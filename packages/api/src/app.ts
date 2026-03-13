@@ -11,10 +11,12 @@ import dbPlugin from "./db/client.js";
 // Services
 import mindRegistryPlugin from "./services/mind-registry.js";
 import mindEnginePlugin from "./services/mind-engine.js";
+import claudePlugin from "./services/claude.js";
 
 // Routes
 import healthRoutes from "./routes/health.js";
 import mindsRoutes from "./routes/minds.js";
+import chatRoutes from "./routes/chat.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -35,10 +37,12 @@ export async function buildServer() {
   // 5. Services
   await app.register(mindRegistryPlugin);
   await app.register(mindEnginePlugin);
+  await app.register(claudePlugin);
 
   // 6. Routes (last — consume services)
   await app.register(healthRoutes);
   await app.register(mindsRoutes);
+  await app.register(chatRoutes);
 
   return app;
 }

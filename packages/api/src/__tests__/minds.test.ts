@@ -15,6 +15,7 @@ const mockEnvPlugin = fp(async (fastify) => {
     DATABASE_URL: "postgresql://test:test@localhost:5432/test",
     CLERK_SECRET_KEY: "sk_test_mock",
     CLERK_PUBLISHABLE_KEY: "pk_test_mock",
+    ANTHROPIC_API_KEY: "sk-ant-test-mock",
     CORS_ORIGIN: "http://localhost:3000",
     MINDS_BASE_PATH: FIXTURES_PATH,
   });

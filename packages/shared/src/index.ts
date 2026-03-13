@@ -12,3 +12,5 @@ export type {
   MindDetail,
   Squad,
 } from "./types/mind.js";
+
+export type { ChatRequest, SSEEvent } from "./types/chat.js";
