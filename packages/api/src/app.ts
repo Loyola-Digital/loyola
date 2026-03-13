@@ -8,8 +8,12 @@ import rateLimitPlugin from "./middleware/rate-limit.js";
 import authPlugin from "./middleware/auth.js";
 import dbPlugin from "./db/client.js";
 
+// Services
+import mindRegistryPlugin from "./services/mind-registry.js";
+
 // Routes
 import healthRoutes from "./routes/health.js";
+import mindsRoutes from "./routes/minds.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -27,8 +31,12 @@ export async function buildServer() {
   // 4. Database
   await app.register(dbPlugin);
 
-  // 5. Routes (last — consume services)
+  // 5. Services
+  await app.register(mindRegistryPlugin);
+
+  // 6. Routes (last — consume services)
   await app.register(healthRoutes);
+  await app.register(mindsRoutes);
 
   return app;
 }

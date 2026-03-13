@@ -1,0 +1,9 @@
+{
+  "name": "Test Mind One",
+  "id": "mind_one",
+  "patterns": {
+    "signature_words": ["test"],
+    "track_profanity": false,
+    "track_questions": true
+  }
+}

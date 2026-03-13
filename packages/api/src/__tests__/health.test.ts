@@ -13,6 +13,7 @@ const mockEnvPlugin = fp(async (fastify) => {
     CLERK_SECRET_KEY: "sk_test_mock",
     CLERK_PUBLISHABLE_KEY: "pk_test_mock",
     CORS_ORIGIN: "http://localhost:3000",
+    MINDS_BASE_PATH: "./squads",
   });
 });
 
