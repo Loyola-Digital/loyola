@@ -14,3 +14,19 @@ export type {
 } from "./types/mind.js";
 
 export type { ChatRequest, SSEEvent } from "./types/chat.js";
+
+export type {
+  TaskStatus,
+  TaskPriority,
+  CreateTaskRequest,
+  DelegatedTask,
+} from "./types/task.js";
+
+export type { UserRole, User } from "./types/user.js";
+
+export type {
+  Conversation,
+  Message,
+  ConversationListResponse,
+  MessageListResponse,
+} from "./types/conversation.js";
