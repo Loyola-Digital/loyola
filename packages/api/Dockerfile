@@ -15,6 +15,9 @@ FROM base AS runtime
 WORKDIR /app
 COPY --from=build /app/packages/api/dist ./dist
 COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages/api/src/db ./src/db
+COPY --from=build /app/packages/api/drizzle.config.ts ./drizzle.config.ts
+COPY --from=build /app/packages/api/package.json ./package.json
 COPY squads ./squads
 EXPOSE 3001
-CMD ["node", "dist/server.js"]
+CMD ["sh", "-c", "npx drizzle-kit push --force && node dist/server.js"]

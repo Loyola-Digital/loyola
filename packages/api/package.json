@@ -7,7 +7,10 @@
     "dev": "tsx watch src/server.ts",
     "lint": "eslint src/",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
+    "start": "node dist/server.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -22,12 +25,12 @@
     "lru-cache": "^11.2.6",
     "pg": "^8.20.0",
     "svix": "^1.88.0",
+    "drizzle-kit": "^0.31.9",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/pg": "^8.18.0",
-    "drizzle-kit": "^0.31.9",
     "tsx": "^4",
     "typescript": "^5",
     "vitest": "^4.1.0"
