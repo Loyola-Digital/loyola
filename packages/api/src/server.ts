@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { buildServer } from "./app.js";
 
 const PORT = Number(process.env.PORT) || 3001;
