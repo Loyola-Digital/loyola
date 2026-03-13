@@ -8,8 +8,9 @@ export default fp(async function authPlugin(fastify) {
   });
 
   fastify.addHook("onRequest", async (request, reply) => {
-    // Skip auth for health check
+    // Skip auth for health check and webhooks
     if (request.url === "/api/health") return;
+    if (request.url.startsWith("/api/webhooks/")) return;
 
     const { userId } = getAuth(request);
     if (!userId) {

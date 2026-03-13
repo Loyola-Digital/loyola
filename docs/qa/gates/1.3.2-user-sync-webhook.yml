@@ -1,0 +1,43 @@
+schema: 1
+story: "1.3.2"
+story_title: "User Sync — Clerk Webhook → PostgreSQL"
+gate: PASS
+status_reason: "11/11 ACs atendidos. Implementação limpa com encapsulação correta do content parser, signature verification via svix, upsert idempotente, e auth skip scoped. Nenhum issue CRITICAL ou HIGH. typecheck e lint passam."
+reviewer: "Quinn (Test Architect)"
+updated: "2026-03-13T23:45:00Z"
+
+quality_score: 97
+
+top_issues: []
+
+waiver:
+  active: false
+
+expires: "2026-03-27T23:45:00Z"
+
+evidence:
+  tests_reviewed: 0
+  risks_identified: 0
+  trace:
+    ac_covered: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    ac_gaps: []
+
+nfr_validation:
+  security:
+    status: PASS
+    notes: "Svix HMAC verification, auth bypass scoped to /api/webhooks/*, no secret leakage in logs."
+  performance:
+    status: PASS
+    notes: "Single-row DB operations. Well within Clerk's 5s timeout."
+  reliability:
+    status: PASS
+    notes: "Error handler catches DB failures, always returns 200 to prevent Clerk retry storms."
+  maintainability:
+    status: PASS
+    notes: "Clean encapsulated plugin (no fp). AC references in comments. Clear type interface for payload."
+
+recommendations:
+  immediate: []
+  future:
+    - action: "Considerar validar email não-vazio antes do insert (Clerk sempre envia, mas defense-in-depth)"
+      refs: ["packages/api/src/routes/webhooks.ts:67"]

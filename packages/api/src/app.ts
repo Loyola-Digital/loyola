@@ -15,6 +15,7 @@ import claudePlugin from "./services/claude.js";
 
 // Routes
 import healthRoutes from "./routes/health.js";
+import webhookRoutes from "./routes/webhooks.js";
 import mindsRoutes from "./routes/minds.js";
 import chatRoutes from "./routes/chat.js";
 
@@ -41,6 +42,7 @@ export async function buildServer() {
 
   // 6. Routes (last — consume services)
   await app.register(healthRoutes);
+  await app.register(webhookRoutes);
   await app.register(mindsRoutes);
   await app.register(chatRoutes);
 

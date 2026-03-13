@@ -11,6 +11,7 @@ const envSchema = z.object({
   CLERK_SECRET_KEY: z.string().min(1),
   CLERK_PUBLISHABLE_KEY: z.string().min(1),
   ANTHROPIC_API_KEY: z.string().min(1),
+  CLERK_WEBHOOK_SECRET: z.string().min(1).optional(),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
   MINDS_BASE_PATH: z.string().default("./squads"),
 });

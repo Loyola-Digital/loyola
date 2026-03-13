@@ -21,6 +21,7 @@
     "fastify-plugin": "^5.1.0",
     "lru-cache": "^11.2.6",
     "pg": "^8.20.0",
+    "svix": "^1.88.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
