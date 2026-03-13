@@ -15,6 +15,8 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useEffect } from "react";
+import { useTasks } from "@/lib/hooks/use-tasks";
+import { Badge } from "@/components/ui/badge";
 
 const navItems = [
   { label: "Minds", href: "/minds", icon: Brain },
@@ -24,6 +26,7 @@ const navItems = [
 
 function NavContent({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname();
+  const { total: openTaskCount } = useTasks({ status: "open", limit: 1, offset: 0 });
 
   return (
     <ScrollArea className="flex-1">
@@ -31,6 +34,7 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
         {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           const Icon = item.icon;
+          const showBadge = item.href === "/tasks" && openTaskCount > 0 && !collapsed;
           return (
             <Button
               key={item.href}
@@ -44,6 +48,11 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
               <Link href={item.href}>
                 <Icon className="h-5 w-5 shrink-0" />
                 {!collapsed && <span>{item.label}</span>}
+                {showBadge && (
+                  <Badge variant="secondary" className="ml-auto text-[10px] px-1.5 py-0">
+                    {openTaskCount}
+                  </Badge>
+                )}
               </Link>
             </Button>
           );

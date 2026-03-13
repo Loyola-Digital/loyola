@@ -9,6 +9,17 @@ interface ChatMessage {
   content: string;
 }
 
+export interface TaskSuggestion {
+  title: string;
+  description?: string;
+  priority?: "urgent" | "high" | "normal" | "low";
+  tags?: string[];
+  messageId?: string;
+  messageIndex: number;
+  status: "pending" | "creating" | "created" | "dismissed";
+  clickupUrl?: string;
+}
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export function useChatStream() {
@@ -16,6 +27,7 @@ export function useChatStream() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [taskSuggestions, setTaskSuggestions] = useState<TaskSuggestion[]>([]);
   const { getToken } = useAuth();
   const apiClient = useApiClient();
   const abortRef = useRef<AbortController | null>(null);
@@ -89,6 +101,20 @@ export function useChatStream() {
                   return updated;
                 });
                 break;
+              case "task_detected":
+                setTaskSuggestions((prev) => [
+                  ...prev,
+                  {
+                    title: parsed.title,
+                    description: parsed.description,
+                    priority: parsed.priority,
+                    tags: parsed.tags,
+                    messageId: parsed.messageId,
+                    messageIndex: messages.length + 1,
+                    status: "pending",
+                  },
+                ]);
+                break;
               case "done":
                 break;
               case "error":
@@ -128,12 +154,23 @@ export function useChatStream() {
     [apiClient],
   );
 
+  const updateTaskSuggestion = useCallback(
+    (index: number, updates: Partial<TaskSuggestion>) => {
+      setTaskSuggestions((prev) =>
+        prev.map((s, i) => (i === index ? { ...s, ...updates } : s)),
+      );
+    },
+    [],
+  );
+
   return {
     messages,
     isStreaming,
     error,
     conversationId,
+    taskSuggestions,
     sendMessage,
     loadHistory,
+    updateTaskSuggestion,
   };
 }

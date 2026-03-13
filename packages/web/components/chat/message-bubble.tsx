@@ -4,12 +4,17 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 import { MindAvatar } from "@/components/minds/mind-avatar";
+import { TaskSuggestionCard } from "@/components/chat/task-suggestion-card";
+import type { TaskSuggestion } from "@/lib/hooks/use-chat-stream";
 
 interface MessageBubbleProps {
   role: "user" | "assistant";
   content: string;
   mindName?: string;
   isStreaming?: boolean;
+  taskSuggestions?: TaskSuggestion[];
+  onConfirmTask?: (index: number) => void;
+  onDismissTask?: (index: number) => void;
 }
 
 export function MessageBubble({
@@ -17,6 +22,9 @@ export function MessageBubble({
   content,
   mindName,
   isStreaming,
+  taskSuggestions,
+  onConfirmTask,
+  onDismissTask,
 }: MessageBubbleProps) {
   const isUser = role === "user";
 
@@ -47,6 +55,19 @@ export function MessageBubble({
             <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground" />
           </div>
         ) : null}
+
+        {!isUser && taskSuggestions && taskSuggestions.length > 0 && (
+          <div className="mt-2 space-y-2">
+            {taskSuggestions.map((suggestion, idx) => (
+              <TaskSuggestionCard
+                key={idx}
+                suggestion={suggestion}
+                onConfirm={() => onConfirmTask?.(idx)}
+                onDismiss={() => onDismissTask?.(idx)}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
