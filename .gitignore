@@ -42,6 +42,9 @@ out/
 # Drizzle
 drizzle/meta/
 
+# TypeScript build info
+*.tsbuildinfo
+
 # Test Coverage
 coverage/
 

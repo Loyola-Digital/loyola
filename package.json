@@ -1,0 +1,21 @@
+{
+  "name": "loyola-digital-x",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck"
+  },
+  "devDependencies": {
+    "turbo": "^2",
+    "typescript": "^5",
+    "eslint": "^9",
+    "@eslint/js": "^9",
+    "typescript-eslint": "^8"
+  },
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20"
+  }
+}
