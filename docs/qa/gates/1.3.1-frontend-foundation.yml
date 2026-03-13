@@ -1,0 +1,63 @@
+schema: 1
+story: "1.3.1"
+story_title: "Frontend Foundation — Next.js 15 + Clerk Auth"
+gate: PASS
+status_reason: "Todos os issues MEDIUM corrigidos pelo @dev. QA-001 (a11y) e QA-002 (responsive) resolvidos com qualidade. QA-003 (API error body) mantido como tech debt LOW para sprint futuro. 19/19 ACs atendidos. typecheck e lint passam."
+reviewer: "Quinn (Test Architect)"
+updated: "2026-03-13T23:30:00Z"
+
+quality_score: 95
+
+top_issues:
+  - id: QA-1.3.1-001
+    severity: medium
+    title: "Topbar — botão toggle sidebar sem aria-expanded"
+    file: "packages/web/components/layout/topbar.tsx"
+    status: RESOLVED
+    resolution: "Adicionado aria-label, aria-expanded={sidebarOpen}, aria-controls='app-sidebar'"
+  - id: QA-1.3.1-002
+    severity: medium
+    title: "Sidebar — responsive resize bug (mobile → desktop)"
+    file: "packages/web/components/layout/app-sidebar.tsx"
+    status: RESOLVED
+    resolution: "useIsMobile() renomeado para useResponsiveSidebar(). Agora usa min-width:768px com setSidebarOpen(e.matches). id='app-sidebar' adicionado ao aside."
+  - id: QA-1.3.1-003
+    severity: low
+    title: "API Client — error sem body parsing"
+    file: "packages/web/lib/api-client.ts"
+    status: DEFERRED
+    resolution: "Tech debt para sprint futuro — funcional para MVP."
+
+waiver:
+  active: false
+
+expires: "2026-03-27T23:30:00Z"
+
+evidence:
+  tests_reviewed: 0
+  risks_identified: 1
+  trace:
+    ac_covered: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    ac_gaps: []
+
+nfr_validation:
+  security:
+    status: PASS
+    notes: "Clerk middleware configurado corretamente (padrão oficial). JWT injection no API client funciona para server e client. Rotas protegidas via auth.protect()."
+  performance:
+    status: PASS
+    notes: "Bundle adequado para MVP. Code splitting via Next.js App Router. useCallback no hook é correto."
+  reliability:
+    status: PASS
+    notes: "API client error handling minimalista mas funcional. Body parsing deferido como tech debt LOW."
+  maintainability:
+    status: PASS
+    notes: "Código limpo, bem estruturado. Separação clara RSC vs client components. shadcn/ui components seguem padrão oficial. Nomes semânticos (useResponsiveSidebar)."
+
+recommendations:
+  immediate: []
+  future:
+    - action: "Incluir response body no Error do API client para melhor debugging"
+      refs: ["packages/web/lib/api-client.ts:25-27", "packages/web/lib/api-client.ts:49-51"]
+    - action: "Considerar Zustand persist middleware para manter sidebar state entre refreshes"
+      refs: ["packages/web/lib/stores/ui-store.ts"]
