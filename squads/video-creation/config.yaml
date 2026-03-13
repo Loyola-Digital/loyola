@@ -1,0 +1,123 @@
+name: video-creation
+version: 1.0.0
+short-title: AI Video Creation Squad
+description: >-
+  Squad especializado em criação de vídeos com IA usando ComfyUI como backbone.
+  Cobre todo o pipeline: prompt engineering, geração text-to-video e image-to-video,
+  consistência de personagens, motion design, upscaling, pós-produção e áudio.
+  Suporta modelos Wan 2.1/2.2, HunyuanVideo, CogVideoX, LTX-2, AnimateDiff e Flux.
+
+author: AIOS Team
+slashPrefix: videoCreation
+
+settings:
+  activation:
+    show_ecosystem_report: true
+    show_greeting: true
+    show_quick_commands: true
+
+pattern_library:
+  prefix: VC
+  naming_convention:
+    format: "{PREFIX}-{CATEGORY}-{NUMBER}"
+    example: "VC-TP-001"
+  categories:
+    - id: TP
+      name: "Task Patterns"
+      description: "Patterns for video creation task structure"
+    - id: EP
+      name: "Executor Patterns"
+      description: "Patterns for executor types (ComfyUI, manual, hybrid)"
+    - id: PP
+      name: "Process Patterns"
+      description: "Patterns for video production workflows"
+    - id: IP
+      name: "Integration Patterns"
+      description: "Patterns for tool/model integrations"
+    - id: AP
+      name: "Automation Patterns"
+      description: "Patterns for automated pipeline execution"
+
+tools:
+  core:
+    - name: ComfyUI
+      type: application
+      path: "/Users/felipegobbi/ComfyUI"
+      description: "Node-based UI for diffusion model pipelines"
+  models:
+    video_generation:
+      - name: "Wan 2.1/2.2"
+        type: "T2V, I2V, V2V"
+        params: "1.3B / 5B / 14B"
+      - name: "HunyuanVideo"
+        type: "T2V, I2V"
+        params: "13B"
+      - name: "CogVideoX-5B"
+        type: "T2V"
+        params: "5B"
+      - name: "LTX-2"
+        type: "T2V, I2V"
+        params: "2B-13B"
+      - name: "AnimateDiff"
+        type: "Motion models for SD"
+        params: "Various"
+    upscaling:
+      - name: "SeedVR2"
+      - name: "Topaz Video AI"
+      - name: "GIMM-VFI"
+    consistency:
+      - name: "IP-Adapter FaceID Plus V2"
+      - name: "InstantID"
+      - name: "FaceDetailer"
+  comfyui_nodes:
+    - "ComfyUI-VideoHelperSuite"
+    - "ComfyUI-AnimateDiff-Evolved"
+    - "ComfyUI-Advanced-ControlNet"
+    - "ComfyUI-WanVideoWrapper"
+    - "ComfyUI-HunyuanVideoWrapper"
+    - "ComfyUI-CogVideoXWrapper"
+    - "ComfyUI_IPAdapter_plus"
+    - "Steerable-Motion"
+    - "ComfyUI-LTXVideo"
+    - "ComfyUI-SeedVR2_VideoUpscaler"
+    - "ComfyUI-GIMM-VFI"
+    - "ComfyUI-TopazVideoAI"
+  audio:
+    - name: "ElevenLabs"
+      type: "Voice, SFX"
+    - name: "Suno"
+      type: "Music (songs)"
+    - name: "Udio"
+      type: "Music (instrumentals)"
+
+heuristics:
+  - id: VC_PRE_001
+    name: "Pre-Production Complete"
+    phase: "phase_1"
+    blocking: true
+  - id: VC_GEN_001
+    name: "Generation Quality Gate"
+    phase: "phase_2"
+    blocking: true
+  - id: VC_CON_001
+    name: "Character Consistency Check"
+    phase: "phase_2"
+    blocking: false
+  - id: VC_ENH_001
+    name: "Enhancement Quality Gate"
+    phase: "phase_3"
+    blocking: true
+  - id: VC_AUD_001
+    name: "Audio Sync Validation"
+    phase: "phase_4"
+    blocking: false
+  - id: VC_FIN_001
+    name: "Final Output Validation"
+    phase: "phase_5"
+    blocking: true
+
+metadata:
+  version: "1.0.0"
+  created: "2026-02-06"
+  last_updated: "2026-02-06"
+  compatible_with: "AIOS-FULLSTACK v5+"

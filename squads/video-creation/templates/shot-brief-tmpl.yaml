@@ -1,0 +1,237 @@
+# Shot Brief Template
+# Template: shot-brief-tmpl.yaml
+# Squad: video-creation
+# Version: 1.0.0
+# Purpose: Define all parameters for a single video shot generation
+#
+# Usage: Fill in all fields for each shot in the video production pipeline.
+#        This brief is consumed by the ComfyUI architect to build and execute
+#        the generation workflow.
+#
+# Reference: wf-create-video.yaml (Phase 1, step_1_4)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SHOT IDENTIFICATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+shot_id: "{{SHOT_ID}}"                    # e.g., "shot-001"
+project_title: "{{PROJECT_TITLE}}"        # Parent project title
+sequence_number: {{SEQUENCE_NUMBER}}      # Order in timeline (1, 2, 3...)
+description: "{{SHOT_DESCRIPTION}}"       # Human-readable description of the shot
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GENERATION MODEL
+# ═══════════════════════════════════════════════════════════════════════════════
+
+model:
+  name: "{{MODEL_NAME}}"                  # e.g., "wan2.1_t2v_1.3b", "hunyuan_video", "cogvideox_5b"
+  type: "{{MODEL_TYPE}}"                  # T2V (text-to-video), I2V (image-to-video), V2V (video-to-video)
+  checkpoint: "{{CHECKPOINT_PATH}}"       # Path relative to ComfyUI models directory
+  vae: "{{VAE_PATH}}"                     # VAE model path (if separate from main model)
+  precision: "{{PRECISION}}"              # fp16, bf16, fp8 (depends on VRAM)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RESOLUTION & DURATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+resolution:
+  width: {{WIDTH}}                        # e.g., 1280, 1920
+  height: {{HEIGHT}}                      # e.g., 720, 1080
+  aspect_ratio: "{{ASPECT_RATIO}}"        # e.g., "16:9", "9:16", "1:1"
+
+duration:
+  seconds: {{DURATION_SECONDS}}           # Target duration in seconds (e.g., 4)
+  frames: {{FRAME_COUNT}}                 # Total frames to generate (seconds * fps for model)
+  fps_generation: {{FPS_GENERATION}}      # FPS the model generates at (often 8, 16, or 24)
+  fps_output: {{FPS_OUTPUT}}              # Target output FPS (24, 30, 60)
+  interpolation_needed: {{INTERPOLATION}} # true if fps_output > fps_generation
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PROMPTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+prompt:
+  positive: |
+    {{POSITIVE_PROMPT}}
+    # Structure guide:
+    #   [subject] [action/pose] [setting/environment]
+    #   [lighting] [style/aesthetic] [quality tags]
+    #
+    # Example:
+    #   A young woman with brown hair walks through a sunlit garden,
+    #   soft natural lighting, cinematic composition, film grain,
+    #   photorealistic, high detail, 4K, masterpiece
+
+  negative: |
+    {{NEGATIVE_PROMPT}}
+    # Common negative elements:
+    #   blurry, low quality, distorted, deformed, ugly,
+    #   extra fingers, extra limbs, bad anatomy, bad proportions,
+    #   watermark, text, signature, logo, artifact, noise,
+    #   oversaturated, underexposed, overexposed
+
+  style_prefix: "{{STYLE_PREFIX}}"        # Prepended to positive prompt from style guide
+  style_suffix: "{{STYLE_SUFFIX}}"        # Appended to positive prompt from style guide
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMFYUI GENERATION SETTINGS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+comfyui_settings:
+  sampler:
+    name: "{{SAMPLER_NAME}}"              # e.g., "euler", "euler_ancestral", "dpmpp_2m", "uni_pc"
+    scheduler: "{{SCHEDULER}}"            # e.g., "normal", "karras", "exponential", "sgm_uniform"
+
+  steps: {{STEPS}}                        # Generation steps (20-50 typical, higher = better but slower)
+  cfg_scale: {{CFG_SCALE}}               # Classifier-free guidance scale (3.0-15.0, model dependent)
+  denoise_strength: {{DENOISE}}           # Denoise strength (0.0-1.0, 1.0 for T2V, lower for I2V/V2V)
+  seed: {{SEED}}                          # Random seed (-1 for random, fixed for reproducibility)
+  batch_size: {{BATCH_SIZE}}              # Number of variants to generate (1-4)
+
+  # Model-specific settings
+  model_specific:
+    # Wan 2.1/2.2 specific
+    wan_shift: {{WAN_SHIFT}}              # Shift parameter (5.0 default for Wan)
+    wan_tea_cache: {{WAN_TEA_CACHE}}      # Enable TeaCache for speed (true/false)
+
+    # HunyuanVideo specific
+    hunyuan_embedded_guidance: {{HUNYUAN_GUIDANCE}}  # Embedded guidance scale
+
+    # CogVideoX specific
+    cogvideo_enable_tiling: {{COG_TILING}} # Enable tiling for memory optimization
+
+    # LTX specific
+    ltx_stg_mode: "{{LTX_STG_MODE}}"     # STG mode for LTX-2
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CHARACTER REFERENCES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+character_refs:
+  enabled: {{CHAR_REFS_ENABLED}}          # true / false
+  characters:
+    - name: "{{CHARACTER_NAME}}"
+      reference_image: "{{CHARACTER_REF_PATH}}"       # Path to reference image
+      embedding_path: "{{CHARACTER_EMBEDDING_PATH}}"   # Path to IP-Adapter embedding (if pre-computed)
+      ip_adapter:
+        model: "{{IPADAPTER_MODEL}}"      # e.g., "ip-adapter-faceid-plusv2_sdxl.bin"
+        weight: {{IPADAPTER_WEIGHT}}      # IP-Adapter strength (0.0-1.0, typical: 0.6-0.85)
+        weight_type: "{{WEIGHT_TYPE}}"    # "linear", "ease in", "ease out", "ease in-out"
+        start_at: {{START_AT}}            # When to start applying (0.0 = from beginning)
+        end_at: {{END_AT}}               # When to stop applying (1.0 = until end)
+      instantid:
+        enabled: {{INSTANTID_ENABLED}}    # true / false (alternative to IP-Adapter)
+        strength: {{INSTANTID_STRENGTH}}  # InstantID strength
+      face_detailer:
+        enabled: {{FACE_DETAILER_ENABLED}}  # Apply FaceDetailer post-processing
+        confidence: {{FACE_CONFIDENCE}}     # Detection confidence threshold
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STYLE REFERENCES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+style_refs:
+  enabled: {{STYLE_REFS_ENABLED}}         # true / false
+  images:
+    - path: "{{STYLE_REF_PATH}}"
+      description: "{{STYLE_REF_DESCRIPTION}}"
+      weight: {{STYLE_REF_WEIGHT}}        # How strongly to apply this style reference
+  lut_path: "{{LUT_PATH}}"               # Color LUT file for post-processing (if applicable)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CAMERA & MOTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+camera:
+  type: "{{CAMERA_TYPE}}"                 # "wide", "medium", "close-up", "extreme-close-up", "aerial", "POV"
+  movement: "{{CAMERA_MOVEMENT}}"         # "static", "pan_left", "pan_right", "tilt_up", "tilt_down",
+                                          # "zoom_in", "zoom_out", "tracking", "dolly", "orbit", "handheld"
+  movement_speed: "{{MOVEMENT_SPEED}}"    # "slow", "medium", "fast"
+  angle: "{{CAMERA_ANGLE}}"              # "eye_level", "low_angle", "high_angle", "dutch_angle", "birds_eye"
+
+  # ControlNet motion guidance (optional)
+  controlnet:
+    enabled: {{CONTROLNET_ENABLED}}       # true / false
+    model: "{{CONTROLNET_MODEL}}"         # ControlNet model for motion guidance
+    strength: {{CONTROLNET_STRENGTH}}     # ControlNet strength (0.0-1.0)
+    guidance_type: "{{GUIDANCE_TYPE}}"    # "depth", "openpose", "canny", "optical_flow"
+
+  # AnimateDiff motion (optional, for SD-based models)
+  animatediff:
+    enabled: {{ANIMATEDIFF_ENABLED}}      # true / false
+    motion_module: "{{MOTION_MODULE}}"    # Motion module name
+    motion_scale: {{MOTION_SCALE}}        # Motion intensity (0.5-1.5)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LIGHTING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+lighting:
+  type: "{{LIGHTING_TYPE}}"              # "natural", "studio", "dramatic", "neon", "ambient",
+                                          # "golden_hour", "blue_hour", "overcast", "night"
+  direction: "{{LIGHTING_DIRECTION}}"     # "front", "side", "back", "top", "bottom", "rim"
+  intensity: "{{LIGHTING_INTENSITY}}"     # "soft", "medium", "hard"
+  color_temperature: "{{COLOR_TEMP}}"     # "warm" (3000K), "neutral" (5500K), "cool" (7000K)
+  notes: "{{LIGHTING_NOTES}}"            # Additional lighting instructions
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AUDIO CUE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+audio:
+  dialogue: "{{DIALOGUE_TEXT}}"           # Dialogue or VO text for this shot
+  voice_id: "{{VOICE_ID}}"               # ElevenLabs voice ID
+  music_mood: "{{MUSIC_MOOD}}"            # e.g., "upbeat", "tense", "calm"
+  sfx_cues:
+    - timestamp: "{{SFX_TIMESTAMP}}"      # When in the shot (e.g., "0.5s")
+      description: "{{SFX_DESCRIPTION}}"  # What sound effect
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TRANSITION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+transition:
+  to_next: "{{TRANSITION_TYPE}}"          # "cut", "crossfade", "fade_to_black", "fade_from_black",
+                                          # "wipe", "dissolve", "motion_match"
+  duration: {{TRANSITION_DURATION}}       # Transition duration in seconds (0 for hard cut)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# POST-PROCESSING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+post_processing:
+  upscale:
+    enabled: {{UPSCALE_ENABLED}}          # true / false
+    method: "{{UPSCALE_METHOD}}"          # "seedvr2", "topaz", "realesrgan"
+    target_resolution: "{{UPSCALE_TARGET}}"  # Target resolution after upscaling
+
+  frame_interpolation:
+    enabled: {{INTERPOLATION_ENABLED}}    # true / false
+    method: "{{INTERPOLATION_METHOD}}"    # "gimm_vfi", "rife"
+    target_fps: {{INTERPOLATION_FPS}}     # Target FPS after interpolation
+
+  color_grading:
+    enabled: {{COLOR_GRADING_ENABLED}}    # true / false
+    lut: "{{COLOR_LUT_PATH}}"            # Path to color LUT file
+    adjustments:
+      exposure: {{EXPOSURE}}              # -2.0 to 2.0 (0 = no change)
+      contrast: {{CONTRAST}}              # -1.0 to 1.0 (0 = no change)
+      saturation: {{SATURATION}}          # -1.0 to 1.0 (0 = no change)
+      temperature: {{TEMPERATURE}}         # -1.0 to 1.0 (0 = no change)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GENERATION STATUS (filled during execution)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+status:
+  state: "{{STATE}}"                      # "pending", "generating", "completed", "failed", "needs_revision"
+  attempts: {{ATTEMPTS}}                  # Number of generation attempts
+  final_seed: {{FINAL_SEED}}             # Seed that produced the accepted result
+  quality_scores:
+    visual: {{SCORE_VISUAL}}              # 0-10
+    prompt_adherence: {{SCORE_ADHERENCE}} # 0-10
+    motion: {{SCORE_MOTION}}              # 0-10
+    consistency: {{SCORE_CONSISTENCY}}     # 0-10
+  output_path: "{{OUTPUT_PATH}}"          # Path to generated video file
+  generation_time: "{{GEN_TIME}}"         # Time taken for generation
+  notes: "{{GENERATION_NOTES}}"           # Any notes from generation process

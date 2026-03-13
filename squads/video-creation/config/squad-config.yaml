@@ -1,0 +1,865 @@
+# Video Creation Squad Configuration
+# Pattern: SC-CF-001 (Squad Configuration Standard)
+# Version: 1.0.0
+# Last Updated: 2026-02-07
+
+# =============================================================================
+# SQUAD METADATA
+# =============================================================================
+squad_config:
+  name: video-creation
+  version: 1.0.0
+  description: >-
+    Squad especializado em criacao de videos com IA usando ComfyUI como backbone.
+    Cobre todo o pipeline: prompt engineering, geracao text-to-video e image-to-video,
+    consistencia de personagens, motion design, upscaling, pos-producao e audio.
+    Suporta modelos Wan 2.1/2.2, HunyuanVideo, CogVideoX, LTX-2, AnimateDiff e Flux.
+  author: AIOS Team
+  created: "2026-02-06"
+  last_updated: "2026-02-07"
+  compatible_with: "AIOS-FULLSTACK v5+"
+  slash_prefix: videoCreation
+  pattern_prefix: VC
+
+  # =========================================================================
+  # DATA SOURCES CONFIGURATION
+  # Pattern: SC-DS-001 (Data Source Abstraction)
+  # =========================================================================
+  data_sources:
+
+    # -----------------------------------------------------------------------
+    # ComfyUI API - Primary generation backend
+    # -----------------------------------------------------------------------
+    comfyui_api:
+      active_source: local
+      description: "ComfyUI server for node-based diffusion pipeline execution"
+
+      sources:
+        local:
+          type: http
+          description: "Local ComfyUI instance running on the same machine"
+          connection:
+            base_url: "http://127.0.0.1:8188"
+            health_endpoint: "/system_stats"
+            ws_endpoint: "ws://127.0.0.1:8188/ws"
+            timeout_seconds: 30
+            max_retries: 3
+          endpoints:
+            prompt: "/prompt"              # POST - queue a generation
+            queue: "/queue"                # GET  - view queue status
+            history: "/history"            # GET  - generation history
+            view: "/view"                  # GET  - view generated images/frames
+            upload_image: "/upload/image"  # POST - upload reference images
+            object_info: "/object_info"    # GET  - list available nodes
+            interrupt: "/interrupt"        # POST - cancel current generation
+
+        remote:
+          type: http
+          description: "Remote ComfyUI instance (cloud GPU, Runpod, Vast.ai, etc.)"
+          connection:
+            base_url_env: COMFYUI_REMOTE_URL
+            auth_type: bearer
+            token_env: COMFYUI_REMOTE_TOKEN
+            timeout_seconds: 120
+            max_retries: 2
+
+    # -----------------------------------------------------------------------
+    # Model Paths - Where model files are stored on disk
+    # -----------------------------------------------------------------------
+    model_paths:
+      description: "Filesystem paths for model weights and related assets"
+      comfyui_root: "/Users/felipegobbi/ComfyUI"
+
+      directories:
+        checkpoints: "models/checkpoints"
+        diffusion_models: "models/diffusion_models"
+        unet: "models/unet"
+        vae: "models/vae"
+        text_encoders: "models/text_encoders"
+        clip: "models/clip"
+        clip_vision: "models/clip_vision"
+        loras: "models/loras"
+        controlnet: "models/controlnet"
+        ipadapter: "models/ipadapter"
+        insightface: "models/insightface"
+        upscale_models: "models/upscale_models"
+        animatediff_models: "models/animatediff_models"
+        custom_nodes: "custom_nodes"
+
+    # -----------------------------------------------------------------------
+    # Output Directories - Where generated assets are stored
+    # -----------------------------------------------------------------------
+    outputs:
+      active_destination: local_file
+      description: "Directories for all generated and processed video assets"
+
+      destinations:
+        local_file:
+          type: file
+          base_path: "/Users/felipegobbi/ComfyUI/output"
+          structure:
+            raw_generations: "raw/{project_name}/{shot_id}/"
+            upscaled: "upscaled/{project_name}/{shot_id}/"
+            interpolated: "interpolated/{project_name}/{shot_id}/"
+            final_renders: "final/{project_name}/"
+            audio: "audio/{project_name}/"
+            thumbnails: "thumbnails/{project_name}/"
+            project_files: "projects/{project_name}/"
+          filename_patterns:
+            raw_video: "{shot_id}_seed{seed}_s{steps}_{timestamp}.mp4"
+            upscaled_video: "{shot_id}_upscaled_{scale}x_{timestamp}.mp4"
+            final_video: "{project_name}_final_v{version}_{timestamp}.mp4"
+            workflow_json: "{shot_id}_workflow_{timestamp}.json"
+          cleanup:
+            auto_cleanup_raw: false
+            max_raw_versions_per_shot: 10
+            archive_after_days: 30
+
+    # -----------------------------------------------------------------------
+    # Input Sources - Reference images, scripts, assets
+    # -----------------------------------------------------------------------
+    inputs:
+      character_references: "inputs/characters/"
+      style_references: "inputs/styles/"
+      scripts: "inputs/scripts/"
+      storyboards: "inputs/storyboards/"
+      control_images: "inputs/controlnet/"
+      audio_assets: "inputs/audio/"
+
+  # =========================================================================
+  # PROCESSING SETTINGS
+  # Defaults for video generation parameters
+  # =========================================================================
+  processing:
+
+    # -----------------------------------------------------------------------
+    # Default Video Settings
+    # -----------------------------------------------------------------------
+    defaults:
+      resolution: "1280x720"        # Default output resolution (WxH)
+      fps: 24                        # Frames per second
+      codec: "h264"                  # Video codec for intermediate renders
+      container: "mp4"               # Container format
+      pixel_format: "yuv420p"        # Pixel format for broad compatibility
+      color_space: "bt709"           # Color space (bt709 for web, bt2020 for HDR)
+
+    # -----------------------------------------------------------------------
+    # Quality Presets
+    # Select preset based on project needs and available compute
+    # -----------------------------------------------------------------------
+    quality_presets:
+      draft:
+        description: "Fast preview quality - for quick iteration and prompt testing"
+        resolution: "640x384"
+        fps: 16
+        steps: 20
+        cfg_scale: 6.0
+        frames: 33                   # ~2 seconds at 16fps
+        codec: "h264"
+        bitrate: "2M"
+        upscaling: false
+        frame_interpolation: false
+
+      standard:
+        description: "Good quality - suitable for review and most social media"
+        resolution: "832x480"
+        fps: 24
+        steps: 30
+        cfg_scale: 6.0
+        frames: 81                   # ~3.3 seconds at 24fps
+        codec: "h264"
+        bitrate: "8M"
+        upscaling: true
+        upscale_factor: 2
+        frame_interpolation: false
+
+      high:
+        description: "High quality - for final renders and professional output"
+        resolution: "1280x720"
+        fps: 24
+        steps: 40
+        cfg_scale: 5.0
+        frames: 81
+        codec: "h265"
+        bitrate: "20M"
+        upscaling: true
+        upscale_factor: 2            # Results in 2560x1440 (2K)
+        frame_interpolation: true
+        target_fps_after_interpolation: 48
+
+      ultra:
+        description: "Maximum quality - for 4K deliverables and broadcast"
+        resolution: "1280x720"
+        fps: 24
+        steps: 50
+        cfg_scale: 4.5
+        frames: 81
+        codec: "h265"
+        bitrate: "50M"
+        upscaling: true
+        upscale_factor: 4            # Results in 5120x2880 (~5K, crop to 4K)
+        frame_interpolation: true
+        target_fps_after_interpolation: 60
+
+    # -----------------------------------------------------------------------
+    # Aspect Ratio Presets
+    # Maps common use cases to optimal resolutions per model capability
+    # -----------------------------------------------------------------------
+    aspect_ratios:
+      landscape_16_9:
+        label: "16:9 Landscape (YouTube, presentations)"
+        resolutions: ["1280x720", "832x480", "640x384"]
+      portrait_9_16:
+        label: "9:16 Portrait (TikTok, Reels, Shorts)"
+        resolutions: ["720x1280", "480x832", "384x640"]
+      square_1_1:
+        label: "1:1 Square (Instagram, thumbnails)"
+        resolutions: ["720x720", "512x512"]
+      cinematic_21_9:
+        label: "21:9 Cinematic (widescreen, letterbox)"
+        resolutions: ["1280x544", "832x352"]
+
+    # -----------------------------------------------------------------------
+    # Sampler and Scheduler Defaults
+    # These can be overridden per-model in the model_configs section
+    # -----------------------------------------------------------------------
+    sampler_defaults:
+      sampler: "euler"
+      scheduler: "normal"
+      denoise_strength: 1.0          # 1.0 for T2V, 0.6-0.85 for I2V
+      cfg_scale: 6.0
+      steps: 30
+      seed: -1                       # -1 = random
+
+  # =========================================================================
+  # MODEL CONFIGURATIONS
+  # Detailed settings for each supported video generation model
+  # =========================================================================
+  model_configs:
+
+    # -----------------------------------------------------------------------
+    # Wan 2.1 - Primary recommended model
+    # Best overall quality, supports T2V, I2V, and V2V
+    # -----------------------------------------------------------------------
+    wan_2_1:
+      name: "Wan 2.1"
+      enabled: true
+      priority: 1                    # Preferred model when auto-selecting
+      capabilities: ["t2v", "i2v", "v2v"]
+      comfyui_node: "ComfyUI-WanVideoWrapper"
+
+      variants:
+        1_3b:
+          name: "Wan 2.1 1.3B"
+          params: "1.3B"
+          min_vram_gb: 8
+          recommended_vram_gb: 12
+          precision: "fp8"
+          max_resolution: "832x480"
+          max_frames: 81
+          notes: "Fastest variant, good for quick iterations"
+
+        5b:
+          name: "Wan 2.1 5B"
+          params: "5B"
+          min_vram_gb: 12
+          recommended_vram_gb: 16
+          precision: "fp16"
+          max_resolution: "1280x720"
+          max_frames: 81
+          notes: "Best balance of quality and speed"
+
+        14b:
+          name: "Wan 2.1 14B"
+          params: "14B"
+          min_vram_gb: 24
+          recommended_vram_gb: 48
+          precision: "fp16"
+          max_resolution: "1280x720"
+          max_frames: 81
+          notes: "Highest quality, requires significant VRAM"
+
+      generation_defaults:
+        sampler: "euler"
+        scheduler: "normal"
+        steps: 30
+        cfg_scale: 6.0
+        shift: 5.0
+        tea_cache_threshold: 0.3     # Temporal attention caching for speed
+        vae_precision: "fp32"        # Always use fp32 for VAE decode
+
+      text_encoders:
+        - name: "T5-XXL"
+          path: "models/text_encoders/t5xxl_fp8_e4m3fn.safetensors"
+          precision: "fp8"
+        - name: "CLIP-L"
+          path: "models/clip/clip_l.safetensors"
+          precision: "fp16"
+
+    # -----------------------------------------------------------------------
+    # Wan 2.2 - Latest experimental version
+    # -----------------------------------------------------------------------
+    wan_2_2:
+      name: "Wan 2.2"
+      enabled: true
+      priority: 2
+      capabilities: ["t2v", "i2v"]
+      comfyui_node: "ComfyUI-WanVideoWrapper"
+      status: "experimental"
+
+      generation_defaults:
+        sampler: "euler"
+        scheduler: "normal"
+        steps: 30
+        cfg_scale: 6.0
+        shift: 5.0
+        vae_precision: "fp32"
+
+      notes: "Shares the same wrapper node as Wan 2.1. Check for model-specific updates."
+
+    # -----------------------------------------------------------------------
+    # HunyuanVideo - Strong motion coherence
+    # -----------------------------------------------------------------------
+    hunyuan_video:
+      name: "HunyuanVideo"
+      enabled: true
+      priority: 3
+      capabilities: ["t2v", "i2v"]
+      comfyui_node: "ComfyUI-HunyuanVideoWrapper"
+      params: "13B"
+      min_vram_gb: 16
+      recommended_vram_gb: 24
+
+      generation_defaults:
+        sampler: "euler"
+        scheduler: "normal"
+        steps: 30
+        cfg_scale: 1.0               # HunyuanVideo uses very low CFG
+        flow_shift: 7.0
+        embedded_guidance_scale: 6.0
+        vae_precision: "fp32"
+        max_resolution: "960x544"
+        max_frames: 77
+
+      text_encoders:
+        - name: "LLaVA-LLaMA"
+          precision: "fp16"
+        - name: "CLIP-L"
+          precision: "fp16"
+
+      notes: "Excellent motion quality. Uses embedded guidance instead of traditional CFG."
+
+    # -----------------------------------------------------------------------
+    # CogVideoX-5B - Fast text-to-video
+    # -----------------------------------------------------------------------
+    cogvideox:
+      name: "CogVideoX-5B"
+      enabled: true
+      priority: 4
+      capabilities: ["t2v"]
+      comfyui_node: "ComfyUI-CogVideoXWrapper"
+      params: "5B"
+      min_vram_gb: 12
+      recommended_vram_gb: 16
+
+      generation_defaults:
+        sampler: "dpm_pp_2m"
+        scheduler: "normal"
+        steps: 50
+        cfg_scale: 6.0
+        max_resolution: "720x480"
+        max_frames: 49               # ~6 seconds at 8fps native
+        native_fps: 8
+        vae_precision: "fp32"
+
+      notes: "Good T2V quality at moderate VRAM. Native 8fps, use interpolation for higher."
+
+    # -----------------------------------------------------------------------
+    # LTX-2 - Balanced speed and quality
+    # -----------------------------------------------------------------------
+    ltx_2:
+      name: "LTX-2"
+      enabled: true
+      priority: 5
+      capabilities: ["t2v", "i2v"]
+      comfyui_node: "ComfyUI-LTXVideo"
+      params: "2B-13B"
+      min_vram_gb: 8
+      recommended_vram_gb: 16
+
+      generation_defaults:
+        sampler: "euler"
+        scheduler: "normal"
+        steps: 25
+        cfg_scale: 3.5
+        max_resolution: "768x512"
+        max_frames: 97
+        vae_precision: "fp32"
+
+      notes: "Very fast generation. Good for rapid prototyping and iteration."
+
+    # -----------------------------------------------------------------------
+    # AnimateDiff - Motion modules for Stable Diffusion
+    # -----------------------------------------------------------------------
+    animatediff:
+      name: "AnimateDiff"
+      enabled: true
+      priority: 6
+      capabilities: ["t2v", "i2v"]
+      comfyui_node: "ComfyUI-AnimateDiff-Evolved"
+      params: "Various"
+      min_vram_gb: 8
+      recommended_vram_gb: 12
+
+      generation_defaults:
+        sampler: "euler_ancestral"
+        scheduler: "normal"
+        steps: 20
+        cfg_scale: 7.5
+        max_resolution: "768x768"
+        max_frames: 32
+        native_fps: 8
+
+      motion_modules:
+        - name: "mm_sd15_v3"
+          description: "SD 1.5 motion module v3"
+        - name: "mm_sdxl_v10_beta"
+          description: "SDXL motion module (beta)"
+
+      notes: "Best used with existing SD/SDXL checkpoints. Good for stylized content."
+
+    # -----------------------------------------------------------------------
+    # Flux - Image generation backbone (for I2V reference frames)
+    # -----------------------------------------------------------------------
+    flux:
+      name: "Flux"
+      enabled: true
+      priority: 7
+      capabilities: ["t2i"]          # Text-to-image only
+      comfyui_node: "native"         # Built into ComfyUI core
+      params: "12B"
+      min_vram_gb: 12
+      recommended_vram_gb: 16
+
+      generation_defaults:
+        sampler: "euler"
+        scheduler: "simple"
+        steps: 20
+        guidance: 3.5                # Flux uses guidance instead of cfg_scale
+        max_resolution: "1536x1024"
+
+      variants:
+        dev:
+          name: "Flux.1 Dev"
+          distilled: false
+          steps: 20
+        schnell:
+          name: "Flux.1 Schnell"
+          distilled: true
+          steps: 4
+          notes: "Distilled version for rapid generation"
+
+      notes: >-
+        Used primarily for generating high-quality reference frames
+        and character sheets that feed into I2V pipelines.
+
+  # =========================================================================
+  # VRAM PROFILES
+  # Hardware-aware configuration that adjusts model selection, precision,
+  # resolution, and optimization strategies based on available VRAM.
+  # =========================================================================
+  vram_profiles:
+
+    # -----------------------------------------------------------------------
+    # 8 GB - Entry-level (GTX 1070/1080, RTX 3060, Apple M1 base)
+    # -----------------------------------------------------------------------
+    8gb:
+      label: "8 GB VRAM - Entry Level"
+      recommended_models: ["wan_2_1_1_3b", "ltx_2", "animatediff"]
+      excluded_models: ["wan_2_1_14b", "hunyuan_video"]
+      max_resolution: "640x384"
+      max_frames: 33
+      precision: "fp8"
+      optimizations:
+        - "Enable model CPU offloading (--lowvram flag)"
+        - "Use fp8 quantized models only"
+        - "Process one shot at a time"
+        - "Close other GPU-intensive applications"
+        - "Use tiled VAE decoding"
+      tea_cache_threshold: 0.2       # More aggressive caching
+      vae_tiling: true
+      attention_slicing: true
+
+    # -----------------------------------------------------------------------
+    # 12 GB - Mid-range (RTX 3060 12GB, RTX 4070, Apple M1 Pro)
+    # -----------------------------------------------------------------------
+    12gb:
+      label: "12 GB VRAM - Mid Range"
+      recommended_models: ["wan_2_1_1_3b", "wan_2_1_5b", "cogvideox", "ltx_2", "animatediff"]
+      excluded_models: ["wan_2_1_14b"]
+      max_resolution: "832x480"
+      max_frames: 49
+      precision: "fp16"
+      optimizations:
+        - "Use fp16 precision for most models"
+        - "Enable tea_cache for Wan models"
+        - "Use tiled VAE for resolutions above 720p"
+      tea_cache_threshold: 0.3
+      vae_tiling: true
+      attention_slicing: false
+
+    # -----------------------------------------------------------------------
+    # 16 GB - High-end consumer (RTX 4080, Apple M1 Max/M2 Pro)
+    # -----------------------------------------------------------------------
+    16gb:
+      label: "16 GB VRAM - High End Consumer"
+      recommended_models: ["wan_2_1_5b", "hunyuan_video", "cogvideox", "ltx_2", "flux"]
+      excluded_models: []
+      max_resolution: "1280x720"
+      max_frames: 81
+      precision: "fp16"
+      optimizations:
+        - "Full fp16 precision"
+        - "Tea cache optional for speed"
+        - "Can run HunyuanVideo with careful memory management"
+      tea_cache_threshold: 0.4
+      vae_tiling: false
+      attention_slicing: false
+
+    # -----------------------------------------------------------------------
+    # 24 GB+ - Professional (RTX 4090, A5000, Apple M2 Ultra)
+    # -----------------------------------------------------------------------
+    24gb_plus:
+      label: "24 GB+ VRAM - Professional"
+      recommended_models: ["wan_2_1_14b", "wan_2_1_5b", "hunyuan_video", "cogvideox", "ltx_2", "flux"]
+      excluded_models: []
+      max_resolution: "1280x720"
+      max_frames: 121
+      precision: "fp16"
+      optimizations:
+        - "Full fp16 or bf16 precision"
+        - "No memory optimization needed"
+        - "Can run 14B models at full precision"
+        - "Parallel VAE decoding"
+        - "Higher resolution outputs without tiling"
+      tea_cache_threshold: 0.5       # Less aggressive, prioritize quality
+      vae_tiling: false
+      attention_slicing: false
+
+  # =========================================================================
+  # VALIDATION RULES
+  # Quality gates, thresholds, and checklist requirements
+  # =========================================================================
+  validation:
+
+    # -----------------------------------------------------------------------
+    # Quality Thresholds
+    # Minimum scores for generation acceptance at each gate
+    # -----------------------------------------------------------------------
+    quality_thresholds:
+      visual_coherence:
+        description: "Subject matches prompt, no major artifacts"
+        min_score: 0.75              # 0.0-1.0 scale
+        blocking: true
+
+      temporal_stability:
+        description: "Frame-to-frame consistency, no flickering"
+        min_score: 0.70
+        blocking: true
+
+      motion_quality:
+        description: "Natural motion, physically plausible"
+        min_score: 0.65
+        blocking: false              # Can proceed with advisory
+
+      character_consistency:
+        description: "Face and body match reference across shots"
+        min_score: 0.80
+        blocking: true
+        applies_when: "has_characters == true"
+
+      audio_sync:
+        description: "Voice and SFX sync with video within tolerance"
+        max_offset_ms: 42            # ~1 frame at 24fps
+        blocking: false
+
+      overall_target:
+        description: "Weighted average of all quality dimensions"
+        quality_mode: 0.90
+        fast_mode: 0.75
+        hybrid_mode: 0.85
+
+    # -----------------------------------------------------------------------
+    # Checklist Gates
+    # References to checklist files that must be completed at each phase
+    # -----------------------------------------------------------------------
+    checklist_gates:
+      pre_production:
+        checklist: "../checklists/video-quality-checklist.md"
+        sections: ["Pre-Production"]
+        phase: "phase_1"
+        blocking: true
+        heuristic_id: "VC_PRE_001"
+
+      per_shot_quality:
+        checklist: "../checklists/video-quality-checklist.md"
+        sections: ["Per-Shot Quality Checks"]
+        phase: "phase_2"
+        blocking: true
+        heuristic_id: "VC_GEN_001"
+
+      enhancement_quality:
+        checklist: "../checklists/video-quality-checklist.md"
+        sections: ["Enhancement Quality Checks"]
+        phase: "phase_3"
+        blocking: true
+        heuristic_id: "VC_ENH_001"
+
+      audio_quality:
+        checklist: "../checklists/video-quality-checklist.md"
+        sections: ["Audio Quality Checks"]
+        phase: "phase_4"
+        blocking: false
+        heuristic_id: "VC_AUD_001"
+
+      final_delivery:
+        checklist: "../checklists/video-quality-checklist.md"
+        sections: ["Final Delivery Checks"]
+        phase: "phase_5"
+        blocking: true
+        heuristic_id: "VC_FIN_001"
+
+    # -----------------------------------------------------------------------
+    # Retry Policy
+    # How many times to retry failed generations before escalating
+    # -----------------------------------------------------------------------
+    retry_policy:
+      max_retries_per_shot: 5
+      retry_strategy: "modify_seed_first"  # modify_seed_first | modify_prompt | escalate
+      backoff_steps:
+        1: "Change seed only"
+        2: "Adjust CFG +/- 0.5 and change seed"
+        3: "Modify prompt (refine keywords)"
+        4: "Try different sampler/scheduler"
+        5: "Switch to alternative model"
+      escalate_to: "@video-director"
+
+  # =========================================================================
+  # SERVICE INTEGRATIONS
+  # External services used by the video creation pipeline
+  # =========================================================================
+  services:
+
+    # -----------------------------------------------------------------------
+    # ComfyUI API - Primary generation service
+    # -----------------------------------------------------------------------
+    comfyui:
+      enabled: true
+      status: required
+      connection:
+        url: "http://127.0.0.1:8188"
+        health_check_interval_seconds: 30
+        auto_start: false            # Set true to auto-launch ComfyUI
+        startup_command: "python main.py --listen --port 8188"
+        startup_cwd: "/Users/felipegobbi/ComfyUI"
+
+    # -----------------------------------------------------------------------
+    # ElevenLabs - Voice generation and cloning
+    # -----------------------------------------------------------------------
+    elevenlabs:
+      enabled: true
+      status: optional
+      connection:
+        api_key_env: ELEVENLABS_API_KEY
+        base_url: "https://api.elevenlabs.io/v1"
+      defaults:
+        model: "eleven_multilingual_v2"
+        stability: 0.5
+        similarity_boost: 0.75
+        style: 0.0
+        output_format: "mp3_44100_128"
+      usage:
+        - "Voice-over narration"
+        - "Character dialogue"
+        - "Sound effect generation (SFX model)"
+
+    # -----------------------------------------------------------------------
+    # Suno - Music generation (songs with vocals)
+    # -----------------------------------------------------------------------
+    suno:
+      enabled: false
+      status: optional
+      connection:
+        api_key_env: SUNO_API_KEY
+      usage:
+        - "Background music with vocals"
+        - "Theme songs"
+        - "Jingles"
+
+    # -----------------------------------------------------------------------
+    # Udio - Music generation (instrumentals)
+    # -----------------------------------------------------------------------
+    udio:
+      enabled: false
+      status: optional
+      connection:
+        api_key_env: UDIO_API_KEY
+      usage:
+        - "Instrumental background music"
+        - "Ambient soundscapes"
+        - "Cinematic scores"
+
+    # -----------------------------------------------------------------------
+    # ffmpeg - Video processing toolkit
+    # -----------------------------------------------------------------------
+    ffmpeg:
+      enabled: true
+      status: required
+      binary_path: "ffmpeg"          # Assumes ffmpeg is in PATH
+      defaults:
+        video_codec: "libx264"
+        audio_codec: "aac"
+        pixel_format: "yuv420p"
+        crf: 18                      # Constant rate factor (lower = better quality)
+        preset: "slow"               # Encoding speed preset
+      usage:
+        - "Video concatenation and trimming"
+        - "Audio muxing"
+        - "Format conversion"
+        - "Thumbnail extraction"
+
+    # -----------------------------------------------------------------------
+    # Topaz Video AI - Optional external upscaler
+    # -----------------------------------------------------------------------
+    topaz_video_ai:
+      enabled: false
+      status: optional
+      binary_path_env: TOPAZ_VIDEO_AI_PATH
+      usage:
+        - "Professional-grade upscaling"
+        - "Frame interpolation"
+        - "Noise reduction and stabilization"
+
+  # =========================================================================
+  # LOGGING CONFIGURATION
+  # =========================================================================
+  logging:
+    enabled: true
+    level: info                      # debug | info | warn | error
+    debug_mode:
+      environment_variable: VIDEO_CREATION_DEBUG
+      default: false
+
+    outputs:
+      console:
+        enabled: true
+        format: "[{timestamp}] [{level}] [{agent}] {message}"
+        colorize: true
+
+      file:
+        enabled: true
+        path: "logs/video-creation.log"
+        max_size_mb: 50
+        max_files: 5                 # Rotate after 5 files
+        format: "json"
+
+    # Per-generation logging (captures all params for reproducibility)
+    generation_log:
+      enabled: true
+      path: "logs/generations/"
+      filename_pattern: "{project_name}_{shot_id}_{timestamp}.json"
+      fields:
+        - "model"
+        - "prompt_positive"
+        - "prompt_negative"
+        - "seed"
+        - "steps"
+        - "cfg_scale"
+        - "sampler"
+        - "scheduler"
+        - "resolution"
+        - "frames"
+        - "duration_seconds"
+        - "vram_used_gb"
+        - "generation_time_seconds"
+        - "quality_score"
+        - "accepted"
+
+  # =========================================================================
+  # DEFAULT WORKFLOW SETTINGS
+  # Settings that apply when launching workflows from this squad
+  # =========================================================================
+  workflow_defaults:
+
+    # -----------------------------------------------------------------------
+    # Primary workflow: wf-create-video
+    # -----------------------------------------------------------------------
+    create_video:
+      workflow_file: "../workflows/wf-create-video.yaml"
+      default_mode: "quality"        # quality | fast | hybrid
+      orchestrator: "@video-director"
+      auto_proceed: false            # Require human approval at checkpoints
+
+      phase_timeouts:
+        phase_1_pre_production: "60m"
+        phase_2_generation: "120m"
+        phase_3_enhancement: "90m"
+        phase_4_audio: "60m"
+        phase_5_delivery: "30m"
+
+      specialist_defaults:
+        prompt_engineer:
+          max_prompt_length: 500
+          include_negative_prompt: true
+          negative_prompt_template: >-
+            blurry, distorted, watermark, text, logo, low quality, deformed,
+            ugly, duplicate, morbid, mutilated, extra fingers, mutated hands,
+            poorly drawn hands, poorly drawn face, mutation, extra limbs,
+            extra legs, extra arms, disfigured, malformed limbs, fused fingers,
+            too many fingers, long neck, bad anatomy
+
+        comfyui_architect:
+          save_workflow_json: true
+          workflow_output_dir: "workflows/generated/"
+          validate_nodes_before_queue: true
+
+        character_designer:
+          ip_adapter_weight: 0.8
+          face_id_weight: 0.75
+          min_reference_images: 3
+          reference_resolution: "1024x1024"
+
+        motion_designer:
+          default_interpolation_model: "gimm_vfi"
+          fallback_interpolation_model: "rife"
+          max_interpolation_factor: 4  # Max 4x frame rate increase
+
+        post_production:
+          default_upscaler: "seedvr2"
+          fallback_upscaler: "topaz"
+          color_grading_enabled: true
+          audio_normalization: true
+          target_loudness_lufs: -14    # YouTube standard
+
+    # -----------------------------------------------------------------------
+    # Setup workflow: wf-setup-environment
+    # -----------------------------------------------------------------------
+    setup_environment:
+      workflow_file: "../workflows/wf-setup-environment.yaml"
+      orchestrator: "@comfyui-architect"
+      auto_install_nodes: true
+      auto_download_models: false    # Require confirmation before large downloads
+      verify_after_install: true
+      min_disk_space_gb: 50
+
+    # -----------------------------------------------------------------------
+    # Naming Conventions
+    # -----------------------------------------------------------------------
+    naming:
+      project_format: "{YYYY}-{MM}-{DD}_{project_slug}"
+      shot_format: "shot_{number:03d}_{descriptor}"
+      version_format: "v{major}.{minor}"
+      examples:
+        project: "2026-02-07_product-launch"
+        shot: "shot_001_establishing-wide"
+        version: "v1.0"

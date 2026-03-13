@@ -1,0 +1,1394 @@
+# wf-create-video.yaml
+# Master Workflow: AI Video Production Pipeline
+# Version: 1.0.0
+# Last Updated: 2026-02-06
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WORKFLOW METADATA
+# ═══════════════════════════════════════════════════════════════════════════════
+
+workflow:
+  id: wf-create-video
+  name: "AI Video Production Pipeline"
+  version: "1.0.0"
+  purpose: "Complete video creation from concept to delivery using ComfyUI-based AI generation"
+  orchestrator: "@video-director"
+  mode: "quality"  # quality | fast | hybrid
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SPECIALIST AGENTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+specialists:
+  prompt_engineer:
+    agent: "@prompt-engineer"
+    role: "Prompt crafting and optimization"
+    invoke_in_phases: ["phase_1", "phase_2"]
+    responsibilities:
+      - "Craft positive and negative prompts per shot"
+      - "Optimize prompt structure for target model (Wan, Hunyuan, CogVideoX, LTX)"
+      - "Iterate prompts based on generation feedback"
+      - "Maintain prompt library and reusable components"
+
+  comfyui_architect:
+    agent: "@comfyui-architect"
+    role: "Workflow design and execution"
+    invoke_in_phases: ["phase_2"]
+    responsibilities:
+      - "Design ComfyUI node graphs per shot type"
+      - "Configure sampler, scheduler, and model parameters"
+      - "Manage model loading and VRAM optimization"
+      - "Troubleshoot node errors and pipeline failures"
+      - "Export and version ComfyUI workflow JSON files"
+
+  character_designer:
+    agent: "@character-designer"
+    role: "Character consistency across shots"
+    invoke_in_phases: ["phase_1", "phase_3"]
+    responsibilities:
+      - "Create character reference sheets"
+      - "Configure IP-Adapter / FaceID / InstantID pipelines"
+      - "Validate facial and body consistency between shots"
+      - "Maintain character embedding library"
+
+  motion_designer:
+    agent: "@motion-designer"
+    role: "Motion and animation quality"
+    invoke_in_phases: ["phase_2", "phase_3"]
+    responsibilities:
+      - "Define camera movements and transitions"
+      - "Configure AnimateDiff / motion modules"
+      - "Apply frame interpolation (GIMM-VFI, RIFE)"
+      - "Smooth temporal artifacts and flickering"
+      - "Validate motion coherence and physics"
+
+  post_production:
+    agent: "@post-production"
+    role: "Enhancement, audio, and final assembly"
+    invoke_in_phases: ["phase_4", "phase_5"]
+    responsibilities:
+      - "Apply upscaling (SeedVR2, Topaz Video AI)"
+      - "Color grading and visual consistency"
+      - "Generate and sync voice-over (ElevenLabs)"
+      - "Generate music and SFX (Suno, Udio)"
+      - "Final timeline assembly and render"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MODE CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+mode_config:
+  quality:
+    description: "Full pipeline with all checkpoints and human review"
+    checkpoints: "ALL"
+    auto_proceed: false
+    upscaling: true
+    frame_interpolation: true
+    max_retries_per_shot: 5
+    target_consistency_score: 0.90
+
+  fast:
+    description: "Rapid generation with minimal review"
+    checkpoints: ["CP_PHASE_1", "CP_PHASE_6"]
+    auto_proceed: true
+    upscaling: false
+    frame_interpolation: false
+    max_retries_per_shot: 2
+    target_consistency_score: 0.75
+
+  hybrid:
+    description: "Auto-proceed on technical steps, human review on creative"
+    checkpoints: ["CP_PHASE_1", "CP_PHASE_3", "CP_PHASE_6"]
+    auto_proceed: "per_phase"
+    upscaling: true
+    frame_interpolation: true
+    max_retries_per_shot: 3
+    target_consistency_score: 0.85
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRE-FLIGHT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+pre_flight:
+  trigger: "Start of workflow"
+  blocking: true
+  purpose: "Validate environment and collect project parameters"
+
+  environment_checks:
+    - check: "ComfyUI is running and accessible"
+      endpoint: "http://127.0.0.1:8188"
+      on_fail: "Run wf-setup-environment.yaml first"
+
+    - check: "Required custom nodes installed"
+      verify:
+        - "ComfyUI-VideoHelperSuite"
+        - "ComfyUI-WanVideoWrapper"
+        - "ComfyUI-HunyuanVideoWrapper"
+        - "ComfyUI_IPAdapter_plus"
+      on_fail: "Run wf-setup-environment.yaml node installation phase"
+
+    - check: "At least one video model available"
+      verify_any:
+        - "models/wan2.1_*.safetensors"
+        - "models/hunyuan_video_*.safetensors"
+        - "models/cogvideox_*.safetensors"
+        - "models/ltx_video_*.safetensors"
+      on_fail: "Run wf-setup-environment.yaml model download phase"
+
+    - check: "Sufficient disk space"
+      minimum: "50GB free"
+      on_fail: "Clear old generations or expand storage"
+
+    - check: "VRAM availability"
+      minimum: "12GB"
+      recommended: "24GB"
+      on_fail: "Adjust model selection to smaller variants"
+
+  questions:
+    - id: "project_type"
+      question: "What type of video project?"
+      required: true
+      options:
+        - id: "short_form"
+          label: "Short Form (15-60s)"
+          description: "Social media, ads, reels"
+          default_resolution: "1080x1920"
+          default_fps: 30
+
+        - id: "medium_form"
+          label: "Medium Form (1-5min)"
+          description: "Explainers, product demos"
+          default_resolution: "1920x1080"
+          default_fps: 24
+
+        - id: "long_form"
+          label: "Long Form (5min+)"
+          description: "Narratives, documentaries"
+          default_resolution: "1920x1080"
+          default_fps: 24
+
+    - id: "execution_mode"
+      question: "Execution mode?"
+      required: true
+      options:
+        - id: "quality"
+          label: "QUALITY - Full pipeline with human review at every phase"
+        - id: "fast"
+          label: "FAST - Rapid generation, minimal review"
+        - id: "hybrid"
+          label: "HYBRID - Auto-proceed on tech, review on creative"
+
+    - id: "has_script"
+      question: "Do you have a script or concept document?"
+      required: true
+      options:
+        - id: "full_script"
+          label: "Full script with dialogue and directions"
+        - id: "concept_only"
+          label: "Concept or rough outline only"
+        - id: "nothing"
+          label: "Starting from scratch - need script generation"
+
+    - id: "has_characters"
+      question: "Does the video feature recurring characters?"
+      required: true
+      options:
+        - id: "yes_refs"
+          label: "Yes, and I have reference images"
+        - id: "yes_no_refs"
+          label: "Yes, but no reference images yet"
+        - id: "no"
+          label: "No recurring characters"
+
+    - id: "primary_model"
+      question: "Preferred generation model?"
+      required: false
+      default: "auto"
+      options:
+        - id: "wan_2_1"
+          label: "Wan 2.1 (best quality, slower)"
+        - id: "wan_2_2"
+          label: "Wan 2.2 (latest, experimental)"
+        - id: "hunyuan"
+          label: "HunyuanVideo (good motion, 13B)"
+        - id: "cogvideox"
+          label: "CogVideoX-5B (fast T2V)"
+        - id: "ltx"
+          label: "LTX-2 (balanced speed/quality)"
+        - id: "auto"
+          label: "Auto-select per shot based on requirements"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INPUTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+inputs:
+  required:
+    - name: project_title
+      type: string
+      description: "Title of the video project"
+      example: "Product Launch - AI Assistant"
+
+    - name: concept
+      type: string
+      description: "Video concept, theme, or script"
+      example: "A futuristic office where an AI assistant helps a team brainstorm"
+
+    - name: duration_target
+      type: string
+      description: "Target video duration"
+      example: "30s"
+
+    - name: style
+      type: string
+      description: "Visual style direction"
+      example: "Photorealistic, cinematic lighting, warm tones"
+
+  optional:
+    - name: script_path
+      type: path
+      description: "Path to existing script document"
+      example: "docs/scripts/product-launch-script.md"
+
+    - name: character_refs
+      type: list
+      description: "Paths to character reference images"
+      example:
+        - "refs/characters/protagonist-front.png"
+        - "refs/characters/protagonist-side.png"
+
+    - name: style_refs
+      type: list
+      description: "Paths to style reference images or videos"
+      example:
+        - "refs/style/cinematic-reference-01.png"
+        - "refs/style/color-palette.png"
+
+    - name: resolution
+      type: string
+      default: "1920x1080"
+      description: "Output resolution (WxH)"
+
+    - name: fps
+      type: integer
+      default: 24
+      description: "Output frames per second"
+
+    - name: aspect_ratio
+      type: string
+      default: "16:9"
+      description: "Output aspect ratio"
+
+    - name: output_format
+      type: string
+      default: "mp4"
+      description: "Final output format"
+      options: ["mp4", "mov", "webm"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRECONDITIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+preconditions:
+  system:
+    - "ComfyUI running and accessible at configured endpoint"
+    - "At least one video generation model loaded"
+    - "Required custom nodes installed (VideoHelperSuite minimum)"
+    - "Minimum 12GB VRAM available"
+    - "50GB+ free disk space for generation cache"
+    - "ffmpeg installed and available in PATH"
+    - "Python 3.10+ with ComfyUI dependencies"
+
+  user:
+    - "Clear concept or script for the video"
+    - "Defined target duration and format"
+    - "Style direction (references preferred but not required)"
+    - "Character references if recurring characters are needed"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHASES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+phases:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # PHASE 1: PRE-PRODUCTION
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: phase_1
+    name: "PRE-PRODUCTION"
+    purpose: "Analyze script, plan shots, establish character and style references"
+    duration: "15-45 minutes"
+    mode: "interactive"
+    depends_on: []
+
+    steps:
+      - id: step_1_1
+        name: "Script Analysis & Shot Breakdown"
+        action: "Parse script or concept into discrete shots"
+        agent: "@video-director"
+        heuristic:
+          id: VC_PRE_001
+          name: "Script Analysis Complete"
+          blocking: true
+          reference: "config.yaml#heuristics"
+        workflow:
+          - "Read and analyze input script or concept"
+          - "Identify key scenes and emotional beats"
+          - "Break down into individual shots (2-8 seconds each)"
+          - "Define shot type (wide, medium, close-up, POV)"
+          - "Assign camera movement per shot (static, pan, zoom, tracking)"
+          - "Map dialogue or narration to shot timeline"
+          - "Identify transition points between shots"
+        output:
+          shot_list:
+            format: "yaml"
+            path: "outputs/{project_title}/shot-list.yaml"
+            fields:
+              - shot_id
+              - duration_seconds
+              - description
+              - camera_type
+              - camera_movement
+              - action_description
+              - dialogue
+              - transition_to_next
+              - emotional_tone
+
+      - id: step_1_2
+        name: "Character Reference Sheet Creation"
+        action: "Create or validate character reference materials"
+        agent: "@character-designer"
+        condition: "has_characters != 'no'"
+        depends_on: ["step_1_1"]
+        workflow:
+          - "Collect provided character reference images"
+          - "If no refs provided, generate character concept images"
+          - "Create multi-angle reference sheet (front, 3/4, side, back)"
+          - "Define character attributes (height, build, clothing, features)"
+          - "Generate IP-Adapter compatible embeddings"
+          - "Create character consistency checklist"
+          - "Test character reproduction with a sample generation"
+        output:
+          character_refs:
+            path: "outputs/{project_title}/characters/"
+            files:
+              - "{character_name}-ref-sheet.png"
+              - "{character_name}-embedding.safetensors"
+              - "{character_name}-attributes.yaml"
+
+      - id: step_1_3
+        name: "Style Reference Compilation"
+        action: "Establish visual style guide for the project"
+        agent: "@prompt-engineer"
+        depends_on: ["step_1_1"]
+        workflow:
+          - "Analyze provided style references (if any)"
+          - "Define color palette (primary, secondary, accent)"
+          - "Define lighting style (natural, studio, dramatic, flat)"
+          - "Define texture and material preferences"
+          - "Create style prompt components (reusable across shots)"
+          - "Generate 2-3 style test images using ComfyUI"
+          - "Iterate on style until consistent look achieved"
+        output:
+          style_guide:
+            path: "outputs/{project_title}/style-guide.yaml"
+            fields:
+              - color_palette
+              - lighting_style
+              - texture_notes
+              - style_prompt_prefix
+              - style_prompt_suffix
+              - negative_prompt_base
+              - test_images
+
+      - id: step_1_4
+        name: "Shot Brief Generation"
+        action: "Create detailed brief for each shot using template"
+        agent: "@prompt-engineer"
+        depends_on: ["step_1_1", "step_1_2", "step_1_3"]
+        workflow:
+          - "For each shot in shot_list:"
+          - "  Select optimal model based on shot requirements"
+          - "  Craft positive prompt (subject + action + style + quality)"
+          - "  Craft negative prompt (artifacts + unwanted elements)"
+          - "  Define ComfyUI parameters (sampler, steps, CFG, denoise)"
+          - "  Assign character refs if characters present"
+          - "  Assign style refs from style guide"
+          - "  Define camera movement parameters"
+          - "  Set resolution and frame count"
+          - "Generate shot-brief YAML using templates/shot-brief-tmpl.yaml"
+        template: "templates/shot-brief-tmpl.yaml"
+        output:
+          shot_briefs:
+            path: "outputs/{project_title}/shots/"
+            files:
+              - "shot-{NNN}-brief.yaml"
+
+      - id: step_1_5
+        name: "Storyboard Assembly"
+        action: "Compile complete storyboard document"
+        agent: "@video-director"
+        depends_on: ["step_1_4"]
+        workflow:
+          - "Generate storyboard using templates/storyboard-tmpl.md"
+          - "Include all shot briefs in sequence"
+          - "Add timing and transition annotations"
+          - "Include character and style reference thumbnails"
+          - "Calculate total estimated duration"
+          - "Verify shot coverage of full script"
+        template: "templates/storyboard-tmpl.md"
+        output:
+          storyboard:
+            path: "outputs/{project_title}/storyboard.md"
+
+    checkpoint:
+      id: CP_PHASE_1
+      name: "Pre-Production Complete"
+      blocking: true
+      heuristic: VC_PRE_001
+      criteria:
+        - shot_list_created: true
+        - all_shots_have_briefs: true
+        - character_refs_validated: "true (if applicable)"
+        - style_guide_defined: true
+        - storyboard_assembled: true
+        - total_duration_matches_target: "within 10% tolerance"
+      on_fail:
+        action: "Return to failed step, iterate until criteria met"
+        max_iterations: 3
+        escalation: "Present issues to user for creative decision"
+      approval:
+        quality: "Human review of storyboard and shot briefs"
+        fast: "Auto-approve if all criteria met"
+        hybrid: "Human review of storyboard only"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # PHASE 2: GENERATION
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: phase_2
+    name: "GENERATION"
+    purpose: "Execute ComfyUI workflows to generate raw video clips per shot"
+    duration: "30-180 minutes (depends on shot count and model)"
+    mode:
+      quality: "sequential with review"
+      fast: "parallel batch"
+      hybrid: "parallel with spot checks"
+    depends_on: ["phase_1"]
+
+    steps:
+      - id: step_2_1
+        name: "ComfyUI Workflow Preparation"
+        action: "Build or load ComfyUI workflow graph for each shot type"
+        agent: "@comfyui-architect"
+        workflow:
+          - "Analyze shot briefs for unique workflow requirements"
+          - "Group shots by workflow type (T2V, I2V, V2V)"
+          - "For each workflow type:"
+          - "  Load base workflow template"
+          - "  Configure model loader node (select model per brief)"
+          - "  Configure sampler node (steps, CFG, scheduler)"
+          - "  Configure resolution and frame count"
+          - "  Add IP-Adapter nodes if character refs needed"
+          - "  Add ControlNet nodes if motion guidance needed"
+          - "  Add AnimateDiff nodes if motion modules required"
+          - "  Configure output node (format, path, naming)"
+          - "Validate all workflows via ComfyUI API dry-run"
+          - "Save workflow JSON files for reproducibility"
+        output:
+          workflows:
+            path: "outputs/{project_title}/comfyui-workflows/"
+            files:
+              - "workflow-t2v-base.json"
+              - "workflow-i2v-character.json"
+              - "workflow-v2v-refinement.json"
+
+      - id: step_2_2
+        name: "Shot Generation Loop"
+        action: "Execute generation for each shot via ComfyUI API"
+        agent: "@comfyui-architect"
+        specialist_support: "@prompt-engineer"
+        depends_on: ["step_2_1"]
+        for_each: "shot_briefs"
+        workflow:
+          - "Load shot brief YAML"
+          - "Select appropriate ComfyUI workflow JSON"
+          - "Inject parameters into workflow:"
+          - "  - Positive prompt"
+          - "  - Negative prompt"
+          - "  - Model selection"
+          - "  - Sampler settings (steps, CFG, denoise)"
+          - "  - Resolution and frame count"
+          - "  - Seed (random or fixed for consistency)"
+          - "  - Character reference images (if applicable)"
+          - "  - Style reference images (if applicable)"
+          - "Queue workflow execution via ComfyUI API"
+          - "Monitor generation progress"
+          - "On completion, save output to shots directory"
+          - "Run initial quality check:"
+          - "  - Verify frame count matches target"
+          - "  - Check for black frames or corruption"
+          - "  - Validate resolution"
+          - "If quality check fails, adjust parameters and retry"
+        retry_policy:
+          max_retries: "{mode_config.max_retries_per_shot}"
+          on_retry:
+            - "Adjust seed"
+            - "Modify CFG scale (+/- 0.5)"
+            - "Adjust denoise strength"
+            - "If 3+ failures, invoke @prompt-engineer for prompt revision"
+        output:
+          raw_shots:
+            path: "outputs/{project_title}/raw-shots/"
+            files:
+              - "shot-{NNN}-raw.mp4"
+              - "shot-{NNN}-generation-log.yaml"
+
+      - id: step_2_3
+        name: "Generation Quality Assessment"
+        action: "Evaluate all generated shots against brief requirements"
+        agent: "@video-director"
+        depends_on: ["step_2_2"]
+        workflow:
+          - "For each generated shot:"
+          - "  Compare output against shot brief description"
+          - "  Score visual quality (0-10)"
+          - "  Score prompt adherence (0-10)"
+          - "  Score motion quality (0-10)"
+          - "  Flag issues: artifacts, deformations, inconsistencies"
+          - "  Mark as: APPROVED / NEEDS_REVISION / REGENERATE"
+          - "Compile generation report"
+          - "Calculate overall generation success rate"
+        heuristic:
+          id: VC_GEN_001
+          name: "Generation Quality Gate"
+          blocking: true
+          thresholds:
+            visual_quality_min: 6.0
+            prompt_adherence_min: 7.0
+            motion_quality_min: 5.0
+            overall_pass_rate: 0.80
+          veto_conditions:
+            - condition: "any shot scores below 3.0 on any dimension"
+              action: "REGENERATE that shot"
+            - condition: "overall_pass_rate < 0.50"
+              action: "HALT - Review prompts and workflow parameters"
+        output:
+          generation_report:
+            path: "outputs/{project_title}/reports/generation-report.yaml"
+
+      - id: step_2_4
+        name: "Shot Revision Loop"
+        action: "Revise failed shots based on quality assessment"
+        agent: "@prompt-engineer"
+        specialist_support: "@comfyui-architect"
+        depends_on: ["step_2_3"]
+        condition: "generation_report has NEEDS_REVISION or REGENERATE shots"
+        workflow:
+          - "For each shot marked NEEDS_REVISION:"
+          - "  Analyze failure reason from quality assessment"
+          - "  Revise prompt (adjust wording, add/remove elements)"
+          - "  Adjust ComfyUI parameters if needed"
+          - "  Re-queue generation"
+          - "For each shot marked REGENERATE:"
+          - "  Complete prompt rewrite"
+          - "  Consider model change if current model struggling"
+          - "  Re-queue generation with new parameters"
+          - "Re-run quality assessment on revised shots"
+        max_iterations: 3
+        on_max_exceeded:
+          action: "Accept best available version, flag for manual review"
+
+    checkpoint:
+      id: CP_PHASE_2
+      name: "Generation Complete"
+      blocking: true
+      heuristic: VC_GEN_001
+      criteria:
+        - all_shots_generated: true
+        - all_shots_pass_quality: "minimum 80% of shots APPROVED"
+        - no_critical_failures: true
+        - frame_counts_correct: true
+        - resolutions_match: true
+      on_fail:
+        action: "Return to step_2_4 for additional revision cycle"
+        max_iterations: 2
+        escalation: "Present failing shots to user for creative decision"
+      approval:
+        quality: "Human review of all generated shots"
+        fast: "Auto-approve if criteria met"
+        hybrid: "Human review of flagged shots only"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # PHASE 3: CONSISTENCY & MOTION
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: phase_3
+    name: "CONSISTENCY & MOTION"
+    purpose: "Ensure character consistency across shots and smooth motion"
+    duration: "15-60 minutes"
+    mode: "autonomous"
+    depends_on: ["phase_2"]
+
+    steps:
+      - id: step_3_1
+        name: "Character Consistency Verification"
+        action: "Validate character appearance across all shots"
+        agent: "@character-designer"
+        condition: "has_characters != 'no'"
+        workflow:
+          - "Extract key frames from each shot featuring characters"
+          - "Compare character appearance metrics across shots:"
+          - "  - Facial feature similarity (IP-Adapter FaceID score)"
+          - "  - Clothing consistency"
+          - "  - Body proportion consistency"
+          - "  - Hair and accessory consistency"
+          - "Score consistency per character per shot pair (0.0 - 1.0)"
+          - "Flag shots with consistency score below threshold"
+          - "For flagged shots, determine correction strategy:"
+          - "  - Re-generate with stronger IP-Adapter weight"
+          - "  - Apply FaceDetailer post-processing"
+          - "  - Use V2V with reference frame"
+        heuristic:
+          id: VC_CON_001
+          name: "Character Consistency Check"
+          blocking: false
+          thresholds:
+            face_similarity_min: 0.85
+            overall_consistency_min: "{mode_config.target_consistency_score}"
+        output:
+          consistency_report:
+            path: "outputs/{project_title}/reports/consistency-report.yaml"
+
+      - id: step_3_2
+        name: "Character Correction Pass"
+        action: "Fix character inconsistencies in flagged shots"
+        agent: "@character-designer"
+        specialist_support: "@comfyui-architect"
+        depends_on: ["step_3_1"]
+        condition: "consistency_report has flagged shots"
+        workflow:
+          - "For each flagged shot:"
+          - "  Apply FaceDetailer with reference face"
+          - "  If FaceDetailer insufficient:"
+          - "    Re-generate shot with V2V pipeline"
+          - "    Use consistent reference frame as input"
+          - "    Increase IP-Adapter strength"
+          - "  Re-score consistency after correction"
+          - "Iterate until consistency threshold met or max iterations"
+        max_iterations: 3
+
+      - id: step_3_3
+        name: "Motion Smoothing"
+        action: "Apply temporal smoothing and frame interpolation"
+        agent: "@motion-designer"
+        depends_on: ["step_3_1"]
+        workflow:
+          - "Analyze each shot for temporal artifacts:"
+          - "  - Flickering between frames"
+          - "  - Jittery motion"
+          - "  - Unnatural speed changes"
+          - "  - Object morphing between frames"
+          - "Apply temporal smoothing where needed"
+          - "If target FPS > generation FPS:"
+          - "  Apply frame interpolation (GIMM-VFI or RIFE)"
+          - "  Verify interpolated frames for artifacts"
+          - "Validate camera movement matches brief specifications"
+          - "Score motion quality per shot (0-10)"
+        output:
+          smoothed_shots:
+            path: "outputs/{project_title}/smoothed-shots/"
+            files:
+              - "shot-{NNN}-smoothed.mp4"
+
+      - id: step_3_4
+        name: "Shot-to-Shot Transition Planning"
+        action: "Plan transitions between consecutive shots"
+        agent: "@motion-designer"
+        depends_on: ["step_3_3"]
+        workflow:
+          - "Analyze last frame of each shot and first frame of next"
+          - "Determine transition type per cut point:"
+          - "  - Hard cut (most common)"
+          - "  - Cross-dissolve"
+          - "  - Fade to/from black"
+          - "  - Motion-matched cut"
+          - "  - Custom transition"
+          - "Pre-render transition frames if needed"
+          - "Update timeline with transition data"
+        output:
+          transition_plan:
+            path: "outputs/{project_title}/transition-plan.yaml"
+
+    checkpoint:
+      id: CP_PHASE_3
+      name: "Consistency & Motion Complete"
+      blocking: true
+      criteria:
+        - character_consistency_above_threshold: "true (if applicable)"
+        - all_shots_motion_smoothed: true
+        - transitions_planned: true
+        - no_temporal_artifacts: "no critical artifacts remaining"
+      on_fail:
+        action: "Return to failing step for additional iteration"
+        max_iterations: 2
+        escalation: "Accept with quality notes for user decision"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # PHASE 4: ENHANCEMENT
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: phase_4
+    name: "ENHANCEMENT"
+    purpose: "Upscale, color grade, and visually polish all shots"
+    duration: "20-90 minutes"
+    mode: "autonomous"
+    depends_on: ["phase_3"]
+
+    steps:
+      - id: step_4_1
+        name: "Video Upscaling"
+        action: "Upscale shots to target output resolution"
+        agent: "@post-production"
+        condition: "mode_config.upscaling == true"
+        workflow:
+          - "Determine upscale factor needed per shot"
+          - "Select upscaling method:"
+          - "  - SeedVR2 (AI upscaling via ComfyUI node)"
+          - "  - Topaz Video AI (external, highest quality)"
+          - "  - Real-ESRGAN (fast, good for 2x)"
+          - "Process each shot through upscaler"
+          - "Verify output resolution matches target"
+          - "Compare visual quality before/after"
+          - "Flag any upscaling artifacts (over-sharpening, halos)"
+        output:
+          upscaled_shots:
+            path: "outputs/{project_title}/upscaled-shots/"
+            files:
+              - "shot-{NNN}-upscaled.mp4"
+
+      - id: step_4_2
+        name: "Color Grading"
+        action: "Apply consistent color grading across all shots"
+        agent: "@post-production"
+        depends_on: ["step_4_1"]
+        workflow:
+          - "Load style guide color palette"
+          - "Create base LUT (Look-Up Table) from style references"
+          - "Apply base LUT to all shots"
+          - "Adjust per-shot color balance if needed:"
+          - "  - Exposure correction"
+          - "  - White balance"
+          - "  - Saturation"
+          - "  - Contrast"
+          - "  - Shadow/highlight recovery"
+          - "Verify visual consistency across all graded shots"
+          - "Generate before/after comparison frames"
+        output:
+          graded_shots:
+            path: "outputs/{project_title}/graded-shots/"
+            files:
+              - "shot-{NNN}-graded.mp4"
+              - "project-lut.cube"
+
+      - id: step_4_3
+        name: "Visual Polish"
+        action: "Apply final visual enhancements"
+        agent: "@post-production"
+        depends_on: ["step_4_2"]
+        workflow:
+          - "Apply film grain if style requires it"
+          - "Add vignette if style requires it"
+          - "Apply letterboxing for cinematic aspect ratio if needed"
+          - "Add lens flare or bokeh effects if specified"
+          - "Apply noise reduction if artifacts remain"
+          - "Final visual quality check per shot"
+        output:
+          polished_shots:
+            path: "outputs/{project_title}/polished-shots/"
+            files:
+              - "shot-{NNN}-final.mp4"
+
+    checkpoint:
+      id: CP_PHASE_4
+      name: "Enhancement Complete"
+      blocking: true
+      heuristic: VC_ENH_001
+      criteria:
+        - all_shots_upscaled: "true (if upscaling enabled)"
+        - color_grading_consistent: true
+        - target_resolution_achieved: true
+        - no_upscaling_artifacts: true
+        - visual_quality_score: ">= 7.0"
+      on_fail:
+        action: "Re-process failing shots with adjusted parameters"
+        max_iterations: 2
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # PHASE 5: AUDIO
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: phase_5
+    name: "AUDIO"
+    purpose: "Generate voice-over, music, SFX, and sync to video"
+    duration: "15-60 minutes"
+    mode: "interactive"
+    depends_on: ["phase_4"]
+
+    steps:
+      - id: step_5_1
+        name: "Voice-Over Generation"
+        action: "Generate narration or dialogue audio"
+        agent: "@post-production"
+        condition: "script has dialogue or narration"
+        workflow:
+          - "Extract dialogue text from script per shot"
+          - "Select voice(s) from ElevenLabs library or clone custom voice"
+          - "Generate voice-over per dialogue segment:"
+          - "  - Set voice parameters (stability, similarity, style)"
+          - "  - Generate audio clip"
+          - "  - Verify pronunciation and timing"
+          - "  - Adjust speed/pacing if needed"
+          - "Export WAV files per segment"
+        output:
+          voice_clips:
+            path: "outputs/{project_title}/audio/voice/"
+            files:
+              - "vo-shot-{NNN}.wav"
+
+      - id: step_5_2
+        name: "Music Generation"
+        action: "Generate background music track(s)"
+        agent: "@post-production"
+        workflow:
+          - "Determine music requirements from script/storyboard:"
+          - "  - Genre and mood"
+          - "  - Tempo (BPM)"
+          - "  - Duration"
+          - "  - Key moments (builds, drops, transitions)"
+          - "Generate music using Suno (songs with lyrics) or Udio (instrumentals)"
+          - "If multiple sections need different moods:"
+          - "  Generate separate tracks per section"
+          - "  Plan crossfade points"
+          - "Verify music does not overpower dialogue"
+          - "Export music stems if possible (for mixing flexibility)"
+        output:
+          music_tracks:
+            path: "outputs/{project_title}/audio/music/"
+            files:
+              - "music-main.wav"
+              - "music-section-{N}.wav"
+
+      - id: step_5_3
+        name: "Sound Effects"
+        action: "Generate or source sound effects"
+        agent: "@post-production"
+        workflow:
+          - "Identify SFX needs from shot descriptions:"
+          - "  - Ambient sounds (room tone, outdoor, crowd)"
+          - "  - Action sounds (footsteps, doors, typing)"
+          - "  - Transition sounds (whoosh, impact)"
+          - "  - UI/tech sounds (beeps, notifications)"
+          - "Generate SFX using ElevenLabs Sound Effects"
+          - "Or source from royalty-free SFX libraries"
+          - "Tag each SFX with target shot and timestamp"
+        output:
+          sfx_clips:
+            path: "outputs/{project_title}/audio/sfx/"
+            files:
+              - "sfx-{description}-{NNN}.wav"
+
+      - id: step_5_4
+        name: "Audio Mixing & Sync"
+        action: "Mix all audio layers and sync to video timeline"
+        agent: "@post-production"
+        depends_on: ["step_5_1", "step_5_2", "step_5_3"]
+        workflow:
+          - "Create audio timeline matching video duration"
+          - "Layer audio tracks:"
+          - "  - Voice-over (primary, loudest)"
+          - "  - Music (secondary, ducked under dialogue)"
+          - "  - SFX (tertiary, accent)"
+          - "  - Ambient (background, low level)"
+          - "Apply audio ducking: lower music when voice is active"
+          - "Sync voice-over to lip movements (if applicable)"
+          - "Add fade in/out on music at start/end"
+          - "Apply light compression and EQ to master mix"
+          - "Verify audio levels: -14 LUFS for web, -24 LUFS for broadcast"
+          - "Export mixed audio as single WAV"
+        heuristic:
+          id: VC_AUD_001
+          name: "Audio Sync Validation"
+          blocking: false
+          criteria:
+            - voice_sync_within: "50ms tolerance"
+            - music_not_overpowering_dialogue: true
+            - no_audio_clipping: true
+            - loudness_within_target: true
+        output:
+          mixed_audio:
+            path: "outputs/{project_title}/audio/"
+            files:
+              - "audio-final-mix.wav"
+              - "audio-mix-report.yaml"
+
+    checkpoint:
+      id: CP_PHASE_5
+      name: "Audio Complete"
+      blocking: true
+      heuristic: VC_AUD_001
+      criteria:
+        - voice_over_generated: "true (if applicable)"
+        - music_generated: true
+        - sfx_placed: true
+        - audio_mixed: true
+        - sync_validated: true
+        - loudness_within_spec: true
+      on_fail:
+        action: "Re-mix audio, adjust levels"
+        max_iterations: 2
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # PHASE 6: DELIVERY
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: phase_6
+    name: "DELIVERY"
+    purpose: "Assemble final video, apply quality checks, and render deliverables"
+    duration: "10-30 minutes"
+    mode: "interactive"
+    depends_on: ["phase_5"]
+
+    steps:
+      - id: step_6_1
+        name: "Timeline Assembly"
+        action: "Assemble all shots with transitions and audio into final timeline"
+        agent: "@post-production"
+        workflow:
+          - "Create master timeline at target FPS"
+          - "Place polished shots in sequence order"
+          - "Apply transitions between shots per transition_plan"
+          - "Overlay mixed audio track"
+          - "Add title cards or text overlays if required"
+          - "Add subtitles/captions if required"
+          - "Verify total duration matches target"
+          - "Preview full timeline end-to-end"
+        output:
+          timeline:
+            path: "outputs/{project_title}/timeline/"
+            files:
+              - "master-timeline.json"
+              - "preview-render.mp4"
+
+      - id: step_6_2
+        name: "Final Quality Check"
+        action: "Comprehensive quality validation of assembled video"
+        agent: "@video-director"
+        depends_on: ["step_6_1"]
+        workflow:
+          - "Watch full video end-to-end"
+          - "Score each dimension (0-10):"
+          - "  - Visual quality"
+          - "  - Motion smoothness"
+          - "  - Character consistency"
+          - "  - Color consistency"
+          - "  - Audio quality"
+          - "  - Audio-video sync"
+          - "  - Story coherence"
+          - "  - Pacing and rhythm"
+          - "  - Overall impression"
+          - "Flag any remaining issues"
+          - "Determine: APPROVED / NEEDS_REVISION"
+        heuristic:
+          id: VC_FIN_001
+          name: "Final Output Validation"
+          blocking: true
+          thresholds:
+            visual_quality: 7.0
+            motion_smoothness: 6.0
+            audio_quality: 7.0
+            overall_impression: 7.0
+            minimum_per_dimension: 5.0
+          veto_conditions:
+            - condition: "any dimension below 4.0"
+              action: "BLOCK - Critical quality failure"
+            - condition: "audio-video sync issues detected"
+              action: "BLOCK - Re-sync required"
+        output:
+          quality_report:
+            path: "outputs/{project_title}/reports/final-quality-report.yaml"
+
+      - id: step_6_3
+        name: "Final Render"
+        action: "Render final deliverable files"
+        agent: "@post-production"
+        depends_on: ["step_6_2"]
+        condition: "quality_report.status == APPROVED"
+        workflow:
+          - "Render master file:"
+          - "  - Codec: H.264 or H.265"
+          - "  - Resolution: {target resolution}"
+          - "  - FPS: {target fps}"
+          - "  - Bitrate: auto (high quality)"
+          - "  - Audio: AAC 320kbps"
+          - "Render platform-specific variants if requested:"
+          - "  - YouTube (1080p, 4K)"
+          - "  - Instagram Reels (1080x1920, 30fps)"
+          - "  - TikTok (1080x1920, 30fps)"
+          - "  - Twitter/X (1280x720)"
+          - "Generate thumbnail from best frame"
+          - "Calculate final file sizes"
+        output:
+          deliverables:
+            path: "outputs/{project_title}/final/"
+            files:
+              - "{project_title}-final.mp4"
+              - "{project_title}-youtube.mp4"
+              - "{project_title}-reels.mp4"
+              - "{project_title}-thumbnail.png"
+
+      - id: step_6_4
+        name: "Project Documentation"
+        action: "Generate production report and archive project files"
+        agent: "@video-director"
+        depends_on: ["step_6_3"]
+        workflow:
+          - "Compile production report with:"
+          - "  - Project metadata"
+          - "  - Shot list with generation parameters"
+          - "  - Models and settings used per shot"
+          - "  - Quality scores per phase"
+          - "  - Total generation time"
+          - "  - Total compute resources used"
+          - "  - Lessons learned and notes"
+          - "Archive all ComfyUI workflow JSON files"
+          - "Archive all prompts for future reference"
+          - "Create project summary for handoff"
+        output:
+          documentation:
+            path: "outputs/{project_title}/"
+            files:
+              - "production-report.md"
+              - "project-archive.zip"
+
+    checkpoint:
+      id: CP_PHASE_6
+      name: "Delivery Complete"
+      blocking: true
+      heuristic: VC_FIN_001
+      criteria:
+        - final_render_complete: true
+        - quality_check_passed: true
+        - all_deliverables_generated: true
+        - production_report_created: true
+        - file_sizes_reasonable: true
+      on_fail:
+        action: "Identify and fix rendering issues"
+        max_iterations: 2
+      approval:
+        quality: "Human final approval required"
+        fast: "Auto-approve if quality check passed"
+        hybrid: "Human final approval required"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# OUTPUTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+outputs:
+  primary:
+    - name: "Final Video"
+      location: "outputs/{project_title}/final/{project_title}-final.mp4"
+      description: "Master render of the completed video"
+
+    - name: "Platform Variants"
+      location: "outputs/{project_title}/final/"
+      description: "Platform-specific renders (YouTube, Reels, TikTok)"
+
+    - name: "Thumbnail"
+      location: "outputs/{project_title}/final/{project_title}-thumbnail.png"
+      description: "Video thumbnail image"
+
+  secondary:
+    - name: "Storyboard"
+      location: "outputs/{project_title}/storyboard.md"
+      description: "Complete storyboard with shot details"
+
+    - name: "Shot Briefs"
+      location: "outputs/{project_title}/shots/"
+      description: "Individual shot brief YAML files"
+
+    - name: "Raw Shots"
+      location: "outputs/{project_title}/raw-shots/"
+      description: "Unprocessed generated video clips"
+
+    - name: "ComfyUI Workflows"
+      location: "outputs/{project_title}/comfyui-workflows/"
+      description: "Saved ComfyUI workflow JSON files for reproducibility"
+
+    - name: "Audio Assets"
+      location: "outputs/{project_title}/audio/"
+      description: "Voice, music, SFX, and mixed audio"
+
+    - name: "Production Report"
+      location: "outputs/{project_title}/production-report.md"
+      description: "Complete production documentation"
+
+    - name: "Quality Reports"
+      location: "outputs/{project_title}/reports/"
+      description: "Per-phase quality assessment reports"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HEURISTICS REFERENCE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+heuristics:
+  - id: VC_PRE_001
+    name: "Pre-Production Complete"
+    phase: "phase_1"
+    blocking: true
+    description: "All pre-production artifacts created and validated"
+    criteria:
+      - shot_list: "complete"
+      - shot_briefs: "all generated"
+      - character_refs: "validated (if applicable)"
+      - style_guide: "defined"
+      - storyboard: "assembled"
+
+  - id: VC_GEN_001
+    name: "Generation Quality Gate"
+    phase: "phase_2"
+    blocking: true
+    description: "All shots generated and meet minimum quality thresholds"
+    criteria:
+      - pass_rate: ">= 80%"
+      - no_critical_failures: true
+      - visual_quality_min: 6.0
+      - prompt_adherence_min: 7.0
+
+  - id: VC_CON_001
+    name: "Character Consistency Check"
+    phase: "phase_3"
+    blocking: false
+    description: "Character appearance consistent across shots"
+    criteria:
+      - face_similarity: ">= 0.85"
+      - overall_consistency: ">= target threshold"
+
+  - id: VC_MOT_001
+    name: "Motion Quality Gate"
+    phase: "phase_3"
+    blocking: false
+    description: "Motion smooth and free of temporal artifacts"
+    criteria:
+      - no_flickering: true
+      - motion_score: ">= 6.0"
+
+  - id: VC_ENH_001
+    name: "Enhancement Quality Gate"
+    phase: "phase_4"
+    blocking: true
+    description: "Upscaling and color grading applied successfully"
+    criteria:
+      - target_resolution: "achieved"
+      - color_consistency: true
+      - no_artifacts: true
+
+  - id: VC_AUD_001
+    name: "Audio Sync Validation"
+    phase: "phase_5"
+    blocking: false
+    description: "Audio mixed and synced correctly"
+    criteria:
+      - sync_tolerance: "<= 50ms"
+      - loudness: "within spec"
+      - no_clipping: true
+
+  - id: VC_FIN_001
+    name: "Final Output Validation"
+    phase: "phase_6"
+    blocking: true
+    description: "Final video meets all quality standards"
+    criteria:
+      - all_dimensions: ">= 5.0"
+      - key_dimensions: ">= 7.0"
+      - render_complete: true
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ERROR HANDLING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+error_handling:
+  comfyui_connection_lost:
+    - action: "Check if ComfyUI process is running"
+    - action: "Attempt to restart ComfyUI"
+    - action: "Wait 30 seconds and retry connection"
+    - if_still_fails: "Halt workflow, notify user"
+
+  generation_fails:
+    - action: "Check VRAM usage and clear cache"
+    - action: "Reduce batch size or resolution"
+    - action: "Try alternative model if available"
+    - if_still_fails: "Log failure details, skip shot and continue"
+
+  out_of_memory:
+    - action: "Unload unused models from VRAM"
+    - action: "Reduce resolution or frame count"
+    - action: "Switch to smaller model variant"
+    - if_still_fails: "Process shots sequentially instead of parallel"
+
+  model_not_found:
+    - action: "Check model path configuration"
+    - action: "Verify model file exists and is not corrupted"
+    - action: "Suggest alternative model from available models"
+    - if_still_fails: "Run wf-setup-environment.yaml model download"
+
+  audio_generation_fails:
+    - action: "Retry with different parameters"
+    - action: "Try alternative audio generation service"
+    - if_still_fails: "Use placeholder audio, flag for manual replacement"
+
+  render_fails:
+    - action: "Check disk space"
+    - action: "Verify ffmpeg installation"
+    - action: "Try alternative codec settings"
+    - if_still_fails: "Export raw frames for manual assembly"
+
+  checkpoint_fails:
+    blocking_checkpoint:
+      action: "Halt and present issues to user"
+      require: "User decision to proceed, revise, or abort"
+    non_blocking_checkpoint:
+      action: "Log warning with details"
+      proceed: true
+      flag: "Include in final quality report"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# METRICS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+metrics:
+  track:
+    - total_duration: "minutes"
+    - duration_per_phase: "minutes"
+    - shots_generated: "count"
+    - shots_revised: "count"
+    - generation_success_rate: "percentage"
+    - average_quality_score: "0-10"
+    - character_consistency_score: "0-1"
+    - total_compute_time: "GPU-minutes"
+    - models_used: "list"
+    - total_frames_generated: "count"
+    - final_video_duration: "seconds"
+    - final_file_size: "MB"
+    - audio_tracks_generated: "count"
+    - retries_per_shot: "average"
+
+  report_at_end: true
+  save_to: "outputs/{project_title}/reports/metrics.yaml"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FLOW DIAGRAM
+# ═══════════════════════════════════════════════════════════════════════════════
+
+flow_diagram: |
+  ```mermaid
+  graph TD
+      subgraph PREFLIGHT["PRE-FLIGHT"]
+          PF[Start] --> PF1{ComfyUI Running?}
+          PF1 -->|No| PF2[Run wf-setup-environment]
+          PF1 -->|Yes| PF3[Collect Project Parameters]
+          PF2 --> PF3
+      end
+
+      subgraph PHASE_1["PHASE 1: PRE-PRODUCTION"]
+          PF3 --> S11[Script Analysis & Shot Breakdown]
+          S11 --> S12[Character Reference Sheets]
+          S11 --> S13[Style Reference Compilation]
+          S12 --> S14[Shot Brief Generation]
+          S13 --> S14
+          S14 --> S15[Storyboard Assembly]
+          S15 --> CP1{CP1: Pre-Production Complete?}
+          CP1 -->|Fail| S11
+      end
+
+      subgraph PHASE_2["PHASE 2: GENERATION"]
+          CP1 -->|Pass| S21[ComfyUI Workflow Preparation]
+          S21 --> S22[Shot Generation Loop]
+          S22 --> S23[Generation Quality Assessment]
+          S23 --> S24{Shots Need Revision?}
+          S24 -->|Yes| S25[Shot Revision Loop]
+          S25 --> S23
+          S24 -->|No| CP2{CP2: Generation Complete?}
+          CP2 -->|Fail| S22
+      end
+
+      subgraph PHASE_3["PHASE 3: CONSISTENCY & MOTION"]
+          CP2 -->|Pass| S31[Character Consistency Verification]
+          S31 --> S32[Character Correction Pass]
+          S31 --> S33[Motion Smoothing]
+          S32 --> S34[Transition Planning]
+          S33 --> S34
+          S34 --> CP3{CP3: Consistency Complete?}
+      end
+
+      subgraph PHASE_4["PHASE 4: ENHANCEMENT"]
+          CP3 -->|Pass| S41[Video Upscaling]
+          S41 --> S42[Color Grading]
+          S42 --> S43[Visual Polish]
+          S43 --> CP4{CP4: Enhancement Complete?}
+      end
+
+      subgraph PHASE_5["PHASE 5: AUDIO"]
+          CP4 -->|Pass| S51[Voice-Over Generation]
+          CP4 -->|Pass| S52[Music Generation]
+          CP4 -->|Pass| S53[Sound Effects]
+          S51 --> S54[Audio Mixing & Sync]
+          S52 --> S54
+          S53 --> S54
+          S54 --> CP5{CP5: Audio Complete?}
+      end
+
+      subgraph PHASE_6["PHASE 6: DELIVERY"]
+          CP5 -->|Pass| S61[Timeline Assembly]
+          S61 --> S62[Final Quality Check]
+          S62 --> S63{Quality Approved?}
+          S63 -->|Yes| S64[Final Render]
+          S63 -->|No| S61
+          S64 --> S65[Project Documentation]
+          S65 --> CP6{CP6: Delivery Complete?}
+          CP6 -->|Pass| DONE[Video Delivered]
+      end
+
+      style DONE fill:#90EE90
+      style PF2 fill:#FF6B6B,color:#fff
+  ```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HANDOFF PROMPTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+handoff_prompts:
+  preflight_to_phase1: "Environment validated. Starting pre-production. Analyzing script and planning shots."
+  phase1_to_phase2: "Pre-production complete. Storyboard approved with {shot_count} shots. Starting AI generation."
+  phase2_to_phase3: "All shots generated. {pass_rate}% passed quality check. Starting consistency and motion pass."
+  phase3_to_phase4: "Consistency verified. Motion smoothed. Starting enhancement (upscaling + color grading)."
+  phase4_to_phase5: "Enhancement complete. All shots at target resolution with consistent color. Starting audio."
+  phase5_to_phase6: "Audio mixed and synced. Starting final assembly and delivery."
+  complete: "Video production complete. Final deliverables ready at outputs/{project_title}/final/"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# METADATA
+# ═══════════════════════════════════════════════════════════════════════════════
+
+metadata:
+  version: "1.0.0"
+  created: "2026-02-06"
+  last_updated: "2026-02-06"
+  author: "video-director"
+  lines: "650+"
+  changelog:
+    - version: "1.0.0"
+      date: "2026-02-06"
+      changes:
+        - "Initial creation of AI Video Production Pipeline"
+        - "6 phases: Pre-Production, Generation, Consistency, Enhancement, Audio, Delivery"
+        - "Full ComfyUI integration with API-driven generation"
+        - "Multi-model support: Wan, Hunyuan, CogVideoX, LTX, AnimateDiff"
+        - "Character consistency via IP-Adapter / FaceID / InstantID"
+        - "Audio pipeline: ElevenLabs (voice), Suno/Udio (music), SFX"
+        - "Three execution modes: quality, fast, hybrid"
+        - "7 heuristic quality gates across all phases"

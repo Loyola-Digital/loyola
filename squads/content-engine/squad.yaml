@@ -1,0 +1,140 @@
+name: content-engine
+version: "2.0.0"
+short-title: "Content Engine v2"
+description: |
+  Squad unificado de 28 agentes elite para estratégia de conteúdo, copywriting,
+  distribuição e validação. 4 camadas: Estratégia → Produção → Qualidade → Visual.
+  Construído para o posicionamento "Clareza em meio ao caos" (Tiago Torriani).
+  Plataformas: Instagram, YouTube, TikTok, LinkedIn, Substack.
+author: oalanicolas
+license: MIT
+slashPrefix: ce
+
+aiox:
+  minVersion: "2.1.0"
+  type: squad
+
+tags:
+  - content-strategy
+  - copywriting
+  - social-media
+  - personal-branding
+  - video-scripts
+  - newsletter
+  - instagram
+  - youtube
+  - debate
+  - validation
+
+components:
+  agents:
+    # Camada 1: Estratégia (4)
+    - caleb-ralston.md
+    - dan-koe.md
+    - gary-vaynerchuk.md
+    - alex-hormozi.md
+    # Camada 2: Produção (10)
+    - nicolas-cole.md
+    - stefan-georgi.md
+    - joanna-wiebe.md
+    - george-blackman.md
+    - vanessa-lau.md
+    - justin-welsh.md
+    - gary-halbert.md
+    - claude-hopkins.md
+    - dan-kennedy.md
+    - david-ogilvy.md
+    # Camada 3: Qualidade (3)
+    - eugene-schwartz.md
+    - oraculo-torriani.md
+    - devil-advocate.md
+    # Camada 4: Visual (3)
+    - visual-director.md
+    - visual-technician.md
+    - visual-typographer.md
+    # Orquestração (2)
+    - content-engine.md
+    - copy-chief.md
+    # ICP (5)
+    - icp-marcos.md
+    - icp-rafael.md
+    - icp-ana.md
+    - icp-camila.md
+    - icp-lucas.md
+    # Legacy (1)
+    - social-strategist.md
+
+  tasks:
+    - write-post.md
+    - write-script.md
+    - write-vsl.md
+    - write-ad.md
+    - write-newsletter.md
+    - write-email-sequence.md
+    - write-sales-page.md
+    - write-landing-page.md
+    - create-offer.md
+    - create-headline.md
+    - hook-creation.md
+    - rmbc-workflow.md
+    - validate-copy.md
+    - batch-content.md
+    - diagnose-market.md
+    - brand-audit.md
+    - attention-audit.md
+    - content-philosophy.md
+    - content-system-setup.md
+    - weekly-plan.md
+    - platform-plan.md
+    - instagram-plan.md
+    - repurpose-content.md
+    - lead-magnet.md
+    - update-tracker.md
+    - mind-story.md
+    - auto-detect-workflow.md
+
+  workflows:
+    - weekly-sprint.md
+    - mid-week-adapt.md
+    - debate-session.md
+    - carousel-creation.md
+    - cover-art-direction.md
+    - content-piece.md
+    - youtube-to-everything.md
+    - newsletter-to-social.md
+    - icp-validation.md
+    - story-creation.md
+
+  checklists:
+    - content-quality-checklist.md
+    - visual-qa.md
+    - carousel-checklist.md
+    - torriani-master-checklist.md
+    - script-checklist.md
+
+  templates:
+    - render-batch-tmpl.md
+    - nano-banana-prompt-tmpl.md
+    - headline-formulas-tmpl.md
+    - offer-stack-tmpl.md
+    - email-sequence-tmpl.md
+    - sales-page-tmpl.md
+    - vsl-script-tmpl.md
+
+  scripts:
+    - run-qa-gate.sh
+    - visual-qa-check.sh
+    - validate-pre-render.sh
+    - copy-pre-check.py
+
+dependencies:
+  node: []
+  python: []
+  squads: []
+
+config:
+  extends: extend
+
+# Rich squad configuration (layers, debate, quality gates) → see config.yaml
+# This file (squad.yaml) is the AIOX manifest entry point.
+# config.yaml contains the full squad architecture and routing rules.

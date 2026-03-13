@@ -1,0 +1,525 @@
+# wf-setup-environment.yaml
+# Workflow: ComfyUI Environment Setup
+# Version: 1.0.0
+# Last Updated: 2026-02-06
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WORKFLOW METADATA
+# ═══════════════════════════════════════════════════════════════════════════════
+
+workflow:
+  id: wf-setup-environment
+  name: "ComfyUI Environment Setup"
+  version: "1.0.0"
+  purpose: "Install, configure, and verify the complete ComfyUI video generation environment"
+  orchestrator: "@comfyui-architect"
+  mode: "quality"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INPUTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+inputs:
+  required:
+    - name: comfyui_path
+      type: path
+      description: "Path to ComfyUI installation directory"
+      default: "/Users/felipegobbi/ComfyUI"
+
+  optional:
+    - name: models_to_install
+      type: list
+      description: "Which video generation models to download"
+      default: ["wan_2_1_1_3b"]
+      options:
+        - "wan_2_1_1_3b"
+        - "wan_2_1_5b"
+        - "wan_2_1_14b"
+        - "wan_2_2"
+        - "hunyuan_video"
+        - "cogvideox_5b"
+        - "ltx_2"
+        - "animatediff"
+
+    - name: install_all_nodes
+      type: boolean
+      default: true
+      description: "Install all recommended custom nodes"
+
+    - name: gpu_vram
+      type: integer
+      description: "Available GPU VRAM in GB (affects model selection)"
+      default: 16
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRECONDITIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+preconditions:
+  system:
+    - "Python 3.10+ installed"
+    - "pip or conda available"
+    - "git installed"
+    - "50GB+ free disk space (models are large)"
+    - "Internet connection for downloads"
+
+  recommended:
+    - "NVIDIA GPU with 12GB+ VRAM (or Apple Silicon with 16GB+ unified memory)"
+    - "100GB+ free disk space for multiple models"
+    - "ffmpeg installed"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHASES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+phases:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # PHASE 1: NODE INSTALLATION
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: phase_1
+    name: "CUSTOM NODE INSTALLATION"
+    purpose: "Install all required ComfyUI custom nodes for video generation"
+    duration: "10-20 minutes"
+    mode: "autonomous"
+    depends_on: []
+
+    steps:
+      - id: step_1_1
+        name: "Verify ComfyUI Base Installation"
+        action: "Check that ComfyUI is installed and functional"
+        workflow:
+          - "Verify ComfyUI directory exists at configured path"
+          - "Check for main.py or ComfyUI entry point"
+          - "Verify Python environment is set up"
+          - "Check if ComfyUI can start (dry run)"
+          - "If not installed:"
+          - "  Clone ComfyUI from GitHub"
+          - "  Install base requirements"
+          - "  Verify installation"
+        on_fail:
+          action: "Guide user through ComfyUI installation"
+          reference: "https://github.com/comfyanonymous/ComfyUI"
+
+      - id: step_1_2
+        name: "Install Core Custom Nodes"
+        action: "Install essential nodes for video workflows"
+        depends_on: ["step_1_1"]
+        nodes:
+          - name: "ComfyUI-VideoHelperSuite"
+            repo: "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite"
+            purpose: "Video loading, saving, combining"
+            required: true
+
+          - name: "ComfyUI-WanVideoWrapper"
+            repo: "https://github.com/kijai/ComfyUI-WanVideoWrapper"
+            purpose: "Wan 2.1/2.2 model integration"
+            required: true
+
+          - name: "ComfyUI-HunyuanVideoWrapper"
+            repo: "https://github.com/kijai/ComfyUI-HunyuanVideoWrapper"
+            purpose: "HunyuanVideo model integration"
+            required: false
+
+          - name: "ComfyUI-CogVideoXWrapper"
+            repo: "https://github.com/kijai/ComfyUI-CogVideoXWrapper"
+            purpose: "CogVideoX model integration"
+            required: false
+
+          - name: "ComfyUI-LTXVideo"
+            repo: "https://github.com/Lightricks/ComfyUI-LTXVideo"
+            purpose: "LTX-2 model integration"
+            required: false
+
+          - name: "ComfyUI-AnimateDiff-Evolved"
+            repo: "https://github.com/Kosinkadink/ComfyUI-AnimateDiff-Evolved"
+            purpose: "AnimateDiff motion modules"
+            required: false
+
+        workflow:
+          - "Navigate to ComfyUI/custom_nodes/ directory"
+          - "For each node to install:"
+          - "  Check if already installed (directory exists)"
+          - "  If not installed: git clone repo"
+          - "  Install node-specific requirements (pip install -r requirements.txt)"
+          - "  Verify node loads without errors"
+          - "Log installation results"
+
+      - id: step_1_3
+        name: "Install Enhancement Custom Nodes"
+        action: "Install nodes for consistency, upscaling, and post-processing"
+        depends_on: ["step_1_1"]
+        nodes:
+          - name: "ComfyUI_IPAdapter_plus"
+            repo: "https://github.com/cubiq/ComfyUI_IPAdapter_plus"
+            purpose: "IP-Adapter for character consistency"
+            required: true
+
+          - name: "ComfyUI-Advanced-ControlNet"
+            repo: "https://github.com/Kosinkadink/ComfyUI-Advanced-ControlNet"
+            purpose: "Advanced ControlNet for motion guidance"
+            required: false
+
+          - name: "Steerable-Motion"
+            repo: "https://github.com/banodoco/Steerable-Motion"
+            purpose: "Camera motion control"
+            required: false
+
+          - name: "ComfyUI-SeedVR2_VideoUpscaler"
+            repo: "https://github.com/kijai/ComfyUI-SeedVR2_VideoUpscaler"
+            purpose: "AI video upscaling"
+            required: false
+
+          - name: "ComfyUI-GIMM-VFI"
+            repo: "https://github.com/kijai/ComfyUI-GIMM-VFI"
+            purpose: "Frame interpolation"
+            required: false
+
+          - name: "ComfyUI-TopazVideoAI"
+            repo: "https://github.com/peteromallet/ComfyUI-TopazVideoAI"
+            purpose: "Topaz Video AI integration"
+            required: false
+
+        workflow:
+          - "Same installation procedure as core nodes"
+          - "Skip optional nodes if install_all_nodes is false"
+          - "Verify each node loads correctly"
+
+    checkpoint:
+      id: CP_NODES
+      name: "Node Installation Complete"
+      blocking: true
+      criteria:
+        - required_nodes_installed: true
+        - all_nodes_load_without_errors: true
+        - comfyui_starts_successfully: true
+      on_fail:
+        action: "Log failed nodes, attempt reinstall"
+        max_retries: 2
+        escalation: "Present node errors to user for manual resolution"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # PHASE 2: MODEL DOWNLOAD
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: phase_2
+    name: "MODEL DOWNLOAD"
+    purpose: "Download and install video generation models and supporting models"
+    duration: "30-120 minutes (depends on connection speed and model count)"
+    mode: "autonomous"
+    depends_on: ["phase_1"]
+
+    steps:
+      - id: step_2_1
+        name: "Select Models Based on VRAM"
+        action: "Recommend models based on available GPU VRAM"
+        workflow:
+          - "Detect available VRAM (or use provided gpu_vram input)"
+          - "Recommend models:"
+          - "  8GB VRAM:  Wan 2.1 1.3B, CogVideoX-5B (quantized), LTX-2 2B"
+          - "  12GB VRAM: Wan 2.1 5B (fp8), LTX-2 7B, CogVideoX-5B"
+          - "  16GB VRAM: Wan 2.1 5B (bf16), HunyuanVideo (quantized)"
+          - "  24GB VRAM: Wan 2.1 14B, HunyuanVideo (full), all models"
+          - "Cross-reference with user's models_to_install preference"
+          - "Generate download plan with estimated sizes and times"
+        output:
+          download_plan:
+            models: "list with URLs and target paths"
+            total_size: "estimated GB"
+            estimated_time: "minutes"
+
+      - id: step_2_2
+        name: "Download Video Generation Models"
+        action: "Download selected video generation model checkpoints"
+        depends_on: ["step_2_1"]
+        models:
+          wan_2_1_1_3b:
+            source: "huggingface"
+            repo: "Wan-AI/Wan2.1-T2V-1.3B"
+            target: "models/diffusion_models/"
+            size: "~5GB"
+
+          wan_2_1_5b:
+            source: "huggingface"
+            repo: "Wan-AI/Wan2.1-T2V-5B"
+            target: "models/diffusion_models/"
+            size: "~18GB"
+
+          wan_2_1_14b:
+            source: "huggingface"
+            repo: "Wan-AI/Wan2.1-T2V-14B"
+            target: "models/diffusion_models/"
+            size: "~50GB"
+
+          hunyuan_video:
+            source: "huggingface"
+            repo: "tencent/HunyuanVideo"
+            target: "models/diffusion_models/"
+            size: "~25GB"
+
+          cogvideox_5b:
+            source: "huggingface"
+            repo: "THUDM/CogVideoX-5b"
+            target: "models/diffusion_models/"
+            size: "~20GB"
+
+          ltx_2:
+            source: "huggingface"
+            repo: "Lightricks/LTX-Video-2"
+            target: "models/diffusion_models/"
+            size: "~10GB"
+
+        workflow:
+          - "For each model in download plan:"
+          - "  Check if model already exists (skip if present)"
+          - "  Download using huggingface-cli or wget"
+          - "  Verify file integrity (checksum if available)"
+          - "  Place in correct ComfyUI model directory"
+          - "  Log download status"
+
+      - id: step_2_3
+        name: "Download Supporting Models"
+        action: "Download IP-Adapter, ControlNet, upscaler, and auxiliary models"
+        depends_on: ["step_2_1"]
+        models:
+          ip_adapter:
+            - name: "IP-Adapter FaceID Plus V2"
+              target: "models/ipadapter/"
+            - name: "IP-Adapter SDXL"
+              target: "models/ipadapter/"
+
+          clip_vision:
+            - name: "CLIP-ViT-H-14"
+              target: "models/clip_vision/"
+
+          controlnet:
+            - name: "ControlNet Depth"
+              target: "models/controlnet/"
+            - name: "ControlNet OpenPose"
+              target: "models/controlnet/"
+
+          upscale:
+            - name: "RealESRGAN_x4plus"
+              target: "models/upscale_models/"
+
+          vae:
+            - name: "Wan2.1 VAE"
+              target: "models/vae/"
+
+        workflow:
+          - "Download each supporting model"
+          - "Verify placement in correct directory"
+          - "Ensure ComfyUI recognizes new models"
+
+    checkpoint:
+      id: CP_MODELS
+      name: "Model Download Complete"
+      blocking: true
+      criteria:
+        - at_least_one_video_model: true
+        - supporting_models_present: true
+        - all_files_valid: "no corrupted downloads"
+      on_fail:
+        action: "Retry failed downloads"
+        max_retries: 3
+        escalation: "Provide manual download links"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # PHASE 3: VERIFICATION
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: phase_3
+    name: "VERIFICATION"
+    purpose: "Verify all components are correctly installed and accessible"
+    duration: "5-10 minutes"
+    mode: "autonomous"
+    depends_on: ["phase_2"]
+
+    steps:
+      - id: step_3_1
+        name: "ComfyUI Startup Test"
+        action: "Start ComfyUI and verify all nodes load"
+        workflow:
+          - "Start ComfyUI server"
+          - "Wait for startup to complete (watch for node loading)"
+          - "Check console output for errors or warnings"
+          - "Verify API endpoint is accessible (http://127.0.0.1:8188)"
+          - "List loaded custom nodes via API"
+          - "Compare against installed nodes list"
+          - "Flag any nodes that failed to load"
+
+      - id: step_3_2
+        name: "Model Discovery Test"
+        action: "Verify ComfyUI can see all installed models"
+        depends_on: ["step_3_1"]
+        workflow:
+          - "Query ComfyUI model list via API"
+          - "Verify each downloaded model appears in the list"
+          - "Check model categories are correct (diffusion, vae, clip, etc.)"
+          - "Flag any models not recognized"
+
+      - id: step_3_3
+        name: "External Tools Verification"
+        action: "Verify ffmpeg and other external tools"
+        workflow:
+          - "Check ffmpeg version and codecs"
+          - "Verify H.264/H.265 encoding support"
+          - "Check Python dependencies (torch, torchvision, etc.)"
+          - "Verify disk space availability"
+          - "Check VRAM availability"
+
+    checkpoint:
+      id: CP_VERIFY
+      name: "Verification Complete"
+      blocking: true
+      criteria:
+        - comfyui_starts: true
+        - all_nodes_loaded: true
+        - models_discovered: true
+        - api_accessible: true
+        - ffmpeg_available: true
+      on_fail:
+        action: "Log specific failures and provide fix instructions"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # PHASE 4: TEST RUN
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: phase_4
+    name: "TEST RUN"
+    purpose: "Execute a test generation to confirm full pipeline functionality"
+    duration: "5-15 minutes"
+    mode: "autonomous"
+    depends_on: ["phase_3"]
+
+    steps:
+      - id: step_4_1
+        name: "Generate Test Image"
+        action: "Run a simple T2I generation to verify base pipeline"
+        workflow:
+          - "Create minimal ComfyUI workflow (text-to-image)"
+          - "Use default model and simple prompt"
+          - "Queue execution via API"
+          - "Wait for completion"
+          - "Verify output image is generated"
+          - "Check image dimensions and format"
+
+      - id: step_4_2
+        name: "Generate Test Video"
+        action: "Run a short T2V generation to verify video pipeline"
+        depends_on: ["step_4_1"]
+        workflow:
+          - "Create T2V workflow using installed video model"
+          - "Use simple prompt: 'A cat walking in a garden, sunny day'"
+          - "Settings: 16 frames, 512x512 (low res for speed), 20 steps"
+          - "Queue execution via API"
+          - "Monitor generation progress"
+          - "Wait for completion (2-10 minutes depending on hardware)"
+          - "Verify output video file exists"
+          - "Check frame count and resolution"
+          - "Play video to verify no corruption"
+
+      - id: step_4_3
+        name: "Generate Test with IP-Adapter"
+        action: "Test character consistency pipeline"
+        depends_on: ["step_4_2"]
+        condition: "IP-Adapter models are installed"
+        workflow:
+          - "Create I2V workflow with IP-Adapter"
+          - "Use a sample reference image"
+          - "Generate short video maintaining reference"
+          - "Verify output contains reference features"
+
+      - id: step_4_4
+        name: "Generate Environment Report"
+        action: "Create comprehensive environment status document"
+        depends_on: ["step_4_2"]
+        workflow:
+          - "Compile all test results into environment report"
+          - "Include:"
+          - "  - ComfyUI version and path"
+          - "  - Installed custom nodes (with status)"
+          - "  - Installed models (with size and type)"
+          - "  - Hardware specs (GPU, VRAM, RAM, disk)"
+          - "  - Test generation results"
+          - "  - Recommended settings for this hardware"
+          - "  - Known issues or warnings"
+          - "Save report to squad data directory"
+        output:
+          report:
+            path: "squads/video-creation/data/environment-report.yaml"
+
+    checkpoint:
+      id: CP_TEST
+      name: "Test Run Complete"
+      blocking: true
+      criteria:
+        - test_image_generated: true
+        - test_video_generated: true
+        - environment_report_created: true
+        - no_critical_errors: true
+      on_fail:
+        action: "Review test failures, provide troubleshooting guide"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# OUTPUTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+outputs:
+  primary:
+    - name: "Environment Report"
+      location: "squads/video-creation/data/environment-report.yaml"
+      description: "Complete environment status with hardware specs and test results"
+
+  secondary:
+    - name: "Test Outputs"
+      location: "outputs/test-run/"
+      description: "Test generation outputs for verification"
+
+    - name: "Installation Log"
+      location: "squads/video-creation/data/installation-log.yaml"
+      description: "Detailed log of all installation steps"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ERROR HANDLING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+error_handling:
+  git_clone_fails:
+    - action: "Check internet connection"
+    - action: "Try alternative mirror or manual download"
+    - if_still_fails: "Provide manual installation instructions"
+
+  pip_install_fails:
+    - action: "Check Python version compatibility"
+    - action: "Try installing with --no-deps"
+    - action: "Check for system-level dependency conflicts"
+    - if_still_fails: "Suggest using conda environment"
+
+  model_download_fails:
+    - action: "Check disk space"
+    - action: "Retry download with resume support"
+    - action: "Try alternative download source"
+    - if_still_fails: "Provide direct download links for manual download"
+
+  comfyui_wont_start:
+    - action: "Check Python environment"
+    - action: "Check for port conflicts on 8188"
+    - action: "Check GPU drivers"
+    - if_still_fails: "Guide user through manual troubleshooting"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# METADATA
+# ═══════════════════════════════════════════════════════════════════════════════
+
+metadata:
+  version: "1.0.0"
+  created: "2026-02-06"
+  last_updated: "2026-02-06"
+  author: "comfyui-architect"
+  lines: "300+"
+  changelog:
+    - version: "1.0.0"
+      date: "2026-02-06"
+      changes:
+        - "Initial creation of environment setup workflow"
+        - "4 phases: Node Installation, Model Download, Verification, Test Run"
+        - "VRAM-based model recommendation system"
+        - "Automatic environment report generation"
+        - "Support for all video-creation squad models"
