@@ -1,14 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
+import { Menu } from "lucide-react";
 import { useMind } from "@/lib/hooks/use-mind";
 import { ChatContainer } from "@/components/chat/chat-container";
+import { ChatSidebar } from "@/components/chat/chat-sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 
 export default function ChatPage() {
   const { mindId } = useParams<{ mindId: string }>();
   const searchParams = useSearchParams();
   const conversationId = searchParams.get("conversationId") ?? undefined;
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const { mind, isLoading } = useMind(mindId);
 
@@ -32,10 +37,31 @@ export default function ChatPage() {
   }
 
   return (
-    <ChatContainer
-      mindId={mindId}
-      mindName={mind.name}
-      conversationId={conversationId}
-    />
+    <div className="flex h-full">
+      <ChatSidebar
+        mindId={mindId}
+        conversationId={conversationId}
+        open={sidebarOpen}
+        onOpenChange={setSidebarOpen}
+      />
+      <div className="flex flex-1 flex-col min-w-0">
+        <div className="md:hidden flex items-center border-b px-3 py-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setSidebarOpen(true)}
+          >
+            <Menu className="h-4 w-4" />
+          </Button>
+          <span className="ml-2 text-sm font-medium truncate">{mind.name}</span>
+        </div>
+        <ChatContainer
+          mindId={mindId}
+          mindName={mind.name}
+          conversationId={conversationId}
+        />
+      </div>
+    </div>
   );
 }
