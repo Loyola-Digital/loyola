@@ -10,6 +10,7 @@ import dbPlugin from "./db/client.js";
 
 // Services
 import mindRegistryPlugin from "./services/mind-registry.js";
+import mindEnginePlugin from "./services/mind-engine.js";
 
 // Routes
 import healthRoutes from "./routes/health.js";
@@ -33,6 +34,7 @@ export async function buildServer() {
 
   // 5. Services
   await app.register(mindRegistryPlugin);
+  await app.register(mindEnginePlugin);
 
   // 6. Routes (last — consume services)
   await app.register(healthRoutes);
