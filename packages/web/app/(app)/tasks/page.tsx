@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckSquare } from "lucide-react";
+import { CheckSquare, AlertCircle } from "lucide-react";
 import { useTasks } from "@/lib/hooks/use-tasks";
 import { TaskList } from "@/components/tasks/task-list";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +24,7 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState<TaskStatus | "all">("all");
   const [offset, setOffset] = useState(0);
 
-  const { tasks, total, isLoading } = useTasks({
+  const { tasks, total, isLoading, error } = useTasks({
     status: statusFilter === "all" ? undefined : statusFilter,
     limit: LIMIT,
     offset,
@@ -58,7 +58,14 @@ export default function TasksPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
-        {isLoading ? (
+        {error ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <AlertCircle className="h-10 w-10 text-destructive/50 mb-3" />
+            <p className="text-sm text-muted-foreground">
+              Erro ao carregar tarefas. Tente novamente.
+            </p>
+          </div>
+        ) : isLoading ? (
           <div className="flex items-center justify-center py-12">
             <p className="text-sm text-muted-foreground">Carregando...</p>
           </div>

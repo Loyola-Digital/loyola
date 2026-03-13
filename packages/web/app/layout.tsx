@@ -4,8 +4,19 @@ import { Providers } from "@/lib/providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Loyola Digital X",
-  description: "Central de Mentes — Loyola Digital",
+  title: {
+    default: "Loyola Digital X",
+    template: "%s | Loyola Digital X",
+  },
+  description:
+    "Central de Mentes — Plataforma de AI para gestao inteligente de equipes e tarefas",
+  icons: { icon: "/icon.svg" },
+  openGraph: {
+    title: "Loyola Digital X",
+    description:
+      "Central de Mentes — Plataforma de AI para gestao inteligente de equipes e tarefas",
+    type: "website",
+  },
 };
 
 export default function RootLayout({

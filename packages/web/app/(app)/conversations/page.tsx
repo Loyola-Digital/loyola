@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, AlertCircle } from "lucide-react";
 import { useConversations } from "@/lib/hooks/use-conversations";
 import { ConversationListItem } from "@/components/conversations/conversation-list-item";
 import { MindFilter } from "@/components/conversations/mind-filter";
@@ -16,7 +16,7 @@ export default function ConversationsPage() {
   const [mindIdFilter, setMindIdFilter] = useState<string | undefined>();
   const [offset, setOffset] = useState(0);
 
-  const { conversations, total, isLoading } = useConversations({
+  const { conversations, total, isLoading, error } = useConversations({
     mindId: mindIdFilter,
     limit: LIMIT,
     offset,
@@ -46,7 +46,14 @@ export default function ConversationsPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
-        {isLoading ? (
+        {error ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <AlertCircle className="h-10 w-10 text-destructive/50 mb-3" />
+            <p className="text-sm text-muted-foreground">
+              Erro ao carregar conversas. Tente novamente.
+            </p>
+          </div>
+        ) : isLoading ? (
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="flex items-center gap-3 rounded-lg border px-4 py-3">
