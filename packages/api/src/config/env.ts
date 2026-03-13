@@ -14,6 +14,8 @@ const envSchema = z.object({
   CLERK_WEBHOOK_SECRET: z.string().min(1).optional(),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
   MINDS_BASE_PATH: z.string().default("./squads"),
+  CLICKUP_API_TOKEN: z.string().min(1).optional(),
+  CLICKUP_LIST_ID: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
