@@ -17,7 +17,7 @@ const uuidParamSchema = z.object({
 });
 
 export default fp(async function conversationRoutes(fastify) {
-  // AC 2: GET /api/conversations — list user's conversations
+  // GET /api/conversations — list user's conversations
   fastify.get("/api/conversations", async (request, reply) => {
     const queryResult = listQuerySchema.safeParse(request.query);
     if (!queryResult.success) {
@@ -27,14 +27,7 @@ export default fp(async function conversationRoutes(fastify) {
       });
     }
 
-    // AC 6: Resolve Clerk ID → UUID
-    const userId = await fastify.conversationService.resolveUserId(
-      request.userId
-    );
-    if (!userId) {
-      return reply.code(404).send({ error: "User not found" });
-    }
-
+    const userId = request.userId;
     const { limit, offset, mindId } = queryResult.data;
 
     const result = await fastify.conversationService.list({
@@ -47,7 +40,7 @@ export default fp(async function conversationRoutes(fastify) {
     return result;
   });
 
-  // AC 3: GET /api/conversations/:id/messages — conversation messages
+  // GET /api/conversations/:id/messages — conversation messages
   fastify.get("/api/conversations/:id/messages", async (request, reply) => {
     const paramResult = uuidParamSchema.safeParse(request.params);
     if (!paramResult.success) {
@@ -62,14 +55,7 @@ export default fp(async function conversationRoutes(fastify) {
       });
     }
 
-    // AC 6: Resolve Clerk ID → UUID
-    const userId = await fastify.conversationService.resolveUserId(
-      request.userId
-    );
-    if (!userId) {
-      return reply.code(404).send({ error: "User not found" });
-    }
-
+    const userId = request.userId;
     const { limit, before } = queryResult.data;
 
     const result = await fastify.conversationService.getMessages({
@@ -86,20 +72,14 @@ export default fp(async function conversationRoutes(fastify) {
     return result;
   });
 
-  // AC 4: DELETE /api/conversations/:id — soft delete
+  // DELETE /api/conversations/:id — soft delete
   fastify.delete("/api/conversations/:id", async (request, reply) => {
     const paramResult = uuidParamSchema.safeParse(request.params);
     if (!paramResult.success) {
       return reply.code(400).send({ error: "Invalid conversation ID" });
     }
 
-    // AC 6: Resolve Clerk ID → UUID
-    const userId = await fastify.conversationService.resolveUserId(
-      request.userId
-    );
-    if (!userId) {
-      return reply.code(404).send({ error: "User not found" });
-    }
+    const userId = request.userId;
 
     const deleted = await fastify.conversationService.softDelete({
       conversationId: paramResult.data.id,

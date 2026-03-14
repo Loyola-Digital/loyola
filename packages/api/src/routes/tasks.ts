@@ -32,12 +32,7 @@ export default fp(async function taskRoutes(fastify) {
       });
     }
 
-    const userId = await fastify.conversationService.resolveUserId(
-      request.userId,
-    );
-    if (!userId) {
-      return reply.code(404).send({ error: "User not found" });
-    }
+    const userId = request.userId;
 
     // Ownership check
     const { conversationId, messageId, mindId, title, description, priority, tags } =
@@ -116,13 +111,7 @@ export default fp(async function taskRoutes(fastify) {
       });
     }
 
-    const userId = await fastify.conversationService.resolveUserId(
-      request.userId,
-    );
-    if (!userId) {
-      return reply.code(404).send({ error: "User not found" });
-    }
-
+    const userId = request.userId;
     const { status, limit, offset } = queryResult.data;
 
     const conditions = [eq(delegatedTasks.userId, userId)];

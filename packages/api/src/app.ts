@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { clerkPlugin } from "@clerk/fastify";
 import "./types/index.js";
 
 // Plugins
@@ -33,7 +34,12 @@ export async function buildServer() {
   await app.register(corsPlugin);
   await app.register(rateLimitPlugin);
 
-  // 3. Auth middleware
+  // 3. Auth — register clerkPlugin at root (onRequest so it runs before preHandler)
+  await app.register(clerkPlugin, {
+    secretKey: app.config.CLERK_SECRET_KEY,
+    publishableKey: app.config.CLERK_PUBLISHABLE_KEY,
+    hookName: "onRequest",
+  });
   await app.register(authPlugin);
 
   // 4. Database

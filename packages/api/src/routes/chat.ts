@@ -2,7 +2,9 @@ import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
 import fp from "fastify-plugin";
 import type { FastifyReply } from "fastify";
+import type { MessageParam } from "@anthropic-ai/sdk/resources/messages.js";
 import { conversations, messages } from "../db/schema.js";
+import { getChatTools, executeChatTool } from "../services/chat-tools.js";
 
 const chatRequestSchema = z.object({
   mindId: z.string().min(1),
@@ -39,7 +41,8 @@ export default fp(async function chatRoutes(fastify) {
         };
       }
 
-      const { mindId, conversationId: requestConvId, message } = parseResult.data;
+      const { mindId, conversationId: requestConvId, message } =
+        parseResult.data;
       const userId = request.userId;
 
       // Resolve mind
@@ -50,10 +53,17 @@ export default fp(async function chatRoutes(fastify) {
       }
 
       // Set up SSE response — use raw to bypass Fastify serialization
+      const origin = request.headers.origin;
       reply.raw.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
+        ...(origin
+          ? {
+              "Access-Control-Allow-Origin": origin,
+              "Access-Control-Allow-Credentials": "true",
+            }
+          : {}),
       });
       // Mark reply as sent so Fastify doesn't try to serialize
       reply.hijack();
@@ -66,7 +76,10 @@ export default fp(async function chatRoutes(fastify) {
         if (requestConvId) {
           // Verify conversation exists and belongs to user
           const existing = await fastify.db
-            .select({ id: conversations.id, userId: conversations.userId })
+            .select({
+              id: conversations.id,
+              userId: conversations.userId,
+            })
             .from(conversations)
             .where(eq(conversations.id, requestConvId))
             .limit(1);
@@ -127,27 +140,33 @@ export default fp(async function chatRoutes(fastify) {
         const systemPrompt = await fastify.mindEngine.buildPrompt(mindId, 2);
 
         // Build messages array for Claude API
-        const claudeMessages = history.map((m) => ({
+        const claudeMessages: MessageParam[] = history.map((m) => ({
           role: m.role as "user" | "assistant",
           content: m.content,
         }));
 
-        // Stream from Claude
-        const stream = fastify.claude.stream({
-          systemPrompt,
-          messages: claudeMessages,
-        });
+        // Get available tools for this chat
+        const tools = getChatTools(fastify);
 
-        // Accumulate full response text
-        let fullText = "";
-
-        stream.on("text", (text: string) => {
-          fullText += text;
-          sendSSE(reply, "text_delta", { text });
-        });
-
-        // Wait for the stream to complete
-        const finalMessage = await stream.finalMessage();
+        // Run agentic loop — Claude decides when to use tools
+        const { fullText, finalMessage, toolCallCount } =
+          await fastify.claude.agentLoop({
+            systemPrompt,
+            messages: claudeMessages,
+            tools,
+            onText: (text: string) => {
+              sendSSE(reply, "text_delta", { text });
+            },
+            onToolUse: (name: string, input: Record<string, unknown>) => {
+              sendSSE(reply, "tool_use", { tool: name, input });
+            },
+            executeToolCall: (
+              name: string,
+              input: Record<string, unknown>,
+            ) => {
+              return executeChatTool(fastify, userId, name, input);
+            },
+          });
 
         // Detect task block
         const taskMatch = fullText.match(TASK_BLOCK_REGEX);
@@ -183,12 +202,12 @@ export default fp(async function chatRoutes(fastify) {
               outputTokens: usage.output_tokens,
               taskDetected: hasTaskBlock,
               finishReason: finalMessage.stop_reason,
+              toolCallCount,
             },
           })
           .returning({ id: messages.id });
 
-        // Update conversation updated_at manually
-        // (DB triggers will handle counters when migrations are in place)
+        // Update conversation updated_at
         await fastify.db
           .update(conversations)
           .set({ updatedAt: new Date() })
@@ -215,6 +234,6 @@ export default fp(async function chatRoutes(fastify) {
           // Response may already be closed
         }
       }
-    }
+    },
   );
 });

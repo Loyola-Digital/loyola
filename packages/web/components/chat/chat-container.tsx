@@ -20,6 +20,7 @@ export function ChatContainer({
   const {
     messages,
     isStreaming,
+    activeTool,
     error,
     conversationId,
     taskSuggestions,
@@ -89,6 +90,12 @@ export function ChatContainer({
         onConfirmTask={handleConfirmTask}
         onDismissTask={handleDismissTask}
       />
+
+      {activeTool && (
+        <div className="border-t bg-muted/50 px-4 py-2 text-sm text-muted-foreground animate-pulse">
+          {activeTool}
+        </div>
+      )}
 
       {error && (
         <div className="border-t bg-destructive/10 px-4 py-2 text-sm text-destructive">
