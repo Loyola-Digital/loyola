@@ -45,16 +45,16 @@ export default function ChatPage() {
         onOpenChange={setSidebarOpen}
       />
       <div className="flex flex-1 flex-col min-w-0">
-        <div className="md:hidden flex items-center border-b px-3 py-2">
+        <div className="md:hidden flex items-center gap-3 border-b border-border/50 px-4 py-2.5">
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-8 w-8 shrink-0"
             onClick={() => setSidebarOpen(true)}
           >
             <Menu className="h-4 w-4" />
           </Button>
-          <span className="ml-2 text-sm font-medium truncate">{mind.name}</span>
+          <span className="text-sm font-semibold truncate">{mind.name}</span>
         </div>
         <ChatContainer
           mindId={mindId}

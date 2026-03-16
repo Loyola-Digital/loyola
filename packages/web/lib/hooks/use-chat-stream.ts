@@ -20,12 +20,31 @@ export interface TaskSuggestion {
   clickupUrl?: string;
 }
 
+export interface ThinkingStep {
+  label: string;
+  tool: string;
+  timestamp: number;
+  status: "running" | "done";
+}
+
+const TOOL_LABELS: Record<string, string> = {
+  clickup_get_workspaces: "Conectando ao ClickUp",
+  clickup_get_spaces: "Navegando spaces",
+  clickup_get_folders: "Buscando folders",
+  clickup_get_lists: "Listando listas",
+  clickup_get_tasks: "Buscando tarefas",
+  clickup_get_task_details: "Carregando detalhes da tarefa",
+  clickup_search: "Pesquisando no ClickUp",
+  clickup_create_task: "Criando tarefa no ClickUp",
+  get_past_conversations: "Consultando conversas anteriores",
+};
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export function useChatStream() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [activeTool, setActiveTool] = useState<string | null>(null);
+  const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [taskSuggestions, setTaskSuggestions] = useState<TaskSuggestion[]>([]);
@@ -37,6 +56,7 @@ export function useChatStream() {
     async (mindId: string, message: string) => {
       setError(null);
       setIsStreaming(true);
+      setThinkingSteps([]);
 
       // Optimistic: add user message
       setMessages((prev) => [...prev, { role: "user", content: message }]);
@@ -90,22 +110,26 @@ export function useChatStream() {
                 setConversationId(parsed.conversationId);
                 break;
               case "tool_use": {
-                const toolLabels: Record<string, string> = {
-                  clickup_get_workspaces: "Conectando ao ClickUp...",
-                  clickup_get_spaces: "Navegando spaces...",
-                  clickup_get_folders: "Buscando folders...",
-                  clickup_get_lists: "Listando listas...",
-                  clickup_get_tasks: "Buscando tarefas...",
-                  clickup_get_task_details: "Carregando detalhes da tarefa...",
-                  clickup_search: `Pesquisando "${parsed.input?.query ?? ""}" no ClickUp...`,
-                  clickup_create_task: "Criando tarefa no ClickUp...",
-                  get_past_conversations: "Consultando conversas anteriores...",
-                };
-                setActiveTool(toolLabels[parsed.tool] ?? `Usando ${parsed.tool}...`);
+                const toolName = parsed.tool as string;
+                let label = TOOL_LABELS[toolName] ?? `Usando ${toolName}`;
+                if (toolName === "clickup_search" && parsed.input?.query) {
+                  label = `Pesquisando "${parsed.input.query}" no ClickUp`;
+                }
+
+                // Mark previous step as done, add new one
+                setThinkingSteps((prev) => [
+                  ...prev.map((s) => ({ ...s, status: "done" as const })),
+                  { label, tool: toolName, timestamp: Date.now(), status: "running" },
+                ]);
                 break;
               }
               case "text_delta":
-                setActiveTool(null);
+                // Mark all thinking steps as done when text starts arriving
+                setThinkingSteps((prev) =>
+                  prev.length > 0 && prev.some((s) => s.status === "running")
+                    ? prev.map((s) => ({ ...s, status: "done" as const }))
+                    : prev,
+                );
                 setMessages((prev) => {
                   const updated = [...prev];
                   const last = updated[updated.length - 1];
@@ -117,6 +141,8 @@ export function useChatStream() {
                   }
                   return updated;
                 });
+                break;
+              case "task_detected":
                 setTaskSuggestions((prev) => [
                   ...prev,
                   {
@@ -146,7 +172,7 @@ export function useChatStream() {
         }
       } finally {
         setIsStreaming(false);
-        setActiveTool(null);
+        setThinkingSteps([]);
         abortRef.current = null;
       }
     },
@@ -182,7 +208,7 @@ export function useChatStream() {
   return {
     messages,
     isStreaming,
-    activeTool,
+    thinkingSteps,
     error,
     conversationId,
     taskSuggestions,

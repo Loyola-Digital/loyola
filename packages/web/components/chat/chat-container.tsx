@@ -5,6 +5,7 @@ import { useChatStream } from "@/lib/hooks/use-chat-stream";
 import { useCreateTask } from "@/lib/hooks/use-create-task";
 import { MessageList } from "./message-list";
 import { ChatInput } from "./chat-input";
+import { ThinkingIndicator } from "./thinking-indicator";
 
 interface ChatContainerProps {
   mindId: string;
@@ -20,7 +21,7 @@ export function ChatContainer({
   const {
     messages,
     isStreaming,
-    activeTool,
+    thinkingSteps,
     error,
     conversationId,
     taskSuggestions,
@@ -91,11 +92,7 @@ export function ChatContainer({
         onDismissTask={handleDismissTask}
       />
 
-      {activeTool && (
-        <div className="border-t bg-muted/50 px-4 py-2 text-sm text-muted-foreground animate-pulse">
-          {activeTool}
-        </div>
-      )}
+      {thinkingSteps.length > 0 && <ThinkingIndicator steps={thinkingSteps} />}
 
       {error && (
         <div className="border-t bg-destructive/10 px-4 py-2 text-sm text-destructive">
@@ -103,7 +100,7 @@ export function ChatContainer({
         </div>
       )}
 
-      <ChatInput onSend={handleSend} disabled={isStreaming} />
+      <ChatInput onSend={handleSend} disabled={isStreaming} mindName={mindName} />
     </div>
   );
 }

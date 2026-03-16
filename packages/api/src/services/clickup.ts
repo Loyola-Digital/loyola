@@ -64,7 +64,7 @@ interface ClickUpTask {
 interface CreateTaskParams {
   name: string;
   description?: string;
-  listId: string;
+  listId?: string;
   priority?: string;
   tags?: string[];
 }
@@ -160,8 +160,12 @@ export default fp(async function clickupService(fastify) {
   async function createTask(
     params: CreateTaskParams,
   ): Promise<{ id: string; url: string }> {
+    const listId = params.listId ?? process.env.CLICKUP_DEFAULT_LIST_ID;
+    if (!listId) {
+      throw new Error("listId is required — set CLICKUP_DEFAULT_LIST_ID or pass listId");
+    }
     const data = await fetchApi<{ id: string; url: string }>(
-      `/list/${params.listId}/task`,
+      `/list/${listId}/task`,
       {
         method: "POST",
         body: JSON.stringify({

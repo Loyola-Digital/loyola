@@ -136,6 +136,8 @@ let mockStreamFn = vi.fn();
 const mockClaudePlugin = fp(async (fastify) => {
   fastify.decorate("claude", {
     stream: mockStreamFn,
+    agentLoop: vi.fn(),
+    client: {} as never,
   });
 });
 

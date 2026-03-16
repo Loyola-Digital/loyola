@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Brain, MessageSquare, CheckSquare } from "lucide-react";
@@ -90,8 +91,8 @@ export function AppSidebar() {
       >
         <SheetContent side="left" className="w-[240px] p-0 md:hidden">
           <SheetHeader className="border-b px-4 py-3">
-            <SheetTitle className="text-sm font-semibold">
-              Loyola Digital X
+            <SheetTitle className="flex items-center gap-2">
+              <Image src="/logo.svg" alt="Loyola" width={120} height={28} className="brightness-0 invert" />
             </SheetTitle>
           </SheetHeader>
           <NavContent collapsed={false} />
@@ -112,10 +113,10 @@ export function AppSidebar() {
             !sidebarOpen && "justify-center px-2",
           )}
         >
-          {sidebarOpen && (
-            <span className="text-sm font-semibold truncate">
-              Loyola Digital X
-            </span>
+          {sidebarOpen ? (
+            <Image src="/logo.svg" alt="Loyola" width={120} height={28} className="brightness-0 invert" />
+          ) : (
+            <Image src="/icon.svg" alt="L" width={28} height={28} />
           )}
         </div>
         <Separator />

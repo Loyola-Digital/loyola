@@ -149,7 +149,7 @@ export default fp(async function chatRoutes(fastify) {
         const tools = getChatTools(fastify);
 
         // Run agentic loop — Claude decides when to use tools
-        const { fullText, finalMessage, toolCallCount } =
+        const { fullText, finalMessage } =
           await fastify.claude.agentLoop({
             systemPrompt,
             messages: claudeMessages,
@@ -201,8 +201,7 @@ export default fp(async function chatRoutes(fastify) {
               inputTokens: usage.input_tokens,
               outputTokens: usage.output_tokens,
               taskDetected: hasTaskBlock,
-              finishReason: finalMessage.stop_reason,
-              toolCallCount,
+              finishReason: finalMessage.stop_reason ?? undefined,
             },
           })
           .returning({ id: messages.id });

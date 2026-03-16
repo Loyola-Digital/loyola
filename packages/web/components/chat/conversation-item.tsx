@@ -34,8 +34,8 @@ export function ConversationItem({
   return (
     <div
       className={cn(
-        "group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent",
-        isActive && "bg-accent",
+        "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all hover:bg-accent/50",
+        isActive && "bg-accent/60 border-l-2 border-l-brand",
       )}
     >
       <Link

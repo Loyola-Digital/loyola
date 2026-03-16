@@ -42,11 +42,12 @@ function SidebarContent({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b">
-        <h3 className="text-sm font-semibold">Conversas</h3>
-        <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">Conversas</h3>
+        <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs border-brand/30 text-brand hover:bg-brand/10 hover:text-brand" asChild>
           <Link href={`/minds/${mindId}/chat`}>
-            <Plus className="h-4 w-4" />
+            <Plus className="h-3.5 w-3.5" />
+            Nova
           </Link>
         </Button>
       </div>
@@ -84,7 +85,7 @@ function SidebarContent({
         <Separator className="my-2" />
 
         <div className="px-4 py-2">
-          <h4 className="text-xs font-semibold text-muted-foreground mb-2">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">
             Tarefas Recentes
           </h4>
           {tasksLoading ? (

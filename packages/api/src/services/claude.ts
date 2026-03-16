@@ -93,10 +93,7 @@ export default fp(async function claudePlugin(fastify) {
           ...(tools && tools.length > 0 ? { tools } : {}),
         });
 
-        let roundText = "";
-
         stream.on("text", (text: string) => {
-          roundText += text;
           fullText += text;
           onText?.(text);
         });

@@ -1,64 +1,123 @@
 @import "tailwindcss";
 
+/*
+ * Loyola Digital X — Design System
+ * Brand Colors:
+ *   Gold:       #fdd449 → hsl(47 98% 64%)
+ *   Dark:       #1a1a1a → hsl(0 0% 10%)
+ *   Light Gray: #e5e5e5 → hsl(0 0% 90%)
+ */
+
 @theme {
-  --color-background: hsl(0 0% 100%);
-  --color-foreground: hsl(240 10% 3.9%);
+  /* Light Mode */
+  --color-background: hsl(40 20% 98%);
+  --color-foreground: hsl(30 10% 12%);
+
   --color-card: hsl(0 0% 100%);
-  --color-card-foreground: hsl(240 10% 3.9%);
+  --color-card-foreground: hsl(30 10% 12%);
+
   --color-popover: hsl(0 0% 100%);
-  --color-popover-foreground: hsl(240 10% 3.9%);
-  --color-primary: hsl(240 5.9% 10%);
-  --color-primary-foreground: hsl(0 0% 98%);
-  --color-secondary: hsl(240 4.8% 95.9%);
-  --color-secondary-foreground: hsl(240 5.9% 10%);
-  --color-muted: hsl(240 4.8% 95.9%);
-  --color-muted-foreground: hsl(240 3.8% 46.1%);
-  --color-accent: hsl(240 4.8% 95.9%);
-  --color-accent-foreground: hsl(240 5.9% 10%);
-  --color-destructive: hsl(0 84.2% 60.2%);
+  --color-popover-foreground: hsl(30 10% 12%);
+
+  /* Primary = Loyola Gold */
+  --color-primary: hsl(47 98% 54%);
+  --color-primary-foreground: hsl(30 15% 10%);
+
+  --color-secondary: hsl(40 10% 94%);
+  --color-secondary-foreground: hsl(30 10% 20%);
+
+  --color-muted: hsl(40 8% 93%);
+  --color-muted-foreground: hsl(30 5% 45%);
+
+  --color-accent: hsl(47 90% 92%);
+  --color-accent-foreground: hsl(40 60% 28%);
+
+  --color-destructive: hsl(0 72% 51%);
   --color-destructive-foreground: hsl(0 0% 98%);
-  --color-border: hsl(240 5.9% 90%);
-  --color-input: hsl(240 5.9% 90%);
-  --color-ring: hsl(240 5.9% 10%);
-  --color-sidebar-background: hsl(0 0% 98%);
-  --color-sidebar-foreground: hsl(240 5.3% 26.1%);
-  --color-sidebar-primary: hsl(240 5.9% 10%);
-  --color-sidebar-primary-foreground: hsl(0 0% 98%);
-  --color-sidebar-accent: hsl(240 4.8% 95.9%);
-  --color-sidebar-accent-foreground: hsl(240 5.9% 10%);
-  --color-sidebar-border: hsl(220 13% 91%);
-  --color-sidebar-ring: hsl(217.2 91.2% 59.8%);
-  --radius: 0.5rem;
+
+  --color-border: hsl(40 10% 88%);
+  --color-input: hsl(40 10% 88%);
+  --color-ring: hsl(47 98% 54%);
+
+  /* Sidebar */
+  --color-sidebar-background: hsl(40 15% 97%);
+  --color-sidebar-foreground: hsl(30 8% 30%);
+  --color-sidebar-primary: hsl(47 98% 54%);
+  --color-sidebar-primary-foreground: hsl(30 15% 10%);
+  --color-sidebar-accent: hsl(47 80% 93%);
+  --color-sidebar-accent-foreground: hsl(40 50% 25%);
+  --color-sidebar-border: hsl(40 10% 90%);
+  --color-sidebar-ring: hsl(47 98% 54%);
+
+  --radius: 0.625rem;
+
+  /* Brand tokens */
+  --color-brand: hsl(47 98% 54%);
+  --color-brand-hover: hsl(43 95% 46%);
+  --color-brand-muted: hsl(47 80% 93%);
+  --color-brand-foreground: hsl(30 15% 10%);
+
+  --color-success: hsl(142 71% 45%);
+  --color-success-foreground: hsl(0 0% 100%);
+  --color-warning: hsl(38 92% 50%);
+  --color-warning-foreground: hsl(30 15% 10%);
+  --color-info: hsl(210 75% 55%);
+  --color-info-foreground: hsl(0 0% 100%);
 }
 
+/* Dark Mode — Loyola premium dark */
 .dark {
-  --color-background: hsl(240 10% 3.9%);
-  --color-foreground: hsl(0 0% 98%);
-  --color-card: hsl(240 10% 3.9%);
-  --color-card-foreground: hsl(0 0% 98%);
-  --color-popover: hsl(240 10% 3.9%);
-  --color-popover-foreground: hsl(0 0% 98%);
-  --color-primary: hsl(0 0% 98%);
-  --color-primary-foreground: hsl(240 5.9% 10%);
-  --color-secondary: hsl(240 3.7% 15.9%);
-  --color-secondary-foreground: hsl(0 0% 98%);
-  --color-muted: hsl(240 3.7% 15.9%);
-  --color-muted-foreground: hsl(240 5% 64.9%);
-  --color-accent: hsl(240 3.7% 15.9%);
-  --color-accent-foreground: hsl(0 0% 98%);
-  --color-destructive: hsl(0 62.8% 30.6%);
+  --color-background: hsl(0 0% 7%);
+  --color-foreground: hsl(40 15% 93%);
+
+  --color-card: hsl(0 0% 10%);
+  --color-card-foreground: hsl(40 15% 93%);
+
+  --color-popover: hsl(0 0% 10%);
+  --color-popover-foreground: hsl(40 15% 93%);
+
+  /* Primary = Loyola Gold */
+  --color-primary: hsl(47 98% 58%);
+  --color-primary-foreground: hsl(0 0% 7%);
+
+  --color-secondary: hsl(0 0% 14%);
+  --color-secondary-foreground: hsl(40 10% 88%);
+
+  --color-muted: hsl(0 0% 14%);
+  --color-muted-foreground: hsl(40 5% 55%);
+
+  --color-accent: hsl(47 40% 15%);
+  --color-accent-foreground: hsl(47 90% 75%);
+
+  --color-destructive: hsl(0 62% 40%);
   --color-destructive-foreground: hsl(0 0% 98%);
-  --color-border: hsl(240 3.7% 15.9%);
-  --color-input: hsl(240 3.7% 15.9%);
-  --color-ring: hsl(240 4.9% 83.9%);
-  --color-sidebar-background: hsl(240 5.9% 10%);
-  --color-sidebar-foreground: hsl(240 4.8% 95.9%);
-  --color-sidebar-primary: hsl(224.3 76.3% 48%);
-  --color-sidebar-primary-foreground: hsl(0 0% 100%);
-  --color-sidebar-accent: hsl(240 3.7% 15.9%);
-  --color-sidebar-accent-foreground: hsl(240 4.8% 95.9%);
-  --color-sidebar-border: hsl(240 3.7% 15.9%);
-  --color-sidebar-ring: hsl(217.2 91.2% 59.8%);
+
+  --color-border: hsl(0 0% 16%);
+  --color-input: hsl(0 0% 16%);
+  --color-ring: hsl(47 98% 58%);
+
+  /* Sidebar — dark sophisticated */
+  --color-sidebar-background: hsl(0 0% 5%);
+  --color-sidebar-foreground: hsl(40 8% 75%);
+  --color-sidebar-primary: hsl(47 98% 58%);
+  --color-sidebar-primary-foreground: hsl(0 0% 7%);
+  --color-sidebar-accent: hsl(47 30% 12%);
+  --color-sidebar-accent-foreground: hsl(47 80% 70%);
+  --color-sidebar-border: hsl(0 0% 14%);
+  --color-sidebar-ring: hsl(47 98% 58%);
+
+  /* Brand tokens dark */
+  --color-brand: hsl(47 98% 58%);
+  --color-brand-hover: hsl(47 98% 65%);
+  --color-brand-muted: hsl(47 30% 12%);
+  --color-brand-foreground: hsl(0 0% 7%);
+
+  --color-success: hsl(142 60% 40%);
+  --color-success-foreground: hsl(0 0% 100%);
+  --color-warning: hsl(38 80% 50%);
+  --color-warning-foreground: hsl(0 0% 7%);
+  --color-info: hsl(210 65% 50%);
+  --color-info-foreground: hsl(0 0% 100%);
 }
 
 @layer base {
@@ -66,6 +125,29 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Gold accent on selection */
+  ::selection {
+    background-color: hsl(47 98% 54% / 0.3);
+    color: inherit;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(40 10% 40% / 0.3);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(47 98% 54% / 0.5);
   }
 }
