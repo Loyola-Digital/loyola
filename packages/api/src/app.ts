@@ -16,6 +16,7 @@ import mindEnginePlugin from "./services/mind-engine.js";
 import claudePlugin from "./services/claude.js";
 import conversationServicePlugin from "./services/conversation.js";
 import clickupServicePlugin from "./services/clickup.js";
+import instagramServicePlugin from "./services/instagram.js";
 
 // Routes
 import healthRoutes from "./routes/health.js";
@@ -25,6 +26,7 @@ import chatRoutes from "./routes/chat.js";
 import uploadRoutes from "./routes/upload.js";
 import conversationRoutes from "./routes/conversations.js";
 import taskRoutes from "./routes/tasks.js";
+import instagramRoutes from "./routes/instagram.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -54,6 +56,7 @@ export async function buildServer() {
   await app.register(claudePlugin);
   await app.register(conversationServicePlugin);
   await app.register(clickupServicePlugin);
+  await app.register(instagramServicePlugin);
 
   // 6. Routes (last — consume services)
   await app.register(healthRoutes);
@@ -63,6 +66,7 @@ export async function buildServer() {
   await app.register(uploadRoutes);
   await app.register(conversationRoutes);
   await app.register(taskRoutes);
+  await app.register(instagramRoutes);
 
   return app;
 }
