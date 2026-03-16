@@ -10,6 +10,36 @@ import fp from "fastify-plugin";
 
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 const DEFAULT_MAX_TOKENS = 4096;
+const MAX_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 2000;
+
+function isRetryableError(err: unknown): boolean {
+  if (err instanceof Anthropic.APIError) {
+    return err.status === 529 || err.status === 429 || err.status >= 500;
+  }
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    return msg.includes("overloaded") || msg.includes("rate limit") || msg.includes("econnreset");
+  }
+  return false;
+}
+
+async function withRetry<T>(fn: () => Promise<T>, logger?: { warn: (msg: string) => void }): Promise<T> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt < MAX_RETRIES && isRetryableError(err)) {
+        const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+        logger?.warn(`Anthropic API retryable error (attempt ${attempt + 1}/${MAX_RETRIES}), retrying in ${delay}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("Unreachable");
+}
 
 export interface ClaudeStreamParams {
   systemPrompt: string;
@@ -85,20 +115,22 @@ export default fp(async function claudePlugin(fastify) {
       const maxToolRounds = 10;
 
       for (let round = 0; round < maxToolRounds; round++) {
-        const stream = client.messages.stream({
-          model: model ?? DEFAULT_MODEL,
-          max_tokens: maxTokens ?? DEFAULT_MAX_TOKENS,
-          system: systemPrompt,
-          messages: currentMessages,
-          ...(tools && tools.length > 0 ? { tools } : {}),
-        });
+        const message = await withRetry(async () => {
+          const stream = client.messages.stream({
+            model: model ?? DEFAULT_MODEL,
+            max_tokens: maxTokens ?? DEFAULT_MAX_TOKENS,
+            system: systemPrompt,
+            messages: currentMessages,
+            ...(tools && tools.length > 0 ? { tools } : {}),
+          });
 
-        stream.on("text", (text: string) => {
-          fullText += text;
-          onText?.(text);
-        });
+          stream.on("text", (text: string) => {
+            fullText += text;
+            onText?.(text);
+          });
 
-        const message = await stream.finalMessage();
+          return stream.finalMessage();
+        }, fastify.log);
         finalMessage = message;
 
         // Check if there are tool_use blocks
@@ -157,19 +189,21 @@ export default fp(async function claudePlugin(fastify) {
         finalMessage &&
         finalMessage.stop_reason === "tool_use"
       ) {
-        const finalStream = client.messages.stream({
-          model: model ?? DEFAULT_MODEL,
-          max_tokens: maxTokens ?? DEFAULT_MAX_TOKENS,
-          system: systemPrompt,
-          messages: currentMessages,
-        });
+        finalMessage = await withRetry(async () => {
+          const finalStream = client.messages.stream({
+            model: model ?? DEFAULT_MODEL,
+            max_tokens: maxTokens ?? DEFAULT_MAX_TOKENS,
+            system: systemPrompt,
+            messages: currentMessages,
+          });
 
-        finalStream.on("text", (text: string) => {
-          fullText += text;
-          onText?.(text);
-        });
+          finalStream.on("text", (text: string) => {
+            fullText += text;
+            onText?.(text);
+          });
 
-        finalMessage = await finalStream.finalMessage();
+          return finalStream.finalMessage();
+        }, fastify.log);
       }
 
       return {
