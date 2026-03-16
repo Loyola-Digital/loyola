@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTasks } from "@/lib/hooks/use-tasks";
 import { Badge } from "@/components/ui/badge";
 
@@ -82,22 +82,34 @@ export function AppSidebar() {
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   useResponsiveSidebar();
 
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const mql = window.matchMedia("(max-width: 767px)");
+    const handler = (e: MediaQueryListEvent | MediaQueryList) => setIsMobile(e.matches);
+    handler(mql);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
+
   return (
     <>
-      {/* Mobile drawer */}
-      <Sheet
-        open={sidebarOpen}
-        onOpenChange={setSidebarOpen}
-      >
-        <SheetContent side="left" className="w-[240px] p-0 md:hidden">
-          <SheetHeader className="border-b px-4 py-3">
-            <SheetTitle className="flex items-center gap-2">
-              <Image src="/logo.svg" alt="Loyola" width={120} height={28} className="brightness-0 invert" />
-            </SheetTitle>
-          </SheetHeader>
-          <NavContent collapsed={false} />
-        </SheetContent>
-      </Sheet>
+      {/* Mobile drawer — only mount Sheet on mobile to prevent overlay on desktop */}
+      {isMobile && (
+        <Sheet
+          open={sidebarOpen}
+          onOpenChange={setSidebarOpen}
+        >
+          <SheetContent side="left" className="w-[240px] p-0">
+            <SheetHeader className="border-b px-4 py-3">
+              <SheetTitle className="flex items-center gap-2">
+                <Image src="/logo.svg" alt="Loyola" width={120} height={28} className="brightness-0 invert" />
+              </SheetTitle>
+            </SheetHeader>
+            <NavContent collapsed={false} />
+          </SheetContent>
+        </Sheet>
+      )}
 
       {/* Desktop sidebar */}
       <aside
