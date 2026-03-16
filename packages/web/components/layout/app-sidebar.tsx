@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Brain, MessageSquare, CheckSquare, Settings } from "lucide-react";
+import { Brain, MessageSquare, CheckSquare, Settings, Instagram } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ const navItems = [
   { label: "Minds", href: "/minds", icon: Brain },
   { label: "Conversations", href: "/conversations", icon: MessageSquare },
   { label: "Tasks", href: "/tasks", icon: CheckSquare },
+  { label: "Instagram", href: "/instagram", icon: Instagram },
   { label: "Settings", href: "/settings", icon: Settings },
 ] as const;
 
