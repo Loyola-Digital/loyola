@@ -93,7 +93,7 @@ interface StoriesResponse {
 }
 
 interface InstagramService {
-  validateToken(accessToken: string): Promise<{ id: string; name: string; username: string }>;
+  validateToken(accessToken: string): Promise<{ id: string; name: string; username: string; profile_picture_url?: string }>;
   getProfile(accountId: string): Promise<InstagramProfile>;
   getMediaList(accountId: string, limit?: number, after?: string): Promise<{ data: InstagramMedia[]; nextCursor?: string }>;
   getMediaInsights(mediaId: string, accountId: string): Promise<InsightEntry[]>;
@@ -336,11 +336,15 @@ export default fp(async function instagramServicePlugin(fastify) {
 
   async function validateToken(
     accessToken: string,
-  ): Promise<{ id: string; name: string; username: string }> {
-    return graphFetch<{ id: string; name: string; username: string }>(
-      "/me?fields=id,name,username",
-      accessToken,
-    );
+  ): Promise<{ id: string; name: string; username: string; profile_picture_url?: string }> {
+    const result = await graphFetch<{
+      id: string | number;
+      name: string;
+      username: string;
+      profile_picture_url?: string;
+    }>("/me?fields=id,name,username,profile_picture_url", accessToken);
+    // Instagram IDs can exceed Number.MAX_SAFE_INTEGER; ensure string type.
+    return { ...result, id: String(result.id) };
   }
 
   async function getProfile(accountId: string): Promise<InstagramProfile> {

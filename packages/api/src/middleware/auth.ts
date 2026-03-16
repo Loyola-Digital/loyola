@@ -5,7 +5,8 @@ import { users } from "../db/schema.js";
 
 export default fp(async function authPlugin(fastify) {
   fastify.addHook("onRequest", async (request, reply) => {
-    // Skip auth for health check and webhooks
+    // Skip auth for health check, webhooks, and CORS preflight
+    if (request.method === "OPTIONS") return;
     if (request.url === "/api/health") return;
     if (request.url.startsWith("/api/webhooks/")) return;
 

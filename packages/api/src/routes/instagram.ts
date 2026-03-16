@@ -87,10 +87,15 @@ export default fp(async function instagramRoutes(fastify) {
       const profile = await fastify.instagramService.validateToken(accessToken);
 
       // Check for duplicate instagram_user_id
+      // profile.id comes from the Graph API as a string, but can be parsed as a
+      // number by JSON.parse when it fits in a float — force string to avoid
+      // type mismatch against the varchar column.
+      const instagramUserId = String(profile.id);
+
       const existing = await fastify.db
         .select({ id: instagramAccounts.id })
         .from(instagramAccounts)
-        .where(eq(instagramAccounts.instagramUserId, profile.id))
+        .where(eq(instagramAccounts.instagramUserId, instagramUserId))
         .limit(1);
 
       if (existing.length > 0) {
@@ -109,10 +114,11 @@ export default fp(async function instagramRoutes(fastify) {
         .values({
           userId,
           accountName,
-          instagramUserId: profile.id,
+          instagramUserId,
           instagramUsername: profile.username,
           accessTokenEncrypted: encrypted,
           accessTokenIv: iv,
+          profilePictureUrl: profile.profile_picture_url ?? null,
         })
         .returning();
 
