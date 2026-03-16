@@ -82,7 +82,7 @@ export default fp(async function claudePlugin(fastify) {
       let fullText = "";
       let finalMessage: Message | null = null;
       let toolCallCount = 0;
-      const maxToolRounds = 5;
+      const maxToolRounds = 10;
 
       for (let round = 0; round < maxToolRounds; round++) {
         const stream = client.messages.stream({
@@ -149,6 +149,27 @@ export default fp(async function claudePlugin(fastify) {
             content: toolResults as ContentBlockParam[],
           },
         ];
+      }
+
+      // Safety net: if loop ended after a tool call, do one final round
+      // without tools so Claude can generate a text response
+      if (
+        finalMessage &&
+        finalMessage.stop_reason === "tool_use"
+      ) {
+        const finalStream = client.messages.stream({
+          model: model ?? DEFAULT_MODEL,
+          max_tokens: maxTokens ?? DEFAULT_MAX_TOKENS,
+          system: systemPrompt,
+          messages: currentMessages,
+        });
+
+        finalStream.on("text", (text: string) => {
+          fullText += text;
+          onText?.(text);
+        });
+
+        finalMessage = await finalStream.finalMessage();
       }
 
       return {

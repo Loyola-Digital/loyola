@@ -130,13 +130,57 @@ const mockAuthPlugin = fp(async (fastify) => {
   });
 });
 
+// Mock ClickUp plugin
+const mockClickupPlugin = fp(async (fastify) => {
+  fastify.decorate("clickupService", {
+    isConfigured: () => false,
+    fetchApi: vi.fn(),
+    getTeams: vi.fn(),
+    getSpaces: vi.fn(),
+    getFolders: vi.fn(),
+    getLists: vi.fn(),
+    getFolderlessLists: vi.fn(),
+    getTasks: vi.fn(),
+    getTask: vi.fn(),
+    searchTasks: vi.fn(),
+    createTask: vi.fn(),
+  });
+});
+
 // Mock Claude plugin
 let mockStreamFn = vi.fn();
+
+function createMockAgentLoop(responseText: string, usage = { input_tokens: 100, output_tokens: 50 }) {
+  return vi.fn().mockImplementation(async (params: { onText?: (text: string) => void }) => {
+    // Simulate streaming text chunks
+    const chunks = responseText.match(/[\s\S]{1,10}/g) ?? [responseText];
+    for (const chunk of chunks) {
+      params.onText?.(chunk);
+    }
+
+    return {
+      fullText: responseText,
+      finalMessage: {
+        id: "msg_mock",
+        type: "message" as const,
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: responseText }],
+        model: "claude-sonnet-4-6",
+        stop_reason: "end_turn" as const,
+        stop_sequence: null,
+        usage,
+      },
+      toolCallCount: 0,
+    };
+  });
+}
+
+const mockAgentLoopFn = createMockAgentLoop("Hello! I am Test Mind One.");
 
 const mockClaudePlugin = fp(async (fastify) => {
   fastify.decorate("claude", {
     stream: mockStreamFn,
-    agentLoop: vi.fn(),
+    agentLoop: mockAgentLoopFn,
     client: {} as never,
   });
 });
@@ -215,6 +259,7 @@ describe("POST /api/chat", () => {
     await app.register(mockEnvPlugin);
     await app.register(mockAuthPlugin);
     await app.register(mockDbPlugin);
+    await app.register(mockClickupPlugin);
     await app.register(mindRegistryPlugin);
     await app.register(mindEnginePlugin);
     await app.register(mockClaudePlugin);
@@ -303,8 +348,27 @@ describe("POST /api/chat", () => {
   it("detects task_detected event in stream when task block present", async () => {
     const taskResponse = 'Here is a task.\n\n```json:task\n{"action":"create_task","title":"Test Task","description":"Do something","priority":2,"tags":["test"]}\n```';
 
-    // Override mock for this test
-    mockStreamFn.mockReturnValueOnce(createMockStream(taskResponse));
+    // Override agentLoop mock for this test
+    mockAgentLoopFn.mockImplementationOnce(async (params: { onText?: (text: string) => void }) => {
+      const chunks = taskResponse.match(/[\s\S]{1,10}/g) ?? [taskResponse];
+      for (const chunk of chunks) {
+        params.onText?.(chunk);
+      }
+      return {
+        fullText: taskResponse,
+        finalMessage: {
+          id: "msg_mock",
+          type: "message" as const,
+          role: "assistant" as const,
+          content: [{ type: "text" as const, text: taskResponse }],
+          model: "claude-sonnet-4-6",
+          stop_reason: "end_turn" as const,
+          stop_sequence: null,
+          usage: { input_tokens: 100, output_tokens: 50 },
+        },
+        toolCallCount: 0,
+      };
+    });
 
     const response = await app.inject({
       method: "POST",
@@ -323,10 +387,24 @@ describe("POST /api/chat", () => {
     expect(body).toContain('"title":"Test Task"');
   });
 
-  it("calls claude.stream with correct system prompt and messages", async () => {
-    mockStreamFn.mockReturnValueOnce(
-      createMockStream("Response from mind")
-    );
+  it("calls claude.agentLoop with correct system prompt and messages", async () => {
+    mockAgentLoopFn.mockImplementationOnce(async (params: { onText?: (text: string) => void; systemPrompt: string; messages: unknown[] }) => {
+      params.onText?.("Response from mind");
+      return {
+        fullText: "Response from mind",
+        finalMessage: {
+          id: "msg_mock",
+          type: "message" as const,
+          role: "assistant" as const,
+          content: [{ type: "text" as const, text: "Response from mind" }],
+          model: "claude-sonnet-4-6",
+          stop_reason: "end_turn" as const,
+          stop_sequence: null,
+          usage: { input_tokens: 100, output_tokens: 50 },
+        },
+        toolCallCount: 0,
+      };
+    });
 
     await app.inject({
       method: "POST",
@@ -338,20 +416,15 @@ describe("POST /api/chat", () => {
       },
     });
 
-    expect(mockStreamFn).toHaveBeenCalled();
-    const callArgs = mockStreamFn.mock.calls[mockStreamFn.mock.calls.length - 1][0];
+    expect(mockAgentLoopFn).toHaveBeenCalled();
+    const callArgs = mockAgentLoopFn.mock.calls[mockAgentLoopFn.mock.calls.length - 1][0];
     expect(callArgs.systemPrompt).toContain("You are Test Mind One");
     expect(callArgs.messages).toBeDefined();
     expect(Array.isArray(callArgs.messages)).toBe(true);
   });
 
-  it("emits error event on stream failure", async () => {
-    // Create a stream that will throw
-    const failingStream = {
-      on: vi.fn().mockReturnValue({ on: vi.fn() }),
-      finalMessage: () => Promise.reject(new Error("API rate limit exceeded")),
-    };
-    mockStreamFn.mockReturnValueOnce(failingStream);
+  it("emits error event on agentLoop failure", async () => {
+    mockAgentLoopFn.mockRejectedValueOnce(new Error("API rate limit exceeded"));
 
     const response = await app.inject({
       method: "POST",
