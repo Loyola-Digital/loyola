@@ -15,6 +15,7 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
   MINDS_BASE_PATH: z.string().default("./squads"),
   CLICKUP_API_TOKEN: z.string().min(1).optional(),
+  ENCRYPTION_KEY: z.string().length(64).regex(/^[0-9a-fA-F]+$/, "Must be 64-char hex string").optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

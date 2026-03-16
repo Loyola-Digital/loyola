@@ -2,12 +2,16 @@ import {
   pgTable,
   uuid,
   text,
+  varchar,
   timestamp,
+  date,
   integer,
+  boolean,
   pgEnum,
   jsonb,
   index,
   uniqueIndex,
+  unique,
   check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -170,5 +174,66 @@ export const delegatedTasks = pgTable(
     uniqueIndex("uq_tasks_clickup_task_id").on(table.clickupTaskId),
     check("chk_task_title_not_empty", sql`length(title) > 0`),
     check("chk_task_clickup_url", sql`clickup_url LIKE 'https://%'`),
+  ]
+);
+
+// ============================================================
+// INSTAGRAM TABLES (EPIC-3)
+// ============================================================
+
+export const instagramAccounts = pgTable(
+  "instagram_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    accountName: varchar("account_name", { length: 100 }).notNull(),
+    instagramUserId: varchar("instagram_user_id", { length: 50 }).notNull(),
+    instagramUsername: varchar("instagram_username", { length: 50 }),
+    accessTokenEncrypted: text("access_token_encrypted").notNull(),
+    accessTokenIv: text("access_token_iv").notNull(),
+    tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }),
+    profilePictureUrl: text("profile_picture_url"),
+    isActive: boolean("is_active").notNull().default(true),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_ig_accounts_instagram_user_id").on(table.instagramUserId),
+    index("idx_ig_accounts_user").on(table.userId),
+  ]
+);
+
+export const instagramMetricsCache = pgTable(
+  "instagram_metrics_cache",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => instagramAccounts.id, { onDelete: "cascade" }),
+    metricType: varchar("metric_type", { length: 50 }).notNull(),
+    metricData: jsonb("metric_data").notNull(),
+    periodStart: date("period_start"),
+    periodEnd: date("period_end"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    unique("uq_ig_metrics_account_type_period").on(
+      table.accountId,
+      table.metricType,
+      table.periodStart,
+      table.periodEnd
+    ),
+    index("idx_ig_metrics_account").on(table.accountId),
+    index("idx_ig_metrics_expires").on(table.expiresAt),
   ]
 );
