@@ -6,6 +6,7 @@ import "./types/index.js";
 import envPlugin from "./config/env.js";
 import corsPlugin from "./middleware/cors.js";
 import rateLimitPlugin from "./middleware/rate-limit.js";
+import multipart from "@fastify/multipart";
 import authPlugin from "./middleware/auth.js";
 import dbPlugin from "./db/client.js";
 
@@ -21,6 +22,7 @@ import healthRoutes from "./routes/health.js";
 import webhookRoutes from "./routes/webhooks.js";
 import mindsRoutes from "./routes/minds.js";
 import chatRoutes from "./routes/chat.js";
+import uploadRoutes from "./routes/upload.js";
 import conversationRoutes from "./routes/conversations.js";
 import taskRoutes from "./routes/tasks.js";
 
@@ -30,9 +32,10 @@ export async function buildServer() {
   // 1. Config (first — everything depends on env)
   await app.register(envPlugin);
 
-  // 2. Infrastructure (CORS, rate-limit)
+  // 2. Infrastructure (CORS, rate-limit, multipart)
   await app.register(corsPlugin);
   await app.register(rateLimitPlugin);
+  await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
 
   // 3. Auth — register clerkPlugin at root (onRequest so it runs before preHandler)
   await app.register(clerkPlugin, {
@@ -57,6 +60,7 @@ export async function buildServer() {
   await app.register(webhookRoutes);
   await app.register(mindsRoutes);
   await app.register(chatRoutes);
+  await app.register(uploadRoutes);
   await app.register(conversationRoutes);
   await app.register(taskRoutes);
 

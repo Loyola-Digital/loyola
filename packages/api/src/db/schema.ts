@@ -116,6 +116,11 @@ export const messages = pgTable(
       outputTokens?: number;
       taskDetected?: boolean;
       finishReason?: string;
+      attachments?: Array<{
+        filename: string;
+        mimeType: string;
+        textLength: number;
+      }>;
     }>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

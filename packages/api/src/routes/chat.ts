@@ -10,6 +10,14 @@ const chatRequestSchema = z.object({
   mindId: z.string().min(1),
   conversationId: z.string().uuid().nullable(),
   message: z.string().min(1).max(10000),
+  attachmentContext: z.string().max(200000).optional(),
+  attachmentMeta: z
+    .object({
+      filename: z.string(),
+      mimeType: z.string(),
+      textLength: z.number(),
+    })
+    .optional(),
 });
 
 export const TASK_BLOCK_REGEX = /```json:task\s*\n([\s\S]*?)```/;
@@ -41,8 +49,13 @@ export default fp(async function chatRoutes(fastify) {
         };
       }
 
-      const { mindId, conversationId: requestConvId, message } =
-        parseResult.data;
+      const {
+        mindId,
+        conversationId: requestConvId,
+        message,
+        attachmentContext,
+        attachmentMeta,
+      } = parseResult.data;
       const userId = request.userId;
 
       // Resolve mind
@@ -115,11 +128,19 @@ export default fp(async function chatRoutes(fastify) {
         // Emit conversation event
         sendSSE(reply, "conversation", { conversationId, isNew });
 
+        // Build user message content — prepend document if attachment present
+        const userContent = attachmentContext
+          ? `[Documento: ${attachmentMeta?.filename ?? "arquivo"}]\n${attachmentContext}\n\n---\n\n${message}`
+          : message;
+
         // Persist user message
         await fastify.db.insert(messages).values({
           conversationId,
           role: "user",
-          content: message,
+          content: userContent,
+          metadata: attachmentMeta
+            ? { attachments: [attachmentMeta] }
+            : undefined,
         });
 
         // Load message history (last 20)

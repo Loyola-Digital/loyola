@@ -3,7 +3,7 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MindAvatar } from "@/components/minds/mind-avatar";
 import { TaskSuggestionCard } from "@/components/chat/task-suggestion-card";
@@ -18,6 +18,7 @@ interface MessageBubbleProps {
   taskSuggestions?: TaskSuggestion[];
   onConfirmTask?: (index: number) => void;
   onDismissTask?: (index: number) => void;
+  attachmentMeta?: { filename: string };
 }
 
 export function MessageBubble({
@@ -29,6 +30,7 @@ export function MessageBubble({
   taskSuggestions,
   onConfirmTask,
   onDismissTask,
+  attachmentMeta,
 }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
   const isUser = role === "user";
@@ -61,6 +63,12 @@ export function MessageBubble({
               : "bg-card border border-border/50 rounded-bl-md",
           )}
         >
+          {isUser && attachmentMeta && (
+            <div className="mb-1.5 flex items-center gap-1 text-xs text-brand-foreground/70">
+              <Paperclip className="h-3 w-3" />
+              <span className="truncate max-w-[180px]">{attachmentMeta.filename}</span>
+            </div>
+          )}
           {isUser ? (
             <p className="whitespace-pre-wrap text-sm leading-relaxed">{content}</p>
           ) : content ? (

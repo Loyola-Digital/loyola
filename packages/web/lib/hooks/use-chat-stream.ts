@@ -7,6 +7,7 @@ import { useApiClient } from "@/lib/hooks/use-api-client";
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  attachmentMeta?: { filename: string; mimeType: string; textLength: number };
 }
 
 export interface TaskSuggestion {
@@ -53,13 +54,27 @@ export function useChatStream() {
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
-    async (mindId: string, message: string) => {
+    async (
+      mindId: string,
+      message: string,
+      attachment?: {
+        attachmentContext: string;
+        attachmentMeta: { filename: string; mimeType: string; textLength: number };
+      },
+    ) => {
       setError(null);
       setIsStreaming(true);
       setThinkingSteps([]);
 
-      // Optimistic: add user message
-      setMessages((prev) => [...prev, { role: "user", content: message }]);
+      // Optimistic: add user message (with attachment meta if present)
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "user",
+          content: message,
+          ...(attachment ? { attachmentMeta: attachment.attachmentMeta } : {}),
+        },
+      ]);
 
       // Add empty assistant message to accumulate
       setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
@@ -78,6 +93,12 @@ export function useChatStream() {
             mindId,
             conversationId,
             message,
+            ...(attachment
+              ? {
+                  attachmentContext: attachment.attachmentContext,
+                  attachmentMeta: attachment.attachmentMeta,
+                }
+              : {}),
           }),
           signal: abortRef.current.signal,
         });

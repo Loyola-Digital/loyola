@@ -9,6 +9,7 @@ import type { TaskSuggestion } from "@/lib/hooks/use-chat-stream";
 interface Message {
   role: "user" | "assistant";
   content: string;
+  attachmentMeta?: { filename: string; mimeType: string; textLength: number };
 }
 
 interface MessageListProps {
@@ -96,6 +97,7 @@ export function MessageList({
                 mindName={mindName}
                 isStreaming={isStreaming && i === messages.length - 1 && msg.role === "assistant"}
                 showAvatar={shouldShowAvatar(i)}
+                attachmentMeta={msg.attachmentMeta}
                 taskSuggestions={suggestionsForMessage}
                 onConfirmTask={
                   globalIndices

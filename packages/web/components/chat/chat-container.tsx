@@ -39,8 +39,14 @@ export function ChatContainer({
   }, [initialConversationId, loadHistory]);
 
   const handleSend = useCallback(
-    (message: string) => {
-      sendMessage(mindId, message);
+    (
+      message: string,
+      attachment?: {
+        attachmentContext: string;
+        attachmentMeta: { filename: string; mimeType: string; textLength: number };
+      },
+    ) => {
+      sendMessage(mindId, message, attachment);
     },
     [sendMessage, mindId],
   );
