@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Brain, MessageSquare, CheckSquare, Settings, Instagram } from "lucide-react";
+import { Brain, MessageSquare, CheckSquare, Settings, Instagram, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { Button } from "@/components/ui/button";
@@ -15,9 +15,13 @@ import {
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useEffect, useState } from "react";
 import { useTasks } from "@/lib/hooks/use-tasks";
 import { Badge } from "@/components/ui/badge";
+import { useProjects } from "@/lib/hooks/use-projects";
+import { ProjectFolder } from "@/components/layout/project-folder";
+import { CreateProjectDialog } from "@/components/layout/create-project-dialog";
 
 const navItems = [
   { label: "Minds", href: "/minds", icon: Brain },
@@ -30,10 +34,18 @@ const navItems = [
 function NavContent({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname();
   const { total: openTaskCount } = useTasks({ status: "open", limit: 1, offset: 0 });
+  const { data: projects, isLoading: projectsLoading } = useProjects();
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   return (
     <ScrollArea className="flex-1">
       <nav className="flex flex-col gap-1 p-2">
+        {/* Global section */}
+        {!collapsed && (
+          <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Global
+          </p>
+        )}
         {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           const Icon = item.icon;
@@ -60,7 +72,50 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
             </Button>
           );
         })}
+
+        {/* Separator */}
+        <Separator className="my-2" />
+
+        {/* Projects section */}
+        {!collapsed && (
+          <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Projetos
+          </p>
+        )}
+
+        {projectsLoading && (
+          <>
+            <Skeleton className="h-8 w-full rounded-md" />
+            <Skeleton className="h-8 w-full rounded-md" />
+          </>
+        )}
+
+        {!projectsLoading && projects && projects.length === 0 && !collapsed && (
+          <p className="px-2 py-2 text-xs text-muted-foreground">
+            Nenhum projeto. Crie o primeiro.
+          </p>
+        )}
+
+        {!projectsLoading &&
+          projects?.map((project) => (
+            <ProjectFolder key={project.id} project={project} collapsed={collapsed} />
+          ))}
+
+        {/* New project button */}
+        <Button
+          variant="ghost"
+          className={cn(
+            "justify-start gap-2 mt-1 text-muted-foreground hover:text-foreground",
+            collapsed && "justify-center px-2",
+          )}
+          onClick={() => setDialogOpen(true)}
+        >
+          <Plus className="h-4 w-4 shrink-0" />
+          {!collapsed && <span className="text-sm">Novo Projeto</span>}
+        </Button>
       </nav>
+
+      <CreateProjectDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </ScrollArea>
   );
 }
