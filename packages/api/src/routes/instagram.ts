@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { instagramAccounts } from "../db/schema.js";
 import { encrypt } from "../services/encryption.js";
@@ -53,17 +53,12 @@ function errorResponse(error: unknown): { error: string; code?: string } {
 // ============================================================
 
 export default fp(async function instagramRoutes(fastify) {
-  // ---- Ownership helper ----
-  async function getOwnedAccount(accountId: string, userId: string) {
+  // ---- Account lookup helper ----
+  async function getAccount(accountId: string) {
     const rows = await fastify.db
       .select()
       .from(instagramAccounts)
-      .where(
-        and(
-          eq(instagramAccounts.id, accountId),
-          eq(instagramAccounts.userId, userId),
-        ),
-      )
+      .where(eq(instagramAccounts.id, accountId))
       .limit(1);
 
     return rows.length > 0 ? rows[0] : null;
@@ -141,9 +136,7 @@ export default fp(async function instagramRoutes(fastify) {
   });
 
   // ---- GET /api/instagram/accounts ----
-  fastify.get("/api/instagram/accounts", async (request) => {
-    const userId = request.userId;
-
+  fastify.get("/api/instagram/accounts", async () => {
     const accounts = await fastify.db
       .select({
         id: instagramAccounts.id,
@@ -156,8 +149,7 @@ export default fp(async function instagramRoutes(fastify) {
         tokenExpiresAt: instagramAccounts.tokenExpiresAt,
         createdAt: instagramAccounts.createdAt,
       })
-      .from(instagramAccounts)
-      .where(eq(instagramAccounts.userId, userId));
+      .from(instagramAccounts);
 
     return accounts;
   });
@@ -169,7 +161,7 @@ export default fp(async function instagramRoutes(fastify) {
       return reply.code(400).send({ error: "ID inválido" });
     }
 
-    const account = await getOwnedAccount(paramResult.data.id, request.userId);
+    const account = await getAccount(paramResult.data.id);
     if (!account) {
       return reply.code(404).send({ error: "Conta não encontrada" });
     }
@@ -203,7 +195,7 @@ export default fp(async function instagramRoutes(fastify) {
       });
     }
 
-    const account = await getOwnedAccount(paramResult.data.id, request.userId);
+    const account = await getAccount(paramResult.data.id);
     if (!account) {
       return reply.code(404).send({ error: "Conta não encontrada" });
     }
@@ -257,7 +249,7 @@ export default fp(async function instagramRoutes(fastify) {
       return reply.code(400).send({ error: "ID inválido" });
     }
 
-    const account = await getOwnedAccount(paramResult.data.id, request.userId);
+    const account = await getAccount(paramResult.data.id);
     if (!account) {
       return reply.code(404).send({ error: "Conta não encontrada" });
     }
@@ -276,7 +268,7 @@ export default fp(async function instagramRoutes(fastify) {
       return reply.code(400).send({ error: "ID inválido" });
     }
 
-    const account = await getOwnedAccount(paramResult.data.id, request.userId);
+    const account = await getAccount(paramResult.data.id);
     if (!account) {
       return reply.code(404).send({ error: "Conta não encontrada" });
     }
@@ -300,10 +292,7 @@ export default fp(async function instagramRoutes(fastify) {
         return reply.code(400).send({ error: "ID inválido" });
       }
 
-      const account = await getOwnedAccount(
-        paramResult.data.id,
-        request.userId,
-      );
+      const account = await getAccount(paramResult.data.id);
       if (!account) {
         return reply.code(404).send({ error: "Conta não encontrada" });
       }
@@ -348,7 +337,7 @@ export default fp(async function instagramRoutes(fastify) {
       return reply.code(400).send({ error: "ID inválido" });
     }
 
-    const account = await getOwnedAccount(paramResult.data.id, request.userId);
+    const account = await getAccount(paramResult.data.id);
     if (!account) {
       return reply.code(404).send({ error: "Conta não encontrada" });
     }
@@ -381,10 +370,7 @@ export default fp(async function instagramRoutes(fastify) {
         return reply.code(400).send({ error: "ID inválido" });
       }
 
-      const account = await getOwnedAccount(
-        paramResult.data.id,
-        request.userId,
-      );
+      const account = await getAccount(paramResult.data.id);
       if (!account) {
         return reply.code(404).send({ error: "Conta não encontrada" });
       }
@@ -409,7 +395,7 @@ export default fp(async function instagramRoutes(fastify) {
       return reply.code(400).send({ error: "ID inválido" });
     }
 
-    const account = await getOwnedAccount(paramResult.data.id, request.userId);
+    const account = await getAccount(paramResult.data.id);
     if (!account) {
       return reply.code(404).send({ error: "Conta não encontrada" });
     }
@@ -431,7 +417,7 @@ export default fp(async function instagramRoutes(fastify) {
       return reply.code(400).send({ error: "ID inválido" });
     }
 
-    const account = await getOwnedAccount(paramResult.data.id, request.userId);
+    const account = await getAccount(paramResult.data.id);
     if (!account) {
       return reply.code(404).send({ error: "Conta não encontrada" });
     }
@@ -455,10 +441,7 @@ export default fp(async function instagramRoutes(fastify) {
         return reply.code(400).send({ error: "ID inválido" });
       }
 
-      const account = await getOwnedAccount(
-        paramResult.data.id,
-        request.userId,
-      );
+      const account = await getAccount(paramResult.data.id);
       if (!account) {
         return reply.code(404).send({ error: "Conta não encontrada" });
       }

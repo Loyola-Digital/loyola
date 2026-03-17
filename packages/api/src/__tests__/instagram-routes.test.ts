@@ -76,9 +76,7 @@ function setupSelectReturns(...results: unknown[][]) {
 function setupSelectNoLimit(...results: unknown[][]) {
   for (const result of results) {
     mockSelect.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue(result),
-      }),
+      from: vi.fn().mockResolvedValue(result),
     });
   }
 }
