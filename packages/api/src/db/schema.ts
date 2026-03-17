@@ -25,6 +25,7 @@ export const userRoleEnum = pgEnum("user_role", [
   "strategist",
   "manager",
   "admin",
+  "guest",
 ]);
 
 export const messageRoleEnum = pgEnum("message_role", ["user", "assistant"]);
@@ -243,6 +244,62 @@ export const instagramAccounts = pgTable(
     uniqueIndex("uq_ig_accounts_instagram_user_id").on(table.instagramUserId),
     index("idx_ig_accounts_user").on(table.userId),
     index("idx_ig_accounts_project").on(table.projectId),
+  ]
+);
+
+// ============================================================
+// GUEST ACCESS TABLES (EPIC-5)
+// ============================================================
+
+export const projectInvitations = pgTable(
+  "project_invitations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    invitedBy: uuid("invited_by")
+      .notNull()
+      .references(() => users.id),
+    email: text("email").notNull(),
+    token: text("token").notNull().unique(),
+    permissions: jsonb("permissions")
+      .notNull()
+      .default({ instagram: true, conversations: true, mind: true }),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_project_invitations_token").on(table.token),
+    index("idx_project_invitations_project").on(table.projectId),
+  ]
+);
+
+export const projectMembers = pgTable(
+  "project_members",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role").notNull().default("guest"),
+    permissions: jsonb("permissions")
+      .notNull()
+      .default({ instagram: true, conversations: true, mind: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("uq_project_members_project_user").on(table.projectId, table.userId),
+    index("idx_project_members_project").on(table.projectId),
+    index("idx_project_members_user").on(table.userId),
   ]
 );
 
