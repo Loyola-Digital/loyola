@@ -26,12 +26,15 @@ export interface UpdateAccountInput {
   accessToken?: string;
 }
 
-// 1.2 — GET /api/instagram/accounts
-export function useInstagramAccounts() {
+// 1.2 — GET /api/instagram/accounts (optional project filter)
+export function useInstagramAccounts(projectId?: string) {
   const apiClient = useApiClient();
+  const url = projectId
+    ? `/api/instagram/accounts?project_id=${projectId}`
+    : "/api/instagram/accounts";
   return useQuery({
-    queryKey: ["instagram-accounts"],
-    queryFn: () => apiClient<InstagramAccount[]>("/api/instagram/accounts"),
+    queryKey: ["instagram-accounts", projectId ?? null],
+    queryFn: () => apiClient<InstagramAccount[]>(url),
   });
 }
 

@@ -13,10 +13,11 @@ import { useInstagramAccounts } from "@/lib/hooks/use-instagram-accounts";
 interface AccountSelectorProps {
   value: string | null;
   onChange: (id: string) => void;
+  projectId?: string;
 }
 
-export function AccountSelector({ value, onChange }: AccountSelectorProps) {
-  const { data: accounts, isLoading } = useInstagramAccounts();
+export function AccountSelector({ value, onChange, projectId }: AccountSelectorProps) {
+  const { data: accounts, isLoading } = useInstagramAccounts(projectId);
 
   if (isLoading) return <Skeleton className="h-9 w-[200px]" />;
 
