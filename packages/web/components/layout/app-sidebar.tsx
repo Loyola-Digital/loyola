@@ -22,6 +22,8 @@ import { Badge } from "@/components/ui/badge";
 import { useProjects } from "@/lib/hooks/use-projects";
 import { ProjectFolder } from "@/components/layout/project-folder";
 import { CreateProjectDialog } from "@/components/layout/create-project-dialog";
+import { useUserRole } from "@/lib/hooks/use-user-role";
+import { GuestSidebar } from "@/components/layout/guest-sidebar";
 
 const navItems = [
   { label: "Minds", href: "/minds", icon: Brain },
@@ -135,6 +137,9 @@ function useResponsiveSidebar() {
 }
 
 export function AppSidebar() {
+  const role = useUserRole();
+  if (role === "guest") return <GuestSidebar />;
+
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   useResponsiveSidebar();

@@ -1,11 +1,16 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import { useProjects } from "@/lib/hooks/use-projects";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery } from "@tanstack/react-query";
-import { Instagram } from "lucide-react";
+import { Instagram, UserPlus, Users } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { useUserRole } from "@/lib/hooks/use-user-role";
+import { InviteMemberDialog } from "@/components/projects/invite-member-dialog";
+import { MemberPermissionsEditor } from "@/components/projects/member-permissions-editor";
 import type { InstagramAccount } from "@/lib/hooks/use-instagram-accounts";
 
 interface Props {
@@ -15,6 +20,10 @@ interface Props {
 export default function ProjectPage({ params }: Props) {
   const { id } = use(params);
   const apiClient = useApiClient();
+  const role = useUserRole();
+  const isAdmin = role !== "guest";
+
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const { data: projects, isLoading: projectsLoading } = useProjects();
   const project = projects?.find((p) => p.id === id);
@@ -45,15 +54,23 @@ export default function ProjectPage({ params }: Props) {
 
   return (
     <div className="p-6 flex flex-col gap-6 max-w-2xl">
-      <div className="flex items-center gap-3">
-        <span
-          className="h-4 w-4 rounded-full shrink-0"
-          style={{ backgroundColor: project.color ?? "#94a3b8" }}
-        />
-        <div>
-          <h1 className="text-2xl font-bold">{project.name}</h1>
-          <p className="text-muted-foreground text-sm">{project.clientName}</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span
+            className="h-4 w-4 rounded-full shrink-0"
+            style={{ backgroundColor: project.color ?? "#94a3b8" }}
+          />
+          <div>
+            <h1 className="text-2xl font-bold">{project.name}</h1>
+            <p className="text-muted-foreground text-sm">{project.clientName}</p>
+          </div>
         </div>
+        {isAdmin && (
+          <Button size="sm" variant="outline" onClick={() => setInviteOpen(true)}>
+            <UserPlus className="h-4 w-4 mr-1.5" />
+            Convidar
+          </Button>
+        )}
       </div>
 
       <div>
@@ -85,6 +102,27 @@ export default function ProjectPage({ params }: Props) {
           </ul>
         )}
       </div>
+
+      {isAdmin && (
+        <>
+          <Separator />
+          <div>
+            <h2 className="text-base font-semibold mb-3 flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Membros convidados
+            </h2>
+            <MemberPermissionsEditor projectId={id} />
+          </div>
+        </>
+      )}
+
+      {isAdmin && (
+        <InviteMemberDialog
+          projectId={id}
+          open={inviteOpen}
+          onOpenChange={setInviteOpen}
+        />
+      )}
     </div>
   );
 }

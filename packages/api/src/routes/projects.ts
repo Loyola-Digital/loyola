@@ -258,6 +258,31 @@ export default fp(async function projectRoutes(fastify) {
     return members;
   });
 
+  // ---- GET /api/projects/:id/my-membership ---- (current user's own membership)
+  fastify.get("/api/projects/:id/my-membership", async (request, reply) => {
+    const paramResult = idParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.code(400).send({ error: "ID inválido" });
+    }
+
+    const [member] = await fastify.db
+      .select({ permissions: projectMembers.permissions })
+      .from(projectMembers)
+      .where(
+        and(
+          eq(projectMembers.projectId, paramResult.data.id),
+          eq(projectMembers.userId, request.userId),
+        ),
+      )
+      .limit(1);
+
+    if (!member) {
+      return reply.code(404).send({ error: "Membro não encontrado" });
+    }
+
+    return { permissions: member.permissions };
+  });
+
   // ---- DELETE /api/projects/:id/members/:userId ---- (AC: 4)
   fastify.delete("/api/projects/:id/members/:userId", async (request, reply) => {
     const paramResult = memberParamSchema.safeParse(request.params);
