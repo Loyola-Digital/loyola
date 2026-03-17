@@ -32,10 +32,9 @@ Introduzir o conceito de **Projeto** (= cliente) como unidade organizacional cen
 - Sidebar redesenhada: seção global (existente) + seção Projetos com folders colapsáveis
 - Dashboard de Instagram por projeto em `/projects/[id]/instagram`
 - Conversas por projeto em `/projects/[id]/conversations`
-- Tasks por projeto em `/projects/[id]/tasks`
 - Visão global de Instagram (`/instagram`) continua — admins veem todas as contas
 - Settings de Instagram migrado: conta vinculada a projeto no momento do cadastro
-- API scoped: endpoints de instagram/conversas/tasks filtram por projeto quando context disponível
+- API scoped: endpoints de instagram/conversas filtram por projeto quando context disponível
 
 **Out of Scope:**
 - Sistema de guests (EPIC-5)
@@ -83,9 +82,7 @@ ALTER TABLE instagram_accounts
 ALTER TABLE conversations
   ADD COLUMN project_id UUID REFERENCES projects(id) ON DELETE SET NULL;
 
--- delegated_tasks: adicionar project_id (nullable)
-ALTER TABLE delegated_tasks
-  ADD COLUMN project_id UUID REFERENCES projects(id) ON DELETE SET NULL;
+-- delegated_tasks: sem alteração nesta epic (tasks não são exibidas por projeto)
 ```
 
 ### Backend (Fastify)
@@ -95,7 +92,7 @@ ALTER TABLE delegated_tasks
 - `instagram_accounts` passa a ter `project_id` obrigatório no POST
 - GET `/api/instagram/accounts` aceita `?project_id=` para filtrar por projeto
 - GET global `/api/instagram/accounts` (sem filtro) continua funcionando para admins
-- `conversations` e `tasks` filtráveis por `project_id`
+- `conversations` filtráveis por `project_id`
 
 ### Frontend (Next.js)
 
@@ -105,14 +102,13 @@ ALTER TABLE delegated_tasks
 /projects/[id]                     → overview do projeto
 /projects/[id]/instagram           → dashboard Instagram do projeto
 /projects/[id]/conversations       → conversas do projeto
-/projects/[id]/tasks               → tasks do projeto
 ```
 
 **Rotas globais (mantidas para admins):**
 ```
 /instagram                         → todos os clientes (seletor de conta global)
 /conversations                     → todas as conversas
-/tasks                             → todas as tasks
+/tasks                             → todas as tasks (global apenas)
 ```
 
 **Sidebar redesenhada:**
@@ -127,8 +123,7 @@ ALTER TABLE delegated_tasks
 [Projetos]
   📁 Cliente XYZ      ← colapsável (chevron)
     ├ 📊 Instagram
-    ├ 💬 Conversas
-    └ ✅ Tasks
+    └ 💬 Conversas
   📁 Cliente ABC
     └ ...
   + Novo Projeto
@@ -158,7 +153,7 @@ Phase 1: Foundation          Phase 2: API Layer          Phase 3: Frontend
                                                           ┌─────────────────┐
                                                           │  4.5             │
                                                           │  Project-scoped  │
-                                                          │  Convs & Tasks   │
+                                                          │  Conversations   │
                                                           └─────────────────┘
 ```
 
@@ -183,13 +178,12 @@ depends_on: ["3.1.2"]
 epic: "EPIC-4-MULTI-PROJECT-STRUCTURE"
 ```
 
-**Description:** Criar tabela `projects` no PostgreSQL via Drizzle, adicionar `project_id` FK em `instagram_accounts` (obrigatório), `conversations` e `delegated_tasks` (nullable). Gerar e aplicar migration.
+**Description:** Criar tabela `projects` no PostgreSQL via Drizzle, adicionar `project_id` FK em `instagram_accounts` (obrigatório) e `conversations` (nullable). Gerar e aplicar migration.
 
 **Acceptance Criteria:**
 - [ ] Tabela `projects` criada com todos os campos do schema acima
 - [ ] `instagram_accounts.project_id` FK → `projects.id` ON DELETE CASCADE
 - [ ] `conversations.project_id` FK → `projects.id` ON DELETE SET NULL (nullable)
-- [ ] `delegated_tasks.project_id` FK → `projects.id` ON DELETE SET NULL (nullable)
 - [ ] Índices: `idx_projects_created_by`, `idx_ig_accounts_project`, `idx_conversations_project`
 - [ ] Drizzle schema atualizado (`db/schema.ts`)
 - [ ] Migration gerada (`pnpm db:generate`) e aplicável (`pnpm db:push`)
@@ -229,7 +223,6 @@ epic: "EPIC-4-MULTI-PROJECT-STRUCTURE"
 - [ ] `GET /api/instagram/accounts?project_id=` — Filtra por projeto (sem filtro = todas as contas do user)
 - [ ] `GET /api/projects/:id/instagram/accounts` — Atalho: contas do projeto
 - [ ] `GET /api/projects/:id/conversations` — Conversas do projeto
-- [ ] `GET /api/projects/:id/tasks` — Tasks do projeto
 - [ ] Todos os endpoints protegidos por auth (Clerk)
 - [ ] Projetos scoped por `created_by` (admin só gerencia seus próprios projetos — para MVP todos os admins podem ver todos via listagem geral)
 - [ ] Testes de integração para cada endpoint
@@ -268,7 +261,7 @@ epic: "EPIC-4-MULTI-PROJECT-STRUCTURE"
   - Chevron toggle (expand/collapse)
   - Cor do projeto como indicador visual (dot ou borda)
   - Nome do projeto
-  - Subitens: 📊 Instagram, 💬 Conversas, ✅ Tasks
+  - Subitens: 📊 Instagram, 💬 Conversas
 - [ ] Estado de collapse persistido no localStorage por projeto
 - [ ] Botão "+ Novo Projeto" ao final da lista de projetos abre dialog de criação
 - [ ] Projeto ativo destacado visualmente
@@ -276,7 +269,7 @@ epic: "EPIC-4-MULTI-PROJECT-STRUCTURE"
 - [ ] Sem projetos: empty state inline "Crie seu primeiro projeto"
 - [ ] Responsivo: sidebar em mobile vira sheet (comportamento atual mantido)
 - [ ] Link de projeto ativo: `/projects/[id]` (overview)
-- [ ] Subitens navegam para: `/projects/[id]/instagram`, `/projects/[id]/conversations`, `/projects/[id]/tasks`
+- [ ] Subitens navegam para: `/projects/[id]/instagram`, `/projects/[id]/conversations`
 
 **File List:**
 - [ ] `packages/web/components/layout/app-sidebar.tsx` — Redesenho completo
@@ -321,11 +314,11 @@ epic: "EPIC-4-MULTI-PROJECT-STRUCTURE"
 
 ---
 
-### Story 4.5 — Project-scoped Conversations & Tasks
+### Story 4.5 — Project-scoped Conversations
 
 ```yaml
 id: "4.5"
-title: "Project-scoped Conversations & Tasks"
+title: "Project-scoped Conversations"
 status: Draft
 executor: "@dev"
 quality_gate: "@qa"
@@ -336,21 +329,18 @@ depends_on: ["4.3"]
 epic: "EPIC-4-MULTI-PROJECT-STRUCTURE"
 ```
 
-**Description:** Páginas de Conversas e Tasks dentro do contexto de um projeto, mostrando apenas os dados vinculados a ele. Conversas iniciadas dentro de um projeto são automaticamente associadas ao projeto.
+**Description:** Página de Conversas dentro do contexto de um projeto, mostrando apenas as conversas vinculadas a ele. Conversas iniciadas dentro de um projeto são automaticamente associadas ao projeto.
 
 **Acceptance Criteria:**
 - [ ] Rota `/projects/[id]/conversations` — lista conversas do projeto
-- [ ] Rota `/projects/[id]/tasks` — lista tasks do projeto
 - [ ] Ao iniciar nova conversa dentro de `/projects/[id]/conversations`: `conversation.project_id` = ID do projeto
 - [ ] Conversa criada no contexto do projeto aparece no sidebar do projeto, não na lista global
-- [ ] Task criada por mind no contexto do projeto: `task.project_id` preenchido automaticamente
-- [ ] Páginas globais `/conversations` e `/tasks` continuam mostrando todos os dados (sem filtro de projeto)
-- [ ] Breadcrumb correto em cada rota de projeto
+- [ ] Página global `/conversations` continua mostrando todas as conversas (sem filtro de projeto)
+- [ ] Breadcrumb correto: Projetos > [Nome do Cliente] > Conversas
 - [ ] Loading states e empty states por projeto
 
 **File List:**
 - [ ] `packages/web/app/(app)/projects/[id]/conversations/page.tsx` — **NEW**
-- [ ] `packages/web/app/(app)/projects/[id]/tasks/page.tsx` — **NEW**
 - [ ] `packages/web/lib/hooks/use-conversations.ts` — Atualizar: aceitar projectId
 - [ ] `packages/api/src/routes/conversations.ts` — Atualizar: passar project_id na criação
 - [ ] `packages/api/src/routes/chat.ts` — Atualizar: inferir project_id do contexto
@@ -400,7 +390,7 @@ EPIC-3 (done)
 - [ ] Todas as 5 stories implementadas e testadas
 - [ ] Admin consegue criar projeto, vincular conta Instagram, e navegar pelo projeto
 - [ ] Sidebar exibe folders colapsáveis por projeto
-- [ ] Dashboard de Instagram e conversas funcionam dentro do projeto
+- [ ] Dashboard de Instagram e conversas funcionam dentro do contexto do projeto
 - [ ] Rotas globais existentes não quebram
 - [ ] Migration aplicada sem perda de dados
 - [ ] Lint + typecheck + build sem erros

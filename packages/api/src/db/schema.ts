@@ -71,6 +71,34 @@ export const users = pgTable(
   ]
 );
 
+// ============================================================
+// PROJECTS TABLES (EPIC-4)
+// ============================================================
+
+export const projects = pgTable(
+  "projects",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: varchar("name", { length: 100 }).notNull(),
+    clientName: varchar("client_name", { length: 100 }).notNull(),
+    description: text("description"),
+    color: varchar("color", { length: 7 }),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("idx_projects_created_by").on(table.createdBy),
+  ]
+);
+
 export const conversations = pgTable(
   "conversations",
   {
@@ -84,6 +112,9 @@ export const conversations = pgTable(
     title: text("title"),
     messageCount: integer("message_count").notNull().default(0),
     totalTokens: integer("total_tokens").notNull().default(0),
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -99,6 +130,7 @@ export const conversations = pgTable(
     index("idx_conversations_user_mind")
       .on(table.userId, table.mindId)
       .where(sql`deleted_at IS NULL`),
+    index("idx_conversations_project").on(table.projectId),
     check("chk_message_count_positive", sql`message_count >= 0`),
     check("chk_total_tokens_positive", sql`total_tokens >= 0`),
   ]
@@ -195,6 +227,9 @@ export const instagramAccounts = pgTable(
     accessTokenIv: text("access_token_iv").notNull(),
     tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }),
     profilePictureUrl: text("profile_picture_url"),
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "cascade",
+    }),
     isActive: boolean("is_active").notNull().default(true),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -207,6 +242,7 @@ export const instagramAccounts = pgTable(
   (table) => [
     uniqueIndex("uq_ig_accounts_instagram_user_id").on(table.instagramUserId),
     index("idx_ig_accounts_user").on(table.userId),
+    index("idx_ig_accounts_project").on(table.projectId),
   ]
 );
 
