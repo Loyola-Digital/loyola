@@ -81,6 +81,47 @@ interface InsightsResponse {
   data: InsightEntry[];
 }
 
+// v21.0 demographics format (follower_demographics with breakdown)
+interface DemographicsResult {
+  dimension_values: string[];
+  value: number;
+}
+interface DemographicsBreakdown {
+  dimension_keys: string[];
+  results: DemographicsResult[];
+}
+interface DemographicsEntry {
+  name: string;
+  period: string;
+  title: string;
+  id: string;
+  total_value: { breakdowns: DemographicsBreakdown[] };
+}
+interface DemographicsResponse {
+  data: DemographicsEntry[];
+}
+
+function transformDemographicsBreakdown(
+  resp: DemographicsResponse,
+  legacyName: string,
+): InsightEntry | null {
+  const entry = resp.data?.[0];
+  if (!entry?.total_value?.breakdowns?.length) return null;
+  const breakdown = entry.total_value.breakdowns[0];
+  const valueMap: Record<string, number> = {};
+  for (const r of breakdown.results) {
+    valueMap[r.dimension_values.join(" ")] = r.value;
+  }
+  return {
+    name: legacyName,
+    period: "lifetime",
+    values: [{ value: valueMap }],
+    title: legacyName,
+    description: "",
+    id: entry.id ?? legacyName,
+  };
+}
+
 interface StoryMedia {
   id: string;
   media_type: string;
@@ -409,7 +450,7 @@ export default fp(async function instagramServicePlugin(fastify) {
 
     const { token, igUserId } = await getDecryptedToken(accountId);
     const result = await graphFetch<InsightsResponse>(
-      `/${igUserId}/insights?metric=impressions,reach,follower_count,profile_views&period=${period}&since=${since}&until=${until}`,
+      `/${igUserId}/insights?metric=reach,accounts_engaged&period=${period}&since=${since}&until=${until}`,
       token,
     );
 
@@ -429,13 +470,54 @@ export default fp(async function instagramServicePlugin(fastify) {
     if (cached) return cached as InsightEntry[];
 
     const { token, igUserId } = await getDecryptedToken(accountId);
-    const result = await graphFetch<InsightsResponse>(
-      `/${igUserId}/insights?metric=audience_city,audience_country,audience_gender_age&period=lifetime`,
-      token,
-    );
 
-    await setCachedMetric(accountId, "demographics", result.data, CACHE_TTL.demographics);
-    return result.data;
+    // v21.0: metric_type=total_value is required for new demographic metrics.
+    const [ageResult, genderResult, countryResult, cityResult] = await Promise.allSettled([
+      graphFetch<DemographicsResponse>(
+        `/${igUserId}/insights?metric=follower_demographics&period=month&metric_type=total_value&breakdown=age`,
+        token,
+      ),
+      graphFetch<DemographicsResponse>(
+        `/${igUserId}/insights?metric=follower_demographics&period=month&metric_type=total_value&breakdown=gender`,
+        token,
+      ),
+      graphFetch<DemographicsResponse>(
+        `/${igUserId}/insights?metric=follower_demographics&period=month&metric_type=total_value&breakdown=country`,
+        token,
+      ),
+      graphFetch<DemographicsResponse>(
+        `/${igUserId}/insights?metric=follower_demographics&period=month&metric_type=total_value&breakdown=city`,
+        token,
+      ),
+    ]);
+
+    const ageResp    = ageResult.status    === "fulfilled" ? ageResult.value    : null;
+    const genderResp = genderResult.status === "fulfilled" ? genderResult.value : null;
+    const countryResp= countryResult.status=== "fulfilled" ? countryResult.value: null;
+    const cityResp   = cityResult.status   === "fulfilled" ? cityResult.value   : null;
+
+    // If every breakdown failed, surface the first error so the UI shows it
+    if (!ageResp && !genderResp && !countryResp && !cityResp) {
+      const firstRejected = [ageResult, genderResult, countryResult, cityResult]
+        .find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+      if (firstRejected) throw firstRejected.reason;
+      return [];
+    }
+
+    const result: InsightEntry[] = [];
+    // Merge age + gender into one audience_gender_age entry
+    const ageEntry    = ageResp    ? transformDemographicsBreakdown(ageResp,    "audience_gender_age") : null;
+    const genderEntry = genderResp ? transformDemographicsBreakdown(genderResp, "audience_gender_age") : null;
+    const mergedAgeGender = ageEntry ?? genderEntry;
+    if (mergedAgeGender) result.push(mergedAgeGender);
+
+    const co = countryResp ? transformDemographicsBreakdown(countryResp, "audience_country") : null;
+    const ci = cityResp    ? transformDemographicsBreakdown(cityResp,    "audience_city")    : null;
+    if (co) result.push(co);
+    if (ci) result.push(ci);
+
+    await setCachedMetric(accountId, "demographics", result, CACHE_TTL.demographics);
+    return result;
   }
 
   async function getStories(

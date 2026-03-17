@@ -21,6 +21,7 @@ import { ptBR } from "date-fns/locale";
 interface ReachChartProps {
   data?: InsightEntry[];
   isLoading: boolean;
+  error?: Error | null;
   onRefresh?: () => void;
   isRefreshing?: boolean;
 }
@@ -33,7 +34,8 @@ interface ChartPoint {
 
 function buildChartData(entries: InsightEntry[]): ChartPoint[] {
   const reachEntry = entries.find((e) => e.name === "reach");
-  const impressionsEntry = entries.find((e) => e.name === "impressions");
+  // v21.0: accounts_engaged replaces impressions/views
+  const viewsEntry = entries.find((e) => e.name === "accounts_engaged" || e.name === "views" || e.name === "impressions");
 
   if (!reachEntry) return [];
 
@@ -41,13 +43,13 @@ function buildChartData(entries: InsightEntry[]): ChartPoint[] {
     date: v.end_time ? format(parseISO(v.end_time), "dd/MM", { locale: ptBR }) : String(i),
     reach: typeof v.value === "number" ? v.value : 0,
     impressions:
-      impressionsEntry && typeof impressionsEntry.values[i]?.value === "number"
-        ? (impressionsEntry.values[i].value as number)
+      viewsEntry && typeof viewsEntry.values[i]?.value === "number"
+        ? (viewsEntry.values[i].value as number)
         : 0,
   }));
 }
 
-export function ReachChart({ data, isLoading, onRefresh, isRefreshing }: ReachChartProps) {
+export function ReachChart({ data, isLoading, error, onRefresh, isRefreshing }: ReachChartProps) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -61,6 +63,10 @@ export function ReachChart({ data, isLoading, onRefresh, isRefreshing }: ReachCh
       <CardContent>
         {isLoading ? (
           <Skeleton className="h-[240px] w-full" />
+        ) : error ? (
+          <div className="flex h-[240px] items-center justify-center text-sm text-destructive text-center px-4">
+            {error.message}
+          </div>
         ) : !data || data.length === 0 ? (
           <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
             Sem dados disponíveis
@@ -76,7 +82,7 @@ export function ReachChart({ data, isLoading, onRefresh, isRefreshing }: ReachCh
                   <Tooltip />
                   <Legend />
                   <Line type="monotone" dataKey="reach" name="Alcance" stroke="#d4a843" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="impressions" name="Impressões" stroke="#94a3b8" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="impressions" name="Engajamento" stroke="#94a3b8" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

@@ -71,14 +71,14 @@ export default function InstagramDashboardPage() {
   }, [accounts, selectedAccountId]);
 
   const { data: profile, isLoading: profileLoading } = useInstagramProfile(selectedAccountId);
-  const { data: insights, isLoading: insightsLoading } = useInstagramInsights(
+  const { data: insights, isLoading: insightsLoading, error: insightsError } = useInstagramInsights(
     selectedAccountId,
-    period.period === "custom" ? "day" : "day",
+    "day",
     period.since,
     period.until,
   );
   const { data: media, isLoading: mediaLoading } = useInstagramMedia(selectedAccountId, 25);
-  const { data: demographics, isLoading: demographicsLoading } = useInstagramDemographics(selectedAccountId);
+  const { data: demographics, isLoading: demographicsLoading, error: demographicsError } = useInstagramDemographics(selectedAccountId);
   const { data: stories, isLoading: storiesLoading } = useInstagramStories(selectedAccountId);
   const { data: reels, isLoading: reelsLoading } = useInstagramReels(selectedAccountId);
   const refresh = useRefreshInstagram(selectedAccountId);
@@ -128,6 +128,7 @@ export default function InstagramDashboardPage() {
       <ReachChart
         data={insights?.data}
         isLoading={insightsLoading}
+        error={insightsError as Error | null}
         onRefresh={handleRefreshAll}
         isRefreshing={refresh.isPending}
       />
@@ -160,6 +161,7 @@ export default function InstagramDashboardPage() {
       <AudienceCharts
         data={demographics}
         isLoading={demographicsLoading}
+        error={demographicsError as Error | null}
         onRefresh={handleRefreshAll}
         isRefreshing={refresh.isPending}
       />

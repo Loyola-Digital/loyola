@@ -18,6 +18,7 @@ import type { InsightEntry } from "@/lib/hooks/use-instagram";
 interface AudienceChartsProps {
   data?: InsightEntry[];
   isLoading: boolean;
+  error?: Error | null;
   onRefresh?: () => void;
   isRefreshing?: boolean;
 }
@@ -37,7 +38,7 @@ function parseBreakdown(entry?: InsightEntry): BarPoint[] {
     .slice(0, 10);
 }
 
-export function AudienceCharts({ data, isLoading, onRefresh, isRefreshing }: AudienceChartsProps) {
+export function AudienceCharts({ data, isLoading, error, onRefresh, isRefreshing }: AudienceChartsProps) {
   const cityEntry = data?.find((e) => e.name === "audience_city");
   const countryEntry = data?.find((e) => e.name === "audience_country");
   const genderAgeEntry = data?.find((e) => e.name === "audience_gender_age");
@@ -62,6 +63,8 @@ export function AudienceCharts({ data, isLoading, onRefresh, isRefreshing }: Aud
             <Skeleton className="h-[180px] w-full" />
             <Skeleton className="h-[180px] w-full" />
           </>
+        ) : error ? (
+          <p className="text-sm text-destructive py-4 text-center">{error.message}</p>
         ) : !data || data.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4 text-center">Sem dados de audiência</p>
         ) : (
