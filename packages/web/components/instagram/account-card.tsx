@@ -14,7 +14,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { InstagramAccount } from "@/lib/hooks/use-instagram-accounts";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useProjects } from "@/lib/hooks/use-projects";
+import { useAssignAccountToProject, type InstagramAccount } from "@/lib/hooks/use-instagram-accounts";
+import { toast } from "sonner";
 
 interface AccountCardProps {
   account: InstagramAccount;
@@ -66,12 +75,26 @@ export function AccountCard({
   onRefresh,
   isRefreshing,
 }: AccountCardProps) {
+  const { data: projects } = useProjects();
+  const assignAccount = useAssignAccountToProject();
+
   const initials = account.accountName
     .split(" ")
     .map((w) => w[0])
     .slice(0, 2)
     .join("")
     .toUpperCase();
+
+  function handleProjectChange(value: string) {
+    const projectId = value === "__none__" ? null : value;
+    assignAccount.mutate(
+      { accountId: account.id, projectId },
+      {
+        onSuccess: () => toast.success("Projeto atualizado."),
+        onError: () => toast.error("Erro ao atualizar projeto."),
+      },
+    );
+  }
 
   return (
     <Card>
@@ -114,6 +137,29 @@ export function AccountCard({
                 </span>
               )}
             </div>
+            {/* Project assignment */}
+            {projects && projects.length > 0 && (
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-muted-foreground shrink-0">Projeto:</span>
+                <Select
+                  value={account.projectId ?? "__none__"}
+                  onValueChange={handleProjectChange}
+                  disabled={assignAccount.isPending}
+                >
+                  <SelectTrigger className="h-7 text-xs w-full max-w-[200px]">
+                    <SelectValue placeholder="Sem projeto" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Sem projeto</SelectItem>
+                    {projects.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           {/* 2.3 — Ações via DropdownMenu */}
