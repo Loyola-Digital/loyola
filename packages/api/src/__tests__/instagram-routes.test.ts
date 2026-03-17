@@ -306,6 +306,11 @@ describe("Instagram Routes", () => {
 
   it("deletes owned account", async () => {
     setupSelectReturns([MOCK_ACCOUNT_ROW]);
+    // First delete: cache rows
+    mockDelete.mockReturnValueOnce({
+      where: vi.fn().mockResolvedValue(undefined),
+    });
+    // Second delete: account row
     mockDelete.mockReturnValueOnce({
       where: vi.fn().mockResolvedValue(undefined),
     });

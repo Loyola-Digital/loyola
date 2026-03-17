@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { instagramAccounts } from "../db/schema.js";
+import { instagramAccounts, instagramMetricsCache } from "../db/schema.js";
 import { encrypt } from "../services/encryption.js";
 import { InstagramApiError } from "../services/instagram.js";
 
@@ -253,6 +253,11 @@ export default fp(async function instagramRoutes(fastify) {
     if (!account) {
       return reply.code(404).send({ error: "Conta não encontrada" });
     }
+
+    // Delete cache first to avoid FK violations if cascade isn't set in DB
+    await fastify.db
+      .delete(instagramMetricsCache)
+      .where(eq(instagramMetricsCache.accountId, paramResult.data.id));
 
     await fastify.db
       .delete(instagramAccounts)
