@@ -16,7 +16,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
-import { format, subDays } from "date-fns";
+import { format, subDays, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { DateRange } from "react-day-picker";
 
@@ -47,12 +47,24 @@ export function PeriodSelector({ value, onChange }: PeriodSelectorProps) {
   function handleSelect(p: string) {
     if (p !== "custom") {
       onChange(periodToConfig(p as Exclude<PeriodValue, "custom">));
+    } else {
+      // Set state to custom immediately so the popover trigger renders
+      const until = Math.floor(Date.now() / 1000);
+      const since = Math.floor(subDays(new Date(), 30).getTime() / 1000);
+      onChange({ period: "custom", since, until });
+      setCalendarOpen(true);
     }
-    // "custom" opens the popover
   }
 
+  const MAX_DAYS = 93;
+
+  const rangeExceedsLimit =
+    range?.from && range?.to
+      ? differenceInDays(range.to, range.from) > MAX_DAYS
+      : false;
+
   function handleRangeConfirm() {
-    if (range?.from && range?.to) {
+    if (range?.from && range?.to && !rangeExceedsLimit) {
       onChange({
         period: "custom",
         since: Math.floor(range.from.getTime() / 1000),
@@ -99,10 +111,15 @@ export function PeriodSelector({ value, onChange }: PeriodSelectorProps) {
               numberOfMonths={2}
               disabled={{ after: new Date() }}
             />
-            <div className="flex justify-end gap-2 p-2 border-t">
+            <div className="flex items-center justify-between gap-2 p-2 border-t">
+              {rangeExceedsLimit ? (
+                <p className="text-xs text-destructive">Máximo 93 dias</p>
+              ) : (
+                <span />
+              )}
               <Button
                 size="sm"
-                disabled={!range?.from || !range?.to}
+                disabled={!range?.from || !range?.to || rangeExceedsLimit}
                 onClick={handleRangeConfirm}
               >
                 Aplicar
