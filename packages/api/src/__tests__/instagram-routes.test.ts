@@ -19,6 +19,7 @@ const MOCK_ACCOUNT_ROW = {
   accessTokenEncrypted: "enc.tag",
   accessTokenIv: "aXY=",
   profilePictureUrl: "https://pic.jpg",
+  projectId: null,
   isActive: true,
   lastSyncedAt: null,
   tokenExpiresAt: null,
@@ -73,10 +74,12 @@ function setupSelectReturns(...results: unknown[][]) {
   }
 }
 
-function setupSelectNoLimit(...results: unknown[][]) {
+function setupSelectWhereReturns(...results: unknown[][]) {
   for (const result of results) {
     mockSelect.mockReturnValueOnce({
-      from: vi.fn().mockResolvedValue(result),
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(result),
+      }),
     });
   }
 }
@@ -217,7 +220,7 @@ describe("Instagram Routes", () => {
   // ---- GET /api/instagram/accounts ----
 
   it("lists accounts for authenticated user", async () => {
-    setupSelectNoLimit([MOCK_ACCOUNT_ROW]);
+    setupSelectWhereReturns([MOCK_ACCOUNT_ROW]);
 
     const response = await app.inject({
       method: "GET",

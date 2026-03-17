@@ -27,6 +27,7 @@ import uploadRoutes from "./routes/upload.js";
 import conversationRoutes from "./routes/conversations.js";
 import taskRoutes from "./routes/tasks.js";
 import instagramRoutes from "./routes/instagram.js";
+import projectRoutes from "./routes/projects.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -67,6 +68,7 @@ export async function buildServer() {
   await app.register(conversationRoutes);
   await app.register(taskRoutes);
   await app.register(instagramRoutes);
+  await app.register(projectRoutes);
 
   return app;
 }

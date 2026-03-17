@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { instagramAccounts, instagramMetricsCache } from "../db/schema.js";
 import { encrypt } from "../services/encryption.js";
@@ -12,6 +12,11 @@ import { InstagramApiError } from "../services/instagram.js";
 const createAccountSchema = z.object({
   accountName: z.string().min(1).max(100),
   accessToken: z.string().min(1),
+  projectId: z.string().uuid().optional(),
+});
+
+const accountsQuerySchema = z.object({
+  project_id: z.string().uuid().optional(),
 });
 
 const updateAccountSchema = z.object({
@@ -74,7 +79,7 @@ export default fp(async function instagramRoutes(fastify) {
       });
     }
 
-    const { accountName, accessToken } = parseResult.data;
+    const { accountName, accessToken, projectId } = parseResult.data;
     const userId = request.userId;
 
     try {
@@ -109,6 +114,7 @@ export default fp(async function instagramRoutes(fastify) {
         .values({
           userId,
           accountName,
+          projectId: projectId ?? null,
           instagramUserId,
           instagramUsername: profile.username,
           accessTokenEncrypted: encrypted,
@@ -123,6 +129,7 @@ export default fp(async function instagramRoutes(fastify) {
         instagramUsername: account.instagramUsername,
         instagramUserId: account.instagramUserId,
         profilePictureUrl: account.profilePictureUrl,
+        projectId: account.projectId,
         isActive: account.isActive,
         tokenExpiresAt: account.tokenExpiresAt,
         createdAt: account.createdAt,
@@ -136,7 +143,19 @@ export default fp(async function instagramRoutes(fastify) {
   });
 
   // ---- GET /api/instagram/accounts ----
-  fastify.get("/api/instagram/accounts", async () => {
+  fastify.get("/api/instagram/accounts", async (request, reply) => {
+    const queryResult = accountsQuerySchema.safeParse(request.query);
+    if (!queryResult.success) {
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
+    }
+
+    const userId = request.userId;
+    const { project_id: projectId } = queryResult.data;
+
+    const whereClause = projectId
+      ? and(eq(instagramAccounts.userId, userId), eq(instagramAccounts.projectId, projectId))
+      : eq(instagramAccounts.userId, userId);
+
     const accounts = await fastify.db
       .select({
         id: instagramAccounts.id,
@@ -144,12 +163,14 @@ export default fp(async function instagramRoutes(fastify) {
         instagramUsername: instagramAccounts.instagramUsername,
         instagramUserId: instagramAccounts.instagramUserId,
         profilePictureUrl: instagramAccounts.profilePictureUrl,
+        projectId: instagramAccounts.projectId,
         isActive: instagramAccounts.isActive,
         lastSyncedAt: instagramAccounts.lastSyncedAt,
         tokenExpiresAt: instagramAccounts.tokenExpiresAt,
         createdAt: instagramAccounts.createdAt,
       })
-      .from(instagramAccounts);
+      .from(instagramAccounts)
+      .where(whereClause);
 
     return accounts;
   });
