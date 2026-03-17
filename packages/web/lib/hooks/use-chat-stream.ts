@@ -61,6 +61,7 @@ export function useChatStream() {
         attachmentContext: string;
         attachmentMeta: { filename: string; mimeType: string; textLength: number };
       },
+      projectId?: string,
     ) => {
       setError(null);
       setIsStreaming(true);
@@ -93,6 +94,7 @@ export function useChatStream() {
             mindId,
             conversationId,
             message,
+            ...(projectId ? { projectId } : {}),
             ...(attachment
               ? {
                   attachmentContext: attachment.attachmentContext,

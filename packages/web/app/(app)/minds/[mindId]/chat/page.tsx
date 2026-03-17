@@ -13,6 +13,7 @@ export default function ChatPage() {
   const { mindId } = useParams<{ mindId: string }>();
   const searchParams = useSearchParams();
   const conversationId = searchParams.get("conversationId") ?? undefined;
+  const projectId = searchParams.get("projectId") ?? undefined;
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const { mind, isLoading } = useMind(mindId);
@@ -60,6 +61,7 @@ export default function ChatPage() {
           mindId={mindId}
           mindName={mind.name}
           conversationId={conversationId}
+          projectId={projectId}
         />
       </div>
     </div>

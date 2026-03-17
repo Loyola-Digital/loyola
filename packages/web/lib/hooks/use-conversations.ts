@@ -8,6 +8,7 @@ interface UseConversationsOptions {
   mindId?: string;
   limit?: number;
   offset?: number;
+  projectId?: string;
 }
 
 interface ConversationListResponse {
@@ -17,11 +18,17 @@ interface ConversationListResponse {
 
 export function useConversations(options?: UseConversationsOptions) {
   const apiClient = useApiClient();
-  const { mindId, limit = 50, offset = 0 } = options ?? {};
+  const { mindId, limit = 50, offset = 0, projectId } = options ?? {};
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["conversations", { mindId, limit, offset }],
-    queryFn: () => {
+    queryKey: ["conversations", { mindId, limit, offset, projectId }],
+    queryFn: async () => {
+      if (projectId) {
+        const list = await apiClient<Conversation[]>(
+          `/api/projects/${projectId}/conversations`,
+        );
+        return { conversations: list, total: list.length };
+      }
       const params = new URLSearchParams();
       params.set("limit", String(limit));
       params.set("offset", String(offset));

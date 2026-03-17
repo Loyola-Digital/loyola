@@ -10,6 +10,7 @@ const chatRequestSchema = z.object({
   mindId: z.string().min(1),
   conversationId: z.string().uuid().nullable(),
   message: z.string().min(1).max(10000),
+  projectId: z.string().uuid().optional(),
   attachmentContext: z.string().max(200000).optional(),
   attachmentMeta: z
     .object({
@@ -53,6 +54,7 @@ export default fp(async function chatRoutes(fastify) {
         mindId,
         conversationId: requestConvId,
         message,
+        projectId,
         attachmentContext,
         attachmentMeta,
       } = parseResult.data;
@@ -119,6 +121,7 @@ export default fp(async function chatRoutes(fastify) {
               mindId,
               mindName: mind.name,
               squadId: mind.squad,
+              projectId: projectId ?? null,
             })
             .returning({ id: conversations.id });
           conversationId = newConv.id;

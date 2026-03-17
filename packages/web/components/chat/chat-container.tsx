@@ -11,12 +11,14 @@ interface ChatContainerProps {
   mindId: string;
   mindName: string;
   conversationId?: string;
+  projectId?: string;
 }
 
 export function ChatContainer({
   mindId,
   mindName,
   conversationId: initialConversationId,
+  projectId,
 }: ChatContainerProps) {
   const {
     messages,
@@ -46,9 +48,9 @@ export function ChatContainer({
         attachmentMeta: { filename: string; mimeType: string; textLength: number };
       },
     ) => {
-      sendMessage(mindId, message, attachment);
+      sendMessage(mindId, message, attachment, projectId);
     },
-    [sendMessage, mindId],
+    [sendMessage, mindId, projectId],
   );
 
   const handleConfirmTask = useCallback(
