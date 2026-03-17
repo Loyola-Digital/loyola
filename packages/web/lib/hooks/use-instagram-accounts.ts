@@ -10,6 +10,7 @@ export interface InstagramAccount {
   instagramUserId: string;
   profilePictureUrl: string | null;
   isActive: boolean;
+  projectId: string | null;
   lastSyncedAt: string | null;
   tokenExpiresAt: string | null;
   createdAt: string;
@@ -24,6 +25,7 @@ export interface UpdateAccountInput {
   id: string;
   accountName?: string;
   accessToken?: string;
+  projectId?: string | null;
 }
 
 // 1.2 — GET /api/instagram/accounts (optional project filter)
@@ -78,6 +80,22 @@ export function useDeleteAccount() {
     mutationFn: (id: string) =>
       apiClient<void>(`/api/instagram/accounts/${id}`, {
         method: "DELETE",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["instagram-accounts"] });
+    },
+  });
+}
+
+// Assign/unassign account to a project
+export function useAssignAccountToProject() {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, projectId }: { accountId: string; projectId: string | null }) =>
+      apiClient<InstagramAccount>(`/api/instagram/accounts/${accountId}`, {
+        method: "PUT",
+        body: JSON.stringify({ projectId }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["instagram-accounts"] });

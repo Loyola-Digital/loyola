@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import { InviteMemberDialog } from "@/components/projects/invite-member-dialog";
 import { MemberPermissionsEditor } from "@/components/projects/member-permissions-editor";
+import { LinkAccountDialog } from "@/components/projects/link-account-dialog";
 import type { InstagramAccount } from "@/lib/hooks/use-instagram-accounts";
 
 interface Props {
@@ -24,6 +25,7 @@ export default function ProjectPage({ params }: Props) {
   const isAdmin = role !== "guest";
 
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [linkAccountOpen, setLinkAccountOpen] = useState(false);
 
   const { data: projects, isLoading: projectsLoading } = useProjects();
   const project = projects?.find((p) => p.id === id);
@@ -74,10 +76,17 @@ export default function ProjectPage({ params }: Props) {
       </div>
 
       <div>
-        <h2 className="text-base font-semibold mb-3 flex items-center gap-2">
-          <Instagram className="h-4 w-4" />
-          Contas Instagram vinculadas
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold flex items-center gap-2">
+            <Instagram className="h-4 w-4" />
+            Contas Instagram vinculadas
+          </h2>
+          {isAdmin && (
+            <Button size="sm" variant="outline" onClick={() => setLinkAccountOpen(true)}>
+              + Vincular conta
+            </Button>
+          )}
+        </div>
         {accountsLoading && (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-10 w-full" />
@@ -121,6 +130,14 @@ export default function ProjectPage({ params }: Props) {
           projectId={id}
           open={inviteOpen}
           onOpenChange={setInviteOpen}
+        />
+      )}
+
+      {isAdmin && (
+        <LinkAccountDialog
+          projectId={id}
+          open={linkAccountOpen}
+          onOpenChange={setLinkAccountOpen}
         />
       )}
     </div>

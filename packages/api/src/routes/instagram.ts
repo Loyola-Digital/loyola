@@ -22,6 +22,7 @@ const accountsQuerySchema = z.object({
 const updateAccountSchema = z.object({
   accountName: z.string().min(1).max(100).optional(),
   accessToken: z.string().min(1).optional(),
+  projectId: z.string().uuid().nullable().optional(),
 });
 
 const idParamSchema = z.object({
@@ -225,6 +226,10 @@ export default fp(async function instagramRoutes(fastify) {
 
     if (parseResult.data.accountName) {
       updates.accountName = parseResult.data.accountName;
+    }
+
+    if (parseResult.data.projectId !== undefined) {
+      updates.projectId = parseResult.data.projectId;
     }
 
     if (parseResult.data.accessToken) {
