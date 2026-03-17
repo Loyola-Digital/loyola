@@ -6,10 +6,10 @@ import type { FastifyInstance } from "fastify";
  * The AI navigates ClickUp autonomously: teams → spaces → folders → lists → tasks.
  */
 
-export function getChatTools(fastify: FastifyInstance): Tool[] {
+export function getChatTools(fastify: FastifyInstance, userRole = "admin"): Tool[] {
   const tools: Tool[] = [];
 
-  if (fastify.clickupService.isConfigured()) {
+  if (fastify.clickupService.isConfigured() && userRole !== "guest") {
     tools.push(
       {
         name: "clickup_get_workspaces",

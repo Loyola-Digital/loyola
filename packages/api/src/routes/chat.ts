@@ -170,7 +170,7 @@ export default fp(async function chatRoutes(fastify) {
         }));
 
         // Get available tools for this chat
-        const tools = getChatTools(fastify);
+        const tools = getChatTools(fastify, request.userRole);
 
         // Run agentic loop — Claude decides when to use tools
         const { fullText, finalMessage } =
