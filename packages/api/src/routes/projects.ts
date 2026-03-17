@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq, and, isNull } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { projects, instagramAccounts, conversations } from "../db/schema.js";
+import { projects, instagramAccounts, conversations, projectMembers, users } from "../db/schema.js";
 
 // ============================================================
 // SCHEMAS
@@ -23,6 +23,19 @@ const updateProjectSchema = z.object({
 
 const idParamSchema = z.object({
   id: z.string().uuid(),
+});
+
+const memberParamSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+});
+
+const updatePermissionsSchema = z.object({
+  permissions: z.object({
+    instagram: z.boolean(),
+    conversations: z.boolean(),
+    mind: z.boolean(),
+  }),
 });
 
 // ============================================================
@@ -78,6 +91,16 @@ export default fp(async function projectRoutes(fastify) {
 
   // ---- GET /api/projects ----
   fastify.get("/api/projects", async (request) => {
+    // Guests see only projects where they are members
+    if (request.userRole === "guest") {
+      const memberRows = await fastify.db
+        .select({ project: projects })
+        .from(projectMembers)
+        .innerJoin(projects, eq(projectMembers.projectId, projects.id))
+        .where(eq(projectMembers.userId, request.userId));
+      return memberRows.map((r) => projectShape(r.project));
+    }
+
     const rows = await fastify.db
       .select()
       .from(projects)
@@ -205,4 +228,98 @@ export default fp(async function projectRoutes(fastify) {
 
     return convs;
   });
+
+  // ---- GET /api/projects/:id/members ---- (AC: 6)
+  fastify.get("/api/projects/:id/members", async (request, reply) => {
+    const paramResult = idParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.code(400).send({ error: "ID inválido" });
+    }
+
+    const project = await getProjectForUser(paramResult.data.id, request.userId);
+    if (!project) {
+      return reply.code(404).send({ error: "Projeto não encontrado" });
+    }
+
+    const members = await fastify.db
+      .select({
+        id: projectMembers.id,
+        userId: projectMembers.userId,
+        role: projectMembers.role,
+        permissions: projectMembers.permissions,
+        createdAt: projectMembers.createdAt,
+        userName: users.name,
+        userEmail: users.email,
+      })
+      .from(projectMembers)
+      .innerJoin(users, eq(projectMembers.userId, users.id))
+      .where(eq(projectMembers.projectId, paramResult.data.id));
+
+    return members;
+  });
+
+  // ---- DELETE /api/projects/:id/members/:userId ---- (AC: 4)
+  fastify.delete("/api/projects/:id/members/:userId", async (request, reply) => {
+    const paramResult = memberParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
+    }
+
+    const project = await getProjectForUser(paramResult.data.id, request.userId);
+    if (!project) {
+      return reply.code(404).send({ error: "Projeto não encontrado" });
+    }
+
+    await fastify.db
+      .delete(projectMembers)
+      .where(
+        and(
+          eq(projectMembers.projectId, paramResult.data.id),
+          eq(projectMembers.userId, paramResult.data.userId),
+        ),
+      );
+
+    return reply.code(204).send();
+  });
+
+  // ---- PATCH /api/projects/:id/members/:userId/permissions ---- (AC: 5)
+  fastify.patch(
+    "/api/projects/:id/members/:userId/permissions",
+    async (request, reply) => {
+      const paramResult = memberParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "Parâmetros inválidos" });
+      }
+
+      const bodyResult = updatePermissionsSchema.safeParse(request.body);
+      if (!bodyResult.success) {
+        return reply.code(400).send({
+          error: "Dados inválidos",
+          details: bodyResult.error.flatten().fieldErrors,
+        });
+      }
+
+      const project = await getProjectForUser(paramResult.data.id, request.userId);
+      if (!project) {
+        return reply.code(404).send({ error: "Projeto não encontrado" });
+      }
+
+      const [updated] = await fastify.db
+        .update(projectMembers)
+        .set({ permissions: bodyResult.data.permissions })
+        .where(
+          and(
+            eq(projectMembers.projectId, paramResult.data.id),
+            eq(projectMembers.userId, paramResult.data.userId),
+          ),
+        )
+        .returning();
+
+      if (!updated) {
+        return reply.code(404).send({ error: "Membro não encontrado" });
+      }
+
+      return { permissions: updated.permissions };
+    },
+  );
 });

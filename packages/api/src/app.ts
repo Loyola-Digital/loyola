@@ -8,6 +8,7 @@ import corsPlugin from "./middleware/cors.js";
 import rateLimitPlugin from "./middleware/rate-limit.js";
 import multipart from "@fastify/multipart";
 import authPlugin from "./middleware/auth.js";
+import guestGuardPlugin from "./middleware/guest-guard.js";
 import dbPlugin from "./db/client.js";
 
 // Services
@@ -28,6 +29,7 @@ import conversationRoutes from "./routes/conversations.js";
 import taskRoutes from "./routes/tasks.js";
 import instagramRoutes from "./routes/instagram.js";
 import projectRoutes from "./routes/projects.js";
+import invitationsRoutes from "./routes/invitations.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -51,6 +53,9 @@ export async function buildServer() {
   // 4. Database
   await app.register(dbPlugin);
 
+  // 4b. Guest access guard (needs DB + userRole from auth)
+  await app.register(guestGuardPlugin);
+
   // 5. Services
   await app.register(mindRegistryPlugin);
   await app.register(mindEnginePlugin);
@@ -69,6 +74,7 @@ export async function buildServer() {
   await app.register(taskRoutes);
   await app.register(instagramRoutes);
   await app.register(projectRoutes);
+  await app.register(invitationsRoutes);
 
   return app;
 }
