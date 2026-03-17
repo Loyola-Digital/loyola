@@ -153,6 +153,35 @@ export function getChatTools(fastify: FastifyInstance): Tool[] {
     );
   }
 
+  // Instagram metrics — always available (handles "no accounts" gracefully)
+  tools.push({
+    name: "instagram_metrics",
+    description:
+      "Busca métricas e dados de uma conta de Instagram cadastrada na plataforma. Use quando o usuário perguntar sobre performance, engagement, followers, alcance, posts, audiência ou dados de Instagram de um cliente.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        account_name_or_username: {
+          type: "string",
+          description:
+            "Nome da conta ou @username do Instagram (busca parcial, case-insensitive)",
+        },
+        metric_type: {
+          type: "string",
+          enum: ["overview", "posts", "demographics", "full"],
+          description:
+            "Tipo de métricas: overview (resumo geral), posts (últimos posts), demographics (audiência), full (tudo). Padrão: overview",
+        },
+        period: {
+          type: "string",
+          description:
+            "Período para métricas: 7d, 14d, 30d, 90d. Padrão: 30d",
+        },
+      },
+      required: ["account_name_or_username"],
+    },
+  });
+
   // Past conversations — always available
   tools.push({
     name: "get_past_conversations",
@@ -387,6 +416,231 @@ export async function executeChatTool(
           parts.push(`**${prefix}:** ${m.content.substring(0, 500)}`);
         }
         parts.push("");
+      }
+
+      return parts.join("\n");
+    }
+
+    case "instagram_metrics": {
+      const { or, ilike } = await import("drizzle-orm");
+      const { instagramAccounts } = await import("../db/schema.js");
+
+      const searchTerm = input.account_name_or_username as string;
+      const metricType = (input.metric_type as string) ?? "overview";
+      const period = (input.period as string) ?? "30d";
+      const days = parseInt(period) || 30;
+
+      // Search account by friendly name or username (partial, case-insensitive)
+      const cleanSearch = searchTerm.replace(/^@/, "");
+      const accounts = await fastify.db
+        .select({
+          id: instagramAccounts.id,
+          accountName: instagramAccounts.accountName,
+          instagramUsername: instagramAccounts.instagramUsername,
+          tokenExpiresAt: instagramAccounts.tokenExpiresAt,
+        })
+        .from(instagramAccounts)
+        .where(
+          or(
+            ilike(instagramAccounts.accountName, `%${cleanSearch}%`),
+            ilike(instagramAccounts.instagramUsername, `%${cleanSearch}%`),
+          ),
+        )
+        .limit(5);
+
+      if (accounts.length === 0) {
+        const allAccounts = await fastify.db
+          .select({
+            accountName: instagramAccounts.accountName,
+            instagramUsername: instagramAccounts.instagramUsername,
+          })
+          .from(instagramAccounts)
+          .limit(20);
+
+        if (allAccounts.length === 0) {
+          return "Nenhuma conta de Instagram cadastrada na plataforma. Adicione em Settings > Instagram.";
+        }
+        const list = allAccounts
+          .map(
+            (a) =>
+              `- ${a.accountName}${a.instagramUsername ? ` (@${a.instagramUsername})` : ""}`,
+          )
+          .join("\n");
+        return `Conta "${searchTerm}" não encontrada. Contas disponíveis:\n${list}`;
+      }
+
+      const account = accounts[0];
+
+      if (account.tokenExpiresAt && account.tokenExpiresAt < new Date()) {
+        return `⚠️ O token da conta **${account.accountName}** expirou em ${account.tokenExpiresAt.toLocaleDateString("pt-BR")}. Renove em Settings > Instagram.`;
+      }
+
+      const until = Math.floor(Date.now() / 1000);
+      const since = until - days * 86400;
+      const usernameDisplay = account.instagramUsername
+        ? `@${account.instagramUsername}`
+        : account.accountName;
+
+      const parts: string[] = [
+        `## Instagram: ${usernameDisplay} (${account.accountName})\n`,
+      ];
+
+      try {
+        // OVERVIEW
+        if (metricType === "overview" || metricType === "full") {
+          const [profileResult, insightsResult] = await Promise.allSettled([
+            fastify.instagramService.getProfile(account.id),
+            fastify.instagramService.getAccountInsights(
+              account.id,
+              "day",
+              since,
+              until,
+            ),
+          ]);
+
+          parts.push(`### Overview (últimos ${days} dias)`);
+
+          if (profileResult.status === "fulfilled") {
+            const p = profileResult.value;
+            parts.push(
+              `- **Followers:** ${p.followers_count.toLocaleString("pt-BR")}`,
+            );
+            parts.push(
+              `- **Seguindo:** ${p.follows_count.toLocaleString("pt-BR")}`,
+            );
+            parts.push(
+              `- **Total de Posts:** ${p.media_count.toLocaleString("pt-BR")}`,
+            );
+          }
+
+          if (insightsResult.status === "fulfilled") {
+            const data = insightsResult.value;
+            const reachEntry = data.find((e) => e.name === "reach");
+            const engagedEntry = data.find(
+              (e) => e.name === "accounts_engaged",
+            );
+
+            const sumValues = (
+              entry: (typeof data)[number] | undefined,
+            ): number => {
+              if (!entry) return 0;
+              return entry.values.reduce(
+                (acc, v) =>
+                  acc + (typeof v.value === "number" ? v.value : 0),
+                0,
+              );
+            };
+
+            const totalReach = sumValues(reachEntry);
+            const totalEngaged = sumValues(engagedEntry);
+
+            if (totalReach > 0)
+              parts.push(
+                `- **Alcance Total:** ${totalReach.toLocaleString("pt-BR")}`,
+              );
+            if (totalEngaged > 0)
+              parts.push(
+                `- **Contas Engajadas:** ${totalEngaged.toLocaleString("pt-BR")}`,
+              );
+
+            if (
+              profileResult.status === "fulfilled" &&
+              totalEngaged > 0 &&
+              profileResult.value.followers_count > 0
+            ) {
+              const rate = (
+                (totalEngaged / profileResult.value.followers_count) *
+                100
+              ).toFixed(2);
+              parts.push(`- **Taxa de Engajamento:** ${rate}%`);
+            }
+          }
+          parts.push("");
+        }
+
+        // POSTS
+        if (metricType === "posts" || metricType === "full") {
+          const media = await fastify.instagramService.getMediaList(
+            account.id,
+            10,
+          );
+          parts.push("### Últimos Posts");
+
+          if (media.data.length === 0) {
+            parts.push("Nenhum post encontrado.");
+          } else {
+            parts.push("| Post | Tipo | Likes | Comentários | Data |");
+            parts.push("|------|------|-------|-------------|------|");
+            for (const post of media.data) {
+              const caption = (post.caption ?? "Sem legenda")
+                .substring(0, 40)
+                .replace(/\n/g, " ");
+              const date = new Date(post.timestamp).toLocaleDateString("pt-BR");
+              const likes =
+                post.like_count?.toLocaleString("pt-BR") ?? "—";
+              const comments =
+                post.comments_count?.toLocaleString("pt-BR") ?? "—";
+              parts.push(
+                `| ${caption}... | ${post.media_type} | ${likes} | ${comments} | ${date} |`,
+              );
+            }
+          }
+          parts.push("");
+        }
+
+        // DEMOGRAPHICS
+        if (metricType === "demographics" || metricType === "full") {
+          const demographics =
+            await fastify.instagramService.getAudienceDemographics(
+              account.id,
+            );
+          parts.push("### Audiência");
+
+          const cityEntry = demographics.find(
+            (e) => e.name === "audience_city",
+          );
+          const countryEntry = demographics.find(
+            (e) => e.name === "audience_country",
+          );
+          const genderAgeEntry = demographics.find(
+            (e) => e.name === "audience_gender_age",
+          );
+
+          const formatBreakdown = (
+            entry: (typeof demographics)[number] | undefined,
+            label: string,
+            topN: number,
+          ) => {
+            if (!entry?.values?.[0]?.value) return;
+            const val = entry.values[0].value;
+            if (typeof val !== "object" || val === null) return;
+            const sorted = Object.entries(val as Record<string, number>)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, topN);
+            parts.push(`**${label}:**`);
+            for (const [key, n] of sorted) {
+              parts.push(`- ${key}: ${n.toLocaleString("pt-BR")}`);
+            }
+          };
+
+          formatBreakdown(genderAgeEntry, "Faixa Etária / Gênero", 5);
+          formatBreakdown(countryEntry, "Top Países", 3);
+          formatBreakdown(cityEntry, "Top Cidades", 3);
+
+          if (!genderAgeEntry && !countryEntry && !cityEntry) {
+            parts.push("Dados de audiência não disponíveis.");
+          }
+          parts.push("");
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Erro desconhecido";
+        if (
+          msg.toLowerCase().includes("expirad") ||
+          msg.toLowerCase().includes("token")
+        ) {
+          return `⚠️ Token expirado ou inválido para **${account.accountName}**. Renove em Settings > Instagram.`;
+        }
+        return `Erro ao buscar métricas de ${account.accountName}: ${msg}`;
       }
 
       return parts.join("\n");
