@@ -7,6 +7,12 @@ import {
   validateMetaAdAccount,
   fetchCampaigns,
   fetchInsights,
+  fetchAdSets,
+  fetchAds,
+  fetchDailyInsights,
+  fetchCampaignInsights,
+  fetchAdSetInsights,
+  fetchAdInsights,
   decryptAccountToken,
 } from "../services/meta-ads.js";
 
@@ -302,6 +308,163 @@ export default fp(async function metaAdsRoutes(fastify) {
     } catch (err) {
       return reply.code(502).send({
         error: "Erro ao buscar insights da Meta",
+        details: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  // ---- GET /api/meta-ads/accounts/:id/adsets ----
+  fastify.get("/api/meta-ads/accounts/:id/adsets", async (request, reply) => {
+    if (request.userRole !== "admin" && request.userRole !== "manager") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+
+    const paramResult = idParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.code(400).send({ error: "ID invalido" });
+    }
+
+    const querySchema = z.object({
+      campaignId: z.string().min(1),
+      days: z.coerce.number().int().min(1).max(90).default(30),
+    });
+    const queryResult = querySchema.safeParse(request.query);
+    if (!queryResult.success) {
+      return reply.code(400).send({ error: "campaignId obrigatorio" });
+    }
+
+    const account = await getAccountForUser(paramResult.data.id, request.userRole);
+    if (!account) {
+      return reply.code(404).send({ error: "Conta nao encontrada" });
+    }
+
+    const token = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
+
+    try {
+      const [adsets, insights] = await Promise.all([
+        fetchAdSets(account.metaAccountId, token, queryResult.data.campaignId),
+        fetchAdSetInsights(account.metaAccountId, token, queryResult.data.campaignId, queryResult.data.days),
+      ]);
+
+      // Merge adsets with their insights
+      const insightMap = new Map(insights.map((i) => [i.adset_id, i]));
+      return adsets.map((as) => ({
+        ...as,
+        insights: insightMap.get(as.id) ?? null,
+      }));
+    } catch (err) {
+      return reply.code(502).send({
+        error: "Erro ao buscar ad sets da Meta",
+        details: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  // ---- GET /api/meta-ads/accounts/:id/ads ----
+  fastify.get("/api/meta-ads/accounts/:id/ads", async (request, reply) => {
+    if (request.userRole !== "admin" && request.userRole !== "manager") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+
+    const paramResult = idParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.code(400).send({ error: "ID invalido" });
+    }
+
+    const querySchema = z.object({
+      adsetId: z.string().min(1),
+      days: z.coerce.number().int().min(1).max(90).default(30),
+    });
+    const queryResult = querySchema.safeParse(request.query);
+    if (!queryResult.success) {
+      return reply.code(400).send({ error: "adsetId obrigatorio" });
+    }
+
+    const account = await getAccountForUser(paramResult.data.id, request.userRole);
+    if (!account) {
+      return reply.code(404).send({ error: "Conta nao encontrada" });
+    }
+
+    const token = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
+
+    try {
+      const [ads, insights] = await Promise.all([
+        fetchAds(account.metaAccountId, token, queryResult.data.adsetId),
+        fetchAdInsights(account.metaAccountId, token, queryResult.data.adsetId, queryResult.data.days),
+      ]);
+
+      const insightMap = new Map(insights.map((i) => [i.ad_id, i]));
+      return ads.map((ad) => ({
+        ...ad,
+        insights: insightMap.get(ad.id) ?? null,
+      }));
+    } catch (err) {
+      return reply.code(502).send({
+        error: "Erro ao buscar ads da Meta",
+        details: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  // ---- GET /api/meta-ads/accounts/:id/insights/daily ----
+  fastify.get("/api/meta-ads/accounts/:id/insights/daily", async (request, reply) => {
+    if (request.userRole !== "admin" && request.userRole !== "manager") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+
+    const paramResult = idParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.code(400).send({ error: "ID invalido" });
+    }
+
+    const queryResult = insightsQuerySchema.safeParse(request.query);
+    const days = queryResult.success ? queryResult.data.days : 30;
+
+    const account = await getAccountForUser(paramResult.data.id, request.userRole);
+    if (!account) {
+      return reply.code(404).send({ error: "Conta nao encontrada" });
+    }
+
+    const token = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
+
+    try {
+      const daily = await fetchDailyInsights(account.metaAccountId, token, days);
+      return daily;
+    } catch (err) {
+      return reply.code(502).send({
+        error: "Erro ao buscar insights diarios da Meta",
+        details: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  // ---- GET /api/meta-ads/accounts/:id/insights/campaigns ----
+  fastify.get("/api/meta-ads/accounts/:id/insights/campaigns", async (request, reply) => {
+    if (request.userRole !== "admin" && request.userRole !== "manager") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+
+    const paramResult = idParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.code(400).send({ error: "ID invalido" });
+    }
+
+    const queryResult = insightsQuerySchema.safeParse(request.query);
+    const days = queryResult.success ? queryResult.data.days : 30;
+
+    const account = await getAccountForUser(paramResult.data.id, request.userRole);
+    if (!account) {
+      return reply.code(404).send({ error: "Conta nao encontrada" });
+    }
+
+    const token = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
+
+    try {
+      const campaignInsights = await fetchCampaignInsights(account.metaAccountId, token, days);
+      return campaignInsights;
+    } catch (err) {
+      return reply.code(502).send({
+        error: "Erro ao buscar insights por campanha da Meta",
         details: err instanceof Error ? err.message : String(err),
       });
     }

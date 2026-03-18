@@ -72,6 +72,48 @@ export interface MetaInsight {
   date_stop: string;
 }
 
+export interface MetaAdSet {
+  id: string;
+  name: string;
+  status: string;
+  daily_budget?: string;
+  bid_amount?: string;
+}
+
+export interface MetaAd {
+  id: string;
+  name: string;
+  status: string;
+  creative?: { id: string };
+}
+
+export interface MetaDailyInsight {
+  date_start: string;
+  date_stop: string;
+  impressions: string;
+  reach: string;
+  clicks: string;
+  spend: string;
+  ctr: string;
+  cpc: string;
+  cpm: string;
+}
+
+export interface MetaCampaignInsight extends MetaDailyInsight {
+  campaign_id: string;
+  campaign_name: string;
+}
+
+export interface MetaAdSetInsight extends MetaDailyInsight {
+  adset_id: string;
+  adset_name: string;
+}
+
+export interface MetaAdInsight extends MetaDailyInsight {
+  ad_id: string;
+  ad_name: string;
+}
+
 // ============================================================
 // CORE FETCH
 // ============================================================
@@ -125,6 +167,108 @@ export async function fetchInsights(
   const datePreset = days <= 7 ? "last_7d" : days <= 30 ? "last_30d" : "last_90d";
   const res = await fetchMeta<{ data: MetaInsight[] }>(
     `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm&date_preset=${datePreset}&level=account`,
+    accessToken
+  );
+  return res.data ?? [];
+}
+
+export async function fetchAdSets(
+  metaAccountId: string,
+  accessToken: string,
+  campaignId: string
+): Promise<MetaAdSet[]> {
+  const filtering = encodeURIComponent(
+    JSON.stringify([
+      { field: "campaign_id", operator: "EQUAL", value: campaignId },
+    ])
+  );
+  const res = await fetchMeta<{ data: MetaAdSet[] }>(
+    `/act_${metaAccountId}/adsets?fields=id,name,status,daily_budget,bid_amount&filtering=${filtering}&limit=100`,
+    accessToken
+  );
+  return res.data ?? [];
+}
+
+export async function fetchAds(
+  metaAccountId: string,
+  accessToken: string,
+  adsetId: string
+): Promise<MetaAd[]> {
+  const filtering = encodeURIComponent(
+    JSON.stringify([
+      { field: "adset_id", operator: "EQUAL", value: adsetId },
+    ])
+  );
+  const res = await fetchMeta<{ data: MetaAd[] }>(
+    `/act_${metaAccountId}/ads?fields=id,name,status,creative{id}&filtering=${filtering}&limit=100`,
+    accessToken
+  );
+  return res.data ?? [];
+}
+
+export async function fetchDailyInsights(
+  metaAccountId: string,
+  accessToken: string,
+  days: number = 30
+): Promise<MetaDailyInsight[]> {
+  const datePreset =
+    days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
+  const res = await fetchMeta<{ data: MetaDailyInsight[] }>(
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm&date_preset=${datePreset}&time_increment=1&level=account`,
+    accessToken
+  );
+  return res.data ?? [];
+}
+
+export async function fetchCampaignInsights(
+  metaAccountId: string,
+  accessToken: string,
+  days: number = 30
+): Promise<MetaCampaignInsight[]> {
+  const datePreset =
+    days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
+  const res = await fetchMeta<{ data: MetaCampaignInsight[] }>(
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,campaign_id,campaign_name&date_preset=${datePreset}&level=campaign`,
+    accessToken
+  );
+  return res.data ?? [];
+}
+
+export async function fetchAdSetInsights(
+  metaAccountId: string,
+  accessToken: string,
+  campaignId: string,
+  days: number = 30
+): Promise<MetaAdSetInsight[]> {
+  const datePreset =
+    days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
+  const filtering = encodeURIComponent(
+    JSON.stringify([
+      { field: "campaign_id", operator: "EQUAL", value: campaignId },
+    ])
+  );
+  const res = await fetchMeta<{ data: MetaAdSetInsight[] }>(
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,adset_id,adset_name&date_preset=${datePreset}&level=adset&filtering=${filtering}`,
+    accessToken
+  );
+  return res.data ?? [];
+}
+
+export async function fetchAdInsights(
+  metaAccountId: string,
+  accessToken: string,
+  adsetId: string,
+  days: number = 30
+): Promise<MetaAdInsight[]> {
+  const datePreset =
+    days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
+  const filtering = encodeURIComponent(
+    JSON.stringify([
+      { field: "adset_id", operator: "EQUAL", value: adsetId },
+    ])
+  );
+  const res = await fetchMeta<{ data: MetaAdInsight[] }>(
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name&date_preset=${datePreset}&level=ad&filtering=${filtering}`,
     accessToken
   );
   return res.data ?? [];
