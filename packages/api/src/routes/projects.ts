@@ -60,7 +60,7 @@ function projectShape(p: typeof projects.$inferSelect) {
 // ============================================================
 
 export default fp(async function projectRoutes(fastify) {
-  // Helper: fetch project only if it belongs to the requesting user
+  // Helper: fetch project only if it belongs to the requesting user (owner)
   async function getProjectForUser(projectId: string, userId: string) {
     const rows = await fastify.db
       .select()
@@ -68,6 +68,26 @@ export default fp(async function projectRoutes(fastify) {
       .where(and(eq(projects.id, projectId), eq(projects.createdBy, userId)))
       .limit(1);
     return rows.length > 0 ? rows[0] : null;
+  }
+
+  // Helper: fetch project if user is owner OR a project member (for guests)
+  async function getProjectForMember(projectId: string, userId: string) {
+    // Check ownership first
+    const owned = await fastify.db
+      .select()
+      .from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.createdBy, userId)))
+      .limit(1);
+    if (owned.length > 0) return owned[0];
+
+    // Check membership
+    const member = await fastify.db
+      .select({ project: projects })
+      .from(projectMembers)
+      .innerJoin(projects, eq(projectMembers.projectId, projects.id))
+      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
+      .limit(1);
+    return member.length > 0 ? member[0].project : null;
   }
 
   // ---- POST /api/projects ----
@@ -182,7 +202,7 @@ export default fp(async function projectRoutes(fastify) {
       return reply.code(400).send({ error: "ID inválido" });
     }
 
-    const project = await getProjectForUser(paramResult.data.id, request.userId);
+    const project = await getProjectForMember(paramResult.data.id, request.userId);
     if (!project) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
@@ -216,7 +236,7 @@ export default fp(async function projectRoutes(fastify) {
       return reply.code(400).send({ error: "ID inválido" });
     }
 
-    const project = await getProjectForUser(paramResult.data.id, request.userId);
+    const project = await getProjectForMember(paramResult.data.id, request.userId);
     if (!project) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
