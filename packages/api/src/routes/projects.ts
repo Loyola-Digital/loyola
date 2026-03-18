@@ -60,12 +60,14 @@ function projectShape(p: typeof projects.$inferSelect) {
 // ============================================================
 
 export default fp(async function projectRoutes(fastify) {
-  // Helper: fetch project only if it belongs to the requesting user (owner)
-  async function getProjectForUser(projectId: string, userId: string) {
+  // Helper: fetch project for non-guest users.
+  // Any non-guest can access/manage any project; guests are denied entirely.
+  async function getProjectForUser(projectId: string, _userId: string, userRole: string) {
+    if (userRole === "guest") return null;
     const rows = await fastify.db
       .select()
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.createdBy, userId)))
+      .where(eq(projects.id, projectId))
       .limit(1);
     return rows.length > 0 ? rows[0] : null;
   }
@@ -134,7 +136,7 @@ export default fp(async function projectRoutes(fastify) {
       return reply.code(400).send({ error: "ID inválido" });
     }
 
-    const project = await getProjectForUser(paramResult.data.id, request.userId);
+    const project = await getProjectForUser(paramResult.data.id, request.userId, request.userRole);
     if (!project) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
@@ -157,7 +159,7 @@ export default fp(async function projectRoutes(fastify) {
       });
     }
 
-    const project = await getProjectForUser(paramResult.data.id, request.userId);
+    const project = await getProjectForUser(paramResult.data.id, request.userId, request.userRole);
     if (!project) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
@@ -185,7 +187,7 @@ export default fp(async function projectRoutes(fastify) {
       return reply.code(400).send({ error: "ID inválido" });
     }
 
-    const project = await getProjectForUser(paramResult.data.id, request.userId);
+    const project = await getProjectForUser(paramResult.data.id, request.userId, request.userRole);
     if (!project) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
@@ -260,7 +262,7 @@ export default fp(async function projectRoutes(fastify) {
       return reply.code(400).send({ error: "ID inválido" });
     }
 
-    const project = await getProjectForUser(paramResult.data.id, request.userId);
+    const project = await getProjectForUser(paramResult.data.id, request.userId, request.userRole);
     if (!project) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
@@ -314,7 +316,7 @@ export default fp(async function projectRoutes(fastify) {
       return reply.code(400).send({ error: "Parâmetros inválidos" });
     }
 
-    const project = await getProjectForUser(paramResult.data.id, request.userId);
+    const project = await getProjectForUser(paramResult.data.id, request.userId, request.userRole);
     if (!project) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
@@ -348,7 +350,7 @@ export default fp(async function projectRoutes(fastify) {
         });
       }
 
-      const project = await getProjectForUser(paramResult.data.id, request.userId);
+      const project = await getProjectForUser(paramResult.data.id, request.userId, request.userRole);
       if (!project) {
         return reply.code(404).send({ error: "Projeto não encontrado" });
       }

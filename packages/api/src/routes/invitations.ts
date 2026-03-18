@@ -45,12 +45,13 @@ const createInvitationSchema = z.object({
 // ============================================================
 
 export default fp(async function invitationsRoutes(fastify) {
-  // Helper: fetch project only if it belongs to the requesting user
-  async function getProjectForUser(projectId: string, userId: string) {
+  // Helper: fetch project for non-guest users (any non-guest can manage any project)
+  async function getProjectIfAllowed(projectId: string, userRole: string) {
+    if (userRole === "guest") return null;
     const rows = await fastify.db
       .select({ id: projects.id })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.createdBy, userId)))
+      .where(eq(projects.id, projectId))
       .limit(1);
     return rows.length > 0 ? rows[0] : null;
   }
@@ -70,7 +71,7 @@ export default fp(async function invitationsRoutes(fastify) {
       });
     }
 
-    const project = await getProjectForUser(paramResult.data.id, request.userId);
+    const project = await getProjectIfAllowed(paramResult.data.id, request.userRole);
     if (!project) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
