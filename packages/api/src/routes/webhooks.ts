@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { Webhook } from "svix";
-import { eq, and, like } from "drizzle-orm";
+import { eq, and, like, ne } from "drizzle-orm";
 import { users } from "../db/schema.js";
 
 interface ClerkWebhookPayload {
@@ -75,6 +75,12 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
             .limit(1);
 
           if (stubUser.length > 0) {
+            // The auth middleware may have already auto-provisioned a placeholder
+            // user with this clerkId — delete it first to avoid unique conflict
+            await fastify.db
+              .delete(users)
+              .where(and(eq(users.clerkId, data.id), ne(users.id, stubUser[0].id)));
+
             // Merge: activate invited user with real Clerk ID
             await fastify.db
               .update(users)
@@ -82,12 +88,26 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
               .where(eq(users.id, stubUser[0].id));
             fastify.log.info({ clerkId: data.id, email }, "Invited user activated");
           } else {
-            // New user signup — starts as pending
-            await fastify.db
-              .insert(users)
-              .values({ clerkId: data.id, email, name, avatarUrl: data.image_url ?? null, status: "pending" })
-              .onConflictDoNothing();
-            fastify.log.info({ clerkId: data.id }, "New user provisioned as pending");
+            // No stub found — check if auto-provisioned placeholder exists and fix its email
+            const placeholderUser = await fastify.db
+              .select({ id: users.id })
+              .from(users)
+              .where(eq(users.clerkId, data.id))
+              .limit(1);
+
+            if (placeholderUser.length > 0) {
+              await fastify.db
+                .update(users)
+                .set({ email, name, avatarUrl: data.image_url ?? null, updatedAt: new Date() })
+                .where(eq(users.id, placeholderUser[0].id));
+              fastify.log.info({ clerkId: data.id }, "Placeholder user email updated");
+            } else {
+              // Brand new user — starts as pending
+              await fastify.db
+                .insert(users)
+                .values({ clerkId: data.id, email, name, avatarUrl: data.image_url ?? null, status: "pending" });
+              fastify.log.info({ clerkId: data.id }, "New user provisioned as pending");
+            }
           }
           break;
         }
