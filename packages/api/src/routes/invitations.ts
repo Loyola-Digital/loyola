@@ -186,6 +186,7 @@ export default fp(async function invitationsRoutes(fastify) {
           email: inv.email,
           name: inv.email,
           role: "guest",
+          status: "active",
         })
         .returning({ id: users.id });
       userId = newUser.id;

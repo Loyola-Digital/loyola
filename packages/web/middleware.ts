@@ -5,6 +5,7 @@ const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/invite(.*)",
+  "/pending-approval(.*)",
 ]);
 
 // Routes that guests are allowed to access

@@ -20,13 +20,18 @@ export function createApiFetcher(getToken: () => Promise<string | null>) {
 
     if (!response.ok) {
       let message = `API error: ${response.status}`;
+      let code: string | undefined;
       try {
-        const body = await response.json() as { error?: string; message?: string };
+        const body = await response.json() as { error?: string; message?: string; code?: string };
         message = body.error ?? body.message ?? message;
+        code = body.code;
       } catch {
         // non-JSON error body
       }
-      throw new Error(message);
+      const err = new Error(message) as Error & { status: number; code?: string };
+      err.status = response.status;
+      err.code = code;
+      throw err;
     }
 
     const text = await response.text();

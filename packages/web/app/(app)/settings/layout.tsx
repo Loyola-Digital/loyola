@@ -19,21 +19,31 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useRouter } from "next/navigation";
+import { useUserRole } from "@/lib/hooks/use-user-role";
 
-const settingsTabs = [
+const BASE_TABS = [
   { label: "Geral", href: "/settings/general", value: "general" },
   { label: "Meta / Instagram", href: "/settings/instagram", value: "instagram" },
 ] as const;
 
-function getActiveTab(pathname: string) {
-  const tab = settingsTabs.find((t) => pathname.startsWith(t.href));
-  return tab ?? settingsTabs[0];
+const ADMIN_TABS = [
+  ...BASE_TABS,
+  { label: "Usuários", href: "/settings/users", value: "users" },
+] as const;
+
+type Tab = { label: string; href: string; value: string };
+
+function getActiveTab(tabs: readonly Tab[], pathname: string) {
+  return tabs.find((t) => pathname.startsWith(t.href)) ?? tabs[0];
 }
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const activeTab = getActiveTab(pathname);
+  const role = useUserRole();
+  const isAdmin = role === "admin" || role === "manager";
+  const settingsTabs: readonly Tab[] = isAdmin ? ADMIN_TABS : BASE_TABS;
+  const activeTab = getActiveTab(settingsTabs, pathname);
 
   return (
     <div className="space-y-6">

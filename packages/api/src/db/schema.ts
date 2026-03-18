@@ -28,6 +28,8 @@ export const userRoleEnum = pgEnum("user_role", [
   "guest",
 ]);
 
+export const userStatusEnum = pgEnum("user_status", ["active", "pending", "blocked"]);
+
 export const messageRoleEnum = pgEnum("message_role", ["user", "assistant"]);
 
 export const taskStatusEnum = pgEnum("task_status", [
@@ -59,6 +61,7 @@ export const users = pgTable(
     name: text("name").notNull(),
     avatarUrl: text("avatar_url"),
     role: userRoleEnum("role").notNull().default("copywriter"),
+    status: userStatusEnum("status").notNull().default("active"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

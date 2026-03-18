@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { Webhook } from "svix";
-import { eq } from "drizzle-orm";
+import { eq, and, like } from "drizzle-orm";
 import { users } from "../db/schema.js";
 
 interface ClerkWebhookPayload {
@@ -61,34 +61,49 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
 
     try {
       switch (type) {
-        case "user.created":
-        case "user.updated": {
-          // AC 3, 4, 7: Upsert (idempotent)
+        case "user.created": {
           const email = data.email_addresses?.[0]?.email_address ?? "";
           const firstName = data.first_name ?? "";
           const lastName = data.last_name ?? "";
-          const name =
-            `${firstName} ${lastName}`.trim() || data.username || "Unknown";
+          const name = `${firstName} ${lastName}`.trim() || data.username || "Unknown";
+
+          // Check if there's an invited stub user with this email
+          const stubUser = await fastify.db
+            .select({ id: users.id, clerkId: users.clerkId })
+            .from(users)
+            .where(and(eq(users.email, email), like(users.clerkId, "guest:%")))
+            .limit(1);
+
+          if (stubUser.length > 0) {
+            // Merge: activate invited user with real Clerk ID
+            await fastify.db
+              .update(users)
+              .set({ clerkId: data.id, name, avatarUrl: data.image_url ?? null, updatedAt: new Date() })
+              .where(eq(users.id, stubUser[0].id));
+            fastify.log.info({ clerkId: data.id, email }, "Invited user activated");
+          } else {
+            // New user signup — starts as pending
+            await fastify.db
+              .insert(users)
+              .values({ clerkId: data.id, email, name, avatarUrl: data.image_url ?? null, status: "pending" })
+              .onConflictDoNothing();
+            fastify.log.info({ clerkId: data.id }, "New user provisioned as pending");
+          }
+          break;
+        }
+
+        case "user.updated": {
+          const email = data.email_addresses?.[0]?.email_address ?? "";
+          const firstName = data.first_name ?? "";
+          const lastName = data.last_name ?? "";
+          const name = `${firstName} ${lastName}`.trim() || data.username || "Unknown";
 
           await fastify.db
-            .insert(users)
-            .values({
-              clerkId: data.id,
-              email,
-              name,
-              avatarUrl: data.image_url ?? null,
-            })
-            .onConflictDoUpdate({
-              target: users.clerkId,
-              set: {
-                email,
-                name,
-                avatarUrl: data.image_url ?? null,
-                updatedAt: new Date(),
-              },
-            });
+            .update(users)
+            .set({ email, name, avatarUrl: data.image_url ?? null, updatedAt: new Date() })
+            .where(eq(users.clerkId, data.id));
 
-          fastify.log.info({ clerkId: data.id, type }, "User synced");
+          fastify.log.info({ clerkId: data.id }, "User profile updated");
           break;
         }
 
