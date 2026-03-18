@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Brain, MessageSquare, CheckSquare, Settings, Instagram, TrendingUp, Plus } from "lucide-react";
+import { Brain, MessageSquare, CheckSquare, Settings, Instagram, TrendingUp, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { Button } from "@/components/ui/button";
@@ -29,9 +29,12 @@ const navItems = [
   { label: "Minds", href: "/minds", icon: Brain },
   { label: "Conversations", href: "/conversations", icon: MessageSquare },
   { label: "Tasks", href: "/tasks", icon: CheckSquare },
-  { label: "Instagram", href: "/instagram", icon: Instagram },
-  { label: "Trafego", href: "/traffic", icon: TrendingUp },
   { label: "Settings", href: "/settings", icon: Settings },
+] as const;
+
+const metaSubItems = [
+  { label: "Instagram", href: "/instagram", icon: Instagram },
+  { label: "Ads", href: "/traffic", icon: TrendingUp },
 ] as const;
 
 function NavContent({ collapsed }: { collapsed: boolean }) {
@@ -39,6 +42,19 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
   const { total: openTaskCount } = useTasks({ status: "open", limit: 1, offset: 0 });
   const { data: projects, isLoading: projectsLoading } = useProjects();
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  // Meta group: auto-expand if user is on /instagram or /traffic
+  const isMetaActive = pathname.startsWith("/instagram") || pathname.startsWith("/traffic");
+  const [metaOpen, setMetaOpen] = useState(isMetaActive);
+
+  // Keep in sync if user navigates
+  useEffect(() => {
+    if (isMetaActive) setMetaOpen(true);
+  }, [isMetaActive]);
+
+  // Split navItems: items before Settings, and Settings itself
+  const topItems = navItems.filter((i) => i.href !== "/settings");
+  const settingsItem = navItems.find((i) => i.href === "/settings")!;
 
   return (
     <ScrollArea className="flex-1">
@@ -49,7 +65,7 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
             Global
           </p>
         )}
-        {navItems.map((item) => {
+        {topItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           const Icon = item.icon;
           const showBadge = item.href === "/tasks" && openTaskCount > 0 && !collapsed;
@@ -75,6 +91,95 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
             </Button>
           );
         })}
+
+        {/* Meta collapsible group */}
+        <Button
+          variant={isMetaActive ? "secondary" : "ghost"}
+          className={cn(
+            "justify-start gap-3",
+            collapsed && "justify-center px-2",
+          )}
+          onClick={() => setMetaOpen((o) => !o)}
+        >
+          <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+            <line x1="9" y1="9" x2="9.01" y2="9" />
+            <line x1="15" y1="9" x2="15.01" y2="9" />
+          </svg>
+          {!collapsed && (
+            <>
+              <span>Meta</span>
+              {metaOpen ? (
+                <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="ml-auto h-4 w-4 text-muted-foreground" />
+              )}
+            </>
+          )}
+        </Button>
+
+        {metaOpen && !collapsed && (
+          <div className="flex flex-col gap-0.5 ml-4">
+            {metaSubItems.map((item) => {
+              const isActive = pathname.startsWith(item.href);
+              const Icon = item.icon;
+              return (
+                <Button
+                  key={item.href}
+                  variant={isActive ? "secondary" : "ghost"}
+                  size="sm"
+                  className="justify-start gap-2.5 h-8 text-sm"
+                  asChild
+                >
+                  <Link href={item.href}>
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span>{item.label}</span>
+                  </Link>
+                </Button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Collapsed: show sub-items as individual icons */}
+        {metaOpen && collapsed && metaSubItems.map((item) => {
+          const isActive = pathname.startsWith(item.href);
+          const Icon = item.icon;
+          return (
+            <Button
+              key={item.href}
+              variant={isActive ? "secondary" : "ghost"}
+              className="justify-center px-2"
+              asChild
+            >
+              <Link href={item.href}>
+                <Icon className="h-5 w-5 shrink-0" />
+              </Link>
+            </Button>
+          );
+        })}
+
+        {/* Settings */}
+        {(() => {
+          const isActive = pathname.startsWith(settingsItem.href);
+          const Icon = settingsItem.icon;
+          return (
+            <Button
+              variant={isActive ? "secondary" : "ghost"}
+              className={cn(
+                "justify-start gap-3",
+                collapsed && "justify-center px-2",
+              )}
+              asChild
+            >
+              <Link href={settingsItem.href}>
+                <Icon className="h-5 w-5 shrink-0" />
+                {!collapsed && <span>{settingsItem.label}</span>}
+              </Link>
+            </Button>
+          );
+        })()}
 
         {/* Separator */}
         <Separator className="my-2" />
