@@ -1,8 +1,13 @@
 "use client";
 
-import { useUser } from "@clerk/nextjs";
+import { useCurrentUser } from "@/lib/hooks/use-current-user";
 
-export function useUserRole(): string {
-  const { user } = useUser();
-  return (user?.publicMetadata?.role as string) ?? "admin";
+/**
+ * Returns the user's role from the DB (via /api/me).
+ * Returns null while loading, "admin" as fallback on error.
+ */
+export function useUserRole(): string | null {
+  const { data: me, isLoading } = useCurrentUser();
+  if (isLoading) return null;
+  return me?.role ?? "admin";
 }
