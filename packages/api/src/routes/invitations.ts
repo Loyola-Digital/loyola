@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { randomBytes } from "crypto";
 import {
@@ -180,6 +180,25 @@ export default fp(async function invitationsRoutes(fastify) {
       .limit(1);
 
     const isPlaceholderEmail = currentUser?.email?.endsWith("@placeholder.dev") ?? false;
+
+    if (isPlaceholderEmail) {
+      // Clean up any old stub user with the same email (leftover from old invite flow)
+      const oldStub = await fastify.db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.email, inv.email), ne(users.id, userId)))
+        .limit(1);
+
+      if (oldStub.length > 0) {
+        // Transfer any existing project memberships to the real user
+        await fastify.db
+          .update(projectMembers)
+          .set({ userId })
+          .where(eq(projectMembers.userId, oldStub[0].id));
+        await fastify.db.delete(users).where(eq(users.id, oldStub[0].id));
+      }
+    }
+
     await fastify.db
       .update(users)
       .set({
