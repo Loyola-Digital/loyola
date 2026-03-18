@@ -38,7 +38,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="-m-6 flex h-[calc(100%+3rem)]">
       <ChatSidebar
         mindId={mindId}
         conversationId={conversationId}
