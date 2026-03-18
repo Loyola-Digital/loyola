@@ -1,21 +1,41 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { LayoutGrid, Network } from "lucide-react";
 import { useMinds } from "@/lib/hooks/use-minds";
 import { MindSearch } from "@/components/minds/mind-search";
 import { SquadGrid } from "@/components/minds/squad-grid";
+import { MindsNetwork } from "@/components/minds/minds-network";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+
+type ViewMode = "grid" | "network";
+const STORAGE_KEY = "minds-view-mode";
 
 export default function MindsPage() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const { squads, isLoading, error } = useMinds(searchQuery || undefined);
+
+  // Persist view preference
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY) as ViewMode | null;
+    if (saved === "grid" || saved === "network") setViewMode(saved);
+  }, []);
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
   }, []);
 
+  const handleViewMode = useCallback((mode: ViewMode) => {
+    setViewMode(mode);
+    localStorage.setItem(STORAGE_KEY, mode);
+  }, []);
+
+  const hasResults = !isLoading && !error && squads && squads.length > 0;
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Hero section */}
       <div className="relative overflow-hidden rounded-2xl border border-border/30 bg-gradient-to-br from-card via-card to-brand/5 px-8 py-10 text-center">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,hsl(47_98%_54%/0.08),transparent_50%)]" />
@@ -25,13 +45,45 @@ export default function MindsPage() {
             <span className="text-brand">IA</span>
           </h1>
           <p className="mx-auto mt-2 max-w-md text-muted-foreground leading-relaxed">
-            Explore as mentes disponiveis e receba orientacao estrategica personalizada
+            Explore as mentes disponíveis e receba orientação estratégica personalizada
           </p>
           <div className="mt-6">
             <MindSearch onSearch={handleSearch} />
           </div>
         </div>
       </div>
+
+      {/* View toggle */}
+      {hasResults && (
+        <div className="flex items-center justify-end gap-1 rounded-lg border border-border/40 bg-muted/30 p-1 w-fit ml-auto">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleViewMode("grid")}
+            className={
+              viewMode === "grid"
+                ? "bg-background shadow-sm text-foreground h-7 px-3"
+                : "text-muted-foreground hover:text-foreground h-7 px-3"
+            }
+          >
+            <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />
+            Grid
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleViewMode("network")}
+            className={
+              viewMode === "network"
+                ? "bg-background shadow-sm text-foreground h-7 px-3"
+                : "text-muted-foreground hover:text-foreground h-7 px-3"
+            }
+          >
+            <Network className="h-3.5 w-3.5 mr-1.5" />
+            Rede Neural
+          </Button>
+        </div>
+      )}
 
       {/* Loading state */}
       {isLoading && (
@@ -75,9 +127,16 @@ export default function MindsPage() {
         </div>
       )}
 
-      {/* Results */}
-      {!isLoading && !error && squads && squads.length > 0 && (
-        <SquadGrid squads={squads} />
+      {/* Grid view */}
+      {hasResults && viewMode === "grid" && (
+        <SquadGrid squads={squads!} />
+      )}
+
+      {/* Network view */}
+      {hasResults && viewMode === "network" && (
+        <div className="h-[600px] rounded-2xl border border-border/30 bg-card/30 overflow-hidden">
+          <MindsNetwork squads={squads!} />
+        </div>
       )}
     </div>
   );
