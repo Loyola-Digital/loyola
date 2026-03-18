@@ -186,6 +186,39 @@ export default fp(async function googleSheetsRoutes(fastify) {
     }
   );
 
+  // ---- GET /api/google-sheets/connections/:id/available-tabs ----
+  fastify.get(
+    "/api/google-sheets/connections/:id/available-tabs",
+    async (request, reply) => {
+      if (!requireAdminOrManager(request.userRole, reply)) return;
+
+      const paramResult = idParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "ID invalido" });
+      }
+
+      const [connection] = await fastify.db
+        .select()
+        .from(googleSheetsConnections)
+        .where(eq(googleSheetsConnections.id, paramResult.data.id))
+        .limit(1);
+
+      if (!connection) {
+        return reply.code(404).send({ error: "Conexao nao encontrada" });
+      }
+
+      try {
+        const info = await validateSpreadsheetAccess(connection.spreadsheetId);
+        return { tabs: info.tabs };
+      } catch (err) {
+        return reply.code(502).send({
+          error: "Erro ao listar abas da planilha",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  );
+
   // ---- DELETE /api/google-sheets/connections/:id ----
   fastify.delete(
     "/api/google-sheets/connections/:id",

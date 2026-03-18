@@ -122,6 +122,18 @@ export function useMapSheetTabs() {
   });
 }
 
+export function useAvailableTabs(connectionId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["sheet-available-tabs", connectionId],
+    queryFn: () =>
+      apiClient<{ tabs: string[] }>(
+        `/api/google-sheets/connections/${connectionId}/available-tabs`
+      ),
+    enabled: !!connectionId,
+  });
+}
+
 export function useSheetTabPreview(
   connectionId: string | null,
   tabName: string | null

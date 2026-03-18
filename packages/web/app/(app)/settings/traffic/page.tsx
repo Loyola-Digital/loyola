@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import {
   TrendingUp,
   Plus,
@@ -51,6 +51,7 @@ import {
   useDeleteGoogleSheetsConnection,
   useMapSheetTabs,
   useSheetTabPreview,
+  useAvailableTabs,
   type TabMappingInput,
 } from "@/lib/hooks/use-google-sheets";
 import {
@@ -322,12 +323,6 @@ export default function TrafficSettingsPage() {
 // GOOGLE SHEETS SECTION
 // ============================================================
 
-const TAB_TYPES = [
-  { value: "leads", label: "Leads" },
-  { value: "survey", label: "Pesquisa" },
-  { value: "sales", label: "Vendas" },
-] as const;
-
 const REQUIRED_COLUMNS: Record<string, { field: string; label: string }[]> = {
   leads: [
     { field: "utmCampaign", label: "UTM Campaign" },
@@ -553,76 +548,69 @@ function TabMappingSection({
   connection: { id: string; projectId: string; spreadsheetId: string; tabMappings: { tabName: string; tabType: string; columnMapping: Record<string, string> }[] };
 }) {
   const mapTabs = useMapSheetTabs();
-  const [previewTab, setPreviewTab] = useState<string | null>(null);
-  const { data: preview, isLoading: loadingPreview } = useSheetTabPreview(
-    previewTab ? connection.id : null,
-    previewTab
-  );
+  const { data: availableTabs, isLoading: loadingTabs } = useAvailableTabs(connection.id);
 
-  // Build initial state from existing mappings
-  const existingMappings = connection.tabMappings ?? [];
-  const [tabConfigs, setTabConfigs] = useState<
-    Record<string, { type: string; columnMapping: Record<string, string> }>
-  >(() => {
-    const initial: Record<string, { type: string; columnMapping: Record<string, string> }> = {};
-    for (const m of existingMappings) {
-      initial[m.tabName] = {
-        type: m.tabType,
-        columnMapping: m.columnMapping as Record<string, string>,
-      };
+  // The 3 data types the system needs
+  const DATA_NEEDS = [
+    { type: "leads" as const, label: "Leads / CRM", description: "Dados de leads com UTMs para cruzar com campanhas", requiredFields: REQUIRED_COLUMNS.leads },
+    { type: "survey" as const, label: "Pesquisa de Captação", description: "Respostas da pesquisa para qualificar leads", requiredFields: [] as { field: string; label: string }[] },
+    { type: "sales" as const, label: "Vendas", description: "Dados de vendas para calcular ROAS real", requiredFields: REQUIRED_COLUMNS.sales },
+  ];
+
+  // Build state from existing mappings
+  const [selections, setSelections] = useState<Record<string, { tabName: string; columnMapping: Record<string, string> }>>(() => {
+    const init: Record<string, { tabName: string; columnMapping: Record<string, string> }> = {};
+    for (const m of connection.tabMappings ?? []) {
+      init[m.tabType] = { tabName: m.tabName, columnMapping: m.columnMapping as Record<string, string> };
     }
-    return initial;
+    return init;
   });
 
-  // Get list of tabs — we need to fetch from API
-  // We show all tabs that have mappings, plus preview lets user discover new ones
-  const mappedTabNames = Object.keys(tabConfigs);
-
-  const [newTabName, setNewTabName] = useState("");
-
-  const updateTabType = useCallback((tabName: string, type: string) => {
-    setTabConfigs((prev) => ({
-      ...prev,
-      [tabName]: { type, columnMapping: prev[tabName]?.columnMapping ?? {} },
-    }));
-  }, []);
-
-  const updateColumnMapping = useCallback(
-    (tabName: string, field: string, headerName: string) => {
-      setTabConfigs((prev) => ({
-        ...prev,
-        [tabName]: {
-          ...prev[tabName],
-          columnMapping: { ...prev[tabName]?.columnMapping, [field]: headerName },
-        },
-      }));
-    },
-    []
+  // Track which type is showing preview
+  const [previewType, setPreviewType] = useState<string | null>(null);
+  const previewTabName = previewType ? selections[previewType]?.tabName : null;
+  const { data: preview, isLoading: loadingPreview } = useSheetTabPreview(
+    previewTabName ? connection.id : null,
+    previewTabName
   );
 
-  const addSurveyField = useCallback((tabName: string, field: string) => {
-    setTabConfigs((prev) => ({
+  // Survey dynamic fields
+  const [newSurveyField, setNewSurveyField] = useState("");
+
+  const tabs = availableTabs?.tabs ?? [];
+
+  function handleSelectTab(type: string, tabName: string) {
+    setSelections((prev) => ({
       ...prev,
-      [tabName]: {
-        ...prev[tabName],
-        columnMapping: { ...prev[tabName]?.columnMapping, [field]: "" },
+      [type]: { tabName, columnMapping: prev[type]?.columnMapping ?? {} },
+    }));
+    // Auto-show preview
+    setPreviewType(type);
+  }
+
+  function handleMapColumn(type: string, field: string, headerName: string) {
+    setSelections((prev) => ({
+      ...prev,
+      [type]: {
+        ...prev[type],
+        columnMapping: { ...prev[type]?.columnMapping, [field]: headerName },
       },
     }));
-  }, []);
+  }
 
   function handleSave() {
     const mappings: TabMappingInput[] = [];
-    for (const [tabName, config] of Object.entries(tabConfigs)) {
-      if (config.type && config.type !== "none") {
+    for (const [type, sel] of Object.entries(selections)) {
+      if (sel.tabName) {
         mappings.push({
-          tabName,
-          tabType: config.type as "leads" | "survey" | "sales",
-          columnMapping: config.columnMapping,
+          tabName: sel.tabName,
+          tabType: type as "leads" | "survey" | "sales",
+          columnMapping: sel.columnMapping,
         });
       }
     }
     if (mappings.length === 0) {
-      toast.error("Configure pelo menos uma aba.");
+      toast.error("Selecione pelo menos uma aba.");
       return;
     }
     mapTabs.mutate(
@@ -637,226 +625,145 @@ function TabMappingSection({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Mapeamento de abas</h3>
+        <div>
+          <h3 className="text-sm font-semibold">Mapeamento de Dados</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Selecione qual aba da planilha corresponde a cada tipo de dado
+          </p>
+        </div>
         <Button size="sm" onClick={handleSave} disabled={mapTabs.isPending}>
           {mapTabs.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          Salvar mapeamento
+          Salvar
         </Button>
       </div>
 
-      {/* Add tab by name */}
-      <div className="flex items-center gap-2">
-        <Input
-          placeholder="Nome da aba (ex: Leads Jan)"
-          value={newTabName}
-          onChange={(e) => setNewTabName(e.target.value)}
-          className="max-w-xs text-sm"
-        />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            if (newTabName.trim()) {
-              setTabConfigs((prev) => ({
-                ...prev,
-                [newTabName.trim()]: { type: "", columnMapping: {} },
-              }));
-              setNewTabName("");
-            }
-          }}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Adicionar aba
-        </Button>
-      </div>
+      {loadingTabs && <Skeleton className="h-40 rounded-xl" />}
 
-      {/* Tab list */}
-      {mappedTabNames.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          Adicione abas da planilha para mapear colunas.
-        </p>
-      )}
-
-      {mappedTabNames.map((tabName) => {
-        const config = tabConfigs[tabName];
-        const tabType = config?.type || "";
-        const requiredCols = REQUIRED_COLUMNS[tabType] ?? [];
-        const isSurvey = tabType === "survey";
+      {!loadingTabs && DATA_NEEDS.map((need) => {
+        const sel = selections[need.type];
+        const selectedTab = sel?.tabName ?? "";
+        const isShowingPreview = previewType === need.type && !!selectedTab;
+        const previewHeaders = isShowingPreview ? preview?.headers ?? [] : [];
 
         return (
-          <div
-            key={tabName}
-            className="rounded-xl border border-border/20 bg-muted/20 p-4 space-y-3"
-          >
+          <div key={need.type} className="rounded-xl border border-border/20 bg-muted/20 p-4 space-y-3">
             <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{need.label}</span>
+                  {selectedTab && (
+                    <Badge variant="default" className="text-[10px] bg-green-500/20 text-green-600 border-green-500/30">
+                      Configurado
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">{need.description}</p>
+              </div>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">{tabName}</span>
-                <Select
-                  value={tabType}
-                  onValueChange={(v) => updateTabType(tabName, v)}
-                >
-                  <SelectTrigger className="h-7 w-[130px] text-xs">
-                    <SelectValue placeholder="Tipo..." />
+                <Select value={selectedTab} onValueChange={(v) => handleSelectTab(need.type, v)}>
+                  <SelectTrigger className="h-8 w-[180px] text-xs">
+                    <SelectValue placeholder="Selecione a aba..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {TAB_TYPES.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>
-                        {t.label}
-                      </SelectItem>
+                    {tabs.map((t) => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs"
-                  onClick={() => setPreviewTab(previewTab === tabName ? null : tabName)}
-                >
-                  <Eye className="h-3.5 w-3.5" />
-                  {previewTab === tabName ? "Fechar" : "Preview"}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-destructive/60 hover:text-destructive"
-                  onClick={() => {
-                    setTabConfigs((prev) => {
-                      const next = { ...prev };
-                      delete next[tabName];
-                      return next;
-                    });
-                    if (previewTab === tabName) setPreviewTab(null);
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                {selectedTab && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-8"
+                    onClick={() => setPreviewType(isShowingPreview ? null : need.type)}
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    {isShowingPreview ? "Fechar" : "Preview"}
+                  </Button>
+                )}
               </div>
             </div>
 
-            {/* Preview table */}
-            {previewTab === tabName && (
+            {/* Preview */}
+            {isShowingPreview && (
               <div className="overflow-x-auto">
-                {loadingPreview && <Skeleton className="h-32" />}
+                {loadingPreview && <Skeleton className="h-24" />}
                 {preview && (
                   <table className="w-full text-xs border border-border/20 rounded">
                     <thead>
                       <tr className="bg-muted/40">
                         {preview.headers.map((h, i) => (
-                          <th key={i} className="px-2 py-1.5 text-left font-medium border-b border-border/20">
-                            {h}
-                          </th>
+                          <th key={i} className="px-2 py-1.5 text-left font-medium border-b border-border/20">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {preview.rows.map((row, ri) => (
+                      {preview.rows.slice(0, 3).map((row, ri) => (
                         <tr key={ri} className="border-b border-border/10">
                           {row.map((cell, ci) => (
-                            <td key={ci} className="px-2 py-1 text-muted-foreground truncate max-w-[150px]">
-                              {cell}
-                            </td>
+                            <td key={ci} className="px-2 py-1 text-muted-foreground truncate max-w-[120px]">{cell}</td>
                           ))}
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 )}
-                {preview && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Mostrando {preview.rows.length} de {preview.totalRows} linhas
-                  </p>
-                )}
               </div>
             )}
 
             {/* Column mapping for leads/sales */}
-            {tabType && !isSurvey && requiredCols.length > 0 && (
+            {selectedTab && need.type !== "survey" && need.requiredFields.length > 0 && (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {requiredCols.map((col) => (
+                {need.requiredFields.map((col) => (
                   <div key={col.field} className="space-y-1">
                     <Label className="text-xs text-muted-foreground">{col.label}</Label>
-                    {preview ? (
-                      <Select
-                        value={config?.columnMapping?.[col.field] ?? ""}
-                        onValueChange={(v) => updateColumnMapping(tabName, col.field, v)}
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue placeholder="Selecione coluna..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {preview.headers.map((h) => (
-                            <SelectItem key={h} value={h}>
-                              {h}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input
-                        className="h-8 text-xs"
-                        placeholder="Nome da coluna"
-                        value={config?.columnMapping?.[col.field] ?? ""}
-                        onChange={(e) =>
-                          updateColumnMapping(tabName, col.field, e.target.value)
-                        }
-                      />
-                    )}
+                    <Select
+                      value={sel?.columnMapping?.[col.field] ?? ""}
+                      onValueChange={(v) => handleMapColumn(need.type, col.field, v)}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Coluna..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(previewHeaders.length > 0 ? previewHeaders : tabs).map((h) => (
+                          <SelectItem key={h} value={h}>{h}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 ))}
               </div>
             )}
 
-            {/* Column mapping for survey (dynamic fields) */}
-            {isSurvey && (
+            {/* Column mapping for survey (dynamic) */}
+            {selectedTab && need.type === "survey" && (
               <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  Adicione os campos da pesquisa que deseja importar:
-                </p>
-                {Object.entries(config?.columnMapping ?? {}).map(([field, headerName]) => (
+                <p className="text-xs text-muted-foreground">Campos da pesquisa para importar:</p>
+                {Object.entries(sel?.columnMapping ?? {}).map(([field, headerName]) => (
                   <div key={field} className="flex items-center gap-2">
-                    <Input
-                      className="h-8 text-xs max-w-[150px]"
-                      placeholder="Nome do campo"
-                      value={field}
-                      readOnly
-                    />
-                    {preview ? (
-                      <Select
-                        value={headerName}
-                        onValueChange={(v) => updateColumnMapping(tabName, field, v)}
-                      >
-                        <SelectTrigger className="h-8 text-xs max-w-[200px]">
-                          <SelectValue placeholder="Coluna..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {preview.headers.map((h) => (
-                            <SelectItem key={h} value={h}>
-                              {h}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input
-                        className="h-8 text-xs max-w-[200px]"
-                        placeholder="Nome da coluna"
-                        value={headerName}
-                        onChange={(e) =>
-                          updateColumnMapping(tabName, field, e.target.value)
-                        }
-                      />
-                    )}
+                    <Badge variant="outline" className="text-xs shrink-0">{field}</Badge>
+                    <Select
+                      value={headerName}
+                      onValueChange={(v) => handleMapColumn("survey", field, v)}
+                    >
+                      <SelectTrigger className="h-8 text-xs max-w-[200px]">
+                        <SelectValue placeholder="Coluna..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(previewHeaders.length > 0 ? previewHeaders : []).map((h) => (
+                          <SelectItem key={h} value={h}>{h}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <Button
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 text-destructive/60"
                       onClick={() => {
-                        setTabConfigs((prev) => {
-                          const mapping = { ...prev[tabName].columnMapping };
+                        setSelections((prev) => {
+                          const mapping = { ...prev.survey.columnMapping };
                           delete mapping[field];
-                          return { ...prev, [tabName]: { ...prev[tabName], columnMapping: mapping } };
+                          return { ...prev, survey: { ...prev.survey, columnMapping: mapping } };
                         });
                       }}
                     >
@@ -864,47 +771,32 @@ function TabMappingSection({
                     </Button>
                   </div>
                 ))}
-                <SurveyFieldAdder
-                  onAdd={(field) => addSurveyField(tabName, field)}
-                />
+                <div className="flex items-center gap-2">
+                  <Input
+                    className="h-8 text-xs max-w-[150px]"
+                    placeholder="Nome do campo (ex: renda)"
+                    value={newSurveyField}
+                    onChange={(e) => setNewSurveyField(e.target.value)}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => {
+                      if (newSurveyField.trim()) {
+                        handleMapColumn("survey", newSurveyField.trim(), "");
+                        setNewSurveyField("");
+                      }
+                    }}
+                  >
+                    <Plus className="h-3 w-3" /> Adicionar
+                  </Button>
+                </div>
               </div>
             )}
           </div>
         );
       })}
-    </div>
-  );
-}
-
-// ============================================================
-// SURVEY FIELD ADDER
-// ============================================================
-
-function SurveyFieldAdder({ onAdd }: { onAdd: (field: string) => void }) {
-  const [fieldName, setFieldName] = useState("");
-
-  return (
-    <div className="flex items-center gap-2">
-      <Input
-        className="h-8 text-xs max-w-[200px]"
-        placeholder="Nome do campo (ex: renda, sexo)"
-        value={fieldName}
-        onChange={(e) => setFieldName(e.target.value)}
-      />
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-8 text-xs"
-        onClick={() => {
-          if (fieldName.trim()) {
-            onAdd(fieldName.trim());
-            setFieldName("");
-          }
-        }}
-      >
-        <Plus className="h-3 w-3" />
-        Adicionar campo
-      </Button>
     </div>
   );
 }
