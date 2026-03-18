@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useInstagramAccounts, useAssignAccountToProject } from "@/lib/hooks/use-instagram-accounts";
+import { useInstagramAccounts, useLinkAccountToProject } from "@/lib/hooks/use-instagram-accounts";
 
 interface LinkAccountDialogProps {
   projectId: string;
@@ -31,9 +31,9 @@ export function LinkAccountDialog({ projectId, open, onOpenChange }: LinkAccount
 
   // All accounts not yet linked to this project
   const { data: allAccounts } = useInstagramAccounts();
-  const assignAccount = useAssignAccountToProject();
+  const linkAccount = useLinkAccountToProject();
 
-  const available = allAccounts?.filter((a) => a.projectId !== projectId) ?? [];
+  const available = allAccounts?.filter((a) => !a.projectIds.includes(projectId)) ?? [];
 
   function handleClose() {
     setSelectedId("");
@@ -43,7 +43,7 @@ export function LinkAccountDialog({ projectId, open, onOpenChange }: LinkAccount
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedId) return;
-    await assignAccount.mutateAsync(
+    await linkAccount.mutateAsync(
       { accountId: selectedId, projectId },
       {
         onSuccess: () => {
@@ -88,8 +88,10 @@ export function LinkAccountDialog({ projectId, open, onOpenChange }: LinkAccount
                     @{account.instagramUsername}
                     {account.accountName !== account.instagramUsername &&
                       ` — ${account.accountName}`}
-                    {account.projectId && (
-                      <span className="ml-1 text-xs text-muted-foreground">(já em outro projeto)</span>
+                    {account.projectIds.length > 0 && (
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        ({account.projectIds.length} projeto{account.projectIds.length !== 1 ? "s" : ""})
+                      </span>
                     )}
                   </SelectItem>
                 ))}
@@ -100,8 +102,8 @@ export function LinkAccountDialog({ projectId, open, onOpenChange }: LinkAccount
               <Button type="button" variant="outline" onClick={handleClose}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={!selectedId || assignAccount.isPending}>
-                {assignAccount.isPending ? "Vinculando..." : "Vincular"}
+              <Button type="submit" disabled={!selectedId || linkAccount.isPending}>
+                {linkAccount.isPending ? "Vinculando..." : "Vincular"}
               </Button>
             </DialogFooter>
           </form>

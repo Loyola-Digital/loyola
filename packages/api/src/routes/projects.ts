@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq, and, isNull } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { projects, instagramAccounts, conversations, projectMembers, users } from "../db/schema.js";
+import { projects, instagramAccounts, instagramAccountProjects, conversations, projectMembers, users } from "../db/schema.js";
 
 // ============================================================
 // SCHEMAS
@@ -195,11 +195,16 @@ export default fp(async function projectRoutes(fastify) {
         instagramUserId: instagramAccounts.instagramUserId,
         profilePictureUrl: instagramAccounts.profilePictureUrl,
         isActive: instagramAccounts.isActive,
-        projectId: instagramAccounts.projectId,
         createdAt: instagramAccounts.createdAt,
       })
       .from(instagramAccounts)
-      .where(eq(instagramAccounts.projectId, paramResult.data.id));
+      .innerJoin(
+        instagramAccountProjects,
+        and(
+          eq(instagramAccountProjects.accountId, instagramAccounts.id),
+          eq(instagramAccountProjects.projectId, paramResult.data.id),
+        ),
+      );
 
     return accounts;
   });

@@ -2,7 +2,7 @@
 
 import { formatDistanceToNow, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { MoreVertical, Pencil, Trash2, RefreshCw } from "lucide-react";
+import { MoreVertical, Pencil, Trash2, RefreshCw, X, Plus } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useProjects } from "@/lib/hooks/use-projects";
-import { useAssignAccountToProject, type InstagramAccount } from "@/lib/hooks/use-instagram-accounts";
+import {
+  useLinkAccountToProject,
+  useUnlinkAccountFromProject,
+  type InstagramAccount,
+} from "@/lib/hooks/use-instagram-accounts";
 import { toast } from "sonner";
 
 interface AccountCardProps {
@@ -76,7 +80,8 @@ export function AccountCard({
   isRefreshing,
 }: AccountCardProps) {
   const { data: projects } = useProjects();
-  const assignAccount = useAssignAccountToProject();
+  const linkAccount = useLinkAccountToProject();
+  const unlinkAccount = useUnlinkAccountFromProject();
 
   const initials = account.accountName
     .split(" ")
@@ -85,13 +90,32 @@ export function AccountCard({
     .join("")
     .toUpperCase();
 
-  function handleProjectChange(value: string) {
-    const projectId = value === "__none__" ? null : value;
-    assignAccount.mutate(
+  // Projects not yet linked to this account
+  const availableProjects = projects?.filter(
+    (p) => !account.projectIds.includes(p.id),
+  ) ?? [];
+
+  // Projects currently linked
+  const linkedProjects = projects?.filter((p) =>
+    account.projectIds.includes(p.id),
+  ) ?? [];
+
+  function handleLink(projectId: string) {
+    linkAccount.mutate(
       { accountId: account.id, projectId },
       {
-        onSuccess: () => toast.success("Projeto atualizado."),
-        onError: () => toast.error("Erro ao atualizar projeto."),
+        onSuccess: () => toast.success("Conta vinculada ao projeto."),
+        onError: () => toast.error("Erro ao vincular."),
+      },
+    );
+  }
+
+  function handleUnlink(projectId: string) {
+    unlinkAccount.mutate(
+      { accountId: account.id, projectId },
+      {
+        onSuccess: () => toast.success("Vínculo removido."),
+        onError: () => toast.error("Erro ao remover vínculo."),
       },
     );
   }
@@ -137,27 +161,45 @@ export function AccountCard({
                 </span>
               )}
             </div>
-            {/* Project assignment */}
+
+            {/* Project links */}
             {projects && projects.length > 0 && (
-              <div className="mt-2 flex items-center gap-2">
-                <span className="text-xs text-muted-foreground shrink-0">Projeto:</span>
-                <Select
-                  value={account.projectId ?? "__none__"}
-                  onValueChange={handleProjectChange}
-                  disabled={assignAccount.isPending}
-                >
-                  <SelectTrigger className="h-7 text-xs w-full max-w-[200px]">
-                    <SelectValue placeholder="Sem projeto" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Sem projeto</SelectItem>
-                    {projects.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {linkedProjects.map((p) => (
+                  <Badge
+                    key={p.id}
+                    variant="secondary"
+                    className="flex items-center gap-1 pr-1"
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full shrink-0"
+                      style={{ backgroundColor: p.color ?? "#94a3b8" }}
+                    />
+                    {p.name}
+                    <button
+                      onClick={() => handleUnlink(p.id)}
+                      disabled={unlinkAccount.isPending}
+                      className="ml-0.5 hover:text-destructive"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+                {availableProjects.length > 0 && (
+                  <Select onValueChange={handleLink} disabled={linkAccount.isPending}>
+                    <SelectTrigger className="h-6 w-auto border-dashed px-2 text-xs gap-1">
+                      <Plus className="h-3 w-3" />
+                      <SelectValue placeholder="Projeto" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableProjects.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             )}
           </div>

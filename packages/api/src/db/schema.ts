@@ -228,9 +228,6 @@ export const instagramAccounts = pgTable(
     accessTokenIv: text("access_token_iv").notNull(),
     tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }),
     profilePictureUrl: text("profile_picture_url"),
-    projectId: uuid("project_id").references(() => projects.id, {
-      onDelete: "cascade",
-    }),
     isActive: boolean("is_active").notNull().default(true),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -243,7 +240,28 @@ export const instagramAccounts = pgTable(
   (table) => [
     uniqueIndex("uq_ig_accounts_instagram_user_id").on(table.instagramUserId),
     index("idx_ig_accounts_user").on(table.userId),
-    index("idx_ig_accounts_project").on(table.projectId),
+  ]
+);
+
+// Many-to-many: one Instagram account can belong to multiple projects
+export const instagramAccountProjects = pgTable(
+  "instagram_account_projects",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => instagramAccounts.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("uq_ig_account_project").on(table.accountId, table.projectId),
+    index("idx_ig_account_projects_account").on(table.accountId),
+    index("idx_ig_account_projects_project").on(table.projectId),
   ]
 );
 

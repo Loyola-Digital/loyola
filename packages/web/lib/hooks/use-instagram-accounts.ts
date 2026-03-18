@@ -10,7 +10,7 @@ export interface InstagramAccount {
   instagramUserId: string;
   profilePictureUrl: string | null;
   isActive: boolean;
-  projectId: string | null;
+  projectIds: string[];
   lastSyncedAt: string | null;
   tokenExpiresAt: string | null;
   createdAt: string;
@@ -19,13 +19,13 @@ export interface InstagramAccount {
 export interface AddAccountInput {
   accountName: string;
   accessToken: string;
+  projectIds?: string[];
 }
 
 export interface UpdateAccountInput {
   id: string;
   accountName?: string;
   accessToken?: string;
-  projectId?: string | null;
 }
 
 // 1.2 — GET /api/instagram/accounts (optional project filter)
@@ -87,18 +87,34 @@ export function useDeleteAccount() {
   });
 }
 
-// Assign/unassign account to a project
-export function useAssignAccountToProject() {
+// Link an account to a project
+export function useLinkAccountToProject() {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ accountId, projectId }: { accountId: string; projectId: string | null }) =>
-      apiClient<InstagramAccount>(`/api/instagram/accounts/${accountId}`, {
-        method: "PUT",
-        body: JSON.stringify({ projectId }),
+    mutationFn: ({ accountId, projectId }: { accountId: string; projectId: string }) =>
+      apiClient<{ message: string }>(`/api/instagram/accounts/${accountId}/projects/${projectId}`, {
+        method: "POST",
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["instagram-accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["project-accounts"] });
+    },
+  });
+}
+
+// Unlink an account from a project
+export function useUnlinkAccountFromProject() {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, projectId }: { accountId: string; projectId: string }) =>
+      apiClient<void>(`/api/instagram/accounts/${accountId}/projects/${projectId}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["instagram-accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["project-accounts"] });
     },
   });
 }

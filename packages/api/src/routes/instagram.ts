@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { instagramAccounts, instagramMetricsCache } from "../db/schema.js";
+import { instagramAccounts, instagramMetricsCache, instagramAccountProjects } from "../db/schema.js";
 import { encrypt } from "../services/encryption.js";
 import { InstagramApiError } from "../services/instagram.js";
 
@@ -12,7 +12,7 @@ import { InstagramApiError } from "../services/instagram.js";
 const createAccountSchema = z.object({
   accountName: z.string().min(1).max(100),
   accessToken: z.string().min(1),
-  projectId: z.string().uuid().optional(),
+  projectIds: z.array(z.string().uuid()).optional(),
 });
 
 const accountsQuerySchema = z.object({
@@ -22,7 +22,11 @@ const accountsQuerySchema = z.object({
 const updateAccountSchema = z.object({
   accountName: z.string().min(1).max(100).optional(),
   accessToken: z.string().min(1).optional(),
-  projectId: z.string().uuid().nullable().optional(),
+});
+
+const linkProjectSchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string().uuid(),
 });
 
 const idParamSchema = z.object({
@@ -80,7 +84,7 @@ export default fp(async function instagramRoutes(fastify) {
       });
     }
 
-    const { accountName, accessToken, projectId } = parseResult.data;
+    const { accountName, accessToken, projectIds } = parseResult.data;
     const userId = request.userId;
 
     try {
@@ -88,9 +92,6 @@ export default fp(async function instagramRoutes(fastify) {
       const profile = await fastify.instagramService.validateToken(accessToken);
 
       // Check for duplicate instagram_user_id
-      // profile.id comes from the Graph API as a string, but can be parsed as a
-      // number by JSON.parse when it fits in a float — force string to avoid
-      // type mismatch against the varchar column.
       const instagramUserId = String(profile.id);
 
       const existing = await fastify.db
@@ -115,7 +116,6 @@ export default fp(async function instagramRoutes(fastify) {
         .values({
           userId,
           accountName,
-          projectId: projectId ?? null,
           instagramUserId,
           instagramUsername: profile.username,
           accessTokenEncrypted: encrypted,
@@ -124,13 +124,21 @@ export default fp(async function instagramRoutes(fastify) {
         })
         .returning();
 
+      // Link to projects if provided
+      if (projectIds && projectIds.length > 0) {
+        await fastify.db
+          .insert(instagramAccountProjects)
+          .values(projectIds.map((pid) => ({ accountId: account.id, projectId: pid })))
+          .onConflictDoNothing();
+      }
+
       return reply.code(201).send({
         id: account.id,
         accountName: account.accountName,
         instagramUsername: account.instagramUsername,
         instagramUserId: account.instagramUserId,
         profilePictureUrl: account.profilePictureUrl,
-        projectId: account.projectId,
+        projectIds: projectIds ?? [],
         isActive: account.isActive,
         tokenExpiresAt: account.tokenExpiresAt,
         createdAt: account.createdAt,
@@ -151,29 +159,52 @@ export default fp(async function instagramRoutes(fastify) {
     }
 
     const userId = request.userId;
-    const { project_id: projectId } = queryResult.data;
+    const { project_id: filterProjectId } = queryResult.data;
 
-    const whereClause = projectId
-      ? and(eq(instagramAccounts.userId, userId), eq(instagramAccounts.projectId, projectId))
-      : eq(instagramAccounts.userId, userId);
-
-    const accounts = await fastify.db
+    // Fetch base accounts
+    let accountRows = await fastify.db
       .select({
         id: instagramAccounts.id,
         accountName: instagramAccounts.accountName,
         instagramUsername: instagramAccounts.instagramUsername,
         instagramUserId: instagramAccounts.instagramUserId,
         profilePictureUrl: instagramAccounts.profilePictureUrl,
-        projectId: instagramAccounts.projectId,
         isActive: instagramAccounts.isActive,
         lastSyncedAt: instagramAccounts.lastSyncedAt,
         tokenExpiresAt: instagramAccounts.tokenExpiresAt,
         createdAt: instagramAccounts.createdAt,
       })
       .from(instagramAccounts)
-      .where(whereClause);
+      .where(eq(instagramAccounts.userId, userId));
 
-    return accounts;
+    if (accountRows.length === 0) return [];
+
+    const accountIds = accountRows.map((a) => a.id);
+
+    // Fetch project links
+    const links = await fastify.db
+      .select({ accountId: instagramAccountProjects.accountId, projectId: instagramAccountProjects.projectId })
+      .from(instagramAccountProjects)
+      .where(inArray(instagramAccountProjects.accountId, accountIds));
+
+    // Build projectIds map
+    const projectIdsMap: Record<string, string[]> = {};
+    for (const link of links) {
+      if (!projectIdsMap[link.accountId]) projectIdsMap[link.accountId] = [];
+      projectIdsMap[link.accountId].push(link.projectId);
+    }
+
+    const result = accountRows.map((a) => ({
+      ...a,
+      projectIds: projectIdsMap[a.id] ?? [],
+    }));
+
+    // Filter by project if requested
+    if (filterProjectId) {
+      return result.filter((a) => a.projectIds.includes(filterProjectId));
+    }
+
+    return result;
   });
 
   // ---- GET /api/instagram/accounts/:id ----
@@ -226,10 +257,6 @@ export default fp(async function instagramRoutes(fastify) {
 
     if (parseResult.data.accountName) {
       updates.accountName = parseResult.data.accountName;
-    }
-
-    if (parseResult.data.projectId !== undefined) {
-      updates.projectId = parseResult.data.projectId;
     }
 
     if (parseResult.data.accessToken) {
@@ -480,6 +507,51 @@ export default fp(async function instagramRoutes(fastify) {
       await fastify.instagramService.invalidateCache(paramResult.data.id);
 
       return { message: "Cache invalidado com sucesso" };
+    },
+  );
+
+  // ---- POST /api/instagram/accounts/:id/projects/:projectId ---- (link account to project)
+  fastify.post(
+    "/api/instagram/accounts/:id/projects/:projectId",
+    async (request, reply) => {
+      const paramResult = linkProjectSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "Parâmetros inválidos" });
+      }
+
+      const account = await getAccount(paramResult.data.id);
+      if (!account) {
+        return reply.code(404).send({ error: "Conta não encontrada" });
+      }
+
+      await fastify.db
+        .insert(instagramAccountProjects)
+        .values({ accountId: paramResult.data.id, projectId: paramResult.data.projectId })
+        .onConflictDoNothing();
+
+      return reply.code(201).send({ message: "Conta vinculada ao projeto." });
+    },
+  );
+
+  // ---- DELETE /api/instagram/accounts/:id/projects/:projectId ---- (unlink)
+  fastify.delete(
+    "/api/instagram/accounts/:id/projects/:projectId",
+    async (request, reply) => {
+      const paramResult = linkProjectSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "Parâmetros inválidos" });
+      }
+
+      await fastify.db
+        .delete(instagramAccountProjects)
+        .where(
+          and(
+            eq(instagramAccountProjects.accountId, paramResult.data.id),
+            eq(instagramAccountProjects.projectId, paramResult.data.projectId),
+          ),
+        );
+
+      return reply.code(204).send();
     },
   );
 });
