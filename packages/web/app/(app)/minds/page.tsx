@@ -35,53 +35,63 @@ export default function MindsPage() {
   const hasResults = !isLoading && !error && squads && squads.length > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Hero section */}
-      <div className="relative overflow-hidden rounded-2xl border border-border/30 bg-gradient-to-br from-card via-card to-brand/5 px-8 py-10 text-center">
+      <div className="relative overflow-hidden rounded-2xl border border-border/30 bg-gradient-to-br from-card via-card to-brand/5 px-8 py-12 text-center">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,hsl(47_98%_54%/0.08),transparent_50%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,hsl(220_98%_60%/0.04),transparent_50%)]" />
         <div className="relative">
+          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-brand/70 mb-3">
+            Loyola X · Minds
+          </p>
           <h1 className="text-3xl font-bold tracking-tight">
             Sua equipe de especialistas em{" "}
             <span className="text-brand">IA</span>
           </h1>
-          <p className="mx-auto mt-2 max-w-md text-muted-foreground leading-relaxed">
+          <p className="mx-auto mt-2.5 max-w-md text-sm text-muted-foreground leading-relaxed">
             Explore as mentes disponíveis e receba orientação estratégica personalizada
           </p>
-          <div className="mt-6">
+          <div className="mt-7">
             <MindSearch onSearch={handleSearch} />
           </div>
         </div>
       </div>
 
-      {/* View toggle */}
+      {/* Toolbar: toggle + count */}
       {hasResults && (
-        <div className="flex items-center justify-end gap-1 rounded-lg border border-border/40 bg-muted/30 p-1 w-fit ml-auto">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleViewMode("grid")}
-            className={
-              viewMode === "grid"
-                ? "bg-background shadow-sm text-foreground h-7 px-3"
-                : "text-muted-foreground hover:text-foreground h-7 px-3"
-            }
-          >
-            <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />
-            Grid
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleViewMode("network")}
-            className={
-              viewMode === "network"
-                ? "bg-background shadow-sm text-foreground h-7 px-3"
-                : "text-muted-foreground hover:text-foreground h-7 px-3"
-            }
-          >
-            <Network className="h-3.5 w-3.5 mr-1.5" />
-            Rede Neural
-          </Button>
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground/60">
+            {squads!.reduce((acc, s) => acc + s.mindCount, 0)} mentes em{" "}
+            {squads!.length} squads
+          </p>
+          <div className="flex items-center gap-1 rounded-lg border border-border/40 bg-muted/30 p-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleViewMode("grid")}
+              className={
+                viewMode === "grid"
+                  ? "bg-background shadow-sm text-foreground h-7 px-3 text-xs"
+                  : "text-muted-foreground hover:text-foreground h-7 px-3 text-xs"
+              }
+            >
+              <LayoutGrid className="h-3 w-3 mr-1.5" />
+              Grid
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleViewMode("network")}
+              className={
+                viewMode === "network"
+                  ? "bg-background shadow-sm text-foreground h-7 px-3 text-xs"
+                  : "text-muted-foreground hover:text-foreground h-7 px-3 text-xs"
+              }
+            >
+              <Network className="h-3 w-3 mr-1.5" />
+              Rede Neural
+            </Button>
+          </div>
         </div>
       )}
 
@@ -134,7 +144,7 @@ export default function MindsPage() {
 
       {/* Network view */}
       {hasResults && viewMode === "network" && (
-        <div className="h-[600px] rounded-2xl border border-border/30 bg-card/30 overflow-hidden">
+        <div className="h-[640px] rounded-2xl border border-border/30 bg-gradient-to-br from-card/50 to-card/20 overflow-hidden shadow-inner">
           <MindsNetwork squads={squads!} />
         </div>
       )}
