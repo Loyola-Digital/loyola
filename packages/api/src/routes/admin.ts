@@ -128,7 +128,6 @@ export default fp(async function adminRoutes(fastify) {
     }
 
     const s = (summaryResult.rows[0] ?? {}) as Row;
-    const byUser = summaryResult.rows as unknown as Row[];
     const totalInput = Number(s.total_input_tokens ?? 0);
     const totalOutput = Number(s.total_output_tokens ?? 0);
 

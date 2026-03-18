@@ -162,7 +162,7 @@ export default fp(async function instagramRoutes(fastify) {
     const { project_id: filterProjectId } = queryResult.data;
 
     // Fetch base accounts
-    let accountRows = await fastify.db
+    const accountRows = await fastify.db
       .select({
         id: instagramAccounts.id,
         accountName: instagramAccounts.accountName,

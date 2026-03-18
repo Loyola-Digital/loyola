@@ -351,3 +351,53 @@ export const instagramMetricsCache = pgTable(
     index("idx_ig_metrics_expires").on(table.expiresAt),
   ]
 );
+
+// ============================================================
+// META ADS TABLES (EPIC-6)
+// ============================================================
+
+export const metaAdsAccounts = pgTable(
+  "meta_ads_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    accountName: varchar("account_name", { length: 100 }).notNull(),
+    metaAccountId: varchar("meta_account_id", { length: 50 }).notNull(),
+    accessTokenEncrypted: text("access_token_encrypted").notNull(),
+    accessTokenIv: text("access_token_iv").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_meta_ads_meta_account_id").on(table.metaAccountId),
+    index("idx_meta_ads_created_by").on(table.createdBy),
+  ]
+);
+
+export const metaAdsAccountProjects = pgTable(
+  "meta_ads_account_projects",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => metaAdsAccounts.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("uq_meta_ads_account_project").on(table.accountId, table.projectId),
+    index("idx_meta_ads_account_projects_account").on(table.accountId),
+    index("idx_meta_ads_account_projects_project").on(table.projectId),
+  ]
+);

@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { Coins, DollarSign, MessageSquare, BookOpen, Loader2 } from "lucide-react";
+import { Coins, DollarSign, MessageSquare, BookOpen } from "lucide-react";
 import { useTokenAudit } from "@/lib/hooks/use-audit";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
