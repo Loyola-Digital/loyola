@@ -31,6 +31,7 @@ import instagramRoutes from "./routes/instagram.js";
 import projectRoutes from "./routes/projects.js";
 import invitationsRoutes from "./routes/invitations.js";
 import adminRoutes from "./routes/admin.js";
+import metaAdsRoutes from "./routes/meta-ads.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -77,6 +78,7 @@ export async function buildServer() {
   await app.register(projectRoutes);
   await app.register(invitationsRoutes);
   await app.register(adminRoutes);
+  await app.register(metaAdsRoutes);
 
   return app;
 }
