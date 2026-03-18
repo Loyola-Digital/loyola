@@ -123,8 +123,7 @@ export default fp(async function projectRoutes(fastify) {
 
     const rows = await fastify.db
       .select()
-      .from(projects)
-      .where(eq(projects.createdBy, request.userId));
+      .from(projects);
     return rows.map(projectShape);
   });
 
