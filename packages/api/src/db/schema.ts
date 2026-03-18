@@ -401,3 +401,63 @@ export const metaAdsAccountProjects = pgTable(
     index("idx_meta_ads_account_projects_project").on(table.projectId),
   ]
 );
+
+// ============================================================
+// GOOGLE SHEETS TABLES (EPIC-7)
+// ============================================================
+
+export const googleSheetsConnections = pgTable(
+  "google_sheets_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    spreadsheetId: varchar("spreadsheet_id", { length: 200 }).notNull(),
+    spreadsheetUrl: text("spreadsheet_url").notNull(),
+    spreadsheetName: varchar("spreadsheet_name", { length: 200 }).notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_gsheets_project").on(table.projectId),
+    index("idx_gsheets_created_by").on(table.createdBy),
+  ]
+);
+
+export const googleSheetsTabMappings = pgTable(
+  "google_sheets_tab_mappings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => googleSheetsConnections.id, { onDelete: "cascade" }),
+    tabName: varchar("tab_name", { length: 200 }).notNull(),
+    tabType: varchar("tab_type", { length: 50 }).notNull(),
+    columnMapping: jsonb("column_mapping")
+      .$type<Record<string, string>>()
+      .notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("uq_gsheets_tab_connection_name").on(
+      table.connectionId,
+      table.tabName
+    ),
+    index("idx_gsheets_tab_connection").on(table.connectionId),
+  ]
+);
