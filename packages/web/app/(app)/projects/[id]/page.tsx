@@ -22,7 +22,7 @@ export default function ProjectPage({ params }: Props) {
   const { id } = use(params);
   const apiClient = useApiClient();
   const role = useUserRole();
-  const isAdmin = role !== "guest";
+  const isAdmin = role !== null && role !== "guest";
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [linkAccountOpen, setLinkAccountOpen] = useState(false);

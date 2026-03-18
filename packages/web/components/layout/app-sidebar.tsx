@@ -138,6 +138,7 @@ function useResponsiveSidebar() {
 
 export function AppSidebar() {
   const role = useUserRole();
+  if (role === null) return null;
   if (role === "guest") return <GuestSidebar />;
 
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);

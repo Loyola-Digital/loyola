@@ -25,7 +25,7 @@ import { useUserRole } from "@/lib/hooks/use-user-role";
 
 export default function GeneralSettingsPage() {
   const role = useUserRole();
-  const isAdmin = role !== "guest";
+  const isAdmin = role !== null && role !== "guest";
   const { data: projects, isLoading: projectsLoading } = useProjects();
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [inviteOpen, setInviteOpen] = useState(false);
