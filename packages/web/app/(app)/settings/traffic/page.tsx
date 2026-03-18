@@ -665,7 +665,7 @@ function TabMappingSection({
                     <SelectValue placeholder="Selecione a aba..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {tabs.map((t) => (
+                    {tabs.filter(Boolean).map((t) => (
                       <SelectItem key={t} value={t}>{t}</SelectItem>
                     ))}
                   </SelectContent>
@@ -725,7 +725,7 @@ function TabMappingSection({
                         <SelectValue placeholder="Coluna..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {(previewHeaders.length > 0 ? previewHeaders : tabs).map((h) => (
+                        {(previewHeaders.length > 0 ? previewHeaders : []).filter(Boolean).map((h) => (
                           <SelectItem key={h} value={h}>{h}</SelectItem>
                         ))}
                       </SelectContent>
@@ -750,7 +750,7 @@ function TabMappingSection({
                         <SelectValue placeholder="Coluna..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {(previewHeaders.length > 0 ? previewHeaders : []).map((h) => (
+                        {(previewHeaders.length > 0 ? previewHeaders : []).filter(Boolean).map((h) => (
                           <SelectItem key={h} value={h}>{h}</SelectItem>
                         ))}
                       </SelectContent>
