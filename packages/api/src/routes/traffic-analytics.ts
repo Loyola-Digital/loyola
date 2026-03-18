@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   getProjectOverview,
@@ -7,6 +8,11 @@ import {
   getProjectAdAnalytics,
   invalidateProjectCache,
 } from "../services/traffic-analytics.js";
+import {
+  classifyLeads,
+  type QualificationRule,
+} from "../services/lead-qualification.js";
+import { qualificationProfiles } from "../db/schema.js";
 
 // ============================================================
 // SCHEMAS
@@ -184,6 +190,150 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
 
       invalidateProjectCache(paramResult.data.projectId);
       return { ok: true };
+    }
+  );
+
+  // ============================================================
+  // QUALIFICATION PROFILE ROUTES (Story 7.5)
+  // ============================================================
+
+  const qualificationRuleSchema = z.object({
+    field: z.string().min(1),
+    operator: z.enum(["equals", "not_equals", "gte", "lte", "contains", "in"]),
+    value: z.string(),
+  });
+
+  const qualificationBodySchema = z.object({
+    rules: z.array(qualificationRuleSchema).min(1),
+  });
+
+  // ---- POST /api/traffic/qualification/:projectId ----
+  fastify.post(
+    "/api/traffic/qualification/:projectId",
+    async (request, reply) => {
+      if (request.userRole !== "admin" && request.userRole !== "manager") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+
+      const bodyResult = qualificationBodySchema.safeParse(request.body);
+      if (!bodyResult.success) {
+        return reply.code(400).send({
+          error: "Dados invalidos",
+          details: bodyResult.error.flatten().fieldErrors,
+        });
+      }
+
+      const { projectId } = paramResult.data;
+
+      // Upsert: delete existing + insert new
+      await fastify.db
+        .delete(qualificationProfiles)
+        .where(eq(qualificationProfiles.projectId, projectId));
+
+      const [profile] = await fastify.db
+        .insert(qualificationProfiles)
+        .values({
+          projectId,
+          rules: bodyResult.data.rules,
+          createdBy: request.userId,
+        })
+        .returning();
+
+      invalidateProjectCache(projectId);
+
+      return reply.code(201).send(profile);
+    }
+  );
+
+  // ---- GET /api/traffic/qualification/:projectId ----
+  fastify.get(
+    "/api/traffic/qualification/:projectId",
+    async (request, reply) => {
+      if (request.userRole !== "admin" && request.userRole !== "manager") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+
+      const [profile] = await fastify.db
+        .select()
+        .from(qualificationProfiles)
+        .where(eq(qualificationProfiles.projectId, paramResult.data.projectId))
+        .limit(1);
+
+      if (!profile) {
+        return reply.code(404).send({ error: "Perfil nao configurado" });
+      }
+
+      return profile;
+    }
+  );
+
+  // ---- DELETE /api/traffic/qualification/:projectId ----
+  fastify.delete(
+    "/api/traffic/qualification/:projectId",
+    async (request, reply) => {
+      if (request.userRole !== "admin" && request.userRole !== "manager") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+
+      await fastify.db
+        .delete(qualificationProfiles)
+        .where(eq(qualificationProfiles.projectId, paramResult.data.projectId));
+
+      invalidateProjectCache(paramResult.data.projectId);
+
+      return reply.code(204).send();
+    }
+  );
+
+  // ---- POST /api/traffic/qualification/:projectId/preview ----
+  fastify.post(
+    "/api/traffic/qualification/:projectId/preview",
+    async (request, reply) => {
+      if (request.userRole !== "admin" && request.userRole !== "manager") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+
+      const bodyResult = qualificationBodySchema.safeParse(request.body);
+      if (!bodyResult.success) {
+        return reply.code(400).send({
+          error: "Dados invalidos",
+          details: bodyResult.error.flatten().fieldErrors,
+        });
+      }
+
+      try {
+        const result = await classifyLeads(
+          fastify.db,
+          paramResult.data.projectId,
+          bodyResult.data.rules as QualificationRule[]
+        );
+        return result;
+      } catch (err) {
+        return reply.code(502).send({
+          error: "Erro ao classificar leads",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   );
 });

@@ -13,6 +13,7 @@ import {
   decryptAccountToken,
 } from "./meta-ads.js";
 import { getTabData } from "./google-sheets.js";
+import { getQualifiedLeadsByEntity, getProfileForProject } from "./lead-qualification.js";
 
 // ============================================================
 // TYPES
@@ -29,14 +30,20 @@ export interface CampaignAnalytics {
   cpm: number;
   leads: number | null;
   cpl: number | null;
+  qualifiedLeads: number | null;
+  cplQualified: number | null;
+  qualificationRate: number | null;
 }
 
 export interface OverviewAnalytics {
   totalSpend: number;
   totalLeads: number | null;
   avgCpl: number | null;
+  totalQualifiedLeads: number | null;
+  avgCplQualified: number | null;
   totalCampaigns: number;
   hasCrm: boolean;
+  hasQualification: boolean;
 }
 
 // ============================================================
@@ -218,7 +225,7 @@ export async function getProjectOverview(
 
   const metaAccount = await getMetaAccountForProject(db, projectId);
   if (!metaAccount) {
-    return { totalSpend: 0, totalLeads: null, avgCpl: null, totalCampaigns: 0, hasCrm: false };
+    return { totalSpend: 0, totalLeads: null, avgCpl: null, totalQualifiedLeads: null, avgCplQualified: null, totalCampaigns: 0, hasCrm: false, hasQualification: false };
   }
 
   const campaigns = await fetchCampaignInsights(
@@ -234,12 +241,30 @@ export async function getProjectOverview(
   const totalLeads = hasCrm ? leads!.length : null;
   const avgCpl = hasCrm && totalLeads! > 0 ? totalSpend / totalLeads! : null;
 
+  // Qualification
+  const profile = await getProfileForProject(db, projectId);
+  const hasQualification = profile !== null;
+  let totalQualifiedLeads: number | null = null;
+  let avgCplQualified: number | null = null;
+
+  if (hasQualification && hasCrm && leads!.length > 0) {
+    const entities = campaigns.map((c) => ({ id: c.campaign_id, name: c.campaign_name }));
+    const qualResult = await getQualifiedLeadsByEntity(db, projectId, leads!, "utmCampaign", entities);
+    if (qualResult) {
+      totalQualifiedLeads = qualResult.totalQualified;
+      avgCplQualified = totalQualifiedLeads > 0 ? totalSpend / totalQualifiedLeads : null;
+    }
+  }
+
   const result: OverviewAnalytics = {
     totalSpend,
     totalLeads,
     avgCpl,
+    totalQualifiedLeads,
+    avgCplQualified,
     totalCampaigns: campaigns.length,
     hasCrm,
+    hasQualification,
   };
 
   setCache(cacheKey, result);
@@ -250,14 +275,14 @@ export async function getProjectCampaignAnalytics(
   db: Database,
   projectId: string,
   days: number
-): Promise<{ campaigns: CampaignAnalytics[]; unattributedLeads: number; hasCrm: boolean }> {
+): Promise<{ campaigns: CampaignAnalytics[]; unattributedLeads: number; hasCrm: boolean; hasQualification: boolean }> {
   const cacheKey = `analytics:${projectId}:campaigns:${days}`;
-  const cached = getCached<{ campaigns: CampaignAnalytics[]; unattributedLeads: number; hasCrm: boolean }>(cacheKey);
+  const cached = getCached<{ campaigns: CampaignAnalytics[]; unattributedLeads: number; hasCrm: boolean; hasQualification: boolean }>(cacheKey);
   if (cached) return cached;
 
   const metaAccount = await getMetaAccountForProject(db, projectId);
   if (!metaAccount) {
-    return { campaigns: [], unattributedLeads: 0, hasCrm: false };
+    return { campaigns: [], unattributedLeads: 0, hasCrm: false, hasQualification: false };
   }
 
   const campaignInsights = await fetchCampaignInsights(
@@ -268,21 +293,28 @@ export async function getProjectCampaignAnalytics(
 
   const leads = await getLeadsForProject(db, projectId);
   const hasCrm = leads !== null;
+  const entities = campaignInsights.map((c) => ({
+    id: c.campaign_id,
+    name: c.campaign_name,
+  }));
 
   let leadCounts: LeadsByEntity = { matched: new Map(), unattributed: 0 };
   if (hasCrm && leads!.length > 0) {
-    const entities = campaignInsights.map((c) => ({
-      id: c.campaign_id,
-      name: c.campaign_name,
-    }));
     leadCounts = countLeadsByUtm(leads!, "utmCampaign", entities);
   }
+
+  // Qualification
+  const qualResult = hasCrm && leads!.length > 0
+    ? await getQualifiedLeadsByEntity(db, projectId, leads!, "utmCampaign", entities)
+    : null;
+  const hasQualification = qualResult !== null;
 
   const campaigns: CampaignAnalytics[] = campaignInsights.map((c) => {
     const spend = parseFloat(c.spend || "0");
     const impressions = parseFloat(c.impressions || "0");
     const clicks = parseFloat(c.clicks || "0");
     const campaignLeads = hasCrm ? (leadCounts.matched.get(c.campaign_id) ?? 0) : null;
+    const qualLeads = hasQualification ? (qualResult.matched.get(c.campaign_id) ?? 0) : null;
 
     return {
       campaignId: c.campaign_id,
@@ -295,10 +327,15 @@ export async function getProjectCampaignAnalytics(
       cpm: impressions > 0 ? (spend * 1000) / impressions : 0,
       leads: campaignLeads,
       cpl: campaignLeads !== null && campaignLeads > 0 ? spend / campaignLeads : null,
+      qualifiedLeads: qualLeads,
+      cplQualified: qualLeads !== null && qualLeads > 0 ? spend / qualLeads : null,
+      qualificationRate: qualLeads !== null && campaignLeads !== null && campaignLeads > 0
+        ? (qualLeads / campaignLeads) * 100
+        : null,
     };
   });
 
-  const result = { campaigns, unattributedLeads: leadCounts.unattributed, hasCrm };
+  const result = { campaigns, unattributedLeads: leadCounts.unattributed, hasCrm, hasQualification };
   setCache(cacheKey, result);
   return result;
 }
@@ -308,10 +345,10 @@ export async function getProjectAdSetAnalytics(
   projectId: string,
   campaignId: string,
   days: number
-): Promise<{ adsets: CampaignAnalytics[]; unattributedLeads: number; hasCrm: boolean }> {
+): Promise<{ adsets: CampaignAnalytics[]; unattributedLeads: number; hasCrm: boolean; hasQualification: boolean }> {
   const metaAccount = await getMetaAccountForProject(db, projectId);
   if (!metaAccount) {
-    return { adsets: [], unattributedLeads: 0, hasCrm: false };
+    return { adsets: [], unattributedLeads: 0, hasCrm: false, hasQualification: false };
   }
 
   const adsetInsights = await fetchAdSetInsights(
@@ -323,37 +360,41 @@ export async function getProjectAdSetAnalytics(
 
   const leads = await getLeadsForProject(db, projectId);
   const hasCrm = leads !== null;
+  const entities = adsetInsights.map((a) => ({ id: a.adset_id, name: a.adset_name }));
 
   let leadCounts: LeadsByEntity = { matched: new Map(), unattributed: 0 };
   if (hasCrm && leads!.length > 0) {
-    const entities = adsetInsights.map((a) => ({
-      id: a.adset_id,
-      name: a.adset_name,
-    }));
     leadCounts = countLeadsByUtm(leads!, "utmMedium", entities);
   }
+
+  const qualResult = hasCrm && leads!.length > 0
+    ? await getQualifiedLeadsByEntity(db, projectId, leads!, "utmMedium", entities)
+    : null;
+  const hasQualification = qualResult !== null;
 
   const adsets = adsetInsights.map((a) => {
     const spend = parseFloat(a.spend || "0");
     const impressions = parseFloat(a.impressions || "0");
     const clicks = parseFloat(a.clicks || "0");
     const adsetLeads = hasCrm ? (leadCounts.matched.get(a.adset_id) ?? 0) : null;
+    const qualLeads = hasQualification ? (qualResult.matched.get(a.adset_id) ?? 0) : null;
 
     return {
       campaignId: a.adset_id,
       campaignName: a.adset_name,
-      spend,
-      impressions,
-      clicks,
+      spend, impressions, clicks,
       ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
       cpc: clicks > 0 ? spend / clicks : 0,
       cpm: impressions > 0 ? (spend * 1000) / impressions : 0,
       leads: adsetLeads,
       cpl: adsetLeads !== null && adsetLeads > 0 ? spend / adsetLeads : null,
+      qualifiedLeads: qualLeads,
+      cplQualified: qualLeads !== null && qualLeads > 0 ? spend / qualLeads : null,
+      qualificationRate: qualLeads !== null && adsetLeads !== null && adsetLeads > 0 ? (qualLeads / adsetLeads) * 100 : null,
     };
   });
 
-  return { adsets, unattributedLeads: leadCounts.unattributed, hasCrm };
+  return { adsets, unattributedLeads: leadCounts.unattributed, hasCrm, hasQualification };
 }
 
 export async function getProjectAdAnalytics(
@@ -361,10 +402,10 @@ export async function getProjectAdAnalytics(
   projectId: string,
   adsetId: string,
   days: number
-): Promise<{ ads: CampaignAnalytics[]; unattributedLeads: number; hasCrm: boolean }> {
+): Promise<{ ads: CampaignAnalytics[]; unattributedLeads: number; hasCrm: boolean; hasQualification: boolean }> {
   const metaAccount = await getMetaAccountForProject(db, projectId);
   if (!metaAccount) {
-    return { ads: [], unattributedLeads: 0, hasCrm: false };
+    return { ads: [], unattributedLeads: 0, hasCrm: false, hasQualification: false };
   }
 
   const adInsights = await fetchAdInsights(
@@ -376,35 +417,39 @@ export async function getProjectAdAnalytics(
 
   const leads = await getLeadsForProject(db, projectId);
   const hasCrm = leads !== null;
+  const entities = adInsights.map((a) => ({ id: a.ad_id, name: a.ad_name }));
 
   let leadCounts: LeadsByEntity = { matched: new Map(), unattributed: 0 };
   if (hasCrm && leads!.length > 0) {
-    const entities = adInsights.map((a) => ({
-      id: a.ad_id,
-      name: a.ad_name,
-    }));
     leadCounts = countLeadsByUtm(leads!, "utmContent", entities);
   }
+
+  const qualResult = hasCrm && leads!.length > 0
+    ? await getQualifiedLeadsByEntity(db, projectId, leads!, "utmContent", entities)
+    : null;
+  const hasQualification = qualResult !== null;
 
   const ads = adInsights.map((a) => {
     const spend = parseFloat(a.spend || "0");
     const impressions = parseFloat(a.impressions || "0");
     const clicks = parseFloat(a.clicks || "0");
     const adLeads = hasCrm ? (leadCounts.matched.get(a.ad_id) ?? 0) : null;
+    const qualLeads = hasQualification ? (qualResult.matched.get(a.ad_id) ?? 0) : null;
 
     return {
       campaignId: a.ad_id,
       campaignName: a.ad_name,
-      spend,
-      impressions,
-      clicks,
+      spend, impressions, clicks,
       ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
       cpc: clicks > 0 ? spend / clicks : 0,
       cpm: impressions > 0 ? (spend * 1000) / impressions : 0,
       leads: adLeads,
       cpl: adLeads !== null && adLeads > 0 ? spend / adLeads : null,
+      qualifiedLeads: qualLeads,
+      cplQualified: qualLeads !== null && qualLeads > 0 ? spend / qualLeads : null,
+      qualificationRate: qualLeads !== null && adLeads !== null && adLeads > 0 ? (qualLeads / adLeads) * 100 : null,
     };
   });
 
-  return { ads, unattributedLeads: leadCounts.unattributed, hasCrm };
+  return { ads, unattributedLeads: leadCounts.unattributed, hasCrm, hasQualification };
 }

@@ -243,39 +243,100 @@ UNIQUE(connection_id, tab_name)
 
 ---
 
-## Stories — Fase 2 (planejado, nao implementar agora)
+## Stories — Fase 2
 
-### Story 7.5: Lead Qualification Engine
+### Story 7.5: Lead Qualification Engine — Perfil + Classificacao Automatica
 
-> Importar dados de pesquisa de captacao, configurar perfil de lead qualificado, e classificar leads automaticamente.
+> Importar dados de pesquisa de captacao do Google Sheets, configurar perfil de lead qualificado por projeto, e classificar leads automaticamente para calcular CPL qualificado.
 
-- **Scope:** Config de perfil qualificado por projeto, match com dados da pesquisa, metricas de CPL qualificado
-- **Highlights:**
-  - Admin configura perfil qualificado: ex. "mulher + renda >5k + catolica + ate 2 filhos"
-  - Sistema cruza perfil com respostas da pesquisa (Sheets)
-  - Novas metricas: leads qualificados, CPL qualificado, taxa de qualificacao
-  - Dashboard com colunas adicionais por campanha/ad set/ad
+- **Executor:** `@dev`
+- **Quality Gate:** `@architect`
+- **Quality Gate Tools:** `[code_review, pattern_validation]`
+- **Scope:** DB schema (qualification_profiles), servico de classificacao, rotas API, settings UI, dashboard update
+- **Depends on:** 7.1, 7.3, 7.4
+- **AC:**
+  1. Nova tabela `qualification_profiles` — perfil qualificado por projeto: regras em JSONB (ex: `[{field: "sexo", operator: "equals", value: "feminino"}, {field: "renda", operator: "gte", value: "5000"}, ...]`)
+  2. `POST /api/traffic/qualification/:projectId` — criar/atualizar perfil de qualificacao
+  3. `GET /api/traffic/qualification/:projectId` — retorna perfil configurado
+  4. Service `lead-qualification.ts`: cruza leads com dados da aba "survey" (pesquisa) da Sheets via UTM; aplica regras do perfil; classifica cada lead como qualificado ou nao
+  5. Operadores suportados: `equals`, `not_equals`, `gte`, `lte`, `contains`, `in` (para arrays como religiao)
+  6. Lead qualificado = TODOS os criterios do perfil satisfeitos (AND logico)
+  7. `GET /api/traffic/analytics/:projectId/campaigns` atualizado — retorna campos adicionais: `qualifiedLeads`, `cplQualified`, `qualificationRate`
+  8. Mesma logica para adsets e ads (drill-down com metricas de qualificacao)
+  9. Settings UI: nova secao "Perfil de Lead Qualificado" em `/settings/traffic` — formulario para adicionar regras (campo + operador + valor)
+  10. Settings UI: preview — "X de Y leads seriam qualificados com este perfil" (dry-run antes de salvar)
+  11. Dashboard: colunas Qualificados, CPL Qual, Taxa Qual visíveis quando perfil configurado
+  12. Cache invalidado ao atualizar perfil
+  13. `pnpm typecheck` e `pnpm lint` passam
 
-### Story 7.6: Sales Funnel Analysis
+**Exemplo do gestor:**
+> No caso da Fernanda Zaparoli, o perfil que mais converteu foi: mulher, com ate dois filhos, renda acima de 5 mil e catolica.
 
-> Cruzar dados de vendas do Google Sheets com campanhas para calcular ROAS real, custo por venda, taxa de conversao.
+Configuracao correspondente:
+```json
+[
+  { "field": "sexo", "operator": "equals", "value": "feminino" },
+  { "field": "filhos", "operator": "lte", "value": "2" },
+  { "field": "renda", "operator": "gte", "value": "5000" },
+  { "field": "religiao", "operator": "equals", "value": "catolica" }
+]
+```
 
-- **Scope:** Vendas por UTM, ROAS real, custo por venda
-- **Highlights:**
-  - Match vendas ↔ campanhas via UTM (mesmo padrao de leads)
-  - Metricas: vendas, custo por venda, ROAS real, taxa de conversao
-  - Analise por criativo: "este ad trouxe 60 leads, 50 qualificados, vendeu 25"
+---
 
-### Story 7.7: Full Funnel Dashboard
+### Story 7.6: Sales Funnel Analysis — Vendas por UTM + ROAS Real
 
-> Visao consolidada das 3 camadas em um unico dashboard interativo.
+> Cruzar dados de vendas do Google Sheets com campanhas via UTM para calcular vendas reais, custo por venda, ROAS real e taxa de conversao por campanha/ad set/ad.
 
-- **Scope:** Dashboard unificado com funil visual
-- **Highlights:**
-  - Funil visual: Impressions → Clicks → Leads → Qualificados → Vendas
-  - Tabela master: campanha | spend | impressions | clicks | CTR | CPC | CPM | leads | CPL | qualificados | CPL qual | vendas | custo/venda | ROAS
-  - Comparativo entre periodos/lancamentos
-  - Drill-down completo em todos os niveis
+- **Executor:** `@dev`
+- **Quality Gate:** `@architect`
+- **Quality Gate Tools:** `[code_review, pattern_validation]`
+- **Scope:** Servico de vendas, rotas API expandidas, dashboard update
+- **Depends on:** 7.1, 7.4
+- **AC:**
+  1. Service `sales-analytics.ts`: le aba "sales" do Sheets via `getTabData()` com column mapping (utmCampaign, utmMedium, utmContent, valor)
+  2. Contagem de vendas por UTM — mesmo padrao de `countLeadsByUtm()` do traffic-analytics
+  3. Calculo de receita: somar coluna "valor" agrupada por UTM
+  4. `GET /api/traffic/analytics/:projectId/campaigns` atualizado — campos adicionais: `sales`, `revenue`, `costPerSale`, `roas`, `conversionRate`
+  5. `costPerSale` = spend / sales (null se sales = 0)
+  6. `roas` = revenue / spend (null se spend = 0)
+  7. `conversionRate` = sales / leads × 100 (null se leads = 0)
+  8. Mesma logica para adsets e ads
+  9. Dashboard: colunas Vendas, Custo/Venda, ROAS visíveis quando aba "sales" mapeada
+  10. Analise por criativo: "este ad trouxe 60 leads, 50 qualificados, vendeu 25" — todos os dados numa linha
+  11. Vendas sem UTM mostradas como "sem atribuicao"
+  12. Cache compartilhado com traffic-analytics (mesma TTL 15min)
+  13. `pnpm typecheck` e `pnpm lint` passam
+
+**Metricas finais por linha da tabela (quando tudo conectado):**
+```
+campanha | spend | impressions | clicks | CTR | CPC | CPM | leads | CPL | qualificados | CPL qual | vendas | custo/venda | ROAS
+```
+
+---
+
+### Story 7.7: Full Funnel Dashboard — Visao Consolidada
+
+> Refatorar o dashboard /traffic para exibir visao consolidada das 3 camadas (midia + qualificacao + vendas) com funil visual, tabela master, e seletor de projeto.
+
+- **Executor:** `@dev`
+- **Quality Gate:** `@architect`
+- **Quality Gate Tools:** `[code_review, ui_validation]`
+- **Scope:** Dashboard UI refactor, funil visual, tabela master, filtros por projeto
+- **Depends on:** 7.2, 7.4, 7.5, 7.6
+- **AC:**
+  1. Dashboard `/traffic` com seletor de projeto (alem de conta Meta Ads) — projeto determina se tem CRM/qualificacao/vendas
+  2. Badge visual por projeto: "Midia" (cinza), "CRM Conectado" (verde), "Qualificacao" (azul), "Vendas" (amarelo)
+  3. Funil visual (Recharts FunnelChart ou componente custom): Impressions → Clicks → Leads → Qualificados → Vendas — com taxas de conversao entre cada etapa
+  4. SummaryCards expandidos: Total Spend, Leads, CPL, Qualificados, CPL Qual, Vendas, ROAS
+  5. Tabela master com TODAS as colunas: Nome | Spend | Impressions | Clicks | CTR | CPC | CPM | Leads | CPL | Qual | CPL Qual | Vendas | Custo/Venda | ROAS
+  6. Colunas condicionais: Leads/CPL so aparecem se CRM; Qual so aparece se perfil configurado; Vendas/ROAS so aparece se aba sales mapeada
+  7. Drill-down completo: campanha → ad sets → ads — todas metricas em todos niveis
+  8. Linha "Sem atribuicao" no final da tabela com leads/vendas que nao matcharam
+  9. Sorting: clicar em header da coluna ordena por aquela metrica (asc/desc)
+  10. Destaque visual: melhor e pior campanha por cada metrica (verde/vermelho sutil)
+  11. Loading states e empty states para cada secao
+  12. `pnpm typecheck` e `pnpm lint` passam
 
 ---
 
@@ -298,16 +359,16 @@ UNIQUE(connection_id, tab_name)
 
 ## Definition of Done
 
-**Fase 1:**
-- [ ] Google Sheets API integrada via Service Account
-- [ ] Tabelas criadas e migration aplicada
-- [ ] CRUD de conexao Sheets funcionando via API
-- [ ] UI de settings com mapeamento de abas + preview
-- [ ] Dashboard de metricas de midia com graficos e tabela de campanhas
-- [ ] Drill-down por ad set e ad
-- [ ] Cruzamento Ads × CRM leads via UTM funcionando
-- [ ] Tabela consolidada com metricas de midia + leads + CPL
-- [ ] Zero regressao em EPIC-6 e funcionalidades existentes
+**Fase 1 (COMPLETA — Stories 7.1-7.4):**
+- [x] Google Sheets API integrada via Service Account
+- [x] Tabelas criadas e migration aplicada
+- [x] CRUD de conexao Sheets funcionando via API
+- [x] UI de settings com mapeamento de abas + preview
+- [x] Dashboard de metricas de midia com graficos e tabela de campanhas
+- [x] Drill-down por ad set e ad
+- [x] Cruzamento Ads × CRM leads via UTM funcionando
+- [x] Tabela consolidada com metricas de midia + leads + CPL
+- [x] Zero regressao em EPIC-6 e funcionalidades existentes
 
 **Fase 2:**
 - [ ] Lead Qualification Engine funcionando

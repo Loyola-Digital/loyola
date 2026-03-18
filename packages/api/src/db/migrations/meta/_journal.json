@@ -36,6 +36,13 @@
       "when": 1773858656149,
       "tag": "0004_mature_scourge",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1773860704843,
+      "tag": "0005_omniscient_loki",
+      "breakpoints": true
     }
   ]
 }

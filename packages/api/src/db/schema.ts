@@ -461,3 +461,36 @@ export const googleSheetsTabMappings = pgTable(
     index("idx_gsheets_tab_connection").on(table.connectionId),
   ]
 );
+
+// ============================================================
+// QUALIFICATION PROFILES (EPIC-7 — Story 7.5)
+// ============================================================
+
+export const qualificationProfiles = pgTable(
+  "qualification_profiles",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    rules: jsonb("rules")
+      .$type<
+        {
+          field: string;
+          operator: string;
+          value: string;
+        }[]
+      >()
+      .notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [uniqueIndex("uq_qualification_project").on(table.projectId)]
+);

@@ -53,6 +53,13 @@ import {
   useSheetTabPreview,
   type TabMappingInput,
 } from "@/lib/hooks/use-google-sheets";
+import {
+  useQualificationProfile,
+  useSaveQualificationProfile,
+  useDeleteQualificationProfile,
+  useQualificationPreview,
+  type QualificationRule,
+} from "@/lib/hooks/use-qualification";
 import { useProjects } from "@/lib/hooks/use-projects";
 
 export default function TrafficSettingsPage() {
@@ -283,6 +290,11 @@ export default function TrafficSettingsPage() {
       {/* GOOGLE SHEETS SECTION */}
       {/* ============================================================ */}
       <GoogleSheetsSection projects={projects ?? []} />
+
+      {/* ============================================================ */}
+      {/* QUALIFICATION PROFILE SECTION */}
+      {/* ============================================================ */}
+      <QualificationSection projects={projects ?? []} />
 
       {/* Delete confirmation */}
       <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
@@ -893,6 +905,243 @@ function SurveyFieldAdder({ onAdd }: { onAdd: (field: string) => void }) {
         <Plus className="h-3 w-3" />
         Adicionar campo
       </Button>
+    </div>
+  );
+}
+
+// ============================================================
+// QUALIFICATION PROFILE SECTION
+// ============================================================
+
+const OPERATORS = [
+  { value: "equals", label: "=" },
+  { value: "not_equals", label: "≠" },
+  { value: "gte", label: ">=" },
+  { value: "lte", label: "<=" },
+  { value: "contains", label: "contém" },
+  { value: "in", label: "em" },
+] as const;
+
+function QualificationSection({ projects }: { projects: { id: string; name: string }[] }) {
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const { data: profile, isLoading } = useQualificationProfile(selectedProjectId || null);
+  const saveProfile = useSaveQualificationProfile();
+  const deleteProfile = useDeleteQualificationProfile();
+  const previewMutation = useQualificationPreview();
+
+  const [rules, setRules] = useState<QualificationRule[]>([]);
+  const [initialized, setInitialized] = useState(false);
+
+  // Sync rules from loaded profile
+  if (profile && !initialized) {
+    setRules(profile.rules);
+    setInitialized(true);
+  }
+
+  // Reset when project changes
+  const handleProjectChange = (id: string) => {
+    setSelectedProjectId(id);
+    setRules([]);
+    setInitialized(false);
+  };
+
+  const [newField, setNewField] = useState("");
+  const [newOperator, setNewOperator] = useState<string>("equals");
+  const [newValue, setNewValue] = useState("");
+
+  function addRule() {
+    if (!newField.trim() || !newValue.trim()) return;
+    setRules((prev) => [
+      ...prev,
+      { field: newField.trim(), operator: newOperator as QualificationRule["operator"], value: newValue.trim() },
+    ]);
+    setNewField("");
+    setNewValue("");
+  }
+
+  function removeRule(index: number) {
+    setRules((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function handleSave() {
+    if (!selectedProjectId || rules.length === 0) {
+      toast.error("Adicione pelo menos uma regra.");
+      return;
+    }
+    saveProfile.mutate(
+      { projectId: selectedProjectId, rules },
+      {
+        onSuccess: () => toast.success("Perfil salvo!"),
+        onError: () => toast.error("Erro ao salvar perfil."),
+      }
+    );
+  }
+
+  function handlePreview() {
+    if (!selectedProjectId || rules.length === 0) return;
+    previewMutation.mutate({ projectId: selectedProjectId, rules });
+  }
+
+  function handleDelete() {
+    if (!selectedProjectId) return;
+    deleteProfile.mutate(selectedProjectId, {
+      onSuccess: () => {
+        toast.success("Perfil removido.");
+        setRules([]);
+        setInitialized(false);
+      },
+      onError: () => toast.error("Erro ao remover perfil."),
+    });
+  }
+
+  return (
+    <div className="border-t border-border/30 pt-8 space-y-4">
+      <div>
+        <h1 className="text-xl font-bold flex items-center gap-2">
+          <TrendingUp className="h-5 w-5" />
+          Perfil de Lead Qualificado
+        </h1>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Configure o perfil ideal de lead qualificado por projeto para classificar automaticamente.
+        </p>
+      </div>
+
+      {/* Project selector */}
+      <div className="space-y-1.5 max-w-xs">
+        <Label className="text-xs">Projeto</Label>
+        <Select value={selectedProjectId} onValueChange={handleProjectChange}>
+          <SelectTrigger className="text-sm">
+            <SelectValue placeholder="Selecione um projeto..." />
+          </SelectTrigger>
+          <SelectContent>
+            {projects.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {selectedProjectId && isLoading && <Skeleton className="h-32 rounded-xl" />}
+
+      {selectedProjectId && !isLoading && (
+        <div className="rounded-2xl border border-border/30 bg-card/60 p-5 space-y-4">
+          {/* Current rules */}
+          {rules.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold">Regras ({rules.length})</h3>
+              {rules.map((rule, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-2 rounded-lg border border-border/20 bg-muted/20 px-3 py-2"
+                >
+                  <span className="text-sm font-medium">{rule.field}</span>
+                  <Badge variant="outline" className="text-[10px]">
+                    {OPERATORS.find((o) => o.value === rule.operator)?.label ?? rule.operator}
+                  </Badge>
+                  <span className="text-sm">{rule.value}</span>
+                  <button
+                    onClick={() => removeRule(idx)}
+                    className="ml-auto rounded-full p-1 hover:bg-destructive/20 transition-colors"
+                  >
+                    <Trash2 className="h-3 w-3 text-destructive/70" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add rule */}
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Campo</Label>
+              <Input
+                className="h-8 text-xs w-[140px]"
+                placeholder="ex: sexo, renda"
+                value={newField}
+                onChange={(e) => setNewField(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Operador</Label>
+              <Select value={newOperator} onValueChange={setNewOperator}>
+                <SelectTrigger className="h-8 text-xs w-[100px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {OPERATORS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Valor</Label>
+              <Input
+                className="h-8 text-xs w-[140px]"
+                placeholder="ex: feminino, 5000"
+                value={newValue}
+                onChange={(e) => setNewValue(e.target.value)}
+              />
+            </div>
+            <Button variant="outline" size="sm" className="h-8" onClick={addRule}>
+              <Plus className="h-3 w-3" />
+              Adicionar
+            </Button>
+          </div>
+
+          {/* Preview */}
+          {previewMutation.data && (
+            <div className="rounded-lg border border-border/20 bg-muted/30 px-4 py-3">
+              <p className="text-sm">
+                <strong>{previewMutation.data.qualifiedLeads}</strong> de{" "}
+                <strong>{previewMutation.data.totalLeads}</strong> leads qualificados (
+                {previewMutation.data.qualificationRate.toFixed(1)}%)
+              </p>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePreview}
+              disabled={previewMutation.isPending || rules.length === 0}
+            >
+              {previewMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Eye className="h-3.5 w-3.5" />
+              )}
+              Preview
+            </Button>
+            <Button size="sm" onClick={handleSave} disabled={saveProfile.isPending || rules.length === 0}>
+              {saveProfile.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
+              Salvar perfil
+            </Button>
+            {profile && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive/70 hover:text-destructive"
+                onClick={handleDelete}
+                disabled={deleteProfile.isPending}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remover
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

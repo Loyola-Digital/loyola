@@ -18,32 +18,41 @@ export interface CampaignAnalytics {
   cpm: number;
   leads: number | null;
   cpl: number | null;
+  qualifiedLeads: number | null;
+  cplQualified: number | null;
+  qualificationRate: number | null;
 }
 
 export interface OverviewAnalytics {
   totalSpend: number;
   totalLeads: number | null;
   avgCpl: number | null;
+  totalQualifiedLeads: number | null;
+  avgCplQualified: number | null;
   totalCampaigns: number;
   hasCrm: boolean;
+  hasQualification: boolean;
 }
 
 export interface CampaignAnalyticsResponse {
   campaigns: CampaignAnalytics[];
   unattributedLeads: number;
   hasCrm: boolean;
+  hasQualification: boolean;
 }
 
 export interface AdSetAnalyticsResponse {
   adsets: CampaignAnalytics[];
   unattributedLeads: number;
   hasCrm: boolean;
+  hasQualification: boolean;
 }
 
 export interface AdAnalyticsResponse {
   ads: CampaignAnalytics[];
   unattributedLeads: number;
   hasCrm: boolean;
+  hasQualification: boolean;
 }
 
 // ============================================================
