@@ -28,11 +28,13 @@ export interface UpdateAccountInput {
   accessToken?: string;
 }
 
-// 1.2 — GET /api/instagram/accounts (optional project filter)
+// 1.2 — GET accounts
+// With projectId: uses project-scoped endpoint (accessible to guests)
+// Without projectId: uses global endpoint (admin/settings only)
 export function useInstagramAccounts(projectId?: string) {
   const apiClient = useApiClient();
   const url = projectId
-    ? `/api/instagram/accounts?project_id=${projectId}`
+    ? `/api/projects/${projectId}/instagram/accounts`
     : "/api/instagram/accounts";
   return useQuery({
     queryKey: ["instagram-accounts", projectId ?? null],
