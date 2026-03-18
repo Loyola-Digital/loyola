@@ -138,9 +138,6 @@ function useResponsiveSidebar() {
 
 export function AppSidebar() {
   const role = useUserRole();
-  if (role === null) return null;
-  if (role === "guest") return <GuestSidebar />;
-
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   useResponsiveSidebar();
@@ -154,6 +151,9 @@ export function AppSidebar() {
     mql.addEventListener("change", handler);
     return () => mql.removeEventListener("change", handler);
   }, []);
+
+  if (role === null) return null;
+  if (role === "guest") return <GuestSidebar />;
 
   return (
     <>
