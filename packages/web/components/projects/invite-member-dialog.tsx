@@ -119,8 +119,8 @@ export function InviteMemberDialog({ projectId, open, onOpenChange }: InviteMemb
             <p className="text-sm text-muted-foreground">
               Copie o link abaixo e envie ao convidado. O link expira em 7 dias.
             </p>
-            <div className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2">
-              <span className="flex-1 truncate text-xs font-mono">{inviteUrl}</span>
+            <div className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2 min-w-0 overflow-hidden">
+              <span className="flex-1 min-w-0 truncate text-xs font-mono">{inviteUrl}</span>
               <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={handleCopy}>
                 {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
               </Button>
