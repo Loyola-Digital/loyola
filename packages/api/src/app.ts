@@ -33,6 +33,7 @@ import invitationsRoutes from "./routes/invitations.js";
 import adminRoutes from "./routes/admin.js";
 import metaAdsRoutes from "./routes/meta-ads.js";
 import googleSheetsRoutes from "./routes/google-sheets.js";
+import trafficAnalyticsRoutes from "./routes/traffic-analytics.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -81,6 +82,7 @@ export async function buildServer() {
   await app.register(adminRoutes);
   await app.register(metaAdsRoutes);
   await app.register(googleSheetsRoutes);
+  await app.register(trafficAnalyticsRoutes);
 
   return app;
 }
