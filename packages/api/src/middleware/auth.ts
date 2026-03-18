@@ -9,7 +9,8 @@ export default fp(async function authPlugin(fastify) {
     if (request.method === "OPTIONS") return;
     if (request.url === "/api/health") return;
     if (request.url.startsWith("/api/webhooks/")) return;
-    if (request.url.startsWith("/api/invitations/")) return;
+    // Only invite info (GET) is public; the accept endpoint (POST) requires auth
+    if (request.method === "GET" && request.url.startsWith("/api/invitations/")) return;
 
     const auth = getAuth(request);
     if (!auth.userId) {

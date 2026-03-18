@@ -5,6 +5,7 @@ import { CheckCircle, Instagram, MessageSquare, Brain, XCircle, Loader2 } from "
 import { Button } from "@/components/ui/button";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 
 interface InviteInfo {
@@ -44,6 +45,7 @@ interface Props {
 export default function InvitePage({ params }: Props) {
   const { token } = use(params);
   const apiClient = useApiClient();
+  const { isSignedIn, isLoaded } = useAuth();
   const [accepted, setAccepted] = useState(false);
 
   const { data: invite, isLoading, error } = useQuery<InviteInfo>({
@@ -58,24 +60,11 @@ export default function InvitePage({ params }: Props) {
   });
 
   const acceptMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/invitations/${token}/accept`,
-        { method: "POST" },
-      );
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? "accept_failed");
-      }
-      return res.json() as Promise<AcceptResult>;
-    },
+    mutationFn: () => apiClient<AcceptResult>(`/api/invitations/${token}/accept`, { method: "POST" }),
     onSuccess: () => {
       setAccepted(true);
     },
   });
-
-  // Suppress unused variable warning for apiClient (kept for consistent hook pattern)
-  void apiClient;
 
   if (isLoading) {
     return (
@@ -164,20 +153,28 @@ export default function InvitePage({ params }: Props) {
           </p>
         )}
 
-        <Button
-          onClick={() => acceptMutation.mutate()}
-          disabled={acceptMutation.isPending}
-          className="w-full"
-        >
-          {acceptMutation.isPending ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Aceitando...
-            </>
-          ) : (
-            "Aceitar convite"
-          )}
-        </Button>
+        {isLoaded && !isSignedIn ? (
+          <Button asChild className="w-full">
+            <Link href={`/sign-up?redirect_url=/invite/${token}`}>
+              Criar conta para aceitar
+            </Link>
+          </Button>
+        ) : (
+          <Button
+            onClick={() => acceptMutation.mutate()}
+            disabled={acceptMutation.isPending || !isLoaded}
+            className="w-full"
+          >
+            {acceptMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Aceitando...
+              </>
+            ) : (
+              "Aceitar convite"
+            )}
+          </Button>
+        )}
       </div>
     </div>
   );

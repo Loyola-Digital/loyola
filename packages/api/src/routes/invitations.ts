@@ -168,29 +168,27 @@ export default fp(async function invitationsRoutes(fastify) {
 
     const inv = rows[0];
 
-    // Find or create user by email (MVP: placeholder clerkId for guests)
-    let userId: string;
-    const existing = await fastify.db
-      .select({ id: users.id })
+    // Use the authenticated user (request.userId set by auth middleware)
+    const userId = request.userId;
+
+    // Activate the user and set their role to guest (invited users are pre-approved).
+    // If their email is a placeholder, update it to the real invite email.
+    const [currentUser] = await fastify.db
+      .select({ email: users.email, role: users.role })
       .from(users)
-      .where(eq(users.email, inv.email))
+      .where(eq(users.id, userId))
       .limit(1);
 
-    if (existing.length > 0) {
-      userId = existing[0].id;
-    } else {
-      const [newUser] = await fastify.db
-        .insert(users)
-        .values({
-          clerkId: `guest:${inv.token}`,
-          email: inv.email,
-          name: inv.email,
-          role: "guest",
-          status: "active",
-        })
-        .returning({ id: users.id });
-      userId = newUser.id;
-    }
+    const isPlaceholderEmail = currentUser?.email?.endsWith("@placeholder.dev") ?? false;
+    await fastify.db
+      .update(users)
+      .set({
+        ...(isPlaceholderEmail ? { email: inv.email, name: inv.email } : {}),
+        role: "guest",
+        status: "active",
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
 
     // Insert member (ignore conflict if already a member)
     await fastify.db
