@@ -29,6 +29,7 @@ const BASE_TABS = [
 const ADMIN_TABS = [
   ...BASE_TABS,
   { label: "Usuários", href: "/settings/users", value: "users" },
+  { label: "Auditoria", href: "/settings/audit", value: "audit" },
 ] as const;
 
 type Tab = { label: string; href: string; value: string };
