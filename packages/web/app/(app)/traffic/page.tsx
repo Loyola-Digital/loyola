@@ -13,11 +13,37 @@ import {
   ArrowUpDown,
   Users,
   ShoppingCart,
+  FileSpreadsheet,
+  Loader2,
+  Save,
+  Plus,
+  Trash2,
+  X,
 } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useMetaAdsAccounts, useMetaAdsDailyInsights } from "@/lib/hooks/use-meta-ads";
+import {
+  useGoogleSheetsConnection,
+  useConnectGoogleSheet,
+  useDeleteGoogleSheetsConnection,
+  useMapSheetTabs,
+  useSheetTabPreview,
+  useAvailableTabs,
+  type TabMappingInput,
+} from "@/lib/hooks/use-google-sheets";
 import {
   useTrafficCampaigns,
   useTrafficAdSets,
@@ -512,6 +538,9 @@ export default function TrafficPage() {
   const activeProjectId = selectedProjectId ?? linkedProjects[0]?.projectId ?? null;
 
   const { data: campaignData, isLoading: loadingCampaigns } = useTrafficCampaigns(activeProjectId, days);
+  const { data: sheetsConnection, error: sheetsError } = useGoogleSheetsConnection(activeProjectId);
+  const hasSheets = !!sheetsConnection && !sheetsError;
+  const [sheetsModalOpen, setSheetsModalOpen] = useState(false);
 
   return (
     <div className="space-y-5">
@@ -573,13 +602,24 @@ export default function TrafficPage() {
               </select>
             )}
 
-            {/* Badges */}
-            {campaignData && (
+            {/* Badges + Sheets config */}
+            {activeProjectId && (
               <div className="flex items-center gap-1.5">
                 <Badge variant="secondary" className="text-[10px]">Mídia</Badge>
-                {campaignData.hasCrm && <Badge className="text-[10px] bg-green-500/20 text-green-600 border-green-500/30">CRM</Badge>}
-                {campaignData.hasQualification && <Badge className="text-[10px] bg-blue-500/20 text-blue-600 border-blue-500/30">Qualificação</Badge>}
-                {campaignData.hasSales && <Badge className="text-[10px] bg-yellow-500/20 text-yellow-700 border-yellow-500/30">Vendas</Badge>}
+                {campaignData?.hasCrm && <Badge className="text-[10px] bg-green-500/20 text-green-600 border-green-500/30">CRM</Badge>}
+                {campaignData?.hasQualification && <Badge className="text-[10px] bg-blue-500/20 text-blue-600 border-blue-500/30">Qualificação</Badge>}
+                {campaignData?.hasSales && <Badge className="text-[10px] bg-yellow-500/20 text-yellow-700 border-yellow-500/30">Vendas</Badge>}
+                <button
+                  onClick={() => setSheetsModalOpen(true)}
+                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors ${
+                    hasSheets
+                      ? "border-green-500/30 text-green-600 hover:bg-green-500/10"
+                      : "border-border/40 text-muted-foreground hover:bg-muted/50"
+                  }`}
+                >
+                  <FileSpreadsheet className="h-3 w-3" />
+                  {hasSheets ? "Planilha" : "Conectar planilha"}
+                </button>
               </div>
             )}
 
@@ -605,6 +645,23 @@ export default function TrafficPage() {
             </div>
           )}
 
+          {/* CTA: connect spreadsheet */}
+          {activeProjectId && !hasSheets && !loadingCampaigns && (
+            <div className="rounded-xl border border-dashed border-border/50 bg-card/40 p-5 flex items-center gap-4">
+              <FileSpreadsheet className="h-8 w-8 text-muted-foreground shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium">Conecte uma planilha do Google Sheets</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Para cruzar leads, qualificação e vendas com as campanhas deste projeto.
+                </p>
+              </div>
+              <Button size="sm" onClick={() => setSheetsModalOpen(true)}>
+                <FileSpreadsheet className="h-3.5 w-3.5" />
+                Conectar
+              </Button>
+            </div>
+          )}
+
           {campaignData && (
             <>
               <SummaryCards data={campaignData} />
@@ -624,8 +681,342 @@ export default function TrafficPage() {
               </p>
             </div>
           )}
+
+          {/* Sheets config modal */}
+          {sheetsModalOpen && activeProjectId && (
+            <SheetsConfigModal
+              projectId={activeProjectId}
+              connection={hasSheets ? sheetsConnection : null}
+              onClose={() => setSheetsModalOpen(false)}
+            />
+          )}
         </>
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// SHEETS CONFIG MODAL
+// ============================================================
+
+const REQUIRED_COLUMNS: Record<string, { field: string; label: string }[]> = {
+  leads: [
+    { field: "utmCampaign", label: "UTM Campaign" },
+    { field: "utmMedium", label: "UTM Medium" },
+    { field: "utmContent", label: "UTM Content" },
+  ],
+  sales: [
+    { field: "utmCampaign", label: "UTM Campaign" },
+    { field: "utmMedium", label: "UTM Medium" },
+    { field: "utmContent", label: "UTM Content" },
+    { field: "valor", label: "Valor da venda" },
+  ],
+  survey: [],
+};
+
+const DATA_NEEDS = [
+  { type: "leads" as const, label: "Leads / CRM", description: "Leads com UTMs para cruzar com campanhas" },
+  { type: "survey" as const, label: "Pesquisa", description: "Respostas para qualificar leads" },
+  { type: "sales" as const, label: "Vendas", description: "Vendas para calcular ROAS real" },
+];
+
+function SheetsConfigModal({
+  projectId,
+  connection,
+  onClose,
+}: {
+  projectId: string;
+  connection: { id: string; projectId: string; spreadsheetName: string; tabMappings: { tabName: string; tabType: string; columnMapping: Record<string, string> }[] } | null;
+  onClose: () => void;
+}) {
+  const connectSheet = useConnectGoogleSheet();
+  const deleteSheet = useDeleteGoogleSheetsConnection();
+  const mapTabs = useMapSheetTabs();
+
+  const [sheetUrl, setSheetUrl] = useState("");
+  const [connectError, setConnectError] = useState("");
+
+  // After connection, fetch available tabs
+  const { data: availableTabs } = useAvailableTabs(connection?.id ?? null);
+  const tabs = availableTabs?.tabs ?? [];
+
+  // Tab selections state
+  const [selections, setSelections] = useState<Record<string, { tabName: string; columnMapping: Record<string, string> }>>(() => {
+    const init: Record<string, { tabName: string; columnMapping: Record<string, string> }> = {};
+    for (const m of connection?.tabMappings ?? []) {
+      init[m.tabType] = { tabName: m.tabName, columnMapping: m.columnMapping as Record<string, string> };
+    }
+    return init;
+  });
+
+  // Preview for column mapping
+  const [previewType, setPreviewType] = useState<string | null>(null);
+  const previewTabName = previewType ? selections[previewType]?.tabName : null;
+  const { data: preview } = useSheetTabPreview(
+    previewTabName ? connection?.id ?? null : null,
+    previewTabName
+  );
+  const previewHeaders = (previewType && preview?.headers) ? preview.headers.filter(Boolean) : [];
+
+  // Survey fields
+  const [newSurveyField, setNewSurveyField] = useState("");
+
+  function handleConnect() {
+    setConnectError("");
+    if (!sheetUrl.trim()) {
+      setConnectError("Cole a URL da planilha.");
+      return;
+    }
+    connectSheet.mutate(
+      { projectId, spreadsheetUrl: sheetUrl.trim() },
+      {
+        onSuccess: () => {
+          toast.success("Planilha conectada!");
+          setSheetUrl("");
+        },
+        onError: (err: unknown) => {
+          const msg = err instanceof Error ? err.message : "Erro ao conectar.";
+          setConnectError(msg);
+        },
+      }
+    );
+  }
+
+  function handleSelectTab(type: string, tabName: string) {
+    setSelections((prev) => ({
+      ...prev,
+      [type]: { tabName, columnMapping: prev[type]?.columnMapping ?? {} },
+    }));
+    setPreviewType(type);
+  }
+
+  function handleMapColumn(type: string, field: string, value: string) {
+    setSelections((prev) => ({
+      ...prev,
+      [type]: { ...prev[type], columnMapping: { ...prev[type]?.columnMapping, [field]: value } },
+    }));
+  }
+
+  function handleSave() {
+    if (!connection) return;
+    const mappings: TabMappingInput[] = [];
+    for (const [type, sel] of Object.entries(selections)) {
+      if (sel.tabName) {
+        mappings.push({ tabName: sel.tabName, tabType: type as "leads" | "survey" | "sales", columnMapping: sel.columnMapping });
+      }
+    }
+    if (mappings.length === 0) {
+      toast.error("Selecione pelo menos uma aba.");
+      return;
+    }
+    mapTabs.mutate(
+      { connectionId: connection.id, projectId, mappings },
+      {
+        onSuccess: () => { toast.success("Mapeamento salvo!"); onClose(); },
+        onError: () => toast.error("Erro ao salvar."),
+      }
+    );
+  }
+
+  function handleDisconnect() {
+    if (!connection) return;
+    deleteSheet.mutate(
+      { id: connection.id, projectId },
+      {
+        onSuccess: () => { toast.success("Planilha desconectada."); onClose(); },
+        onError: () => toast.error("Erro ao desconectar."),
+      }
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto m-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border/30 px-6 py-4">
+          <div className="flex items-center gap-2">
+            <FileSpreadsheet className="h-5 w-5" />
+            <h2 className="text-lg font-bold">Google Sheets</h2>
+          </div>
+          <button onClick={onClose} className="rounded-full p-1 hover:bg-muted transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* Step 1: Connect sheet */}
+          {!connection && (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Cole a URL da planilha do Google Sheets. Certifique-se de compartilhá-la com a Service Account.
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="https://docs.google.com/spreadsheets/d/..."
+                  value={sheetUrl}
+                  onChange={(e) => setSheetUrl(e.target.value)}
+                  className="flex-1"
+                />
+                <Button onClick={handleConnect} disabled={connectSheet.isPending}>
+                  {connectSheet.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                  Conectar
+                </Button>
+              </div>
+              {connectError && <p className="text-sm text-destructive">{connectError}</p>}
+            </div>
+          )}
+
+          {/* Step 2: Connected — map tabs */}
+          {connection && (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Badge className="text-[10px] bg-green-500/20 text-green-600 border-green-500/30">Conectada</Badge>
+                  <span className="text-sm font-medium">{connection.spreadsheetName}</span>
+                </div>
+                <Button variant="ghost" size="sm" className="text-destructive/70 hover:text-destructive text-xs" onClick={handleDisconnect}>
+                  <Trash2 className="h-3 w-3" /> Desconectar
+                </Button>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Selecione qual aba da planilha corresponde a cada tipo de dado:
+              </p>
+
+              {DATA_NEEDS.map((need) => {
+                const sel = selections[need.type];
+                const selectedTab = sel?.tabName ?? "";
+                const isActive = previewType === need.type;
+                const cols = REQUIRED_COLUMNS[need.type] ?? [];
+
+                return (
+                  <div key={need.type} className="rounded-xl border border-border/20 bg-muted/20 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{need.label}</span>
+                          {selectedTab && <Badge variant="outline" className="text-[10px]">{selectedTab}</Badge>}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{need.description}</p>
+                      </div>
+                      <Select value={selectedTab} onValueChange={(v) => handleSelectTab(need.type, v)}>
+                        <SelectTrigger className="h-8 w-[170px] text-xs shrink-0">
+                          <SelectValue placeholder="Aba..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {tabs.filter(Boolean).map((t) => (
+                            <SelectItem key={t} value={t}>{t}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Preview (compact) */}
+                    {isActive && preview && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-[11px] border border-border/20 rounded">
+                          <thead>
+                            <tr className="bg-muted/40">
+                              {preview.headers.map((h, i) => (
+                                <th key={i} className="px-2 py-1 text-left font-medium border-b border-border/20">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {preview.rows.slice(0, 2).map((row, ri) => (
+                              <tr key={ri} className="border-b border-border/10">
+                                {row.map((cell, ci) => (
+                                  <td key={ci} className="px-2 py-0.5 text-muted-foreground truncate max-w-[100px]">{cell}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Column mapping — leads / sales */}
+                    {selectedTab && need.type !== "survey" && cols.length > 0 && (
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        {cols.map((col) => (
+                          <div key={col.field} className="space-y-1">
+                            <Label className="text-[11px] text-muted-foreground">{col.label}</Label>
+                            <Select
+                              value={sel?.columnMapping?.[col.field] ?? ""}
+                              onValueChange={(v) => handleMapColumn(need.type, col.field, v)}
+                            >
+                              <SelectTrigger className="h-7 text-xs">
+                                <SelectValue placeholder="Coluna..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {previewHeaders.map((h) => (
+                                  <SelectItem key={h} value={h}>{h}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Column mapping — survey (dynamic) */}
+                    {selectedTab && need.type === "survey" && (
+                      <div className="space-y-2">
+                        {Object.entries(sel?.columnMapping ?? {}).map(([field, headerName]) => (
+                          <div key={field} className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs shrink-0">{field}</Badge>
+                            <Select
+                              value={headerName}
+                              onValueChange={(v) => handleMapColumn("survey", field, v)}
+                            >
+                              <SelectTrigger className="h-7 text-xs max-w-[180px]">
+                                <SelectValue placeholder="Coluna..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {previewHeaders.map((h) => (
+                                  <SelectItem key={h} value={h}>{h}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <button
+                              onClick={() => setSelections((prev) => {
+                                const m = { ...prev.survey.columnMapping };
+                                delete m[field];
+                                return { ...prev, survey: { ...prev.survey, columnMapping: m } };
+                              })}
+                              className="text-destructive/60 hover:text-destructive"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                        <div className="flex items-center gap-2">
+                          <Input className="h-7 text-xs max-w-[140px]" placeholder="Campo (ex: renda)" value={newSurveyField} onChange={(e) => setNewSurveyField(e.target.value)} />
+                          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { if (newSurveyField.trim()) { handleMapColumn("survey", newSurveyField.trim(), ""); setNewSurveyField(""); } }}>
+                            <Plus className="h-3 w-3" /> Adicionar
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Save */}
+              <div className="flex justify-end">
+                <Button onClick={handleSave} disabled={mapTabs.isPending}>
+                  {mapTabs.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Salvar mapeamento
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
