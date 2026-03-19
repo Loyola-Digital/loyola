@@ -159,10 +159,14 @@ export default fp(async function instagramRoutes(fastify) {
     }
 
     const userId = request.userId;
+    const userRole = request.userRole;
     const { project_id: filterProjectId } = queryResult.data;
 
+    // Guests see only their own accounts; all other roles see ALL accounts
+    const isGuest = userRole === "guest";
+
     // Fetch base accounts
-    const accountRows = await fastify.db
+    const baseQuery = fastify.db
       .select({
         id: instagramAccounts.id,
         accountName: instagramAccounts.accountName,
@@ -174,8 +178,11 @@ export default fp(async function instagramRoutes(fastify) {
         tokenExpiresAt: instagramAccounts.tokenExpiresAt,
         createdAt: instagramAccounts.createdAt,
       })
-      .from(instagramAccounts)
-      .where(eq(instagramAccounts.userId, userId));
+      .from(instagramAccounts);
+
+    const accountRows = isGuest
+      ? await baseQuery.where(eq(instagramAccounts.userId, userId))
+      : await baseQuery;
 
     if (accountRows.length === 0) return [];
 
