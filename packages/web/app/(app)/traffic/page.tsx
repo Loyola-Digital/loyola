@@ -59,10 +59,13 @@ import {
   type CampaignAnalyticsResponse,
   type TopPerformerMetric,
   type TopPerformerAd,
+  type VideoMetrics,
 } from "@/lib/hooks/use-traffic-analytics";
 import {
   LineChart,
   Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -104,6 +107,35 @@ function fmtRoas(val: number | null): string {
 
 function safeNum(val: string | undefined): number {
   return val ? parseFloat(val) : 0;
+}
+
+// ============================================================
+// VIDEO RETENTION SPARKLINE (Story 8.6)
+// ============================================================
+
+function VideoRetentionSparkline({ metrics }: { metrics: VideoMetrics }) {
+  const data = [
+    { label: "25%", value: metrics.p25 },
+    { label: "50%", value: metrics.p50 },
+    { label: "75%", value: metrics.p75 },
+    { label: "100%", value: metrics.p100 },
+  ];
+  if (data.every((d) => d.value === 0)) return null;
+
+  return (
+    <div className="inline-block" title={`25%: ${fmtNumber(metrics.p25)} → 50%: ${fmtNumber(metrics.p50)} → 75%: ${fmtNumber(metrics.p75)} → 100%: ${fmtNumber(metrics.p100)}`}>
+      <ResponsiveContainer width={72} height={22}>
+        <AreaChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+          <Area type="monotone" dataKey="value" stroke="hsl(200 80% 60%)" fill="hsl(200 80% 60% / 0.2)" strokeWidth={1.5} />
+          <Tooltip
+            contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "10px", padding: "4px 6px" }}
+            formatter={(v) => fmtNumber(Number(v))}
+            labelFormatter={(l) => `Retenção ${l}`}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
 }
 
 const PERIOD_OPTIONS = [
@@ -494,7 +526,7 @@ function DrillDownAds({ projectId, adsetId, days, hasCrm, hasQual, hasSales }: {
   return (
     <>
       {data.ads.map((a) => (
-        <DrillDownRow key={a.campaignId} item={a} level={2} isExpanded={false} onToggle={() => {}} hasCrm={hasCrm} hasQual={hasQual} hasSales={hasSales} creative={a.creative} onCreativeClick={() => setLightboxAd(a)} />
+        <DrillDownRow key={a.campaignId} item={a} level={2} isExpanded={false} onToggle={() => {}} hasCrm={hasCrm} hasQual={hasQual} hasSales={hasSales} creative={a.creative} videoMetrics={a.videoMetrics} onCreativeClick={() => setLightboxAd(a)} />
       ))}
       {/* Lightbox (Story 8.4) */}
       {lightboxAd?.creative && (
@@ -535,10 +567,11 @@ function DrillDownAds({ projectId, adsetId, days, hasCrm, hasQual, hasSales }: {
   );
 }
 
-function DrillDownRow({ item, level, isExpanded, onToggle, hasCrm, hasQual, hasSales, children, creative, onCreativeClick }: {
+function DrillDownRow({ item, level, isExpanded, onToggle, hasCrm, hasQual, hasSales, children, creative, videoMetrics, onCreativeClick }: {
   item: CampaignAnalytics; level: 1 | 2; isExpanded: boolean; onToggle: () => void;
   hasCrm: boolean; hasQual: boolean; hasSales: boolean; children?: React.ReactNode;
   creative?: { thumbnailUrl: string | null; objectType: string | null } | null;
+  videoMetrics?: VideoMetrics | null;
   onCreativeClick?: () => void;
 }) {
   const pl = level === 1 ? "pl-8" : "pl-14";
@@ -570,6 +603,7 @@ function DrillDownRow({ item, level, isExpanded, onToggle, hasCrm, hasQual, hasS
             ) : null}
             <span className="truncate">{item.campaignName}</span>
             {level === 2 && creative?.objectType && <CreativeTypeBadge objectType={creative.objectType} />}
+            {level === 2 && videoMetrics && <VideoRetentionSparkline metrics={videoMetrics} />}
           </span>
         </td>
         <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(item.spend)}</td>
@@ -715,10 +749,106 @@ function TopPerformersSection({ projectId, days, campaignId }: { projectId: stri
                 <p>Campanha: {ad.parentCampaignName}</p>
                 <p>Spend: {fmtCurrency(ad.spend)}</p>
               </div>
+              {/* Video retention sparkline (Story 8.6) */}
+              {ad.videoMetrics && <VideoRetentionSparkline metrics={ad.videoMetrics} />}
             </div>
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// CREATIVE RANKING CHART (Story 8.5)
+// ============================================================
+
+const RANKING_COLORS = [
+  "hsl(142 70% 45%)", "hsl(142 60% 50%)", "hsl(150 50% 52%)", "hsl(160 40% 55%)",
+  "hsl(45 80% 55%)", "hsl(35 70% 55%)", "hsl(25 65% 55%)", "hsl(15 60% 50%)",
+  "hsl(5 60% 50%)", "hsl(0 65% 50%)",
+];
+
+function CreativeRankingChart({ projectId, days, campaignId }: { projectId: string; days: number; campaignId?: string | null }) {
+  const [metric, setMetric] = useState<TopPerformerMetric>("roas");
+  const [onlyWithCreatives, setOnlyWithCreatives] = useState(false);
+  const { data, isLoading } = useTopPerformers(projectId, metric, 10, days, campaignId);
+
+  if (isLoading) return <Skeleton className="h-64 rounded-xl" />;
+  if (!data || data.topPerformers.length < 2) return null;
+
+  const metricLabel = METRIC_OPTIONS.find((m) => m.value === metric)?.sortLabel ?? metric;
+  const performers = onlyWithCreatives
+    ? data.topPerformers.filter((ad) => ad.creative?.thumbnailUrl)
+    : data.topPerformers;
+
+  if (performers.length === 0) return null;
+
+  const chartData = performers.map((ad, i) => ({
+    name: ad.campaignName.length > 25 ? ad.campaignName.slice(0, 25) + "…" : ad.campaignName,
+    value: (() => {
+      switch (metric) {
+        case "roas": return ad.roas ?? 0;
+        case "cpl": return ad.cpl ?? 0;
+        case "cplQualified": return ad.cplQualified ?? 0;
+        case "leads": return ad.leads ?? 0;
+        case "sales": return ad.sales ?? 0;
+        case "ctr": return ad.ctr ?? 0;
+        default: return 0;
+      }
+    })(),
+    fullName: ad.campaignName,
+    adsetName: ad.adsetName,
+    parentCampaignName: ad.parentCampaignName,
+    spend: ad.spend,
+    color: RANKING_COLORS[i] ?? RANKING_COLORS[RANKING_COLORS.length - 1],
+    thumbnail: ad.creative?.thumbnailUrl ?? null,
+  }));
+
+  return (
+    <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="text-sm font-semibold">Comparativo de Criativos — {metricLabel}</h3>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer">
+            <input type="checkbox" checked={onlyWithCreatives} onChange={(e) => setOnlyWithCreatives(e.target.checked)} className="rounded border-border" />
+            Apenas com criativos
+          </label>
+          <Select value={metric} onValueChange={(v) => setMetric(v as TopPerformerMetric)}>
+            <SelectTrigger className="h-7 w-[130px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {METRIC_OPTIONS.map((m) => (
+                <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height={Math.max(200, performers.length * 40)}>
+        <BarChart data={chartData} layout="vertical" margin={{ left: 140, right: 60 }}>
+          <XAxis type="number" hide />
+          <YAxis
+            type="category"
+            dataKey="name"
+            tick={{ fontSize: 10 }}
+            width={135}
+          />
+          <Tooltip
+            contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "11px" }}
+            formatter={(value) => {
+              const v = Number(value);
+              return metric === "roas" ? fmtRoas(v) : metric === "ctr" ? fmtPercent(v) : ["cpl", "cplQualified"].includes(metric) ? fmtCurrency(v) : fmtNumber(v);
+            }}
+          />
+          <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+            {chartData.map((d, i) => (
+              <Cell key={i} fill={d.color} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -973,6 +1103,7 @@ export default function TrafficPage() {
             <>
               <SummaryCards data={filteredCampaignData!} />
               {activeProjectId && <TopPerformersSection projectId={activeProjectId} days={days} campaignId={filterCampaignId} />}
+              {activeProjectId && <CreativeRankingChart projectId={activeProjectId} days={days} campaignId={filterCampaignId} />}
               <FunnelChart data={filteredCampaignData!} />
               {activeAccountId && <DailyChart accountId={activeAccountId} projectId={activeProjectId} campaignId={filterCampaignId} days={days} />}
               <CampaignTable data={filteredCampaignData!} projectId={activeProjectId!} days={days} />

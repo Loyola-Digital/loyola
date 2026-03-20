@@ -109,9 +109,18 @@ export interface MetaAdSetInsight extends MetaDailyInsight {
   adset_name: string;
 }
 
+export interface VideoMetrics {
+  p25: number;
+  p50: number;
+  p75: number;
+  p100: number;
+  thruplay: number;
+}
+
 export interface MetaAdInsight extends MetaDailyInsight {
   ad_id: string;
   ad_name: string;
+  videoMetrics?: VideoMetrics | null;
 }
 
 // ============================================================
@@ -288,6 +297,31 @@ export async function fetchAdSetInsights(
   return res.data ?? [];
 }
 
+interface RawAdInsight extends MetaDailyInsight {
+  ad_id: string;
+  ad_name: string;
+  video_p25_watched_actions?: { action_type: string; value: string }[];
+  video_p50_watched_actions?: { action_type: string; value: string }[];
+  video_p75_watched_actions?: { action_type: string; value: string }[];
+  video_p100_watched_actions?: { action_type: string; value: string }[];
+  video_thruplay_watched_actions?: { action_type: string; value: string }[];
+}
+
+function parseVideoAction(actions?: { action_type: string; value: string }[]): number {
+  if (!actions || actions.length === 0) return 0;
+  return parseInt(actions[0].value, 10) || 0;
+}
+
+function extractVideoMetrics(raw: RawAdInsight): VideoMetrics | null {
+  const p25 = parseVideoAction(raw.video_p25_watched_actions);
+  const p50 = parseVideoAction(raw.video_p50_watched_actions);
+  const p75 = parseVideoAction(raw.video_p75_watched_actions);
+  const p100 = parseVideoAction(raw.video_p100_watched_actions);
+  const thruplay = parseVideoAction(raw.video_thruplay_watched_actions);
+  if (p25 === 0 && p50 === 0 && p75 === 0 && p100 === 0) return null;
+  return { p25, p50, p75, p100, thruplay };
+}
+
 export async function fetchAdInsights(
   metaAccountId: string,
   accessToken: string,
@@ -301,11 +335,14 @@ export async function fetchAdInsights(
       { field: "adset_id", operator: "EQUAL", value: adsetId },
     ])
   );
-  const res = await fetchMeta<{ data: MetaAdInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name&date_preset=${datePreset}&level=ad&filtering=${filtering}`,
+  const res = await fetchMeta<{ data: RawAdInsight[] }>(
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions&date_preset=${datePreset}&level=ad&filtering=${filtering}`,
     accessToken
   );
-  return res.data ?? [];
+  return (res.data ?? []).map((raw) => ({
+    ...raw,
+    videoMetrics: extractVideoMetrics(raw),
+  }));
 }
 
 // ============================================================

@@ -60,6 +60,14 @@ export interface AdSetAnalyticsResponse {
   hasSales: boolean;
 }
 
+export interface VideoMetrics {
+  p25: number;
+  p50: number;
+  p75: number;
+  p100: number;
+  thruplay: number;
+}
+
 export interface MetaAdCreative {
   adId: string;
   thumbnailUrl: string | null;
@@ -73,7 +81,7 @@ export interface MetaAdCreative {
 }
 
 export interface AdAnalyticsResponse {
-  ads: (CampaignAnalytics & { creative: MetaAdCreative | null })[];
+  ads: (CampaignAnalytics & { creative: MetaAdCreative | null; videoMetrics: VideoMetrics | null })[];
   unattributedLeads: number;
   unattributedSales: { count: number; revenue: number };
   hasCrm: boolean;
@@ -151,6 +159,7 @@ export interface TopPerformerAd extends CampaignAnalytics {
   adsetName: string;
   parentCampaignName: string;
   creative: MetaAdCreative | null;
+  videoMetrics: VideoMetrics | null;
 }
 
 export interface TopPerformersResponse {

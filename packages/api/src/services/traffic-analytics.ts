@@ -17,6 +17,7 @@ import {
   type MetaAdInsight,
   type MetaAdCreative,
   type MetaDailyInsight,
+  type VideoMetrics,
 } from "./meta-ads.js";
 import { getTabData } from "./google-sheets.js";
 import { getQualifiedLeadsByEntity, getProfileForProject } from "./lead-qualification.js";
@@ -540,7 +541,7 @@ export async function getProjectAdAnalytics(
   projectId: string,
   adsetId: string,
   days: number
-): Promise<{ ads: (CampaignAnalytics & { creative: MetaAdCreative | null })[]; unattributedLeads: number; unattributedSales: { count: number; revenue: number }; hasCrm: boolean; hasQualification: boolean; hasSales: boolean }> {
+): Promise<{ ads: (CampaignAnalytics & { creative: MetaAdCreative | null; videoMetrics: VideoMetrics | null })[]; unattributedLeads: number; unattributedSales: { count: number; revenue: number }; hasCrm: boolean; hasQualification: boolean; hasSales: boolean }> {
   const metaAccount = await getMetaAccountForProject(db, projectId);
   if (!metaAccount) {
     return { ads: [], unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
@@ -570,7 +571,7 @@ export async function getProjectAdAnalytics(
     const qualLeads = hasQualification ? (qualResult.matched.get(a.ad_id) ?? 0) : null;
     const saleData = hasSales ? (salesCounts.matched.get(a.ad_id) ?? { count: 0, revenue: 0 }) : null;
 
-    return { ...buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, entityLeads, qualLeads, saleData), creative: null as MetaAdCreative | null };
+    return { ...buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, entityLeads, qualLeads, saleData), creative: null as MetaAdCreative | null, videoMetrics: a.videoMetrics ?? null };
   });
 
   // Fetch creatives for all ads in drill-down
@@ -598,6 +599,7 @@ export interface TopPerformerAd extends CampaignAnalytics {
   adsetName: string;
   parentCampaignName: string;
   creative: MetaAdCreative | null;
+  videoMetrics: VideoMetrics | null;
 }
 
 export async function getTopPerformers(
@@ -674,7 +676,7 @@ export async function getTopPerformers(
     const saleData = salesData ? (salesCounts.matched.get(a.ad_id) ?? { count: 0, revenue: 0 }) : null;
 
     const row = buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, entityLeads, qualLeads, saleData);
-    return { ...row, adsetName: a.adsetName, parentCampaignName: a.parentCampaignName, creative: null };
+    return { ...row, adsetName: a.adsetName, parentCampaignName: a.parentCampaignName, creative: null, videoMetrics: a.videoMetrics ?? null };
   });
 
   // Sort by metric
