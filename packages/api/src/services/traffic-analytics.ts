@@ -100,6 +100,11 @@ function normalizeUtm(value: string | undefined | null): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+/** Strip all separators for fuzzy comparison: "fz-l1" → "fzl1", "lista-de-espera" → "listadeespera" */
+function stripSeparators(value: string): string {
+  return value.replace(/[-_.\s[\]()]/g, "");
+}
+
 function matchUtm(
   utmValue: string,
   entityName: string,
@@ -107,10 +112,32 @@ function matchUtm(
 ): boolean {
   const normalized = normalizeUtm(utmValue);
   if (!normalized) return false;
-  return (
-    normalized === normalizeUtm(entityName) ||
-    normalized === normalizeUtm(entityId)
-  );
+
+  const normName = normalizeUtm(entityName);
+  const normId = normalizeUtm(entityId);
+
+  // 1. Exact match
+  if (normalized === normName || normalized === normId) return true;
+
+  // 2. Fuzzy: strip separators and check contains (min 3 chars to avoid false positives)
+  const strippedUtm = stripSeparators(normalized);
+  if (strippedUtm.length < 3) return false;
+
+  const strippedName = stripSeparators(normName);
+  const strippedId = stripSeparators(normId);
+
+  // UTM value found inside campaign/adset/ad name (e.g., "fzl1" inside "fzl1fev26leads...")
+  if (strippedName.includes(strippedUtm) || strippedId.includes(strippedUtm)) return true;
+
+  // Campaign name tag found inside UTM (e.g., compound UTM "fzl1_grupo_whatsapp_cpl_lista-de-espera")
+  // Split compound UTMs and check each part
+  const utmParts = normalized.split(/[-_]/g).filter((p) => p.length >= 3);
+  for (const part of utmParts) {
+    const strippedPart = stripSeparators(part);
+    if (strippedName.includes(strippedPart) && strippedPart.length >= 4) return true;
+  }
+
+  return false;
 }
 
 // ============================================================
