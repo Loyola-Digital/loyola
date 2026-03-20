@@ -13,6 +13,7 @@ import {
   getTabData,
   getServiceAccountEmail,
 } from "../services/google-sheets.js";
+import { invalidateProjectCache } from "../services/traffic-analytics.js";
 
 // ============================================================
 // SCHEMAS
@@ -270,7 +271,7 @@ export default fp(async function googleSheetsRoutes(fastify) {
 
       // Verify connection exists
       const [connection] = await fastify.db
-        .select({ id: googleSheetsConnections.id })
+        .select({ id: googleSheetsConnections.id, projectId: googleSheetsConnections.projectId })
         .from(googleSheetsConnections)
         .where(eq(googleSheetsConnections.id, paramResult.data.id))
         .limit(1);
@@ -295,6 +296,9 @@ export default fp(async function googleSheetsRoutes(fastify) {
           }))
         )
         .returning();
+
+      // Invalidate traffic analytics cache so new mappings take effect immediately
+      invalidateProjectCache(connection.projectId);
 
       return newMappings;
     }
