@@ -115,6 +115,22 @@ export interface MetaAdInsight extends MetaDailyInsight {
 }
 
 // ============================================================
+// AD CREATIVE TYPES (Story 8.1)
+// ============================================================
+
+export interface MetaAdCreative {
+  adId: string;
+  thumbnailUrl: string | null;
+  imageUrl: string | null;
+  title: string | null;
+  body: string | null;
+  linkUrl: string | null;
+  ctaType: string | null;
+  objectType: string | null;
+  videoId: string | null;
+}
+
+// ============================================================
 // CORE FETCH
 // ============================================================
 
@@ -272,6 +288,124 @@ export async function fetchAdInsights(
     accessToken
   );
   return res.data ?? [];
+}
+
+// ============================================================
+// AD CREATIVES (Story 8.1)
+// ============================================================
+
+const CREATIVE_CACHE_TTL = 60 * 60 * 1000; // 1h
+
+interface CreativeCacheEntry {
+  data: MetaAdCreative;
+  timestamp: number;
+}
+
+const creativeCache = new Map<string, CreativeCacheEntry>();
+
+function getCachedCreative(adId: string): MetaAdCreative | undefined {
+  const entry = creativeCache.get(adId);
+  if (!entry) return undefined;
+  if (Date.now() - entry.timestamp > CREATIVE_CACHE_TTL) {
+    creativeCache.delete(adId);
+    return undefined;
+  }
+  return entry.data;
+}
+
+function setCachedCreative(creative: MetaAdCreative): void {
+  creativeCache.set(creative.adId, { data: creative, timestamp: Date.now() });
+}
+
+interface MetaCreativeRaw {
+  thumbnail_url?: string;
+  image_url?: string;
+  title?: string;
+  body?: string;
+  link_url?: string;
+  call_to_action_type?: string;
+  object_type?: string;
+  video_id?: string;
+}
+
+interface MetaAdWithCreative {
+  id: string;
+  creative?: MetaCreativeRaw;
+}
+
+export async function fetchAdCreatives(
+  metaAccountId: string,
+  accessToken: string,
+  adIds: string[]
+): Promise<MetaAdCreative[]> {
+  if (adIds.length === 0) return [];
+
+  // Check cache first, collect uncached
+  const results: MetaAdCreative[] = [];
+  const uncachedIds: string[] = [];
+
+  for (const adId of adIds) {
+    const cached = getCachedCreative(adId);
+    if (cached) {
+      results.push(cached);
+    } else {
+      uncachedIds.push(adId);
+    }
+  }
+
+  if (uncachedIds.length === 0) return results;
+
+  // Batch in groups of 50 (parallel requests with field expansion)
+  const BATCH_SIZE = 50;
+  const batches: string[][] = [];
+  for (let i = 0; i < uncachedIds.length; i += BATCH_SIZE) {
+    batches.push(uncachedIds.slice(i, i + BATCH_SIZE));
+  }
+
+  for (const batch of batches) {
+    const promises = batch.map(async (adId) => {
+      try {
+        const data = await fetchMeta<MetaAdWithCreative>(
+          `/${adId}?fields=id,creative{thumbnail_url,image_url,title,body,link_url,call_to_action_type,object_type,video_id}`,
+          accessToken
+        );
+        const c = data.creative;
+        const creative: MetaAdCreative = {
+          adId,
+          thumbnailUrl: c?.thumbnail_url ?? null,
+          imageUrl: c?.image_url ?? null,
+          title: c?.title ?? null,
+          body: c?.body ?? null,
+          linkUrl: c?.link_url ?? null,
+          ctaType: c?.call_to_action_type ?? null,
+          objectType: c?.object_type ?? null,
+          videoId: c?.video_id ?? null,
+        };
+        setCachedCreative(creative);
+        return creative;
+      } catch {
+        // Graceful fallback — return null creative
+        const creative: MetaAdCreative = {
+          adId,
+          thumbnailUrl: null,
+          imageUrl: null,
+          title: null,
+          body: null,
+          linkUrl: null,
+          ctaType: null,
+          objectType: null,
+          videoId: null,
+        };
+        setCachedCreative(creative);
+        return creative;
+      }
+    });
+
+    const batchResults = await Promise.all(promises);
+    results.push(...batchResults);
+  }
+
+  return results;
 }
 
 export function decryptAccountToken(encrypted: string, iv: string): string {

@@ -10,9 +10,11 @@ import {
   fetchCampaignInsights,
   fetchAdSetInsights,
   fetchAdInsights,
+  fetchAdCreatives,
   decryptAccountToken,
   type MetaAdSetInsight,
   type MetaAdInsight,
+  type MetaAdCreative,
 } from "./meta-ads.js";
 import { getTabData } from "./google-sheets.js";
 import { getQualifiedLeadsByEntity, getProfileForProject } from "./lead-qualification.js";
@@ -536,7 +538,7 @@ export async function getProjectAdAnalytics(
   projectId: string,
   adsetId: string,
   days: number
-): Promise<{ ads: CampaignAnalytics[]; unattributedLeads: number; unattributedSales: { count: number; revenue: number }; hasCrm: boolean; hasQualification: boolean; hasSales: boolean }> {
+): Promise<{ ads: (CampaignAnalytics & { creative: MetaAdCreative | null })[]; unattributedLeads: number; unattributedSales: { count: number; revenue: number }; hasCrm: boolean; hasQualification: boolean; hasSales: boolean }> {
   const metaAccount = await getMetaAccountForProject(db, projectId);
   if (!metaAccount) {
     return { ads: [], unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
@@ -566,8 +568,20 @@ export async function getProjectAdAnalytics(
     const qualLeads = hasQualification ? (qualResult.matched.get(a.ad_id) ?? 0) : null;
     const saleData = hasSales ? (salesCounts.matched.get(a.ad_id) ?? { count: 0, revenue: 0 }) : null;
 
-    return buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, entityLeads, qualLeads, saleData);
+    return { ...buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, entityLeads, qualLeads, saleData), creative: null as MetaAdCreative | null };
   });
+
+  // Fetch creatives for all ads in drill-down
+  try {
+    const adIds = ads.map((a) => a.campaignId);
+    const creatives = await fetchAdCreatives(metaAccount.metaAccountId, metaAccount.accessToken, adIds);
+    const creativeMap = new Map(creatives.map((c) => [c.adId, c]));
+    for (const ad of ads) {
+      ad.creative = creativeMap.get(ad.campaignId) ?? null;
+    }
+  } catch {
+    // Graceful: ads still returned with creative: null
+  }
 
   return { ads, unattributedLeads: leadCounts.unattributed, unattributedSales: salesCounts.unattributed, hasCrm, hasQualification, hasSales };
 }
@@ -581,6 +595,7 @@ export type TopPerformerMetric = "roas" | "cpl" | "cplQualified" | "leads" | "sa
 export interface TopPerformerAd extends CampaignAnalytics {
   adsetName: string;
   parentCampaignName: string;
+  creative: MetaAdCreative | null;
 }
 
 export async function getTopPerformers(
@@ -651,7 +666,7 @@ export async function getTopPerformers(
     const saleData = salesData ? (salesCounts.matched.get(a.ad_id) ?? { count: 0, revenue: 0 }) : null;
 
     const row = buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, entityLeads, qualLeads, saleData);
-    return { ...row, adsetName: a.adsetName, parentCampaignName: a.parentCampaignName };
+    return { ...row, adsetName: a.adsetName, parentCampaignName: a.parentCampaignName, creative: null };
   });
 
   // Sort by metric
@@ -669,9 +684,22 @@ export async function getTopPerformers(
     return isDesc ? vb - va : va - vb;
   });
 
-  const result = filtered.slice(0, limit);
-  setCache(cacheKey, result);
-  return result;
+  const topAds = filtered.slice(0, limit);
+
+  // Fetch creatives for top ads only (rate limit friendly)
+  try {
+    const adIds = topAds.map((a) => a.campaignId); // campaignId is actually the ad_id from buildAnalyticsRow
+    const creatives = await fetchAdCreatives(metaAccount.metaAccountId, metaAccount.accessToken, adIds);
+    const creativeMap = new Map(creatives.map((c) => [c.adId, c]));
+    for (const ad of topAds) {
+      ad.creative = creativeMap.get(ad.campaignId) ?? null;
+    }
+  } catch {
+    // Graceful: if creative fetch fails, ads still have creative: null
+  }
+
+  setCache(cacheKey, topAds);
+  return topAds;
 }
 
 function getMetricValue(a: CampaignAnalytics, metric: TopPerformerMetric): number | null {

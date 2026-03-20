@@ -60,8 +60,20 @@ export interface AdSetAnalyticsResponse {
   hasSales: boolean;
 }
 
+export interface MetaAdCreative {
+  adId: string;
+  thumbnailUrl: string | null;
+  imageUrl: string | null;
+  title: string | null;
+  body: string | null;
+  linkUrl: string | null;
+  ctaType: string | null;
+  objectType: string | null;
+  videoId: string | null;
+}
+
 export interface AdAnalyticsResponse {
-  ads: CampaignAnalytics[];
+  ads: (CampaignAnalytics & { creative: MetaAdCreative | null })[];
   unattributedLeads: number;
   unattributedSales: { count: number; revenue: number };
   hasCrm: boolean;
@@ -138,6 +150,7 @@ export type TopPerformerMetric = "roas" | "cpl" | "cplQualified" | "leads" | "sa
 export interface TopPerformerAd extends CampaignAnalytics {
   adsetName: string;
   parentCampaignName: string;
+  creative: MetaAdCreative | null;
 }
 
 export interface TopPerformersResponse {
@@ -166,6 +179,26 @@ export function useTopPerformers(
         `/api/traffic/analytics/${projectId}/top-performers?metric=${metric}&limit=${limit}&days=${days}`
       ),
     enabled: !!projectId,
+  });
+}
+
+export interface AdCreativesResponse {
+  creatives: MetaAdCreative[];
+}
+
+export function useAdCreatives(
+  projectId: string | null,
+  adIds: string[]
+) {
+  const apiClient = useApiClient();
+  const idsParam = adIds.join(",");
+  return useQuery({
+    queryKey: ["traffic-ad-creatives", projectId, idsParam],
+    queryFn: () =>
+      apiClient<AdCreativesResponse>(
+        `/api/traffic/analytics/${projectId}/ad-creatives?adIds=${encodeURIComponent(idsParam)}`
+      ),
+    enabled: !!projectId && adIds.length > 0,
   });
 }
 

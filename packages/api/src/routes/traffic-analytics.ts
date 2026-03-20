@@ -12,6 +12,11 @@ import {
   type TopPerformerMetric,
 } from "../services/traffic-analytics.js";
 import {
+  fetchAdCreatives,
+  decryptAccountToken,
+} from "../services/meta-ads.js";
+import { metaAdsAccounts, metaAdsAccountProjects } from "../db/schema.js";
+import {
   classifyLeads,
   generateRulesFromDescription,
   type QualificationRule,
@@ -247,6 +252,74 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
       } catch (err) {
         return reply.code(502).send({
           error: "Erro ao buscar ad sets",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  );
+
+  // ---- GET /api/traffic/analytics/:projectId/ad-creatives ---- (Story 8.1)
+  const adCreativesQuerySchema = z.object({
+    adIds: z.string().min(1),
+  });
+
+  fastify.get(
+    "/api/traffic/analytics/:projectId/ad-creatives",
+    async (request, reply) => {
+      if (request.userRole !== "admin" && request.userRole !== "manager") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+
+      const queryResult = adCreativesQuerySchema.safeParse(request.query);
+      if (!queryResult.success) {
+        return reply.code(400).send({ error: "adIds obrigatorio" });
+      }
+
+      const adIds = queryResult.data.adIds.split(",").filter(Boolean).slice(0, 50);
+      if (adIds.length === 0) {
+        return reply.code(400).send({ error: "adIds vazio" });
+      }
+
+      // Get Meta account for project
+      const [link] = await fastify.db
+        .select({ accountId: metaAdsAccountProjects.accountId })
+        .from(metaAdsAccountProjects)
+        .where(eq(metaAdsAccountProjects.projectId, paramResult.data.projectId))
+        .limit(1);
+
+      if (!link) {
+        return reply.code(404).send({ error: "Conta Meta Ads nao encontrada" });
+      }
+
+      const [account] = await fastify.db
+        .select()
+        .from(metaAdsAccounts)
+        .where(eq(metaAdsAccounts.id, link.accountId))
+        .limit(1);
+
+      if (!account) {
+        return reply.code(404).send({ error: "Conta Meta Ads nao encontrada" });
+      }
+
+      try {
+        const accessToken = decryptAccountToken(
+          account.accessTokenEncrypted,
+          account.accessTokenIv
+        );
+        const creatives = await fetchAdCreatives(
+          account.metaAccountId,
+          accessToken,
+          adIds
+        );
+        return { creatives };
+      } catch (err) {
+        return reply.code(502).send({
+          error: "Erro ao buscar criativos",
           details: err instanceof Error ? err.message : String(err),
         });
       }
