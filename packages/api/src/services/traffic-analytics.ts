@@ -8,6 +8,7 @@ import {
   fetchCampaignInsights,
   fetchAdSetInsights,
   fetchAdInsights,
+  fetchAllAdInsights,
   fetchAdCreatives,
   fetchCampaignDailyInsights,
   fetchPlacementBreakdown,
@@ -17,6 +18,7 @@ import {
   type MetaAdCreative,
   type MetaDailyInsight,
   type VideoMetrics,
+  type AllAdInsight,
 } from "./meta-ads.js";
 
 // ============================================================
@@ -217,13 +219,33 @@ export async function getProjectAdSetAnalytics(
     return { adsets: [], unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
   }
 
-  const adsetInsights = await fetchAdSetInsights(metaAccount.metaAccountId, metaAccount.accessToken, campaignId, days);
+  // Story 9.1: Try hierarchical first, fallback to flat query for ASC campaigns
+  let adsetInsights = await fetchAdSetInsights(metaAccount.metaAccountId, metaAccount.accessToken, campaignId, days);
+
+  // ASC fallback: if no adsets found, aggregate from flat ad query
+  if (adsetInsights.length === 0) {
+    const allAds = await fetchAllAdInsights(metaAccount.metaAccountId, metaAccount.accessToken, days, campaignId);
+    const adsetAgg = new Map<string, { name: string; spend: number; impressions: number; clicks: number }>();
+    for (const a of allAds) {
+      const existing = adsetAgg.get(a.adset_id);
+      if (existing) {
+        existing.spend += parseFloat(a.spend || "0");
+        existing.impressions += parseFloat(a.impressions || "0");
+        existing.clicks += parseFloat(a.clicks || "0");
+      } else {
+        adsetAgg.set(a.adset_id, { name: a.adset_name, spend: parseFloat(a.spend || "0"), impressions: parseFloat(a.impressions || "0"), clicks: parseFloat(a.clicks || "0") });
+      }
+    }
+    const adsets = Array.from(adsetAgg.entries()).map(([id, a]) =>
+      buildAnalyticsRow(id, a.name, a.spend, a.impressions, a.clicks, null, null, null)
+    );
+    return { adsets, unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
+  }
 
   const adsets = adsetInsights.map((a) => {
     const spend = parseFloat(a.spend || "0");
     const impressions = parseFloat(a.impressions || "0");
     const clicks = parseFloat(a.clicks || "0");
-
     return buildAnalyticsRow(a.adset_id, a.adset_name, spend, impressions, clicks, null, null, null);
   });
 
@@ -241,7 +263,15 @@ export async function getProjectAdAnalytics(
     return { ads: [], unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
   }
 
-  const adInsights = await fetchAdInsights(metaAccount.metaAccountId, metaAccount.accessToken, adsetId, days);
+  // Story 9.1: Try hierarchical first, fallback to flat query for ASC campaigns
+  let adInsights = await fetchAdInsights(metaAccount.metaAccountId, metaAccount.accessToken, adsetId, days);
+
+  // ASC fallback: if no ads found via adset filter, try flat query filtered by adset
+  if (adInsights.length === 0) {
+    const allAds = await fetchAllAdInsights(metaAccount.metaAccountId, metaAccount.accessToken, days);
+    const filtered = allAds.filter((a) => a.adset_id === adsetId);
+    adInsights = filtered.map((a) => ({ ...a, ad_id: a.ad_id, ad_name: a.ad_name }));
+  }
 
   const ads = adInsights.map((a) => {
     const spend = parseFloat(a.spend || "0");
@@ -294,48 +324,24 @@ export async function getTopPerformers(
   const metaAccount = await getMetaAccountForProject(db, projectId);
   if (!metaAccount) return [];
 
-  // Fetch all campaigns
-  const allCampaignInsights = await fetchCampaignInsights(
+  // Story 9.1: Single flat query for ALL ads (works for ASC/Advantage+ campaigns)
+  const allAds = await fetchAllAdInsights(
     metaAccount.metaAccountId,
     metaAccount.accessToken,
-    days
+    days,
+    campaignId
   );
-
-  // Filter by campaignId if provided
-  const campaignInsights = campaignId
-    ? allCampaignInsights.filter((c) => c.campaign_id === campaignId)
-    : allCampaignInsights;
-
-  if (campaignInsights.length === 0) return [];
-
-  // Fetch all adsets for all campaigns in parallel
-  type AdSetWithParent = MetaAdSetInsight & { parentCampaignName: string };
-  const adsetPromises = campaignInsights.map((c) =>
-    fetchAdSetInsights(metaAccount.metaAccountId, metaAccount.accessToken, c.campaign_id, days)
-      .then((adsets): AdSetWithParent[] => adsets.map((a) => ({ ...a, parentCampaignName: c.campaign_name })))
-      .catch((): AdSetWithParent[] => [])
-  );
-  const allAdsets = (await Promise.all(adsetPromises)).flat();
-
-  // Fetch all ads for all adsets in parallel
-  type AdWithContext = MetaAdInsight & { adsetName: string; parentCampaignName: string };
-  const adPromises = allAdsets.map((a) =>
-    fetchAdInsights(metaAccount.metaAccountId, metaAccount.accessToken, a.adset_id, days)
-      .then((ads): AdWithContext[] => ads.map((ad) => ({ ...ad, adsetName: a.adset_name, parentCampaignName: a.parentCampaignName })))
-      .catch((): AdWithContext[] => [])
-  );
-  const allAds = (await Promise.all(adPromises)).flat();
 
   if (allAds.length === 0) return [];
 
-  // Build analytics rows for all ads (Meta Ads data only)
+  // Build analytics rows
   const ads: TopPerformerAd[] = allAds.map((a) => {
     const spend = parseFloat(a.spend || "0");
     const impressions = parseFloat(a.impressions || "0");
     const clicks = parseFloat(a.clicks || "0");
 
     const row = buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, null, null, null);
-    return { ...row, adsetName: a.adsetName, parentCampaignName: a.parentCampaignName, creative: null, videoMetrics: a.videoMetrics ?? null };
+    return { ...row, adsetName: a.adset_name, parentCampaignName: a.campaign_name, creative: null, videoMetrics: a.videoMetrics ?? null };
   });
 
   // Sort by metric
@@ -402,28 +408,36 @@ export async function getAllAdSetsForProject(
     return { adsets: [], hasCrm: false, hasQualification: false, hasSales: false };
   }
 
-  const campaignInsights = await fetchCampaignInsights(
+  // Story 9.1: Use flat ad query and aggregate by adset (works for ASC campaigns)
+  const allAds = await fetchAllAdInsights(
     metaAccount.metaAccountId,
     metaAccount.accessToken,
     days
   );
 
-  // Fetch adsets for all campaigns in parallel
-  type AdSetWithParent = MetaAdSetInsight & { parentCampaignName: string };
-  const adsetPromises = campaignInsights.map((c) =>
-    fetchAdSetInsights(metaAccount.metaAccountId, metaAccount.accessToken, c.campaign_id, days)
-      .then((adsets): AdSetWithParent[] => adsets.map((a) => ({ ...a, parentCampaignName: c.campaign_name })))
-      .catch((): AdSetWithParent[] => [])
-  );
-  const allAdsets = (await Promise.all(adsetPromises)).flat();
+  // Aggregate ads by adset_id
+  const adsetMap = new Map<string, { name: string; campaignName: string; spend: number; impressions: number; clicks: number }>();
+  for (const a of allAds) {
+    const key = a.adset_id;
+    const existing = adsetMap.get(key);
+    if (existing) {
+      existing.spend += parseFloat(a.spend || "0");
+      existing.impressions += parseFloat(a.impressions || "0");
+      existing.clicks += parseFloat(a.clicks || "0");
+    } else {
+      adsetMap.set(key, {
+        name: a.adset_name,
+        campaignName: a.campaign_name,
+        spend: parseFloat(a.spend || "0"),
+        impressions: parseFloat(a.impressions || "0"),
+        clicks: parseFloat(a.clicks || "0"),
+      });
+    }
+  }
 
-  const adsets = allAdsets.map((a) => {
-    const spend = parseFloat(a.spend || "0");
-    const impressions = parseFloat(a.impressions || "0");
-    const clicks = parseFloat(a.clicks || "0");
-
-    const row = buildAnalyticsRow(a.adset_id, a.adset_name, spend, impressions, clicks, null, null, null);
-    return { ...row, parentCampaignName: a.parentCampaignName };
+  const adsets = Array.from(adsetMap.entries()).map(([id, a]) => {
+    const row = buildAnalyticsRow(id, a.name, a.spend, a.impressions, a.clicks, null, null, null);
+    return { ...row, parentCampaignName: a.campaignName };
   });
 
   const result: AllAdSetsResult = { adsets, hasCrm: false, hasQualification: false, hasSales: false };
