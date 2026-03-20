@@ -52,6 +52,7 @@ import {
   useMapSheetTabs,
   useSheetTabPreview,
   useAvailableTabs,
+  useAIAnalyzeSheet,
   type TabMappingInput,
 } from "@/lib/hooks/use-google-sheets";
 import {
@@ -549,7 +550,9 @@ function TabMappingSection({
   connection: { id: string; projectId: string; spreadsheetId: string; tabMappings: { tabName: string; tabType: string; columnMapping: Record<string, string> }[] };
 }) {
   const mapTabs = useMapSheetTabs();
+  const aiAnalyze = useAIAnalyzeSheet();
   const { data: availableTabs, isLoading: loadingTabs } = useAvailableTabs(connection.id);
+  const [aiExplanation, setAiExplanation] = useState("");
 
   // The 3 data types the system needs
   const DATA_NEEDS = [
@@ -623,20 +626,50 @@ function TabMappingSection({
     );
   }
 
+  function handleAIAnalyze() {
+    setAiExplanation("");
+    aiAnalyze.mutate(connection.id, {
+      onSuccess: (data) => {
+        const newSelections: Record<string, { tabName: string; columnMapping: Record<string, string> }> = {};
+        for (const m of data.mappings) {
+          newSelections[m.tabType] = { tabName: m.tabName, columnMapping: m.columnMapping };
+        }
+        setSelections(newSelections);
+        setAiExplanation(data.explanation);
+        toast.success(`IA identificou ${data.mappings.length} aba(s). Revise e salve.`);
+      },
+      onError: (err) => {
+        toast.error(err instanceof Error ? err.message : "Erro ao analisar.");
+      },
+    });
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold">Mapeamento de Dados</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Selecione qual aba da planilha corresponde a cada tipo de dado
+            Selecione manualmente ou deixe a IA mapear automaticamente
           </p>
         </div>
-        <Button size="sm" onClick={handleSave} disabled={mapTabs.isPending}>
-          {mapTabs.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          Salvar
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleAIAnalyze} disabled={aiAnalyze.isPending}>
+            {aiAnalyze.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <TrendingUp className="h-3.5 w-3.5" />}
+            Mapear com IA
+          </Button>
+          <Button size="sm" onClick={handleSave} disabled={mapTabs.isPending}>
+            {mapTabs.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            Salvar
+          </Button>
+        </div>
       </div>
+
+      {aiExplanation && (
+        <div className="rounded-lg border border-green-500/20 bg-green-500/5 px-4 py-2.5">
+          <p className="text-xs text-green-700">{aiExplanation}</p>
+        </div>
+      )}
 
       {loadingTabs && <Skeleton className="h-40 rounded-xl" />}
 
