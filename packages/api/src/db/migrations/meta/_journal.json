@@ -43,6 +43,13 @@
       "when": 1773860704843,
       "tag": "0005_omniscient_loki",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1774027524677,
+      "tag": "0006_open_whirlwind",
+      "breakpoints": true
     }
   ]
 }

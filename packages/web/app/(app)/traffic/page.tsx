@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   TrendingUp,
@@ -994,6 +994,14 @@ function AdSetFilterDropdown({
 }
 
 export default function TrafficPage() {
+  return (
+    <Suspense fallback={<div className="space-y-4"><Skeleton className="h-10 w-96 rounded-lg" /><div className="grid gap-3 grid-cols-2 lg:grid-cols-5">{[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}</div></div>}>
+      <TrafficPageContent />
+    </Suspense>
+  );
+}
+
+function TrafficPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: accounts, isLoading: loadingAccounts } = useMetaAdsAccounts();
