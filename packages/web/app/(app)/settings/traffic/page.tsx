@@ -52,7 +52,6 @@ import {
   useMapSheetTabs,
   useSheetTabPreview,
   useAvailableTabs,
-  useAIAnalyzeSheet,
   type TabMappingInput,
 } from "@/lib/hooks/use-google-sheets";
 import {
@@ -550,9 +549,7 @@ function TabMappingSection({
   connection: { id: string; projectId: string; spreadsheetId: string; tabMappings: { tabName: string; tabType: string; columnMapping: Record<string, string> }[] };
 }) {
   const mapTabs = useMapSheetTabs();
-  const aiAnalyze = useAIAnalyzeSheet();
   const { data: availableTabs, isLoading: loadingTabs } = useAvailableTabs(connection.id);
-  const [aiExplanation, setAiExplanation] = useState("");
 
   // The 3 data types the system needs
   const DATA_NEEDS = [
@@ -583,13 +580,101 @@ function TabMappingSection({
 
   const tabs = availableTabs?.tabs ?? [];
 
+  // Auto-map columns based on header names
+  function autoMapColumns(headers: string[], type: string): Record<string, string> {
+    const mapping: Record<string, string> = {};
+    const lowerHeaders = headers.map((h) => h.toLowerCase().trim());
+
+    // UTM matching patterns
+    const utmPatterns: Record<string, string[]> = {
+      utmCampaign: ["utm_campaign", "utm campaign", "campaign", "campanha", "nome da campanha", "campaign name"],
+      utmMedium: ["utm_medium", "utm medium", "medium", "ad set", "adset", "conjunto de anuncio", "conjunto de anúncio", "ad_set", "conjunto"],
+      utmContent: ["utm_content", "utm content", "content", "ad name", "ad_name", "anuncio", "anúncio", "criativo", "nome do anuncio", "nome do anúncio"],
+    };
+
+    // Match UTMs for all types
+    for (const [field, patterns] of Object.entries(utmPatterns)) {
+      for (const pattern of patterns) {
+        const idx = lowerHeaders.findIndex((h) => h === pattern || h.includes(pattern));
+        if (idx >= 0 && !mapping[field]) {
+          mapping[field] = headers[idx];
+          break;
+        }
+      }
+    }
+
+    // Sales: also match "valor"
+    if (type === "sales") {
+      const valorPatterns = ["valor", "value", "receita", "revenue", "venda", "price", "preco", "preço", "total"];
+      for (const pattern of valorPatterns) {
+        const idx = lowerHeaders.findIndex((h) => h === pattern || h.includes(pattern));
+        if (idx >= 0) {
+          mapping.valor = headers[idx];
+          break;
+        }
+      }
+    }
+
+    // Survey: map ALL non-UTM columns as profile fields
+    if (type === "survey") {
+      const mappedHeaders = new Set(Object.values(mapping));
+      for (const header of headers) {
+        if (mappedHeaders.has(header)) continue;
+        if (!header.trim()) continue;
+        // Use a clean lowercase key for the field name
+        const fieldKey = header
+          .toLowerCase()
+          .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9\s]/g, "")
+          .trim()
+          .replace(/\s+/g, "_");
+        if (fieldKey) {
+          mapping[fieldKey] = header;
+        }
+      }
+    }
+
+    return mapping;
+  }
+
   function handleSelectTab(type: string, tabName: string) {
     setSelections((prev) => ({
       ...prev,
       [type]: { tabName, columnMapping: prev[type]?.columnMapping ?? {} },
     }));
-    // Auto-show preview
     setPreviewType(type);
+  }
+
+  // When preview loads for the selected tab, auto-map columns
+  const currentPreviewType = previewType;
+  const currentPreviewHeaders = preview?.headers ?? [];
+  const [lastAutoMapped, setLastAutoMapped] = useState<string>("");
+
+  // Auto-map when preview headers arrive for a new tab selection
+  const autoMapKey = `${currentPreviewType}:${previewTabName}`;
+  if (
+    currentPreviewType &&
+    previewTabName &&
+    currentPreviewHeaders.length > 0 &&
+    autoMapKey !== lastAutoMapped
+  ) {
+    const autoMapping = autoMapColumns(currentPreviewHeaders, currentPreviewType);
+    const existingMapping = selections[currentPreviewType]?.columnMapping ?? {};
+    // Only auto-map if existing mapping is empty (don't overwrite user edits)
+    if (Object.keys(existingMapping).length === 0) {
+      setSelections((prev) => ({
+        ...prev,
+        [currentPreviewType]: {
+          ...prev[currentPreviewType],
+          columnMapping: autoMapping,
+        },
+      }));
+      const count = Object.keys(autoMapping).length;
+      if (count > 0) {
+        toast.success(`${count} coluna(s) mapeada(s) automaticamente.`);
+      }
+    }
+    setLastAutoMapped(autoMapKey);
   }
 
   function handleMapColumn(type: string, field: string, headerName: string) {
@@ -626,50 +711,20 @@ function TabMappingSection({
     );
   }
 
-  function handleAIAnalyze() {
-    setAiExplanation("");
-    aiAnalyze.mutate(connection.id, {
-      onSuccess: (data) => {
-        const newSelections: Record<string, { tabName: string; columnMapping: Record<string, string> }> = {};
-        for (const m of data.mappings) {
-          newSelections[m.tabType] = { tabName: m.tabName, columnMapping: m.columnMapping };
-        }
-        setSelections(newSelections);
-        setAiExplanation(data.explanation);
-        toast.success(`IA identificou ${data.mappings.length} aba(s). Revise e salve.`);
-      },
-      onError: (err) => {
-        toast.error(err instanceof Error ? err.message : "Erro ao analisar.");
-      },
-    });
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold">Mapeamento de Dados</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Selecione manualmente ou deixe a IA mapear automaticamente
+            Vincule cada aba ao tipo de dado — as colunas sao mapeadas automaticamente
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleAIAnalyze} disabled={aiAnalyze.isPending}>
-            {aiAnalyze.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <TrendingUp className="h-3.5 w-3.5" />}
-            Mapear com IA
-          </Button>
-          <Button size="sm" onClick={handleSave} disabled={mapTabs.isPending}>
-            {mapTabs.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-            Salvar
-          </Button>
-        </div>
+        <Button size="sm" onClick={handleSave} disabled={mapTabs.isPending}>
+          {mapTabs.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          Salvar
+        </Button>
       </div>
-
-      {aiExplanation && (
-        <div className="rounded-lg border border-green-500/20 bg-green-500/5 px-4 py-2.5">
-          <p className="text-xs text-green-700">{aiExplanation}</p>
-        </div>
-      )}
 
       {loadingTabs && <Skeleton className="h-40 rounded-xl" />}
 
