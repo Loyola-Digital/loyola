@@ -1,8 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
-  googleSheetsConnections,
-  googleSheetsTabMappings,
   metaAdsAccounts,
   metaAdsAccountProjects,
 } from "../db/schema.js";
@@ -20,8 +18,6 @@ import {
   type MetaDailyInsight,
   type VideoMetrics,
 } from "./meta-ads.js";
-import { getTabData } from "./google-sheets.js";
-import { getQualifiedLeadsByEntity, getProfileForProject } from "./lead-qualification.js";
 
 // ============================================================
 // TYPES
@@ -98,129 +94,8 @@ export function invalidateProjectCache(projectId: string): void {
 }
 
 // ============================================================
-// UTM MATCHING
-// ============================================================
-
-function normalizeUtm(value: string | undefined | null): string {
-  if (!value) return "";
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-/** Strip all separators for fuzzy comparison: "fz-l1" → "fzl1", "lista-de-espera" → "listadeespera" */
-function stripSeparators(value: string): string {
-  return value.replace(/[-_.\s[\]()]/g, "");
-}
-
-function matchUtm(
-  utmValue: string,
-  entityName: string,
-  entityId: string
-): boolean {
-  const normalized = normalizeUtm(utmValue);
-  if (!normalized) return false;
-
-  const normName = normalizeUtm(entityName);
-  const normId = normalizeUtm(entityId);
-
-  // 1. Exact match
-  if (normalized === normName || normalized === normId) return true;
-
-  // 2. Fuzzy: strip separators and check contains (min 3 chars to avoid false positives)
-  const strippedUtm = stripSeparators(normalized);
-  if (strippedUtm.length < 3) return false;
-
-  const strippedName = stripSeparators(normName);
-  const strippedId = stripSeparators(normId);
-
-  // UTM value found inside campaign/adset/ad name (e.g., "fzl1" inside "fzl1fev26leads...")
-  if (strippedName.includes(strippedUtm) || strippedId.includes(strippedUtm)) return true;
-
-  // Campaign name tag found inside UTM (e.g., compound UTM "fzl1_grupo_whatsapp_cpl_lista-de-espera")
-  // Split compound UTMs and check each part
-  const utmParts = normalized.split(/[-_]/g).filter((p) => p.length >= 3);
-  for (const part of utmParts) {
-    const strippedPart = stripSeparators(part);
-    if (strippedName.includes(strippedPart) && strippedPart.length >= 4) return true;
-  }
-
-  return false;
-}
-
-// ============================================================
-// LEAD COUNTING
-// ============================================================
-
-interface LeadsByEntity {
-  matched: Map<string, number>; // entityId → count
-  unattributed: number;
-}
-
-function countLeadsByUtm(
-  leads: Record<string, string>[],
-  utmField: string,
-  entities: { id: string; name: string }[]
-): LeadsByEntity {
-  const matched = new Map<string, number>();
-  let unattributed = 0;
-
-  for (const lead of leads) {
-    const utmValue = lead[utmField];
-    if (!utmValue) {
-      unattributed++;
-      continue;
-    }
-
-    let found = false;
-    for (const entity of entities) {
-      if (matchUtm(utmValue, entity.name, entity.id)) {
-        matched.set(entity.id, (matched.get(entity.id) ?? 0) + 1);
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      unattributed++;
-    }
-  }
-
-  return { matched, unattributed };
-}
-
-// ============================================================
 // CORE ANALYTICS
 // ============================================================
-
-async function getLeadsForProject(
-  db: Database,
-  projectId: string
-): Promise<Record<string, string>[] | null> {
-  // Find Google Sheets connection for this project
-  const [connection] = await db
-    .select()
-    .from(googleSheetsConnections)
-    .where(eq(googleSheetsConnections.projectId, projectId))
-    .limit(1);
-
-  if (!connection) return null;
-
-  // Find "leads" tab mapping
-  const [leadsMapping] = await db
-    .select()
-    .from(googleSheetsTabMappings)
-    .where(eq(googleSheetsTabMappings.connectionId, connection.id))
-    .then((rows) => rows.filter((r) => r.tabType === "leads"));
-
-  if (!leadsMapping) return null;
-
-  // Fetch data from Sheets
-  const tabData = await getTabData(
-    connection.spreadsheetId,
-    leadsMapping.tabName,
-    leadsMapping.columnMapping as Record<string, string>
-  );
-
-  return tabData.rows;
-}
 
 async function getMetaAccountForProject(
   db: Database,
@@ -254,94 +129,6 @@ async function getMetaAccountForProject(
 }
 
 // ============================================================
-// SALES DATA (Story 7.6)
-// ============================================================
-
-interface SalesByEntity {
-  matched: Map<string, { count: number; revenue: number }>;
-  unattributed: { count: number; revenue: number };
-}
-
-function parseValor(raw: string): number {
-  if (!raw) return 0;
-  // Handle BR format: "1.297,50" → 1297.50 or "297" → 297
-  const cleaned = raw
-    .replace(/[R$\s]/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".");
-  const val = parseFloat(cleaned);
-  return isNaN(val) ? 0 : val;
-}
-
-async function getSalesForProject(
-  db: Database,
-  projectId: string
-): Promise<Record<string, string>[] | null> {
-  const [connection] = await db
-    .select()
-    .from(googleSheetsConnections)
-    .where(eq(googleSheetsConnections.projectId, projectId))
-    .limit(1);
-
-  if (!connection) return null;
-
-  const salesMappings = await db
-    .select()
-    .from(googleSheetsTabMappings)
-    .where(eq(googleSheetsTabMappings.connectionId, connection.id))
-    .then((rows) => rows.filter((r) => r.tabType === "sales"));
-
-  if (salesMappings.length === 0) return null;
-
-  const mapping = salesMappings[0];
-  const tabData = await getTabData(
-    connection.spreadsheetId,
-    mapping.tabName,
-    mapping.columnMapping as Record<string, string>
-  );
-
-  return tabData.rows;
-}
-
-function countSalesByUtm(
-  sales: Record<string, string>[],
-  utmField: string,
-  entities: { id: string; name: string }[]
-): SalesByEntity {
-  const matched = new Map<string, { count: number; revenue: number }>();
-  const unattributed = { count: 0, revenue: 0 };
-
-  for (const sale of sales) {
-    const utmValue = sale[utmField];
-    const valor = parseValor(sale.valor ?? "");
-
-    if (!utmValue) {
-      unattributed.count++;
-      unattributed.revenue += valor;
-      continue;
-    }
-
-    let found = false;
-    for (const entity of entities) {
-      if (matchUtm(utmValue, entity.name, entity.id)) {
-        const current = matched.get(entity.id) ?? { count: 0, revenue: 0 };
-        current.count++;
-        current.revenue += valor;
-        matched.set(entity.id, current);
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      unattributed.count++;
-      unattributed.revenue += valor;
-    }
-  }
-
-  return { matched, unattributed };
-}
-
-// ============================================================
 // PUBLIC API
 // ============================================================
 
@@ -365,51 +152,20 @@ export async function getProjectOverview(
     days
   );
 
-  const leads = await getLeadsForProject(db, projectId);
-  const hasCrm = leads !== null;
-
   const totalSpend = campaigns.reduce((s, c) => s + parseFloat(c.spend || "0"), 0);
-  const totalLeads = hasCrm ? leads!.length : null;
-  const avgCpl = hasCrm && totalLeads! > 0 ? totalSpend / totalLeads! : null;
-
-  // Qualification
-  const profile = await getProfileForProject(db, projectId);
-  const hasQualification = profile !== null;
-  let totalQualifiedLeads: number | null = null;
-  let avgCplQualified: number | null = null;
-
-  if (hasQualification && hasCrm && leads!.length > 0) {
-    const entities = campaigns.map((c) => ({ id: c.campaign_id, name: c.campaign_name }));
-    const qualResult = await getQualifiedLeadsByEntity(db, projectId, leads!, "utmCampaign", entities);
-    if (qualResult) {
-      totalQualifiedLeads = qualResult.totalQualified;
-      avgCplQualified = totalQualifiedLeads > 0 ? totalSpend / totalQualifiedLeads : null;
-    }
-  }
-
-  // Sales
-  const salesData = await getSalesForProject(db, projectId);
-  const hasSales = salesData !== null;
-  let totalSales: number | null = null;
-  let totalRevenue: number | null = null;
-
-  if (hasSales) {
-    totalSales = salesData!.length;
-    totalRevenue = salesData!.reduce((s, r) => s + parseValor(r.valor ?? ""), 0);
-  }
 
   const result: OverviewAnalytics = {
     totalSpend,
-    totalLeads,
-    avgCpl,
-    totalQualifiedLeads,
-    avgCplQualified,
-    totalSales,
-    totalRevenue,
+    totalLeads: null,
+    avgCpl: null,
+    totalQualifiedLeads: null,
+    avgCplQualified: null,
+    totalSales: null,
+    totalRevenue: null,
     totalCampaigns: campaigns.length,
-    hasCrm,
-    hasQualification,
-    hasSales,
+    hasCrm: false,
+    hasQualification: false,
+    hasSales: false,
   };
 
   setCache(cacheKey, result);
@@ -437,61 +193,15 @@ export async function getProjectCampaignAnalytics(
     days
   );
 
-  const leads = await getLeadsForProject(db, projectId);
-  const hasCrm = leads !== null;
-  const entities = campaignInsights.map((c) => ({
-    id: c.campaign_id,
-    name: c.campaign_name,
-  }));
-
-  let leadCounts: LeadsByEntity = { matched: new Map(), unattributed: 0 };
-  if (hasCrm && leads!.length > 0) {
-    leadCounts = countLeadsByUtm(leads!, "utmCampaign", entities);
-  }
-
-  // Qualification
-  const qualResult = hasCrm && leads!.length > 0
-    ? await getQualifiedLeadsByEntity(db, projectId, leads!, "utmCampaign", entities)
-    : null;
-  const hasQualification = qualResult !== null;
-
-  // Sales
-  const salesData = await getSalesForProject(db, projectId);
-  const hasSales = salesData !== null;
-  let salesCounts: SalesByEntity = { matched: new Map(), unattributed: { count: 0, revenue: 0 } };
-  if (hasSales && salesData!.length > 0) {
-    salesCounts = countSalesByUtm(salesData!, "utmCampaign", entities);
-  }
-
   const campaigns: CampaignAnalytics[] = campaignInsights.map((c) => {
     const spend = parseFloat(c.spend || "0");
     const impressions = parseFloat(c.impressions || "0");
     const clicks = parseFloat(c.clicks || "0");
-    const campaignLeads = hasCrm ? (leadCounts.matched.get(c.campaign_id) ?? 0) : null;
-    const qualLeads = hasQualification ? (qualResult.matched.get(c.campaign_id) ?? 0) : null;
-    const saleData = hasSales ? (salesCounts.matched.get(c.campaign_id) ?? { count: 0, revenue: 0 }) : null;
 
-    return {
-      campaignId: c.campaign_id,
-      campaignName: c.campaign_name,
-      spend, impressions, clicks,
-      ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
-      cpc: clicks > 0 ? spend / clicks : 0,
-      cpm: impressions > 0 ? (spend * 1000) / impressions : 0,
-      leads: campaignLeads,
-      cpl: campaignLeads !== null && campaignLeads > 0 ? spend / campaignLeads : null,
-      qualifiedLeads: qualLeads,
-      cplQualified: qualLeads !== null && qualLeads > 0 ? spend / qualLeads : null,
-      qualificationRate: qualLeads !== null && campaignLeads !== null && campaignLeads > 0 ? (qualLeads / campaignLeads) * 100 : null,
-      sales: saleData ? saleData.count : null,
-      revenue: saleData ? saleData.revenue : null,
-      costPerSale: saleData && saleData.count > 0 ? spend / saleData.count : null,
-      roas: saleData && spend > 0 ? saleData.revenue / spend : null,
-      conversionRate: saleData && campaignLeads !== null && campaignLeads > 0 ? (saleData.count / campaignLeads) * 100 : null,
-    };
+    return buildAnalyticsRow(c.campaign_id, c.campaign_name, spend, impressions, clicks, null, null, null);
   });
 
-  const result: CampaignResult = { campaigns, unattributedLeads: leadCounts.unattributed, unattributedSales: salesCounts.unattributed, hasCrm, hasQualification, hasSales };
+  const result: CampaignResult = { campaigns, unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
   setCache(cacheKey, result);
   return result;
 }
@@ -508,33 +218,16 @@ export async function getProjectAdSetAnalytics(
   }
 
   const adsetInsights = await fetchAdSetInsights(metaAccount.metaAccountId, metaAccount.accessToken, campaignId, days);
-  const leads = await getLeadsForProject(db, projectId);
-  const hasCrm = leads !== null;
-  const entities = adsetInsights.map((a) => ({ id: a.adset_id, name: a.adset_name }));
-
-  let leadCounts: LeadsByEntity = { matched: new Map(), unattributed: 0 };
-  if (hasCrm && leads!.length > 0) leadCounts = countLeadsByUtm(leads!, "utmMedium", entities);
-
-  const qualResult = hasCrm && leads!.length > 0 ? await getQualifiedLeadsByEntity(db, projectId, leads!, "utmMedium", entities) : null;
-  const hasQualification = qualResult !== null;
-
-  const salesData = await getSalesForProject(db, projectId);
-  const hasSales = salesData !== null;
-  let salesCounts: SalesByEntity = { matched: new Map(), unattributed: { count: 0, revenue: 0 } };
-  if (hasSales && salesData!.length > 0) salesCounts = countSalesByUtm(salesData!, "utmMedium", entities);
 
   const adsets = adsetInsights.map((a) => {
     const spend = parseFloat(a.spend || "0");
     const impressions = parseFloat(a.impressions || "0");
     const clicks = parseFloat(a.clicks || "0");
-    const entityLeads = hasCrm ? (leadCounts.matched.get(a.adset_id) ?? 0) : null;
-    const qualLeads = hasQualification ? (qualResult.matched.get(a.adset_id) ?? 0) : null;
-    const saleData = hasSales ? (salesCounts.matched.get(a.adset_id) ?? { count: 0, revenue: 0 }) : null;
 
-    return buildAnalyticsRow(a.adset_id, a.adset_name, spend, impressions, clicks, entityLeads, qualLeads, saleData);
+    return buildAnalyticsRow(a.adset_id, a.adset_name, spend, impressions, clicks, null, null, null);
   });
 
-  return { adsets, unattributedLeads: leadCounts.unattributed, unattributedSales: salesCounts.unattributed, hasCrm, hasQualification, hasSales };
+  return { adsets, unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
 }
 
 export async function getProjectAdAnalytics(
@@ -549,30 +242,13 @@ export async function getProjectAdAnalytics(
   }
 
   const adInsights = await fetchAdInsights(metaAccount.metaAccountId, metaAccount.accessToken, adsetId, days);
-  const leads = await getLeadsForProject(db, projectId);
-  const hasCrm = leads !== null;
-  const entities = adInsights.map((a) => ({ id: a.ad_id, name: a.ad_name }));
-
-  let leadCounts: LeadsByEntity = { matched: new Map(), unattributed: 0 };
-  if (hasCrm && leads!.length > 0) leadCounts = countLeadsByUtm(leads!, "utmContent", entities);
-
-  const qualResult = hasCrm && leads!.length > 0 ? await getQualifiedLeadsByEntity(db, projectId, leads!, "utmContent", entities) : null;
-  const hasQualification = qualResult !== null;
-
-  const salesData = await getSalesForProject(db, projectId);
-  const hasSales = salesData !== null;
-  let salesCounts: SalesByEntity = { matched: new Map(), unattributed: { count: 0, revenue: 0 } };
-  if (hasSales && salesData!.length > 0) salesCounts = countSalesByUtm(salesData!, "utmContent", entities);
 
   const ads = adInsights.map((a) => {
     const spend = parseFloat(a.spend || "0");
     const impressions = parseFloat(a.impressions || "0");
     const clicks = parseFloat(a.clicks || "0");
-    const entityLeads = hasCrm ? (leadCounts.matched.get(a.ad_id) ?? 0) : null;
-    const qualLeads = hasQualification ? (qualResult.matched.get(a.ad_id) ?? 0) : null;
-    const saleData = hasSales ? (salesCounts.matched.get(a.ad_id) ?? { count: 0, revenue: 0 }) : null;
 
-    return { ...buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, entityLeads, qualLeads, saleData), creative: null as MetaAdCreative | null, videoMetrics: a.videoMetrics ?? null };
+    return { ...buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, null, null, null), creative: null as MetaAdCreative | null, videoMetrics: a.videoMetrics ?? null };
   });
 
   // Fetch creatives for all ads in drill-down
@@ -587,7 +263,7 @@ export async function getProjectAdAnalytics(
     // Graceful: ads still returned with creative: null
   }
 
-  return { ads, unattributedLeads: leadCounts.unattributed, unattributedSales: salesCounts.unattributed, hasCrm, hasQualification, hasSales };
+  return { ads, unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
 }
 
 // ============================================================
@@ -652,31 +328,13 @@ export async function getTopPerformers(
 
   if (allAds.length === 0) return [];
 
-  // Get leads/qualification/sales data
-  const leads = await getLeadsForProject(db, projectId);
-  const entities = allAds.map((a) => ({ id: a.ad_id, name: a.ad_name }));
-
-  let leadCounts: LeadsByEntity = { matched: new Map(), unattributed: 0 };
-  if (leads && leads.length > 0) leadCounts = countLeadsByUtm(leads, "utmContent", entities);
-
-  const qualResult = leads && leads.length > 0
-    ? await getQualifiedLeadsByEntity(db, projectId, leads, "utmContent", entities)
-    : null;
-
-  const salesData = await getSalesForProject(db, projectId);
-  let salesCounts: SalesByEntity = { matched: new Map(), unattributed: { count: 0, revenue: 0 } };
-  if (salesData && salesData.length > 0) salesCounts = countSalesByUtm(salesData, "utmContent", entities);
-
-  // Build analytics rows for all ads
+  // Build analytics rows for all ads (Meta Ads data only)
   const ads: TopPerformerAd[] = allAds.map((a) => {
     const spend = parseFloat(a.spend || "0");
     const impressions = parseFloat(a.impressions || "0");
     const clicks = parseFloat(a.clicks || "0");
-    const entityLeads = leads ? (leadCounts.matched.get(a.ad_id) ?? 0) : null;
-    const qualLeads = qualResult ? (qualResult.matched.get(a.ad_id) ?? 0) : null;
-    const saleData = salesData ? (salesCounts.matched.get(a.ad_id) ?? { count: 0, revenue: 0 }) : null;
 
-    const row = buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, entityLeads, qualLeads, saleData);
+    const row = buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, null, null, null);
     return { ...row, adsetName: a.adsetName, parentCampaignName: a.parentCampaignName, creative: null, videoMetrics: a.videoMetrics ?? null };
   });
 
@@ -759,35 +417,16 @@ export async function getAllAdSetsForProject(
   );
   const allAdsets = (await Promise.all(adsetPromises)).flat();
 
-  // Get leads/qualification/sales
-  const leads = await getLeadsForProject(db, projectId);
-  const hasCrm = leads !== null;
-  const entities = allAdsets.map((a) => ({ id: a.adset_id, name: a.adset_name }));
-
-  let leadCounts: LeadsByEntity = { matched: new Map(), unattributed: 0 };
-  if (hasCrm && leads!.length > 0) leadCounts = countLeadsByUtm(leads!, "utmMedium", entities);
-
-  const qualResult = hasCrm && leads!.length > 0 ? await getQualifiedLeadsByEntity(db, projectId, leads!, "utmMedium", entities) : null;
-  const hasQualification = qualResult !== null;
-
-  const salesData = await getSalesForProject(db, projectId);
-  const hasSales = salesData !== null;
-  let salesCounts: SalesByEntity = { matched: new Map(), unattributed: { count: 0, revenue: 0 } };
-  if (hasSales && salesData!.length > 0) salesCounts = countSalesByUtm(salesData!, "utmMedium", entities);
-
   const adsets = allAdsets.map((a) => {
     const spend = parseFloat(a.spend || "0");
     const impressions = parseFloat(a.impressions || "0");
     const clicks = parseFloat(a.clicks || "0");
-    const entityLeads = hasCrm ? (leadCounts.matched.get(a.adset_id) ?? 0) : null;
-    const qualLeads = hasQualification ? (qualResult.matched.get(a.adset_id) ?? 0) : null;
-    const saleData = hasSales ? (salesCounts.matched.get(a.adset_id) ?? { count: 0, revenue: 0 }) : null;
 
-    const row = buildAnalyticsRow(a.adset_id, a.adset_name, spend, impressions, clicks, entityLeads, qualLeads, saleData);
+    const row = buildAnalyticsRow(a.adset_id, a.adset_name, spend, impressions, clicks, null, null, null);
     return { ...row, parentCampaignName: a.parentCampaignName };
   });
 
-  const result: AllAdSetsResult = { adsets, hasCrm, hasQualification, hasSales };
+  const result: AllAdSetsResult = { adsets, hasCrm: false, hasQualification: false, hasSales: false };
   setCache(cacheKey, result);
   return result;
 }
