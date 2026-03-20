@@ -59,6 +59,7 @@ import {
   useSaveQualificationProfile,
   useDeleteQualificationProfile,
   useQualificationPreview,
+  useAIGenerateRules,
   type QualificationRule,
 } from "@/lib/hooks/use-qualification";
 import { useProjects } from "@/lib/hooks/use-projects";
@@ -820,9 +821,12 @@ function QualificationSection({ projects }: { projects: { id: string; name: stri
   const saveProfile = useSaveQualificationProfile();
   const deleteProfile = useDeleteQualificationProfile();
   const previewMutation = useQualificationPreview();
+  const aiGenerate = useAIGenerateRules();
 
   const [rules, setRules] = useState<QualificationRule[]>([]);
   const [initialized, setInitialized] = useState(false);
+  const [aiDescription, setAiDescription] = useState("");
+  const [aiError, setAiError] = useState("");
 
   // Sync rules from loaded profile
   if (profile && !initialized) {
@@ -886,6 +890,27 @@ function QualificationSection({ projects }: { projects: { id: string; name: stri
     });
   }
 
+  function handleAIGenerate() {
+    if (!selectedProjectId || !aiDescription.trim()) return;
+    setAiError("");
+    aiGenerate.mutate(
+      { projectId: selectedProjectId, description: aiDescription.trim() },
+      {
+        onSuccess: (data) => {
+          setRules(data.rules);
+          toast.success(`${data.rules.length} regra(s) gerada(s) pela IA.`);
+          // Auto-preview
+          previewMutation.mutate({ projectId: selectedProjectId, rules: data.rules });
+        },
+        onError: (err) => {
+          const msg = err instanceof Error ? err.message : "Erro ao gerar regras";
+          setAiError(msg);
+          toast.error(msg);
+        },
+      }
+    );
+  }
+
   return (
     <div className="border-t border-border/30 pt-8 space-y-4">
       <div>
@@ -943,6 +968,49 @@ function QualificationSection({ projects }: { projects: { id: string; name: stri
               ))}
             </div>
           )}
+
+          {/* AI Generation */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold">Gerar regras com IA</h3>
+            <p className="text-xs text-muted-foreground">
+              Descreva seu publico ideal e a IA analisa a planilha para gerar as regras automaticamente.
+            </p>
+            <div className="flex gap-2">
+              <Input
+                className="h-8 text-xs flex-1"
+                placeholder="Ex: Mulheres catolicas, renda acima de 5 mil, no maximo 2 filhos"
+                value={aiDescription}
+                onChange={(e) => setAiDescription(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAIGenerate()}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 whitespace-nowrap"
+                onClick={handleAIGenerate}
+                disabled={aiGenerate.isPending || !aiDescription.trim()}
+              >
+                {aiGenerate.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <TrendingUp className="h-3.5 w-3.5" />
+                )}
+                Gerar com IA
+              </Button>
+            </div>
+            {aiError && (
+              <p className="text-xs text-destructive">{aiError}</p>
+            )}
+          </div>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border/30" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card/60 px-2 text-muted-foreground">ou adicione manualmente</span>
+            </div>
+          </div>
 
           {/* Add rule */}
           <div className="flex flex-wrap items-end gap-2">

@@ -6,10 +6,14 @@ import {
   getProjectCampaignAnalytics,
   getProjectAdSetAnalytics,
   getProjectAdAnalytics,
+  getTopPerformers,
+  getAllAdSetsForProject,
   invalidateProjectCache,
+  type TopPerformerMetric,
 } from "../services/traffic-analytics.js";
 import {
   classifyLeads,
+  generateRulesFromDescription,
   type QualificationRule,
 } from "../services/lead-qualification.js";
 import { qualificationProfiles } from "../db/schema.js";
@@ -175,6 +179,80 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
     }
   );
 
+  // ---- GET /api/traffic/analytics/:projectId/top-performers ---- (Story 7.8)
+  const topPerformersQuerySchema = z.object({
+    metric: z.enum(["roas", "cpl", "cplQualified", "leads", "sales", "ctr"]).default("roas"),
+    limit: z.coerce.number().int().min(1).max(20).default(5),
+    days: z.coerce.number().int().min(1).max(90).default(30),
+  });
+
+  fastify.get(
+    "/api/traffic/analytics/:projectId/top-performers",
+    async (request, reply) => {
+      if (request.userRole !== "admin" && request.userRole !== "manager") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+
+      const queryResult = topPerformersQuerySchema.safeParse(request.query);
+      if (!queryResult.success) {
+        return reply.code(400).send({ error: "Parametros invalidos" });
+      }
+
+      try {
+        const result = await getTopPerformers(
+          fastify.db,
+          paramResult.data.projectId,
+          queryResult.data.metric as TopPerformerMetric,
+          queryResult.data.limit,
+          queryResult.data.days
+        );
+        return { topPerformers: result, metric: queryResult.data.metric };
+      } catch (err) {
+        return reply.code(502).send({
+          error: "Erro ao buscar top performers",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  );
+
+  // ---- GET /api/traffic/analytics/:projectId/all-adsets ---- (Story 7.8)
+  fastify.get(
+    "/api/traffic/analytics/:projectId/all-adsets",
+    async (request, reply) => {
+      if (request.userRole !== "admin" && request.userRole !== "manager") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+
+      const queryResult = daysQuerySchema.safeParse(request.query);
+      const days = queryResult.success ? queryResult.data.days : 30;
+
+      try {
+        const result = await getAllAdSetsForProject(
+          fastify.db,
+          paramResult.data.projectId,
+          days
+        );
+        return result;
+      } catch (err) {
+        return reply.code(502).send({
+          error: "Erro ao buscar ad sets",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  );
+
   // ---- POST /api/traffic/analytics/:projectId/invalidate ----
   fastify.post(
     "/api/traffic/analytics/:projectId/invalidate",
@@ -297,6 +375,47 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
       invalidateProjectCache(paramResult.data.projectId);
 
       return reply.code(204).send();
+    }
+  );
+
+  // ---- POST /api/traffic/qualification/:projectId/ai-generate ---- (Story 7.9)
+  const aiGenerateBodySchema = z.object({
+    description: z.string().min(5, "Descricao muito curta"),
+  });
+
+  fastify.post(
+    "/api/traffic/qualification/:projectId/ai-generate",
+    async (request, reply) => {
+      if (request.userRole !== "admin" && request.userRole !== "manager") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+
+      const bodyResult = aiGenerateBodySchema.safeParse(request.body);
+      if (!bodyResult.success) {
+        return reply.code(400).send({
+          error: "Descricao invalida",
+          details: bodyResult.error.flatten().fieldErrors,
+        });
+      }
+
+      try {
+        const rules = await generateRulesFromDescription(
+          fastify.db,
+          fastify.claude.client,
+          paramResult.data.projectId,
+          bodyResult.data.description
+        );
+        return { rules };
+      } catch (err) {
+        return reply.code(422).send({
+          error: err instanceof Error ? err.message : "Erro ao gerar regras",
+        });
+      }
     }
   );
 

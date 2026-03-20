@@ -11,6 +11,8 @@ import {
   fetchAdSetInsights,
   fetchAdInsights,
   decryptAccountToken,
+  type MetaAdSetInsight,
+  type MetaAdInsight,
 } from "./meta-ads.js";
 import { getTabData } from "./google-sheets.js";
 import { getQualifiedLeadsByEntity, getProfileForProject } from "./lead-qualification.js";
@@ -541,6 +543,187 @@ export async function getProjectAdAnalytics(
   });
 
   return { ads, unattributedLeads: leadCounts.unattributed, unattributedSales: salesCounts.unattributed, hasCrm, hasQualification, hasSales };
+}
+
+// ============================================================
+// TOP PERFORMERS (Story 7.8)
+// ============================================================
+
+export type TopPerformerMetric = "roas" | "cpl" | "cplQualified" | "leads" | "sales" | "ctr";
+
+export interface TopPerformerAd extends CampaignAnalytics {
+  adsetName: string;
+  parentCampaignName: string;
+}
+
+export async function getTopPerformers(
+  db: Database,
+  projectId: string,
+  metric: TopPerformerMetric,
+  limit: number,
+  days: number
+): Promise<TopPerformerAd[]> {
+  const cacheKey = `analytics:${projectId}:top:${metric}:${limit}:${days}`;
+  const cached = getCached<TopPerformerAd[]>(cacheKey);
+  if (cached) return cached;
+
+  const metaAccount = await getMetaAccountForProject(db, projectId);
+  if (!metaAccount) return [];
+
+  // Fetch all campaigns
+  const campaignInsights = await fetchCampaignInsights(
+    metaAccount.metaAccountId,
+    metaAccount.accessToken,
+    days
+  );
+
+  if (campaignInsights.length === 0) return [];
+
+  // Fetch all adsets for all campaigns in parallel
+  type AdSetWithParent = MetaAdSetInsight & { parentCampaignName: string };
+  const adsetPromises = campaignInsights.map((c) =>
+    fetchAdSetInsights(metaAccount.metaAccountId, metaAccount.accessToken, c.campaign_id, days)
+      .then((adsets): AdSetWithParent[] => adsets.map((a) => ({ ...a, parentCampaignName: c.campaign_name })))
+      .catch((): AdSetWithParent[] => [])
+  );
+  const allAdsets = (await Promise.all(adsetPromises)).flat();
+
+  // Fetch all ads for all adsets in parallel
+  type AdWithContext = MetaAdInsight & { adsetName: string; parentCampaignName: string };
+  const adPromises = allAdsets.map((a) =>
+    fetchAdInsights(metaAccount.metaAccountId, metaAccount.accessToken, a.adset_id, days)
+      .then((ads): AdWithContext[] => ads.map((ad) => ({ ...ad, adsetName: a.adset_name, parentCampaignName: a.parentCampaignName })))
+      .catch((): AdWithContext[] => [])
+  );
+  const allAds = (await Promise.all(adPromises)).flat();
+
+  if (allAds.length === 0) return [];
+
+  // Get leads/qualification/sales data
+  const leads = await getLeadsForProject(db, projectId);
+  const entities = allAds.map((a) => ({ id: a.ad_id, name: a.ad_name }));
+
+  let leadCounts: LeadsByEntity = { matched: new Map(), unattributed: 0 };
+  if (leads && leads.length > 0) leadCounts = countLeadsByUtm(leads, "utmContent", entities);
+
+  const qualResult = leads && leads.length > 0
+    ? await getQualifiedLeadsByEntity(db, projectId, leads, "utmContent", entities)
+    : null;
+
+  const salesData = await getSalesForProject(db, projectId);
+  let salesCounts: SalesByEntity = { matched: new Map(), unattributed: { count: 0, revenue: 0 } };
+  if (salesData && salesData.length > 0) salesCounts = countSalesByUtm(salesData, "utmContent", entities);
+
+  // Build analytics rows for all ads
+  const ads: TopPerformerAd[] = allAds.map((a) => {
+    const spend = parseFloat(a.spend || "0");
+    const impressions = parseFloat(a.impressions || "0");
+    const clicks = parseFloat(a.clicks || "0");
+    const entityLeads = leads ? (leadCounts.matched.get(a.ad_id) ?? 0) : null;
+    const qualLeads = qualResult ? (qualResult.matched.get(a.ad_id) ?? 0) : null;
+    const saleData = salesData ? (salesCounts.matched.get(a.ad_id) ?? { count: 0, revenue: 0 }) : null;
+
+    const row = buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, entityLeads, qualLeads, saleData);
+    return { ...row, adsetName: a.adsetName, parentCampaignName: a.parentCampaignName };
+  });
+
+  // Sort by metric
+  const descMetrics: TopPerformerMetric[] = ["roas", "leads", "sales", "ctr"];
+  const isDesc = descMetrics.includes(metric);
+
+  const filtered = ads.filter((a) => {
+    const val = getMetricValue(a, metric);
+    return val !== null && val !== 0;
+  });
+
+  filtered.sort((a, b) => {
+    const va = getMetricValue(a, metric) ?? 0;
+    const vb = getMetricValue(b, metric) ?? 0;
+    return isDesc ? vb - va : va - vb;
+  });
+
+  const result = filtered.slice(0, limit);
+  setCache(cacheKey, result);
+  return result;
+}
+
+function getMetricValue(a: CampaignAnalytics, metric: TopPerformerMetric): number | null {
+  switch (metric) {
+    case "roas": return a.roas;
+    case "cpl": return a.cpl;
+    case "cplQualified": return a.cplQualified;
+    case "leads": return a.leads;
+    case "sales": return a.sales;
+    case "ctr": return a.ctr;
+    default: return null;
+  }
+}
+
+// ============================================================
+// ALL ADSETS (Story 7.8)
+// ============================================================
+
+export async function getAllAdSetsForProject(
+  db: Database,
+  projectId: string,
+  days: number
+): Promise<{ adsets: (CampaignAnalytics & { parentCampaignName: string })[]; hasCrm: boolean; hasQualification: boolean; hasSales: boolean }> {
+  const cacheKey = `analytics:${projectId}:alladsets:${days}`;
+  type AllAdSetsResult = { adsets: (CampaignAnalytics & { parentCampaignName: string })[]; hasCrm: boolean; hasQualification: boolean; hasSales: boolean };
+  const cached = getCached<AllAdSetsResult>(cacheKey);
+  if (cached) return cached;
+
+  const metaAccount = await getMetaAccountForProject(db, projectId);
+  if (!metaAccount) {
+    return { adsets: [], hasCrm: false, hasQualification: false, hasSales: false };
+  }
+
+  const campaignInsights = await fetchCampaignInsights(
+    metaAccount.metaAccountId,
+    metaAccount.accessToken,
+    days
+  );
+
+  // Fetch adsets for all campaigns in parallel
+  type AdSetWithParent = MetaAdSetInsight & { parentCampaignName: string };
+  const adsetPromises = campaignInsights.map((c) =>
+    fetchAdSetInsights(metaAccount.metaAccountId, metaAccount.accessToken, c.campaign_id, days)
+      .then((adsets): AdSetWithParent[] => adsets.map((a) => ({ ...a, parentCampaignName: c.campaign_name })))
+      .catch((): AdSetWithParent[] => [])
+  );
+  const allAdsets = (await Promise.all(adsetPromises)).flat();
+
+  // Get leads/qualification/sales
+  const leads = await getLeadsForProject(db, projectId);
+  const hasCrm = leads !== null;
+  const entities = allAdsets.map((a) => ({ id: a.adset_id, name: a.adset_name }));
+
+  let leadCounts: LeadsByEntity = { matched: new Map(), unattributed: 0 };
+  if (hasCrm && leads!.length > 0) leadCounts = countLeadsByUtm(leads!, "utmMedium", entities);
+
+  const qualResult = hasCrm && leads!.length > 0 ? await getQualifiedLeadsByEntity(db, projectId, leads!, "utmMedium", entities) : null;
+  const hasQualification = qualResult !== null;
+
+  const salesData = await getSalesForProject(db, projectId);
+  const hasSales = salesData !== null;
+  let salesCounts: SalesByEntity = { matched: new Map(), unattributed: { count: 0, revenue: 0 } };
+  if (hasSales && salesData!.length > 0) salesCounts = countSalesByUtm(salesData!, "utmMedium", entities);
+
+  const adsets = allAdsets.map((a) => {
+    const spend = parseFloat(a.spend || "0");
+    const impressions = parseFloat(a.impressions || "0");
+    const clicks = parseFloat(a.clicks || "0");
+    const entityLeads = hasCrm ? (leadCounts.matched.get(a.adset_id) ?? 0) : null;
+    const qualLeads = hasQualification ? (qualResult.matched.get(a.adset_id) ?? 0) : null;
+    const saleData = hasSales ? (salesCounts.matched.get(a.adset_id) ?? { count: 0, revenue: 0 }) : null;
+
+    const row = buildAnalyticsRow(a.adset_id, a.adset_name, spend, impressions, clicks, entityLeads, qualLeads, saleData);
+    return { ...row, parentCampaignName: a.parentCampaignName };
+  });
+
+  const result: AllAdSetsResult = { adsets, hasCrm, hasQualification, hasSales };
+  setCache(cacheKey, result);
+  return result;
 }
 
 // Helper to build a consistent analytics row

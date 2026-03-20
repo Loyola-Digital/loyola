@@ -374,3 +374,7 @@ campanha | spend | impressions | clicks | CTR | CPC | CPM | leads | CPL | qualif
 - [ ] Lead Qualification Engine funcionando
 - [ ] Sales Funnel com ROAS real
 - [ ] Full Funnel Dashboard consolidado
+
+**Fase 3 (Analytics Avancado):**
+- [ ] Top Performers — ranking de criativos por KPI + filtro por adset (Story 7.8)
+- [ ] AI MQL Matching — descricao natural do publico ideal → IA gera regras automaticamente (Story 7.9)

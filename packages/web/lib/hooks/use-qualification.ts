@@ -100,3 +100,17 @@ export function useQualificationPreview() {
       ),
   });
 }
+
+export function useAIGenerateRules() {
+  const apiClient = useApiClient();
+  return useMutation({
+    mutationFn: (data: { projectId: string; description: string }) =>
+      apiClient<{ rules: QualificationRule[] }>(
+        `/api/traffic/qualification/${data.projectId}/ai-generate`,
+        {
+          method: "POST",
+          body: JSON.stringify({ description: data.description }),
+        }
+      ),
+  });
+}

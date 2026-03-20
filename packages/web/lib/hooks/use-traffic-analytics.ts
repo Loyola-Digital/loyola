@@ -128,3 +128,55 @@ export function useTrafficAds(
     enabled: !!projectId && !!adsetId,
   });
 }
+
+// ============================================================
+// TOP PERFORMERS & ALL ADSETS (Story 7.8)
+// ============================================================
+
+export type TopPerformerMetric = "roas" | "cpl" | "cplQualified" | "leads" | "sales" | "ctr";
+
+export interface TopPerformerAd extends CampaignAnalytics {
+  adsetName: string;
+  parentCampaignName: string;
+}
+
+export interface TopPerformersResponse {
+  topPerformers: TopPerformerAd[];
+  metric: TopPerformerMetric;
+}
+
+export interface AllAdSetsResponse {
+  adsets: (CampaignAnalytics & { parentCampaignName: string })[];
+  hasCrm: boolean;
+  hasQualification: boolean;
+  hasSales: boolean;
+}
+
+export function useTopPerformers(
+  projectId: string | null,
+  metric: TopPerformerMetric = "roas",
+  limit: number = 5,
+  days: number = 30
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["traffic-top-performers", projectId, metric, limit, days],
+    queryFn: () =>
+      apiClient<TopPerformersResponse>(
+        `/api/traffic/analytics/${projectId}/top-performers?metric=${metric}&limit=${limit}&days=${days}`
+      ),
+    enabled: !!projectId,
+  });
+}
+
+export function useAllAdSets(projectId: string | null, days: number = 30) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["traffic-all-adsets", projectId, days],
+    queryFn: () =>
+      apiClient<AllAdSetsResponse>(
+        `/api/traffic/analytics/${projectId}/all-adsets?days=${days}`
+      ),
+    enabled: !!projectId,
+  });
+}

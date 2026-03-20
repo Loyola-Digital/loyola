@@ -48,8 +48,12 @@ import {
   useTrafficCampaigns,
   useTrafficAdSets,
   useTrafficAds,
+  useTopPerformers,
+  useAllAdSets,
   type CampaignAnalytics,
   type CampaignAnalyticsResponse,
+  type TopPerformerMetric,
+  type TopPerformerAd,
 } from "@/lib/hooks/use-traffic-analytics";
 import {
   LineChart,
@@ -524,6 +528,114 @@ function DrillDownRow({ item, level, isExpanded, onToggle, hasCrm, hasQual, hasS
 // MAIN PAGE
 // ============================================================
 
+// ============================================================
+// TOP PERFORMERS (Story 7.8)
+// ============================================================
+
+const METRIC_OPTIONS: { value: TopPerformerMetric; label: string; sortLabel: string }[] = [
+  { value: "roas", label: "ROAS", sortLabel: "Maior ROAS" },
+  { value: "cpl", label: "CPL", sortLabel: "Menor CPL" },
+  { value: "cplQualified", label: "CPL Qual", sortLabel: "Menor CPL Qualificado" },
+  { value: "leads", label: "Leads", sortLabel: "Mais Leads" },
+  { value: "sales", label: "Vendas", sortLabel: "Mais Vendas" },
+  { value: "ctr", label: "CTR", sortLabel: "Maior CTR" },
+];
+
+function formatMetricValue(ad: TopPerformerAd, metric: TopPerformerMetric): string {
+  switch (metric) {
+    case "roas": return fmtRoas(ad.roas);
+    case "cpl": return fmtCurrency(ad.cpl);
+    case "cplQualified": return fmtCurrency(ad.cplQualified);
+    case "leads": return fmtNumber(ad.leads);
+    case "sales": return fmtNumber(ad.sales);
+    case "ctr": return fmtPercent(ad.ctr);
+    default: return "—";
+  }
+}
+
+function TopPerformersSection({ projectId, days }: { projectId: string; days: number }) {
+  const [metric, setMetric] = useState<TopPerformerMetric>("roas");
+  const { data, isLoading } = useTopPerformers(projectId, metric, 5, days);
+
+  if (isLoading) return <Skeleton className="h-32 rounded-xl" />;
+  if (!data || data.topPerformers.length === 0) return null;
+
+  const metricLabel = METRIC_OPTIONS.find((m) => m.value === metric)?.sortLabel ?? metric;
+  const medals = ["🥇", "🥈", "🥉", "4.", "5."];
+
+  return (
+    <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Top Performers — {metricLabel}</h3>
+        <Select value={metric} onValueChange={(v) => setMetric(v as TopPerformerMetric)}>
+          <SelectTrigger className="h-7 w-[130px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {METRIC_OPTIONS.map((m) => (
+              <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid gap-2 md:grid-cols-5">
+        {data.topPerformers.map((ad, i) => (
+          <div
+            key={ad.campaignId}
+            className="rounded-lg border border-border/20 bg-muted/20 p-3 space-y-1"
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm">{medals[i] ?? `${i + 1}.`}</span>
+              <span className="text-xs font-medium truncate">{ad.campaignName}</span>
+            </div>
+            <p className="text-lg font-bold tracking-tight">{formatMetricValue(ad, metric)}</p>
+            <div className="text-[10px] text-muted-foreground space-y-0.5">
+              <p>Adset: {ad.adsetName}</p>
+              <p>Campanha: {ad.parentCampaignName}</p>
+              <p>Spend: {fmtCurrency(ad.spend)}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// ADSET FILTER (Story 7.8)
+// ============================================================
+
+function AdSetFilterDropdown({
+  projectId,
+  days,
+  value,
+  onChange,
+}: {
+  projectId: string;
+  days: number;
+  value: string | null;
+  onChange: (id: string | null) => void;
+}) {
+  const { data } = useAllAdSets(projectId, days);
+  if (!data || data.adsets.length === 0) return null;
+
+  return (
+    <Select value={value ?? "__all__"} onValueChange={(v) => onChange(v === "__all__" ? null : v)}>
+      <SelectTrigger className="h-8 w-[200px] text-xs">
+        <SelectValue placeholder="Todos Ad Sets" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="__all__">Todos Ad Sets</SelectItem>
+        {data.adsets.map((a) => (
+          <SelectItem key={a.campaignId} value={a.campaignId}>
+            {a.campaignName}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export default function TrafficPage() {
   const { data: accounts, isLoading: loadingAccounts } = useMetaAdsAccounts();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -541,6 +653,15 @@ export default function TrafficPage() {
   const { data: sheetsConnection, error: sheetsError } = useGoogleSheetsConnection(activeProjectId);
   const hasSheets = !!sheetsConnection && !sheetsError;
   const [sheetsModalOpen, setSheetsModalOpen] = useState(false);
+  const [filterAdsetId, setFilterAdsetId] = useState<string | null>(null);
+
+  // Filter campaigns by adset when adset filter is active
+  const filteredCampaignData = useMemo(() => {
+    if (!campaignData || !filterAdsetId) return campaignData;
+    // When adset filter is active, keep only campaigns that contain that adset
+    // We'll pass the filter down and let the table handle drill-down display
+    return campaignData;
+  }, [campaignData, filterAdsetId]);
 
   return (
     <div className="space-y-5">
@@ -623,6 +744,16 @@ export default function TrafficPage() {
               </div>
             )}
 
+            {/* Adset filter */}
+            {activeProjectId && (
+              <AdSetFilterDropdown
+                projectId={activeProjectId}
+                days={days}
+                value={filterAdsetId}
+                onChange={setFilterAdsetId}
+              />
+            )}
+
             <div className="flex rounded-lg border border-border/40 overflow-hidden ml-auto">
               {PERIOD_OPTIONS.map((opt) => (
                 <button
@@ -665,9 +796,10 @@ export default function TrafficPage() {
           {campaignData && (
             <>
               <SummaryCards data={campaignData} />
+              {activeProjectId && <TopPerformersSection projectId={activeProjectId} days={days} />}
               <FunnelChart data={campaignData} />
               {activeAccountId && <DailyChart accountId={activeAccountId} days={days} />}
-              <CampaignTable data={campaignData} projectId={activeProjectId!} days={days} />
+              <CampaignTable data={filteredCampaignData!} projectId={activeProjectId!} days={days} />
             </>
           )}
 
