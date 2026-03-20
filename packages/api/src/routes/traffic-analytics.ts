@@ -9,6 +9,7 @@ import {
   getTopPerformers,
   getAllAdSetsForProject,
   getCampaignDailyInsights,
+  getPlacementBreakdown,
   invalidateProjectCache,
   type TopPerformerMetric,
 } from "../services/traffic-analytics.js";
@@ -295,6 +296,38 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
       } catch (err) {
         return reply.code(502).send({
           error: "Erro ao buscar daily insights da campanha",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  );
+
+  // ---- GET /api/traffic/analytics/:projectId/placements ---- (Story 8.7)
+  fastify.get(
+    "/api/traffic/analytics/:projectId/placements",
+    async (request, reply) => {
+      if (request.userRole !== "admin" && request.userRole !== "manager") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+
+      const queryResult = daysQuerySchema.safeParse(request.query);
+      const days = queryResult.success ? queryResult.data.days : 30;
+
+      try {
+        const result = await getPlacementBreakdown(
+          fastify.db,
+          paramResult.data.projectId,
+          days
+        );
+        return { placements: result };
+      } catch (err) {
+        return reply.code(502).send({
+          error: "Erro ao buscar placements",
           details: err instanceof Error ? err.message : String(err),
         });
       }

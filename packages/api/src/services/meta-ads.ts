@@ -346,6 +346,35 @@ export async function fetchAdInsights(
 }
 
 // ============================================================
+// PLACEMENT BREAKDOWN (Story 8.7)
+// ============================================================
+
+export interface MetaPlacementInsight {
+  publisher_platform: string;
+  platform_position: string;
+  spend: string;
+  impressions: string;
+  clicks: string;
+  ctr: string;
+  cpc: string;
+  cpm: string;
+}
+
+export async function fetchPlacementBreakdown(
+  metaAccountId: string,
+  accessToken: string,
+  days: number = 30
+): Promise<MetaPlacementInsight[]> {
+  const datePreset =
+    days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
+  const res = await fetchMeta<{ data: MetaPlacementInsight[] }>(
+    `/act_${metaAccountId}/insights?fields=spend,impressions,clicks,ctr,cpc,cpm&breakdowns=publisher_platform,platform_position&date_preset=${datePreset}&level=account`,
+    accessToken
+  );
+  return res.data ?? [];
+}
+
+// ============================================================
 // AD CREATIVES (Story 8.1)
 // ============================================================
 

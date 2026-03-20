@@ -221,6 +221,33 @@ export function useCampaignDailyInsights(
   });
 }
 
+export interface PlacementInsight {
+  platform: string;
+  position: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  cpc: number;
+  cpm: number;
+}
+
+export interface PlacementBreakdownResponse {
+  placements: PlacementInsight[];
+}
+
+export function usePlacementBreakdown(projectId: string | null, days: number = 30) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["traffic-placements", projectId, days],
+    queryFn: () =>
+      apiClient<PlacementBreakdownResponse>(
+        `/api/traffic/analytics/${projectId}/placements?days=${days}`
+      ),
+    enabled: !!projectId,
+  });
+}
+
 export interface AdCreativesResponse {
   creatives: MetaAdCreative[];
 }

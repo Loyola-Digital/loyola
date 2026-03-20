@@ -22,6 +22,7 @@ import {
   X,
   Play,
   ImageIcon,
+  Download,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -55,11 +56,13 @@ import {
   useTopPerformers,
   useAllAdSets,
   useCampaignDailyInsights,
+  usePlacementBreakdown,
   type CampaignAnalytics,
   type CampaignAnalyticsResponse,
   type TopPerformerMetric,
   type TopPerformerAd,
   type VideoMetrics,
+  type PlacementInsight,
 } from "@/lib/hooks/use-traffic-analytics";
 import {
   LineChart,
@@ -854,6 +857,127 @@ function CreativeRankingChart({ projectId, days, campaignId }: { projectId: stri
 }
 
 // ============================================================
+// PLACEMENT BREAKDOWN (Story 8.7)
+// ============================================================
+
+const PLATFORM_LABELS: Record<string, string> = {
+  facebook: "Facebook",
+  instagram: "Instagram",
+  audience_network: "Audience Network",
+  messenger: "Messenger",
+};
+
+function PlacementBreakdownSection({ projectId, days }: { projectId: string; days: number }) {
+  const { data, isLoading } = usePlacementBreakdown(projectId, days);
+
+  if (isLoading) return <Skeleton className="h-48 rounded-xl" />;
+  if (!data || data.placements.length === 0) return null;
+
+  const placements = data.placements;
+  const grouped = new Map<string, PlacementInsight[]>();
+  for (const p of placements) {
+    const list = grouped.get(p.platform) ?? [];
+    list.push(p);
+    grouped.set(p.platform, list);
+  }
+
+  const bestCpc = placements.reduce((b, p) => (p.cpc > 0 && (b === null || p.cpc < b.cpc)) ? p : b, null as PlacementInsight | null);
+  const bestCtr = placements.reduce((b, p) => p.ctr > (b?.ctr ?? 0) ? p : b, null as PlacementInsight | null);
+
+  return (
+    <div className="rounded-xl border border-border/30 bg-card/60 overflow-hidden">
+      <div className="px-5 py-3 border-b border-border/20">
+        <h3 className="text-sm font-semibold">Performance por Posicionamento</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-border/30">
+              <th className="text-left text-[11px] font-medium text-muted-foreground py-2 px-3">Posição</th>
+              <th className="text-right text-[11px] font-medium text-muted-foreground py-2 px-2">Spend</th>
+              <th className="text-right text-[11px] font-medium text-muted-foreground py-2 px-2">Impr</th>
+              <th className="text-right text-[11px] font-medium text-muted-foreground py-2 px-2">Clicks</th>
+              <th className="text-right text-[11px] font-medium text-muted-foreground py-2 px-2">CTR</th>
+              <th className="text-right text-[11px] font-medium text-muted-foreground py-2 px-2">CPC</th>
+              <th className="text-right text-[11px] font-medium text-muted-foreground py-2 px-2">CPM</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from(grouped.entries()).map(([platform, items]) => (
+              items.map((p, i) => (
+                <tr key={`${platform}-${p.position}`} className="border-t border-border/10 hover:bg-muted/20">
+                  <td className="py-1.5 px-3 text-[11px]">
+                    {i === 0 && <span className="text-muted-foreground font-medium mr-1.5">{PLATFORM_LABELS[platform] ?? platform}</span>}
+                    <span className={i === 0 ? "" : "pl-4"}>{p.position.replace(/_/g, " ")}</span>
+                  </td>
+                  <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(p.spend)}</td>
+                  <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(p.impressions)}</td>
+                  <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(p.clicks)}</td>
+                  <td className={`py-1.5 px-2 text-[11px] text-right ${bestCtr && p.platform === bestCtr.platform && p.position === bestCtr.position ? "text-green-500 font-medium" : ""}`}>
+                    {fmtPercent(p.ctr)}
+                  </td>
+                  <td className={`py-1.5 px-2 text-[11px] text-right ${bestCpc && p.platform === bestCpc.platform && p.position === bestCpc.position ? "text-green-500 font-medium" : ""}`}>
+                    {fmtCurrency(p.cpc)}
+                  </td>
+                  <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(p.cpm)}</td>
+                </tr>
+              ))
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// CSV EXPORT (Story 8.8)
+// ============================================================
+
+function exportCsv(campaigns: CampaignAnalytics[], hasCrm: boolean, hasQual: boolean, hasSales: boolean) {
+  const headers = ["Nome", "Spend", "Impressoes", "Cliques", "CTR", "CPC", "CPM"];
+  if (hasCrm) headers.push("Leads", "CPL");
+  if (hasQual) headers.push("Qualificados", "CPL Qual");
+  if (hasSales) headers.push("Vendas", "Custo/Venda", "ROAS");
+
+  const rows = campaigns.map((c) => {
+    const row = [
+      c.campaignName,
+      c.spend.toFixed(2).replace(".", ","),
+      String(c.impressions),
+      String(c.clicks),
+      c.ctr.toFixed(2).replace(".", ","),
+      c.cpc.toFixed(2).replace(".", ","),
+      c.cpm.toFixed(2).replace(".", ","),
+    ];
+    if (hasCrm) {
+      row.push(c.leads !== null ? String(c.leads) : "");
+      row.push(c.cpl !== null ? c.cpl.toFixed(2).replace(".", ",") : "");
+    }
+    if (hasQual) {
+      row.push(c.qualifiedLeads !== null ? String(c.qualifiedLeads) : "");
+      row.push(c.cplQualified !== null ? c.cplQualified.toFixed(2).replace(".", ",") : "");
+    }
+    if (hasSales) {
+      row.push(c.sales !== null ? String(c.sales) : "");
+      row.push(c.costPerSale !== null ? c.costPerSale.toFixed(2).replace(".", ",") : "");
+      row.push(c.roas !== null ? c.roas.toFixed(2).replace(".", ",") : "");
+    }
+    return row;
+  });
+
+  const csv = [headers.join(";"), ...rows.map((r) => r.join(";"))].join("\n");
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const now = new Date().toISOString().slice(0, 10);
+  a.download = `loyola-traffic-${now}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================
 // ADSET FILTER (Story 7.8)
 // ============================================================
 
@@ -950,9 +1074,19 @@ export default function TrafficPage() {
           <p className="text-xs font-semibold uppercase tracking-widest text-brand/60 mb-0.5">Loyola X · Tráfego</p>
           <h1 className="text-2xl font-bold tracking-tight">Full Funnel Analytics</h1>
         </div>
-        <Link href="/settings/traffic" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-          <Settings className="h-3.5 w-3.5" /> Configurar
-        </Link>
+        <div className="flex items-center gap-3">
+          {campaignData && campaignData.campaigns.length > 0 && (
+            <button
+              onClick={() => exportCsv(filteredCampaignData?.campaigns ?? campaignData.campaigns, campaignData.hasCrm, campaignData.hasQualification, campaignData.hasSales)}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Download className="h-3.5 w-3.5" /> CSV
+            </button>
+          )}
+          <Link href="/settings/traffic" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            <Settings className="h-3.5 w-3.5" /> Configurar
+          </Link>
+        </div>
       </div>
 
       {/* Loading */}
@@ -1107,6 +1241,7 @@ export default function TrafficPage() {
               <FunnelChart data={filteredCampaignData!} />
               {activeAccountId && <DailyChart accountId={activeAccountId} projectId={activeProjectId} campaignId={filterCampaignId} days={days} />}
               <CampaignTable data={filteredCampaignData!} projectId={activeProjectId!} days={days} />
+              {activeProjectId && <PlacementBreakdownSection projectId={activeProjectId} days={days} />}
             </>
           )}
 

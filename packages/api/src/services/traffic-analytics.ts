@@ -12,6 +12,7 @@ import {
   fetchAdInsights,
   fetchAdCreatives,
   fetchCampaignDailyInsights,
+  fetchPlacementBreakdown,
   decryptAccountToken,
   type MetaAdSetInsight,
   type MetaAdInsight,
@@ -840,6 +841,54 @@ export async function getCampaignDailyInsights(
     campaignId,
     days
   );
+
+  setCache(cacheKey, result);
+  return result;
+}
+
+// ============================================================
+// PLACEMENT BREAKDOWN (Story 8.7)
+// ============================================================
+
+export interface PlacementInsight {
+  platform: string;
+  position: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  cpc: number;
+  cpm: number;
+}
+
+export async function getPlacementBreakdown(
+  db: Database,
+  projectId: string,
+  days: number
+): Promise<PlacementInsight[]> {
+  const cacheKey = `analytics:${projectId}:placements:${days}`;
+  const cached = getCached<PlacementInsight[]>(cacheKey);
+  if (cached) return cached;
+
+  const metaAccount = await getMetaAccountForProject(db, projectId);
+  if (!metaAccount) return [];
+
+  const raw = await fetchPlacementBreakdown(
+    metaAccount.metaAccountId,
+    metaAccount.accessToken,
+    days
+  );
+
+  const result: PlacementInsight[] = raw.map((r) => ({
+    platform: r.publisher_platform,
+    position: r.platform_position,
+    spend: parseFloat(r.spend || "0"),
+    impressions: parseFloat(r.impressions || "0"),
+    clicks: parseFloat(r.clicks || "0"),
+    ctr: parseFloat(r.ctr || "0"),
+    cpc: parseFloat(r.cpc || "0"),
+    cpm: parseFloat(r.cpm || "0"),
+  }));
 
   setCache(cacheKey, result);
   return result;
