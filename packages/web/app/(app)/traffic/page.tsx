@@ -20,6 +20,8 @@ import {
   Plus,
   Trash2,
   X,
+  Play,
+  ImageIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -483,6 +485,7 @@ function DrillDownAdSets({ projectId, campaignId, days, hasCrm, hasQual, hasSale
 
 function DrillDownAds({ projectId, adsetId, days, hasCrm, hasQual, hasSales }: { projectId: string; adsetId: string; days: number; hasCrm: boolean; hasQual: boolean; hasSales: boolean }) {
   const { data, isLoading } = useTrafficAds(projectId, adsetId, days);
+  const [lightboxAd, setLightboxAd] = useState<(CampaignAnalytics & { creative: import("@/lib/hooks/use-traffic-analytics").MetaAdCreative | null }) | null>(null);
   const colSpan = 7 + (hasCrm ? 2 : 0) + (hasQual ? 2 : 0) + (hasSales ? 3 : 0);
 
   if (isLoading) return <tr><td colSpan={colSpan} className="py-1 px-4"><Skeleton className="h-6" /></td></tr>;
@@ -491,15 +494,52 @@ function DrillDownAds({ projectId, adsetId, days, hasCrm, hasQual, hasSales }: {
   return (
     <>
       {data.ads.map((a) => (
-        <DrillDownRow key={a.campaignId} item={a} level={2} isExpanded={false} onToggle={() => {}} hasCrm={hasCrm} hasQual={hasQual} hasSales={hasSales} />
+        <DrillDownRow key={a.campaignId} item={a} level={2} isExpanded={false} onToggle={() => {}} hasCrm={hasCrm} hasQual={hasQual} hasSales={hasSales} creative={a.creative} onCreativeClick={() => setLightboxAd(a)} />
       ))}
+      {/* Lightbox (Story 8.4) */}
+      {lightboxAd?.creative && (
+        <tr><td colSpan={colSpan} className="p-0">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setLightboxAd(null)} onKeyDown={(e) => e.key === "Escape" && setLightboxAd(null)}>
+            <div className="bg-card border border-border rounded-2xl shadow-xl max-w-lg w-full m-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
+                <div className="flex items-center gap-2">
+                  <CreativeTypeBadge objectType={lightboxAd.creative.objectType} />
+                  <span className="text-sm font-medium truncate">{lightboxAd.campaignName}</span>
+                </div>
+                <button onClick={() => setLightboxAd(null)} className="rounded-full p-1 hover:bg-muted"><X className="h-4 w-4" /></button>
+              </div>
+              <img
+                src={lightboxAd.creative.imageUrl || lightboxAd.creative.thumbnailUrl || ""}
+                alt={lightboxAd.campaignName}
+                className="w-full max-h-[60vh] object-contain bg-black/5"
+              />
+              <div className="p-4 space-y-2">
+                {lightboxAd.creative.title && <p className="text-sm font-medium">{lightboxAd.creative.title}</p>}
+                {lightboxAd.creative.body && <p className="text-xs text-muted-foreground">{lightboxAd.creative.body}</p>}
+                {lightboxAd.creative.objectType === "VIDEO" && (
+                  <a
+                    href={`https://www.facebook.com/ads/library/?id=${lightboxAd.campaignId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-brand hover:underline"
+                  >
+                    <Play className="h-3 w-3" /> Ver no Meta
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        </td></tr>
+      )}
     </>
   );
 }
 
-function DrillDownRow({ item, level, isExpanded, onToggle, hasCrm, hasQual, hasSales, children }: {
+function DrillDownRow({ item, level, isExpanded, onToggle, hasCrm, hasQual, hasSales, children, creative, onCreativeClick }: {
   item: CampaignAnalytics; level: 1 | 2; isExpanded: boolean; onToggle: () => void;
   hasCrm: boolean; hasQual: boolean; hasSales: boolean; children?: React.ReactNode;
+  creative?: { thumbnailUrl: string | null; objectType: string | null } | null;
+  onCreativeClick?: () => void;
 }) {
   const pl = level === 1 ? "pl-8" : "pl-14";
   const bg = level === 1 ? "bg-muted/20" : "bg-muted/10";
@@ -508,9 +548,28 @@ function DrillDownRow({ item, level, isExpanded, onToggle, hasCrm, hasQual, hasS
     <>
       <tr className={`border-t border-border/10 ${bg} hover:bg-muted/40 cursor-pointer`} onClick={onToggle}>
         <td className={`py-1.5 px-3 text-[11px] ${pl}`}>
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-2">
             {level === 1 && (isExpanded ? <ChevronDown className="h-2.5 w-2.5" /> : <ChevronRight className="h-2.5 w-2.5" />)}
-            {item.campaignName}
+            {/* Ad thumbnail (Story 8.4) */}
+            {level === 2 && creative?.thumbnailUrl ? (
+              <button
+                onClick={(e) => { e.stopPropagation(); onCreativeClick?.(); }}
+                className="relative shrink-0 rounded overflow-hidden"
+              >
+                <img src={creative.thumbnailUrl} alt="" className="w-10 h-10 object-cover" />
+                {creative.objectType === "VIDEO" && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Play className="h-3 w-3 text-white fill-white drop-shadow" />
+                  </div>
+                )}
+              </button>
+            ) : level === 2 ? (
+              <div className="w-10 h-10 rounded bg-muted/40 flex items-center justify-center shrink-0">
+                <ImageIcon className="h-3.5 w-3.5 text-muted-foreground/40" />
+              </div>
+            ) : null}
+            <span className="truncate">{item.campaignName}</span>
+            {level === 2 && creative?.objectType && <CreativeTypeBadge objectType={creative.objectType} />}
           </span>
         </td>
         <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(item.spend)}</td>
@@ -561,11 +620,38 @@ function formatMetricValue(ad: TopPerformerAd, metric: TopPerformerMetric): stri
   }
 }
 
+const RANK_STYLES = [
+  "ring-2 ring-yellow-500/60",  // #1 gold
+  "ring-1 ring-gray-400/40",    // #2 silver
+  "ring-1 ring-amber-600/30",   // #3 bronze
+  "",                            // #4
+  "",                            // #5
+];
+
+function CreativeTypeBadge({ objectType }: { objectType: string | null }) {
+  if (!objectType) return null;
+  const label = objectType === "VIDEO" ? "Video" : objectType === "CAROUSEL" ? "Carousel" : "Imagem";
+  return <Badge variant="outline" className="text-[9px] px-1 py-0">{label}</Badge>;
+}
+
 function TopPerformersSection({ projectId, days, campaignId }: { projectId: string; days: number; campaignId?: string | null }) {
   const [metric, setMetric] = useState<TopPerformerMetric>("roas");
   const { data, isLoading } = useTopPerformers(projectId, metric, 5, days, campaignId);
 
-  if (isLoading) return <Skeleton className="h-32 rounded-xl" />;
+  if (isLoading) return (
+    <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
+      <Skeleton className="h-5 w-48" />
+      <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="space-y-2">
+            <Skeleton className="h-32 w-full rounded-lg" />
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-6 w-16" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
   if (!data || data.topPerformers.length === 0) return null;
 
   const metricLabel = METRIC_OPTIONS.find((m) => m.value === metric)?.sortLabel ?? metric;
@@ -586,21 +672,49 @@ function TopPerformersSection({ projectId, days, campaignId }: { projectId: stri
           </SelectContent>
         </Select>
       </div>
-      <div className="grid gap-2 md:grid-cols-5">
+      <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
         {data.topPerformers.map((ad, i) => (
           <div
             key={ad.campaignId}
-            className="rounded-lg border border-border/20 bg-muted/20 p-3 space-y-1"
+            className={`rounded-lg border border-border/20 bg-muted/20 overflow-hidden ${RANK_STYLES[i] ?? ""}`}
+            title={ad.creative?.title && ad.creative?.body ? `${ad.creative.title}\n\n${ad.creative.body}` : undefined}
           >
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm">{medals[i] ?? `${i + 1}.`}</span>
-              <span className="text-xs font-medium truncate">{ad.campaignName}</span>
+            {/* Thumbnail */}
+            <div className="relative aspect-square bg-muted/40 max-h-[200px]">
+              {ad.creative?.thumbnailUrl ? (
+                <>
+                  <img
+                    src={ad.creative.thumbnailUrl}
+                    alt={ad.campaignName}
+                    className="w-full h-full object-cover"
+                  />
+                  {ad.creative.objectType === "VIDEO" && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="rounded-full bg-black/50 p-2">
+                        <Play className="h-5 w-5 text-white fill-white" />
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <ImageIcon className="h-8 w-8 text-muted-foreground/40" />
+                </div>
+              )}
             </div>
-            <p className="text-lg font-bold tracking-tight">{formatMetricValue(ad, metric)}</p>
-            <div className="text-[10px] text-muted-foreground space-y-0.5">
-              <p>Adset: {ad.adsetName}</p>
-              <p>Campanha: {ad.parentCampaignName}</p>
-              <p>Spend: {fmtCurrency(ad.spend)}</p>
+            {/* Info */}
+            <div className="p-3 space-y-1">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm">{medals[i] ?? `${i + 1}.`}</span>
+                <CreativeTypeBadge objectType={ad.creative?.objectType ?? null} />
+              </div>
+              <p className="text-xs font-medium truncate">{ad.campaignName}</p>
+              <p className="text-lg font-bold tracking-tight">{formatMetricValue(ad, metric)}</p>
+              <div className="text-[10px] text-muted-foreground space-y-0.5">
+                <p>Adset: {ad.adsetName}</p>
+                <p>Campanha: {ad.parentCampaignName}</p>
+                <p>Spend: {fmtCurrency(ad.spend)}</p>
+              </div>
             </div>
           </div>
         ))}
