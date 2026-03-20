@@ -236,6 +236,24 @@ export async function fetchDailyInsights(
   return res.data ?? [];
 }
 
+export async function fetchCampaignDailyInsights(
+  metaAccountId: string,
+  accessToken: string,
+  campaignId: string,
+  days: number = 30
+): Promise<MetaDailyInsight[]> {
+  const datePreset =
+    days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
+  const filtering = encodeURIComponent(
+    JSON.stringify([{ field: "campaign_id", operator: "EQUAL", value: campaignId }])
+  );
+  const res = await fetchMeta<{ data: MetaDailyInsight[] }>(
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm&date_preset=${datePreset}&time_increment=1&level=campaign&filtering=${filtering}`,
+    accessToken
+  );
+  return res.data ?? [];
+}
+
 export async function fetchCampaignInsights(
   metaAccountId: string,
   accessToken: string,

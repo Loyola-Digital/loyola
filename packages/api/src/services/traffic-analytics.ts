@@ -11,10 +11,12 @@ import {
   fetchAdSetInsights,
   fetchAdInsights,
   fetchAdCreatives,
+  fetchCampaignDailyInsights,
   decryptAccountToken,
   type MetaAdSetInsight,
   type MetaAdInsight,
   type MetaAdCreative,
+  type MetaDailyInsight,
 } from "./meta-ads.js";
 import { getTabData } from "./google-sheets.js";
 import { getQualifiedLeadsByEntity, getProfileForProject } from "./lead-qualification.js";
@@ -603,9 +605,10 @@ export async function getTopPerformers(
   projectId: string,
   metric: TopPerformerMetric,
   limit: number,
-  days: number
+  days: number,
+  campaignId?: string
 ): Promise<TopPerformerAd[]> {
-  const cacheKey = `analytics:${projectId}:top:${metric}:${limit}:${days}`;
+  const cacheKey = `analytics:${projectId}:top:${metric}:${limit}:${days}:${campaignId ?? "all"}`;
   const cached = getCached<TopPerformerAd[]>(cacheKey);
   if (cached) return cached;
 
@@ -613,11 +616,16 @@ export async function getTopPerformers(
   if (!metaAccount) return [];
 
   // Fetch all campaigns
-  const campaignInsights = await fetchCampaignInsights(
+  const allCampaignInsights = await fetchCampaignInsights(
     metaAccount.metaAccountId,
     metaAccount.accessToken,
     days
   );
+
+  // Filter by campaignId if provided
+  const campaignInsights = campaignId
+    ? allCampaignInsights.filter((c) => c.campaign_id === campaignId)
+    : allCampaignInsights;
 
   if (campaignInsights.length === 0) return [];
 
@@ -805,4 +813,32 @@ function buildAnalyticsRow(
     roas: saleData && spend > 0 ? saleData.revenue / spend : null,
     conversionRate: saleData && entityLeads !== null && entityLeads > 0 ? (saleData.count / entityLeads) * 100 : null,
   };
+}
+
+// ============================================================
+// CAMPAIGN DAILY INSIGHTS (Story 8.3)
+// ============================================================
+
+export async function getCampaignDailyInsights(
+  db: Database,
+  projectId: string,
+  campaignId: string,
+  days: number
+): Promise<MetaDailyInsight[]> {
+  const cacheKey = `analytics:${projectId}:campaign-daily:${campaignId}:${days}`;
+  const cached = getCached<MetaDailyInsight[]>(cacheKey);
+  if (cached) return cached;
+
+  const metaAccount = await getMetaAccountForProject(db, projectId);
+  if (!metaAccount) return [];
+
+  const result = await fetchCampaignDailyInsights(
+    metaAccount.metaAccountId,
+    metaAccount.accessToken,
+    campaignId,
+    days
+  );
+
+  setCache(cacheKey, result);
+  return result;
 }

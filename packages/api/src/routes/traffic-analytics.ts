@@ -8,6 +8,7 @@ import {
   getProjectAdAnalytics,
   getTopPerformers,
   getAllAdSetsForProject,
+  getCampaignDailyInsights,
   invalidateProjectCache,
   type TopPerformerMetric,
 } from "../services/traffic-analytics.js";
@@ -189,6 +190,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
     metric: z.enum(["roas", "cpl", "cplQualified", "leads", "sales", "ctr"]).default("roas"),
     limit: z.coerce.number().int().min(1).max(20).default(5),
     days: z.coerce.number().int().min(1).max(90).default(30),
+    campaignId: z.string().optional(),
   });
 
   fastify.get(
@@ -214,7 +216,8 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
           paramResult.data.projectId,
           queryResult.data.metric as TopPerformerMetric,
           queryResult.data.limit,
-          queryResult.data.days
+          queryResult.data.days,
+          queryResult.data.campaignId
         );
         return { topPerformers: result, metric: queryResult.data.metric };
       } catch (err) {
@@ -252,6 +255,46 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
       } catch (err) {
         return reply.code(502).send({
           error: "Erro ao buscar ad sets",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  );
+
+  // ---- GET /api/traffic/analytics/:projectId/campaign-daily ---- (Story 8.3)
+  const campaignDailyQuerySchema = z.object({
+    campaignId: z.string().min(1),
+    days: z.coerce.number().int().min(1).max(90).default(30),
+  });
+
+  fastify.get(
+    "/api/traffic/analytics/:projectId/campaign-daily",
+    async (request, reply) => {
+      if (request.userRole !== "admin" && request.userRole !== "manager") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+
+      const queryResult = campaignDailyQuerySchema.safeParse(request.query);
+      if (!queryResult.success) {
+        return reply.code(400).send({ error: "campaignId obrigatorio" });
+      }
+
+      try {
+        const result = await getCampaignDailyInsights(
+          fastify.db,
+          paramResult.data.projectId,
+          queryResult.data.campaignId,
+          queryResult.data.days
+        );
+        return result;
+      } catch (err) {
+        return reply.code(502).send({
+          error: "Erro ao buscar daily insights da campanha",
           details: err instanceof Error ? err.message : String(err),
         });
       }

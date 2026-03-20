@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   TrendingUp,
   Settings,
@@ -51,6 +52,7 @@ import {
   useTrafficAds,
   useTopPerformers,
   useAllAdSets,
+  useCampaignDailyInsights,
   type CampaignAnalytics,
   type CampaignAnalyticsResponse,
   type TopPerformerMetric,
@@ -227,8 +229,13 @@ function SummaryCards({ data }: { data: CampaignAnalyticsResponse }) {
 // DAILY CHART
 // ============================================================
 
-function DailyChart({ accountId, days }: { accountId: string; days: number }) {
-  const { data: dailyData, isLoading } = useMetaAdsDailyInsights(accountId, days);
+function DailyChart({ accountId, projectId, campaignId, days }: { accountId: string; projectId: string | null; campaignId: string | null; days: number }) {
+  const { data: accountDailyData, isLoading: loadingAccount } = useMetaAdsDailyInsights(!campaignId ? accountId : null, days);
+  const { data: campaignDailyData, isLoading: loadingCampaign } = useCampaignDailyInsights(projectId, campaignId, days);
+
+  const isLoading = campaignId ? loadingCampaign : loadingAccount;
+  const dailyData = campaignId ? campaignDailyData : accountDailyData;
+
   if (isLoading) return <Skeleton className="h-64 rounded-xl" />;
   if (!dailyData || dailyData.length === 0) return null;
 
@@ -554,9 +561,9 @@ function formatMetricValue(ad: TopPerformerAd, metric: TopPerformerMetric): stri
   }
 }
 
-function TopPerformersSection({ projectId, days }: { projectId: string; days: number }) {
+function TopPerformersSection({ projectId, days, campaignId }: { projectId: string; days: number; campaignId?: string | null }) {
   const [metric, setMetric] = useState<TopPerformerMetric>("roas");
-  const { data, isLoading } = useTopPerformers(projectId, metric, 5, days);
+  const { data, isLoading } = useTopPerformers(projectId, metric, 5, days, campaignId);
 
   if (isLoading) return <Skeleton className="h-32 rounded-xl" />;
   if (!data || data.topPerformers.length === 0) return null;
@@ -638,6 +645,8 @@ function AdSetFilterDropdown({
 }
 
 export default function TrafficPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: accounts, isLoading: loadingAccounts } = useMetaAdsAccounts();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
@@ -654,15 +663,40 @@ export default function TrafficPage() {
   const { data: sheetsConnection, error: sheetsError } = useGoogleSheetsConnection(activeProjectId);
   const hasSheets = !!sheetsConnection && !sheetsError;
   const [sheetsModalOpen, setSheetsModalOpen] = useState(false);
-  const [filterAdsetId, setFilterAdsetId] = useState<string | null>(null);
 
-  // Filter campaigns by adset when adset filter is active
+  // Filters from URL state (Story 8.3)
+  const filterCampaignId = searchParams.get("campaign") ?? null;
+  const filterAdsetId = searchParams.get("adset") ?? null;
+
+  const updateFilters = useCallback((campaign: string | null, adset: string | null) => {
+    const params = new URLSearchParams();
+    if (campaign) params.set("campaign", campaign);
+    if (adset) params.set("adset", adset);
+    const qs = params.toString();
+    router.replace(`/traffic${qs ? `?${qs}` : ""}`, { scroll: false });
+  }, [router]);
+
+  const setFilterCampaignId = useCallback((id: string | null) => {
+    updateFilters(id, id ? filterAdsetId : null);
+  }, [updateFilters, filterAdsetId]);
+
+  const setFilterAdsetId = useCallback((id: string | null) => {
+    updateFilters(filterCampaignId, id);
+  }, [updateFilters, filterCampaignId]);
+
+  const clearFilters = useCallback(() => {
+    updateFilters(null, null);
+  }, [updateFilters]);
+
+  const hasActiveFilters = filterCampaignId !== null || filterAdsetId !== null;
+
+  // Filter campaigns by campaign filter (Story 8.3)
   const filteredCampaignData = useMemo(() => {
-    if (!campaignData || !filterAdsetId) return campaignData;
-    // When adset filter is active, keep only campaigns that contain that adset
-    // We'll pass the filter down and let the table handle drill-down display
-    return campaignData;
-  }, [campaignData, filterAdsetId]);
+    if (!campaignData) return campaignData;
+    if (!filterCampaignId) return campaignData;
+    const filtered = campaignData.campaigns.filter((c) => c.campaignId === filterCampaignId);
+    return { ...campaignData, campaigns: filtered };
+  }, [campaignData, filterCampaignId]);
 
   return (
     <div className="space-y-5">
@@ -745,6 +779,23 @@ export default function TrafficPage() {
               </div>
             )}
 
+            {/* Campaign filter (Story 8.3) */}
+            {activeProjectId && campaignData && campaignData.campaigns.length > 0 && (
+              <Select value={filterCampaignId ?? "__all__"} onValueChange={(v) => setFilterCampaignId(v === "__all__" ? null : v)}>
+                <SelectTrigger className="h-8 w-[200px] text-xs">
+                  <SelectValue placeholder="Todas Campanhas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">Todas Campanhas</SelectItem>
+                  {campaignData.campaigns.map((c) => (
+                    <SelectItem key={c.campaignId} value={c.campaignId}>
+                      {c.campaignName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
             {/* Adset filter */}
             {activeProjectId && (
               <AdSetFilterDropdown
@@ -753,6 +804,16 @@ export default function TrafficPage() {
                 value={filterAdsetId}
                 onChange={setFilterAdsetId}
               />
+            )}
+
+            {/* Clear filters (Story 8.3) */}
+            {hasActiveFilters && (
+              <button
+                onClick={clearFilters}
+                className="inline-flex items-center gap-1 rounded-md border border-border/40 px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 transition-colors"
+              >
+                <X className="h-3 w-3" /> Limpar filtros
+              </button>
             )}
 
             <div className="flex rounded-lg border border-border/40 overflow-hidden ml-auto">
@@ -796,10 +857,10 @@ export default function TrafficPage() {
 
           {campaignData && (
             <>
-              <SummaryCards data={campaignData} />
-              {activeProjectId && <TopPerformersSection projectId={activeProjectId} days={days} />}
-              <FunnelChart data={campaignData} />
-              {activeAccountId && <DailyChart accountId={activeAccountId} days={days} />}
+              <SummaryCards data={filteredCampaignData!} />
+              {activeProjectId && <TopPerformersSection projectId={activeProjectId} days={days} campaignId={filterCampaignId} />}
+              <FunnelChart data={filteredCampaignData!} />
+              {activeAccountId && <DailyChart accountId={activeAccountId} projectId={activeProjectId} campaignId={filterCampaignId} days={days} />}
               <CampaignTable data={filteredCampaignData!} projectId={activeProjectId!} days={days} />
             </>
           )}

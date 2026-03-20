@@ -169,16 +169,46 @@ export function useTopPerformers(
   projectId: string | null,
   metric: TopPerformerMetric = "roas",
   limit: number = 5,
+  days: number = 30,
+  campaignId?: string | null
+) {
+  const apiClient = useApiClient();
+  const campaignParam = campaignId ? `&campaignId=${campaignId}` : "";
+  return useQuery({
+    queryKey: ["traffic-top-performers", projectId, metric, limit, days, campaignId],
+    queryFn: () =>
+      apiClient<TopPerformersResponse>(
+        `/api/traffic/analytics/${projectId}/top-performers?metric=${metric}&limit=${limit}&days=${days}${campaignParam}`
+      ),
+    enabled: !!projectId,
+  });
+}
+
+export interface CampaignDailyInsight {
+  date_start: string;
+  date_stop: string;
+  impressions: string;
+  reach: string;
+  clicks: string;
+  spend: string;
+  ctr: string;
+  cpc: string;
+  cpm: string;
+}
+
+export function useCampaignDailyInsights(
+  projectId: string | null,
+  campaignId: string | null,
   days: number = 30
 ) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["traffic-top-performers", projectId, metric, limit, days],
+    queryKey: ["traffic-campaign-daily", projectId, campaignId, days],
     queryFn: () =>
-      apiClient<TopPerformersResponse>(
-        `/api/traffic/analytics/${projectId}/top-performers?metric=${metric}&limit=${limit}&days=${days}`
+      apiClient<CampaignDailyInsight[]>(
+        `/api/traffic/analytics/${projectId}/campaign-daily?campaignId=${campaignId}&days=${days}`
       ),
-    enabled: !!projectId,
+    enabled: !!projectId && !!campaignId,
   });
 }
 
