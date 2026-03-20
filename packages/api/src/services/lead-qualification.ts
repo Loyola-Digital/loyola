@@ -279,21 +279,29 @@ export async function generateRulesFromDescription(
     );
   }
 
-  // 2. Read survey data (raw headers, no column mapping — we want original headers)
-  const tabData = await getTabData(
-    connection.spreadsheetId,
-    surveyMappings[0].tabName
-  );
+  // 2. Read survey data — use columnMapping if available so AI generates
+  //    rules with the same field names that classifyLeads() expects
+  const mapping = surveyMappings[0];
+  const columnMapping = mapping.columnMapping as Record<string, string> | null;
+  const hasMappedFields = columnMapping && Object.keys(columnMapping).length > 0;
 
-  if (tabData.headers.length === 0) {
+  const tabData = hasMappedFields
+    ? await getTabData(connection.spreadsheetId, mapping.tabName, columnMapping)
+    : await getTabData(connection.spreadsheetId, mapping.tabName);
+
+  if (tabData.headers.length === 0 && (!hasMappedFields || tabData.rows.length === 0)) {
     throw new Error("Aba de pesquisa vazia — sem headers encontrados.");
   }
 
-  // 3. Build field summaries
+  // 3. Build field summaries using the keys that classifyLeads will use
   const fieldSummaries: Record<string, FieldSummary> = {};
-  for (const header of tabData.headers) {
-    const values = tabData.rows.slice(0, 50).map((row) => row[header] ?? "");
-    fieldSummaries[header] = summarizeFieldValues(values);
+  const fieldNames = hasMappedFields
+    ? Object.keys(columnMapping).filter((k) => !k.startsWith("utm"))
+    : tabData.headers;
+
+  for (const field of fieldNames) {
+    const values = tabData.rows.slice(0, 50).map((row) => row[field] ?? "");
+    fieldSummaries[field] = summarizeFieldValues(values);
   }
 
   // 4. Build prompt
@@ -312,8 +320,8 @@ export async function generateRulesFromDescription(
 O usuario descreveu o publico ideal como:
 "${description}"
 
-A planilha de pesquisa tem os seguintes campos (headers):
-${tabData.headers.join(", ")}
+A planilha de pesquisa tem os seguintes campos:
+${fieldNames.join(", ")}
 
 Valores encontrados por campo:
 ${fieldDescriptions}

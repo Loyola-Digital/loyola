@@ -42,6 +42,7 @@ import {
   useMapSheetTabs,
   useSheetTabPreview,
   useAvailableTabs,
+  useAIAnalyzeSheet,
   type TabMappingInput,
 } from "@/lib/hooks/use-google-sheets";
 import {
@@ -865,9 +866,11 @@ function SheetsConfigModal({
   const connectSheet = useConnectGoogleSheet();
   const deleteSheet = useDeleteGoogleSheetsConnection();
   const mapTabs = useMapSheetTabs();
+  const aiAnalyze = useAIAnalyzeSheet();
 
   const [sheetUrl, setSheetUrl] = useState("");
   const [connectError, setConnectError] = useState("");
+  const [aiExplanation, setAiExplanation] = useState("");
 
   // After connection, fetch available tabs
   const { data: availableTabs } = useAvailableTabs(connection?.id ?? null);
@@ -962,6 +965,26 @@ function SheetsConfigModal({
     );
   }
 
+  function handleAIAnalyze() {
+    if (!connection) return;
+    setAiExplanation("");
+    aiAnalyze.mutate(connection.id, {
+      onSuccess: (data) => {
+        // Apply AI suggestions to selections
+        const newSelections: Record<string, { tabName: string; columnMapping: Record<string, string> }> = {};
+        for (const m of data.mappings) {
+          newSelections[m.tabType] = { tabName: m.tabName, columnMapping: m.columnMapping };
+        }
+        setSelections(newSelections);
+        setAiExplanation(data.explanation);
+        toast.success(`IA identificou ${data.mappings.length} aba(s). Revise e salve.`);
+      },
+      onError: (err) => {
+        toast.error(err instanceof Error ? err.message : "Erro ao analisar planilha.");
+      },
+    });
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
@@ -1015,9 +1038,30 @@ function SheetsConfigModal({
                 </Button>
               </div>
 
-              <p className="text-xs text-muted-foreground">
-                Selecione qual aba da planilha corresponde a cada tipo de dado:
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  Selecione qual aba corresponde a cada tipo de dado, ou deixe a IA mapear:
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs shrink-0"
+                  onClick={handleAIAnalyze}
+                  disabled={aiAnalyze.isPending}
+                >
+                  {aiAnalyze.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <TrendingUp className="h-3.5 w-3.5" />
+                  )}
+                  Mapear com IA
+                </Button>
+              </div>
+              {aiExplanation && (
+                <div className="rounded-lg border border-green-500/20 bg-green-500/5 px-3 py-2">
+                  <p className="text-xs text-green-700">{aiExplanation}</p>
+                </div>
+              )}
 
               {DATA_NEEDS.map((need) => {
                 const sel = selections[need.type];

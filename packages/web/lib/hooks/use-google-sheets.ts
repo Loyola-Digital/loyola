@@ -134,6 +134,23 @@ export function useAvailableTabs(connectionId: string | null) {
   });
 }
 
+export interface AIAnalyzeResult {
+  mappings: TabMappingInput[];
+  explanation: string;
+  availableTabs: string[];
+}
+
+export function useAIAnalyzeSheet() {
+  const apiClient = useApiClient();
+  return useMutation({
+    mutationFn: (connectionId: string) =>
+      apiClient<AIAnalyzeResult>(
+        `/api/google-sheets/connections/${connectionId}/ai-analyze`,
+        { method: "POST" }
+      ),
+  });
+}
+
 export function useSheetTabPreview(
   connectionId: string | null,
   tabName: string | null

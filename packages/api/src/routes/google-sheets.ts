@@ -300,6 +300,138 @@ export default fp(async function googleSheetsRoutes(fastify) {
     }
   );
 
+  // ---- POST /api/google-sheets/connections/:id/ai-analyze ----
+  fastify.post(
+    "/api/google-sheets/connections/:id/ai-analyze",
+    async (request, reply) => {
+      if (!requireAdminOrManager(request.userRole, reply)) return;
+
+      const paramResult = idParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "ID invalido" });
+      }
+
+      const [connection] = await fastify.db
+        .select()
+        .from(googleSheetsConnections)
+        .where(eq(googleSheetsConnections.id, paramResult.data.id))
+        .limit(1);
+
+      if (!connection) {
+        return reply.code(404).send({ error: "Conexao nao encontrada" });
+      }
+
+      try {
+        // 1. Get all tabs
+        const info = await validateSpreadsheetAccess(connection.spreadsheetId);
+
+        // 2. Get preview (headers + first 5 rows) of each tab
+        const tabPreviews: { tabName: string; headers: string[]; sampleRows: string[][] }[] = [];
+        for (const tabName of info.tabs.slice(0, 10)) {
+          try {
+            const preview = await getTabPreview(connection.spreadsheetId, tabName);
+            tabPreviews.push({
+              tabName,
+              headers: preview.headers,
+              sampleRows: preview.rows.slice(0, 5),
+            });
+          } catch {
+            // Skip tabs that can't be read
+          }
+        }
+
+        if (tabPreviews.length === 0) {
+          return reply.code(422).send({ error: "Nenhuma aba com dados encontrada" });
+        }
+
+        // 3. Build prompt for Claude
+        const tabDescriptions = tabPreviews
+          .map((t) => {
+            const rows = t.sampleRows.map((r) => r.join(" | ")).join("\n  ");
+            return `Aba "${t.tabName}":\n  Headers: ${t.headers.join(" | ")}\n  Dados:\n  ${rows}`;
+          })
+          .join("\n\n");
+
+        const prompt = `Analise esta planilha do Google Sheets e identifique quais abas contem dados de leads, pesquisa (survey) e vendas (sales) para uma empresa de marketing digital.
+
+${tabDescriptions}
+
+Para cada aba identificada, mapeie as colunas para os campos logicos do sistema.
+
+Campos esperados por tipo de aba:
+- leads: utmCampaign (campanha/UTM), utmMedium (conjunto de anuncios/ad set), utmContent (anuncio/ad/criativo)
+- survey: utmCampaign (para cruzar com leads), e campos de perfil como renda, sexo, idade, filhos, religiao, profissao, etc.
+- sales: utmCampaign, utmMedium, utmContent, valor (valor da venda em reais)
+
+Retorne APENAS um JSON no formato:
+{
+  "mappings": [
+    {
+      "tabName": "nome exato da aba",
+      "tabType": "leads|survey|sales",
+      "columnMapping": {
+        "campoLogico": "nome exato do header da planilha"
+      }
+    }
+  ],
+  "explanation": "breve explicacao do que foi identificado"
+}
+
+REGRAS:
+- Use EXATAMENTE os nomes das abas e headers como aparecem na planilha
+- Nem toda aba precisa ser mapeada — ignore abas irrelevantes (instrucoes, configuracoes, etc)
+- Se uma aba nao tiver UTMs, ainda pode ser survey se tiver dados de perfil
+- Para survey, mapeie TODOS os campos de perfil encontrados (renda, sexo, idade, etc) usando nomes logicos curtos
+- Retorne APENAS o JSON, sem markdown, sem code fences`;
+
+        // 4. Call Claude
+        const message = await fastify.claude.client.messages.create({
+          model: "claude-sonnet-4-6",
+          max_tokens: 1000,
+          messages: [{ role: "user", content: prompt }],
+        });
+
+        const textBlock = message.content.find((b) => b.type === "text");
+        if (!textBlock || textBlock.type !== "text") {
+          return reply.code(422).send({ error: "IA nao conseguiu analisar a planilha" });
+        }
+
+        // 5. Parse response
+        const cleaned = textBlock.text
+          .replace(/```json?\s*/g, "")
+          .replace(/```\s*/g, "")
+          .trim();
+
+        let result: { mappings: Array<{ tabName: string; tabType: string; columnMapping: Record<string, string> }>; explanation: string };
+        try {
+          result = JSON.parse(cleaned);
+        } catch {
+          return reply.code(422).send({
+            error: "IA retornou formato invalido. Tente novamente.",
+          });
+        }
+
+        // 6. Validate mappings
+        const validTypes = new Set(["leads", "survey", "sales"]);
+        const validTabNames = new Set(info.tabs);
+        result.mappings = result.mappings.filter(
+          (m) => validTypes.has(m.tabType) && validTabNames.has(m.tabName)
+        );
+
+        return {
+          mappings: result.mappings,
+          explanation: result.explanation,
+          availableTabs: info.tabs,
+        };
+      } catch (err) {
+        return reply.code(502).send({
+          error: "Erro ao analisar planilha",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  );
+
   // ---- GET /api/google-sheets/connections/:id/tabs/:tabName/preview ----
   fastify.get(
     "/api/google-sheets/connections/:id/tabs/:tabName/preview",
