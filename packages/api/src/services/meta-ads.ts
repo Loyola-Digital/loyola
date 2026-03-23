@@ -204,7 +204,7 @@ export async function fetchAdSets(
 ): Promise<MetaAdSet[]> {
   const filtering = encodeURIComponent(
     JSON.stringify([
-      { field: "campaign_id", operator: "EQUAL", value: campaignId },
+      { field: "campaign.id", operator: "EQUAL", value: campaignId },
     ])
   );
   const res = await fetchMeta<{ data: MetaAdSet[] }>(
@@ -221,7 +221,7 @@ export async function fetchAds(
 ): Promise<MetaAd[]> {
   const filtering = encodeURIComponent(
     JSON.stringify([
-      { field: "adset_id", operator: "EQUAL", value: adsetId },
+      { field: "adset.id", operator: "EQUAL", value: adsetId },
     ])
   );
   const res = await fetchMeta<{ data: MetaAd[] }>(
@@ -254,7 +254,7 @@ export async function fetchCampaignDailyInsights(
   const datePreset =
     days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
   const filtering = encodeURIComponent(
-    JSON.stringify([{ field: "campaign_id", operator: "EQUAL", value: campaignId }])
+    JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: campaignId }])
   );
   const res = await fetchMeta<{ data: MetaDailyInsight[] }>(
     `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm&date_preset=${datePreset}&time_increment=1&level=campaign&filtering=${filtering}`,
@@ -287,7 +287,7 @@ export async function fetchAdSetInsights(
     days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
   const filtering = encodeURIComponent(
     JSON.stringify([
-      { field: "campaign_id", operator: "EQUAL", value: campaignId },
+      { field: "campaign.id", operator: "EQUAL", value: campaignId },
     ])
   );
   const res = await fetchMeta<{ data: MetaAdSetInsight[] }>(
@@ -332,7 +332,7 @@ export async function fetchAdInsights(
     days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
   const filtering = encodeURIComponent(
     JSON.stringify([
-      { field: "adset_id", operator: "EQUAL", value: adsetId },
+      { field: "adset.id", operator: "EQUAL", value: adsetId },
     ])
   );
   const res = await fetchMeta<{ data: RawAdInsight[] }>(
@@ -376,7 +376,7 @@ export async function fetchAllAdInsights(
     days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
 
   const filterPart = campaignId
-    ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign_id", operator: "EQUAL", value: campaignId }]))}`
+    ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: campaignId }]))}`
     : "";
 
   const fields = "impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions";
