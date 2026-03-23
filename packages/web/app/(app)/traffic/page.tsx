@@ -1022,6 +1022,8 @@ const PLATFORM_LABELS: Record<string, string> = {
   instagram: "Instagram",
   audience_network: "Audience Network",
   messenger: "Messenger",
+  threads: "Threads",
+  unknown: "Outros",
 };
 
 function PlacementBreakdownSection({ projectId, days }: { projectId: string; days: number }) {
@@ -1061,11 +1063,17 @@ function PlacementBreakdownSection({ projectId, days }: { projectId: string; day
           </thead>
           <tbody>
             {Array.from(grouped.entries()).map(([platform, items]) => (
-              items.map((p, i) => (
+              <>
+                {/* Platform header row */}
+                <tr key={`header-${platform}`} className="border-t border-border/20 bg-muted/30">
+                  <td colSpan={7} className="py-1.5 px-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    {PLATFORM_LABELS[platform] ?? platform}
+                  </td>
+                </tr>
+                {items.map((p) => (
                 <tr key={`${platform}-${p.position}`} className="border-t border-border/10 hover:bg-muted/20">
-                  <td className="py-1.5 px-3 text-[11px]">
-                    {i === 0 && <span className="text-muted-foreground font-medium mr-1.5">{PLATFORM_LABELS[platform] ?? platform}</span>}
-                    <span className={i === 0 ? "" : "pl-4"}>{p.position.replace(/_/g, " ")}</span>
+                  <td className="py-1.5 px-3 pl-6 text-[11px]">
+                    {p.position.replace(/_/g, " ")}
                   </td>
                   <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(p.spend)}</td>
                   <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(p.impressions)}</td>
@@ -1078,7 +1086,8 @@ function PlacementBreakdownSection({ projectId, days }: { projectId: string; day
                   </td>
                   <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(p.cpm)}</td>
                 </tr>
-              ))
+              ))}
+              </>
             ))}
           </tbody>
         </table>
