@@ -385,9 +385,18 @@ export async function fetchAllAdInsights(
   type PageResponse = { data: RawAllAdInsight[]; paging?: { next?: string } };
   const allResults: AllAdInsight[] = [];
   let nextPath: string | null = `/act_${metaAccountId}/insights?fields=${fields}&date_preset=${datePreset}&level=ad&limit=200${filterPart}`;
+  let useFullUrl = false;
 
   while (nextPath) {
-    const res: PageResponse = await fetchMeta<PageResponse>(nextPath, accessToken);
+    let res: PageResponse;
+    if (useFullUrl) {
+      // Subsequent pages: Meta returns full absolute URL with token already included
+      checkRateLimit();
+      const raw = await fetch(nextPath);
+      res = (await raw.json()) as PageResponse;
+    } else {
+      res = await fetchMeta<PageResponse>(nextPath, accessToken);
+    }
 
     for (const raw of res.data ?? []) {
       allResults.push({
@@ -396,14 +405,11 @@ export async function fetchAllAdInsights(
       });
     }
 
-    // Meta returns full URL for next page — extract the path portion
+    // Meta returns full absolute URL for next page (may use different API version)
     const nextUrl: string | undefined = res.paging?.next;
     if (nextUrl && allResults.length < 500) {
-      // Next URL is absolute; strip the base to get path+query
-      let stripped = nextUrl.replace(GRAPH_API_BASE, "");
-      // Remove access_token from the path since fetchMeta adds it
-      stripped = stripped.replace(/([&?])access_token=[^&]+/, "");
-      nextPath = stripped;
+      nextPath = nextUrl;
+      useFullUrl = true;
     } else {
       nextPath = null;
     }
