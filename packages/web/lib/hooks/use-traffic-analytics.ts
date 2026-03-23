@@ -13,6 +13,8 @@ export interface CampaignAnalytics {
   spend: number;
   impressions: number;
   clicks: number;
+  reach: number;
+  frequency: number;
   ctr: number;
   cpc: number;
   cpm: number;
@@ -30,6 +32,8 @@ export interface CampaignAnalytics {
 
 export interface OverviewAnalytics {
   totalSpend: number;
+  totalReach: number | null;
+  avgFrequency: number | null;
   totalLeads: number | null;
   avgCpl: number | null;
   totalQualifiedLeads: number | null;

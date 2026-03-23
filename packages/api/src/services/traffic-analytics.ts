@@ -31,6 +31,8 @@ export interface CampaignAnalytics {
   spend: number;
   impressions: number;
   clicks: number;
+  reach: number;
+  frequency: number;
   ctr: number;
   cpc: number;
   cpm: number;
@@ -48,6 +50,8 @@ export interface CampaignAnalytics {
 
 export interface OverviewAnalytics {
   totalSpend: number;
+  totalReach: number | null;
+  avgFrequency: number | null;
   totalLeads: number | null;
   avgCpl: number | null;
   totalQualifiedLeads: number | null;
@@ -145,7 +149,7 @@ export async function getProjectOverview(
 
   const metaAccount = await getMetaAccountForProject(db, projectId);
   if (!metaAccount) {
-    return { totalSpend: 0, totalLeads: null, avgCpl: null, totalQualifiedLeads: null, avgCplQualified: null, totalSales: null, totalRevenue: null, totalCampaigns: 0, hasCrm: false, hasQualification: false, hasSales: false };
+    return { totalSpend: 0, totalReach: null, avgFrequency: null, totalLeads: null, avgCpl: null, totalQualifiedLeads: null, avgCplQualified: null, totalSales: null, totalRevenue: null, totalCampaigns: 0, hasCrm: false, hasQualification: false, hasSales: false };
   }
 
   const campaigns = await fetchCampaignInsights(
@@ -155,9 +159,14 @@ export async function getProjectOverview(
   );
 
   const totalSpend = campaigns.reduce((s, c) => s + parseFloat(c.spend || "0"), 0);
+  const totalImpressions = campaigns.reduce((s, c) => s + parseFloat(c.impressions || "0"), 0);
+  const totalReach = campaigns.reduce((s, c) => s + parseFloat(c.reach || "0"), 0);
+  const avgFrequency = totalReach > 0 ? totalImpressions / totalReach : null;
 
   const result: OverviewAnalytics = {
     totalSpend,
+    totalReach: totalReach > 0 ? totalReach : null,
+    avgFrequency,
     totalLeads: null,
     avgCpl: null,
     totalQualifiedLeads: null,
@@ -199,8 +208,9 @@ export async function getProjectCampaignAnalytics(
     const spend = parseFloat(c.spend || "0");
     const impressions = parseFloat(c.impressions || "0");
     const clicks = parseFloat(c.clicks || "0");
+    const reach = parseFloat(c.reach || "0");
 
-    return buildAnalyticsRow(c.campaign_id, c.campaign_name, spend, impressions, clicks, null, null, null);
+    return buildAnalyticsRow(c.campaign_id, c.campaign_name, spend, impressions, clicks, null, null, null, reach);
   });
 
   const result: CampaignResult = { campaigns, unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
@@ -225,19 +235,20 @@ export async function getProjectAdSetAnalytics(
   // ASC fallback: if no adsets found, aggregate from flat ad query
   if (adsetInsights.length === 0) {
     const allAds = await fetchAllAdInsights(metaAccount.metaAccountId, metaAccount.accessToken, days, campaignId);
-    const adsetAgg = new Map<string, { name: string; spend: number; impressions: number; clicks: number }>();
+    const adsetAgg = new Map<string, { name: string; spend: number; impressions: number; clicks: number; reach: number }>();
     for (const a of allAds) {
       const existing = adsetAgg.get(a.adset_id);
       if (existing) {
         existing.spend += parseFloat(a.spend || "0");
         existing.impressions += parseFloat(a.impressions || "0");
         existing.clicks += parseFloat(a.clicks || "0");
+        existing.reach += parseFloat(a.reach || "0");
       } else {
-        adsetAgg.set(a.adset_id, { name: a.adset_name, spend: parseFloat(a.spend || "0"), impressions: parseFloat(a.impressions || "0"), clicks: parseFloat(a.clicks || "0") });
+        adsetAgg.set(a.adset_id, { name: a.adset_name, spend: parseFloat(a.spend || "0"), impressions: parseFloat(a.impressions || "0"), clicks: parseFloat(a.clicks || "0"), reach: parseFloat(a.reach || "0") });
       }
     }
     const adsets = Array.from(adsetAgg.entries()).map(([id, a]) =>
-      buildAnalyticsRow(id, a.name, a.spend, a.impressions, a.clicks, null, null, null)
+      buildAnalyticsRow(id, a.name, a.spend, a.impressions, a.clicks, null, null, null, a.reach)
     );
     return { adsets, unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
   }
@@ -246,7 +257,8 @@ export async function getProjectAdSetAnalytics(
     const spend = parseFloat(a.spend || "0");
     const impressions = parseFloat(a.impressions || "0");
     const clicks = parseFloat(a.clicks || "0");
-    return buildAnalyticsRow(a.adset_id, a.adset_name, spend, impressions, clicks, null, null, null);
+    const reach = parseFloat(a.reach || "0");
+    return buildAnalyticsRow(a.adset_id, a.adset_name, spend, impressions, clicks, null, null, null, reach);
   });
 
   return { adsets, unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
@@ -277,8 +289,9 @@ export async function getProjectAdAnalytics(
     const spend = parseFloat(a.spend || "0");
     const impressions = parseFloat(a.impressions || "0");
     const clicks = parseFloat(a.clicks || "0");
+    const reach = parseFloat(a.reach || "0");
 
-    return { ...buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, null, null, null), creative: null as MetaAdCreative | null, videoMetrics: a.videoMetrics ?? null };
+    return { ...buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, null, null, null, reach), creative: null as MetaAdCreative | null, videoMetrics: a.videoMetrics ?? null };
   });
 
   // Fetch creatives for all ads in drill-down
@@ -339,8 +352,9 @@ export async function getTopPerformers(
     const spend = parseFloat(a.spend || "0");
     const impressions = parseFloat(a.impressions || "0");
     const clicks = parseFloat(a.clicks || "0");
+    const reach = parseFloat(a.reach || "0");
 
-    const row = buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, null, null, null);
+    const row = buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, null, null, null, reach);
     return { ...row, adsetName: a.adset_name, parentCampaignName: a.campaign_name, creative: null, videoMetrics: a.videoMetrics ?? null };
   });
 
@@ -416,7 +430,7 @@ export async function getAllAdSetsForProject(
   );
 
   // Aggregate ads by adset_id
-  const adsetMap = new Map<string, { name: string; campaignName: string; spend: number; impressions: number; clicks: number }>();
+  const adsetMap = new Map<string, { name: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number }>();
   for (const a of allAds) {
     const key = a.adset_id;
     const existing = adsetMap.get(key);
@@ -424,6 +438,7 @@ export async function getAllAdSetsForProject(
       existing.spend += parseFloat(a.spend || "0");
       existing.impressions += parseFloat(a.impressions || "0");
       existing.clicks += parseFloat(a.clicks || "0");
+      existing.reach += parseFloat(a.reach || "0");
     } else {
       adsetMap.set(key, {
         name: a.adset_name,
@@ -431,12 +446,13 @@ export async function getAllAdSetsForProject(
         spend: parseFloat(a.spend || "0"),
         impressions: parseFloat(a.impressions || "0"),
         clicks: parseFloat(a.clicks || "0"),
+        reach: parseFloat(a.reach || "0"),
       });
     }
   }
 
   const adsets = Array.from(adsetMap.entries()).map(([id, a]) => {
-    const row = buildAnalyticsRow(id, a.name, a.spend, a.impressions, a.clicks, null, null, null);
+    const row = buildAnalyticsRow(id, a.name, a.spend, a.impressions, a.clicks, null, null, null, a.reach);
     return { ...row, parentCampaignName: a.campaignName };
   });
 
@@ -449,12 +465,15 @@ export async function getAllAdSetsForProject(
 function buildAnalyticsRow(
   id: string, name: string, spend: number, impressions: number, clicks: number,
   entityLeads: number | null, qualLeads: number | null,
-  saleData: { count: number; revenue: number } | null
+  saleData: { count: number; revenue: number } | null,
+  reach: number = 0
 ): CampaignAnalytics {
   return {
     campaignId: id,
     campaignName: name,
     spend, impressions, clicks,
+    reach,
+    frequency: reach > 0 ? impressions / reach : 0,
     ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
     cpc: clicks > 0 ? spend / clicks : 0,
     cpm: impressions > 0 ? (spend * 1000) / impressions : 0,

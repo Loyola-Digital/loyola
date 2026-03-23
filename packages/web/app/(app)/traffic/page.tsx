@@ -18,6 +18,8 @@ import {
   Play,
   ImageIcon,
   Download,
+  Repeat,
+  Radio,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -205,17 +207,22 @@ function SummaryCards({ data }: { data: CampaignAnalyticsResponse }) {
       spend: acc.spend + c.spend,
       impressions: acc.impressions + c.impressions,
       clicks: acc.clicks + c.clicks,
+      reach: acc.reach + c.reach,
       leads: acc.leads + (c.leads ?? 0),
       qualified: acc.qualified + (c.qualifiedLeads ?? 0),
       sales: acc.sales + (c.sales ?? 0),
       revenue: acc.revenue + (c.revenue ?? 0),
     }),
-    { spend: 0, impressions: 0, clicks: 0, leads: 0, qualified: 0, sales: 0, revenue: 0 }
+    { spend: 0, impressions: 0, clicks: 0, reach: 0, leads: 0, qualified: 0, sales: 0, revenue: 0 }
   );
+
+  const frequency = totals.reach > 0 ? totals.impressions / totals.reach : 0;
 
   const cards: { label: string; value: string; icon: typeof DollarSign; show: boolean }[] = [
     { label: "Spend", value: fmtCurrency(totals.spend), icon: DollarSign, show: true },
     { label: "Impressões", value: fmtNumber(totals.impressions), icon: Eye, show: true },
+    { label: "Alcance", value: fmtNumber(totals.reach), icon: Radio, show: true },
+    { label: "Frequência", value: totals.reach > 0 ? frequency.toFixed(2) : "—", icon: Repeat, show: true },
     { label: "Cliques", value: fmtNumber(totals.clicks), icon: MousePointerClick, show: true },
     { label: "CTR", value: fmtPercent(totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0), icon: Percent, show: true },
     { label: "Leads", value: fmtNumber(totals.leads), icon: Users, show: data.hasCrm },
@@ -229,14 +236,14 @@ function SummaryCards({ data }: { data: CampaignAnalyticsResponse }) {
   const visible = cards.filter((c) => c.show);
 
   return (
-    <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
+    <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
       {visible.map((card) => (
-        <div key={card.label} className="rounded-xl border border-border/30 bg-card/60 p-3">
-          <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
-            <card.icon className="h-3 w-3" />
-            <span className="text-[11px]">{card.label}</span>
+        <div key={card.label} className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3 hover:border-border/50 transition-colors">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{card.label}</span>
+            <card.icon className="h-3.5 w-3.5 text-muted-foreground/50" />
           </div>
-          <p className="text-lg font-bold tracking-tight">{card.value}</p>
+          <p className="text-xl font-bold tracking-tight">{card.value}</p>
         </div>
       ))}
     </div>
@@ -369,6 +376,8 @@ function CampaignTable({
               <th className="text-left text-[11px] font-medium text-muted-foreground py-2 px-3 whitespace-nowrap">Nome</th>
               <SortHeader label="Spend" col="spend" />
               <SortHeader label="Impr" col="impressions" />
+              <SortHeader label="Reach" col="reach" />
+              <SortHeader label="Freq" col="frequency" />
               <SortHeader label="Clicks" col="clicks" />
               <SortHeader label="CTR" col="ctr" />
               <SortHeader label="CPC" col="cpc" />
@@ -408,7 +417,7 @@ function CampaignTable({
             {(data.unattributedLeads > 0 || data.unattributedSales.count > 0) && (
               <tr className="border-t border-border/20 bg-muted/10 italic text-muted-foreground">
                 <td className="py-2 px-3 text-xs">Sem atribuição</td>
-                <td colSpan={6} />
+                <td colSpan={8} />
                 {data.hasCrm && <td className="py-2 px-2 text-xs text-right">{data.unattributedLeads}</td>}
                 {data.hasCrm && <td />}
                 {data.hasQualification && <><td /><td /></>}
@@ -457,6 +466,8 @@ function CampaignRowMaster({
         </td>
         <td className="py-2 px-2 text-xs text-right font-medium">{fmtCurrency(c.spend)}</td>
         <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.impressions)}</td>
+        <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.reach)}</td>
+        <td className="py-2 px-2 text-xs text-right">{c.frequency > 0 ? c.frequency.toFixed(2) : "—"}</td>
         <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.clicks)}</td>
         <td className="py-2 px-2 text-xs text-right">{fmtPercent(c.ctr)}</td>
         <td className="py-2 px-2 text-xs text-right">{fmtCurrency(c.cpc)}</td>
@@ -483,7 +494,7 @@ function CampaignRowMaster({
 function DrillDownAdSets({ projectId, campaignId, days, hasCrm, hasQual, hasSales }: { projectId: string; campaignId: string; days: number; hasCrm: boolean; hasQual: boolean; hasSales: boolean }) {
   const { data, isLoading } = useTrafficAdSets(projectId, campaignId, days);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const colSpan = 7 + (hasCrm ? 2 : 0) + (hasQual ? 2 : 0) + (hasSales ? 3 : 0);
+  const colSpan = 9 + (hasCrm ? 2 : 0) + (hasQual ? 2 : 0) + (hasSales ? 3 : 0);
 
   if (isLoading) return <tr><td colSpan={colSpan} className="py-2 px-4"><Skeleton className="h-8" /></td></tr>;
   if (!data || data.adsets.length === 0) return <tr><td colSpan={colSpan} className="py-2 px-8 text-xs text-muted-foreground">Nenhum ad set</td></tr>;
@@ -502,7 +513,7 @@ function DrillDownAdSets({ projectId, campaignId, days, hasCrm, hasQual, hasSale
 function DrillDownAds({ projectId, adsetId, days, hasCrm, hasQual, hasSales }: { projectId: string; adsetId: string; days: number; hasCrm: boolean; hasQual: boolean; hasSales: boolean }) {
   const { data, isLoading } = useTrafficAds(projectId, adsetId, days);
   const [lightboxAd, setLightboxAd] = useState<(CampaignAnalytics & { creative: import("@/lib/hooks/use-traffic-analytics").MetaAdCreative | null }) | null>(null);
-  const colSpan = 7 + (hasCrm ? 2 : 0) + (hasQual ? 2 : 0) + (hasSales ? 3 : 0);
+  const colSpan = 9 + (hasCrm ? 2 : 0) + (hasQual ? 2 : 0) + (hasSales ? 3 : 0);
 
   if (isLoading) return <tr><td colSpan={colSpan} className="py-1 px-4"><Skeleton className="h-6" /></td></tr>;
   if (!data || data.ads.length === 0) return <tr><td colSpan={colSpan} className="py-1 px-12 text-xs text-muted-foreground">Nenhum ad</td></tr>;
@@ -592,6 +603,8 @@ function DrillDownRow({ item, level, isExpanded, onToggle, hasCrm, hasQual, hasS
         </td>
         <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(item.spend)}</td>
         <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(item.impressions)}</td>
+        <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(item.reach)}</td>
+        <td className="py-1.5 px-2 text-[11px] text-right">{item.frequency > 0 ? item.frequency.toFixed(2) : "—"}</td>
         <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(item.clicks)}</td>
         <td className="py-1.5 px-2 text-[11px] text-right">{fmtPercent(item.ctr)}</td>
         <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(item.cpc)}</td>
@@ -838,6 +851,169 @@ function CreativeRankingChart({ projectId, days, campaignId }: { projectId: stri
 }
 
 // ============================================================
+// CREATIVE GALLERY (Story 9.3)
+// ============================================================
+
+type CreativeFilter = "all" | "VIDEO" | "IMAGE" | "CAROUSEL";
+type CreativeSort = "spend" | "ctr" | "cpc" | "impressions";
+
+function CreativeGallerySection({ projectId, days, campaignId }: { projectId: string; days: number; campaignId?: string | null }) {
+  const [filterType, setFilterType] = useState<CreativeFilter>("all");
+  const [sortBy, setSortBy] = useState<CreativeSort>("spend");
+  const [expanded, setExpanded] = useState(false);
+  const { data, isLoading } = useTopPerformers(projectId, "ctr", 20, days, campaignId);
+
+  if (isLoading) return <Skeleton className="h-64 rounded-xl" />;
+  if (!data || data.topPerformers.length === 0) return null;
+
+  const withCreatives = data.topPerformers.filter((ad) => ad.creative?.thumbnailUrl);
+  if (withCreatives.length === 0) return null;
+
+  const filtered = filterType === "all"
+    ? withCreatives
+    : withCreatives.filter((ad) => ad.creative?.objectType === filterType);
+
+  const sorted = [...filtered].sort((a, b) => {
+    switch (sortBy) {
+      case "spend": return b.spend - a.spend;
+      case "ctr": return b.ctr - a.ctr;
+      case "cpc": return (a.cpc || 999) - (b.cpc || 999);
+      case "impressions": return b.impressions - a.impressions;
+      default: return 0;
+    }
+  });
+
+  const shown = expanded ? sorted : sorted.slice(0, 8);
+  const typeCount = {
+    all: withCreatives.length,
+    VIDEO: withCreatives.filter((a) => a.creative?.objectType === "VIDEO").length,
+    IMAGE: withCreatives.filter((a) => a.creative?.objectType !== "VIDEO" && a.creative?.objectType !== "CAROUSEL").length,
+    CAROUSEL: withCreatives.filter((a) => a.creative?.objectType === "CAROUSEL").length,
+  };
+
+  return (
+    <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">Galeria de Criativos</h3>
+          <p className="text-[11px] text-muted-foreground">{withCreatives.length} criativos com preview</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Type filter */}
+          <div className="flex rounded-lg border border-border/40 overflow-hidden">
+            {(["all", "VIDEO", "IMAGE", "CAROUSEL"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setFilterType(t)}
+                className={`px-2.5 py-1 text-[10px] font-medium transition-colors ${filterType === t ? "bg-brand text-brand-foreground" : "bg-card hover:bg-muted/50 text-muted-foreground"} ${typeCount[t] === 0 ? "opacity-40" : ""}`}
+                disabled={typeCount[t] === 0}
+              >
+                {t === "all" ? "Todos" : t === "IMAGE" ? "Imagem" : t === "VIDEO" ? "Vídeo" : "Carousel"}
+                <span className="ml-1 opacity-60">{typeCount[t]}</span>
+              </button>
+            ))}
+          </div>
+          {/* Sort */}
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as CreativeSort)}>
+            <SelectTrigger className="h-7 w-[120px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="spend">Maior Spend</SelectItem>
+              <SelectItem value="ctr">Maior CTR</SelectItem>
+              <SelectItem value="cpc">Menor CPC</SelectItem>
+              <SelectItem value="impressions">Mais Impressões</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        {shown.map((ad, i) => (
+          <div
+            key={ad.campaignId}
+            className="group rounded-lg border border-border/20 bg-muted/10 overflow-hidden hover:border-border/50 transition-all hover:shadow-md"
+          >
+            {/* Thumbnail */}
+            <div className="relative aspect-video bg-muted/30">
+              <img
+                src={ad.creative!.thumbnailUrl!}
+                alt={ad.campaignName}
+                className="w-full h-full object-cover"
+              />
+              {/* Overlay with metrics */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute bottom-0 left-0 right-0 p-2.5 text-white">
+                  <div className="grid grid-cols-3 gap-1 text-[10px]">
+                    <div>
+                      <p className="opacity-60">Spend</p>
+                      <p className="font-semibold">{fmtCurrency(ad.spend)}</p>
+                    </div>
+                    <div>
+                      <p className="opacity-60">CTR</p>
+                      <p className="font-semibold">{fmtPercent(ad.ctr)}</p>
+                    </div>
+                    <div>
+                      <p className="opacity-60">CPC</p>
+                      <p className="font-semibold">{fmtCurrency(ad.cpc)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {/* Type badge */}
+              <div className="absolute top-1.5 left-1.5">
+                <Badge variant="outline" className="text-[9px] px-1 py-0 bg-black/50 text-white border-white/20 backdrop-blur-sm">
+                  {ad.creative?.objectType === "VIDEO" ? "Video" : ad.creative?.objectType === "CAROUSEL" ? "Carousel" : "Imagem"}
+                </Badge>
+              </div>
+              {/* Play icon for video */}
+              {ad.creative?.objectType === "VIDEO" && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="rounded-full bg-black/40 p-2 group-hover:bg-black/60 transition-colors">
+                    <Play className="h-4 w-4 text-white fill-white" />
+                  </div>
+                </div>
+              )}
+              {/* Rank badge */}
+              <div className="absolute top-1.5 right-1.5">
+                <span className="text-[10px] font-bold bg-black/50 text-white rounded px-1.5 py-0.5 backdrop-blur-sm">
+                  #{i + 1}
+                </span>
+              </div>
+            </div>
+            {/* Info */}
+            <div className="p-2.5 space-y-1">
+              <p className="text-[11px] font-medium truncate" title={ad.campaignName}>{ad.campaignName}</p>
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                <span>{fmtNumber(ad.impressions)} impr</span>
+                <span>{fmtNumber(ad.clicks)} clicks</span>
+                <span>{fmtNumber(ad.reach)} reach</span>
+              </div>
+              {/* Video retention mini bar */}
+              {ad.videoMetrics && (
+                <div className="flex items-center gap-1 mt-1">
+                  <span className="text-[9px] text-muted-foreground/60">Retenção</span>
+                  <VideoRetentionSparkline metrics={ad.videoMetrics} />
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {sorted.length > 8 && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+        >
+          {expanded ? "Mostrar menos" : `Ver todos (${sorted.length})`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
 // PLACEMENT BREAKDOWN (Story 8.7)
 // ============================================================
 
@@ -916,7 +1092,7 @@ function PlacementBreakdownSection({ projectId, days }: { projectId: string; day
 // ============================================================
 
 function exportCsv(campaigns: CampaignAnalytics[], hasCrm: boolean, hasQual: boolean, hasSales: boolean) {
-  const headers = ["Nome", "Spend", "Impressoes", "Cliques", "CTR", "CPC", "CPM"];
+  const headers = ["Nome", "Spend", "Impressoes", "Alcance", "Frequencia", "Cliques", "CTR", "CPC", "CPM"];
   if (hasCrm) headers.push("Leads", "CPL");
   if (hasQual) headers.push("Qualificados", "CPL Qual");
   if (hasSales) headers.push("Vendas", "Custo/Venda", "ROAS");
@@ -926,6 +1102,8 @@ function exportCsv(campaigns: CampaignAnalytics[], hasCrm: boolean, hasQual: boo
       c.campaignName,
       c.spend.toFixed(2).replace(".", ","),
       String(c.impressions),
+      String(c.reach),
+      c.frequency > 0 ? c.frequency.toFixed(2).replace(".", ",") : "",
       String(c.clicks),
       c.ctr.toFixed(2).replace(".", ","),
       c.cpc.toFixed(2).replace(".", ","),
@@ -1189,11 +1367,27 @@ function TrafficPageContent() {
 
           {campaignData && (
             <>
+              {/* KPI Overview */}
               <SummaryCards data={filteredCampaignData!} />
-              {activeProjectId && <TopPerformersSection projectId={activeProjectId} days={days} campaignId={filterCampaignId} />}
+
+              {/* Visual Performance */}
+              <div className="grid gap-5 lg:grid-cols-2">
+                <div className="space-y-5">
+                  {activeAccountId && <DailyChart accountId={activeAccountId} projectId={activeProjectId} campaignId={filterCampaignId} days={days} />}
+                  <FunnelChart data={filteredCampaignData!} />
+                </div>
+                <div>
+                  {activeProjectId && <TopPerformersSection projectId={activeProjectId} days={days} campaignId={filterCampaignId} />}
+                </div>
+              </div>
+
+              {/* Creative Gallery */}
+              {activeProjectId && <CreativeGallerySection projectId={activeProjectId} days={days} campaignId={filterCampaignId} />}
+
+              {/* Creative Comparison */}
               {activeProjectId && <CreativeRankingChart projectId={activeProjectId} days={days} campaignId={filterCampaignId} />}
-              <FunnelChart data={filteredCampaignData!} />
-              {activeAccountId && <DailyChart accountId={activeAccountId} projectId={activeProjectId} campaignId={filterCampaignId} days={days} />}
+
+              {/* Data Tables */}
               <CampaignTable data={filteredCampaignData!} projectId={activeProjectId!} days={days} />
               {activeProjectId && <PlacementBreakdownSection projectId={activeProjectId} days={days} />}
             </>
