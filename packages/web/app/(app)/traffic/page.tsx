@@ -1017,14 +1017,29 @@ function CreativeGallerySection({ projectId, days, campaignId }: { projectId: st
 // PLACEMENT BREAKDOWN (Story 8.7)
 // ============================================================
 
-const PLATFORM_LABELS: Record<string, string> = {
-  facebook: "Facebook",
-  instagram: "Instagram",
-  audience_network: "Audience Network",
-  messenger: "Messenger",
-  threads: "Threads",
-  unknown: "Outros",
+const PLATFORM_META: Record<string, { label: string; color: string; icon: string }> = {
+  facebook: { label: "Facebook", color: "hsl(220 80% 55%)", icon: "f" },
+  instagram: { label: "Instagram", color: "hsl(330 70% 55%)", icon: "ig" },
+  audience_network: { label: "Audience Network", color: "hsl(200 60% 50%)", icon: "an" },
+  messenger: { label: "Messenger", color: "hsl(210 90% 55%)", icon: "m" },
+  threads: { label: "Threads", color: "hsl(0 0% 45%)", icon: "t" },
+  unknown: { label: "Outros", color: "hsl(0 0% 55%)", icon: "?" },
 };
+
+/** Strip redundant platform prefix from position name: "facebook reels" → "Reels" */
+function cleanPositionName(platform: string, position: string): string {
+  let name = position.replace(/_/g, " ");
+  // Strip platform prefix (e.g. "facebook reels" → "reels", "instagram stories" → "stories")
+  const prefixes = [platform, platform.replace(/_/g, " ")];
+  for (const prefix of prefixes) {
+    if (name.toLowerCase().startsWith(prefix.toLowerCase())) {
+      name = name.slice(prefix.length).trim();
+    }
+  }
+  // Capitalize first letter
+  if (name.length > 0) name = name.charAt(0).toUpperCase() + name.slice(1);
+  return name || "Feed";
+}
 
 function PlacementBreakdownSection({ projectId, days }: { projectId: string; days: number }) {
   const { data, isLoading } = usePlacementBreakdown(projectId, days);
@@ -1033,6 +1048,9 @@ function PlacementBreakdownSection({ projectId, days }: { projectId: string; day
   if (!data || data.placements.length === 0) return null;
 
   const placements = data.placements;
+  const maxSpend = Math.max(...placements.map((p) => p.spend));
+
+  // Group and sort by platform spend
   const grouped = new Map<string, PlacementInsight[]>();
   for (const p of placements) {
     const list = grouped.get(p.platform) ?? [];
@@ -1040,57 +1058,74 @@ function PlacementBreakdownSection({ projectId, days }: { projectId: string; day
     grouped.set(p.platform, list);
   }
 
-  const bestCpc = placements.reduce((b, p) => (p.cpc > 0 && (b === null || p.cpc < b.cpc)) ? p : b, null as PlacementInsight | null);
-  const bestCtr = placements.reduce((b, p) => p.ctr > (b?.ctr ?? 0) ? p : b, null as PlacementInsight | null);
+  // Sort platforms by total spend, positions within by spend
+  const sortedPlatforms = Array.from(grouped.entries())
+    .map(([platform, items]) => ({
+      platform,
+      items: items.sort((a, b) => b.spend - a.spend),
+      totalSpend: items.reduce((s, p) => s + p.spend, 0),
+      totalImpressions: items.reduce((s, p) => s + p.impressions, 0),
+      totalClicks: items.reduce((s, p) => s + p.clicks, 0),
+    }))
+    .sort((a, b) => b.totalSpend - a.totalSpend);
 
   return (
-    <div className="rounded-xl border border-border/30 bg-card/60 overflow-hidden">
-      <div className="px-5 py-3 border-b border-border/20">
-        <h3 className="text-sm font-semibold">Performance por Posicionamento</h3>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-border/30">
-              <th className="text-left text-[11px] font-medium text-muted-foreground py-2 px-3">Posição</th>
-              <th className="text-right text-[11px] font-medium text-muted-foreground py-2 px-2">Spend</th>
-              <th className="text-right text-[11px] font-medium text-muted-foreground py-2 px-2">Impr</th>
-              <th className="text-right text-[11px] font-medium text-muted-foreground py-2 px-2">Clicks</th>
-              <th className="text-right text-[11px] font-medium text-muted-foreground py-2 px-2">CTR</th>
-              <th className="text-right text-[11px] font-medium text-muted-foreground py-2 px-2">CPC</th>
-              <th className="text-right text-[11px] font-medium text-muted-foreground py-2 px-2">CPM</th>
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from(grouped.entries()).map(([platform, items]) => (
-              <>
-                {/* Platform header row */}
-                <tr key={`header-${platform}`} className="border-t border-border/20 bg-muted/30">
-                  <td colSpan={7} className="py-1.5 px-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    {PLATFORM_LABELS[platform] ?? platform}
-                  </td>
-                </tr>
-                {items.map((p) => (
-                <tr key={`${platform}-${p.position}`} className="border-t border-border/10 hover:bg-muted/20">
-                  <td className="py-1.5 px-3 pl-6 text-[11px]">
-                    {p.position.replace(/_/g, " ")}
-                  </td>
-                  <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(p.spend)}</td>
-                  <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(p.impressions)}</td>
-                  <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(p.clicks)}</td>
-                  <td className={`py-1.5 px-2 text-[11px] text-right ${bestCtr && p.platform === bestCtr.platform && p.position === bestCtr.position ? "text-green-500 font-medium" : ""}`}>
-                    {fmtPercent(p.ctr)}
-                  </td>
-                  <td className={`py-1.5 px-2 text-[11px] text-right ${bestCpc && p.platform === bestCpc.platform && p.position === bestCpc.position ? "text-green-500 font-medium" : ""}`}>
-                    {fmtCurrency(p.cpc)}
-                  </td>
-                  <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(p.cpm)}</td>
-                </tr>
-              ))}
-              </>
-            ))}
-          </tbody>
-        </table>
+    <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
+      <h3 className="text-sm font-semibold">Performance por Posicionamento</h3>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {sortedPlatforms.map(({ platform, items, totalSpend, totalImpressions, totalClicks }) => {
+          const meta = PLATFORM_META[platform] ?? PLATFORM_META.unknown;
+          const avgCtr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
+
+          return (
+            <div key={platform} className="rounded-lg border border-border/20 bg-muted/10 overflow-hidden">
+              {/* Platform header */}
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/15" style={{ borderLeftWidth: 3, borderLeftColor: meta.color }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold">{meta.label}</span>
+                  <span className="text-[10px] text-muted-foreground">{items.length} posições</span>
+                </div>
+                <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                  <span>{fmtCurrency(totalSpend)}</span>
+                  <span>CTR {fmtPercent(avgCtr)}</span>
+                </div>
+              </div>
+
+              {/* Positions */}
+              <div className="divide-y divide-border/10">
+                {items.map((p) => {
+                  const spendPct = maxSpend > 0 ? (p.spend / maxSpend) * 100 : 0;
+                  const name = cleanPositionName(platform, p.position);
+
+                  return (
+                    <div key={p.position} className="px-4 py-2 hover:bg-muted/20 transition-colors">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium">{name}</span>
+                        <span className="text-xs font-semibold">{fmtCurrency(p.spend)}</span>
+                      </div>
+                      {/* Spend bar */}
+                      <div className="h-1 rounded-full bg-muted/40 mb-1.5">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{ width: `${spendPct}%`, backgroundColor: meta.color, opacity: 0.6 }}
+                        />
+                      </div>
+                      <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                        <span>{fmtNumber(p.impressions)} impr</span>
+                        <span>{fmtNumber(p.clicks)} clicks</span>
+                        <span className="font-medium" style={{ color: p.ctr > avgCtr ? "hsl(142 70% 45%)" : undefined }}>
+                          CTR {fmtPercent(p.ctr)}
+                        </span>
+                        <span>CPC {fmtCurrency(p.cpc)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
