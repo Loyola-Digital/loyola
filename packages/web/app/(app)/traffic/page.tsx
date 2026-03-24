@@ -702,7 +702,7 @@ function CreativeLightbox({ items, initialIndex, projectId, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-2xl w-full m-4 overflow-hidden max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-3xl w-full m-4 overflow-hidden max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/30 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
@@ -729,9 +729,12 @@ function CreativeLightbox({ items, initialIndex, projectId, onClose }: {
             />
           ) : isVideo && videoData?.embedHtml ? (
             <iframe
-              srcDoc={videoData.embedHtml.replace(/width="\d+"/, 'width="100%"').replace(/height="\d+"/, 'height="100%"')}
+              src={(() => {
+                const match = videoData.embedHtml.match(/src="([^"]+)"/);
+                return match ? match[1].replace(/&amp;/g, "&") + "&autoplay=1" : "";
+              })()}
               className="w-full h-[60vh] border-0"
-              allow="autoplay; encrypted-media"
+              allow="autoplay; encrypted-media; fullscreen"
               allowFullScreen
             />
           ) : isVideo && videoData?.permalinkUrl ? (
