@@ -272,6 +272,19 @@ export function useAdCreatives(
   });
 }
 
+export function useVideoSource(projectId: string | null, videoId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["traffic-video-source", projectId, videoId],
+    queryFn: () =>
+      apiClient<{ sourceUrl: string | null }>(
+        `/api/traffic/analytics/${projectId}/video-source?videoId=${videoId}`
+      ),
+    enabled: !!projectId && !!videoId,
+    staleTime: 25 * 60 * 1000, // 25min (Meta URLs expire ~30min)
+  });
+}
+
 export function useAllAdSets(projectId: string | null, days: number = 30) {
   const apiClient = useApiClient();
   return useQuery({

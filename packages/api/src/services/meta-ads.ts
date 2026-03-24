@@ -565,6 +565,37 @@ export async function fetchAdCreatives(
   return results;
 }
 
+// ============================================================
+// VIDEO SOURCE (Story 9.5)
+// ============================================================
+
+const videoSourceCache = new Map<string, { url: string; timestamp: number }>();
+const VIDEO_SOURCE_TTL = 30 * 60 * 1000; // 30min (Meta video URLs expire)
+
+export async function fetchVideoSource(
+  videoId: string,
+  accessToken: string
+): Promise<string | null> {
+  const cached = videoSourceCache.get(videoId);
+  if (cached && Date.now() - cached.timestamp < VIDEO_SOURCE_TTL) {
+    return cached.url;
+  }
+
+  try {
+    const data = await fetchMeta<{ source?: string }>(
+      `/${videoId}?fields=source`,
+      accessToken
+    );
+    if (data.source) {
+      videoSourceCache.set(videoId, { url: data.source, timestamp: Date.now() });
+      return data.source;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function decryptAccountToken(encrypted: string, iv: string): string {
   return decrypt(encrypted, iv);
 }

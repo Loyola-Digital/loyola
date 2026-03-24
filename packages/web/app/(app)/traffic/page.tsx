@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, Suspense } from "react";
+import { useState, useMemo, useCallback, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   TrendingUp,
@@ -20,6 +20,8 @@ import {
   Download,
   Repeat,
   Radio,
+  ChevronLeft,
+  ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -40,12 +42,14 @@ import {
   useAllAdSets,
   useCampaignDailyInsights,
   usePlacementBreakdown,
+  useVideoSource,
   type CampaignAnalytics,
   type CampaignAnalyticsResponse,
   type TopPerformerMetric,
   type TopPerformerAd,
   type VideoMetrics,
   type PlacementInsight,
+  type MetaAdCreative,
 } from "@/lib/hooks/use-traffic-analytics";
 import {
   LineChart,
@@ -136,6 +140,35 @@ const PERIOD_OPTIONS = [
 // ============================================================
 
 const FUNNEL_COLORS = ["hsl(200 80% 60%)", "hsl(47 98% 54%)", "hsl(142 70% 45%)", "hsl(210 80% 55%)", "hsl(45 93% 47%)"];
+
+// ============================================================
+// CTA LABELS (Story 9.6)
+// ============================================================
+
+const CTA_LABELS: Record<string, string> = {
+  LEARN_MORE: "Saiba Mais",
+  SHOP_NOW: "Compre Agora",
+  SIGN_UP: "Cadastre-se",
+  WATCH_MORE: "Assistir Mais",
+  CONTACT_US: "Fale Conosco",
+  APPLY_NOW: "Inscreva-se",
+  BOOK_TRAVEL: "Reserve",
+  DOWNLOAD: "Baixar",
+  GET_OFFER: "Ver Oferta",
+  GET_QUOTE: "Pedir Orçamento",
+  SUBSCRIBE: "Assinar",
+  BUY_NOW: "Comprar",
+  ORDER_NOW: "Pedir Agora",
+  WHATSAPP_MESSAGE: "WhatsApp",
+  MESSAGE_PAGE: "Mensagem",
+  CALL_NOW: "Ligar",
+};
+
+function CtaBadge({ ctaType }: { ctaType: string | null }) {
+  if (!ctaType || ctaType === "NO_BUTTON") return null;
+  const label = CTA_LABELS[ctaType] ?? ctaType.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  return <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-brand/10 text-brand border-brand/20">{label}</Badge>;
+}
 
 function FunnelChart({ data }: { data: CampaignAnalyticsResponse }) {
   const totals = data.campaigns.reduce(
@@ -512,62 +545,58 @@ function DrillDownAdSets({ projectId, campaignId, days, hasCrm, hasQual, hasSale
 
 function DrillDownAds({ projectId, adsetId, days, hasCrm, hasQual, hasSales }: { projectId: string; adsetId: string; days: number; hasCrm: boolean; hasQual: boolean; hasSales: boolean }) {
   const { data, isLoading } = useTrafficAds(projectId, adsetId, days);
-  const [lightboxAd, setLightboxAd] = useState<(CampaignAnalytics & { creative: import("@/lib/hooks/use-traffic-analytics").MetaAdCreative | null }) | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const colSpan = 9 + (hasCrm ? 2 : 0) + (hasQual ? 2 : 0) + (hasSales ? 3 : 0);
 
   if (isLoading) return <tr><td colSpan={colSpan} className="py-1 px-4"><Skeleton className="h-6" /></td></tr>;
   if (!data || data.ads.length === 0) return <tr><td colSpan={colSpan} className="py-1 px-12 text-xs text-muted-foreground">Nenhum ad</td></tr>;
 
+  // Build lightbox items for drill-down ads (Story 9.5)
+  const lightboxItems: LightboxItem[] = data.ads
+    .filter((a) => a.creative)
+    .map((a) => ({
+      id: a.campaignId,
+      name: a.campaignName,
+      creative: a.creative!,
+      spend: a.spend,
+      impressions: a.impressions,
+      clicks: a.clicks,
+      ctr: a.ctr,
+      cpc: a.cpc,
+      reach: a.reach,
+      videoMetrics: a.videoMetrics,
+    }));
+
   return (
     <>
       {data.ads.map((a) => (
-        <DrillDownRow key={a.campaignId} item={a} level={2} isExpanded={false} onToggle={() => {}} hasCrm={hasCrm} hasQual={hasQual} hasSales={hasSales} creative={a.creative} videoMetrics={a.videoMetrics} onCreativeClick={() => setLightboxAd(a)} />
+        <DrillDownRow key={a.campaignId} item={a} level={2} isExpanded={false} onToggle={() => {}} hasCrm={hasCrm} hasQual={hasQual} hasSales={hasSales} creative={a.creative} videoMetrics={a.videoMetrics} ctaType={a.creative?.ctaType} onCreativeClick={() => {
+          const lbIdx = lightboxItems.findIndex((li) => li.id === a.campaignId);
+          if (lbIdx >= 0) setLightboxIndex(lbIdx);
+        }} />
       ))}
-      {/* Lightbox (Story 8.4) */}
-      {lightboxAd?.creative && (
+      {/* Enhanced Lightbox (Story 9.5) */}
+      {lightboxIndex !== null && (
         <tr><td colSpan={colSpan} className="p-0">
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setLightboxAd(null)} onKeyDown={(e) => e.key === "Escape" && setLightboxAd(null)}>
-            <div className="bg-card border border-border rounded-2xl shadow-xl max-w-lg w-full m-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
-                <div className="flex items-center gap-2">
-                  <CreativeTypeBadge objectType={lightboxAd.creative.objectType} />
-                  <span className="text-sm font-medium truncate">{lightboxAd.campaignName}</span>
-                </div>
-                <button onClick={() => setLightboxAd(null)} className="rounded-full p-1 hover:bg-muted"><X className="h-4 w-4" /></button>
-              </div>
-              <img
-                src={lightboxAd.creative.imageUrl || lightboxAd.creative.thumbnailUrl || ""}
-                alt={lightboxAd.campaignName}
-                className="w-full max-h-[60vh] object-contain bg-black/5"
-              />
-              <div className="p-4 space-y-2">
-                {lightboxAd.creative.title && <p className="text-sm font-medium">{lightboxAd.creative.title}</p>}
-                {lightboxAd.creative.body && <p className="text-xs text-muted-foreground">{lightboxAd.creative.body}</p>}
-                {lightboxAd.creative.objectType === "VIDEO" && (
-                  <a
-                    href={`https://www.facebook.com/ads/library/?id=${lightboxAd.campaignId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-brand hover:underline"
-                  >
-                    <Play className="h-3 w-3" /> Ver no Meta
-                  </a>
-                )}
-              </div>
-            </div>
-          </div>
+          <CreativeLightbox
+            items={lightboxItems}
+            initialIndex={lightboxIndex}
+            projectId={projectId}
+            onClose={() => setLightboxIndex(null)}
+          />
         </td></tr>
       )}
     </>
   );
 }
 
-function DrillDownRow({ item, level, isExpanded, onToggle, hasCrm, hasQual, hasSales, children, creative, videoMetrics, onCreativeClick }: {
+function DrillDownRow({ item, level, isExpanded, onToggle, hasCrm, hasQual, hasSales, children, creative, videoMetrics, onCreativeClick, ctaType }: {
   item: CampaignAnalytics; level: 1 | 2; isExpanded: boolean; onToggle: () => void;
   hasCrm: boolean; hasQual: boolean; hasSales: boolean; children?: React.ReactNode;
   creative?: { thumbnailUrl: string | null; objectType: string | null } | null;
   videoMetrics?: VideoMetrics | null;
   onCreativeClick?: () => void;
+  ctaType?: string | null;
 }) {
   const pl = level === 1 ? "pl-8" : "pl-14";
   const bg = level === 1 ? "bg-muted/20" : "bg-muted/10";
@@ -598,6 +627,7 @@ function DrillDownRow({ item, level, isExpanded, onToggle, hasCrm, hasQual, hasS
             ) : null}
             <span className="truncate">{item.campaignName}</span>
             {level === 2 && creative?.objectType && <CreativeTypeBadge objectType={creative.objectType} />}
+            {level === 2 && <CtaBadge ctaType={ctaType ?? null} />}
             {level === 2 && videoMetrics && <VideoRetentionSparkline metrics={videoMetrics} />}
           </span>
         </td>
@@ -619,6 +649,174 @@ function DrillDownRow({ item, level, isExpanded, onToggle, hasCrm, hasQual, hasS
       </tr>
       {children}
     </>
+  );
+}
+
+// ============================================================
+// ENHANCED LIGHTBOX (Story 9.5) + CREATIVE METADATA (Story 9.6)
+// ============================================================
+
+interface LightboxItem {
+  id: string;
+  name: string;
+  creative: MetaAdCreative;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  cpc: number;
+  reach: number;
+  videoMetrics?: VideoMetrics | null;
+  parentInfo?: string;
+}
+
+function CreativeLightbox({ items, initialIndex, projectId, onClose }: {
+  items: LightboxItem[];
+  initialIndex: number;
+  projectId: string;
+  onClose: () => void;
+}) {
+  const [index, setIndex] = useState(initialIndex);
+  const item = items[index];
+  const isVideo = item.creative.objectType === "VIDEO";
+
+  // Fetch video source on demand
+  const { data: videoData } = useVideoSource(
+    isVideo ? projectId : null,
+    isVideo ? item.creative.videoId : null
+  );
+
+  // Keyboard navigation
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft") setIndex((i) => (i - 1 + items.length) % items.length);
+      if (e.key === "ArrowRight") setIndex((i) => (i + 1) % items.length);
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [items.length, onClose]);
+
+  const prev = () => setIndex((i) => (i - 1 + items.length) % items.length);
+  const next = () => setIndex((i) => (i + 1) % items.length);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-2xl w-full m-4 overflow-hidden max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border/30 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <CreativeTypeBadge objectType={item.creative.objectType} />
+            <CtaBadge ctaType={item.creative.ctaType} />
+            <span className="text-sm font-medium truncate">{item.name}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs text-muted-foreground">{index + 1} / {items.length}</span>
+            <button onClick={onClose} className="rounded-full p-1 hover:bg-muted"><X className="h-4 w-4" /></button>
+          </div>
+        </div>
+
+        {/* Media */}
+        <div className="relative bg-black/5 min-h-[300px] max-h-[60vh] flex items-center justify-center overflow-hidden">
+          {isVideo && videoData?.sourceUrl ? (
+            <video
+              key={videoData.sourceUrl}
+              src={videoData.sourceUrl}
+              controls
+              autoPlay
+              className="w-full max-h-[60vh] object-contain"
+              poster={item.creative.thumbnailUrl || undefined}
+            />
+          ) : (
+            <img
+              src={item.creative.imageUrl || item.creative.thumbnailUrl || ""}
+              alt={item.name}
+              className="w-full max-h-[60vh] object-contain"
+            />
+          )}
+
+          {/* Loading indicator for video */}
+          {isVideo && !videoData?.sourceUrl && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+              <div className="text-center text-white">
+                <Play className="h-10 w-10 mx-auto mb-2 opacity-60" />
+                <p className="text-xs opacity-80">Carregando vídeo...</p>
+              </div>
+            </div>
+          )}
+
+          {/* Nav arrows */}
+          {items.length > 1 && (
+            <>
+              <button onClick={(e) => { e.stopPropagation(); prev(); }} className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 hover:bg-black/70 p-2 text-white transition-colors">
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); next(); }} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 hover:bg-black/70 p-2 text-white transition-colors">
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Info panel */}
+        <div className="p-4 space-y-3 shrink-0 overflow-y-auto">
+          {/* Metrics */}
+          <div className="grid grid-cols-5 gap-3">
+            {[
+              { label: "Spend", value: fmtCurrency(item.spend) },
+              { label: "Impressões", value: fmtNumber(item.impressions) },
+              { label: "Cliques", value: fmtNumber(item.clicks) },
+              { label: "CTR", value: fmtPercent(item.ctr) },
+              { label: "CPC", value: fmtCurrency(item.cpc) },
+            ].map((m) => (
+              <div key={m.label} className="text-center">
+                <p className="text-[10px] text-muted-foreground">{m.label}</p>
+                <p className="text-sm font-semibold">{m.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Video retention */}
+          {item.videoMetrics && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-muted-foreground">Retenção:</span>
+              <VideoRetentionSparkline metrics={item.videoMetrics} />
+              <span className="text-[10px] text-muted-foreground ml-auto">
+                Thruplay: {fmtNumber(item.videoMetrics.thruplay)}
+              </span>
+            </div>
+          )}
+
+          {/* Title & body */}
+          {item.creative.title && <p className="text-sm font-medium">{item.creative.title}</p>}
+          {item.creative.body && <p className="text-xs text-muted-foreground line-clamp-3">{item.creative.body}</p>}
+
+          {/* Landing page URL (Story 9.6) */}
+          {item.creative.linkUrl && (
+            <a
+              href={item.creative.linkUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs text-brand hover:underline truncate max-w-full"
+              title={item.creative.linkUrl}
+            >
+              <ExternalLink className="h-3 w-3 shrink-0" />
+              {(() => {
+                try {
+                  const u = new URL(item.creative.linkUrl);
+                  return u.hostname + (u.pathname.length > 1 ? u.pathname.split("/").slice(0, 3).join("/") : "");
+                } catch { return item.creative.linkUrl; }
+              })()}
+            </a>
+          )}
+
+          {/* Parent info */}
+          {item.parentInfo && (
+            <p className="text-[10px] text-muted-foreground">{item.parentInfo}</p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -861,6 +1059,7 @@ function CreativeGallerySection({ projectId, days, campaignId }: { projectId: st
   const [filterType, setFilterType] = useState<CreativeFilter>("all");
   const [sortBy, setSortBy] = useState<CreativeSort>("spend");
   const [expanded, setExpanded] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const { data, isLoading } = useTopPerformers(projectId, "ctr", 20, days, campaignId);
 
   if (isLoading) return <Skeleton className="h-64 rounded-xl" />;
@@ -890,6 +1089,21 @@ function CreativeGallerySection({ projectId, days, campaignId }: { projectId: st
     IMAGE: withCreatives.filter((a) => a.creative?.objectType !== "VIDEO" && a.creative?.objectType !== "CAROUSEL").length,
     CAROUSEL: withCreatives.filter((a) => a.creative?.objectType === "CAROUSEL").length,
   };
+
+  // Build lightbox items from sorted list (Story 9.5)
+  const lightboxItems: LightboxItem[] = sorted.map((ad) => ({
+    id: ad.campaignId,
+    name: ad.campaignName,
+    creative: ad.creative!,
+    spend: ad.spend,
+    impressions: ad.impressions,
+    clicks: ad.clicks,
+    ctr: ad.ctr,
+    cpc: ad.cpc,
+    reach: ad.reach,
+    videoMetrics: ad.videoMetrics,
+    parentInfo: `${ad.parentCampaignName} › ${ad.adsetName}`,
+  }));
 
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
@@ -932,7 +1146,8 @@ function CreativeGallerySection({ projectId, days, campaignId }: { projectId: st
         {shown.map((ad, i) => (
           <div
             key={ad.campaignId}
-            className="group rounded-lg border border-border/20 bg-muted/10 overflow-hidden hover:border-border/50 transition-all hover:shadow-md"
+            className="group rounded-lg border border-border/20 bg-muted/10 overflow-hidden hover:border-border/50 transition-all hover:shadow-md cursor-pointer"
+            onClick={() => setLightboxIndex(i)}
           >
             {/* Thumbnail */}
             <div className="relative aspect-video bg-muted/30">
@@ -983,7 +1198,10 @@ function CreativeGallerySection({ projectId, days, campaignId }: { projectId: st
             </div>
             {/* Info */}
             <div className="p-2.5 space-y-1">
-              <p className="text-[11px] font-medium truncate" title={ad.campaignName}>{ad.campaignName}</p>
+              <div className="flex items-center gap-1">
+                <p className="text-[11px] font-medium truncate" title={ad.campaignName}>{ad.campaignName}</p>
+                <CtaBadge ctaType={ad.creative?.ctaType ?? null} />
+              </div>
               <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                 <span>{fmtNumber(ad.impressions)} impr</span>
                 <span>{fmtNumber(ad.clicks)} clicks</span>
@@ -1008,6 +1226,16 @@ function CreativeGallerySection({ projectId, days, campaignId }: { projectId: st
         >
           {expanded ? "Mostrar menos" : `Ver todos (${sorted.length})`}
         </button>
+      )}
+
+      {/* Enhanced Lightbox (Story 9.5) */}
+      {lightboxIndex !== null && (
+        <CreativeLightbox
+          items={lightboxItems}
+          initialIndex={lightboxIndex}
+          projectId={projectId}
+          onClose={() => setLightboxIndex(null)}
+        />
       )}
     </div>
   );
