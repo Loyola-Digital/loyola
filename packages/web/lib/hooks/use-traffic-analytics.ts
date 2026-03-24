@@ -272,16 +272,23 @@ export function useAdCreatives(
   });
 }
 
+export interface VideoSourceData {
+  sourceUrl: string | null;
+  embedHtml: string | null;
+  permalinkUrl: string | null;
+  picture: string | null;
+}
+
 export function useVideoSource(projectId: string | null, videoId: string | null) {
   const apiClient = useApiClient();
   return useQuery({
     queryKey: ["traffic-video-source", projectId, videoId],
     queryFn: () =>
-      apiClient<{ sourceUrl: string | null }>(
+      apiClient<VideoSourceData>(
         `/api/traffic/analytics/${projectId}/video-source?videoId=${videoId}`
       ),
     enabled: !!projectId && !!videoId,
-    staleTime: 25 * 60 * 1000, // 25min (Meta URLs expire ~30min)
+    staleTime: 55 * 60 * 1000, // 55min (embed URLs are stable)
   });
 }
 

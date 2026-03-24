@@ -569,30 +569,49 @@ export async function fetchAdCreatives(
 // VIDEO SOURCE (Story 9.5)
 // ============================================================
 
-const videoSourceCache = new Map<string, { url: string; timestamp: number }>();
-const VIDEO_SOURCE_TTL = 30 * 60 * 1000; // 30min (Meta video URLs expire)
+interface VideoSourceResult {
+  sourceUrl: string | null;
+  embedHtml: string | null;
+  permalinkUrl: string | null;
+  picture: string | null;
+}
+
+const videoSourceCache = new Map<string, { data: VideoSourceResult; timestamp: number }>();
+const VIDEO_SOURCE_TTL = 60 * 60 * 1000; // 1h (embed URLs are stable)
 
 export async function fetchVideoSource(
   videoId: string,
   accessToken: string
-): Promise<string | null> {
+): Promise<VideoSourceResult> {
   const cached = videoSourceCache.get(videoId);
   if (cached && Date.now() - cached.timestamp < VIDEO_SOURCE_TTL) {
-    return cached.url;
+    return cached.data;
   }
 
+  const empty: VideoSourceResult = { sourceUrl: null, embedHtml: null, permalinkUrl: null, picture: null };
+
   try {
-    const data = await fetchMeta<{ source?: string }>(
-      `/${videoId}?fields=source`,
+    const data = await fetchMeta<{
+      source?: string;
+      embed_html?: string;
+      permalink_url?: string;
+      picture?: string;
+    }>(
+      `/${videoId}?fields=source,embed_html,permalink_url,picture`,
       accessToken
     );
-    if (data.source) {
-      videoSourceCache.set(videoId, { url: data.source, timestamp: Date.now() });
-      return data.source;
-    }
-    return null;
+
+    const result: VideoSourceResult = {
+      sourceUrl: data.source ?? null,
+      embedHtml: data.embed_html ?? null,
+      permalinkUrl: data.permalink_url ? `https://www.facebook.com${data.permalink_url}` : null,
+      picture: data.picture ?? null,
+    };
+
+    videoSourceCache.set(videoId, { data: result, timestamp: Date.now() });
+    return result;
   } catch {
-    return null;
+    return empty;
   }
 }
 

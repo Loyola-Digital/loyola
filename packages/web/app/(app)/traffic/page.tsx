@@ -717,7 +717,7 @@ function CreativeLightbox({ items, initialIndex, projectId, onClose }: {
         </div>
 
         {/* Media */}
-        <div className="relative bg-black/5 min-h-[300px] max-h-[60vh] flex items-center justify-center overflow-hidden">
+        <div className="relative bg-black min-h-[300px] max-h-[60vh] flex items-center justify-center overflow-hidden">
           {isVideo && videoData?.sourceUrl ? (
             <video
               key={videoData.sourceUrl}
@@ -727,17 +727,40 @@ function CreativeLightbox({ items, initialIndex, projectId, onClose }: {
               className="w-full max-h-[60vh] object-contain"
               poster={item.creative.thumbnailUrl || undefined}
             />
-          ) : (
+          ) : isVideo && videoData?.embedHtml ? (
+            <iframe
+              srcDoc={videoData.embedHtml.replace(/width="\d+"/, 'width="100%"').replace(/height="\d+"/, 'height="100%"')}
+              className="w-full h-[60vh] border-0"
+              allow="autoplay; encrypted-media"
+              allowFullScreen
+            />
+          ) : isVideo && videoData?.permalinkUrl ? (
+            <div className="text-center p-8">
+              <img
+                src={videoData.picture || item.creative.thumbnailUrl || ""}
+                alt={item.name}
+                className="max-h-[40vh] object-contain mx-auto rounded-lg mb-4"
+              />
+              <a
+                href={videoData.permalinkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-brand-foreground hover:bg-brand/90 transition-colors"
+              >
+                <Play className="h-4 w-4" /> Assistir no Facebook
+              </a>
+            </div>
+          ) : !isVideo ? (
             <img
               src={item.creative.imageUrl || item.creative.thumbnailUrl || ""}
               alt={item.name}
               className="w-full max-h-[60vh] object-contain"
             />
-          )}
+          ) : null}
 
           {/* Loading indicator for video */}
-          {isVideo && !videoData?.sourceUrl && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+          {isVideo && !videoData && (
+            <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center text-white">
                 <Play className="h-10 w-10 mx-auto mb-2 opacity-60" />
                 <p className="text-xs opacity-80">Carregando vídeo...</p>

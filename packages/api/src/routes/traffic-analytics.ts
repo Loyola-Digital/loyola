@@ -463,11 +463,11 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
           account.accessTokenEncrypted,
           account.accessTokenIv
         );
-        const sourceUrl = await fetchVideoSource(
+        const videoData = await fetchVideoSource(
           queryResult.data.videoId,
           accessToken
         );
-        return { sourceUrl };
+        return videoData;
       } catch (err) {
         return reply.code(502).send({
           error: "Erro ao buscar video",
