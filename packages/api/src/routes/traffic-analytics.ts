@@ -51,7 +51,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/overview",
     async (request, reply) => {
-      if (request.userRole !== "admin" && request.userRole !== "manager") {
+      if (request.userRole === "guest") {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -83,7 +83,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/campaigns",
     async (request, reply) => {
-      if (request.userRole !== "admin" && request.userRole !== "manager") {
+      if (request.userRole === "guest") {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -115,7 +115,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/adsets",
     async (request, reply) => {
-      if (request.userRole !== "admin" && request.userRole !== "manager") {
+      if (request.userRole === "guest") {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -150,7 +150,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/ads",
     async (request, reply) => {
-      if (request.userRole !== "admin" && request.userRole !== "manager") {
+      if (request.userRole === "guest") {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -192,7 +192,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/top-performers",
     async (request, reply) => {
-      if (request.userRole !== "admin" && request.userRole !== "manager") {
+      if (request.userRole === "guest") {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -229,7 +229,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/all-adsets",
     async (request, reply) => {
-      if (request.userRole !== "admin" && request.userRole !== "manager") {
+      if (request.userRole === "guest") {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -266,7 +266,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/campaign-daily",
     async (request, reply) => {
-      if (request.userRole !== "admin" && request.userRole !== "manager") {
+      if (request.userRole === "guest") {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -301,7 +301,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/placements",
     async (request, reply) => {
-      if (request.userRole !== "admin" && request.userRole !== "manager") {
+      if (request.userRole === "guest") {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -337,7 +337,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/ad-creatives",
     async (request, reply) => {
-      if (request.userRole !== "admin" && request.userRole !== "manager") {
+      if (request.userRole === "guest") {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -401,7 +401,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.post(
     "/api/traffic/analytics/:projectId/invalidate",
     async (request, reply) => {
-      if (request.userRole !== "admin" && request.userRole !== "manager") {
+      if (request.userRole === "guest") {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -423,7 +423,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/video-source",
     async (request, reply) => {
-      if (request.userRole !== "admin" && request.userRole !== "manager") {
+      if (request.userRole === "guest") {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 

@@ -57,7 +57,7 @@ export default fp(async function metaAdsRoutes(fastify) {
 
   // ---- POST /api/meta-ads/accounts ----
   fastify.post("/api/meta-ads/accounts", async (request, reply) => {
-    if (request.userRole !== "admin" && request.userRole !== "manager") {
+    if (request.userRole === "guest") {
       return reply.code(403).send({ error: "Acesso negado" });
     }
 
@@ -106,7 +106,7 @@ export default fp(async function metaAdsRoutes(fastify) {
 
   // ---- GET /api/meta-ads/accounts ----
   fastify.get("/api/meta-ads/accounts", async (request, reply) => {
-    if (request.userRole !== "admin" && request.userRole !== "manager") {
+    if (request.userRole === "guest") {
       return reply.code(403).send({ error: "Acesso negado" });
     }
 
@@ -149,7 +149,7 @@ export default fp(async function metaAdsRoutes(fastify) {
 
   // ---- DELETE /api/meta-ads/accounts/:id ----
   fastify.delete("/api/meta-ads/accounts/:id", async (request, reply) => {
-    if (request.userRole !== "admin" && request.userRole !== "manager") {
+    if (request.userRole === "guest") {
       return reply.code(403).send({ error: "Acesso negado" });
     }
 
@@ -172,7 +172,7 @@ export default fp(async function metaAdsRoutes(fastify) {
 
   // ---- POST /api/meta-ads/accounts/:id/projects/:projectId ----
   fastify.post("/api/meta-ads/accounts/:id/projects/:projectId", async (request, reply) => {
-    if (request.userRole !== "admin" && request.userRole !== "manager") {
+    if (request.userRole === "guest") {
       return reply.code(403).send({ error: "Acesso negado" });
     }
 
@@ -225,7 +225,7 @@ export default fp(async function metaAdsRoutes(fastify) {
 
   // ---- DELETE /api/meta-ads/accounts/:id/projects/:projectId ----
   fastify.delete("/api/meta-ads/accounts/:id/projects/:projectId", async (request, reply) => {
-    if (request.userRole !== "admin" && request.userRole !== "manager") {
+    if (request.userRole === "guest") {
       return reply.code(403).send({ error: "Acesso negado" });
     }
 
@@ -248,7 +248,7 @@ export default fp(async function metaAdsRoutes(fastify) {
 
   // ---- GET /api/meta-ads/accounts/:id/campaigns ----
   fastify.get("/api/meta-ads/accounts/:id/campaigns", async (request, reply) => {
-    if (request.userRole !== "admin" && request.userRole !== "manager") {
+    if (request.userRole === "guest") {
       return reply.code(403).send({ error: "Acesso negado" });
     }
 
@@ -280,7 +280,7 @@ export default fp(async function metaAdsRoutes(fastify) {
 
   // ---- GET /api/meta-ads/accounts/:id/insights ----
   fastify.get("/api/meta-ads/accounts/:id/insights", async (request, reply) => {
-    if (request.userRole !== "admin" && request.userRole !== "manager") {
+    if (request.userRole === "guest") {
       return reply.code(403).send({ error: "Acesso negado" });
     }
 
@@ -315,7 +315,7 @@ export default fp(async function metaAdsRoutes(fastify) {
 
   // ---- GET /api/meta-ads/accounts/:id/adsets ----
   fastify.get("/api/meta-ads/accounts/:id/adsets", async (request, reply) => {
-    if (request.userRole !== "admin" && request.userRole !== "manager") {
+    if (request.userRole === "guest") {
       return reply.code(403).send({ error: "Acesso negado" });
     }
 
@@ -362,7 +362,7 @@ export default fp(async function metaAdsRoutes(fastify) {
 
   // ---- GET /api/meta-ads/accounts/:id/ads ----
   fastify.get("/api/meta-ads/accounts/:id/ads", async (request, reply) => {
-    if (request.userRole !== "admin" && request.userRole !== "manager") {
+    if (request.userRole === "guest") {
       return reply.code(403).send({ error: "Acesso negado" });
     }
 
@@ -408,7 +408,7 @@ export default fp(async function metaAdsRoutes(fastify) {
 
   // ---- GET /api/meta-ads/accounts/:id/insights/daily ----
   fastify.get("/api/meta-ads/accounts/:id/insights/daily", async (request, reply) => {
-    if (request.userRole !== "admin" && request.userRole !== "manager") {
+    if (request.userRole === "guest") {
       return reply.code(403).send({ error: "Acesso negado" });
     }
 
@@ -440,7 +440,7 @@ export default fp(async function metaAdsRoutes(fastify) {
 
   // ---- GET /api/meta-ads/accounts/:id/insights/campaigns ----
   fastify.get("/api/meta-ads/accounts/:id/insights/campaigns", async (request, reply) => {
-    if (request.userRole !== "admin" && request.userRole !== "manager") {
+    if (request.userRole === "guest") {
       return reply.code(403).send({ error: "Acesso negado" });
     }
 
