@@ -3,6 +3,8 @@
 import { useParams } from "next/navigation";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LaunchDashboard } from "@/components/funnels/launch-dashboard";
+import { PerpetualDashboard } from "@/components/funnels/perpetual-dashboard";
 
 export default function FunnelPage() {
   const params = useParams<{ id: string; funnelId: string }>();
@@ -30,7 +32,7 @@ export default function FunnelPage() {
     );
   }
 
-  const { funnel, campaignId, funnelType } = data;
+  const { funnel, funnelType } = data;
 
   return (
     <div className="p-6 space-y-6">
@@ -42,21 +44,10 @@ export default function FunnelPage() {
         </p>
       </div>
 
-      {!campaignId ? (
-        <div className="rounded-lg border border-dashed p-8 text-center">
-          <p className="text-muted-foreground">
-            Nenhuma campanha vinculada a este funil.
-          </p>
-          <p className="text-sm text-muted-foreground mt-1">
-            Edite o funil para vincular uma campanha do Meta Ads.
-          </p>
-        </div>
+      {funnelType === "launch" ? (
+        <LaunchDashboard funnel={funnel} projectId={params.id} />
       ) : (
-        <div className="rounded-lg border p-4 text-sm text-muted-foreground">
-          Dashboard {funnelType === "launch" ? "de Lançamento" : "Perpétuo"} — Campanha: {funnel.campaignName ?? campaignId}
-          <br />
-          <span className="text-xs">Stories 10.5/10.6 implementarão os dashboards completos.</span>
-        </div>
+        <PerpetualDashboard funnel={funnel} projectId={params.id} />
       )}
     </div>
   );
