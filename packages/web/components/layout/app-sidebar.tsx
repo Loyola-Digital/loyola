@@ -22,8 +22,10 @@ import { Badge } from "@/components/ui/badge";
 import { useProjects } from "@/lib/hooks/use-projects";
 import { ProjectFolder } from "@/components/layout/project-folder";
 import { CreateProjectDialog } from "@/components/layout/create-project-dialog";
+import { FunnelWizard } from "@/components/funnels/funnel-wizard";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import { GuestSidebar } from "@/components/layout/guest-sidebar";
+import { useFunnels } from "@/lib/hooks/use-funnels";
 
 const navItems = [
   { label: "Minds", href: "/minds", icon: Brain },
@@ -42,6 +44,7 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
   const { total: openTaskCount } = useTasks({ status: "open", limit: 1, offset: 0 });
   const { data: projects, isLoading: projectsLoading } = useProjects();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [wizardProjectId, setWizardProjectId] = useState<string | null>(null);
 
   // Meta group: auto-expand if user is on /instagram or /traffic
   const isMetaActive = pathname.startsWith("/instagram") || pathname.startsWith("/traffic");
@@ -206,7 +209,12 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
 
         {!projectsLoading &&
           projects?.map((project) => (
-            <ProjectFolder key={project.id} project={project} collapsed={collapsed} />
+            <ProjectFolder
+              key={project.id}
+              project={project}
+              collapsed={collapsed}
+              onNewFunnel={() => setWizardProjectId(project.id)}
+            />
           ))}
 
         {/* New project button */}
@@ -224,6 +232,16 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
       </nav>
 
       <CreateProjectDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+
+      {wizardProjectId && (
+        <FunnelWizard
+          projectId={wizardProjectId}
+          open={!!wizardProjectId}
+          onOpenChange={(open) => {
+            if (!open) setWizardProjectId(null);
+          }}
+        />
+      )}
     </ScrollArea>
   );
 }
