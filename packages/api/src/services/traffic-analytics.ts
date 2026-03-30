@@ -50,8 +50,13 @@ export interface CampaignAnalytics {
 
 export interface OverviewAnalytics {
   totalSpend: number;
+  totalImpressions: number;
+  totalClicks: number;
   totalReach: number | null;
   avgFrequency: number | null;
+  ctr: number;
+  cpc: number;
+  cpm: number;
   totalLeads: number | null;
   avgCpl: number | null;
   totalQualifiedLeads: number | null;
@@ -150,7 +155,7 @@ export async function getProjectOverview(
 
   const metaAccount = await getMetaAccountForProject(db, projectId);
   if (!metaAccount) {
-    return { totalSpend: 0, totalReach: null, avgFrequency: null, totalLeads: null, avgCpl: null, totalQualifiedLeads: null, avgCplQualified: null, totalSales: null, totalRevenue: null, totalCampaigns: 0, hasCrm: false, hasQualification: false, hasSales: false };
+    return { totalSpend: 0, totalImpressions: 0, totalClicks: 0, totalReach: null, avgFrequency: null, ctr: 0, cpc: 0, cpm: 0, totalLeads: null, avgCpl: null, totalQualifiedLeads: null, avgCplQualified: null, totalSales: null, totalRevenue: null, totalCampaigns: 0, hasCrm: false, hasQualification: false, hasSales: false };
   }
 
   const allCampaigns = await fetchCampaignInsights(
@@ -166,13 +171,19 @@ export async function getProjectOverview(
 
   const totalSpend = campaigns.reduce((s, c) => s + parseFloat(c.spend || "0"), 0);
   const totalImpressions = campaigns.reduce((s, c) => s + parseFloat(c.impressions || "0"), 0);
+  const totalClicks = campaigns.reduce((s, c) => s + parseFloat(c.clicks || "0"), 0);
   const totalReach = campaigns.reduce((s, c) => s + parseFloat(c.reach || "0"), 0);
   const avgFrequency = totalReach > 0 ? totalImpressions / totalReach : null;
 
   const result: OverviewAnalytics = {
     totalSpend,
+    totalImpressions,
+    totalClicks,
     totalReach: totalReach > 0 ? totalReach : null,
     avgFrequency,
+    ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0,
+    cpc: totalClicks > 0 ? totalSpend / totalClicks : 0,
+    cpm: totalImpressions > 0 ? (totalSpend * 1000) / totalImpressions : 0,
     totalLeads: null,
     avgCpl: null,
     totalQualifiedLeads: null,

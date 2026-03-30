@@ -10,7 +10,6 @@ import {
   TrendingUp,
   TrendingDown,
   LinkIcon,
-  ArrowUpDown,
 } from "lucide-react";
 import {
   LineChart,
@@ -36,6 +35,7 @@ import {
   type CampaignAnalytics,
   type PlacementInsight,
 } from "@/lib/hooks/use-traffic-analytics";
+import { FunnelCampaignTable } from "./funnel-campaign-table";
 import type { Funnel } from "@loyola-x/shared";
 
 interface PerpetualDashboardProps {
@@ -160,19 +160,19 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
       ) : overview ? (
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
           <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} delta={deltas?.spend} />
-          <KpiCard icon={Eye} label="Impressões" value={fmtNumber(overview.totalReach)} />
+          <KpiCard icon={Eye} label="Impressões" value={fmtNumber(overview.totalImpressions)} />
           <KpiCard icon={Radio} label="Alcance" value={fmtNumber(overview.totalReach)} />
-          <KpiCard icon={MousePointerClick} label="Cliques" value={fmtNumber(overview.totalLeads)} />
-          <KpiCard icon={Percent} label="CTR" value={overview.totalReach && overview.totalLeads ? fmtPercent((overview.totalLeads / overview.totalReach) * 100) : "—"} />
-          <KpiCard icon={DollarSign} label="CPC" value={overview.totalLeads ? fmtCurrency(overview.totalSpend / overview.totalLeads) : "—"} />
+          <KpiCard icon={MousePointerClick} label="Cliques" value={fmtNumber(overview.totalClicks)} />
+          <KpiCard icon={Percent} label="CTR" value={fmtPercent(overview.ctr)} />
+          <KpiCard icon={DollarSign} label="CPC" value={fmtCurrency(overview.cpc)} />
         </div>
       ) : <EmptyState />}
 
-      {/* Campaign Table */}
+      {/* Campaign Table with drill-down */}
       {campaignsLoading ? (
         <Skeleton className="h-48 rounded-xl" />
       ) : funnelCampaigns.length > 0 ? (
-        <CampaignTable campaigns={funnelCampaigns} />
+        <FunnelCampaignTable campaigns={funnelCampaigns} projectId={projectId} days={days} />
       ) : null}
 
       {/* Charts row */}
@@ -253,61 +253,6 @@ function KpiCard({ icon: Icon, label, value, delta }: {
             {Math.abs(delta).toFixed(1)}%
           </span>
         )}
-      </div>
-    </div>
-  );
-}
-
-function CampaignTable({ campaigns }: { campaigns: CampaignAnalytics[] }) {
-  const [sortCol, setSortCol] = useState<keyof CampaignAnalytics>("spend");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const sorted = useMemo(() => [...campaigns].sort((a, b) => {
-    const av = (a[sortCol] as number) ?? 0;
-    const bv = (b[sortCol] as number) ?? 0;
-    return sortDir === "asc" ? av - bv : bv - av;
-  }), [campaigns, sortCol, sortDir]);
-
-  function handleSort(col: keyof CampaignAnalytics) {
-    if (sortCol === col) setSortDir((d) => d === "asc" ? "desc" : "asc");
-    else { setSortCol(col); setSortDir("desc"); }
-  }
-
-  const SortHeader = ({ label, col }: { label: string; col: keyof CampaignAnalytics }) => (
-    <th className="text-right text-[11px] font-medium text-muted-foreground py-2 px-2 cursor-pointer hover:text-foreground select-none whitespace-nowrap" onClick={() => handleSort(col)}>
-      <span className="inline-flex items-center gap-0.5">{label}{sortCol === col && <ArrowUpDown className="h-2.5 w-2.5" />}</span>
-    </th>
-  );
-
-  return (
-    <div className="rounded-xl border border-border/30 bg-card/60 overflow-hidden">
-      <div className="px-5 py-3 border-b border-border/20"><h3 className="text-sm font-semibold">Campanhas do Funil</h3></div>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead><tr className="border-b border-border/30">
-            <th className="text-left text-[11px] font-medium text-muted-foreground py-2 px-3 whitespace-nowrap">Nome</th>
-            <SortHeader label="Spend" col="spend" />
-            <SortHeader label="Impr" col="impressions" />
-            <SortHeader label="Reach" col="reach" />
-            <SortHeader label="Clicks" col="clicks" />
-            <SortHeader label="CTR" col="ctr" />
-            <SortHeader label="CPC" col="cpc" />
-            <SortHeader label="CPM" col="cpm" />
-          </tr></thead>
-          <tbody>
-            {sorted.map((c) => (
-              <tr key={c.campaignId} className="border-t border-border/20 hover:bg-muted/30 transition-colors">
-                <td className="py-2 px-3 text-xs font-medium whitespace-nowrap truncate max-w-[200px]">{c.campaignName}</td>
-                <td className="py-2 px-2 text-xs text-right font-medium">{fmtCurrency(c.spend)}</td>
-                <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.impressions)}</td>
-                <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.reach)}</td>
-                <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.clicks)}</td>
-                <td className="py-2 px-2 text-xs text-right">{fmtPercent(c.ctr)}</td>
-                <td className="py-2 px-2 text-xs text-right">{fmtCurrency(c.cpc)}</td>
-                <td className="py-2 px-2 text-xs text-right">{fmtCurrency(c.cpm)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     </div>
   );
