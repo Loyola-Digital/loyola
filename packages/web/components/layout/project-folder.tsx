@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { ChevronRight, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { ChevronRight, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -13,7 +13,25 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 import type { Project } from "@/lib/hooks/use-projects";
+import { useDeleteProject } from "@/lib/hooks/use-projects";
 import { useFunnels } from "@/lib/hooks/use-funnels";
 
 interface ProjectFolderProps {
@@ -30,7 +48,10 @@ const PROJECT_SUBITEMS = [
 
 export function ProjectFolder({ project, collapsed = false, onNewFunnel }: ProjectFolderProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const { data: funnelList, isLoading: funnelsLoading } = useFunnels(project.id);
+  const deleteProject = useDeleteProject();
+  const [showDeleteAlert, setShowDeleteAlert] = useState(false);
   const storageKey = `project-folder-${project.id}`;
 
   const [open, setOpen] = useState(() => {
@@ -61,23 +82,75 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
     );
   }
 
+  async function handleDelete() {
+    try {
+      await deleteProject.mutateAsync(project.id);
+      toast.success(`Projeto "${project.name}" deletado.`);
+      router.push("/");
+    } catch {
+      toast.error("Erro ao deletar projeto.");
+    }
+  }
+
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <Button
-          variant={isProjectActive && !pathname.includes("/instagram") && !pathname.includes("/traffic") && !pathname.includes("/conversations") ? "secondary" : "ghost"}
-          className="w-full justify-start gap-2 px-2"
-        >
-          <ChevronRight
-            className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
-          />
-          <span
-            className="h-2.5 w-2.5 rounded-full shrink-0"
-            style={{ backgroundColor: project.color ?? "#94a3b8" }}
-          />
-          <span className="truncate text-sm">{project.name}</span>
-        </Button>
-      </CollapsibleTrigger>
+      <div className="group flex items-center">
+        <CollapsibleTrigger asChild>
+          <Button
+            variant={isProjectActive && !pathname.includes("/instagram") && !pathname.includes("/traffic") && !pathname.includes("/conversations") ? "secondary" : "ghost"}
+            className="flex-1 justify-start gap-2 px-2"
+          >
+            <ChevronRight
+              className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
+            />
+            <span
+              className="h-2.5 w-2.5 rounded-full shrink-0"
+              style={{ backgroundColor: project.color ?? "#94a3b8" }}
+            />
+            <span className="truncate text-sm">{project.name}</span>
+          </Button>
+        </CollapsibleTrigger>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => setShowDeleteAlert(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Deletar projeto
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <AlertDialog open={showDeleteAlert} onOpenChange={setShowDeleteAlert}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deletar projeto?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O projeto <strong>{project.name}</strong> e todos os seus dados (funis, conversas, vínculos) serão removidos permanentemente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteProject.isPending ? "Deletando..." : "Deletar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <CollapsibleContent>
         <div className="ml-4 flex flex-col gap-0.5 border-l pl-2 py-1">
           {PROJECT_SUBITEMS.map((item) => {
