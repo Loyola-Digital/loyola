@@ -1,39 +1,44 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   DollarSign,
-  Users,
-  Target,
-  ShoppingCart,
-  Banknote,
+  Eye,
+  MousePointerClick,
+  Percent,
+  Radio,
+  Repeat,
   TrendingUp,
   LinkIcon,
+  ChevronRight,
+  ChevronDown,
+  ArrowUpDown,
 } from "lucide-react";
 import {
-  AreaChart,
-  Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  Legend,
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import {
   useTrafficOverview,
+  useTrafficCampaigns,
   useTopPerformers,
   usePlacementBreakdown,
   useCampaignDailyInsights,
+  type CampaignAnalytics,
   type PlacementInsight,
-  type TopPerformerAd,
 } from "@/lib/hooks/use-traffic-analytics";
 import { ConversionFunnel } from "./conversion-funnel";
 import type { Funnel } from "@loyola-x/shared";
@@ -44,9 +49,18 @@ interface LaunchDashboardProps {
 }
 
 const PERIOD_OPTIONS = [
-  { value: "7", label: "7 dias" },
-  { value: "14", label: "14 dias" },
-  { value: "30", label: "30 dias" },
+  { label: "7d", value: 7 },
+  { label: "14d", value: 14 },
+  { label: "30d", value: 30 },
+  { label: "90d", value: 90 },
+];
+
+const DONUT_COLORS = [
+  "hsl(45 90% 55%)",
+  "hsl(200 80% 60%)",
+  "hsl(150 60% 50%)",
+  "hsl(280 60% 55%)",
+  "hsl(350 70% 55%)",
 ];
 
 function fmtCurrency(val: number | null): string {
@@ -72,38 +86,49 @@ function safeNum(val: string | undefined): number {
   return val ? parseFloat(val) : 0;
 }
 
+function RoasBadge({ value }: { value: number | null }) {
+  if (value === null) return <span className="text-muted-foreground">—</span>;
+  const color =
+    value >= 8 ? "bg-green-500/15 text-green-600" :
+    value >= 3 ? "bg-amber-500/15 text-amber-600" :
+    "bg-red-500/15 text-red-500";
+  return (
+    <Badge variant="secondary" className={`text-[10px] px-1.5 ${color}`}>
+      {value.toFixed(2)}x
+    </Badge>
+  );
+}
+
 export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
   const [days, setDays] = useState(30);
   const campaignIds = funnel.campaigns.map((c) => c.id);
+  const campaignIdSet = new Set(campaignIds);
   const firstCampaignId = campaignIds[0] ?? null;
 
   const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
-    projectId,
-    days,
-    campaignIds.length > 0 ? campaignIds : null,
+    projectId, days, campaignIds.length > 0 ? campaignIds : null,
   );
+  const { data: campaignData, isLoading: campaignsLoading } = useTrafficCampaigns(projectId, days);
   const { data: topData, isLoading: topLoading } = useTopPerformers(
-    projectId,
-    "ctr",
-    5,
-    days,
-    firstCampaignId,
+    projectId, "ctr", 5, days, firstCampaignId,
   );
   const { data: placementData, isLoading: placementLoading } =
     usePlacementBreakdown(projectId, days, campaignIds.length > 0 ? campaignIds : null);
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsights(projectId, firstCampaignId, days);
 
+  // Filter campaign table to only funnel campaigns
+  const funnelCampaigns = useMemo(() => {
+    if (!campaignData) return [];
+    return campaignData.campaigns.filter((c) => campaignIdSet.has(c.campaignId));
+  }, [campaignData, campaignIdSet]);
+
   if (campaignIds.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed p-12 text-center space-y-2">
+      <div className="rounded-xl border border-dashed border-border/30 p-12 text-center space-y-2">
         <LinkIcon className="h-8 w-8 mx-auto text-muted-foreground" />
-        <p className="text-muted-foreground">
-          Nenhuma campanha vinculada a este funil.
-        </p>
-        <p className="text-sm text-muted-foreground">
-          Edite o funil para vincular uma campanha do Meta Ads.
-        </p>
+        <p className="text-muted-foreground">Nenhuma campanha vinculada a este funil.</p>
+        <p className="text-sm text-muted-foreground">Edite o funil para vincular campanhas do Meta Ads.</p>
       </div>
     );
   }
@@ -111,175 +136,99 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
   return (
     <div className="space-y-6">
       {/* Period selector */}
-      <div className="flex justify-end">
-        <Select
-          value={String(days)}
-          onValueChange={(v) => setDays(Number(v))}
-        >
-          <SelectTrigger className="w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PERIOD_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex gap-1.5">
+        {PERIOD_OPTIONS.map((o) => (
+          <button
+            key={o.value}
+            onClick={() => setDays(o.value)}
+            className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+              days === o.value
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted/50 text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI Cards — Meta only */}
       {overviewLoading ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-lg" />
-          ))}
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : overview ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <KpiCard
-            icon={DollarSign}
-            label="Investido"
-            value={fmtCurrency(overview.totalSpend)}
-          />
-          <KpiCard
-            icon={Users}
-            label="Leads"
-            value={fmtNumber(overview.totalLeads ?? overview.totalReach)}
-          />
-          <KpiCard
-            icon={Target}
-            label="CPL"
-            value={fmtCurrency(overview.avgCpl)}
-          />
-          <KpiCard
-            icon={ShoppingCart}
-            label="Vendas"
-            value={fmtNumber(overview.totalSales)}
-          />
-          <KpiCard
-            icon={Banknote}
-            label="Receita"
-            value={fmtCurrency(overview.totalRevenue)}
-          />
-          <KpiCard
-            icon={TrendingUp}
-            label="ROAS"
-            value={
-              overview.totalRevenue && overview.totalSpend > 0
-                ? `${(overview.totalRevenue / overview.totalSpend).toFixed(2)}x`
-                : "—"
-            }
-          />
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+          <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} />
+          <KpiCard icon={Eye} label="Impressões" value={fmtNumber(overview.totalReach)} />
+          <KpiCard icon={Radio} label="Alcance" value={fmtNumber(overview.totalReach)} />
+          <KpiCard icon={MousePointerClick} label="Cliques" value={fmtNumber(overview.totalLeads)} />
+          <KpiCard icon={Percent} label="CTR" value={overview.totalReach && overview.totalLeads ? fmtPercent((overview.totalLeads / overview.totalReach) * 100) : "—"} />
+          <KpiCard icon={DollarSign} label="CPM" value={overview.totalReach ? fmtCurrency((overview.totalSpend * 1000) / overview.totalReach) : "—"} />
         </div>
-      ) : (
-        <EmptyState />
-      )}
+      ) : <EmptyState />}
 
-      {/* Spend daily chart */}
-      <div className="rounded-lg border p-4 space-y-3">
-        <h3 className="text-sm font-medium">Investimento Diário</h3>
-        {dailyLoading ? (
-          <Skeleton className="h-64" />
-        ) : dailyData && dailyData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={260}>
-            <AreaChart
-              data={dailyData.map((d) => ({
-                date: d.date_start.slice(5),
-                spend: safeNum(d.spend),
-              }))}
-              margin={{ top: 4, right: 4, bottom: 4, left: 4 }}
-            >
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="hsl(var(--border))"
-              />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-                tickFormatter={(v) => `R$${v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v}`}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "hsl(var(--card))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "6px",
-                  fontSize: "12px",
-                }}
-                formatter={(v) => [`R$ ${Number(v).toFixed(2)}`, "Spend"]}
-              />
-              <Area
-                type="monotone"
-                dataKey="spend"
-                stroke="hsl(45 90% 55%)"
-                fill="hsl(45 90% 55% / 0.15)"
-                strokeWidth={2}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        ) : (
-          <EmptyState />
-        )}
+      {/* Campaign Table */}
+      {campaignsLoading ? (
+        <Skeleton className="h-48 rounded-xl" />
+      ) : funnelCampaigns.length > 0 ? (
+        <CampaignTable campaigns={funnelCampaigns} />
+      ) : null}
+
+      {/* Charts row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Spend daily chart */}
+        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+          <h3 className="text-sm font-semibold mb-4">Spend & Cliques Diários</h3>
+          {dailyLoading ? (
+            <Skeleton className="h-48" />
+          ) : dailyData && dailyData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={dailyData.map((d) => ({ date: d.date_start.slice(5, 10), spend: safeNum(d.spend), clicks: safeNum(d.clicks) }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                <YAxis yAxisId="spend" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
+                <YAxis yAxisId="clicks" orientation="right" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} />
+                <Legend />
+                <Line yAxisId="spend" type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={false} name="Spend (R$)" />
+                <Line yAxisId="clicks" type="monotone" dataKey="clicks" stroke="hsl(200 80% 60%)" strokeWidth={2} dot={false} name="Cliques" />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : <EmptyState />}
+        </div>
+
+        {/* Top 5 campaigns donut */}
+        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+          <h3 className="text-sm font-semibold mb-4">Distribuição de Investimento</h3>
+          {funnelCampaigns.length > 0 ? (
+            <CampaignDonut campaigns={funnelCampaigns} />
+          ) : <EmptyState />}
+        </div>
       </div>
 
-      {/* Two-column: Conversion Funnel + Top Creatives */}
+      {/* Conversion Funnel + Placement */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Conversion Funnel */}
-        <div className="rounded-lg border p-4 space-y-3">
-          <h3 className="text-sm font-medium">Funil de Conversão</h3>
-          {overviewLoading ? (
-            <Skeleton className="h-48" />
-          ) : overview ? (
+        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+          <h3 className="text-sm font-semibold mb-4">Funil de Conversão</h3>
+          {overview ? (
             <ConversionFunnel
               impressions={overview.totalReach ?? 0}
-              clicks={
-                overview.totalSpend > 0 && overview.avgCpl
-                  ? Math.round(overview.totalSpend / overview.avgCpl)
-                  : 0
-              }
-              leads={overview.totalLeads}
+              clicks={overview.totalLeads ?? 0}
+              leads={null}
               sales={overview.totalSales}
             />
-          ) : (
-            <EmptyState />
-          )}
+          ) : <EmptyState />}
         </div>
 
-        {/* Top Creatives */}
-        <div className="rounded-lg border p-4 space-y-3">
-          <h3 className="text-sm font-medium">Top Criativos (CTR)</h3>
-          {topLoading ? (
+        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+          <h3 className="text-sm font-semibold mb-4">Placements</h3>
+          {placementLoading ? (
             <Skeleton className="h-48" />
-          ) : topData?.topPerformers && topData.topPerformers.length > 0 ? (
-            <div className="space-y-2">
-              {topData.topPerformers.slice(0, 5).map((ad) => (
-                <CreativeRow key={ad.campaignId} ad={ad} />
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground py-4 text-center">
-              Sem dados de criativos
-            </p>
-          )}
+          ) : placementData?.placements && placementData.placements.length > 0 ? (
+            <PlacementTable placements={placementData.placements} />
+          ) : <EmptyState />}
         </div>
-      </div>
-
-      {/* Placement Breakdown */}
-      <div className="rounded-lg border p-4 space-y-3">
-        <h3 className="text-sm font-medium">Distribuição por Placement</h3>
-        {placementLoading ? (
-          <Skeleton className="h-32" />
-        ) : placementData?.placements && placementData.placements.length > 0 ? (
-          <PlacementTable placements={placementData.placements} />
-        ) : (
-          <p className="text-sm text-muted-foreground py-4 text-center">
-            Sem dados de placement
-          </p>
-        )}
       </div>
     </div>
   );
@@ -289,40 +238,107 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
 // Sub-components
 // ============================================================
 
-function KpiCard({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-}) {
+function KpiCard({ icon: Icon, label, value }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string }) {
   return (
-    <div className="rounded-lg border p-3 space-y-1">
-      <div className="flex items-center gap-1.5 text-muted-foreground">
-        <Icon className="h-3.5 w-3.5" />
-        <span className="text-xs">{label}</span>
+    <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3 hover:border-border/50 transition-colors">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
+        <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
       </div>
-      <p className="text-lg font-semibold tabular-nums">{value}</p>
+      <p className="text-xl font-bold tracking-tight">{value}</p>
     </div>
   );
 }
 
-function CreativeRow({ ad }: { ad: TopPerformerAd }) {
+function CampaignTable({ campaigns }: { campaigns: CampaignAnalytics[] }) {
+  const [sortCol, setSortCol] = useState<keyof CampaignAnalytics>("spend");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const sorted = useMemo(() => {
+    return [...campaigns].sort((a, b) => {
+      const av = (a[sortCol] as number) ?? 0;
+      const bv = (b[sortCol] as number) ?? 0;
+      return sortDir === "asc" ? av - bv : bv - av;
+    });
+  }, [campaigns, sortCol, sortDir]);
+
+  function handleSort(col: keyof CampaignAnalytics) {
+    if (sortCol === col) setSortDir((d) => d === "asc" ? "desc" : "asc");
+    else { setSortCol(col); setSortDir("desc"); }
+  }
+
+  const SortHeader = ({ label, col }: { label: string; col: keyof CampaignAnalytics }) => (
+    <th className="text-right text-[11px] font-medium text-muted-foreground py-2 px-2 cursor-pointer hover:text-foreground select-none whitespace-nowrap" onClick={() => handleSort(col)}>
+      <span className="inline-flex items-center gap-0.5">{label}{sortCol === col && <ArrowUpDown className="h-2.5 w-2.5" />}</span>
+    </th>
+  );
+
   return (
-    <div className="flex items-center justify-between text-sm py-1 border-b last:border-0">
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">{ad.campaignName}</p>
-        <p className="text-xs text-muted-foreground truncate">
-          {fmtCurrency(ad.spend)} spend
-        </p>
+    <div className="rounded-xl border border-border/30 bg-card/60 overflow-hidden">
+      <div className="px-5 py-3 border-b border-border/20">
+        <h3 className="text-sm font-semibold">Campanhas do Funil</h3>
       </div>
-      <div className="text-right shrink-0 ml-2">
-        <p className="font-medium tabular-nums">{fmtPercent(ad.ctr)}</p>
-        <p className="text-xs text-muted-foreground">
-          {fmtNumber(ad.clicks)} cliques
-        </p>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-border/30">
+              <th className="text-left text-[11px] font-medium text-muted-foreground py-2 px-3 whitespace-nowrap">Nome</th>
+              <SortHeader label="Spend" col="spend" />
+              <SortHeader label="Impr" col="impressions" />
+              <SortHeader label="Reach" col="reach" />
+              <SortHeader label="Clicks" col="clicks" />
+              <SortHeader label="CTR" col="ctr" />
+              <SortHeader label="CPC" col="cpc" />
+              <SortHeader label="CPM" col="cpm" />
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((c) => (
+              <tr key={c.campaignId} className="border-t border-border/20 hover:bg-muted/30 transition-colors">
+                <td className="py-2 px-3 text-xs font-medium whitespace-nowrap truncate max-w-[200px]">{c.campaignName}</td>
+                <td className="py-2 px-2 text-xs text-right font-medium">{fmtCurrency(c.spend)}</td>
+                <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.impressions)}</td>
+                <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.reach)}</td>
+                <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.clicks)}</td>
+                <td className="py-2 px-2 text-xs text-right">{fmtPercent(c.ctr)}</td>
+                <td className="py-2 px-2 text-xs text-right">{fmtCurrency(c.cpc)}</td>
+                <td className="py-2 px-2 text-xs text-right">{fmtCurrency(c.cpm)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function CampaignDonut({ campaigns }: { campaigns: CampaignAnalytics[] }) {
+  const data = campaigns
+    .sort((a, b) => b.spend - a.spend)
+    .slice(0, 5)
+    .map((c) => ({ name: c.campaignName, value: c.spend }));
+  const total = data.reduce((s, d) => s + d.value, 0);
+
+  return (
+    <div className="flex items-center gap-4">
+      <ResponsiveContainer width={160} height={160}>
+        <PieChart>
+          <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={70} strokeWidth={1}>
+            {data.map((_, i) => <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
+          </Pie>
+          <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "11px" }} formatter={(v) => [fmtCurrency(Number(v)), "Spend"]} />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="space-y-1.5 text-xs flex-1 min-w-0">
+        {data.map((d, i) => (
+          <div key={d.name} className="flex items-center gap-2">
+            <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+            <span className="truncate flex-1">{d.name}</span>
+            <span className="text-muted-foreground tabular-nums shrink-0">
+              {total > 0 ? `${((d.value / total) * 100).toFixed(0)}%` : "—"}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -337,17 +353,14 @@ function PlacementTable({ placements }: { placements: PlacementInsight[] }) {
           <tr className="text-xs text-muted-foreground border-b">
             <th className="text-left py-2 font-medium">Placement</th>
             <th className="text-right py-2 font-medium">Spend</th>
-            <th className="text-right py-2 font-medium">Impressões</th>
+            <th className="text-right py-2 font-medium">Impr</th>
             <th className="text-right py-2 font-medium">CTR</th>
           </tr>
         </thead>
         <tbody>
           {sorted.map((p) => (
             <tr key={`${p.platform}-${p.position}`} className="border-b last:border-0">
-              <td className="py-1.5">
-                <span className="capitalize">{p.platform}</span>
-                <span className="text-muted-foreground"> / {p.position}</span>
-              </td>
+              <td className="py-1.5"><span className="capitalize">{p.platform}</span> / {p.position}</td>
               <td className="text-right tabular-nums">{fmtCurrency(p.spend)}</td>
               <td className="text-right tabular-nums">{fmtNumber(p.impressions)}</td>
               <td className="text-right tabular-nums">{fmtPercent(p.ctr)}</td>
@@ -362,12 +375,8 @@ function PlacementTable({ placements }: { placements: PlacementInsight[] }) {
 function EmptyState() {
   return (
     <div className="py-8 text-center">
-      <p className="text-sm text-muted-foreground">
-        Campanha sem dados no período selecionado.
-      </p>
-      <p className="text-xs text-muted-foreground mt-1">
-        Tente selecionar um período diferente.
-      </p>
+      <p className="text-sm text-muted-foreground">Sem dados no período selecionado.</p>
+      <p className="text-xs text-muted-foreground mt-1">Tente selecionar um período diferente.</p>
     </div>
   );
 }
