@@ -141,9 +141,10 @@ async function getMetaAccountForProject(
 export async function getProjectOverview(
   db: Database,
   projectId: string,
-  days: number
+  days: number,
+  campaignId?: string
 ): Promise<OverviewAnalytics> {
-  const cacheKey = `analytics:${projectId}:overview:${days}`;
+  const cacheKey = `analytics:${projectId}:overview:${days}:${campaignId ?? "all"}`;
   const cached = getCached<OverviewAnalytics>(cacheKey);
   if (cached) return cached;
 
@@ -152,11 +153,15 @@ export async function getProjectOverview(
     return { totalSpend: 0, totalReach: null, avgFrequency: null, totalLeads: null, avgCpl: null, totalQualifiedLeads: null, avgCplQualified: null, totalSales: null, totalRevenue: null, totalCampaigns: 0, hasCrm: false, hasQualification: false, hasSales: false };
   }
 
-  const campaigns = await fetchCampaignInsights(
+  const allCampaigns = await fetchCampaignInsights(
     metaAccount.metaAccountId,
     metaAccount.accessToken,
     days
   );
+
+  const campaigns = campaignId
+    ? allCampaigns.filter((c) => c.campaign_id === campaignId)
+    : allCampaigns;
 
   const totalSpend = campaigns.reduce((s, c) => s + parseFloat(c.spend || "0"), 0);
   const totalImpressions = campaigns.reduce((s, c) => s + parseFloat(c.impressions || "0"), 0);
@@ -536,9 +541,10 @@ export interface PlacementInsight {
 export async function getPlacementBreakdown(
   db: Database,
   projectId: string,
-  days: number
+  days: number,
+  campaignId?: string
 ): Promise<PlacementInsight[]> {
-  const cacheKey = `analytics:${projectId}:placements:${days}`;
+  const cacheKey = `analytics:${projectId}:placements:${days}:${campaignId ?? "all"}`;
   const cached = getCached<PlacementInsight[]>(cacheKey);
   if (cached) return cached;
 
@@ -548,7 +554,8 @@ export async function getPlacementBreakdown(
   const raw = await fetchPlacementBreakdown(
     metaAccount.metaAccountId,
     metaAccount.accessToken,
-    days
+    days,
+    campaignId
   );
 
   const result: PlacementInsight[] = raw.map((r) => ({

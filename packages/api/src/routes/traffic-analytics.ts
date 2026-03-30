@@ -30,6 +30,7 @@ const projectIdParamSchema = z.object({
 
 const daysQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(90).default(30),
+  campaignId: z.string().optional(),
 });
 
 const campaignQuerySchema = z.object({
@@ -62,12 +63,14 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
 
       const queryResult = daysQuerySchema.safeParse(request.query);
       const days = queryResult.success ? queryResult.data.days : 30;
+      const campaignId = queryResult.success ? queryResult.data.campaignId : undefined;
 
       try {
         const overview = await getProjectOverview(
           fastify.db,
           paramResult.data.projectId,
-          days
+          days,
+          campaignId
         );
         return overview;
       } catch (err) {
@@ -297,7 +300,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
     }
   );
 
-  // ---- GET /api/traffic/analytics/:projectId/placements ---- (Story 8.7)
+  // ---- GET /api/traffic/analytics/:projectId/placements ---- (Story 8.7 + 10.7)
   fastify.get(
     "/api/traffic/analytics/:projectId/placements",
     async (request, reply) => {
@@ -312,12 +315,14 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
 
       const queryResult = daysQuerySchema.safeParse(request.query);
       const days = queryResult.success ? queryResult.data.days : 30;
+      const campaignId = queryResult.success ? queryResult.data.campaignId : undefined;
 
       try {
         const result = await getPlacementBreakdown(
           fastify.db,
           paramResult.data.projectId,
-          days
+          days,
+          campaignId
         );
         return { placements: result };
       } catch (err) {

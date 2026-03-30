@@ -436,12 +436,17 @@ export interface MetaPlacementInsight {
 export async function fetchPlacementBreakdown(
   metaAccountId: string,
   accessToken: string,
-  days: number = 30
+  days: number = 30,
+  campaignId?: string
 ): Promise<MetaPlacementInsight[]> {
   const datePreset =
     days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
+  const filtering = campaignId
+    ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: campaignId }]))}`
+    : "";
+  const level = campaignId ? "campaign" : "account";
   const res = await fetchMeta<{ data: MetaPlacementInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=spend,impressions,clicks,ctr,cpc,cpm&breakdowns=publisher_platform,platform_position&date_preset=${datePreset}&level=account`,
+    `/act_${metaAccountId}/insights?fields=spend,impressions,clicks,ctr,cpc,cpm&breakdowns=publisher_platform,platform_position&date_preset=${datePreset}&level=${level}${filtering}`,
     accessToken
   );
   return res.data ?? [];
@@ -512,21 +517,25 @@ export async function fetchAdCreatives(
 
   if (uncachedIds.length === 0) return results;
 
-  // Batch in groups of 50 (parallel requests with field expansion)
+  // Batch via Meta ?ids= endpoint: 1 request per 50 ads instead of 50 requests
   const BATCH_SIZE = 50;
   const batches: string[][] = [];
   for (let i = 0; i < uncachedIds.length; i += BATCH_SIZE) {
     batches.push(uncachedIds.slice(i, i + BATCH_SIZE));
   }
 
-  for (const batch of batches) {
-    const promises = batch.map(async (adId) => {
-      try {
-        const data = await fetchMeta<MetaAdWithCreative>(
-          `/${adId}?fields=id,creative{thumbnail_url,image_url,title,body,link_url,call_to_action_type,object_type,video_id}`,
-          accessToken
-        );
-        const c = data.creative;
+  // Run all batches in parallel
+  const batchPromises = batches.map(async (batch) => {
+    const batchResults: MetaAdCreative[] = [];
+    try {
+      const idsParam = batch.join(",");
+      const data = await fetchMeta<Record<string, MetaAdWithCreative>>(
+        `/?ids=${idsParam}&fields=id,creative{thumbnail_url,image_url,title,body,link_url,call_to_action_type,object_type,video_id}`,
+        accessToken
+      );
+      for (const adId of batch) {
+        const ad = data[adId];
+        const c = ad?.creative;
         const creative: MetaAdCreative = {
           adId,
           thumbnailUrl: c?.thumbnail_url ?? null,
@@ -539,9 +548,11 @@ export async function fetchAdCreatives(
           videoId: c?.video_id ?? null,
         };
         setCachedCreative(creative);
-        return creative;
-      } catch {
-        // Graceful fallback — return null creative
+        batchResults.push(creative);
+      }
+    } catch {
+      // Graceful fallback — return null creatives for all ads in batch
+      for (const adId of batch) {
         const creative: MetaAdCreative = {
           adId,
           thumbnailUrl: null,
@@ -553,13 +564,15 @@ export async function fetchAdCreatives(
           objectType: null,
           videoId: null,
         };
-        setCachedCreative(creative);
-        return creative;
+        batchResults.push(creative);
       }
-    });
+    }
+    return batchResults;
+  });
 
-    const batchResults = await Promise.all(promises);
-    results.push(...batchResults);
+  const allBatchResults = await Promise.all(batchPromises);
+  for (const batch of allBatchResults) {
+    results.push(...batch);
   }
 
   return results;

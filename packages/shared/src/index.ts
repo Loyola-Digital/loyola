@@ -30,3 +30,5 @@ export type {
   ConversationListResponse,
   MessageListResponse,
 } from "./types/conversation.js";
+
+export type { FunnelType, Funnel } from "./types/funnel.js";

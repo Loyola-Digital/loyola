@@ -97,15 +97,20 @@ export interface AdAnalyticsResponse {
 // HOOKS
 // ============================================================
 
-export function useTrafficOverview(projectId: string | null, days: number = 30) {
+const TRAFFIC_STALE_TIME = 5 * 60 * 1000; // 5min — avoid redundant refetches on tab focus / remount
+const CREATIVE_STALE_TIME = 30 * 60 * 1000; // 30min — creatives rarely change
+
+export function useTrafficOverview(projectId: string | null, days: number = 30, campaignId?: string | null) {
   const apiClient = useApiClient();
+  const campaignParam = campaignId ? `&campaignId=${campaignId}` : "";
   return useQuery({
-    queryKey: ["traffic-overview", projectId, days],
+    queryKey: ["traffic-overview", projectId, days, campaignId],
     queryFn: () =>
       apiClient<OverviewAnalytics>(
-        `/api/traffic/analytics/${projectId}/overview?days=${days}`
+        `/api/traffic/analytics/${projectId}/overview?days=${days}${campaignParam}`
       ),
     enabled: !!projectId,
+    staleTime: TRAFFIC_STALE_TIME,
   });
 }
 
@@ -118,6 +123,7 @@ export function useTrafficCampaigns(projectId: string | null, days: number = 30)
         `/api/traffic/analytics/${projectId}/campaigns?days=${days}`
       ),
     enabled: !!projectId,
+    staleTime: TRAFFIC_STALE_TIME,
   });
 }
 
@@ -134,6 +140,7 @@ export function useTrafficAdSets(
         `/api/traffic/analytics/${projectId}/adsets?campaignId=${campaignId}&days=${days}`
       ),
     enabled: !!projectId && !!campaignId,
+    staleTime: TRAFFIC_STALE_TIME,
   });
 }
 
@@ -150,6 +157,7 @@ export function useTrafficAds(
         `/api/traffic/analytics/${projectId}/ads?adsetId=${adsetId}&days=${days}`
       ),
     enabled: !!projectId && !!adsetId,
+    staleTime: TRAFFIC_STALE_TIME,
   });
 }
 
@@ -194,6 +202,7 @@ export function useTopPerformers(
         `/api/traffic/analytics/${projectId}/top-performers?metric=${metric}&limit=${limit}&days=${days}${campaignParam}`
       ),
     enabled: !!projectId,
+    staleTime: TRAFFIC_STALE_TIME,
   });
 }
 
@@ -222,6 +231,7 @@ export function useCampaignDailyInsights(
         `/api/traffic/analytics/${projectId}/campaign-daily?campaignId=${campaignId}&days=${days}`
       ),
     enabled: !!projectId && !!campaignId,
+    staleTime: TRAFFIC_STALE_TIME,
   });
 }
 
@@ -240,15 +250,17 @@ export interface PlacementBreakdownResponse {
   placements: PlacementInsight[];
 }
 
-export function usePlacementBreakdown(projectId: string | null, days: number = 30) {
+export function usePlacementBreakdown(projectId: string | null, days: number = 30, campaignId?: string | null) {
   const apiClient = useApiClient();
+  const campaignParam = campaignId ? `&campaignId=${campaignId}` : "";
   return useQuery({
-    queryKey: ["traffic-placements", projectId, days],
+    queryKey: ["traffic-placements", projectId, days, campaignId],
     queryFn: () =>
       apiClient<PlacementBreakdownResponse>(
-        `/api/traffic/analytics/${projectId}/placements?days=${days}`
+        `/api/traffic/analytics/${projectId}/placements?days=${days}${campaignParam}`
       ),
     enabled: !!projectId,
+    staleTime: TRAFFIC_STALE_TIME,
   });
 }
 
@@ -269,6 +281,7 @@ export function useAdCreatives(
         `/api/traffic/analytics/${projectId}/ad-creatives?adIds=${encodeURIComponent(idsParam)}`
       ),
     enabled: !!projectId && adIds.length > 0,
+    staleTime: CREATIVE_STALE_TIME,
   });
 }
 
@@ -301,5 +314,6 @@ export function useAllAdSets(projectId: string | null, days: number = 30) {
         `/api/traffic/analytics/${projectId}/all-adsets?days=${days}`
       ),
     enabled: !!projectId,
+    staleTime: TRAFFIC_STALE_TIME,
   });
 }

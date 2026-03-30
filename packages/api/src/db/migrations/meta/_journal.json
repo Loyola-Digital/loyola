@@ -50,6 +50,13 @@
       "when": 1774027524677,
       "tag": "0006_open_whirlwind",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1774883237150,
+      "tag": "0007_flowery_smasher",
+      "breakpoints": true
     }
   ]
 }

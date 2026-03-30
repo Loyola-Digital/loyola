@@ -402,3 +402,36 @@ export const metaAdsAccountProjects = pgTable(
   ]
 );
 
+// ============================================================
+// FUNNELS TABLES (EPIC-10)
+// ============================================================
+
+export const funnelTypeEnum = pgEnum("funnel_type", ["launch", "perpetual"]);
+
+export const funnels = pgTable(
+  "funnels",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 255 }).notNull(),
+    type: funnelTypeEnum("type").notNull(),
+    metaAccountId: uuid("meta_account_id").references(() => metaAdsAccounts.id, {
+      onDelete: "set null",
+    }),
+    campaignId: varchar("campaign_id", { length: 100 }),
+    campaignName: varchar("campaign_name", { length: 255 }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("idx_funnels_project").on(table.projectId),
+    unique("uq_funnels_project_campaign").on(table.projectId, table.campaignId),
+  ]
+);
+
