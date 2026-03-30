@@ -30,12 +30,21 @@ interface ChartPoint {
   date: string;
   reach: number;
   impressions: number;
+  engaged: number;
+}
+
+// Only match entries that have a time series values array (skip total_value metrics)
+function hasTimeSeries(e: InsightEntry): boolean {
+  return Array.isArray(e.values) && e.values.length > 0;
 }
 
 function buildChartData(entries: InsightEntry[]): ChartPoint[] {
-  const reachEntry = entries.find((e) => e.name === "reach");
-  // v21.0: accounts_engaged replaces impressions/views
-  const viewsEntry = entries.find((e) => e.name === "accounts_engaged" || e.name === "views" || e.name === "impressions");
+  const reachEntry = entries.find((e) => e.name === "reach" && hasTimeSeries(e));
+  const impressionsEntry = entries.find(
+    (e) => ["impressions", "views", "profile_views"].includes(e.name) && hasTimeSeries(e),
+  );
+  // accounts_engaged may be total_value only (no time series) — skip if so
+  const engagedEntry = entries.find((e) => e.name === "accounts_engaged" && hasTimeSeries(e));
 
   if (!reachEntry) return [];
 
@@ -43,13 +52,26 @@ function buildChartData(entries: InsightEntry[]): ChartPoint[] {
     date: v.end_time ? format(parseISO(v.end_time), "dd/MM", { locale: ptBR }) : String(i),
     reach: typeof v.value === "number" ? v.value : 0,
     impressions:
-      viewsEntry && typeof viewsEntry.values[i]?.value === "number"
-        ? (viewsEntry.values[i].value as number)
+      impressionsEntry && typeof impressionsEntry.values[i]?.value === "number"
+        ? (impressionsEntry.values[i].value as number)
+        : 0,
+    engaged:
+      engagedEntry && typeof engagedEntry.values[i]?.value === "number"
+        ? (engagedEntry.values[i].value as number)
         : 0,
   }));
 }
 
+function formatNumber(value: number): string {
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
+  return String(value);
+}
+
 export function ReachChart({ data, isLoading, error, onRefresh, isRefreshing }: ReachChartProps) {
+  const chartData = data ? buildChartData(data) : [];
+  const hasImpressions = chartData.some((p) => p.impressions > 0);
+  const hasEngaged = chartData.some((p) => p.engaged > 0);
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -75,14 +97,19 @@ export function ReachChart({ data, isLoading, error, onRefresh, isRefreshing }: 
           <div className="overflow-x-auto">
             <div className="min-w-[400px]">
               <ResponsiveContainer width="100%" height={240}>
-                <LineChart data={buildChartData(data)} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} width={40} />
-                  <Tooltip />
+                  <YAxis tick={{ fontSize: 11 }} width={45} tickFormatter={formatNumber} />
+                  <Tooltip formatter={(value) => formatNumber(Number(value))} />
                   <Legend />
                   <Line type="monotone" dataKey="reach" name="Alcance" stroke="#d4a843" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="impressions" name="Engajamento" stroke="#94a3b8" strokeWidth={2} dot={false} />
+                  {hasImpressions && (
+                    <Line type="monotone" dataKey="impressions" name="Impressões" stroke="#60a5fa" strokeWidth={2} dot={false} />
+                  )}
+                  {hasEngaged && (
+                    <Line type="monotone" dataKey="engaged" name="Engajamento" stroke="#34d399" strokeWidth={2} dot={false} />
+                  )}
                 </LineChart>
               </ResponsiveContainer>
             </div>

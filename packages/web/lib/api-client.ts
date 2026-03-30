@@ -1,4 +1,6 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+// In dev, use relative path so Next.js rewrites proxy to the API server.
+// This allows access from any device on the same network (e.g. phone via LAN IP).
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 /**
  * Client-side API fetch function factory.

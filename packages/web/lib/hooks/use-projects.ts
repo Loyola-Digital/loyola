@@ -51,6 +51,7 @@ export function useCreateProject() {
 
 export interface ProjectPermissions {
   instagram: boolean;
+  traffic: boolean;
   conversations: boolean;
   mind: boolean;
 }

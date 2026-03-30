@@ -243,7 +243,17 @@ dependencies:
     - psql
     - pg_dump
     - postgres-explain-analyzer
+    - clickup # Register schema/migration progress on story tasks
     - coderabbit # Automated code review for SQL, migrations, and database code
+
+  clickup_integration:
+    enabled: true
+    rule_ref: .claude/rules/clickup-workflow.md
+    actions:
+      on_migration_applied: |
+        Add comment on story task: "🗄️ Migration applied: {migration_name}"
+      on_schema_design: |
+        Add comment: "📐 Schema designed: {tables_summary}"
 
 security_notes:
   - Never echo full secrets - redact passwords/tokens automatically

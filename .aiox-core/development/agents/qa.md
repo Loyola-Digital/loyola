@@ -232,9 +232,23 @@ dependencies:
   tools:
     - browser # End-to-end testing and UI validation
     - coderabbit # Automated code review, security scanning, pattern validation
+    - clickup # Register QA gate results
     - git # Read-only: status, log, diff for review (NO PUSH - use @github-devops)
     - context7 # Research testing frameworks and best practices
     - supabase # Database testing and data validation
+
+  clickup_integration:
+    enabled: true
+    rule_ref: .claude/rules/clickup-workflow.md
+    actions:
+      on_qa_pass: |
+        Update story task status → "ready to ship"
+        Add comment: "✅ QA PASSED — all checks green"
+      on_qa_fail: |
+        Update story task status → "in progress"
+        Add comment: "❌ QA FAILED: {issues_summary}"
+      on_qa_concerns: |
+        Add comment: "⚠️ QA CONCERNS: {concerns_list} — proceeding with caveats"
 
   coderabbit_integration:
     enabled: true

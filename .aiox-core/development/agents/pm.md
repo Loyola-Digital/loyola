@@ -260,6 +260,24 @@ dependencies:
     - change-checklist.md
   data:
     - technical-preferences.md
+  tools:
+    - clickup # Register epics, requirements, and spec pipeline progress
+
+  clickup_integration:
+    enabled: true
+    rule_ref: .claude/rules/clickup-workflow.md
+    actions:
+      on_create_epic: |
+        Create task in ClickUp list 901326621645:
+        - Name: "[Epic {epicNum}] {epic title}"
+        - Status: "backlog"
+        - Tags: ["aiox-agent", "epic"]
+        - Description: "Epic path: {epic_path}\nAgent: @pm"
+      on_spec_complete: |
+        Add comment: "📋 Spec pipeline complete — spec approved"
+      on_execute_epic: |
+        Update epic task status → "in progress"
+        Add comment: "🚀 Epic execution started — {n_stories} stories planned"
 
 autoClaude:
   version: '3.0'

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, Instagram, MessageSquare } from "lucide-react";
+import { ChevronRight, Instagram, MessageSquare, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -20,6 +20,7 @@ interface ProjectFolderProps {
 
 const PROJECT_SUBITEMS = [
   { label: "Instagram", href: "instagram", icon: Instagram },
+  { label: "Ads", href: "traffic", icon: TrendingUp },
   { label: "Conversas", href: "conversations", icon: MessageSquare },
 ] as const;
 
@@ -59,7 +60,7 @@ export function ProjectFolder({ project, collapsed = false }: ProjectFolderProps
     <Collapsible open={open} onOpenChange={setOpen}>
       <CollapsibleTrigger asChild>
         <Button
-          variant={isProjectActive && !pathname.includes("/instagram") && !pathname.includes("/conversations") ? "secondary" : "ghost"}
+          variant={isProjectActive && !pathname.includes("/instagram") && !pathname.includes("/traffic") && !pathname.includes("/conversations") ? "secondary" : "ghost"}
           className="w-full justify-start gap-2 px-2"
         >
           <ChevronRight

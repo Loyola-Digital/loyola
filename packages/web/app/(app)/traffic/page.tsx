@@ -1485,12 +1485,21 @@ function TrafficPageContent() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [days, setDays] = useState(30);
 
-  // Auto-select first account
-  const activeAccountId = selectedAccountId ?? accounts?.[0]?.id ?? null;
+  // Support ?project=xxx for project-scoped access
+  const forceProjectId = searchParams.get("project") ?? undefined;
+
+  // Auto-select account: if forceProjectId, find the account linked to that project
+  const autoAccountId = useMemo(() => {
+    if (!forceProjectId || !accounts) return accounts?.[0]?.id ?? null;
+    const match = accounts.find((a) => a.projects.some((p) => p.projectId === forceProjectId));
+    return match?.id ?? accounts?.[0]?.id ?? null;
+  }, [forceProjectId, accounts]);
+
+  const activeAccountId = selectedAccountId ?? autoAccountId;
 
   // Get project linked to selected account
   const linkedProjects = accounts?.find((a) => a.id === activeAccountId)?.projects ?? [];
-  const activeProjectId = selectedProjectId ?? linkedProjects[0]?.projectId ?? null;
+  const activeProjectId = forceProjectId ?? selectedProjectId ?? linkedProjects[0]?.projectId ?? null;
 
   const { data: campaignData, isLoading: loadingCampaigns } = useTrafficCampaigns(activeProjectId, days);
 

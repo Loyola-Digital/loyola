@@ -211,8 +211,21 @@ dependencies:
     - change-checklist.md
   tools:
     - github-cli # Create issues, view PRs, manage repositories
+    - clickup # Register validation results and story status
     - context7 # Look up documentation for libraries and frameworks
-    # Note: PM tool is now adapter-based (not tool-specific)
+
+  clickup_integration:
+    enabled: true
+    rule_ref: .claude/rules/clickup-workflow.md
+    actions:
+      on_validate_go: |
+        Update story task status → "ready for dev"
+        Add comment: "✅ PO validated — GO (score: {score}/10)"
+      on_validate_nogo: |
+        Update story task status → "blocked"
+        Add comment: "❌ NO-GO: {rejection_reasons}"
+      on_close_story: |
+        Add comment: "📦 Story closed by @po"
 
 autoClaude:
   version: '3.0'

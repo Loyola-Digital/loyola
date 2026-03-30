@@ -301,9 +301,23 @@ dependencies:
     - migrate-agent.js # Migrate V2→V3 single agent
   tools:
     - coderabbit # Automated code review, pre-PR quality gate
+    - clickup # Register ship/deploy events — final status update
     - github-cli # PRIMARY TOOL - All GitHub operations
     - git # ALL operations including push (EXCLUSIVE to this agent)
     - docker-gateway # Docker MCP Toolkit gateway for MCP management [Story 6.14]
+
+  clickup_integration:
+    enabled: true
+    rule_ref: .claude/rules/clickup-workflow.md
+    actions:
+      on_push: |
+        Update story task status → "done"
+        Add comment: "🚀 Pushed to {branch} by @devops"
+      on_pr_create: |
+        Add comment: "🔗 PR created: {pr_url}"
+      on_pr_merge: |
+        Update story task status → "done"
+        Add comment: "✅ PR merged — shipped to production"
 
   coderabbit_integration:
     enabled: true

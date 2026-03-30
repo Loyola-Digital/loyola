@@ -15,7 +15,7 @@ interface OverviewCardsProps {
 function calcEngagementRate(profile?: InstagramProfile, insights?: InsightEntry[]): number | null {
   if (!profile || !insights) return null;
   const reachEntry = insights.find((e) => e.name === "reach");
-  if (!reachEntry || reachEntry.values.length === 0) return null;
+  if (!reachEntry || !Array.isArray(reachEntry.values) || reachEntry.values.length === 0) return null;
   const totalReach = reachEntry.values.reduce((sum, v) => sum + (typeof v.value === "number" ? v.value : 0), 0);
   if (totalReach === 0) return null;
   return Math.round((profile.followers_count / totalReach) * 100 * 10) / 10;

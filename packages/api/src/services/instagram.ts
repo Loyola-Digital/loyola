@@ -445,24 +445,47 @@ export default fp(async function instagramServicePlugin(fastify) {
     const periodStart = new Date(since * 1000).toISOString().split("T")[0];
     const periodEnd = new Date(until * 1000).toISOString().split("T")[0];
 
-    const cached = await getCachedMetric(accountId, "account_insights", periodStart, periodEnd);
+    // Cache key v3: each metric fetched independently
+    const cacheKey = "account_insights_v3";
+    const cached = await getCachedMetric(accountId, cacheKey, periodStart, periodEnd);
     if (cached) return cached as InsightEntry[];
 
     const { token, igUserId } = await getDecryptedToken(accountId);
-    const result = await graphFetch<InsightsResponse>(
-      `/${igUserId}/insights?metric=reach,accounts_engaged&period=${period}&since=${since}&until=${until}`,
-      token,
-    );
+
+    // v21.0: fetch each metric independently so one failure doesn't kill others.
+    // Try multiple metric names for impressions (impressions → views → profile_views).
+    const base = `/${igUserId}/insights`;
+    const tsParams = `&period=${period}&since=${since}&until=${until}`;
+
+    const results = await Promise.allSettled([
+      graphFetch<InsightsResponse>(`${base}?metric=reach${tsParams}`, token),
+      graphFetch<InsightsResponse>(`${base}?metric=impressions${tsParams}`, token)
+        .catch(() => graphFetch<InsightsResponse>(`${base}?metric=views${tsParams}`, token))
+        .catch(() => graphFetch<InsightsResponse>(`${base}?metric=profile_views${tsParams}`, token))
+        .catch(() => null),
+      graphFetch<InsightsResponse>(
+        `${base}?metric=accounts_engaged${tsParams}&metric_type=total_value`,
+        token,
+      ).catch(() => null),
+    ]);
+
+    const entries: InsightEntry[] = [];
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value?.data) {
+        entries.push(...r.value.data);
+      }
+    }
+    console.log("[IG insights] returned metrics:", entries.map((e) => e.name).join(", ") || "(none)");
 
     await setCachedMetric(
       accountId,
-      "account_insights",
-      result.data,
+      cacheKey,
+      entries,
       CACHE_TTL.account_insights,
       periodStart,
       periodEnd,
     );
-    return result.data;
+    return entries;
   }
 
   async function getAudienceDemographics(accountId: string): Promise<InsightEntry[]> {

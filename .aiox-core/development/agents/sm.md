@@ -180,6 +180,20 @@ dependencies:
     - clickup # Track sprint progress and story status
     - context7 # Research technical requirements for stories
 
+  clickup_integration:
+    enabled: true
+    rule_ref: .claude/rules/clickup-workflow.md
+    actions:
+      on_create_story: |
+        Create task in ClickUp list 901326621645:
+        - Name: "[Story {epicNum}.{storyNum}] {story title}"
+        - Status: "backlog"
+        - Tags: ["aiox-agent", "story"]
+        - Description: "Story path: {story_path}\nAgent: @sm\nBranch: {branch}"
+        - Save task_id as <!-- clickup:{task_id} --> in story file
+      on_draft_complete: |
+        Add comment: "📝 Story drafted by @sm — ready for PO validation"
+
 autoClaude:
   version: '3.0'
   migratedAt: '2026-01-29T02:24:26.852Z'

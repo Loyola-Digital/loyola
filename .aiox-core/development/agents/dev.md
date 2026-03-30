@@ -290,11 +290,25 @@ dependencies:
   tools:
     - coderabbit # Pre-commit code quality review, catches issues before commit
     - git # Local operations: add, commit, status, diff, log (NO PUSH)
+    - clickup # Register dev progress on story tasks
     - context7 # Look up library documentation during development
     - supabase # Database operations, migrations, and queries
     - n8n # Workflow automation and integration
     - browser # Test web applications and debug UI
     - ffmpeg # Process media files during development
+
+  clickup_integration:
+    enabled: true
+    rule_ref: .claude/rules/clickup-workflow.md
+    actions:
+      on_develop_start: |
+        Update story task status → "in progress"
+        Add comment: "🔨 @dev started implementation on branch: {branch}"
+      on_develop_complete: |
+        Update story task status → "in review"
+        Add comment: "✅ Implementation complete — all tasks [x], tests passing"
+      on_qa_fix: |
+        Add comment: "🔧 Applying QA fixes: {fix_summary}"
 
   coderabbit_integration:
     enabled: true

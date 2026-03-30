@@ -267,11 +267,21 @@ dependencies:
     - technical-preferences.md
   tools:
     - exa # Research technologies and best practices
+    - clickup # Register architecture decisions on story tasks
     - context7 # Look up library documentation and technical references
     - git # Read-only: status, log, diff (NO PUSH - use @github-devops)
     - supabase-cli # High-level database architecture (schema design → @data-engineer)
     - railway-cli # Infrastructure planning and deployment
     - coderabbit # Automated code review for architectural patterns and security
+
+  clickup_integration:
+    enabled: true
+    rule_ref: .claude/rules/clickup-workflow.md
+    actions:
+      on_architecture_decision: |
+        Add comment on story/epic task: "🏛️ Architecture decision: {decision_summary}"
+      on_complexity_assessment: |
+        Add comment: "📊 Complexity: {score} ({class}) — {rationale}"
 
   git_restrictions:
     allowed_operations:

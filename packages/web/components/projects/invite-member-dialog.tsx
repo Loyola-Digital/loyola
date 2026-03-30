@@ -24,12 +24,14 @@ interface InviteMemberDialogProps {
 
 const DEFAULT_PERMISSIONS: ProjectPermissions = {
   instagram: true,
+  traffic: true,
   conversations: true,
   mind: true,
 };
 
 const MODULE_LABELS: { key: keyof ProjectPermissions; label: string }[] = [
   { key: "instagram", label: "Instagram" },
+  { key: "traffic", label: "Ads" },
   { key: "conversations", label: "Conversas" },
   { key: "mind", label: "Mind (IA)" },
 ];

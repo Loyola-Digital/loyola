@@ -183,8 +183,16 @@ dependencies:
     - brainstorming-techniques.md
   tools:
     - google-workspace # Research documentation (Drive, Docs, Sheets)
+    - clickup # Register research findings on story/epic tasks
     - exa # Advanced web research
     - context7 # Library documentation
+
+  clickup_integration:
+    enabled: true
+    rule_ref: .claude/rules/clickup-workflow.md
+    actions:
+      on_research_complete: |
+        Add comment on story/epic task: "🔍 Research complete: {research_summary}"
 
 autoClaude:
   version: '3.0'
