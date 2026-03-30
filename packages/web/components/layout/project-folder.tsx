@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, Instagram, MessageSquare, TrendingUp } from "lucide-react";
+import { ChevronRight, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -11,11 +11,15 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { Project } from "@/lib/hooks/use-projects";
+import { useFunnels } from "@/lib/hooks/use-funnels";
 
 interface ProjectFolderProps {
   project: Project;
   collapsed?: boolean;
+  onNewFunnel?: () => void;
 }
 
 const PROJECT_SUBITEMS = [
@@ -24,8 +28,9 @@ const PROJECT_SUBITEMS = [
   { label: "Conversas", href: "conversations", icon: MessageSquare },
 ] as const;
 
-export function ProjectFolder({ project, collapsed = false }: ProjectFolderProps) {
+export function ProjectFolder({ project, collapsed = false, onNewFunnel }: ProjectFolderProps) {
   const pathname = usePathname();
+  const { data: funnelList, isLoading: funnelsLoading } = useFunnels(project.id);
   const storageKey = `project-folder-${project.id}`;
 
   const [open, setOpen] = useState(() => {
@@ -93,6 +98,48 @@ export function ProjectFolder({ project, collapsed = false }: ProjectFolderProps
               </Button>
             );
           })}
+
+          {/* Funnels section */}
+          {(funnelList && funnelList.length > 0 || funnelsLoading) && (
+            <Separator className="my-1" />
+          )}
+
+          {funnelsLoading && (
+            <>
+              <Skeleton className="h-7 w-full rounded-md" />
+              <Skeleton className="h-7 w-full rounded-md" />
+            </>
+          )}
+
+          {funnelList?.map((funnel) => {
+            const href = `/projects/${project.id}/funnels/${funnel.id}`;
+            const isActive = pathname.startsWith(href);
+            const FunnelIcon = funnel.type === "launch" ? Rocket : Repeat;
+            return (
+              <Button
+                key={funnel.id}
+                variant={isActive ? "secondary" : "ghost"}
+                className="justify-start gap-2 h-8 text-sm"
+                asChild
+              >
+                <Link href={href}>
+                  <FunnelIcon className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{funnel.name}</span>
+                </Link>
+              </Button>
+            );
+          })}
+
+          {onNewFunnel && (
+            <Button
+              variant="ghost"
+              className="justify-start gap-2 h-8 text-sm text-muted-foreground hover:text-foreground"
+              onClick={onNewFunnel}
+            >
+              <Plus className="h-4 w-4 shrink-0" />
+              <span>Novo Funil</span>
+            </Button>
+          )}
         </div>
       </CollapsibleContent>
     </Collapsible>

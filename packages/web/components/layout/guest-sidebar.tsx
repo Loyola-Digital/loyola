@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, Instagram, MessageSquare, Brain, TrendingUp } from "lucide-react";
+import { ChevronRight, Instagram, MessageSquare, Brain, TrendingUp, Rocket, Repeat } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -24,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useProjects } from "@/lib/hooks/use-projects";
 import { useMyMembership } from "@/lib/hooks/use-projects";
 import { useUIStore } from "@/lib/stores/ui-store";
+import { useFunnels } from "@/lib/hooks/use-funnels";
 import type { Project, ProjectPermissions } from "@/lib/hooks/use-projects";
 
 // ============================================================
@@ -45,6 +46,7 @@ function GuestProjectFolder({ project }: { project: Project }) {
   const pathname = usePathname();
   const { data: membership } = useMyMembership(project.id);
   const permissions = membership?.permissions;
+  const { data: funnelList } = useFunnels(project.id);
 
   const [open, setOpen] = useState(() => {
     if (typeof window === "undefined") return true;
@@ -100,6 +102,31 @@ function GuestProjectFolder({ project }: { project: Project }) {
               </Button>
             );
           })}
+
+          {/* Funnels (read-only for guests) */}
+          {funnelList && funnelList.length > 0 && (
+            <>
+              <Separator className="my-1" />
+              {funnelList.map((funnel) => {
+                const href = `/projects/${project.id}/funnels/${funnel.id}`;
+                const isActive = pathname.startsWith(href);
+                const FunnelIcon = funnel.type === "launch" ? Rocket : Repeat;
+                return (
+                  <Button
+                    key={funnel.id}
+                    variant={isActive ? "secondary" : "ghost"}
+                    className="justify-start gap-2 h-8 text-sm"
+                    asChild
+                  >
+                    <Link href={href}>
+                      <FunnelIcon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{funnel.name}</span>
+                    </Link>
+                  </Button>
+                );
+              })}
+            </>
+          )}
         </div>
       </CollapsibleContent>
     </Collapsible>
