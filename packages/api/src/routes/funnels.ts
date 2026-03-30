@@ -8,20 +8,23 @@ import { fetchCampaigns, decryptAccountToken } from "../services/meta-ads.js";
 // SCHEMAS
 // ============================================================
 
+const campaignSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+});
+
 const createFunnelSchema = z.object({
   name: z.string().min(1).max(255),
   type: z.enum(["launch", "perpetual"]),
   metaAccountId: z.string().uuid().nullable().optional(),
-  campaignId: z.string().max(100).nullable().optional(),
-  campaignName: z.string().max(255).nullable().optional(),
+  campaigns: z.array(campaignSchema).default([]),
 });
 
 const updateFunnelSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   type: z.enum(["launch", "perpetual"]).optional(),
   metaAccountId: z.string().uuid().nullable().optional(),
-  campaignId: z.string().max(100).nullable().optional(),
-  campaignName: z.string().max(255).nullable().optional(),
+  campaigns: z.array(campaignSchema).optional(),
 });
 
 const projectIdParamSchema = z.object({
@@ -44,8 +47,7 @@ function funnelShape(f: typeof funnels.$inferSelect) {
     name: f.name,
     type: f.type,
     metaAccountId: f.metaAccountId,
-    campaignId: f.campaignId,
-    campaignName: f.campaignName,
+    campaigns: f.campaigns ?? [],
     createdAt: f.createdAt,
     updatedAt: f.updatedAt,
   };
@@ -155,7 +157,7 @@ export default fp(async function funnelRoutes(fastify) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
 
-    const { name, type, metaAccountId, campaignId, campaignName } = parseResult.data;
+    const { name, type, metaAccountId, campaigns } = parseResult.data;
 
     const [funnel] = await fastify.db
       .insert(funnels)
@@ -164,8 +166,7 @@ export default fp(async function funnelRoutes(fastify) {
         name,
         type,
         metaAccountId: metaAccountId ?? null,
-        campaignId: campaignId ?? null,
-        campaignName: campaignName ?? null,
+        campaigns,
       })
       .returning();
 
@@ -212,12 +213,11 @@ export default fp(async function funnelRoutes(fastify) {
     }
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
-    const { name, type, metaAccountId, campaignId, campaignName } = parseResult.data;
+    const { name, type, metaAccountId, campaigns } = parseResult.data;
     if (name !== undefined) updates.name = name;
     if (type !== undefined) updates.type = type;
     if (metaAccountId !== undefined) updates.metaAccountId = metaAccountId;
-    if (campaignId !== undefined) updates.campaignId = campaignId;
-    if (campaignName !== undefined) updates.campaignName = campaignName;
+    if (campaigns !== undefined) updates.campaigns = campaigns;
 
     const [updated] = await fastify.db
       .update(funnels)

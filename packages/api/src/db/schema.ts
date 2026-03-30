@@ -420,8 +420,10 @@ export const funnels = pgTable(
     metaAccountId: uuid("meta_account_id").references(() => metaAdsAccounts.id, {
       onDelete: "set null",
     }),
-    campaignId: varchar("campaign_id", { length: 100 }),
-    campaignName: varchar("campaign_name", { length: 255 }),
+    campaigns: jsonb("campaigns")
+      .notNull()
+      .default([])
+      .$type<{ id: string; name: string }[]>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -431,7 +433,6 @@ export const funnels = pgTable(
   },
   (table) => [
     index("idx_funnels_project").on(table.projectId),
-    unique("uq_funnels_project_campaign").on(table.projectId, table.campaignId),
   ]
 );
 

@@ -2,7 +2,7 @@
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Funnel, FunnelType } from "@loyola-x/shared";
+import type { Funnel, FunnelType, FunnelCampaign } from "@loyola-x/shared";
 
 // ============================================================
 // TYPES
@@ -12,16 +12,14 @@ export interface CreateFunnelInput {
   name: string;
   type: FunnelType;
   metaAccountId?: string | null;
-  campaignId?: string | null;
-  campaignName?: string | null;
+  campaigns?: FunnelCampaign[];
 }
 
 export interface UpdateFunnelInput {
   name?: string;
   type?: FunnelType;
   metaAccountId?: string | null;
-  campaignId?: string | null;
-  campaignName?: string | null;
+  campaigns?: FunnelCampaign[];
 }
 
 export interface MetaCampaignOption {
@@ -63,7 +61,7 @@ export function useFunnel(projectId: string | null, funnelId: string | null) {
     staleTime: FUNNEL_STALE_TIME,
     select: (funnel) => ({
       funnel,
-      campaignId: funnel.campaignId,
+      campaignIds: funnel.campaigns.map((c) => c.id),
       funnelType: funnel.type,
     }),
   });

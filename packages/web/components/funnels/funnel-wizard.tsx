@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Rocket, Repeat, ArrowLeft, ArrowRight, Check, Loader2 } from "lucide-react";
+import { Rocket, Repeat, ArrowLeft, ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -16,37 +16,38 @@ import { cn } from "@/lib/utils";
 import { CampaignSelector } from "@/components/funnels/campaign-selector";
 import { useCreateFunnel, useCampaignPicker } from "@/lib/hooks/use-funnels";
 import { toast } from "sonner";
-import type { FunnelType } from "@loyola-x/shared";
+import type { FunnelType, FunnelCampaign } from "@loyola-x/shared";
 
 interface FunnelWizardProps {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  existingCampaignIds?: string[];
 }
 
-const STEPS = ["Nome & Tipo", "Campanha", "Confirmação"] as const;
+const STEPS = ["Nome & Tipo", "Campanhas", "Confirmação"] as const;
 
 const slideVariants = {
   enter: (direction: number) => ({
     x: direction > 0 ? 200 : -200,
     opacity: 0,
   }),
-  center: {
-    x: 0,
-    opacity: 1,
-  },
+  center: { x: 0, opacity: 1 },
   exit: (direction: number) => ({
     x: direction < 0 ? 200 : -200,
     opacity: 0,
   }),
 };
 
+/** Extract funnel prefix from name: "fz-l1-fev26" from "fz-l1-fev26--vendas--broad" */
+function extractPrefix(campaignName: string): string {
+  const idx = campaignName.indexOf("--");
+  return idx > 0 ? campaignName.slice(0, idx).trim() : campaignName.trim();
+}
+
 export function FunnelWizard({
   projectId,
   open,
   onOpenChange,
-  existingCampaignIds = [],
 }: FunnelWizardProps) {
   const router = useRouter();
   const createFunnel = useCreateFunnel(projectId);
@@ -56,8 +57,27 @@ export function FunnelWizard({
   const [direction, setDirection] = useState(0);
   const [name, setName] = useState("");
   const [type, setType] = useState<FunnelType | null>(null);
-  const [campaignId, setCampaignId] = useState<string | null>(null);
-  const [campaignName, setCampaignName] = useState<string | null>(null);
+  const [campaigns, setCampaigns] = useState<FunnelCampaign[]>([]);
+  const [autoMatched, setAutoMatched] = useState(false);
+
+  // Auto-match campaigns when entering step 2
+  const allCampaigns = campaignData?.campaigns ?? [];
+
+  // When step changes to 1 (campaign step), auto-select matching campaigns
+  useEffect(() => {
+    if (step === 1 && name.length >= 3 && allCampaigns.length > 0 && !autoMatched) {
+      const prefix = name.toLowerCase().trim();
+      const matched = allCampaigns.filter((c) => {
+        const campaignPrefix = extractPrefix(c.name).toLowerCase();
+        return campaignPrefix === prefix || c.name.toLowerCase().startsWith(prefix + "--");
+      });
+      if (matched.length > 0) {
+        setCampaigns(matched.map((c) => ({ id: c.id, name: c.name })));
+        setAutoMatched(true);
+        toast.success(`${matched.length} campanha${matched.length > 1 ? "s" : ""} encontrada${matched.length > 1 ? "s" : ""} com prefixo "${name}"`);
+      }
+    }
+  }, [step, name, allCampaigns, autoMatched]);
 
   const canNext = step === 0 ? name.length >= 3 && type !== null : true;
 
@@ -80,24 +100,18 @@ export function FunnelWizard({
     setDirection(0);
     setName("");
     setType(null);
-    setCampaignId(null);
-    setCampaignName(null);
+    setCampaigns([]);
+    setAutoMatched(false);
   }
 
   async function handleCreate() {
     if (!type) return;
 
-    if (campaignId && existingCampaignIds.includes(campaignId)) {
-      toast.error("Essa campanha já está vinculada a outro funil deste projeto.");
-      return;
-    }
-
     try {
       const funnel = await createFunnel.mutateAsync({
         name,
         type,
-        campaignId,
-        campaignName,
+        campaigns,
       });
       toast.success("Funil criado com sucesso!");
       reset();
@@ -156,14 +170,21 @@ export function FunnelWizard({
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Nome do Funil</label>
                     <Input
-                      placeholder="Ex: Lançamento Black Friday"
+                      placeholder="Ex: fz-l1-fev26"
                       value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      onChange={(e) => {
+                        setName(e.target.value);
+                        setAutoMatched(false);
+                      }}
                       autoFocus
                     />
                     {name.length > 0 && name.length < 3 && (
                       <p className="text-xs text-destructive">Mínimo 3 caracteres</p>
                     )}
+                    <p className="text-xs text-muted-foreground">
+                      <Sparkles className="inline h-3 w-3 mr-1" />
+                      Use o mesmo prefixo das campanhas no Meta (ex: fz-l1-fev26) — o sistema auto-seleciona as campanhas correspondentes.
+                    </p>
                   </div>
 
                   <div className="space-y-2">
@@ -209,25 +230,19 @@ export function FunnelWizard({
               {step === 1 && (
                 <div className="space-y-3">
                   <label className="text-sm font-medium">
-                    Vincular Campanha Meta Ads
+                    Campanhas Meta Ads
                   </label>
                   <p className="text-xs text-muted-foreground">
-                    Opcional — você pode vincular uma campanha depois.
+                    {autoMatched
+                      ? `Auto-selecionadas pelo prefixo "${name}". Ajuste se necessário.`
+                      : "Selecione as campanhas do lançamento. Opcional — vincule depois."}
                   </p>
                   <CampaignSelector
-                    campaigns={campaignData?.campaigns ?? []}
+                    campaigns={allCampaigns}
                     accountLinked={campaignData?.accountLinked ?? false}
-                    value={campaignId}
-                    onSelect={(id, cName) => {
-                      setCampaignId(id);
-                      setCampaignName(cName);
-                    }}
+                    value={campaigns}
+                    onChange={setCampaigns}
                   />
-                  {campaignId && existingCampaignIds.includes(campaignId) && (
-                    <p className="text-xs text-destructive">
-                      Essa campanha já está vinculada a outro funil deste projeto.
-                    </p>
-                  )}
                 </div>
               )}
 
@@ -243,15 +258,23 @@ export function FunnelWizard({
                       )}
                       <span className="font-medium">{name}</span>
                     </div>
-                    <div className="text-sm text-muted-foreground">
+                    <div className="text-sm text-muted-foreground space-y-1">
                       <p>
-                        Tipo:{" "}
-                        {type === "launch" ? "Lançamento" : "Perpétuo"}
+                        Tipo: {type === "launch" ? "Lançamento" : "Perpétuo"}
                       </p>
                       <p>
-                        Campanha:{" "}
-                        {campaignName ?? "Nenhuma (vincular depois)"}
+                        Campanhas:{" "}
+                        {campaigns.length > 0
+                          ? `${campaigns.length} selecionada${campaigns.length > 1 ? "s" : ""}`
+                          : "Nenhuma (vincular depois)"}
                       </p>
+                      {campaigns.length > 0 && (
+                        <ul className="ml-4 text-xs space-y-0.5">
+                          {campaigns.map((c) => (
+                            <li key={c.id}>• {c.name}</li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -262,11 +285,7 @@ export function FunnelWizard({
 
         {/* Navigation */}
         <div className="flex justify-between pt-2">
-          <Button
-            variant="outline"
-            onClick={goBack}
-            disabled={step === 0}
-          >
+          <Button variant="outline" onClick={goBack} disabled={step === 0}>
             <ArrowLeft className="mr-1 h-4 w-4" />
             Voltar
           </Button>
@@ -277,10 +296,7 @@ export function FunnelWizard({
               <ArrowRight className="ml-1 h-4 w-4" />
             </Button>
           ) : (
-            <Button
-              onClick={handleCreate}
-              disabled={createFunnel.isPending}
-            >
+            <Button onClick={handleCreate} disabled={createFunnel.isPending}>
               {createFunnel.isPending ? (
                 <Loader2 className="mr-1 h-4 w-4 animate-spin" />
               ) : (

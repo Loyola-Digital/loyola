@@ -40,7 +40,7 @@ export default function FunnelPage() {
         <h1 className="text-2xl font-bold">{funnel.name}</h1>
         <p className="text-sm text-muted-foreground">
           {funnelType === "launch" ? "Funil de Lançamento" : "Funil Perpétuo"}
-          {funnel.campaignName && ` — ${funnel.campaignName}`}
+          {funnel.campaigns.length > 0 && ` — ${funnel.campaigns.length} campanha${funnel.campaigns.length > 1 ? "s" : ""}`}
         </p>
       </div>
 

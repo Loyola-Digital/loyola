@@ -100,11 +100,11 @@ export interface AdAnalyticsResponse {
 const TRAFFIC_STALE_TIME = 5 * 60 * 1000; // 5min — avoid redundant refetches on tab focus / remount
 const CREATIVE_STALE_TIME = 30 * 60 * 1000; // 30min — creatives rarely change
 
-export function useTrafficOverview(projectId: string | null, days: number = 30, campaignId?: string | null) {
+export function useTrafficOverview(projectId: string | null, days: number = 30, campaignIds?: string[] | null) {
   const apiClient = useApiClient();
-  const campaignParam = campaignId ? `&campaignId=${campaignId}` : "";
+  const campaignParam = campaignIds && campaignIds.length > 0 ? `&campaignIds=${campaignIds.join(",")}` : "";
   return useQuery({
-    queryKey: ["traffic-overview", projectId, days, campaignId],
+    queryKey: ["traffic-overview", projectId, days, campaignIds],
     queryFn: () =>
       apiClient<OverviewAnalytics>(
         `/api/traffic/analytics/${projectId}/overview?days=${days}${campaignParam}`
@@ -250,11 +250,11 @@ export interface PlacementBreakdownResponse {
   placements: PlacementInsight[];
 }
 
-export function usePlacementBreakdown(projectId: string | null, days: number = 30, campaignId?: string | null) {
+export function usePlacementBreakdown(projectId: string | null, days: number = 30, campaignIds?: string[] | null) {
   const apiClient = useApiClient();
-  const campaignParam = campaignId ? `&campaignId=${campaignId}` : "";
+  const campaignParam = campaignIds && campaignIds.length > 0 ? `&campaignIds=${campaignIds.join(",")}` : "";
   return useQuery({
-    queryKey: ["traffic-placements", projectId, days, campaignId],
+    queryKey: ["traffic-placements", projectId, days, campaignIds],
     queryFn: () =>
       apiClient<PlacementBreakdownResponse>(
         `/api/traffic/analytics/${projectId}/placements?days=${days}${campaignParam}`

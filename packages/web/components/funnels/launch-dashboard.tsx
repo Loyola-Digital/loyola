@@ -74,26 +74,27 @@ function safeNum(val: string | undefined): number {
 
 export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
   const [days, setDays] = useState(30);
-  const campaignId = funnel.campaignId;
+  const campaignIds = funnel.campaigns.map((c) => c.id);
+  const firstCampaignId = campaignIds[0] ?? null;
 
   const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
     projectId,
     days,
-    campaignId,
+    campaignIds.length > 0 ? campaignIds : null,
   );
   const { data: topData, isLoading: topLoading } = useTopPerformers(
     projectId,
     "ctr",
     5,
     days,
-    campaignId,
+    firstCampaignId,
   );
   const { data: placementData, isLoading: placementLoading } =
-    usePlacementBreakdown(projectId, days, campaignId);
+    usePlacementBreakdown(projectId, days, campaignIds.length > 0 ? campaignIds : null);
   const { data: dailyData, isLoading: dailyLoading } =
-    useCampaignDailyInsights(projectId, campaignId, days);
+    useCampaignDailyInsights(projectId, firstCampaignId, days);
 
-  if (!campaignId) {
+  if (campaignIds.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-12 text-center space-y-2">
         <LinkIcon className="h-8 w-8 mx-auto text-muted-foreground" />

@@ -142,9 +142,9 @@ export async function getProjectOverview(
   db: Database,
   projectId: string,
   days: number,
-  campaignId?: string
+  campaignIds?: string[]
 ): Promise<OverviewAnalytics> {
-  const cacheKey = `analytics:${projectId}:overview:${days}:${campaignId ?? "all"}`;
+  const cacheKey = `analytics:${projectId}:overview:${days}:${campaignIds?.sort().join(",") ?? "all"}`;
   const cached = getCached<OverviewAnalytics>(cacheKey);
   if (cached) return cached;
 
@@ -159,8 +159,9 @@ export async function getProjectOverview(
     days
   );
 
-  const campaigns = campaignId
-    ? allCampaigns.filter((c) => c.campaign_id === campaignId)
+  const idSet = campaignIds ? new Set(campaignIds) : null;
+  const campaigns = idSet
+    ? allCampaigns.filter((c) => idSet.has(c.campaign_id))
     : allCampaigns;
 
   const totalSpend = campaigns.reduce((s, c) => s + parseFloat(c.spend || "0"), 0);
@@ -542,21 +543,60 @@ export async function getPlacementBreakdown(
   db: Database,
   projectId: string,
   days: number,
-  campaignId?: string
+  campaignIds?: string[]
 ): Promise<PlacementInsight[]> {
-  const cacheKey = `analytics:${projectId}:placements:${days}:${campaignId ?? "all"}`;
+  const cacheKey = `analytics:${projectId}:placements:${days}:${campaignIds?.sort().join(",") ?? "all"}`;
   const cached = getCached<PlacementInsight[]>(cacheKey);
   if (cached) return cached;
 
   const metaAccount = await getMetaAccountForProject(db, projectId);
   if (!metaAccount) return [];
 
-  const raw = await fetchPlacementBreakdown(
-    metaAccount.metaAccountId,
-    metaAccount.accessToken,
-    days,
-    campaignId
-  );
+  // For multiple campaigns, fetch each and merge placement data
+  let rawAll: import("./meta-ads.js").MetaPlacementInsight[] = [];
+  if (campaignIds && campaignIds.length > 0) {
+    const results = await Promise.all(
+      campaignIds.map((cid) =>
+        fetchPlacementBreakdown(metaAccount.metaAccountId, metaAccount.accessToken, days, cid)
+      )
+    );
+    rawAll = results.flat();
+  } else {
+    rawAll = await fetchPlacementBreakdown(metaAccount.metaAccountId, metaAccount.accessToken, days);
+  }
+
+  // Aggregate by platform+position
+  const agg = new Map<string, { spend: number; impressions: number; clicks: number; ctr: number; cpc: number; cpm: number; count: number }>();
+  for (const r of rawAll) {
+    const key = `${r.publisher_platform}|${r.platform_position}`;
+    const existing = agg.get(key);
+    const spend = parseFloat(r.spend || "0");
+    const impressions = parseFloat(r.impressions || "0");
+    const clicks = parseFloat(r.clicks || "0");
+    if (existing) {
+      existing.spend += spend;
+      existing.impressions += impressions;
+      existing.clicks += clicks;
+      existing.count++;
+    } else {
+      agg.set(key, { spend, impressions, clicks, ctr: 0, cpc: 0, cpm: 0, count: 1 });
+    }
+  }
+
+  // Recalculate derived metrics
+  const raw = Array.from(agg.entries()).map(([key, v]) => {
+    const [platform, position] = key.split("|");
+    return {
+      publisher_platform: platform,
+      platform_position: position,
+      spend: String(v.spend),
+      impressions: String(v.impressions),
+      clicks: String(v.clicks),
+      ctr: String(v.impressions > 0 ? (v.clicks / v.impressions) * 100 : 0),
+      cpc: String(v.clicks > 0 ? v.spend / v.clicks : 0),
+      cpm: String(v.impressions > 0 ? (v.spend * 1000) / v.impressions : 0),
+    };
+  });
 
   const result: PlacementInsight[] = raw.map((r) => ({
     platform: r.publisher_platform,
