@@ -7,11 +7,7 @@ import {
   MousePointerClick,
   Percent,
   Radio,
-  Repeat,
-  TrendingUp,
   LinkIcon,
-  ChevronRight,
-  ChevronDown,
 } from "lucide-react";
 import {
   LineChart,
@@ -25,15 +21,11 @@ import {
   PieChart,
   Pie,
   Cell,
-  BarChart,
-  Bar,
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import {
   useTrafficOverview,
   useTrafficCampaigns,
-  useTopPerformers,
   usePlacementBreakdown,
   useCampaignDailyInsights,
   type CampaignAnalytics,
@@ -63,40 +55,27 @@ const DONUT_COLORS = [
   "hsl(350 70% 55%)",
 ];
 
-function fmtCurrency(val: number | null): string {
-  if (val === null || val === 0) return "—";
+function fmtCurrency(val: number | null | undefined): string {
+  if (val == null || val === 0) return "—";
   if (val >= 1_000_000) return `R$ ${(val / 1_000_000).toFixed(1)}M`;
   if (val >= 1_000) return `R$ ${(val / 1_000).toFixed(1)}K`;
   return `R$ ${val.toFixed(2)}`;
 }
 
-function fmtNumber(val: number | null): string {
-  if (val === null) return "—";
+function fmtNumber(val: number | null | undefined): string {
+  if (val == null) return "—";
   if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}M`;
   if (val >= 1_000) return `${(val / 1_000).toFixed(1)}K`;
   return val.toLocaleString("pt-BR");
 }
 
-function fmtPercent(val: number | null): string {
-  if (val === null) return "—";
+function fmtPercent(val: number | null | undefined): string {
+  if (val == null) return "—";
   return `${val.toFixed(2)}%`;
 }
 
 function safeNum(val: string | undefined): number {
   return val ? parseFloat(val) : 0;
-}
-
-function RoasBadge({ value }: { value: number | null }) {
-  if (value === null) return <span className="text-muted-foreground">—</span>;
-  const color =
-    value >= 8 ? "bg-green-500/15 text-green-600" :
-    value >= 3 ? "bg-amber-500/15 text-amber-600" :
-    "bg-red-500/15 text-red-500";
-  return (
-    <Badge variant="secondary" className={`text-[10px] px-1.5 ${color}`}>
-      {value.toFixed(2)}x
-    </Badge>
-  );
 }
 
 export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
@@ -109,9 +88,6 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
   );
   const { data: campaignData, isLoading: campaignsLoading } = useTrafficCampaigns(projectId, days);
-  const { data: topData, isLoading: topLoading } = useTopPerformers(
-    projectId, "ctr", 5, days, firstCampaignId,
-  );
   const { data: placementData, isLoading: placementLoading } =
     usePlacementBreakdown(projectId, days, campaignIds.length > 0 ? campaignIds : null);
   const { data: dailyData, isLoading: dailyLoading } =

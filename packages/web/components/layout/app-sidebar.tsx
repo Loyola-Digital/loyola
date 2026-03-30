@@ -25,7 +25,6 @@ import { CreateProjectDialog } from "@/components/layout/create-project-dialog";
 import { FunnelWizard } from "@/components/funnels/funnel-wizard";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import { GuestSidebar } from "@/components/layout/guest-sidebar";
-import { useFunnels } from "@/lib/hooks/use-funnels";
 
 const navItems = [
   { label: "Minds", href: "/minds", icon: Brain },

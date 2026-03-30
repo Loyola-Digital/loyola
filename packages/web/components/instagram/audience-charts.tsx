@@ -41,14 +41,6 @@ function formatNumber(value: number): string {
   return String(value);
 }
 
-// Gender/age labels: "F.25-34" → "Fem 25-34"
-function formatGenderAge(label: string): string {
-  return label
-    .replace(/^F\./, "Fem ")
-    .replace(/^M\./, "Masc ")
-    .replace(/^U\./, "Outro ");
-}
-
 function HorizontalBars({ items, color }: { items: BarItem[]; color: string }) {
   if (items.length === 0) {
     return <p className="text-sm text-muted-foreground py-2">Sem dados</p>;

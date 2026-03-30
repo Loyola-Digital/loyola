@@ -29,10 +29,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   useTrafficOverview,
   useTrafficCampaigns,
-  useTopPerformers,
   usePlacementBreakdown,
   useCampaignDailyInsights,
-  type CampaignAnalytics,
   type PlacementInsight,
 } from "@/lib/hooks/use-traffic-analytics";
 import { FunnelCampaignTable } from "./funnel-campaign-table";
@@ -55,22 +53,22 @@ const DONUT_COLORS = [
   "hsl(280 60% 55%)", "hsl(350 70% 55%)", "hsl(30 80% 55%)",
 ];
 
-function fmtCurrency(val: number | null): string {
-  if (val === null || val === 0) return "—";
+function fmtCurrency(val: number | null | undefined): string {
+  if (val == null || val === 0) return "—";
   if (val >= 1_000_000) return `R$ ${(val / 1_000_000).toFixed(1)}M`;
   if (val >= 1_000) return `R$ ${(val / 1_000).toFixed(1)}K`;
   return `R$ ${val.toFixed(2)}`;
 }
 
-function fmtNumber(val: number | null): string {
-  if (val === null) return "—";
+function fmtNumber(val: number | null | undefined): string {
+  if (val == null) return "—";
   if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}M`;
   if (val >= 1_000) return `${(val / 1_000).toFixed(1)}K`;
   return val.toLocaleString("pt-BR");
 }
 
-function fmtPercent(val: number | null): string {
-  if (val === null) return "—";
+function fmtPercent(val: number | null | undefined): string {
+  if (val == null) return "—";
   return `${val.toFixed(2)}%`;
 }
 

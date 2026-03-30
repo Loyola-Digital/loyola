@@ -2,7 +2,7 @@
 
 import { useRef, useMemo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Float, MeshTransmissionMaterial } from "@react-three/drei";
+import { Float } from "@react-three/drei";
 import * as THREE from "three";
 
 function GoldRing({ radius, tube, speed }: { radius: number; tube: number; speed: number }) {
@@ -30,7 +30,7 @@ function FloatingPanel({
   rotation,
   width,
   height,
-  delay,
+  delay: _delay,
 }: {
   position: [number, number, number];
   rotation: [number, number, number];

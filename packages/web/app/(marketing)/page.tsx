@@ -7,10 +7,8 @@ import { useRef } from "react";
 import { motion, useScroll, useTransform, useInView } from "framer-motion";
 import {
   Brain,
-  BarChart3,
   TrendingUp,
   Users,
-  Zap,
   Shield,
   ArrowRight,
   ChevronDown,
