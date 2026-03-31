@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, Instagram, MessageSquare, Brain, TrendingUp, Rocket, Repeat } from "lucide-react";
+import { ChevronRight, ChevronDown, Instagram, MessageSquare, Brain, TrendingUp, Rocket, Repeat, Share2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -31,8 +31,11 @@ import type { Project, ProjectPermissions } from "@/lib/hooks/use-projects";
 // Module config
 // ============================================================
 
-const ALL_MODULES = [
+const SOCIAL_MODULES = [
   { key: "instagram" as keyof ProjectPermissions, label: "Instagram", href: "instagram", icon: Instagram },
+] as const;
+
+const OTHER_MODULES = [
   { key: "traffic" as keyof ProjectPermissions, label: "Ads", href: "traffic", icon: TrendingUp },
   { key: "conversations" as keyof ProjectPermissions, label: "Conversas", href: "conversations", icon: MessageSquare },
   { key: "mind" as keyof ProjectPermissions, label: "Mind", href: "minds", icon: Brain },
@@ -55,9 +58,15 @@ function GuestProjectFolder({ project }: { project: Project }) {
 
   const isProjectActive = pathname.startsWith(`/projects/${project.id}`);
 
-  const visibleModules = ALL_MODULES.filter(
+  const visibleSocial = SOCIAL_MODULES.filter(
     (m) => !permissions || permissions[m.key],
   );
+  const visibleOther = OTHER_MODULES.filter(
+    (m) => !permissions || permissions[m.key],
+  );
+
+  const isSocialActive = visibleSocial.some((s) => pathname.includes(`/${s.href}`));
+  const [socialOpen, setSocialOpen] = useState(isSocialActive);
 
   return (
     <Collapsible
@@ -69,7 +78,7 @@ function GuestProjectFolder({ project }: { project: Project }) {
     >
       <CollapsibleTrigger asChild>
         <Button
-          variant={isProjectActive && !visibleModules.some((m) => pathname.includes(`/${m.href}`)) ? "secondary" : "ghost"}
+          variant={isProjectActive && !visibleSocial.some((m) => pathname.includes(`/${m.href}`)) && !visibleOther.some((m) => pathname.includes(`/${m.href}`)) ? "secondary" : "ghost"}
           className="w-full justify-start gap-2 px-2"
         >
           <ChevronRight
@@ -84,7 +93,49 @@ function GuestProjectFolder({ project }: { project: Project }) {
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="ml-4 flex flex-col gap-0.5 border-l pl-2 py-1">
-          {visibleModules.map((item) => {
+          {/* Social group (collapsible) */}
+          {visibleSocial.length > 0 && (
+            <>
+              <Button
+                variant={isSocialActive && !socialOpen ? "secondary" : "ghost"}
+                className="justify-start gap-2 h-8 text-sm"
+                onClick={() => setSocialOpen((o) => !o)}
+              >
+                <Share2 className="h-4 w-4 shrink-0" />
+                <span className="flex-1 text-left">Social</span>
+                {socialOpen ? (
+                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                )}
+              </Button>
+              {socialOpen && (
+                <div className="ml-4 flex flex-col gap-0.5">
+                  {visibleSocial.map((item) => {
+                    const href = `/projects/${project.id}/${item.href}`;
+                    const isActive = pathname.startsWith(href);
+                    const Icon = item.icon;
+                    return (
+                      <Button
+                        key={item.key}
+                        variant={isActive ? "secondary" : "ghost"}
+                        className="justify-start gap-2 h-7 text-sm"
+                        asChild
+                      >
+                        <Link href={href}>
+                          <Icon className="h-3.5 w-3.5 shrink-0" />
+                          <span>{item.label}</span>
+                        </Link>
+                      </Button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Other modules */}
+          {visibleOther.map((item) => {
             const href = `/projects/${project.id}/${item.href}`;
             const isActive = pathname.startsWith(href);
             const Icon = item.icon;

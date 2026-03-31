@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronRight, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2 } from "lucide-react";
+import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2, Share2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -40,8 +40,11 @@ interface ProjectFolderProps {
   onNewFunnel?: () => void;
 }
 
-const PROJECT_SUBITEMS = [
+const SOCIAL_SUBITEMS = [
   { label: "Instagram", href: "instagram", icon: Instagram },
+] as const;
+
+const PROJECT_SUBITEMS = [
   { label: "Ads", href: "traffic", icon: TrendingUp },
   { label: "Conversas", href: "conversations", icon: MessageSquare },
 ] as const;
@@ -53,6 +56,19 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
   const deleteProject = useDeleteProject();
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
   const storageKey = `project-folder-${project.id}`;
+  const socialKey = `social-group-${project.id}`;
+
+  const isSocialActive = SOCIAL_SUBITEMS.some((s) => pathname.includes(`/${s.href}`));
+  const [socialOpen, setSocialOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const stored = localStorage.getItem(socialKey);
+    if (stored !== null) return stored !== "closed";
+    return isSocialActive;
+  });
+
+  useEffect(() => {
+    if (isSocialActive && !socialOpen) setSocialOpen(true);
+  }, [isSocialActive, socialOpen]);
 
   const [open, setOpen] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -62,6 +78,10 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
   useEffect(() => {
     localStorage.setItem(storageKey, open ? "open" : "closed");
   }, [open, storageKey]);
+
+  useEffect(() => {
+    localStorage.setItem(socialKey, socialOpen ? "open" : "closed");
+  }, [socialOpen, socialKey]);
 
   const isProjectActive = pathname.startsWith(`/projects/${project.id}`);
 
@@ -153,6 +173,45 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
       </AlertDialog>
       <CollapsibleContent>
         <div className="ml-4 flex flex-col gap-0.5 border-l pl-2 py-1">
+          {/* Social group (collapsible) */}
+          <Button
+            variant={isSocialActive && !socialOpen ? "secondary" : "ghost"}
+            className="justify-start gap-2 h-8 text-sm"
+            onClick={() => setSocialOpen((o) => !o)}
+          >
+            <Share2 className="h-4 w-4 shrink-0" />
+            <span className="flex-1 text-left">Social</span>
+            {socialOpen ? (
+              <ChevronDown className="h-3 w-3 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-3 w-3 text-muted-foreground" />
+            )}
+          </Button>
+
+          {socialOpen && (
+            <div className="ml-4 flex flex-col gap-0.5">
+              {SOCIAL_SUBITEMS.map((item) => {
+                const href = `/projects/${project.id}/${item.href}`;
+                const isActive = pathname.startsWith(href);
+                const Icon = item.icon;
+                return (
+                  <Button
+                    key={item.href}
+                    variant={isActive ? "secondary" : "ghost"}
+                    className="justify-start gap-2 h-7 text-sm"
+                    asChild
+                  >
+                    <Link href={href}>
+                      <Icon className="h-3.5 w-3.5 shrink-0" />
+                      <span>{item.label}</span>
+                    </Link>
+                  </Button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Other modules */}
           {PROJECT_SUBITEMS.map((item) => {
             const href = `/projects/${project.id}/${item.href}`;
             const isActive = pathname.startsWith(href);
