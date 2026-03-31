@@ -1,0 +1,2594 @@
+Disclaimer 
+The information provided in this book is for educational and informational purposes only. The author, 
+publisher, and licensed distributor have made reasonable efforts to ensure that the information within 
+was accurate at the time of publication . The author, publisher, and licensed distributor make no 
+representation or warranties with respect to the merchantability, fitness for a particular purpose, 
+current or continued accuracy or completeness, and reliability of the contents of this book . 
+The strategies, tips, and tools discussed in this book are the author's personal opinions and are provided 
+as-is. They are intended to provide helpful and informative material on the subjects addressed in this 
+book. Success in any marketing and business endeavors is based on a wide range of factors unique to 
+each individual or business. 
+Laws are subject to change and may vary by location and jurisdiction. You, as the reader, are 
+encouraged to consult with a professional where appropriate and review the current local laws before 
+implementing any marketing strategies or campaigns. 
+Earnings and income representations made by the author are aspirational statements only of your 
+potential earnings. The success of the author and others referenced herein, testimonials, and other 
+examples used are exceptional, non-typical results and are not intended to be and are not a guarantee 
+that you or others will achieve the same results. Individual results will always vary and your results 
+will depend entirely on your individual capacity, work ethic, business, skills and experience, level of 
+motivation, diligence in applying the strategies discussed, the economy, the normal and unforeseen 
+risks of doing business, and other factors within or beyond your control. 
+No guarantee is made that you will achieve any result at all from the ideas in this book. The author, 
+publisher, and licensed distributor disclaim any representations or warranties (express or implied), 
+including, without limitation, those of merchantability, fitness for any particular purpose, current or 
+continued accuracy or completeness, and reliability. Reliance on the information provided is solely at 
+your own risk. As further described herein, the author, publisher, and licensed distributor shall in no 
+event be held liable to you or any party for any direct, indirect, punitive, special, incidental, speculative, 
+or other consequential damages arising directly or indirectly from any use and/or misuse of this book, 
+which is provided "as is", and without warranties . 
+As always, the advice of a competent legal, tax, accounting, finance, or other professional should be 
+sought and obtained . 
+Any statements that express or involve discussions with respect to predictions, goals, expectations, 
+beliefs, plans, projections, objectives, assumptions or future events or performance are not statements 
+of historical fact and may be "forward looking statements." Forward looking statements are based on 
+expectations , estimates, and projections at the time the statements are made that involve a number 
+of risks and uncertainties which could cause actual results or events to differ materially from those 
+presently anticipated. 
+Running a business involves the risk of loss as well as the possibility of profit. All businesses involve 
+risk, and all business decisions remain the responsibility of the individual. The author, Bumble IP, LLC, 
+Acquisition.com , LLC, and their affiliates (collectively referred to herein as the "Company") have not 
+made any guarantees that the strategies outlined in this book will be profitable or beneficial for you 
+or your business, and the Company is not liable for any potential business losses related to these 
+strategies. 
+
+---PAGE---
+
+The Company's representatives are professionals, and their results are not typical of the average 
+individual. Background, education, effort, and dedication of individuals and business owners will affect 
+their overall experience. Any examples shared in this book are merely illustrative and not guarantees 
+of a return on businesses or other result. Each reader's results may vary. The Company does not 
+warrant the performance, effectiveness, or applicability of any sites listed or linked in this book. All links 
+are for informational purposes only and are not warranted for content, accuracy, or any other implied 
+or explicit purpose. All the information provided in this book pertaining to running a business and 
+business strategies is educational only and not specific guarantees of success. Even though reasonable 
+precaution has been taken in the preparation of this book, the Company does not assume any liability 
+for errors and/or omissions. This book is published without warranty or guarantee of any kind, either 
+expressed or implied. The Company is not liable for any damages, regardless of whether arising 
+directly or indirectly from the use and/or misuse of this book . Readers agree to release and hold 
+harmless the Company and its members, employees, agents, representatives, affiliates, subsidiaries, 
+successors, and assignees (collectively "Agents") from and against any and all claims, liabilities, losses, 
+causes of actions, costs, lost profits, lost opportunities, indirect, special, incidental, consequential, 
+punitive, or any other damages whatsoever and expenses (including, without limitation, court costs 
+and attorney's fees) ("Losses") asserted against, resulting from, imposed upon or incurred by any of 
+the Agents as a result of, or arising out of the reader's use and/or misuse of this book . This book is 
+intended for informat ional and educational purposes only. 
+HYPOTHETICAL PERFORMANCE RESULTS HAVE MANY INHERENT LIMITATIONS, SOME 
+OF WHICH ARE DESCRIBED BELOW. NO REPRESENTATION IS BEING MADE THAT ANY 
+BUSINESS WILL OR IS LIKELY TO ACHIEVE PROFITS OR LOSSES SIMILAR TO THOSE SHOWN 
+OR DESCRIBED. IN FACT, THERE ARE FREQUENTLY SHARP DIFFERENCES BETWEEN 
+HYPOTHETICAL PERFORMANCE RESULTS AND THE ACTUAL RESULTS SUBSEQUENTLY 
+ACHIEVED BY ANY PARTICULAR BUSINESS. ONE OF THE LIMITATIONS OF HYPOTHETICAL 
+PERFORMANCE RESULTS IS THAT THEY ARE GENERALLY PREPARED WITH THE BENEFIT 
+OF HINDSIGHT. IN ADDITION, HYPOTHETICAL BUSINESS DOES NOT INVOLVE FINANCIAL 
+RISK, AND NO HYPOTHETICAL BUSINESS RECORD CAN COMPLETELY ACCOUNT FOR 
+THE IMPACT OF FINANCIAL AND OTHER RISK IN ACTUAL BUSINESS. FOR EXAMPLE, THE 
+ABILITY TO WITHSTAND LOSSES OR TO ADHERE TO A PARTICULAR BUSINESS STRATEGY 
+IN SPITE OF BUSINESS LOSSES ARE MATERIAL POINTS WHICH CAN ALSO ADVERSELY 
+AFFECT ACTUAL BUSINESS RESULTS. THERE ARE NUMEROUS OTHER FACTORS RELATED 
+TO THE MARKETS IN GENERAL OR TO THE IMPLEMENTATION OF ANY SPECIFIC BUSINESS 
+PROGRAM , WHICH CANNOT BE FULLY ACCOUNTED FOR IN THE PREPARATION OF 
+HYPOTHETICAL PERFORMANCE. When used herein, this "book" means this book, its contents, 
+and all information and ideas contained therein . 
+Copyright © 2025 by Bumble IP, LLC and distributed via license by Acquisition .com, LLC. Reproduction 
+or translation of any part of this work beyond that permitted by Section 107 or 108 of the 1976 
+United States Copyright Act without the permission of the copyright owner is unlawful. Acquisition. 
+com® , its logo, and $100M® are all registered trademarks of Bumble IP, LLC and utilized via limited 
+license by Acquisition.com, LLC. All rights reserved, including rights for text and data mining and 
+training of artificial technologies or similar technologies. 
+Printed in Canada. 
+
+---PAGE---
+
+IV Copyrigh1 C 202S by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+Table of Contents 
+Why People Struggle To Advertise And How To Fix It 1 
+PART I: Ad Kaleidoscope .......... .......................................... ........................................................ 3 
+What The Ad Kaleidoscope Is 6 
+How To Use The Ad Kaleidoscope 
+Remixing Winner s 
+Remaking Winners 
+Next Steps 
+8 
+9 
+14 
+17 
+PART II: My Ads Blackbook: Best 20 Ad Frameworks of All Time. ................................. .19 
+Section I: My Best Gym Launch Ad Frameworks .. 
+Ad Framework #1: Personal Testimonial/Origin Story 
+Ad Framework #2: Prop Comedy .. 
+Ad Framework #3: Emotional Avatar Testimonial . 
+Ad Framework #4 Show Don't Tell 
+Ad Framework #5 Long Term Result 
+Section II: My Best ALAN Ad Frameworks ............................ . 
+Ad Framework #1 Looking For 5 Avatars .. . 
+Ad Framework #2: New vs. Old 
+Ad Framework #3: Why You Will Never 
+Ad Framework #4: The "North Star" 
+Ad Framework #5: No BS Selfie 
+Section III: My Best Skool Ad Frameworks .. 
+Ad Framework #1: Trending Format 
+Ad Framework #2: Value Anchor ... . .. 
+Ad Framework #3: Bribe 
+Ad Framework #4: Underdog . 
+Ad Framework #5: Challenge With Prize 
+............. 21 
+23 
+27 
+31 
+35 
+39 
+. 43 
+45 
+49 
+53 
+57 
+61 
+.65 
+67 
+71 
+75 
+79 
+83 
+Section IV: My Best $JOOM Leads Book Launch Ad Frameworks... . .. . ............. . 87 
+Ad Framework# 1: Flying Prop 89 
+Ad Framework #2: Bribe 93 
+Copyright O 202~ by BUMBLE IP, LLC NOT FOR DISTRIBUTION V 
+
+---PAGE---
+
+Ad Framewo rk #3: The Rumors Aie True 
+Ad Framework #4: You're Being Lied To 
+Ad Framework #S: Data Stack 
+PA.Kr III: What To Do Ncxt -+Checldists 
+Ad Kaleidoscope Checklist 
+Best Ad Framework Checklist 
+Visual Elements 
+Verbal Delivery 
+Ad Script 
+CTA 
+97 
+101 
+105 
+.. ······· 109 
+111 
+113 
+113 
+113 
+114 
+114 
+
+---PAGE---
+
+Why People Struggle To Advertise And How To Fix It 
+The reason most people struggle co advertise is... thry spend too much tir,u making new 
+ads and not nearly enough time doubling down on the ads that work. 
+This handbook is separated into three parts. Pare I will help you double down on the ads 
+chat work using my Ad Kaleidoscope. Part II will help you find the ads to double down on 
+with My Best 20 Ad Frameworks Of Ali Time. Part III will give you checklists to follow for the 
+next time you make ads. 
+I start the handbook with Ad Kaleidoscope because if you already have ads, you should 
+use this immediately to make more money. And for chose of you who don't have ads, I'll give 
+you my 20 best ad frameworks of all time to make chem. In short, if you have winni ng ads, 
+use the Ad Kaleidoscope. If you don•t have winning ads, I'll kt you use mint . 
+And before we dive in, I want to be dear, any business (no matter what industry) can 
+model the examples in both Ad Kaleidoscope and My Ads Blackbook to advertise better. 
+Especially yours. So, use chem. 
+Happy hunting , 
+Alex 
+Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 1 
+
+---PAGE---
+
+2 Copyright O 2025 by BUMBLE IP. LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+PART I: AD KALEIDOSCOPE 
+When some is good, more is better. 
+Henry Ford walked the same hallway to his factory floor every morning. For three 
+straight months he passed the glass door of his chief marketing officer and saw the exact 
+same print layout pinned on the wall: a black-and-white ad for the Model T. Days later, 
+Ford stopped, pushed the door open, and asked, "When are we going co stop running that 
+ad? I'm tired of looking at it." 
+The chief marketing officer smiled. "Mr. Ford , we haven't run it once. You've seen it a 
+hundr ed times because you work here. 1he public hasn't even seen it yet." 
+Moral : You will tire of your advertising before your prospects even know your name . 
+You make campaign s for them, not for you. And when an ad finally works, keep running it 
+until it sto ps working - never until you get bored. 
+Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 3 
+
+---PAGE---
+
+rART I AD KALLIDO SCOPL 
+Kaleidoscope Ads 
+The Ad Kaleidoscope is so valuable I wanted to make it a standalone item to draw 
+attention to its importance. But, it's too deep to be in a wider book. So I've been holding 
+onto it for a while trying to find the right moment. And the right moment is now. 
+The Ad Kaleidoscope is my tool for taking winning ads and multiplying them. I think 
+it's the most important tool I use to run paid ads. 
+If you've consumed my stuff before then you know I rely on "more, better, new" as my 
+growth strategy for ... pretty much everything. And that's because-it works. 
+The Ad Kaleidoscope is "more, better, new" applied to advertising. It works so well because 
+it puts advertising-specific action items on all three growth clements. The Ad Kaki~scope 
+puts out!!!!!!!. volume. And makes that volume better. And gmeraus !!!!£. winners. 
+It all happens because the Ad Kaleidoscope harn esses power law. Aka - the Pareto 
+Principle. In other words, using the fact that 80% of advertising results come from 20% of 
+winners. And only 20% of the results come from 80% of your effort. 
+Inputs 
+In an ideal world, you would make the 100% of your ads like the 20% that get 80% of 
+the results. And if you do that, you get 5x the output. And that's what the Ad Kaleidoscope 
+docs. le would look something like this ... 
+4 Copyright Cl 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+PART I: AD KALl:.IDOSCOPE 
+~ 
+Ad Kalcido1copc 
+Ati'1 
+Ad Kaleidoscope 
+Bad Ads .. .. 
+Outputs Ouq,uts 
+The image wouldn't fit if I made the new output proportional. But you get the point. If 
+you spend 80% of your effort making permutations of ads that are already proven--you'// 
+make more winning ads than if you start from scratch every time. 
+Think of it like this ... imagine you had two advertisers, both of whom made 100 ads. 
+One made 100 brand new ads, while the other took his top five ads from the month before 
+and made 100 versions of those five winners. Who do you think would win next month? No 
+question: the guy who put his effort into replicating winners. 
+If you agree with that premise, then you will love this. It will also likely make you a lot 
+of money. At least, it has for me. 
+So, this section will show you how to use the Ad Kaleidoscope like a pro. And the good 
+news is you only need to know two things: 
+1) What The Ad Kaleidoscope Is 
+2) How To Use It 
+Keep using it until you've made more money than you need, or die. Whichever comes 
+first. That's my plan anyways. 
+Copyrigh1 C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 5 
+
+---PAGE---
+
+PART I· AD KALf.lD OSCOPL 
+What The Ad Kaleidoscope Is 
+The Ad Kaleidoscope permutatts winning ads. In other words, it tweaks stuff that already 
+worked. It cakes old winners and makes new ones . 
+I call it the Ad Kaleidoscope because it works like a kaleidoscope. As you turn the dial of 
+the kaleidoscope, you see a hundred different versions of whatever you're looking at. You're 
+still looking at the same thing , but what you're seeing is obviously different. That's what the 
+Ad Kaleidoscope does. 
+For example, this ad was the highest converting Skool ad for a few month s. We spent 
+over $100,000 on this single ad creative alone. 
+6 Copy11gh1 C 2025 by BUM BL£ IP, LLC NOT f-OR DISTRIBUI ION 
+
+---PAGE---
+
+PART I: AD KALEIDOS COPE 
+After we squeezed the life out of this ad, we put it through the kaleidoscope ... and made 
+a ton of new variations. And each of those variations ... also performed like the original You 
+can even see how my team named the file "Top Skool Ad." 
+• -.-M- ■ ' .,. , .. --L I .,. ,.._ ,.._ L l 
+a 
+New does not mean "start from zero". New means new to the viewer. Like the Henry 
+Ford story, consumers have a far lower threshold of "new" than you do. So yes ... this is 
+new, but also obviously ... more of what already worked. And when one of these new versions 
+outperforms the previous, we get better. You get close to the same results as before (or better), 
+without fatiguing the audience. That's it. 
+7he same ad, again, with different props 
+Now that you know what it is, let's break down how to use it. 
+Copyright C) 2025 by BUMBLE. JP, LLC NOT FOR DISTRIBUTION 7 
+
+---PAGE---
+
+PART I AD KALl:.ll)O ~COPL 
+How To Use The Ad Kaleidoscope 
+Step1 i • 
+Identify 
+\'v'inners 
+THE AD KALE IDOSCOPE 
+Step 2: 
+Remix 
+Winners 
+80¼ of Effort 
+Step 3: 
+Remake 
+\X'inners 
+&peal 1vhm ne1v wi1111tr fa1111d 
+20¼ of Effort 
+Step 4: 
+Try New 
+Ideas 
+I want co be clear-this process only works if you've already made ads. You can't optimize 
+ads chat don't exist yet. Duh . Don't worry, I've got you covered there. 
+Bue, the moment you get even a single winner, you can use the Ad Kaleidoscope. 
+Here's how: 
+1) Identify Winner s: Look for ads that outperform. Your cop 20%, your top 10%, top 
+5%, etc. The more ads you make the more winners you'U have co choose from-and 
+chat's what gives you huge output . If you model the ads in this handbook , you'll have 
+hundr eds of ads per month to pull from . 
+80% ofYour Effort 
+2) Remix WU1J1ers: Your first run through the kaleidoscope, you'll use the same raw footage 
+of your previous winners , but vary the edits. Think special effects and software. These are 
+aU the things you do after you film an ad. You'll make these pose-production variation s 
+first because they,re the fastest to make . They also fatigue the fastest. Bue, you can get 
+these up fast to keep ads performing co buy you time co do step 3 ... 
+3) Remake Winn ers: Here, instead of editing the same footage in a new way, we make new 
+ads with basically the same winning script. Think re-filming. These are all the things you 
+do to slightly modify the subject matter of the ad you record. You just change real world 
+variables rather than digital ones. The real world changes take longer co do but the ads 
+they produ ce can keep you fed for months (and in some cases years!). Once you do chat 
+the only thing left to do is ... try new scuff ... 
+20% of Your Effort 
+8 Copyright O 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+PART I: AD KALEIDOSCO PE 
+4) Try New Ideas: The remaining 20% of your time you spend testing totally new stuff. 
+Keep running permutations of the previous winner until a winner emerges out of the 
+totally new stuff. Then , put it through the ad kaleidoscope all over again. To be clear, this 
+doesn't mean you stop using your old winners, you just have yet another winner to make 
+more winners from. 
+Once you find your winning ad, you make variations of it. But how do you actually 
+make the variations for the remixes and remakes? Well, lucky for you, this is my cheat sheet. 
+These are all the ways I make variations on winning ads to get ... even more winning ads. 
+We'll start with Remixing. Remixing is something you can do immediately with your 
+existing winning ads. Especially with AI. Since it's the fastest path to money, I'll start there. 
+Remixing Winners 
+To remix, you need a winning ad. Once you have that ad, think of this like a permutation 
+master checklist . These are all the different things you can do to your winning ad to instantly 
+give yourself dozens if not hundreds of winning variations. Yes. Endless winners on demand. 
+Here are a few of my favorite remixes. 
+Same Ad. . . (in order from easiest to hardest) 
+• New Speed - Literally just change playback speed to l. lx or l.2x 
+• New Filters - One-click black & white, sepia, or contrast adjustments 
+• New Background/Border - Simple color swaps or border additions 
+• New Fonts/Captions - Change text styling in editing software 
+• New Headline - Replace text overlay with different copy 
+• New Medium - Export video frame as static image 
+• New Format - Resize for different placements (square, vertical, etc.) 
+• New Meat - Splice in different middl e section (requires editing skills) 
+• New Effects - Add motion graphics, stickers, animations , etc. 
+Use 'em all. Test 'em all. You'll be surprised how effective they are. Let's dive in. 
+Copyrighr C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 9 
+
+---PAGE---
+
+PART I: AD KALEIDO SCO PE 
+• Same Ad. New Speeds: Yes, you can literally just speed up or slow down the ad. Just 
+run it at 1.1 to l .2x the speed (without making the voice of the person in the ad sound 
+weird). Sometimes faster and slower versions convert better. And even if they just convert 
+the same .. . they convert the same as a top performer ... making them top performers . 
+• Same Ad. New Filters: Think black and white , sepia, higher contrast , etc. You just 
+want to change the way the ad looks. The ad on the right demonstrates higher contrast 
+compared to the original on the left. 
+10 
+t1'1N£(~ ft(~l1A'jlf 
+, c:tiOIY<>~$1 '5,c.ro /"'O 
+Copyright Q 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+PART I: AD KAL EIDOSCOPE 
+• Same Ad. New Background/Border: It can be as simple as changing the background 
+color in the ad. You can also put a thin trim around the border of the ad (especially true 
+with images). You can vary the colors of the trim as well. 
+• Same Ad. New Fonts/Captions: You can change the fonts you use in the text for the ad 
+or headline. 
+AGENCY OWNERS 
+$1,500/mo to $15,000/mo Clients 
+How we SWITCHED 
+.. 
+Agency Owners 
+$1500/mo to $1&,000/mo Clients 
+How We SWIJCHED 
+• Same Ad. New Headline: On some platforms, you can put different headlines on top of 
+an ad, or you can put a headline on the top third of the ad itsel( 
+AGENCY OWNERS 
+$1 ,500/mo to $15,000/mo Clients 
+How we SWITCHED 
+.. 
+Looking To Partner With 
+5 AGENCY OWNERS 
+Copyright 0 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTI ON 11 
+
+---PAGE---
+
+• 
+• 
+12 
+PART I: AD KAL EIDOSCO PI:. 
+Same Ad. New Medium: Take a winning hook or headline from a video. Make it into 
+a standalone static image. 
+Same Ad. New Format: Make different versions native to each ad placement on each 
+platform . 
+... 
+Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+,--
+PART I: AD KALEIDOSCO PE 
+• Same Hook. New Meat: When you find your best performer, pair the winning hook 
+with a different "ad meat" you've already recorded. (Note: I don't have a screenshot because 
+it would be identical, but this is the structure) 
+Hook! Hook! Hook! CTA 1 
+• Same Ad. New Visual Effects: You can add or change the visual effects in the original 
+ad. You can add doodads and wizbangs to your heart's desire. The ones that will matter 
+most are the ones you do earlier (the hook), since this is what most people will see first . 
+... 
+When remixing, you vary all the aforementioned . That means once you find your 
+winner, you can immediately make a kajillion variations by changing combinations of the 
+variables. And since these can all be done on a computer, that means lots more ads without 
+extra recording time. 
+Beyond that though, remixes tend to fatigue faster than remakes. Main reason- they 
+tend to look more similar, which is both good and bad. Good because the original worked . 
+Bad because they won't have the same "shelf life" as more differentiated ads. 
+So to create remakes, you need to record again (or using AI, generate new subject matter). 
+And that leads us to the other way of making permutations ... 
+Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 13 
+
+---PAGE---
+
+PART I: AD KALEIDOS CO PE 
+Remaking Winners 
+Remakes happen during recording. This means we're actually changing the real world 
+components of che ad. That's what differentiates this list from the list above-you actually 
+need co record again. As such they take more effort, which is why I put chem second . Bue, 
+this is where you can keep a winner performing.for years. To be clear though, you should be 
+doing both simultaneously if you really want co advertise like a pro. 
+These are all the different ways co cake an existing ad and remake it without losing what 
+made it a winner to begin with . Like before, these are my favorite ways co remake my highe st 
+performing ads into hundreds of variations: 
+Same Ad ... (again from easiest to hardest) 
+• New Clone - Same everything, just hie record again 
+• New Props - Swap one object for another 
+• New Examples - Change names/numbers in same script 
+• New Setting - Move co different locatio n 
+• New Talent - Find, coordinate, and direct different person 
+• New Combination - Multiple changes at once 
+Like before, I put example images below the text that describes them . Lee's dive in. 
+• New Clone: You literally record the same ad again in a new session. Like fingerprints , no 
+cwo recording sessions will be exactly the same. Time of day, weather , lighting , sound , 
+will all create tiny variations chat make it different enough co convert like new . 
+.. 
+14 Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUT ION 
+
+---PAGE---
+
+PART I: AD KALEIDO SCOPE 
+• New Props: If you didn't use props before, add them now. If you did use props before, use 
+new ones (or remove them!). This also includes costumes, hair styles, jewelry/accessories, 
+and so on. This creates significant variation while allowing for the same winning script ... 
+so it stays likely to convert. In the example, I removed the banana prop. 
+• New Examples: Record the same ad, but use a different example as either the hook or 
+the meat. In this ad, I start with the last month 's lowest performer on the leaderboard. 
+The next month, I swapped the number and the name of the person. The rest of the ad 
+remained the same. And .. . it worked again. 
+Copyright C 2025 by BUMBLE IP, LLC NOT FOR DIST RIBUTION 15 
+
+---PAGE---
+
+PART I: AD KALEIDOSCOPE 
+• New Setting: The same script of your winning ad in a different setting. You can do the 
+same ad at the beach, in your car, or in your office. A different place makes the same ad 
+new again. On the left, I record in my studio. On the right , I record the same script in 
+my office. 
+• 
+16 
+New Talent: Record the same ad with different people. Ideally, you should find talent 
+that looks like the people that buy your stuff. For example, if you make stuff for 
+midwestern men ages 18-25 then ... then make more versions with different 18-25 year 
+old midwestern men! If you want more women , then use more women. This is a wildly 
+underutilized variation style. 
+... 
+IF 1 Lo<.i-r ~~ri.. ,,,,,, I 
+~ ~Jr '.J~~ D"f. \N 
+SQ~ 
+Copy right 0 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUT ION 
+
+---PAGE---
+
+PART I: AD KALEIDOSCOPE 
+• New Combinations: You can do a new prop coupled with a new post-production 
+effect. You can have new talent say the same script with a new filter or headline . The 
+combinations give you endless permutations. Once you find a winner, milk it for all . , 
+ltS got. 
+Here's the beauty of this-you 're putting the most effort into the thing that has the 
+highest likelihood of winning. This is leverage. You get a higher return on your time. 
+Next Steps 
+When starting, run as many ads as you can until you find a winner. As soon as you do, 
+run it through the Kaleidoscope-and make more winners. 80% of your energy goes into 
+making Kaleidoscope variations, and the other 20% goes into a totally new ad that beats 
+the original winners. The Kaleidoscope keeps you competitive now, the new ads keep you 
+competitive forever. And that 's what this is all about. 
+It's so simple, the only thing simpler is not doing it-which is what most people tU>-and 
+get the results most people get: none. 
+With that being said, Kaleidoscope is about getting more from winners. But, if you 
+don't have any winners .. . I'll let you borrow mine. 
+Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 17 
+
+---PAGE---
+
+18 Copyrigh1 C 2025 by BUMBLE IP, LLC NOT FOR DISTRJBlITION 
+
+---PAGE---
+
+PART II: MY ADS BLACKBOOK: 
+BEST 20 AD FRAMEWORKS 
+OF ALL TIME 
+These are the 20 best ad frameworks of all time. I demonstrate my five best frameworks 
+across four different businesses: Gym Launch, ALAN, Skool, and $JOOM Leads. 
+When I called this a Blackbook, I meant it. I refer to this list whenever I make ads today. 
+Period. In fact, if you're reading these words right now, it proves they work. 
+I use these ad frameworks across different industries and they still crush. So no matter 
+what business you're in, you can use these ad frameworks to achieve better results. 
+I'm going to say this again because someone is gonna say "This ad is for B2B, so it won't 
+work for me" or "This ad is about making money so it won't apply to my lawncare service". 
+You're wrong. It will. You just need to replace the blocks with words that describe your 
+service/product and benefits. Do not think "this won't work for me" think "how can I make 
+this work for me". Every great entrepreneur I know thinks this way. So you might as well 
+start now. If you want to test yourself, you should be able to rum every ad into a B2C, B2B, 
+service, SaaS, or product ad. That's how you'll really know you've "gotten it". 
+The Sections: 
+Section I: My 5 Best Gym Launch Ad Frameworks 
+Section II: My 5 Best ALAN Ad Frameworks 
+Section III: My 5 Best Skool Ad Frameworks 
+Section IV: My 5 Best Book Launch Ad Frameworks 
+Section V: Checklists 
+Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 19 
+
+---PAGE---
+
+PART JI MY ADS BLACKBOOK : BEST 20 AD FRAMEWORKS OF ALL T IME 
+What You'll Sec for Every Wmning Ad Framework 
+I) Ad Framework Type 
+2) Why This Ad Framework Rocks: how this ad came to be, why I like it, and other 
+useful tidbits 
+3) Thumbnail+ Link: So you can watch and see them in action. 
+4) Visual Hook: A description of the first three seconds of motion and design that 
+stopped the scroll. 
+5) Ad Copy: The exact words from the ad. I also include within the copy me breaking 
+down what's happening as it's happening (I DO THESE IN ALL CAPS). I find ic 
+more useful than doing it separately. 
+6) How To Apply This Framework: Directions to follow co apply chis style and 
+structure to advertise whatever you sell. This comes in two parts. The "what to say" 
+and the "how co show it". So, you'll also see more visual notes than you're probably 
+used to from me. I do this so you can actually make these winners for your business. 
+What To Do Next 
+For anyone who needs winners, these frameworks will give you a headstarc. For anyone 
+who already has winners, these will just give you more. 
+These are the output of tens of millions of dollars and years of iterations. They are my 
+greatest hits. These ads funded payroll, paid mortgages, and scaled four companies. Now 
+they're yours. Use them responsibly- preferably co put a dent in your revenue ceiling. 
+With that said, lee's scare. 
+20 Copyright C 2025 by BUMBLE IP, LLC NOT POR DISTRIBUTION 
+
+---PAGE---
+
+Section I: My Best Gym Launch Ad Frameworks 
+Inside this section I'll give you my five best Gym Launch ad frameworks. I break them 
+down in the following order: 
+1) Personal Testimonial Ad 
+2) Prop Comedy Ad 
+3) Emotional Avatar Testimonial Ad 
+4) Show Don,t Tell Ad 
+5) Long Term Results Ad 
+Now that we got formalities out of the way, lees dive into the ad ftamework that started 
+it all. .. 
+Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 21 
+
+---PAGE---
+
+22 Copyrigh1 0 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUT ION 
+
+---PAGE---
+
+Sl:.CTIO I: MY DE:.H GYM LAUNC H AD 1-RAMEWORKS 
+Ad Framework #1: Personal Testimonial/Origin Story 
+Why This Ad Framework Rocks: 
+Believe it or not, the first time this ad framework worked, it was with a video I didn't 
+even intend to be an ad. I made it for an online group I was a part of. I wanted to show how 
+crazy a particular launch location was. Tons of people in the group said it was cool. Then 
+one of them told me I should run it as a "meme style ad". I didn't know how to do that, so 
+she showed me how to put meme style captions on a video. Then , I launched it ... and it 
+took off. 
+This ad framework functions like one gigantic open loop. The entire ad builds mystery. 
+But, through building mystery, it also eliminates many of the implied objections that people 
+have about why something won't work with their gym (location, bad neighborhood, gym size, 
+price point, age, etc). 
+It claims a ridiculous outcome up front, then shows circumstances that are opposite to 
+what you'd expect to get that kind of outcome. Then, it keeps expanding on this open loop 
+by stacking "anti-proof" of the situation until it finally snaps the loop closed or "pays off' 
+the viewer at the very end with the stack of $500 bills (signed contracts). 
+Any business can easily think about a situation that would make it less than ideal for 
+a customer to get an outcome. Show all of those negatives in a row. Then show an insane 
+outcome to prove your thing works regardless of circumstance. 
+This works because there was a big promise, fast timeline, and the delivery/setting made 
+it believable. It eliminates all the reasons someone would say it didn 't work for them in the 
+ad itself with a massive payoff of proof at the end. 
+This ad, and subsequent framework, took me from broke to not broke. It changed my 
+life. It also goes to show you that you don't need to be fancy to win. Just use what you've got. 
+Copyrigh1 C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 23 
+
+---PAGE---
+
+PART If : MY ADS BLACKBOOK : BEST 20 AD FRAMEWORK S OF ALL TIME 
+191 SIONUPS 
+IN 19 DAYS 
+@ scAN ME 
+Visual Hook: 
+• Shaky selfie style ad creates extra movement and looks more social native. 
+• Pans to show the entire neighborhood. 
+• This is definitel y curiosity-driven when paired with the verbal hook. The prospect 
+might wonder: What is he showing us? What's the humble brag? 
+Ad Copy: 
+Hook 
+Hey guys, I wanted to show you something kind of cool, a little bit of a humble brag, but, 
+um, yeah. (HOOK - not the best hook, but it seemed so authentic, it worked) 
+24 Copyright C 2025 by BUMBL E IP, LLC NOT POR DISTRIBUTION 
+
+---PAGE---
+
+SECTION I: MY BEST GYM LAUNCH AD FRAMEWORKS 
+Meat/Offer 
+So I'm opening this gym in kind of the middle of nowhere. It doesn't really look like, it's 
+like a residential kind of neighborhood, kind of sketchy, (DAMAGING ADMISSION) but 
+I wanna show you something (CURIOSITY). So, even though, you know, don't let your 
+circumstances make you feel like your, uh, uh, like you can't sell, usually it's just your pitch. 
+Um, she's like, how sketchy does this look right? (CURIOSITY) I'd be sketched out. So people 
+are coming up these stairs, they're like, oh my God, why am I doing this? (CURIOSITY) 
+Looks so sketchy. Look at these bars and these windows. Oh my God, what am I getting 
+into? (CURIOSITY) Like, what is this? (CURIOSITY) Like, ah, I'm saying, yeah, this 
+is gonna be a gym. (DAMAGING ADMISSION/RELATABILITY - the entire intro is a 
+combination of curiosity-driven and re/,a,table) 
+It's gonna be amazing. Look, we got some stuff here. Here's a bathroom that I don't even 
+know. Here's some stuff. Here's some stuff. What 's going on? (CURIOSITY) Hold on. So 
+the other side's like, wait, is it an apartment? (CURIOSITY) I don't even know. Is it sort of, 
+it's like in the middle of the living room, there's some paintings on the wall and this is it, 
+right? (CURIOSITY) 
+But somehow, here's the cool part. 
+These are all 500 bills, so (DREAM OUTCOME/PROOF) 
+you can sell wherever you want. So, uh, don't let that stop you. 
+How To Apply This Ad Framework: 
+Make a wild promise/ claim in the first five seconds. Open with the end result your 
+prospects crave ("We added $42k in 19 days"). Keep it short- no details yet. (Ihe ad does 
+this visually rather than in the copy). 
+Show yourself in an obviously '~ong" environment. Film in a setting that looks 
+incompatible with the promise (run-down storefront, tiny bedroom office, deserted parking 
+lot, etc). Mention the flaws aloud (bad neighborhood, zero foot traffic, ugly walls, ancient 
+equipment). 
+Walle the viewer through a rapid "problems tour". Move the camera and rattle off 
+every objection prospects normally raise: "Too hard to find." "No fancy decor." "Prices look 
+crazy high." "We're brand new / too old / too small." Each objection is "anti-proof " that 
+keeps curiosity piqued. 
+Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 25 
+- _ __ I 
+
+---PAGE---
+
+PART II: MY ADS 81..ACKBOOK : BEST 20 AD FRAMEWORKS OF ALL 1 IMI: 
+Expand the open loop and stack more negatives. Keep revealing fresh reasons success 
+shouldn't happen here (broken sign, cramped space, outdated website) . Let curiosity build. 
+Offer no resolution yet. 
+Snap the loop closed with overwhelming proof. End the tour by shoving irrefutable 
+evidence into the focus: A stack of cash, signed contracts, fully booked calendar, Shopify 
+dashboard-all tied to the original wild promise/claim. Say one plain sentence that connects 
+dots ("If we can sell here, you can sell anywhere."). 
+Deliver the takeaway and soft CfA. Tie the lesson to the prospect's own limiting 
+belief ("Your results aren't about location-just the pitch"). Invite them to the next step 
+(download, book a call, start a trial). 
+26 Copyright C 2025 by BUMBLE JP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTION I: MY BEST GYM LAUN C H AD FRAMEWORKS 
+Ad Framework #2: Prop Comedy 
+Why This Ad Framework Rocks 
+I always wanted to make a "Dollar Shave Club" style ad but never had the resources (or 
+skill). Finally, I had a good enough videographer to do this with. So we scripted the whole 
+thing out. One phrase at a time. Then tried to pair each phrase with some prop/scene that 
+was funny and fast moving. 
+This was an entertaining ad. The music and visuals do a lot of work here. It's clear and to 
+the point. We taught gyms how to advertise, so our ads had to be good . Our ads were proof 
+that we knew what we were doing. These types of ads don't try to do too much. The point is 
+to get the right person to click with the right intent. This accomplishes that . 
+ID SCAN Mf 
+Copyrigh1 C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 27 
+
+---PAGE---
+
+PART II: MY ADS BLACKBOOK : BEST 20 AD FRAMEWO RKS OF ALL TIME 
+Visual Hooks: 
+• First scene already in the gym, because I'm targeting gym owners. This seems obvious , 
+and yet so few people ever do it. Your avatar should immediately see the background , 
+clothing, and spokesperson as "like them" co increase the likelihood they respond. 
+• Motion on camera (approaching subject), motion on subject {lifting weights) . 
+• Second scene changes within half a second. 
+Ad Copy: 
+Hook 
+Are you a gym owner? (CALL OUT) 
+Meat/Offer 
+Do you wane high ticket online clients? (DREAM OUTCOME ) 
+Do you wane chis in as little as 30 days? (SPEED) 
+It's possible. We're already doing it. (PERCEIVED LIKELIHOOD) 
+CTA 
+To find out how you can too , click the link, download the case studies, schedule a call time . 
+We'll see you on the ocher side. ( CTA) 
+How Apply This Ad Framework: 
+Map the value-equation questions. Write three to four "Yes" prompts chat hit dream 
+outcome, speed, ease, and proof Ex. "Are you a gym owner?" ➔ "Wane high-ticket client s in 
+30 days?" Keep each line three to five seconds max. The lase one should be a CTA. 
+Assign one prop + one mini-setting per line . Make sure the first setting is one your 
+avatar recognizes so they know it's for chem. After that , try and match the prop to the line if 
+you can. If you can't, just try to make it fun and interesting. 
+Film each line separately. Shoot all lines in order but as individual clips. Keep talent 
+centered and moving (step forward , lift prop, spin around). 
+28 Copyrigh1 C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECT ION I: MY BEST GYM LAUNC H AD FRAMEWORKS 
+Use whip-cuts or camera swings between clips. Finish each clip with a fast pan ; start 
+the next clip continuing that morion. The mome ntum "drags" viewers forward without 
+missing a beat. *This is super importa nt for the pace of the ad* 
+Layer upbeat music with captions . Choose a royalty-free track (found that out the 
+hard way). Make captions in huge, high-contrast font to match the spoken line. 
+Finish with a CTA card. Show the CTA with the spokesperson pointing to it. Freeze­
+frame the last card for one full second so they have time to read it and take action. Bonus 
+points: I learned this later, actually screenshare the page they'll go to and demonstrate opting in 
+so they know what happens next. 
+Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 29 
+
+---PAGE---
+
+30 Copyrigh1 C 2025 by BUMBLE IP, LLC NOT FOR DISTRJBUTION 
+
+---PAGE---
+
+SE.CTTO ~ l 1✓.Y RE5f Gib<! U\UNCH AD B.A:V..£110RD 
+Ad Framework #3: Emotional Avatar Testimonial 
+Why lhis Ad Framework Rocks 
+This ad framework absolutely C RUSHf.S _ It birrhed one of m y best ads of all time 
+(broken down below)_ We cllil y ran 100+ variations of this one piece of crca.rive alone_ And 
+they all perfo rmed. 
+l h is ad features Cale :.md Maggi e who were some of my first Gym l.2un ch ru.srnmcrs. 
+l hcir lives had obviously change d since using rhe systems at Gym Launch. They asked if 
+they could do anyrhing for me in return_ I asked them ro film a testi monial and gave rhcm 
+six points co hit: 1) v.n ar was life like before perso nal ly and 2) professionally- 3) ~bac 
+skepticism did you have and 4) v.-hy did you choose ro take actio n anyways_ 5) ~bat was life 
+afi:er like personally and 6) profossionaily. 
+And rhcy kno cked it out of rhc park. I don't ch ink we've had a testimonial ourperform 
+this one in the company's history. Le e's break it down so you can ll5C it. 
+- We were two months 
+from shutting our doors. 
+@ SCAN VE 
+C '?"nfb,: 0 Jll~; IT? i5Dl8L.E U: U.C 1'v T Fm:. D£.5TIUB:. 'TIOt-: 31 
+
+---PAGE---
+
+ECTION I: MY 81·. T GYM LAUNCH AD FRAMl:.WORKS 
+Ad Framework #3: Emotional Avatar Testimonial 
+Why This Ad Framework Rocks 
+This ad framework absolutely CRUSHES. It birthed one of my best ads of all time 
+(broken down below). We easily ran 100+ variations of this one piece of creative alone. And 
+they all performed .. 
+This ad features Cale and Maggie who were some of my first Gym Launch customers. 
+Their lives had obviously changed since using the systems at Gym Launch. They asked if 
+they could do anything for me in return. I asked them to film a testimonial and gave chem 
+six points to hit: 1) what was life like before personally and 2) professionally. 3) What 
+skepticism did you have and 4) why did you choose to take action anyways. 5) What was life 
+after like personally and 6) professionally. 
+And they knocked it out of the park. I don't think we've had a testimonial outperform 
+this one in the company 's history. Let's break it down so you can use it. 
+- We were two months 
+from shutting our doors. 
+@ st AN Mf 
+Copyright C 2025 by BUMLILE II', LLC NOT FOR DISTRIBUT ION 31 
+
+---PAGE---
+
+PART II: MY ADS BLACKBOOK: BEST 20 AD FRAM EWORKS OF ALL TIME 
+Visual Hook: 
+• Visual proof begins showing Cale and Maggie with their gym behind them. Again , 
+make sure the ideal avatar thinks "this is for me". Cale and Maggie look and talk 
+like gym owners (because they are). This also-unsurprisingly-brought in more 
+married couple owners. 
+• The frame changes within half a second to an extremely empty looking gym and a 
+sad looking Cale. 
+• Emotional music is also playing (we remixed dozens of different music variations). 
+Ad Copy: 
+Hook -
+We were two months from shutting our doors. (HOOK) 
+Meat/Offer 
+When we started, we had about 31 members (PAIN). We were making about four grand a 
+month (PAIN). Maggie was pregnant with our second (STAKES). I had actually gone and 
+gotten another job in order just to literally put food on the table (PAIN). I was working 
+really long hours, coaching in the morning, going to work (PAIN). 
+Coaching in the evening wasn't sustainable (PAIN). There was no light at the end of the 
+tunnel (PAIN). We weren't happy with where we were at (PAIN), and we joined Gym Launch 
+(TURNING POINT). We buckled down and we followed the system and we followed it 
+to a T. 18 months later. Um, I haven't coached a class in a year (LESS BAD STUFF). Now 
+we've gone from 31 members to over 200 easily. (MORE GOOD STUFF) 
+We're able to take our kids to school in the morning (GOOD STUFF). We're able to be at 
+home with them at night and make dinner for them (GOOD STUFF), go to their gymnastics 
+or soccer (GOOD STUFF). We literally went from being every day in our gym to hiring a 
+full staff and being able to step away in four and a half months. (FAST BAD TO GOOD 
+STUFF) 
+It's not easy, but it's comp letely worth it. (DAMAGING ADMISSION) 
+And I would encourage any gym owner that's sitting there on the verge and they're, they're 
+tired of what they're doing (CALL OUT). They wanna help more people and they wanna 
+have more freedom in their life, spend more time with their family, and really create a 
+32 Copyright C 202~ by BUMBLE Jr, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECT ION I: MY BEST GYM LAUN C H AD FRAM EWORK S 
+legacy, um, in their community (DREAM OUTCOME). And personally to join Alex 
+and Leila because it's completely changed our life, um, both personally (INTERNAL 
+TRANSFORMATION) as well as, uh, financially (EXTERNAL STATUS) and also helped 
+us reach more people in our community, which is ultimately what we started a gym for. 
+(INTERNAL TRANSFORMATION + EXTERNAL STATUS) 
+CTA 
+There's a better way to build a gym, download these 11 frameworks that we use to build 
+million dollar gyms (CTA). 
+How To Apply This Ad Framework: 
+Pick a client and record them in a setting that communicates that they're like your 
+avatar visually. This instantly signals "for gym owners" and, by showing both spouses fit 
+and present, pulls in married-owner prospects. 
+Show sad setting fast. Cut within half a second to an empty, gloomy shot of the same 
+setting and add a gentle, emotional soundtrack. The visual contrast plus music sets the 
+mood for hardship before words are spoken. 
+Open with a blunt pain statement. "We were two months from shutting our doors" 
+then stack five-to-six rapid-fire pains and stakes. Ex: low member count, tiny revenue, 
+pregnancy, second job, and crushing work hours-each line a quick jump-cut to keep 
+viewers locked in. 
+Mark a clear turning point. "We bought [Your Product/Service]" and describe the 
+disciplin ed work phase. Keep this portion short; the audience only needs to hear that there's 
+work and to set realistic expectations: Ex: "followed the system to a T. It was hard but worth 
+it". Switch to upbeat music at the turning point in the ad. 
+Describe/show the dream outcome with numbers and personal benefits. Ex: the 
+member surge (31 ➔ 200+), profit jump, kids taken to school, dinners at home-each 
+positive matched with uplifting B-roll (if you can, if not, words work). 
+Highlight the speed and ease. Ex: "hired staff, stepped away in 4.5 month s". This 
+tackles the "too slow/too hard" objection before it forms. 
+Insert a brief, honest disclaimer. Ex: "It's not easy, but it's completely worth it". The 
+damaging admission boosts credibility and decreases skepticism. 
+Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 33 
+
+---PAGE---
+
+PART II. MY ADS BLACK BOOK · REST 20 AD FRAMEWO RKS OF ALL T IME 
+Give a condensed "reason why'' to take action. Talent should mirror the prospect 's 
+pain, then paint their bigger dream (freedom, legacy, community impact). Lee the customer 
+speak directly to camera so prospects feel the invitation is personal. 
+End with one crystal-dear CTA on screen. Plus add in voice-over. Ex: "Dow nload 
+the 11 frameworks we used to build million -dollar gyms". Use a bold numeric hook and a 
+button graphic so the next step is clear. 
+Remember the narrative rhythm: PERSONAL STAKES ➔ PERSONAL PAIN 
+➔ PROFESSIONAL PA1N ➔ TURNING POINT ➔ WORK ➔ PROFESSIONAL 
+GOOD ➔ PERSONAL GOOD ➔ ADDRESS SKEPTICISM ➔ REASON WHY➔ CTA 
+Follow that sequence and you'll do just fine. 
+34 
+Copyright O 2025 by BUMBLE Ir, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+Sl·.CTION I: MY BEST GYM LAUNCH AD FRAMEWORKS 
+Ad Framework #4 Show Don't Tell 
+Why This Ad Framework Rocks 
+I discovered chis framework at a time when I was learning more about proof. In shore, 
+the closer a prospect can approximate the proof to their situation , the lower the risk, and by 
+extension, the more compelling it is. So for example, someone who doesn't look like them, 
+in a different country, says they own a gym, and chat it got full, is far less compelling than 
+someone who looks like them, down the street, at their gym, with a line out the door they 
+can see. 
+I sold "make your gym more profitable". The way to show that was a packed class. So 
+I asked my community to send me videos of their most packed times. And ... these ads 
+crushed. I reused chis format many many many times. Below was the most successful of that 
+entire family of ads. And it serves as proof chat you don't even need ad copy. Just showing the 
+result clearly enough can be an ad in and of itself. Proof works better than just about anything 
+else for persuading people. 
+Reminder : Ads don't need co be fancy. They need co get people co click. 
+@ scAN ME 
+Copyright C 2025 by BUMBL E IP, LLC NOT FOR DISTRIBUTION 35 
+
+---PAGE---
+
+PART 11: MY ADS BLACKBOOK: BEST 20 AD FRAMEWORKS OF ALL TIME 
+Visual Hook: 
+• Bold red text at top with clear "dream outcome" with high ticket price point . 
+• Proves the headline by showing a completely full class. 
+• The visual demonstrates the dream outcome-packed clmses. Show not tell. 
+• Many people moving at once almost always draws attention. (Remember this. It's a 
+big one. The only thing better than many people moving at once is many people 
+moving at once in unison). This is a massive pro tip. 
+Ad Copy: No telling. All showing. 
+How To Apply This Ad Framework: 
+Show the outcome happening instead of saying it happened. Ask current customers 
+who match your target avatar to film their "dream outcome proof moment". The more the 
+ad shows viewers' own dream outcome, the lower the perceived risk. Ex: Don't say you can 
+get their phone to ring off the hook, show their packed calendars. Don't say you can fill their 
+gym, show them what their gym could look like-show them a line around the block. Don't say 
+you fix their credit-show them reacting to paying off their !mt loan and getting a card in the 
+mail with 1 Ox their old limit. Etc. 
+Frame what they're looking at. Use the fewest possible words and numbers to frame 
+what they're looking at imme diately. We don't want them to have to figure out. Do this in 
+post production . Use a high-contrast color to grab their eye. 
+Get people to move in unison if possible. We pay attentio n when we see lots of 
+humans doing the same stuff at the same time. Think synchronized swimming, flash mobs, 
+cheerleading teams. We can't help but stare. This stops the scroll far better than narration 
+ever can. This is a massive pro tip that people will skip over. This ad only shows many people 
+moving, but not in unison. If it were in unison-it would be even better. 
+Proof does the talking. The proof should be so clear you don't need to add narration 
+(if possible). If you have to use words for people to know what it means, you'll have a less 
+effective ad. Not to say it won't work, but if you can demonstrate it without words it'll work 
+that much better. Also, a fun side benefit of this style is that non-verbal clips also tend to get 
+more reach organically. 
+36 Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+ECTION I: MY BEST GYM LAUNCH AD FRAMEWORKS 
+Non-verbal ads need non-verbal CTAs. For chis type of ad, there are no words, so 
+make sure you add a visual CTA chat works without narration/speaking . The ad shows them 
+"This could be you" and the button cells them what co do next. 
+Copyright O 2015 by BUMBU. JP, LLC NOT FOR DISTRIBUTION 37 
+
+---PAGE---
+
+38 Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECT ION I: MY BEST GYM LAUNCH AD FRAMEWORKS 
+Ad Framework #5 Long Term Result 
+Why This Ad Framework Rocks 
+This is one of my top ad frameworks from a family of ads I called "the one year later 
+campaign ". Basically, I contrast my results against the "one trick ponies" in my industry. 
+They're all talking about small results in short timelines. I want to show bigger results on 
+longer timelines. It shows we're legit. When I discovered these, I didn't realize it would 
+become our most successful campaign (in aggregate) of all time. 
+By focusing on the numbers that mattered to them, and setting realistic expectations, 
+it brings in the absolute highest quality customers. These calls and customers cost more to 
+acquire-but they paid more, stayed longer, got better results, and referred friends. 
+To be clear, poor beginner customers will absolutely buy "get rich quick" but then you're 
+only selling to poor beginners. The more advanced your prospect, the more informed they 
+are. They know it takes time. They know it takes work. They just want to make sure you're 
+at their level and can help them get to the next one. 
+Interestingly, when I ran this the first time, the cost per call for this campaign was 
+higher than our KPis. I almost turned the campaign off, but my sales team begged me not 
+to. This campaign taught me an important lesson: don't optimize for CAC, optimize for 
+LTV:CAC. This type of ad doesn't optimize for cheap leads, it optimizes for big spenders. 
+Said differently, you can get $100 customers who pay you $200 or you can get $1,000 
+customers that pay you $10,000. They'll cost more but you'll make more. 
+This style also taught me to make ads that don't just attract your genre of customer (any 
+gym owner), but the exact customer you want (advanced gym owner). And the easiest way to 
+do that is talk about the things those customers care about. So be specific. Use language that 
+only the upper echelon of customers would understand. 
+For the most part, you'll get the upper market and the smaller market. But only talking 
+to a beginner never gets the advanced guy. And besides, no one else will talk to the advanced 
+customer because they're afraid to ostracize any customers. So it's ripe for the taking. 
+Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 39 
+
+---PAGE---
+
+PART II: MY ADS BLACKBOOK: BEST 20 AD FRAM EWORKS OF ALL TIMI-. 
+4x Lifespan 
+I) SCAN ME 
+Visual Hook: 
+• The avatar in their place of work: A gym owner, in a gym. Again. It's so simpl e, and 
+yet few do it. 
+• A whiteboard with reference numbers creates more proof and believability. 
+• This attracts a more affluent gym owner. NOT a struggling gym- but average gyms 
+that want to become great gyms . 
+• Headline shows a wild before and after 93 ➔321 and includes client lifespan (not a 
+normal discussion for beginners in this industry). 
+40 Copyright O 2025 by BUM BLE IP, LLC NOT FOR DISTRIB UTION 
+
+---PAGE---
+
+SECT ION I: MY BEST GYM LAUNCH AD FRAMEWORKS 
+Ad Copy: 
+Hook 
+My profit was $0 . I had a few part-time people helping me out. I was working 60 plus hours 
+a week. (PAIN HOOK) 
+Meat/Offer 
+At that point. We were really struggling and failing business (PAIN), um, and really just 
+running on my passion. Uh, and I really was not able to see a path towards a future in small 
+business, uh, particularly with gyms. (PAIN) 
+Uh, for myself and my family, we joined Gym Launch, uh, in March of2017 (DECISION). 
+Within the first few months, we had tripled revenue. Now we've grown it through the 
+techniques, uh, that we've learned from Alex and Gym Launch (GUIDE) to over $83,000 
+a month (EXTERNAL GOOD STUFF). Went from 93, uh, members that were leaving 
+pretty quickly to now. We have 321 members (EXTERNAL GOOD STUFF), uh, as of this 
+month, and we're gonna hit 400 by spring, and we've got an attrition of under 2%, uh, every 
+single month. (EXTERNAL GOOD STUFF) 
+Last year, I've got six full-time people who all make over 40, $45,000 a year as much as 
+$75,000 a year. (INTERNAL GOOD STUFF - took pride in paying people) 
+CTA 
+Thank you, Gym Launch. Thank you Alex and Leila. Uh, and I look forward to, uh, you 
+know, joining mid meeting , more of you in the, the Gym Launch group as we, as we go. 
+(CTA) 
+How To Apply This Ad Framework: 
+Open with a visual that matches the avatar plus wild before/after headline. Film 
+your ideal customer in their own workspace (chef in the kitchen, contractor on-site, founder 
+at the desk). Show a bold industry specific on-screen stat like "Revenue $0 ➔ $83k" and/or 
+"Users 93 ➔ 321 (12-mo lifespan)." 
+Hook with a single pain sentence. Lead off camera: "My profit was zero and I was 
+working 60-hour weeks." One line is enough to make the right prospect think, that's me. 
+Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 41 
+
+---PAGE---
+
+PART II: MY ADS BLACKBOOK: BEST 20 AD FRAMEWORKS OF ALL TIME 
+Stack two to three more specific pains. Ex: Mention hours, cash burn, family pressure­
+details only an advanced avatar would relate to. More advanced prospects will lean in when 
+the struggle sounds exactly like theirs. Pain always works. But the pain has to be their pain, 
+not someone else's. 
+Mark the decision point. Small but important detail: make sure they name your solution 
+and when they did it ("We joined in March 2023 "). The timestamp increases credibility by 
+a lot. 
+Show two wins--the Fast Wm and the Big Win. Ex: Fast Win: "Within three months 
+we tripled revenue." Big Win : "Today we clear $83k/month with <2 o/o churn ." Two tiers 
+show both quick payoff and long-term climb. You want both. 
+Add more detail to further prove the initial claim. Display metrics only advanced 
+people would understand that would be aligned with the larger proof (revenue/growth)­
+L1V, churn, margin, head count, salaries, etc. The deeper the metric, the more advanced the 
+avatar you attract . 
+Don't forget life improvements and "soft'' benefits. "Six full-time staff now earn 
+$45-75k; I take my kids to school every day." Human outcomes make the financials 
+feel real-and the prospect feel better. It'll also cover both types of avatars-some people 
+genuinely want the "soft stuff" more , others want the "money stuff," so covering both angles 
+in the ad gets you both types of avatars. 
+Reason why CTA. Have the spokesperson/testimonial restate the hook and tie the 
+outcome to the call to action. A simple "Thanks to [you/product], excited to meet more of 
+you inside" works as an implicit CTA. Massive tip: Advanced prospects respond better to 
+peer endorsement than you . Get them to make the invitation to them if you can. 
+42 Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+Section II: My Best ALAN Ad Frameworks 
+Inside this section I'll give you my five best ALAN ad frameworks. I break them down 
+in the following order: 
+I) Looking for 5 
+2) New vs. Old 
+3) Why You Will Never 
+4) The "Nort h Star" 
+5) No BS Selfie 
+Let's start with the first ... 
+Copyright C 2025 by BUMBLE IP, LLC NOT FOR DISTR1 BUTION 43 
+
+---PAGE---
+
+44 Copyrigh1 0 2025 by BUMBLE IP, LLC NOT FOR DISTRJBUTION 
+
+---PAGE---
+
+SECT ION II: MY BEST ALAN AD FRAMEWORKS 
+Ad Framework #1 Looking For 5 Avatars ... 
+Why This Ad Framework Rocks 
+'Tm looking for# AVATARS who are looking to DREAM OUTCOME." 
+This is one of the most classic direct response ads of all time. It works in any niche . It 
+worked 70 years ago. It works today. It'll likely work tomorrow. When I launch something 
+new, I'll almo st always start with an ad like this . 
+This also works great for organic audiences. To make it more effective, you can also 
+mention who you aren't lookingfor. Be as specific as possible-it 'll further increase credibility. 
+On top of that, what takes thes e ads to the next level is a compelling reason why. For 
+mine, I wanted to dominat e other niche s. And that made sense. So, that was the angle. Use 
+these if you are just starting to run paid ads or moneti ze your audience . Simple and brutally 
+effective. To furth er prove the point, below is an ad from my gym days I dug up using the 
+same template. It's a simple image with the copy. The second is the ALAN top performer­
+and the one I'll breakdown fully in this chapt er. 
+~ United Fitness - La Habra 
+J.:!:a Sponsored • \11 
+V 
+WE ARE LOOKING FOR 30 LOCAL WOMEN AND MEN TO LOSE 
+WEIGHT AND TRANSFORM THEIR BODIES FOR FREE IN 6 WEEKS. 
+Apply al: '-------~ 
+You will receive: 
+-Cuslomized food preparation Instructions 
+-Personal eating plan 
+•Accountablllty coach & group 
+-6 weeks of unlimited training sessions 
+-Family of support to help you acoomplish your goals and make tt a lttestyle 
+change 
+We only ask that once you completely change your body that we can share 
+your transformation with others. When you complete the program ... It's free 
+Apply at:....._ _____ ~ 
+INFAMOUS 6 WEEK 
+CHALLENGE - HOME OF ... 
+ww .'L.-___ _____ ___. 
+Sign Up 
+Copyright © 2025 by BUMBLE 11', LLC NOT FOR D ISTRIBUT ION 45 
+
+---PAGE---
+
+Visual Hook: 
+PART II: M Y ADS BLA C KBOOK: BEST 20 AD FRAMEWO RKS OF All. TI M E 
+Looking To Partner With 
+5 AGENCY OWNERS -
+- If you are a local Lead 
+Gen Agency, 
+i) SCAN ME 
+• Man in front of whiteboard = educational = value 
+• Think of this as "aducational " 
+• An educationa l setting works better with more complex products 
+Ad Copy: 
+Hook 
+If you are a local lead gen agency that markets for one single niche and is doing $15,000 
+a month or more in recurring revenue (CALL OUT) and is trying to get to a hundred 
+thousand a month, 250 a month, 500, a million plus per month in one niche, (DREAM 
+OUTCOME) then I have something very special for you. So right now I'm looking for five 
+agencies that I can help do exactly that . (HOOK) 
+46 Copyright © 2025 by BUMBLE IP, LLC NOT FOR DISTRJBUTION 
+- --- ----------- ---- j 
+
+---PAGE---
+
+SECTIO N II: MY BEST ALAN AD FRAM EWORKS 
+Meat/Offer 
+And the difference between what I'm trying to do and probably everything else that you 
+see is that. Most people in the marketplace that help agencies made their money helping 
+agencies, they didn't actua lly make their money dominating a niche . (OLD WAY/OTHER 
+GUYS) So to date , we are at 98-and-a-half million dollars in revenue in a single niche of 
+gyms in our other business. (US/PROOF) 
+And so I'm looking for the people who want to actually do that and learn that from somebody 
+who's actually done it. That being said, my goal here is not to sell a thousand people a 1 Ok 
+course. That's just not my game. (US VS. THEM) What I'm trying to do is find a handful 
+of high value partners that I can align with and make my one irresistible offer for you, which 
+is if we make a ton of money together, you make a lot of money, I make a lot of money, but 
+if what I help you within your business doesn't make you a red cent, then I don't gee paid. 
+(OFFER) 
+Fair enough. If that sounds interesting to you. Then what I'd like you to do is click the link, 
+app ly (CTA) and then my executive assistant or someone on my team is actually gonna reach 
+out and first qualify just to make sure that you actually meet those requirements (NEXT 
+STEPS) that I just said. Um, but then if it works as a partnership, then we'll be able to 
+align and I'll give you everything in my arsenal to help you scale very quickly. (DREAM 
+OUTCOME + SPEED) 
+CTA 
+All right, and so anyways, if that sounds interesting to you, then this is for you. Click the 
+link, apply, and can't wait to meet you. (CTA 2) 
+How To Apply This Framework: 
+Film in an educational setting. Think chalkboard, whiteboard, digital screen, or 
+anything connected to learning. The "teacher " visual signals authority and works best for 
+complex, novel, or higher ticket offers. 
+Open with the one-liner. 'Tm looking for five (AVATAR) who are looking to 
+(OUTCOME) but don't want to (BIGGEST PAIN POINT) so that I can (REASON 
+WHY). Here 's my (PROOF). If interested, (KEEP WATCHING)." 
+Copyrighc © 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 47 
+
+---PAGE---
+
+PART II: MY ADS BLAC KBO O K: BEST 20 AD FRAMEWO RKS O F ALI. TI ME 
+Explain why you're only taking limited clients. It can be "co get great case studies" or 
+"to prove my stuff works" or "because we're new to the area" or "because I'm starting out and 
+will do everything I can to win" etc. No matter what you choose, make it believable. I prefer 
+the truth (ha). 
+Why your thing is better than what's out there. The difference should elevate your 
+produ ct/ service. You'll underline this with proof. 
+Split risk with the customer. Promi se to win with them and have some element of 
+performance compensation; thi s decreases risk, show s intent to deliver, and attracts 
+more people. 
+Send them to your assistant. Ex: "Click the link, appl y, and my EA will call to confirm 
+you fit the requirement s." Mentionin g my executive assistant further reinforced my authori ty 
+and the authenticity of the ad. 
+48 Copyright© 2025 by BUMB LE IP. LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTION I I: MY BEST Al.AN AD FRAMEWORK S 
+Ad Framework #2: New vs. Old 
+Why This Ad Framework Rocks 
+It's a classic ADucational framework. You see these a lot, but few do them well. Ir works 
+especia lly well with more advanced/complex products or services. It also has the side benefit 
+of turning you into a de facto authority in your space over a long enough time hori zon. So 
+these ad types both build brand and drive sales. A great combo . 
+Marketing and sales have the same objective, they simply operate in different media 
+(one to one vs. one to many). The goal is to educate the prospect enough to make a decision. 
+ADucat ional ads can do a lot of heavy lifting, especially if you have something brand new. 
+If you're brand new these work great because you'll be judged based on the quality of the 
+informat ion, not a pre-existing brand. And if you're established, it works even better . 
+AGENCY OWNERS 
+$1 ,500/mo to $15,000/ mo Clients 
+How we SWITCHED 
+P~-Cl..1'JEJ'..~« !..',(E 
+$I t"<£J/"'v- >! i:-:- CCO/A\o 
+- Lead gen agency owners 
+for local businesses . 
+ID SCAN ME 
+Copyright© 2025 by BUMBLE I P, LLC NOT FOR DI STRIBUT ION 49 
+
+---PAGE---
+
+PART II : MY ADS BLACKBOOK: BEST 20 AD FRAMEWORK S OF ALL T IME 
+Visual Hook: 
+• Man in front of whiteboard = edu cation al = value 
+• 1hink of this as "aducational" 
+• An educational setting works better with more comp lex produ cts 
+Ad Copy: 
+Hook 
+Lead gen agency owner s for local businesses. (CALL OUT) What I wanna show you in 
+the next coup le seconds is how we went from retain er clients at $1,500 a month in the 
+gym niche to performance clients at $15,000 a month in the same niche, meaning we took 
+$1,500 a month clients and turned them into $15,000 a month by going from retainer to 
+performance . (HOOK) 
+Meat/Offer 
+And here's how it works. See, the reason that most people don't, can't charge a lot for a 
+retainer model is that you have what you're charging, which is your price, right? (OLD 
+WAY) And then you have what they get, which is their value. Simply put, that makes sense. 
+As long as there's a gap between these two thing s, everyone is happy because they're getting 
+more than what they're payin g for. (OLD WAY) 
+The problem is, is that the amount of value that you provide changes over time and the 
+moment that it dips below what you're charging, this is the moment that they cancel. Right ? 
+(PAIN/PROBLEM) But if you were to reverse this equation and actually make it so that every 
+single time you charge them for something, this value always existed. (OPPORTUNITY) 
+Then you'd, in theor y, be able to charge them as much as possible. Right, right. (DREAM 
+OUTCOME ) And so that 's pretty much what we did. (PROOF) And so we, instead of 
+saying, Hey, pay us X per month , and you get what you get, you get however many leads you 
+get, or you get how many people in the door get how many sales. What we did is inste ad of 
+charging for service, we instead started charging for shows. (OPPORTUNITY) 
+50 Copyright © 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTION II: MY BEST ALAN AD FRAMEWORKS 
+And for a brick and mortar business, that is the thing that they want. They want bodies in 
+the door and they know what a body in the door is worth to them, right? (SPECIFIC) And 
+so what we did was we said, okay, we're gonna ascribe a value to this number . And so the 
+question is, let's say it's a hundred dollars per person who walks in the door per person, that 's 
+a person. (EXAMPLE/HYPOTHETICAL PROOF) 
+Just go with me. It's a hundred dollars per person who walks in the door. How many would 
+you like? And then all of a sudden you no longer have a cap on the earnings (DREAM 
+OUTCOME) that you can have per customer, but instead, the customer becomes greedy 
+and wants to get as many as humanly possible. Think about thi s. When you have you r 
+retainer model, which is a recurring model, imagine going to a customer at day 30 and 
+saying, Hey, I'd like you to pay us twice as much . 
+Probabl y wouldn't go too well, (SPECIFIC PAIN) but what if you said, Hey, it's day 
+30, you're within your KPis. So let's just double your ad spend. They're gonna say, sure. 
+(OPPORTUNITY) But what ends up happening is that you just doubled the amount of 
+people that are gonna show up at their facility and therefore how much you can charge. 
+(DREAM OUTCOME) 
+And so thi s is just one of the ways that when we switched from a retainer to a performance 
+model, oops. Made a lot of videos today (THROWAWAY JOKES ). Um, then we switched 
+from retai ner, true performan ce model. We were able to make a whole bunch more, whatever . 
+It's somewhere. 
+CTA 
+But the point is, is that if you wanna see exactly how this model works, go ahead, click and 
+then apply. (CTA 1) 
+And I'll show you exactly how we made this transition and how hundred s of other agencies 
+are doing it right now, and seeing massive amounts of profit, lower churn, higher amount s 
+per custom er, and ultimatel y making themselves a much stronger and more competitive 
+busines s. So if you're gonna do that, go click, uh, apply, and then we'll see you on the other 
+side. (CTA 2) 
+How To Apply This Framework 
+Film in an educational setting and call out your exact avatar in < five seconds. 
+Ex: "Local lead-gen agency owners doin g about $15k a month-listen up." Why: the 
+whiteboard signals teaching;, the label filters for only qualified prospects. 
+Copyright © 2025 by BUMBL E IP, LLC NOT FOR DISTRIBUT ION 51 
+
+---PAGE---
+
+PART II: MY ADS BLACKBOOK: BEST 20 AD FRAMEWORKS OF ALL T IME 
+Make a big claim with details. "We turn ed $ 1,500/month clients into $ I 5,000/month 
+clients-sa me niche , same leads." Big increase + same context = curiosity. 
+Attribute all the pain in their life to their outdated model. Be as specific as possible 
+with the problems they're likely dealing with and attrib ute all relevant woes to their outdated 
+model. If the person relates to the old way, and the problems you describe, they'll be hooked 
+to hear how you solved them. 
+Reveal the new way and anchor it to a simple metric. Erase the old graph, draw a lin e, 
+or turn the page etc. Then rewrite "$ 100 per show" (or your new unit). Explain your model/ 
+way/met hod is superior based on this simp lified metric. 
+Drive it home with a case study or hypothetical. Ex: "On day 30 you don't ask for 
+doubl e the retainer -you just double ad spend. Clients say yes because ROI is already 
+proven." The math makes the promi se believable and serves as a proxy for proof. 
+Reinforce authority with a single proof line. Ex: "We've generated $98.5 million in 
+one niche using this switch." One number is enough. Just make it compelling . 
+Make a risk-reversed offer if possible. Ex: "If you don't make money, I don't get paid. " 
+Finish with a CTA that previews the process . Ex: "Click 'Apply,' my EA will confirm 
+you qualify, then we'll map your numbers on a 15-minut e call." This keeps you elevate d 
+and maintain s the frame that this is by application only and that you actually only want 
+qualified leads. 
+Close with your hook. You can start with somet hing like this: 'Tm looking for five 
+[AVATAR] doing roughly [CURRENT METRI C] who want [lOx OUTCOME] by 
+swapping their [OLD MODEL] for a [NEW MECHANISM]. We've already produ ced 
+[SINGLE PROOF STAT], and if you don't profit, I don't get paid [RISK REVERSAL]. 
+Click to apply-my team will verify fit and show the math. [QUALIFIED CTA)" 
+52 Copyright © 2025 by BUMBLE IP, L.LC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTIO N II: MY BEST ALAN AD FRAMEWORKS 
+Ad Framework #3: Why You Will Never 
+Why This Ad Framework Rocks 
+This ad framework capitalizes on understanding your prospects ' problem-and the 
+solution-better than they do. This leans on expertise . Interestingly, this ad is very similar 
+to the "Personal Testimonia l" ad (the first framework from Section I). But, instead of open­
+looping how I achieved the outcome despite terrible circumstances ... it outlines the terrible 
+circumstances and explains that they're the reason they haven't achieved their outcome. So it 
+flips it on its head. 
+Each added detail keeps "building pressure" with each additional shared statistic/ 
+problem that they probably suffer from. By the end of the ad, the person thinks ''man this 
+guy just named a bunch of stats about my business - and - I'm not at a million dollars a year, he 
+might be able to help me fix it. " 
+You demonstrate your expert ise by how specific or relevant you can describe the problem. 
+A prob lem so specific that someone hears it and says "he must be an insider to know this" or 
+"he must really understand this space" or "I feel like he's describing my life right now ': That 's 
+what makes an ad like this effective. This is a personal favorite of mine because of how 
+flexible it is. But remember. .. BE SPECIFIC. 
+This pain/prob lem-ba sed angle is super repeatable in any niche. List all the problems out 
+as specifically as you possibly can. Continue to build pressure, then resolve the pressure with 
+aCTA. 
+Copyrigh1 © 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUT ION 53 
+
+---PAGE---
+
+PART II: MY ADS BLAC KBOOK : BEST 20 AD FRAMEWOR K S OF A LL TIME 
+The 4 WARNING SIGNS 
+Your Agency Will NEVER Pass $1 M/Yr 
+4 WAl:'.Nl"J(. ~~11 ¼,., /J,.rn, 
+1
+ILL Nr:,•• ~ • 1 H Yf. 
+q,- v/(\,• 
+lJ ' ''..7- ' ,., 
+C!) r-"~~ t '> 1:, -. 
+- Agency owners. 
+ID SCAN ME 
+Visual Hook: 
+• Man in front of whiteboard = educatio nal = value 
+• Think of this as "aducatio nal" 
+• An educationa l setting works better with more complex products 
+Ad Copy: 
+Hook 
+Agency owners (CALL OUT), I wanna show you the four warning signs your agency will 
+never pass a million dollars per year. (H OOK) 
+54 Copyrighr © 2025 by BUMBL E IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTIO N II: MY BEST ALAN AD FRAMEWORKS 
+Meat/Offer 
+And the reason I know this is 'cause we've taken 68 companies over the last four years, over a 
+million dollars, and on our own company, we've done over a hundred million dollars in sales 
+in a single niche. (PROOF) 
+And these patterns repeat themselves over and over and over again. The first is if your lifetime 
+value per customer is less than $10,000, it'll be very difficult for you to pass a million dollar 
+per year run rate in your agency (SPECIFIC PAIN/PROBLEM). The second is if your 
+average revenue per client is less than $2,500 per month . ( SPECIFIC PAIN /PROBLEM ) 
+And what I mean by that is if, if you take all of your clients and you take all your revenue 
+and you divide it out, if your average revenue per client is less than $2,500 per month , it's 
+very difficult to have enough profit to continue to scale. The third is if your gross margin is 
+less than 80%. (SPECIFIC PAIN/PROBLEM) Alright, so if you charge a thous and dollars 
+per month, uh, to a client and your cost is $500 a month between your creative person, the 
+account manager, traffic person, et cetera, then your margins are gonna be below 80% and 
+it's gonna be difficult for you to scale. 
+And then finally, if your payback period is over 30 days, meaning it takes you more than 
+30 days with a customer to recover the cost that it costs you to acquire them . (SPECIFIC 
+PAIN/PROBLEM) So that would be the commission, the ad spend, and any other cost 
+associated with getting a customer. If it takes you more than 30 days to make that amo unt 
+of profit off the customer , you'll be very cash constra ined. (SPECIFIC PAIN /PROBLEM ). 
+You won't have enough cash flow to continue to reinvest in ads and continue to market 
+profitably. (SPECIFIC PAIN). Alright? Now, you may be suffering from one or even all four 
+of these thing s, but the good news is there is a model that reverses it and it's not a retainer 
+model. It's called the reverse royalty model. ( 0 PPO RTU NIT Y) 
+And I have a seven minute video that breaks down how it, it capitalizes on all four of these 
+things. Flips 'em to your favor unless you get way more customers. And at the end of the day, 
+take hom e a lot more than that. (LEAD MAGNET /VSL) 
+CTA 
+Alright , so if you're interested in that , click uh, opt in, watch the video (CTA I). And if it 
+sounds intere sting to you, you can apply and schedule a 15-minute call with my team and 
+we'll see if thi s model works in your niche. (CTA 2) 
+Uh, look forward to meeting you and hope you found this valuable. 
+Copyright© 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 55 
+
+---PAGE---
+
+PART 11: MY AD S BLAC KBOO K: BEST 20 AD FRAME WORK S OF ALL T I M E 
+How To Apply This Framework 
+Begin by standing in front of a whiteboard and addressing your exact avatar in the 
+first sentence. Ex: "Agency owners, let me show you the four warning signs you'll never 
+cross $1 million a year." The setting projects authority, and the hyper-specific call-out filters 
+for qualified prospects. 
+Establish authority. Ex: "We've taken 68 companies past $1 million and generated 
+$100 million ourselves ." A single , giant credentia l convinces the audience to keep listening. 
+Rapid -fire through prospect-specific pains . Ex: LTV under $10k, ARPC under $2.5k, 
+gross margin below 80% , payback over 30 days. Each number makes owners think, "1his 
+is me': 
+Introduce your new solution. Ex: "the reverse-royalt y model." Name it something 
+non-obvious. Explain what it is in one sentence and how it inverts all their prob lems. I had 
+to come up with "reverse royalty" becau se "Pay Per Show" was too obviou s and killed the 
+curiosity. 
+CTA to your lead magnet or Video Sales Letter. If you need the prospect to consume 
+more information to buy, tell them how. Ex: "Click to opt in, watch a seven-minute demo, 
+then book a 15-minute qualification call." 
+56 Copyright © 2025 by BUMB LE II~ LLC NOT FOR DISTRI BUTION 
+
+---PAGE---
+
+SECTJO N 11 : MY BEST ALAN AD FRAMEWO RKS 
+Ad Framework #4: The "North Star" 
+Why This Ad Framework Rocks 
+In this framework, I create a "north star" metric. Then I predict their pain point based 
+on this metric (it can be anything as long as it's predictiv e). For example, if you know a 
+man's neck and wrist thickness you can predict their body fat. You need to pick a metric that 
+does the same for your prospect. 
+Then , list a series of pain point s that resonate with them . Attribute all chis pain to their 
+old way of doing things which causes the north scar metric to lag. It explains how all these 
+dream outcome s aren't achievable for them right now. It lists what they want and explains 
+why it's out of reach. Then I posit that my model can help them and invite them to find out 
+more. 
+I want to zero in on something that 's always seemed to differentiate my copy from that 
+of other people-specificity. Instead of explain ing, let me show you .. . 
+For example, I could tell you probably a million very specific prob lems for gyms. 
+• Member s saying the music is too loud while five minutes earlier a member 
+comp lained it was too quiet. 
+• A member comp laining that we needed more variety of music right after ano ther 
+asked me to play the same playlist as last week because they liked it. 
+• One member requesting clean music with no curse words while anoth er asked 
+for the real music since the gym is for adu lts. 
+• My mic batt ery dying and having to shou t over the music until my voice gave 
+out . 
+• Realizing that my members cared more about my playlists than they did about 
+my workouts . 
+• Getting a cease and desist for playing my personal playlist over the speakers 
+because I hadn't licensed the music in a commercia l setting. 
+• iPhon es ringing or alarms going off because a trainer plugged their phone in to 
+play music . 
+• Commercia ls in the middle of a song while my gym is going on because a trainer 
+put their phone on and hadn't paid for premium. 
+Copyright© 2025 by BUMBLE IP, LLC NOT FOR DISTRJBUTION 57 
+
+---PAGE---
+
+PART II: MY ADS BLACKBOOK: BEST 20 AD FRAM EW O RKS OF ALL TIM E 
+And all these examples are just about the music in a gym that yo u might not have 
+thought about-but if you were a gym owner, you would've. Be specific . 
+AGENCY OWNERS 
+Learn Why You Haven't Passed $1 M/Yr 
+- Agencies, if you are struggling 
+ij) SCAN ME 
+Visual Hook: 
+• Anot her ADucational video 
+• If somethi ng works, keep doing it-+that might be a better meta-lesson than any of 
+the ad hooks. 
+58 Copyright © 2025 by BUMB LE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECT ION II: MY BEST ALAN AD FRAMEWORK S 
+Ad Copy: 
+Hook 
+Agencies. (CALLOUT) If you are struggling to break through a plateau and you're struggling 
+to grow your agency, it's probably not because you don't know how to get customers. It's 
+'cause you probably don't make enough per customer. (HOOK) 
+Meat/Offer 
+And now after taking 68 different businesses over a million dollar run rate and taking our 
+own business over a hundred million dollars in revenue (PROOF), I can tell you that these 
+patterns repeat themselves over and over and over again. 
+And so if right now your agency makes less than $5,000 per customer, in terms of total 
+lifetime value (SPECIFIC PROBLEM). You'll never be able to crack a hundred to $300,000 
+per year in run rate. You're just never gonna crack it. There's just not enough profit because it 
+costs X amount to get a customer (SPECIFIC PROBLEM). Alright? Now, as you get better 
+and you get closer to that $10,000 per customer in lifetime value, how much you make over 
+the lifespan , then you'll be able to get, you'll be able to crack that million dollars (DREAM 
+OUTCOME). 
+And if you're really lucky and you're in a really cheap space, you might be able to squeeze 
+your way to $3 million a year (DREAM OUTCOME), but you can't do it until you crack 
+over $10,000 . Once you hit 15, then you kind of open up the $3 million plus range you get 
+from three . And then in really lucky scenarios, like I said, you can get to $10 million a year. 
+(DREAM OUTCOME ) 
+Alright , but that 's where you have a $15 ,000 LTV or higher. Alright? And then finally, if you 
+wanna crack that million dollars a month, you wanna get to a million and a half, two million , 
+two and a half million dollar s per month plus (DREAM OUTCOME). And I've done this 
+two time s in my career (PROOF), then you have to have an LTV that 's over $20,000. 
+And the nice thing is that this single numbe r, your LTV is one of the biggest predictors of how. 
+Uh, your agency will plateau on how big it will grow. Now, uh, your current model may be a 
+retainer model , and if you're str uggling, you're under 10,000 , you're at 8,000 , 7,000, 6,000 , 
+et cetera (SPEC IFIC PROBLEM ). Then I wanna give you a different model that can blow 
+these numbers outta the water, and it's called a reverse royalty model (OPPORTUNITY). 
+Copyrighc © 2025 by BUMBLE JP, LLC NOT FOR DJST RJBUTJON 59 
+
+---PAGE---
+
+PART II: MY ADS BLAC KBOOK: BEST 20 AD FRAMEWORKS OF AL L TIM E 
+CTA 
+If that sound s interesting to you, you can opt in and download , and there's a seven-minute 
+video that I explain the model in more details and more number s than I can in thi s short ad. 
+Um , and if that sounds interesting, you can click and apply for a 15-minute call and we'll 
+see if this model would work in your niche. 
+Hope you found this video valuable, and uh, hope to see you soon. 
+How To Apply This Framework 
+Start with a direct callout plus a nightmare scenario. Ex: "Agencies, if you're stuck on 
+a revenue plat eau it's probably because you don't make eno ugh per customer." Address the 
+avatar and their biggest pain in one breath. 
+Establish authority. One sentence-"We've taken 68 agencies past $ 1 million and our 
+own firm has don e $ 100 million in a single niche"-is plenty to establish authority before 
+attention fades. 
+List a hierarchy of outcomes based on the metric. Ex: "und er $5k and you' ll never 
+crack $300k a year; $ 1 Ok open s $ 1 million ; $15k unlocks $3 million; $20k+ makes $1 
+million -a-month realistic." The prospect can identify themselves in the hierarchy. 
+List specific pains they experience at each level. The narrower your focus, the more 
+examples there are. Think math. Think moment s. 
+Introduce how your new method solves the north star metric. Keep the explanat ion 
+to one clear sente nce: billing per result mean s value always exceeds price, so profit scales 
+without hitting the old plateaus. 
+CTA to the next step. Ex: "Op t in to watch a seven-minut e video that runs the numb ers, 
+then apply for a 15-m inut e call so we can test the model in your niche." Detailing the 
+micro-journ ey removes friction and positions the call as the obvious release valve for all the 
+tension you just created. 
+60 Copyright © 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTION II : MY BEST Al.AN AD FRAM EWO RKS 
+Ad Framework #5: No BS Selfie 
+Why This Ad Framework Rocks 
+This ad framework is very short. First, you can bang a ton of these out with little 
+effort. Next, you can do them on your own in a bunch of different settings. Beyond that, 
+constraining your time forces you to limit your words to the only things that matter. These 
+ads rely on having additional information in the funnel and conversion process. Think of 
+this as an ad for your lead magnet more than an ad to sell. It sells the next step. Nothing 
+more. These can work well at the top of the funnel. 
+Beyond that, I think the camera movement , the hous e in the background , nice car, and 
+casual selfie-style did a lot of the heavy lifting . .. and one of the lines of copy. I'll let you guess 
+which . 
+ID SCAN ME 
+Copyright © 2025 by BUMBLE IP, LLC NOT FOR DIST RIBUTION 61 
+
+---PAGE---
+
+PART II: MY ADS BLACKBOOK: BEST 20 AD FRAMEWORKS OF ALL TIME 
+Visual Hook: Selfie Style 
+• Big house in background 
+• Selfie style 
+• Low-fi 
+• Walking with movement 
+Ad Copy: 
+Hook 
+Agency owners, if you can't crack $10,000 in lifetime value per customer, you're never gonna 
+hit the million dollar run rate you want. (HOOK) 
+Meat/Offer 
+And I can show you exactly how to do it using a reverse royalty model. (MECHANISM) 
+And we've had $6 million-plus agencies for kids in their twenties. (PROOF) 
+CTA 
+If you wanna see how it works, swipe up. See you there. (CTA) 
+How To Apply This Framework: 
+Let the setting do the selling. Open the clip while in motion. Walk and talk with 
+something that establishes you as credible related to the thing you talk about. In this one, 
+I have a fancy car and house behind me. Which-in relation to helping businesses grow­
+made sense. (Personally - I only did this for a brief stint in my career and I realized I didn't 
+want that kind of brand - so I stopped. But it is effective). 
+Start with an if-then pain statement. Ex: ''Agency owners, if you r LTV hasn't broken 
+$1 Ok you'll never hit a $1 million run rate ." The specificity pulls in the right prospects. 
+Introduce your solution in one sentence. Ex: "I can show you how to do it with a 
+reverse-royalty model. " Name the solution w ithout explaining it. (We'll let the lead magnet 
+do that). 
+62 Copyright© 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECT ION II : MY BEST ALAN AD FRAMEWORKS 
+Show proof that someone worse than them got results better than them. Ex: "We've 
+helped kids in their twenties build $6 million-plus agencies." Age juxtaposition implies that 
+bigger, older agencies can do even better. This was the line that did the heavy lifting in case 
+you were curious. I learned this selling weight loss. I used to say our meal plan was "so 
+easy to use kids and people who couldn't speak English followed it"-before asking if the 
+prospect could. With that preframe , how could they say no (ha). It makes the prospect think 
+''ff they could do it, so can I. " 
+Copyrig ht © 2025 by BUMBLE IP, l.LC NOT FO R DISTRJBUT ION 63 
+
+---PAGE---
+
+64 Copyright © 2025 by BUMB LE I P. LLC NOT FOR D ISTRI BUTION 
+
+---PAGE---
+
+Section III: My Best Skool Ad Frameworks 
+Inside this section I'll give you my five best Skool ad frameworks . These generated the 
+top .1 % of ads. I know this because I published over 3,000 over a 10-month sprint . These 
+five grew the company by many tens of millions in annua l recurring revenue. I break them 
+down in the following order: 
+1) Trending Format 
+2) Value Anchor 
+3) Bribe 
+4) Underdog 
+5) Challenge With Prize 
+Let's start with the first. .. 
+Copyright© 2025 by BUM BLE IP, LLC NOT FOR DISTRIBUTION 65 
+
+---PAGE---
+
+66 Copyrigh1 C> 2025 by BUMBLE IP, LLC NOT FOR DISTRlBUTION 
+
+---PAGE---
+
+SECT IO N Ill: MY BEST SKOOL AO FRAM EWORK S 
+Ad Framework #1: Trending Format 
+Why This Ad Framework Rocks 
+This ad framework cruuuushes. 
+Trend ads capitalize on current popular video formats. The example I show emerged 
+when podcast clips were my entire feed. I had the biggest "duh" moment in life when I 
+realized-these are popular for a reason, I may as well make my own and use it to sell stuff 
+To be clear-the lesson to take from this ad isn't that it was a podcast, it's that it was a 
+popular video format at the time. This is something I didn't understand when I was a "pure 
+ads guy". Making organic content has changed the way I see ads-and made me much 
+better at them. 
+Organic is always ahead of paid ads because of the volume and speed of testing for 
+creators. If you want to see where ads will be in six to 12 months, just look at where organic 
+is today. This is a huge point that will be missed by most. 
+You can model this ad directly or indirectly. If you want to model the ad directly, you 
+can take the podcast style ad. This may work for a short period while short podcast clips are 
+still "in". Just truthfully explain why you think your thing is awesome by hitting the main 
+value equation pillars. Then cut to a CTA. Bingo bango. 
+If you want to model the larger concept, look at organic content to inform your ad 
+hooks and content. Take the best organic hooks and use them in your own ads. Even better, 
+if you make organic content, take your highest performing organic content and simply bolt 
+on a CTA on the end. This ad style can be modeled across any niche selling any product or 
+service. I use it all the time. It's one of my most frequently used ad styles. 
+Copyright © 2025 by BUMBLE 11', LLC NOT FOR DISTRIBUTION 67 
+
+---PAGE---
+
+PART I I : MY ADS BLACK BOO K: BEST 20 AD FRA MEWO RKS OF AL L T IME 
+ID SCAN ME 
+Visual Hook: 
+• "Podcast style" 
+• Looks like an organic clip 
+Ad Copy: 
+Hook 
+So we laun ched the Skoa l Games a little over two weeks ago, and I was surprised at how 
+much people were making so quickly, (HOOK ) 
+Meat/Offer 
+like the top 10 people in the games, you know, they're making 10, 20, 30, 40 plus thousand 
+dollars a month, and that's new revenue. Like they started at zero on the first of the month . 
+(GOOD STU FF - SPEED) 
+68 Copyrighc © 2025 by BUM BLE II', LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTI O N Ill: MY BEST SKOO L AD FRAM EWORKS 
+And that got me really excited because we believe that we gave all this training and made 
+the platform super easy and simple that we'd be able to get a lot of people over the hump. I 
+just didn't understand how many people we were gonna be able to help do it (PERCEIVED 
+LIKELIHOOD). And so now we have hundreds of people who are making their first dollar 
+online (PERCEIVED LIKELIHOOD), which is the whole point of all the stuff that I 
+do now. 
+I'm even more convicted in promoting the Skool Games , letting people know that I think 
+it's the easiest way for them to get started online (EASE). And if you've ever been on the 
+fence or been like, man, I don't know how to do this, or I'm not an expert or I don't have an 
+audience inside the community (BAD STUFF). There's right now eight different kinds of 
+models that people are doing all that don't require you to have an audience or be an expert . 
+(EASE+ PERCEIVED LIKELIHOOD) 
+CTA 
+And so if you've been on the fence and you haven't been sure what to do, but you do know 
+that you want to start making money on the internet, you wanna start your first business 
+online, um, I think this is the best way to do it. 
+CLICK THE LINK TO 
+START FREE 
+How To Apply This Framework: 
+Record a solo podcast clip that looks 100% organic. Sit in front of a mic, wear 
+AirPods, keep jump-cuts and captions exactly the way popular reels do. Viewers should 
+think they 're watching a snippet from your show, not an ad. Alternatively: You can do an 
+actual podcast where the host feeds you questions you asked them to ask you. And you can 
+answer with your ad copy. Either work. 
+Lead with a recent surprising discovery. Ex: Open with "We launched just two weeks 
+ago and I'm shocked at how fast people are cashing in," so the recency and your genuine 
+disbelief hook attention. 
+Copyright © 2025 by BUMB LE IP, LLC NOT FOR DISTR IBUTION 69 
+
+---PAGE---
+
+PART II: MY AD S BLACK BOO K: BEST 20 AD FRAM EWORKS OF ALL TIM E 
+Stack speed and scaled proof in one line. Ex: "Top 10 are already pulling $1 Ok, $20k, 
+even $40k a month after starting at zero on the 1st." Big numbers plus a 30-day window 
+make the result feel both huge and fast. Note: this ad was targeted at prosumers . If you 
+want to capture a different segment you'd say different stuff more aligned with their desires 
+and expectations . 
+Hammer perceived likelihood and ease by removing every classic objection using 
+proof. Ex: I explain that hundreds have made their first dollar online and that eight different 
+no-audience models exist. This crushed the "I don't have an audience objection" and the 
+"but what if I don't succeed " fear. It also balances the "non-typical" outcomes with the 
+"everyday" outcomes. Important: I always try to include both big and average outcomes in 
+my ads. Because people want to know the big thing is possible, but most importantl y, want 
+to understand what 's likely. 
+70 Copyrighc © 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTION Ill : MY BEST SKOOL AD FRAMEWORKS 
+Ad Framework #2: Value Anchor 
+Why This Ad Framework Rocks 
+I discovered this ad framework during the first batch of ads I recorded to kick off the 
+Skool Games. And this framework became a clear winner for a while. You may have even 
+seen it. This fueled the first ever Skool Games. 
+Things to pay attention to. This is an offer-centric ad. It has two "stacks" that anchor 
+high then "price drop". First, the hook does this to anchor what someone would be willing 
+to pay to get their dream business. Most people would pay $1, 000-but if you could do it for 
+free-even better. 
+The second "stack" and price drop happen once we explain how we help them. Most 
+people charge $10, 000+ for stuff like this, but instead .. . we'll do it free. 
+Then , we add a variable reward in making this "better than free" because not only does 
+it cost them nothing, they could get something too. 
+A strong visual and verbal hook + two back to back stacks + strong bonus incentive 
+create a very compelling ad. This structure could be copied in any niche. It might sound like 
+this ... 
+How much would you pay for DREAM OUTCOME? $XX)(, $XX, $X? ➔Explain 
+offer➔Anchor value of offer at marketplace rate. ➔ Give it free/or less than anchor➔Add in a last­
+minute incentive that makes it even better than free. ➔ CTA. 
+Copyrigh t © 2025 by BUMBLE IP, LLC NOT FOR DISTRJBUTION 71 
+
+---PAGE---
+
+PART II: M Y ADS BLACKBOOK : BEST 20 AD FRAMEWO RKS OF ALL TIME 
+ID SCAN ME 
+Visual Hook: 
+• Cash fanne d out 
+• lhree -second keyframe in creates immediate motion 
+• Big red backgroun d color 
+• Text fills the screen re pea ting the hook 
+Ad Copy: 
+Hook 
+Would you pay a thousand dollars co gee the business of your dream in 30 days? 
+Meat/Offer 
+Well, how about a hundred dollar s to get the business of your dream in 30 days? Well, how 
+about free? 
+72 Copyright O 2025 by BUMBL E IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTIO Ill: MY BEST SKOOL AD FRAM EWO RKS 
+If that sound s at all interesting. We just launch ed the Skool Games to help you build and 
+moneti ze a commun ity on one platform in 30 days. (BENEFIT) 
+And thi s train ing is the type of stuff that people charge a thousand, $5,000 for, $10,000 
+(ANCHOR ) for, and it's yours. Absolutely free. And to give you one more added incentive , 
+the top 10 Skools that get built in the 30 days, we're gonna fly out to Vegas to spend a full 
+day with me to help you scale your business from where it is to wherever you want to go. 
+(MORE GOOD STUFF) 
+CTA: 
+Click the link to join for free, and I'll see you on the other side. (CTA) 
+How To Apply This Framework 
+Open with a scroll-stopping money/prop visual. Film a three- second keyframe of 
+cash fanned out against a high-contrast backdrop (red works everywhere). Pro Tip: Overlay 
+oversized text that repeats your first question so even muted viewers grasp the hook before 
+they can swipe or scroll away. 
+Make the outcome valuable before you give it away. Free still has costs, this means 
+that you still have to make free valuable. So you anchor the value by asking a series of 
+descendin g questions that compa re the outcome to some value (mo ney) or another valuable 
+thing -"Wou ld you pay $1,000? $100? W hat if it were free?"- to set an initial value in the 
+viewer's mind and make "free" feel like an unexpected windfall instead of a marketing cliche. 
+Altern atively: Ask how much it would be wort h to make something bad go away. Ex: "How 
+much would you pay to make your back pain go away?" 
+Put the dream outcom e on a fast timeline. Follow the anchor and price drop with a 
+one-sentence promi se: "Our [product/serv ice] helps you achieve [x] in [duratio n]." 
+Make your product/lead magnet valuable before giving it away. Call out real 
+competitor pricing (Ex: "Most courses cost $1 k- $ 1 Ok") to prove your free offer doesn't suck. 
+If it's tru e, it's compelling. 
+Make it better than free with a variable incentive. Offer an extra incentive (trip , 
+coaching day, premium tool, etc.) for the top performer s/random selection/or everyone. 
+Point: Turnin g zero cost into potent ial gain (at no cost). 
+Copyright © 2025 by BUMBLE IP. LLC NOT FOR DISTRIBUTION 73 
+
+---PAGE---
+
+' 
+f 
+74 Copyright Q 2025 by BUMBLE IP, LLC NOT FOR DIST RIBUTION 
+
+---PAGE---
+
+SECT IO N III : MY BEST SKOOL AD FRAMEWOR KS 
+Ad Framework #3: Bribe 
+Why This Ad Framework Rocks 
+This framework is a monster-folly machined. It came from my first Skool Games shoot: 
+one brutal day cranking out ,..,250 ads. Different hooks. Meat. CTAs. Background colors. 
+Shirts . Pure Mozi volum e-and-testing violence. People romantici ze random hits, but volume 
+negate s luck. The real winners are built by deliberate work. This ad is no exception. There's 
+zero magi c here. 
+It's a killer offer-driven ad up front driving to a page that did the heavy lifting. To be 
+clear-some selling always has to happ en. But, you can pack it into the ad or shift it to the 
+page. We found shorter , proof-he avy creatives worked best for us. We just needed enough to 
+earn the click, then let the page and video sales letter close. 
+I've reused this meat hundr eds of times because it convert s. Once this winner emerged 
+from the 250+ day, I prob ably cut another 200+ variations of this winner alone. 
+Also note , the hook reappears later in the Blackbook in a totally different niche. I recycle 
+hooks and formats across industri es. You should too. Only amateur s reinvent the wheel. 
+Pro s use proven playbooks and checklists and make up for the rest with volume. As usual. 
+Big visuals. Big offer. Small words. Sho rt sentences. This is the way. 
+8 SCAN ME 
+Copyright© 2025 by BUMBLE IP. LLC NOT FOR DISTRIBUTION 75 
+
+---PAGE---
+
+PART II : MY ADS BLACKBOOK: BEST 20 AD FRAMEWORKS OF ALL TIME 
+Visual Hook: 
+• Cash behind the back reveal 
+• Three-second keyframe in creates immediate motion 
+• Big background color 
+• Text fills the screen repeating the hook 
+Ad Copy: 
+Hook 
+Real quick, can I get your email address? Because I wanna send you a thousand dollars of free 
+stuff straight to your inbox. 
+Meat 
+And the way I'm gonna do that is through the Skool Games. I will help you build a community 
+and monetize that comm unity through Skool (DREAM OUTCOME). And this training is 
+the type of scuff that people charge a thousand, $5,000 for, $10,000 for. (ANCHOR) 
+And it's yours absolutely free. And the reason I'm doing all this is because I just became the 
+co-owner of Skool. (REASON WHY) 
+CTA 
+And to commemorate that, I wanted to make the most insane offer ever. If interested, click 
+the link and I'll see you on the other side. 
+How To Apply This Framework 
+Ask them for contact information with a pattern-interrupt question. Open with 
+a hidd en prop behind your back, and lead with "Real quick-can I get your [info]?" The 
+swing-into -frame reveal plus direct ask buys you time and immediately signals that handing 
+over contact info triggers something valuable. 
+76 Copyrighc © 2025 by BUMBLE IP. LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECT ION III: MY BEST SKOO L AD FRAMEWO RKS 
+Tell them what they'll get in exchange. Promise valuable free stuff. Ex: "$1,000 of free 
+stuff straight to your inbox. " Stating cash value (if realistic! ) turns a vague lead magnet into 
+a tangible benefit. 
+Explain why it's valuable by anchoring against real market pricing. Point out that 
+comparable products/ services sell for more and escalate the number s. (Ex: $1k, $5k, $10k+). 
+Now "free" feels more like generosity than gimmick. 
+Clarify what it will help them do➔the dream outcome. In one line, tie the gift to a 
+result that matters : "Build and monetize your own community in 30 days." Outcome focus 
+prevent s the offer from sounding random. 
+Add an additional incentive if desired. And give a reason why. Ex: "It's my birthday, 
+so I'm giving an insane bonus to the first 100 clients. " A motive behind a bonus make s the 
+bonus feel more authentic, and by extension increases urgency . 
+Make your CTA the same as your hook. Remind them to get the free thing by taking 
+action. This mirrors the hook and increases congruency in the ad. Said differently, if they 
+stayed to watch becau se of the hook , they'll also take the next step becau se of it too. Ex: "If 
+[HOOK], then [CTA]," mirroring the initi al info ask to take the next step. 
+Copy right© 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTIO N 77 
+
+---PAGE---
+
+78 Copyrighr © 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTION Ill : MY BEST SKOO L AD FRAMEW ORKS 
+Ad Framework #4: Underdog 
+Why This Ad Framework Rocks 
+This style . .. also crushed. I repeated it multiple times only changing out the person I 
+described. It outperformed every time. What's beautiful about it is it sets low expectations­
+which is my preference. I also think it's more believable. People already know earning an 
+income is cool. The issue is they don't believe they'll be able to do it. This style ad squashes that 
+objection up front. 
+So don't be afraid to talk about your lower tier outcomes-beat people to the punch. 
+They're already doubtful. They already wonder, "yea but what about the average person, 
+what about the below-average person"-so tell them. Then, contrast it by saying you don't 
+want to talk about all these amazing outcomes. This gains you trust, while also talking about 
+the higher range of outcomes to attract those higher achievers as well. 
+End result: you attract all potential buyers , elegantly, without setting crazy high 
+expectations. You just state the facts and tell the truth. 
+@ srAN ME 
+Co pyrigh, © 2025 by BUM BLE IP, LLC NOT FOR DISTR IBUTI ON 79 
+
+---PAGE---
+
+PART I I: MY ADS BLACKBOOK : BEST 20 AD FRAMEWORKS OF ALL T IME 
+Visual Hook: 
+• Big dollar number 
+• Blank black background 
+• Movement scroll + visual effect 
+Ad Copy: 
+Hook 
+$4,664 per month in recurring revenue (HOOK ). Thar's what Kyle, the last person, the 
+lowest person on the 20 leaderboard that we have for the Skool Games just halfway through 
+has been able to build . (PROOF ) 
+Meat 
+I don't wanna talk about Evelyn, who's made $43,000 in recurring revenue already (PROO F), 
+or Eddie, who's just about $30,000 a month in recurring revenue. (PROOF ) 
+Like sure. Those are amazing outcomes. But what about like four or $5, 000 a month? 
+(REALISTIC OUTCOME) And because I just became the largest investor in Skool 
+(REASON WHY), we're commemorating it by having the biggest games ever. (OFFER/ 
+CURIOSITY) 
+CTA 
+So if that sounds interesting, click the link to join. Your first 14 days are free. I'll see you on 
+the other side. 
+How To Apply This Framework 
+Lead with a modest, believable number/ outcome that feels attainable. Focus 
+attent ion on the number/ outcome by flashing it against a blank black screen and add subtle 
+scroll or glitch motion before the audio begins. Lower, specific numbers /outcom es convert 
+better because viewers think, "/ could do that. " 
+80 Copyrighc © 2025 by BUMBLE IP. LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTIO N II I: M Y BEST SKOOL AD FRAMEWO RK S 
+Stack proof by naming progressively larger results, then pivot back to the smallest. 
+Mention big achiever #1 and big achiever #2 and their outcomes , then circle back to the 
+underdog outcome to show the floor, not just the ceiling. This contrast makes your offer 
+credib le to beginners while still engaging top performers. 
+Give them a good "reason why" this promotion is a big deal. One of my marketing 
+rules: 7hey'll only think it's a big deal if you tell them it is. So tell them! Prospects will believe 
+that you'd do something big and crazy if you have a big and crazy reason. Ex: I called 
+it "the biggest games ever" so prospects felt they're about to miss something big, not a 
+routin e promotion. Putting your money where your mouth is dissolves skept icism and 
+adds credibilit y. 
+Copy right© 2025 by BUMBLE IP, LLC NOT FOR D ISTRIBUT ION 81 
+
+---PAGE---
+
+82 Copyrighc © 2025 by BUMBLE JP. LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTION Ill : MY BEST SKOOL AD FRAMEWORK S 
+Ad Framework #5: Challenge With Prize 
+Why This Ad Framework Rocks 
+Six months of Skool Games later and we asked ourselves "what cou ld we do to kick 
+things up a notch? " We paused in silence, then one of us eventua lly said "we could give 
+a Cybertruck to the winner ". We both liked it. So, that's what we did. And-it worked 
+like gangbusters. 
+This ad framework was dynamite. So was the campaign. They brought in bucket s of 
+users. The permutations of this hook + visuals combo dominated for the rest of the year. 
+To state the obvious, you don't need to give away massive amounts of cash or a Cybertruck 
+to make your marketing more compelling-but it helps. Ideally, you want something that 's 
+huge for your audience. The broader the audience though, the more things like money, cars, 
+and vacations work. But for a gym own er, re-outfitting their old gym with new equipment 
+would be even more compe lling. So-stay creative. 
+ID SCAN ME 
+Copyright © 2025 by BUM BLE IP, LLC NOT FOR DI STRIBUTION 83 
+
+---PAGE---
+
+PART II: M Y ADS BLAC KBO O K: BEST 20 AD FRAMEWO RKS OF ALL T I ME 
+Visual Hook: 
+• Immediately shows Cybertruck 
+• Scack of cash in hand 
+• With pattern interrupt of metal ball being thrown against the truck glass within the 
+first second 
+• In front of known landmark (Acquisition.com Headquarters ) 
+Ad Copy: 
+Hook 
+This is a Cybertruck. This is a hundred grand . And in the next 30 days I'm gonna be giving 
+away one to one person who's watching this ad right now. (HOOK ) 
+Meat/Offer 
+And the way you win it is by building the largest community on Skool within the next 30 
+days. (SPEED) 
+Last month, I think the winner had 40 or $50,000 a month in monthl y recurring revenue. 
+(DREAM OUTCOME+ PERCEIVED LIKELIHOOD) 
+And so this is a hundred thousand dollars prize or more, depending on how much you like 
+Cybertrucks (DREAM OUTCOME). And we make it pretty easy (EASE). So right now, 
+one out of two people who start a paid community on Skool make their first dollar online 
+(PERCEIVED LIKELIHOOD). Oftentimes it's much more, the average is 1,360 bucks per 
+month in recurring revenue. (DREAM OUTCOME ) 
+Which is kinda sweet. And the reason we have such a high success rate (PERCEIVED 
+LIKELIHOOD) is because we give you the tools, as in I walk you through step by step 
+exactly what you have to do (EASE). I also answer questions every single week. Hop on. So if 
+you wanna hop on there live, I think we have about 200, 300 people hop on the call (EASE). 
+So it's, it's not huge and we're pretty good at doing it and we've now done it with thou sands 
+and thousands of people. (PERCEIVED LIKELIHOOD ) 
+84 Copyright© 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECT IO N Ill : MY BEST SKOOL AD FRAM EWOR KS 
+CTA 
+And so if that sounds at all interesting, the best part is you can start absolutely free. So click 
+the link , join the community, start your own community, have fun , make money. We'll see 
+you on the other side. 
+Two important visuals (see screenshots) 
+Shows internal animation of the actual landing page itself to align expectations and reduce friction 
+when they get to the opt-in page 
+JOIN THE SKOOL GAMES 
+fun way to build your own business with other people 
+..... -, .. , ) 
+The Skool Games 
+skool.co111/games 
+Build your business, win prizes, 
+make friend s, have fun . Win 1-day 
+with Alex Hormo zi. 
+17.6k 669 8 
+M embers Online Admins 
+JOINGIIOUP 
+~ 
+powered by skool 
+Copy right © 2025 by BUMBL E IP, LLC NOT FOR DISTRI BUTION 85 
+
+---PAGE---
+
+PART 11: M Y AD S BLACKBO O K: BEST 20 AD FRAM EWO RKS OF ALL T IM E 
+How To Apply This Framework: 
+Give away something insane. Find the stuff your audience likes. Find the most valuable 
+version you can afford to give away. Then give it away to one or some of them. Ex: a year of 
+your premium service, a $5,000 store credit, a designer toolkit, even a weekend retreat with 
+you. Display it on-camera to prove that you have the thing to give away. 
+Put it on a time constraint. Tie the giveaway to a clear, short window-"in the next 
+30 days," "before quarter-end," "this month only". A deadline gets more people to do it if 
+it's believable. 
+Prove somebody else has gotten the thing you give away. Reference a recent contest 
+winner who won the thing. Real-world peers prove the prize is winnable and the process 
+is legitimate. 
+Tell them exactly how to get it. Make succeeding their ticket of entry. The simp ler to 
+track (for them and you) the better. Use a single metric that matches your business goal: 
+most referrals, highest product review count, biggest single purchase, best before-and-after 
+photo. Nore: One clear path beats a complicated points system. 
+Show how you'll help them win. Ex: Promise tools, checklists, weekly tips, or live 
+Q&A so participants know you'll guide them, not abandon them. If this takes tools or 
+skills, provide them the best you can. Hand-holding overcomes the ''I'll get stuck" objection 
+before it forms . 
+Make not winning valuable too . Remind chem the worst- case scenario is walking away 
+with all the free stuff (Ex: new skills, discounts, or small bonuses) even if they miss the grand 
+priz e. This makes both outcome s a win, and the only bad outcome not doing it. Make sure 
+they under stand the free thing they get has value on its own outside of the grand prize. 
+Show proof your free thing works. Cite user counts, testimonial snippets, or quick 
+screenshots of past wins. Pair visuals with each component to make them dramatically more 
+compelling- they make a big difference. 
+Show them what happens the moment they take the next step. Overlay a fast screen 
+recording or screenshare mock-up of the signup flow so prospects see exactly where the click 
+leads. Reducing uncertainty about the next seep removes the final barrier to conversion. 
+86 Copyright © 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+Section N: My Best $1 OOM Leads 
+Book Launch Ad Framewo rks 
+These ad frameworks brought in over 500,000+ people to register for the event in less 
+than a month . Thar's more than the city of Baltimore, where I'm from. In other words, these 
+work. 
+I break the ad frameworks down in the following order: 
+1) Flying Prop 
+2) Bribe 
+3) Rumors Are True 
+4) You're Being Lied To 
+5) Data Stack 
+Let's dive in. 
+Copyrighr © 2025 by BUMBLE I P, LLC NOT FOR DISTRIBUTION 87 
+
+---PAGE---
+
+88 Copyugh1 Q 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTI ON IV: MY BEST $J00M LEADS BOOK LAUNCH AD FRAMEWORKS 
+Ad Framework #1: Flying Prop 
+Why This Ad Framework Rocks 
+We were in my old kitchen filming ads for the launch and the team had the idea to 
+throw a banana at me. At first, they did it as a joke. Bur then, I took it seriously. And I'm 
+glad we did because it became one of the top ad frameworks for the launch. 
+Stuff that moves generally beats stuff that doesn't. And real stuff that moves often beats 
+computer stuff that moves. So, these basically always work. I should probably use them 
+more. You shou ld too. 
+That being said, it's clear why they did so well. The entire ad is curiosity-driven. The entire 
+ad is a daisy chain of open loops with only one action to close them-taking the next step. 
+Daisy-chained open loops: The banana➔ The money spent on the event➔ My birthday➔ 
+Giving a secret away. 
+Everything has the objective to get people to want to come to see what's going to happen. 
+This accomplishes both campaign objectives of getting someone to register and show. So--it 
+accomplishes the mission. 
+So if you wanna use these types of ads effectively, capitalize on curiosity. 
+Copyrighc © 2025 by HUM BLE IP, LLC NOT FOR DISTRIBUTION 89 
+
+---PAGE---
+
+PART II: MY ADS BLACKBO O K: BEST 20 AD FRAMEWO RK S O F ALL T JM E 
+m SCAN ME 
+Visual Hook: 
+• A flying banana 
+• Movement + Prop 
+Ad Copy: 
+Hook 
+You might be wondering why I just mushed the shit outta this banana in my hand. 
+Meat/Offer 
+And it's because the launch of my second book, $1 00M Leads, is both nutritious, natural, 
+and uh, will make you lots of money unlike bananas (HUMOR). But the event itself, where 
+I'll be launching it on Saturday, August 19th, will be bananas. 
+90 Copy right© 2025 by BUM BLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTIO N IV: MY BEST $100M LEADS BOO K LAUNCH AD FRAMEWORKS 
+I've spent over a million dollar s on the event itself (APPROXIMATION OF VALUE), and 
+I'm going to be giving away a secret thing that I've been working on for over four years to 
+everyone who's there with me live (CURIOSITY). And I would love to tell you what it is. It 
+kills me inside that I cannot tell you. But I want the surprise itself to be worth it, and I think 
+it will be. (CU RIOSITY) 
+This is a date that you're not gonna wanna miss. It's a day after my birthda y and it's my way 
+of giving back to you guys for being so awesome. (REASON WHY) 
+CTA 
+Click the link to register. I'll see you guys there. 
+How To Apply This Framework: 
+Catch a flying prop. Start the video by having the spokesperson catch something 
+mid-air while looking at the camera. 
+Make a quick joke and tie the prop to your offer. Drop a one- liner that links the prop 
+to your product or service. 
+Pile on tangible reasons to attend. Mention time invested, mon ey spent, relation ship 
+capital used, etc., so viewers see how much you invested to make this great. Tie that 
+investme nt to what they're gonna get. This approximates their value. In short, make it a big 
+deal to you, so it's a big deal to them. Stakes are a big part of that. 
+Hint at a big secret and leave the loop open. Tease an unrevealed bonu s available only 
+to people who take the next step. Withholding details keeps tension high until they take 
+action . After they take action, you can open more loops to move them through the process. 
+Props. I'd suggest keeping a shed or a storage closet full of these things . You'd be surpri sed 
+how often you use them once you start making ads and content regularly. I wish I had done 
+this sooner. Anytime something catches your attention-if you can buy it, do so-because 
+it'll probabl y catch someone else's. And when it does, it'll make you more money than it 
+costs (by a lot). 
+Copyright © 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 91 
+
+---PAGE---
+
+Co pyrighc ~ 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+92 
+
+---PAGE---
+
+SECT ION IV: MY BEST $ 100M LEADS BOOK LAUNCH AD FRAMEWORKS 
+Ad Framework #2: Bribe 
+Why This Ad Framework Rocks 
+This ad framework also crushed. Beyond it crushing though, I included this to show you 
+something important. This hook is the same hook I used for a Skool ad. But wait-one is 
+for an event that sells a book , but the other was to advertise a software platform for building 
+a community?? Aren't those two completely differ ent products and businesses?? 
+Yes. And that 's the point. 
+These ad structures work agnostic of industry. So yes, please model them. Or - don't. But 
+I certainly will (and will continue to as long as they work). 
+Beyond that, you'll notice yet another common theme-curiosity and open loop s. Just 
+tons of curiosity and stakes to drive the click. Then , you let the page do its job and convert 
+the traffic. 
+ID SCAN ME 
+Copyright © 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 93 
+
+---PAGE---
+
+PART II : MY ADS BLAC KBO O K: BEST 20 AD FRAM EWO RKS OF AL L T IME 
+Visual Hook: 
+• Me pointing directly at the viewer asking permission to get their attention 
+Ad Copy: 
+Hook 
+Real quick question, what's your email address? The reason I ask is because what I wanna do 
+is send you a gazillion dollars of free stuff. . . 
+Meat/Offer 
+And what that really is, is the biggest entrepreneur event of the season (STAKES). I'm gonna 
+be releasing my $ 100M Leads book, which is two years in the making (STAKES) live for 
+everyone there with a secret project (STAKES) I've been working on for four years that I 
+haven't said once publicl y. I've been saving it. I can't tell you what it is ... (STAKES) 
+CTA 
+What I can tell you is it's more than a gift card and less than a Tesla and every single person 
+who shows up is gonna get one (CURIOSITY) , it's gonna be sick, can't wait to see you there, 
+go register. See you there. (CTA) 
+How To Apply This Framework: 
+Tell them what you want. O pen with the patt ern-int errupt question, "Real qui ck­
+what's your [info] ?" so viewers instantly know they're trading contact info for something. 
+Tell them what they'll get in exchange . Promi se to send somethin g valuable. Ex: "a 
+gazillion dollars of free stuff," positionin g the giveaway as outrageously valuable for anyone 
+in your niche. 
+Explain why it's valuable. Explain all costs you incurred to create the product, service, 
+etc. (17 prototy pes, my enti re life savings, cost me my marriage, this obsession consumed my 
+past six years, etc.). If you can't tell someo ne exactly what something is (to keep curiosity), 
+then you talk more about your investment as a proxy for their pote ntial benefit. If you can 
+talk about other parts directly, then do that. 
+94 Co pyright © 2025 by BUMBLE IP. LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTIO I V: MY BEST $JOOM LEADS BOOK LAUN CH AD FRAMEWO RKS 
+Emphasize that the thing you promote is a big deal. This is where hype actual ly works. 
+"Biggest event of the season" type stuff. If your investment support s that , then people will 
+start calling it that. 
+Make your free thing mysterious and valuable through comparisons. Instead of 
+saying "if you do x, you'll get a free t-shirt " we'd say "if you do x, you'll get something more 
+than a gift card but less than a Tesla". People will automatically abstract what they're going 
+to gee cowards the bigger thing. Give a range of values between two known items: one low­
+value and one high-value. Then say that someone, some group, or everyone will get this 
+prize. This keeps things interesting. Being vague allows people 's imagin ations to fill in the 
+perfect copy for each of them. And you're not gonna beat anyone's imaginat ion . So- refuse 
+to share details. Leave an open loop chat only people who take the desired action can close. 
+BONUS: I practice what I preach. Below you can find photo ads we made of chis 
+winn ing video ad. And surprise-these were big winners too. Kaleido scope to the rescue. 
+Copyright © 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 95 
+
+---PAGE---
+
+,... 
+96 Copy righc © 2025 by BUMBLE IP. LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTION IV: MY BEST $ 100M LEADS BOO K LAU NC H AD FRA MEWO RKS 
+Ad Framework #3: The Rumors Are True 
+Why This Ad Framework Rocks 
+I position my product as important because other people talk about it. It leverages 
+curiosity. It results in: I) someone feeling left out 2) feeling left out of something important. 
+And these object ives work great to motivate action-which is the point of all good ads ... 
+Good ads do two things: get the prospect's attention ➔get the prospect to take action. So 
+it would follow that you have a part of the ad tha t gets attentio n (importance) - and - a part 
+of the ad that increases the ben efit and decreases the cost of taking action (other people do 
+it). This follows the same recipe. 
+s 
+ID SCAN ME 
+Visual Hook: 
+• The subtitl e acts as the visua l hook 
+Co pyright © 2025 by BUMBLE IP, LLC NOT FOR DISTRJBUTION 97 
+
+---PAGE---
+
+PART II : MY ADS BLAC KBOOK: BEST 20 AD FRAMEWORKS OF ALL T IM E 
+Ad Copy: 
+Hook 
+The rumor s are true ... (HOOK) 
+Meat 
+My next book, $1 OOM Leads, is finally coming out. 
+I've spent two years on this book, 2,000 hour s that I personally logged. (STAKES) 
+My editor put in 1,500 (STAKES), and we're gonna be giving it away for free (GOOD 
+STUFF). It's gonna be fucking nuts. I'm gonna give away a lot more stuff, and you're not 
+gonna wanna miss it. (CURIOSITY) 
+Believe me, I'm making it the entrepreneur event of the season (GOOD STUFF). Put over 
+a million dollars into the event (STAKES). I just can't wait to share it with you guys. 
+CTA 
+With this CTA at the end 
+How To Apply This Framework: 
+Tell them other people want what you have. Open with "The rumors are true-my 
+[product]is finally comin g out". This hook works in any market. 
+98 Copyrigh, © 2025 by BUMBLE IP. LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTION IV: MY BEST $ 100M LEADS BOOK LAUNC H AD FRAME W O RKS 
+Tell them what they'll get for taking the next step. Frame it as an over-the-top gift­
+and that it's just the tip of the iceberg because there's "a lot more stuff" for everyone who 
+[takes the next desired action]. 
+Explain why it's valuable. Explain your personal investment (iterations, hours , money, 
+etc.). If you can "show receipts" - aka - prove that you actually spent all that on the thing-it 
+will dramatically increase how much they believe its value. Add in what it can help them do 
+as a result , or outcome it facilitates without giving it away. 
+Add curiosity. Tease an additional unnamed secret project . Give a range like before. 
+Ex: "more than a gift card, less than a Tesla"-so the only way to learn more is to take the 
+next step. 
+Visual CTA. This CTA did one unique thing worth mentioning-the CTA was not 
+spoken and was only visual. The end screen was the CTA. 'This is a great thing to experiment 
+with (especially for remixes). 
+Make multiple versions in multiple formats. Also, like our last ad. Once we have a 
+winning hook , we will make permutation s of that ad into static form . You can see a few 
+below . These were also winner s. Again , just becau se they're simple doesn't mean they're not 
+effective. Winning is hard enough on its own. You don't need to also make it complicated . 
+Copyrig ht © 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 99 
+
+---PAGE---
+
+100 Copyright 0 2025 by BUMBLE IP. LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+SECTIO N IV: MY BEST $!QOM LEADS BOOK LAUNCH AD FRA MEWORKS 
+Ad Framework #4: You're Being Lied To 
+Why This Ad Framework Rocks 
+This ad framework drove a truckload of registrations and book buyers. It's another spin 
+on a classic: old way vs. new way. Problem vs. solution. Us vs. them. The classics are classics 
+for a reason-they work. 
+The ad likely also worked well because walking around corners and high movement, 
+especially towards the camera works exceptionally well. This confrontationa l style paired 
+well with the hook which was also confrontational. 
+People for whatever reason have a hard er time walking and talking. So, it makes it 
+somewhat rarer when people do it well. Give it a shot. Ads where I move almost always 
+outperform . And if you're wondering why I don't do that all the tim e, I'm wondering the 
+same thing myself. 
+~ SCAN ME 
+Copyright © 2025 by BUM BLE IP, LLC NOT FOR DIST RIBUTION 101 
+
+---PAGE---
+
+PART II: MY ADS BLAC KBO O K: BEST 20 AD FRAMEWO RKS OF ALL TIME 
+Visual Hook: 
+• Camera movement coming quickly around the corner 
+• Talent (me) demonstrates urgency 
+• Cuts quick to large text written on board then a tearoff 
+Ad Copy: 
+Hook 
+You're being lied to ... 
+Meat/Offer 
+When I started my first business, I was told, if you build it, they will come. That 's not true. 
+(OLD WAY) 
+What is true is that if you tell them, they will find you, and you do that only one way, 
+through advertising . (NEW WAY) And over the last 10 years, I've built multiple companie s. 
+I sold my last one for $46 million. (PROOF) 
+Acqui sition .com is now our family office portfolio that does over $10 million a month. 
+(PROOF) The mission of acqui sition. com is to make real business education accessible to 
+everyone , and my selfish intent here is that companie s go from one million to 10 million 
+and then they hit me up and say, Hey, can you help us go from 10 million to 100 million? 
+(REASON WHY) 
+Just so you under stand my intention , if you have a business or you wann a start a business 
+and you don't believe that if you build it, they will come, or you've already experien ced the 
+fact that that 's a lie, then I would encourage you to shift your perspective to "I can force 
+people to find out". And we do that through advertising, and that is what I wrote this book 
+about. (NEW WAY) 
+CTA 
+And I'm gonna share all of the thing s that I've learned over the last decade and shrink it into 
+just a matter of hours for you so you can use it not tomorrow, but today (SPEED) to get 
+more leads. 
+102 Copyright © 2025 by BUMBLE IP, LLC NOT FO R D ISTRIBUTI O N 
+
+---PAGE---
+
+SECTION IV: MY BEST $ J00M LEADS BOOK LAUNCH AD FRAMEWORKS 
+How To Apply This Framework: 
+Walk towards the camera aggressively. Tell them they're being lied to. Confront their 
+belief. Look into the lens, round a corner, and open with "You're being lied to". 
+Expose the old way and present the new way. Throw rocks at the old way (the lie), 
+then tell them the new way (the truth). Ex: "I was told if you build it, they will come. That's 
+not true. If you cell chem, they will find you." 
+Show proof your new way works. Use math, authority, social proof, or any other kind 
+of proof. 
+Share your selfish reason why. People trust people who share their biases openly, even if 
+they know the opposing person's bias is contradictory to their own interest. 
+Promise fast results. You don't want to promise fast results per se, but explain how 
+much time they're saving-or that you're compressing for them . Reframe the amount of 
+time it would take to solve this problem on their own without your product/ services-a nd 
+frame that as the speed they're getting. 
+Tell them what to do next to learn about the new way. Flash large on-screen text that 
+tears away to reveal a single button and say, "Tap to learn the new way". One step resolves 
+the tension you created. 
+C opyright © 202 5 by BUMBLE IP. LLC NOT FOR D ISTRIBU TIO N 103 
+
+---PAGE---
+
+104 Copyrigh1 © 2025 by BUMBL E IP, LLC NOT FOR DISTRIBUT IO N 
+
+---PAGE---
+
+SECT IO JV: MY BEST $!QOM LEAD S BOOK LAUN CH AD FRAMEWO RKS 
+Ad Framework #5: Data Stack 
+Why This Ad Framework Rocks 
+This is underrated: Numbers at the beginning of ads, especially big num bers, seem to 
+work every time I use them. You've probab ly seen this theme at least a few times in this 
+Blackbook. And remember, if you see something multip le times in here, it represents the 
+absolute best of zillions of ads. So-pay attention. 
+Beyond that - having half of something written on the board invokes more curiosity 
+because peop le want to see it completed. It's also, in and of itself, a flex to show the work 
+that went into somet hing. The remaining themes repeat: authority, social proof, curiosity, 
+scarcity, urgency, call to action . 
+To make this work, find out, then list out, all the wild stats about your prod uct or service. 
+Once you have that , there are many permuta tions of this ad you can create with very little 
+effort. And when you say a winning thing in multiple ways, it gives you m ultiple winners. 
+@) SCAN ME 
+LJorzv~ 
+I-\ 0 lA R.. S 
+PAGE' 'S 
+DrtAw ,rv G, ~ 
+PRo ~ P-S 
+~ E\:TS 
+Copyright © 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTI ON 105 
+
+---PAGE---
+
+PART 11: MY ADS BLAC KBO O K: BEST 20 AO FRAM EWORKS OF ALL TIM E 
+Visual Hook: 
+• Open loop with the number s half written on the board already 
+Ad Copy: 
+Hook 
+This is gonna blow your mind. 
+Meat/Offer 
+67,000 words , 2,000 hours, 270 pages, 107 drawings , 62 pro tips, nine tweets, two years 
+to make one cookbook for making money (NUMBERS/PROOF). My next book, $JOOM 
+Leads, comes out August 19th. I'm gonna be giving away ... these and a lot of other stuff live 
+as just my way of giving back to you guys. (CURIOSITY) 
+You guys have been amazing. It will be unlike any event that you have been to before. We 
+already have 200,000 peopl e who've registered for the event (SOCIAL PROOF). I have a 
+limited number of books (SCARCITY) ... 
+CTA 
+.. . so if that sounds at all interestin g, go there. Register to be one of the first to know and be 
+there with me live and I'll see you then. 
+How To Apply This Framework: 
+Tell them you're going to blow their mind. Face the camera , point at a half-written 
+whiteboard, and say, "This will blow your mind ". 
+Collect stats. About your product, proj ect, business, service, etc. Put all of them on one 
+sheet. Select the most impr essive ones. Do this before your recording session. 
+List your most impressive stats. Rapid-fir e numb ers: customers , leads, pounds lost , 
+time saved, etc.-to prove you poured real effort into your flagship product or service. 
+Tell them how many people have shown interest already. All the leads, preorders, 
+waiting list, group memb ers, etc. that have shown interest. You want people to feel like 
+they're gonna be left out. 
+106 Copy right © 2025 by BUMBL E IP, LLC NOT FO R DISTRIBUTION 
+
+---PAGE---
+
+SECTION IV: MY BEST $ ! QOM LEADS BOOK LAUNC H AD FRAMEWO RKS 
+Explain the true and real limitations of your product/service. You can't sell an 
+unlimited amoun t (in all likelihood) . So, own that you can't. Think limited hours in a 
+day, limited number of people you can deliver, limited inventor y, etc. Doing this increases 
+demand by cutting perceived supply. Aka-creating scarcity. 
+Tell them what to do next. Make it fast, clear, and easy. 
+Copyri ght© 2025 by BUMB LE IP, LLC NOT FOR D ISTRIBUT ION 107 
+
+---PAGE---
+
+108 Copyr ight <0 2025 by BUMBLE IP, LLC NOT FOR DISTRJBUTION 
+
+---PAGE---
+
+PART III: WHAT TO DO 
+NEXT ➔ CHECKLISTS 
+You've now seen the whole machine-how I find winners, how I multip ly them, and the 
+exact steps to do it. Three ideas power the engine . 
+First, volume negates luck. The process is simple: make lots of ads, spot the few that 
+perform , pour 80% of your effort into remixing and remaking those, then spend the other 
+20% hunting for the next winner. One winner is enough to start the flywheel. Permutations 
+keep it spinning . 
+Second, winners are rare, so squeeze every drop of blood from them. 80% of sales come 
+from 20% of ads. When an ad finally clicks, hammer it until it dies-then rerun it with 
+Kaleidoscope variations. Run new colors, headlines, props, speeds, fonts; swap settings, 
+talent, and examp les. All those small twists cost a fraction of inventing a new winner ­
+and will give you consistent solid returns. Consistent winners take the volatility out of 
+advertising. 
+Third , winning ad fram eworks work for any business. The 20 ads you just studied sell 
+gym services, software, agencies, and a book , yet every hook, proof stack, and CTA can sell 
+whatever you've got. Steal the open-loop selfie, the white -board "four reasons," the prize 
+challenge, or the low-number underdog . Swap the details , record, ship, test, repeat. Make 
+them yours. 
+*** 
+''No wise pilot, no matter how great his talent and experience, 
+fails to use his checklist. " - Charlie Munger 
+I made you checklists at the end of this book. Use them. Remixes you can use tonight. 
+Remakes you can film this weekend . Promise a result, make it fast, make it likely, and make 
+it easy. Pack curiosity up front, proof in the middle , and a single action at the end. 
+Use your Ad Kaleidoscope , my Blackbook of 20 killer ads, and follow the instruction s. 
+That 's it. 
+*** 
+Copyrig ht© 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUT ION 109 
+
+---PAGE---
+
+PART III : WHAT TO DO NEXT-+C H ECKLJSTS 
+With that, it's been my great pleasure to serve you. I hope my Ad Kaleidoscope + 
+My 20 Best Ad Frameworks Of All Time bring you even more good fortune than they've 
+brought me. 
+Many people have helped me knowingly and unknowingly on my journey. I pay them 
+back by paying it forward to you. Thank you for the opportunity to serve you . 
+Ad astra, 
+Alex 
+PS - My books sit on my desk. I reference them regularly. I share with you the findings I 
+document for myself. As such , in an attempt to keep my books on your desk-I want to 
+make it easy for you to find what you're looking for. 
+Here are two checklists on the following pages for the next time you make ads. One for 
+the Ad Kaleidoscope. The other for making banger ads. That way, you can tear them out, or 
+at the very least, always know where to turn to get what you need. 
+110 Copyright© 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+Ad Kaleidoscope Checklist 
+Post-production: Apply to an existing winning ad (in order of difficulty) 
+• New Speed: Ex: Play the entire spot at 1.1 x. Just make sure your voice doesn't sound 
+weird. 
+• New Filters: Ex: Add a high-contrast black-and-white filter, or sepia, or social media 
+style filter, so video looks different than the original. 
+• New Background/Border: Ex: Swap a white backdrop for a neon-green gradient 
+border. 
+• New Fonts/Captions: Ex: Replace the default subtitle font with bold, comic-style 
+caps for the first three words (or in its entirety). 
+• New Headline: Ex: Change "Double Your Leads Fast" to "Steal Our 30-Day Leads 
+Blueprint". Keep the rest the same. 
+• New Medium: Ex: Take your hook from one ad, "Would you build your dream 
+business for $1000? $100? Well how about free?" and turn it into an image . 
+• New Format: Ex: Re-edit the vertical selfie ad into a square 1: 1 version for different 
+ad placement. Native placements improve performance big time. 
+• New Meat: Ex: Keep the winning hook, but splice in a different case-study clip for 
+the body copy. 
+• New Effects: Ex: Drop a "BOOM " motion-graphic sticker over the revenue figure 
+as it appears. Or show some visual proof after you say a number-driven hook. 
+Pre-production: Record a fresh version of the same winn er 
+• New Clone: Ex: same gestures, script, background but different clothing, lighting, 
+etc.-so micro -differences feel fresh to viewers. 
+• New Props: Ex: Swap the stack of cash for a silver platter holding signup sheets. 
+• New Examples: Ex: "$4497/mo Kyle" to "$6398/mo Sarah" 
+• New Setting: Ex: Film the ad on a sidewalk instead of inside the office. 
+Copyright © 2025 by BU M BLE IP, LLC NOT FOR DIST RIBUT IO N 111 
+
+---PAGE---
+
+• 
+• 
+112 
+PART III : WHAT TO DO NEXT--+CH ECKLJSTS 
+New Talent: Ex: Have someone else deliver the script instead of you to attract an 
+avatar that looks like them . Or even if the person doing the second take is the same 
+demographic as you, at the very least, it'll look different . 
+New Combination: Ex: Shoot the ad on a rooftop (new setting) with a bright red 
+megaphone (new prop) and overlay comic-book captions (post-production font 
+change). 
+Copyright@ 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUTION 
+
+---PAGE---
+
+Best Ad Framework Checklist 
+I'm a checklist guy. I divide the checklist into four parts: visual, verbal delivery, script, 
+and CTA. They correspond roughly to: what they see, what you say, what they get, how 
+to get it. Within each buck et, I divid e them into my own divisio n of "must- haves" and 
+" . h ,, mce-to- aves . 
+I want to be clear, you can make ads without some of my must -haves . .. I just don't. So, 
+I give to you my real-world checkl ist for making ads that make money. Enjoy. 
+VISUAL ELEMENTS 
+Must-Hav es 
+• Paired Verbal & Visual Hooks 
+• Movement 
+• Similar Avatar 
+• Show What You Tell 
+• Captions 
+• Platform Native 
+Nice-to-Ha ves 
+• Aspirational Setting/Trending Formats 
+• Real World Demonstrations and Settings 
+• Props 
+VERBAL DELIVERY 
+Must-Haves 
+• Simple Words 
+• Enunciation (No mumbling!) 
+Copy right © 2025 by BUM BLE II', LLC NOT FOR DISTRIBUTION 113 
+
+---PAGE---
+
+PART III: W HAT TO DO NEXT -+CH EC KLISTS 
+Nice-to-Haves 
+• Details/Numbers 
+• Continuous "Open-looped" Curiosity 
+• Benefits & Pains Through Prospect's Real Life Experiences 
+AD SCRIPT 
+Must-Haves 
+• 
+• 
+• 
+Call Out Prospects 
+Compelling Reason Why 
+Comparisons 
+• Dream Outcome & Nightmare of Staying The Same 
+• Speed To Result & Delay of Inaction 
+• 
+• 
+Certainty Of New Path & Risk of Current Path 
+Ease Of Result & Difficulty of Current Path 
+• As Many Proof Points As Possible 
+N ice-to-Haves 
+• Damaging Admissions 
+• Stakes/Struggles/Investment 
+CTA 
+Must-Haves 
+• One Clear Verbal & Visual Next Step To Take 
+114 Copyright © 2025 by BUMBLE IP, LLC NOT FOR DISTRIBUT ION 
+
+---PAGE---
+
+BEST AD FRAM EWORK CHECKLIST 
+Nice-to-Haves 
+• Reasons To Act 
+• CTA Congruent With Hook 
+• Scarcity & Urgency 
+• Bonus/Incentives 
+Copyright © 2025 by BUMBLE IP, LLC NOT FOR DISTR.JBUTION ll5 
+
+---PAGE---
+
+t. 
+
+---PAGE---
+
+This page intentionall y left blank 
+
+---PAGE---
+
+I I 
+9 781963 t349535 J 
+
+---PAGE---
+

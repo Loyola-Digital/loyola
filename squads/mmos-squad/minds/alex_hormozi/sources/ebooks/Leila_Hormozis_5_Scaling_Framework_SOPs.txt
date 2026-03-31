@@ -1,0 +1,443 @@
+TABLEOFCONTENTS
+ReadThisFirst......................................................................................................................................................................35STARSERVICEFRAMEWORK.....................................................................................................................................6WhyThisIsImportant............................................................................................................................................6What It Is..........................................................................................................................................................................7HowToDoThis............................................................................................................................................................8HowToGradeEachRep.......................................................................................................................................11GAMETAPEREVIEWFRAMEWORK.............................................................................................................................13Whyisthisimportant?.........................................................................................................................................14What isit?......................................................................................................................................................................15HowtoDoGametapeReview.........................................................................................................................16HIGHPERFORMANCECOMMUNICATIONFRAMEWORK..............................................................................18Whyisthisimportant?.........................................................................................................................................19What isit?....................................................................................................................................................................20HowtoUseTheFramework..............................................................................................................................21HowToDeployThis...............................................................................................................................................24MONDAYHOURONEFRAMEWORK........................................................................................................................25Whyisthisimportant?........................................................................................................................................25What isMondayHour One?.............................................................................................................................26What isExpected?..................................................................................................................................................26HowToDeployMondayHour One..............................................................................................................26Examplesof MondayHour OneCalendars..........................................................................................29PAYINCREASEFRAMEWORK.......................................................................................................................................31Whyisthisimportant?........................................................................................................................................32What isthePayIncreaseFramework?....................................................................................................32Howdoyouuseit?.................................................................................................................................................33What toExpect asanAmount for Your Raise:....................................................................................33CommonCircumstancesThat LeadtoaBigger Raise:..............................................................34FrequencyandPercentageof Raises:.....................................................................................................34HowtoGet/Askfor aRaise..............................................................................................................................35TYINGITALTOGETHER....................................................................................................................................................37
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+ReadThisFirst
+Insidethisdocument arefiveframeworksI usetoscaleour teamsto$100Millionandbeyond.
+Eachframeworkisminorlyeditedfrommyoriginal internal versionthat I usetotrainmyteams. Rather thanmakea“leadmagnet” -I figuredI’dgiveyoutheframeworksthewayI givethemtomyteamsoyoucouldinturn, givethemtoyours.
+Wehavezillionsof internal documentsthat weusetorundepartments. Theseareamongthemost frequentlyusedasour portfoliocompaniesscale.
+Here’swhat theyareandhowthey’ll helpyouscale.
+FiveStarServiceFramework:Asyouscaleacompany, deliveryisoftenoneofthefirst thingstobreak. I givethisframeworktomycustomer supportrepresentatives. It setsastandardfor delivery. Our goal istomakedeliverybetter thanit waswhenthecompanywassmaller. It’show-for example-ouraverageNet Promoter Scoreis88. Which-for context -isaboveChickFil A-58, andApple-61. If youhavepoor customer resultsscores-thisisfor you.
+Sales-CustomerSuccessGametapeFramework: Asyouscaleyour salesandcustomer successdepartments, newfacescomein, anddetailsget lost.Sometimesnewmanagersdoapoor jobtraining-resultsonbothsidessuffer. Tocombat this-webeganusingaweeklysales-CSgametapereview.Thisiswhereeveryweek, bothcustomer successandsaleswatcheither asalescall or anonboardingcall together. Thisgivestransparencytothework
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+bothteamsdo. It allowsbothteamstocreateandmaintainaseamlesscustomer experienceasyouscale. Onceyoustart this, you’ll never goback.
+HighPerformanceCommunicationFramework:Asyouscale, youaddmoreteammates. Moreteammatesmeansmorecommunication. Communicationscaledpoorlycreatesendlessmeetings, lowmorale, andplummetingteameffectiveness. TheHighPerformanceCommunicationFrameworkpreventsthat. It focusesonincreasingenergy, engagement, andexploration-whichwerefoundtobethethreemainingredientsfor highperformingteams. Itresultsinbetter communication, whichresultsinhigher qualityandquantityof workper teammate. Thisisamust asyouscale.
+MondayHourOneFramework:Asyouscale, everyemployeewill bestretchedtocapacity. Distractioncomesnext. Tocombat this, weusetheMondayHourOneFramework. It organizeseveryone’swork. It increasestheoutput of eachteammember asanindividual andgivesfull transparencytotheir manager.Thisallowsmanagerstoseeexactlywhat everyoneisworkingon, howwell-utilizedtheir teamis, whoneedshelp, andhowalignedeveryoneis…at aglance. Thisallowsustohireeffectivelyanddivideworkupasweaddheadcount.
+PayIncreaseFramework:Asyouscale, theneedsof your organizationwillgrow. Andtheskillsof your employeeswill also(hopefully)grow. Withanincreaseinskill andresponsibility, comeincreasesincompensation. Wegivethistoall our teammatessotheyknowwhat toexpect, what wereward, andhowtoaskfor raisestheright way. Thisgetseveryoneonthesamepageandwill makeyour teammoreproductive, avoidunnecessarydrama, retainteammateslonger, andprotect your bottomline. Andavoidthemistakesofoverpayingor underpayingthat bothleadtolosinggreat teammates.
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+Withthat beingsaid, there’salot moretoscalingacompanythanasmallbooklet couldever hold. But, myhopeisthat theseframeworkshelpyousolvekeyproblemsasyouscale. Theycertainlyhavefor me. Enjoy.
+LeilaHormozi, Co-Founder andCEOof Acquisition.com
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+5STARSERVICEFRAMEWORKSOP
+WhyThisIsImportant
+Somethingshockingthat I didnot knowwhenI startedinbusinessisthatcustomersaremorelikelytoleaveduetobadservicethantheyareduetopriceor product (studydonebyMckinsey&Co)
+Deliveringhigh-qualitycustomer serviceiscrucial becauseit buildstrust andloyalty, setsusapart fromcompetitors, andenhancesour brand'sreputation.
+Byshowingcustomersthat wecare, listen, andresolvetheir issuesquickly, wecreateapositiveexperiencethat keepsthemsatisfiedandencouragesthemtostaywithusandrefer their friends.
+©2024, byAcquisition.comLLC
+
+
+---PAGE---
+
+Ensuringeverysingleinteractionwehaveeither strengthensor weakensourbrand.
+Thisframeworkservesasatool tousesoyoucanensureevery‘touch’ youmakewithacustomer isonethat movesusforward, not backwards.
+WhatItIs
+Our customer serviceapproachisbuilt aroundfivekeystandards. I usethissameframeworkwithmyownteams, takethis-passit ontoyoursandbrainstormonhowyoucanworktogether asateamtoimplement it.
+1) Concern- Weshowconcernfor our customers’ well being, feelings, andcircumstances.2) Courtesy-Wetreat customerswiththeutmost respect andprofessionalism.3) One&Done-Weresolvetheir issueandanydependenciesthefirsttime, everytime. AsI liketosay‘noleftovers’ incustomer service.4) Educate&Empower-Weeducateour customersonthe‘why’ andempower themonwhat todonext timeissuesarise.5) Timeliness-Customershavelittlepatience(myself included). Wewantthemtobeimpressed, not just satisfied, withour speed.
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+HowToDoThis
+Toevaluatetheperformanceof Customer ServiceRepresentatives(CSRs),usethefivekeystandardsasaframeworktotrainyour teamon. Eachinteractioncanbeassessedbasedonhowwell therepresentativemeetsthesestandardsonceyouhavetrainedthemonthefollowingframework.
+First, learnthisframeworkandhowtoapplyit tactically, thenthenext sectionwill cover howtomeasureif you’retrackingtowardsuccessor not.
+★ ConcernStar-Letourcustomersknowwecare○ Thankthecustomerforreachingout&personalizethecontact■ “HeyJohn, thankyoufor reachingout to_____.”○ GiveReassurance■ “Not toworryI ammorethanhappytoassist youinresolving(issue) today!”○ Verifytheissuetoensureaccuracy■ “I understandyouarestrugglingwith(issue), isthatcorrect?”○ Attheendverifythataresolutionwasreached■ “TodayI assistedyouwith(issue) byhelpingyou(stepstakentoreachresolution), bydoingsowasI abletofullyresolveyour issuesandquestionsyouhadtoday?”
+★ CourtesyStar-Listentoourcustomers○ ActiveListening■ Rephrasethecustomer responsetoensurecompleteunderstanding● “Soit soundslikeyouareupset becausetheonboardingemail statedyouwouldreceiveacallwithin48hoursandthat didnot happen, isthat
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+correct?”■ Askprobingquestionstofindout theroot issue● “It lookslikeyouusedXXXemail tosignupandthenXXXemail toinquirewithsupport, whichemail wouldyoulikenotificationstogoto?”● “Wouldyouprefer tohavethecall rescheduledorspeakonthephonetodetermineamorefittingcourseof action?○ Personableconversation/Buildrapport■ Call thecustomer bytheir name■ Askthecustomer about their day■ Usesmall talkandmorecasual languagetobuildrapportwiththecustomer○ Useapoliteprofessionaltone■ Saypleasewhenaskingfor additional information● “John, wouldyoumindpleasesendingmetheemailyousignedupwith?”■ Saythankyouwheninformationisprovided● “John, thankyousomuchfor providingthatinformation”■ Acknowledgewhentheygiveyougratitude● “I reallyappreciatethat feedback, that meansalot toknow”
+★ EducateandEmpower-Utilizeallresourcestoeducateandempowerourcustomers
+○ Answerthecustomer■ Givethemwhat theywant, asolutionor answer, first andforemost● “Hi John! Hereisthephonenumber andemail yousignedupwith.”
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+○ Educateonhowyousolvedtheproblemorfoundthesolution■ Showthecustomer whereandhowyoufoundtheansweryouaregivingthem● “Tomakeit easyfor next time, HEREisalinkthatshowswhereyoucanfindthisnext time, soyoudon’thavetowait for me!”
+○ Empowerthecustomergoingforward
+■ Teach/Explaintothecustomer what causedtheissueandshowthemhowtoavoidit inthefuture
+● “Just soyouknowthereasonthiswasnot sent toyour email isbecauseyouinput thisalternativeemailintothesecondintakeform. If youwant tokeepusingtheemail I'mcorrespondingwithnowyoucangoaheadandusethat onetosignupfor webinarssoitsendsemailsthere! :)”
+★ One&Done-Resolvetheissuethefirsttimeandpreventrecurrences○ Verifytheissuewasresolved■ Summarizethestepstakentoresolvetheissueandensurethesameissuewill not repeat itself● “Thanksfor your patienceJohn! Tosummarize, wehavereplacedtheemail youget notificationstowiththisonesothat all notificationsgohere, topreventthisfromoccurringagainI will deletetheother emailfromour database”○ Educatethecustomer■ “If thishappensagain, youcaneither inquirewithmeagainor goHEREtoupdatetheemail.”○ Offeradditionalassistance■ Beforewrappingupbesurethat thereisn’t anyotherquestionsor other issuesthat theywouldlikeassistance
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+with● “Thisisall takencareof, John. IsthereanythingelseIcandotohelpyoutoday?”
+★ Timeliness-Interactandresolveissuesassoonaspossible
+○ Respondtotheinquiryimmediatelyevenifyoucannotrespondwithinthatmoment
+■ “MorningJohn! I will bewithyouintwomomentssoI canensureyouhavemyundividedattention”
+○ Resolvethatissuebeforeyouopenanother
+■ Wewant toensureour undividedattentiontoeachinquiryat atimetoensureproper resolutionandatimelyone!
+HowToGradeEachRep
+If yousimplydeploythiswithout measuringitseffectiveness, youwill fail. Inorder toknowif youareupholdingthesestandardsyou’regoingtohavetoaskyour customers. Theeasiest wayistosendthefollowingsurveytocustomersafter eachinteraction. It isatotal of 5questionsandtheywill rateonascaleof 1-5, soit shouldonlytake60secondsif not lesstofill out. Isuggest pluggingthisintoyour email followup, CRM, CSplatform, or whateverplatformyouusetobuildautomations(I’mnot theexpert here)
+Concern:
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+● Question: Didtherepresentativedemonstrateempathyandgenuinecarefor your needs?Didtheyacknowledgeyour feelingsandshowunderstandingof theissue?○ Grading: Ratefrom1 to5basedonhowwell thecustomer servicerepshowedconcernandempathy.
+Courtesy:
+● Question: Wastherepresentativepolite, respectful, andprofessionalthroughout theinteraction?Didtheylistenactively?○ Grading: Ratefrom1 to5basedonpoliteness, professionalism,andactivelistening.
+Educate&Empower:
+● Question: Didtherepresentativeprovideaccurate, helpful informationandguidance?Didtheyuseavailableresourcestoempower youwithknowledgeor solutions?○ Grading: Ratefrom1 to5basedonthequalityof informationsharedandtherepresentative'sabilitytoempower youtomakeaninformeddecision.
+One&Done:
+● Criteria: Wasyour issueresolvedinasingleinteraction, or wasfurtherfollow-upneeded?Didtherepresentativetakethenecessarystepstosolvetheproblemcompletely?○ Grading: Ratefrom1 to5basedonhoweffectivelytheCSRresolvedtheissueinthefirst contact.
+Timeliness:
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+● Criteria: Howquicklywasyour issueresolved?Wastheresolutioncompletedwithintheexpectedtimeframe?○ Grading: Ratefrom1 to5basedonthespeedof resolution.
+FiveStarService:
+● Criteria: Overall, didtherepresentativedeliver afive-star experience?Wereall aspectsof theservice—concern, courtesy, knowledge,efficiency, andtimeliness—executedtothehighest standard?○ Grading: Provideanoverall ratingfrom1 to5basedonthecombinedperformanceacrossall thestandards.
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+GAMETAPEREVIEWFRAMEWORKSOP
+Whyisthisimportant?
+Thisisoneof themostbeneficial callsthat youcanimplement inacompany. I canspeakfromfirsthandexperience, implementingthiscall hascompletelyturnedaroundthemarketing, sales, andcustomer successdepartmentsinmultipleportfoliocompaniesof mine. I can’t speakhighlyenoughof howinsanetheresultsareif thisisdoneright.
+Most departmentsoperateinsilos. That’stoughwhenyour customer doesnot. If theteamswhointeract withyour customer arenot alignedonwhat thecustomer
+©2024, byAcquisition.comLLC
+
+
+---PAGE---
+
+journeylookslike, thenyouwill inevitablybeleavingmoneyonthetableor evenactively burningit.
+AstheCEOof a$500millionportfolio, I still attendthesecalls. If I ever seeanissueinmymarketingdepartment, salesdepartment, customer successdepartment mygotoistosit onthesecallsuntil I havepinpointedwheretheproblemlies. Oftentimesthereasonwedon’t get what wewant inbusinessisnot becausetheindividualdepartment isnot functioningwell but becausetheydon’t functionwell togetherasateam. Theyfunctioninsilosandthereforecreateadisjointedexperiencefor thecustomer that haspeoplewantingtoleave.
+Thiscall helpsmarketingunderstandcustomer wants, needs, objectionsevenmorethentheywouldhear it fromsales.
+Thingstheycanleveragewhenwritingads/content. Overcomingobjectionsbeforetheyevenhit asalescall.
+Thishelpssalesrecognizewhat theycandobetter intermsof presentingonthecall,andshoreupexpectationsif anyarenot properlyset andyou’reseeingbadchurn.
+Thishelpsproduct anddeliveryunderstandwhat features, benefits, andaddwecanbuildintotheproduct. Thishelpsusclearlydefinewhatfeatures/servicesarenecessaryfor abaselevel product aswell aswhat arepossibleup-sells, addons&expansionrevenueopportunities.
+Whatisit?
+ThisisameetingwhereyoubringinstakeholdersfromtheMarketing, Sales,Customer Successdepartmentstoobserveasalesor deliverycall.
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+Eachpersonhasadifferent objectiveof what theyarelookingfor whenwatchingthecall andwill takenoteasdirectedbelow. It isprobablyoneof thehighest ROImeetingsyoucanimplement intoyour company.
+HowtoDoGametapeReview
+1. ARRANGEa. Youwill implement arecurringweeklymeetingonyour calendar thatwill last 60-90minutestofacilitatetheGametapeReviewb. Host: Headof Salesc. Attendees: Headof Marketing, Sales, Customer Successi. If your teamislarger, youcanincludeadditional teammatessuchasmanagersor “leads”ii. If onespecificteamisstruggling, I will addmorepeoplefromthatteamtothiscall sothat wecantrainthemquickly.iii. therearenorules, addwhoever youthinkthiswill help.
+2. ASSEMBLEa. 1 Dayprior tothemeetingeachweektheHeadof Saleswill askforeither…b. Salescallc. OnboardingCalld. Servicecalli. Thisisthecall that will bereviewedduringthemeetingthefollowingday.ii. If there'snothinggoingwronginanyof thesedepartments, thenIwouldsuggest rotatingcallsinsuchorder. However, if youhaveanissueinanysingledepartment, I wouldspend4weekssequentiallyonlyreviewingcallsfromthedepartment withtheconstraint.
+3. ASSESSa. Theappropriatepartieswill hoponthecall readytotakenotesandwatchthecall together at 1.5xspeed
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+b. Thehost will sharetheir screenandplaythecall at 1.5xspeed.c. Eachstakeholder hasadifferent objectivetheyarewatchingfor…i. SalesLeader:1. What went right?2. What shouldweimprove?ii. MarketingLeader:1. What objectionscouldI overcomeaheadof thecall inourmarketing?2. What objectionscannot beovercomeinmarketingthatsalesshouldtrainon?iii. Customer SuccessLeader:1. What wassaidherethat I canensuregetshandedoff tothedeliveryteam?2. What wassaidherethat wecannot deliver onandthereforesalesshouldupdatetheir script?
+4. ANALYZEa. At theendof thecall, all partieswill sharetheir feedbackwitheachother anddeterminewhat ONEthingwecancommit toactingupon.b. Thisisimportant becauseyouwill seealot of thingswrong. However,mystrongsuggestionisthat youpicktheonethingthat isthe“bigdomino” becauseif youpicktoomanythingsat once, evenif theyareobjectivelybetter, youmight messstuff upbecauseyour teamdoesn’thavethebandwidthtoseeout all thechangeswithgreat execution.
+5. ACTa. Document theactionitemandkeypoints.b. Monitor progressandadjust infuturereviews.
+Highlights Sales(Assess) Marketing(Assess) CS(Assess)
+1.)
+2.)
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+3.)
+BigDominoes1.)
+2.)
+3.)
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+HIGHPERFORMANCECOMMUNICATIONFRAMEWORKSOP
+Whyisthisimportant?
+Thequestionisalwaystherebut never said. Whyisit that someteamsandteammatesexceedexpectationsconstantly, whileothersstruggletomeettheminimumrequirements?Interestinglyenough, I haveconcludedthat thisisrevolvingaroundtheir communicationhabits. Thinkabout it, if someoneisaterriblecommunicator (nonresponsive, slow, short, vague)that ishowyoulabel them, youcannot evenseepast their horrificcommunicationskillstoseeif theyareahighperformer.
+Andif theyare, it'sunlikelyyoucaresomuchbecausetheir communicationisdetrimental totheteam.
+Communicationistheendall, beall. Goodcommunicationisthebridgebetweenconfusionandclarity. Andif youleavepeoplearoundyouconstantlyfeelingconfused, oddsareyouarenot their favoritepersonandevenmoretheyprobablyavoidyou.
+©2024, byAcquisition.comLLC
+
+
+---PAGE---
+
+Actually, canyoueventhinkof atimeyouwereconfusedandit wasNOTduetoimproper communication?*I cannot*
+Secondarytobeingahorriblecommunicator, thentherearethosewhojustsimplydonot communicate. I mean, theydo, but onlywhenit'sabsolutelynecessary. Asidefromthat, youwouldnot evenknowtheywereontheteambecausetheydon’t makeapeep.
+Thesepeopleareoftentheshiningstarsof thecompanybut youwouldneverknowbecausetheylackconfidence, areshy, or wouldnever dareboast orspeakhighlyof themselves. Thisisnot anybetter thanleavingpeopleconfused. Insteadof leavingpeopleconfused, theyjust simplydonot addressyoubecauseof fear of creatingdiscomfort or anxiety.
+TherewasastudyI readabout doneat MITwheretheylookedacrossawiderangeof industriestofindworkplacesthat hadsimilar teamswithvaryingperformance. Theresearchincludedinnovationteams, post -opwardsinhospitals, customer facingteamsinbanks, backroomoperations, andmanyothers. Theyaskedthemembersof thoseteamstowear electronicbadges.Thosebadgescollecteddataontheir individual communicationbehavior -toneof voice, bodylanguage, whomtheytalkedtohowmanytimes, etc…
+Acrosstheboard, thedataconfirmedthat communicationplayedthemostcritical roleinbuildingasuccessful team. Theyactuallyidentifiedspecificpatternsof communicationtobethemost important predictorsof success.
+Communicationitselfwasagreaterpredictorofsuccessthanindividualintelligenceorskill level oftheteam.
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+It turnsout, thetwobest predictorsof thisweretheteam'senergyandengagement witheachother outsideof formal meetings. Together thosetwofactorsexplained40%of thevarianceindollar productivityamonggroups.
+Whatisit?
+Most books, courses, andarticlesvaguelydescribewhat goodcommunicationis. Over theyearsoneof thethingsthat hasirritatedmethemost isthefact that everyonepreaches‘Yougottacommunicate’ but thentheyfail todefinewhat that meansor howtodoit, tactically. Belowismyframeworkthat I havefoundskyrocketscommunication, collaborationandtherefore-businessgrowth.
+Energy: Thenumber andnatureof interactionsamongteammembers,regardlessof if theyareverbal or nonverbal. (#1 videoconference, #1 text)
+Engagement: Thedistributionof energyamongteammembers. Inasimplethree-personteam, engagement isafunctionof theaverageamount ofenergybetweenAandB, AandC, andBand. Themoremembersof theteamthat speakupduringadecisionmakingprocess, themoreprofitable/successful thedecisionendsuptobe. Yes, thismeansthemoreYOUspeakup, thesmarter your teamasawholebecomes.
+Exploration: Thisiscommunicationthat teammatesengageinoutsideoftheir coreteam(other teams). Thereisacorrelationbetweenhighperformingteamsandcollaborationwithother teammatesanddepartments. Thereasonthisisthe‘multiplier’ isbecauseonceyounail energyandengagement, youwant to‘explore’ akaMULTIPLYthegoodcommunicationthat hasbeenbuilt.
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+HowtoUseTheFramework
+1.Energy:HowtoImproveIt
+● BecomeaFastCommunicator:
+○ Slowcommunicatorsarenotoriousfor worseningteams, the
+speedof communicationhastheclosest correlationtoenergy.
+Thinkabout it, whohasmoreenergy, someonewhorunsslowlyor
+quickly?Thinkabout great communicators, doyouwait daysfor
+themtorespond?I thinknot.
+● IfYouSeeSomethingSaySomething:
+○ Aspecial practiceI engagewitheachdayisI haveablockat my
+EODonmycalendar labeled‘praise’ inwhichI just reachout to
+anyonewhoI noticeddosomethingcool, difficult, or impressive
+that day. I sendthemamessagebeforeI gotobed. I livebythe
+saying, never let agoodgesturegounnoticed.
+● VaryHowYouCommunicate:
+○ If youstudythebest communicators, theydon’t haveoneway
+theycommunicate. Theyoftenaretheteammatesyoublowup
+thezoomchat oncalls, slackyou, sendyougifts, comment on
+your social mediaposts. Wheni’mtryingtoincreasetheenergyof
+communicationI encouragepeopletousedifferent mediumsto
+‘react’ totheir teammates, evenif it'sasimpleemoji.
+2.Engagement:HowtoImproveIt
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+● PullOnMeetings:
+○ If you’rethebossor evenanambitiouspeer, chattingteammates
+privatelyoncallswhodon’t speakupasmuchandencouraging
+themtodoso-thenpraisethemwhentheydo. Whenever I am
+trainingsomeonetobealeader or better communicator I usethe
+privatechat featuretofeedthemlinestosaytothegroup, until
+theyarecomfortabledoingsothemselves.
+○ Haveeachmember of theteamresponsiblefor onepieceof
+presentingontheteammeeting-thiswayyoucreateaprocess
+for evendistributionof talktimeandengagement. Thisalsohelps
+teammatesincreasetheir publicspeakingcapabilities.
+● BuddyUp:
+○ WhenI havetwoteammateswhodon’t interact much, I tryto
+strategicallyplacethemonprojectstogether. Not onlybecauseI
+will improvecommunicationbut becauseI alsoknowthat the
+moretheteamcommunicates, thelesstheyneedme!
+3.Exploration:HowToImproveIt
+● CollaborateAcrossTeams:
+○ Set upcross-teamprojectsor “special projects” wherepeople
+fromdifferent departmentsworktogether. DoyouNEEDtohave2
+departmentsworkingonit?Maybenot, but youWILLbenefit from
+it, andsowill they.
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+○ Haveteammembersjoinprojectsor groupsoutsidetheir usual
+roletogainnewinsights, ideas, andcollaboration. I will ask
+teammatesfromour mediateamtojoinportfoliocallsoncea
+monthtoensuretheyseewhat goesoninother departmentson
+our teamandwekeepcommunicationflowing.
+● CasualEvents
+○ Myteamslikehangingout witheachother but seldomdowefind
+all of ourselvesinaroom. Somethingthat'sworkedreallywell is
+hostingmonthlygamenights, pizzaparties, or luncheonssothat
+all theteamsacrosstheboardget tospendtimewitheachother.
+○ Asanaside, I dohaveonceayear full teammeetupstofacilitate
+thisaswell whereI purposelymixupseatingarrangementsand
+activitiessofor 2daysnobodyinteractswiththeir typical team!
+HowToDeployThis
+1. ShareThiswithyourteam: Sharethisdocument withyour leadersand
+askthemtogradetheir teamsoneacharea
+a. Howwouldyougradeyour teamonENERGYonascaleof 1-10?
+b. Howwouldyougradeyour teamonENGAGEMENTonascaleof 1-10?
+c. Howwouldyougradeyour teamonEXPLORATIONonascaleof 1-10?
+2. Askyourteam:Askyour teamtoaskhowTHEYwant totakeaction. You
+don’t needtocomeupwithall theideasonyour own. Givethemthis
+document, havethemgradetheir teamandaskthemtoreflect on
+what theywant tofocusontoimprovetheir ‘worst’ areaof
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+communication. I findthat it'sbest tofocusonONEarea, nomatter ‘how
+bad’ or far off youmaybe.
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+MONDAYHOURONEFRAMEWORKSOP
+Whyisthisimportant?
+Thisprovidestransparencyfor management toensurenoonepersonisoverloadedor underloaded, andwecanproperlydisperseworkamongstteams, andproject deadlinesmoreeasily.
+WhatisMondayHourOne?
+It isONEhour (usuallyless)of planningthat savesyou10-12hourstherest oftheweekonaverage. Duringthishour, youwill pre-planyour workinghoursfor therest of theweektoensureyoucompleteall tasks, projects, andalsoaccommodatefor anyunexpecteditems. Somepeoplecall thistime-blocking.
+WhatisExpected?
+Eachweekafter youcompletethisMondaymorning(or over theweekend)your Supervisor shouldbeabletolookat your calendar andseeall of yourtimeblockedandproperlyallocated.
+©2024, byAcquisition.comLLC
+
+
+---PAGE---
+
+HowToDeployMondayHourOne
+1. TheLookBack: Reviewthepreviousweek’scalendar, what didyounot
+get done?What isunresolved?
+a. Reviewall your sent emails, what isnot followeduponor
+complete?
+b. What happenedlast weekonmycalendar that I needtopull
+forwardtothisweek?
+c. Reviewcommunicationplatform, anythingyoumissedor forgot
+torespondto?
+d. Review‘constraints’ fromlast week.
+i. What process/communication/document canbeput in
+placetoprevent that constraint fromhappeningagainin
+thefuture?
+2. TheLookForward: Reviewthenext 1-3monthscalendar, what doyou
+needtostart workingon?What shouldyou‘pull’ forwardthisweekto
+ensureyouhit your targets?
+a. Reviewyour project management tool -what projectsare
+upcomingthat youneedtostart workingon?
+b. Reviewthenext monthonyour calendar, what isupandcoming
+youmayneedtostart preparingfor?What about your quarterly
+goals?
+c. Reviewyour EOWreports(yoursor your reportsif applicable)
+what stepsneedtobetaken?
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+3. Prioritizetheitemsyouhavejustwrittendown.
+a. What isthemost important that will moveyou/your team/the
+businessforwardthemost?Thoseshouldbescheduledas
+priorities. Wedonot scheduleprioritiesaroundour other stuff, we
+scheduleother stuff aroundour priorities.
+4. ScheduleYourPriorities!
+a. Scheduleinyour projects/tasks/workblocksfor your priorities
+b. Deleteor moveanythingthat doesnot revolvearoundtheseto
+thebest of your ability
+c. Berealistic-Insert your lunchtime, aswell asanybreaksyou
+maytakedailytopick/dropkidsoff at school and/or takeastroll
+toclear your head.
+d. Theseshouldbeasdetailedaspossible. Thereisno“project work”
+block, it must benamedspecifictothenameof theproject you
+areworkingon.
+e. Start byinsertingthehighpriorityprojects, andthenfollowthat
+withschedulingtimetocheckemail, project management tool,
+facebook, andanyother small tasksthat must bedonemultiple
+timesthroughout theday.
+5. ScheduleinOVERFLOW/AD-HOCtime.
+a. Wecanonlybesogoodat guessinghowlongthingswill takeus,
+however youwouldbesurprisedthat if weput constraintsonour
+time, wecantypicallyget itemsdoneinmuchlesstimethanif we
+giveourselvestoomuchtime.
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+b. Thistimeisalsoset apart for ‘AdHocRequests’ if your jobentails
+youmayget thoseonadailybasis, whether itsurgent customer
+requests, followups, or itemsurgentlyrequestedbypeersor
+managers.
+6. ColorCodeYourCalendar
+a. Thisisextremelyhelpful becauseit givesaneasytomeasureway
+of seeingwhereyour timeisspent.
+b. Hereisabasiccolor code:
+i. RecurringMeetings: Blue
+ii. AdminTasks: Red
+iii. Oneoff Meetings: Yellow
+iv. Project/Priorities: Green
+v. Break/FoodTime: Purple
+vi. Personal Events/Time(If youchoosetoinput): Orange
+CONTINUETONEXTPAGE
+VVV
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+ExamplesofMondayHourOneCalendarsOnceyouhavecompletedtheabove, your calendar maylooksimilar tooneof thefollowing.
+©2024, byAcquisition.comLLC
+
+
+---PAGE---
+
+©2024, byAcquisition.comLLC
+
+
+---PAGE---
+
+PAYINCREASEFRAMEWORKSOP
+Whyisthisimportant?
+Manycompaniesdon’t haveaphilosophyaroundhowtopaypeopleor howtogiveraises.
+Thisendsupbitingyouinthebutt asyougrowbecauseyoulosegoodpeopleeither duetooverpayingthebadpeopleor underpayingthegoodones.
+Not tomention, havingnostandardwayinwhichyouexplainhowyoupay,whichthenleadstounfair andunequal pay.
+I wishI understoodmycompanyisthat peopletalk. Theytalkandtheysharewhat theyget paidmorethanyouwouldever guess. Andsoyouwant tobeastransparent aspossibleandwhypeopledothat nomatter what isnot anareaof contention.
+Thisissomethingthat youwant todobeforeyougrow, andif youhaven’t untilnow-thisisoneyoucan’t implement toosoon.
+©2024, byAcquisition.comLLC
+
+
+---PAGE---
+
+WhatisthePayIncreaseFramework?
+Thisisaguidemeant togiveyouanoutlinefor howtodohayincreases, butalsoonethat youcanhandtoyour teamwhentheyjoinandshowthemsothat theyknowwhat toexpect.
+I’mabigfanof transparent paypoliciesandthisisoneof those. Thisframeworkservesasonethat youcanuseyourself andalsousetoeducateyour team.
+Howdoyouuseit?
+TheKeytoEarningaRaise:DemonstratingExcellence
+Thesinglemost important factor inearningaraiseisdemonstratingconsistent excellenceinyour work. Highperformersarerewardedthefastest.Thisprinciplesupersedesall other considerations. If youexcel, theopportunitiesfor financial growthwill naturallyfollow.
+WhattoExpectasanAmountforYourRaise:
+LeadershipincollaborationwithHumanResourceswill evaluatetheemployee'sperformanceandassignthemtooneof thefour categories:
+● StandardPerformance/NotMeetingCriteria: Regular performancewithoutanyexceptional results. (1-3%)● ConsistentPerformanceandReliability: Consistentlymeetsexpectationsandisareliablecontributor. (4-5%)● Excellence/HighPerformance/AddedResponsibilities: Consistentlyexceedsexpectations, takesonextraresponsibilities. (5-10%)
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+● PromotiontoManagement/NewSkills/SignificantIncreaseinResponsibilities: Recentlypromotedor hasacquirednewskillsor takenonsignificant newduties. (10-20%)
+Oncetheemployeeisassignedtoacategorythat ishowwedictatetheir payincrease.
+CommonCircumstancesThatLeadtoaBiggerRaise:
+1. SignificantIncreaseinResponsibilities: Whenthereisasubstantialchangeinyour role, significant increaseinteammates, takingonnewtasksthat areformallydocumented(e.g., changestoaJDdocument),thisoftenwarrantsaraise.2. PromotiontoManagementorLeadership: Movingintoamanagementpositionor takingonaleadershiprolebyoverseeingateamcanjustifyasalaryincrease.3. ConsistentPerformanceandAchievement: Continual hardworkandconsistent achievement, especiallywhenit leadstotakingontasksbeyondtheoriginal scopeof your job, isastrongcasefor requestingaraise. Wedon’t rewardfantasticindividual contributorsanylessthanleaders-botharecrucial tocompanyperformance.
+FrequencyandPercentageofRaises:
+Wedonot grant raisesbasedonanypredeterminedschedule, nor areraisesdistributedequallyacrossthecompanyor withindepartments. Instead, raisesareevaluatedonanindividual, case-by-casebasis, reflectingeachemployee'suniquecontributionsandperformance.
+However, asageneral rule, unlessthereisaspecial circumstance(suchasapromotion), raisesaretypicallynot awardedmorethanoncewithinacalendar year.
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+HowtoGet/AskforaRaise
+1.UnderstandYourValueandMarketRate:
+● ResearchYourPosition'sMarketValue: Start bygatheringdataontheaveragesalaryor hourlyratefor your jobtitleinyour region, consideringfactorslikeyour level of experience, industrystandards, andcost ofliving. WebsiteslikeGlassdoor, Payscale, andtheBureauof LaborStatisticscanprovideuseful benchmarks.● AssessYourUniqueContributions: Identifyandquantifyyourcontributionstothecompany, suchascompletedprojects, revenuegenerated, cost savings, or processimprovements. Understandingyourvaluewill helpjustifyyour request. Wewant toleadwithdata, notemotions.
+2.DeterminetheAppropriateIncrease:
+● KnowWhatPercentagetoAskFor: Makesureyour request isrealisticandbackedbydataandworkswithinthePayRaiseFrameworkweuseinternally● BeReadywithSpecificNumbers: For example, "Basedonmyresearchandcontributions, I wouldliketorequest anincreaseof $5,000to$7,000."
+3.PreparefortheConversation:
+● ApproachProfessionallyandCalmly: Avoidmakingemotional appealsor puttingyour supervisor onthedefensive. Start theconversationwithapositivenoteabout your satisfactionwithyour jobandhowmuchyouenjoyyour work.● SampleOpeningLines:○ "I reallyenjoyworkinghereandfindmyprojectsverychallenging.Over thepast year, I'venoticedthescopeof myworkhas
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+expandedsignificantly, andmyrolesandresponsibilities, alongwithmycontributions, haveincreased. I wouldliketodiscussthepossibilityof reviewingmycompensation."○ "I’dliketotalkabout mycareer andhowI cancontinuedoingmybest workfor thecompany."
+4.PresentaStrongCase:
+● BeSpecificandEvidence-Based: Clearlyoutlinewhyyoudeservearaise, usingexamplesandmetricstodemonstrateyour increasedresponsibilitiesandcontributions, leadwithevidencenot emotionsandusetheprovidedframework.● HaveSupportingDocumentationReady: Bepreparedtosharedatathat supportsyour request, suchasindustrysalaryreportsor alist ofyour achievementsandhowtheyalignwithcompanygoals. Youcanusepayscale.comor salary.comtogather thisinformation. Thebestpayincreaserequestsi haveseentheemployeehasput together aslidedeckpresentation.
+5.PracticePatienceandProfessionalism:
+● GiveYourManagerTime: Recognizethat salarydecisionsrequirecareful consideration, reviews, andpossiblydiscussionswithuppermanagement. Don’t expect animmediateresponse.● RemainCalmandPatient: Avoidfollowinguptoofrequently. Typically,it'sacceptabletodiscusssalaryonceayear unlessthereareexceptional circumstancesor promotionopportunities.
+6.AvoidOver-Asking:
+● LimitFrequencyofRequests: Askingfor araisetoooftencanappear asthoughyouaredissatisfiedor constantlyseekingmorecompensationrather thanbeingcommittedtoyour role. Annual reviewsareusually
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+thestandardunlessyouhavereceivedapromotionor yourresponsibilitieshavechangeddramatically.
+7.FollowUpRespectfully:
+● After theconversation, sendapoliteemail thankingyour manager fortheir timeandreiteratingyour commitment toyour roleandthecompany, whilealsogentlyremindingthemof your request.
+TYINGITALTOGETHER
+Ifitfeelslikethisisalot.Iagree- itis.
+Asa4xFounder andtheCEOof aportfolioof businesses, I seeit everyday. Thejobof theFounder/CEOisgrueling. Thereisnever endingworkandlimitedtime.
+Thegoal of these5Frameworksistosaveyoualittletimeandalotof painsoyoudon’t havetobuildtheseout yourself or makethesamemistakesI didwhenI wasscalingfast for thefirst timeadecadeago.
+Ifyou’reabusinessownerlookingtoscale …I host ScalingWorkshopsat myHeadquartersinLasVegasmonthly. Thereareusually50-75businesses(100peopleintotal)at theseworkshops. Theteamthat runsmy$500MPortfoliorunstheseworkshopshencethelimitedspaceandfrequency. Soif youwantmorehands-onhelpthantheseFrameworks, goaheadandsignupfor acallat thelinkhereandwewill hoponandlet youknowif youqualify.
+©2024, byAcquisition.comLLC
+
+---PAGE---
+
+Andif not -I'mstill rootingfor youasoneof thefewbraveonestryingtomakeadifferenceinthisworld.
+©2024, byAcquisition.comLLC
+
+---PAGE---
+

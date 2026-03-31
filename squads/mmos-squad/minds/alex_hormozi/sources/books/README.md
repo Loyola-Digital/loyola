@@ -1,93 +1,32 @@
 # Books - Alex Hormozi
 
-## 📚 Livros para Coletar
+## Status: 4/5 Processados
 
-### 1. $100M Offers (100M_Offers/)
-**Status:** ⏸️ Não Coletado
-**Prioridade:** 🔴 P0 - URGENTE
+### 1. $100M Offers
+**Status:** Processado
+**Arquivo:** `100m-offers.md` (37KB, 588 lines)
+**Conteudo:** 9 frameworks, 44 principios, 6 formulas, 16+ quotes, 12 case studies, 41 action items
 
-**Descrição:**
-O livro principal que define o framework "Grand Slam Offer" do Alex Hormozi. Essencial para capturar sua filosofia de criação de ofertas irresistíveis.
+### 2. $100M Leads
+**Status:** Processado
+**Arquivo:** `100m-leads.md` (35KB, 587 lines)
+**Conteudo:** 12 frameworks (Core Four, Lead Magnets, Content Unit, etc.), 7+ processos, 40+ quotes
 
-**Conteúdo Esperado:**
-- Value Equation completa
-- Framework de criação de ofertas
-- Casos práticos
-- Psicologia de vendas
-- Estratégias de precificação
+### 3. $100M Money Models
+**Status:** Processado
+**Arquivo:** `100m-money-models.md` (26KB, 456 lines)
+**Conteudo:** 4 offer types, 15 subtypes, Gym Launch trajectory, 26+ quotes
 
-**Formato:** PDF/ePub
-**Páginas:** ~200
-**Tamanho:** 2-3MB
+### 4. $100M Lost Chapters
+**Status:** Processado
+**Arquivo:** `100m-lost-chapters.md` (27KB, 416 lines)
+**Conteudo:** Vista Method, CFA math, Value Grid, Advanced Offer Stacking, 35 tactical items
 
----
-
-### 2. $100M Leads (100M_Leads/)
-**Status:** ⏸️ Não Coletado
-**Prioridade:** 🔴 P0 - URGENTE
-
-**Descrição:**
-Complemento do $100M Offers focado em geração de leads e aquisição de clientes. Fundamental para entender o sistema completo.
-
-**Conteúdo Esperado:**
-- Estratégias de lead generation
-- Core Four (outbound methods)
-- Lead nurturing frameworks
-- Scaling strategies
-- Case studies
-
-**Formato:** PDF/ePub
-**Páginas:** ~250
-**Tamanho:** 2-3MB
+### 5. Gym Launch Secrets
+**Status:** Nao Disponivel
+**Notas:** Nao incluido nos PDFs fornecidos
 
 ---
 
-### 3. Gym Launch Secrets (gym_launch_secrets/)
-**Status:** ⏸️ Não Coletado
-**Prioridade:** 🟡 P1
-
-**Descrição:**
-Material original do Gym Launch, primeira empresa de escala do Alex. Contém a origem de muitos frameworks.
-
-**Conteúdo Esperado:**
-- 6-Week Challenge framework
-- Launch playbooks
-- Scripts de vendas
-- Materiais de treinamento
-
-**Formato:** Multiple (PDFs, docs)
-**Tamanho:** 5-10MB
-
----
-
-## 📋 Checklist de Processamento
-
-Para cada livro:
-- [ ] Baixar PDF/ePub
-- [ ] Extrair texto completo
-- [ ] Identificar capítulos principais
-- [ ] Mapear frameworks e conceitos
-- [ ] Extrair quotes principais
-- [ ] Documentar casos e exemplos
-- [ ] Integrar com artifacts/
-
----
-
-## 🎯 Comandos ETL Pack
-
-Use o ETL Pack para processar automaticamente:
-
-```bash
-# Processar livro
-*etl process-book $100M_Offers.pdf
-
-# Extrair frameworks
-*etl extract-frameworks $100M_Offers.pdf --output artifacts/
-
-# Criar índice
-*etl index-book $100M_Offers.pdf
-```
-
----
-
-*Pasta criada: 2025-10-10*
+*Processado: 2026-03-31*
+*Fonte: 24 PDFs extraidos via pypdf*
