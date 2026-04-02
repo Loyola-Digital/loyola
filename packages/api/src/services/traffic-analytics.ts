@@ -494,10 +494,12 @@ export async function getAllAdSetsForProject(
     : adsetInsights;
 
   // Aggregate by adset NAME (same audience across campaigns)
-  const adsetMap = new Map<string, { id: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number; leads: number }>();
+  const adsetMap = new Map<string, { id: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number; leads: number; linkClicks: number; lpViews: number }>();
   for (const a of filtered) {
     const key = a.adset_name.trim();
     const leads = parseLeadsFromActions(a.actions);
+    const lc = parseActionValue(a.actions, "link_click");
+    const lpv = parseActionValue(a.actions, "landing_page_view");
     const existing = adsetMap.get(key);
     if (existing) {
       existing.spend += parseFloat(a.spend || "0");
@@ -505,6 +507,8 @@ export async function getAllAdSetsForProject(
       existing.clicks += parseFloat(a.clicks || "0");
       existing.reach += parseFloat(a.reach || "0");
       existing.leads += leads;
+      existing.linkClicks += lc;
+      existing.lpViews += lpv;
     } else {
       adsetMap.set(key, {
         id: a.adset_id,
@@ -513,13 +517,13 @@ export async function getAllAdSetsForProject(
         impressions: parseFloat(a.impressions || "0"),
         clicks: parseFloat(a.clicks || "0"),
         reach: parseFloat(a.reach || "0"),
-        leads,
+        leads, linkClicks: lc, lpViews: lpv,
       });
     }
   }
 
   const adsets = Array.from(adsetMap.entries()).map(([name, a]) => {
-    const row = buildAnalyticsRow(a.id, name, a.spend, a.impressions, a.clicks, a.leads > 0 ? a.leads : null, null, null, a.reach);
+    const row = buildAnalyticsRow(a.id, name, a.spend, a.impressions, a.clicks, a.leads > 0 ? a.leads : null, null, null, a.reach, a.linkClicks > 0 ? a.linkClicks : null, a.lpViews > 0 ? a.lpViews : null);
     return { ...row, parentCampaignName: a.campaignName };
   });
 
@@ -554,10 +558,12 @@ export async function getAllAdsForProject(
   const filtered = idSet ? allAds.filter((a) => idSet.has(a.campaign_id)) : allAds;
 
   // Aggregate by ad NAME (same creative across adsets/campaigns)
-  const adMap = new Map<string, { id: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number; leads: number }>();
+  const adMap = new Map<string, { id: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number; leads: number; linkClicks: number; lpViews: number }>();
   for (const a of filtered) {
     const key = a.ad_name.trim();
     const leads = parseLeadsFromActions(a.actions);
+    const lc = parseActionValue(a.actions, "link_click");
+    const lpv = parseActionValue(a.actions, "landing_page_view");
     const existing = adMap.get(key);
     if (existing) {
       existing.spend += parseFloat(a.spend || "0");
@@ -565,6 +571,8 @@ export async function getAllAdsForProject(
       existing.clicks += parseFloat(a.clicks || "0");
       existing.reach += parseFloat(a.reach || "0");
       existing.leads += leads;
+      existing.linkClicks += lc;
+      existing.lpViews += lpv;
     } else {
       adMap.set(key, {
         id: a.ad_id,
@@ -573,13 +581,13 @@ export async function getAllAdsForProject(
         impressions: parseFloat(a.impressions || "0"),
         clicks: parseFloat(a.clicks || "0"),
         reach: parseFloat(a.reach || "0"),
-        leads,
+        leads, linkClicks: lc, lpViews: lpv,
       });
     }
   }
 
   const ads = Array.from(adMap.entries()).map(([name, a]) => {
-    const row = buildAnalyticsRow(a.id, name, a.spend, a.impressions, a.clicks, a.leads > 0 ? a.leads : null, null, null, a.reach);
+    const row = buildAnalyticsRow(a.id, name, a.spend, a.impressions, a.clicks, a.leads > 0 ? a.leads : null, null, null, a.reach, a.linkClicks > 0 ? a.linkClicks : null, a.lpViews > 0 ? a.lpViews : null);
     return { ...row, parentCampaignName: a.campaignName };
   });
 
