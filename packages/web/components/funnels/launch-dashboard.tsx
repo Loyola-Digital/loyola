@@ -435,48 +435,84 @@ function SaturationBadge({ dailyData }: { dailyData: CampaignDailyInsight[] | nu
   const ctrDrop = ctrChange < -10;
   const cpmRise = cpmChange > 10;
 
-  const ctrLabel = `CTR: ${ctrFirst.toFixed(2)}% → ${ctrSecond.toFixed(2)}% (${ctrChange >= 0 ? "+" : ""}${ctrChange.toFixed(1)}%)`;
-  const cpmLabel = `CPM: R$${cpmFirst.toFixed(2)} → R$${cpmSecond.toFixed(2)} (${cpmChange >= 0 ? "+" : ""}${cpmChange.toFixed(1)}%)`;
+  let status: "saturating" | "ctr-drop" | "cpm-rise" | "healthy" = "healthy";
+  if (ctrDrop && cpmRise) status = "saturating";
+  else if (ctrDrop) status = "ctr-drop";
+  else if (cpmRise) status = "cpm-rise";
 
-  if (ctrDrop && cpmRise) {
-    return (
-      <span
-        className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/20 cursor-help"
-        title={`Anúncios saturando — CTR caindo e CPM subindo\n\n${ctrLabel}\n${cpmLabel}\n\nConsidere trocar criativos ou pausar públicos exaustos.`}
-      >
-        ⚠ Saturando
-      </span>
-    );
-  }
+  const config = {
+    saturating: {
+      label: "⚠ Saturando",
+      classes: "bg-red-500/15 text-red-400 border-red-500/20",
+      cardBorder: "border-red-500/30",
+      title: "Anúncios saturando",
+      desc: "CTR caindo e CPM subindo ao mesmo tempo — sinal claro de saturação.",
+      tip: "Troque criativos ou pause públicos exaustos.",
+    },
+    "ctr-drop": {
+      label: "⚡ Atenção",
+      classes: "bg-amber-500/15 text-amber-400 border-amber-500/20",
+      cardBorder: "border-amber-500/30",
+      title: "CTR em queda",
+      desc: "O público pode estar cansando dos criativos atuais.",
+      tip: "Teste novos ângulos de copy e criativos.",
+    },
+    "cpm-rise": {
+      label: "⚡ Atenção",
+      classes: "bg-amber-500/15 text-amber-400 border-amber-500/20",
+      cardBorder: "border-amber-500/30",
+      title: "CPM subindo",
+      desc: "Custo de entrega aumentando — concorrência ou frequência alta.",
+      tip: "Diversifique públicos ou ajuste lances.",
+    },
+    healthy: {
+      label: "✓ Saudável",
+      classes: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
+      cardBorder: "border-emerald-500/30",
+      title: "Métricas estáveis",
+      desc: "Sem sinais de saturação no período analisado.",
+      tip: "Continue monitorando para detectar mudanças cedo.",
+    },
+  };
 
-  if (ctrDrop) {
-    return (
-      <span
-        className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20 cursor-help"
-        title={`CTR em queda — atenção à fadiga criativa\n\n${ctrLabel}\n${cpmLabel}\n\nO público pode estar cansando dos criativos atuais.`}
-      >
-        ⚡ Atenção
-      </span>
-    );
-  }
-
-  if (cpmRise) {
-    return (
-      <span
-        className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20 cursor-help"
-        title={`CPM subindo — custo de entrega aumentando\n\n${ctrLabel}\n${cpmLabel}\n\nConcorrência ou frequência alta podem estar encarecendo o leilão.`}
-      >
-        ⚡ Atenção
-      </span>
-    );
-  }
+  const c = config[status];
 
   return (
-    <span
-      className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 cursor-help"
-      title={`Métricas estáveis — sem sinais de saturação\n\n${ctrLabel}\n${cpmLabel}`}
-    >
-      ✓ Saudável
-    </span>
+    <div className="relative group">
+      <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full border cursor-pointer ${c.classes}`}>
+        {c.label}
+      </span>
+
+      {/* Hover card */}
+      <div className={`absolute right-0 top-full mt-2 w-72 rounded-xl border bg-card shadow-xl p-4 z-50 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150 ${c.cardBorder}`}>
+        <p className="text-sm font-semibold mb-2">{c.title}</p>
+        <p className="text-xs text-muted-foreground mb-3">{c.desc}</p>
+
+        <div className="space-y-1.5 mb-3">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">CTR</span>
+            <span>
+              {ctrFirst.toFixed(2)}% → {ctrSecond.toFixed(2)}%{" "}
+              <span className={ctrChange < 0 ? "text-red-400" : "text-emerald-400"}>
+                ({ctrChange >= 0 ? "+" : ""}{ctrChange.toFixed(1)}%)
+              </span>
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">CPM</span>
+            <span>
+              R${cpmFirst.toFixed(2)} → R${cpmSecond.toFixed(2)}{" "}
+              <span className={cpmChange > 0 ? "text-red-400" : "text-emerald-400"}>
+                ({cpmChange >= 0 ? "+" : ""}{cpmChange.toFixed(1)}%)
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <p className="text-[11px] text-muted-foreground border-t border-border/30 pt-2">
+          💡 {c.tip}
+        </p>
+      </div>
+    </div>
   );
 }
