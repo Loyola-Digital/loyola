@@ -32,6 +32,7 @@ import {
   usePlacementBreakdown,
   useCampaignDailyInsights,
   type CampaignAnalytics,
+  type CampaignDailyInsight,
   type PlacementInsight,
 } from "@/lib/hooks/use-traffic-analytics";
 import { ConversionFunnel } from "./conversion-funnel";
@@ -179,6 +180,22 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
         <FunnelCampaignTable campaigns={funnelCampaigns} projectId={projectId} days={days} />
       ) : null}
 
+      {/* CTR × CPM — Saturation Chart */}
+      <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-sm font-semibold">CTR × CPM — Indicador de Saturação</h3>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Quando CTR cai e CPM sobe, seus anúncios estão saturando</p>
+          </div>
+          <SaturationBadge dailyData={dailyData ?? null} />
+        </div>
+        {dailyLoading ? (
+          <Skeleton className="h-56" />
+        ) : dailyData && dailyData.length > 0 ? (
+          <CtrCpmChart data={dailyData} />
+        ) : <EmptyState />}
+      </div>
+
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Spend daily chart */}
@@ -320,5 +337,123 @@ function EmptyState() {
       <p className="text-sm text-muted-foreground">Sem dados no período selecionado.</p>
       <p className="text-xs text-muted-foreground mt-1">Tente selecionar um período diferente.</p>
     </div>
+  );
+}
+
+// ============================================================
+// CTR × CPM — Saturation Chart (ref: Samuel Diogenes)
+// ============================================================
+
+function CtrCpmChart({ data }: { data: CampaignDailyInsight[] }) {
+  const chartData = data.map((d) => ({
+    date: d.date_start.slice(5, 10),
+    ctr: safeNum(d.ctr),
+    cpm: safeNum(d.cpm),
+  }));
+
+  return (
+    <ResponsiveContainer width="100%" height={260}>
+      <LineChart data={chartData}>
+        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+        <XAxis
+          dataKey="date"
+          tick={{ fontSize: 11 }}
+          stroke="hsl(var(--muted-foreground))"
+        />
+        <YAxis
+          yAxisId="ctr"
+          tick={{ fontSize: 11 }}
+          stroke="hsl(200 80% 60%)"
+          tickFormatter={(v) => `${v.toFixed(1)}%`}
+          label={{ value: "CTR %", angle: -90, position: "insideLeft", style: { fontSize: 11, fill: "hsl(200 80% 60%)" } }}
+        />
+        <YAxis
+          yAxisId="cpm"
+          orientation="right"
+          tick={{ fontSize: 11 }}
+          stroke="hsl(0 72% 55%)"
+          tickFormatter={(v) => `R$${v.toFixed(0)}`}
+          label={{ value: "CPM R$", angle: 90, position: "insideRight", style: { fontSize: 11, fill: "hsl(0 72% 55%)" } }}
+        />
+        <Tooltip
+          contentStyle={{
+            backgroundColor: "hsl(var(--card))",
+            border: "1px solid hsl(var(--border))",
+            borderRadius: "8px",
+            fontSize: "12px",
+          }}
+          formatter={(value, name) => {
+            const v = Number(value);
+            if (name === "CTR") return [`${v.toFixed(2)}%`, name];
+            return [`R$ ${v.toFixed(2)}`, name];
+          }}
+        />
+        <Legend />
+        <Line
+          yAxisId="ctr"
+          type="monotone"
+          dataKey="ctr"
+          stroke="hsl(200 80% 60%)"
+          strokeWidth={2.5}
+          dot={{ r: 3, fill: "hsl(200 80% 60%)" }}
+          activeDot={{ r: 5 }}
+          name="CTR"
+        />
+        <Line
+          yAxisId="cpm"
+          type="monotone"
+          dataKey="cpm"
+          stroke="hsl(0 72% 55%)"
+          strokeWidth={2.5}
+          dot={{ r: 3, fill: "hsl(0 72% 55%)" }}
+          activeDot={{ r: 5 }}
+          name="CPM"
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function SaturationBadge({ dailyData }: { dailyData: CampaignDailyInsight[] | null }) {
+  if (!dailyData || dailyData.length < 4) return null;
+
+  // Compare first half vs second half
+  const mid = Math.floor(dailyData.length / 2);
+  const firstHalf = dailyData.slice(0, mid);
+  const secondHalf = dailyData.slice(mid);
+
+  const avgCtr = (arr: CampaignDailyInsight[]) =>
+    arr.reduce((s, d) => s + safeNum(d.ctr), 0) / arr.length;
+  const avgCpm = (arr: CampaignDailyInsight[]) =>
+    arr.reduce((s, d) => s + safeNum(d.cpm), 0) / arr.length;
+
+  const ctrFirst = avgCtr(firstHalf);
+  const ctrSecond = avgCtr(secondHalf);
+  const cpmFirst = avgCpm(firstHalf);
+  const cpmSecond = avgCpm(secondHalf);
+
+  const ctrDrop = ctrSecond < ctrFirst * 0.9; // CTR dropped 10%+
+  const cpmRise = cpmSecond > cpmFirst * 1.1; // CPM rose 10%+
+
+  if (ctrDrop && cpmRise) {
+    return (
+      <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/20">
+        ⚠ Saturando
+      </span>
+    );
+  }
+
+  if (ctrDrop || cpmRise) {
+    return (
+      <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20">
+        ⚡ Atenção
+      </span>
+    );
+  }
+
+  return (
+    <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+      ✓ Saudável
+    </span>
   );
 }
