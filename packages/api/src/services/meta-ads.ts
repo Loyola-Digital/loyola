@@ -474,6 +474,7 @@ export interface MetaPlacementInsight {
   ctr: string;
   cpc: string;
   cpm: string;
+  actions?: { action_type: string; value: string }[];
 }
 
 export async function fetchPlacementBreakdown(
@@ -489,7 +490,7 @@ export async function fetchPlacementBreakdown(
     : "";
   const level = campaignId ? "campaign" : "account";
   const res = await fetchMeta<{ data: MetaPlacementInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=spend,impressions,clicks,ctr,cpc,cpm&breakdowns=publisher_platform,platform_position&date_preset=${datePreset}&level=${level}${filtering}`,
+    `/act_${metaAccountId}/insights?fields=spend,impressions,clicks,ctr,cpc,cpm,actions&breakdowns=publisher_platform,platform_position&date_preset=${datePreset}&level=${level}${filtering}`,
     accessToken
   );
   return res.data ?? [];

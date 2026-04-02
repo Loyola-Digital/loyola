@@ -661,6 +661,9 @@ export interface PlacementInsight {
   spend: number;
   impressions: number;
   clicks: number;
+  linkClicks: number;
+  leads: number | null;
+  cpl: number | null;
   ctr: number;
   cpc: number;
   cpm: number;
@@ -693,48 +696,43 @@ export async function getPlacementBreakdown(
   }
 
   // Aggregate by platform+position
-  const agg = new Map<string, { spend: number; impressions: number; clicks: number; ctr: number; cpc: number; cpm: number; count: number }>();
+  const agg = new Map<string, { spend: number; impressions: number; clicks: number; linkClicks: number; leads: number }>();
   for (const r of rawAll) {
     const key = `${r.publisher_platform}|${r.platform_position}`;
-    const existing = agg.get(key);
     const spend = parseFloat(r.spend || "0");
     const impressions = parseFloat(r.impressions || "0");
     const clicks = parseFloat(r.clicks || "0");
+    const linkClicks = parseActionValue(r.actions, "link_click");
+    const leads = parseActionValue(r.actions, "lead");
+    const existing = agg.get(key);
     if (existing) {
       existing.spend += spend;
       existing.impressions += impressions;
       existing.clicks += clicks;
-      existing.count++;
+      existing.linkClicks += linkClicks;
+      existing.leads += leads;
     } else {
-      agg.set(key, { spend, impressions, clicks, ctr: 0, cpc: 0, cpm: 0, count: 1 });
+      agg.set(key, { spend, impressions, clicks, linkClicks, leads });
     }
   }
 
-  // Recalculate derived metrics
-  const raw = Array.from(agg.entries()).map(([key, v]) => {
+  const result: PlacementInsight[] = Array.from(agg.entries()).map(([key, v]) => {
     const [platform, position] = key.split("|");
+    const lc = v.linkClicks > 0 ? v.linkClicks : v.clicks;
     return {
-      publisher_platform: platform,
-      platform_position: position,
-      spend: String(v.spend),
-      impressions: String(v.impressions),
-      clicks: String(v.clicks),
-      ctr: String(v.impressions > 0 ? (v.clicks / v.impressions) * 100 : 0),
-      cpc: String(v.clicks > 0 ? v.spend / v.clicks : 0),
-      cpm: String(v.impressions > 0 ? (v.spend * 1000) / v.impressions : 0),
+      platform,
+      position,
+      spend: v.spend,
+      impressions: v.impressions,
+      clicks: v.clicks,
+      linkClicks: v.linkClicks,
+      leads: v.leads > 0 ? v.leads : null,
+      cpl: v.leads > 0 ? v.spend / v.leads : null,
+      ctr: v.impressions > 0 ? (lc / v.impressions) * 100 : 0,
+      cpc: lc > 0 ? v.spend / lc : 0,
+      cpm: v.impressions > 0 ? (v.spend * 1000) / v.impressions : 0,
     };
   });
-
-  const result: PlacementInsight[] = raw.map((r) => ({
-    platform: r.publisher_platform,
-    position: r.platform_position,
-    spend: parseFloat(r.spend || "0"),
-    impressions: parseFloat(r.impressions || "0"),
-    clicks: parseFloat(r.clicks || "0"),
-    ctr: parseFloat(r.ctr || "0"),
-    cpc: parseFloat(r.cpc || "0"),
-    cpm: parseFloat(r.cpm || "0"),
-  }));
 
   setCache(cacheKey, result);
   return result;

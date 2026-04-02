@@ -306,9 +306,12 @@ function PlacementTable({ placements }: { placements: PlacementInsight[] }) {
         <thead>
           <tr className="text-xs text-muted-foreground border-b">
             <th className="text-left py-2 font-medium">Placement</th>
-            <th className="text-right py-2 font-medium">Spend</th>
-            <th className="text-right py-2 font-medium">Impr</th>
+            <th className="text-right py-2 font-medium">Investimento</th>
+            <th className="text-right py-2 font-medium">Leads</th>
+            <th className="text-right py-2 font-medium">CPL</th>
             <th className="text-right py-2 font-medium">CTR</th>
+            <th className="text-right py-2 font-medium">CPC</th>
+            <th className="text-right py-2 font-medium">CPM</th>
           </tr>
         </thead>
         <tbody>
@@ -316,8 +319,11 @@ function PlacementTable({ placements }: { placements: PlacementInsight[] }) {
             <tr key={`${p.platform}-${p.position}`} className="border-b last:border-0">
               <td className="py-1.5"><span className="capitalize">{p.platform}</span> / {p.position}</td>
               <td className="text-right tabular-nums">{fmtCurrency(p.spend)}</td>
-              <td className="text-right tabular-nums">{fmtNumber(p.impressions)}</td>
+              <td className="text-right tabular-nums">{fmtNumber(p.leads)}</td>
+              <td className="text-right tabular-nums">{fmtCurrency(p.cpl)}</td>
               <td className="text-right tabular-nums">{fmtPercent(p.ctr)}</td>
+              <td className="text-right tabular-nums">{fmtCurrency(p.cpc)}</td>
+              <td className="text-right tabular-nums">{fmtCurrency(p.cpm)}</td>
             </tr>
           ))}
         </tbody>

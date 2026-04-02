@@ -252,6 +252,9 @@ export interface PlacementInsight {
   spend: number;
   impressions: number;
   clicks: number;
+  linkClicks: number;
+  leads: number | null;
+  cpl: number | null;
   ctr: number;
   cpc: number;
   cpm: number;
