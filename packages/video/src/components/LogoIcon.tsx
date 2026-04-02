@@ -1,0 +1,18 @@
+import React from "react";
+
+export const LogoIcon: React.FC<{ size?: number }> = ({ size = 80 }) => {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 64 64"
+      width={size}
+      height={size}
+    >
+      <rect width="64" height="64" rx="12" fill="#1a1a1a" />
+      <path
+        d="M33.01,4v18.1l2.95,10.1-2.95-2.77h0l-16.5-17.43-7.46,7.46,17.99,17.99H4v10.55h25.44l-17.99,17.99,7.46,7.46,17.99-17.99v25.44h10.55V42.72s0-.01,0-.02V4h-10.55Z"
+        fill="#fdd449"
+      />
+    </svg>
+  );
+};

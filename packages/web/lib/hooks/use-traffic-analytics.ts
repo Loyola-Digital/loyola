@@ -310,13 +310,32 @@ export function useVideoSource(projectId: string | null, videoId: string | null)
   });
 }
 
-export function useAllAdSets(projectId: string | null, days: number = 30) {
+export function useAllAdSets(projectId: string | null, days: number = 30, campaignIds?: string[] | null) {
   const apiClient = useApiClient();
+  const campaignParam = campaignIds && campaignIds.length > 0 ? `&campaignIds=${campaignIds.join(",")}` : "";
   return useQuery({
-    queryKey: ["traffic-all-adsets", projectId, days],
+    queryKey: ["traffic-all-adsets", projectId, days, campaignIds],
     queryFn: () =>
       apiClient<AllAdSetsResponse>(
-        `/api/traffic/analytics/${projectId}/all-adsets?days=${days}`
+        `/api/traffic/analytics/${projectId}/all-adsets?days=${days}${campaignParam}`
+      ),
+    enabled: !!projectId,
+    staleTime: TRAFFIC_STALE_TIME,
+  });
+}
+
+export interface AllAdsResponse {
+  ads: (CampaignAnalytics & { parentCampaignName: string })[];
+}
+
+export function useAllAds(projectId: string | null, days: number = 30, campaignIds?: string[] | null) {
+  const apiClient = useApiClient();
+  const campaignParam = campaignIds && campaignIds.length > 0 ? `&campaignIds=${campaignIds.join(",")}` : "";
+  return useQuery({
+    queryKey: ["traffic-all-ads", projectId, days, campaignIds],
+    queryFn: () =>
+      apiClient<AllAdsResponse>(
+        `/api/traffic/analytics/${projectId}/all-ads?days=${days}${campaignParam}`
       ),
     enabled: !!projectId,
     staleTime: TRAFFIC_STALE_TIME,

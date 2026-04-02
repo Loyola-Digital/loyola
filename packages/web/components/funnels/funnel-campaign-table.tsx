@@ -317,10 +317,9 @@ export function FunnelCampaignTable({ campaigns, projectId, days }: FunnelCampai
           <thead>
             <tr className="border-b border-border/30">
               <th className="text-left text-[11px] font-medium text-muted-foreground py-2 px-3 whitespace-nowrap">Nome</th>
-              <SortHeader label="Spend" col="spend" />
-              <SortHeader label="Impr" col="impressions" />
-              <SortHeader label="Reach" col="reach" />
-              <SortHeader label="Clicks" col="clicks" />
+              <SortHeader label="Investimento" col="spend" />
+              <SortHeader label="Leads" col="leads" />
+              <SortHeader label="CPL" col="cpl" />
               <SortHeader label="CTR" col="ctr" />
               <SortHeader label="CPC" col="cpc" />
               <SortHeader label="CPM" col="cpm" />
@@ -364,9 +363,8 @@ function CampaignRow({ campaign: c, isExpanded, onToggle, projectId, days }: {
           </span>
         </td>
         <td className="py-2 px-2 text-xs text-right font-medium">{fmtCurrency(c.spend)}</td>
-        <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.impressions)}</td>
-        <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.reach)}</td>
-        <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.clicks)}</td>
+        <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.leads)}</td>
+        <td className="py-2 px-2 text-xs text-right">{fmtCurrency(c.cpl)}</td>
         <td className="py-2 px-2 text-xs text-right">{fmtPercent(c.ctr)}</td>
         <td className="py-2 px-2 text-xs text-right">{fmtCurrency(c.cpc)}</td>
         <td className="py-2 px-2 text-xs text-right">{fmtCurrency(c.cpm)}</td>
@@ -378,8 +376,8 @@ function CampaignRow({ campaign: c, isExpanded, onToggle, projectId, days }: {
 
 function DrillDownAdSets({ projectId, campaignId, days }: { projectId: string; campaignId: string; days: number }) {
   const { data, isLoading } = useTrafficAdSets(projectId, campaignId, days);
-  if (isLoading) return <tr><td colSpan={8} className="py-2 px-4"><Skeleton className="h-8" /></td></tr>;
-  if (!data || data.adsets.length === 0) return <tr><td colSpan={8} className="py-2 px-8 text-xs text-muted-foreground">Nenhum ad set</td></tr>;
+  if (isLoading) return <tr><td colSpan={7} className="py-2 px-4"><Skeleton className="h-8" /></td></tr>;
+  if (!data || data.adsets.length === 0) return <tr><td colSpan={7} className="py-2 px-8 text-xs text-muted-foreground">Nenhum ad set</td></tr>;
 
   return (
     <>
@@ -402,9 +400,8 @@ function DrillDownAdSetRow({ adset, projectId, days }: { adset: CampaignAnalytic
           </span>
         </td>
         <td className="py-1.5 px-2 text-[11px] text-right font-medium">{fmtCurrency(adset.spend)}</td>
-        <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(adset.impressions)}</td>
-        <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(adset.reach)}</td>
-        <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(adset.clicks)}</td>
+        <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(adset.leads)}</td>
+        <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(adset.cpl)}</td>
         <td className="py-1.5 px-2 text-[11px] text-right">{fmtPercent(adset.ctr)}</td>
         <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(adset.cpc)}</td>
         <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(adset.cpm)}</td>
@@ -418,8 +415,8 @@ function DrillDownAds({ projectId, adsetId, days }: { projectId: string; adsetId
   const { data, isLoading } = useTrafficAds(projectId, adsetId, days);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
-  if (isLoading) return <tr><td colSpan={8} className="py-1 px-4"><Skeleton className="h-6" /></td></tr>;
-  if (!data || data.ads.length === 0) return <tr><td colSpan={8} className="py-1 px-12 text-xs text-muted-foreground">Nenhum ad</td></tr>;
+  if (isLoading) return <tr><td colSpan={7} className="py-1 px-4"><Skeleton className="h-6" /></td></tr>;
+  if (!data || data.ads.length === 0) return <tr><td colSpan={7} className="py-1 px-12 text-xs text-muted-foreground">Nenhum ad</td></tr>;
 
   const lightboxItems: LightboxItem[] = data.ads
     .filter((a) => a.creative)
@@ -469,16 +466,15 @@ function DrillDownAds({ projectId, adsetId, days }: { projectId: string; adsetId
             </span>
           </td>
           <td className="py-1.5 px-2 text-[11px] text-right font-medium">{fmtCurrency(a.spend)}</td>
-          <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(a.impressions)}</td>
-          <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(a.reach)}</td>
-          <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(a.clicks)}</td>
+          <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(a.leads)}</td>
+          <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(a.cpl)}</td>
           <td className="py-1.5 px-2 text-[11px] text-right">{fmtPercent(a.ctr)}</td>
           <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(a.cpc)}</td>
           <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(a.cpm)}</td>
         </tr>
       ))}
       {lightboxIndex !== null && (
-        <tr><td colSpan={8} className="p-0">
+        <tr><td colSpan={7} className="p-0">
           <CreativeLightbox
             items={lightboxItems}
             initialIndex={lightboxIndex}

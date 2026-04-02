@@ -8,6 +8,7 @@ import {
   getProjectAdAnalytics,
   getTopPerformers,
   getAllAdSetsForProject,
+  getAllAdsForProject,
   getCampaignDailyInsights,
   getPlacementBreakdown,
   invalidateProjectCache,
@@ -246,17 +247,57 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
 
       const queryResult = daysQuerySchema.safeParse(request.query);
       const days = queryResult.success ? queryResult.data.days : 30;
+      const campaignIds = queryResult.success
+        ? queryResult.data.campaignIds?.split(",").filter(Boolean)
+        : undefined;
 
       try {
         const result = await getAllAdSetsForProject(
           fastify.db,
           paramResult.data.projectId,
-          days
+          days,
+          campaignIds
         );
         return result;
       } catch (err) {
         return reply.code(502).send({
           error: "Erro ao buscar ad sets",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  );
+
+  // ---- GET /api/traffic/analytics/:projectId/all-ads ----
+  fastify.get(
+    "/api/traffic/analytics/:projectId/all-ads",
+    async (request, reply) => {
+      if (request.userRole === "guest") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+
+      const queryResult = daysQuerySchema.safeParse(request.query);
+      const days = queryResult.success ? queryResult.data.days : 30;
+      const campaignIds = queryResult.success
+        ? queryResult.data.campaignIds?.split(",").filter(Boolean)
+        : undefined;
+
+      try {
+        const result = await getAllAdsForProject(
+          fastify.db,
+          paramResult.data.projectId,
+          days,
+          campaignIds
+        );
+        return result;
+      } catch (err) {
+        return reply.code(502).send({
+          error: "Erro ao buscar ads",
           details: err instanceof Error ? err.message : String(err),
         });
       }

@@ -3,11 +3,12 @@
 import { useState, useMemo } from "react";
 import {
   DollarSign,
-  Eye,
   MousePointerClick,
   Percent,
-  Radio,
   LinkIcon,
+  Users,
+  Target,
+  BarChart3,
 } from "lucide-react";
 import {
   LineChart,
@@ -26,13 +27,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   useTrafficOverview,
   useTrafficCampaigns,
+  useAllAdSets,
+  useAllAds,
   usePlacementBreakdown,
   useCampaignDailyInsights,
   type CampaignAnalytics,
   type PlacementInsight,
 } from "@/lib/hooks/use-traffic-analytics";
 import { ConversionFunnel } from "./conversion-funnel";
-import { FunnelCampaignTable } from "./funnel-campaign-table";
+import { MetricsTable } from "./metrics-table";
 import type { Funnel } from "@loyola-x/shared";
 
 interface LaunchDashboardProps {
@@ -88,8 +91,11 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
   );
   const { data: campaignData, isLoading: campaignsLoading } = useTrafficCampaigns(projectId, days);
+  const cids = campaignIds.length > 0 ? campaignIds : null;
+  const { data: adsetData, isLoading: adsetsLoading } = useAllAdSets(projectId, days, cids);
+  const { data: adData, isLoading: adsLoading } = useAllAds(projectId, days, cids);
   const { data: placementData, isLoading: placementLoading } =
-    usePlacementBreakdown(projectId, days, campaignIds.length > 0 ? campaignIds : null);
+    usePlacementBreakdown(projectId, days, cids);
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsights(projectId, firstCampaignId, days);
 
@@ -136,19 +142,33 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
       ) : overview ? (
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
           <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} />
-          <KpiCard icon={Eye} label="Impressões" value={fmtNumber(overview.totalImpressions)} />
-          <KpiCard icon={Radio} label="Alcance" value={fmtNumber(overview.totalReach)} />
-          <KpiCard icon={MousePointerClick} label="Cliques" value={fmtNumber(overview.totalClicks)} />
+          <KpiCard icon={Users} label="Leads" value={fmtNumber(overview.totalLeads)} />
+          <KpiCard icon={Target} label="CPL" value={fmtCurrency(overview.avgCpl)} />
           <KpiCard icon={Percent} label="CTR" value={fmtPercent(overview.ctr)} />
-          <KpiCard icon={DollarSign} label="CPC" value={fmtCurrency(overview.cpc)} />
+          <KpiCard icon={MousePointerClick} label="CPC" value={fmtCurrency(overview.cpc)} />
+          <KpiCard icon={BarChart3} label="CPM" value={fmtCurrency(overview.cpm)} />
         </div>
       ) : <EmptyState />}
 
-      {/* Campaign Table with drill-down */}
+      {/* Campanhas */}
       {campaignsLoading ? (
         <Skeleton className="h-48 rounded-xl" />
       ) : funnelCampaigns.length > 0 ? (
-        <FunnelCampaignTable campaigns={funnelCampaigns} projectId={projectId} days={days} />
+        <MetricsTable title="Campanhas" rows={funnelCampaigns} />
+      ) : null}
+
+      {/* Públicos (agrupados por nome do ad set) */}
+      {adsetsLoading ? (
+        <Skeleton className="h-48 rounded-xl" />
+      ) : adsetData && adsetData.adsets.length > 0 ? (
+        <MetricsTable title="Públicos" rows={adsetData.adsets} />
+      ) : null}
+
+      {/* Anúncios (agrupados por nome do ad) */}
+      {adsLoading ? (
+        <Skeleton className="h-48 rounded-xl" />
+      ) : adData && adData.ads.length > 0 ? (
+        <MetricsTable title="Anúncios" rows={adData.ads} />
       ) : null}
 
       {/* Charts row */}

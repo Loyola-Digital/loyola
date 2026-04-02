@@ -7,6 +7,7 @@ import {
 import {
   fetchCampaignInsights,
   fetchAdSetInsights,
+  fetchAllAdSetInsights,
   fetchAdInsights,
   fetchAllAdInsights,
   fetchAdCreatives,
@@ -19,6 +20,7 @@ import {
   type MetaDailyInsight,
   type VideoMetrics,
   type AllAdInsight,
+  type MetaCampaignInsight,
 } from "./meta-ads.js";
 
 // ============================================================
@@ -94,6 +96,36 @@ function getCached<T>(key: string): T | null {
 
 function setCache<T>(key: string, data: T): void {
   cache.set(key, { data, timestamp: Date.now() });
+}
+
+const LEAD_ACTION_TYPES = new Set([
+  "lead",
+  "leadgen_grouped",
+  "onsite_conversion.lead_grouped",
+  "offsite_conversion.fb_pixel_lead",
+  "offsite_conversion.lead",
+]);
+
+function parseLeads(campaign: MetaCampaignInsight): number {
+  if (!campaign.actions || campaign.actions.length === 0) return 0;
+  let total = 0;
+  for (const a of campaign.actions) {
+    if (LEAD_ACTION_TYPES.has(a.action_type)) {
+      total += parseInt(a.value, 10) || 0;
+    }
+  }
+  return total;
+}
+
+function parseLeadsFromActions(actions?: { action_type: string; value: string }[]): number {
+  if (!actions) return 0;
+  let total = 0;
+  for (const a of actions) {
+    if (LEAD_ACTION_TYPES.has(a.action_type)) {
+      total += parseInt(a.value, 10) || 0;
+    }
+  }
+  return total;
 }
 
 export function invalidateProjectCache(projectId: string): void {
@@ -175,6 +207,8 @@ export async function getProjectOverview(
   const totalReach = campaigns.reduce((s, c) => s + parseFloat(c.reach || "0"), 0);
   const avgFrequency = totalReach > 0 ? totalImpressions / totalReach : null;
 
+  const totalLeads = campaigns.reduce((s, c) => s + parseLeads(c), 0);
+
   const result: OverviewAnalytics = {
     totalSpend,
     totalImpressions,
@@ -184,8 +218,8 @@ export async function getProjectOverview(
     ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0,
     cpc: totalClicks > 0 ? totalSpend / totalClicks : 0,
     cpm: totalImpressions > 0 ? (totalSpend * 1000) / totalImpressions : 0,
-    totalLeads: null,
-    avgCpl: null,
+    totalLeads: totalLeads > 0 ? totalLeads : null,
+    avgCpl: totalLeads > 0 ? totalSpend / totalLeads : null,
     totalQualifiedLeads: null,
     avgCplQualified: null,
     totalSales: null,
@@ -226,8 +260,9 @@ export async function getProjectCampaignAnalytics(
     const impressions = parseFloat(c.impressions || "0");
     const clicks = parseFloat(c.clicks || "0");
     const reach = parseFloat(c.reach || "0");
+    const leads = parseLeads(c);
 
-    return buildAnalyticsRow(c.campaign_id, c.campaign_name, spend, impressions, clicks, null, null, null, reach);
+    return buildAnalyticsRow(c.campaign_id, c.campaign_name, spend, impressions, clicks, leads > 0 ? leads : null, null, null, reach);
   });
 
   const result: CampaignResult = { campaigns, unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
@@ -427,9 +462,10 @@ function getMetricValue(a: CampaignAnalytics, metric: TopPerformerMetric): numbe
 export async function getAllAdSetsForProject(
   db: Database,
   projectId: string,
-  days: number
+  days: number,
+  campaignIds?: string[]
 ): Promise<{ adsets: (CampaignAnalytics & { parentCampaignName: string })[]; hasCrm: boolean; hasQualification: boolean; hasSales: boolean }> {
-  const cacheKey = `analytics:${projectId}:alladsets:${days}`;
+  const cacheKey = `analytics:${projectId}:alladsets:v2:${days}:${campaignIds?.sort().join(",") ?? "all"}`;
   type AllAdSetsResult = { adsets: (CampaignAnalytics & { parentCampaignName: string })[]; hasCrm: boolean; hasQualification: boolean; hasSales: boolean };
   const cached = getCached<AllAdSetsResult>(cacheKey);
   if (cached) return cached;
@@ -439,41 +475,109 @@ export async function getAllAdSetsForProject(
     return { adsets: [], hasCrm: false, hasQualification: false, hasSales: false };
   }
 
-  // Story 9.1: Use flat ad query and aggregate by adset (works for ASC campaigns)
-  const allAds = await fetchAllAdInsights(
+  // Fetch at adset level (not ad level) — gets actions/leads correctly
+  const adsetInsights = await fetchAllAdSetInsights(
     metaAccount.metaAccountId,
     metaAccount.accessToken,
     days
   );
 
-  // Aggregate ads by adset_id
-  const adsetMap = new Map<string, { name: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number }>();
-  for (const a of allAds) {
-    const key = a.adset_id;
+  const idSet = campaignIds ? new Set(campaignIds) : null;
+  const filtered = idSet
+    ? adsetInsights.filter((a) => a.campaign_id && idSet.has(a.campaign_id))
+    : adsetInsights;
+
+  // Aggregate by adset NAME (same audience across campaigns)
+  const adsetMap = new Map<string, { id: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number; leads: number }>();
+  for (const a of filtered) {
+    const key = a.adset_name.trim();
+    const leads = parseLeadsFromActions(a.actions);
     const existing = adsetMap.get(key);
     if (existing) {
       existing.spend += parseFloat(a.spend || "0");
       existing.impressions += parseFloat(a.impressions || "0");
       existing.clicks += parseFloat(a.clicks || "0");
       existing.reach += parseFloat(a.reach || "0");
+      existing.leads += leads;
     } else {
       adsetMap.set(key, {
-        name: a.adset_name,
+        id: a.adset_id,
+        campaignName: a.campaign_name ?? "",
+        spend: parseFloat(a.spend || "0"),
+        impressions: parseFloat(a.impressions || "0"),
+        clicks: parseFloat(a.clicks || "0"),
+        reach: parseFloat(a.reach || "0"),
+        leads,
+      });
+    }
+  }
+
+  const adsets = Array.from(adsetMap.entries()).map(([name, a]) => {
+    const row = buildAnalyticsRow(a.id, name, a.spend, a.impressions, a.clicks, a.leads > 0 ? a.leads : null, null, null, a.reach);
+    return { ...row, parentCampaignName: a.campaignName };
+  });
+
+  const result: AllAdSetsResult = { adsets, hasCrm: false, hasQualification: false, hasSales: false };
+  setCache(cacheKey, result);
+  return result;
+}
+
+export async function getAllAdsForProject(
+  db: Database,
+  projectId: string,
+  days: number,
+  campaignIds?: string[]
+): Promise<{ ads: (CampaignAnalytics & { parentCampaignName: string })[]; }> {
+  const cacheKey = `analytics:${projectId}:allads:${days}:${campaignIds?.sort().join(",") ?? "all"}`;
+  type AllAdsResult = { ads: (CampaignAnalytics & { parentCampaignName: string })[] };
+  const cached = getCached<AllAdsResult>(cacheKey);
+  if (cached) return cached;
+
+  const metaAccount = await getMetaAccountForProject(db, projectId);
+  if (!metaAccount) {
+    return { ads: [] };
+  }
+
+  const allAds = await fetchAllAdInsights(
+    metaAccount.metaAccountId,
+    metaAccount.accessToken,
+    days
+  );
+
+  const idSet = campaignIds ? new Set(campaignIds) : null;
+  const filtered = idSet ? allAds.filter((a) => idSet.has(a.campaign_id)) : allAds;
+
+  // Aggregate by ad NAME (same creative across adsets/campaigns)
+  const adMap = new Map<string, { id: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number; leads: number }>();
+  for (const a of filtered) {
+    const key = a.ad_name.trim();
+    const leads = parseLeadsFromActions(a.actions);
+    const existing = adMap.get(key);
+    if (existing) {
+      existing.spend += parseFloat(a.spend || "0");
+      existing.impressions += parseFloat(a.impressions || "0");
+      existing.clicks += parseFloat(a.clicks || "0");
+      existing.reach += parseFloat(a.reach || "0");
+      existing.leads += leads;
+    } else {
+      adMap.set(key, {
+        id: a.ad_id,
         campaignName: a.campaign_name,
         spend: parseFloat(a.spend || "0"),
         impressions: parseFloat(a.impressions || "0"),
         clicks: parseFloat(a.clicks || "0"),
         reach: parseFloat(a.reach || "0"),
+        leads,
       });
     }
   }
 
-  const adsets = Array.from(adsetMap.entries()).map(([id, a]) => {
-    const row = buildAnalyticsRow(id, a.name, a.spend, a.impressions, a.clicks, null, null, null, a.reach);
+  const ads = Array.from(adMap.entries()).map(([name, a]) => {
+    const row = buildAnalyticsRow(a.id, name, a.spend, a.impressions, a.clicks, a.leads > 0 ? a.leads : null, null, null, a.reach);
     return { ...row, parentCampaignName: a.campaignName };
   });
 
-  const result: AllAdSetsResult = { adsets, hasCrm: false, hasQualification: false, hasSales: false };
+  const result: AllAdsResult = { ads };
   setCache(cacheKey, result);
   return result;
 }

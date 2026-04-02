@@ -1,0 +1,21 @@
+{
+  "name": "@loyola-x/video",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts LoyolaShowcase out/loyola-digital-x.mp4",
+    "render:gif": "remotion render src/index.ts LoyolaShowcase out/loyola-digital-x.gif --image-format png"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.301",
+    "@remotion/player": "4.0.301",
+    "react": "^19",
+    "react-dom": "^19",
+    "remotion": "4.0.301"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "typescript": "^5"
+  }
+}
