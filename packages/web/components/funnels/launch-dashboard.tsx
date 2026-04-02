@@ -154,11 +154,11 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
         </div>
       ) : <EmptyState />}
 
-      {/* Campanhas */}
+      {/* Campanhas do Funil (drill-down com thumbnails) */}
       {campaignsLoading ? (
         <Skeleton className="h-48 rounded-xl" />
       ) : funnelCampaigns.length > 0 ? (
-        <MetricsTable title="Campanhas" rows={funnelCampaigns} />
+        <FunnelCampaignTable campaigns={funnelCampaigns} projectId={projectId} days={days} />
       ) : null}
 
       {/* Públicos (agrupados por nome do ad set) */}
@@ -173,13 +173,6 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
         <Skeleton className="h-48 rounded-xl" />
       ) : adData && adData.ads.length > 0 ? (
         <MetricsTable title="Anúncios" rows={adData.ads} />
-      ) : null}
-
-      {/* Drill-down com thumbnails dos criativos */}
-      {campaignsLoading ? (
-        <Skeleton className="h-48 rounded-xl" />
-      ) : funnelCampaigns.length > 0 ? (
-        <FunnelCampaignTable campaigns={funnelCampaigns} projectId={projectId} days={days} />
       ) : null}
 
       {/* CTR × CPM — Saturation Chart */}
