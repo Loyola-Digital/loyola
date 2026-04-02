@@ -417,42 +417,65 @@ function CtrCpmChart({ data }: { data: CampaignDailyInsight[] }) {
 function SaturationBadge({ dailyData }: { dailyData: CampaignDailyInsight[] | null }) {
   if (!dailyData || dailyData.length < 4) return null;
 
-  // Compare first half vs second half
   const mid = Math.floor(dailyData.length / 2);
   const firstHalf = dailyData.slice(0, mid);
   const secondHalf = dailyData.slice(mid);
 
-  const avgCtr = (arr: CampaignDailyInsight[]) =>
-    arr.reduce((s, d) => s + safeNum(d.ctr), 0) / arr.length;
-  const avgCpm = (arr: CampaignDailyInsight[]) =>
-    arr.reduce((s, d) => s + safeNum(d.cpm), 0) / arr.length;
+  const avg = (arr: CampaignDailyInsight[], key: "ctr" | "cpm") =>
+    arr.reduce((s, d) => s + safeNum(d[key]), 0) / arr.length;
 
-  const ctrFirst = avgCtr(firstHalf);
-  const ctrSecond = avgCtr(secondHalf);
-  const cpmFirst = avgCpm(firstHalf);
-  const cpmSecond = avgCpm(secondHalf);
+  const ctrFirst = avg(firstHalf, "ctr");
+  const ctrSecond = avg(secondHalf, "ctr");
+  const cpmFirst = avg(firstHalf, "cpm");
+  const cpmSecond = avg(secondHalf, "cpm");
 
-  const ctrDrop = ctrSecond < ctrFirst * 0.9; // CTR dropped 10%+
-  const cpmRise = cpmSecond > cpmFirst * 1.1; // CPM rose 10%+
+  const ctrChange = ctrFirst > 0 ? ((ctrSecond - ctrFirst) / ctrFirst) * 100 : 0;
+  const cpmChange = cpmFirst > 0 ? ((cpmSecond - cpmFirst) / cpmFirst) * 100 : 0;
+
+  const ctrDrop = ctrChange < -10;
+  const cpmRise = cpmChange > 10;
+
+  const ctrLabel = `CTR: ${ctrFirst.toFixed(2)}% → ${ctrSecond.toFixed(2)}% (${ctrChange >= 0 ? "+" : ""}${ctrChange.toFixed(1)}%)`;
+  const cpmLabel = `CPM: R$${cpmFirst.toFixed(2)} → R$${cpmSecond.toFixed(2)} (${cpmChange >= 0 ? "+" : ""}${cpmChange.toFixed(1)}%)`;
 
   if (ctrDrop && cpmRise) {
     return (
-      <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/20">
+      <span
+        className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/20 cursor-help"
+        title={`Anúncios saturando — CTR caindo e CPM subindo\n\n${ctrLabel}\n${cpmLabel}\n\nConsidere trocar criativos ou pausar públicos exaustos.`}
+      >
         ⚠ Saturando
       </span>
     );
   }
 
-  if (ctrDrop || cpmRise) {
+  if (ctrDrop) {
     return (
-      <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20">
+      <span
+        className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20 cursor-help"
+        title={`CTR em queda — atenção à fadiga criativa\n\n${ctrLabel}\n${cpmLabel}\n\nO público pode estar cansando dos criativos atuais.`}
+      >
+        ⚡ Atenção
+      </span>
+    );
+  }
+
+  if (cpmRise) {
+    return (
+      <span
+        className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20 cursor-help"
+        title={`CPM subindo — custo de entrega aumentando\n\n${ctrLabel}\n${cpmLabel}\n\nConcorrência ou frequência alta podem estar encarecendo o leilão.`}
+      >
         ⚡ Atenção
       </span>
     );
   }
 
   return (
-    <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+    <span
+      className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 cursor-help"
+      title={`Métricas estáveis — sem sinais de saturação\n\n${ctrLabel}\n${cpmLabel}`}
+    >
       ✓ Saudável
     </span>
   );
