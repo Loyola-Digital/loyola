@@ -439,24 +439,24 @@ function DrillDownAds({ projectId, adsetId, days }: { projectId: string; adsetId
         <tr key={a.campaignId} className="border-t border-border/10 bg-muted/10 hover:bg-muted/30">
           <td className="py-1.5 px-3 text-[11px] pl-14">
             <span className="inline-flex items-center gap-2">
-              {a.creative?.thumbnailUrl ? (
+              {(a.creative?.imageUrl || a.creative?.thumbnailUrl) ? (
                 <button
                   onClick={() => {
                     const idx = lightboxItems.findIndex((li) => li.id === a.campaignId);
                     if (idx >= 0) setLightboxIndex(idx);
                   }}
-                  className="relative shrink-0 rounded overflow-hidden"
+                  className="relative shrink-0 rounded-lg overflow-hidden shadow-sm border border-border/20"
                 >
-                  <img src={a.creative.thumbnailUrl} alt="" className="w-10 h-10 object-cover" />
+                  <img src={a.creative.imageUrl || a.creative.thumbnailUrl || ""} alt="" className="w-16 h-16 object-cover" />
                   {a.creative.objectType === "VIDEO" && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <Play className="h-3 w-3 text-white fill-white drop-shadow" />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                      <Play className="h-4 w-4 text-white fill-white drop-shadow" />
                     </div>
                   )}
                 </button>
               ) : (
-                <div className="w-10 h-10 rounded bg-muted/40 flex items-center justify-center shrink-0">
-                  <ImageIcon className="h-3.5 w-3.5 text-muted-foreground/40" />
+                <div className="w-16 h-16 rounded-lg bg-muted/40 flex items-center justify-center shrink-0">
+                  <ImageIcon className="h-5 w-5 text-muted-foreground/40" />
                 </div>
               )}
               <span className="truncate">{a.campaignName}</span>

@@ -36,6 +36,7 @@ import {
 } from "@/lib/hooks/use-traffic-analytics";
 import { ConversionFunnel } from "./conversion-funnel";
 import { MetricsTable } from "./metrics-table";
+import { FunnelCampaignTable } from "./funnel-campaign-table";
 import type { Funnel } from "@loyola-x/shared";
 
 interface LaunchDashboardProps {
@@ -169,6 +170,13 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
         <Skeleton className="h-48 rounded-xl" />
       ) : adData && adData.ads.length > 0 ? (
         <MetricsTable title="Anúncios" rows={adData.ads} />
+      ) : null}
+
+      {/* Drill-down com thumbnails dos criativos */}
+      {campaignsLoading ? (
+        <Skeleton className="h-48 rounded-xl" />
+      ) : funnelCampaigns.length > 0 ? (
+        <FunnelCampaignTable campaigns={funnelCampaigns} projectId={projectId} days={days} />
       ) : null}
 
       {/* Charts row */}
