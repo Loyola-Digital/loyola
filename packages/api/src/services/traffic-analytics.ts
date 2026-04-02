@@ -287,20 +287,22 @@ export async function getProjectAdSetAnalytics(
   // ASC fallback: if no adsets found, aggregate from flat ad query
   if (adsetInsights.length === 0) {
     const allAds = await fetchAllAdInsights(metaAccount.metaAccountId, metaAccount.accessToken, days, campaignId);
-    const adsetAgg = new Map<string, { name: string; spend: number; impressions: number; clicks: number; reach: number }>();
+    const adsetAgg = new Map<string, { name: string; spend: number; impressions: number; clicks: number; reach: number; leads: number }>();
     for (const a of allAds) {
+      const leads = parseLeadsFromActions(a.actions);
       const existing = adsetAgg.get(a.adset_id);
       if (existing) {
         existing.spend += parseFloat(a.spend || "0");
         existing.impressions += parseFloat(a.impressions || "0");
         existing.clicks += parseFloat(a.clicks || "0");
         existing.reach += parseFloat(a.reach || "0");
+        existing.leads += leads;
       } else {
-        adsetAgg.set(a.adset_id, { name: a.adset_name, spend: parseFloat(a.spend || "0"), impressions: parseFloat(a.impressions || "0"), clicks: parseFloat(a.clicks || "0"), reach: parseFloat(a.reach || "0") });
+        adsetAgg.set(a.adset_id, { name: a.adset_name, spend: parseFloat(a.spend || "0"), impressions: parseFloat(a.impressions || "0"), clicks: parseFloat(a.clicks || "0"), reach: parseFloat(a.reach || "0"), leads });
       }
     }
     const adsets = Array.from(adsetAgg.entries()).map(([id, a]) =>
-      buildAnalyticsRow(id, a.name, a.spend, a.impressions, a.clicks, null, null, null, a.reach)
+      buildAnalyticsRow(id, a.name, a.spend, a.impressions, a.clicks, a.leads > 0 ? a.leads : null, null, null, a.reach)
     );
     return { adsets, unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
   }
@@ -310,7 +312,8 @@ export async function getProjectAdSetAnalytics(
     const impressions = parseFloat(a.impressions || "0");
     const clicks = parseFloat(a.clicks || "0");
     const reach = parseFloat(a.reach || "0");
-    return buildAnalyticsRow(a.adset_id, a.adset_name, spend, impressions, clicks, null, null, null, reach);
+    const leads = parseLeadsFromActions(a.actions);
+    return buildAnalyticsRow(a.adset_id, a.adset_name, spend, impressions, clicks, leads > 0 ? leads : null, null, null, reach);
   });
 
   return { adsets, unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
@@ -343,7 +346,8 @@ export async function getProjectAdAnalytics(
     const clicks = parseFloat(a.clicks || "0");
     const reach = parseFloat(a.reach || "0");
 
-    return { ...buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, null, null, null, reach), creative: null as MetaAdCreative | null, videoMetrics: a.videoMetrics ?? null };
+    const leads = parseLeadsFromActions(a.actions);
+    return { ...buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, leads > 0 ? leads : null, null, null, reach), creative: null as MetaAdCreative | null, videoMetrics: a.videoMetrics ?? null };
   });
 
   // Fetch creatives for all ads in drill-down

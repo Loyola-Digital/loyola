@@ -175,7 +175,7 @@ function CreativeLightbox({ items, initialIndex, projectId, onClose }: {
           ) : isVideo && videoData?.permalinkUrl ? (
             <div className="text-center p-8">
               <img
-                src={videoData.picture || item.creative.thumbnailUrl || ""}
+                src={item.creative.imageUrl || videoData.picture || item.creative.thumbnailUrl || ""}
                 alt={item.name}
                 className="max-h-[40vh] object-contain mx-auto rounded-lg mb-4"
               />
