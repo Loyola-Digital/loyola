@@ -10,9 +10,10 @@ interface FunnelStage {
 
 interface ConversionFunnelProps {
   impressions: number;
-  clicks: number;
+  reach: number | null;
+  linkClicks: number | null;
+  landingPageViews: number | null;
   leads: number | null;
-  sales: number | null;
 }
 
 function fmtNumber(val: number): string {
@@ -26,17 +27,22 @@ function conversionRate(from: number, to: number): string {
   return `${((to / from) * 100).toFixed(1)}%`;
 }
 
-export function ConversionFunnel({ impressions, clicks, leads, sales }: ConversionFunnelProps) {
+export function ConversionFunnel({ impressions, reach, linkClicks, landingPageViews, leads }: ConversionFunnelProps) {
   const stages: FunnelStage[] = [
-    { label: "Impressões", value: impressions, color: "bg-amber-500/80" },
-    { label: "Cliques", value: clicks, color: "bg-amber-400/80" },
+    { label: "Impressões", value: impressions, color: "bg-blue-500/70" },
   ];
 
+  if (reach !== null && reach > 0) {
+    stages.push({ label: "Alcance", value: reach, color: "bg-blue-400/70" });
+  }
+  if (linkClicks !== null && linkClicks > 0) {
+    stages.push({ label: "Cliques no Link", value: linkClicks, color: "bg-amber-500/70" });
+  }
+  if (landingPageViews !== null && landingPageViews > 0) {
+    stages.push({ label: "Visualização da LP", value: landingPageViews, color: "bg-amber-400/70" });
+  }
   if (leads !== null && leads > 0) {
     stages.push({ label: "Leads", value: leads, color: "bg-emerald-500/70" });
-  }
-  if (sales !== null && sales > 0) {
-    stages.push({ label: "Vendas", value: sales, color: "bg-emerald-400/90" });
   }
 
   const maxValue = stages[0]?.value || 1;
