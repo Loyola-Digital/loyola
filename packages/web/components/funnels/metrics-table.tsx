@@ -28,12 +28,13 @@ interface MetricsTableProps {
   rows: CampaignAnalytics[];
 }
 
-type SortableCol = "spend" | "leads" | "cpl" | "ctr" | "cpc" | "cpm";
+type SortableCol = "spend" | "leads" | "cpl" | "connectRate" | "ctr" | "cpc" | "cpm";
 
 const columns: { label: string; col: SortableCol; fmt: (row: CampaignAnalytics) => string }[] = [
   { label: "Investimento", col: "spend", fmt: (r) => fmtCurrency(r.spend) },
   { label: "Leads", col: "leads", fmt: (r) => fmtNumber(r.leads) },
   { label: "CPL", col: "cpl", fmt: (r) => fmtCurrency(r.cpl) },
+  { label: "Connect Rate", col: "connectRate", fmt: (r) => fmtPercent(r.connectRate) },
   { label: "CTR", col: "ctr", fmt: (r) => fmtPercent(r.ctr) },
   { label: "CPC", col: "cpc", fmt: (r) => fmtCurrency(r.cpc) },
   { label: "CPM", col: "cpm", fmt: (r) => fmtCurrency(r.cpm) },

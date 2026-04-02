@@ -40,6 +40,9 @@ export interface CampaignAnalytics {
   cpm: number;
   leads: number | null;
   cpl: number | null;
+  linkClicks: number | null;
+  landingPageViews: number | null;
+  connectRate: number | null;
   qualifiedLeads: number | null;
   cplQualified: number | null;
   qualificationRate: number | null;
@@ -61,6 +64,9 @@ export interface OverviewAnalytics {
   cpm: number;
   totalLeads: number | null;
   avgCpl: number | null;
+  totalLinkClicks: number | null;
+  totalLandingPageViews: number | null;
+  connectRate: number | null;
   totalQualifiedLeads: number | null;
   avgCplQualified: number | null;
   totalSales: number | null;
@@ -115,6 +121,12 @@ function parseLeads(campaign: MetaCampaignInsight): number {
     }
   }
   return total;
+}
+
+function parseActionValue(actions: { action_type: string; value: string }[] | undefined, type: string): number {
+  if (!actions) return 0;
+  const action = actions.find((a) => a.action_type === type);
+  return action ? parseInt(action.value, 10) || 0 : 0;
 }
 
 function parseLeadsFromActions(actions?: { action_type: string; value: string }[]): number {
@@ -187,7 +199,7 @@ export async function getProjectOverview(
 
   const metaAccount = await getMetaAccountForProject(db, projectId);
   if (!metaAccount) {
-    return { totalSpend: 0, totalImpressions: 0, totalClicks: 0, totalReach: null, avgFrequency: null, ctr: 0, cpc: 0, cpm: 0, totalLeads: null, avgCpl: null, totalQualifiedLeads: null, avgCplQualified: null, totalSales: null, totalRevenue: null, totalCampaigns: 0, hasCrm: false, hasQualification: false, hasSales: false };
+    return { totalSpend: 0, totalImpressions: 0, totalClicks: 0, totalReach: null, avgFrequency: null, ctr: 0, cpc: 0, cpm: 0, totalLeads: null, avgCpl: null, totalLinkClicks: null, totalLandingPageViews: null, connectRate: null, totalQualifiedLeads: null, avgCplQualified: null, totalSales: null, totalRevenue: null, totalCampaigns: 0, hasCrm: false, hasQualification: false, hasSales: false };
   }
 
   const allCampaigns = await fetchCampaignInsights(
@@ -208,6 +220,8 @@ export async function getProjectOverview(
   const avgFrequency = totalReach > 0 ? totalImpressions / totalReach : null;
 
   const totalLeads = campaigns.reduce((s, c) => s + parseLeads(c), 0);
+  const totalLinkClicks = campaigns.reduce((s, c) => s + parseActionValue(c.actions, "link_click"), 0);
+  const totalLandingPageViews = campaigns.reduce((s, c) => s + parseActionValue(c.actions, "landing_page_view"), 0);
 
   const result: OverviewAnalytics = {
     totalSpend,
@@ -220,6 +234,9 @@ export async function getProjectOverview(
     cpm: totalImpressions > 0 ? (totalSpend * 1000) / totalImpressions : 0,
     totalLeads: totalLeads > 0 ? totalLeads : null,
     avgCpl: totalLeads > 0 ? totalSpend / totalLeads : null,
+    totalLinkClicks: totalLinkClicks > 0 ? totalLinkClicks : null,
+    totalLandingPageViews: totalLandingPageViews > 0 ? totalLandingPageViews : null,
+    connectRate: totalLinkClicks > 0 && totalLandingPageViews > 0 ? (totalLandingPageViews / totalLinkClicks) * 100 : null,
     totalQualifiedLeads: null,
     avgCplQualified: null,
     totalSales: null,
@@ -261,8 +278,10 @@ export async function getProjectCampaignAnalytics(
     const clicks = parseFloat(c.clicks || "0");
     const reach = parseFloat(c.reach || "0");
     const leads = parseLeads(c);
+    const lc = parseActionValue(c.actions, "link_click");
+    const lpv = parseActionValue(c.actions, "landing_page_view");
 
-    return buildAnalyticsRow(c.campaign_id, c.campaign_name, spend, impressions, clicks, leads > 0 ? leads : null, null, null, reach);
+    return buildAnalyticsRow(c.campaign_id, c.campaign_name, spend, impressions, clicks, leads > 0 ? leads : null, null, null, reach, lc > 0 ? lc : null, lpv > 0 ? lpv : null);
   });
 
   const result: CampaignResult = { campaigns, unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
@@ -313,7 +332,9 @@ export async function getProjectAdSetAnalytics(
     const clicks = parseFloat(a.clicks || "0");
     const reach = parseFloat(a.reach || "0");
     const leads = parseLeadsFromActions(a.actions);
-    return buildAnalyticsRow(a.adset_id, a.adset_name, spend, impressions, clicks, leads > 0 ? leads : null, null, null, reach);
+    const lc = parseActionValue(a.actions, "link_click");
+    const lpv = parseActionValue(a.actions, "landing_page_view");
+    return buildAnalyticsRow(a.adset_id, a.adset_name, spend, impressions, clicks, leads > 0 ? leads : null, null, null, reach, lc > 0 ? lc : null, lpv > 0 ? lpv : null);
   });
 
   return { adsets, unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
@@ -347,7 +368,9 @@ export async function getProjectAdAnalytics(
     const reach = parseFloat(a.reach || "0");
 
     const leads = parseLeadsFromActions(a.actions);
-    return { ...buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, leads > 0 ? leads : null, null, null, reach), creative: null as MetaAdCreative | null, videoMetrics: a.videoMetrics ?? null };
+    const lc = parseActionValue(a.actions, "link_click");
+    const lpv = parseActionValue(a.actions, "landing_page_view");
+    return { ...buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, leads > 0 ? leads : null, null, null, reach, lc > 0 ? lc : null, lpv > 0 ? lpv : null), creative: null as MetaAdCreative | null, videoMetrics: a.videoMetrics ?? null };
   });
 
   // Fetch creatives for all ads in drill-down
@@ -591,7 +614,9 @@ function buildAnalyticsRow(
   id: string, name: string, spend: number, impressions: number, clicks: number,
   entityLeads: number | null, qualLeads: number | null,
   saleData: { count: number; revenue: number } | null,
-  reach: number = 0
+  reach: number = 0,
+  linkClicks: number | null = null,
+  landingPageViews: number | null = null
 ): CampaignAnalytics {
   return {
     campaignId: id,
@@ -604,6 +629,9 @@ function buildAnalyticsRow(
     cpm: impressions > 0 ? (spend * 1000) / impressions : 0,
     leads: entityLeads,
     cpl: entityLeads !== null && entityLeads > 0 ? spend / entityLeads : null,
+    linkClicks,
+    landingPageViews,
+    connectRate: linkClicks && linkClicks > 0 && landingPageViews !== null ? (landingPageViews / linkClicks) * 100 : null,
     qualifiedLeads: qualLeads,
     cplQualified: qualLeads !== null && qualLeads > 0 ? spend / qualLeads : null,
     qualificationRate: qualLeads !== null && entityLeads !== null && entityLeads > 0 ? (qualLeads / entityLeads) * 100 : null,

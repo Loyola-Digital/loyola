@@ -20,6 +20,9 @@ export interface CampaignAnalytics {
   cpm: number;
   leads: number | null;
   cpl: number | null;
+  linkClicks: number | null;
+  landingPageViews: number | null;
+  connectRate: number | null;
   qualifiedLeads: number | null;
   cplQualified: number | null;
   qualificationRate: number | null;
@@ -41,6 +44,9 @@ export interface OverviewAnalytics {
   cpm: number;
   totalLeads: number | null;
   avgCpl: number | null;
+  totalLinkClicks: number | null;
+  totalLandingPageViews: number | null;
+  connectRate: number | null;
   totalQualifiedLeads: number | null;
   avgCplQualified: number | null;
   totalSales: number | null;

@@ -9,6 +9,7 @@ import {
   Users,
   Target,
   BarChart3,
+  Link2,
 } from "lucide-react";
 import {
   LineChart,
@@ -138,14 +139,15 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
 
       {/* KPI Cards — Meta only */}
       {overviewLoading ? (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
+          {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : overview ? (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
           <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} />
           <KpiCard icon={Users} label="Leads" value={fmtNumber(overview.totalLeads)} />
           <KpiCard icon={Target} label="CPL" value={fmtCurrency(overview.avgCpl)} />
+          <KpiCard icon={Link2} label="Connect Rate" value={fmtPercent(overview.connectRate)} />
           <KpiCard icon={Percent} label="CTR" value={fmtPercent(overview.ctr)} />
           <KpiCard icon={MousePointerClick} label="CPC" value={fmtCurrency(overview.cpc)} />
           <KpiCard icon={BarChart3} label="CPM" value={fmtCurrency(overview.cpm)} />
