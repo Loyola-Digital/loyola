@@ -104,40 +104,19 @@ function setCache<T>(key: string, data: T): void {
   cache.set(key, { data, timestamp: Date.now() });
 }
 
-const LEAD_ACTION_TYPES = new Set([
-  "lead",
-  "leadgen_grouped",
-  "onsite_conversion.lead_grouped",
-  "offsite_conversion.fb_pixel_lead",
-  "offsite_conversion.lead",
-]);
-
-function parseLeads(campaign: MetaCampaignInsight): number {
-  if (!campaign.actions || campaign.actions.length === 0) return 0;
-  let total = 0;
-  for (const a of campaign.actions) {
-    if (LEAD_ACTION_TYPES.has(a.action_type)) {
-      total += parseInt(a.value, 10) || 0;
-    }
-  }
-  return total;
-}
-
 function parseActionValue(actions: { action_type: string; value: string }[] | undefined, type: string): number {
   if (!actions) return 0;
   const action = actions.find((a) => a.action_type === type);
   return action ? parseInt(action.value, 10) || 0 : 0;
 }
 
+// Use only "lead" — other types (leadgen_grouped, onsite_conversion.lead_grouped) are duplicates
+function parseLeads(campaign: MetaCampaignInsight): number {
+  return parseActionValue(campaign.actions, "lead");
+}
+
 function parseLeadsFromActions(actions?: { action_type: string; value: string }[]): number {
-  if (!actions) return 0;
-  let total = 0;
-  for (const a of actions) {
-    if (LEAD_ACTION_TYPES.has(a.action_type)) {
-      total += parseInt(a.value, 10) || 0;
-    }
-  }
-  return total;
+  return parseActionValue(actions, "lead");
 }
 
 export function invalidateProjectCache(projectId: string): void {
@@ -229,8 +208,8 @@ export async function getProjectOverview(
     totalClicks,
     totalReach: totalReach > 0 ? totalReach : null,
     avgFrequency,
-    ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0,
-    cpc: totalClicks > 0 ? totalSpend / totalClicks : 0,
+    ctr: totalLinkClicks > 0 && totalImpressions > 0 ? (totalLinkClicks / totalImpressions) * 100 : 0,
+    cpc: totalLinkClicks > 0 ? totalSpend / totalLinkClicks : 0,
     cpm: totalImpressions > 0 ? (totalSpend * 1000) / totalImpressions : 0,
     totalLeads: totalLeads > 0 ? totalLeads : null,
     avgCpl: totalLeads > 0 ? totalSpend / totalLeads : null,
@@ -624,8 +603,9 @@ function buildAnalyticsRow(
     spend, impressions, clicks,
     reach,
     frequency: reach > 0 ? impressions / reach : 0,
-    ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
-    cpc: clicks > 0 ? spend / clicks : 0,
+    // CTR and CPC use link clicks (not total clicks) — matches Meta Ads Manager
+    ctr: linkClicks && linkClicks > 0 && impressions > 0 ? (linkClicks / impressions) * 100 : (impressions > 0 ? (clicks / impressions) * 100 : 0),
+    cpc: linkClicks && linkClicks > 0 ? spend / linkClicks : (clicks > 0 ? spend / clicks : 0),
     cpm: impressions > 0 ? (spend * 1000) / impressions : 0,
     leads: entityLeads,
     cpl: entityLeads !== null && entityLeads > 0 ? spend / entityLeads : null,
