@@ -614,12 +614,13 @@ export async function fetchAdCreatives(
   }
 
   // Step 2: Fetch hi-res images via creative IDs (effective_image_url)
-  const needsHiRes = results.filter(
-    (c) => (c as unknown as Record<string, unknown>)._creativeId && !c.imageUrl
+  // Always fetch — image_url from creative{} is often low-res
+  const withCreativeId = results.filter(
+    (c) => (c as unknown as Record<string, unknown>)._creativeId
   );
-  if (needsHiRes.length > 0) {
+  if (withCreativeId.length > 0) {
     const creativeIdMap = new Map<string, MetaAdCreative>();
-    for (const c of needsHiRes) {
+    for (const c of withCreativeId) {
       const cid = (c as unknown as Record<string, unknown>)._creativeId as string;
       creativeIdMap.set(cid, c);
     }
