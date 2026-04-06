@@ -1489,6 +1489,7 @@ function TrafficPageContent() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [days, setDays] = useState(30);
   const [customDays, setCustomDays] = useState("");
+  const isCustomPeriod = !PERIOD_OPTIONS.find((o) => o.value === days);
 
   // Support ?project=xxx for project-scoped access
   const forceProjectId = searchParams.get("project") ?? undefined;
@@ -1657,11 +1658,15 @@ function TrafficPageContent() {
 
             <div className="flex items-center gap-2 ml-auto">
               <Select
-                value={PERIOD_OPTIONS.find((o) => o.value === days) ? String(days) : "custom"}
+                value={isCustomPeriod ? "custom" : String(days)}
                 onValueChange={(v) => {
-                  if (v === "custom") return;
-                  setDays(Number(v));
-                  setCustomDays("");
+                  if (v === "custom") {
+                    setCustomDays(String(days));
+                    setDays(-1);
+                  } else {
+                    setDays(Number(v));
+                    setCustomDays("");
+                  }
                 }}
               >
                 <SelectTrigger className="w-[130px] h-8 text-xs">
@@ -1674,22 +1679,17 @@ function TrafficPageContent() {
                   <SelectItem value="custom">Personalizado</SelectItem>
                 </SelectContent>
               </Select>
-              {!PERIOD_OPTIONS.find((o) => o.value === days) && (
+              {isCustomPeriod && (
                 <div className="flex items-center gap-1.5">
                   <input
                     type="number"
                     min={1}
                     max={365}
+                    autoFocus
                     value={customDays}
-                    onChange={(e) => setCustomDays(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        const v = parseInt(customDays);
-                        if (v > 0 && v <= 365) setDays(v);
-                      }
-                    }}
-                    onBlur={() => {
-                      const v = parseInt(customDays);
+                    onChange={(e) => {
+                      setCustomDays(e.target.value);
+                      const v = parseInt(e.target.value);
                       if (v > 0 && v <= 365) setDays(v);
                     }}
                     placeholder="Dias"

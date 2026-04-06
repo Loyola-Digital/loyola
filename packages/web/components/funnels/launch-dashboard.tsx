@@ -99,6 +99,7 @@ function safeNum(val: string | undefined): number {
 export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
   const [days, setDays] = useState(30);
   const [customDays, setCustomDays] = useState("");
+  const isCustom = !PERIOD_OPTIONS.find((o) => o.value === days);
   const campaignIds = funnel.campaigns.map((c) => c.id);
   const campaignIdSet = new Set(campaignIds);
   const firstCampaignId = campaignIds[0] ?? null;
@@ -136,11 +137,15 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
       {/* Period selector */}
       <div className="flex items-center gap-2">
         <Select
-          value={PERIOD_OPTIONS.find((o) => o.value === days) ? String(days) : "custom"}
+          value={isCustom ? "custom" : String(days)}
           onValueChange={(v) => {
-            if (v === "custom") return;
-            setDays(Number(v));
-            setCustomDays("");
+            if (v === "custom") {
+              setCustomDays(String(days));
+              setDays(-1);
+            } else {
+              setDays(Number(v));
+              setCustomDays("");
+            }
           }}
         >
           <SelectTrigger className="w-[130px] h-8 text-xs">
@@ -153,22 +158,17 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
             <SelectItem value="custom">Personalizado</SelectItem>
           </SelectContent>
         </Select>
-        {!PERIOD_OPTIONS.find((o) => o.value === days) && (
+        {isCustom && (
           <div className="flex items-center gap-1.5">
             <input
               type="number"
               min={1}
               max={365}
+              autoFocus
               value={customDays}
-              onChange={(e) => setCustomDays(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  const v = parseInt(customDays);
-                  if (v > 0 && v <= 365) setDays(v);
-                }
-              }}
-              onBlur={() => {
-                const v = parseInt(customDays);
+              onChange={(e) => {
+                setCustomDays(e.target.value);
+                const v = parseInt(e.target.value);
                 if (v > 0 && v <= 365) setDays(v);
               }}
               placeholder="Dias"
