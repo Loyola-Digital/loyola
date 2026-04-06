@@ -98,7 +98,7 @@ export function TopCreativesGallery({ projectId, days, campaignIds }: TopCreativ
 
   if (!data || data.topPerformers.length === 0) return null;
 
-  const withCreatives = data.topPerformers.filter((ad) => ad.creative?.thumbnailUrl);
+  const withCreatives = data.topPerformers.filter((ad) => ad.creative?.imageUrl || ad.creative?.thumbnailUrl);
   if (withCreatives.length === 0) return null;
 
   const shown = expanded ? withCreatives : withCreatives.slice(0, 6);
@@ -133,7 +133,7 @@ export function TopCreativesGallery({ projectId, days, campaignIds }: TopCreativ
             {/* Thumbnail */}
             <div className="relative aspect-video bg-muted/30">
               <img
-                src={ad.creative!.thumbnailUrl!}
+                src={ad.creative!.imageUrl || ad.creative!.thumbnailUrl!}
                 alt={ad.campaignName}
                 className="w-full h-full object-cover"
               />

@@ -940,10 +940,10 @@ function TopPerformersSection({ projectId, days, campaignId }: { projectId: stri
           >
             {/* Thumbnail */}
             <div className="relative aspect-square bg-muted/40 max-h-[200px]">
-              {ad.creative?.thumbnailUrl ? (
+              {(ad.creative?.imageUrl || ad.creative?.thumbnailUrl) ? (
                 <>
                   <img
-                    src={ad.creative.thumbnailUrl}
+                    src={ad.creative.imageUrl || ad.creative.thumbnailUrl!}
                     alt={ad.campaignName}
                     className="w-full h-full object-cover"
                   />
@@ -1004,7 +1004,7 @@ function CreativeRankingChart({ projectId, days, campaignId }: { projectId: stri
 
   const metricLabel = METRIC_OPTIONS.find((m) => m.value === metric)?.sortLabel ?? metric;
   const performers = onlyWithCreatives
-    ? data.topPerformers.filter((ad) => ad.creative?.thumbnailUrl)
+    ? data.topPerformers.filter((ad) => ad.creative?.imageUrl || ad.creative?.thumbnailUrl)
     : data.topPerformers;
 
   if (performers.length === 0) return null;
@@ -1095,7 +1095,7 @@ function CreativeGallerySection({ projectId, days, campaignId }: { projectId: st
   if (isLoading) return <Skeleton className="h-64 rounded-xl" />;
   if (!data || data.topPerformers.length === 0) return null;
 
-  const withCreatives = data.topPerformers.filter((ad) => ad.creative?.thumbnailUrl);
+  const withCreatives = data.topPerformers.filter((ad) => ad.creative?.imageUrl || ad.creative?.thumbnailUrl);
   if (withCreatives.length === 0) return null;
 
   const filtered = filterType === "all"
@@ -1182,7 +1182,7 @@ function CreativeGallerySection({ projectId, days, campaignId }: { projectId: st
             {/* Thumbnail */}
             <div className="relative aspect-video bg-muted/30">
               <img
-                src={ad.creative!.thumbnailUrl!}
+                src={ad.creative!.imageUrl || ad.creative!.thumbnailUrl!}
                 alt={ad.campaignName}
                 className="w-full h-full object-cover"
               />
