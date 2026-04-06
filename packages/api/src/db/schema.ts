@@ -403,6 +403,58 @@ export const metaAdsAccountProjects = pgTable(
 );
 
 // ============================================================
+// GOOGLE ADS TABLES (EPIC-12)
+// ============================================================
+
+export const googleAdsAccounts = pgTable(
+  "google_ads_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    accountName: varchar("account_name", { length: 100 }).notNull(),
+    customerId: varchar("customer_id", { length: 20 }).notNull(),
+    developerTokenEncrypted: text("developer_token_encrypted").notNull(),
+    developerTokenIv: text("developer_token_iv").notNull(),
+    refreshTokenEncrypted: text("refresh_token_encrypted").notNull(),
+    refreshTokenIv: text("refresh_token_iv").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_google_ads_customer_id").on(table.customerId),
+    index("idx_google_ads_created_by").on(table.createdBy),
+  ]
+);
+
+export const googleAdsAccountProjects = pgTable(
+  "google_ads_account_projects",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => googleAdsAccounts.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("uq_google_ads_account_project").on(table.accountId, table.projectId),
+    index("idx_google_ads_account_projects_account").on(table.accountId),
+    index("idx_google_ads_account_projects_project").on(table.projectId),
+  ]
+);
+
+// ============================================================
 // FUNNELS TABLES (EPIC-10)
 // ============================================================
 

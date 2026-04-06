@@ -34,6 +34,7 @@ import adminRoutes from "./routes/admin.js";
 import metaAdsRoutes from "./routes/meta-ads.js";
 import trafficAnalyticsRoutes from "./routes/traffic-analytics.js";
 import funnelRoutes from "./routes/funnels.js";
+import googleAdsRoutes from "./routes/google-ads.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -83,6 +84,7 @@ export async function buildServer() {
   await app.register(metaAdsRoutes);
   await app.register(trafficAnalyticsRoutes);
   await app.register(funnelRoutes);
+  await app.register(googleAdsRoutes);
 
   return app;
 }
