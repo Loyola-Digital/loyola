@@ -524,6 +524,7 @@ function setCachedCreative(creative: MetaAdCreative): void {
 }
 
 interface MetaCreativeRaw {
+  id?: string;
   thumbnail_url?: string;
   image_url?: string;
   title?: string;
@@ -568,26 +569,21 @@ export async function fetchAdCreatives(
     batches.push(uncachedIds.slice(i, i + BATCH_SIZE));
   }
 
-  // Run all batches in parallel
+  // Step 1: Fetch ad data with creative metadata
   const batchPromises = batches.map(async (batch) => {
     const batchResults: MetaAdCreative[] = [];
     try {
       const idsParam = batch.join(",");
       const data = await fetchMeta<Record<string, MetaAdWithCreative>>(
-        `/?ids=${idsParam}&fields=id,creative{thumbnail_url,image_url,title,body,link_url,call_to_action_type,object_type,video_id}`,
+        `/?ids=${idsParam}&fields=id,creative{id,thumbnail_url,image_url,title,body,link_url,call_to_action_type,object_type,video_id}`,
         accessToken
       );
       for (const adId of batch) {
         const ad = data[adId];
         const c = ad?.creative;
-        // For videos, thumbnail_url is low-res; append width param for better quality
-        let thumbUrl = c?.thumbnail_url ?? null;
-        if (thumbUrl && c?.object_type === "VIDEO" && !thumbUrl.includes("width=")) {
-          thumbUrl = thumbUrl + (thumbUrl.includes("?") ? "&" : "?") + "width=720&height=720";
-        }
         const creative: MetaAdCreative = {
           adId,
-          thumbnailUrl: thumbUrl,
+          thumbnailUrl: c?.thumbnail_url ?? null,
           imageUrl: c?.image_url ?? null,
           title: c?.title ?? null,
           body: c?.body ?? null,
@@ -596,25 +592,17 @@ export async function fetchAdCreatives(
           objectType: c?.object_type ?? null,
           videoId: c?.video_id ?? null,
         };
-        setCachedCreative(creative);
+        // Store creative ID temporarily for hi-res fetch
+        (creative as unknown as Record<string, unknown>)._creativeId = c?.id ?? null;
         batchResults.push(creative);
       }
     } catch (err) {
       console.error("[fetchAdCreatives] batch failed:", err);
-      // Graceful fallback — return null creatives for all ads in batch
       for (const adId of batch) {
-        const creative: MetaAdCreative = {
-          adId,
-          thumbnailUrl: null,
-          imageUrl: null,
-          title: null,
-          body: null,
-          linkUrl: null,
-          ctaType: null,
-          objectType: null,
-          videoId: null,
-        };
-        batchResults.push(creative);
+        batchResults.push({
+          adId, thumbnailUrl: null, imageUrl: null, title: null,
+          body: null, linkUrl: null, ctaType: null, objectType: null, videoId: null,
+        });
       }
     }
     return batchResults;
@@ -623,6 +611,47 @@ export async function fetchAdCreatives(
   const allBatchResults = await Promise.all(batchPromises);
   for (const batch of allBatchResults) {
     results.push(...batch);
+  }
+
+  // Step 2: Fetch hi-res images via creative IDs (effective_image_url)
+  const needsHiRes = results.filter(
+    (c) => (c as unknown as Record<string, unknown>)._creativeId && !c.imageUrl
+  );
+  if (needsHiRes.length > 0) {
+    const creativeIdMap = new Map<string, MetaAdCreative>();
+    for (const c of needsHiRes) {
+      const cid = (c as unknown as Record<string, unknown>)._creativeId as string;
+      creativeIdMap.set(cid, c);
+    }
+    const creativeIds = Array.from(creativeIdMap.keys());
+    const cBatches: string[][] = [];
+    for (let i = 0; i < creativeIds.length; i += BATCH_SIZE) {
+      cBatches.push(creativeIds.slice(i, i + BATCH_SIZE));
+    }
+    await Promise.all(cBatches.map(async (batch) => {
+      try {
+        const idsParam = batch.join(",");
+        const data = await fetchMeta<Record<string, { id: string; effective_image_url?: string; image_url?: string }>>(
+          `/?ids=${idsParam}&fields=id,effective_image_url,image_url`,
+          accessToken
+        );
+        for (const cid of batch) {
+          const c = creativeIdMap.get(cid);
+          const meta = data[cid];
+          if (c && meta) {
+            c.imageUrl = meta.effective_image_url ?? meta.image_url ?? null;
+          }
+        }
+      } catch (err) {
+        console.error("[fetchAdCreatives] hi-res batch failed:", err);
+      }
+    }));
+  }
+
+  // Clean up temp field and cache
+  for (const c of results) {
+    delete (c as unknown as Record<string, unknown>)._creativeId;
+    setCachedCreative(c);
   }
 
   return results;
