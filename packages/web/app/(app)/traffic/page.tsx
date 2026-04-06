@@ -129,14 +129,14 @@ function VideoRetentionSparkline({ metrics }: { metrics: VideoMetrics }) {
 }
 
 const PERIOD_OPTIONS = [
-  { label: "1d", value: 1 },
-  { label: "2d", value: 2 },
-  { label: "3d", value: 3 },
-  { label: "5d", value: 5 },
-  { label: "7d", value: 7 },
-  { label: "14d", value: 14 },
-  { label: "30d", value: 30 },
-  { label: "90d", value: 90 },
+  { label: "1 dia", value: 1 },
+  { label: "2 dias", value: 2 },
+  { label: "3 dias", value: 3 },
+  { label: "5 dias", value: 5 },
+  { label: "7 dias", value: 7 },
+  { label: "14 dias", value: 14 },
+  { label: "30 dias", value: 30 },
+  { label: "90 dias", value: 90 },
 ] as const;
 
 // ============================================================
@@ -1488,6 +1488,7 @@ function TrafficPageContent() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [days, setDays] = useState(30);
+  const [customDays, setCustomDays] = useState("");
 
   // Support ?project=xxx for project-scoped access
   const forceProjectId = searchParams.get("project") ?? undefined;
@@ -1654,16 +1655,49 @@ function TrafficPageContent() {
               </button>
             )}
 
-            <div className="flex rounded-lg border border-border/40 overflow-hidden ml-auto">
-              {PERIOD_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setDays(opt.value)}
-                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${days === opt.value ? "bg-brand text-brand-foreground" : "bg-card hover:bg-muted/50 text-muted-foreground"}`}
-                >
-                  {opt.label}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 ml-auto">
+              <Select
+                value={PERIOD_OPTIONS.find((o) => o.value === days) ? String(days) : "custom"}
+                onValueChange={(v) => {
+                  if (v === "custom") return;
+                  setDays(Number(v));
+                  setCustomDays("");
+                }}
+              >
+                <SelectTrigger className="w-[130px] h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PERIOD_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>
+                  ))}
+                  <SelectItem value="custom">Personalizado</SelectItem>
+                </SelectContent>
+              </Select>
+              {!PERIOD_OPTIONS.find((o) => o.value === days) && (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={customDays}
+                    onChange={(e) => setCustomDays(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const v = parseInt(customDays);
+                        if (v > 0 && v <= 365) setDays(v);
+                      }
+                    }}
+                    onBlur={() => {
+                      const v = parseInt(customDays);
+                      if (v > 0 && v <= 365) setDays(v);
+                    }}
+                    placeholder="Dias"
+                    className="w-[70px] h-8 rounded-md border border-border bg-card px-2 text-xs"
+                  />
+                  <span className="text-xs text-muted-foreground">dias</span>
+                </div>
+              )}
             </div>
           </div>
 
