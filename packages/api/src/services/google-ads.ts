@@ -156,6 +156,261 @@ export async function validateGoogleAdsAccount(
 }
 
 // ============================================================
+// ANALYTICS — OVERVIEW
+// ============================================================
+
+export interface GoogleAdsOverview {
+  totalSpend: number;
+  totalViews: number;
+  totalImpressions: number;
+  totalClicks: number;
+  cpv: number | null;
+  viewRate: number | null;
+  ctr: number;
+  cpc: number;
+  cpm: number;
+  conversions: number;
+  costPerConversion: number | null;
+  retention: { p25: number; p50: number; p75: number; p100: number };
+}
+
+function microsToCurrency(micros: string | number | undefined): number {
+  if (!micros) return 0;
+  return Number(micros) / 1_000_000;
+}
+
+function safeRate(val: unknown): number {
+  if (typeof val === "number") return val;
+  if (typeof val === "string") return parseFloat(val) || 0;
+  return 0;
+}
+
+export async function fetchGoogleAdsOverview(
+  customerId: string,
+  developerToken: string,
+  refreshToken: string,
+  days: number
+): Promise<GoogleAdsOverview> {
+  const accessToken = await getAccessToken(refreshToken, customerId);
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+  const startStr = start.toISOString().slice(0, 10);
+  const endStr = end.toISOString().slice(0, 10);
+
+  const results = await queryGoogleAds(
+    customerId,
+    developerToken,
+    accessToken,
+    `SELECT
+      metrics.cost_micros,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.video_views,
+      metrics.ctr,
+      metrics.average_cpc,
+      metrics.average_cpm,
+      metrics.conversions,
+      metrics.cost_per_conversion,
+      metrics.video_quartile_p25_rate,
+      metrics.video_quartile_p50_rate,
+      metrics.video_quartile_p75_rate,
+      metrics.video_quartile_p100_rate
+    FROM customer
+    WHERE segments.date BETWEEN '${startStr}' AND '${endStr}'`
+  );
+
+  // Aggregate across all rows
+  let totalSpend = 0;
+  let totalViews = 0;
+  let totalImpressions = 0;
+  let totalClicks = 0;
+  let totalConversions = 0;
+  let p25Sum = 0, p50Sum = 0, p75Sum = 0, p100Sum = 0;
+  let rowCount = 0;
+
+  for (const row of results) {
+    const m = row.metrics as Record<string, unknown> | undefined;
+    if (!m) continue;
+    totalSpend += microsToCurrency(m.costMicros as string | number | undefined);
+    totalViews += Number(m.videoViews || 0);
+    totalImpressions += Number(m.impressions || 0);
+    totalClicks += Number(m.clicks || 0);
+    totalConversions += Number(m.conversions || 0);
+    p25Sum += safeRate(m.videoQuartileP25Rate);
+    p50Sum += safeRate(m.videoQuartileP50Rate);
+    p75Sum += safeRate(m.videoQuartileP75Rate);
+    p100Sum += safeRate(m.videoQuartileP100Rate);
+    rowCount++;
+  }
+
+  const cpv = totalViews > 0 ? totalSpend / totalViews : null;
+  const viewRate = totalImpressions > 0 ? (totalViews / totalImpressions) * 100 : null;
+  const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
+  const cpc = totalClicks > 0 ? totalSpend / totalClicks : 0;
+  const cpm = totalImpressions > 0 ? (totalSpend / totalImpressions) * 1000 : 0;
+  const costPerConversion = totalConversions > 0 ? totalSpend / totalConversions : null;
+
+  return {
+    totalSpend,
+    totalViews,
+    totalImpressions,
+    totalClicks,
+    cpv,
+    viewRate,
+    ctr,
+    cpc,
+    cpm,
+    conversions: totalConversions,
+    costPerConversion,
+    retention: {
+      p25: rowCount > 0 ? p25Sum / rowCount : 0,
+      p50: rowCount > 0 ? p50Sum / rowCount : 0,
+      p75: rowCount > 0 ? p75Sum / rowCount : 0,
+      p100: rowCount > 0 ? p100Sum / rowCount : 0,
+    },
+  };
+}
+
+// ============================================================
+// ANALYTICS — DAILY INSIGHTS
+// ============================================================
+
+export interface GoogleAdsDailyInsight {
+  date: string;
+  spend: number;
+  views: number;
+  impressions: number;
+  clicks: number;
+}
+
+export async function fetchGoogleAdsDailyInsights(
+  customerId: string,
+  developerToken: string,
+  refreshToken: string,
+  days: number,
+  campaignId?: string
+): Promise<GoogleAdsDailyInsight[]> {
+  const accessToken = await getAccessToken(refreshToken, customerId);
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+  const startStr = start.toISOString().slice(0, 10);
+  const endStr = end.toISOString().slice(0, 10);
+
+  const campaignFilter = campaignId
+    ? `AND campaign.id = ${campaignId}`
+    : "";
+
+  const results = await queryGoogleAds(
+    customerId,
+    developerToken,
+    accessToken,
+    `SELECT
+      segments.date,
+      metrics.cost_micros,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.video_views
+    FROM campaign
+    WHERE segments.date BETWEEN '${startStr}' AND '${endStr}'
+      ${campaignFilter}
+    ORDER BY segments.date`
+  );
+
+  // Aggregate per date (multiple campaigns may share a date)
+  const dateMap = new Map<string, GoogleAdsDailyInsight>();
+  for (const row of results) {
+    const segments = row.segments as { date?: string } | undefined;
+    const m = row.metrics as Record<string, unknown> | undefined;
+    const date = segments?.date;
+    if (!date || !m) continue;
+
+    const existing = dateMap.get(date) ?? { date, spend: 0, views: 0, impressions: 0, clicks: 0 };
+    existing.spend += microsToCurrency(m.costMicros as string | number | undefined);
+    existing.views += Number(m.videoViews || 0);
+    existing.impressions += Number(m.impressions || 0);
+    existing.clicks += Number(m.clicks || 0);
+    dateMap.set(date, existing);
+  }
+
+  return Array.from(dateMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// ============================================================
+// ANALYTICS — CAMPAIGNS LIST
+// ============================================================
+
+export interface GoogleAdsCampaign {
+  id: string;
+  name: string;
+  status: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  views: number;
+  cpv: number | null;
+  viewRate: number | null;
+  ctr: number;
+  cpc: number;
+  cpm: number;
+  conversions: number;
+}
+
+export async function fetchGoogleAdsCampaigns(
+  customerId: string,
+  developerToken: string,
+  refreshToken: string,
+  days: number
+): Promise<GoogleAdsCampaign[]> {
+  const accessToken = await getAccessToken(refreshToken, customerId);
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+  const startStr = start.toISOString().slice(0, 10);
+  const endStr = end.toISOString().slice(0, 10);
+
+  const results = await queryGoogleAds(
+    customerId,
+    developerToken,
+    accessToken,
+    `SELECT
+      campaign.id, campaign.name, campaign.status,
+      metrics.cost_micros, metrics.impressions, metrics.clicks,
+      metrics.video_views, metrics.ctr, metrics.average_cpc,
+      metrics.average_cpm, metrics.conversions
+    FROM campaign
+    WHERE segments.date BETWEEN '${startStr}' AND '${endStr}'
+      AND campaign.status != 'REMOVED'`
+  );
+
+  return results.map((row) => {
+    const c = row.campaign as { id?: string; name?: string; status?: string } | undefined;
+    const m = row.metrics as Record<string, unknown> | undefined;
+    const spend = microsToCurrency(m?.costMicros as string | number | undefined);
+    const impressions = Number(m?.impressions || 0);
+    const clicks = Number(m?.clicks || 0);
+    const views = Number(m?.videoViews || 0);
+
+    return {
+      id: String(c?.id ?? ""),
+      name: String(c?.name ?? ""),
+      status: String(c?.status ?? ""),
+      spend,
+      impressions,
+      clicks,
+      views,
+      cpv: views > 0 ? spend / views : null,
+      viewRate: impressions > 0 ? (views / impressions) * 100 : null,
+      ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+      cpc: clicks > 0 ? spend / clicks : 0,
+      cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
+      conversions: Number(m?.conversions || 0),
+    };
+  }).sort((a, b) => b.spend - a.spend);
+}
+
+// ============================================================
 // DECRYPT HELPER
 // ============================================================
 
