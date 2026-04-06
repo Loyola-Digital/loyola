@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Play, ImageIcon } from "lucide-react";
+import { Play } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
