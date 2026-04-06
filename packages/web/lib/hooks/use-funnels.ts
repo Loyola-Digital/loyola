@@ -20,6 +20,8 @@ export interface UpdateFunnelInput {
   type?: FunnelType;
   metaAccountId?: string | null;
   campaigns?: FunnelCampaign[];
+  googleAdsAccountId?: string | null;
+  googleAdsCampaigns?: FunnelCampaign[];
 }
 
 export interface MetaCampaignOption {

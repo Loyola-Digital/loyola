@@ -5,6 +5,7 @@ import { useFunnel } from "@/lib/hooks/use-funnels";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LaunchDashboard } from "@/components/funnels/launch-dashboard";
 import { PerpetualDashboard } from "@/components/funnels/perpetual-dashboard";
+import { YouTubeFunnelSection } from "@/components/funnels/youtube-funnel-section";
 
 export default function FunnelPage() {
   const params = useParams<{ id: string; funnelId: string }>();
@@ -40,15 +41,20 @@ export default function FunnelPage() {
         <h1 className="text-2xl font-bold">{funnel.name}</h1>
         <p className="text-sm text-muted-foreground">
           {funnelType === "launch" ? "Funil de Lançamento" : "Funil Perpétuo"}
-          {funnel.campaigns.length > 0 && ` — ${funnel.campaigns.length} campanha${funnel.campaigns.length > 1 ? "s" : ""}`}
+          {funnel.campaigns.length > 0 && ` — ${funnel.campaigns.length} campanha${funnel.campaigns.length > 1 ? "s" : ""} Meta`}
+          {funnel.googleAdsCampaigns.length > 0 && ` · ${funnel.googleAdsCampaigns.length} campanha${funnel.googleAdsCampaigns.length > 1 ? "s" : ""} YouTube`}
         </p>
       </div>
 
+      {/* Meta Ads Dashboard */}
       {funnelType === "launch" ? (
         <LaunchDashboard funnel={funnel} projectId={params.id} />
       ) : (
         <PerpetualDashboard funnel={funnel} projectId={params.id} />
       )}
+
+      {/* YouTube Ads Section (collapsible) */}
+      <YouTubeFunnelSection funnel={funnel} projectId={params.id} days={30} />
     </div>
   );
 }
