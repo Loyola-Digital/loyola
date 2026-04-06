@@ -41,7 +41,7 @@ import {
   useGoogleAdsCampaignPicker,
   useUpdateFunnel,
 } from "@/lib/hooks/use-funnels";
-import type { Funnel, FunnelCampaign } from "@loyola-x/shared";
+import type { Funnel } from "@loyola-x/shared";
 import Link from "next/link";
 import { toast } from "sonner";
 

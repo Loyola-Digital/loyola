@@ -12,8 +12,6 @@ import {
   TrendingUp,
   Youtube,
   Settings,
-  ChevronDown,
-  ChevronRight,
 } from "lucide-react";
 import {
   LineChart,
@@ -40,7 +38,6 @@ import {
   useGoogleAdsOverview,
   useGoogleAdsDailyInsights,
   useGoogleAdsCampaigns,
-  type GoogleAdsCampaign,
 } from "@/lib/hooks/use-google-ads-analytics";
 import { useGoogleAdsCampaignPicker } from "@/lib/hooks/use-funnels";
 
