@@ -569,13 +569,13 @@ export async function fetchAdCreatives(
     batches.push(uncachedIds.slice(i, i + BATCH_SIZE));
   }
 
-  // Step 1: Fetch ad data with creative metadata
+  // Step 1: Fetch ad data with creative metadata + effective_instagram_media_id for SHARE ads
   const batchPromises = batches.map(async (batch) => {
     const batchResults: MetaAdCreative[] = [];
     try {
       const idsParam = batch.join(",");
-      const data = await fetchMeta<Record<string, MetaAdWithCreative>>(
-        `/?ids=${idsParam}&fields=id,creative{id,thumbnail_url,image_url,title,body,link_url,call_to_action_type,object_type,video_id}`,
+      const data = await fetchMeta<Record<string, MetaAdWithCreative & { creative?: MetaCreativeRaw & { id?: string; effective_instagram_media_id?: string } }>>(
+        `/?ids=${idsParam}&fields=id,creative{id,thumbnail_url,image_url,effective_instagram_media_id,title,body,link_url,call_to_action_type,object_type,video_id}`,
         accessToken
       );
       for (const adId of batch) {
@@ -592,8 +592,10 @@ export async function fetchAdCreatives(
           objectType: c?.object_type ?? null,
           videoId: c?.video_id ?? null,
         };
-        // Store creative ID temporarily for hi-res fetch
-        (creative as unknown as Record<string, unknown>)._creativeId = c?.id ?? null;
+        // Store IDs temporarily for hi-res fetch
+        const extra = creative as unknown as Record<string, unknown>;
+        extra._creativeId = c?.id ?? null;
+        extra._igMediaId = c?.effective_instagram_media_id ?? null;
         batchResults.push(creative);
       }
     } catch (err) {
@@ -613,45 +615,81 @@ export async function fetchAdCreatives(
     results.push(...batch);
   }
 
-  // Step 2: Fetch hi-res images via creative IDs (effective_image_url)
-  // Always fetch — image_url from creative{} is often low-res
-  const withCreativeId = results.filter(
-    (c) => (c as unknown as Record<string, unknown>)._creativeId
-  );
-  if (withCreativeId.length > 0) {
-    const creativeIdMap = new Map<string, MetaAdCreative>();
-    for (const c of withCreativeId) {
-      const cid = (c as unknown as Record<string, unknown>)._creativeId as string;
-      creativeIdMap.set(cid, c);
-    }
-    const creativeIds = Array.from(creativeIdMap.keys());
-    const cBatches: string[][] = [];
-    for (let i = 0; i < creativeIds.length; i += BATCH_SIZE) {
-      cBatches.push(creativeIds.slice(i, i + BATCH_SIZE));
-    }
-    await Promise.all(cBatches.map(async (batch) => {
-      try {
-        const idsParam = batch.join(",");
-        const data = await fetchMeta<Record<string, { id: string; effective_image_url?: string; image_url?: string }>>(
-          `/?ids=${idsParam}&fields=id,effective_image_url,image_url`,
-          accessToken
-        );
-        for (const cid of batch) {
-          const c = creativeIdMap.get(cid);
-          const meta = data[cid];
-          if (c && meta) {
-            c.imageUrl = meta.effective_image_url ?? meta.image_url ?? null;
-          }
-        }
-      } catch (err) {
-        console.error("[fetchAdCreatives] hi-res batch failed:", err);
-      }
-    }));
-  }
+  // Step 2: Fetch hi-res images — two strategies in parallel
+  const needsImage = results.filter((c) => !c.imageUrl);
 
-  // Clean up temp field and cache
+  // Strategy A: Instagram media_url (for SHARE/Instagram ads)
+  const igMediaIds = needsImage
+    .filter((c) => (c as unknown as Record<string, unknown>)._igMediaId)
+    .map((c) => ({
+      creative: c,
+      igMediaId: (c as unknown as Record<string, unknown>)._igMediaId as string,
+    }));
+
+  // Strategy B: Creative effective_image_url (for other ads)
+  const creativeIdsForHiRes = needsImage
+    .filter((c) => (c as unknown as Record<string, unknown>)._creativeId && !(c as unknown as Record<string, unknown>)._igMediaId)
+    .map((c) => ({
+      creative: c,
+      creativeId: (c as unknown as Record<string, unknown>)._creativeId as string,
+    }));
+
+  await Promise.all([
+    // Strategy A: Batch fetch IG media URLs
+    (async () => {
+      if (igMediaIds.length === 0) return;
+      const igMap = new Map(igMediaIds.map((x) => [x.igMediaId, x.creative]));
+      const igIdList = Array.from(igMap.keys());
+      for (let i = 0; i < igIdList.length; i += BATCH_SIZE) {
+        const batch = igIdList.slice(i, i + BATCH_SIZE);
+        try {
+          const data = await fetchMeta<Record<string, { id: string; media_url?: string; thumbnail_url?: string }>>(
+            `/?ids=${batch.join(",")}&fields=id,media_url,thumbnail_url`,
+            accessToken
+          );
+          for (const igId of batch) {
+            const c = igMap.get(igId);
+            const meta = data[igId];
+            if (c && meta?.media_url) {
+              c.imageUrl = meta.media_url;
+            }
+          }
+        } catch (err) {
+          console.error("[fetchAdCreatives] IG media batch failed:", err);
+        }
+      }
+    })(),
+    // Strategy B: Batch fetch creative effective_image_url
+    (async () => {
+      if (creativeIdsForHiRes.length === 0) return;
+      const cMap = new Map(creativeIdsForHiRes.map((x) => [x.creativeId, x.creative]));
+      const cIdList = Array.from(cMap.keys());
+      for (let i = 0; i < cIdList.length; i += BATCH_SIZE) {
+        const batch = cIdList.slice(i, i + BATCH_SIZE);
+        try {
+          const data = await fetchMeta<Record<string, { id: string; effective_image_url?: string; image_url?: string }>>(
+            `/?ids=${batch.join(",")}&fields=id,effective_image_url,image_url`,
+            accessToken
+          );
+          for (const cid of batch) {
+            const c = cMap.get(cid);
+            const meta = data[cid];
+            if (c && meta) {
+              c.imageUrl = meta.effective_image_url ?? meta.image_url ?? null;
+            }
+          }
+        } catch (err) {
+          console.error("[fetchAdCreatives] hi-res batch failed:", err);
+        }
+      }
+    })(),
+  ]);
+
+  // Clean up temp fields and cache
   for (const c of results) {
-    delete (c as unknown as Record<string, unknown>)._creativeId;
+    const extra = c as unknown as Record<string, unknown>;
+    delete extra._creativeId;
+    delete extra._igMediaId;
     setCachedCreative(c);
   }
 
