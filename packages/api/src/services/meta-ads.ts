@@ -536,10 +536,8 @@ interface MetaCreativeRaw {
 
 interface MetaAdWithCreative {
   id: string;
-  creative?: MetaCreativeRaw & {
-    effective_image_url?: string;
-    object_story_spec?: { link_data?: { picture?: string } };
-  };
+  creative?: MetaCreativeRaw;
+  effective_image_url?: string;
 }
 
 export async function fetchAdCreatives(
@@ -577,20 +575,16 @@ export async function fetchAdCreatives(
     try {
       const idsParam = batch.join(",");
       const data = await fetchMeta<Record<string, MetaAdWithCreative>>(
-        `/?ids=${idsParam}&fields=id,creative{thumbnail_url,image_url,effective_image_url,object_story_spec{link_data{picture}},title,body,link_url,call_to_action_type,object_type,video_id}`,
+        `/?ids=${idsParam}&fields=id,effective_image_url,creative{thumbnail_url,image_url,title,body,link_url,call_to_action_type,object_type,video_id}`,
         accessToken
       );
       for (const adId of batch) {
         const ad = data[adId];
         const c = ad?.creative;
-        const hiResImage = c?.effective_image_url
-          ?? c?.object_story_spec?.link_data?.picture
-          ?? c?.image_url
-          ?? null;
         const creative: MetaAdCreative = {
           adId,
           thumbnailUrl: c?.thumbnail_url ?? null,
-          imageUrl: hiResImage,
+          imageUrl: ad?.effective_image_url ?? c?.image_url ?? null,
           title: c?.title ?? null,
           body: c?.body ?? null,
           linkUrl: c?.link_url ?? null,
@@ -601,7 +595,8 @@ export async function fetchAdCreatives(
         setCachedCreative(creative);
         batchResults.push(creative);
       }
-    } catch {
+    } catch (err) {
+      console.error("[fetchAdCreatives] batch failed:", err);
       // Graceful fallback — return null creatives for all ads in batch
       for (const adId of batch) {
         const creative: MetaAdCreative = {
