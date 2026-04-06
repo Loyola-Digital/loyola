@@ -537,6 +537,7 @@ interface MetaCreativeRaw {
 interface MetaAdWithCreative {
   id: string;
   creative?: MetaCreativeRaw;
+  effective_image_url?: string;
 }
 
 export async function fetchAdCreatives(
@@ -574,7 +575,7 @@ export async function fetchAdCreatives(
     try {
       const idsParam = batch.join(",");
       const data = await fetchMeta<Record<string, MetaAdWithCreative>>(
-        `/?ids=${idsParam}&fields=id,creative{thumbnail_url,image_url,title,body,link_url,call_to_action_type,object_type,video_id}`,
+        `/?ids=${idsParam}&fields=id,effective_image_url,creative{thumbnail_url,image_url,title,body,link_url,call_to_action_type,object_type,video_id}`,
         accessToken
       );
       for (const adId of batch) {
@@ -583,7 +584,7 @@ export async function fetchAdCreatives(
         const creative: MetaAdCreative = {
           adId,
           thumbnailUrl: c?.thumbnail_url ?? null,
-          imageUrl: c?.image_url ?? null,
+          imageUrl: ad?.effective_image_url ?? c?.image_url ?? null,
           title: c?.title ?? null,
           body: c?.body ?? null,
           linkUrl: c?.link_url ?? null,
