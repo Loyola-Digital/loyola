@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Youtube,
   ChevronDown,
@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import {
-  useGoogleAdsOverview,
+  useGoogleAdsCampaigns,
   useGoogleAdsDailyInsights,
 } from "@/lib/hooks/use-google-ads-analytics";
 import {
@@ -72,18 +72,18 @@ interface YouTubeFunnelSectionProps {
 
 export function YouTubeFunnelSection({ funnel, projectId, days }: YouTubeFunnelSectionProps) {
   const [open, setOpen] = useState(funnel.googleAdsCampaigns.length > 0);
-  const [showPicker, setShowPicker] = useState(false);
-  const { data: pickerData } = useGoogleAdsCampaignPicker(showPicker ? projectId : null);
+  const { data: pickerData } = useGoogleAdsCampaignPicker(projectId);
   const updateFunnel = useUpdateFunnel(projectId, funnel.id);
 
   const hasYouTube = funnel.googleAdsCampaigns.length > 0;
-  const accountId = funnel.googleAdsAccountId;
+  const accountId = funnel.googleAdsAccountId ?? pickerData?.accountId ?? null;
+  const campaignIdSet = useMemo(() => new Set(funnel.googleAdsCampaigns.map((c) => c.id)), [funnel.googleAdsCampaigns]);
 
   function handleAddCampaign(campaign: { id: string; name: string }) {
     if (funnel.googleAdsCampaigns.some((c) => c.id === campaign.id)) return;
     const updated = [...funnel.googleAdsCampaigns, campaign];
     updateFunnel.mutate(
-      { googleAdsCampaigns: updated, googleAdsAccountId: pickerData?.accountId ?? funnel.googleAdsAccountId },
+      { googleAdsCampaigns: updated, googleAdsAccountId: accountId },
       { onSuccess: () => toast.success("Campanha YouTube adicionada!") }
     );
   }
@@ -98,9 +98,8 @@ export function YouTubeFunnelSection({ funnel, projectId, days }: YouTubeFunnelS
 
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 overflow-hidden">
-      {/* Header */}
       <button
-        onClick={() => { setOpen(!open); if (!open) setShowPicker(true); }}
+        onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between px-5 py-3 hover:bg-muted/30 transition-colors"
       >
         <div className="flex items-center gap-2">
@@ -117,7 +116,6 @@ export function YouTubeFunnelSection({ funnel, projectId, days }: YouTubeFunnelS
 
       {open && (
         <div className="border-t border-border/20 p-5 space-y-4">
-          {/* Campaign picker */}
           {!pickerData?.accountLinked ? (
             <div className="text-center py-4 space-y-2">
               <Youtube className="h-6 w-6 text-muted-foreground mx-auto" />
@@ -138,10 +136,7 @@ export function YouTubeFunnelSection({ funnel, projectId, days }: YouTubeFunnelS
                     <Badge key={c.id} variant="secondary" className="flex items-center gap-1 pr-1">
                       <Youtube className="h-3 w-3 text-red-500" />
                       {c.name}
-                      <button
-                        onClick={() => handleRemoveCampaign(c.id)}
-                        className="ml-1 rounded-full p-0.5 hover:bg-destructive/20"
-                      >
+                      <button onClick={() => handleRemoveCampaign(c.id)} className="ml-1 rounded-full p-0.5 hover:bg-destructive/20">
                         <span className="text-destructive/70 text-xs">x</span>
                       </button>
                     </Badge>
@@ -160,7 +155,7 @@ export function YouTubeFunnelSection({ funnel, projectId, days }: YouTubeFunnelS
                   </SelectTrigger>
                   <SelectContent>
                     {pickerData.campaigns
-                      .filter((c) => !funnel.googleAdsCampaigns.some((fc) => fc.id === c.id))
+                      .filter((c) => !campaignIdSet.has(c.id))
                       .map((c) => (
                         <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                       ))}
@@ -170,9 +165,9 @@ export function YouTubeFunnelSection({ funnel, projectId, days }: YouTubeFunnelS
             </>
           )}
 
-          {/* Dashboard when campaigns selected */}
+          {/* Dashboard filtered by selected campaigns */}
           {hasYouTube && accountId && (
-            <YouTubeFunnelDashboard accountId={accountId} days={days} />
+            <YouTubeFunnelDashboard accountId={accountId} days={days} campaignIds={campaignIdSet} />
           )}
         </div>
       )}
@@ -181,32 +176,59 @@ export function YouTubeFunnelSection({ funnel, projectId, days }: YouTubeFunnelS
 }
 
 // ============================================================
-// MINI DASHBOARD
+// DASHBOARD (filtered by selected campaigns)
 // ============================================================
 
-function YouTubeFunnelDashboard({ accountId, days }: { accountId: string; days: number }) {
-  const { data: overview, isLoading: overviewLoading } = useGoogleAdsOverview(accountId, days);
-  const { data: dailyData, isLoading: dailyLoading } = useGoogleAdsDailyInsights(accountId, days);
+function YouTubeFunnelDashboard({ accountId, days, campaignIds }: { accountId: string; days: number; campaignIds: Set<string> }) {
+  const { data: campaignData, isLoading } = useGoogleAdsCampaigns(accountId, days);
+  const firstCampaignId = campaignIds.size > 0 ? Array.from(campaignIds)[0] : undefined;
+  const { data: dailyData, isLoading: dailyLoading } = useGoogleAdsDailyInsights(accountId, days, firstCampaignId);
+
+  // Filter and aggregate only selected campaigns
+  const overview = useMemo(() => {
+    if (!campaignData?.campaigns) return null;
+    const filtered = campaignData.campaigns.filter((c) => campaignIds.has(c.id));
+    if (filtered.length === 0) return null;
+
+    const totalSpend = filtered.reduce((s, c) => s + c.spend, 0);
+    const totalViews = filtered.reduce((s, c) => s + c.views, 0);
+    const totalImpressions = filtered.reduce((s, c) => s + c.impressions, 0);
+    const totalClicks = filtered.reduce((s, c) => s + c.clicks, 0);
+    const totalConversions = filtered.reduce((s, c) => s + c.conversions, 0);
+
+    return {
+      totalSpend,
+      totalViews,
+      cpv: totalViews > 0 ? totalSpend / totalViews : null,
+      viewRate: totalImpressions > 0 ? (totalViews / totalImpressions) * 100 : null,
+      ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0,
+      cpc: totalClicks > 0 ? totalSpend / totalClicks : 0,
+      conversions: totalConversions,
+      campaigns: filtered,
+    };
+  }, [campaignData, campaignIds]);
+
+  if (isLoading) return (
+    <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+      {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
+    </div>
+  );
+
+  if (!overview) return null;
 
   return (
     <div className="space-y-4">
-      {/* KPI Cards */}
-      {overviewLoading ? (
-        <div className="grid gap-2 grid-cols-2 sm:grid-cols-4 lg:grid-cols-6">
-          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
-        </div>
-      ) : overview ? (
-        <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-          <MiniKpi icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} />
-          <MiniKpi icon={Play} label="Views" value={fmtNumber(overview.totalViews)} />
-          <MiniKpi icon={Target} label="CPV" value={fmtCurrency(overview.cpv)} />
-          <MiniKpi icon={Eye} label="View Rate" value={fmtPercent(overview.viewRate)} />
-          <MiniKpi icon={Percent} label="CTR" value={fmtPercent(overview.ctr)} />
-          <MiniKpi icon={MousePointerClick} label="CPC" value={fmtCurrency(overview.cpc)} />
-        </div>
-      ) : null}
+      {/* KPIs */}
+      <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+        <MiniKpi icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} />
+        <MiniKpi icon={Play} label="Views" value={fmtNumber(overview.totalViews)} />
+        <MiniKpi icon={Target} label="CPV" value={fmtCurrency(overview.cpv)} />
+        <MiniKpi icon={Eye} label="View Rate" value={fmtPercent(overview.viewRate)} />
+        <MiniKpi icon={Percent} label="CTR" value={fmtPercent(overview.ctr)} />
+        <MiniKpi icon={MousePointerClick} label="CPC" value={fmtCurrency(overview.cpc)} />
+      </div>
 
-      {/* Daily Chart */}
+      {/* Daily chart */}
       {dailyLoading ? (
         <Skeleton className="h-48" />
       ) : dailyData && dailyData.length > 0 ? (
@@ -227,14 +249,33 @@ function YouTubeFunnelDashboard({ accountId, days }: { accountId: string; days: 
         </div>
       ) : null}
 
-      {/* Retention */}
-      {overview?.retention && (overview.retention.p25 > 0 || overview.retention.p100 > 0) && (
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span className="font-medium">Retencao:</span>
-          <span>25%: <strong className="text-foreground">{(overview.retention.p25 * 100).toFixed(1)}%</strong></span>
-          <span>50%: <strong className="text-foreground">{(overview.retention.p50 * 100).toFixed(1)}%</strong></span>
-          <span>75%: <strong className="text-foreground">{(overview.retention.p75 * 100).toFixed(1)}%</strong></span>
-          <span>100%: <strong className="text-foreground">{(overview.retention.p100 * 100).toFixed(1)}%</strong></span>
+      {/* Campaign table (only selected ones) */}
+      {overview.campaigns.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-muted-foreground border-b">
+                <th className="text-left py-2 font-medium">Campanha</th>
+                <th className="text-right py-2 font-medium">Spend</th>
+                <th className="text-right py-2 font-medium">Views</th>
+                <th className="text-right py-2 font-medium">CPV</th>
+                <th className="text-right py-2 font-medium">View Rate</th>
+                <th className="text-right py-2 font-medium">CTR</th>
+              </tr>
+            </thead>
+            <tbody>
+              {overview.campaigns.map((c) => (
+                <tr key={c.id} className="border-b last:border-0">
+                  <td className="py-1.5 text-xs">{c.name}</td>
+                  <td className="text-right tabular-nums text-xs">{fmtCurrency(c.spend)}</td>
+                  <td className="text-right tabular-nums text-xs">{fmtNumber(c.views)}</td>
+                  <td className="text-right tabular-nums text-xs">{fmtCurrency(c.cpv)}</td>
+                  <td className="text-right tabular-nums text-xs">{fmtPercent(c.viewRate)}</td>
+                  <td className="text-right tabular-nums text-xs">{fmtPercent(c.ctr)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
