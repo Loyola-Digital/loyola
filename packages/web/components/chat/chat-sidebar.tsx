@@ -36,7 +36,7 @@ function SidebarContent({
   mindId: string;
   conversationId?: string;
 }) {
-  const { conversations, isLoading } = useConversations();
+  const { conversations, isLoading } = useConversations({ mindId });
   const deleteConversation = useDeleteConversation();
   const { tasks, isLoading: tasksLoading } = useTasks({ limit: 5 });
 
