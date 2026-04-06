@@ -476,6 +476,14 @@ export const funnels = pgTable(
       .notNull()
       .default([])
       .$type<{ id: string; name: string }[]>(),
+    googleAdsAccountId: uuid("google_ads_account_id").references(
+      () => googleAdsAccounts.id,
+      { onDelete: "set null" }
+    ),
+    googleAdsCampaigns: jsonb("google_ads_campaigns")
+      .notNull()
+      .default([])
+      .$type<{ id: string; name: string }[]>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

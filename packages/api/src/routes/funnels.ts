@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { funnels, projects, projectMembers, metaAdsAccountProjects, metaAdsAccounts } from "../db/schema.js";
+import { funnels, projects, projectMembers, metaAdsAccountProjects, metaAdsAccounts, googleAdsAccountProjects, googleAdsAccounts } from "../db/schema.js";
 import { fetchCampaigns, decryptAccountToken } from "../services/meta-ads.js";
+import { fetchGoogleAdsCampaigns, decryptToken as decryptGoogleToken } from "../services/google-ads.js";
 
 // ============================================================
 // SCHEMAS
@@ -18,6 +19,8 @@ const createFunnelSchema = z.object({
   type: z.enum(["launch", "perpetual"]),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).default([]),
+  googleAdsAccountId: z.string().uuid().nullable().optional(),
+  googleAdsCampaigns: z.array(campaignSchema).default([]),
 });
 
 const updateFunnelSchema = z.object({
@@ -25,6 +28,8 @@ const updateFunnelSchema = z.object({
   type: z.enum(["launch", "perpetual"]).optional(),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).optional(),
+  googleAdsAccountId: z.string().uuid().nullable().optional(),
+  googleAdsCampaigns: z.array(campaignSchema).optional(),
 });
 
 const projectIdParamSchema = z.object({
@@ -48,6 +53,8 @@ function funnelShape(f: typeof funnels.$inferSelect) {
     type: f.type,
     metaAccountId: f.metaAccountId,
     campaigns: f.campaigns ?? [],
+    googleAdsAccountId: f.googleAdsAccountId,
+    googleAdsCampaigns: f.googleAdsCampaigns ?? [],
     createdAt: f.createdAt,
     updatedAt: f.updatedAt,
   };
@@ -157,7 +164,7 @@ export default fp(async function funnelRoutes(fastify) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
 
-    const { name, type, metaAccountId, campaigns } = parseResult.data;
+    const { name, type, metaAccountId, campaigns, googleAdsAccountId, googleAdsCampaigns } = parseResult.data;
 
     const [funnel] = await fastify.db
       .insert(funnels)
@@ -167,6 +174,8 @@ export default fp(async function funnelRoutes(fastify) {
         type,
         metaAccountId: metaAccountId ?? null,
         campaigns,
+        googleAdsAccountId: googleAdsAccountId ?? null,
+        googleAdsCampaigns,
       })
       .returning();
 
@@ -213,11 +222,13 @@ export default fp(async function funnelRoutes(fastify) {
     }
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
-    const { name, type, metaAccountId, campaigns } = parseResult.data;
+    const { name, type, metaAccountId, campaigns, googleAdsAccountId, googleAdsCampaigns } = parseResult.data;
     if (name !== undefined) updates.name = name;
     if (type !== undefined) updates.type = type;
     if (metaAccountId !== undefined) updates.metaAccountId = metaAccountId;
     if (campaigns !== undefined) updates.campaigns = campaigns;
+    if (googleAdsAccountId !== undefined) updates.googleAdsAccountId = googleAdsAccountId;
+    if (googleAdsCampaigns !== undefined) updates.googleAdsCampaigns = googleAdsCampaigns;
 
     const [updated] = await fastify.db
       .update(funnels)
@@ -316,6 +327,58 @@ export default fp(async function funnelRoutes(fastify) {
     } catch (err) {
       return reply.code(502).send({
         error: "Erro ao buscar campanhas da Meta",
+        details: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  // ---- GET /api/projects/:projectId/google-ads-campaigns ----
+  fastify.get("/api/projects/:projectId/google-ads-campaigns", async (request, reply) => {
+    if (request.userRole === "guest") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+
+    const paramResult = projectIdParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.code(400).send({ error: "ID invalido" });
+    }
+
+    const [link] = await fastify.db
+      .select({ accountId: googleAdsAccountProjects.accountId })
+      .from(googleAdsAccountProjects)
+      .where(eq(googleAdsAccountProjects.projectId, paramResult.data.projectId))
+      .limit(1);
+
+    if (!link) {
+      return { campaigns: [], accountLinked: false, accountId: null };
+    }
+
+    const [account] = await fastify.db
+      .select()
+      .from(googleAdsAccounts)
+      .where(eq(googleAdsAccounts.id, link.accountId))
+      .limit(1);
+
+    if (!account) {
+      return { campaigns: [], accountLinked: false, accountId: null };
+    }
+
+    try {
+      const developerToken = decryptGoogleToken(account.developerTokenEncrypted, account.developerTokenIv);
+      const refreshToken = decryptGoogleToken(account.refreshTokenEncrypted, account.refreshTokenIv);
+      const campaigns = await fetchGoogleAdsCampaigns(account.customerId, developerToken, refreshToken, 90);
+      return {
+        campaigns: campaigns.map((c) => ({
+          id: c.id,
+          name: c.name,
+          status: c.status,
+        })),
+        accountLinked: true,
+        accountId: account.id,
+      };
+    } catch (err) {
+      return reply.code(502).send({
+        error: "Erro ao buscar campanhas do Google Ads",
         details: err instanceof Error ? err.message : String(err),
       });
     }

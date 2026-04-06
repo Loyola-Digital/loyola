@@ -133,3 +133,31 @@ export function useCampaignPicker(projectId: string | null) {
     }),
   });
 }
+
+// ============================================================
+// GOOGLE ADS CAMPAIGN PICKER
+// ============================================================
+
+interface GoogleCampaignPickerResponse {
+  campaigns: { id: string; name: string; status: string }[];
+  accountLinked: boolean;
+  accountId: string | null;
+}
+
+export function useGoogleAdsCampaignPicker(projectId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["google-ads-campaigns-picker", projectId],
+    queryFn: () =>
+      apiClient<GoogleCampaignPickerResponse>(
+        `/api/projects/${projectId}/google-ads-campaigns`
+      ),
+    enabled: !!projectId,
+    staleTime: FUNNEL_STALE_TIME,
+    select: (data) => ({
+      campaigns: data.campaigns.filter((c) => c.status !== "REMOVED"),
+      accountLinked: data.accountLinked,
+      accountId: data.accountId,
+    }),
+  });
+}

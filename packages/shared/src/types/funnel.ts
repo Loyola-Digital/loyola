@@ -12,6 +12,8 @@ export interface Funnel {
   type: FunnelType;
   metaAccountId: string | null;
   campaigns: FunnelCampaign[];
+  googleAdsAccountId: string | null;
+  googleAdsCampaigns: FunnelCampaign[];
   createdAt: string;
   updatedAt: string;
 }
