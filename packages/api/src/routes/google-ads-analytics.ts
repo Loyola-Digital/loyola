@@ -7,6 +7,9 @@ import {
   fetchGoogleAdsOverview,
   fetchGoogleAdsDailyInsights,
   fetchGoogleAdsCampaigns,
+  fetchGoogleAdsAdGroups,
+  fetchGoogleAdsAds,
+  fetchGoogleAdsTopPerformers,
 } from "../services/google-ads.js";
 
 const accountIdParamSchema = z.object({
@@ -149,6 +152,95 @@ export default fp(async function googleAdsAnalyticsRoutes(fastify) {
           error: "Erro ao buscar campanhas do Google Ads",
           details: err instanceof Error ? err.message : String(err),
         });
+      }
+    }
+  );
+
+  // ---- GET /api/google-ads/analytics/:accountId/adgroups ----
+  const adGroupQuerySchema = z.object({
+    campaignId: z.string().min(1),
+    days: z.coerce.number().int().min(1).max(365).default(30),
+  });
+
+  fastify.get(
+    "/api/google-ads/analytics/:accountId/adgroups",
+    async (request, reply) => {
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+      const paramResult = accountIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) return reply.code(400).send({ error: "accountId invalido" });
+      const queryResult = adGroupQuerySchema.safeParse(request.query);
+      if (!queryResult.success) return reply.code(400).send({ error: "campaignId obrigatorio" });
+
+      const account = await getAccount(paramResult.data.accountId, request.userRole!);
+      if (!account) return reply.code(404).send({ error: "Conta nao encontrada" });
+
+      try {
+        const adGroups = await fetchGoogleAdsAdGroups(
+          account.customerId, account.developerToken, account.refreshToken,
+          queryResult.data.campaignId, queryResult.data.days
+        );
+        return { adGroups };
+      } catch (err) {
+        return reply.code(502).send({ error: "Erro ao buscar ad groups", details: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  );
+
+  // ---- GET /api/google-ads/analytics/:accountId/ads ----
+  const adsQuerySchema = z.object({
+    adGroupId: z.string().min(1),
+    days: z.coerce.number().int().min(1).max(365).default(30),
+  });
+
+  fastify.get(
+    "/api/google-ads/analytics/:accountId/ads",
+    async (request, reply) => {
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+      const paramResult = accountIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) return reply.code(400).send({ error: "accountId invalido" });
+      const queryResult = adsQuerySchema.safeParse(request.query);
+      if (!queryResult.success) return reply.code(400).send({ error: "adGroupId obrigatorio" });
+
+      const account = await getAccount(paramResult.data.accountId, request.userRole!);
+      if (!account) return reply.code(404).send({ error: "Conta nao encontrada" });
+
+      try {
+        const ads = await fetchGoogleAdsAds(
+          account.customerId, account.developerToken, account.refreshToken,
+          queryResult.data.adGroupId, queryResult.data.days
+        );
+        return { ads };
+      } catch (err) {
+        return reply.code(502).send({ error: "Erro ao buscar ads", details: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  );
+
+  // ---- GET /api/google-ads/analytics/:accountId/top-performers ----
+  const topQuerySchema = z.object({
+    days: z.coerce.number().int().min(1).max(365).default(30),
+    limit: z.coerce.number().int().min(1).max(20).default(10),
+  });
+
+  fastify.get(
+    "/api/google-ads/analytics/:accountId/top-performers",
+    async (request, reply) => {
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+      const paramResult = accountIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) return reply.code(400).send({ error: "accountId invalido" });
+      const queryResult = topQuerySchema.safeParse(request.query);
+      const { days, limit } = queryResult.success ? queryResult.data : { days: 30, limit: 10 };
+
+      const account = await getAccount(paramResult.data.accountId, request.userRole!);
+      if (!account) return reply.code(404).send({ error: "Conta nao encontrada" });
+
+      try {
+        const topPerformers = await fetchGoogleAdsTopPerformers(
+          account.customerId, account.developerToken, account.refreshToken, days, limit
+        );
+        return { topPerformers };
+      } catch (err) {
+        return reply.code(502).send({ error: "Erro ao buscar top performers", details: err instanceof Error ? err.message : String(err) });
       }
     }
   );

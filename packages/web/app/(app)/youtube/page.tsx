@@ -10,6 +10,11 @@ import {
   Target,
   TrendingUp,
   Youtube,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  X,
+  ChevronLeft,
 } from "lucide-react";
 import {
   LineChart,
@@ -34,8 +39,13 @@ import {
   useGoogleAdsOverview,
   useGoogleAdsDailyInsights,
   useGoogleAdsCampaigns,
+  useGoogleAdsAdGroups,
+  useGoogleAdsAds,
+  useGoogleAdsTopPerformers,
   type GoogleAdsCampaign,
+  type GoogleAdsAd,
 } from "@/lib/hooks/use-google-ads-analytics";
+import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -129,10 +139,11 @@ function RetentionBar({ retention }: { retention: { p25: number; p50: number; p7
 }
 
 // ============================================================
-// CAMPAIGN TABLE
+// CAMPAIGN TABLE WITH DRILL-DOWN
 // ============================================================
 
-function CampaignTable({ campaigns }: { campaigns: GoogleAdsCampaign[] }) {
+function CampaignTable({ campaigns, accountId, days }: { campaigns: GoogleAdsCampaign[]; accountId: string; days: number }) {
+  const [expanded, setExpanded] = useState<string | null>(null);
   if (campaigns.length === 0) return null;
 
   return (
@@ -156,21 +167,262 @@ function CampaignTable({ campaigns }: { campaigns: GoogleAdsCampaign[] }) {
             </tr>
           </thead>
           <tbody>
-            {campaigns.map((c) => (
-              <tr key={c.id} className="border-t border-border/20 hover:bg-muted/30">
-                <td className="py-2 px-3 text-xs font-medium">{c.name}</td>
-                <td className="py-2 px-2 text-xs text-right font-medium">{fmtCurrency(c.spend)}</td>
-                <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.views)}</td>
-                <td className="py-2 px-2 text-xs text-right">{fmtCurrency(c.cpv)}</td>
-                <td className="py-2 px-2 text-xs text-right">{fmtPercent(c.viewRate)}</td>
-                <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.impressions)}</td>
-                <td className="py-2 px-2 text-xs text-right">{fmtPercent(c.ctr)}</td>
-                <td className="py-2 px-2 text-xs text-right">{fmtCurrency(c.cpc)}</td>
-                <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.conversions)}</td>
-              </tr>
-            ))}
+            {campaigns.map((c) => {
+              const isExpanded = expanded === c.id;
+              return (
+                <CampaignRow key={c.id} campaign={c} isExpanded={isExpanded} onToggle={() => setExpanded(isExpanded ? null : c.id)} accountId={accountId} days={days} />
+              );
+            })}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function CampaignRow({ campaign: c, isExpanded, onToggle, accountId, days }: { campaign: GoogleAdsCampaign; isExpanded: boolean; onToggle: () => void; accountId: string; days: number }) {
+  return (
+    <>
+      <tr className="border-t border-border/20 hover:bg-muted/30 cursor-pointer" onClick={onToggle}>
+        <td className="py-2 px-3 text-xs font-medium">
+          <span className="inline-flex items-center gap-1">
+            {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {c.name}
+          </span>
+        </td>
+        <td className="py-2 px-2 text-xs text-right font-medium">{fmtCurrency(c.spend)}</td>
+        <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.views)}</td>
+        <td className="py-2 px-2 text-xs text-right">{fmtCurrency(c.cpv)}</td>
+        <td className="py-2 px-2 text-xs text-right">{fmtPercent(c.viewRate)}</td>
+        <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.impressions)}</td>
+        <td className="py-2 px-2 text-xs text-right">{fmtPercent(c.ctr)}</td>
+        <td className="py-2 px-2 text-xs text-right">{fmtCurrency(c.cpc)}</td>
+        <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.conversions)}</td>
+      </tr>
+      {isExpanded && <DrillDownAdGroups accountId={accountId} campaignId={c.id} days={days} />}
+    </>
+  );
+}
+
+function DrillDownAdGroups({ accountId, campaignId, days }: { accountId: string; campaignId: string; days: number }) {
+  const { data, isLoading } = useGoogleAdsAdGroups(accountId, campaignId, days);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  if (isLoading) return <tr><td colSpan={9} className="py-2 px-4"><Skeleton className="h-8" /></td></tr>;
+  if (!data?.adGroups?.length) return <tr><td colSpan={9} className="py-2 px-8 text-xs text-muted-foreground">Nenhum ad group</td></tr>;
+
+  return (
+    <>
+      {data.adGroups.map((ag) => (
+        <DrillDownAdGroupRow key={ag.id} adGroup={ag} isExpanded={expanded === ag.id} onToggle={() => setExpanded(expanded === ag.id ? null : ag.id)} accountId={accountId} days={days} />
+      ))}
+    </>
+  );
+}
+
+function DrillDownAdGroupRow({ adGroup: ag, isExpanded, onToggle, accountId, days }: { adGroup: { id: string; name: string; spend: number; views: number; cpv: number | null; viewRate: number | null; impressions: number; ctr: number; cpc: number; conversions: number; clicks: number }; isExpanded: boolean; onToggle: () => void; accountId: string; days: number }) {
+  return (
+    <>
+      <tr className="border-t border-border/10 bg-muted/20 hover:bg-muted/40 cursor-pointer" onClick={onToggle}>
+        <td className="py-1.5 px-3 text-[11px] pl-8">
+          <span className="inline-flex items-center gap-1">
+            {isExpanded ? <ChevronDown className="h-2.5 w-2.5" /> : <ChevronRight className="h-2.5 w-2.5" />}
+            {ag.name}
+          </span>
+        </td>
+        <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(ag.spend)}</td>
+        <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(ag.views)}</td>
+        <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(ag.cpv)}</td>
+        <td className="py-1.5 px-2 text-[11px] text-right">{fmtPercent(ag.viewRate)}</td>
+        <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(ag.impressions)}</td>
+        <td className="py-1.5 px-2 text-[11px] text-right">{fmtPercent(ag.ctr)}</td>
+        <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(ag.cpc)}</td>
+        <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(ag.conversions)}</td>
+      </tr>
+      {isExpanded && <DrillDownAds accountId={accountId} adGroupId={ag.id} days={days} />}
+    </>
+  );
+}
+
+function DrillDownAds({ accountId, adGroupId, days }: { accountId: string; adGroupId: string; days: number }) {
+  const { data, isLoading } = useGoogleAdsAds(accountId, adGroupId, days);
+  if (isLoading) return <tr><td colSpan={9} className="py-1 px-4"><Skeleton className="h-6" /></td></tr>;
+  if (!data?.ads?.length) return <tr><td colSpan={9} className="py-1 px-12 text-xs text-muted-foreground">Nenhum ad</td></tr>;
+
+  return (
+    <>
+      {data.ads.map((ad) => (
+        <tr key={ad.id} className="border-t border-border/10 bg-muted/10 hover:bg-muted/30">
+          <td className="py-1.5 px-3 text-[11px] pl-14">
+            <span className="inline-flex items-center gap-2">
+              {ad.thumbnailUrl ? (
+                <img src={ad.thumbnailUrl} alt="" className="w-16 h-9 object-cover rounded shrink-0" />
+              ) : null}
+              <span className="truncate">{ad.name}</span>
+              {ad.type.includes("VIDEO") && <Badge variant="outline" className="text-[9px] px-1 py-0">Video</Badge>}
+            </span>
+          </td>
+          <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(ad.spend)}</td>
+          <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(ad.views)}</td>
+          <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(ad.cpv)}</td>
+          <td className="py-1.5 px-2 text-[11px] text-right">{fmtPercent(ad.viewRate)}</td>
+          <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(ad.impressions)}</td>
+          <td className="py-1.5 px-2 text-[11px] text-right">{fmtPercent(ad.ctr)}</td>
+          <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(ad.cpc)}</td>
+          <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(ad.conversions)}</td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+// ============================================================
+// CREATIVE GALLERY
+// ============================================================
+
+function CreativeGallery({ accountId, days }: { accountId: string; days: number }) {
+  const { data, isLoading } = useGoogleAdsTopPerformers(accountId, days, 12);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  if (isLoading) return <Skeleton className="h-64 rounded-xl" />;
+  if (!data?.topPerformers?.length) return null;
+
+  const withThumbnails = data.topPerformers.filter((ad) => ad.thumbnailUrl);
+  if (withThumbnails.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold">Top Criativos YouTube</h3>
+        <p className="text-[11px] text-muted-foreground">{withThumbnails.length} videos com preview</p>
+      </div>
+
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        {withThumbnails.map((ad, i) => (
+          <div
+            key={ad.id}
+            className="group rounded-lg border border-border/20 bg-muted/10 overflow-hidden hover:border-border/50 transition-all hover:shadow-md cursor-pointer"
+            onClick={() => setLightboxIndex(i)}
+          >
+            <div className="relative aspect-video bg-muted/30">
+              <img src={ad.thumbnailUrl!} alt={ad.name} className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute bottom-0 left-0 right-0 p-2.5 text-white">
+                  <div className="grid grid-cols-3 gap-1 text-[10px]">
+                    <div><p className="opacity-60">Spend</p><p className="font-semibold">{fmtCurrency(ad.spend)}</p></div>
+                    <div><p className="opacity-60">CPV</p><p className="font-semibold">{fmtCurrency(ad.cpv)}</p></div>
+                    <div><p className="opacity-60">Views</p><p className="font-semibold">{fmtNumber(ad.views)}</p></div>
+                  </div>
+                </div>
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="rounded-full bg-black/40 p-2 group-hover:bg-black/60 transition-colors">
+                  <Play className="h-4 w-4 text-white fill-white" />
+                </div>
+              </div>
+              <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
+                {ad.youtubeVideoId && (
+                  <a
+                    href={`https://www.youtube.com/watch?v=${ad.youtubeVideoId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity rounded bg-black/50 p-1 text-white hover:bg-black/70 backdrop-blur-sm"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+                <span className="text-[10px] font-bold bg-black/50 text-white rounded px-1.5 py-0.5 backdrop-blur-sm">#{i + 1}</span>
+              </div>
+            </div>
+            <div className="p-2.5 space-y-1">
+              <p className="text-[11px] font-medium truncate">{ad.name}</p>
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                <span>{fmtNumber(ad.views)} views</span>
+                <span>{fmtPercent(ad.viewRate)} view rate</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Lightbox */}
+      {lightboxIndex !== null && (
+        <YouTubeLightbox
+          ads={withThumbnails}
+          initialIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function YouTubeLightbox({ ads, initialIndex, onClose }: { ads: GoogleAdsAd[]; initialIndex: number; onClose: () => void }) {
+  const [index, setIndex] = useState(initialIndex);
+  const ad = ads[index];
+  const prev = () => setIndex((i) => (i - 1 + ads.length) % ads.length);
+  const next = () => setIndex((i) => (i + 1) % ads.length);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-3xl w-full m-4 overflow-hidden max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border/30 shrink-0">
+          <span className="text-sm font-medium truncate">{ad.name}</span>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs text-muted-foreground">{index + 1} / {ads.length}</span>
+            {ad.youtubeVideoId && (
+              <a href={`https://www.youtube.com/watch?v=${ad.youtubeVideoId}`} target="_blank" rel="noopener noreferrer" className="rounded-full p-1 hover:bg-muted text-muted-foreground hover:text-foreground">
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            )}
+            <button onClick={onClose} className="rounded-full p-1 hover:bg-muted"><X className="h-4 w-4" /></button>
+          </div>
+        </div>
+        <div className="relative bg-black">
+          {ad.youtubeVideoId ? (
+            <iframe
+              key={ad.youtubeVideoId}
+              src={`https://www.youtube.com/embed/${ad.youtubeVideoId}?autoplay=1&rel=0`}
+              className="w-full aspect-video border-0"
+              allow="autoplay; encrypted-media; fullscreen"
+              allowFullScreen
+            />
+          ) : (
+            <img src={ad.thumbnailUrl!} alt={ad.name} className="w-full aspect-video object-contain" />
+          )}
+          {ads.length > 1 && (
+            <>
+              <button onClick={(e) => { e.stopPropagation(); prev(); }} className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 hover:bg-black/70 p-2 text-white"><ChevronLeft className="h-5 w-5" /></button>
+              <button onClick={(e) => { e.stopPropagation(); next(); }} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 hover:bg-black/70 p-2 text-white"><ChevronRight className="h-5 w-5" /></button>
+            </>
+          )}
+        </div>
+        <div className="p-4 space-y-3 shrink-0">
+          <div className="grid grid-cols-6 gap-3">
+            {[
+              { label: "Spend", value: fmtCurrency(ad.spend) },
+              { label: "Views", value: fmtNumber(ad.views) },
+              { label: "CPV", value: fmtCurrency(ad.cpv) },
+              { label: "View Rate", value: fmtPercent(ad.viewRate) },
+              { label: "CTR", value: fmtPercent(ad.ctr) },
+              { label: "Conv", value: fmtNumber(ad.conversions) },
+            ].map((m) => (
+              <div key={m.label} className="text-center">
+                <p className="text-[10px] text-muted-foreground">{m.label}</p>
+                <p className="text-sm font-semibold">{m.value}</p>
+              </div>
+            ))}
+          </div>
+          {(ad.retention.p25 > 0 || ad.retention.p100 > 0) && (
+            <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
+              <span>Retencao:</span>
+              <span>25%: <strong className="text-foreground">{(ad.retention.p25 * 100).toFixed(1)}%</strong></span>
+              <span>50%: <strong className="text-foreground">{(ad.retention.p50 * 100).toFixed(1)}%</strong></span>
+              <span>75%: <strong className="text-foreground">{(ad.retention.p75 * 100).toFixed(1)}%</strong></span>
+              <span>100%: <strong className="text-foreground">{(ad.retention.p100 * 100).toFixed(1)}%</strong></span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -335,11 +587,14 @@ export default function YouTubeDashboardPage() {
         )}
       </div>
 
-      {/* Campaign Table */}
+      {/* Creative Gallery */}
+      {activeAccountId && <CreativeGallery accountId={activeAccountId} days={days > 0 ? days : 30} />}
+
+      {/* Campaign Table with drill-down */}
       {campaignsLoading ? (
         <Skeleton className="h-48 rounded-xl" />
-      ) : campaignData?.campaigns && campaignData.campaigns.length > 0 ? (
-        <CampaignTable campaigns={campaignData.campaigns} />
+      ) : campaignData?.campaigns && campaignData.campaigns.length > 0 && activeAccountId ? (
+        <CampaignTable campaigns={campaignData.campaigns} accountId={activeAccountId} days={days > 0 ? days : 30} />
       ) : null}
     </div>
   );

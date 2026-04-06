@@ -411,6 +411,306 @@ export async function fetchGoogleAdsCampaigns(
 }
 
 // ============================================================
+// ANALYTICS — AD GROUPS
+// ============================================================
+
+export interface GoogleAdsAdGroup {
+  id: string;
+  name: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  views: number;
+  cpv: number | null;
+  viewRate: number | null;
+  ctr: number;
+  cpc: number;
+  conversions: number;
+}
+
+export async function fetchGoogleAdsAdGroups(
+  customerId: string,
+  developerToken: string,
+  refreshToken: string,
+  campaignId: string,
+  days: number
+): Promise<GoogleAdsAdGroup[]> {
+  const accessToken = await getAccessToken(refreshToken, customerId);
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+
+  const results = await queryGoogleAds(
+    customerId, developerToken, accessToken,
+    `SELECT
+      ad_group.id, ad_group.name,
+      metrics.cost_micros, metrics.impressions, metrics.clicks,
+      metrics.video_views, metrics.conversions
+    FROM ad_group
+    WHERE campaign.id = ${campaignId}
+      AND segments.date BETWEEN '${start.toISOString().slice(0, 10)}' AND '${end.toISOString().slice(0, 10)}'`
+  );
+
+  return results.map((row) => {
+    const ag = row.adGroup as { id?: string; name?: string } | undefined;
+    const m = row.metrics as Record<string, unknown> | undefined;
+    const spend = microsToCurrency(m?.costMicros as string | number | undefined);
+    const impressions = Number(m?.impressions || 0);
+    const clicks = Number(m?.clicks || 0);
+    const views = Number(m?.videoViews || 0);
+    return {
+      id: String(ag?.id ?? ""),
+      name: String(ag?.name ?? ""),
+      spend, impressions, clicks, views,
+      cpv: views > 0 ? spend / views : null,
+      viewRate: impressions > 0 ? (views / impressions) * 100 : null,
+      ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+      cpc: clicks > 0 ? spend / clicks : 0,
+      conversions: Number(m?.conversions || 0),
+    };
+  }).sort((a, b) => b.spend - a.spend);
+}
+
+// ============================================================
+// ANALYTICS — ADS WITH VIDEO DATA
+// ============================================================
+
+export interface GoogleAdsAd {
+  id: string;
+  name: string;
+  type: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  views: number;
+  cpv: number | null;
+  viewRate: number | null;
+  ctr: number;
+  cpc: number;
+  conversions: number;
+  retention: { p25: number; p50: number; p75: number; p100: number };
+  youtubeVideoId: string | null;
+  thumbnailUrl: string | null;
+}
+
+export async function fetchGoogleAdsAds(
+  customerId: string,
+  developerToken: string,
+  refreshToken: string,
+  adGroupId: string,
+  days: number
+): Promise<GoogleAdsAd[]> {
+  const accessToken = await getAccessToken(refreshToken, customerId);
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+
+  const results = await queryGoogleAds(
+    customerId, developerToken, accessToken,
+    `SELECT
+      ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type,
+      metrics.cost_micros, metrics.impressions, metrics.clicks,
+      metrics.video_views, metrics.conversions,
+      metrics.video_quartile_p25_rate, metrics.video_quartile_p50_rate,
+      metrics.video_quartile_p75_rate, metrics.video_quartile_p100_rate
+    FROM ad_group_ad
+    WHERE ad_group.id = ${adGroupId}
+      AND segments.date BETWEEN '${start.toISOString().slice(0, 10)}' AND '${end.toISOString().slice(0, 10)}'`
+  );
+
+  // Collect Google Ads video resource names to resolve YouTube IDs
+  const ads = results.map((row) => {
+    const adData = row.adGroupAd as { ad?: { id?: string; name?: string; type?: string } } | undefined;
+    const ad = adData?.ad;
+    const m = row.metrics as Record<string, unknown> | undefined;
+    const spend = microsToCurrency(m?.costMicros as string | number | undefined);
+    const impressions = Number(m?.impressions || 0);
+    const clicks = Number(m?.clicks || 0);
+    const views = Number(m?.videoViews || 0);
+    return {
+      id: String(ad?.id ?? ""),
+      name: String(ad?.name ?? ""),
+      type: String(ad?.type ?? ""),
+      spend, impressions, clicks, views,
+      cpv: views > 0 ? spend / views : null,
+      viewRate: impressions > 0 ? (views / impressions) * 100 : null,
+      ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+      cpc: clicks > 0 ? spend / clicks : 0,
+      conversions: Number(m?.conversions || 0),
+      retention: {
+        p25: safeRate(m?.videoQuartileP25Rate),
+        p50: safeRate(m?.videoQuartileP50Rate),
+        p75: safeRate(m?.videoQuartileP75Rate),
+        p100: safeRate(m?.videoQuartileP100Rate),
+      },
+      youtubeVideoId: null as string | null,
+      thumbnailUrl: null as string | null,
+    };
+  }).sort((a, b) => b.spend - a.spend);
+
+  // Try to resolve YouTube video IDs for video ads
+  const videoAdIds = ads.filter((a) => a.type.includes("VIDEO")).map((a) => a.id);
+  if (videoAdIds.length > 0) {
+    try {
+      const videoResults = await queryGoogleAds(
+        customerId, developerToken, accessToken,
+        `SELECT ad_group_ad.ad.id, ad_group_ad.ad.video_ad.video.id
+        FROM ad_group_ad
+        WHERE ad_group_ad.ad.id IN (${videoAdIds.join(",")})
+          AND ad_group_ad.ad.type = 'VIDEO_AD'`
+      );
+      // Map Google video resource to YouTube video ID
+      const googleVideoIds = new Set<string>();
+      const adVideoMap = new Map<string, string>();
+      for (const row of videoResults) {
+        const adData = row.adGroupAd as { ad?: { id?: string; videoAd?: { video?: { id?: string } } } } | undefined;
+        const adId = String(adData?.ad?.id ?? "");
+        const videoId = String(adData?.ad?.videoAd?.video?.id ?? "");
+        if (adId && videoId) {
+          adVideoMap.set(adId, videoId);
+          googleVideoIds.add(videoId);
+        }
+      }
+      // Resolve Google video IDs to YouTube video IDs
+      if (googleVideoIds.size > 0) {
+        const ytResults = await queryGoogleAds(
+          customerId, developerToken, accessToken,
+          `SELECT video.id, video.youtube_video_id
+          FROM video
+          WHERE video.id IN (${Array.from(googleVideoIds).join(",")})`
+        );
+        const ytMap = new Map<string, string>();
+        for (const row of ytResults) {
+          const v = row.video as { id?: string; youtubeVideoId?: string } | undefined;
+          if (v?.id && v?.youtubeVideoId) {
+            ytMap.set(v.id, v.youtubeVideoId);
+          }
+        }
+        // Assign YouTube IDs and thumbnails to ads
+        for (const ad of ads) {
+          const googleVideoId = adVideoMap.get(ad.id);
+          if (googleVideoId) {
+            const ytId = ytMap.get(googleVideoId);
+            if (ytId) {
+              ad.youtubeVideoId = ytId;
+              ad.thumbnailUrl = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
+            }
+          }
+        }
+      }
+    } catch {
+      // Graceful — ads still returned without video info
+    }
+  }
+
+  return ads;
+}
+
+// ============================================================
+// TOP PERFORMERS (for gallery)
+// ============================================================
+
+export async function fetchGoogleAdsTopPerformers(
+  customerId: string,
+  developerToken: string,
+  refreshToken: string,
+  days: number,
+  limit: number = 10
+): Promise<GoogleAdsAd[]> {
+  const accessToken = await getAccessToken(refreshToken, customerId);
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+
+  const results = await queryGoogleAds(
+    customerId, developerToken, accessToken,
+    `SELECT
+      ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type,
+      metrics.cost_micros, metrics.impressions, metrics.clicks,
+      metrics.video_views, metrics.conversions,
+      metrics.video_quartile_p25_rate, metrics.video_quartile_p50_rate,
+      metrics.video_quartile_p75_rate, metrics.video_quartile_p100_rate
+    FROM ad_group_ad
+    WHERE segments.date BETWEEN '${start.toISOString().slice(0, 10)}' AND '${end.toISOString().slice(0, 10)}'
+      AND ad_group_ad.ad.type = 'VIDEO_AD'
+      AND metrics.impressions > 0
+    ORDER BY metrics.video_views DESC
+    LIMIT ${limit}`
+  );
+
+  const ads: GoogleAdsAd[] = results.map((row) => {
+    const adData = row.adGroupAd as { ad?: { id?: string; name?: string; type?: string } } | undefined;
+    const ad = adData?.ad;
+    const m = row.metrics as Record<string, unknown> | undefined;
+    const spend = microsToCurrency(m?.costMicros as string | number | undefined);
+    const impressions = Number(m?.impressions || 0);
+    const clicks = Number(m?.clicks || 0);
+    const views = Number(m?.videoViews || 0);
+    return {
+      id: String(ad?.id ?? ""),
+      name: String(ad?.name ?? ""),
+      type: String(ad?.type ?? ""),
+      spend, impressions, clicks, views,
+      cpv: views > 0 ? spend / views : null,
+      viewRate: impressions > 0 ? (views / impressions) * 100 : null,
+      ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+      cpc: clicks > 0 ? spend / clicks : 0,
+      conversions: Number(m?.conversions || 0),
+      retention: {
+        p25: safeRate(m?.videoQuartileP25Rate),
+        p50: safeRate(m?.videoQuartileP50Rate),
+        p75: safeRate(m?.videoQuartileP75Rate),
+        p100: safeRate(m?.videoQuartileP100Rate),
+      },
+      youtubeVideoId: null,
+      thumbnailUrl: null,
+    };
+  });
+
+  // Resolve YouTube video IDs in bulk
+  const adIds = ads.map((a) => a.id);
+  if (adIds.length > 0) {
+    try {
+      const videoResults = await queryGoogleAds(
+        customerId, developerToken, accessToken,
+        `SELECT ad_group_ad.ad.id, ad_group_ad.ad.video_ad.video.id
+        FROM ad_group_ad
+        WHERE ad_group_ad.ad.id IN (${adIds.join(",")})
+          AND ad_group_ad.ad.type = 'VIDEO_AD'`
+      );
+      const googleVideoIds = new Set<string>();
+      const adVideoMap = new Map<string, string>();
+      for (const row of videoResults) {
+        const d = row.adGroupAd as { ad?: { id?: string; videoAd?: { video?: { id?: string } } } } | undefined;
+        const aId = String(d?.ad?.id ?? "");
+        const vId = String(d?.ad?.videoAd?.video?.id ?? "");
+        if (aId && vId) { adVideoMap.set(aId, vId); googleVideoIds.add(vId); }
+      }
+      if (googleVideoIds.size > 0) {
+        const ytResults = await queryGoogleAds(
+          customerId, developerToken, accessToken,
+          `SELECT video.id, video.youtube_video_id FROM video WHERE video.id IN (${Array.from(googleVideoIds).join(",")})`
+        );
+        const ytMap = new Map<string, string>();
+        for (const row of ytResults) {
+          const v = row.video as { id?: string; youtubeVideoId?: string } | undefined;
+          if (v?.id && v?.youtubeVideoId) ytMap.set(v.id, v.youtubeVideoId);
+        }
+        for (const ad of ads) {
+          const gvId = adVideoMap.get(ad.id);
+          if (gvId) {
+            const ytId = ytMap.get(gvId);
+            if (ytId) { ad.youtubeVideoId = ytId; ad.thumbnailUrl = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`; }
+          }
+        }
+      }
+    } catch { /* graceful */ }
+  }
+
+  return ads;
+}
+
+// ============================================================
 // DECRYPT HELPER
 // ============================================================
 
