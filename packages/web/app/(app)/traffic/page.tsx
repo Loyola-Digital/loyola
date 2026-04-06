@@ -1489,7 +1489,7 @@ function TrafficPageContent() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [days, setDays] = useState(30);
   const [customDays, setCustomDays] = useState("");
-  const isCustomPeriod = !PERIOD_OPTIONS.find((o) => o.value === days);
+  const [isCustomPeriod, setIsCustomPeriod] = useState(false);
 
   // Support ?project=xxx for project-scoped access
   const forceProjectId = searchParams.get("project") ?? undefined;
@@ -1661,9 +1661,10 @@ function TrafficPageContent() {
                 value={isCustomPeriod ? "custom" : String(days)}
                 onValueChange={(v) => {
                   if (v === "custom") {
-                    setCustomDays(String(days));
-                    setDays(-1);
+                    setIsCustomPeriod(true);
+                    setCustomDays("");
                   } else {
+                    setIsCustomPeriod(false);
                     setDays(Number(v));
                     setCustomDays("");
                   }

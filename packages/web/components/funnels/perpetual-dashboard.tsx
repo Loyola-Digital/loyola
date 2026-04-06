@@ -91,7 +91,7 @@ function safeNum(val: string | undefined): number {
 export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProps) {
   const [days, setDays] = useState(30);
   const [customDays, setCustomDays] = useState("");
-  const isCustom = !PERIOD_OPTIONS.find((o) => o.value === days);
+  const [isCustom, setIsCustom] = useState(false);
   const campaignIds = funnel.campaigns.map((c) => c.id);
   const campaignIdSet = new Set(campaignIds);
   const firstCampaignId = campaignIds[0] ?? null;
@@ -155,9 +155,10 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
           value={isCustom ? "custom" : String(days)}
           onValueChange={(v) => {
             if (v === "custom") {
-              setCustomDays(String(days));
-              setDays(-1);
+              setIsCustom(true);
+              setCustomDays("");
             } else {
+              setIsCustom(false);
               setDays(Number(v));
               setCustomDays("");
             }
