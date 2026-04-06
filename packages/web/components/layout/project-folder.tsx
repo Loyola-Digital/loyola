@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2, Share2 } from "lucide-react";
+import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2, Share2, Youtube } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -46,6 +46,7 @@ const SOCIAL_SUBITEMS = [
 
 const PROJECT_SUBITEMS = [
   { label: "Ads", href: "traffic", icon: TrendingUp },
+  { label: "YouTube Ads", href: "youtube", icon: Youtube },
   { label: "Conversas", href: "conversations", icon: MessageSquare },
 ] as const;
 
