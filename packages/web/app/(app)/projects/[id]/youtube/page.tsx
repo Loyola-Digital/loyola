@@ -97,7 +97,7 @@ export default function ProjectYouTubePage() {
   const linkedAccount = accounts?.find((a) =>
     a.projects.some((p) => p.projectId === projectId)
   );
-  const accountId = linkedAccount?.id ?? null;
+  const accountId = linkedAccount?.id ?? pickerData?.accountId ?? null;
 
   const { data: overview, isLoading: overviewLoading } = useGoogleAdsOverview(accountId, days > 0 ? days : 30);
   const { data: dailyData, isLoading: dailyLoading } = useGoogleAdsDailyInsights(accountId, days > 0 ? days : 30);

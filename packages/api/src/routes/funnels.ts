@@ -377,10 +377,14 @@ export default fp(async function funnelRoutes(fastify) {
         accountId: account.id,
       };
     } catch (err) {
-      return reply.code(502).send({
-        error: "Erro ao buscar campanhas do Google Ads",
-        details: err instanceof Error ? err.message : String(err),
-      });
+      // Account IS linked, but campaigns couldn't be fetched (API error, test token, etc)
+      fastify.log.error({ err }, "[google-ads-campaigns] failed to fetch campaigns");
+      return {
+        campaigns: [],
+        accountLinked: true,
+        accountId: account.id,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   });
 });
