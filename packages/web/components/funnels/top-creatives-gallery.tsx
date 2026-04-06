@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Play, ChevronLeft, ChevronRight, X, ExternalLink } from "lucide-react";
+import { Play, ChevronLeft, ChevronRight, X, ExternalLink, Maximize2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -128,6 +128,16 @@ function CreativeLightbox({ items, initialIndex, projectId, onClose }: {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-xs text-muted-foreground">{index + 1} / {items.length}</span>
+            <a
+              href={creativeImgSrc(item.creative)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-full p-1 hover:bg-muted text-muted-foreground hover:text-foreground"
+              title="Abrir imagem original"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Maximize2 className="h-4 w-4" />
+            </a>
             <button onClick={onClose} className="rounded-full p-1 hover:bg-muted"><X className="h-4 w-4" /></button>
           </div>
         </div>
@@ -362,8 +372,18 @@ export function TopCreativesGallery({ projectId, days, campaignIds }: TopCreativ
                   </div>
                 </div>
               )}
-              {/* Rank */}
-              <div className="absolute top-1.5 right-1.5">
+              {/* Rank + open in new tab */}
+              <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
+                <a
+                  href={creativeImgSrc(ad.creative)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity rounded bg-black/50 p-1 text-white hover:bg-black/70 backdrop-blur-sm"
+                  title="Abrir em nova guia"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ExternalLink className="h-3 w-3" />
+                </a>
                 <span className="text-[10px] font-bold bg-black/50 text-white rounded px-1.5 py-0.5 backdrop-blur-sm">
                   #{i + 1}
                 </span>

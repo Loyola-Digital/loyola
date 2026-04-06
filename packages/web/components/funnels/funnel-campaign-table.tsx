@@ -10,6 +10,7 @@ import {
   ImageIcon,
   X,
   ExternalLink,
+  Maximize2,
 } from "lucide-react";
 import {
   AreaChart,
@@ -156,6 +157,16 @@ function CreativeLightbox({ items, initialIndex, projectId, onClose }: {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-xs text-muted-foreground">{index + 1} / {items.length}</span>
+            <a
+              href={item.creative.imageUrl || item.creative.thumbnailUrl || ""}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-full p-1 hover:bg-muted text-muted-foreground hover:text-foreground"
+              title="Abrir imagem original"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Maximize2 className="h-4 w-4" />
+            </a>
             <button onClick={onClose} className="rounded-full p-1 hover:bg-muted"><X className="h-4 w-4" /></button>
           </div>
         </div>
