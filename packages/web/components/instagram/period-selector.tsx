@@ -20,7 +20,7 @@ import { format, subDays, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { DateRange } from "react-day-picker";
 
-export type PeriodValue = "7d" | "14d" | "30d" | "90d" | "custom";
+export type PeriodValue = "1d" | "2d" | "3d" | "5d" | "7d" | "14d" | "30d" | "90d" | "custom";
 
 export interface PeriodConfig {
   period: PeriodValue;
@@ -34,7 +34,7 @@ interface PeriodSelectorProps {
 }
 
 function periodToConfig(period: Exclude<PeriodValue, "custom">): PeriodConfig {
-  const days = { "7d": 7, "14d": 14, "30d": 30, "90d": 90 }[period];
+  const days = { "1d": 1, "2d": 2, "3d": 3, "5d": 5, "7d": 7, "14d": 14, "30d": 30, "90d": 90 }[period];
   const until = Math.floor(Date.now() / 1000);
   const since = Math.floor(subDays(new Date(), days).getTime() / 1000);
   return { period, since, until };
@@ -86,6 +86,10 @@ export function PeriodSelector({ value, onChange }: PeriodSelectorProps) {
           <SelectValue>{displayLabel}</SelectValue>
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value="1d">1 dia</SelectItem>
+          <SelectItem value="2d">2 dias</SelectItem>
+          <SelectItem value="3d">3 dias</SelectItem>
+          <SelectItem value="5d">5 dias</SelectItem>
           <SelectItem value="7d">7 dias</SelectItem>
           <SelectItem value="14d">14 dias</SelectItem>
           <SelectItem value="30d">30 dias</SelectItem>

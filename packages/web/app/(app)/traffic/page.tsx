@@ -118,7 +118,7 @@ function VideoRetentionSparkline({ metrics }: { metrics: VideoMetrics }) {
         <AreaChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
           <Area type="monotone" dataKey="value" stroke="hsl(200 80% 60%)" fill="hsl(200 80% 60% / 0.2)" strokeWidth={1.5} />
           <Tooltip
-            contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "10px", padding: "4px 6px" }}
+            contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "10px", padding: "4px 6px", color: "#fff" }}
             formatter={(v) => fmtNumber(Number(v))}
             labelFormatter={(l) => `Retenção ${l}`}
           />
@@ -129,6 +129,10 @@ function VideoRetentionSparkline({ metrics }: { metrics: VideoMetrics }) {
 }
 
 const PERIOD_OPTIONS = [
+  { label: "1d", value: 1 },
+  { label: "2d", value: 2 },
+  { label: "3d", value: 3 },
+  { label: "5d", value: 5 },
   { label: "7d", value: 7 },
   { label: "14d", value: 14 },
   { label: "30d", value: 30 },
@@ -205,10 +209,10 @@ function FunnelChart({ data }: { data: CampaignAnalyticsResponse }) {
       <ResponsiveContainer width="100%" height={200}>
         <BarChart data={stages} layout="vertical" margin={{ left: 80, right: 60 }}>
           <XAxis type="number" hide />
-          <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={75} />
+          <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: "#fff" }} width={75} />
           <Tooltip
             formatter={(value) => fmtNumber(Number(value))}
-            contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }}
+            contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "#fff" }}
           />
           <Bar dataKey="value" radius={[0, 6, 6, 0]}>
             {stages.map((_, i) => (
@@ -309,11 +313,11 @@ function DailyChart({ accountId, projectId, campaignId, days }: { accountId: str
       <ResponsiveContainer width="100%" height={250}>
         <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-          <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-          <YAxis yAxisId="spend" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
-          <YAxis yAxisId="clicks" orientation="right" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-          <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} />
-          <Legend />
+          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
+          <YAxis yAxisId="spend" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
+          <YAxis yAxisId="clicks" orientation="right" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
+          <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "#fff" }} />
+          <Legend wrapperStyle={{ color: "#fff" }} />
           <Line yAxisId="spend" type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={false} name="Spend (R$)" />
           <Line yAxisId="clicks" type="monotone" dataKey="clicks" stroke="hsl(200 80% 60%)" strokeWidth={2} dot={false} name="Cliques" />
         </LineChart>
@@ -1053,11 +1057,11 @@ function CreativeRankingChart({ projectId, days, campaignId }: { projectId: stri
           <YAxis
             type="category"
             dataKey="name"
-            tick={{ fontSize: 10 }}
+            tick={{ fontSize: 10, fill: "#fff" }}
             width={135}
           />
           <Tooltip
-            contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "11px" }}
+            contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "11px", color: "#fff" }}
             formatter={(value) => {
               const v = Number(value);
               return metric === "roas" ? fmtRoas(v) : metric === "ctr" ? fmtPercent(v) : ["cpl", "cplQualified"].includes(metric) ? fmtCurrency(v) : fmtNumber(v);

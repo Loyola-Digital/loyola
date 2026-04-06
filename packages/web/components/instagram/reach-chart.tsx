@@ -99,10 +99,10 @@ export function ReachChart({ data, isLoading, error, onRefresh, isRefreshing }: 
               <ResponsiveContainer width="100%" height={240}>
                 <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} width={45} tickFormatter={formatNumber} />
-                  <Tooltip formatter={(value) => formatNumber(Number(value))} />
-                  <Legend />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} />
+                  <YAxis tick={{ fontSize: 11, fill: "#fff" }} width={45} tickFormatter={formatNumber} />
+                  <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "#fff" }} formatter={(value) => formatNumber(Number(value))} />
+                  <Legend wrapperStyle={{ color: "#fff" }} />
                   <Line type="monotone" dataKey="reach" name="Alcance" stroke="#d4a843" strokeWidth={2} dot={false} />
                   {hasImpressions && (
                     <Line type="monotone" dataKey="impressions" name="Impressões" stroke="#60a5fa" strokeWidth={2} dot={false} />

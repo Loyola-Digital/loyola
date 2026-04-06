@@ -47,6 +47,10 @@ interface LaunchDashboardProps {
 }
 
 const PERIOD_OPTIONS = [
+  { label: "1d", value: 1 },
+  { label: "2d", value: 2 },
+  { label: "3d", value: 3 },
+  { label: "5d", value: 5 },
   { label: "7d", value: 7 },
   { label: "14d", value: 14 },
   { label: "30d", value: 30 },
@@ -202,11 +206,11 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={dailyData.map((d) => ({ date: d.date_start.slice(5, 10), spend: safeNum(d.spend), clicks: safeNum(d.clicks) }))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis yAxisId="spend" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
-                <YAxis yAxisId="clicks" orientation="right" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} />
-                <Legend />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
+                <YAxis yAxisId="spend" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
+                <YAxis yAxisId="clicks" orientation="right" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
+                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "#fff" }} />
+                <Legend wrapperStyle={{ color: "#fff" }} />
                 <Line yAxisId="spend" type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={false} name="Spend (R$)" />
                 <Line yAxisId="clicks" type="monotone" dataKey="clicks" stroke="hsl(200 80% 60%)" strokeWidth={2} dot={false} name="Cliques" />
               </LineChart>
@@ -281,7 +285,7 @@ function CampaignDonut({ campaigns }: { campaigns: CampaignAnalytics[] }) {
           <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={70} strokeWidth={1}>
             {data.map((_, i) => <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
           </Pie>
-          <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "11px" }} formatter={(v) => [fmtCurrency(Number(v)), "Spend"]} />
+          <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "11px", color: "#fff" }} formatter={(v) => [fmtCurrency(Number(v)), "Spend"]} />
         </PieChart>
       </ResponsiveContainer>
       <div className="space-y-1.5 text-xs flex-1 min-w-0">
@@ -359,12 +363,12 @@ function CtrCpmChart({ data }: { data: CampaignDailyInsight[] }) {
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
         <XAxis
           dataKey="date"
-          tick={{ fontSize: 11 }}
+          tick={{ fontSize: 11, fill: "#fff" }}
           stroke="hsl(var(--muted-foreground))"
         />
         <YAxis
           yAxisId="ctr"
-          tick={{ fontSize: 11 }}
+          tick={{ fontSize: 11, fill: "#fff" }}
           stroke="hsl(200 80% 60%)"
           tickFormatter={(v) => `${v.toFixed(1)}%`}
           label={{ value: "CTR %", angle: -90, position: "insideLeft", style: { fontSize: 11, fill: "hsl(200 80% 60%)" } }}
@@ -372,7 +376,7 @@ function CtrCpmChart({ data }: { data: CampaignDailyInsight[] }) {
         <YAxis
           yAxisId="cpm"
           orientation="right"
-          tick={{ fontSize: 11 }}
+          tick={{ fontSize: 11, fill: "#fff" }}
           stroke="hsl(0 72% 55%)"
           tickFormatter={(v) => `R$${v.toFixed(0)}`}
           label={{ value: "CPM R$", angle: 90, position: "insideRight", style: { fontSize: 11, fill: "hsl(0 72% 55%)" } }}
@@ -383,6 +387,7 @@ function CtrCpmChart({ data }: { data: CampaignDailyInsight[] }) {
             border: "1px solid hsl(var(--border))",
             borderRadius: "8px",
             fontSize: "12px",
+            color: "#fff",
           }}
           formatter={(value, name) => {
             const v = Number(value);
@@ -390,7 +395,7 @@ function CtrCpmChart({ data }: { data: CampaignDailyInsight[] }) {
             return [`R$ ${v.toFixed(2)}`, name];
           }}
         />
-        <Legend />
+        <Legend wrapperStyle={{ color: "#fff" }} />
         <Line
           yAxisId="ctr"
           type="monotone"

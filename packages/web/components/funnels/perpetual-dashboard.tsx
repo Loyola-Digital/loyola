@@ -42,6 +42,10 @@ interface PerpetualDashboardProps {
 }
 
 const PERIOD_OPTIONS = [
+  { label: "1d", value: 1 },
+  { label: "2d", value: 2 },
+  { label: "3d", value: 3 },
+  { label: "5d", value: 5 },
   { label: "7d", value: 7 },
   { label: "14d", value: 14 },
   { label: "30d", value: 30 },
@@ -184,11 +188,11 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={dailyData.map((d) => ({ date: d.date_start.slice(5, 10), spend: safeNum(d.spend), clicks: safeNum(d.clicks) }))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis yAxisId="spend" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
-                <YAxis yAxisId="clicks" orientation="right" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} />
-                <Legend />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
+                <YAxis yAxisId="spend" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
+                <YAxis yAxisId="clicks" orientation="right" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
+                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "#fff" }} />
+                <Legend wrapperStyle={{ color: "#fff" }} />
                 <Line yAxisId="spend" type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={false} name="Spend (R$)" />
                 <Line yAxisId="clicks" type="monotone" dataKey="clicks" stroke="hsl(200 80% 60%)" strokeWidth={2} dot={false} name="Cliques" />
               </LineChart>
@@ -206,10 +210,10 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={cpcTrend}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v.toFixed(1)}`} />
-                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} formatter={(v) => [`R$ ${Number(v).toFixed(2)}`, "CPC"]} />
-                <ReferenceLine y={avgCpc} stroke="hsl(var(--muted-foreground))" strokeDasharray="4 4" label={{ value: `Média: R$${avgCpc.toFixed(2)}`, position: "insideTopRight", fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
+                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v.toFixed(1)}`} />
+                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "#fff" }} formatter={(v) => [`R$ ${Number(v).toFixed(2)}`, "CPC"]} />
+                <ReferenceLine y={avgCpc} stroke="hsl(var(--muted-foreground))" strokeDasharray="4 4" label={{ value: `Média: R$${avgCpc.toFixed(2)}`, position: "insideTopRight", fontSize: 10, fill: "#fff" }} />
                 <Line type="monotone" dataKey="cpc" stroke="hsl(200 80% 60%)" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -267,7 +271,7 @@ function PlacementDonut({ placements }: { placements: PlacementInsight[] }) {
           <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={80} strokeWidth={1}>
             {data.map((_, i) => <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
           </Pie>
-          <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "11px" }} formatter={(v) => [fmtCurrency(Number(v)), "Spend"]} />
+          <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "11px", color: "#fff" }} formatter={(v) => [fmtCurrency(Number(v)), "Spend"]} />
         </PieChart>
       </ResponsiveContainer>
       <div className="space-y-2 text-xs flex-1 min-w-0">
