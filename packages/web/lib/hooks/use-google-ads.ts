@@ -82,3 +82,49 @@ export function useUnlinkGoogleAdsProject() {
     },
   });
 }
+
+// ============================================================
+// OAUTH FLOW
+// ============================================================
+
+export interface GoogleAdsAccessibleAccount {
+  customerId: string;
+  descriptiveName: string;
+  canManage: boolean;
+}
+
+export function useGoogleAdsAuthUrl() {
+  const apiClient = useApiClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient<{ url: string; redirectUri: string }>(
+        `/api/google-ads/auth/url?origin=${encodeURIComponent(window.location.origin)}`
+      ),
+  });
+}
+
+export function useGoogleAdsAuthCallback() {
+  const apiClient = useApiClient();
+  return useMutation({
+    mutationFn: (data: { code: string; redirectUri: string }) =>
+      apiClient<{ refreshToken: string; accounts: GoogleAdsAccessibleAccount[] }>(
+        "/api/google-ads/auth/callback",
+        { method: "POST", body: JSON.stringify(data) }
+      ),
+  });
+}
+
+export function useGoogleAdsOAuthConnect() {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { accountName: string; customerId: string; refreshToken: string }) =>
+      apiClient<GoogleAdsAccount>("/api/google-ads/auth/connect", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["google-ads-accounts"] });
+    },
+  });
+}

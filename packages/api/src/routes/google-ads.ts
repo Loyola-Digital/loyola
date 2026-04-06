@@ -11,6 +11,9 @@ import {
   validateGoogleAdsAccount,
   normalizeCustomerId,
   decryptToken,
+  getGoogleOAuthUrl,
+  exchangeGoogleCode,
+  listAccessibleAccounts,
 } from "../services/google-ads.js";
 
 // ============================================================
@@ -249,4 +252,118 @@ export default fp(async function googleAdsRoutes(fastify) {
       return { success: true };
     }
   );
+
+  // ============================================================
+  // OAUTH FLOW
+  // ============================================================
+
+  // ---- GET /api/google-ads/auth/url ----
+  fastify.get("/api/google-ads/auth/url", async (request, reply) => {
+    if (request.userRole === "guest") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+
+    const origin = (request.query as { origin?: string }).origin
+      ?? fastify.config.CORS_ORIGIN
+      ?? "http://localhost:3000";
+    const redirectUri = `${origin}/settings/google-ads/callback`;
+
+    try {
+      const url = getGoogleOAuthUrl(redirectUri);
+      return { url, redirectUri };
+    } catch (err) {
+      return reply.code(500).send({
+        error: "Google OAuth nao configurado",
+        details: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  // ---- POST /api/google-ads/auth/callback ----
+  const callbackSchema = z.object({
+    code: z.string().min(1),
+    redirectUri: z.string().url(),
+  });
+
+  fastify.post("/api/google-ads/auth/callback", async (request, reply) => {
+    if (request.userRole === "guest") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+
+    const parseResult = callbackSchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.code(400).send({ error: "code e redirectUri obrigatorios" });
+    }
+
+    try {
+      const { accessToken, refreshToken } = await exchangeGoogleCode(
+        parseResult.data.code,
+        parseResult.data.redirectUri
+      );
+
+      const accounts = await listAccessibleAccounts(accessToken);
+
+      return { refreshToken, accounts };
+    } catch (err) {
+      return reply.code(400).send({
+        error: "Falha na autenticacao",
+        details: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  // ---- POST /api/google-ads/auth/connect ----
+  const connectSchema = z.object({
+    accountName: z.string().min(1).max(100),
+    customerId: z.string().min(1).max(20),
+    refreshToken: z.string().min(1),
+  });
+
+  fastify.post("/api/google-ads/auth/connect", async (request, reply) => {
+    if (request.userRole === "guest") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+
+    const parseResult = connectSchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.code(400).send({ error: "Dados invalidos" });
+    }
+
+    const { accountName, customerId, refreshToken } = parseResult.data;
+    const normalizedId = normalizeCustomerId(customerId);
+    const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? "";
+
+    // Encrypt tokens
+    const devTokenEnc = encrypt(developerToken);
+    const refreshTokenEnc = encrypt(refreshToken);
+
+    try {
+      const [account] = await fastify.db
+        .insert(googleAdsAccounts)
+        .values({
+          accountName,
+          customerId: normalizedId,
+          developerTokenEncrypted: devTokenEnc.encrypted,
+          developerTokenIv: devTokenEnc.iv,
+          refreshTokenEncrypted: refreshTokenEnc.encrypted,
+          refreshTokenIv: refreshTokenEnc.iv,
+          createdBy: request.userId!,
+        })
+        .returning({
+          id: googleAdsAccounts.id,
+          accountName: googleAdsAccounts.accountName,
+          customerId: googleAdsAccounts.customerId,
+          isActive: googleAdsAccounts.isActive,
+          createdAt: googleAdsAccounts.createdAt,
+          updatedAt: googleAdsAccounts.updatedAt,
+        });
+
+      return reply.code(201).send(account);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message.includes("uq_google_ads_customer_id")) {
+        return reply.code(409).send({ error: "Conta ja cadastrada" });
+      }
+      throw err;
+    }
+  });
 });

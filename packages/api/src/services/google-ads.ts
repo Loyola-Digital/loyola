@@ -50,8 +50,6 @@ async function getAccessToken(
     return cached.token;
   }
 
-  // Google OAuth2 client credentials for token refresh
-  // These should come from env in production
   const clientId = process.env.GOOGLE_ADS_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET;
 
@@ -708,6 +706,116 @@ export async function fetchGoogleAdsTopPerformers(
   }
 
   return ads;
+}
+
+// ============================================================
+// OAUTH FLOW
+// ============================================================
+
+const GOOGLE_ADS_SCOPES = [
+  "https://www.googleapis.com/auth/adwords",
+];
+
+export function getGoogleOAuthUrl(redirectUri: string, state?: string): string {
+  const clientId = process.env.GOOGLE_ADS_CLIENT_ID;
+  if (!clientId) throw new Error("GOOGLE_ADS_CLIENT_ID nao configurado");
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: GOOGLE_ADS_SCOPES.join(" "),
+    access_type: "offline",
+    prompt: "consent",
+  });
+  if (state) params.set("state", state);
+
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+}
+
+export async function exchangeGoogleCode(
+  code: string,
+  redirectUri: string
+): Promise<{ accessToken: string; refreshToken: string }> {
+  const clientId = process.env.GOOGLE_ADS_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET;
+  if (!clientId || !clientSecret) throw new Error("Google OAuth nao configurado");
+
+  const res = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: redirectUri,
+      client_id: clientId,
+      client_secret: clientSecret,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Falha ao trocar code por tokens: ${err}`);
+  }
+
+  const data = (await res.json()) as { access_token: string; refresh_token?: string };
+  if (!data.refresh_token) {
+    throw new Error("Refresh token nao retornado. Tente revogar o acesso em myaccount.google.com e reconectar.");
+  }
+
+  return { accessToken: data.access_token, refreshToken: data.refresh_token };
+}
+
+export interface GoogleAdsAccessibleAccount {
+  customerId: string;
+  descriptiveName: string;
+  canManage: boolean;
+}
+
+export async function listAccessibleAccounts(
+  accessToken: string
+): Promise<GoogleAdsAccessibleAccount[]> {
+  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
+  if (!developerToken) throw new Error("GOOGLE_ADS_DEVELOPER_TOKEN nao configurado");
+
+  const url = `${GOOGLE_ADS_BASE}/customers:listAccessibleCustomers`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "developer-token": developerToken,
+    },
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Erro ao listar contas: ${err}`);
+  }
+
+  const data = (await res.json()) as { resourceNames?: string[] };
+  if (!data.resourceNames?.length) return [];
+
+  // Extract customer IDs and fetch names
+  const accounts: GoogleAdsAccessibleAccount[] = [];
+  for (const rn of data.resourceNames) {
+    const cid = rn.replace("customers/", "");
+    try {
+      const results = await queryGoogleAds(
+        cid, developerToken, accessToken,
+        `SELECT customer.descriptive_name, customer.id, customer.manager FROM customer LIMIT 1`
+      );
+      const customer = results[0]?.customer as { descriptiveName?: string; id?: string; manager?: boolean } | undefined;
+      accounts.push({
+        customerId: cid,
+        descriptiveName: customer?.descriptiveName ?? formatCustomerId(cid),
+        canManage: customer?.manager !== true,
+      });
+    } catch {
+      // Skip accounts we can't access
+    }
+  }
+
+  return accounts.filter((a) => a.canManage);
 }
 
 // ============================================================

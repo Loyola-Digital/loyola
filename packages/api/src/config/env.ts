@@ -16,6 +16,9 @@ const envSchema = z.object({
   MINDS_BASE_PATH: z.string().default("./squads"),
   CLICKUP_API_TOKEN: z.string().min(1).optional(),
   ENCRYPTION_KEY: z.string().length(64).regex(/^[0-9a-fA-F]+$/, "Must be 64-char hex string").optional(),
+  GOOGLE_ADS_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_ADS_CLIENT_SECRET: z.string().min(1).optional(),
+  GOOGLE_ADS_DEVELOPER_TOKEN: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
