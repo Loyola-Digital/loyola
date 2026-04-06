@@ -46,6 +46,7 @@ import {
 import { ConversionFunnel } from "./conversion-funnel";
 import { MetricsTable } from "./metrics-table";
 import { FunnelCampaignTable } from "./funnel-campaign-table";
+import { TopCreativesGallery } from "./top-creatives-gallery";
 import type { Funnel } from "@loyola-x/shared";
 
 interface LaunchDashboardProps {
@@ -263,6 +264,9 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
           ) : <EmptyState />}
         </div>
       </div>
+
+      {/* Top Creatives Gallery */}
+      <TopCreativesGallery projectId={projectId} days={days} campaignIds={campaignIds} />
 
       {/* Conversion Funnel + Placement */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

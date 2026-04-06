@@ -41,6 +41,7 @@ import {
   type PlacementInsight,
 } from "@/lib/hooks/use-traffic-analytics";
 import { FunnelCampaignTable } from "./funnel-campaign-table";
+import { TopCreativesGallery } from "./top-creatives-gallery";
 import type { Funnel } from "@loyola-x/shared";
 
 interface PerpetualDashboardProps {
@@ -259,6 +260,9 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
           ) : <EmptyState />}
         </div>
       </div>
+
+      {/* Top Creatives Gallery */}
+      <TopCreativesGallery projectId={projectId} days={days} campaignIds={campaignIds} />
 
       {/* Placement donut + distribution */}
       <div className="rounded-xl border border-border/30 bg-card/60 p-5">
