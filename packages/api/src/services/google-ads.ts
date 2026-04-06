@@ -778,7 +778,7 @@ export async function listAccessibleAccounts(
   const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
   if (!developerToken) throw new Error("GOOGLE_ADS_DEVELOPER_TOKEN nao configurado");
 
-  const url = `${GOOGLE_ADS_BASE}/customers:listAccessibleCustomers`;
+  const url = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers:listAccessibleCustomers`;
   const res = await fetch(url, {
     method: "GET",
     headers: {
@@ -788,8 +788,9 @@ export async function listAccessibleAccounts(
   });
 
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Erro ao listar contas: ${err}`);
+    // If listing fails (e.g. test token), return empty — user will input Customer ID manually
+    console.error("[listAccessibleAccounts] failed:", res.status, await res.text().catch(() => ""));
+    return [];
   }
 
   const data = (await res.json()) as { resourceNames?: string[] };

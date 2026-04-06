@@ -66,6 +66,8 @@ export default function GoogleAdsSettingsPage() {
   const [availableAccounts, setAvailableAccounts] = useState<GoogleAdsAccessibleAccount[]>([]);
   const [refreshToken, setRefreshToken] = useState("");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [manualCustomerId, setManualCustomerId] = useState("");
+  const [manualAccountName, setManualAccountName] = useState("");
   const [redirectUri, setRedirectUri] = useState("");
 
   // Listen for OAuth callback message from popup
@@ -88,10 +90,6 @@ export default function GoogleAdsSettingsPage() {
             setRefreshToken(data.refreshToken);
             setAvailableAccounts(data.accounts);
             setOauthStep("picking");
-            if (data.accounts.length === 0) {
-              toast.error("Nenhuma conta Google Ads acessivel encontrada.");
-              setOauthStep("idle");
-            }
           },
           onError: (err) => {
             toast.error(err instanceof Error ? err.message : "Erro na autenticacao.");
@@ -130,15 +128,17 @@ export default function GoogleAdsSettingsPage() {
   }
 
   function handleConnect() {
-    if (!selectedCustomerId || !refreshToken) return;
-    const account = availableAccounts.find((a) => a.customerId === selectedCustomerId);
-    if (!account) return;
+    const fromList = availableAccounts.find((a) => a.customerId === selectedCustomerId);
+    const accountName = fromList?.descriptiveName ?? manualAccountName.trim();
+    const customerId = fromList?.customerId ?? manualCustomerId.replace(/-/g, "").trim();
+
+    if (!customerId || !refreshToken || !accountName) return;
 
     setOauthStep("connecting");
     oauthConnect.mutate(
       {
-        accountName: account.descriptiveName,
-        customerId: account.customerId,
+        accountName,
+        customerId,
         refreshToken,
       },
       {
@@ -214,41 +214,84 @@ export default function GoogleAdsSettingsPage() {
           </div>
         )}
 
-        {oauthStep === "picking" && availableAccounts.length > 0 && (
+        {oauthStep === "picking" && (
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Selecione a conta Google Ads para conectar:
-            </p>
-            <div className="space-y-2">
-              {availableAccounts.map((acc) => (
-                <button
-                  key={acc.customerId}
-                  onClick={() => setSelectedCustomerId(acc.customerId)}
-                  className={`w-full flex items-center justify-between rounded-lg border p-3 text-left transition-colors ${
-                    selectedCustomerId === acc.customerId
-                      ? "border-primary bg-primary/5"
-                      : "border-border/30 hover:border-border/60"
-                  }`}
-                >
-                  <div>
-                    <p className="text-sm font-medium">{acc.descriptiveName}</p>
-                    <p className="text-xs text-muted-foreground">{formatCustomerId(acc.customerId)}</p>
+            {availableAccounts.length > 0 ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Selecione a conta Google Ads para conectar:
+                </p>
+                <div className="space-y-2">
+                  {availableAccounts.map((acc) => (
+                    <button
+                      key={acc.customerId}
+                      onClick={() => setSelectedCustomerId(acc.customerId)}
+                      className={`w-full flex items-center justify-between rounded-lg border p-3 text-left transition-colors ${
+                        selectedCustomerId === acc.customerId
+                          ? "border-primary bg-primary/5"
+                          : "border-border/30 hover:border-border/60"
+                      }`}
+                    >
+                      <div>
+                        <p className="text-sm font-medium">{acc.descriptiveName}</p>
+                        <p className="text-xs text-muted-foreground">{formatCustomerId(acc.customerId)}</p>
+                      </div>
+                      {selectedCustomerId === acc.customerId && (
+                        <CheckCircle2 className="h-5 w-5 text-primary" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={handleConnect} disabled={!selectedCustomerId || oauthConnect.isPending}>
+                    {oauthConnect.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Conectar conta selecionada
+                  </Button>
+                  <Button variant="outline" onClick={() => { setOauthStep("idle"); setAvailableAccounts([]); }}>
+                    Cancelar
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                  <span>Autenticado com Google! Informe os dados da conta:</span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium">Nome da conta</label>
+                    <input
+                      value={manualAccountName}
+                      onChange={(e) => setManualAccountName(e.target.value)}
+                      placeholder="Ex: Minha Conta YouTube"
+                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm"
+                    />
                   </div>
-                  {selectedCustomerId === acc.customerId && (
-                    <CheckCircle2 className="h-5 w-5 text-primary" />
-                  )}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={handleConnect} disabled={!selectedCustomerId || oauthConnect.isPending}>
-                {oauthConnect.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Conectar conta selecionada
-              </Button>
-              <Button variant="outline" onClick={() => { setOauthStep("idle"); setAvailableAccounts([]); }}>
-                Cancelar
-              </Button>
-            </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium">Customer ID</label>
+                    <input
+                      value={manualCustomerId}
+                      onChange={(e) => setManualCustomerId(e.target.value)}
+                      placeholder="123-456-7890"
+                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  O Customer ID esta em Google Ads → icone de engrenagem → no topo da pagina.
+                </p>
+                <div className="flex gap-2">
+                  <Button onClick={handleConnect} disabled={!manualCustomerId.trim() || !manualAccountName.trim() || oauthConnect.isPending}>
+                    {oauthConnect.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Conectar conta
+                  </Button>
+                  <Button variant="outline" onClick={() => { setOauthStep("idle"); setRefreshToken(""); }}>
+                    Cancelar
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         )}
 

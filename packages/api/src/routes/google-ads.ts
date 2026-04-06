@@ -296,15 +296,25 @@ export default fp(async function googleAdsRoutes(fastify) {
     }
 
     try {
+      fastify.log.info("[google-ads-auth] exchanging code for tokens...");
       const { accessToken, refreshToken } = await exchangeGoogleCode(
         parseResult.data.code,
         parseResult.data.redirectUri
       );
+      fastify.log.info("[google-ads-auth] tokens received, listing accounts...");
 
-      const accounts = await listAccessibleAccounts(accessToken);
+      let accounts: Awaited<ReturnType<typeof listAccessibleAccounts>> = [];
+      try {
+        accounts = await listAccessibleAccounts(accessToken);
+        fastify.log.info(`[google-ads-auth] found ${accounts.length} accessible accounts`);
+      } catch (listErr) {
+        fastify.log.error({ err: listErr }, "[google-ads-auth] listAccessibleAccounts failed — returning empty list");
+        // Still return the refresh token so user can connect manually
+      }
 
       return { refreshToken, accounts };
     } catch (err) {
+      fastify.log.error({ err }, "[google-ads-auth] callback failed");
       return reply.code(400).send({
         error: "Falha na autenticacao",
         details: err instanceof Error ? err.message : String(err),
