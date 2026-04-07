@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Brain, MessageSquare, CheckSquare, Settings, Instagram, TrendingUp, Plus, ChevronDown, ChevronRight, Youtube } from "lucide-react";
+import { Brain, MessageSquare, CheckSquare, Settings, Plus, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { Button } from "@/components/ui/button";
@@ -33,38 +33,12 @@ const navItems = [
   { label: "Settings", href: "/settings", icon: Settings },
 ] as const;
 
-const metaSubItems = [
-  { label: "Instagram", href: "/instagram", icon: Instagram },
-  { label: "Ads", href: "/traffic", icon: TrendingUp },
-] as const;
-
-const googleSubItems = [
-  { label: "YouTube Ads", href: "/youtube", icon: Youtube },
-] as const;
-
 function NavContent({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname();
   const { total: openTaskCount } = useTasks({ status: "open", limit: 1, offset: 0 });
   const { data: projects, isLoading: projectsLoading } = useProjects();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [wizardProjectId, setWizardProjectId] = useState<string | null>(null);
-
-  // Meta group: auto-expand if user is on /instagram or /traffic
-  const isMetaActive = pathname.startsWith("/instagram") || pathname.startsWith("/traffic");
-  const [metaOpen, setMetaOpen] = useState(isMetaActive);
-
-  // Google group: auto-expand if user is on /youtube
-  const isGoogleActive = pathname.startsWith("/youtube");
-  const [googleOpen, setGoogleOpen] = useState(isGoogleActive);
-
-  // Keep in sync if user navigates
-  useEffect(() => {
-    if (isMetaActive) setMetaOpen(true);
-  }, [isMetaActive]);
-
-  useEffect(() => {
-    if (isGoogleActive) setGoogleOpen(true);
-  }, [isGoogleActive]);
 
   // Split navItems: items before Settings, and Settings itself
   const topItems = navItems.filter((i) => i.href !== "/settings");
@@ -101,137 +75,6 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
                     {openTaskCount}
                   </Badge>
                 )}
-              </Link>
-            </Button>
-          );
-        })}
-
-        {/* Meta collapsible group */}
-        <Button
-          variant={isMetaActive ? "secondary" : "ghost"}
-          className={cn(
-            "justify-start gap-3",
-            collapsed && "justify-center px-2",
-          )}
-          onClick={() => setMetaOpen((o) => !o)}
-        >
-          <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-            <line x1="9" y1="9" x2="9.01" y2="9" />
-            <line x1="15" y1="9" x2="15.01" y2="9" />
-          </svg>
-          {!collapsed && (
-            <>
-              <span>Meta</span>
-              {metaOpen ? (
-                <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="ml-auto h-4 w-4 text-muted-foreground" />
-              )}
-            </>
-          )}
-        </Button>
-
-        {metaOpen && !collapsed && (
-          <div className="flex flex-col gap-0.5 ml-4">
-            {metaSubItems.map((item) => {
-              const isActive = pathname.startsWith(item.href);
-              const Icon = item.icon;
-              return (
-                <Button
-                  key={item.href}
-                  variant={isActive ? "secondary" : "ghost"}
-                  size="sm"
-                  className="justify-start gap-2.5 h-8 text-sm"
-                  asChild
-                >
-                  <Link href={item.href}>
-                    <Icon className="h-4 w-4 shrink-0" />
-                    <span>{item.label}</span>
-                  </Link>
-                </Button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Collapsed: show sub-items as individual icons */}
-        {metaOpen && collapsed && metaSubItems.map((item) => {
-          const isActive = pathname.startsWith(item.href);
-          const Icon = item.icon;
-          return (
-            <Button
-              key={item.href}
-              variant={isActive ? "secondary" : "ghost"}
-              className="justify-center px-2"
-              asChild
-            >
-              <Link href={item.href}>
-                <Icon className="h-5 w-5 shrink-0" />
-              </Link>
-            </Button>
-          );
-        })}
-
-        {/* Google collapsible group */}
-        <Button
-          variant={isGoogleActive ? "secondary" : "ghost"}
-          className={cn(
-            "justify-start gap-3",
-            collapsed && "justify-center px-2",
-          )}
-          onClick={() => setGoogleOpen((o) => !o)}
-        >
-          <Youtube className="h-5 w-5 shrink-0 text-red-500" />
-          {!collapsed && (
-            <>
-              <span>Google</span>
-              {googleOpen ? (
-                <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="ml-auto h-4 w-4 text-muted-foreground" />
-              )}
-            </>
-          )}
-        </Button>
-
-        {googleOpen && !collapsed && (
-          <div className="flex flex-col gap-0.5 ml-4">
-            {googleSubItems.map((item) => {
-              const isActive = pathname.startsWith(item.href);
-              const Icon = item.icon;
-              return (
-                <Button
-                  key={item.href}
-                  variant={isActive ? "secondary" : "ghost"}
-                  size="sm"
-                  className="justify-start gap-2.5 h-8 text-sm"
-                  asChild
-                >
-                  <Link href={item.href}>
-                    <Icon className="h-4 w-4 shrink-0" />
-                    <span>{item.label}</span>
-                  </Link>
-                </Button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Collapsed: show google sub-items as icons */}
-        {googleOpen && collapsed && googleSubItems.map((item) => {
-          const isActive = pathname.startsWith(item.href);
-          const Icon = item.icon;
-          return (
-            <Button
-              key={item.href}
-              variant={isActive ? "secondary" : "ghost"}
-              className="justify-center px-2"
-              asChild
-            >
-              <Link href={item.href}>
-                <Icon className="h-5 w-5 shrink-0" />
               </Link>
             </Button>
           );
