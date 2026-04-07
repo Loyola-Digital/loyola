@@ -26,13 +26,7 @@ import {
   Cell,
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { DayRangePicker } from "@/components/ui/day-range-picker";
 import {
   useTrafficOverview,
   useTrafficCampaigns,
@@ -48,17 +42,6 @@ interface PerpetualDashboardProps {
   funnel: Funnel;
   projectId: string;
 }
-
-const PERIOD_OPTIONS = [
-  { label: "1 dia", value: 1 },
-  { label: "2 dias", value: 2 },
-  { label: "3 dias", value: 3 },
-  { label: "5 dias", value: 5 },
-  { label: "7 dias", value: 7 },
-  { label: "14 dias", value: 14 },
-  { label: "30 dias", value: 30 },
-  { label: "90 dias", value: 90 },
-];
 
 const DONUT_COLORS = [
   "hsl(45 90% 55%)", "hsl(200 80% 60%)", "hsl(150 60% 50%)",
@@ -90,8 +73,6 @@ function safeNum(val: string | undefined): number {
 
 export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProps) {
   const [days, setDays] = useState(30);
-  const [customDays, setCustomDays] = useState("");
-  const [isCustom, setIsCustom] = useState(false);
   const campaignIds = funnel.campaigns.map((c) => c.id);
   const campaignIdSet = new Set(campaignIds);
   const firstCampaignId = campaignIds[0] ?? null;
@@ -150,50 +131,7 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
   return (
     <div className="space-y-6">
       {/* Period selector */}
-      <div className="flex items-center gap-2">
-        <Select
-          value={isCustom ? "custom" : String(days)}
-          onValueChange={(v) => {
-            if (v === "custom") {
-              setIsCustom(true);
-              setCustomDays("");
-            } else {
-              setIsCustom(false);
-              setDays(Number(v));
-              setCustomDays("");
-            }
-          }}
-        >
-          <SelectTrigger className="w-[130px] h-8 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PERIOD_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>
-            ))}
-            <SelectItem value="custom">Personalizado</SelectItem>
-          </SelectContent>
-        </Select>
-        {isCustom && (
-          <div className="flex items-center gap-1.5">
-            <input
-              type="number"
-              min={1}
-              max={365}
-              autoFocus
-              value={customDays}
-              onChange={(e) => {
-                setCustomDays(e.target.value);
-                const v = parseInt(e.target.value);
-                if (v > 0 && v <= 365) setDays(v);
-              }}
-              placeholder="Dias"
-              className="w-[70px] h-8 rounded-md border border-border bg-card px-2 text-xs"
-            />
-            <span className="text-xs text-muted-foreground">dias</span>
-          </div>
-        )}
-      </div>
+      <DayRangePicker days={days} onDaysChange={setDays} />
 
       {/* KPI Cards with delta */}
       {overviewLoading ? (

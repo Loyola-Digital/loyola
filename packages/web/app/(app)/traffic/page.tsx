@@ -129,16 +129,7 @@ function VideoRetentionSparkline({ metrics }: { metrics: VideoMetrics }) {
   );
 }
 
-const PERIOD_OPTIONS = [
-  { label: "1 dia", value: 1 },
-  { label: "2 dias", value: 2 },
-  { label: "3 dias", value: 3 },
-  { label: "5 dias", value: 5 },
-  { label: "7 dias", value: 7 },
-  { label: "14 dias", value: 14 },
-  { label: "30 dias", value: 30 },
-  { label: "90 dias", value: 90 },
-] as const;
+import { DayRangePicker } from "@/components/ui/day-range-picker";
 
 // ============================================================
 // FUNNEL CHART
@@ -1509,8 +1500,6 @@ function TrafficPageContent() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [days, setDays] = useState(30);
-  const [customDays, setCustomDays] = useState("");
-  const [isCustomPeriod, setIsCustomPeriod] = useState(false);
 
   // Support ?project=xxx for project-scoped access
   const forceProjectId = searchParams.get("project") ?? undefined;
@@ -1677,49 +1666,8 @@ function TrafficPageContent() {
               </button>
             )}
 
-            <div className="flex items-center gap-2 ml-auto">
-              <Select
-                value={isCustomPeriod ? "custom" : String(days)}
-                onValueChange={(v) => {
-                  if (v === "custom") {
-                    setIsCustomPeriod(true);
-                    setCustomDays("");
-                  } else {
-                    setIsCustomPeriod(false);
-                    setDays(Number(v));
-                    setCustomDays("");
-                  }
-                }}
-              >
-                <SelectTrigger className="w-[130px] h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PERIOD_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>
-                  ))}
-                  <SelectItem value="custom">Personalizado</SelectItem>
-                </SelectContent>
-              </Select>
-              {isCustomPeriod && (
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="number"
-                    min={1}
-                    max={365}
-                    autoFocus
-                    value={customDays}
-                    onChange={(e) => {
-                      setCustomDays(e.target.value);
-                      const v = parseInt(e.target.value);
-                      if (v > 0 && v <= 365) setDays(v);
-                    }}
-                    placeholder="Dias"
-                    className="w-[70px] h-8 rounded-md border border-border bg-card px-2 text-xs"
-                  />
-                  <span className="text-xs text-muted-foreground">dias</span>
-                </div>
-              )}
+            <div className="ml-auto">
+              <DayRangePicker days={days} onDaysChange={setDays} />
             </div>
           </div>
 
