@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
-export default function YouTubeCallbackPage() {
+function CallbackHandler() {
   const searchParams = useSearchParams();
   const sent = useRef(false);
 
@@ -17,12 +17,17 @@ export default function YouTubeCallbackPage() {
     if (code) { window.opener?.postMessage({ type: "youtube-auth", code }, window.location.origin); window.close(); }
   }, [searchParams]);
 
+  return null;
+}
+
+export default function YouTubeCallbackPage() {
   return (
     <div className="flex items-center justify-center py-20">
       <div className="text-center space-y-3">
         <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
         <p className="text-sm text-muted-foreground">Conectando YouTube...</p>
       </div>
+      <Suspense><CallbackHandler /></Suspense>
     </div>
   );
 }
