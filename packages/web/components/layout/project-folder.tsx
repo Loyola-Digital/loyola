@@ -71,7 +71,7 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
     if (typeof window === "undefined") return false;
     const stored = localStorage.getItem(socialKey);
     if (stored !== null) return stored !== "closed";
-    return isSocialActive;
+    return isSocialActive; // only open if user is on a social page
   });
 
   useEffect(() => {
@@ -80,7 +80,9 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
 
   const [open, setOpen] = useState(() => {
     if (typeof window === "undefined") return false;
-    return localStorage.getItem(storageKey) !== "closed";
+    const stored = localStorage.getItem(storageKey);
+    if (stored !== null) return stored !== "closed";
+    return isProjectActive; // only open if user is inside this project
   });
 
   useEffect(() => {
