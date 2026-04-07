@@ -57,6 +57,11 @@ export default fp(async function authPlugin(fastify) {
     // Allow /api/me regardless of status (so frontend can check status)
     if (request.url === "/api/me") return;
 
+    // Allow pending users to accept invitations (the accept endpoint activates them)
+    if (dbUser[0].status === "pending" && request.method === "POST" && request.url.match(/^\/api\/invitations\/[^/]+\/accept$/)) {
+      return;
+    }
+
     if (dbUser[0].status === "pending") {
       reply.code(403).send({ error: "Acesso pendente de aprovação.", code: "PENDING_APPROVAL" });
       return;
