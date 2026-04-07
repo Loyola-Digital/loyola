@@ -1,42 +1,13 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { funnelSurveys, funnels, youtubeChannels, googleAdsAccounts } from "../db/schema.js";
-import { decrypt } from "../services/encryption.js";
+import { funnelSurveys, funnels } from "../db/schema.js";
 import {
-  getSheetsAccessToken,
   listSpreadsheets,
   getSpreadsheetSheets,
   readSheetData,
   clearSheetDataCache,
 } from "../services/google-sheets.js";
-
-// ============================================================
-// HELPERS
-// ============================================================
-
-/** Find a refresh token from any connected Google account (YouTube or Google Ads) */
-async function findGoogleRefreshToken(db: Parameters<Parameters<typeof fp>[0]>[0]["db"]): Promise<string | null> {
-  // Try YouTube channels first
-  const [ytCh] = await db
-    .select({ enc: youtubeChannels.refreshTokenEncrypted, iv: youtubeChannels.refreshTokenIv })
-    .from(youtubeChannels)
-    .limit(1);
-  if (ytCh) return decrypt(ytCh.enc, ytCh.iv);
-
-  // Try Google Ads accounts
-  const [gAds] = await db
-    .select({ enc: googleAdsAccounts.refreshTokenEncrypted, iv: googleAdsAccounts.refreshTokenIv })
-    .from(googleAdsAccounts)
-    .limit(1);
-  if (gAds) return decrypt(gAds.enc, gAds.iv);
-
-  return null;
-}
-
-// ============================================================
-// ROUTES
-// ============================================================
 
 export default fp(async function googleSheetsRoutes(fastify) {
 
@@ -44,14 +15,8 @@ export default fp(async function googleSheetsRoutes(fastify) {
   fastify.get("/api/google-sheets/spreadsheets", async (request, reply) => {
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
 
-    const refreshToken = await findGoogleRefreshToken(fastify.db);
-    if (!refreshToken) {
-      return reply.code(400).send({ error: "Nenhuma conta Google conectada. Conecte YouTube ou Google Ads primeiro." });
-    }
-
     try {
-      const accessToken = await getSheetsAccessToken(refreshToken, "sheets-list");
-      const spreadsheets = await listSpreadsheets(accessToken);
+      const spreadsheets = await listSpreadsheets();
       return { spreadsheets };
     } catch (err) {
       fastify.log.error({ err }, "[google-sheets] list spreadsheets failed");
@@ -64,12 +29,8 @@ export default fp(async function googleSheetsRoutes(fastify) {
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
     const { spreadsheetId } = request.params as { spreadsheetId: string };
 
-    const refreshToken = await findGoogleRefreshToken(fastify.db);
-    if (!refreshToken) return reply.code(400).send({ error: "Nenhuma conta Google conectada" });
-
     try {
-      const accessToken = await getSheetsAccessToken(refreshToken, "sheets-detail");
-      const result = await getSpreadsheetSheets(accessToken, spreadsheetId);
+      const result = await getSpreadsheetSheets(spreadsheetId);
       return result;
     } catch (err) {
       return reply.code(502).send({ error: "Erro ao listar abas", details: err instanceof Error ? err.message : String(err) });
@@ -81,12 +42,8 @@ export default fp(async function googleSheetsRoutes(fastify) {
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
     const { spreadsheetId, sheetName } = request.params as { spreadsheetId: string; sheetName: string };
 
-    const refreshToken = await findGoogleRefreshToken(fastify.db);
-    if (!refreshToken) return reply.code(400).send({ error: "Nenhuma conta Google conectada" });
-
     try {
-      const accessToken = await getSheetsAccessToken(refreshToken, "sheets-data");
-      const data = await readSheetData(accessToken, spreadsheetId, decodeURIComponent(sheetName));
+      const data = await readSheetData(spreadsheetId, decodeURIComponent(sheetName));
       return data;
     } catch (err) {
       return reply.code(502).send({ error: "Erro ao ler dados", details: err instanceof Error ? err.message : String(err) });
@@ -123,7 +80,6 @@ export default fp(async function googleSheetsRoutes(fastify) {
     const body = createSurveySchema.safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: "Dados invalidos" });
 
-    // Verify funnel exists
     const [funnel] = await fastify.db
       .select({ id: funnels.id })
       .from(funnels)
@@ -174,27 +130,19 @@ export default fp(async function googleSheetsRoutes(fastify) {
 
     if (surveys.length === 0) return { totalResponses: 0, surveys: [], responseRate: null };
 
-    const refreshToken = await findGoogleRefreshToken(fastify.db);
-    if (!refreshToken) return { totalResponses: 0, surveys: surveys.map((s) => ({ ...s, responses: 0 })), responseRate: null };
+    let totalResponses = 0;
+    const surveyDetails = [];
 
-    try {
-      const accessToken = await getSheetsAccessToken(refreshToken, "sheets-summary");
-      let totalResponses = 0;
-      const surveyDetails = [];
-
-      for (const survey of surveys) {
-        try {
-          const data = await readSheetData(accessToken, survey.spreadsheetId, survey.sheetName);
-          totalResponses += data.totalRows;
-          surveyDetails.push({ ...survey, responses: data.totalRows });
-        } catch {
-          surveyDetails.push({ ...survey, responses: 0 });
-        }
+    for (const survey of surveys) {
+      try {
+        const data = await readSheetData(survey.spreadsheetId, survey.sheetName);
+        totalResponses += data.totalRows;
+        surveyDetails.push({ ...survey, responses: data.totalRows });
+      } catch {
+        surveyDetails.push({ ...survey, responses: 0 });
       }
-
-      return { totalResponses, surveys: surveyDetails, responseRate: null };
-    } catch {
-      return { totalResponses: 0, surveys: surveys.map((s) => ({ ...s, responses: 0 })), responseRate: null };
     }
+
+    return { totalResponses, surveys: surveyDetails, responseRate: null };
   });
 });
