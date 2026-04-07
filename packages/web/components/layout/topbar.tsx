@@ -23,7 +23,7 @@ export function Topbar() {
         <span className="sr-only">Toggle sidebar</span>
       </Button>
 
-      <span className="text-sm font-semibold">Loyola Digital X</span>
+      <span className="text-sm font-semibold">Loyola X</span>
 
       <div className="ml-auto">
         <UserButton />

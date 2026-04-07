@@ -5,14 +5,14 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "Loyola Digital X",
-    template: "%s | Loyola Digital X",
+    default: "Loyola X",
+    template: "%s | Loyola X",
   },
   description:
     "Central de Mentes — Plataforma de AI para gestao inteligente de equipes e tarefas",
   icons: { icon: "/icon.svg" },
   openGraph: {
-    title: "Loyola Digital X",
+    title: "Loyola X",
     description:
       "Central de Mentes — Plataforma de AI para gestao inteligente de equipes e tarefas",
     type: "website",
