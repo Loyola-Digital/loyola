@@ -145,7 +145,7 @@ export function YouTubeFunnelSection({ funnel, projectId, days }: YouTubeFunnelS
               )}
 
               {/* Add campaign */}
-              {pickerData?.campaigns && (
+              {pickerData?.campaigns && pickerData.campaigns.length > 0 ? (
                 <Select onValueChange={(v) => {
                   const c = pickerData.campaigns.find((c) => c.id === v);
                   if (c) handleAddCampaign({ id: c.id, name: c.name });
@@ -161,7 +161,11 @@ export function YouTubeFunnelSection({ funnel, projectId, days }: YouTubeFunnelS
                       ))}
                   </SelectContent>
                 </Select>
-              )}
+              ) : pickerData?.accountLinked ? (
+                <p className="text-xs text-amber-500">
+                  Conta vinculada mas nao foi possivel carregar campanhas. Verifique se o Developer Token tem acesso a esta conta no Google Ads.
+                </p>
+              ) : null}
             </>
           )}
 
