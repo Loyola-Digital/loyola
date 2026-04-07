@@ -45,6 +45,22 @@ export function useCreateProject() {
   });
 }
 
+// PUT /api/projects/:id
+export function useUpdateProject() {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string; name?: string; color?: string | null }) =>
+      apiClient<Project>(`/api/projects/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+}
+
 // ============================================================
 // Member types
 // ============================================================
