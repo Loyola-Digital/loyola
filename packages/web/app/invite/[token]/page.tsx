@@ -51,7 +51,12 @@ export default function InvitePage({ params }: Props) {
   const { data: invite, isLoading, error } = useQuery<InviteInfo>({
     queryKey: ["invite", token],
     queryFn: async () => {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/invitations/${token}`);
+      let res: Response;
+      try {
+        res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/invitations/${token}`);
+      } catch {
+        throw new Error("connection_error");
+      }
       if (res.status === 409) throw new Error("already_accepted");
       if (!res.ok) throw new Error("not_found");
       return res.json();
@@ -75,10 +80,13 @@ export default function InvitePage({ params }: Props) {
   }
 
   if (error) {
+    const errMsg = (error as Error).message;
     const message =
-      (error as Error).message === "already_accepted"
+      errMsg === "already_accepted"
         ? "Este convite já foi aceito anteriormente."
-        : "Este convite expirou ou é inválido. Peça um novo ao seu gestor.";
+        : errMsg === "not_found"
+          ? "Este convite expirou ou é inválido. Peça um novo ao seu gestor."
+          : "Erro ao carregar convite. Verifique sua conexão e tente novamente.";
 
     return (
       <div className="flex min-h-screen items-center justify-center p-6">
