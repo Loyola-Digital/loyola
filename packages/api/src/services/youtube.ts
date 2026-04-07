@@ -167,20 +167,26 @@ export async function listChannelVideos(
   if (videoIds.length === 0) return [];
 
   // Step 2: Get statistics
-  const statsRes = await fetch(
-    `${YOUTUBE_DATA_API}/videos?part=statistics&id=${videoIds.join(",")}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
+  let statsMap = new Map<string, { viewCount?: string; likeCount?: string; commentCount?: string }>();
+  try {
+    const statsRes = await fetch(
+      `${YOUTUBE_DATA_API}/videos?part=statistics&id=${videoIds.join(",")}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
 
-  if (!statsRes.ok) throw new Error(`YouTube videos error: ${await statsRes.text()}`);
-
-  const statsData = (await statsRes.json()) as {
-    items?: { id: string; statistics?: { viewCount?: string; likeCount?: string; commentCount?: string } }[];
-  };
-
-  const statsMap = new Map(
-    (statsData.items ?? []).map((v) => [v.id, v.statistics])
-  );
+    if (statsRes.ok) {
+      const statsData = (await statsRes.json()) as {
+        items?: { id: string; statistics?: { viewCount?: string; likeCount?: string; commentCount?: string } }[];
+      };
+      statsMap = new Map(
+        (statsData.items ?? []).map((v) => [v.id, v.statistics ?? {}])
+      );
+    } else {
+      console.error("[youtube] Failed to fetch video stats:", statsRes.status, await statsRes.text().catch(() => ""));
+    }
+  } catch (err) {
+    console.error("[youtube] Stats fetch error:", err);
+  }
 
   return (searchData.items ?? []).map((item) => {
     const vid = item.id?.videoId ?? "";
@@ -228,13 +234,23 @@ export async function fetchChannelOverview(
     metrics: "views,estimatedMinutesWatched,subscribersGained,subscribersLost,likes,comments,shares,averageViewPercentage",
   });
 
-  const res = await fetch(`${YOUTUBE_ANALYTICS_API}/reports?${params.toString()}`, {
+  const url = `${YOUTUBE_ANALYTICS_API}/reports?${params.toString()}`;
+  console.log("[youtube-analytics] overview request:", url.replace(/access_token=[^&]+/, "access_token=***"));
+
+  const res = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
-  if (!res.ok) throw new Error(`YouTube Analytics error: ${await res.text()}`);
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    console.error("[youtube-analytics] overview error:", res.status, errText);
+    throw new Error(`YouTube Analytics error (${res.status}): ${errText}`);
+  }
 
-  const data = (await res.json()) as { rows?: number[][] };
+  const data = (await res.json()) as { columnHeaders?: { name: string }[]; rows?: number[][] };
+  console.log("[youtube-analytics] overview columns:", data.columnHeaders?.map((c) => c.name));
+  console.log("[youtube-analytics] overview rows:", data.rows?.length ?? 0);
+
   const row = data.rows?.[0] ?? [0, 0, 0, 0, 0, 0, 0, 0];
 
   return {
@@ -282,7 +298,11 @@ export async function fetchDailyInsights(
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
-  if (!res.ok) throw new Error(`YouTube Analytics daily error: ${await res.text()}`);
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    console.error("[youtube-analytics] daily error:", res.status, errText);
+    throw new Error(`YouTube Analytics daily error (${res.status}): ${errText}`);
+  }
 
   const data = (await res.json()) as { rows?: (string | number)[][] };
   return (data.rows ?? []).map((row) => ({
