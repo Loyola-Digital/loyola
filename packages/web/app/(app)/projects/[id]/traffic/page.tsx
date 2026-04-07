@@ -9,7 +9,6 @@ import {
   TrendingUp,
   Radio,
   Users,
-  Repeat,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -22,7 +21,6 @@ import {
 import { useMetaAdsAccounts } from "@/lib/hooks/use-meta-ads";
 import {
   useTrafficCampaigns,
-  type CampaignAnalyticsResponse,
 } from "@/lib/hooks/use-traffic-analytics";
 import { FunnelCampaignTable } from "@/components/funnels/funnel-campaign-table";
 
