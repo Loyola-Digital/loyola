@@ -1,8 +1,10 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import { TrendingUp, Youtube } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LaunchDashboard } from "@/components/funnels/launch-dashboard";
 import { PerpetualDashboard } from "@/components/funnels/perpetual-dashboard";
 import { YouTubeFunnelSection } from "@/components/funnels/youtube-funnel-section";
@@ -28,33 +30,54 @@ export default function FunnelPage() {
   if (!data) {
     return (
       <div className="flex items-center justify-center h-[50vh]">
-        <p className="text-muted-foreground">Funil não encontrado</p>
+        <p className="text-muted-foreground">Funil nao encontrado</p>
       </div>
     );
   }
 
   const { funnel, funnelType } = data;
+  const metaCount = funnel.campaigns.length;
+  const ytCount = funnel.googleAdsCampaigns.length;
 
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">{funnel.name}</h1>
         <p className="text-sm text-muted-foreground">
-          {funnelType === "launch" ? "Funil de Lançamento" : "Funil Perpétuo"}
-          {funnel.campaigns.length > 0 && ` — ${funnel.campaigns.length} campanha${funnel.campaigns.length > 1 ? "s" : ""} Meta`}
-          {funnel.googleAdsCampaigns.length > 0 && ` · ${funnel.googleAdsCampaigns.length} campanha${funnel.googleAdsCampaigns.length > 1 ? "s" : ""} YouTube`}
+          {funnelType === "launch" ? "Funil de Lancamento" : "Funil Perpetuo"}
         </p>
       </div>
 
-      {/* Meta Ads Dashboard */}
-      {funnelType === "launch" ? (
-        <LaunchDashboard funnel={funnel} projectId={params.id} />
-      ) : (
-        <PerpetualDashboard funnel={funnel} projectId={params.id} />
-      )}
+      <Tabs defaultValue="meta-ads">
+        <TabsList>
+          <TabsTrigger value="meta-ads" className="gap-1.5">
+            <TrendingUp className="h-3.5 w-3.5" />
+            Meta Ads
+            {metaCount > 0 && (
+              <span className="ml-1 text-[10px] bg-muted rounded-full px-1.5 py-0.5">{metaCount}</span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="youtube-ads" className="gap-1.5">
+            <Youtube className="h-3.5 w-3.5 text-red-500" />
+            YouTube Ads
+            {ytCount > 0 && (
+              <span className="ml-1 text-[10px] bg-muted rounded-full px-1.5 py-0.5">{ytCount}</span>
+            )}
+          </TabsTrigger>
+        </TabsList>
 
-      {/* YouTube Ads Section (collapsible) */}
-      <YouTubeFunnelSection funnel={funnel} projectId={params.id} days={30} />
+        <TabsContent value="meta-ads" className="mt-6">
+          {funnelType === "launch" ? (
+            <LaunchDashboard funnel={funnel} projectId={params.id} />
+          ) : (
+            <PerpetualDashboard funnel={funnel} projectId={params.id} />
+          )}
+        </TabsContent>
+
+        <TabsContent value="youtube-ads" className="mt-6">
+          <YouTubeFunnelSection funnel={funnel} projectId={params.id} days={30} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
