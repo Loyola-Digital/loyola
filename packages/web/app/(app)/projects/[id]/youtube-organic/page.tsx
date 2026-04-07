@@ -10,9 +10,7 @@ import {
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { DayRangePicker } from "@/components/ui/day-range-picker";
 import Link from "next/link";
 import {
   useYouTubeChannels, useYouTubeOverview, useYouTubeDaily, useYouTubeVideos,
@@ -32,11 +30,6 @@ function fmtPercent(val: number | null | undefined): string {
   return `${val.toFixed(1)}%`;
 }
 
-const PERIOD_OPTIONS = [
-  { label: "7 dias", value: 7 }, { label: "14 dias", value: 14 },
-  { label: "30 dias", value: 30 }, { label: "90 dias", value: 90 },
-];
-
 function KpiCard({ icon: Icon, label, value }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string }) {
   return (
     <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3 hover:border-border/50 transition-colors">
@@ -52,8 +45,6 @@ function KpiCard({ icon: Icon, label, value }: { icon: React.ComponentType<{ cla
 export default function ProjectYouTubeOrganicPage({ params }: Props) {
   const { id: projectId } = use(params);
   const [days, setDays] = useState(30);
-  const [isCustom, setIsCustom] = useState(false);
-  const [customDays, setCustomDays] = useState("");
 
   const { data: channels } = useYouTubeChannels();
   const linkedChannel = channels?.find((ch) => ch.projects.some((p) => p.projectId === projectId));
@@ -86,21 +77,7 @@ export default function ProjectYouTubeOrganicPage({ params }: Props) {
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <Select value={isCustom ? "custom" : String(days)} onValueChange={(v) => { if (v === "custom") { setIsCustom(true); setCustomDays(""); } else { setIsCustom(false); setDays(Number(v)); } }}>
-            <SelectTrigger className="w-[130px] h-8 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {PERIOD_OPTIONS.map((o) => <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>)}
-              <SelectItem value="custom">Personalizado</SelectItem>
-            </SelectContent>
-          </Select>
-          {isCustom && (
-            <div className="flex items-center gap-1.5">
-              <input type="number" min={1} max={365} autoFocus value={customDays} onChange={(e) => { setCustomDays(e.target.value); const v = parseInt(e.target.value); if (v > 0 && v <= 365) setDays(v); }} placeholder="Dias" className="w-[70px] h-8 rounded-md border border-border bg-card px-2 text-xs" />
-              <span className="text-xs text-muted-foreground">dias</span>
-            </div>
-          )}
-        </div>
+        <DayRangePicker days={days} onDaysChange={setDays} />
       </div>
 
       {/* KPIs */}

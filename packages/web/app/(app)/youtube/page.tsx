@@ -34,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { useGoogleAdsAccounts } from "@/lib/hooks/use-google-ads";
 import {
   useGoogleAdsOverview,
@@ -71,17 +72,6 @@ function fmtPercent(val: number | null | undefined): string {
   if (val == null) return "—";
   return `${val.toFixed(2)}%`;
 }
-
-const PERIOD_OPTIONS = [
-  { label: "1 dia", value: 1 },
-  { label: "2 dias", value: 2 },
-  { label: "3 dias", value: 3 },
-  { label: "5 dias", value: 5 },
-  { label: "7 dias", value: 7 },
-  { label: "14 dias", value: 14 },
-  { label: "30 dias", value: 30 },
-  { label: "90 dias", value: 90 },
-];
 
 // ============================================================
 // KPI CARD
@@ -436,8 +426,6 @@ export default function YouTubeDashboardPage() {
   const { data: accounts, isLoading: accountsLoading } = useGoogleAdsAccounts();
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [days, setDays] = useState(30);
-  const [customDays, setCustomDays] = useState("");
-  const [isCustom, setIsCustom] = useState(false);
 
   // Auto-select first account
   const activeAccountId = selectedAccountId ?? accounts?.[0]?.id ?? null;
@@ -493,48 +481,7 @@ export default function YouTubeDashboardPage() {
           )}
 
           {/* Period selector */}
-          <Select
-            value={isCustom ? "custom" : String(days)}
-            onValueChange={(v) => {
-              if (v === "custom") {
-                setIsCustom(true);
-                setCustomDays("");
-              } else {
-                setIsCustom(false);
-                setDays(Number(v));
-                setCustomDays("");
-              }
-            }}
-          >
-            <SelectTrigger className="w-[130px] h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PERIOD_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>
-              ))}
-              <SelectItem value="custom">Personalizado</SelectItem>
-            </SelectContent>
-          </Select>
-          {isCustom && (
-            <div className="flex items-center gap-1.5">
-              <input
-                type="number"
-                min={1}
-                max={365}
-                autoFocus
-                value={customDays}
-                onChange={(e) => {
-                  setCustomDays(e.target.value);
-                  const v = parseInt(e.target.value);
-                  if (v > 0 && v <= 365) setDays(v);
-                }}
-                placeholder="Dias"
-                className="w-[70px] h-8 rounded-md border border-border bg-card px-2 text-xs"
-              />
-              <span className="text-xs text-muted-foreground">dias</span>
-            </div>
-          )}
+          <DayRangePicker days={days} onDaysChange={setDays} />
         </div>
       </div>
 

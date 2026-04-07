@@ -25,13 +25,7 @@ import {
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { DayRangePicker } from "@/components/ui/day-range-picker";
 import Link from "next/link";
 import { useGoogleAdsAccounts } from "@/lib/hooks/use-google-ads";
 import {
@@ -60,13 +54,6 @@ function fmtPercent(val: number | null | undefined): string {
   return `${val.toFixed(2)}%`;
 }
 
-const PERIOD_OPTIONS = [
-  { label: "7 dias", value: 7 },
-  { label: "14 dias", value: 14 },
-  { label: "30 dias", value: 30 },
-  { label: "90 dias", value: 90 },
-];
-
 function KpiCard({ icon: Icon, label, value }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
@@ -86,8 +73,6 @@ function KpiCard({ icon: Icon, label, value }: {
 export default function ProjectYouTubePage() {
   const { id: projectId } = useParams<{ id: string }>();
   const [days, setDays] = useState(30);
-  const [isCustom, setIsCustom] = useState(false);
-  const [customDays, setCustomDays] = useState("");
 
   // Find Google Ads account linked to this project
   const { data: pickerData, isLoading: pickerLoading } = useGoogleAdsCampaignPicker(projectId);
@@ -134,37 +119,7 @@ export default function ProjectYouTubePage() {
           <Youtube className="h-5 w-5 text-red-500" />
           YouTube Ads
         </h1>
-        <div className="flex items-center gap-2">
-          <Select
-            value={isCustom ? "custom" : String(days)}
-            onValueChange={(v) => {
-              if (v === "custom") { setIsCustom(true); setCustomDays(""); }
-              else { setIsCustom(false); setDays(Number(v)); }
-            }}
-          >
-            <SelectTrigger className="w-[130px] h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PERIOD_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>
-              ))}
-              <SelectItem value="custom">Personalizado</SelectItem>
-            </SelectContent>
-          </Select>
-          {isCustom && (
-            <div className="flex items-center gap-1.5">
-              <input
-                type="number" min={1} max={365} autoFocus
-                value={customDays}
-                onChange={(e) => { setCustomDays(e.target.value); const v = parseInt(e.target.value); if (v > 0 && v <= 365) setDays(v); }}
-                placeholder="Dias"
-                className="w-[70px] h-8 rounded-md border border-border bg-card px-2 text-xs"
-              />
-              <span className="text-xs text-muted-foreground">dias</span>
-            </div>
-          )}
-        </div>
+        <DayRangePicker days={days} onDaysChange={setDays} />
       </div>
 
       {/* KPIs */}
