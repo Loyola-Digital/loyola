@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { CalendarIcon } from "lucide-react";
-import { format, subDays, differenceInDays } from "date-fns";
+import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
