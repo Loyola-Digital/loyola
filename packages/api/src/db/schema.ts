@@ -548,3 +548,26 @@ export const funnels = pgTable(
   ]
 );
 
+// ============================================================
+// FUNNEL SURVEYS (EPIC-14 — Google Sheets)
+// ============================================================
+
+export const funnelSurveys = pgTable(
+  "funnel_surveys",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => funnels.id, { onDelete: "cascade" }),
+    spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
+    spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
+    sheetName: varchar("sheet_name", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("idx_funnel_surveys_funnel").on(table.funnelId),
+  ]
+);
+

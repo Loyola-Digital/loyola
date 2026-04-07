@@ -3,165 +3,114 @@
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
-// ============================================================
-// TYPES
-// ============================================================
-
-export interface TabMapping {
+export interface SpreadsheetInfo {
   id: string;
-  connectionId: string;
-  tabName: string;
-  tabType: "leads" | "survey" | "sales";
-  columnMapping: Record<string, string>;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
+  name: string;
 }
 
-export interface GoogleSheetsConnection {
-  id: string;
-  projectId: string;
-  spreadsheetId: string;
-  spreadsheetUrl: string;
-  spreadsheetName: string;
-  isActive: boolean;
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-  tabMappings: TabMapping[];
+export interface SheetInfo {
+  sheetId: number;
+  title: string;
+  rowCount: number;
 }
 
-export interface CreateConnectionResponse extends GoogleSheetsConnection {
-  tabs: string[];
-}
-
-export interface TabPreview {
+export interface SheetData {
   headers: string[];
   rows: string[][];
   totalRows: number;
 }
 
-export interface TabMappingInput {
-  tabName: string;
-  tabType: "leads" | "survey" | "sales";
-  columnMapping: Record<string, string>;
+export interface FunnelSurvey {
+  id: string;
+  funnelId: string;
+  spreadsheetId: string;
+  spreadsheetName: string;
+  sheetName: string;
+  createdAt: string;
+  responses?: number;
 }
 
-// ============================================================
-// HOOKS
-// ============================================================
+export interface SurveySummary {
+  totalResponses: number;
+  surveys: FunnelSurvey[];
+  responseRate: number | null;
+}
 
-export function useGoogleSheetsConnection(projectId: string | null) {
+export function useSpreadsheets() {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["google-sheets-connection", projectId],
-    queryFn: () =>
-      apiClient<GoogleSheetsConnection>(
-        `/api/google-sheets/connections/${projectId}`
-      ),
-    enabled: !!projectId,
-    retry: false,
+    queryKey: ["google-sheets-spreadsheets"],
+    queryFn: () => apiClient<{ spreadsheets: SpreadsheetInfo[] }>("/api/google-sheets/spreadsheets"),
+    staleTime: 5 * 60 * 1000,
   });
 }
 
-export function useConnectGoogleSheet() {
+export function useSpreadsheetSheets(spreadsheetId: string | null) {
   const apiClient = useApiClient();
-  const queryClient = useQueryClient();
+  return useQuery({
+    queryKey: ["google-sheets-sheets", spreadsheetId],
+    queryFn: () => apiClient<{ name: string; sheets: SheetInfo[] }>(`/api/google-sheets/spreadsheets/${spreadsheetId}/sheets`),
+    enabled: !!spreadsheetId,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useSheetData(spreadsheetId: string | null, sheetName: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["google-sheets-data", spreadsheetId, sheetName],
+    queryFn: () => apiClient<SheetData>(`/api/google-sheets/spreadsheets/${spreadsheetId}/sheets/${encodeURIComponent(sheetName!)}/data`),
+    enabled: !!spreadsheetId && !!sheetName,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useFunnelSurveys(projectId: string, funnelId: string) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["funnel-surveys", projectId, funnelId],
+    queryFn: () => apiClient<{ surveys: FunnelSurvey[] }>(`/api/projects/${projectId}/funnels/${funnelId}/surveys`),
+  });
+}
+
+export function useAddFunnelSurvey(projectId: string, funnelId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { projectId: string; spreadsheetUrl: string }) =>
-      apiClient<CreateConnectionResponse>("/api/google-sheets/connections", {
+    mutationFn: (data: { spreadsheetId: string; spreadsheetName: string; sheetName: string }) =>
+      apiClient(`/api/projects/${projectId}/funnels/${funnelId}/surveys`, {
         method: "POST",
         body: JSON.stringify(data),
       }),
-    onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({
-        queryKey: ["google-sheets-connection", vars.projectId],
-      });
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["funnel-surveys", projectId, funnelId] }); },
   });
 }
 
-export function useDeleteGoogleSheetsConnection() {
+export function useRemoveFunnelSurvey(projectId: string, funnelId: string) {
   const apiClient = useApiClient();
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { id: string; projectId: string }) =>
-      apiClient(`/api/google-sheets/connections/${vars.id}`, { method: "DELETE" }),
-    onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({
-        queryKey: ["google-sheets-connection", vars.projectId],
-      });
-    },
+    mutationFn: (surveyId: string) =>
+      apiClient(`/api/projects/${projectId}/funnels/${funnelId}/surveys/${surveyId}`, { method: "DELETE" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["funnel-surveys", projectId, funnelId] }); },
   });
 }
 
-export function useMapSheetTabs() {
-  const apiClient = useApiClient();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      connectionId,
-      mappings,
-    }: {
-      connectionId: string;
-      projectId: string;
-      mappings: TabMappingInput[];
-    }) =>
-      apiClient<TabMapping[]>(
-        `/api/google-sheets/connections/${connectionId}/tabs`,
-        {
-          method: "PUT",
-          body: JSON.stringify({ mappings }),
-        }
-      ),
-    onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({
-        queryKey: ["google-sheets-connection", vars.projectId],
-      });
-    },
-  });
-}
-
-export function useAvailableTabs(connectionId: string | null) {
+export function useSurveySummary(projectId: string, funnelId: string) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["sheet-available-tabs", connectionId],
-    queryFn: () =>
-      apiClient<{ tabs: string[] }>(
-        `/api/google-sheets/connections/${connectionId}/available-tabs`
-      ),
-    enabled: !!connectionId,
+    queryKey: ["funnel-surveys-summary", projectId, funnelId],
+    queryFn: () => apiClient<SurveySummary>(`/api/projects/${projectId}/funnels/${funnelId}/surveys/summary`),
+    staleTime: 5 * 60 * 1000,
   });
 }
 
-export interface AIAnalyzeResult {
-  mappings: TabMappingInput[];
-  explanation: string;
-  availableTabs: string[];
-}
-
-export function useAIAnalyzeSheet() {
+export function useRefreshSheetData() {
   const apiClient = useApiClient();
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: (connectionId: string) =>
-      apiClient<AIAnalyzeResult>(
-        `/api/google-sheets/connections/${connectionId}/ai-analyze`,
-        { method: "POST" }
-      ),
-  });
-}
-
-export function useSheetTabPreview(
-  connectionId: string | null,
-  tabName: string | null
-) {
-  const apiClient = useApiClient();
-  return useQuery({
-    queryKey: ["sheet-tab-preview", connectionId, tabName],
-    queryFn: () =>
-      apiClient<TabPreview>(
-        `/api/google-sheets/connections/${connectionId}/tabs/${encodeURIComponent(tabName!)}/preview`
-      ),
-    enabled: !!connectionId && !!tabName,
+    mutationFn: ({ spreadsheetId, sheetName }: { spreadsheetId: string; sheetName: string }) =>
+      apiClient(`/api/google-sheets/spreadsheets/${spreadsheetId}/sheets/${encodeURIComponent(sheetName)}/refresh`, { method: "POST" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["google-sheets-data"] }); qc.invalidateQueries({ queryKey: ["funnel-surveys-summary"] }); },
   });
 }
