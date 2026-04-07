@@ -42,6 +42,8 @@ import { MetricsTable } from "./metrics-table";
 import { FunnelCampaignTable } from "./funnel-campaign-table";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import type { Funnel } from "@loyola-x/shared";
+import { useSurveySummary } from "@/lib/hooks/use-google-sheets";
+import { ClipboardList } from "lucide-react";
 
 interface LaunchDashboardProps {
   funnel: Funnel;
@@ -96,6 +98,11 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
     usePlacementBreakdown(projectId, days, cids);
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsights(projectId, firstCampaignId, days);
+  const { data: surveySummary } = useSurveySummary(projectId, funnel.id);
+
+  const surveyResponseRate = surveySummary && surveySummary.totalResponses > 0 && overview?.totalLeads
+    ? (surveySummary.totalResponses / overview.totalLeads) * 100
+    : null;
 
   // Filter campaign table to only funnel campaigns
   const funnelCampaigns = useMemo(() => {
@@ -124,7 +131,7 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
           {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : overview ? (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
+        <div className={`grid gap-3 grid-cols-2 sm:grid-cols-4 ${surveyResponseRate !== null ? "lg:grid-cols-8" : "lg:grid-cols-7"}`}>
           <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} />
           <KpiCard icon={Users} label="Leads" value={fmtNumber(overview.totalLeads)} />
           <KpiCard icon={Target} label="CPL" value={fmtCurrency(overview.avgCpl)} />
@@ -132,6 +139,16 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
           <KpiCard icon={Percent} label="CTR" value={fmtPercent(overview.ctr)} />
           <KpiCard icon={MousePointerClick} label="CPC" value={fmtCurrency(overview.cpc)} />
           <KpiCard icon={BarChart3} label="CPM" value={fmtCurrency(overview.cpm)} />
+          {surveyResponseRate !== null && (
+            <div className={`rounded-xl border p-3 hover:border-border/50 transition-colors ${surveyResponseRate >= 30 ? "border-emerald-500/30 bg-emerald-500/5" : surveyResponseRate >= 10 ? "border-amber-500/30 bg-amber-500/5" : "border-red-500/30 bg-red-500/5"}`}>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Pesquisa</span>
+                <ClipboardList className="h-3.5 w-3.5 text-muted-foreground/50" />
+              </div>
+              <p className="text-xl font-bold tracking-tight">{surveyResponseRate.toFixed(1)}%</p>
+              <p className="text-[9px] text-muted-foreground">{surveySummary!.totalResponses} de {overview.totalLeads} leads</p>
+            </div>
+          )}
         </div>
       ) : <EmptyState />}
 

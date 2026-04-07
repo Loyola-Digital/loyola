@@ -37,6 +37,8 @@ import {
 import { FunnelCampaignTable } from "./funnel-campaign-table";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import type { Funnel } from "@loyola-x/shared";
+import { useSurveySummary } from "@/lib/hooks/use-google-sheets";
+import { ClipboardList } from "lucide-react";
 
 interface PerpetualDashboardProps {
   funnel: Funnel;
@@ -88,6 +90,11 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
     usePlacementBreakdown(projectId, days, campaignIds.length > 0 ? campaignIds : null);
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsights(projectId, firstCampaignId, days);
+  const { data: surveySummary } = useSurveySummary(projectId, funnel.id);
+
+  const surveyResponseRate = surveySummary && surveySummary.totalResponses > 0 && overview?.totalLeads
+    ? (surveySummary.totalResponses / overview.totalLeads) * 100
+    : null;
 
   const funnelCampaigns = useMemo(() => {
     if (!campaignData) return [];
@@ -139,13 +146,23 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
           {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : overview ? (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+        <div className={`grid gap-3 grid-cols-2 sm:grid-cols-3 ${surveyResponseRate !== null ? "lg:grid-cols-7" : "lg:grid-cols-6"}`}>
           <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} delta={deltas?.spend} />
           <KpiCard icon={Eye} label="Impressões" value={fmtNumber(overview.totalImpressions)} />
           <KpiCard icon={Radio} label="Alcance" value={fmtNumber(overview.totalReach)} />
           <KpiCard icon={MousePointerClick} label="Cliques" value={fmtNumber(overview.totalClicks)} />
           <KpiCard icon={Percent} label="CTR" value={fmtPercent(overview.ctr)} />
           <KpiCard icon={DollarSign} label="CPC" value={fmtCurrency(overview.cpc)} />
+          {surveyResponseRate !== null && (
+            <div className={`rounded-xl border p-3 hover:border-border/50 transition-colors ${surveyResponseRate >= 30 ? "border-emerald-500/30 bg-emerald-500/5" : surveyResponseRate >= 10 ? "border-amber-500/30 bg-amber-500/5" : "border-red-500/30 bg-red-500/5"}`}>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Pesquisa</span>
+                <ClipboardList className="h-3.5 w-3.5 text-muted-foreground/50" />
+              </div>
+              <p className="text-xl font-bold tracking-tight">{surveyResponseRate.toFixed(1)}%</p>
+              <p className="text-[9px] text-muted-foreground">{surveySummary!.totalResponses} de {overview.totalLeads} leads</p>
+            </div>
+          )}
         </div>
       ) : <EmptyState />}
 
