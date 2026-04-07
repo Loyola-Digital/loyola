@@ -33,6 +33,7 @@ const META_TABS = [
 
 const GOOGLE_TABS = [
   { label: "YouTube Ads", href: "/settings/google-ads", value: "google-ads" },
+  { label: "YouTube Canal", href: "/settings/youtube", value: "youtube" },
 ] as const;
 
 const ADMIN_TABS = [

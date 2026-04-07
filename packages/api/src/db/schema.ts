@@ -455,6 +455,58 @@ export const googleAdsAccountProjects = pgTable(
 );
 
 // ============================================================
+// YOUTUBE CHANNELS TABLES (EPIC-13)
+// ============================================================
+
+export const youtubeChannels = pgTable(
+  "youtube_channels",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    channelId: varchar("channel_id", { length: 50 }).notNull(),
+    channelName: varchar("channel_name", { length: 255 }).notNull(),
+    thumbnailUrl: text("thumbnail_url"),
+    subscriberCount: integer("subscriber_count").default(0),
+    refreshTokenEncrypted: text("refresh_token_encrypted").notNull(),
+    refreshTokenIv: text("refresh_token_iv").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_youtube_channel_id").on(table.channelId),
+    index("idx_youtube_channels_created_by").on(table.createdBy),
+  ]
+);
+
+export const youtubeChannelProjects = pgTable(
+  "youtube_channel_projects",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    channelId: uuid("channel_id")
+      .notNull()
+      .references(() => youtubeChannels.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("uq_youtube_channel_project").on(table.channelId, table.projectId),
+    index("idx_youtube_channel_projects_channel").on(table.channelId),
+    index("idx_youtube_channel_projects_project").on(table.projectId),
+  ]
+);
+
+// ============================================================
 // FUNNELS TABLES (EPIC-10)
 // ============================================================
 

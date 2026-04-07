@@ -42,6 +42,7 @@ interface ProjectFolderProps {
 
 const SOCIAL_SUBITEMS = [
   { label: "Instagram", href: "instagram", icon: Instagram },
+  { label: "YouTube", href: "youtube-organic", icon: Youtube },
 ] as const;
 
 const PROJECT_SUBITEMS = [
