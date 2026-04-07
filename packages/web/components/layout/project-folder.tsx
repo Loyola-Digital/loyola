@@ -63,37 +63,18 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editName, setEditName] = useState(project.name);
   const [editColor, setEditColor] = useState(project.color ?? "#94a3b8");
-  const storageKey = `project-folder-${project.id}`;
-  const socialKey = `social-group-${project.id}`;
 
   const isSocialActive = SOCIAL_SUBITEMS.some((s) => pathname.includes(`/${s.href}`));
-  const [socialOpen, setSocialOpen] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const stored = localStorage.getItem(socialKey);
-    if (stored !== null) return stored !== "closed";
-    return isSocialActive; // only open if user is on a social page
-  });
+  const [socialOpen, setSocialOpen] = useState(isSocialActive);
 
   useEffect(() => {
     if (isSocialActive && !socialOpen) setSocialOpen(true);
   }, [isSocialActive, socialOpen]);
 
-  const [open, setOpen] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const stored = localStorage.getItem(storageKey);
-    if (stored !== null) return stored !== "closed";
-    return isProjectActive; // only open if user is inside this project
-  });
-
-  useEffect(() => {
-    localStorage.setItem(storageKey, open ? "open" : "closed");
-  }, [open, storageKey]);
-
-  useEffect(() => {
-    localStorage.setItem(socialKey, socialOpen ? "open" : "closed");
-  }, [socialOpen, socialKey]);
-
   const isProjectActive = pathname.startsWith(`/projects/${project.id}`);
+
+  // Only auto-expand if user is navigating inside this project
+  const [open, setOpen] = useState(isProjectActive);
 
   if (collapsed) {
     return (
