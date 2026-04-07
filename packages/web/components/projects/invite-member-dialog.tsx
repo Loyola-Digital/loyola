@@ -25,13 +25,17 @@ interface InviteMemberDialogProps {
 const DEFAULT_PERMISSIONS: ProjectPermissions = {
   instagram: true,
   traffic: true,
+  youtubeAds: true,
+  youtubeOrganic: true,
   conversations: true,
   mind: true,
 };
 
 const MODULE_LABELS: { key: keyof ProjectPermissions; label: string }[] = [
   { key: "instagram", label: "Instagram" },
-  { key: "traffic", label: "Ads" },
+  { key: "traffic", label: "Meta Ads" },
+  { key: "youtubeAds", label: "YouTube Ads" },
+  { key: "youtubeOrganic", label: "YouTube Canal" },
   { key: "conversations", label: "Conversas" },
   { key: "mind", label: "Mind (IA)" },
 ];

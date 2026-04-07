@@ -286,7 +286,7 @@ export const projectInvitations = pgTable(
     token: text("token").notNull().unique(),
     permissions: jsonb("permissions")
       .notNull()
-      .default({ instagram: true, conversations: true, mind: true }),
+      .default({ instagram: true, traffic: true, youtubeAds: true, youtubeOrganic: true, conversations: true, mind: true }),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -312,7 +312,7 @@ export const projectMembers = pgTable(
     role: text("role").notNull().default("guest"),
     permissions: jsonb("permissions")
       .notNull()
-      .default({ instagram: true, conversations: true, mind: true }),
+      .default({ instagram: true, traffic: true, youtubeAds: true, youtubeOrganic: true, conversations: true, mind: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

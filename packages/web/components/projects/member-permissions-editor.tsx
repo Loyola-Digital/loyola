@@ -17,6 +17,9 @@ interface MemberPermissionsEditorProps {
 
 const MODULE_LABELS: { key: keyof ProjectPermissions; label: string }[] = [
   { key: "instagram", label: "Instagram" },
+  { key: "traffic", label: "Meta Ads" },
+  { key: "youtubeAds", label: "YouTube Ads" },
+  { key: "youtubeOrganic", label: "YouTube Canal" },
   { key: "conversations", label: "Conversas" },
   { key: "mind", label: "Mind" },
 ];

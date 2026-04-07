@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useState } from "react";
-import { CheckCircle, Instagram, MessageSquare, Brain, XCircle, Loader2 } from "lucide-react";
+import { CheckCircle, Instagram, MessageSquare, Brain, XCircle, Loader2, TrendingUp, Youtube } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -14,6 +14,9 @@ interface InviteInfo {
   email: string;
   permissions: {
     instagram: boolean;
+    traffic: boolean;
+    youtubeAds: boolean;
+    youtubeOrganic: boolean;
     conversations: boolean;
     mind: boolean;
   };
@@ -28,12 +31,18 @@ interface AcceptResult {
 
 const MODULE_ICONS = {
   instagram: Instagram,
+  traffic: TrendingUp,
+  youtubeAds: Youtube,
+  youtubeOrganic: Youtube,
   conversations: MessageSquare,
   mind: Brain,
 } as const;
 
 const MODULE_LABELS = {
   instagram: "Instagram",
+  traffic: "Meta Ads",
+  youtubeAds: "YouTube Ads",
+  youtubeOrganic: "YouTube Canal",
   conversations: "Conversas",
   mind: "Mind (IA)",
 } as const;
