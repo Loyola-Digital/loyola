@@ -58,7 +58,7 @@ function SheetsPickerDialog({ projectId, funnelId, open, onOpenChange }: {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[520px]">
+      <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5 text-green-600" />
@@ -105,7 +105,7 @@ function SheetsPickerDialog({ projectId, funnelId, open, onOpenChange }: {
             ) : (sheetsData?.sheets ?? []).length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">Nenhuma aba encontrada.</p>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-1 max-h-[300px] overflow-y-auto">
                 {(sheetsData?.sheets ?? []).map((sheet) => (
                   <div key={sheet.title} className="flex items-center justify-between rounded-lg border border-border/30 p-3">
                     <div>
