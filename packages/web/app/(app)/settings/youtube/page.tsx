@@ -47,7 +47,12 @@ export default function YouTubeSettingsPage() {
     if (event.data.code) {
       setOauthStep("authorizing");
       authCallback.mutate({ code: event.data.code, redirectUri }, {
-        onSuccess: (data) => { setRefreshToken(data.refreshToken); setAvailableChannels(data.channels); setOauthStep("picking"); },
+        onSuccess: (data) => {
+          setRefreshToken(data.refreshToken);
+          setAvailableChannels(data.channels);
+          setOauthStep("picking");
+          if (data.channels.length === 1) setSelectedChannelId(data.channels[0].channelId);
+        },
         onError: (err) => { toast.error(err instanceof Error ? err.message : "Erro."); setOauthStep("idle"); },
       });
     }
