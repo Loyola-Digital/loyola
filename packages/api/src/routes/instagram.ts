@@ -608,7 +608,7 @@ export default fp(async function instagramRoutes(fastify) {
         { metric: "views", params: tsDay },
         { metric: "follower_count", params: tsDay },
         { metric: "accounts_engaged", params: tsTotal },
-        { metric: "total_interactions", params: tsDay },
+        { metric: "total_interactions", params: tsTotal },
         { metric: "website_clicks", params: tsDay },
         { metric: "profile_links_taps", params: tsDay },
         { metric: "profile_views", params: tsDay },
@@ -616,7 +616,7 @@ export default fp(async function instagramRoutes(fastify) {
         { metric: "comments", params: tsDay },
         { metric: "shares", params: tsDay },
         { metric: "saves", params: tsDay },
-        { metric: "follows_and_unfollows", params: tsDay },
+        { metric: "follows_and_unfollows", params: tsTotal },
         { metric: "profile_activity", params: tsDay },
         { metric: "engaged_audience_demographics", params: tsTotal },
       ];

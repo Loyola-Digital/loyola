@@ -457,32 +457,40 @@ export default fp(async function instagramServicePlugin(fastify) {
     const base = `/${igUserId}/insights`;
     const tsParams = `&period=${period}&since=${since}&until=${until}`;
 
-    // Each metric fetched independently with fallback names for API version compatibility
-    const metricRequests: { name: string; attempts: string[]; extraParams?: string }[] = [
-      { name: "reach", attempts: ["reach"] },
-      { name: "impressions", attempts: ["impressions", "views"] },
-      { name: "accounts_engaged", attempts: ["accounts_engaged"], extraParams: "&metric_type=total_value" },
-      { name: "follower_count", attempts: ["follower_count"] },
-      { name: "website_clicks", attempts: ["website_clicks", "profile_links_taps"] },
-      { name: "profile_views", attempts: ["profile_views"] },
-      { name: "total_interactions", attempts: ["total_interactions"] },
-    ];
-
+    // Instagram Graph API v25 — correct metric names and params
+    // Batch 1: time_series metrics (return daily values array)
+    // Batch 2: total_value metrics (return single aggregated value)
     const entries: InsightEntry[] = [];
 
-    await Promise.all(metricRequests.map(async ({ attempts, extraParams = "" }) => {
-      for (const metricName of attempts) {
-        try {
-          const url = `${base}?metric=${metricName}${tsParams}${extraParams}`;
-          const result = await graphFetch<InsightsResponse>(url, token);
-          if (result?.data?.length > 0) {
-            entries.push(...result.data);
-            console.log(`[IG insights] ${metricName}: OK (${result.data[0]?.values?.length ?? 0} values)`);
-            return; // success, stop trying alternatives
-          }
-        } catch (err) {
-          console.log(`[IG insights] ${metricName}: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
+    // Time series metrics (period=day, default metric_type)
+    const timeSeriesMetrics = ["reach", "impressions", "follower_count", "profile_views"];
+    await Promise.all(timeSeriesMetrics.map(async (metric) => {
+      try {
+        const result = await graphFetch<InsightsResponse>(
+          `${base}?metric=${metric}${tsParams}`, token
+        );
+        if (result?.data?.length > 0) {
+          entries.push(...result.data);
+          console.log(`[IG insights] ${metric}: OK (${result.data[0]?.values?.length ?? 0} values)`);
         }
+      } catch (err) {
+        console.log(`[IG insights] ${metric}: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
+      }
+    }));
+
+    // Total value metrics (need metric_type=total_value)
+    const totalValueMetrics = ["accounts_engaged", "total_interactions", "follows_and_unfollows"];
+    await Promise.all(totalValueMetrics.map(async (metric) => {
+      try {
+        const result = await graphFetch<InsightsResponse>(
+          `${base}?metric=${metric}${tsParams}&metric_type=total_value`, token
+        );
+        if (result?.data?.length > 0) {
+          entries.push(...result.data);
+          console.log(`[IG insights] ${metric}: OK (total_value)`);
+        }
+      } catch (err) {
+        console.log(`[IG insights] ${metric}: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
       }
     }));
 

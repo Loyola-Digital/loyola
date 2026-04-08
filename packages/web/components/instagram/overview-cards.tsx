@@ -3,7 +3,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users, UserPlus, UserMinus, Eye, MousePointerClick,
-  TrendingUp, Heart, Link2,
+  TrendingUp, Heart,
 } from "lucide-react";
 import type { InstagramProfile, InsightEntry } from "@/lib/hooks/use-instagram";
 
@@ -73,42 +73,55 @@ export function OverviewCards({ profile, insights, isLoading }: OverviewCardsPro
   }
 
   const followers = profile?.followers_count ?? 0;
+
+  // follower_count time series for initial/final
   const followerSeries = getFollowerTimeSeries(insights);
   const followersInitial = followerSeries?.first ?? followers;
   const followersFinal = followerSeries?.last ?? followers;
-  const followersDelta = followersFinal - followersInitial;
 
-  const totalReach = sumInsightValues(insights, "reach");
-  const totalImpressions = sumInsightValues(insights, "impressions") || sumInsightValues(insights, "views");
-  const websiteClicks = sumInsightValues(insights, "website_clicks") || sumInsightValues(insights, "profile_links_taps");
-  const profileViews = sumInsightValues(insights, "profile_views");
-  const totalInteractions = sumInsightValues(insights, "total_interactions");
-
-  // Engagement rate = accounts_engaged / reach (or interactions / reach)
-  const engagedEntry = insights?.find((e) => e.name === "accounts_engaged");
-  let totalEngaged = 0;
-  if (engagedEntry) {
-    if (Array.isArray(engagedEntry.values) && engagedEntry.values.length > 0) {
-      const v = engagedEntry.values[0].value;
-      if (typeof v === "number") totalEngaged = v;
-      else if (typeof v === "object" && v !== null) {
-        totalEngaged = Object.values(v as Record<string, number>).reduce((s, n) => s + n, 0);
-      }
-    }
+  // follows_and_unfollows (total_value with breakdown {follow, unfollow})
+  const followsEntry = insights?.find((e) => e.name === "follows_and_unfollows");
+  let followersDelta = followersFinal - followersInitial;
+  let hasFollowData = followerSeries !== null;
+  if (followsEntry?.values?.[0]?.value && typeof followsEntry.values[0].value === "object") {
+    const fv = followsEntry.values[0].value as Record<string, number>;
+    followersDelta = (fv.follow ?? 0) - (fv.unfollow ?? 0);
+    hasFollowData = true;
   }
 
-  const interactions = totalEngaged || totalInteractions;
+  const totalReach = sumInsightValues(insights, "reach");
+  const totalImpressions = sumInsightValues(insights, "impressions");
+  const profileViews = sumInsightValues(insights, "profile_views");
+
+  // accounts_engaged (total_value)
+  const engagedEntry = insights?.find((e) => e.name === "accounts_engaged");
+  let totalEngaged = 0;
+  if (engagedEntry?.values?.[0]?.value) {
+    const v = engagedEntry.values[0].value;
+    if (typeof v === "number") totalEngaged = v;
+    else if (typeof v === "object" && v !== null) totalEngaged = Object.values(v as Record<string, number>).reduce((s, n) => s + n, 0);
+  }
+
+  // total_interactions (total_value)
+  const interactionsEntry = insights?.find((e) => e.name === "total_interactions");
+  let totalInteractions = 0;
+  if (interactionsEntry?.values?.[0]?.value) {
+    const v = interactionsEntry.values[0].value;
+    if (typeof v === "number") totalInteractions = v;
+    else if (typeof v === "object" && v !== null) totalInteractions = Object.values(v as Record<string, number>).reduce((s, n) => s + n, 0);
+  }
+
+  const interactions = totalInteractions || totalEngaged;
   const engagementRate = totalReach > 0 ? (interactions / totalReach) * 100 : 0;
 
   const cards = [
     { icon: Users, label: "Seguidores", value: fmtNumber(followers), gradient: "from-blue-500/10 to-blue-600/5", border: "border-blue-500/20", show: true },
-    { icon: followersDelta >= 0 ? UserPlus : UserMinus, label: "Saldo", value: `${followersDelta >= 0 ? "+" : ""}${fmtNumber(followersDelta)}`, sub: `${fmtNumber(followersInitial)} → ${fmtNumber(followersFinal)}`, gradient: followersDelta >= 0 ? "from-emerald-500/10 to-emerald-600/5" : "from-red-500/10 to-red-600/5", border: followersDelta >= 0 ? "border-emerald-500/20" : "border-red-500/20", show: followerSeries !== null },
+    { icon: followersDelta >= 0 ? UserPlus : UserMinus, label: "Saldo Seguidores", value: `${followersDelta >= 0 ? "+" : ""}${fmtNumber(Math.abs(followersDelta))}`, sub: hasFollowData ? `${fmtNumber(followersInitial)} → ${fmtNumber(followersFinal)}` : undefined, gradient: followersDelta >= 0 ? "from-emerald-500/10 to-emerald-600/5" : "from-red-500/10 to-red-600/5", border: followersDelta >= 0 ? "border-emerald-500/20" : "border-red-500/20", show: hasFollowData },
     { icon: Eye, label: "Alcance", value: fmtNumber(totalReach), gradient: "from-cyan-500/10 to-cyan-600/5", border: "border-cyan-500/20", show: totalReach > 0 },
-    { icon: Eye, label: "Impressoes", value: fmtNumber(totalImpressions), gradient: "from-purple-500/10 to-purple-600/5", border: "border-purple-500/20", show: totalImpressions > 0 },
     { icon: Heart, label: "Interacoes", value: fmtNumber(interactions), gradient: "from-pink-500/10 to-pink-600/5", border: "border-pink-500/20", show: interactions > 0 },
     { icon: TrendingUp, label: "Engajamento", value: fmtPercent(engagementRate), gradient: "from-amber-500/10 to-amber-600/5", border: "border-amber-500/20", show: engagementRate > 0 },
-    { icon: Link2, label: "Cliques Bio", value: fmtNumber(websiteClicks), gradient: "from-indigo-500/10 to-indigo-600/5", border: "border-indigo-500/20", show: websiteClicks > 0 },
     { icon: MousePointerClick, label: "Visitas Perfil", value: fmtNumber(profileViews), gradient: "from-orange-500/10 to-orange-600/5", border: "border-orange-500/20", show: profileViews > 0 },
+    { icon: Eye, label: "Impressoes", value: fmtNumber(totalImpressions), gradient: "from-purple-500/10 to-purple-600/5", border: "border-purple-500/20", show: totalImpressions > 0 },
   ].filter((c) => c.show);
 
   return (
