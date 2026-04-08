@@ -579,6 +579,22 @@ export default fp(async function instagramRoutes(fastify) {
       const token = decrypt(account.accessTokenEncrypted, account.accessTokenIv);
       const igUserId = account.instagramUserId;
 
+      // Debug: log token shape to verify decryption
+      fastify.log.info(`[debug-metrics] token length=${token.length}, starts=${token.substring(0, 10)}..., ends=...${token.substring(token.length - 5)}`);
+
+      // First test: try a simple profile fetch to verify token works
+      let tokenValid = false;
+      try {
+        const profileRes = await fetch(`https://graph.facebook.com/v21.0/${igUserId}?fields=id,username&access_token=${token}`);
+        const profileData = await profileRes.json() as { id?: string; error?: { message: string } };
+        tokenValid = !!profileData.id;
+        if (!tokenValid) {
+          return { igUserId, accountName: account.accountName, tokenValid: false, tokenError: profileData.error?.message ?? "Unknown", tokenLength: token.length };
+        }
+      } catch (err) {
+        return { igUserId, accountName: account.accountName, tokenValid: false, tokenError: err instanceof Error ? err.message : String(err) };
+      }
+
       const since = Math.floor(Date.now() / 1000) - 30 * 86400;
       const until = Math.floor(Date.now() / 1000);
       const base = `https://graph.facebook.com/v21.0/${igUserId}/insights`;
