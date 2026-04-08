@@ -467,6 +467,9 @@ export default fp(async function instagramServicePlugin(fastify) {
         `${base}?metric=accounts_engaged${tsParams}&metric_type=total_value`,
         token,
       ).catch(() => null),
+      graphFetch<InsightsResponse>(`${base}?metric=follower_count${tsParams}`, token).catch(() => null),
+      graphFetch<InsightsResponse>(`${base}?metric=website_clicks${tsParams}`, token).catch(() => null),
+      graphFetch<InsightsResponse>(`${base}?metric=profile_views${tsParams}`, token).catch(() => null),
     ]);
 
     const entries: InsightEntry[] = [];
