@@ -35,3 +35,15 @@ export function useUpdateUserStatus() {
     },
   });
 }
+
+export function useSyncUsers() {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient<{ total: number; updated: number; errors: string[] }>("/api/admin/sync-users", { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+  });
+}

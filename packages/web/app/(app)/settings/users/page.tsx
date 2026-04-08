@@ -1,6 +1,6 @@
 "use client";
 
-import { Users, CheckCircle, XCircle, Clock } from "lucide-react";
+import { Users, CheckCircle, XCircle, Clock, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAdminUsers, useUpdateUserStatus } from "@/lib/hooks/use-admin-users";
+import { useAdminUsers, useUpdateUserStatus, useSyncUsers } from "@/lib/hooks/use-admin-users";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 
 function StatusBadge({ status }: { status: string }) {
@@ -28,6 +28,7 @@ export default function UsersSettingsPage() {
   const isAdmin = role === "admin" || role === "manager";
   const { data: users, isLoading } = useAdminUsers();
   const updateStatus = useUpdateUserStatus();
+  const syncUsers = useSyncUsers();
 
   function handleStatus(userId: string, status: "active" | "blocked") {
     updateStatus.mutate(
@@ -57,6 +58,38 @@ export default function UsersSettingsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Sync button */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Usuarios
+          </h1>
+          <p className="text-sm text-muted-foreground">Gerencie usuarios e permissoes.</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          disabled={syncUsers.isPending}
+          onClick={() => {
+            syncUsers.mutate(undefined, {
+              onSuccess: (data) => {
+                if (data.updated > 0) {
+                  toast.success(`${data.updated} usuario${data.updated > 1 ? "s" : ""} atualizado${data.updated > 1 ? "s" : ""} com dados do Clerk.`);
+                } else {
+                  toast.info("Todos os usuarios ja estao sincronizados.");
+                }
+              },
+              onError: () => toast.error("Erro ao sincronizar."),
+            });
+          }}
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${syncUsers.isPending ? "animate-spin" : ""}`} />
+          Sincronizar com Clerk
+        </Button>
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
