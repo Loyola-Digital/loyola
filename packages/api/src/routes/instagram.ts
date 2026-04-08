@@ -576,23 +576,38 @@ export default fp(async function instagramRoutes(fastify) {
       const account = await getAccount(paramResult.data.id);
       if (!account) return reply.code(404).send({ error: "Conta nao encontrada" });
 
-      const token = decrypt(account.accessTokenEncrypted, account.accessTokenIv);
       const igUserId = account.instagramUserId;
 
-      // Debug: log token shape to verify decryption
-      fastify.log.info(`[debug-metrics] token length=${token.length}, starts=${token.substring(0, 10)}..., ends=...${token.substring(token.length - 5)}`);
+      // Test 1: use the SAME service that the dashboard uses (includes cache)
+      let profileFromService = null;
+      let serviceError = null;
+      try {
+        profileFromService = await fastify.instagramService.getProfile(paramResult.data.id);
+      } catch (err) {
+        serviceError = err instanceof Error ? err.message : String(err);
+      }
 
-      // First test: try a simple profile fetch to verify token works
-      let tokenValid = false;
+      // Test 2: decrypt and test token directly (bypasses cache)
+      const token = decrypt(account.accessTokenEncrypted, account.accessTokenIv);
+      let directProfileResult = null;
+      let directError = null;
       try {
         const profileRes = await fetch(`https://graph.facebook.com/v21.0/${igUserId}?fields=id,username&access_token=${token}`);
-        const profileData = await profileRes.json() as { id?: string; error?: { message: string } };
-        tokenValid = !!profileData.id;
-        if (!tokenValid) {
-          return { igUserId, accountName: account.accountName, tokenValid: false, tokenError: profileData.error?.message ?? "Unknown", tokenLength: token.length };
-        }
+        directProfileResult = await profileRes.json();
       } catch (err) {
-        return { igUserId, accountName: account.accountName, tokenValid: false, tokenError: err instanceof Error ? err.message : String(err) };
+        directError = err instanceof Error ? err.message : String(err);
+      }
+
+      // Test 3: try insights via service (with cache)
+      let insightsFromService = null;
+      let insightsError = null;
+      try {
+        const since = Math.floor(Date.now() / 1000) - 30 * 86400;
+        const until = Math.floor(Date.now() / 1000);
+        const insightsResult = await fastify.instagramService.getAccountInsights(paramResult.data.id, "day", since, until);
+        insightsFromService = { data: insightsResult };
+      } catch (err) {
+        insightsError = err instanceof Error ? err.message : String(err);
       }
 
       const since = Math.floor(Date.now() / 1000) - 30 * 86400;
@@ -649,7 +664,19 @@ export default fp(async function instagramRoutes(fastify) {
         }
       }
 
-      return { igUserId, accountName: account.accountName, results };
+      return {
+        igUserId,
+        accountName: account.accountName,
+        tokenLength: token.length,
+        tokenStart: token.substring(0, 15),
+        serviceProfile: profileFromService ? { id: profileFromService.id, username: profileFromService.username, followers: profileFromService.followers_count } : null,
+        serviceProfileError: serviceError,
+        directProfile: directProfileResult,
+        directProfileError: directError,
+        insightsMetrics: insightsFromService?.data?.map((e: { name: string }) => e.name) ?? [],
+        insightsError,
+        metricTests: results,
+      };
     },
   );
 });
