@@ -3,7 +3,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users, UserPlus, UserMinus, Eye, MousePointerClick,
-  TrendingUp, Heart, MessageSquare as MsgIcon, Link2,
+  TrendingUp, Heart, Link2,
 } from "lucide-react";
 import type { InstagramProfile, InsightEntry } from "@/lib/hooks/use-instagram";
 
