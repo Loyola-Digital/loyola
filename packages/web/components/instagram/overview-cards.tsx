@@ -74,19 +74,26 @@ export function OverviewCards({ profile, insights, isLoading }: OverviewCardsPro
 
   const followers = profile?.followers_count ?? 0;
 
-  // follower_count time series for initial/final
-  const followerSeries = getFollowerTimeSeries(insights);
-  const followersInitial = followerSeries?.first ?? followers;
-  const followersFinal = followerSeries?.last ?? followers;
-
-  // follows_and_unfollows (total_value with breakdown {follow, unfollow})
+  // Saldo de seguidores: prefer follows_and_unfollows (total_value), fallback to follower_count series
   const followsEntry = insights?.find((e) => e.name === "follows_and_unfollows");
-  let followersDelta = followersFinal - followersInitial;
-  let hasFollowData = followerSeries !== null;
+  const followerSeries = getFollowerTimeSeries(insights);
+
+  let followersDelta = 0;
+  let followsGained = 0;
+  let followsLost = 0;
+  let hasFollowData = false;
+
   if (followsEntry?.values?.[0]?.value && typeof followsEntry.values[0].value === "object") {
+    // v25: follows_and_unfollows returns {follow: N, unfollow: N}
     const fv = followsEntry.values[0].value as Record<string, number>;
-    followersDelta = (fv.follow ?? 0) - (fv.unfollow ?? 0);
+    followsGained = fv.follow ?? 0;
+    followsLost = fv.unfollow ?? 0;
+    followersDelta = followsGained - followsLost;
     hasFollowData = true;
+  } else if (followerSeries) {
+    // Fallback: calculate from time series first/last
+    followersDelta = followerSeries.last - followerSeries.first;
+    hasFollowData = followerSeries.last > 0; // only show if data is valid
   }
 
   const totalReach = sumInsightValues(insights, "reach");
@@ -116,7 +123,7 @@ export function OverviewCards({ profile, insights, isLoading }: OverviewCardsPro
 
   const cards = [
     { icon: Users, label: "Seguidores", value: fmtNumber(followers), gradient: "from-blue-500/10 to-blue-600/5", border: "border-blue-500/20", show: true },
-    { icon: followersDelta >= 0 ? UserPlus : UserMinus, label: "Saldo Seguidores", value: `${followersDelta >= 0 ? "+" : ""}${fmtNumber(Math.abs(followersDelta))}`, sub: hasFollowData ? `${fmtNumber(followersInitial)} → ${fmtNumber(followersFinal)}` : undefined, gradient: followersDelta >= 0 ? "from-emerald-500/10 to-emerald-600/5" : "from-red-500/10 to-red-600/5", border: followersDelta >= 0 ? "border-emerald-500/20" : "border-red-500/20", show: hasFollowData },
+    { icon: followersDelta >= 0 ? UserPlus : UserMinus, label: "Saldo Seguidores", value: `${followersDelta >= 0 ? "+" : ""}${fmtNumber(followersDelta)}`, sub: followsGained > 0 ? `+${fmtNumber(followsGained)} / -${fmtNumber(followsLost)}` : undefined, gradient: followersDelta >= 0 ? "from-emerald-500/10 to-emerald-600/5" : "from-red-500/10 to-red-600/5", border: followersDelta >= 0 ? "border-emerald-500/20" : "border-red-500/20", show: hasFollowData },
     { icon: Eye, label: "Alcance", value: fmtNumber(totalReach), gradient: "from-cyan-500/10 to-cyan-600/5", border: "border-cyan-500/20", show: totalReach > 0 },
     { icon: Heart, label: "Interacoes", value: fmtNumber(interactions), gradient: "from-pink-500/10 to-pink-600/5", border: "border-pink-500/20", show: interactions > 0 },
     { icon: TrendingUp, label: "Engajamento", value: fmtPercent(engagementRate), gradient: "from-amber-500/10 to-amber-600/5", border: "border-amber-500/20", show: engagementRate > 0 },
