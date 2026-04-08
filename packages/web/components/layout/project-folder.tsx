@@ -32,6 +32,7 @@ import {
 import { toast } from "sonner";
 import type { Project } from "@/lib/hooks/use-projects";
 import { useDeleteProject, useUpdateProject } from "@/lib/hooks/use-projects";
+import { useUserRole } from "@/lib/hooks/use-user-role";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useFunnels } from "@/lib/hooks/use-funnels";
@@ -57,6 +58,8 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
   const pathname = usePathname();
   const router = useRouter();
   const { data: funnelList, isLoading: funnelsLoading } = useFunnels(project.id);
+  const role = useUserRole();
+  const isAdmin = role === "admin" || role === "manager";
   const deleteProject = useDeleteProject();
   const updateProject = useUpdateProject();
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
@@ -122,29 +125,31 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
           </Button>
         </CollapsibleTrigger>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => { setEditName(project.name); setEditColor(project.color ?? "#94a3b8"); setShowEditDialog(true); }}>
-              <Pencil className="mr-2 h-4 w-4" />
-              Editar projeto
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              onClick={() => setShowDeleteAlert(true)}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Deletar projeto
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {isAdmin && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => { setEditName(project.name); setEditColor(project.color ?? "#94a3b8"); setShowEditDialog(true); }}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Editar projeto
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => setShowDeleteAlert(true)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Deletar projeto
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       <AlertDialog open={showDeleteAlert} onOpenChange={setShowDeleteAlert}>
