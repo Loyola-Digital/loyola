@@ -70,6 +70,31 @@ export default fp(async function authPlugin(fastify) {
     request.userId = dbUser[0].id;
     request.userRole = dbUser[0].role;
 
+    // Auto-fix placeholder users on login (lazy sync with Clerk)
+    const userEmail = await fastify.db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, dbUser[0].id))
+      .limit(1);
+
+    if (userEmail[0]?.email?.endsWith("@placeholder.dev")) {
+      try {
+        const clerkUser = await clerkClient.users.getUser(clerkId);
+        const realEmail = clerkUser.emailAddresses?.[0]?.emailAddress;
+        if (realEmail) {
+          const firstName = clerkUser.firstName ?? "";
+          const lastName = clerkUser.lastName ?? "";
+          const realName = `${firstName} ${lastName}`.trim() || clerkUser.username || clerkId;
+          await fastify.db
+            .update(users)
+            .set({ email: realEmail, name: realName, avatarUrl: clerkUser.imageUrl ?? null, updatedAt: new Date() })
+            .where(eq(users.id, dbUser[0].id));
+        }
+      } catch {
+        // Non-critical — will retry next request
+      }
+    }
+
     // Allow /api/me regardless of status (so frontend can check status)
     if (request.url === "/api/me") return;
 
