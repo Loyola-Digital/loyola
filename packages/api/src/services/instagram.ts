@@ -457,29 +457,35 @@ export default fp(async function instagramServicePlugin(fastify) {
     const base = `/${igUserId}/insights`;
     const tsParams = `&period=${period}&since=${since}&until=${until}`;
 
-    const results = await Promise.allSettled([
-      graphFetch<InsightsResponse>(`${base}?metric=reach${tsParams}`, token),
-      graphFetch<InsightsResponse>(`${base}?metric=impressions${tsParams}`, token)
-        .catch(() => graphFetch<InsightsResponse>(`${base}?metric=views${tsParams}`, token))
-        .catch(() => null),
-      graphFetch<InsightsResponse>(
-        `${base}?metric=accounts_engaged${tsParams}&metric_type=total_value`,
-        token,
-      ).catch(() => null),
-      graphFetch<InsightsResponse>(`${base}?metric=follower_count${tsParams}`, token).catch(() => null),
-      // website_clicks and profile_views may not be available in all API versions
-      graphFetch<InsightsResponse>(`${base}?metric=website_clicks${tsParams}`, token)
-        .catch(() => null),
-      graphFetch<InsightsResponse>(`${base}?metric=profile_views${tsParams}`, token)
-        .catch(() => null),
-    ]);
+    // Each metric fetched independently with fallback names for API version compatibility
+    const metricRequests: { name: string; attempts: string[]; extraParams?: string }[] = [
+      { name: "reach", attempts: ["reach"] },
+      { name: "impressions", attempts: ["impressions", "views"] },
+      { name: "accounts_engaged", attempts: ["accounts_engaged"], extraParams: "&metric_type=total_value" },
+      { name: "follower_count", attempts: ["follower_count"] },
+      { name: "website_clicks", attempts: ["website_clicks", "profile_links_taps"] },
+      { name: "profile_views", attempts: ["profile_views"] },
+      { name: "total_interactions", attempts: ["total_interactions"] },
+    ];
 
     const entries: InsightEntry[] = [];
-    for (const r of results) {
-      if (r.status === "fulfilled" && r.value?.data) {
-        entries.push(...r.value.data);
+
+    await Promise.all(metricRequests.map(async ({ attempts, extraParams = "" }) => {
+      for (const metricName of attempts) {
+        try {
+          const url = `${base}?metric=${metricName}${tsParams}${extraParams}`;
+          const result = await graphFetch<InsightsResponse>(url, token);
+          if (result?.data?.length > 0) {
+            entries.push(...result.data);
+            console.log(`[IG insights] ${metricName}: OK (${result.data[0]?.values?.length ?? 0} values)`);
+            return; // success, stop trying alternatives
+          }
+        } catch (err) {
+          console.log(`[IG insights] ${metricName}: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
+        }
       }
-    }
+    }));
+
     console.log("[IG insights] returned metrics:", entries.map((e) => e.name).join(", ") || "(none)");
 
     await setCachedMetric(
