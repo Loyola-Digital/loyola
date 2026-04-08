@@ -2,7 +2,7 @@ import { z } from "zod";
 import { eq, and, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { instagramAccounts, instagramMetricsCache, instagramAccountProjects } from "../db/schema.js";
-import { encrypt } from "../services/encryption.js";
+import { encrypt, decrypt } from "../services/encryption.js";
 import { InstagramApiError } from "../services/instagram.js";
 
 // ============================================================
@@ -559,6 +559,81 @@ export default fp(async function instagramRoutes(fastify) {
         );
 
       return reply.code(204).send();
+    },
+  );
+
+  // ---- GET /api/instagram/accounts/:id/debug-metrics ---- (admin only)
+  fastify.get(
+    "/api/instagram/accounts/:id/debug-metrics",
+    async (request, reply) => {
+      if (request.userRole !== "admin" && request.userRole !== "manager") {
+        return reply.code(403).send({ error: "Admin only" });
+      }
+
+      const paramResult = idParamSchema.safeParse(request.params);
+      if (!paramResult.success) return reply.code(400).send({ error: "ID invalido" });
+
+      const account = await getAccount(paramResult.data.id);
+      if (!account) return reply.code(404).send({ error: "Conta nao encontrada" });
+
+      const token = decrypt(account.accessTokenEncrypted, account.accessTokenIv);
+      const igUserId = account.instagramUserId;
+
+      const since = Math.floor(Date.now() / 1000) - 30 * 86400;
+      const until = Math.floor(Date.now() / 1000);
+      const base = `https://graph.facebook.com/v21.0/${igUserId}/insights`;
+      const tsDay = `&period=day&since=${since}&until=${until}`;
+      const tsTotal = `&period=day&since=${since}&until=${until}&metric_type=total_value`;
+
+      // All possible metrics
+      const tests = [
+        { metric: "reach", params: tsDay },
+        { metric: "impressions", params: tsDay },
+        { metric: "views", params: tsDay },
+        { metric: "follower_count", params: tsDay },
+        { metric: "accounts_engaged", params: tsTotal },
+        { metric: "total_interactions", params: tsDay },
+        { metric: "website_clicks", params: tsDay },
+        { metric: "profile_links_taps", params: tsDay },
+        { metric: "profile_views", params: tsDay },
+        { metric: "likes", params: tsDay },
+        { metric: "comments", params: tsDay },
+        { metric: "shares", params: tsDay },
+        { metric: "saves", params: tsDay },
+        { metric: "follows_and_unfollows", params: tsDay },
+        { metric: "profile_activity", params: tsDay },
+        { metric: "engaged_audience_demographics", params: tsTotal },
+      ];
+
+      const results: Record<string, unknown> = {};
+
+      for (const { metric, params } of tests) {
+        try {
+          const url = `${base}?metric=${metric}${params}&access_token=${token}`;
+          const res = await fetch(url);
+          const data = await res.json() as { data?: { name: string; values?: { value: unknown }[] }[]; error?: { message: string; code: number } };
+
+          if (data.error) {
+            results[metric] = { status: "ERROR", code: data.error.code, message: data.error.message.substring(0, 100) };
+          } else if (data.data?.[0]) {
+            const entry = data.data[0];
+            const values = entry.values ?? [];
+            const nonZero = values.filter((v) => typeof v.value === "number" ? v.value > 0 : v.value !== null);
+            results[metric] = {
+              status: "OK",
+              totalValues: values.length,
+              nonZeroValues: nonZero.length,
+              sample: nonZero.slice(0, 2),
+            };
+          } else {
+            results[metric] = { status: "EMPTY" };
+          }
+        } catch (err) {
+          results[metric] = { status: "FETCH_ERROR", message: err instanceof Error ? err.message.substring(0, 80) : String(err) };
+        }
+      }
+
+      return { igUserId, accountName: account.accountName, results };
     },
   );
 });
