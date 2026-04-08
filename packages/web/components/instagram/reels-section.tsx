@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Play, Heart, Share2 } from "lucide-react";
-import Image from "next/image";
 import { format, parseISO } from "date-fns";
 import type { MediaListResponse } from "@/lib/hooks/use-instagram";
 
@@ -43,7 +42,7 @@ export function ReelsSection({ data, isLoading, onRefresh, isRefreshing }: Reels
                 <div key={reel.id}>
                   <div className="relative aspect-[9/16] overflow-hidden rounded-lg bg-muted">
                     {thumb ? (
-                      <Image src={thumb} alt="" fill className="object-cover" sizes="(max-width: 640px) 50vw, 25vw" />
+                      <img src={thumb} alt="" className="absolute inset-0 w-full h-full object-cover" />
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center">
                         <Play className="h-8 w-8 text-muted-foreground" />

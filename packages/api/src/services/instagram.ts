@@ -461,15 +461,17 @@ export default fp(async function instagramServicePlugin(fastify) {
       graphFetch<InsightsResponse>(`${base}?metric=reach${tsParams}`, token),
       graphFetch<InsightsResponse>(`${base}?metric=impressions${tsParams}`, token)
         .catch(() => graphFetch<InsightsResponse>(`${base}?metric=views${tsParams}`, token))
-        .catch(() => graphFetch<InsightsResponse>(`${base}?metric=profile_views${tsParams}`, token))
         .catch(() => null),
       graphFetch<InsightsResponse>(
         `${base}?metric=accounts_engaged${tsParams}&metric_type=total_value`,
         token,
       ).catch(() => null),
       graphFetch<InsightsResponse>(`${base}?metric=follower_count${tsParams}`, token).catch(() => null),
-      graphFetch<InsightsResponse>(`${base}?metric=website_clicks${tsParams}`, token).catch(() => null),
-      graphFetch<InsightsResponse>(`${base}?metric=profile_views${tsParams}`, token).catch(() => null),
+      // website_clicks and profile_views may not be available in all API versions
+      graphFetch<InsightsResponse>(`${base}?metric=website_clicks${tsParams}`, token)
+        .catch(() => null),
+      graphFetch<InsightsResponse>(`${base}?metric=profile_views${tsParams}`, token)
+        .catch(() => null),
     ]);
 
     const entries: InsightEntry[] = [];

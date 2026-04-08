@@ -13,7 +13,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RefreshCw, ArrowUpDown } from "lucide-react";
-import Image from "next/image";
 import type { InstagramMedia } from "@/lib/hooks/use-instagram";
 import { format, parseISO } from "date-fns";
 
@@ -100,7 +99,7 @@ export function PostsTable({ data, isLoading, onRefresh, isRefreshing }: PostsTa
                       <TableCell>
                         {thumb ? (
                           <div className="relative h-10 w-10 overflow-hidden rounded">
-                            <Image src={thumb} alt="" fill className="object-cover" sizes="40px" />
+                            <img src={thumb} alt="" className="absolute inset-0 w-full h-full object-cover" />
                           </div>
                         ) : (
                           <div className="h-10 w-10 rounded bg-muted" />

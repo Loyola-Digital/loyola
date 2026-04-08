@@ -5,7 +5,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RefreshCw, Eye, Users, MessageSquare, LogOut } from "lucide-react";
-import Image from "next/image";
 import type { StoryMedia } from "@/lib/hooks/use-instagram";
 
 interface StoriesSectionProps {
@@ -55,7 +54,7 @@ export function StoriesSection({ data, isLoading, onRefresh, isRefreshing }: Sto
                 <div key={story.id} className="shrink-0 w-28">
                   <div className="relative h-48 w-28 overflow-hidden rounded-lg bg-muted">
                     {thumb ? (
-                      <Image src={thumb} alt="" fill className="object-cover" sizes="112px" />
+                      <img src={thumb} alt="" className="absolute inset-0 w-full h-full object-cover" />
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center">
                         <Badge variant="secondary">{story.media_type}</Badge>
