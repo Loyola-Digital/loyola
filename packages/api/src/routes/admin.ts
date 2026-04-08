@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { eq, sql } from "drizzle-orm";
+import { eq, like, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
+import { clerkClient } from "@clerk/fastify";
 import { users, messages, conversations } from "../db/schema.js";
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -196,5 +197,44 @@ export default fp(async function adminRoutes(fastify) {
     }
 
     return updated;
+  });
+
+  // ---- POST /api/admin/sync-users ---- (admin only — fix placeholder users from Clerk)
+  fastify.post("/api/admin/sync-users", async (request, reply) => {
+    if (request.userRole !== "admin" && request.userRole !== "manager") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+
+    // Find all users with placeholder emails
+    const placeholders = await fastify.db
+      .select({ id: users.id, clerkId: users.clerkId, email: users.email })
+      .from(users)
+      .where(like(users.email, "%@placeholder.dev"));
+
+    let updated = 0;
+    const errors: string[] = [];
+
+    for (const user of placeholders) {
+      try {
+        const clerkUser = await clerkClient.users.getUser(user.clerkId);
+        const email = clerkUser.emailAddresses?.[0]?.emailAddress;
+        const firstName = clerkUser.firstName ?? "";
+        const lastName = clerkUser.lastName ?? "";
+        const name = `${firstName} ${lastName}`.trim() || clerkUser.username || user.clerkId;
+        const avatarUrl = clerkUser.imageUrl ?? null;
+
+        if (email) {
+          await fastify.db
+            .update(users)
+            .set({ email, name, avatarUrl, updatedAt: new Date() })
+            .where(eq(users.id, user.id));
+          updated++;
+        }
+      } catch (err) {
+        errors.push(`${user.clerkId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    return { total: placeholders.length, updated, errors };
   });
 });

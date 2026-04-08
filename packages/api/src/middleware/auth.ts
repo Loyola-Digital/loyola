@@ -1,4 +1,4 @@
-import { getAuth } from "@clerk/fastify";
+import { getAuth, clerkClient } from "@clerk/fastify";
 import { eq } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { users } from "../db/schema.js";
@@ -27,13 +27,29 @@ export default fp(async function authPlugin(fastify) {
       .limit(1);
 
     if (dbUser.length === 0) {
+      // Fetch real user data from Clerk before provisioning
+      let email = `${clerkId}@placeholder.dev`;
+      let name = clerkId;
+      let avatarUrl: string | null = null;
+      try {
+        const clerkUser = await clerkClient.users.getUser(clerkId);
+        email = clerkUser.emailAddresses?.[0]?.emailAddress ?? email;
+        const firstName = clerkUser.firstName ?? "";
+        const lastName = clerkUser.lastName ?? "";
+        name = `${firstName} ${lastName}`.trim() || clerkUser.username || name;
+        avatarUrl = clerkUser.imageUrl ?? null;
+      } catch {
+        // Fallback to placeholder if Clerk API fails
+      }
+
       // Auto-provision new user as pending (requires admin approval)
       const [newUser] = await fastify.db
         .insert(users)
         .values({
           clerkId,
-          email: `${clerkId}@placeholder.dev`,
-          name: clerkId,
+          email,
+          name,
+          avatarUrl,
           status: "pending",
         })
         .onConflictDoNothing()
