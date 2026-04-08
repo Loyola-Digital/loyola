@@ -12,12 +12,12 @@ import {
   PieChart,
   Pie,
   Cell,
-  Legend,
+  Area,
+  AreaChart,
 } from "recharts";
-import { Coins, DollarSign, MessageSquare, Hash, Cpu } from "lucide-react";
-import { useTokenAudit } from "@/lib/hooks/use-audit";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { useTokenAudit } from "@/lib/hooks/use-audit";
 
 const PERIODS = [
   { label: "7d", value: 7 },
@@ -27,10 +27,9 @@ const PERIODS = [
 ];
 
 const MIND_COLORS = [
-  "hsl(47 98% 54%)", "hsl(200 80% 60%)", "hsl(142 70% 45%)",
-  "hsl(280 60% 55%)", "hsl(350 70% 55%)", "hsl(30 80% 55%)",
-  "hsl(170 60% 45%)", "hsl(220 70% 55%)", "hsl(0 72% 55%)",
-  "hsl(90 60% 45%)",
+  "#f59e0b", "#3b82f6", "#10b981", "#8b5cf6",
+  "#ef4444", "#f97316", "#06b6d4", "#ec4899",
+  "#84cc16", "#6366f1",
 ];
 
 function fmt(n: number) {
@@ -41,13 +40,38 @@ function fmt(n: number) {
 }
 
 function fmtCost(n: number) {
-  if (n >= 1000) return `$${n.toFixed(2)}`;
-  if (n >= 1) return `$${n.toFixed(2)}`;
-  return `$${n.toFixed(4)}`;
+  return n >= 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(4)}`;
 }
 
-function fmtDate(iso: string) {
-  return iso.slice(0, 10);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function DailyTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-border/50 bg-card/95 backdrop-blur-sm px-4 py-3 shadow-2xl">
+      <p className="text-xs font-medium text-muted-foreground mb-2">{String(label).slice(0, 10)}</p>
+      {payload.map((p: { name: string; value: number; color: string }) => (
+        <div key={p.name} className="flex items-center justify-between gap-6 text-sm">
+          <span className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+            {p.name === "inputTokens" ? "Input" : "Output"}
+          </span>
+          <span className="font-semibold tabular-nums">{fmt(p.value)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function MindTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0];
+  return (
+    <div className="rounded-xl border border-border/50 bg-card/95 backdrop-blur-sm px-4 py-3 shadow-2xl">
+      <p className="text-xs font-medium mb-1">{d.name}</p>
+      <p className="text-sm font-semibold">{fmt(d.value)} tokens</p>
+    </div>
+  );
 }
 
 export default function AuditPage() {
@@ -59,42 +83,42 @@ export default function AuditPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-brand">Loyola X Usage Dashboard</h1>
+          <h1 className="text-xl font-bold bg-gradient-to-r from-brand to-amber-400 bg-clip-text text-transparent">
+            Loyola X Usage Dashboard
+          </h1>
+          <p className="text-xs text-muted-foreground mt-0.5">Consumo de tokens e custos estimados</p>
         </div>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span>RANGE</span>
-          <div className="flex gap-0.5 rounded-lg border border-border/40 bg-muted/30 p-0.5">
-            {PERIODS.map((p) => (
-              <Button
-                key={p.value}
-                variant="ghost"
-                size="sm"
-                onClick={() => setDays(p.value)}
-                className={
-                  days === p.value
-                    ? "bg-brand text-brand-foreground h-7 px-3 text-xs"
-                    : "text-muted-foreground hover:text-foreground h-7 px-3 text-xs"
-                }
-              >
-                {p.label}
-              </Button>
-            ))}
-          </div>
+        <div className="flex gap-0.5 rounded-full border border-border/40 bg-muted/20 p-1">
+          {PERIODS.map((p) => (
+            <Button
+              key={p.value}
+              variant="ghost"
+              size="sm"
+              onClick={() => setDays(p.value)}
+              className={`rounded-full h-7 px-4 text-xs transition-all ${
+                days === p.value
+                  ? "bg-brand text-brand-foreground shadow-md shadow-brand/20"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {p.label}
+            </Button>
+          ))}
         </div>
       </div>
 
       {isLoading && (
         <div className="space-y-6">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+            {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}
           </div>
-          <Skeleton className="h-64 rounded-xl" />
+          <Skeleton className="h-72 rounded-2xl" />
         </div>
       )}
 
       {error && (
-        <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-6 py-4 text-center">
-          <p className="text-sm text-destructive">Erro ao carregar dados de auditoria.</p>
+        <div className="rounded-2xl border border-destructive/20 bg-destructive/5 px-6 py-4 text-center">
+          <p className="text-sm text-destructive">Erro ao carregar dados.</p>
         </div>
       )}
 
@@ -102,66 +126,67 @@ export default function AuditPage() {
         <>
           {/* KPI Cards */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            <KpiCard label="CONVERSAS" value={String(data.summary.conversationCount)} sub={`last ${days} days`} />
-            <KpiCard label="MENSAGENS" value={fmt(data.summary.messageCount)} sub={`last ${days} days`} />
-            <KpiCard label="INPUT TOKENS" value={fmt(data.summary.totalInputTokens)} sub={`last ${days} days`} />
-            <KpiCard label="OUTPUT TOKENS" value={fmt(data.summary.totalOutputTokens)} sub={`last ${days} days`} />
-            <KpiCard label="EST. COST" value={fmtCost(data.summary.estimatedCostUsd)} sub="API pricing" accent />
+            <GlassCard label="Conversas" value={String(data.summary.conversationCount)} sub={`ultimos ${days} dias`} gradient="from-blue-500/10 to-blue-600/5" border="border-blue-500/20" />
+            <GlassCard label="Mensagens" value={fmt(data.summary.messageCount)} sub={`ultimos ${days} dias`} gradient="from-purple-500/10 to-purple-600/5" border="border-purple-500/20" />
+            <GlassCard label="Input Tokens" value={fmt(data.summary.totalInputTokens)} sub={`ultimos ${days} dias`} gradient="from-cyan-500/10 to-cyan-600/5" border="border-cyan-500/20" />
+            <GlassCard label="Output Tokens" value={fmt(data.summary.totalOutputTokens)} sub={`ultimos ${days} dias`} gradient="from-amber-500/10 to-amber-600/5" border="border-amber-500/20" />
+            <GlassCard label="Est. Cost" value={fmtCost(data.summary.estimatedCostUsd)} sub="API pricing" gradient="from-emerald-500/10 to-emerald-600/5" border="border-emerald-500/20" accent />
           </div>
 
-          {/* Daily Token Usage Chart */}
+          {/* Daily Token Usage — Area Chart */}
           {data.timeline.length > 0 && (
-            <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Daily Token Usage — Last {days} Days
-                </h2>
-                <div className="flex gap-4 text-xs">
-                  <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-blue-400" /> Input</span>
-                  <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: "hsl(47 98% 54%)" }} /> Output</span>
+            <div className="rounded-2xl border border-border/20 bg-gradient-to-br from-card/80 to-card/40 p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-sm font-semibold">Tokens por Dia</h2>
+                <div className="flex gap-4 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-500" /> Input</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-500" /> Output</span>
                 </div>
               </div>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={data.timeline} barSize={days > 60 ? 4 : 10}>
-                  <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.3} />
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart data={data.timeline}>
+                  <defs>
+                    <linearGradient id="inputGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.4} />
+                      <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.05} />
+                    </linearGradient>
+                    <linearGradient id="outputGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.4} />
+                      <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.05} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.15} strokeDasharray="4 4" />
                   <XAxis
                     dataKey="date"
-                    tickFormatter={fmtDate}
-                    tick={{ fontSize: 10, fill: "#fff" }}
+                    tickFormatter={(d) => String(d).slice(5, 10)}
+                    tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
                     axisLine={false}
                     tickLine={false}
-                    interval={days > 60 ? 6 : "preserveStartEnd"}
-                    angle={-45}
-                    textAnchor="end"
-                    height={60}
+                    interval="preserveStartEnd"
                   />
                   <YAxis
                     tickFormatter={fmt}
-                    tick={{ fontSize: 10, fill: "#fff" }}
+                    tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
                     axisLine={false}
                     tickLine={false}
                     width={50}
                   />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "#fff" }}
-                    formatter={(value) => [fmt(Number(value)), "Tokens"]}
-                    labelFormatter={(l) => fmtDate(String(l))}
-                  />
-                  <Bar dataKey="inputTokens" stackId="a" fill="#60a5fa" />
-                  <Bar dataKey="outputTokens" stackId="a" fill="hsl(47, 98%, 54%)" radius={[3, 3, 0, 0]} />
-                </BarChart>
+                  <Tooltip content={<DailyTooltip />} cursor={{ stroke: "hsl(var(--muted-foreground))", strokeWidth: 1, strokeDasharray: "4 4" }} />
+                  <Area type="monotone" dataKey="inputTokens" stackId="1" stroke="#3b82f6" strokeWidth={2} fill="url(#inputGrad)" />
+                  <Area type="monotone" dataKey="outputTokens" stackId="1" stroke="#f59e0b" strokeWidth={2} fill="url(#outputGrad)" />
+                </AreaChart>
               </ResponsiveContainer>
             </div>
           )}
 
-          {/* Bottom row: By Mind (donut) + Top Minds (bar) */}
+          {/* Bottom: Donut + Horizontal Bar */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* By Mind — Donut */}
+            {/* Donut by Mind */}
             {data.byMind.length > 0 && (
-              <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-4">By Mind</h2>
-                <div className="flex items-center gap-4">
-                  <ResponsiveContainer width={200} height={200}>
+              <div className="rounded-2xl border border-border/20 bg-gradient-to-br from-card/80 to-card/40 p-6">
+                <h2 className="text-sm font-semibold mb-4">Por Mind</h2>
+                <div className="flex items-center gap-6">
+                  <ResponsiveContainer width={180} height={180}>
                     <PieChart>
                       <Pie
                         data={data.byMind.slice(0, 8)}
@@ -170,99 +195,87 @@ export default function AuditPage() {
                         cx="50%"
                         cy="50%"
                         innerRadius={50}
-                        outerRadius={85}
-                        strokeWidth={2}
+                        outerRadius={80}
+                        strokeWidth={0}
+                        animationBegin={0}
+                        animationDuration={800}
                       >
                         {data.byMind.slice(0, 8).map((_, i) => (
                           <Cell key={i} fill={MIND_COLORS[i % MIND_COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip
-                        contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "11px", color: "#fff" }}
-                        formatter={(v) => [fmt(Number(v)), "Tokens"]}
-                      />
+                      <Tooltip content={<MindTooltip />} />
                     </PieChart>
                   </ResponsiveContainer>
-                  <div className="space-y-1.5 flex-1 min-w-0">
-                    {data.byMind.slice(0, 8).map((m, i) => (
-                      <div key={m.mindId} className="flex items-center gap-2 text-xs">
-                        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: MIND_COLORS[i % MIND_COLORS.length] }} />
-                        <span className="truncate flex-1">{m.mindName}</span>
-                        <span className="text-muted-foreground tabular-nums shrink-0">{fmt(m.totalTokens)}</span>
-                      </div>
-                    ))}
+                  <div className="space-y-2 flex-1 min-w-0">
+                    {data.byMind.slice(0, 8).map((m, i) => {
+                      const pct = data.summary.totalTokens > 0 ? ((m.totalTokens / data.summary.totalTokens) * 100) : 0;
+                      return (
+                        <div key={m.mindId} className="flex items-center gap-2">
+                          <span className="h-3 w-3 rounded-md shrink-0" style={{ backgroundColor: MIND_COLORS[i % MIND_COLORS.length] }} />
+                          <span className="text-xs truncate flex-1">{m.mindName}</span>
+                          <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{pct.toFixed(0)}%</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Top Minds — Horizontal Bar */}
+            {/* Top Minds Bar */}
             {data.byMind.length > 0 && (
-              <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-4">Top Minds by Tokens</h2>
-                <div className="flex gap-4 text-xs mb-3">
-                  <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-blue-400" /> Input</span>
-                  <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: "hsl(280 60% 55%)" }} /> Output</span>
-                </div>
-                <ResponsiveContainer width="100%" height={Math.max(200, data.byMind.slice(0, 10).length * 30)}>
-                  <BarChart
-                    data={data.byMind.slice(0, 10)}
-                    layout="vertical"
-                    margin={{ left: 100, right: 10 }}
-                  >
-                    <XAxis type="number" tickFormatter={fmt} tick={{ fontSize: 10, fill: "#fff" }} axisLine={false} />
-                    <YAxis
-                      type="category"
-                      dataKey="mindName"
-                      tick={{ fontSize: 10, fill: "#fff" }}
-                      width={95}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "11px", color: "#fff" }}
-                      formatter={(v) => [fmt(Number(v)), "Tokens"]}
-                    />
-                    <Bar dataKey="inputTokens" stackId="a" fill="#60a5fa" />
-                    <Bar dataKey="outputTokens" stackId="a" fill="hsl(280, 60%, 55%)" radius={[0, 3, 3, 0]} />
+              <div className="rounded-2xl border border-border/20 bg-gradient-to-br from-card/80 to-card/40 p-6">
+                <h2 className="text-sm font-semibold mb-4">Top Minds por Tokens</h2>
+                <ResponsiveContainer width="100%" height={Math.max(180, data.byMind.slice(0, 8).length * 32)}>
+                  <BarChart data={data.byMind.slice(0, 8)} layout="vertical" margin={{ left: 80, right: 10 }}>
+                    <XAxis type="number" tickFormatter={fmt} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
+                    <YAxis type="category" dataKey="mindName" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} width={75} axisLine={false} tickLine={false} />
+                    <Tooltip content={<MindTooltip />} cursor={{ fill: "hsl(var(--muted)/0.2)" }} />
+                    <Bar dataKey="inputTokens" stackId="a" fill="#3b82f6" radius={0} />
+                    <Bar dataKey="outputTokens" stackId="a" fill="#8b5cf6" radius={[0, 6, 6, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
+                <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-500" /> Input</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-purple-500" /> Output</span>
+                </div>
               </div>
             )}
           </div>
 
           {/* Users table */}
           {data.byUser.length > 0 && (
-            <div className="rounded-xl border border-border/30 bg-card/60 overflow-hidden">
-              <div className="px-5 py-4 border-b border-border/30">
-                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Usage by User</h2>
+            <div className="rounded-2xl border border-border/20 bg-gradient-to-br from-card/80 to-card/40 overflow-hidden">
+              <div className="px-6 py-4 border-b border-border/20">
+                <h2 className="text-sm font-semibold">Uso por Usuario</h2>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full">
                   <thead>
-                    <tr className="border-b border-border/20 text-[11px] text-muted-foreground/70">
-                      <th className="px-5 py-2.5 text-left font-medium">Usuario</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Msgs</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Convs</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Input</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Output</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Total</th>
-                      <th className="px-5 py-2.5 text-right font-medium">Est. Cost</th>
+                    <tr className="border-b border-border/10 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                      <th className="px-6 py-3 text-left font-medium">Usuario</th>
+                      <th className="px-3 py-3 text-right font-medium">Msgs</th>
+                      <th className="px-3 py-3 text-right font-medium">Convs</th>
+                      <th className="px-3 py-3 text-right font-medium">Input</th>
+                      <th className="px-3 py-3 text-right font-medium">Output</th>
+                      <th className="px-3 py-3 text-right font-medium">Total</th>
+                      <th className="px-6 py-3 text-right font-medium">Est. Cost</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.byUser.map((u, i) => (
-                      <tr key={u.userId} className={i % 2 === 0 ? "bg-muted/10" : ""}>
-                        <td className="px-5 py-3">
-                          <div className="font-medium text-sm leading-tight">{u.userName || "—"}</div>
+                      <tr key={u.userId} className={`border-b border-border/5 transition-colors hover:bg-muted/20 ${i % 2 === 0 ? "bg-muted/5" : ""}`}>
+                        <td className="px-6 py-3">
+                          <div className="text-sm font-medium">{u.userName || "—"}</div>
                           <div className="text-[10px] text-muted-foreground">{u.userEmail}</div>
                         </td>
-                        <td className="px-3 py-3 text-right tabular-nums text-xs">{u.messageCount}</td>
-                        <td className="px-3 py-3 text-right tabular-nums text-xs">{u.conversationCount}</td>
+                        <td className="px-3 py-3 text-right tabular-nums text-xs text-muted-foreground">{u.messageCount}</td>
+                        <td className="px-3 py-3 text-right tabular-nums text-xs text-muted-foreground">{u.conversationCount}</td>
                         <td className="px-3 py-3 text-right tabular-nums text-xs text-blue-400">{fmt(u.inputTokens)}</td>
-                        <td className="px-3 py-3 text-right tabular-nums text-xs" style={{ color: "hsl(47 98% 54%)" }}>{fmt(u.outputTokens)}</td>
+                        <td className="px-3 py-3 text-right tabular-nums text-xs text-amber-400">{fmt(u.outputTokens)}</td>
                         <td className="px-3 py-3 text-right tabular-nums text-xs font-semibold">{fmt(u.totalTokens)}</td>
-                        <td className="px-5 py-3 text-right tabular-nums text-xs font-medium text-emerald-400">{fmtCost(u.estimatedCostUsd)}</td>
+                        <td className="px-6 py-3 text-right tabular-nums text-xs font-medium text-emerald-400">{fmtCost(u.estimatedCostUsd)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -276,12 +289,14 @@ export default function AuditPage() {
   );
 }
 
-function KpiCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
+function GlassCard({ label, value, sub, gradient, border, accent }: {
+  label: string; value: string; sub?: string; gradient: string; border: string; accent?: boolean;
+}) {
   return (
-    <div className={`rounded-xl border p-4 ${accent ? "border-emerald-500/30 bg-emerald-500/5" : "border-border/30 bg-card/60"}`}>
-      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">{label}</p>
+    <div className={`rounded-2xl ${border} bg-gradient-to-br ${gradient} p-4 backdrop-blur-sm`}>
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80 mb-2">{label}</p>
       <p className={`text-2xl font-bold tracking-tight ${accent ? "text-emerald-400" : ""}`}>{value}</p>
-      {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
+      {sub && <p className="text-[10px] text-muted-foreground/60 mt-1">{sub}</p>}
     </div>
   );
 }
