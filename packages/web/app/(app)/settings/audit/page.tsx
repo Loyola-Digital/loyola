@@ -9,45 +9,45 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
 } from "recharts";
-import { Coins, DollarSign, MessageSquare, BookOpen } from "lucide-react";
+import { Coins, DollarSign, MessageSquare, Hash, Cpu } from "lucide-react";
 import { useTokenAudit } from "@/lib/hooks/use-audit";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const PERIODS = [
-  { label: "7 dias", value: 7 },
-  { label: "30 dias", value: 30 },
-  { label: "90 dias", value: 90 },
+  { label: "7d", value: 7 },
+  { label: "30d", value: 30 },
+  { label: "90d", value: 90 },
+  { label: "All", value: 365 },
+];
+
+const MIND_COLORS = [
+  "hsl(47 98% 54%)", "hsl(200 80% 60%)", "hsl(142 70% 45%)",
+  "hsl(280 60% 55%)", "hsl(350 70% 55%)", "hsl(30 80% 55%)",
+  "hsl(170 60% 45%)", "hsl(220 70% 55%)", "hsl(0 72% 55%)",
+  "hsl(90 60% 45%)",
 ];
 
 function fmt(n: number) {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(n);
 }
 
 function fmtCost(n: number) {
+  if (n >= 1000) return `$${n.toFixed(2)}`;
+  if (n >= 1) return `$${n.toFixed(2)}`;
   return `$${n.toFixed(4)}`;
 }
 
 function fmtDate(iso: string) {
-  return new Date(iso + "T00:00:00").toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "short",
-  });
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function CustomTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-lg border border-border/50 bg-card px-3 py-2 text-xs shadow-lg">
-      <p className="font-medium mb-1">{fmtDate(label)}</p>
-      <p className="text-blue-400">Input: {fmt(payload[0]?.value ?? 0)}</p>
-      <p className="text-brand">Output: {fmt(payload[1]?.value ?? 0)}</p>
-    </div>
-  );
+  return iso.slice(0, 10);
 }
 
 export default function AuditPage() {
@@ -55,46 +55,43 @@ export default function AuditPage() {
   const { data, isLoading, error } = useTokenAudit(days);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold">Auditoria de Tokens</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Consumo de tokens Claude por usuário e Mind
-          </p>
+          <h1 className="text-xl font-bold text-brand">Loyola X Usage Dashboard</h1>
         </div>
-        <div className="flex gap-1 rounded-lg border border-border/40 bg-muted/30 p-1">
-          {PERIODS.map((p) => (
-            <Button
-              key={p.value}
-              variant="ghost"
-              size="sm"
-              onClick={() => setDays(p.value)}
-              className={
-                days === p.value
-                  ? "bg-background shadow-sm text-foreground h-7 px-3 text-xs"
-                  : "text-muted-foreground hover:text-foreground h-7 px-3 text-xs"
-              }
-            >
-              {p.label}
-            </Button>
-          ))}
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span>RANGE</span>
+          <div className="flex gap-0.5 rounded-lg border border-border/40 bg-muted/30 p-0.5">
+            {PERIODS.map((p) => (
+              <Button
+                key={p.value}
+                variant="ghost"
+                size="sm"
+                onClick={() => setDays(p.value)}
+                className={
+                  days === p.value
+                    ? "bg-brand text-brand-foreground h-7 px-3 text-xs"
+                    : "text-muted-foreground hover:text-foreground h-7 px-3 text-xs"
+                }
+              >
+                {p.label}
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Loading */}
       {isLoading && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
           </div>
-          <Skeleton className="h-56 rounded-xl" />
-          <Skeleton className="h-40 rounded-xl" />
+          <Skeleton className="h-64 rounded-xl" />
         </div>
       )}
 
-      {/* Error */}
       {error && (
         <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-6 py-4 text-center">
           <p className="text-sm text-destructive">Erro ao carregar dados de auditoria.</p>
@@ -103,148 +100,173 @@ export default function AuditPage() {
 
       {data && (
         <>
-          {/* Summary cards */}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <SummaryCard
-              icon={<Coins className="h-4 w-4" />}
-              label="Total de tokens"
-              value={fmt(data.summary.totalTokens)}
-              sub={`${fmt(data.summary.totalInputTokens)} input · ${fmt(data.summary.totalOutputTokens)} output`}
-            />
-            <SummaryCard
-              icon={<DollarSign className="h-4 w-4" />}
-              label="Custo estimado"
-              value={fmtCost(data.summary.estimatedCostUsd)}
-              sub="Sonnet 4.6 pricing"
-              accent
-            />
-            <SummaryCard
-              icon={<MessageSquare className="h-4 w-4" />}
-              label="Mensagens"
-              value={String(data.summary.messageCount)}
-              sub={`${data.summary.conversationCount} conversas`}
-            />
-            <SummaryCard
-              icon={<BookOpen className="h-4 w-4" />}
-              label="Período"
-              value={`${days}d`}
-              sub={`${new Date(data.period.startDate).toLocaleDateString("pt-BR")} → hoje`}
-            />
+          {/* KPI Cards */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <KpiCard label="CONVERSAS" value={String(data.summary.conversationCount)} sub={`last ${days} days`} />
+            <KpiCard label="MENSAGENS" value={fmt(data.summary.messageCount)} sub={`last ${days} days`} />
+            <KpiCard label="INPUT TOKENS" value={fmt(data.summary.totalInputTokens)} sub={`last ${days} days`} />
+            <KpiCard label="OUTPUT TOKENS" value={fmt(data.summary.totalOutputTokens)} sub={`last ${days} days`} />
+            <KpiCard label="EST. COST" value={fmtCost(data.summary.estimatedCostUsd)} sub="API pricing" accent />
           </div>
 
-          {/* Timeline chart */}
-          {data.timeline.length > 0 ? (
-            <div className="rounded-2xl border border-border/30 bg-card/60 p-5">
-              <h2 className="text-sm font-semibold mb-4">Tokens por dia</h2>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={data.timeline} barSize={8} barGap={2}>
+          {/* Daily Token Usage Chart */}
+          {data.timeline.length > 0 && (
+            <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Daily Token Usage — Last {days} Days
+                </h2>
+                <div className="flex gap-4 text-xs">
+                  <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-blue-400" /> Input</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: "hsl(47 98% 54%)" }} /> Output</span>
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={data.timeline} barSize={days > 60 ? 4 : 10}>
                   <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.3} />
                   <XAxis
                     dataKey="date"
                     tickFormatter={fmtDate}
-                    tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                    tick={{ fontSize: 10, fill: "#fff" }}
                     axisLine={false}
                     tickLine={false}
-                    interval="preserveStartEnd"
+                    interval={days > 60 ? 6 : "preserveStartEnd"}
+                    angle={-45}
+                    textAnchor="end"
+                    height={60}
                   />
                   <YAxis
                     tickFormatter={fmt}
-                    tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                    tick={{ fontSize: 10, fill: "#fff" }}
                     axisLine={false}
                     tickLine={false}
-                    width={40}
+                    width={50}
                   />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--muted)/0.3)" }} />
-                  <Bar dataKey="inputTokens" stackId="a" fill="#60a5fa" radius={[0, 0, 0, 0]} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "#fff" }}
+                    formatter={(value) => [fmt(Number(value)), "Tokens"]}
+                    labelFormatter={(l) => fmtDate(String(l))}
+                  />
+                  <Bar dataKey="inputTokens" stackId="a" fill="#60a5fa" />
                   <Bar dataKey="outputTokens" stackId="a" fill="hsl(47, 98%, 54%)" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-              <div className="flex gap-4 mt-2 justify-end">
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span className="h-2 w-2 rounded-full bg-blue-400" /> Input
-                </span>
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span className="h-2 w-2 rounded-full bg-brand" /> Output
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-border/30 bg-card/60 p-8 text-center text-sm text-muted-foreground">
-              Nenhuma conversa no período selecionado.
             </div>
           )}
 
-          {/* By user */}
-          {data.byUser.length > 0 && (
-            <div className="rounded-2xl border border-border/30 bg-card/60 overflow-hidden">
-              <div className="px-5 py-4 border-b border-border/30">
-                <h2 className="text-sm font-semibold">Por usuário</h2>
-              </div>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border/20 text-xs text-muted-foreground/70">
-                    <th className="px-5 py-2.5 text-left font-medium">Usuário</th>
-                    <th className="px-5 py-2.5 text-right font-medium">Input</th>
-                    <th className="px-5 py-2.5 text-right font-medium">Output</th>
-                    <th className="px-5 py-2.5 text-right font-medium">Total</th>
-                    <th className="px-5 py-2.5 text-right font-medium">Custo</th>
-                    <th className="px-5 py-2.5 text-right font-medium">Msgs</th>
-                    <th className="px-5 py-2.5 text-right font-medium">Convs</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.byUser.map((u, i) => (
-                    <tr
-                      key={u.userId}
-                      className={i % 2 === 0 ? "bg-muted/10" : ""}
-                    >
-                      <td className="px-5 py-3">
-                        <div className="font-medium leading-tight">{u.userName || "—"}</div>
-                        <div className="text-xs text-muted-foreground">{u.userEmail}</div>
-                      </td>
-                      <td className="px-5 py-3 text-right tabular-nums text-muted-foreground text-xs">{fmt(u.inputTokens)}</td>
-                      <td className="px-5 py-3 text-right tabular-nums text-muted-foreground text-xs">{fmt(u.outputTokens)}</td>
-                      <td className="px-5 py-3 text-right tabular-nums font-semibold">{fmt(u.totalTokens)}</td>
-                      <td className="px-5 py-3 text-right tabular-nums text-brand/90 font-medium">{fmtCost(u.estimatedCostUsd)}</td>
-                      <td className="px-5 py-3 text-right tabular-nums text-muted-foreground">{u.messageCount}</td>
-                      <td className="px-5 py-3 text-right tabular-nums text-muted-foreground">{u.conversationCount}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* By mind */}
-          {data.byMind.length > 0 && (
-            <div className="rounded-2xl border border-border/30 bg-card/60 overflow-hidden">
-              <div className="px-5 py-4 border-b border-border/30">
-                <h2 className="text-sm font-semibold">Por Mind (top 10)</h2>
-              </div>
-              <div className="divide-y divide-border/20">
-                {data.byMind.map((m) => {
-                  const pct = data.summary.totalTokens > 0
-                    ? Math.round((m.totalTokens / data.summary.totalTokens) * 100)
-                    : 0;
-                  return (
-                    <div key={m.mindId} className="flex items-center gap-4 px-5 py-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium truncate">{m.mindName}</span>
-                          <span className="text-xs text-muted-foreground ml-2 shrink-0">
-                            {fmt(m.totalTokens)} · {pct}%
-                          </span>
-                        </div>
-                        <div className="h-1.5 rounded-full bg-muted/40 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-brand/60"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
+          {/* Bottom row: By Mind (donut) + Top Minds (bar) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* By Mind — Donut */}
+            {data.byMind.length > 0 && (
+              <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-4">By Mind</h2>
+                <div className="flex items-center gap-4">
+                  <ResponsiveContainer width={200} height={200}>
+                    <PieChart>
+                      <Pie
+                        data={data.byMind.slice(0, 8)}
+                        dataKey="totalTokens"
+                        nameKey="mindName"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={85}
+                        strokeWidth={2}
+                      >
+                        {data.byMind.slice(0, 8).map((_, i) => (
+                          <Cell key={i} fill={MIND_COLORS[i % MIND_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "11px", color: "#fff" }}
+                        formatter={(v) => [fmt(Number(v)), "Tokens"]}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    {data.byMind.slice(0, 8).map((m, i) => (
+                      <div key={m.mindId} className="flex items-center gap-2 text-xs">
+                        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: MIND_COLORS[i % MIND_COLORS.length] }} />
+                        <span className="truncate flex-1">{m.mindName}</span>
+                        <span className="text-muted-foreground tabular-nums shrink-0">{fmt(m.totalTokens)}</span>
                       </div>
-                    </div>
-                  );
-                })}
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Top Minds — Horizontal Bar */}
+            {data.byMind.length > 0 && (
+              <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-4">Top Minds by Tokens</h2>
+                <div className="flex gap-4 text-xs mb-3">
+                  <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-blue-400" /> Input</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: "hsl(280 60% 55%)" }} /> Output</span>
+                </div>
+                <ResponsiveContainer width="100%" height={Math.max(200, data.byMind.slice(0, 10).length * 30)}>
+                  <BarChart
+                    data={data.byMind.slice(0, 10)}
+                    layout="vertical"
+                    margin={{ left: 100, right: 10 }}
+                  >
+                    <XAxis type="number" tickFormatter={fmt} tick={{ fontSize: 10, fill: "#fff" }} axisLine={false} />
+                    <YAxis
+                      type="category"
+                      dataKey="mindName"
+                      tick={{ fontSize: 10, fill: "#fff" }}
+                      width={95}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "11px", color: "#fff" }}
+                      formatter={(v) => [fmt(Number(v)), "Tokens"]}
+                    />
+                    <Bar dataKey="inputTokens" stackId="a" fill="#60a5fa" />
+                    <Bar dataKey="outputTokens" stackId="a" fill="hsl(280, 60%, 55%)" radius={[0, 3, 3, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          {/* Users table */}
+          {data.byUser.length > 0 && (
+            <div className="rounded-xl border border-border/30 bg-card/60 overflow-hidden">
+              <div className="px-5 py-4 border-b border-border/30">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Usage by User</h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border/20 text-[11px] text-muted-foreground/70">
+                      <th className="px-5 py-2.5 text-left font-medium">Usuario</th>
+                      <th className="px-3 py-2.5 text-right font-medium">Msgs</th>
+                      <th className="px-3 py-2.5 text-right font-medium">Convs</th>
+                      <th className="px-3 py-2.5 text-right font-medium">Input</th>
+                      <th className="px-3 py-2.5 text-right font-medium">Output</th>
+                      <th className="px-3 py-2.5 text-right font-medium">Total</th>
+                      <th className="px-5 py-2.5 text-right font-medium">Est. Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.byUser.map((u, i) => (
+                      <tr key={u.userId} className={i % 2 === 0 ? "bg-muted/10" : ""}>
+                        <td className="px-5 py-3">
+                          <div className="font-medium text-sm leading-tight">{u.userName || "—"}</div>
+                          <div className="text-[10px] text-muted-foreground">{u.userEmail}</div>
+                        </td>
+                        <td className="px-3 py-3 text-right tabular-nums text-xs">{u.messageCount}</td>
+                        <td className="px-3 py-3 text-right tabular-nums text-xs">{u.conversationCount}</td>
+                        <td className="px-3 py-3 text-right tabular-nums text-xs text-blue-400">{fmt(u.inputTokens)}</td>
+                        <td className="px-3 py-3 text-right tabular-nums text-xs" style={{ color: "hsl(47 98% 54%)" }}>{fmt(u.outputTokens)}</td>
+                        <td className="px-3 py-3 text-right tabular-nums text-xs font-semibold">{fmt(u.totalTokens)}</td>
+                        <td className="px-5 py-3 text-right tabular-nums text-xs font-medium text-emerald-400">{fmtCost(u.estimatedCostUsd)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -254,27 +276,12 @@ export default function AuditPage() {
   );
 }
 
-function SummaryCard({
-  icon,
-  label,
-  value,
-  sub,
-  accent,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  sub?: string;
-  accent?: boolean;
-}) {
+function KpiCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
   return (
-    <div className={`rounded-2xl border p-4 space-y-2 ${accent ? "border-brand/30 bg-brand/5" : "border-border/30 bg-card/60"}`}>
-      <div className={`flex items-center gap-1.5 text-xs font-medium ${accent ? "text-brand/80" : "text-muted-foreground"}`}>
-        {icon}
-        {label}
-      </div>
-      <p className="text-2xl font-bold tracking-tight">{value}</p>
-      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+    <div className={`rounded-xl border p-4 ${accent ? "border-emerald-500/30 bg-emerald-500/5" : "border-border/30 bg-card/60"}`}>
+      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">{label}</p>
+      <p className={`text-2xl font-bold tracking-tight ${accent ? "text-emerald-400" : ""}`}>{value}</p>
+      {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
     </div>
   );
 }
