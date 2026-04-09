@@ -186,7 +186,7 @@ export function getChatTools(fastify: FastifyInstance, userRole = "admin"): Tool
   tools.push({
     name: "consult_mind",
     description:
-      "Consulta outro Mind/especialista para obter perspectiva sobre um tópico. Use quando o usuário mencionar outro Mind com /nome ou quando precisar de expertise complementar. Pode ser chamado múltiplas vezes para criar uma conversa colaborativa entre você e o Mind consultado — passe previous_exchange para continuar a conversa.",
+      "Consulta outro Mind/especialista para obter perspectiva. O debate inteiro acontece dentro de uma reunião fechada. Use consult_mind MÚLTIPLAS VEZES para conduzir a reunião: passe previous_exchange para continuar o debate. Quando o debate chegar a um consenso, pare de chamar a tool e apresente APENAS o resultado final consolidado no chat. O chat principal só deve receber o output final — nunca o debate intermediário.",
     input_schema: {
       type: "object" as const,
       properties: {

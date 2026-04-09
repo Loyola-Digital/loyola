@@ -180,7 +180,13 @@ export default fp(async function chatRoutes(fastify) {
           // Modify the last user message to include the instruction
           const lastMsg = claudeMessages[claudeMessages.length - 1];
           if (lastMsg && lastMsg.role === "user") {
-            lastMsg.content = `${lastMsg.content}\n\n[SYSTEM: O usuário quer consultar o Mind "${mentionNames}". Você DEVE usar a tool consult_mind com mind_name="${mentions[0]}" ANTES de responder. Não responda sem usar a tool primeiro.]`;
+            lastMsg.content = `${lastMsg.content}\n\n[SYSTEM: INSTRUÇÃO OBRIGATÓRIA — O usuário quer consultar o Mind "${mentionNames}". Você DEVE:
+1. Usar a tool consult_mind com mind_name="${mentions[0]}" ANTES de qualquer resposta
+2. Conduzir uma REUNIÃO completa com múltiplas rodadas (chame consult_mind várias vezes passando previous_exchange)
+3. Continue o debate até chegar num CONSENSO ou resultado sólido
+4. Só DEPOIS da reunião terminar, apresente o RESULTADO FINAL consolidado no chat
+5. Sua resposta no chat deve ser APENAS o output final — NÃO repita o debate
+6. NUNCA responda sem chamar a tool primeiro]`;
           }
           fastify.log.info(`[chat] /mention detected: ${mentionNames}, injected into user message`);
         }

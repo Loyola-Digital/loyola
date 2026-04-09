@@ -52,7 +52,7 @@ export function DebateCard({ turns, currentMindName, isActive }: DebateCardProps
               {isActive && <Sparkles className="inline h-3 w-3 ml-1 text-amber-500 animate-pulse" />}
             </p>
             <p className="text-[10px] text-muted-foreground">
-              {isActive ? "Em andamento..." : `${turns.length} turnos`}
+              {isActive ? "Em andamento..." : `✓ Concluida • ${turns.length} turnos`}
             </p>
           </div>
           <Button variant="ghost" size="sm" className="text-xs gap-1.5">
@@ -157,7 +157,7 @@ function DebateModal({ turns, currentMindName, consultedName, isActive, onClose 
             );
           })}
 
-          {isActive && (
+          {isActive ? (
             <div className="flex gap-3 animate-in fade-in duration-300">
               <div className="h-9 w-9 rounded-full bg-muted/20 flex items-center justify-center">
                 <Brain className="h-4 w-4 text-muted-foreground animate-pulse" />
@@ -170,7 +170,12 @@ function DebateModal({ turns, currentMindName, consultedName, isActive, onClose 
                 </div>
               </div>
             </div>
-          )}
+          ) : turns.length > 0 ? (
+            <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-3 animate-in fade-in duration-300">
+              <span className="text-emerald-500 text-sm">✓</span>
+              <p className="text-sm text-emerald-400">Reuniao encerrada — resultado no chat</p>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
