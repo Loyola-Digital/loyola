@@ -239,13 +239,14 @@ export default fp(async function chatRoutes(fastify) {
         // Get usage from final message
         const usage = finalMessage.usage;
 
-        // Persist assistant message
+        // Persist assistant message (handle refusal/empty responses)
+        const responseContent = fullText || "[Resposta não disponível]";
         const [assistantMsg] = await fastify.db
           .insert(messages)
           .values({
             conversationId,
             role: "assistant",
-            content: fullText,
+            content: responseContent,
             tokensUsed: usage.input_tokens + usage.output_tokens,
             metadata: {
               model: finalMessage.model,

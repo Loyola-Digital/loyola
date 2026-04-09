@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Brain, Sparkles, X, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import ReactMarkdown from "react-markdown";
 
 export interface DebateTurn {
   speaker: "current" | "consulted";
@@ -149,7 +150,7 @@ function DebateModal({ turns, currentMindName, consultedName, isActive, onClose 
                 <div className="flex-1 min-w-0">
                   <p className={cn("text-[11px] font-semibold mb-1", isLeft ? "text-primary/80" : "text-amber-500/80")}>{name}</p>
                   <div className={cn("rounded-xl px-4 py-3 text-sm leading-relaxed", isLeft ? "bg-primary/5 border border-primary/10" : "bg-amber-500/5 border border-amber-500/10")}>
-                    <p className="whitespace-pre-wrap">{turn.message}</p>
+                    <div className="prose prose-sm prose-invert max-w-none"><ReactMarkdown>{turn.message}</ReactMarkdown></div>
                   </div>
                 </div>
               </div>
