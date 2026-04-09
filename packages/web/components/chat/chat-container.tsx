@@ -6,7 +6,7 @@ import { useCreateTask } from "@/lib/hooks/use-create-task";
 import { MessageList } from "./message-list";
 import { ChatInput } from "./chat-input";
 import { ThinkingIndicator } from "./thinking-indicator";
-import { DebateView } from "./debate-view";
+import { DebateCard } from "./debate-view";
 
 interface ChatContainerProps {
   mindId: string;
@@ -104,8 +104,8 @@ export function ChatContainer({
       />
 
       {debateTurns.length > 0 && (
-        <div className="px-4 pb-2">
-          <DebateView turns={debateTurns} currentMindName={mindName} isActive={debateActive} />
+        <div className="px-4 pb-2 max-w-3xl mx-auto w-full">
+          <DebateCard turns={debateTurns} currentMindName={mindName} isActive={debateActive} />
         </div>
       )}
       {thinkingSteps.length > 0 && <ThinkingIndicator steps={thinkingSteps} />}
