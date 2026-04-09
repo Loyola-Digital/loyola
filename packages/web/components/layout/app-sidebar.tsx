@@ -204,7 +204,7 @@ export function AppSidebar() {
           open={sidebarOpen}
           onOpenChange={setSidebarOpen}
         >
-          <SheetContent side="left" className="w-[240px] p-0">
+          <SheetContent side="left" className="w-[280px] p-0">
             <SheetHeader className="border-b px-4 py-3">
               <SheetTitle className="flex items-center gap-2">
                 <Image src="/logo.svg" alt="Loyola" width={120} height={28} className="brightness-0 invert" />
@@ -220,7 +220,7 @@ export function AppSidebar() {
         id="app-sidebar"
         className={cn(
           "hidden md:flex flex-col border-r bg-sidebar-background text-sidebar-foreground transition-all duration-200",
-          sidebarOpen ? "w-[240px]" : "w-16",
+          sidebarOpen ? "w-[280px]" : "w-16",
         )}
       >
         <div
