@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useRef, useCallback, type KeyboardEvent } from "react";
+import { useState, useRef, useCallback, useMemo, type KeyboardEvent } from "react";
 import { ArrowUp, Paperclip, X, Loader2, FileText } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
+import { useMinds } from "@/lib/hooks/use-minds";
+import { MindMentionPopup, type MindOption } from "./mind-mention-popup";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -33,6 +35,17 @@ export function ChatInput({ onSend, disabled, mindName }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { getToken } = useAuth();
+
+  // Mind mention state
+  const { squads } = useMinds();
+  const allMinds: MindOption[] = useMemo(
+    () => (squads ?? []).flatMap((s) => s.minds.map((m) => ({ id: m.id, name: m.name, squad: s.displayName }))),
+    [squads]
+  );
+  const [mentionVisible, setMentionVisible] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [mentionStart, setMentionStart] = useState(-1);
 
   // Attachment state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -135,14 +148,39 @@ export function ChatInput({ onSend, disabled, mindName }: ChatInputProps) {
     }
   }, [value, disabled, onSend, extractedText, extractedMeta, handleRemoveFile]);
 
+  const handleMentionSelect = useCallback((mind: MindOption) => {
+    const before = value.substring(0, mentionStart);
+    const after = value.substring(textareaRef.current?.selectionStart ?? value.length);
+    const newValue = `${before}/${mind.name.toLowerCase().replace(/\s+/g, "-")} ${after}`;
+    setValue(newValue);
+    setMentionVisible(false);
+    setMentionQuery("");
+    setMentionIndex(0);
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }, [value, mentionStart]);
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (mentionVisible) {
+        const filtered = mentionQuery
+          ? allMinds.filter((m) => m.name.toLowerCase().includes(mentionQuery.toLowerCase()))
+          : allMinds;
+        const shown = filtered.slice(0, 8);
+
+        if (e.key === "ArrowDown") { e.preventDefault(); setMentionIndex((i) => Math.min(i + 1, shown.length - 1)); return; }
+        if (e.key === "ArrowUp") { e.preventDefault(); setMentionIndex((i) => Math.max(i - 1, 0)); return; }
+        if (e.key === "Enter" || e.key === "Tab") {
+          if (shown[mentionIndex]) { e.preventDefault(); handleMentionSelect(shown[mentionIndex]); return; }
+        }
+        if (e.key === "Escape") { e.preventDefault(); setMentionVisible(false); return; }
+      }
+
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSend();
       }
     },
-    [handleSend],
+    [handleSend, mentionVisible, mentionQuery, mentionIndex, allMinds, handleMentionSelect],
   );
 
   const handleInput = useCallback(() => {
@@ -197,6 +235,15 @@ export function ChatInput({ onSend, disabled, mindName }: ChatInputProps) {
           </div>
         )}
 
+        {/* Mind mention popup */}
+        <MindMentionPopup
+          minds={allMinds}
+          query={mentionQuery}
+          selectedIndex={mentionIndex}
+          onSelect={handleMentionSelect}
+          visible={mentionVisible}
+        />
+
         <div className="relative flex items-end gap-2 rounded-2xl border border-border/60 bg-card px-4 py-3 shadow-sm transition-colors focus-within:border-ring/50 focus-within:shadow-[0_0_0_1px_hsl(var(--color-ring)/0.2)]">
           {/* Hidden file input */}
           <input
@@ -225,8 +272,22 @@ export function ChatInput({ onSend, disabled, mindName }: ChatInputProps) {
             ref={textareaRef}
             value={value}
             onChange={(e) => {
-              setValue(e.target.value);
+              const newVal = e.target.value;
+              setValue(newVal);
               handleInput();
+
+              // Detect / for mind mention
+              const cursor = e.target.selectionStart ?? newVal.length;
+              const textBefore = newVal.substring(0, cursor);
+              const slashMatch = textBefore.match(/(?:^|\s)\/([\w-]*)$/);
+              if (slashMatch) {
+                setMentionVisible(true);
+                setMentionQuery(slashMatch[1]);
+                setMentionStart(textBefore.lastIndexOf("/"));
+                setMentionIndex(0);
+              } else {
+                setMentionVisible(false);
+              }
             }}
             onKeyDown={handleKeyDown}
             placeholder={mindName ? `Mensagem para ${mindName}...` : "Digite sua mensagem..."}

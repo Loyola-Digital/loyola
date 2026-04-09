@@ -161,7 +161,15 @@ export default fp(async function chatRoutes(fastify) {
         history.reverse();
 
         // Build system prompt via MindEngine (tier 2)
-        const systemPrompt = await fastify.mindEngine.buildPrompt(mindId, 2);
+        let systemPrompt = await fastify.mindEngine.buildPrompt(mindId, 2);
+
+        // Detect /mindName mentions in the user message and add consultation instruction
+        const mentionRegex = /\/(\w[\w-]*)/g;
+        const mentions = [...message.matchAll(mentionRegex)].map((m) => m[1]);
+        if (mentions.length > 0) {
+          const mentionNames = mentions.join(", ");
+          systemPrompt += `\n\n---\nINSTRUÇÃO ESPECIAL: O usuário mencionou ${mentions.length > 1 ? "os Minds" : "o Mind"} "${mentionNames}" na mensagem usando /nome. Use a tool consult_mind para consultar ${mentions.length > 1 ? "cada um deles" : "esse Mind"} e incorpore a perspectiva na sua resposta. Não repita a menção /nome na sua resposta.`;
+        }
 
         // Build messages array for Claude API
         const claudeMessages: MessageParam[] = history.map((m) => ({
@@ -183,6 +191,9 @@ export default fp(async function chatRoutes(fastify) {
             },
             onToolUse: (name: string, input: Record<string, unknown>) => {
               sendSSE(reply, "tool_use", { tool: name, input });
+              if (name === "consult_mind") {
+                sendSSE(reply, "mind_consulted", { mindName: input.mind_name, question: input.question });
+              }
             },
             executeToolCall: (
               name: string,

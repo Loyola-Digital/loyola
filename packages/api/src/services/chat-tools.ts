@@ -182,6 +182,32 @@ export function getChatTools(fastify: FastifyInstance, userRole = "admin"): Tool
     },
   });
 
+  // Consult another Mind — always available (cross-mind consultation)
+  tools.push({
+    name: "consult_mind",
+    description:
+      "Consulta outro Mind/especialista para obter perspectiva sobre um tópico. Use quando o usuário mencionar outro Mind com /nome ou quando precisar de expertise complementar de outro especialista.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        mind_name: {
+          type: "string",
+          description:
+            "Nome do Mind a consultar (case-insensitive, busca parcial). Ex: 'hormozi', 'brunson', 'cardone'",
+        },
+        question: {
+          type: "string",
+          description: "Pergunta ou tópico para consultar ao Mind",
+        },
+        context: {
+          type: "string",
+          description: "Contexto da conversa atual para o Mind consultado entender o cenário (opcional)",
+        },
+      },
+      required: ["mind_name", "question"],
+    },
+  });
+
   // Past conversations — always available
   tools.push({
     name: "get_past_conversations",
@@ -644,6 +670,55 @@ export async function executeChatTool(
       }
 
       return parts.join("\n");
+    }
+
+    case "consult_mind": {
+      const mindName = input.mind_name as string;
+      const question = input.question as string;
+      const context = (input.context as string) ?? "";
+
+      if (!mindName || !question) return "Erro: mind_name e question são obrigatórios";
+
+      // Find mind by name (case-insensitive, partial match)
+      const squads = fastify.mindRegistry.getAll();
+      const allMinds = squads.flatMap((s) => s.minds.map((m) => ({ ...m, squad: s.displayName })));
+      const normalizedQuery = mindName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const foundMind = allMinds.find((m) => {
+        const normalizedName = m.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        return normalizedName.includes(normalizedQuery) || normalizedQuery.includes(normalizedName);
+      });
+
+      if (!foundMind) {
+        return `Mind "${mindName}" não encontrado. Minds disponíveis: ${allMinds.slice(0, 10).map((m) => m.name).join(", ")}`;
+      }
+
+      // Build system prompt for the consulted mind (tier 2 — identity + frameworks)
+      const systemPrompt = await fastify.mindEngine.buildPrompt(foundMind.id, 2);
+
+      // Build the consultation message
+      const consultMessage = context
+        ? `Contexto da conversa:\n${context}\n\nPergunta:\n${question}`
+        : question;
+
+      // Call Claude with the consulted mind's prompt (no tools — prevents recursion)
+      try {
+        const stream = fastify.claude.stream({
+          systemPrompt,
+          messages: [{ role: "user" as const, content: consultMessage }],
+          maxTokens: 1500,
+        });
+
+        // Collect full response
+        const finalMessage = await stream.finalMessage();
+        const fullResponse = finalMessage.content
+          .filter((b: { type: string }) => b.type === "text")
+          .map((b: { type: string; text?: string }) => b.text ?? "")
+          .join("");
+
+        return `🧠 Resposta de **${foundMind.name}** (${foundMind.squad}):\n\n${fullResponse}`;
+      } catch (err) {
+        return `Erro ao consultar ${foundMind.name}: ${err instanceof Error ? err.message : String(err)}`;
+      }
     }
 
     default:

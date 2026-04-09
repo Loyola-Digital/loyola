@@ -38,6 +38,7 @@ const TOOL_LABELS: Record<string, string> = {
   clickup_search: "Pesquisando no ClickUp",
   clickup_create_task: "Criando tarefa no ClickUp",
   get_past_conversations: "Consultando conversas anteriores",
+  consult_mind: "🧠 Consultando especialista",
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
@@ -137,6 +138,9 @@ export function useChatStream() {
                 let label = TOOL_LABELS[toolName] ?? `Usando ${toolName}`;
                 if (toolName === "clickup_search" && parsed.input?.query) {
                   label = `Pesquisando "${parsed.input.query}" no ClickUp`;
+                }
+                if (toolName === "consult_mind" && parsed.input?.mind_name) {
+                  label = `🧠 Consultando ${parsed.input.mind_name}...`;
                 }
 
                 // Mark previous step as done, add new one
