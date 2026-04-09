@@ -168,7 +168,7 @@ export default fp(async function chatRoutes(fastify) {
         const mentions = [...message.matchAll(mentionRegex)].map((m) => m[1]);
         if (mentions.length > 0) {
           const mentionNames = mentions.join(", ");
-          systemPrompt += `\n\n---\nINSTRUÇÃO ESPECIAL: O usuário mencionou ${mentions.length > 1 ? "os Minds" : "o Mind"} "${mentionNames}" na mensagem usando /nome. Use a tool consult_mind para consultar ${mentions.length > 1 ? "cada um deles" : "esse Mind"}. Você pode chamar consult_mind MÚLTIPLAS VEZES para ter uma conversa colaborativa — passe o previous_exchange da resposta anterior para continuar o diálogo. Converse com o Mind até chegar num resultado sólido. Depois, apresente o resultado final ao usuário combinando sua expertise com a do Mind consultado. Não repita a menção /nome na sua resposta.`;
+          systemPrompt += `\n\n---\nINSTRUÇÃO OBRIGATÓRIA: O usuário mencionou ${mentions.length > 1 ? "os Minds" : "o Mind"} "${mentionNames}" usando /nome. Você DEVE OBRIGATORIAMENTE usar a tool consult_mind para consultar ${mentions.length > 1 ? "cada um" : "esse Mind"} — NÃO responda sem consultar primeiro. NUNCA finja que o Mind não existe ou que você já sabe o que ele diria. Use a tool consult_mind com mind_name="${mentions[0]}". Você pode chamar consult_mind MÚLTIPLAS VEZES para conversar com o Mind consultado até chegarem num consenso. Depois de obter a resposta real, apresente o resultado combinando ambas perspectivas.`;
         }
 
         // Build messages array for Claude API

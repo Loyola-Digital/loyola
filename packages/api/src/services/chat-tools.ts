@@ -685,13 +685,16 @@ export async function executeChatTool(
 
       if (!mindName || !question) return "Erro: mind_name e question são obrigatórios";
 
-      // Find mind by name (case-insensitive, partial match)
+      // Find mind by name or ID (case-insensitive, partial match, hyphens = spaces = underscores)
       const squads = fastify.mindRegistry.getAll();
       const allMinds = squads.flatMap((s) => s.minds.map((m) => ({ ...m, squad: s.displayName })));
-      const normalizedQuery = mindName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[-_]/g, " ").trim();
+      const normalizedQuery = normalize(mindName);
       const foundMind = allMinds.find((m) => {
-        const normalizedName = m.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        return normalizedName.includes(normalizedQuery) || normalizedQuery.includes(normalizedName);
+        const normalizedName = normalize(m.name);
+        const normalizedId = normalize(m.id);
+        return normalizedName.includes(normalizedQuery) || normalizedQuery.includes(normalizedName)
+          || normalizedId.includes(normalizedQuery) || normalizedQuery.includes(normalizedId);
       });
 
       if (!foundMind) {
