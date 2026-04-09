@@ -36,9 +36,13 @@ import {
 } from "@/lib/hooks/use-traffic-analytics";
 import { FunnelCampaignTable } from "./funnel-campaign-table";
 import { TopCreativesGallery } from "./top-creatives-gallery";
-import type { Funnel } from "@loyola-x/shared";
+import { CampaignSelector } from "./campaign-selector";
+import type { Funnel, FunnelCampaign } from "@loyola-x/shared";
 import { useSurveySummary } from "@/lib/hooks/use-google-sheets";
-import { ClipboardList } from "lucide-react";
+import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
+import { ClipboardList, Settings2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 interface PerpetualDashboardProps {
   funnel: Funnel;
@@ -75,6 +79,9 @@ function safeNum(val: string | undefined): number {
 
 export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProps) {
   const [days, setDays] = useState(30);
+  const [showCampaignManager, setShowCampaignManager] = useState(false);
+  const { data: pickerData } = useCampaignPicker(showCampaignManager ? projectId : null);
+  const updateFunnel = useUpdateFunnel(projectId, funnel.id);
   const campaignIds = funnel.campaigns.map((c) => c.id);
   const campaignIdSet = new Set(campaignIds);
   const firstCampaignId = campaignIds[0] ?? null;
@@ -137,8 +144,36 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
 
   return (
     <div className="space-y-6">
-      {/* Period selector */}
-      <DayRangePicker days={days} onDaysChange={setDays} />
+      {/* Header: period selector + campaign manager */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <DayRangePicker days={days} onDaysChange={setDays} />
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 text-xs"
+          onClick={() => setShowCampaignManager(!showCampaignManager)}
+        >
+          <Settings2 className="h-3.5 w-3.5" />
+          {funnel.campaigns.length} campanha{funnel.campaigns.length !== 1 ? "s" : ""}
+        </Button>
+      </div>
+
+      {showCampaignManager && pickerData && (
+        <div className="rounded-xl border border-border/30 bg-card/60 p-4 space-y-3">
+          <p className="text-xs font-medium text-muted-foreground">Gerenciar campanhas do funil</p>
+          <CampaignSelector
+            campaigns={pickerData.campaigns ?? []}
+            accountLinked={pickerData.accountLinked}
+            value={funnel.campaigns}
+            onChange={(campaigns: FunnelCampaign[]) => {
+              updateFunnel.mutate(
+                { campaigns },
+                { onSuccess: () => toast.success("Campanhas atualizadas!") }
+              );
+            }}
+          />
+        </div>
+      )}
 
       {/* KPI Cards with delta */}
       {overviewLoading ? (
