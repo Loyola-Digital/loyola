@@ -201,11 +201,7 @@ export function getChatTools(fastify: FastifyInstance, userRole = "admin"): Tool
         },
         context: {
           type: "string",
-          description: "Contexto da conversa atual para o Mind consultado entender o cenário (opcional, apenas na primeira chamada)",
-        },
-        previous_exchange: {
-          type: "string",
-          description: "Histórico da conversa anterior com este Mind (extraído do exchange_history da resposta anterior). Passe isso para continuar a conversa multi-turno.",
+          description: "Contexto da conversa atual para o Mind consultado entender o cenário (opcional)",
         },
       },
       required: ["mind_name", "question"],
@@ -701,60 +697,51 @@ export async function executeChatTool(
         return `Mind "${mindName}" não encontrado. Minds disponíveis: ${allMinds.slice(0, 10).map((m) => m.name).join(", ")}`;
       }
 
-      // Build system prompt for the consulted mind (tier 2 — identity + frameworks)
-      const systemPrompt = await fastify.mindEngine.buildPrompt(foundMind.id, 2);
+      // AUTONOMOUS MULTI-TURN DEBATE
+      // The tool runs the entire debate internally and returns only the final result
+      const consultedPrompt = await fastify.mindEngine.buildPrompt(foundMind.id, 2);
+      const MAX_ROUNDS = 5;
 
-      // Build conversation messages — support multi-turn exchange
-      const messages: { role: "user" | "assistant"; content: string }[] = [];
-
-      // Add context as first message if available
-      if (context) {
-        messages.push({ role: "user", content: `Contexto:\n${context}` });
-        messages.push({ role: "assistant", content: "Entendi o contexto. Pode prosseguir com a pergunta." });
-      }
-
-      // Add previous exchange history if this is a follow-up
-      if (previousExchange) {
-        const turns = previousExchange.split("\n---\n");
-        for (const turn of turns) {
-          if (turn.startsWith("Q:")) messages.push({ role: "user", content: turn.replace("Q:", "").trim() });
-          else if (turn.startsWith("A:")) messages.push({ role: "assistant", content: turn.replace("A:", "").trim() });
-        }
-      }
-
-      // Add the current question
-      messages.push({ role: "user", content: question });
-
-      // Call Claude with the consulted mind's prompt (no tools — prevents recursion)
       try {
-        const stream = fastify.claude.stream({
-          systemPrompt,
-          messages,
-          maxTokens: 2000,
-        });
+        // Emit first turn (the question)
+        onDebateTurn?.({ speaker: "current", mindName: "Expert", message: question, type: "question" });
 
-        const finalMessage = await stream.finalMessage();
-        const fullResponse = finalMessage.content
-          .filter((b: { type: string }) => b.type === "text")
-          .map((b: { type: string; text?: string }) => b.text ?? "")
-          .join("");
+        const debateMessages: { role: "user" | "assistant"; content: string }[] = [];
+        const briefing = context ? `Contexto:\n${context}\n\n${question}` : question;
+        debateMessages.push({ role: "user", content: `${briefing}\n\nResponda com sua expertise. Seja específico e use frameworks. Quando terminar todos os pontos, finalize com "---CONCLUSÃO---" seguido do resumo final.` });
 
-        // Return with exchange history so the Mind can continue the conversation
-        const exchangeHistory = previousExchange
-          ? `${previousExchange}\n---\nQ:${question}\n---\nA:${fullResponse}`
-          : `Q:${question}\n---\nA:${fullResponse}`;
+        let lastResponse = "";
 
-        // Emit debate turn for animated UI
-        onDebateTurn?.({
-          speaker: "consulted",
-          mindName: foundMind.name,
-          message: fullResponse,
-          type: "response",
-        });
+        for (let round = 0; round < MAX_ROUNDS; round++) {
+          // Consulted mind responds
+          const stream = fastify.claude.stream({
+            systemPrompt: consultedPrompt,
+            messages: debateMessages,
+            maxTokens: 3000,
+          });
+          const msg = await stream.finalMessage();
+          lastResponse = msg.content
+            .filter((b: { type: string }) => b.type === "text")
+            .map((b: { type: string; text?: string }) => b.text ?? "")
+            .join("");
 
-        return `🧠 **${foundMind.name}** (${foundMind.squad}):\n\n${fullResponse}\n\n<!-- exchange_history: ${Buffer.from(exchangeHistory).toString("base64")} -->`;
+          debateMessages.push({ role: "assistant", content: lastResponse });
+          onDebateTurn?.({ speaker: "consulted", mindName: foundMind.name, message: lastResponse, type: "response" });
+
+          // Check if debate is complete
+          if (lastResponse.includes("---CONCLUSÃO---") || round >= MAX_ROUNDS - 1) break;
+
+          // Generate follow-up question/challenge
+          const followUp = `Bom ponto. Agora aprofunde: quais são as objeções mais fortes contra essa abordagem? E como resolver cada uma? Continue sendo específico.`;
+          debateMessages.push({ role: "user", content: followUp });
+          onDebateTurn?.({ speaker: "current", mindName: "Expert", message: followUp, type: "question" });
+        }
+
+        onDebateTurn?.({ speaker: "current", mindName: "Expert", message: "✅ Reunião encerrada.", type: "question" });
+
+        return `🧠 Reunião com **${foundMind.name}** concluída.\n\n**Resultado:**\n\n${lastResponse}`;
       } catch (err) {
-        return `Erro ao consultar ${foundMind.name}: ${err instanceof Error ? err.message : String(err)}`;
+        return `Erro na reunião com ${foundMind.name}: ${err instanceof Error ? err.message : String(err)}`;
       }
     }
 
