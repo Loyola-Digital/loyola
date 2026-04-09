@@ -108,11 +108,11 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <div className="group flex items-center">
+      <div className="group flex items-center min-w-0">
         <CollapsibleTrigger asChild>
           <Button
             variant={isProjectActive && !pathname.includes("/instagram") && !pathname.includes("/traffic") && !pathname.includes("/conversations") ? "secondary" : "ghost"}
-            className="flex-1 justify-start gap-2 px-2"
+            className="flex-1 justify-start gap-2 px-2 min-w-0 overflow-hidden"
           >
             <ChevronRight
               className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
