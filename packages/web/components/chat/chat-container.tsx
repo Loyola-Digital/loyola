@@ -6,6 +6,7 @@ import { useCreateTask } from "@/lib/hooks/use-create-task";
 import { MessageList } from "./message-list";
 import { ChatInput } from "./chat-input";
 import { ThinkingIndicator } from "./thinking-indicator";
+import { DebateView } from "./debate-view";
 
 interface ChatContainerProps {
   mindId: string;
@@ -27,6 +28,8 @@ export function ChatContainer({
     error,
     conversationId,
     taskSuggestions,
+    debateTurns,
+    debateActive,
     sendMessage,
     loadHistory,
     updateTaskSuggestion,
@@ -100,6 +103,11 @@ export function ChatContainer({
         onDismissTask={handleDismissTask}
       />
 
+      {debateTurns.length > 0 && (
+        <div className="px-4 pb-2">
+          <DebateView turns={debateTurns} currentMindName={mindName} isActive={debateActive} />
+        </div>
+      )}
       {thinkingSteps.length > 0 && <ThinkingIndicator steps={thinkingSteps} />}
 
       {error && (

@@ -192,14 +192,21 @@ export default fp(async function chatRoutes(fastify) {
             onToolUse: (name: string, input: Record<string, unknown>) => {
               sendSSE(reply, "tool_use", { tool: name, input });
               if (name === "consult_mind") {
-                sendSSE(reply, "mind_consulted", { mindName: input.mind_name, question: input.question });
+                sendSSE(reply, "debate_turn", {
+                  speaker: "current",
+                  mindName: input.mind_name,
+                  message: input.question,
+                  type: "question",
+                });
               }
             },
             executeToolCall: (
               name: string,
               input: Record<string, unknown>,
             ) => {
-              return executeChatTool(fastify, userId, name, input);
+              return executeChatTool(fastify, userId, name, input, (turn) => {
+                sendSSE(reply, "debate_turn", turn);
+              });
             },
           });
 

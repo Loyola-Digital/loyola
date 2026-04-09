@@ -28,6 +28,14 @@ export interface ThinkingStep {
   status: "running" | "done";
 }
 
+export interface DebateTurn {
+  speaker: "current" | "consulted";
+  mindName: string;
+  message: string;
+  type: "question" | "response";
+  timestamp: number;
+}
+
 const TOOL_LABELS: Record<string, string> = {
   clickup_get_workspaces: "Conectando ao ClickUp",
   clickup_get_spaces: "Navegando spaces",
@@ -50,6 +58,8 @@ export function useChatStream() {
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [taskSuggestions, setTaskSuggestions] = useState<TaskSuggestion[]>([]);
+  const [debateTurns, setDebateTurns] = useState<DebateTurn[]>([]);
+  const [debateActive, setDebateActive] = useState(false);
   const { getToken } = useAuth();
   const apiClient = useApiClient();
   const abortRef = useRef<AbortController | null>(null);
@@ -67,6 +77,8 @@ export function useChatStream() {
       setError(null);
       setIsStreaming(true);
       setThinkingSteps([]);
+      setDebateTurns([]);
+      setDebateActive(false);
 
       // Optimistic: add user message (with attachment meta if present)
       setMessages((prev) => [
@@ -169,6 +181,19 @@ export function useChatStream() {
                   return updated;
                 });
                 break;
+              case "debate_turn":
+                setDebateActive(true);
+                setDebateTurns((prev) => [
+                  ...prev,
+                  {
+                    speaker: parsed.speaker,
+                    mindName: parsed.mindName,
+                    message: parsed.message,
+                    type: parsed.type,
+                    timestamp: Date.now(),
+                  },
+                ]);
+                break;
               case "task_detected":
                 setTaskSuggestions((prev) => [
                   ...prev,
@@ -184,6 +209,7 @@ export function useChatStream() {
                 ]);
                 break;
               case "done":
+                setDebateActive(false);
                 break;
               case "error":
                 setError(parsed.message);
@@ -239,6 +265,8 @@ export function useChatStream() {
     error,
     conversationId,
     taskSuggestions,
+    debateTurns,
+    debateActive,
     sendMessage,
     loadHistory,
     updateTaskSuggestion,

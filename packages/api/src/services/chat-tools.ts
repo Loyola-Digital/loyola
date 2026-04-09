@@ -246,6 +246,7 @@ export async function executeChatTool(
   userId: string,
   toolName: string,
   input: Record<string, unknown>,
+  onDebateTurn?: (data: { speaker: string; mindName: string; message: string; type: string }) => void,
 ): Promise<string> {
   const svc = fastify.clickupService;
 
@@ -739,6 +740,14 @@ export async function executeChatTool(
         const exchangeHistory = previousExchange
           ? `${previousExchange}\n---\nQ:${question}\n---\nA:${fullResponse}`
           : `Q:${question}\n---\nA:${fullResponse}`;
+
+        // Emit debate turn for animated UI
+        onDebateTurn?.({
+          speaker: "consulted",
+          mindName: foundMind.name,
+          message: fullResponse,
+          type: "response",
+        });
 
         return `🧠 **${foundMind.name}** (${foundMind.squad}):\n\n${fullResponse}\n\n<!-- exchange_history: ${Buffer.from(exchangeHistory).toString("base64")} -->`;
       } catch (err) {
