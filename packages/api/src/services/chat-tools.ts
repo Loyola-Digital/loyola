@@ -186,7 +186,7 @@ export function getChatTools(fastify: FastifyInstance, userRole = "admin"): Tool
   tools.push({
     name: "consult_mind",
     description:
-      "Consulta outro Mind/especialista para obter perspectiva sobre um tópico. Use quando o usuário mencionar outro Mind com /nome ou quando precisar de expertise complementar de outro especialista.",
+      "Consulta outro Mind/especialista para obter perspectiva sobre um tópico. Use quando o usuário mencionar outro Mind com /nome ou quando precisar de expertise complementar. Pode ser chamado múltiplas vezes para criar uma conversa colaborativa entre você e o Mind consultado — passe previous_exchange para continuar a conversa.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -197,11 +197,15 @@ export function getChatTools(fastify: FastifyInstance, userRole = "admin"): Tool
         },
         question: {
           type: "string",
-          description: "Pergunta ou tópico para consultar ao Mind",
+          description: "Pergunta ou tópico para consultar ao Mind. Em follow-ups, pode ser um refinamento ou feedback sobre a resposta anterior.",
         },
         context: {
           type: "string",
-          description: "Contexto da conversa atual para o Mind consultado entender o cenário (opcional)",
+          description: "Contexto da conversa atual para o Mind consultado entender o cenário (opcional, apenas na primeira chamada)",
+        },
+        previous_exchange: {
+          type: "string",
+          description: "Histórico da conversa anterior com este Mind (extraído do exchange_history da resposta anterior). Passe isso para continuar a conversa multi-turno.",
         },
       },
       required: ["mind_name", "question"],
@@ -676,6 +680,7 @@ export async function executeChatTool(
       const mindName = input.mind_name as string;
       const question = input.question as string;
       const context = (input.context as string) ?? "";
+      const previousExchange = (input.previous_exchange as string) ?? "";
 
       if (!mindName || !question) return "Erro: mind_name e question são obrigatórios";
 
@@ -695,27 +700,47 @@ export async function executeChatTool(
       // Build system prompt for the consulted mind (tier 2 — identity + frameworks)
       const systemPrompt = await fastify.mindEngine.buildPrompt(foundMind.id, 2);
 
-      // Build the consultation message
-      const consultMessage = context
-        ? `Contexto da conversa:\n${context}\n\nPergunta:\n${question}`
-        : question;
+      // Build conversation messages — support multi-turn exchange
+      const messages: { role: "user" | "assistant"; content: string }[] = [];
+
+      // Add context as first message if available
+      if (context) {
+        messages.push({ role: "user", content: `Contexto:\n${context}` });
+        messages.push({ role: "assistant", content: "Entendi o contexto. Pode prosseguir com a pergunta." });
+      }
+
+      // Add previous exchange history if this is a follow-up
+      if (previousExchange) {
+        const turns = previousExchange.split("\n---\n");
+        for (const turn of turns) {
+          if (turn.startsWith("Q:")) messages.push({ role: "user", content: turn.replace("Q:", "").trim() });
+          else if (turn.startsWith("A:")) messages.push({ role: "assistant", content: turn.replace("A:", "").trim() });
+        }
+      }
+
+      // Add the current question
+      messages.push({ role: "user", content: question });
 
       // Call Claude with the consulted mind's prompt (no tools — prevents recursion)
       try {
         const stream = fastify.claude.stream({
           systemPrompt,
-          messages: [{ role: "user" as const, content: consultMessage }],
-          maxTokens: 1500,
+          messages,
+          maxTokens: 2000,
         });
 
-        // Collect full response
         const finalMessage = await stream.finalMessage();
         const fullResponse = finalMessage.content
           .filter((b: { type: string }) => b.type === "text")
           .map((b: { type: string; text?: string }) => b.text ?? "")
           .join("");
 
-        return `🧠 Resposta de **${foundMind.name}** (${foundMind.squad}):\n\n${fullResponse}`;
+        // Return with exchange history so the Mind can continue the conversation
+        const exchangeHistory = previousExchange
+          ? `${previousExchange}\n---\nQ:${question}\n---\nA:${fullResponse}`
+          : `Q:${question}\n---\nA:${fullResponse}`;
+
+        return `🧠 **${foundMind.name}** (${foundMind.squad}):\n\n${fullResponse}\n\n<!-- exchange_history: ${Buffer.from(exchangeHistory).toString("base64")} -->`;
       } catch (err) {
         return `Erro ao consultar ${foundMind.name}: ${err instanceof Error ? err.message : String(err)}`;
       }
