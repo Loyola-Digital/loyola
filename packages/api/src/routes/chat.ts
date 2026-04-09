@@ -163,13 +163,9 @@ export default fp(async function chatRoutes(fastify) {
         // Build system prompt via MindEngine (tier 2)
         let systemPrompt = await fastify.mindEngine.buildPrompt(mindId, 2);
 
-        // Detect /mindName mentions in the user message and add consultation instruction
+        // Detect /mindName mentions in the user message
         const mentionRegex = /\/(\w[\w-]*)/g;
         const mentions = [...message.matchAll(mentionRegex)].map((m) => m[1]);
-        if (mentions.length > 0) {
-          const mentionNames = mentions.join(", ");
-          systemPrompt += `\n\n---\nINSTRUÇÃO OBRIGATÓRIA: O usuário mencionou ${mentions.length > 1 ? "os Minds" : "o Mind"} "${mentionNames}" usando /nome. Você DEVE OBRIGATORIAMENTE usar a tool consult_mind para consultar ${mentions.length > 1 ? "cada um" : "esse Mind"} — NÃO responda sem consultar primeiro. NUNCA finja que o Mind não existe ou que você já sabe o que ele diria. Use a tool consult_mind com mind_name="${mentions[0]}". Você pode chamar consult_mind MÚLTIPLAS VEZES para conversar com o Mind consultado até chegarem num consenso. Depois de obter a resposta real, apresente o resultado combinando ambas perspectivas.`;
-        }
 
         // Build messages array for Claude API
         const claudeMessages: MessageParam[] = history.map((m) => ({
@@ -177,8 +173,21 @@ export default fp(async function chatRoutes(fastify) {
           content: m.content,
         }));
 
+        // If mentions found, inject consultation instruction into the user message itself
+        // (system prompt injection sometimes gets ignored by strong persona prompts)
+        if (mentions.length > 0) {
+          const mentionNames = mentions.join(", ");
+          // Modify the last user message to include the instruction
+          const lastMsg = claudeMessages[claudeMessages.length - 1];
+          if (lastMsg && lastMsg.role === "user") {
+            lastMsg.content = `${lastMsg.content}\n\n[SYSTEM: O usuário quer consultar o Mind "${mentionNames}". Você DEVE usar a tool consult_mind com mind_name="${mentions[0]}" ANTES de responder. Não responda sem usar a tool primeiro.]`;
+          }
+          fastify.log.info(`[chat] /mention detected: ${mentionNames}, injected into user message`);
+        }
+
         // Get available tools for this chat
         const tools = getChatTools(fastify, request.userRole);
+        fastify.log.info(`[chat] tools available: ${tools.map((t) => t.name).join(", ")} (${tools.length} total)`);
 
         // Run agentic loop — Claude decides when to use tools
         const { fullText, finalMessage } =
