@@ -84,6 +84,42 @@ export default function ProjectSalesPage({ params }: Props) {
             <KpiCard icon={Clock} label="Tempo Medio" value={`${asc.avgDaysToAscend}d`} sub="dias para ascender" gradient="from-amber-500/10 to-amber-600/5" border="border-amber-500/20" />
           </div>
 
+          {/* Funnel visualization */}
+          <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-5">
+            <h3 className="text-sm font-semibold mb-5">Funil de Ascensao</h3>
+            <div className="space-y-3 max-w-xl mx-auto">
+              {[
+                { label: `Compraram Front-end`, value: asc.totalInferior, color: "bg-blue-500", pct: 100 },
+                { label: `Compraram Back-end (total)`, value: asc.totalSuperior, color: "bg-purple-500", pct: asc.totalInferior > 0 ? (asc.totalSuperior / asc.totalInferior) * 100 : 0 },
+                { label: `Ascenderam (front → back)`, value: asc.totalAscended, color: "bg-emerald-500", pct: asc.totalInferior > 0 ? (asc.totalAscended / asc.totalInferior) * 100 : 0 },
+              ].map((stage, i) => {
+                const width = Math.max(stage.pct, 8);
+                return (
+                  <div key={i} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">{stage.label}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="tabular-nums font-bold">{fmtNumber(stage.value)}</span>
+                        {i > 0 && <span className="text-xs text-muted-foreground">({stage.pct.toFixed(1)}%)</span>}
+                      </div>
+                    </div>
+                    <div className="h-10 w-full rounded-lg bg-muted/20 overflow-hidden" style={{ display: "flex", justifyContent: "center" }}>
+                      <div
+                        className={`h-full ${stage.color}/70 rounded-lg transition-all duration-700`}
+                        style={{ width: `${width}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="flex items-center justify-center gap-2 pt-2 text-xs text-muted-foreground">
+                <span>Nao ascenderam:</span>
+                <span className="font-semibold text-foreground">{fmtNumber(asc.totalInferior - asc.totalAscended)}</span>
+                <span>({asc.totalInferior > 0 ? ((1 - asc.totalAscended / asc.totalInferior) * 100).toFixed(1) : 0}%)</span>
+              </div>
+            </div>
+          </div>
+
           {/* Distribution chart */}
           {asc.distribution.some((d) => d.count > 0) && (
             <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-5">
