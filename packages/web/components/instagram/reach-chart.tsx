@@ -75,7 +75,7 @@ export function ReachChart({ data, isLoading, error, onRefresh, isRefreshing }: 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-base">Alcance & Impressões</CardTitle>
+        <CardTitle className="text-base">Alcance Diario</CardTitle>
         {onRefresh && (
           <Button variant="ghost" size="icon" onClick={onRefresh} disabled={isRefreshing}>
             <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />

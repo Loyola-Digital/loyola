@@ -38,6 +38,7 @@ export interface InsightEntry {
   name: string;
   period: string;
   values: InsightValue[];
+  total_value?: { value: number | Record<string, unknown>; breakdowns?: unknown[] };
   title: string;
   description: string;
   id: string;

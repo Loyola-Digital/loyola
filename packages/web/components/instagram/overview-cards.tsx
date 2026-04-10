@@ -3,7 +3,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users, UserPlus, UserMinus, Eye, MousePointerClick,
-  TrendingUp, Heart,
+  TrendingUp, Heart, MessageCircle, Bookmark, Share2, Link2,
 } from "lucide-react";
 import type { InstagramProfile, InsightEntry } from "@/lib/hooks/use-instagram";
 
@@ -13,20 +13,49 @@ interface OverviewCardsProps {
   isLoading: boolean;
 }
 
-function sumInsightValues(entries: InsightEntry[] | undefined, name: string): number {
+/** Extract a numeric value from an insight entry — handles both time_series and total_value formats */
+function getInsightValue(entries: InsightEntry[] | undefined, name: string): number {
   if (!entries) return 0;
   const entry = entries.find((e) => e.name === name);
-  if (!entry || !Array.isArray(entry.values)) return 0;
-  return entry.values.reduce((sum, v) => sum + (typeof v.value === "number" ? v.value : 0), 0);
+  if (!entry) return 0;
+
+  // total_value format (v25 — most metrics)
+  if (entry.total_value) {
+    const tv = entry.total_value.value;
+    if (typeof tv === "number") return tv;
+    if (typeof tv === "object" && tv !== null) {
+      return Object.values(tv as Record<string, number>).reduce((s, n) => s + (typeof n === "number" ? n : 0), 0);
+    }
+  }
+
+  // time_series format (v25 — only reach)
+  if (Array.isArray(entry.values) && entry.values.length > 0) {
+    return entry.values.reduce((sum, v) => sum + (typeof v.value === "number" ? v.value : 0), 0);
+  }
+
+  return 0;
 }
 
-function getFollowerTimeSeries(entries: InsightEntry[] | undefined): { first: number; last: number } | null {
+/** Get follows/unfollows breakdown from total_value */
+function getFollowsBreakdown(entries: InsightEntry[] | undefined): { gained: number; lost: number } | null {
   if (!entries) return null;
-  const entry = entries.find((e) => e.name === "follower_count");
-  if (!entry || !Array.isArray(entry.values) || entry.values.length < 2) return null;
-  const values = entry.values.filter((v) => typeof v.value === "number").map((v) => v.value as number);
-  if (values.length < 2) return null;
-  return { first: values[0], last: values[values.length - 1] };
+  const entry = entries.find((e) => e.name === "follows_and_unfollows");
+  if (!entry) return null;
+
+  // total_value format: { value: { follow: N, unfollow: N } }
+  const tv = entry.total_value?.value;
+  if (tv && typeof tv === "object") {
+    const fv = tv as Record<string, number>;
+    return { gained: fv.follow ?? 0, lost: fv.unfollow ?? 0 };
+  }
+
+  // time_series fallback
+  if (entry.values?.[0]?.value && typeof entry.values[0].value === "object") {
+    const fv = entry.values[0].value as Record<string, number>;
+    return { gained: fv.follow ?? 0, lost: fv.unfollow ?? 0 };
+  }
+
+  return null;
 }
 
 function fmtNumber(val: number): string {
@@ -74,61 +103,33 @@ export function OverviewCards({ profile, insights, isLoading }: OverviewCardsPro
 
   const followers = profile?.followers_count ?? 0;
 
-  // Saldo de seguidores: prefer follows_and_unfollows (total_value), fallback to follower_count series
-  const followsEntry = insights?.find((e) => e.name === "follows_and_unfollows");
-  const followerSeries = getFollowerTimeSeries(insights);
+  // Follows/unfollows breakdown
+  const followsData = getFollowsBreakdown(insights);
+  const followersDelta = followsData ? followsData.gained - followsData.lost : 0;
+  const hasFollowData = !!followsData && (followsData.gained > 0 || followsData.lost > 0);
 
-  let followersDelta = 0;
-  let followsGained = 0;
-  let followsLost = 0;
-  let hasFollowData = false;
+  // Core metrics
+  const totalReach = getInsightValue(insights, "reach");
+  const totalViews = getInsightValue(insights, "views");
+  const totalInteractions = getInsightValue(insights, "total_interactions");
+  const totalLikes = getInsightValue(insights, "likes");
+  const totalComments = getInsightValue(insights, "comments");
+  const totalSaves = getInsightValue(insights, "saves");
+  const totalShares = getInsightValue(insights, "shares");
+  const bioClicks = getInsightValue(insights, "profile_links_taps");
 
-  if (followsEntry?.values?.[0]?.value && typeof followsEntry.values[0].value === "object") {
-    // v25: follows_and_unfollows returns {follow: N, unfollow: N}
-    const fv = followsEntry.values[0].value as Record<string, number>;
-    followsGained = fv.follow ?? 0;
-    followsLost = fv.unfollow ?? 0;
-    followersDelta = followsGained - followsLost;
-    hasFollowData = true;
-  } else if (followerSeries) {
-    // Fallback: calculate from time series first/last
-    followersDelta = followerSeries.last - followerSeries.first;
-    hasFollowData = followerSeries.last > 0; // only show if data is valid
-  }
-
-  const totalReach = sumInsightValues(insights, "reach");
-  const totalImpressions = sumInsightValues(insights, "impressions");
-  const profileViews = sumInsightValues(insights, "profile_views");
-
-  // accounts_engaged (total_value)
-  const engagedEntry = insights?.find((e) => e.name === "accounts_engaged");
-  let totalEngaged = 0;
-  if (engagedEntry?.values?.[0]?.value) {
-    const v = engagedEntry.values[0].value;
-    if (typeof v === "number") totalEngaged = v;
-    else if (typeof v === "object" && v !== null) totalEngaged = Object.values(v as Record<string, number>).reduce((s, n) => s + n, 0);
-  }
-
-  // total_interactions (total_value)
-  const interactionsEntry = insights?.find((e) => e.name === "total_interactions");
-  let totalInteractions = 0;
-  if (interactionsEntry?.values?.[0]?.value) {
-    const v = interactionsEntry.values[0].value;
-    if (typeof v === "number") totalInteractions = v;
-    else if (typeof v === "object" && v !== null) totalInteractions = Object.values(v as Record<string, number>).reduce((s, n) => s + n, 0);
-  }
-
-  const interactions = totalInteractions || totalEngaged;
-  const engagementRate = totalReach > 0 ? (interactions / totalReach) * 100 : 0;
+  const engagementRate = totalReach > 0 ? (totalInteractions / totalReach) * 100 : 0;
 
   const cards = [
     { icon: Users, label: "Seguidores", value: fmtNumber(followers), gradient: "from-blue-500/10 to-blue-600/5", border: "border-blue-500/20", show: true },
-    { icon: followersDelta >= 0 ? UserPlus : UserMinus, label: "Saldo Seguidores", value: `${followersDelta >= 0 ? "+" : ""}${fmtNumber(followersDelta)}`, sub: followsGained > 0 ? `+${fmtNumber(followsGained)} / -${fmtNumber(followsLost)}` : undefined, gradient: followersDelta >= 0 ? "from-emerald-500/10 to-emerald-600/5" : "from-red-500/10 to-red-600/5", border: followersDelta >= 0 ? "border-emerald-500/20" : "border-red-500/20", show: hasFollowData },
+    { icon: followersDelta >= 0 ? UserPlus : UserMinus, label: "Saldo Seguidores", value: `${followersDelta >= 0 ? "+" : ""}${fmtNumber(followersDelta)}`, sub: followsData ? `+${fmtNumber(followsData.gained)} / -${fmtNumber(followsData.lost)}` : undefined, gradient: followersDelta >= 0 ? "from-emerald-500/10 to-emerald-600/5" : "from-red-500/10 to-red-600/5", border: followersDelta >= 0 ? "border-emerald-500/20" : "border-red-500/20", show: hasFollowData },
     { icon: Eye, label: "Alcance", value: fmtNumber(totalReach), gradient: "from-cyan-500/10 to-cyan-600/5", border: "border-cyan-500/20", show: totalReach > 0 },
-    { icon: Heart, label: "Interacoes", value: fmtNumber(interactions), gradient: "from-pink-500/10 to-pink-600/5", border: "border-pink-500/20", show: interactions > 0 },
-    { icon: TrendingUp, label: "Engajamento", value: fmtPercent(engagementRate), gradient: "from-amber-500/10 to-amber-600/5", border: "border-amber-500/20", show: engagementRate > 0 },
-    { icon: MousePointerClick, label: "Visitas Perfil", value: fmtNumber(profileViews), gradient: "from-orange-500/10 to-orange-600/5", border: "border-orange-500/20", show: profileViews > 0 },
-    { icon: Eye, label: "Impressoes", value: fmtNumber(totalImpressions), gradient: "from-purple-500/10 to-purple-600/5", border: "border-purple-500/20", show: totalImpressions > 0 },
+    { icon: Eye, label: "Visualizacoes", value: fmtNumber(totalViews), gradient: "from-purple-500/10 to-purple-600/5", border: "border-purple-500/20", show: totalViews > 0 },
+    { icon: Heart, label: "Interacoes", value: fmtNumber(totalInteractions), sub: totalLikes > 0 ? `${fmtNumber(totalLikes)} likes · ${fmtNumber(totalComments)} comments` : undefined, gradient: "from-pink-500/10 to-pink-600/5", border: "border-pink-500/20", show: totalInteractions > 0 },
+    { icon: TrendingUp, label: "Engajamento", value: fmtPercent(engagementRate), sub: "interacoes / alcance", gradient: "from-amber-500/10 to-amber-600/5", border: "border-amber-500/20", show: engagementRate > 0 },
+    { icon: Bookmark, label: "Salvamentos", value: fmtNumber(totalSaves), gradient: "from-indigo-500/10 to-indigo-600/5", border: "border-indigo-500/20", show: totalSaves > 0 },
+    { icon: Share2, label: "Compartilhamentos", value: fmtNumber(totalShares), gradient: "from-teal-500/10 to-teal-600/5", border: "border-teal-500/20", show: totalShares > 0 },
+    { icon: Link2, label: "Cliques na Bio", value: fmtNumber(bioClicks), gradient: "from-orange-500/10 to-orange-600/5", border: "border-orange-500/20", show: bioClicks > 0 },
   ].filter((c) => c.show);
 
   return (
