@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, ChevronDown, Instagram, MessageSquare, Brain, TrendingUp, Rocket, Repeat, Share2 } from "lucide-react";
+import { ChevronRight, ChevronDown, Instagram, MessageSquare, Brain, TrendingUp, Rocket, Repeat, Share2, ArrowUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -39,6 +39,11 @@ const OTHER_MODULES = [
   { key: "traffic" as keyof ProjectPermissions, label: "Ads", href: "traffic", icon: TrendingUp },
   { key: "conversations" as keyof ProjectPermissions, label: "Conversas", href: "conversations", icon: MessageSquare },
   { key: "mind" as keyof ProjectPermissions, label: "Mind", href: "minds", icon: Brain },
+] as const;
+
+// Modules visible to ALL guests regardless of permissions
+const UNGATED_MODULES = [
+  { label: "Vendas", href: "sales", icon: ArrowUpDown },
 ] as const;
 
 // ============================================================
@@ -142,6 +147,26 @@ function GuestProjectFolder({ project }: { project: Project }) {
             return (
               <Button
                 key={item.key}
+                variant={isActive ? "secondary" : "ghost"}
+                className="justify-start gap-2 h-8 text-sm"
+                asChild
+              >
+                <Link href={href}>
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span>{item.label}</span>
+                </Link>
+              </Button>
+            );
+          })}
+
+          {/* Ungated modules (always visible) */}
+          {UNGATED_MODULES.map((item) => {
+            const href = `/projects/${project.id}/${item.href}`;
+            const isActive = pathname.startsWith(href);
+            const Icon = item.icon;
+            return (
+              <Button
+                key={item.href}
                 variant={isActive ? "secondary" : "ghost"}
                 className="justify-start gap-2 h-8 text-sm"
                 asChild
