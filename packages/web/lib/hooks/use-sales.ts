@@ -12,6 +12,11 @@ export interface ColumnMapping {
   name?: string;
   phone?: string;
   status?: string;
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_content?: string;
+  utm_term?: string;
 }
 
 export interface SalesMapping {
@@ -78,7 +83,7 @@ export interface AscensionData {
   conversionRate: number;
   avgDaysToAscend: number;
   distribution: { range: string; count: number }[];
-  ascended: { email: string; inferiorDate: string; superiorDate: string; daysToAscend: number; inferiorProduct: string; superiorProduct: string; origin?: string }[];
+  ascended: { email: string; inferiorDate: string; superiorDate: string; daysToAscend: number; inferiorProduct: string; superiorProduct: string; origin?: string; utm_source?: string; utm_medium?: string; utm_campaign?: string }[];
   inferiorProducts: string[];
   superiorProducts: string[];
   revenueInferior: number;
@@ -88,8 +93,9 @@ export interface AscensionData {
   ltvEstimado: number;
   cohort: { month: string; total: number; ascended: number; rate: number }[];
   topOrigins: { origin: string; total: number; ascended: number; rate: number }[];
+  topCampaigns: { campaign: string; total: number; ascended: number; rate: number }[];
   timeline: { date: string; front: number; back: number }[];
-  remarketing: { email: string; date: string; product: string; origin?: string }[];
+  remarketing: { email: string; date: string; product: string; origin?: string; utm_source?: string; utm_campaign?: string }[];
 }
 
 export function useSalesAscension(projectId: string) {
@@ -98,6 +104,19 @@ export function useSalesAscension(projectId: string) {
     queryKey: ["sales-ascension", projectId],
     queryFn: () => apiClient<{ data: AscensionData | null; message?: string }>(`/api/projects/${projectId}/sales/ascension`),
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useUpdateSalesMapping(projectId: string, productId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ mappingId, columnMapping }: { mappingId: string; columnMapping: ColumnMapping }) =>
+      apiClient(`/api/projects/${projectId}/sales/products/${productId}/mappings/${mappingId}`, {
+        method: "PUT",
+        body: JSON.stringify({ columnMapping }),
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-products", projectId] }); },
   });
 }
 

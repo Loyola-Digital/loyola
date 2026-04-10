@@ -194,6 +194,29 @@ export default function ProjectSalesPage({ params }: Props) {
             )}
           </div>
 
+          {/* Top UTM Campaigns */}
+          {asc.topCampaigns && asc.topCampaigns.length > 0 && (
+            <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-5">
+              <h3 className="text-sm font-semibold mb-4">Top UTM Campaigns</h3>
+              <div className="space-y-2">
+                {asc.topCampaigns.map((c, i) => (
+                  <div key={c.campaign} className="flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground w-5 text-right">{i + 1}.</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium truncate">{c.campaign}</span>
+                        <span className="text-[10px] text-muted-foreground shrink-0">{c.ascended}/{c.total} ({c.rate.toFixed(1)}%)</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-muted/30 overflow-hidden">
+                        <div className="h-full rounded-full bg-violet-500/60" style={{ width: `${Math.max(c.rate, 2)}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Distribution */}
           {asc.distribution.some((d) => d.count > 0) && (
             <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-5">
@@ -221,7 +244,7 @@ export default function ProjectSalesPage({ params }: Props) {
                 </div>
                 <Button variant="ghost" size="sm" className="text-xs gap-1" onClick={(e) => {
                   e.stopPropagation();
-                  const csv = "Email,Data,Produto,Origem\n" + asc.remarketing.map((r) => `${r.email},${r.date},${r.product},${r.origin ?? ""}`).join("\n");
+                  const csv = "Email,Data,Produto,Origem,UTM Source,UTM Campaign\n" + asc.remarketing.map((r) => `${r.email},${r.date},${r.product},${r.origin ?? ""},${r.utm_source ?? ""},${r.utm_campaign ?? ""}`).join("\n");
                   const blob = new Blob([csv], { type: "text/csv" });
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement("a"); a.href = url; a.download = "remarketing.csv"; a.click();
@@ -238,7 +261,9 @@ export default function ProjectSalesPage({ params }: Props) {
                         <th className="px-5 py-2 text-left font-medium">Email</th>
                         <th className="px-3 py-2 text-left font-medium">Data Compra</th>
                         <th className="px-3 py-2 text-left font-medium">Produto</th>
-                        <th className="px-5 py-2 text-left font-medium">Origem</th>
+                        <th className="px-3 py-2 text-left font-medium">Origem</th>
+                        <th className="px-3 py-2 text-left font-medium">UTM Source</th>
+                        <th className="px-5 py-2 text-left font-medium">UTM Campaign</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -247,7 +272,9 @@ export default function ProjectSalesPage({ params }: Props) {
                           <td className="px-5 py-2 text-xs">{r.email}</td>
                           <td className="px-3 py-2 text-xs text-muted-foreground">{r.date}</td>
                           <td className="px-3 py-2"><Badge variant="secondary" className="text-[9px]">{r.product}</Badge></td>
-                          <td className="px-5 py-2 text-xs text-muted-foreground">{r.origin ?? "—"}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground">{r.origin ?? "—"}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground">{r.utm_source ?? "—"}</td>
+                          <td className="px-5 py-2 text-xs text-muted-foreground">{r.utm_campaign ?? "—"}</td>
                         </tr>
                       ))}
                     </tbody>

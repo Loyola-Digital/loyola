@@ -26,6 +26,11 @@ const createMappingSchema = z.object({
     name: z.string().optional(),
     phone: z.string().optional(),
     status: z.string().optional(),
+    utm_source: z.string().optional(),
+    utm_medium: z.string().optional(),
+    utm_campaign: z.string().optional(),
+    utm_content: z.string().optional(),
+    utm_term: z.string().optional(),
   }),
 });
 
@@ -107,6 +112,24 @@ export default fp(async function salesRoutes(fastify) {
     return { success: true };
   });
 
+  // ---- PUT /api/projects/:projectId/sales/products/:productId/mappings/:mappingId ----
+  fastify.put("/api/projects/:projectId/sales/products/:productId/mappings/:mappingId", async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const p = mappingParamSchema.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parametros invalidos" });
+    const body = z.object({ columnMapping: createMappingSchema.shape.columnMapping }).safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados invalidos" });
+
+    const [updated] = await fastify.db
+      .update(salesSpreadsheetMappings)
+      .set({ columnMapping: body.data.columnMapping })
+      .where(eq(salesSpreadsheetMappings.id, p.data.mappingId))
+      .returning();
+
+    if (!updated) return reply.code(404).send({ error: "Mapeamento nao encontrado" });
+    return updated;
+  });
+
   // ---- GET /api/projects/:projectId/sales/ascension ----
   // Cross-reference inferior vs superior sales by email
   fastify.get("/api/projects/:projectId/sales/ascension", async (request, reply) => {
@@ -127,7 +150,7 @@ export default fp(async function salesRoutes(fastify) {
     }
 
     // Read all sales data from spreadsheets
-    type SaleRecord = { email: string; date: string; productName: string; productType: string; origin?: string; value?: string };
+    type SaleRecord = { email: string; date: string; productName: string; productType: string; origin?: string; value?: string; utm_source?: string; utm_medium?: string; utm_campaign?: string; utm_content?: string; utm_term?: string };
 
     async function readProductSales(productId: string, productName: string, productType: string): Promise<SaleRecord[]> {
       const mappings = await fastify.db.select().from(salesSpreadsheetMappings).where(eq(salesSpreadsheetMappings.productId, productId));
@@ -136,11 +159,16 @@ export default fp(async function salesRoutes(fastify) {
       for (const mapping of mappings) {
         try {
           const data = await readSheetData(mapping.spreadsheetId, mapping.sheetName);
-          const colMap = mapping.columnMapping as { email: string; date: string; origin?: string; value?: string };
+          const colMap = mapping.columnMapping as { email: string; date: string; origin?: string; value?: string; utm_source?: string; utm_medium?: string; utm_campaign?: string; utm_content?: string; utm_term?: string };
           const emailIdx = data.headers.indexOf(colMap.email);
           const dateIdx = data.headers.indexOf(colMap.date);
           const originIdx = colMap.origin ? data.headers.indexOf(colMap.origin) : -1;
           const valueIdx = colMap.value ? data.headers.indexOf(colMap.value) : -1;
+          const utmSourceIdx = colMap.utm_source ? data.headers.indexOf(colMap.utm_source) : -1;
+          const utmMediumIdx = colMap.utm_medium ? data.headers.indexOf(colMap.utm_medium) : -1;
+          const utmCampaignIdx = colMap.utm_campaign ? data.headers.indexOf(colMap.utm_campaign) : -1;
+          const utmContentIdx = colMap.utm_content ? data.headers.indexOf(colMap.utm_content) : -1;
+          const utmTermIdx = colMap.utm_term ? data.headers.indexOf(colMap.utm_term) : -1;
 
           if (emailIdx === -1 || dateIdx === -1) continue;
 
@@ -155,6 +183,11 @@ export default fp(async function salesRoutes(fastify) {
               productType,
               origin: originIdx >= 0 ? row[originIdx] : undefined,
               value: valueIdx >= 0 ? row[valueIdx] : undefined,
+              utm_source: utmSourceIdx >= 0 ? row[utmSourceIdx] : undefined,
+              utm_medium: utmMediumIdx >= 0 ? row[utmMediumIdx] : undefined,
+              utm_campaign: utmCampaignIdx >= 0 ? row[utmCampaignIdx] : undefined,
+              utm_content: utmContentIdx >= 0 ? row[utmContentIdx] : undefined,
+              utm_term: utmTermIdx >= 0 ? row[utmTermIdx] : undefined,
             });
           }
         } catch (err) {
@@ -210,7 +243,7 @@ export default fp(async function salesRoutes(fastify) {
     }
 
     // Calculate ascension
-    const ascended: { email: string; inferiorDate: string; superiorDate: string; daysToAscend: number; inferiorProduct: string; superiorProduct: string; origin?: string }[] = [];
+    const ascended: { email: string; inferiorDate: string; superiorDate: string; daysToAscend: number; inferiorProduct: string; superiorProduct: string; origin?: string; utm_source?: string; utm_medium?: string; utm_campaign?: string }[] = [];
 
     for (const [email, sup] of superiorByEmail) {
       const inf = inferiorByEmail.get(email);
@@ -229,6 +262,9 @@ export default fp(async function salesRoutes(fastify) {
           inferiorProduct: inf.productName,
           superiorProduct: sup.productName,
           origin: inf.origin,
+          utm_source: inf.utm_source,
+          utm_medium: inf.utm_medium,
+          utm_campaign: inf.utm_campaign,
         });
       }
     }
@@ -321,11 +357,27 @@ export default fp(async function salesRoutes(fastify) {
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([date, data]) => ({ date, ...data }));
 
+    // Top UTM campaigns
+    const campaignMap = new Map<string, { total: number; ascended: number }>();
+    for (const [email, inf] of inferiorByEmail) {
+      const campaign = inf.utm_campaign?.trim() || inf.utm_source?.trim();
+      if (!campaign) continue;
+      const label = [inf.utm_source, inf.utm_medium, inf.utm_campaign].filter(Boolean).join(" / ");
+      const entry = campaignMap.get(label) ?? { total: 0, ascended: 0 };
+      entry.total++;
+      if (ascended.some((a) => a.email === email)) entry.ascended++;
+      campaignMap.set(label, entry);
+    }
+    const topCampaigns = Array.from(campaignMap.entries())
+      .map(([campaign, data]) => ({ campaign, ...data, rate: data.total > 0 ? (data.ascended / data.total) * 100 : 0 }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 15);
+
     // Remarketing list — bought front but NOT back
     const ascendedEmails = new Set(ascended.map((a) => a.email));
     const remarketing = Array.from(inferiorByEmail.entries())
       .filter(([email]) => !ascendedEmails.has(email))
-      .map(([email, sale]) => ({ email, date: parseDate(sale.date)?.toLocaleDateString("pt-BR") ?? sale.date, product: sale.productName, origin: sale.origin }))
+      .map(([email, sale]) => ({ email, date: parseDate(sale.date)?.toLocaleDateString("pt-BR") ?? sale.date, product: sale.productName, origin: sale.origin, utm_source: sale.utm_source, utm_campaign: sale.utm_campaign }))
       .slice(0, 200);
 
     return {
@@ -347,6 +399,7 @@ export default fp(async function salesRoutes(fastify) {
         ltvEstimado,
         cohort,
         topOrigins,
+        topCampaigns,
         timeline,
         remarketing,
       },

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  ShoppingCart, Plus, Trash2, FileSpreadsheet, ArrowUpDown, Search, ChevronDown, ChevronRight,
+  ShoppingCart, Plus, Trash2, FileSpreadsheet, ArrowUpDown, Search, ChevronDown, ChevronRight, Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,10 +19,26 @@ import {
 import { useProjects } from "@/lib/hooks/use-projects";
 import {
   useSalesProducts, useCreateSalesProduct, useDeleteSalesProduct,
-  useAddSalesMapping, useDeleteSalesMapping,
-  type SalesProduct, type ColumnMapping,
+  useAddSalesMapping, useDeleteSalesMapping, useUpdateSalesMapping,
+  type SalesProduct, type SalesMapping, type ColumnMapping,
 } from "@/lib/hooks/use-sales";
 import { useSpreadsheets, useSpreadsheetSheets, useSheetData } from "@/lib/hooks/use-google-sheets";
+
+const MAPPING_FIELDS = [
+  { key: "email", label: "Email *", group: "base" },
+  { key: "date", label: "Data *", group: "base" },
+  { key: "name", label: "Nome", group: "base" },
+  { key: "phone", label: "Telefone", group: "base" },
+  { key: "origin", label: "Origem", group: "base" },
+  { key: "type", label: "Tipo", group: "base" },
+  { key: "value", label: "Valor", group: "base" },
+  { key: "status", label: "Status", group: "base" },
+  { key: "utm_source", label: "UTM Source", group: "utm" },
+  { key: "utm_medium", label: "UTM Medium", group: "utm" },
+  { key: "utm_campaign", label: "UTM Campaign", group: "utm" },
+  { key: "utm_content", label: "UTM Content", group: "utm" },
+  { key: "utm_term", label: "UTM Term", group: "utm" },
+] as const;
 
 // ============================================================
 // COLUMN MAPPING DIALOG
@@ -144,16 +160,7 @@ function MappingDialog({ projectId, productId, open, onOpenChange }: {
               <p className="text-xs text-muted-foreground">Indique qual coluna corresponde a cada campo. Email e Data sao obrigatorios.</p>
 
               <div className="grid gap-3 grid-cols-2">
-                {[
-                  { key: "email", label: "Email *", required: true },
-                  { key: "date", label: "Data *", required: true },
-                  { key: "name", label: "Nome" },
-                  { key: "phone", label: "Telefone" },
-                  { key: "origin", label: "Origem" },
-                  { key: "type", label: "Tipo" },
-                  { key: "value", label: "Valor" },
-                  { key: "status", label: "Status" },
-                ].map(({ key, label }) => (
+                {MAPPING_FIELDS.filter((f) => f.group === "base").map(({ key, label }) => (
                   <div key={key} className="space-y-1">
                     <Label className="text-xs">{label}</Label>
                     <Select value={(mapping as unknown as Record<string, string>)[key] || "__none__"} onValueChange={(v) => setMapping((prev) => ({ ...prev, [key]: v === "__none__" ? "" : v }))}>
@@ -165,6 +172,24 @@ function MappingDialog({ projectId, productId, open, onOpenChange }: {
                     </Select>
                   </div>
                 ))}
+              </div>
+
+              <div className="pt-2 border-t border-border/20">
+                <p className="text-xs font-medium text-muted-foreground mb-2">UTM Parameters</p>
+                <div className="grid gap-3 grid-cols-2">
+                  {MAPPING_FIELDS.filter((f) => f.group === "utm").map(({ key, label }) => (
+                    <div key={key} className="space-y-1">
+                      <Label className="text-xs">{label}</Label>
+                      <Select value={(mapping as unknown as Record<string, string>)[key] || "__none__"} onValueChange={(v) => setMapping((prev) => ({ ...prev, [key]: v === "__none__" ? "" : v }))}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">— Nenhum —</SelectItem>
+                          {columns.map((col) => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {columns.length === 0 && <p className="text-xs text-amber-500">Carregando colunas da planilha...</p>}
@@ -189,9 +214,71 @@ function MappingDialog({ projectId, productId, open, onOpenChange }: {
 // PRODUCT SECTION
 // ============================================================
 
+function EditMappingDialog({ mapping, projectId, productId, open, onOpenChange }: {
+  mapping: SalesMapping; projectId: string; productId: string; open: boolean; onOpenChange: (open: boolean) => void;
+}) {
+  const [editMapping, setEditMapping] = useState<ColumnMapping>(mapping.columnMapping);
+  const { data: sheetData } = useSheetData(mapping.spreadsheetId, mapping.sheetName);
+  const updateMapping = useUpdateSalesMapping(projectId, productId);
+  const columns = sheetData?.headers ?? [];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle className="text-sm">Editar mapeamento — {mapping.spreadsheetName} / {mapping.sheetName}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 grid-cols-2">
+          {MAPPING_FIELDS.filter((f) => f.group === "base").map(({ key, label }) => (
+            <div key={key} className="space-y-1">
+              <Label className="text-xs">{label}</Label>
+              <Select value={(editMapping as unknown as Record<string, string>)[key] || "__none__"} onValueChange={(v) => setEditMapping((prev) => ({ ...prev, [key]: v === "__none__" ? "" : v }))}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— Nenhum —</SelectItem>
+                  {columns.map((col) => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          ))}
+        </div>
+        <div className="pt-2 border-t border-border/20">
+          <p className="text-xs font-medium text-muted-foreground mb-2">UTM Parameters</p>
+          <div className="grid gap-3 grid-cols-2">
+            {MAPPING_FIELDS.filter((f) => f.group === "utm").map(({ key, label }) => (
+              <div key={key} className="space-y-1">
+                <Label className="text-xs">{label}</Label>
+                <Select value={(editMapping as unknown as Record<string, string>)[key] || "__none__"} onValueChange={(v) => setEditMapping((prev) => ({ ...prev, [key]: v === "__none__" ? "" : v }))}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— Nenhum —</SelectItem>
+                    {columns.map((col) => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button disabled={!editMapping.email || !editMapping.date || updateMapping.isPending} onClick={() => {
+            updateMapping.mutate({ mappingId: mapping.id, columnMapping: editMapping }, {
+              onSuccess: () => { toast.success("Mapeamento atualizado!"); onOpenChange(false); },
+              onError: () => toast.error("Erro ao atualizar."),
+            });
+          }}>
+            {updateMapping.isPending ? "Salvando..." : "Salvar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ProductSection({ product, projectId }: { product: SalesProduct; projectId: string }) {
   const [open, setOpen] = useState(true);
   const [mappingOpen, setMappingOpen] = useState(false);
+  const [editingMapping, setEditingMapping] = useState<SalesMapping | null>(null);
   const deleteProduct = useDeleteSalesProduct(projectId);
   const deleteMapping = useDeleteSalesMapping(projectId, product.id);
 
@@ -230,11 +317,27 @@ function ProductSection({ product, projectId }: { product: SalesProduct; project
                     {m.columnMapping.origin ? ` · Origem: ${m.columnMapping.origin}` : ""}
                     {m.columnMapping.value ? ` · Valor: ${m.columnMapping.value}` : ""}
                   </p>
+                  {(m.columnMapping.utm_source || m.columnMapping.utm_medium || m.columnMapping.utm_campaign) && (
+                    <p className="text-[10px] text-muted-foreground">
+                      UTM: {[
+                        m.columnMapping.utm_source && `source=${m.columnMapping.utm_source}`,
+                        m.columnMapping.utm_medium && `medium=${m.columnMapping.utm_medium}`,
+                        m.columnMapping.utm_campaign && `campaign=${m.columnMapping.utm_campaign}`,
+                        m.columnMapping.utm_content && `content=${m.columnMapping.utm_content}`,
+                        m.columnMapping.utm_term && `term=${m.columnMapping.utm_term}`,
+                      ].filter(Boolean).join(" · ")}
+                    </p>
+                  )}
                 </div>
               </div>
-              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => deleteMapping.mutate(m.id, { onSuccess: () => toast.success("Removido.") })}>
-                <Trash2 className="h-3 w-3 text-destructive/70" />
-              </Button>
+              <div className="flex items-center gap-0.5">
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditingMapping(m)}>
+                  <Pencil className="h-3 w-3 text-muted-foreground" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => deleteMapping.mutate(m.id, { onSuccess: () => toast.success("Removido.") })}>
+                  <Trash2 className="h-3 w-3 text-destructive/70" />
+                </Button>
+              </div>
             </div>
           ))}
 
@@ -244,6 +347,15 @@ function ProductSection({ product, projectId }: { product: SalesProduct; project
           </Button>
 
           <MappingDialog projectId={projectId} productId={product.id} open={mappingOpen} onOpenChange={setMappingOpen} />
+          {editingMapping && (
+            <EditMappingDialog
+              mapping={editingMapping}
+              projectId={projectId}
+              productId={product.id}
+              open={!!editingMapping}
+              onOpenChange={(open) => { if (!open) setEditingMapping(null); }}
+            />
+          )}
         </div>
       )}
     </div>
