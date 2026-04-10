@@ -84,38 +84,59 @@ export default function ProjectSalesPage({ params }: Props) {
             <KpiCard icon={Clock} label="Tempo Medio" value={`${asc.avgDaysToAscend}d`} sub="dias para ascender" gradient="from-amber-500/10 to-amber-600/5" border="border-amber-500/20" />
           </div>
 
-          {/* Funnel visualization */}
-          <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-5">
-            <h3 className="text-sm font-semibold mb-5">Funil de Ascensao</h3>
-            <div className="space-y-3 max-w-xl mx-auto">
+          {/* Funnel visualization — trapezoid shape */}
+          <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-6">
+            <h3 className="text-sm font-semibold mb-6">Funil de Ascensao</h3>
+            <div className="flex flex-col items-center gap-0 max-w-lg mx-auto">
               {[
-                { label: `Compraram Front-end`, value: asc.totalInferior, color: "bg-blue-500", pct: 100 },
-                { label: `Compraram Back-end (total)`, value: asc.totalSuperior, color: "bg-purple-500", pct: asc.totalInferior > 0 ? (asc.totalSuperior / asc.totalInferior) * 100 : 0 },
-                { label: `Ascenderam (front → back)`, value: asc.totalAscended, color: "bg-emerald-500", pct: asc.totalInferior > 0 ? (asc.totalAscended / asc.totalInferior) * 100 : 0 },
-              ].map((stage, i) => {
-                const width = Math.max(stage.pct, 8);
+                { label: "Compraram Front-end", value: asc.totalInferior, pct: 100, color: "from-blue-500 to-blue-600", textColor: "text-blue-300" },
+                { label: "Compraram Back-end", value: asc.totalSuperior, pct: asc.totalInferior > 0 ? (asc.totalSuperior / asc.totalInferior) * 100 : 0, color: "from-purple-500 to-purple-600", textColor: "text-purple-300" },
+                { label: "Ascenderam", value: asc.totalAscended, pct: asc.totalInferior > 0 ? (asc.totalAscended / asc.totalInferior) * 100 : 0, color: "from-emerald-500 to-emerald-600", textColor: "text-emerald-300" },
+              ].map((stage, i, arr) => {
+                const widthPct = Math.max(stage.pct, 15);
+                const nextWidthPct = i < arr.length - 1 ? Math.max(arr[i + 1].pct, 15) : widthPct * 0.7;
                 return (
-                  <div key={i} className="space-y-1.5">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="font-medium">{stage.label}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="tabular-nums font-bold">{fmtNumber(stage.value)}</span>
-                        {i > 0 && <span className="text-xs text-muted-foreground">({stage.pct.toFixed(1)}%)</span>}
+                  <div key={i} className="w-full flex flex-col items-center">
+                    {/* Trapezoid stage */}
+                    <div
+                      className="relative transition-all duration-700"
+                      style={{
+                        width: `${widthPct}%`,
+                        minWidth: "120px",
+                      }}
+                    >
+                      <div
+                        className={`bg-gradient-to-r ${stage.color} rounded-lg py-4 px-4 text-center relative overflow-hidden`}
+                        style={{
+                          clipPath: `polygon(0 0, 100% 0, ${50 + (nextWidthPct / widthPct) * 50}% 100%, ${50 - (nextWidthPct / widthPct) * 50}% 100%)`,
+                        }}
+                      >
+                        <div className="relative z-10">
+                          <p className="text-white text-2xl font-bold tabular-nums">{fmtNumber(stage.value)}</p>
+                          <p className="text-white/80 text-xs font-medium">{stage.label}</p>
+                          {i > 0 && <p className="text-white/60 text-[10px] mt-0.5">{stage.pct.toFixed(1)}% do topo</p>}
+                        </div>
                       </div>
                     </div>
-                    <div className="h-10 w-full rounded-lg bg-muted/20 overflow-hidden" style={{ display: "flex", justifyContent: "center" }}>
-                      <div
-                        className={`h-full ${stage.color}/70 rounded-lg transition-all duration-700`}
-                        style={{ width: `${width}%` }}
-                      />
-                    </div>
+                    {/* Conversion arrow between stages */}
+                    {i < arr.length - 1 && (
+                      <div className="flex items-center gap-2 py-1">
+                        <div className="h-4 w-px bg-border/40" />
+                        <span className={`text-[10px] font-medium ${arr[i + 1].textColor}`}>
+                          {arr[i + 1].pct.toFixed(1)}% ↓
+                        </span>
+                        <div className="h-4 w-px bg-border/40" />
+                      </div>
+                    )}
                   </div>
                 );
               })}
-              <div className="flex items-center justify-center gap-2 pt-2 text-xs text-muted-foreground">
-                <span>Nao ascenderam:</span>
-                <span className="font-semibold text-foreground">{fmtNumber(asc.totalInferior - asc.totalAscended)}</span>
-                <span>({asc.totalInferior > 0 ? ((1 - asc.totalAscended / asc.totalInferior) * 100).toFixed(1) : 0}%)</span>
+              {/* Bottom stat */}
+              <div className="flex items-center gap-2 mt-4 px-4 py-2 rounded-lg bg-muted/10 border border-border/20">
+                <div className="h-2 w-2 rounded-full bg-red-500/60" />
+                <span className="text-xs text-muted-foreground">Nao ascenderam:</span>
+                <span className="text-xs font-semibold">{fmtNumber(asc.totalInferior - asc.totalAscended)}</span>
+                <span className="text-[10px] text-muted-foreground">({asc.totalInferior > 0 ? ((1 - asc.totalAscended / asc.totalInferior) * 100).toFixed(1) : 0}%)</span>
               </div>
             </div>
           </div>
