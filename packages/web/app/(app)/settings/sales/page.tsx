@@ -224,10 +224,11 @@ function EditMappingDialog({ mapping, projectId, productId, open, onOpenChange }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="text-sm">Editar mapeamento — {mapping.spreadsheetName} / {mapping.sheetName}</DialogTitle>
         </DialogHeader>
+        <div className="flex-1 overflow-y-auto space-y-3">
         <div className="grid gap-3 grid-cols-2">
           {MAPPING_FIELDS.filter((f) => f.group === "base").map(({ key, label }) => (
             <div key={key} className="space-y-1">
@@ -258,6 +259,7 @@ function EditMappingDialog({ mapping, projectId, productId, open, onOpenChange }
               </div>
             ))}
           </div>
+        </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
