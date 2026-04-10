@@ -618,6 +618,11 @@ export const salesSpreadsheetMappings = pgTable(
         name?: string;
         phone?: string;
         status?: string;
+        utm_source?: string;
+        utm_medium?: string;
+        utm_campaign?: string;
+        utm_content?: string;
+        utm_term?: string;
       }>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
