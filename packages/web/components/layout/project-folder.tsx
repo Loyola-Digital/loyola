@@ -223,7 +223,7 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
             onClick={() => setSocialOpen((o) => !o)}
           >
             <Share2 className="h-4 w-4 shrink-0" />
-            <span className="flex-1 text-left">Social</span>
+            <span className="flex-1 text-left">Social Orgânico</span>
             {socialOpen ? (
               <ChevronDown className="h-3 w-3 text-muted-foreground" />
             ) : (
