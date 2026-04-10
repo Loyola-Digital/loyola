@@ -2,8 +2,8 @@
 
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Users, UserPlus, UserMinus, Eye, MousePointerClick,
-  TrendingUp, Heart, MessageCircle, Bookmark, Share2, Link2,
+  Users, UserPlus, UserMinus, Eye,
+  TrendingUp, Heart, Bookmark, Share2, Link2,
 } from "lucide-react";
 import type { InstagramProfile, InsightEntry } from "@/lib/hooks/use-instagram";
 
