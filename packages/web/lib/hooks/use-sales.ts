@@ -81,6 +81,15 @@ export interface AscensionData {
   ascended: { email: string; inferiorDate: string; superiorDate: string; daysToAscend: number; inferiorProduct: string; superiorProduct: string; origin?: string }[];
   inferiorProducts: string[];
   superiorProducts: string[];
+  revenueInferior: number;
+  revenueSuperior: number;
+  ticketMedioInferior: number;
+  ticketMedioSuperior: number;
+  ltvEstimado: number;
+  cohort: { month: string; total: number; ascended: number; rate: number }[];
+  topOrigins: { origin: string; total: number; ascended: number; rate: number }[];
+  timeline: { date: string; front: number; back: number }[];
+  remarketing: { email: string; date: string; product: string; origin?: string }[];
 }
 
 export function useSalesAscension(projectId: string) {

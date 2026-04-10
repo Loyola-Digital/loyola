@@ -251,6 +251,83 @@ export default fp(async function salesRoutes(fastify) {
       { range: "90+ dias", count: ascended.filter((a) => a.daysToAscend > 90).length },
     ];
 
+    // Revenue calculations
+    let revenueInferior = 0;
+    let revenueSuperior = 0;
+    for (const sale of inferiorSales) {
+      const v = parseFloat((sale.value ?? "0").replace(/[^\d.,]/g, "").replace(",", "."));
+      if (!isNaN(v)) revenueInferior += v;
+    }
+    for (const sale of superiorSales) {
+      const v = parseFloat((sale.value ?? "0").replace(/[^\d.,]/g, "").replace(",", "."));
+      if (!isNaN(v)) revenueSuperior += v;
+    }
+    const ticketMedioInferior = totalInferior > 0 ? revenueInferior / totalInferior : 0;
+    const ticketMedioSuperior = totalSuperior > 0 ? revenueSuperior / totalSuperior : 0;
+    const ltvEstimado = totalAscended > 0 ? (revenueInferior + revenueSuperior) / new Set([...inferiorByEmail.keys(), ...superiorByEmail.keys()]).size : 0;
+
+    // Cohort by month (when bought front-end → how many ascended)
+    const cohortMap = new Map<string, { total: number; ascended: number }>();
+    for (const [email, inf] of inferiorByEmail) {
+      const d = parseDate(inf.date);
+      if (!d) continue;
+      const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const entry = cohortMap.get(month) ?? { total: 0, ascended: 0 };
+      entry.total++;
+      if (superiorByEmail.has(email)) {
+        const sup = superiorByEmail.get(email)!;
+        const supDate = parseDate(sup.date);
+        if (supDate && supDate.getTime() >= d.getTime()) entry.ascended++;
+      }
+      cohortMap.set(month, entry);
+    }
+    const cohort = Array.from(cohortMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([month, data]) => ({ month, ...data, rate: data.total > 0 ? (data.ascended / data.total) * 100 : 0 }));
+
+    // Top origins that ascend most
+    const originMap = new Map<string, { total: number; ascended: number }>();
+    for (const [email, inf] of inferiorByEmail) {
+      const origin = inf.origin?.trim() || "Direto";
+      const entry = originMap.get(origin) ?? { total: 0, ascended: 0 };
+      entry.total++;
+      if (ascended.some((a) => a.email === email)) entry.ascended++;
+      originMap.set(origin, entry);
+    }
+    const topOrigins = Array.from(originMap.entries())
+      .map(([origin, data]) => ({ origin, ...data, rate: data.total > 0 ? (data.ascended / data.total) * 100 : 0 }))
+      .sort((a, b) => b.ascended - a.ascended)
+      .slice(0, 10);
+
+    // Timeline — sales per day
+    const timelineMap = new Map<string, { front: number; back: number }>();
+    for (const sale of inferiorSales) {
+      const d = parseDate(sale.date);
+      if (!d) continue;
+      const day = d.toISOString().slice(0, 10);
+      const entry = timelineMap.get(day) ?? { front: 0, back: 0 };
+      entry.front++;
+      timelineMap.set(day, entry);
+    }
+    for (const sale of superiorSales) {
+      const d = parseDate(sale.date);
+      if (!d) continue;
+      const day = d.toISOString().slice(0, 10);
+      const entry = timelineMap.get(day) ?? { front: 0, back: 0 };
+      entry.back++;
+      timelineMap.set(day, entry);
+    }
+    const timeline = Array.from(timelineMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, data]) => ({ date, ...data }));
+
+    // Remarketing list — bought front but NOT back
+    const ascendedEmails = new Set(ascended.map((a) => a.email));
+    const remarketing = Array.from(inferiorByEmail.entries())
+      .filter(([email]) => !ascendedEmails.has(email))
+      .map(([email, sale]) => ({ email, date: parseDate(sale.date)?.toLocaleDateString("pt-BR") ?? sale.date, product: sale.productName, origin: sale.origin }))
+      .slice(0, 200);
+
     return {
       data: {
         totalInferior,
@@ -259,9 +336,19 @@ export default fp(async function salesRoutes(fastify) {
         conversionRate,
         avgDaysToAscend,
         distribution,
-        ascended: ascended.slice(0, 100), // limit to 100 records
+        ascended: ascended.slice(0, 100),
         inferiorProducts: inferiorProducts.map((p) => p.name),
         superiorProducts: superiorProducts.map((p) => p.name),
+        // New metrics
+        revenueInferior,
+        revenueSuperior,
+        ticketMedioInferior,
+        ticketMedioSuperior,
+        ltvEstimado,
+        cohort,
+        topOrigins,
+        timeline,
+        remarketing,
       },
     };
   });
