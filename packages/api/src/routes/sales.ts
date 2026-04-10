@@ -38,7 +38,6 @@ export default fp(async function salesRoutes(fastify) {
 
   // ---- GET /api/projects/:projectId/sales/products ----
   fastify.get("/api/projects/:projectId/sales/products", async (request, reply) => {
-    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
     const p = projectParamSchema.safeParse(request.params);
     if (!p.success) return reply.code(400).send({ error: "ID invalido" });
 
@@ -133,7 +132,6 @@ export default fp(async function salesRoutes(fastify) {
   // ---- GET /api/projects/:projectId/sales/ascension ----
   // Cross-reference inferior vs superior sales by email
   fastify.get("/api/projects/:projectId/sales/ascension", async (request, reply) => {
-    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
     const p = projectParamSchema.safeParse(request.params);
     if (!p.success) return reply.code(400).send({ error: "ID invalido" });
 
