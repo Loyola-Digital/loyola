@@ -128,8 +128,8 @@ export default function ProjectSalesPage({ params }: Props) {
                         <td className="px-3 py-2.5"><Badge className="text-[9px]">{a.superiorProduct}</Badge></td>
                         <td className="px-3 py-2.5 text-xs text-muted-foreground">{a.superiorDate}</td>
                         <td className="px-3 py-2.5 text-right">
-                          <span className={`text-xs font-medium ${a.daysToAscend <= 7 ? "text-emerald-400" : a.daysToAscend <= 30 ? "text-amber-400" : "text-red-400"}`}>
-                            {a.daysToAscend}d
+                          <span className={`text-xs font-medium ${a.daysToAscend == null || isNaN(a.daysToAscend) ? "text-muted-foreground" : a.daysToAscend <= 7 ? "text-emerald-400" : a.daysToAscend <= 30 ? "text-amber-400" : "text-red-400"}`}>
+                            {a.daysToAscend != null && !isNaN(a.daysToAscend) ? `${a.daysToAscend}d` : "—"}
                           </span>
                         </td>
                         <td className="px-5 py-2.5 text-xs text-muted-foreground">{a.origin ?? "—"}</td>
