@@ -192,20 +192,38 @@ export default fp(async function salesRoutes(fastify) {
       }
     }
 
+    // Parse date string in various formats (DD/MM/YYYY, D/M/YYYY, YYYY-MM-DD, with optional time)
+    function parseDate(dateStr: string): Date | null {
+      if (!dateStr) return null;
+      // Try DD/MM/YYYY or D/M/YYYY (with optional time)
+      const brMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(.*)$/);
+      if (brMatch) {
+        const [, day, month, year, time] = brMatch;
+        const timePart = time?.trim() || "00:00:00";
+        const d = new Date(`${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}T${timePart}`);
+        if (!isNaN(d.getTime())) return d;
+      }
+      // Try ISO or other formats
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) return d;
+      return null;
+    }
+
     // Calculate ascension
     const ascended: { email: string; inferiorDate: string; superiorDate: string; daysToAscend: number; inferiorProduct: string; superiorProduct: string; origin?: string }[] = [];
 
     for (const [email, sup] of superiorByEmail) {
       const inf = inferiorByEmail.get(email);
       if (inf) {
-        const infDate = new Date(inf.date);
-        const supDate = new Date(sup.date);
+        const infDate = parseDate(inf.date);
+        const supDate = parseDate(sup.date);
+        if (!infDate || !supDate) continue;
         const diffMs = supDate.getTime() - infDate.getTime();
         const diffDays = Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
         ascended.push({
           email,
-          inferiorDate: inf.date,
-          superiorDate: sup.date,
+          inferiorDate: infDate.toLocaleDateString("pt-BR"),
+          superiorDate: supDate.toLocaleDateString("pt-BR"),
           daysToAscend: diffDays,
           inferiorProduct: inf.productName,
           superiorProduct: sup.productName,
