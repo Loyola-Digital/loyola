@@ -71,6 +71,27 @@ export function useAddSalesMapping(projectId: string, productId: string) {
   });
 }
 
+export interface AscensionData {
+  totalInferior: number;
+  totalSuperior: number;
+  totalAscended: number;
+  conversionRate: number;
+  avgDaysToAscend: number;
+  distribution: { range: string; count: number }[];
+  ascended: { email: string; inferiorDate: string; superiorDate: string; daysToAscend: number; inferiorProduct: string; superiorProduct: string; origin?: string }[];
+  inferiorProducts: string[];
+  superiorProducts: string[];
+}
+
+export function useSalesAscension(projectId: string) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["sales-ascension", projectId],
+    queryFn: () => apiClient<{ data: AscensionData | null; message?: string }>(`/api/projects/${projectId}/sales/ascension`),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useDeleteSalesMapping(projectId: string, productId: string) {
   const apiClient = useApiClient();
   const qc = useQueryClient();

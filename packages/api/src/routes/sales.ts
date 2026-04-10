@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { salesProducts, salesSpreadsheetMappings } from "../db/schema.js";
+import { readSheetData } from "../services/google-sheets.js";
 
 const projectParamSchema = z.object({ projectId: z.string().uuid() });
 const productParamSchema = z.object({ projectId: z.string().uuid(), productId: z.string().uuid() });
@@ -104,5 +105,145 @@ export default fp(async function salesRoutes(fastify) {
 
     await fastify.db.delete(salesSpreadsheetMappings).where(eq(salesSpreadsheetMappings.id, p.data.mappingId));
     return { success: true };
+  });
+
+  // ---- GET /api/projects/:projectId/sales/ascension ----
+  // Cross-reference inferior vs superior sales by email
+  fastify.get("/api/projects/:projectId/sales/ascension", async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const p = projectParamSchema.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "ID invalido" });
+
+    const products = await fastify.db
+      .select()
+      .from(salesProducts)
+      .where(eq(salesProducts.projectId, p.data.projectId));
+
+    const inferiorProducts = products.filter((pr) => pr.type === "inferior");
+    const superiorProducts = products.filter((pr) => pr.type === "superior");
+
+    if (inferiorProducts.length === 0 || superiorProducts.length === 0) {
+      return { error: null, message: "Configure pelo menos 1 produto inferior e 1 superior", data: null };
+    }
+
+    // Read all sales data from spreadsheets
+    type SaleRecord = { email: string; date: string; productName: string; productType: string; origin?: string; value?: string };
+
+    async function readProductSales(productId: string, productName: string, productType: string): Promise<SaleRecord[]> {
+      const mappings = await fastify.db.select().from(salesSpreadsheetMappings).where(eq(salesSpreadsheetMappings.productId, productId));
+      const records: SaleRecord[] = [];
+
+      for (const mapping of mappings) {
+        try {
+          const data = await readSheetData(mapping.spreadsheetId, mapping.sheetName);
+          const colMap = mapping.columnMapping as { email: string; date: string; origin?: string; value?: string };
+          const emailIdx = data.headers.indexOf(colMap.email);
+          const dateIdx = data.headers.indexOf(colMap.date);
+          const originIdx = colMap.origin ? data.headers.indexOf(colMap.origin) : -1;
+          const valueIdx = colMap.value ? data.headers.indexOf(colMap.value) : -1;
+
+          if (emailIdx === -1 || dateIdx === -1) continue;
+
+          for (const row of data.rows) {
+            const email = (row[emailIdx] ?? "").toLowerCase().trim();
+            const date = row[dateIdx] ?? "";
+            if (!email || !date) continue;
+            records.push({
+              email,
+              date,
+              productName,
+              productType,
+              origin: originIdx >= 0 ? row[originIdx] : undefined,
+              value: valueIdx >= 0 ? row[valueIdx] : undefined,
+            });
+          }
+        } catch (err) {
+          fastify.log.error({ err, productName }, "[sales] failed to read spreadsheet");
+        }
+      }
+      return records;
+    }
+
+    // Collect all sales
+    const inferiorSales: SaleRecord[] = [];
+    const superiorSales: SaleRecord[] = [];
+
+    for (const prod of inferiorProducts) {
+      inferiorSales.push(...await readProductSales(prod.id, prod.name, "inferior"));
+    }
+    for (const prod of superiorProducts) {
+      superiorSales.push(...await readProductSales(prod.id, prod.name, "superior"));
+    }
+
+    // Build maps by email
+    const inferiorByEmail = new Map<string, SaleRecord>();
+    for (const sale of inferiorSales) {
+      const existing = inferiorByEmail.get(sale.email);
+      if (!existing || sale.date < existing.date) {
+        inferiorByEmail.set(sale.email, sale); // keep earliest
+      }
+    }
+
+    const superiorByEmail = new Map<string, SaleRecord>();
+    for (const sale of superiorSales) {
+      const existing = superiorByEmail.get(sale.email);
+      if (!existing || sale.date < existing.date) {
+        superiorByEmail.set(sale.email, sale);
+      }
+    }
+
+    // Calculate ascension
+    const ascended: { email: string; inferiorDate: string; superiorDate: string; daysToAscend: number; inferiorProduct: string; superiorProduct: string; origin?: string }[] = [];
+
+    for (const [email, sup] of superiorByEmail) {
+      const inf = inferiorByEmail.get(email);
+      if (inf) {
+        const infDate = new Date(inf.date);
+        const supDate = new Date(sup.date);
+        const diffMs = supDate.getTime() - infDate.getTime();
+        const diffDays = Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+        ascended.push({
+          email,
+          inferiorDate: inf.date,
+          superiorDate: sup.date,
+          daysToAscend: diffDays,
+          inferiorProduct: inf.productName,
+          superiorProduct: sup.productName,
+          origin: inf.origin,
+        });
+      }
+    }
+
+    ascended.sort((a, b) => a.daysToAscend - b.daysToAscend);
+
+    const totalInferior = inferiorByEmail.size;
+    const totalSuperior = superiorByEmail.size;
+    const totalAscended = ascended.length;
+    const conversionRate = totalInferior > 0 ? (totalAscended / totalInferior) * 100 : 0;
+    const avgDaysToAscend = totalAscended > 0 ? Math.round(ascended.reduce((s, a) => s + a.daysToAscend, 0) / totalAscended) : 0;
+
+    // Distribution by days ranges
+    const distribution = [
+      { range: "0-7 dias", count: ascended.filter((a) => a.daysToAscend <= 7).length },
+      { range: "8-14 dias", count: ascended.filter((a) => a.daysToAscend > 7 && a.daysToAscend <= 14).length },
+      { range: "15-30 dias", count: ascended.filter((a) => a.daysToAscend > 14 && a.daysToAscend <= 30).length },
+      { range: "31-60 dias", count: ascended.filter((a) => a.daysToAscend > 30 && a.daysToAscend <= 60).length },
+      { range: "61-90 dias", count: ascended.filter((a) => a.daysToAscend > 60 && a.daysToAscend <= 90).length },
+      { range: "90+ dias", count: ascended.filter((a) => a.daysToAscend > 90).length },
+    ];
+
+    return {
+      data: {
+        totalInferior,
+        totalSuperior,
+        totalAscended,
+        conversionRate,
+        avgDaysToAscend,
+        distribution,
+        ascended: ascended.slice(0, 100), // limit to 100 records
+        inferiorProducts: inferiorProducts.map((p) => p.name),
+        superiorProducts: superiorProducts.map((p) => p.name),
+      },
+    };
   });
 });
