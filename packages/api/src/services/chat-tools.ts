@@ -700,24 +700,26 @@ export async function executeChatTool(
       // AUTONOMOUS MULTI-TURN DEBATE
       // The tool runs the entire debate internally and returns only the final result
       const consultedPrompt = await fastify.mindEngine.buildPrompt(foundMind.id, 2);
-      const MAX_ROUNDS = 5;
+      const MAX_ROUNDS = 3; // 3 rounds = ~5 turnos (briefing + 3 respostas + follow-ups)
 
       try {
-        // Emit first turn (the question)
         onDebateTurn?.({ speaker: "current", mindName: "Expert", message: question, type: "question" });
 
         const debateMessages: { role: "user" | "assistant"; content: string }[] = [];
         const briefing = context ? `Contexto:\n${context}\n\n${question}` : question;
-        debateMessages.push({ role: "user", content: `${briefing}\n\nResponda com sua expertise. Seja específico e use frameworks. Quando terminar todos os pontos, finalize com "---CONCLUSÃO---" seguido do resumo final.` });
+        debateMessages.push({ role: "user", content: `${briefing}\n\nResponda com sua expertise de forma CONCISA e direta. Use frameworks e dados. Máximo 500 palavras.` });
 
         let lastResponse = "";
+        const followUps = [
+          "Bom. Agora: quais as 3 maiores objeções e como resolver cada uma? Seja direto.",
+          "Último ponto: consolide tudo num plano de ação final com os passos concretos. Seja breve e definitivo.",
+        ];
 
         for (let round = 0; round < MAX_ROUNDS; round++) {
-          // Consulted mind responds
           const stream = fastify.claude.stream({
             systemPrompt: consultedPrompt,
             messages: debateMessages,
-            maxTokens: 3000,
+            maxTokens: 1500,
           });
           const msg = await stream.finalMessage();
           lastResponse = msg.content
@@ -728,13 +730,10 @@ export async function executeChatTool(
           debateMessages.push({ role: "assistant", content: lastResponse });
           onDebateTurn?.({ speaker: "consulted", mindName: foundMind.name, message: lastResponse, type: "response" });
 
-          // Check if debate is complete
-          if (lastResponse.includes("---CONCLUSÃO---") || round >= MAX_ROUNDS - 1) break;
-
-          // Generate follow-up question/challenge
-          const followUp = `Bom ponto. Agora aprofunde: quais são as objeções mais fortes contra essa abordagem? E como resolver cada uma? Continue sendo específico.`;
-          debateMessages.push({ role: "user", content: followUp });
-          onDebateTurn?.({ speaker: "current", mindName: "Expert", message: followUp, type: "question" });
+          if (round < MAX_ROUNDS - 1 && followUps[round]) {
+            debateMessages.push({ role: "user", content: followUps[round] });
+            onDebateTurn?.({ speaker: "current", mindName: "Expert", message: followUps[round], type: "question" });
+          }
         }
 
         onDebateTurn?.({ speaker: "current", mindName: "Expert", message: "✅ Reunião encerrada.", type: "question" });
