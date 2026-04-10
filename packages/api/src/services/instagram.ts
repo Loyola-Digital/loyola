@@ -7,7 +7,7 @@ import { decrypt } from "./encryption.js";
 // CONSTANTS
 // ============================================================
 
-const GRAPH_API_VERSION = "v21.0";
+const GRAPH_API_VERSION = "v25.0";
 const GRAPH_API_BASE = `https://graph.instagram.com/${GRAPH_API_VERSION}`;
 const RATE_LIMIT_MAX = 200;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
@@ -72,6 +72,7 @@ interface InsightEntry {
   name: string;
   period: string;
   values: InsightValue[];
+  total_value?: { value: number | Record<string, unknown> };
   title: string;
   description: string;
   id: string;
@@ -137,7 +138,7 @@ interface InstagramService {
   validateToken(accessToken: string): Promise<{ id: string; name: string; username: string; profile_picture_url?: string }>;
   getProfile(accountId: string): Promise<InstagramProfile>;
   getMediaList(accountId: string, limit?: number, after?: string): Promise<{ data: InstagramMedia[]; nextCursor?: string }>;
-  getMediaInsights(mediaId: string, accountId: string): Promise<InsightEntry[]>;
+  getMediaInsights(mediaId: string, accountId: string, mediaType?: string): Promise<InsightEntry[]>;
   getAccountInsights(accountId: string, period: string, since: number, until: number): Promise<InsightEntry[]>;
   getAudienceDemographics(accountId: string): Promise<InsightEntry[]>;
   getStories(accountId: string): Promise<Array<StoryMedia & { insights?: InsightEntry[] }>>;
@@ -421,19 +422,51 @@ export default fp(async function instagramServicePlugin(fastify) {
   async function getMediaInsights(
     mediaId: string,
     accountId: string,
+    mediaType?: string,
   ): Promise<InsightEntry[]> {
     const cacheKey = `post_insights_${mediaId}`;
     const cached = await getCachedMetric(accountId, cacheKey);
     if (cached) return cached as InsightEntry[];
 
     const { token } = await getDecryptedToken(accountId);
-    const result = await graphFetch<InsightsResponse>(
-      `/${mediaId}/insights?metric=impressions,reach,likes,comments,saved,shares,plays`,
-      token,
-    );
 
-    await setCachedMetric(accountId, cacheKey, result.data, CACHE_TTL.post_insights);
-    return result.data;
+    // v25.0: metrics depend on media type
+    // Deprecated: impressions (use views), plays
+    let metrics: string;
+    if (mediaType === "VIDEO" || mediaType === "REEL") {
+      metrics = "reach,views,likes,comments,saved,shares,ig_reels_avg_watch_time";
+    } else if (mediaType === "STORY") {
+      metrics = "reach,views,replies,shares,follows,navigation";
+    } else {
+      // FEED (IMAGE, CAROUSEL_ALBUM)
+      metrics = "reach,views,likes,comments,saved,shares,follows";
+    }
+
+    // Fetch with fallback — some metrics may fail for older posts
+    const entries: InsightEntry[] = [];
+    try {
+      const result = await graphFetch<InsightsResponse>(
+        `/${mediaId}/insights?metric=${metrics}`,
+        token,
+      );
+      entries.push(...result.data);
+    } catch {
+      // Fallback: try minimal set
+      try {
+        const result = await graphFetch<InsightsResponse>(
+          `/${mediaId}/insights?metric=reach,likes,comments,saved,shares`,
+          token,
+        );
+        entries.push(...result.data);
+      } catch {
+        // Media might not support insights (carousel albums, etc.)
+      }
+    }
+
+    if (entries.length > 0) {
+      await setCachedMetric(accountId, cacheKey, entries, CACHE_TTL.post_insights);
+    }
+    return entries;
   }
 
   async function getAccountInsights(
@@ -452,34 +485,44 @@ export default fp(async function instagramServicePlugin(fastify) {
 
     const { token, igUserId } = await getDecryptedToken(accountId);
 
-    // v21.0: fetch each metric independently so one failure doesn't kill others.
-    // Try multiple metric names for impressions (impressions → views → profile_views).
+    // v25.0: fetch each metric independently so one failure doesn't kill others.
+    // API v22+ deprecated: impressions (use views), profile_views, plays
+    // Only "reach" supports time_series. All others require metric_type=total_value.
     const base = `/${igUserId}/insights`;
     const tsParams = `&period=${period}&since=${since}&until=${until}`;
 
-    // Instagram Graph API v25 — correct metric names and params
-    // Batch 1: time_series metrics (return daily values array)
-    // Batch 2: total_value metrics (return single aggregated value)
     const entries: InsightEntry[] = [];
 
-    // Time series metrics (period=day, default metric_type)
-    const timeSeriesMetrics = ["reach", "impressions", "follower_count", "profile_views"];
+    // 1. Time series metrics (return daily values array) — only "reach" supports this
+    const timeSeriesMetrics = ["reach"];
     await Promise.all(timeSeriesMetrics.map(async (metric) => {
       try {
         const result = await graphFetch<InsightsResponse>(
-          `${base}?metric=${metric}${tsParams}`, token
+          `${base}?metric=${metric}${tsParams}&metric_type=time_series`, token
         );
         if (result?.data?.length > 0) {
           entries.push(...result.data);
-          console.log(`[IG insights] ${metric}: OK (${result.data[0]?.values?.length ?? 0} values)`);
+          fastify.log.info(`[IG insights] ${metric}: OK time_series (${result.data[0]?.values?.length ?? 0} values)`);
         }
       } catch (err) {
-        console.log(`[IG insights] ${metric}: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
+        fastify.log.warn(`[IG insights] ${metric} time_series: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
       }
     }));
 
-    // Total value metrics (need metric_type=total_value)
-    const totalValueMetrics = ["accounts_engaged", "total_interactions", "follows_and_unfollows"];
+    // 2. Total value metrics (aggregated for the period)
+    const totalValueMetrics = [
+      "views",                    // replaces deprecated "impressions"
+      "accounts_engaged",
+      "total_interactions",
+      "follows_and_unfollows",
+      "likes",
+      "comments",
+      "saves",
+      "shares",
+      "replies",
+      "profile_links_taps",
+      "follower_count",
+    ];
     await Promise.all(totalValueMetrics.map(async (metric) => {
       try {
         const result = await graphFetch<InsightsResponse>(
@@ -487,14 +530,14 @@ export default fp(async function instagramServicePlugin(fastify) {
         );
         if (result?.data?.length > 0) {
           entries.push(...result.data);
-          console.log(`[IG insights] ${metric}: OK (total_value)`);
+          fastify.log.info(`[IG insights] ${metric}: OK (total_value)`);
         }
       } catch (err) {
-        console.log(`[IG insights] ${metric}: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
+        fastify.log.warn(`[IG insights] ${metric}: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
       }
     }));
 
-    console.log("[IG insights] returned metrics:", entries.map((e) => e.name).join(", ") || "(none)");
+    fastify.log.info("[IG insights] returned metrics: " + (entries.map((e) => e.name).join(", ") || "(none)"));
 
     await setCachedMetric(
       accountId,
@@ -513,22 +556,22 @@ export default fp(async function instagramServicePlugin(fastify) {
 
     const { token, igUserId } = await getDecryptedToken(accountId);
 
-    // v21.0: metric_type=total_value is required for new demographic metrics.
+    // v25.0: demographic metrics use timeframe instead of since/until
     const [ageResult, genderResult, countryResult, cityResult] = await Promise.allSettled([
       graphFetch<DemographicsResponse>(
-        `/${igUserId}/insights?metric=follower_demographics&period=month&metric_type=total_value&breakdown=age`,
+        `/${igUserId}/insights?metric=follower_demographics&period=lifetime&metric_type=total_value&breakdown=age&timeframe=last_30_days`,
         token,
       ),
       graphFetch<DemographicsResponse>(
-        `/${igUserId}/insights?metric=follower_demographics&period=month&metric_type=total_value&breakdown=gender`,
+        `/${igUserId}/insights?metric=follower_demographics&period=lifetime&metric_type=total_value&breakdown=gender&timeframe=last_30_days`,
         token,
       ),
       graphFetch<DemographicsResponse>(
-        `/${igUserId}/insights?metric=follower_demographics&period=month&metric_type=total_value&breakdown=country`,
+        `/${igUserId}/insights?metric=follower_demographics&period=lifetime&metric_type=total_value&breakdown=country&timeframe=last_30_days`,
         token,
       ),
       graphFetch<DemographicsResponse>(
-        `/${igUserId}/insights?metric=follower_demographics&period=month&metric_type=total_value&breakdown=city`,
+        `/${igUserId}/insights?metric=follower_demographics&period=lifetime&metric_type=total_value&breakdown=city&timeframe=last_30_days`,
         token,
       ),
     ]);
@@ -578,7 +621,7 @@ export default fp(async function instagramServicePlugin(fastify) {
       result.data.map(async (story) => {
         try {
           const insights = await graphFetch<InsightsResponse>(
-            `/${story.id}/insights?metric=impressions,reach,replies,exits`,
+            `/${story.id}/insights?metric=reach,views,replies,shares,follows,navigation`,
             token,
           );
           return { ...story, insights: insights.data };

@@ -592,7 +592,7 @@ export default fp(async function instagramRoutes(fastify) {
       let directProfileResult = null;
       let directError = null;
       try {
-        const profileRes = await fetch(`https://graph.facebook.com/v21.0/${igUserId}?fields=id,username&access_token=${token}`);
+        const profileRes = await fetch(`https://graph.instagram.com/v25.0/${igUserId}?fields=id,username&access_token=${token}`);
         directProfileResult = await profileRes.json();
       } catch (err) {
         directError = err instanceof Error ? err.message : String(err);
@@ -612,28 +612,26 @@ export default fp(async function instagramRoutes(fastify) {
 
       const since = Math.floor(Date.now() / 1000) - 30 * 86400;
       const until = Math.floor(Date.now() / 1000);
-      const base = `https://graph.facebook.com/v21.0/${igUserId}/insights`;
-      const tsDay = `&period=day&since=${since}&until=${until}`;
+      const base = `https://graph.instagram.com/v25.0/${igUserId}/insights`;
+      const tsTimeSeries = `&period=day&since=${since}&until=${until}&metric_type=time_series`;
       const tsTotal = `&period=day&since=${since}&until=${until}&metric_type=total_value`;
 
-      // All possible metrics
+      // v25.0: correct metrics — deprecated ones removed
       const tests = [
-        { metric: "reach", params: tsDay },
-        { metric: "impressions", params: tsDay },
-        { metric: "views", params: tsDay },
-        { metric: "follower_count", params: tsDay },
+        // time_series (only reach supports this)
+        { metric: "reach", params: tsTimeSeries },
+        // total_value metrics
+        { metric: "views", params: tsTotal },
+        { metric: "follower_count", params: tsTotal },
         { metric: "accounts_engaged", params: tsTotal },
         { metric: "total_interactions", params: tsTotal },
-        { metric: "website_clicks", params: tsDay },
-        { metric: "profile_links_taps", params: tsDay },
-        { metric: "profile_views", params: tsDay },
-        { metric: "likes", params: tsDay },
-        { metric: "comments", params: tsDay },
-        { metric: "shares", params: tsDay },
-        { metric: "saves", params: tsDay },
+        { metric: "likes", params: tsTotal },
+        { metric: "comments", params: tsTotal },
+        { metric: "shares", params: tsTotal },
+        { metric: "saves", params: tsTotal },
+        { metric: "replies", params: tsTotal },
         { metric: "follows_and_unfollows", params: tsTotal },
-        { metric: "profile_activity", params: tsDay },
-        { metric: "engaged_audience_demographics", params: tsTotal },
+        { metric: "profile_links_taps", params: tsTotal },
       ];
 
       const results: Record<string, unknown> = {};
@@ -647,15 +645,18 @@ export default fp(async function instagramRoutes(fastify) {
           if (data.error) {
             results[metric] = { status: "ERROR", code: data.error.code, message: data.error.message.substring(0, 100) };
           } else if (data.data?.[0]) {
-            const entry = data.data[0];
-            const values = entry.values ?? [];
-            const nonZero = values.filter((v) => typeof v.value === "number" ? v.value > 0 : v.value !== null);
-            results[metric] = {
-              status: "OK",
-              totalValues: values.length,
-              nonZeroValues: nonZero.length,
-              sample: nonZero.slice(0, 2),
-            };
+            const entry = data.data[0] as Record<string, unknown>;
+            // Handle both time_series (values array) and total_value (single value) formats
+            const values = (entry.values as { value: unknown }[]) ?? [];
+            const totalValue = entry.total_value as { value?: unknown } | undefined;
+            if (values.length > 0) {
+              const nonZero = values.filter((v) => typeof v.value === "number" ? v.value > 0 : v.value !== null);
+              results[metric] = { status: "OK", type: "time_series", totalValues: values.length, nonZeroValues: nonZero.length, sample: nonZero.slice(0, 2) };
+            } else if (totalValue) {
+              results[metric] = { status: "OK", type: "total_value", value: totalValue.value };
+            } else {
+              results[metric] = { status: "OK", type: "unknown", raw: entry };
+            }
           } else {
             results[metric] = { status: "EMPTY" };
           }
