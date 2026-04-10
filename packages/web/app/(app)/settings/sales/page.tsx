@@ -156,10 +156,10 @@ function MappingDialog({ projectId, productId, open, onOpenChange }: {
                 ].map(({ key, label }) => (
                   <div key={key} className="space-y-1">
                     <Label className="text-xs">{label}</Label>
-                    <Select value={(mapping as unknown as Record<string, string>)[key] ?? ""} onValueChange={(v) => setMapping((prev) => ({ ...prev, [key]: v }))}>
+                    <Select value={(mapping as unknown as Record<string, string>)[key] || "__none__"} onValueChange={(v) => setMapping((prev) => ({ ...prev, [key]: v === "__none__" ? "" : v }))}>
                       <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">— Nenhum —</SelectItem>
+                        <SelectItem value="__none__">— Nenhum —</SelectItem>
                         {columns.map((col) => <SelectItem key={col} value={col}>{col}</SelectItem>)}
                       </SelectContent>
                     </Select>
