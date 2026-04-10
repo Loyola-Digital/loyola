@@ -38,6 +38,7 @@ function MappingDialog({ projectId, productId, open, onOpenChange }: {
   const { data: sheetData } = useSheetData(selectedSpreadsheet?.id ?? null, selectedSheet);
   const [mapping, setMapping] = useState<ColumnMapping>({ email: "", date: "" });
   const [search, setSearch] = useState("");
+  const [directLink, setDirectLink] = useState("");
   const addMapping = useAddSalesMapping(projectId, productId);
 
   const spreadsheets = spreadsheetsData?.spreadsheets ?? [];
@@ -49,7 +50,7 @@ function MappingDialog({ projectId, productId, open, onOpenChange }: {
   function handleSave() {
     if (!selectedSpreadsheet || !selectedSheet || !mapping.email || !mapping.date) return;
     addMapping.mutate(
-      { spreadsheetId: selectedSpreadsheet.id, spreadsheetName: selectedSpreadsheet.name, sheetName: selectedSheet, columnMapping: mapping },
+      { spreadsheetId: selectedSpreadsheet.id, spreadsheetName: sheetsData?.name ?? selectedSpreadsheet.name, sheetName: selectedSheet, columnMapping: mapping },
       { onSuccess: () => { toast.success("Planilha mapeada!"); handleClose(); }, onError: () => toast.error("Erro ao salvar.") }
     );
   }
@@ -71,6 +72,35 @@ function MappingDialog({ projectId, productId, open, onOpenChange }: {
         <div className="flex-1 overflow-y-auto space-y-3">
           {step === "spreadsheet" && (
             <>
+              {/* Direct link input */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Colar link da planilha</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={directLink}
+                    onChange={(e) => setDirectLink(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                    className="flex-1 text-xs"
+                  />
+                  <Button size="sm" variant="outline" disabled={!directLink.trim()} onClick={() => {
+                    const match = directLink.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                    if (match) {
+                      setSelectedSpreadsheet({ id: match[1], name: "Planilha" });
+                    } else {
+                      toast.error("Link invalido. Cole o link completo do Google Sheets.");
+                    }
+                  }}>
+                    Usar
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="flex-1 h-px bg-border/50" />
+                <span>ou selecione da lista</span>
+                <div className="flex-1 h-px bg-border/50" />
+              </div>
+
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input placeholder="Buscar planilha..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
@@ -94,7 +124,7 @@ function MappingDialog({ projectId, productId, open, onOpenChange }: {
           {step === "sheet" && (
             <>
               <button onClick={() => setSelectedSpreadsheet(null)} className="text-xs text-muted-foreground hover:text-foreground">← Voltar</button>
-              <p className="text-sm font-medium">{selectedSpreadsheet?.name}</p>
+              <p className="text-sm font-medium">{sheetsData?.name ?? selectedSpreadsheet?.name}</p>
               <div className="space-y-1 max-h-[300px] overflow-y-auto">
                 {(sheetsData?.sheets ?? []).map((sheet) => (
                   <button key={sheet.title} onClick={() => setSelectedSheet(sheet.title)}
