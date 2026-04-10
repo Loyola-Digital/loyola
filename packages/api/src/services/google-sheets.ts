@@ -77,9 +77,10 @@ export async function listSpreadsheets(): Promise<SpreadsheetInfo[]> {
   const accessToken = await getAccessToken();
   const q = encodeURIComponent("mimeType='application/vnd.google-apps.spreadsheet'");
   const res = await fetch(
-    `${DRIVE_API}/files?q=${q}&fields=files(id,name)&pageSize=50&orderBy=modifiedTime desc`,
+    `${DRIVE_API}/files?q=${q}&fields=files(id,name)&pageSize=100&orderBy=modifiedTime desc&supportsAllDrives=true&includeItemsFromAllDrives=true`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
+  console.log(`[google-sheets] listing spreadsheets, status: ${res.status}`);
 
   if (!res.ok) {
     const err = await res.text().catch(() => "");
@@ -87,6 +88,7 @@ export async function listSpreadsheets(): Promise<SpreadsheetInfo[]> {
   }
 
   const data = (await res.json()) as { files?: { id: string; name: string }[] };
+  console.log(`[google-sheets] found ${data.files?.length ?? 0} spreadsheets`);
   return (data.files ?? []).map((f) => ({ id: f.id, name: f.name }));
 }
 
