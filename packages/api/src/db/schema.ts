@@ -571,3 +571,58 @@ export const funnelSurveys = pgTable(
   ]
 );
 
+// ============================================================
+// SALES PRODUCTS & SPREADSHEET MAPPINGS (Settings — Sales Integration)
+// ============================================================
+
+export const salesProductTypeEnum = pgEnum("sales_product_type", ["inferior", "superior"]);
+
+export const salesProducts = pgTable(
+  "sales_products",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 255 }).notNull(),
+    type: salesProductTypeEnum("type").notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_sales_products_project").on(table.projectId),
+  ]
+);
+
+export const salesSpreadsheetMappings = pgTable(
+  "sales_spreadsheet_mappings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => salesProducts.id, { onDelete: "cascade" }),
+    spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
+    spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
+    sheetName: varchar("sheet_name", { length: 255 }).notNull(),
+    columnMapping: jsonb("column_mapping")
+      .notNull()
+      .$type<{
+        email: string;
+        date: string;
+        origin?: string;
+        type?: string;
+        value?: string;
+        name?: string;
+        phone?: string;
+        status?: string;
+      }>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_sales_mappings_product").on(table.productId),
+  ]
+);
+

@@ -38,6 +38,7 @@ import googleAdsRoutes from "./routes/google-ads.js";
 import googleAdsAnalyticsRoutes from "./routes/google-ads-analytics.js";
 import youtubeChannelRoutes from "./routes/youtube-channels.js";
 import googleSheetsRoutes from "./routes/google-sheets.js";
+import salesRoutes from "./routes/sales.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -91,6 +92,7 @@ export async function buildServer() {
   await app.register(googleAdsAnalyticsRoutes);
   await app.register(youtubeChannelRoutes);
   await app.register(googleSheetsRoutes);
+  await app.register(salesRoutes);
 
   return app;
 }

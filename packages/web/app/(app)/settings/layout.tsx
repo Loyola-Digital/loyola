@@ -24,6 +24,7 @@ import { useUserRole } from "@/lib/hooks/use-user-role";
 
 const BASE_TABS = [
   { label: "Geral", href: "/settings/general", value: "general" },
+  { label: "Vendas", href: "/settings/sales", value: "sales" },
 ] as const;
 
 const META_TABS = [
