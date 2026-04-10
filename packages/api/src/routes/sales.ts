@@ -158,15 +158,27 @@ export default fp(async function salesRoutes(fastify) {
         try {
           const data = await readSheetData(mapping.spreadsheetId, mapping.sheetName);
           const colMap = mapping.columnMapping as { email: string; date: string; origin?: string; value?: string; utm_source?: string; utm_medium?: string; utm_campaign?: string; utm_content?: string; utm_term?: string };
-          const emailIdx = data.headers.indexOf(colMap.email);
-          const dateIdx = data.headers.indexOf(colMap.date);
-          const originIdx = colMap.origin ? data.headers.indexOf(colMap.origin) : -1;
-          const valueIdx = colMap.value ? data.headers.indexOf(colMap.value) : -1;
-          const utmSourceIdx = colMap.utm_source ? data.headers.indexOf(colMap.utm_source) : -1;
-          const utmMediumIdx = colMap.utm_medium ? data.headers.indexOf(colMap.utm_medium) : -1;
-          const utmCampaignIdx = colMap.utm_campaign ? data.headers.indexOf(colMap.utm_campaign) : -1;
-          const utmContentIdx = colMap.utm_content ? data.headers.indexOf(colMap.utm_content) : -1;
-          const utmTermIdx = colMap.utm_term ? data.headers.indexOf(colMap.utm_term) : -1;
+
+          // Flexible column matching: trim + case-insensitive
+          function findCol(name: string | undefined): number {
+            if (!name) return -1;
+            const normalized = name.trim().toLowerCase();
+            const idx = data.headers.findIndex((h) => h.trim().toLowerCase() === normalized);
+            if (idx === -1) {
+              fastify.log.warn(`[sales] column "${name}" not found in headers: [${data.headers.join(", ")}]`);
+            }
+            return idx;
+          }
+
+          const emailIdx = findCol(colMap.email);
+          const dateIdx = findCol(colMap.date);
+          const originIdx = findCol(colMap.origin);
+          const valueIdx = findCol(colMap.value);
+          const utmSourceIdx = findCol(colMap.utm_source);
+          const utmMediumIdx = findCol(colMap.utm_medium);
+          const utmCampaignIdx = findCol(colMap.utm_campaign);
+          const utmContentIdx = findCol(colMap.utm_content);
+          const utmTermIdx = findCol(colMap.utm_term);
 
           if (emailIdx === -1 || dateIdx === -1) continue;
 
