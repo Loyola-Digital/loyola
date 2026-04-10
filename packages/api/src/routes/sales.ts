@@ -289,11 +289,11 @@ export default fp(async function salesRoutes(fastify) {
     let revenueInferior = 0;
     let revenueSuperior = 0;
     for (const sale of inferiorSales) {
-      const v = parseFloat((sale.value ?? "0").replace(/[^\d.,]/g, "").replace(",", "."));
+      const v = parseFloat((sale.value ?? "0").replace(/[^\d.,]/g, "").replace(/\./g, "").replace(",", "."));
       if (!isNaN(v)) revenueInferior += v;
     }
     for (const sale of superiorSales) {
-      const v = parseFloat((sale.value ?? "0").replace(/[^\d.,]/g, "").replace(",", "."));
+      const v = parseFloat((sale.value ?? "0").replace(/[^\d.,]/g, "").replace(/\./g, "").replace(",", "."));
       if (!isNaN(v)) revenueSuperior += v;
     }
     const ticketMedioInferior = totalInferior > 0 ? revenueInferior / totalInferior : 0;
