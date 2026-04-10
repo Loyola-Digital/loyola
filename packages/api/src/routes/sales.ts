@@ -219,7 +219,8 @@ export default fp(async function salesRoutes(fastify) {
         const supDate = parseDate(sup.date);
         if (!infDate || !supDate) continue;
         const diffMs = supDate.getTime() - infDate.getTime();
-        const diffDays = Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+        if (diffMs < 0) continue; // bought superior BEFORE inferior — not ascension
+        const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
         ascended.push({
           email,
           inferiorDate: infDate.toLocaleDateString("pt-BR"),
