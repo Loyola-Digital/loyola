@@ -61,6 +61,14 @@ export default function ProjectPage({ params }: Props) {
     );
   }
 
+  if (!isAdmin) {
+    return (
+      <div className="p-6">
+        <p className="text-muted-foreground">Acesso restrito a administradores.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 flex flex-col gap-6 max-w-2xl">
       <div className="flex items-center justify-between">
@@ -74,12 +82,10 @@ export default function ProjectPage({ params }: Props) {
             <p className="text-muted-foreground text-sm">{project.clientName}</p>
           </div>
         </div>
-        {isAdmin && (
-          <Button size="sm" variant="outline" onClick={() => setInviteOpen(true)}>
-            <UserPlus className="h-4 w-4 mr-1.5" />
-            Convidar
-          </Button>
-        )}
+        <Button size="sm" variant="outline" onClick={() => setInviteOpen(true)}>
+          <UserPlus className="h-4 w-4 mr-1.5" />
+          Convidar
+        </Button>
       </div>
 
       <div>
@@ -88,11 +94,9 @@ export default function ProjectPage({ params }: Props) {
             <Instagram className="h-4 w-4" />
             Contas Instagram vinculadas
           </h2>
-          {isAdmin && (
-            <Button size="sm" variant="outline" onClick={() => setLinkAccountOpen(true)}>
-              + Vincular conta
-            </Button>
-          )}
+          <Button size="sm" variant="outline" onClick={() => setLinkAccountOpen(true)}>
+            + Vincular conta
+          </Button>
         </div>
         {accountsLoading && (
           <div className="flex flex-col gap-2">
@@ -119,14 +123,12 @@ export default function ProjectPage({ params }: Props) {
         )}
       </div>
 
-      {isAdmin && (
-        <>
-          <Separator />
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-semibold flex items-center gap-2">
-                <Brain className="h-4 w-4" />
-                Minds vinculadas
+      <Separator />
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold flex items-center gap-2">
+            <Brain className="h-4 w-4" />
+            Minds vinculadas
               </h2>
               <Button size="sm" variant="outline" onClick={() => setLinkMindOpen(true)}>
                 + Vincular mind
@@ -176,46 +178,34 @@ export default function ProjectPage({ params }: Props) {
                 ))}
               </ul>
             )}
-          </div>
-        </>
-      )}
+      </div>
 
-      {isAdmin && (
-        <>
-          <Separator />
-          <div>
-            <h2 className="text-base font-semibold mb-3 flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Membros convidados
-            </h2>
-            <MemberPermissionsEditor projectId={id} />
-          </div>
-        </>
-      )}
+      <Separator />
+      <div>
+        <h2 className="text-base font-semibold mb-3 flex items-center gap-2">
+          <Users className="h-4 w-4" />
+          Membros convidados
+        </h2>
+        <MemberPermissionsEditor projectId={id} />
+      </div>
 
-      {isAdmin && (
-        <InviteMemberDialog
-          projectId={id}
-          open={inviteOpen}
-          onOpenChange={setInviteOpen}
-        />
-      )}
+      <InviteMemberDialog
+        projectId={id}
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+      />
 
-      {isAdmin && (
-        <LinkAccountDialog
-          projectId={id}
-          open={linkAccountOpen}
-          onOpenChange={setLinkAccountOpen}
-        />
-      )}
+      <LinkAccountDialog
+        projectId={id}
+        open={linkAccountOpen}
+        onOpenChange={setLinkAccountOpen}
+      />
 
-      {isAdmin && (
-        <LinkMindDialog
-          projectId={id}
-          open={linkMindOpen}
-          onOpenChange={setLinkMindOpen}
-        />
-      )}
+      <LinkMindDialog
+        projectId={id}
+        open={linkMindOpen}
+        onOpenChange={setLinkMindOpen}
+      />
     </div>
   );
 }

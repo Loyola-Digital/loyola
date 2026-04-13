@@ -203,7 +203,10 @@ export default fp(async function projectRoutes(fastify) {
       return reply.code(400).send({ error: "ID inválido" });
     }
 
-    const project = await getProjectForMember(paramResult.data.id, request.userId);
+    // Non-guests can access any project; guests check membership
+    const project = request.userRole !== "guest"
+      ? await getProjectForUser(paramResult.data.id, request.userId!, request.userRole!)
+      : await getProjectForMember(paramResult.data.id, request.userId!);
     if (!project) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
