@@ -97,12 +97,13 @@ export interface MetaDailyInsight {
   ctr: string;
   cpc: string;
   cpm: string;
+  actions?: { action_type: string; value: string }[];
+  action_values?: { action_type: string; value: string }[];
 }
 
 export interface MetaCampaignInsight extends MetaDailyInsight {
   campaign_id: string;
   campaign_name: string;
-  actions?: { action_type: string; value: string }[];
 }
 
 export interface MetaAdSetInsight extends MetaDailyInsight {
@@ -110,7 +111,6 @@ export interface MetaAdSetInsight extends MetaDailyInsight {
   adset_name: string;
   campaign_id?: string;
   campaign_name?: string;
-  actions?: { action_type: string; value: string }[];
 }
 
 export interface VideoMetrics {
@@ -125,7 +125,6 @@ export interface MetaAdInsight extends MetaDailyInsight {
   ad_id: string;
   ad_name: string;
   videoMetrics?: VideoMetrics | null;
-  actions?: { action_type: string; value: string }[];
 }
 
 // ============================================================
@@ -262,7 +261,7 @@ export async function fetchCampaignDailyInsights(
     JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: campaignId }])
   );
   const res = await fetchMeta<{ data: MetaDailyInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm&date_preset=${datePreset}&time_increment=1&level=campaign&filtering=${filtering}`,
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,actions,action_values&date_preset=${datePreset}&time_increment=1&level=campaign&filtering=${filtering}`,
     accessToken
   );
   return res.data ?? [];
@@ -276,7 +275,7 @@ export async function fetchCampaignInsights(
   const datePreset =
     days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
   const res = await fetchMeta<{ data: MetaCampaignInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,campaign_id,campaign_name,actions&date_preset=${datePreset}&level=campaign`,
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,campaign_id,campaign_name,actions,action_values&date_preset=${datePreset}&level=campaign`,
     accessToken
   );
   return res.data ?? [];
@@ -296,7 +295,7 @@ export async function fetchAdSetInsights(
     ])
   );
   const res = await fetchMeta<{ data: MetaAdSetInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,adset_id,adset_name,actions&date_preset=${datePreset}&level=adset&filtering=${filtering}`,
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,adset_id,adset_name,actions,action_values&date_preset=${datePreset}&level=adset&filtering=${filtering}`,
     accessToken
   );
   return res.data ?? [];
@@ -309,7 +308,7 @@ export async function fetchAllAdSetInsights(
 ): Promise<MetaAdSetInsight[]> {
   const datePreset =
     days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
-  const fields = "impressions,reach,clicks,spend,ctr,cpc,cpm,adset_id,adset_name,campaign_id,campaign_name,actions";
+  const fields = "impressions,reach,clicks,spend,ctr,cpc,cpm,adset_id,adset_name,campaign_id,campaign_name,actions,action_values";
 
   type PageResponse = { data: MetaAdSetInsight[]; paging?: { next?: string } };
   const allResults: MetaAdSetInsight[] = [];
@@ -377,7 +376,7 @@ export async function fetchAdInsights(
     ])
   );
   const res = await fetchMeta<{ data: RawAdInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name,actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions&date_preset=${datePreset}&level=ad&filtering=${filtering}`,
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name,actions,action_values,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions&date_preset=${datePreset}&level=ad&filtering=${filtering}`,
     accessToken
   );
   return (res.data ?? []).map((raw) => ({
@@ -406,7 +405,6 @@ export interface AllAdInsight extends MetaAdInsight {
   campaign_name: string;
   adset_id: string;
   adset_name: string;
-  actions?: { action_type: string; value: string }[];
 }
 
 export async function fetchAllAdInsights(
@@ -422,7 +420,7 @@ export async function fetchAllAdInsights(
     ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: campaignId }]))}`
     : "";
 
-  const fields = "impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions";
+  const fields = "impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,actions,action_values,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions";
 
   // Paginate — Meta defaults to 25 results per page
   type PageResponse = { data: RawAllAdInsight[]; paging?: { next?: string } };
@@ -490,7 +488,7 @@ export async function fetchPlacementBreakdown(
     : "";
   const level = campaignId ? "campaign" : "account";
   const res = await fetchMeta<{ data: MetaPlacementInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=spend,impressions,clicks,ctr,cpc,cpm,actions&breakdowns=publisher_platform,platform_position&date_preset=${datePreset}&level=${level}${filtering}`,
+    `/act_${metaAccountId}/insights?fields=spend,impressions,clicks,ctr,cpc,cpm,actions,action_values&breakdowns=publisher_platform,platform_position&date_preset=${datePreset}&level=${level}${filtering}`,
     accessToken
   );
   return res.data ?? [];

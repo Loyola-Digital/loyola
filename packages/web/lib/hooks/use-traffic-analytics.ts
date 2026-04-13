@@ -51,6 +51,13 @@ export interface OverviewAnalytics {
   avgCplQualified: number | null;
   totalSales: number | null;
   totalRevenue: number | null;
+  totalCheckouts: number | null;
+  checkoutRate: number | null;
+  checkoutConversionRate: number | null;
+  roas: number | null;
+  cac: number | null;
+  margin: number | null;
+  marginPercent: number | null;
   totalCampaigns: number;
   hasCrm: boolean;
   hasQualification: boolean;
@@ -227,6 +234,8 @@ export interface CampaignDailyInsight {
   ctr: string;
   cpc: string;
   cpm: string;
+  actions?: { action_type: string; value: string }[];
+  action_values?: { action_type: string; value: string }[];
 }
 
 export function useCampaignDailyInsights(

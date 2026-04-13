@@ -258,6 +258,13 @@ export function useChatStream() {
     [],
   );
 
+  const stopStream = useCallback(() => {
+    abortRef.current?.abort();
+    setIsStreaming(false);
+    setDebateActive(false);
+    setThinkingSteps([]);
+  }, []);
+
   return {
     messages,
     isStreaming,
@@ -270,5 +277,6 @@ export function useChatStream() {
     sendMessage,
     loadHistory,
     updateTaskSuggestion,
+    stopStream,
   };
 }

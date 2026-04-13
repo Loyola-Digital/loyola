@@ -83,6 +83,10 @@ export default fp(async function chatRoutes(fastify) {
       // Mark reply as sent so Fastify doesn't try to serialize
       reply.hijack();
 
+      // Abort controller for client disconnect detection
+      const clientAbort = new AbortController();
+      request.raw.on("close", () => clientAbort.abort());
+
       try {
         // Resolve or create conversation
         let conversationId: string;
@@ -221,7 +225,7 @@ export default fp(async function chatRoutes(fastify) {
             ) => {
               return executeChatTool(fastify, userId, name, input, (turn) => {
                 sendSSE(reply, "debate_turn", turn);
-              });
+              }, clientAbort.signal);
             },
           });
 

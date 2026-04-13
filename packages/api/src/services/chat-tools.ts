@@ -243,6 +243,7 @@ export async function executeChatTool(
   toolName: string,
   input: Record<string, unknown>,
   onDebateTurn?: (data: { speaker: string; mindName: string; message: string; type: string }) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
   const svc = fastify.clickupService;
 
@@ -716,6 +717,12 @@ export async function executeChatTool(
         ];
 
         for (let round = 0; round < MAX_ROUNDS; round++) {
+          // Check if client disconnected before starting a new round
+          if (signal?.aborted) {
+            onDebateTurn?.({ speaker: "current", mindName: "Expert", message: "⏹️ Reunião interrompida pelo usuário.", type: "question" });
+            return `🧠 Reunião com **${foundMind.name}** interrompida.\n\n**Último resultado parcial:**\n\n${lastResponse || "(nenhum)"}`;
+          }
+
           const stream = fastify.claude.stream({
             systemPrompt: consultedPrompt,
             messages: debateMessages,

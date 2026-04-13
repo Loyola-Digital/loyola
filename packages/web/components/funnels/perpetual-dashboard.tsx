@@ -3,13 +3,14 @@
 import { useState, useMemo } from "react";
 import {
   DollarSign,
-  Eye,
-  MousePointerClick,
-  Percent,
-  Radio,
   TrendingUp,
   TrendingDown,
   LinkIcon,
+  ShoppingCart,
+  Target,
+  BarChart3,
+  Filter,
+  Settings2,
 } from "lucide-react";
 import {
   LineChart,
@@ -21,38 +22,35 @@ import {
   ResponsiveContainer,
   Legend,
   ReferenceLine,
-  PieChart,
-  Pie,
-  Cell,
+  BarChart,
+  Bar,
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
 import {
   useTrafficOverview,
   useTrafficCampaigns,
-  usePlacementBreakdown,
   useCampaignDailyInsights,
-  type PlacementInsight,
+  useAllAdSets,
+  useAllAds,
+  type CampaignAnalytics,
 } from "@/lib/hooks/use-traffic-analytics";
-import { FunnelCampaignTable } from "./funnel-campaign-table";
-import { TopCreativesGallery } from "./top-creatives-gallery";
 import { CampaignSelector } from "./campaign-selector";
+import { TopCreativesGallery } from "./top-creatives-gallery";
 import type { Funnel, FunnelCampaign } from "@loyola-x/shared";
-import { useSurveySummary } from "@/lib/hooks/use-google-sheets";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
-import { ClipboardList, Settings2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
 
 interface PerpetualDashboardProps {
   funnel: Funnel;
   projectId: string;
 }
 
-const DONUT_COLORS = [
-  "hsl(45 90% 55%)", "hsl(200 80% 60%)", "hsl(150 60% 50%)",
-  "hsl(280 60% 55%)", "hsl(350 70% 55%)", "hsl(30 80% 55%)",
-];
+// ============================================================
+// FORMATTERS
+// ============================================================
 
 function fmtCurrency(val: number | null | undefined): string {
   if (val == null || val === 0) return "—";
@@ -73,64 +71,120 @@ function fmtPercent(val: number | null | undefined): string {
   return `${val.toFixed(2)}%`;
 }
 
+function fmtRoas(val: number | null | undefined): string {
+  if (val == null) return "—";
+  return `${val.toFixed(2)}x`;
+}
+
 function safeNum(val: string | undefined): number {
   return val ? parseFloat(val) : 0;
 }
 
+const CHART_COLORS = [
+  "hsl(47 98% 54%)", "hsl(200 80% 60%)", "hsl(150 60% 50%)",
+  "hsl(280 60% 55%)", "hsl(350 70% 55%)", "hsl(30 80% 55%)",
+  "hsl(170 60% 50%)", "hsl(220 70% 60%)",
+];
+
+const TOOLTIP_STYLE = {
+  backgroundColor: "hsl(var(--card))",
+  border: "1px solid hsl(var(--border))",
+  borderRadius: "8px",
+  fontSize: "12px",
+  color: "#fff",
+};
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
+
 export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProps) {
   const [days, setDays] = useState(30);
   const [showCampaignManager, setShowCampaignManager] = useState(false);
+  const [tableFilter, setTableFilter] = useState<"campaign" | "adset" | "ad">("campaign");
   const { data: pickerData } = useCampaignPicker(showCampaignManager ? projectId : null);
   const updateFunnel = useUpdateFunnel(projectId, funnel.id);
   const campaignIds = funnel.campaigns.map((c) => c.id);
   const campaignIdSet = new Set(campaignIds);
   const firstCampaignId = campaignIds[0] ?? null;
 
+  // Data hooks
   const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
   );
-  const { data: prevOverview } = useTrafficOverview(
-    projectId, days * 2, campaignIds.length > 0 ? campaignIds : null,
-  );
   const { data: campaignData, isLoading: campaignsLoading } = useTrafficCampaigns(projectId, days);
-  const { data: placementData, isLoading: placementLoading } =
-    usePlacementBreakdown(projectId, days, campaignIds.length > 0 ? campaignIds : null);
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsights(projectId, firstCampaignId, days);
-  const { data: surveySummary } = useSurveySummary(projectId, funnel.id);
+  const { data: adSetsData } = useAllAdSets(projectId, days, campaignIds.length > 0 ? campaignIds : null);
+  const { data: adsData } = useAllAds(projectId, days, campaignIds.length > 0 ? campaignIds : null);
 
-  const surveyResponseRate = surveySummary && surveySummary.totalResponses > 0 && overview?.totalLeads
-    ? (surveySummary.totalResponses / overview.totalLeads) * 100
-    : null;
-
+  // Filtered campaigns for this funnel
   const funnelCampaigns = useMemo(() => {
     if (!campaignData) return [];
     return campaignData.campaigns.filter((c) => campaignIdSet.has(c.campaignId));
   }, [campaignData, campaignIdSet]);
 
-  // Period comparison
-  const deltas = useMemo(() => {
-    if (!overview || !prevOverview) return null;
-    const prevSpend = prevOverview.totalSpend - overview.totalSpend;
-    return {
-      spend: prevSpend > 0 ? ((overview.totalSpend - prevSpend) / prevSpend) * 100 : null,
-    };
-  }, [overview, prevOverview]);
-
-  // CPC daily trend (proxy for CPL)
-  const cpcTrend = useMemo(() => {
+  // Daily chart data: investment + margin
+  const dailyChartData = useMemo(() => {
     if (!dailyData) return [];
     return dailyData.map((d) => {
       const spend = safeNum(d.spend);
-      const clicks = safeNum(d.clicks);
-      return { date: d.date_start.slice(5, 10), cpc: clicks > 0 ? spend / clicks : 0, spend };
+      const purchases = d.actions?.find((a) =>
+        a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase"
+      );
+      const revenueEntry = d.action_values?.find((a) =>
+        a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase"
+      );
+      const revenue = revenueEntry ? parseFloat(revenueEntry.value) : 0;
+      const margin = revenue - spend;
+      return {
+        date: d.date_start.slice(5, 10),
+        spend,
+        revenue,
+        margin,
+        sales: purchases ? parseInt(purchases.value) : 0,
+      };
     });
   }, [dailyData]);
 
-  const avgCpc = useMemo(() => {
-    if (cpcTrend.length === 0) return 0;
-    return cpcTrend.reduce((s, d) => s + d.cpc, 0) / cpcTrend.length;
-  }, [cpcTrend]);
+  // Revenue by audience (ad sets)
+  const revenueByAudience = useMemo(() => {
+    if (!adSetsData?.adsets) return [];
+    return adSetsData.adsets
+      .filter((a) => a.revenue && a.revenue > 0)
+      .sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0))
+      .slice(0, 8)
+      .map((a) => ({ name: a.campaignName, revenue: a.revenue ?? 0 }));
+  }, [adSetsData]);
+
+  // Revenue by creative (ads)
+  const revenueByCreative = useMemo(() => {
+    if (!adsData?.ads) return [];
+    return adsData.ads
+      .filter((a) => a.revenue && a.revenue > 0)
+      .sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0))
+      .slice(0, 8)
+      .map((a) => ({ name: a.campaignName.length > 25 ? a.campaignName.slice(0, 25) + "..." : a.campaignName, revenue: a.revenue ?? 0 }));
+  }, [adsData]);
+
+  // Revenue by channel (campaigns)
+  const revenueByCampaign = useMemo(() => {
+    return funnelCampaigns
+      .filter((c) => c.revenue && c.revenue > 0)
+      .sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0))
+      .slice(0, 8)
+      .map((c) => ({ name: c.campaignName.length > 25 ? c.campaignName.slice(0, 25) + "..." : c.campaignName, revenue: c.revenue ?? 0 }));
+  }, [funnelCampaigns]);
+
+  // Table data based on filter
+  const tableData = useMemo((): CampaignAnalytics[] => {
+    switch (tableFilter) {
+      case "campaign": return funnelCampaigns;
+      case "adset": return adSetsData?.adsets ?? [];
+      case "ad": return adsData?.ads ?? [];
+      default: return [];
+    }
+  }, [tableFilter, funnelCampaigns, adSetsData, adsData]);
 
   if (campaignIds.length === 0) {
     return (
@@ -144,15 +198,10 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
 
   return (
     <div className="space-y-6">
-      {/* Header: period selector + campaign manager */}
+      {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <DayRangePicker days={days} onDaysChange={setDays} />
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5 text-xs"
-          onClick={() => setShowCampaignManager(!showCampaignManager)}
-        >
+        <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setShowCampaignManager(!showCampaignManager)}>
           <Settings2 className="h-3.5 w-3.5" />
           {funnel.campaigns.length} campanha{funnel.campaigns.length !== 1 ? "s" : ""}
         </Button>
@@ -166,160 +215,259 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
             accountLinked={pickerData.accountLinked}
             value={funnel.campaigns}
             onChange={(campaigns: FunnelCampaign[]) => {
-              updateFunnel.mutate(
-                { campaigns },
-                { onSuccess: () => toast.success("Campanhas atualizadas!") }
-              );
+              updateFunnel.mutate({ campaigns }, { onSuccess: () => toast.success("Campanhas atualizadas!") });
             }}
           />
         </div>
       )}
 
-      {/* KPI Cards with delta */}
+      {/* ================================================================ */}
+      {/* KPIs PRINCIPAIS                                                  */}
+      {/* ================================================================ */}
       {overviewLoading ? (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
+          {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : overview ? (
-        <div className={`grid gap-3 grid-cols-2 sm:grid-cols-3 ${surveyResponseRate !== null ? "lg:grid-cols-7" : "lg:grid-cols-6"}`}>
-          <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} delta={deltas?.spend} />
-          <KpiCard icon={Eye} label="Impressões" value={fmtNumber(overview.totalImpressions)} />
-          <KpiCard icon={Radio} label="Alcance" value={fmtNumber(overview.totalReach)} />
-          <KpiCard icon={MousePointerClick} label="Cliques" value={fmtNumber(overview.totalClicks)} />
-          <KpiCard icon={Percent} label="CTR" value={fmtPercent(overview.ctr)} />
-          <KpiCard icon={DollarSign} label="CPC" value={fmtCurrency(overview.cpc)} />
-          {surveyResponseRate !== null && (
-            <div className={`rounded-xl border p-3 hover:border-border/50 transition-colors ${surveyResponseRate >= 30 ? "border-emerald-500/30 bg-emerald-500/5" : surveyResponseRate >= 10 ? "border-amber-500/30 bg-amber-500/5" : "border-red-500/30 bg-red-500/5"}`}>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Pesquisa</span>
-                <ClipboardList className="h-3.5 w-3.5 text-muted-foreground/50" />
-              </div>
-              <p className="text-xl font-bold tracking-tight">{surveyResponseRate.toFixed(1)}%</p>
-              <p className="text-[9px] text-muted-foreground">{surveySummary!.totalResponses} de {overview.totalLeads} leads</p>
-            </div>
-          )}
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
+          <KpiCard icon={Target} label="ROAS" value={fmtRoas(overview.roas)} target={2} actual={overview.roas} />
+          <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} />
+          <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(overview.totalSales)} />
+          <KpiCard icon={DollarSign} label="Receita" value={fmtCurrency(overview.totalRevenue)} />
+          <KpiCard icon={DollarSign} label="CAC" value={fmtCurrency(overview.cac)} />
+          <KpiCard icon={DollarSign} label="Margem" value={fmtCurrency(overview.margin)} />
+          <KpiCard icon={BarChart3} label="Margem %" value={fmtPercent(overview.marginPercent)} />
         </div>
       ) : <EmptyState />}
 
-      {/* Campaign Table with drill-down */}
-      {campaignsLoading ? (
-        <Skeleton className="h-48 rounded-xl" />
-      ) : funnelCampaigns.length > 0 ? (
-        <FunnelCampaignTable campaigns={funnelCampaigns} projectId={projectId} days={days} />
-      ) : null}
+      {/* ================================================================ */}
+      {/* TAXAS DE CONVERSÃO                                               */}
+      {/* ================================================================ */}
+      {overview && (overview.connectRate || overview.checkoutRate || overview.checkoutConversionRate) && (
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
+          <RateCard label="Connect Rate" sublabel="Landing Page / Link Clicks" value={overview.connectRate} />
+          <RateCard label="Taxa Visita Checkout" sublabel="Checkout / Link Clicks" value={overview.checkoutRate} />
+          <RateCard label="Taxa Conversao Checkout" sublabel="Compra / Checkout" value={overview.checkoutConversionRate} />
+        </div>
+      )}
 
-      {/* Charts row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Spend daily chart */}
+      {/* ================================================================ */}
+      {/* DESEMPENHO POR CAMPANHA (CANAL)                                  */}
+      {/* ================================================================ */}
+      {!campaignsLoading && funnelCampaigns.length > 0 && (
         <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-          <h3 className="text-sm font-semibold mb-4">Spend & Cliques Diários</h3>
-          {dailyLoading ? (
-            <Skeleton className="h-48" />
-          ) : dailyData && dailyData.length > 0 ? (
+          <h3 className="text-sm font-semibold mb-3">Desempenho por Canal (Campanha)</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-muted-foreground border-b border-border/20">
+                  <th className="text-left py-2 pr-3">Campanha</th>
+                  <th className="text-right px-2">Invest.</th>
+                  <th className="text-right px-2">Receita</th>
+                  <th className="text-right px-2">Vendas</th>
+                  <th className="text-right px-2">ROAS</th>
+                  <th className="text-right px-2">CAC</th>
+                  <th className="text-right pl-2">CTR</th>
+                </tr>
+              </thead>
+              <tbody>
+                {funnelCampaigns.map((c) => (
+                  <tr key={c.campaignId} className="border-b border-border/10 hover:bg-muted/5">
+                    <td className="py-2 pr-3 font-medium truncate max-w-[200px]">{c.campaignName}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtCurrency(c.spend)}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtCurrency(c.revenue)}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtNumber(c.sales)}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtRoas(c.roas)}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtCurrency(c.costPerSale)}</td>
+                    <td className="text-right pl-2 tabular-nums">{fmtPercent(c.ctr)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* GRÁFICOS EM LINHA: Investimento + Margem no tempo                */}
+      {/* ================================================================ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+          <h3 className="text-sm font-semibold mb-4">Investimento no Tempo</h3>
+          {dailyLoading ? <Skeleton className="h-48" /> : dailyChartData.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={dailyData.map((d) => ({ date: d.date_start.slice(5, 10), spend: safeNum(d.spend), clicks: safeNum(d.clicks) }))}>
+              <LineChart data={dailyChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis yAxisId="spend" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
-                <YAxis yAxisId="clicks" orientation="right" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
-                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "#fff" }} />
+                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
+                <Tooltip contentStyle={TOOLTIP_STYLE} />
                 <Legend wrapperStyle={{ color: "#fff" }} />
-                <Line yAxisId="spend" type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={false} name="Spend (R$)" />
-                <Line yAxisId="clicks" type="monotone" dataKey="clicks" stroke="hsl(200 80% 60%)" strokeWidth={2} dot={false} name="Cliques" />
+                <Line type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={false} name="Investimento" />
+                <Line type="monotone" dataKey="revenue" stroke="hsl(150 60% 50%)" strokeWidth={2} dot={false} name="Receita" />
               </LineChart>
             </ResponsiveContainer>
           ) : <EmptyState />}
         </div>
 
-        {/* CPC Trend */}
         <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-          <h3 className="text-sm font-semibold mb-1">Tendência CPC</h3>
-          <p className="text-xs text-muted-foreground mb-4">Linha pontilhada = média do período</p>
-          {dailyLoading ? (
-            <Skeleton className="h-48" />
-          ) : cpcTrend.length > 0 ? (
+          <h3 className="text-sm font-semibold mb-4">Margem no Tempo</h3>
+          {dailyLoading ? <Skeleton className="h-48" /> : dailyChartData.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={cpcTrend}>
+              <LineChart data={dailyChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v.toFixed(1)}`} />
-                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "#fff" }} formatter={(v) => [`R$ ${Number(v).toFixed(2)}`, "CPC"]} />
-                <ReferenceLine y={avgCpc} stroke="hsl(var(--muted-foreground))" strokeDasharray="4 4" label={{ value: `Média: R$${avgCpc.toFixed(2)}`, position: "insideTopRight", fontSize: 10, fill: "#fff" }} />
-                <Line type="monotone" dataKey="cpc" stroke="hsl(200 80% 60%)" strokeWidth={2} dot={false} />
+                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
+                <Tooltip contentStyle={TOOLTIP_STYLE} />
+                <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="4 4" />
+                <Line type="monotone" dataKey="margin" stroke="hsl(150 60% 50%)" strokeWidth={2} dot={false} name="Margem (R$)" />
               </LineChart>
             </ResponsiveContainer>
           ) : <EmptyState />}
         </div>
       </div>
 
-      {/* Top Creatives Gallery */}
+      {/* ================================================================ */}
+      {/* GRÁFICOS EM BARRAS HORIZONTAIS: Receita por canal/público/criativo */}
+      {/* ================================================================ */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <HBarChart title="Receita por Canal" data={revenueByCampaign} />
+        <HBarChart title="Receita por Publico" data={revenueByAudience} />
+        <HBarChart title="Receita por Criativo" data={revenueByCreative} />
+      </div>
+
+      {/* ================================================================ */}
+      {/* TOP CRIATIVOS                                                    */}
+      {/* ================================================================ */}
       <TopCreativesGallery projectId={projectId} days={days} campaignIds={campaignIds} />
 
-      {/* Placement donut + distribution */}
-      <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-        <h3 className="text-sm font-semibold mb-4">Distribuição por Placement</h3>
-        {placementLoading ? (
-          <Skeleton className="h-48" />
-        ) : placementData?.placements && placementData.placements.length > 0 ? (
-          <PlacementDonut placements={placementData.placements} />
-        ) : <EmptyState />}
+      {/* ================================================================ */}
+      {/* TABELA DETALHADA COM FILTRO                                      */}
+      {/* ================================================================ */}
+      <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Filter className="h-4 w-4" />
+            Detalhamento
+          </h3>
+          <Select value={tableFilter} onValueChange={(v) => setTableFilter(v as typeof tableFilter)}>
+            <SelectTrigger className="w-[160px] h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="campaign">Por Canal</SelectItem>
+              <SelectItem value="adset">Por Publico</SelectItem>
+              <SelectItem value="ad">Por Criativo</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-muted-foreground border-b border-border/20">
+                <th className="text-left py-2 pr-3 min-w-[150px]">Dimensao</th>
+                <th className="text-right px-2">Invest.</th>
+                <th className="text-right px-2">Receita</th>
+                <th className="text-right px-2">CAC</th>
+                <th className="text-right px-2">ROAS</th>
+                <th className="text-right px-2">Margem %</th>
+                <th className="text-right px-2">Margem/Venda</th>
+                <th className="text-right px-2">CTR (link)</th>
+                <th className="text-right px-2">CPC (link)</th>
+                <th className="text-right pl-2">CPM</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tableData.length === 0 ? (
+                <tr><td colSpan={10} className="py-6 text-center text-muted-foreground">Sem dados</td></tr>
+              ) : tableData.map((row) => {
+                const margin = (row.revenue ?? 0) - row.spend;
+                const marginPct = (row.revenue ?? 0) > 0 ? (margin / row.revenue!) * 100 : null;
+                const marginPerSale = (row.sales ?? 0) > 0 ? margin / row.sales! : null;
+                return (
+                  <tr key={row.campaignId} className="border-b border-border/10 hover:bg-muted/5">
+                    <td className="py-2 pr-3 font-medium truncate max-w-[200px]">{row.campaignName}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtCurrency(row.spend)}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtCurrency(row.revenue)}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtCurrency(row.costPerSale)}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtRoas(row.roas)}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtPercent(marginPct)}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtCurrency(marginPerSale)}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtPercent(row.ctr)}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtCurrency(row.cpc)}</td>
+                    <td className="text-right pl-2 tabular-nums">{fmtCurrency(row.cpm)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
 }
 
 // ============================================================
-// Sub-components
+// SUB-COMPONENTS
 // ============================================================
 
-function KpiCard({ icon: Icon, label, value, delta }: {
-  icon: React.ComponentType<{ className?: string }>; label: string; value: string; delta?: number | null;
+function KpiCard({ icon: Icon, label, value, target, actual }: {
+  icon: React.ComponentType<{ className?: string }>; label: string; value: string;
+  target?: number; actual?: number | null;
 }) {
+  const isRoas = target !== undefined;
+  const roasOk = isRoas && actual != null && actual >= target;
+  const roasBad = isRoas && actual != null && actual < target;
+
   return (
-    <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3 hover:border-border/50 transition-colors">
+    <div className={`rounded-xl border p-3 hover:border-border/50 transition-colors ${
+      roasOk ? "border-emerald-500/30 bg-emerald-500/5" : roasBad ? "border-red-500/30 bg-red-500/5" : "border-border/30 bg-gradient-to-br from-card/80 to-card/40"
+    }`}>
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
       </div>
-      <div className="flex items-center gap-2">
-        <p className="text-xl font-bold tracking-tight">{value}</p>
-        {delta !== null && delta !== undefined && (
-          <span className={`flex items-center gap-0.5 text-xs font-medium ${delta >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-            {delta >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-            {Math.abs(delta).toFixed(1)}%
-          </span>
-        )}
-      </div>
+      <p className="text-xl font-bold tracking-tight">{value}</p>
+      {isRoas && (
+        <p className="text-[9px] text-muted-foreground mt-0.5">
+          Meta: {target}x {roasOk ? <span className="text-emerald-500">OK</span> : <span className="text-red-400">Abaixo</span>}
+        </p>
+      )}
     </div>
   );
 }
 
-function PlacementDonut({ placements }: { placements: PlacementInsight[] }) {
-  const data = placements.sort((a, b) => b.spend - a.spend).slice(0, 6).map((p) => ({ name: `${p.platform} / ${p.position}`, value: p.spend }));
-  const total = data.reduce((s, d) => s + d.value, 0);
-
+function RateCard({ label, sublabel, value }: { label: string; sublabel: string; value: number | null }) {
   return (
-    <div className="flex items-center gap-6">
-      <ResponsiveContainer width={180} height={180}>
-        <PieChart>
-          <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={80} strokeWidth={1}>
-            {data.map((_, i) => <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
-          </Pie>
-          <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "11px", color: "#fff" }} formatter={(v) => [fmtCurrency(Number(v)), "Spend"]} />
-        </PieChart>
-      </ResponsiveContainer>
-      <div className="space-y-2 text-xs flex-1 min-w-0">
-        {data.map((d, i) => (
-          <div key={d.name} className="flex items-center gap-2">
-            <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: DONUT_COLORS[i % DONUT_COLORS.length] }} />
-            <span className="truncate flex-1">{d.name}</span>
-            <span className="text-muted-foreground tabular-nums shrink-0">{fmtCurrency(d.value)}</span>
-            <span className="text-muted-foreground tabular-nums shrink-0 w-8 text-right">
-              {total > 0 ? `${((d.value / total) * 100).toFixed(0)}%` : "—"}
-            </span>
-          </div>
-        ))}
+    <div className="rounded-xl border border-border/30 bg-card/60 p-4">
+      <p className="text-sm font-semibold">{label}</p>
+      <p className="text-[10px] text-muted-foreground mb-2">{sublabel}</p>
+      <p className="text-2xl font-bold">{fmtPercent(value)}</p>
+    </div>
+  );
+}
+
+function HBarChart({ title, data }: { title: string; data: { name: string; revenue: number }[] }) {
+  if (data.length === 0) {
+    return (
+      <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+        <h3 className="text-sm font-semibold mb-4">{title}</h3>
+        <p className="text-xs text-muted-foreground py-4 text-center">Sem dados de receita</p>
       </div>
+    );
+  }
+  return (
+    <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+      <h3 className="text-sm font-semibold mb-4">{title}</h3>
+      <ResponsiveContainer width="100%" height={data.length * 36 + 20}>
+        <BarChart data={data} layout="vertical" margin={{ left: 0, right: 10, top: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+          <XAxis type="number" tick={{ fontSize: 10, fill: "#fff" }} tickFormatter={(v) => fmtCurrency(v)} />
+          <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10, fill: "#fff" }} />
+          <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v) => [fmtCurrency(Number(v)), "Receita"]} />
+          <Bar dataKey="revenue" fill="hsl(150 60% 50%)" radius={[0, 4, 4, 0]} barSize={20} />
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -327,8 +475,8 @@ function PlacementDonut({ placements }: { placements: PlacementInsight[] }) {
 function EmptyState() {
   return (
     <div className="py-8 text-center">
-      <p className="text-sm text-muted-foreground">Sem dados no período selecionado.</p>
-      <p className="text-xs text-muted-foreground mt-1">Tente selecionar um período diferente.</p>
+      <p className="text-sm text-muted-foreground">Sem dados no periodo selecionado.</p>
+      <p className="text-xs text-muted-foreground mt-1">Tente selecionar um periodo diferente.</p>
     </div>
   );
 }

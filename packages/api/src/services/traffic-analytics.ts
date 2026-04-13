@@ -71,6 +71,13 @@ export interface OverviewAnalytics {
   avgCplQualified: number | null;
   totalSales: number | null;
   totalRevenue: number | null;
+  totalCheckouts: number | null;
+  checkoutRate: number | null;
+  checkoutConversionRate: number | null;
+  roas: number | null;
+  cac: number | null;
+  margin: number | null;
+  marginPercent: number | null;
   totalCampaigns: number;
   hasCrm: boolean;
   hasQualification: boolean;
@@ -104,19 +111,56 @@ function setCache<T>(key: string, data: T): void {
   cache.set(key, { data, timestamp: Date.now() });
 }
 
-function parseActionValue(actions: { action_type: string; value: string }[] | undefined, type: string): number {
+function parseActionCount(actions: { action_type: string; value: string }[] | undefined, type: string): number {
   if (!actions) return 0;
   const action = actions.find((a) => a.action_type === type);
   return action ? parseInt(action.value, 10) || 0 : 0;
 }
 
+function parseActionFloat(actionValues: { action_type: string; value: string }[] | undefined, type: string): number {
+  if (!actionValues) return 0;
+  const action = actionValues.find((a) => a.action_type === type);
+  return action ? parseFloat(action.value) || 0 : 0;
+}
+
 // Use only "lead" — other types (leadgen_grouped, onsite_conversion.lead_grouped) are duplicates
 function parseLeads(campaign: MetaCampaignInsight): number {
-  return parseActionValue(campaign.actions, "lead");
+  return parseActionCount(campaign.actions, "lead");
 }
 
 function parseLeadsFromActions(actions?: { action_type: string; value: string }[]): number {
-  return parseActionValue(actions, "lead");
+  return parseActionCount(actions, "lead");
+}
+
+/** Parse purchase count from actions — checks multiple Meta action types */
+function parsePurchases(actions?: { action_type: string; value: string }[]): number {
+  if (!actions) return 0;
+  // Try standard purchase first, then pixel-specific, then omni
+  for (const type of ["purchase", "offsite_conversion.fb_pixel_purchase", "omni_purchase"]) {
+    const v = parseActionCount(actions, type);
+    if (v > 0) return v;
+  }
+  return 0;
+}
+
+/** Parse purchase revenue from action_values */
+function parsePurchaseRevenue(actionValues?: { action_type: string; value: string }[]): number {
+  if (!actionValues) return 0;
+  for (const type of ["purchase", "offsite_conversion.fb_pixel_purchase", "omni_purchase"]) {
+    const v = parseActionFloat(actionValues, type);
+    if (v > 0) return v;
+  }
+  return 0;
+}
+
+/** Parse checkout initiations from actions */
+function parseCheckouts(actions?: { action_type: string; value: string }[]): number {
+  if (!actions) return 0;
+  for (const type of ["initiate_checkout", "offsite_conversion.fb_pixel_initiate_checkout", "omni_initiate_checkout"]) {
+    const v = parseActionCount(actions, type);
+    if (v > 0) return v;
+  }
+  return 0;
 }
 
 export function invalidateProjectCache(projectId: string): void {
@@ -178,7 +222,7 @@ export async function getProjectOverview(
 
   const metaAccount = await getMetaAccountForProject(db, projectId);
   if (!metaAccount) {
-    return { totalSpend: 0, totalImpressions: 0, totalClicks: 0, totalReach: null, avgFrequency: null, ctr: 0, cpc: 0, cpm: 0, totalLeads: null, avgCpl: null, totalLinkClicks: null, totalLandingPageViews: null, connectRate: null, totalQualifiedLeads: null, avgCplQualified: null, totalSales: null, totalRevenue: null, totalCampaigns: 0, hasCrm: false, hasQualification: false, hasSales: false };
+    return { totalSpend: 0, totalImpressions: 0, totalClicks: 0, totalReach: null, avgFrequency: null, ctr: 0, cpc: 0, cpm: 0, totalLeads: null, avgCpl: null, totalLinkClicks: null, totalLandingPageViews: null, connectRate: null, totalQualifiedLeads: null, avgCplQualified: null, totalSales: null, totalRevenue: null, totalCheckouts: null, checkoutRate: null, checkoutConversionRate: null, roas: null, cac: null, margin: null, marginPercent: null, totalCampaigns: 0, hasCrm: false, hasQualification: false, hasSales: false };
   }
 
   const allCampaigns = await fetchCampaignInsights(
@@ -199,8 +243,11 @@ export async function getProjectOverview(
   const avgFrequency = totalReach > 0 ? totalImpressions / totalReach : null;
 
   const totalLeads = campaigns.reduce((s, c) => s + parseLeads(c), 0);
-  const totalLinkClicks = campaigns.reduce((s, c) => s + parseActionValue(c.actions, "link_click"), 0);
-  const totalLandingPageViews = campaigns.reduce((s, c) => s + parseActionValue(c.actions, "landing_page_view"), 0);
+  const totalLinkClicks = campaigns.reduce((s, c) => s + parseActionCount(c.actions, "link_click"), 0);
+  const totalLandingPageViews = campaigns.reduce((s, c) => s + parseActionCount(c.actions, "landing_page_view"), 0);
+  const totalPurchases = campaigns.reduce((s, c) => s + parsePurchases(c.actions), 0);
+  const totalRevenue = campaigns.reduce((s, c) => s + parsePurchaseRevenue(c.action_values), 0);
+  const totalCheckouts = campaigns.reduce((s, c) => s + parseCheckouts(c.actions), 0);
 
   const result: OverviewAnalytics = {
     totalSpend,
@@ -218,12 +265,19 @@ export async function getProjectOverview(
     connectRate: totalLinkClicks > 0 && totalLandingPageViews > 0 ? (totalLandingPageViews / totalLinkClicks) * 100 : null,
     totalQualifiedLeads: null,
     avgCplQualified: null,
-    totalSales: null,
-    totalRevenue: null,
+    totalSales: totalPurchases > 0 ? totalPurchases : null,
+    totalRevenue: totalRevenue > 0 ? totalRevenue : null,
+    totalCheckouts: totalCheckouts > 0 ? totalCheckouts : null,
+    checkoutRate: totalLinkClicks > 0 && totalCheckouts > 0 ? (totalCheckouts / totalLinkClicks) * 100 : null,
+    checkoutConversionRate: totalCheckouts > 0 && totalPurchases > 0 ? (totalPurchases / totalCheckouts) * 100 : null,
+    roas: totalSpend > 0 && totalRevenue > 0 ? totalRevenue / totalSpend : null,
+    cac: totalPurchases > 0 ? totalSpend / totalPurchases : null,
+    margin: totalRevenue > 0 ? totalRevenue - totalSpend : null,
+    marginPercent: totalRevenue > 0 ? ((totalRevenue - totalSpend) / totalRevenue) * 100 : null,
     totalCampaigns: campaigns.length,
     hasCrm: false,
     hasQualification: false,
-    hasSales: false,
+    hasSales: totalPurchases > 0,
   };
 
   setCache(cacheKey, result);
@@ -257,10 +311,13 @@ export async function getProjectCampaignAnalytics(
     const clicks = parseFloat(c.clicks || "0");
     const reach = parseFloat(c.reach || "0");
     const leads = parseLeads(c);
-    const lc = parseActionValue(c.actions, "link_click");
-    const lpv = parseActionValue(c.actions, "landing_page_view");
+    const lc = parseActionCount(c.actions, "link_click");
+    const lpv = parseActionCount(c.actions, "landing_page_view");
+    const purchases = parsePurchases(c.actions);
+    const revenue = parsePurchaseRevenue(c.action_values);
+    const saleData = purchases > 0 ? { count: purchases, revenue } : null;
 
-    return buildAnalyticsRow(c.campaign_id, c.campaign_name, spend, impressions, clicks, leads > 0 ? leads : null, null, null, reach, lc > 0 ? lc : null, lpv > 0 ? lpv : null);
+    return buildAnalyticsRow(c.campaign_id, c.campaign_name, spend, impressions, clicks, leads > 0 ? leads : null, null, saleData, reach, lc > 0 ? lc : null, lpv > 0 ? lpv : null);
   });
 
   const result: CampaignResult = { campaigns, unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
@@ -311,8 +368,8 @@ export async function getProjectAdSetAnalytics(
     const clicks = parseFloat(a.clicks || "0");
     const reach = parseFloat(a.reach || "0");
     const leads = parseLeadsFromActions(a.actions);
-    const lc = parseActionValue(a.actions, "link_click");
-    const lpv = parseActionValue(a.actions, "landing_page_view");
+    const lc = parseActionCount(a.actions, "link_click");
+    const lpv = parseActionCount(a.actions, "landing_page_view");
     return buildAnalyticsRow(a.adset_id, a.adset_name, spend, impressions, clicks, leads > 0 ? leads : null, null, null, reach, lc > 0 ? lc : null, lpv > 0 ? lpv : null);
   });
 
@@ -347,8 +404,8 @@ export async function getProjectAdAnalytics(
     const reach = parseFloat(a.reach || "0");
 
     const leads = parseLeadsFromActions(a.actions);
-    const lc = parseActionValue(a.actions, "link_click");
-    const lpv = parseActionValue(a.actions, "landing_page_view");
+    const lc = parseActionCount(a.actions, "link_click");
+    const lpv = parseActionCount(a.actions, "landing_page_view");
     return { ...buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, leads > 0 ? leads : null, null, null, reach, lc > 0 ? lc : null, lpv > 0 ? lpv : null), creative: null as MetaAdCreative | null, videoMetrics: a.videoMetrics ?? null };
   });
 
@@ -494,12 +551,14 @@ export async function getAllAdSetsForProject(
     : adsetInsights;
 
   // Aggregate by adset NAME (same audience across campaigns)
-  const adsetMap = new Map<string, { id: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number; leads: number; linkClicks: number; lpViews: number }>();
+  const adsetMap = new Map<string, { id: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number; leads: number; linkClicks: number; lpViews: number; purchases: number; revenue: number }>();
   for (const a of filtered) {
     const key = a.adset_name.trim();
     const leads = parseLeadsFromActions(a.actions);
-    const lc = parseActionValue(a.actions, "link_click");
-    const lpv = parseActionValue(a.actions, "landing_page_view");
+    const lc = parseActionCount(a.actions, "link_click");
+    const lpv = parseActionCount(a.actions, "landing_page_view");
+    const purchases = parsePurchases(a.actions);
+    const revenue = parsePurchaseRevenue(a.action_values);
     const existing = adsetMap.get(key);
     if (existing) {
       existing.spend += parseFloat(a.spend || "0");
@@ -509,6 +568,8 @@ export async function getAllAdSetsForProject(
       existing.leads += leads;
       existing.linkClicks += lc;
       existing.lpViews += lpv;
+      existing.purchases += purchases;
+      existing.revenue += revenue;
     } else {
       adsetMap.set(key, {
         id: a.adset_id,
@@ -517,13 +578,14 @@ export async function getAllAdSetsForProject(
         impressions: parseFloat(a.impressions || "0"),
         clicks: parseFloat(a.clicks || "0"),
         reach: parseFloat(a.reach || "0"),
-        leads, linkClicks: lc, lpViews: lpv,
+        leads, linkClicks: lc, lpViews: lpv, purchases, revenue,
       });
     }
   }
 
   const adsets = Array.from(adsetMap.entries()).map(([name, a]) => {
-    const row = buildAnalyticsRow(a.id, name, a.spend, a.impressions, a.clicks, a.leads > 0 ? a.leads : null, null, null, a.reach, a.linkClicks > 0 ? a.linkClicks : null, a.lpViews > 0 ? a.lpViews : null);
+    const saleData = a.purchases > 0 ? { count: a.purchases, revenue: a.revenue } : null;
+    const row = buildAnalyticsRow(a.id, name, a.spend, a.impressions, a.clicks, a.leads > 0 ? a.leads : null, null, saleData, a.reach, a.linkClicks > 0 ? a.linkClicks : null, a.lpViews > 0 ? a.lpViews : null);
     return { ...row, parentCampaignName: a.campaignName };
   });
 
@@ -558,12 +620,14 @@ export async function getAllAdsForProject(
   const filtered = idSet ? allAds.filter((a) => idSet.has(a.campaign_id)) : allAds;
 
   // Aggregate by ad NAME (same creative across adsets/campaigns)
-  const adMap = new Map<string, { id: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number; leads: number; linkClicks: number; lpViews: number }>();
+  const adMap = new Map<string, { id: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number; leads: number; linkClicks: number; lpViews: number; purchases: number; revenue: number }>();
   for (const a of filtered) {
     const key = a.ad_name.trim();
     const leads = parseLeadsFromActions(a.actions);
-    const lc = parseActionValue(a.actions, "link_click");
-    const lpv = parseActionValue(a.actions, "landing_page_view");
+    const lc = parseActionCount(a.actions, "link_click");
+    const lpv = parseActionCount(a.actions, "landing_page_view");
+    const purchases = parsePurchases(a.actions);
+    const revenue = parsePurchaseRevenue(a.action_values);
     const existing = adMap.get(key);
     if (existing) {
       existing.spend += parseFloat(a.spend || "0");
@@ -573,6 +637,8 @@ export async function getAllAdsForProject(
       existing.leads += leads;
       existing.linkClicks += lc;
       existing.lpViews += lpv;
+      existing.purchases += purchases;
+      existing.revenue += revenue;
     } else {
       adMap.set(key, {
         id: a.ad_id,
@@ -581,13 +647,14 @@ export async function getAllAdsForProject(
         impressions: parseFloat(a.impressions || "0"),
         clicks: parseFloat(a.clicks || "0"),
         reach: parseFloat(a.reach || "0"),
-        leads, linkClicks: lc, lpViews: lpv,
+        leads, linkClicks: lc, lpViews: lpv, purchases, revenue,
       });
     }
   }
 
   const ads = Array.from(adMap.entries()).map(([name, a]) => {
-    const row = buildAnalyticsRow(a.id, name, a.spend, a.impressions, a.clicks, a.leads > 0 ? a.leads : null, null, null, a.reach, a.linkClicks > 0 ? a.linkClicks : null, a.lpViews > 0 ? a.lpViews : null);
+    const saleData = a.purchases > 0 ? { count: a.purchases, revenue: a.revenue } : null;
+    const row = buildAnalyticsRow(a.id, name, a.spend, a.impressions, a.clicks, a.leads > 0 ? a.leads : null, null, saleData, a.reach, a.linkClicks > 0 ? a.linkClicks : null, a.lpViews > 0 ? a.lpViews : null);
     return { ...row, parentCampaignName: a.campaignName };
   });
 
@@ -710,8 +777,8 @@ export async function getPlacementBreakdown(
     const spend = parseFloat(r.spend || "0");
     const impressions = parseFloat(r.impressions || "0");
     const clicks = parseFloat(r.clicks || "0");
-    const linkClicks = parseActionValue(r.actions, "link_click");
-    const leads = parseActionValue(r.actions, "lead");
+    const linkClicks = parseActionCount(r.actions, "link_click");
+    const leads = parseActionCount(r.actions, "lead");
     const existing = agg.get(key);
     if (existing) {
       existing.spend += spend;

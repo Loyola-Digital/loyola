@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Brain, Sparkles, X, MessageSquare } from "lucide-react";
+import { Brain, Sparkles, X, MessageSquare, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import ReactMarkdown from "react-markdown";
@@ -18,13 +18,14 @@ interface DebateCardProps {
   turns: DebateTurn[];
   currentMindName: string;
   isActive: boolean;
+  onStop?: () => void;
 }
 
 // ============================================================
 // COMPACT CARD (inline in chat — clean, not polluted)
 // ============================================================
 
-export function DebateCard({ turns, currentMindName, isActive }: DebateCardProps) {
+export function DebateCard({ turns, currentMindName, isActive, onStop }: DebateCardProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const consultedName = turns.find((t) => t.speaker === "consulted")?.mindName ?? "Mind";
 
@@ -55,6 +56,17 @@ export function DebateCard({ turns, currentMindName, isActive }: DebateCardProps
               {isActive ? "Em andamento..." : `✓ Concluida • ${turns.length} turnos`}
             </p>
           </div>
+          {isActive && onStop && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={(e) => { e.stopPropagation(); onStop(); }}
+            >
+              <Square className="h-3 w-3 fill-current" />
+              Parar
+            </Button>
+          )}
           <Button variant="ghost" size="sm" className="text-xs gap-1.5">
             <MessageSquare className="h-3.5 w-3.5" />
             Ver reuniao
@@ -68,6 +80,7 @@ export function DebateCard({ turns, currentMindName, isActive }: DebateCardProps
           currentMindName={currentMindName}
           consultedName={consultedName}
           isActive={isActive}
+          onStop={onStop}
           onClose={() => setModalOpen(false)}
         />
       )}
@@ -79,11 +92,12 @@ export function DebateCard({ turns, currentMindName, isActive }: DebateCardProps
 // FULL MODAL
 // ============================================================
 
-function DebateModal({ turns, currentMindName, consultedName, isActive, onClose }: {
+function DebateModal({ turns, currentMindName, consultedName, isActive, onStop, onClose }: {
   turns: DebateTurn[];
   currentMindName: string;
   consultedName: string;
   isActive: boolean;
+  onStop?: () => void;
   onClose: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -129,7 +143,20 @@ function DebateModal({ turns, currentMindName, consultedName, isActive, onClose 
               </div>
             )}
           </div>
-          <button onClick={onClose} className="rounded-full p-1.5 hover:bg-muted"><X className="h-4 w-4" /></button>
+          <div className="flex items-center gap-1">
+            {isActive && onStop && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={onStop}
+              >
+                <Square className="h-3 w-3 fill-current" />
+                Interromper
+              </Button>
+            )}
+            <button onClick={onClose} className="rounded-full p-1.5 hover:bg-muted"><X className="h-4 w-4" /></button>
+          </div>
         </div>
 
         {/* Conversation */}

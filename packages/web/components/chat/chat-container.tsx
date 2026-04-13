@@ -33,6 +33,7 @@ export function ChatContainer({
     sendMessage,
     loadHistory,
     updateTaskSuggestion,
+    stopStream,
   } = useChatStream();
 
   const createTask = useCreateTask();
@@ -105,7 +106,7 @@ export function ChatContainer({
 
       {debateTurns.length > 0 && (
         <div className="px-4 pb-2 max-w-3xl mx-auto w-full">
-          <DebateCard turns={debateTurns} currentMindName={mindName} isActive={debateActive} />
+          <DebateCard turns={debateTurns} currentMindName={mindName} isActive={debateActive} onStop={stopStream} />
         </div>
       )}
       {thinkingSteps.length > 0 && <ThinkingIndicator steps={thinkingSteps} />}
