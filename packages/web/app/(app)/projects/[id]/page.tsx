@@ -4,7 +4,7 @@ import { use, useState } from "react";
 import { useProjects } from "@/lib/hooks/use-projects";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery } from "@tanstack/react-query";
-import { Instagram, UserPlus, Users } from "lucide-react";
+import { Instagram, UserPlus, Users, Brain, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -12,7 +12,10 @@ import { useUserRole } from "@/lib/hooks/use-user-role";
 import { InviteMemberDialog } from "@/components/projects/invite-member-dialog";
 import { MemberPermissionsEditor } from "@/components/projects/member-permissions-editor";
 import { LinkAccountDialog } from "@/components/projects/link-account-dialog";
+import { LinkMindDialog } from "@/components/projects/link-mind-dialog";
+import { useProjectMinds, useUnlinkMindFromProject } from "@/lib/hooks/use-project-minds";
 import type { InstagramAccount } from "@/lib/hooks/use-instagram-accounts";
+import { toast } from "sonner";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -26,6 +29,10 @@ export default function ProjectPage({ params }: Props) {
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [linkAccountOpen, setLinkAccountOpen] = useState(false);
+  const [linkMindOpen, setLinkMindOpen] = useState(false);
+
+  const { data: linkedMinds, isLoading: mindsLoading } = useProjectMinds(id);
+  const unlinkMind = useUnlinkMindFromProject();
 
   const { data: projects, isLoading: projectsLoading } = useProjects();
   const project = projects?.find((p) => p.id === id);
@@ -116,6 +123,67 @@ export default function ProjectPage({ params }: Props) {
         <>
           <Separator />
           <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-semibold flex items-center gap-2">
+                <Brain className="h-4 w-4" />
+                Minds vinculadas
+              </h2>
+              <Button size="sm" variant="outline" onClick={() => setLinkMindOpen(true)}>
+                + Vincular mind
+              </Button>
+            </div>
+            {mindsLoading && (
+              <div className="flex flex-col gap-2">
+                <Skeleton className="h-10 w-full" />
+              </div>
+            )}
+            {!mindsLoading && (!linkedMinds || linkedMinds.length === 0) && (
+              <p className="text-sm text-muted-foreground">
+                Nenhuma mind vinculada. Vincule minds para que convidados possam acessá-las.
+              </p>
+            )}
+            {!mindsLoading && linkedMinds && linkedMinds.length > 0 && (
+              <ul className="flex flex-col gap-2">
+                {linkedMinds.map((mind) => (
+                  <li
+                    key={mind.id}
+                    className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Brain className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">{mind.mindName}</span>
+                      <span className="text-muted-foreground text-xs">
+                        {mind.squadDisplayName}
+                      </span>
+                    </div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={async () => {
+                        await unlinkMind.mutateAsync(
+                          { projectId: id, mindId: mind.mindId },
+                          {
+                            onSuccess: () => toast.success("Mind desvinculada."),
+                            onError: () => toast.error("Erro ao desvincular mind."),
+                          },
+                        );
+                      }}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
+      )}
+
+      {isAdmin && (
+        <>
+          <Separator />
+          <div>
             <h2 className="text-base font-semibold mb-3 flex items-center gap-2">
               <Users className="h-4 w-4" />
               Membros convidados
@@ -138,6 +206,14 @@ export default function ProjectPage({ params }: Props) {
           projectId={id}
           open={linkAccountOpen}
           onOpenChange={setLinkAccountOpen}
+        />
+      )}
+
+      {isAdmin && (
+        <LinkMindDialog
+          projectId={id}
+          open={linkMindOpen}
+          onOpenChange={setLinkMindOpen}
         />
       )}
     </div>
