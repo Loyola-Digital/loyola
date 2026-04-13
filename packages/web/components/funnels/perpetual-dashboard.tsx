@@ -3,8 +3,6 @@
 import { useState, useMemo } from "react";
 import {
   DollarSign,
-  TrendingUp,
-  TrendingDown,
   LinkIcon,
   ShoppingCart,
   Target,
@@ -79,12 +77,6 @@ function fmtRoas(val: number | null | undefined): string {
 function safeNum(val: string | undefined): number {
   return val ? parseFloat(val) : 0;
 }
-
-const CHART_COLORS = [
-  "hsl(47 98% 54%)", "hsl(200 80% 60%)", "hsl(150 60% 50%)",
-  "hsl(280 60% 55%)", "hsl(350 70% 55%)", "hsl(30 80% 55%)",
-  "hsl(170 60% 50%)", "hsl(220 70% 60%)",
-];
 
 const TOOLTIP_STYLE = {
   backgroundColor: "hsl(var(--card))",
