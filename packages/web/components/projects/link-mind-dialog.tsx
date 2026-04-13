@@ -34,9 +34,10 @@ export function LinkMindDialog({ projectId, open, onOpenChange }: LinkMindDialog
   const { data: linkedMinds } = useProjectMinds(projectId);
   const linkMind = useLinkMindToProject();
 
-  // Flatten all minds from all squads, exclude already linked
+  // Only show minds from restricted squads (the ones that need linking)
   const linkedIds = new Set(linkedMinds?.map((m) => m.mindId) ?? []);
-  const availableMinds = (squads ?? []).flatMap((squad) =>
+  const restrictedSquads = (squads ?? []).filter((s) => s.access?.excludeRoles?.length);
+  const availableMinds = restrictedSquads.flatMap((squad) =>
     squad.minds
       .filter((m) => !linkedIds.has(m.id))
       .map((m) => ({

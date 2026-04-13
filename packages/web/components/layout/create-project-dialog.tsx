@@ -42,8 +42,9 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
   const { squads } = useMinds();
   const linkMind = useLinkMindToProject();
 
-  // Flatten all minds from all squads for the checklist
-  const allMinds = (squads ?? []).flatMap((squad) =>
+  // Only show minds from restricted squads (Loyola Experts etc.) — public minds don't need linking
+  const restrictedSquads = (squads ?? []).filter((s) => s.access?.excludeRoles?.length);
+  const allMinds = restrictedSquads.flatMap((squad) =>
     squad.minds.map((m) => ({
       id: m.id,
       name: m.name,
