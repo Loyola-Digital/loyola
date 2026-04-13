@@ -1,0 +1,115 @@
+---
+mind:
+  name: "Netão Bom Beef"
+  slug: "netao"
+  real_name: "Domingos Neto"
+  type: "greenfield"
+  status: "in_progress"
+  created_at: "2026-04-10"
+  updated_at: "2026-04-10"
+  current_phase: "implementation"
+  progress_percentage: 90
+
+archetype:
+  primary: "CEO Influencer / Açougueiro-Empreendedor"
+  secondary: "Educador de Churrasco"
+  note: "Empreendedor (55%) + Churrasqueiro/Educador (30%) + Influencer/Entertainer (15%)"
+
+pipeline:
+  version: "1.0"
+  methodology: "DNA Mental (full 8-layer framework)"
+  workflow_status: "executing"
+  fidelity_target: "85-92%"
+
+phases:
+  research:
+    status: "complete"
+    sources_collected: 9
+    categories:
+      video_transcriptions: 6
+      articles: 3
+    deliverables:
+      - "sources/videos/ (6 transcriptions)"
+      - "sources/articles/ (3 articles)"
+
+  analysis:
+    status: "complete"
+    deliverables:
+      - "artifacts/cognitive-spec.yaml"
+      - "artifacts/layers-1-4-observable.yaml"
+      - "artifacts/layer-5-mental-models.yaml"
+      - "artifacts/identity-core.yaml"
+      - "artifacts/communication-style.md"
+      - "artifacts/frameworks.md"
+
+  implementation:
+    status: "complete"
+    deliverables:
+      - "system_prompts/generalista.md"
+
+  validation:
+    status: "pending"
+    note: "Requires user testing and iteration"
+
+dna_mental_coverage:
+  layer_1_behavioral: 95
+  layer_2_communication: 95
+  layer_3_routines: 70
+  layer_4_recognition: 90
+  layer_5_mental_models: 95
+  layer_6_values: 95
+  layer_7_obsessions: 92
+  layer_8_paradoxes: 90
+  average_coverage: 90
+
+source_quality:
+  tier_1:
+    count: 7
+    note: "Video transcriptions (6) + compiled life/product summary (1)"
+  tier_2:
+    count: 2
+    note: "Exame article, Juicy Santos article"
+  tier_3:
+    count: 1
+    note: "Blog Hiel Levy (promotional)"
+
+biography:
+  full_name: "Domingos Neto"
+  nickname: "Netao"
+  brand: "Bom Beef"
+  age_reference: "39 anos (Exame, ~2023)"
+  birthday_purchase: "6 de janeiro"
+  brand_birthday: "13 de maio"
+  first_day_owner: "1 de marco (~2014)"
+  origin: "Santos, SP"
+  family:
+    father: "Seu Domingos (motociclista, conselheiro financeiro)"
+    wife: "Esposa (presente no acougue de Santos)"
+    daughter: "Dudinha"
+    son: "Joaquim"
+    father_in_law: "Falecido em 2022 (infeccao + vaper)"
+  companies:
+    - "BBA - Bom Beef Acougue (50+ lojas)"
+    - "BBB - Bom Beef Burgers (31+ lojas)"
+    - "BBP - Bom Beef Parrilla (restaurante Santos)"
+    - "BBC - Bom Beef Churrasco (pracas de alimentacao)"
+    - "BBD - Bom Beef Digital (conteudo/palestras)"
+    - "BBE - Bom Beef Educacao (gestao/churrasco)"
+  metrics:
+    revenue: "R$ 300M+ (2023)"
+    daily_revenue: "~R$ 1M/dia"
+    followers: "5M+ total"
+    youtube: "1.3M"
+    instagram: "1.7M"
+    units: "~100 (acougues + hamburguerias + restaurantes)"
+    states: "13 estados"
+    skus_acougue: "3000+ (gira ~900-1000 por loja)"
+  awards:
+    - "Melhor Assador do Brasil (2022)"
+    - "Homem de Negocios do Ano (2023)"
+    - "8o mais influente do churrasco no mundo (2025)"
+
+next_actions:
+  - "User validation: test mind fidelity with real scenarios"
+  - "Add more video transcriptions (6-9) for L3 refinement"
+  - "Create kb/ domain chunks for RAG retrieval"

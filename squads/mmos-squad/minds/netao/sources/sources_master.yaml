@@ -1,0 +1,93 @@
+# Sources Master — Netao Bom Beef Mind
+# Last Updated: 2026-04-10
+
+metadata:
+  total_sources: 10
+  total_words_estimated: "~50,000+"
+  collection_method: "Video transcriptions + web articles"
+
+sources:
+
+  source_1:
+    type: "compiled_summary"
+    title: "A Mente, A Jornada e O Imperio de Netao Bom Beef"
+    format: "text"
+    tier: 1
+    confidence: 95
+    domains: ["biography", "business", "churrasco", "philosophy"]
+    status: "processed"
+
+  source_2:
+    type: "article"
+    title: "Blog Hiel Levy — Netao DSX 2026"
+    url: "https://blogdohiellevy.com.br/como-transformar-produto-em-imperio-netao-bom-beef-o-acougueiro-que-movimenta-r-1-milhao-por-dia-e-destaque-no-dsx-2026/"
+    tier: 3
+    confidence: 70
+    domains: ["biography", "metrics"]
+    status: "processed"
+
+  source_3:
+    type: "article"
+    title: "Juicy Santos — CreativeMornings Santos"
+    url: "https://www.juicysantos.com.br/noticias-da-regiao/o-santista-que-virou-icone-mundial-em-churrasco-chega-ao-creativemornings-santos/"
+    tier: 2
+    confidence: 85
+    domains: ["biography", "philosophy"]
+    status: "processed"
+
+  source_4:
+    type: "article"
+    title: "Exame — Aos 39 anos, R$300M"
+    url: "https://exame.com/negocios/aos-39-anos-ele-faturou-r-300-milhoes-e-transformou-acougue-de-bairro-em-um-imperio-de-carnes/"
+    tier: 2
+    confidence: 85
+    domains: ["business", "metrics", "expansion"]
+    status: "processed"
+
+  source_5:
+    type: "video_transcription"
+    title: "Alfredo Soares aprendeu a fazer Churrasco? | Netao Bom Beef"
+    tier: 1
+    confidence: 95
+    domains: ["churrasco", "networking", "business", "communication"]
+    status: "processed"
+
+  source_6:
+    type: "video_transcription"
+    title: "Churrasco e Resenha com Renato Cariani | Netao Bom Beef"
+    tier: 1
+    confidence: 95
+    domains: ["churrasco", "health", "family", "product", "philosophy"]
+    status: "processed"
+
+  source_7:
+    type: "video_transcription"
+    title: "Como foram meus 10 anos como dono de acougue | Netao Bom Beef"
+    tier: 1
+    confidence: 95
+    domains: ["biography", "values", "loyalty", "origin"]
+    status: "processed"
+
+  source_8:
+    type: "video_transcription"
+    title: "Do Acougue a Franquia — O Padrinho Podcast #049"
+    tier: 1
+    confidence: 95
+    domains: ["business", "franchise", "strategy", "leadership", "finance"]
+    status: "processed"
+
+  source_9:
+    type: "video_transcription"
+    title: "Fiz o Verdadeiro Churrasco Brasileiro para um Americano | Netao Bom Beef"
+    tier: 1
+    confidence: 95
+    domains: ["churrasco", "international", "technique"]
+    status: "processed"
+
+  source_10:
+    type: "video_transcription"
+    title: "Netao Bom Beef Inaugurou sua Hamburgueria no Aeroporto"
+    tier: 1
+    confidence: 90
+    domains: ["expansion", "franchise", "team", "motivation"]
+    status: "processed"

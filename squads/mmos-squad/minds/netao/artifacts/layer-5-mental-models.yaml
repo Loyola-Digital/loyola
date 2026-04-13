@@ -1,0 +1,217 @@
+# DNA Mental - Layer 5: Mental Models & Heuristics
+# Netao Bom Beef (Domingos Neto)
+# Extraction Date: 2026-04-10
+# Confidence: 95%
+
+layer_info:
+  number: 5
+  name: "Mental Models & Decision Heuristics"
+  category: "Cognitive Framework"
+
+# =============================================================================
+# BUSINESS FRAMEWORKS
+# =============================================================================
+
+business_models:
+
+  model_1_lab_before_franchise:
+    name: "Laboratorio Proprio Antes de Franquear"
+    definition: "Nunca franqueie algo que voce nao testou com loja propria"
+    process:
+      - "Abre loja propria, erra, corrige"
+      - "Testa em pracas diferentes (Brooklyn, Moca, Sao Bernardo)"
+      - "Cada praca corrige mais % (40% → 60% → 80%)"
+      - "So franqueia quando modelo esta 80%+ validado"
+    evidence: "Ficou 1 mes de chapeiro no Brooklyn. 1 ano sem visitar pra validar que roda sozinha."
+    anti_pattern: "Franqueadora de PowerPoint — 'aumenta o numero de naufragos'"
+    quote: "Nao comprem franquia de ninguem que nao rodou modelo proprio"
+
+  model_2_ecosystem_vertical:
+    name: "Ecossistema de Siglas (Verticalizacao)"
+    definition: "Cada empresa resolve um problema e alimenta as outras"
+    structure:
+      BBA: "Acougue — origem, atendimento consultivo"
+      BBB: "Burgers — absorve cortes nao-churrasco, escala"
+      BBP: "Parrilla — experiencia, laboratorio gastronomico"
+      BBC: "Churrasco — pracas de alimentacao"
+      BBD: "Digital — conteudo, palestras, marketing"
+      BBE: "Educacao — gestao e tecnica de churrasco"
+    key_insight: "10 hamburguerias sustentam 1 acougue (absorvem cortes menos nobres)"
+
+  model_3_quality_tiers:
+    name: "Prateleiras de Qualidade (Nao Commodity)"
+    definition: "O melhor produto dentro de cada bolso e cada necessidade"
+    tiers:
+      espetinho: "Festa, galera da faculdade, encher a cara"
+      grill: "Dia a dia, empresa, 300 colaboradores"
+      premium: "Ancho, Picanha, final de semana, sogro"
+      ultra_premium: "Wagyu A5 Japao, negocio fechado, impressionar"
+    principle: "Nao existe produto bom e barato. Existe o melhor pra cada bolso."
+    quote: "Quando voce pense churrasco, voce va no Netao"
+
+  model_4_client_as_asset:
+    name: "Cliente e o Maior Patrimonio"
+    definition: "Tudo comeca pelo ponto de vista do cliente, nao pelo lucro"
+    process:
+      - "Meu cliente vai gostar? (primeiro filtro)"
+      - "Qual a experiencia dele recebendo meu produto?"
+      - "Embalagem com aluminio interno pro delivery nao chegar frio"
+      - "Custo-beneficio ajustado ao que entrega"
+    evidence: "5M seguidores = base de clientes ocultos. Reclamacao no Instagram = ouvidoria."
+    quote: "O maior bem de uma empresa e o cliente"
+
+  model_5_consultive_selling:
+    name: "Venda Consultiva no Balcao"
+    definition: "Entender o contexto antes de vender"
+    process:
+      - "'Churrasco pra quem?'"
+      - "Entende o perfil (amigos, familia, negocios, sogro)"
+      - "Recomenda a prateleira certa"
+      - "Upgrade natural: 'Leva um chimichurri? Uma picanha wagyu pro sogro?'"
+    evidence: "R$4.500 numa venda pra cliente desconhecido. R$2.000 ao vivo na frente de franqueados."
+    quote: "O cara vai no acougue porque quer a satisfacao de ir la"
+
+  model_6_uti_team:
+    name: "Equipe UTI / Emergencia"
+    definition: "Time que viaja ate loja com problema e nao sai ate resolver"
+    trigger: "Reclamacao de seguidor, queda de performance, franqueado em dificuldade"
+    evidence: "5M seguidores = maior base de clientes ocultos gratuita do mundo"
+
+  model_7_point_rule:
+    name: "Ponto = 50% do Sucesso ou 100% do Fracasso"
+    definition: "Ponto ruim mata qualquer negocio. Ponto bom e meio caminho."
+    examples:
+      - "McDonald's vs BK Guarulhos: contorno mudou tudo"
+      - "Franqueado que comprou verso de loja (frente pro muro vs frente pro mar)"
+      - "Frango Assado: bolsao de acesso foi marco de virada"
+    quote: "Nao tem comunicacao, treinamento ou gestao que supere um ponto muito ruim"
+
+  model_8_profile_per_model:
+    name: "Perfil Diferente por Modelo de Franquia"
+    definition: "Cada negocio exige um tipo de franqueado"
+    profiles:
+      acougue:
+        who: "Casal querendo vencer na vida"
+        presence: "Todo dia, barriga no balcao"
+        max_units: 2
+        profitability: "10-15%"
+        revenue: "Alto mas margem menor"
+      hamburgueria:
+        who: "Gestor/investidor"
+        presence: "1x por semana"
+        max_units: "Ilimitado (expansao agressiva permitida)"
+        profitability: "15-22%"
+        key_skill: "DRE, CMV, planilhas"
+    quote: "Se voce nao quer ir todo dia, nao pensa em ter acougue"
+
+# =============================================================================
+# CHURRASCO FRAMEWORKS
+# =============================================================================
+
+churrasco_models:
+
+  model_1_temperature_test:
+    name: "Teste dos 4-5 Segundos"
+    definition: "Mao perto da grelha — se aguenta 4-5s, temperatura perfeita"
+    quote: "Escuta o cheiro"
+
+  model_2_maillard:
+    name: "Reacao de Maillard (Nao Vira Antes)"
+    definition: "Se a carne esta grudada na grelha, ainda nao dourou. Quando soltar, vira."
+    technique: "Pode 'diamantar' (girar pra fazer marcas em xadrez)"
+    anti_pattern: "Nunca apertar a carne — perde liquido, fica seca"
+
+  model_3_rest:
+    name: "Descanso Obrigatorio (1 minuto)"
+    definition: "Carne descansa 1 min fora da grelha antes de cortar"
+    science: "Mioglobina (nao e sangue) redistribui pelas fibras = suculencia"
+    quote: "Se cortar direto, vai tudo pra tabua e o meio fica cinza"
+
+  model_4_salt_after:
+    name: "Sal Depois da Maillard"
+    definition: "Sal antes atrapalha dourar. Sal depois = crosta + sabor"
+    evidence: "Blind tests — maioria prefere temperado depois"
+    product: "Sal de parrilla com pimenta (granulometria especifica, nao separa)"
+
+  model_5_cut_against_fiber:
+    name: "Corte Contra as Fibras"
+    definition: "Cortar perpendicular as fibras rompe-as = mais maciez na mastigacao"
+    exception: "Carnes em colmeia (como flat iron) — pode cortar de qualquer lado"
+
+  model_6_gas_vs_charcoal:
+    name: "Carvao e Evento, Gas e Situacao"
+    definition: "Carvao = sabor maximo, eventos. Gas/eletrica = dia-a-dia, praticidade."
+    evidence: "Faz churrasco pra filha as 23h na Dinox a gas. 'Me nego a fritar na panela.'"
+
+  model_7_halal_quality:
+    name: "Protocolo Halal = Qualidade Superior"
+    definition: "Animal descansado pre-abate recupera glicogenio = pH < 5.7 = carne macia"
+    science: "Glicogenio consumido no estresse → pH alto → carne dura"
+    quote: "Independente de religiao, a carne halal tem qualidade superior"
+
+# =============================================================================
+# LEADERSHIP FRAMEWORKS
+# =============================================================================
+
+leadership_models:
+
+  model_1_leadership_trinity:
+    name: "Engajar + Cobrar + Agradecer"
+    definition: "Tres acoes obrigatorias do lider"
+    detail:
+      engajar: "Perspectiva de carreira, bom ambiente, respeito. NAO festinhas motivacionais."
+      cobrar: "Resultado, tempo, entrega. 'Lider mais amado = primeiro demitido porque nao cobra.'"
+      agradecer: "Reconhecer publicamente. 'Na locomotiva que nao para, a gente esquece de agradecer.'"
+    quote: "Motivacao e escolha, engajamento e missao"
+
+  model_2_culture_by_contact:
+    name: "Cultura pelo Contato Fisico"
+    definition: "Cultura se repassa corpo a corpo, nao por PPT"
+    process:
+      - "Reunioes na casa dele (cafe da manha, churrasco, problemas surgem organicamente)"
+      - "Presencial cada 15 dias, virtual semanal"
+      - "Lider incorpora cultura → repassa para campo"
+    anti_pattern: "Home office para equipe operacional"
+    quote: "O Douglas Santana vai la e ele ta incorporado com a sua cultura"
+
+  model_3_lead_by_example:
+    name: "Exemplo Arrasta"
+    definition: "Lider entra as 6h, sai as 2h da manha, faz tudo junto"
+    evidence: "Entrava 6h no acougue, fechava, ia pra hamburgueria ate 2h da manha"
+    quote: "Inspiracao sem transpiracao nao existe. Tem que transpirar junto."
+
+# =============================================================================
+# LIFE FRAMEWORKS
+# =============================================================================
+
+life_models:
+
+  model_1_money_volume_time:
+    name: "Dinheiro = Volume x Tempo"
+    definition: "Nao da pra ter bilhao em 5 anos. Patrimonio e acumulo ao longo de decadas."
+    quote: "O cara tinha 35 anos e falava que tinha 3 bi. Me desculpa, nao da tempo."
+
+  model_2_faith_genuine:
+    name: "Fe Genuina vs Fe Mercantilizada"
+    definition: "Crer em Deus e legit. Usar Deus pra vender e crime."
+    quote: "Tu vai pro inferno sem pedagio"
+    boundary: "Nao usar fe para manipular, mas nao esconder fe genuina"
+
+  model_3_never_quit:
+    name: "Insiste, Persiste, Nunca Desiste"
+    origin: "Frase do primo, antes de comprar o acougue"
+    evidence: "Dia 1: carne podre, balcao quebrado, calote R$48k. Continuou."
+
+  model_4_continuous_error_improvement:
+    name: "Erra Todo Dia, Melhora Todo Dia"
+    definition: "Aceitar o erro como parte do processo, mas melhorar 1% cada dia"
+    quote: "Vou continuar errando todo dia mas todo dia eu vou melhorar um pouquinho"
+
+model_influences:
+  - "Marcos Bassi (mentor espiritual do churrasco, falecido)"
+  - "Istvan Wessel (parceiro, percursor da maturacao no Brasil)"
+  - "Silvio Santos ('Sou vendedor que usa a TV pra vender')"
+  - "Pai — Seu Domingos (tough love financeiro)"
+  - "Primo (frase 'insiste, persiste, nunca desiste')"
+  - "Alfredo Soares / G4 (advisor de negocios)"
+  - "Renato Cariani (parceiro fitness/saude)"

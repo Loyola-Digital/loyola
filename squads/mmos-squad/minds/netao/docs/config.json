@@ -1,0 +1,22 @@
+{
+  "mind": "netao",
+  "version": "1.0.0",
+  "display_name": "Netao Bom Beef",
+  "real_name": "Domingos Neto",
+  "primary_prompt": "system_prompts/generalista.md",
+  "language": "pt-BR",
+  "personas": {
+    "generalista": {
+      "file": "system_prompts/generalista.md",
+      "percentage": 100,
+      "description": "Persona unica — empreendedor + churrasqueiro + educador"
+    }
+  },
+  "artifacts": [
+    "artifacts/identity-core.yaml",
+    "artifacts/layer-5-mental-models.yaml",
+    "artifacts/communication-style.md"
+  ],
+  "fidelity_target": "85-92%",
+  "status": "implementation_complete"
+}
