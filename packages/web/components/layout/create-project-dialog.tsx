@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { Brain } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Check } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +15,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCreateProject } from "@/lib/hooks/use-projects";
+import { useMinds } from "@/lib/hooks/use-minds";
+import { useLinkMindToProject } from "@/lib/hooks/use-project-minds";
 
 const PRESET_COLORS = [
   "#6366f1", // indigo
@@ -32,13 +36,32 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
   const [name, setName] = useState("");
   const [clientName, setClientName] = useState("");
   const [color, setColor] = useState<string>(PRESET_COLORS[0]);
+  const [selectedMinds, setSelectedMinds] = useState<string[]>([]);
 
   const createProject = useCreateProject();
+  const { squads } = useMinds();
+  const linkMind = useLinkMindToProject();
+
+  // Flatten all minds from all squads for the checklist
+  const allMinds = (squads ?? []).flatMap((squad) =>
+    squad.minds.map((m) => ({
+      id: m.id,
+      name: m.name,
+      squad: squad.displayName,
+    })),
+  );
+
+  function toggleMind(mindId: string) {
+    setSelectedMinds((prev) =>
+      prev.includes(mindId) ? prev.filter((id) => id !== mindId) : [...prev, mindId],
+    );
+  }
 
   function handleClose() {
     setName("");
     setClientName("");
     setColor(PRESET_COLORS[0]);
+    setSelectedMinds([]);
     onOpenChange(false);
   }
 
@@ -46,7 +69,13 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
     e.preventDefault();
     if (!name.trim() || !clientName.trim()) return;
 
-    await createProject.mutateAsync({ name: name.trim(), clientName: clientName.trim(), color });
+    const project = await createProject.mutateAsync({ name: name.trim(), clientName: clientName.trim(), color });
+
+    // Link selected minds to the new project
+    for (const mindId of selectedMinds) {
+      await linkMind.mutateAsync({ projectId: project.id, mindId }).catch(() => {});
+    }
+
     handleClose();
   }
 
@@ -95,11 +124,49 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
               ))}
             </div>
           </div>
+          {allMinds.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <Label className="flex items-center gap-1.5">
+                <Brain className="h-3.5 w-3.5" />
+                Minds do projeto
+              </Label>
+              <p className="text-xs text-muted-foreground -mt-1">
+                Selecione as minds que convidados poderão acessar neste projeto.
+              </p>
+              <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto rounded-md border p-2">
+                {allMinds.map((mind) => (
+                  <button
+                    key={mind.id}
+                    type="button"
+                    onClick={() => toggleMind(mind.id)}
+                    className={cn(
+                      "flex items-center gap-2 rounded px-2 py-1.5 text-sm text-left transition-colors",
+                      selectedMinds.includes(mind.id)
+                        ? "bg-primary/10 text-primary"
+                        : "hover:bg-muted/50",
+                    )}
+                  >
+                    <span className={cn(
+                      "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                      selectedMinds.includes(mind.id)
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-muted-foreground/30",
+                    )}>
+                      {selectedMinds.includes(mind.id) && <Check className="h-3 w-3" />}
+                    </span>
+                    <span>{mind.name}</span>
+                    <span className="text-xs text-muted-foreground">({mind.squad})</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={handleClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={createProject.isPending}>
+            <Button type="submit" disabled={createProject.isPending || linkMind.isPending}>
               {createProject.isPending ? "Criando..." : "Criar"}
             </Button>
           </DialogFooter>
