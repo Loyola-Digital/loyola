@@ -1,0 +1,25 @@
+name: loyola-experts
+version: "1.0.0"
+short-title: "Loyola Experts"
+description: "Mentes especialistas da Loyola Digital. Experts clonados para uso interno da equipe."
+author: "Loyola Digital"
+license: MIT
+slashPrefix: "loyola-experts"
+
+aios:
+  minVersion: "4.0.0"
+  type: squad
+
+tags:
+  - loyola
+  - experts
+  - internal
+
+components:
+  minds:
+    - netao
+
+access:
+  excludeRoles:
+    - guest
+  allowProjectMembers: true

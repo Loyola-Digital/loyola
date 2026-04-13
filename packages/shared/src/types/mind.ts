@@ -47,6 +47,11 @@ export interface MindDetail extends MindSummary {
   };
 }
 
+export interface SquadAccess {
+  excludeRoles?: string[];
+  allowProjectMembers?: boolean;
+}
+
 export interface Squad {
   id: string;
   name: string;
@@ -54,4 +59,5 @@ export interface Squad {
   description: string;
   mindCount: number;
   minds: MindSummary[];
+  access?: SquadAccess;
 }

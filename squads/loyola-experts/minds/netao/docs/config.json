@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "display_name": "Netao Bom Beef",
   "real_name": "Domingos Neto",
+  "squad": "loyola-experts",
   "primary_prompt": "system_prompts/generalista.md",
   "language": "pt-BR",
   "personas": {

@@ -1,11 +1,13 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, basename } from "node:path";
 import fp from "fastify-plugin";
-import type { MindMetadata, MindSummary, Squad } from "@loyola-x/shared";
+import type { MindMetadata, MindSummary, Squad, SquadAccess } from "@loyola-x/shared";
 
 interface MindRegistry {
   getAll(): Squad[];
+  getAllForRole(role: string, projectMindIds?: string[]): Squad[];
   getById(id: string): MindMetadata | undefined;
+  getSquadByMindId(mindId: string): Squad | undefined;
   search(query: string): Squad[];
 }
 
@@ -223,6 +225,32 @@ async function scanAgents(
   return agents;
 }
 
+async function readSquadAccess(squadDir: string): Promise<SquadAccess | undefined> {
+  const yamlPath = join(squadDir, "squad.yaml");
+  try {
+    const content = await readFile(yamlPath, "utf-8");
+    // Simple YAML parse for access.excludeRoles and access.allowProjectMembers
+    const excludeMatch = content.match(/excludeRoles:\s*\n((?:\s+-\s+.+\n?)+)/);
+    const allowMatch = content.match(/allowProjectMembers:\s*(true|false)/);
+
+    if (!excludeMatch && !allowMatch) return undefined;
+
+    const access: SquadAccess = {};
+    if (excludeMatch) {
+      access.excludeRoles = excludeMatch[1]
+        .split("\n")
+        .map((line) => line.replace(/^\s+-\s+/, "").trim())
+        .filter(Boolean);
+    }
+    if (allowMatch) {
+      access.allowProjectMembers = allowMatch[1] === "true";
+    }
+    return access;
+  } catch {
+    return undefined;
+  }
+}
+
 async function scanSquads(basePath: string): Promise<{
   minds: Map<string, MindMetadata>;
   squads: Squad[];
@@ -279,6 +307,9 @@ async function scanSquads(basePath: string): Promise<{
       minds.set(mind.id, mind);
     }
 
+    // Read squad access config
+    const access = await readSquadAccess(squadDir);
+
     // Build squad summary
     const mindSummaries: MindSummary[] = squadMinds.map((m) => ({
       id: m.id,
@@ -297,6 +328,7 @@ async function scanSquads(basePath: string): Promise<{
       description: "",
       mindCount: squadMinds.length,
       minds: mindSummaries,
+      ...(access && { access }),
     });
   }
 
@@ -327,8 +359,33 @@ export default fp(async function mindRegistryPlugin(fastify) {
       return squadsCache;
     },
 
+    getAllForRole(role: string, projectMindIds?: string[]) {
+      return squadsCache
+        .map((squad) => {
+          if (!squad.access?.excludeRoles?.includes(role)) {
+            return squad;
+          }
+          // Role is excluded — only show minds linked to user's projects
+          if (!squad.access.allowProjectMembers || !projectMindIds?.length) {
+            return null;
+          }
+          const allowedMinds = squad.minds.filter((m) =>
+            projectMindIds.includes(m.id)
+          );
+          if (allowedMinds.length === 0) return null;
+          return { ...squad, minds: allowedMinds, mindCount: allowedMinds.length };
+        })
+        .filter((s): s is Squad => s !== null);
+    },
+
     getById(id: string) {
       return mindsMap.get(id);
+    },
+
+    getSquadByMindId(mindId: string) {
+      const mind = mindsMap.get(mindId);
+      if (!mind) return undefined;
+      return squadsCache.find((s) => s.id === mind.squad);
     },
 
     search(query: string) {

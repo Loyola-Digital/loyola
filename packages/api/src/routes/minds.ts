@@ -1,26 +1,97 @@
 import { readFile } from "node:fs/promises";
 import fp from "fastify-plugin";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 import type { MindDetail } from "@loyola-x/shared";
+import { projectMembers, conversations } from "../db/schema.js";
 
 export default fp(async function mindsRoutes(fastify) {
   fastify.get("/api/minds", async (request) => {
     const { q } = request.query as { q?: string };
+    const userId = request.userId!;
+    const userRole = request.userRole!;
 
-    if (q && q.trim().length > 0) {
-      return { squads: fastify.mindRegistry.search(q.trim()) };
+    // For restricted roles, find mind IDs linked to user's projects
+    let projectMindIds: string[] | undefined;
+    if (userRole === "guest") {
+      try {
+        const memberships = await fastify.db
+          .select({ projectId: projectMembers.projectId })
+          .from(projectMembers)
+          .where(eq(projectMembers.userId, userId));
+
+        if (memberships.length > 0) {
+          const projectIds = memberships.map((m) => m.projectId);
+          const result = await fastify.db.execute(
+            sql`SELECT DISTINCT mind_id FROM conversations WHERE project_id = ANY(${projectIds}) AND deleted_at IS NULL`
+          );
+          const rows = result as unknown as { mind_id: string }[];
+          projectMindIds = rows.map((r) => r.mind_id);
+        }
+      } catch {
+        projectMindIds = [];
+      }
     }
 
-    return { squads: fastify.mindRegistry.getAll() };
+    if (q && q.trim().length > 0) {
+      const all = fastify.mindRegistry.search(q.trim());
+      // Apply role filtering to search results too
+      if (userRole === "guest") {
+        return {
+          squads: fastify.mindRegistry
+            .getAllForRole(userRole, projectMindIds)
+            .map((squad) => ({
+              ...squad,
+              minds: squad.minds.filter(
+                (m) =>
+                  m.name.toLowerCase().includes(q.trim().toLowerCase()) ||
+                  m.specialty.toLowerCase().includes(q.trim().toLowerCase()) ||
+                  m.tags.some((t) => t.toLowerCase().includes(q.trim().toLowerCase()))
+              ),
+            }))
+            .filter((s) => s.minds.length > 0)
+            .map((s) => ({ ...s, mindCount: s.minds.length })),
+        };
+      }
+      return { squads: all };
+    }
+
+    return { squads: fastify.mindRegistry.getAllForRole(userRole, projectMindIds) };
   });
 
   fastify.get("/api/minds/:mindId", async (request, reply) => {
     const { mindId } = request.params as { mindId: string };
+    const userId = request.userId!;
+    const userRole = request.userRole!;
     const mind = fastify.mindRegistry.getById(mindId);
 
     if (!mind) {
       reply.code(404);
       return { error: "Mind not found" };
+    }
+
+    // Check squad access restrictions
+    const squad = fastify.mindRegistry.getSquadByMindId(mindId);
+    if (squad?.access?.excludeRoles?.includes(userRole)) {
+      // Check if user has access via project membership
+      let hasProjectAccess = false;
+      if (squad.access.allowProjectMembers) {
+        try {
+          const result = await fastify.db.execute(
+            sql`SELECT 1 FROM conversations c
+                JOIN project_members pm ON pm.project_id = c.project_id AND pm.user_id = ${userId}
+                WHERE c.mind_id = ${mindId} AND c.deleted_at IS NULL
+                LIMIT 1`
+          );
+          const rows = result as unknown as unknown[];
+          hasProjectAccess = rows.length > 0;
+        } catch {
+          hasProjectAccess = false;
+        }
+      }
+      if (!hasProjectAccess) {
+        reply.code(403);
+        return { error: "Access denied" };
+      }
     }
 
     // Read bio from COGNITIVE_OS (first ~500 chars)
