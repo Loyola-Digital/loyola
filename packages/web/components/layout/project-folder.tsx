@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown } from "lucide-react";
+import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -35,7 +35,8 @@ import { useDeleteProject, useUpdateProject } from "@/lib/hooks/use-projects";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useFunnels } from "@/lib/hooks/use-funnels";
+import { useFunnels, useDeleteFunnel, useUpdateFunnel } from "@/lib/hooks/use-funnels";
+import type { Funnel } from "@loyola-x/shared";
 
 interface ProjectFolderProps {
   project: Project;
@@ -54,6 +55,108 @@ const PROJECT_SUBITEMS = [
   { label: "Vendas", href: "sales", icon: ArrowUpDown },
   { label: "Conversas", href: "conversations", icon: MessageSquare },
 ] as const;
+
+function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId: string; isAdmin: boolean }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const deleteFunnel = useDeleteFunnel(projectId);
+  const updateFunnel = useUpdateFunnel(projectId, funnel.id);
+  const [showDeleteAlert, setShowDeleteAlert] = useState(false);
+
+  const href = `/projects/${projectId}/funnels/${funnel.id}`;
+  const isActive = pathname.startsWith(href);
+  const FunnelIcon = funnel.type === "launch" ? Rocket : Repeat;
+  const oppositeType = funnel.type === "launch" ? "perpetual" : "launch";
+  const oppositeLabel = funnel.type === "launch" ? "Perpétuo" : "Lançamento";
+
+  async function handleDelete() {
+    try {
+      await deleteFunnel.mutateAsync(funnel.id);
+      toast.success(`Funil "${funnel.name}" deletado.`);
+      if (pathname.startsWith(href)) {
+        router.push(`/projects/${projectId}`);
+      }
+    } catch {
+      toast.error("Erro ao deletar funil.");
+    }
+  }
+
+  async function handleTypeChange() {
+    try {
+      await updateFunnel.mutateAsync({ type: oppositeType });
+      toast.success(`Funil alterado para ${oppositeLabel}.`);
+    } catch {
+      toast.error("Erro ao alterar tipo do funil.");
+    }
+  }
+
+  return (
+    <>
+      <div className="group/funnel flex items-center">
+        <Button
+          variant={isActive ? "secondary" : "ghost"}
+          className="flex-1 justify-start gap-2 h-8 text-sm min-w-0"
+          asChild
+        >
+          <Link href={href}>
+            <FunnelIcon className="h-4 w-4 shrink-0" />
+            <span className="truncate">{funnel.name}</span>
+          </Link>
+        </Button>
+
+        {isAdmin && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                className="h-6 w-6 p-0 opacity-0 group-hover/funnel:opacity-100 transition-opacity shrink-0"
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleTypeChange} disabled={updateFunnel.isPending}>
+                {funnel.type === "launch" ? (
+                  <Repeat className="mr-2 h-4 w-4" />
+                ) : (
+                  <Rocket className="mr-2 h-4 w-4" />
+                )}
+                Alterar para {oppositeLabel}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => setShowDeleteAlert(true)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Deletar funil
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+
+      <AlertDialog open={showDeleteAlert} onOpenChange={setShowDeleteAlert}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deletar funil?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O funil <strong>{funnel.name}</strong> e todos os seus dados (campanhas vinculadas, pesquisas) serão removidos permanentemente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteFunnel.isPending ? "Deletando..." : "Deletar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
 
 export function ProjectFolder({ project, collapsed = false, onNewFunnel }: ProjectFolderProps) {
   const pathname = usePathname();
@@ -137,6 +240,12 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem asChild>
+                <Link href={`/projects/${project.id}`}>
+                  <Settings className="mr-2 h-4 w-4" />
+                  Configurações
+                </Link>
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => { setEditName(project.name); setEditColor(project.color ?? "#94a3b8"); setShowEditDialog(true); }}>
                 <Pencil className="mr-2 h-4 w-4" />
                 Editar projeto
@@ -287,24 +396,14 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
             </>
           )}
 
-          {funnelList?.map((funnel) => {
-            const href = `/projects/${project.id}/funnels/${funnel.id}`;
-            const isActive = pathname.startsWith(href);
-            const FunnelIcon = funnel.type === "launch" ? Rocket : Repeat;
-            return (
-              <Button
-                key={funnel.id}
-                variant={isActive ? "secondary" : "ghost"}
-                className="justify-start gap-2 h-8 text-sm"
-                asChild
-              >
-                <Link href={href}>
-                  <FunnelIcon className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{funnel.name}</span>
-                </Link>
-              </Button>
-            );
-          })}
+          {funnelList?.map((funnel) => (
+            <FunnelItem
+              key={funnel.id}
+              funnel={funnel}
+              projectId={project.id}
+              isAdmin={isAdmin}
+            />
+          ))}
 
           {onNewFunnel && (
             <Button
