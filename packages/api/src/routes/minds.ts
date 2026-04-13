@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import fp from "fastify-plugin";
 import { sql, eq } from "drizzle-orm";
 import type { MindDetail } from "@loyola-x/shared";
-import { projectMembers, conversations } from "../db/schema.js";
+import { projectMembers, projectMinds } from "../db/schema.js";
 
 export default fp(async function mindsRoutes(fastify) {
   fastify.get("/api/minds", async (request) => {
@@ -10,23 +10,18 @@ export default fp(async function mindsRoutes(fastify) {
     const userId = request.userId!;
     const userRole = request.userRole!;
 
-    // For restricted roles, find mind IDs linked to user's projects
+    // For restricted roles, find mind IDs linked to user's projects via project_minds
     let projectMindIds: string[] | undefined;
     if (userRole === "guest") {
       try {
-        const memberships = await fastify.db
-          .select({ projectId: projectMembers.projectId })
-          .from(projectMembers)
-          .where(eq(projectMembers.userId, userId));
-
-        if (memberships.length > 0) {
-          const projectIds = memberships.map((m) => m.projectId);
-          const result = await fastify.db.execute(
-            sql`SELECT DISTINCT mind_id FROM conversations WHERE project_id = ANY(${projectIds}) AND deleted_at IS NULL`
-          );
-          const rows = result as unknown as { mind_id: string }[];
-          projectMindIds = rows.map((r) => r.mind_id);
-        }
+        const result = await fastify.db.execute(
+          sql`SELECT DISTINCT pm.mind_id
+              FROM project_minds pm
+              JOIN project_members pmem ON pmem.project_id = pm.project_id
+              WHERE pmem.user_id = ${userId}`
+        );
+        const rows = result as unknown as { mind_id: string }[];
+        projectMindIds = rows.map((r) => r.mind_id);
       } catch {
         projectMindIds = [];
       }
@@ -72,14 +67,14 @@ export default fp(async function mindsRoutes(fastify) {
     // Check squad access restrictions
     const squad = fastify.mindRegistry.getSquadByMindId(mindId);
     if (squad?.access?.excludeRoles?.includes(userRole)) {
-      // Check if user has access via project membership
+      // Check if user has access via project_minds linkage
       let hasProjectAccess = false;
       if (squad.access.allowProjectMembers) {
         try {
           const result = await fastify.db.execute(
-            sql`SELECT 1 FROM conversations c
-                JOIN project_members pm ON pm.project_id = c.project_id AND pm.user_id = ${userId}
-                WHERE c.mind_id = ${mindId} AND c.deleted_at IS NULL
+            sql`SELECT 1 FROM project_minds pm
+                JOIN project_members pmem ON pmem.project_id = pm.project_id AND pmem.user_id = ${userId}
+                WHERE pm.mind_id = ${mindId}
                 LIMIT 1`
           );
           const rows = result as unknown as unknown[];

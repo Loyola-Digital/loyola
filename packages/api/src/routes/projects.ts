@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq, and, isNull } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { projects, instagramAccounts, instagramAccountProjects, conversations, projectMembers, users } from "../db/schema.js";
+import { projects, instagramAccounts, instagramAccountProjects, conversations, projectMembers, projectMinds, users } from "../db/schema.js";
 
 // ============================================================
 // SCHEMAS
@@ -371,6 +371,125 @@ export default fp(async function projectRoutes(fastify) {
       }
 
       return { permissions: updated.permissions };
+    },
+  );
+
+  // ============================================================
+  // PROJECT MINDS — Link/unlink minds to projects
+  // ============================================================
+
+  // GET /api/projects/:id/minds — List minds linked to project
+  fastify.get(
+    "/api/projects/:id/minds",
+    async (request, reply) => {
+      const { id } = idParamSchema.parse(request.params);
+
+      const linked = await fastify.db
+        .select({
+          id: projectMinds.id,
+          mindId: projectMinds.mindId,
+          addedBy: projectMinds.addedBy,
+          createdAt: projectMinds.createdAt,
+        })
+        .from(projectMinds)
+        .where(eq(projectMinds.projectId, id));
+
+      // Enrich with mind metadata from registry
+      const enriched = linked.map((pm) => {
+        const mind = fastify.mindRegistry.getById(pm.mindId);
+        return {
+          ...pm,
+          mindName: mind?.name ?? pm.mindId,
+          squad: mind?.squad ?? "unknown",
+          squadDisplayName: mind?.squadDisplayName ?? "Unknown",
+          specialty: mind?.specialty ?? "",
+        };
+      });
+
+      return { minds: enriched };
+    },
+  );
+
+  // POST /api/projects/:id/minds — Link a mind to project
+  fastify.post(
+    "/api/projects/:id/minds",
+    async (request, reply) => {
+      const { id } = idParamSchema.parse(request.params);
+      const { mindId } = z.object({ mindId: z.string().min(1) }).parse(request.body);
+      const userId = request.userId!;
+      const userRole = request.userRole!;
+
+      // Only non-guests can link minds
+      if (userRole === "guest") {
+        return reply.code(403).send({ error: "Guests cannot link minds to projects" });
+      }
+
+      // Verify mind exists in registry
+      const mind = fastify.mindRegistry.getById(mindId);
+      if (!mind) {
+        return reply.code(404).send({ error: "Mind not found" });
+      }
+
+      // Verify project exists
+      const [project] = await fastify.db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(eq(projects.id, id));
+
+      if (!project) {
+        return reply.code(404).send({ error: "Project not found" });
+      }
+
+      // Insert (ignore conflict = already linked)
+      const [linked] = await fastify.db
+        .insert(projectMinds)
+        .values({ projectId: id, mindId, addedBy: userId })
+        .onConflictDoNothing({ target: [projectMinds.projectId, projectMinds.mindId] })
+        .returning();
+
+      if (!linked) {
+        // Already linked
+        return { message: "Mind already linked to project" };
+      }
+
+      return {
+        id: linked.id,
+        mindId: linked.mindId,
+        mindName: mind.name,
+        squad: mind.squad,
+      };
+    },
+  );
+
+  // DELETE /api/projects/:id/minds/:mindId — Unlink a mind from project
+  fastify.delete(
+    "/api/projects/:id/minds/:mindId",
+    async (request, reply) => {
+      const params = z.object({
+        id: z.string().uuid(),
+        mindId: z.string().min(1),
+      }).parse(request.params);
+      const userRole = request.userRole!;
+
+      if (userRole === "guest") {
+        return reply.code(403).send({ error: "Guests cannot unlink minds" });
+      }
+
+      const deleted = await fastify.db
+        .delete(projectMinds)
+        .where(
+          and(
+            eq(projectMinds.projectId, params.id),
+            eq(projectMinds.mindId, params.mindId),
+          ),
+        )
+        .returning();
+
+      if (deleted.length === 0) {
+        return reply.code(404).send({ error: "Mind not linked to this project" });
+      }
+
+      return { message: "Mind unlinked from project" };
     },
   );
 });

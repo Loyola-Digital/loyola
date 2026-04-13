@@ -324,6 +324,28 @@ export const projectMembers = pgTable(
   ]
 );
 
+export const projectMinds = pgTable(
+  "project_minds",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    mindId: text("mind_id").notNull(),
+    addedBy: uuid("added_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("uq_project_minds_project_mind").on(table.projectId, table.mindId),
+    index("idx_project_minds_project").on(table.projectId),
+    index("idx_project_minds_mind").on(table.mindId),
+  ]
+);
+
 export const instagramMetricsCache = pgTable(
   "instagram_metrics_cache",
   {
