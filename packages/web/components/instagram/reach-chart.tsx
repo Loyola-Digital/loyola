@@ -17,6 +17,9 @@ import {
 import type { InsightEntry } from "@/lib/hooks/use-instagram";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
+import type { MetricFormula } from "@/lib/types/metric-formula";
+import { buildDailyPointFormula } from "@/lib/formulas/instagram";
 
 interface ReachChartProps {
   data?: InsightEntry[];
@@ -31,6 +34,7 @@ interface ChartPoint {
   reach: number;
   impressions: number;
   engaged: number;
+  formulasByKey: Record<string, MetricFormula>;
 }
 
 // Only match entries that have a time series values array (skip total_value metrics)
@@ -48,18 +52,37 @@ function buildChartData(entries: InsightEntry[]): ChartPoint[] {
 
   if (!reachEntry) return [];
 
-  return reachEntry.values.map((v, i) => ({
-    date: v.end_time ? format(parseISO(v.end_time), "dd/MM", { locale: ptBR }) : String(i),
-    reach: typeof v.value === "number" ? v.value : 0,
-    impressions:
-      impressionsEntry && typeof impressionsEntry.values[i]?.value === "number"
-        ? (impressionsEntry.values[i].value as number)
-        : 0,
-    engaged:
-      engagedEntry && typeof engagedEntry.values[i]?.value === "number"
-        ? (engagedEntry.values[i].value as number)
-        : 0,
-  }));
+  return reachEntry.values.map((v, i) => {
+    const dateLabel = v.end_time ? format(parseISO(v.end_time), "dd/MM", { locale: ptBR }) : String(i);
+    const reach = typeof v.value === "number" ? v.value : 0;
+    const impressionsRaw = impressionsEntry?.values[i]?.value;
+    const impressions = typeof impressionsRaw === "number" ? impressionsRaw : 0;
+    const impressionsField = impressionsEntry?.name ?? "impressions";
+    const engagedRaw = engagedEntry?.values[i]?.value;
+    const engaged = typeof engagedRaw === "number" ? engagedRaw : 0;
+
+    const formulasByKey: Record<string, MetricFormula> = {
+      reach: buildDailyPointFormula("Alcance", "reach", reach, dateLabel),
+    };
+    if (impressions > 0) {
+      formulasByKey.impressions = buildDailyPointFormula(
+        "Impressões",
+        impressionsField,
+        impressions,
+        dateLabel,
+      );
+    }
+    if (engaged > 0) {
+      formulasByKey.engaged = buildDailyPointFormula(
+        "Engajamento",
+        "accounts_engaged",
+        engaged,
+        dateLabel,
+      );
+    }
+
+    return { date: dateLabel, reach, impressions, engaged, formulasByKey };
+  });
 }
 
 function formatNumber(value: number): string {
@@ -101,7 +124,7 @@ export function ReachChart({ data, isLoading, error, onRefresh, isRefreshing }: 
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} />
                   <YAxis tick={{ fontSize: 11, fill: "#fff" }} width={45} tickFormatter={formatNumber} />
-                  <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "#fff" }} formatter={(value) => formatNumber(Number(value))} />
+                  <Tooltip content={<FormulaChartTooltip />} />
                   <Legend wrapperStyle={{ color: "#fff" }} />
                   <Line type="monotone" dataKey="reach" name="Alcance" stroke="#d4a843" strokeWidth={2} dot={false} />
                   {hasImpressions && (

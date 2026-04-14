@@ -122,6 +122,7 @@ export default function InstagramDashboardPage() {
         profile={profile}
         insights={insights?.data}
         isLoading={profileLoading || insightsLoading}
+        period={{ since: period.since, until: period.until }}
       />
 
       {/* Reach & Impressions chart */}

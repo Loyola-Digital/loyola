@@ -6,11 +6,27 @@ import {
   TrendingUp, Heart, Bookmark, Share2, Link2,
 } from "lucide-react";
 import type { InstagramProfile, InsightEntry } from "@/lib/hooks/use-instagram";
+import { MetricTooltip } from "@/components/metrics/metric-tooltip";
+import type { MetricFormula } from "@/lib/types/metric-formula";
+import {
+  buildFollowersFormula,
+  buildFollowersDeltaFormula,
+  buildReachFormula,
+  buildViewsFormula,
+  buildInteractionsFormula,
+  buildEngagementFormula,
+  buildSavesFormula,
+  buildSharesFormula,
+  buildBioClicksFormula,
+  type InstagramPeriod,
+} from "@/lib/formulas/instagram";
 
 interface OverviewCardsProps {
   profile?: InstagramProfile;
   insights?: InsightEntry[];
   isLoading: boolean;
+  /** Período ativo do filtro — usado para compor o memorial de cada métrica. */
+  period?: InstagramPeriod;
 }
 
 /** Extract a numeric value from an insight entry — handles both time_series and total_value formats */
@@ -90,7 +106,7 @@ function KpiCard({ icon: Icon, label, value, sub, gradient = "from-card/80 to-ca
   );
 }
 
-export function OverviewCards({ profile, insights, isLoading }: OverviewCardsProps) {
+export function OverviewCards({ profile, insights, isLoading, period }: OverviewCardsProps) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
@@ -120,22 +136,116 @@ export function OverviewCards({ profile, insights, isLoading }: OverviewCardsPro
 
   const engagementRate = totalReach > 0 ? (totalInteractions / totalReach) * 100 : 0;
 
-  const cards = [
-    { icon: Users, label: "Seguidores", value: fmtNumber(followers), gradient: "from-blue-500/10 to-blue-600/5", border: "border-blue-500/20", show: true },
-    { icon: followersDelta >= 0 ? UserPlus : UserMinus, label: "Saldo Seguidores", value: `${followersDelta >= 0 ? "+" : ""}${fmtNumber(followersDelta)}`, sub: followsData ? `+${fmtNumber(followsData.gained)} / -${fmtNumber(followsData.lost)}` : undefined, gradient: followersDelta >= 0 ? "from-emerald-500/10 to-emerald-600/5" : "from-red-500/10 to-red-600/5", border: followersDelta >= 0 ? "border-emerald-500/20" : "border-red-500/20", show: hasFollowData },
-    { icon: Eye, label: "Alcance", value: fmtNumber(totalReach), gradient: "from-cyan-500/10 to-cyan-600/5", border: "border-cyan-500/20", show: totalReach > 0 },
-    { icon: Eye, label: "Visualizacoes", value: fmtNumber(totalViews), gradient: "from-purple-500/10 to-purple-600/5", border: "border-purple-500/20", show: totalViews > 0 },
-    { icon: Heart, label: "Interacoes", value: fmtNumber(totalInteractions), sub: totalLikes > 0 ? `${fmtNumber(totalLikes)} likes · ${fmtNumber(totalComments)} comments` : undefined, gradient: "from-pink-500/10 to-pink-600/5", border: "border-pink-500/20", show: totalInteractions > 0 },
-    { icon: TrendingUp, label: "Engajamento", value: fmtPercent(engagementRate), sub: "interacoes / alcance", gradient: "from-amber-500/10 to-amber-600/5", border: "border-amber-500/20", show: engagementRate > 0 },
-    { icon: Bookmark, label: "Salvamentos", value: fmtNumber(totalSaves), gradient: "from-indigo-500/10 to-indigo-600/5", border: "border-indigo-500/20", show: totalSaves > 0 },
-    { icon: Share2, label: "Compartilhamentos", value: fmtNumber(totalShares), gradient: "from-teal-500/10 to-teal-600/5", border: "border-teal-500/20", show: totalShares > 0 },
-    { icon: Link2, label: "Cliques na Bio", value: fmtNumber(bioClicks), gradient: "from-orange-500/10 to-orange-600/5", border: "border-orange-500/20", show: bioClicks > 0 },
+  interface CardDef {
+    icon: React.ComponentType<{ className?: string }>;
+    label: string;
+    value: string;
+    sub?: string;
+    gradient?: string;
+    border?: string;
+    show: boolean;
+    formula?: MetricFormula;
+  }
+
+  const cards: CardDef[] = [
+    {
+      icon: Users,
+      label: "Seguidores",
+      value: fmtNumber(followers),
+      gradient: "from-blue-500/10 to-blue-600/5",
+      border: "border-blue-500/20",
+      show: true,
+      formula: buildFollowersFormula(profile?.followers_count),
+    },
+    {
+      icon: followersDelta >= 0 ? UserPlus : UserMinus,
+      label: "Saldo Seguidores",
+      value: `${followersDelta >= 0 ? "+" : ""}${fmtNumber(followersDelta)}`,
+      sub: followsData ? `+${fmtNumber(followsData.gained)} / -${fmtNumber(followsData.lost)}` : undefined,
+      gradient: followersDelta >= 0 ? "from-emerald-500/10 to-emerald-600/5" : "from-red-500/10 to-red-600/5",
+      border: followersDelta >= 0 ? "border-emerald-500/20" : "border-red-500/20",
+      show: hasFollowData,
+      formula: followsData && period
+        ? buildFollowersDeltaFormula(followsData.gained, followsData.lost, period)
+        : undefined,
+    },
+    {
+      icon: Eye,
+      label: "Alcance",
+      value: fmtNumber(totalReach),
+      gradient: "from-cyan-500/10 to-cyan-600/5",
+      border: "border-cyan-500/20",
+      show: totalReach > 0,
+      formula: period ? buildReachFormula(totalReach, period) : undefined,
+    },
+    {
+      icon: Eye,
+      label: "Visualizacoes",
+      value: fmtNumber(totalViews),
+      gradient: "from-purple-500/10 to-purple-600/5",
+      border: "border-purple-500/20",
+      show: totalViews > 0,
+      formula: period ? buildViewsFormula(totalViews, period) : undefined,
+    },
+    {
+      icon: Heart,
+      label: "Interacoes",
+      value: fmtNumber(totalInteractions),
+      sub: totalLikes > 0 ? `${fmtNumber(totalLikes)} likes · ${fmtNumber(totalComments)} comments` : undefined,
+      gradient: "from-pink-500/10 to-pink-600/5",
+      border: "border-pink-500/20",
+      show: totalInteractions > 0,
+      formula: period
+        ? buildInteractionsFormula(totalInteractions, totalLikes, totalComments, period)
+        : undefined,
+    },
+    {
+      icon: TrendingUp,
+      label: "Engajamento",
+      value: fmtPercent(engagementRate),
+      sub: "interacoes / alcance",
+      gradient: "from-amber-500/10 to-amber-600/5",
+      border: "border-amber-500/20",
+      show: engagementRate > 0,
+      formula: period
+        ? buildEngagementFormula(totalInteractions, totalReach, period)
+        : undefined,
+    },
+    {
+      icon: Bookmark,
+      label: "Salvamentos",
+      value: fmtNumber(totalSaves),
+      gradient: "from-indigo-500/10 to-indigo-600/5",
+      border: "border-indigo-500/20",
+      show: totalSaves > 0,
+      formula: period ? buildSavesFormula(totalSaves, period) : undefined,
+    },
+    {
+      icon: Share2,
+      label: "Compartilhamentos",
+      value: fmtNumber(totalShares),
+      gradient: "from-teal-500/10 to-teal-600/5",
+      border: "border-teal-500/20",
+      show: totalShares > 0,
+      formula: period ? buildSharesFormula(totalShares, period) : undefined,
+    },
+    {
+      icon: Link2,
+      label: "Cliques na Bio",
+      value: fmtNumber(bioClicks),
+      gradient: "from-orange-500/10 to-orange-600/5",
+      border: "border-orange-500/20",
+      show: bioClicks > 0,
+      formula: period ? buildBioClicksFormula(bioClicks, period) : undefined,
+    },
   ].filter((c) => c.show);
 
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" style={{ gridTemplateColumns: `repeat(${Math.min(cards.length, 4)}, minmax(0, 1fr))` }}>
       {cards.map((c) => (
-        <KpiCard key={c.label} icon={c.icon} label={c.label} value={c.value} sub={c.sub} gradient={c.gradient} border={c.border} />
+        <MetricTooltip key={c.label} label={c.label} value={c.value} formula={c.formula}>
+          <KpiCard icon={c.icon} label={c.label} value={c.value} sub={c.sub} gradient={c.gradient} border={c.border} />
+        </MetricTooltip>
       ))}
     </div>
   );

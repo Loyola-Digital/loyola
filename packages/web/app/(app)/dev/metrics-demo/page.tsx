@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { MetricWithTooltip } from "@/components/metrics/metric-with-tooltip";
+import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import type { MetricFormula } from "@/lib/types/metric-formula";
@@ -95,6 +96,37 @@ const leadsByChannel = [
   } satisfies MetricFormula,
 }));
 
+// Exemplo com formulasByKey (Story 16.2) — cada série tem sua própria fórmula
+const multiSeriesData = [
+  { day: "Seg", reach: 12000, impressions: 18500, engaged: 950 },
+  { day: "Ter", reach: 13400, impressions: 20100, engaged: 1120 },
+  { day: "Qua", reach: 11800, impressions: 17200, engaged: 880 },
+  { day: "Qui", reach: 14200, impressions: 21300, engaged: 1245 },
+  { day: "Sex", reach: 15100, impressions: 22800, engaged: 1380 },
+].map((d) => ({
+  ...d,
+  formulasByKey: {
+    reach: {
+      expression: "Alcance do dia",
+      values: [{ label: "Alcance", value: d.reach, source: "Instagram Graph API · reach" }],
+      result: d.reach.toLocaleString("pt-BR"),
+      period: d.day,
+    } satisfies MetricFormula,
+    impressions: {
+      expression: "Impressões do dia",
+      values: [{ label: "Impressões", value: d.impressions, source: "Instagram Graph API · impressions" }],
+      result: d.impressions.toLocaleString("pt-BR"),
+      period: d.day,
+    } satisfies MetricFormula,
+    engaged: {
+      expression: "Accounts engaged no dia",
+      values: [{ label: "Contas engajadas", value: d.engaged, source: "Instagram Graph API · accounts_engaged" }],
+      result: d.engaged.toLocaleString("pt-BR"),
+      period: d.day,
+    } satisfies MetricFormula,
+  },
+}));
+
 export default function MetricsDemoPage() {
   const role = useUserRole();
   const isAdmin = role === "admin" || role === "manager";
@@ -175,6 +207,60 @@ export default function MetricsDemoPage() {
         </div>
         <p className="text-xs text-muted-foreground">
           Hover em um ponto mostra fórmula + spend/receita daquele mês.
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">
+          Story 16.2 — MetricTooltip wrapping custom card
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          <code>&lt;MetricTooltip&gt;</code> envolve um card com design autoral
+          (gradiente + ícone custom) sem substituir o layout interno.
+        </p>
+        <div className="max-w-xs">
+          <MetricTooltip
+            label="Alcance"
+            value="42.300"
+            formula={{
+              expression: "Σ reach diário",
+              values: [{ label: "Alcance", value: 42300, source: "Instagram Graph API · reach" }],
+              result: "42.300",
+              period: "20/03 — 17/06",
+            } satisfies MetricFormula}
+          >
+            <div className="rounded-xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 p-3">
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Alcance
+                </span>
+              </div>
+              <p className="text-xl font-bold tracking-tight">42.300</p>
+            </div>
+          </MetricTooltip>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">
+          Story 16.2 — Chart com formulasByKey (per-series)
+        </h2>
+        <div className="rounded-lg border border-border/40 bg-card/40 p-4">
+          <ResponsiveContainer width="100%" height={260}>
+            <LineChart data={multiSeriesData}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+              <XAxis dataKey="day" />
+              <YAxis />
+              <Tooltip content={<FormulaChartTooltip />} />
+              <Line type="monotone" dataKey="reach" stroke="#d4a843" strokeWidth={2} name="Alcance" />
+              <Line type="monotone" dataKey="impressions" stroke="#60a5fa" strokeWidth={2} name="Impressões" />
+              <Line type="monotone" dataKey="engaged" stroke="#34d399" strokeWidth={2} name="Engajamento" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Cada série (reach / impressions / engaged) tem fórmula própria
+          via <code>formulasByKey[dataKey]</code>. Hover empilha 3 memoriais.
         </p>
       </section>
 

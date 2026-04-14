@@ -148,6 +148,7 @@ export default function ProjectInstagramPage({ params }: Props) {
         profile={profile}
         insights={insights?.data}
         isLoading={profileLoading || insightsLoading}
+        period={{ since: period.since, until: period.until }}
       />
 
       {/* Reach & Impressions chart */}

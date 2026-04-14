@@ -6,14 +6,18 @@ import type { MetricFormula } from "@/lib/types/metric-formula";
 /**
  * Payload genérico do Recharts. Mantemos tipado de forma relaxada pois
  * Recharts passa `any` — o importante é extrair `payload[i].payload`
- * (o data item original) onde esperamos encontrar `formula`.
+ * (o data item original) onde esperamos encontrar `formula` (singular,
+ * comum a todas as séries) ou `formulasByKey` (por `dataKey`, uma por série).
  */
 interface RechartsPayloadEntry {
   name?: string;
   dataKey?: string | number;
   value?: string | number;
   color?: string;
-  payload?: Record<string, unknown> & { formula?: MetricFormula };
+  payload?: Record<string, unknown> & {
+    formula?: MetricFormula;
+    formulasByKey?: Record<string, MetricFormula>;
+  };
 }
 
 interface FormulaChartTooltipProps {
@@ -55,10 +59,13 @@ export function FormulaChartTooltip({
   }> = [];
 
   for (const entry of payload) {
-    const candidate = entry.payload?.formula;
+    const byKey = entry.payload?.formulasByKey;
+    const dataKey = entry.dataKey !== undefined ? String(entry.dataKey) : undefined;
+    const perSeries = dataKey ? byKey?.[dataKey] : undefined;
+    const candidate = perSeries ?? entry.payload?.formula;
     if (candidate) {
       formulas.push({
-        seriesName: entry.name ?? String(entry.dataKey ?? ""),
+        seriesName: entry.name ?? dataKey ?? "",
         value: entry.value,
         formula: candidate,
       });
