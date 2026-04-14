@@ -98,7 +98,7 @@ export default function ProjectYouTubePage() {
         <div>
           <p className="font-semibold text-lg">Nenhuma conta Google Ads vinculada</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Conecte uma conta Google Ads e vincule a este projeto nas configuracoes.
+            Conecte uma conta Google Ads e vincule a esta empresa nas configuracoes.
           </p>
         </div>
         <Button asChild>

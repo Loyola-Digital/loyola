@@ -93,7 +93,7 @@ export default function TrafficSettingsPage() {
     linkProject.mutate(
       { accountId, projectId },
       {
-        onSuccess: () => toast.success("Projeto vinculado!"),
+        onSuccess: () => toast.success("Empresa vinculada!"),
         onError: (err) => toast.error(err instanceof Error ? err.message : "Erro ao vincular."),
       }
     );
@@ -103,7 +103,7 @@ export default function TrafficSettingsPage() {
     unlinkProject.mutate(
       { accountId, projectId },
       {
-        onSuccess: () => toast.success("Projeto desvinculado."),
+        onSuccess: () => toast.success("Empresa desvinculada."),
         onError: () => toast.error("Erro ao desvincular."),
       }
     );
@@ -248,7 +248,7 @@ export default function TrafficSettingsPage() {
                       onValueChange={(projectId) => handleLink(account.id, projectId)}
                     >
                       <SelectTrigger className="h-7 w-[160px] text-xs">
-                        <SelectValue placeholder="Vincular projeto..." />
+                        <SelectValue placeholder="Vincular empresa..." />
                       </SelectTrigger>
                       <SelectContent>
                         {availableProjects.map((p) => (
@@ -273,7 +273,7 @@ export default function TrafficSettingsPage() {
             <AlertDialogTitle>Remover conta de anúncios?</AlertDialogTitle>
             <AlertDialogDescription>
               A conta <strong>{deleteTarget?.accountName}</strong> será removida permanentemente.
-              Todas as vinculações com projetos serão perdidas.
+              Todas as vinculações com empresas serão perdidas.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

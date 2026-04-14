@@ -175,7 +175,7 @@ export default function YouTubeSettingsPage() {
                   ))}
                   {available.length > 0 && (
                     <Select onValueChange={(pid) => linkProject.mutate({ channelId: ch.id, projectId: pid }, { onSuccess: () => toast.success("Vinculado!") })}>
-                      <SelectTrigger className="h-7 w-[160px] text-xs"><SelectValue placeholder="Vincular projeto..." /></SelectTrigger>
+                      <SelectTrigger className="h-7 w-[160px] text-xs"><SelectValue placeholder="Vincular empresa..." /></SelectTrigger>
                       <SelectContent>{available.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
                     </Select>
                   )}

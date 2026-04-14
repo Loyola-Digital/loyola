@@ -47,7 +47,7 @@ export function LinkAccountDialog({ projectId, open, onOpenChange }: LinkAccount
       { accountId: selectedId, projectId },
       {
         onSuccess: () => {
-          toast.success("Conta vinculada ao projeto.");
+          toast.success("Conta vinculada à empresa.");
           handleClose();
         },
         onError: () => {
@@ -70,7 +70,7 @@ export function LinkAccountDialog({ projectId, open, onOpenChange }: LinkAccount
         {available.length === 0 ? (
           <div className="py-4 text-center">
             <p className="text-sm text-muted-foreground">
-              Todas as contas já estão vinculadas a este projeto, ou não há contas cadastradas.
+              Todas as contas já estão vinculadas a esta empresa, ou não há contas cadastradas.
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               Adicione contas em <strong>Settings → Instagram</strong>.
@@ -90,7 +90,7 @@ export function LinkAccountDialog({ projectId, open, onOpenChange }: LinkAccount
                       ` — ${account.accountName}`}
                     {account.projectIds.length > 0 && (
                       <span className="ml-1 text-xs text-muted-foreground">
-                        ({account.projectIds.length} projeto{account.projectIds.length !== 1 ? "s" : ""})
+                        ({account.projectIds.length} empresa{account.projectIds.length !== 1 ? "s" : ""})
                       </span>
                     )}
                   </SelectItem>

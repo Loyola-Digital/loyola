@@ -59,7 +59,7 @@ export default function ProjectYouTubeOrganicPage({ params }: Props) {
       <div className="flex flex-col items-center gap-4 py-20 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted"><Youtube className="h-8 w-8 text-red-500" /></div>
         <p className="font-semibold text-lg">Nenhum canal YouTube vinculado</p>
-        <p className="text-sm text-muted-foreground">Conecte um canal em Settings e vincule a este projeto.</p>
+        <p className="text-sm text-muted-foreground">Conecte um canal em Settings e vincule a esta empresa.</p>
         <Button asChild><Link href="/settings/youtube"><Settings className="h-4 w-4" />Ir para Settings</Link></Button>
       </div>
     );

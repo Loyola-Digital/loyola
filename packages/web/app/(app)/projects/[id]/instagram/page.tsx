@@ -40,9 +40,9 @@ function ProjectEmptyState() {
         <Instagram className="h-8 w-8 text-muted-foreground" />
       </div>
       <div>
-        <p className="font-semibold text-lg">Nenhuma conta vinculada a este projeto</p>
+        <p className="font-semibold text-lg">Nenhuma conta vinculada a esta empresa</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Adicione uma conta do Instagram em Settings e vincule ao projeto.
+          Adicione uma conta do Instagram em Settings e vincule à empresa.
         </p>
       </div>
       <Button asChild>
@@ -199,11 +199,11 @@ function Breadcrumb({ projectId, projectName }: { projectId: string; projectName
   return (
     <nav className="flex items-center gap-1 text-sm text-muted-foreground">
       <Link href="/projects" className="hover:text-foreground transition-colors">
-        Projetos
+        Empresas
       </Link>
       <ChevronRight className="h-3.5 w-3.5" />
       <Link href={`/projects/${projectId}`} className="hover:text-foreground transition-colors">
-        {projectName ?? "Projeto"}
+        {projectName ?? "Empresa"}
       </Link>
       <ChevronRight className="h-3.5 w-3.5" />
       <span className="text-foreground">Instagram</span>

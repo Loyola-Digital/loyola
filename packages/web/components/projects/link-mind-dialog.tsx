@@ -60,7 +60,7 @@ export function LinkMindDialog({ projectId, open, onOpenChange }: LinkMindDialog
       { projectId, mindId: selectedMindId },
       {
         onSuccess: () => {
-          toast.success("Mind vinculada ao projeto.");
+          toast.success("Mind vinculada à empresa.");
           handleClose();
         },
         onError: () => {
@@ -76,14 +76,14 @@ export function LinkMindDialog({ projectId, open, onOpenChange }: LinkMindDialog
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Brain className="h-5 w-5" />
-            Vincular Mind ao Projeto
+            Vincular Mind à Empresa
           </DialogTitle>
         </DialogHeader>
 
         {availableMinds.length === 0 ? (
           <div className="py-4 text-center">
             <p className="text-sm text-muted-foreground">
-              Todas as minds já estão vinculadas a este projeto.
+              Todas as minds já estão vinculadas a esta empresa.
             </p>
           </div>
         ) : (

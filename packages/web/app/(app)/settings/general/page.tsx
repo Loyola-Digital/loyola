@@ -40,19 +40,19 @@ export default function GeneralSettingsPage() {
               Acesso de Convidados
             </CardTitle>
             <CardDescription>
-              Convide membros externos e gerencie as permissões deles por projeto.
+              Convide membros externos e gerencie as permissões deles por empresa.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Project selector */}
             <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-sm font-medium shrink-0">Projeto:</span>
+              <span className="text-sm font-medium shrink-0">Empresa:</span>
               {projectsLoading ? (
                 <Skeleton className="h-9 w-48" />
               ) : (
                 <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
                   <SelectTrigger className="w-[220px]">
-                    <SelectValue placeholder="Selecionar projeto" />
+                    <SelectValue placeholder="Selecionar empresa" />
                   </SelectTrigger>
                   <SelectContent>
                     {projects?.map((p) => (
@@ -79,7 +79,7 @@ export default function GeneralSettingsPage() {
 
             {!selectedProjectId && !projectsLoading && (
               <p className="text-sm text-muted-foreground">
-                Selecione um projeto acima para ver e gerenciar os membros convidados.
+                Selecione uma empresa acima para ver e gerenciar os membros convidados.
               </p>
             )}
           </CardContent>

@@ -167,14 +167,14 @@ export default function GoogleAdsSettingsPage() {
 
   function handleLink(accountId: string, projectId: string) {
     linkProject.mutate({ accountId, projectId }, {
-      onSuccess: () => toast.success("Projeto vinculado!"),
+      onSuccess: () => toast.success("Empresa vinculada!"),
       onError: (err) => toast.error(err instanceof Error ? err.message : "Erro ao vincular."),
     });
   }
 
   function handleUnlink(accountId: string, projectId: string) {
     unlinkProject.mutate({ accountId, projectId }, {
-      onSuccess: () => toast.success("Projeto desvinculado."),
+      onSuccess: () => toast.success("Empresa desvinculada."),
       onError: () => toast.error("Erro ao desvincular."),
     });
   }
@@ -356,7 +356,7 @@ export default function GoogleAdsSettingsPage() {
                   ))}
                   {availableProjects.length > 0 && (
                     <Select onValueChange={(projectId) => handleLink(account.id, projectId)}>
-                      <SelectTrigger className="h-7 w-[160px] text-xs"><SelectValue placeholder="Vincular projeto..." /></SelectTrigger>
+                      <SelectTrigger className="h-7 w-[160px] text-xs"><SelectValue placeholder="Vincular empresa..." /></SelectTrigger>
                       <SelectContent>
                         {availableProjects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                       </SelectContent>

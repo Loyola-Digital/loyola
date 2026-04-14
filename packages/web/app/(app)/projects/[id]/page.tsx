@@ -56,7 +56,7 @@ export default function ProjectPage({ params }: Props) {
   if (!project) {
     return (
       <div className="p-6">
-        <p className="text-muted-foreground">Projeto não encontrado.</p>
+        <p className="text-muted-foreground">Empresa não encontrada.</p>
       </div>
     );
   }
@@ -105,7 +105,7 @@ export default function ProjectPage({ params }: Props) {
           </div>
         )}
         {!accountsLoading && (!accounts || accounts.length === 0) && (
-          <p className="text-sm text-muted-foreground">Nenhuma conta vinculada a este projeto.</p>
+          <p className="text-sm text-muted-foreground">Nenhuma conta vinculada a esta empresa.</p>
         )}
         {!accountsLoading && accounts && accounts.length > 0 && (
           <ul className="flex flex-col gap-2">

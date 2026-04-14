@@ -104,7 +104,7 @@ export function AccountCard({
     linkAccount.mutate(
       { accountId: account.id, projectId },
       {
-        onSuccess: () => toast.success("Conta vinculada ao projeto."),
+        onSuccess: () => toast.success("Conta vinculada à empresa."),
         onError: () => toast.error("Erro ao vincular."),
       },
     );
@@ -189,7 +189,7 @@ export function AccountCard({
                   <Select onValueChange={handleLink} disabled={linkAccount.isPending}>
                     <SelectTrigger className="h-6 w-auto border-dashed px-2 text-xs gap-1">
                       <Plus className="h-3 w-3" />
-                      <SelectValue placeholder="Projeto" />
+                      <SelectValue placeholder="Empresa" />
                     </SelectTrigger>
                     <SelectContent>
                       {availableProjects.map((p) => (

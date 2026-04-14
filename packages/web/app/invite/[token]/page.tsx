@@ -115,7 +115,7 @@ export default function InvitePage({ params }: Props) {
           <CheckCircle className="h-12 w-12 text-green-500" />
           <h1 className="text-xl font-bold">Convite aceito!</h1>
           <p className="text-sm text-muted-foreground">
-            Faça login com o e-mail <strong>{invite?.email}</strong> para acessar o projeto.
+            Faça login com o e-mail <strong>{invite?.email}</strong> para acessar a empresa.
           </p>
           <Button asChild className="mt-2">
             <Link href="/sign-in">Entrar na plataforma</Link>
@@ -137,7 +137,7 @@ export default function InvitePage({ params }: Props) {
         <div className="text-center flex flex-col gap-1">
           <h1 className="text-2xl font-bold">Você foi convidado</h1>
           <p className="text-sm text-muted-foreground">
-            <strong>{invite.invitedByName}</strong> convidou você para acessar o projeto{" "}
+            <strong>{invite.invitedByName}</strong> convidou você para acessar a empresa{" "}
             <strong>{invite.projectName}</strong>.
           </p>
         </div>

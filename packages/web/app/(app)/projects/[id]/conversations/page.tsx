@@ -25,14 +25,14 @@ export default function ProjectConversationsPage({ params }: Props) {
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1 border-b px-6 py-3 text-sm text-muted-foreground">
         <Link href="/projects" className="hover:text-foreground transition-colors">
-          Projetos
+          Empresas
         </Link>
         <ChevronRight className="h-3.5 w-3.5" />
         <Link
           href={`/projects/${projectId}`}
           className="hover:text-foreground transition-colors"
         >
-          {project?.clientName ?? project?.name ?? "Projeto"}
+          {project?.clientName ?? project?.name ?? "Empresa"}
         </Link>
         <ChevronRight className="h-3.5 w-3.5" />
         <span className="text-foreground">Conversas</span>
@@ -65,7 +65,7 @@ export default function ProjectConversationsPage({ params }: Props) {
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <MessageSquare className="h-10 w-10 text-muted-foreground/50 mb-3" />
             <p className="text-sm text-muted-foreground">
-              Nenhuma conversa neste projeto ainda.
+              Nenhuma conversa nesta empresa ainda.
             </p>
           </div>
         ) : (

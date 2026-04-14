@@ -403,7 +403,7 @@ export default function SalesSettingsPage() {
       {/* Project selector */}
       {projects && projects.length > 1 && (
         <Select value={activeProjectId ?? undefined} onValueChange={setSelectedProjectId}>
-          <SelectTrigger className="w-[200px] h-8 text-xs"><SelectValue placeholder="Projeto" /></SelectTrigger>
+          <SelectTrigger className="w-[200px] h-8 text-xs"><SelectValue placeholder="Empresa" /></SelectTrigger>
           <SelectContent>
             {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
           </SelectContent>

@@ -76,7 +76,7 @@ export default function ProjectTrafficPage({ params }: Props) {
           <TrendingUp className="h-8 w-8 text-muted-foreground" />
         </div>
         <p className="font-semibold text-lg">Nenhuma conta Meta Ads vinculada</p>
-        <p className="text-sm text-muted-foreground">Conecte uma conta em Settings e vincule a este projeto.</p>
+        <p className="text-sm text-muted-foreground">Conecte uma conta em Settings e vincule a esta empresa.</p>
       </div>
     );
   }

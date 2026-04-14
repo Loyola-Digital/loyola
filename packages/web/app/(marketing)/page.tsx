@@ -232,13 +232,13 @@ const FEATURES = [
   {
     icon: Users,
     title: "Gestão de Equipe",
-    description: "Projetos, permissões granulares, convites. Cada membro vê exatamente o que precisa, nada mais.",
+    description: "Empresas, permissões granulares, convites. Cada membro vê exatamente o que precisa, nada mais.",
     accent: "from-amber-500/20 to-amber-500/5",
   },
   {
     icon: Shield,
     title: "Dados Protegidos",
-    description: "Tokens criptografados, acesso por projeto, auditoria completa. Seus dados de cliente nunca ficam expostos.",
+    description: "Tokens criptografados, acesso por empresa, auditoria completa. Seus dados de cliente nunca ficam expostos.",
     accent: "from-cyan-500/20 to-cyan-500/5",
   },
 ];

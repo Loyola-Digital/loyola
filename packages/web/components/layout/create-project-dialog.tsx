@@ -84,11 +84,11 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle>Novo Projeto</DialogTitle>
+          <DialogTitle>Nova Empresa</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="project-name">Nome do projeto</Label>
+            <Label htmlFor="project-name">Nome da empresa</Label>
             <Input
               id="project-name"
               value={name}
@@ -129,10 +129,10 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
             <div className="flex flex-col gap-2">
               <Label className="flex items-center gap-1.5">
                 <Brain className="h-3.5 w-3.5" />
-                Minds do projeto
+                Minds da empresa
               </Label>
               <p className="text-xs text-muted-foreground -mt-1">
-                Selecione as minds que convidados poderão acessar neste projeto.
+                Selecione as minds que convidados poderão acessar nesta empresa.
               </p>
               <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto rounded-md border p-2">
                 {allMinds.map((mind) => (

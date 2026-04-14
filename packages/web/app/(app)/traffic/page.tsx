@@ -1712,7 +1712,7 @@ function TrafficPageContent() {
           {!activeProjectId && linkedProjects.length === 0 && (
             <div className="rounded-xl border border-border/30 bg-card/60 p-6 text-center">
               <p className="text-sm text-muted-foreground">
-                Vincule um projeto a esta conta em{" "}
+                Vincule uma empresa a esta conta em{" "}
                 <Link href="/settings/traffic" className="text-brand hover:underline">Settings</Link>{" "}
                 para ver analytics cruzados.
               </p>

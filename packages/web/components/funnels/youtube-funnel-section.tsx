@@ -119,7 +119,7 @@ export function YouTubeFunnelSection({ funnel, projectId, days }: YouTubeFunnelS
           {!pickerData?.accountLinked ? (
             <div className="text-center py-4 space-y-2">
               <Youtube className="h-6 w-6 text-muted-foreground mx-auto" />
-              <p className="text-sm text-muted-foreground">Nenhuma conta Google Ads vinculada a este projeto.</p>
+              <p className="text-sm text-muted-foreground">Nenhuma conta Google Ads vinculada a esta empresa.</p>
               <Button variant="outline" size="sm" asChild>
                 <Link href="/settings/google-ads">
                   <Settings className="h-3.5 w-3.5" />

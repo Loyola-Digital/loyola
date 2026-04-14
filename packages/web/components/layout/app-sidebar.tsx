@@ -107,7 +107,7 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
         {/* Projects section */}
         {!collapsed && (
           <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Projetos
+            Empresas
           </p>
         )}
 
@@ -120,7 +120,7 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
 
         {!projectsLoading && projects && projects.length === 0 && !collapsed && (
           <p className="px-2 py-2 text-xs text-muted-foreground">
-            Nenhum projeto. Crie o primeiro.
+            Nenhuma empresa. Crie a primeira.
           </p>
         )}
 
@@ -144,7 +144,7 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
           onClick={() => setDialogOpen(true)}
         >
           <Plus className="h-4 w-4 shrink-0" />
-          {!collapsed && <span className="text-sm">Novo Projeto</span>}
+          {!collapsed && <span className="text-sm">Nova Empresa</span>}
         </Button>
       </nav>
 
