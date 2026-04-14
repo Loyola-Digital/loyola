@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings, Brain } from "lucide-react";
+import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings, Brain, EyeOff, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -33,6 +33,7 @@ import { toast } from "sonner";
 import type { Project } from "@/lib/hooks/use-projects";
 import { useDeleteProject, useUpdateProject } from "@/lib/hooks/use-projects";
 import { useUserRole } from "@/lib/hooks/use-user-role";
+import { useHiddenProjectsStore } from "@/lib/stores/hidden-projects-store";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useFunnels, useDeleteFunnel, useUpdateFunnel } from "@/lib/hooks/use-funnels";
@@ -41,6 +42,7 @@ import type { Funnel } from "@loyola-x/shared";
 interface ProjectFolderProps {
   project: Project;
   collapsed?: boolean;
+  isHidden?: boolean;
   onNewFunnel?: () => void;
 }
 
@@ -159,7 +161,7 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
   );
 }
 
-export function ProjectFolder({ project, collapsed = false, onNewFunnel }: ProjectFolderProps) {
+export function ProjectFolder({ project, collapsed = false, isHidden = false, onNewFunnel }: ProjectFolderProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { data: funnelList, isLoading: funnelsLoading } = useFunnels(project.id);
@@ -167,6 +169,8 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
   const isAdmin = role === "admin" || role === "manager";
   const deleteProject = useDeleteProject();
   const updateProject = useUpdateProject();
+  const hideProject = useHiddenProjectsStore((s) => s.hide);
+  const showProject = useHiddenProjectsStore((s) => s.show);
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editName, setEditName] = useState(project.name);
@@ -211,9 +215,19 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
     }
   }
 
+  function handleToggleVisibility() {
+    if (isHidden) {
+      showProject(project.id);
+      toast.success(`Empresa "${project.name}" reexibida.`);
+    } else {
+      hideProject(project.id);
+      toast.success(`Empresa "${project.name}" oculta.`);
+    }
+  }
+
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <div className="group flex items-center min-w-0">
+      <div className={cn("group flex items-center min-w-0", isHidden && "opacity-50")}>
         <CollapsibleTrigger asChild>
           <Button
             variant={isProjectActive && !pathname.includes("/instagram") && !pathname.includes("/traffic") && !pathname.includes("/conversations") ? "secondary" : "ghost"}
@@ -227,6 +241,7 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
               style={{ backgroundColor: project.color ?? "#94a3b8" }}
             />
             <span className="truncate text-sm">{project.name}</span>
+            {isHidden && <EyeOff className="h-3 w-3 shrink-0 text-muted-foreground ml-auto" />}
           </Button>
         </CollapsibleTrigger>
 
@@ -250,6 +265,19 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
               <DropdownMenuItem onClick={() => { setEditName(project.name); setEditColor(project.color ?? "#94a3b8"); setShowEditDialog(true); }}>
                 <Pencil className="mr-2 h-4 w-4" />
                 Editar empresa
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleToggleVisibility}>
+                {isHidden ? (
+                  <>
+                    <Eye className="mr-2 h-4 w-4" />
+                    Reexibir empresa
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="mr-2 h-4 w-4" />
+                    Ocultar empresa
+                  </>
+                )}
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"

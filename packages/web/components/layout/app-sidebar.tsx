@@ -3,9 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Brain, MessageSquare, CheckSquare, Settings, Plus } from "lucide-react";
+import { Brain, MessageSquare, CheckSquare, Settings, Plus, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/stores/ui-store";
+import { useHiddenProjectsStore } from "@/lib/stores/hidden-projects-store";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -37,8 +38,16 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname();
   const { total: openTaskCount } = useTasks({ status: "open", limit: 1, offset: 0 });
   const { data: projects, isLoading: projectsLoading } = useProjects();
+  const hiddenIds = useHiddenProjectsStore((s) => s.hiddenIds);
+  const showHidden = useHiddenProjectsStore((s) => s.showHidden);
+  const toggleShowHidden = useHiddenProjectsStore((s) => s.toggleShowHidden);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [wizardProjectId, setWizardProjectId] = useState<string | null>(null);
+
+  const visibleProjects = projects?.filter(
+    (p) => showHidden || !hiddenIds.includes(p.id),
+  );
+  const hiddenCount = projects?.filter((p) => hiddenIds.includes(p.id)).length ?? 0;
 
   // Split navItems: items before Settings, and Settings itself
   const topItems = navItems.filter((i) => i.href !== "/settings");
@@ -125,14 +134,34 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
         )}
 
         {!projectsLoading &&
-          projects?.map((project) => (
+          visibleProjects?.map((project) => (
             <ProjectFolder
               key={project.id}
               project={project}
               collapsed={collapsed}
+              isHidden={hiddenIds.includes(project.id)}
               onNewFunnel={() => setWizardProjectId(project.id)}
             />
           ))}
+
+        {/* Toggle hidden projects */}
+        {!projectsLoading && hiddenCount > 0 && !collapsed && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="justify-start gap-2 mt-1 text-muted-foreground hover:text-foreground h-7"
+            onClick={toggleShowHidden}
+          >
+            {showHidden ? (
+              <EyeOff className="h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <Eye className="h-3.5 w-3.5 shrink-0" />
+            )}
+            <span className="text-xs">
+              {showHidden ? "Esconder ocultas" : `Mostrar ocultas (${hiddenCount})`}
+            </span>
+          </Button>
+        )}
 
         {/* New project button */}
         <Button
