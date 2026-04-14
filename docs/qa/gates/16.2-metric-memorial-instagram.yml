@@ -1,0 +1,50 @@
+schema: 1
+story: '16.2'
+gate: PASS
+status_reason: 'All 6 AC met. KpiCard visual preservado (wrap, não substituição). Retrocompat da 16.1 verificada (formulasByKey ?? formula). Typecheck + lint clean.'
+reviewer: 'Quinn'
+updated: '2026-04-14T00:00:00Z'
+top_issues:
+  - id: 'TEST-002'
+    severity: low
+    finding: '10 factories em lib/formulas/instagram.ts sem unit tests. Easy targets: assertar retorno undefined quando reach=0 (buildEngagementFormula), quando followersCount ausente (buildFollowersFormula), formato de period string.'
+    suggested_action: 'Adicionar RTL + suite Vitest para factories em follow-up. Não-bloqueante — factories são puras e determinísticas, cobertas implicitamente pela demo page.'
+  - id: 'MNT-003'
+    severity: low
+    finding: 'Risk #2 da story (period availability) resolvido sem necessidade de adaptação — period já vivia localmente nas 2 pages Instagram com tipo compatível (PeriodConfig.since/until em unix seconds). Adição foi trivial.'
+    suggested_action: 'Nenhuma ação. Documentado para rastreabilidade dos risks originais.'
+  - id: 'DOC-002'
+    severity: low
+    finding: 'Demo page (/dev/metrics-demo) tem muito inline mock data com satisfies MetricFormula. Conforme EPIC-16 avança (16.3-16.7), demo vai crescer.'
+    suggested_action: 'Quando 16.7 completar, considerar extrair mocks para fixtures em lib/formulas/__fixtures__/.'
+waiver: { active: false }
+retrocompat_verification:
+  description: '16.1 demo page (ROAS LineChart + Leads BarChart) continua usando formula singular'
+  mechanism: 'Lookup order formulasByKey[dataKey] ?? payload.formula — fallback preservado'
+  verified_by: 'Code inspection + typecheck pass'
+  status: PASS
+blast_radius:
+  files_modified: 7
+  files_new: 2
+  downstream_stories_unblocked: 0  # 16.3-16.7 já eram unblocked pela 16.1
+  risk_level: LOW  # KpiCard preservado, retrocompat verificada, extensões aditivas
+coverage:
+  ac1_kpis_com_tooltip: PASS
+  ac2_reach_chart_per_series: PASS
+  ac3_helper_centralizado: PASS
+  ac4_graceful_fallback: PASS
+  ac5_sem_regressao: PASS
+  ac6_demo_page: PASS
+quality_checks:
+  code_review: PASS
+  unit_tests: CONCERN  # TEST-002 low
+  acceptance_criteria: PASS
+  no_regressions: PASS  # 16.1 compat verified
+  performance: PASS
+  security: PASS
+  documentation: PASS  # JSDoc em todas factories
+risks_resolution:
+  risk_1_breaking_16_1: RESOLVED  # fallback verificado em código
+  risk_2_period_propagation: RESOLVED  # period já vivia nas pages, prop add trivial
+  risk_3_divisao_por_zero: RESOLVED  # buildEngagementFormula retorna undefined quando reach<=0
+  risk_4_regressao_visual: RESOLVED  # KpiCard wrap (não substitui), gradientes preservados
