@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings } from "lucide-react";
+import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -50,6 +50,7 @@ const SOCIAL_SUBITEMS = [
 ] as const;
 
 const PROJECT_SUBITEMS = [
+  { label: "Minds", href: "minds", icon: Brain },
   { label: "Ads", href: "traffic", icon: TrendingUp },
   { label: "YouTube Ads", href: "youtube", icon: Youtube },
   { label: "Vendas", href: "sales", icon: ArrowUpDown },
@@ -203,10 +204,10 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
   async function handleDelete() {
     try {
       await deleteProject.mutateAsync(project.id);
-      toast.success(`Projeto "${project.name}" deletado.`);
+      toast.success(`Empresa "${project.name}" deletada.`);
       router.push("/");
     } catch {
-      toast.error("Erro ao deletar projeto.");
+      toast.error("Erro ao deletar empresa.");
     }
   }
 
@@ -248,14 +249,14 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => { setEditName(project.name); setEditColor(project.color ?? "#94a3b8"); setShowEditDialog(true); }}>
                 <Pencil className="mr-2 h-4 w-4" />
-                Editar projeto
+                Editar empresa
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
                 onClick={() => setShowDeleteAlert(true)}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
-                Deletar projeto
+                Deletar empresa
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -265,9 +266,9 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
       <AlertDialog open={showDeleteAlert} onOpenChange={setShowDeleteAlert}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Deletar projeto?</AlertDialogTitle>
+            <AlertDialogTitle>Deletar empresa?</AlertDialogTitle>
             <AlertDialogDescription>
-              O projeto <strong>{project.name}</strong> e todos os seus dados (funis, conversas, vínculos) serão removidos permanentemente.
+              A empresa <strong>{project.name}</strong> e todos os seus dados (funis, conversas, vínculos) serão removidos permanentemente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -286,11 +287,11 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
       <AlertDialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Editar projeto</AlertDialogTitle>
+            <AlertDialogTitle>Editar empresa</AlertDialogTitle>
           </AlertDialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label htmlFor="edit-name" className="text-xs">Nome do projeto</Label>
+              <Label htmlFor="edit-name" className="text-xs">Nome da empresa</Label>
               <Input id="edit-name" value={editName} onChange={(e) => setEditName(e.target.value)} />
             </div>
             <div className="space-y-1.5">
@@ -313,7 +314,7 @@ export function ProjectFolder({ project, collapsed = false, onNewFunnel }: Proje
               disabled={!editName.trim() || updateProject.isPending}
               onClick={() => {
                 updateProject.mutate({ id: project.id, name: editName.trim(), color: editColor }, {
-                  onSuccess: () => { toast.success("Projeto atualizado!"); setShowEditDialog(false); },
+                  onSuccess: () => { toast.success("Empresa atualizada!"); setShowEditDialog(false); },
                   onError: () => toast.error("Erro ao atualizar."),
                 });
               }}

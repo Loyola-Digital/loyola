@@ -15,6 +15,7 @@ type GuestPermissions = {
 function detectModule(subPath: string): keyof GuestPermissions | null {
   if (subPath.includes("/instagram")) return "instagram";
   if (subPath.includes("/conversations")) return "conversations";
+  if (subPath.includes("/minds")) return "mind";
   return null;
 }
 
