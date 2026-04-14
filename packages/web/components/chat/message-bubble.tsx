@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { Copy, Check, Paperclip } from "lucide-react";
+import { Copy, Check, Paperclip, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MindAvatar } from "@/components/minds/mind-avatar";
 import { TaskSuggestionCard } from "@/components/chat/task-suggestion-card";
+import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import type { TaskSuggestion } from "@/lib/hooks/use-chat-stream";
 
 interface MessageBubbleProps {
@@ -18,6 +17,7 @@ interface MessageBubbleProps {
   taskSuggestions?: TaskSuggestion[];
   onConfirmTask?: (index: number) => void;
   onDismissTask?: (index: number) => void;
+  onRegenerate?: () => void;
   attachmentMeta?: { filename: string };
 }
 
@@ -30,6 +30,7 @@ export function MessageBubble({
   taskSuggestions,
   onConfirmTask,
   onDismissTask,
+  onRegenerate,
   attachmentMeta,
 }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
@@ -72,9 +73,7 @@ export function MessageBubble({
           {isUser ? (
             <p className="whitespace-pre-wrap text-sm leading-relaxed">{content}</p>
           ) : content ? (
-            <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-background/50 prose-pre:border prose-pre:border-border/50 prose-code:text-brand prose-code:font-normal prose-headings:text-foreground prose-a:text-brand prose-a:no-underline hover:prose-a:underline">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-            </div>
+            <MarkdownRenderer content={content} />
           ) : isStreaming ? (
             <div className="flex items-center gap-1.5 py-1 px-1">
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-brand/60 [animation-delay:-0.3s]" />
@@ -84,18 +83,32 @@ export function MessageBubble({
           ) : null}
         </div>
 
-        {/* Copy button — hover-revealed on assistant messages */}
+        {/* Action buttons — hover-revealed on assistant messages */}
         {!isUser && content && !isStreaming && (
-          <button
-            onClick={handleCopy}
-            className="absolute -bottom-3 right-2 flex h-6 w-6 items-center justify-center rounded-md border border-border/50 bg-card text-muted-foreground/60 opacity-0 shadow-sm transition-all hover:text-foreground group-hover:opacity-100"
-          >
-            {copied ? (
-              <Check className="h-3 w-3 text-success" />
-            ) : (
-              <Copy className="h-3 w-3" />
+          <div className="absolute -bottom-3 right-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            <button
+              onClick={handleCopy}
+              title={copied ? "Copiado" : "Copiar resposta"}
+              aria-label={copied ? "Copiado" : "Copiar resposta"}
+              className="flex h-6 w-6 items-center justify-center rounded-md border border-border/50 bg-card text-muted-foreground/60 shadow-sm transition-colors hover:text-foreground"
+            >
+              {copied ? (
+                <Check className="h-3 w-3 text-success" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
+            </button>
+            {onRegenerate && (
+              <button
+                onClick={onRegenerate}
+                title="Regenerar resposta"
+                aria-label="Regenerar resposta"
+                className="flex h-6 w-6 items-center justify-center rounded-md border border-border/50 bg-card text-muted-foreground/60 shadow-sm transition-colors hover:text-foreground"
+              >
+                <RefreshCw className="h-3 w-3" />
+              </button>
             )}
-          </button>
+          </div>
         )}
 
         {/* Task suggestions inline */}

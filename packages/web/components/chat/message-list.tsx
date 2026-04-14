@@ -19,6 +19,7 @@ interface MessageListProps {
   taskSuggestions?: TaskSuggestion[];
   onConfirmTask?: (globalIndex: number) => void;
   onDismissTask?: (globalIndex: number) => void;
+  onRegenerate?: () => void;
 }
 
 export function MessageList({
@@ -28,6 +29,7 @@ export function MessageList({
   taskSuggestions,
   onConfirmTask,
   onDismissTask,
+  onRegenerate,
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -88,6 +90,8 @@ export function MessageList({
             const globalIndices = taskSuggestions
               ?.map((s, idx) => ({ ...s, globalIdx: idx }))
               .filter((s) => s.messageIndex === i);
+            const isLastAssistant =
+              msg.role === "assistant" && i === messages.length - 1;
 
             return (
               <MessageBubble
@@ -95,7 +99,7 @@ export function MessageList({
                 role={msg.role}
                 content={msg.content}
                 mindName={mindName}
-                isStreaming={isStreaming && i === messages.length - 1 && msg.role === "assistant"}
+                isStreaming={isStreaming && isLastAssistant}
                 showAvatar={shouldShowAvatar(i)}
                 attachmentMeta={msg.attachmentMeta}
                 taskSuggestions={suggestionsForMessage}
@@ -108,6 +112,9 @@ export function MessageList({
                   globalIndices
                     ? (localIdx) => onDismissTask?.(globalIndices[localIdx].globalIdx)
                     : undefined
+                }
+                onRegenerate={
+                  isLastAssistant && !isStreaming ? onRegenerate : undefined
                 }
               />
             );

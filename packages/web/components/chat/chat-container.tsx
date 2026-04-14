@@ -34,6 +34,7 @@ export function ChatContainer({
     loadHistory,
     updateTaskSuggestion,
     stopStream,
+    regenerateLast,
   } = useChatStream();
 
   const createTask = useCreateTask();
@@ -93,6 +94,10 @@ export function ChatContainer({
     [updateTaskSuggestion],
   );
 
+  const handleRegenerate = useCallback(() => {
+    regenerateLast(mindId, projectId);
+  }, [regenerateLast, mindId, projectId]);
+
   return (
     <div className="flex h-full flex-col">
       <MessageList
@@ -102,6 +107,7 @@ export function ChatContainer({
         taskSuggestions={taskSuggestions}
         onConfirmTask={handleConfirmTask}
         onDismissTask={handleDismissTask}
+        onRegenerate={handleRegenerate}
       />
 
       {debateTurns.length > 0 && (

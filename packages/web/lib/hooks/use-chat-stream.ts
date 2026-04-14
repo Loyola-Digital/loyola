@@ -265,6 +265,26 @@ export function useChatStream() {
     setThinkingSteps([]);
   }, []);
 
+  const regenerateLast = useCallback(
+    async (mindId: string, projectId?: string) => {
+      if (isStreaming) return;
+      // Find the last user message and drop everything from there onwards.
+      let lastUserIdx = -1;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === "user") {
+          lastUserIdx = i;
+          break;
+        }
+      }
+      if (lastUserIdx === -1) return;
+      const lastUser = messages[lastUserIdx];
+      setMessages((prev) => prev.slice(0, lastUserIdx));
+      setTaskSuggestions((prev) => prev.filter((s) => s.messageIndex < lastUserIdx));
+      await sendMessage(mindId, lastUser.content, undefined, projectId);
+    },
+    [isStreaming, messages, sendMessage],
+  );
+
   return {
     messages,
     isStreaming,
@@ -278,5 +298,6 @@ export function useChatStream() {
     loadHistory,
     updateTaskSuggestion,
     stopStream,
+    regenerateLast,
   };
 }
