@@ -79,11 +79,16 @@ async function scanMMOSMinds(
     // Read config.json if exists
     let name = entry.name.replace(/_/g, " ");
     let id = entry.name;
+    let avatarUrl: string | null = null;
     try {
       const configRaw = await readFile(configPath, "utf-8");
       const config = JSON.parse(configRaw);
+      if (config.display_name) name = config.display_name;
       if (config.name) name = config.name;
       if (config.id) id = config.id;
+      if (typeof config.avatar === "string" && config.avatar.trim().length > 0) {
+        avatarUrl = config.avatar;
+      }
     } catch {
       // config.json optional
     }
@@ -157,7 +162,7 @@ async function scanMMOSMinds(
       squad: squadId,
       squadDisplayName,
       type: "mind",
-      avatarUrl: null,
+      avatarUrl,
       tags,
       specialty,
       artifactPaths,

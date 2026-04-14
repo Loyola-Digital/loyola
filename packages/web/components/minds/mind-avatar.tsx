@@ -1,11 +1,19 @@
 "use client";
 
+import { useState } from "react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 const sizeClasses = {
   sm: "h-8 w-8 text-xs",
   md: "h-10 w-10 text-sm",
   lg: "h-16 w-16 text-xl",
+} as const;
+
+const sizePixels = {
+  sm: 32,
+  md: 40,
+  lg: 64,
 } as const;
 
 const colors = [
@@ -42,13 +50,38 @@ function getInitials(name: string): string {
 
 interface MindAvatarProps {
   name: string;
+  avatarUrl?: string | null;
   size?: "sm" | "md" | "lg";
   className?: string;
 }
 
-export function MindAvatar({ name, size = "md", className }: MindAvatarProps) {
+export function MindAvatar({ name, avatarUrl, size = "md", className }: MindAvatarProps) {
+  const [imgError, setImgError] = useState(false);
   const colorClass = colors[hashName(name) % colors.length];
   const initials = getInitials(name);
+  const px = sizePixels[size];
+
+  if (avatarUrl && !imgError) {
+    return (
+      <div
+        className={cn(
+          "relative overflow-hidden rounded-full bg-muted",
+          sizeClasses[size],
+          className,
+        )}
+      >
+        <Image
+          src={avatarUrl}
+          alt={name}
+          width={px}
+          height={px}
+          className="h-full w-full object-cover"
+          onError={() => setImgError(true)}
+          unoptimized
+        />
+      </div>
+    );
+  }
 
   return (
     <div

@@ -1,8 +1,9 @@
 {
   "mind": "netao",
   "version": "1.0.0",
-  "display_name": "Netao Bom Beef",
+  "display_name": "Netão",
   "real_name": "Domingos Neto",
+  "avatar": "/minds/netao.png",
   "squad": "loyola-experts",
   "primary_prompt": "system_prompts/generalista.md",
   "language": "pt-BR",

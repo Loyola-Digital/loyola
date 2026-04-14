@@ -22,6 +22,7 @@ export function MindProfile({ mind }: MindProfileProps) {
         <div className="relative flex items-start gap-5">
           <MindAvatar
             name={mind.name}
+            avatarUrl={mind.avatarUrl}
             size="lg"
             className="shrink-0 ring-2 ring-border/20 shadow-lg"
           />
