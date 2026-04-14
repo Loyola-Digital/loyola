@@ -12,6 +12,7 @@ interface MessageBubbleProps {
   role: "user" | "assistant";
   content: string;
   mindName?: string;
+  mindAvatarUrl?: string | null;
   isStreaming?: boolean;
   showAvatar?: boolean;
   taskSuggestions?: TaskSuggestion[];
@@ -25,6 +26,7 @@ export function MessageBubble({
   role,
   content,
   mindName,
+  mindAvatarUrl,
   isStreaming,
   showAvatar = true,
   taskSuggestions,
@@ -50,7 +52,12 @@ export function MessageBubble({
       )}
     >
       {!isUser && showAvatar && mindName ? (
-        <MindAvatar name={mindName} size="sm" className="mt-0.5 shrink-0" />
+        <MindAvatar
+          name={mindName}
+          avatarUrl={mindAvatarUrl}
+          size="sm"
+          className="mt-0.5 shrink-0"
+        />
       ) : !isUser && !showAvatar ? (
         <div className="w-8 shrink-0" />
       ) : null}

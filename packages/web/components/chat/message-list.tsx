@@ -16,6 +16,7 @@ interface MessageListProps {
   messages: Message[];
   isStreaming: boolean;
   mindName: string;
+  mindAvatarUrl?: string | null;
   taskSuggestions?: TaskSuggestion[];
   onConfirmTask?: (globalIndex: number) => void;
   onDismissTask?: (globalIndex: number) => void;
@@ -26,6 +27,7 @@ export function MessageList({
   messages,
   isStreaming,
   mindName,
+  mindAvatarUrl,
   taskSuggestions,
   onConfirmTask,
   onDismissTask,
@@ -99,6 +101,7 @@ export function MessageList({
                 role={msg.role}
                 content={msg.content}
                 mindName={mindName}
+                mindAvatarUrl={mindAvatarUrl}
                 isStreaming={isStreaming && isLastAssistant}
                 showAvatar={shouldShowAvatar(i)}
                 attachmentMeta={msg.attachmentMeta}

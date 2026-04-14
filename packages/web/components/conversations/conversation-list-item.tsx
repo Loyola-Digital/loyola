@@ -4,6 +4,7 @@ import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { MindAvatar } from "@/components/minds/mind-avatar";
+import { useMindAvatarLookup } from "@/lib/hooks/use-mind-avatar-lookup";
 import { Badge } from "@/components/ui/badge";
 import type { Conversation } from "@loyola-x/shared";
 
@@ -14,12 +15,13 @@ interface ConversationListItemProps {
 export function ConversationListItem({
   conversation: conv,
 }: ConversationListItemProps) {
+  const resolveAvatar = useMindAvatarLookup();
   return (
     <Link
       href={`/minds/${conv.mindId}/chat?conversationId=${conv.id}`}
       className="flex items-center gap-3 rounded-lg border px-4 py-3 hover:bg-accent transition-colors"
     >
-      <MindAvatar name={conv.mindName} size="sm" />
+      <MindAvatar name={conv.mindName} avatarUrl={resolveAvatar(conv.mindId)} size="sm" />
 
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">

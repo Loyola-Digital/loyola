@@ -11,6 +11,7 @@ import { DebateCard } from "./debate-view";
 interface ChatContainerProps {
   mindId: string;
   mindName: string;
+  mindAvatarUrl?: string | null;
   conversationId?: string;
   projectId?: string;
 }
@@ -18,6 +19,7 @@ interface ChatContainerProps {
 export function ChatContainer({
   mindId,
   mindName,
+  mindAvatarUrl,
   conversationId: initialConversationId,
   projectId,
 }: ChatContainerProps) {
@@ -104,6 +106,7 @@ export function ChatContainer({
         messages={messages}
         isStreaming={isStreaming}
         mindName={mindName}
+        mindAvatarUrl={mindAvatarUrl}
         taskSuggestions={taskSuggestions}
         onConfirmTask={handleConfirmTask}
         onDismissTask={handleDismissTask}

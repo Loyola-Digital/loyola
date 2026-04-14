@@ -60,6 +60,7 @@ export default function ChatPage() {
         <ChatContainer
           mindId={mindId}
           mindName={mind.name}
+          mindAvatarUrl={mind.avatarUrl}
           conversationId={conversationId}
           projectId={projectId}
         />

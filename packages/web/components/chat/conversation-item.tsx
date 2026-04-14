@@ -6,6 +6,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { MindAvatar } from "@/components/minds/mind-avatar";
+import { useMindAvatarLookup } from "@/lib/hooks/use-mind-avatar-lookup";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -31,6 +32,7 @@ export function ConversationItem({
   isActive,
   onDelete,
 }: ConversationItemProps) {
+  const resolveAvatar = useMindAvatarLookup();
   return (
     <div
       className={cn(
@@ -42,7 +44,11 @@ export function ConversationItem({
         href={`/minds/${conversation.mindId}/chat?conversationId=${conversation.id}`}
         className="flex flex-1 items-center gap-3 min-w-0"
       >
-        <MindAvatar name={conversation.mindName ?? conversation.mindId} size="sm" />
+        <MindAvatar
+          name={conversation.mindName ?? conversation.mindId}
+          avatarUrl={resolveAvatar(conversation.mindId)}
+          size="sm"
+        />
         <div className="flex-1 min-w-0">
           <p className="font-medium truncate">
             {conversation.mindName ?? conversation.mindId}
