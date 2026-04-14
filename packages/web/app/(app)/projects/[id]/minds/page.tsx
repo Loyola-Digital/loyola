@@ -91,6 +91,7 @@ export default function ProjectMindsPage({ params }: Props) {
                 <div className="flex items-start gap-3.5">
                   <MindAvatar
                     name={mind.mindName}
+                    avatarUrl={mind.avatarUrl}
                     className="ring-2 ring-border/20 group-hover:ring-brand/30 transition-all duration-300 shrink-0"
                   />
                   <div className="min-w-0 flex-1 pr-4">

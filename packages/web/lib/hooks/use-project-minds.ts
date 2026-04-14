@@ -10,6 +10,7 @@ export interface ProjectMind {
   squad: string;
   squadDisplayName: string;
   specialty: string;
+  avatarUrl: string | null;
   addedBy: string;
   createdAt: string;
 }

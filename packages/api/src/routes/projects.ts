@@ -406,6 +406,7 @@ export default fp(async function projectRoutes(fastify) {
           squad: mind?.squad ?? "unknown",
           squadDisplayName: mind?.squadDisplayName ?? "Unknown",
           specialty: mind?.specialty ?? "",
+          avatarUrl: mind?.avatarUrl ?? null,
         };
       });
 
