@@ -1,0 +1,44 @@
+schema: 1
+story: '16.1'
+gate: PASS
+status_reason: 'All 6 acceptance criteria met. Components follow shadcn unified radix-ui pattern, typecheck + lint clean, graceful fallbacks in place. Minor non-blocking concerns documented.'
+reviewer: 'Quinn'
+updated: '2026-04-14T00:00:00Z'
+top_issues:
+  - id: 'TEST-001'
+    severity: low
+    finding: 'Components ship without unit tests (React Testing Library). Story did not list automated tests as AC — demo page at /dev/metrics-demo + visual review were the agreed test strategy.'
+    suggested_action: 'Track as tech debt. Add RTL coverage for <MetricWithTooltip> (graceful fallback without formula) and <FormulaChartTooltip> (payload parsing, empty state, multi-series) when 16.2 starts consuming them.'
+  - id: 'MNT-001'
+    severity: low
+    finding: 'Array index used as React key in formula-chart-tooltip.tsx:77 and :106 (.map with key={i}).'
+    suggested_action: 'Acceptable here because Recharts payload order is stable per render. If payload reorders in future variations, switch to stable id (dataKey or seriesName).'
+  - id: 'MNT-002'
+    severity: low
+    finding: 'Cast `value as string | number` at formula-chart-tooltip.tsx:108 — Recharts types entry.value as `any`, so cast is functionally safe but TS-wise loose.'
+    suggested_action: 'Optional: narrow with explicit typeof guard before passing to <FormulaTooltipContent>.'
+  - id: 'DOC-001'
+    severity: low
+    finding: 'aria-describedby not explicitly set — relies on Radix Tooltip primitive internal wiring, which is correct but not obvious to reviewers.'
+    suggested_action: 'Radix auto-wires aria-describedby via Trigger/Content pair. No action required; documented for future auditors.'
+waiver: { active: false }
+blast_radius:
+  files_modified: 8
+  files_new: 6
+  downstream_stories_unblocked: 6  # 16.2 → 16.7
+  risk_level: LOW  # opt-in component, no existing call sites touched
+coverage:
+  ac1_types: PASS
+  ac2_metric_with_tooltip: PASS
+  ac3_formula_tooltip_content: PASS
+  ac4_formula_chart_tooltip: PASS
+  ac5_accessibility: PASS  # Radix handles aria-describedby; keyboard focus works
+  ac6_demo_page: PASS
+quality_checks:
+  code_review: PASS
+  unit_tests: CONCERN  # no automated tests (TEST-001 low)
+  acceptance_criteria: PASS
+  no_regressions: PASS
+  performance: PASS
+  security: PASS
+  documentation: PASS  # JSDoc present on all exports
