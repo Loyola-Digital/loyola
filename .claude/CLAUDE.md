@@ -149,6 +149,18 @@ O AIOX carrega regras contextuais de `.claude/rules/` automaticamente. Regras co
 | `team-scopes.md` | Team member identification via `git config user.email` + scope enforcement (soft) — source: `docs/team/members.md` |
 
 > **Diretório:** `.claude/rules/` — rules são carregadas automaticamente pelo Claude Code quando relevantes.
+
+## Team & Project Context
+
+Ao operar neste repo, leia estes documentos versionados como referência primária:
+
+| Doc | Propósito |
+|-----|-----------|
+| `docs/team/members.md` | Integrantes do time e scope de edição por pessoa (fonte do `team-scopes` rule) |
+| `docs/team/collaboration.md` | Fluxo git, branch protection, como resolver conflitos, setup inicial |
+| `docs/team/project-context.md` | Contexto do produto (Loyola Digital X) — arquitetura, domínios, epics, integrações |
+
+**Branch protection:** `main` exige PR (push direto bloqueado). Ver `docs/team/collaboration.md` para detalhes completos.
 <!-- AIOX-MANAGED-END: rules-system -->
 
 <!-- AIOX-MANAGED-START: code-intelligence -->
