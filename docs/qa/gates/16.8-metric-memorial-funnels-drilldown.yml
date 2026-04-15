@@ -1,0 +1,49 @@
+schema: 1
+story: '16.8'
+gate: PASS
+status_reason: 'All 6 ACs met. MetricTooltip aplicado em MetricsTable (Públicos/Anúncios), FunnelCampaignTable (3 níveis: Campanha/AdSet/Ad com caminho completo), e tabela Detalhamento do perpetual-dashboard (9 colunas). Helper enrichFormulaForEntity puro, retrocompat via funnel? optional. Typecheck + lint clean. Sem regressão em sort/expand/lightbox.'
+reviewer: 'Quinn'
+updated: '2026-04-15T00:00:00Z'
+top_issues:
+  - id: 'TEST-008'
+    severity: low
+    finding: 'Novo helper enrichFormulaForEntity é pure function trivialmente testável (5 casos: formula undefined → undefined, path vazio → unchanged, só campaign, só adset, campaign+adset+ad com note existente prepend). Sem suite de testes no projeto.'
+    suggested_action: 'Backlog debt: criar packages/web/lib/formulas/__tests__/funnels.test.ts junto com primeira story que instituir Vitest/Jest no projeto. Não bloqueia — consistente com padrão herdado de 16.1-16.7.'
+  - id: 'PERF-003'
+    severity: low
+    finding: 'perpetual-dashboard.tsx: const f = { days, funnelType, funnelName } declarado dentro do map tableData.map() — gera nova reference por row. Não causa re-render porque f não é usado como key/dep, mas é desperdício.'
+    suggested_action: 'Micro-refactor: extrair f para fora do map (antes do return) ou usar useMemo. Não-bloqueante — impact imperceptível com N<100 rows típicos.'
+  - id: 'DOC-003'
+    severity: low
+    finding: 'Novas funções (enrichFormulaForEntity, NumericCell, buildRowFormulas, formatEntityPath) sem JSDoc. Nomes auto-explicativos cobrem a maioria dos casos.'
+    suggested_action: 'Opcional — adicionar JSDoc curto a enrichFormulaForEntity em sprint de docs. Factories existentes em funnels.ts também não têm JSDoc, então é aderente ao padrão do arquivo.'
+waiver: { active: false }
+coverage:
+  ac1_metricstable_com_memorial: PASS
+  ac2_funnelcampaigntable_3_niveis: PASS
+  ac3_entity_identification_contextual: PASS  # note enriquecido com path completo nos 3 níveis
+  ac4_reuso_factories: PASS  # 100% reuso, só helper adicionado
+  ac5_sem_regressao: PASS  # sort/expand/lightbox intocados
+  ac6_cobertura_launch_perpetual: PASS
+quality_checks:
+  code_review: PASS
+  unit_tests: CONCERN  # TEST-008 low
+  acceptance_criteria: PASS
+  no_regressions: PASS
+  performance: CONCERN  # PERF-003 low
+  security: PASS
+  documentation: PASS  # DOC-003 low não bloqueia
+risks_resolution:
+  r1_perf_muitas_linhas: RESOLVED  # Radix Tooltip lazy mount + MetricTooltip passthrough quando formula=undefined
+  r2_poluicao_kpi_cards: RESOLVED  # enrichFormulaForEntity só é chamado nos componentes de tabela — KPI cards usam factories puras sem enrich
+  r3_lightbox_conflict: RESOLVED  # tooltip no span dentro do td; lightbox onClick no button separado — sem conflito de event propagation
+blast_radius:
+  files_modified: 5  # 4 componentes + 1 helper (+ 1 story doc + 1 gate yml)
+  files_new: 0
+  lines_changed: '+520 / -94'
+  downstream_stories_unblocked: 0  # Epic 16 já estava fechado; esta é extension
+  risk_level: LOW  # Extensão aditiva, retrocompat garantida, abordagem alinhada com stories anteriores
+commit: '44d5f37'
+branch: 'feature/16.8-funnels-drilldown-memorial'
+smoke_test: 'DEFERRED_TO_USER'  # dev server rodado pelo usuário separadamente — inspeção de código + tsc+lint clean suficientes pra PASS
+coderabbit_status: 'SKIPPED'  # binário não instalado neste WSL — documentado em change log

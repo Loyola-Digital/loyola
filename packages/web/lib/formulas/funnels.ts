@@ -136,3 +136,32 @@ export function buildFunnelDailyFormula(label: string, apiSource: string, value:
     period: dateLabel,
   };
 }
+
+// ============================================================
+// Drill-down enrichment
+// ============================================================
+
+export interface EntityPath {
+  campaign?: string;
+  adset?: string;
+  ad?: string;
+}
+
+function formatEntityPath(p: EntityPath): string {
+  const parts: string[] = [];
+  if (p.campaign) parts.push(`Campanha: ${p.campaign}`);
+  if (p.adset) parts.push(`Ad Set: ${p.adset}`);
+  if (p.ad) parts.push(`Ad: ${p.ad}`);
+  return parts.join(" · ");
+}
+
+export function enrichFormulaForEntity(
+  formula: MetricFormula | undefined,
+  path: EntityPath,
+): MetricFormula | undefined {
+  if (!formula) return undefined;
+  const entityNote = formatEntityPath(path);
+  if (!entityNote) return formula;
+  const combinedNote = formula.note ? `${entityNote}\n${formula.note}` : entityNote;
+  return { ...formula, note: combinedNote };
+}

@@ -3,6 +3,18 @@
 import { useState, useMemo } from "react";
 import { ArrowUpDown } from "lucide-react";
 import type { CampaignAnalytics } from "@/lib/hooks/use-traffic-analytics";
+import { MetricTooltip } from "@/components/metrics/metric-tooltip";
+import {
+  buildFunnelSpendFormula,
+  buildFunnelLeadsFormula,
+  buildFunnelCplFormula,
+  buildFunnelConnectRateFormula,
+  buildFunnelCtrFormula,
+  buildFunnelCpcFormula,
+  buildFunnelCpmFormula,
+  enrichFormulaForEntity,
+  type FunnelFilters,
+} from "@/lib/formulas/funnels";
 
 function fmtCurrency(val: number | null | undefined): string {
   if (val == null || val === 0) return "—";
@@ -26,23 +38,70 @@ function fmtPercent(val: number | null | undefined): string {
 interface MetricsTableProps {
   title: string;
   rows: CampaignAnalytics[];
+  funnel?: FunnelFilters;
+  entityType?: "adset" | "ad";
 }
 
 type SortableCol = "spend" | "leads" | "cpl" | "connectRate" | "ctr" | "cpc" | "cpm";
 
-const columns: { label: string; col: SortableCol; fmt: (row: CampaignAnalytics) => string }[] = [
-  { label: "Investimento", col: "spend", fmt: (r) => fmtCurrency(r.spend) },
-  { label: "Leads", col: "leads", fmt: (r) => fmtNumber(r.leads) },
-  { label: "CPL", col: "cpl", fmt: (r) => fmtCurrency(r.cpl) },
-  { label: "Connect Rate", col: "connectRate", fmt: (r) => fmtPercent(r.connectRate) },
-  { label: "CTR", col: "ctr", fmt: (r) => fmtPercent(r.ctr) },
-  { label: "CPC", col: "cpc", fmt: (r) => fmtCurrency(r.cpc) },
-  { label: "CPM", col: "cpm", fmt: (r) => fmtCurrency(r.cpm) },
+interface ColumnDef {
+  label: string;
+  col: SortableCol;
+  fmt: (row: CampaignAnalytics) => string;
+  formula: (row: CampaignAnalytics, f: FunnelFilters) => ReturnType<typeof buildFunnelSpendFormula>;
+}
+
+const columns: ColumnDef[] = [
+  {
+    label: "Investimento",
+    col: "spend",
+    fmt: (r) => fmtCurrency(r.spend),
+    formula: (r, f) => buildFunnelSpendFormula(r.spend, f),
+  },
+  {
+    label: "Leads",
+    col: "leads",
+    fmt: (r) => fmtNumber(r.leads),
+    formula: (r, f) => buildFunnelLeadsFormula(r.leads, f),
+  },
+  {
+    label: "CPL",
+    col: "cpl",
+    fmt: (r) => fmtCurrency(r.cpl),
+    formula: (r, f) => buildFunnelCplFormula(r.spend, r.leads, f),
+  },
+  {
+    label: "Connect Rate",
+    col: "connectRate",
+    fmt: (r) => fmtPercent(r.connectRate),
+    formula: (r, f) => buildFunnelConnectRateFormula(r.connectRate, f),
+  },
+  {
+    label: "CTR",
+    col: "ctr",
+    fmt: (r) => fmtPercent(r.ctr),
+    formula: (r, f) => buildFunnelCtrFormula(r.ctr, f),
+  },
+  {
+    label: "CPC",
+    col: "cpc",
+    fmt: (r) => fmtCurrency(r.cpc),
+    formula: (r, f) => buildFunnelCpcFormula(r.cpc, f),
+  },
+  {
+    label: "CPM",
+    col: "cpm",
+    fmt: (r) => fmtCurrency(r.cpm),
+    formula: (r, f) => buildFunnelCpmFormula(r.cpm, f),
+  },
 ];
 
-export function MetricsTable({ title, rows }: MetricsTableProps) {
+export function MetricsTable({ title, rows, funnel, entityType }: MetricsTableProps) {
   const [sortCol, setSortCol] = useState<SortableCol>("spend");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const derivedEntityType: "adset" | "ad" = entityType
+    ?? (title.toLowerCase().includes("públic") || title.toLowerCase().includes("public") ? "adset" : "ad");
 
   const sorted = useMemo(() => {
     return [...rows].sort((a, b) => {
@@ -84,18 +143,36 @@ export function MetricsTable({ title, rows }: MetricsTableProps) {
             </tr>
           </thead>
           <tbody>
-            {sorted.map((row) => (
-              <tr key={row.campaignId} className="border-t border-border/20 hover:bg-muted/30 transition-colors">
-                <td className="py-2 px-3 text-xs font-medium whitespace-nowrap">
-                  <span className="truncate max-w-[260px] inline-block">{row.campaignName}</span>
-                </td>
-                {columns.map((c) => (
-                  <td key={c.col} className={`py-2 px-2 text-xs text-right ${c.col === "spend" ? "font-medium" : ""}`}>
-                    {c.fmt(row)}
+            {sorted.map((row) => {
+              const entityPath = derivedEntityType === "adset"
+                ? { adset: row.campaignName }
+                : { ad: row.campaignName };
+              return (
+                <tr key={row.campaignId} className="border-t border-border/20 hover:bg-muted/30 transition-colors">
+                  <td className="py-2 px-3 text-xs font-medium whitespace-nowrap">
+                    <span className="truncate max-w-[260px] inline-block">{row.campaignName}</span>
                   </td>
-                ))}
-              </tr>
-            ))}
+                  {columns.map((c) => {
+                    const formattedValue = c.fmt(row);
+                    const cellClasses = `py-2 px-2 text-xs text-right ${c.col === "spend" ? "font-medium" : ""}`;
+                    if (!funnel) {
+                      return <td key={c.col} className={cellClasses}>{formattedValue}</td>;
+                    }
+                    const baseFormula = c.formula(row, funnel);
+                    const enriched = enrichFormulaForEntity(baseFormula, entityPath);
+                    return (
+                      <td key={c.col} className={cellClasses}>
+                        <MetricTooltip label={c.label} value={formattedValue} formula={enriched}>
+                          <span className={enriched ? "cursor-help underline decoration-dotted decoration-border/60 underline-offset-2" : undefined}>
+                            {formattedValue}
+                          </span>
+                        </MetricTooltip>
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
