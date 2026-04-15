@@ -39,7 +39,12 @@ export function EditFunnelSpreadsheetDialog({
   const { data: sheetData, isLoading } = useSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName);
   const updateSpreadsheet = useUpdateFunnelSpreadsheet(projectId, funnelId);
 
-  const columns = sheetData?.headers ?? [];
+  const rawHeaders = sheetData?.headers ?? [];
+  const columns = Array.from(
+    new Set(
+      rawHeaders.map((h, i) => (h && h.trim().length > 0 ? h : `Coluna ${i + 1}`)),
+    ),
+  );
   const mappedCount = countMappedFields(mapping);
   const canSave = mappedCount > 0 && label.trim().length > 0;
 
