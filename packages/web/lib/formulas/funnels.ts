@@ -138,6 +138,36 @@ export function buildFunnelDailyFormula(label: string, apiSource: string, value:
 }
 
 // ============================================================
+// Funnel conversion stages
+// ============================================================
+
+export function buildFunnelStageFormula(stageLabel: string, value: number, apiSource: string): MetricFormula {
+  return {
+    expression: `Σ ${stageLabel.toLowerCase()}`,
+    values: [{ label: stageLabel, value: nf.format(value), source: apiSource }],
+    result: nf.format(value),
+  };
+}
+
+export function buildFunnelStageConversionFormula(
+  fromLabel: string,
+  fromValue: number,
+  toLabel: string,
+  toValue: number,
+): MetricFormula | undefined {
+  if (fromValue <= 0) return undefined;
+  const rate = (toValue / fromValue) * 100;
+  return {
+    expression: `${toLabel} ÷ ${fromLabel} × 100`,
+    values: [
+      { label: fromLabel, value: nf.format(fromValue), source: "Meta Ads API · derivado" },
+      { label: toLabel, value: nf.format(toValue), source: "Meta Ads API · derivado" },
+    ],
+    result: `${nf.format(toValue)} ÷ ${nf.format(fromValue)} × 100 = ${rate.toFixed(1)}%`,
+  };
+}
+
+// ============================================================
 // Drill-down enrichment
 // ============================================================
 

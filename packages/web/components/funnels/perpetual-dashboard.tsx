@@ -96,14 +96,6 @@ function safeNum(val: string | undefined): number {
   return val ? parseFloat(val) : 0;
 }
 
-const TOOLTIP_STYLE = {
-  backgroundColor: "hsl(var(--card))",
-  border: "1px solid hsl(var(--border))",
-  borderRadius: "8px",
-  fontSize: "12px",
-  color: "#fff",
-};
-
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
@@ -250,25 +242,25 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
           return (
             <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
               <MetricTooltip label="ROAS" value={fmtRoas(overview.roas)} formula={buildFunnelRoasFormula(overview.roas, f)}>
-                <KpiCard icon={Target} label="ROAS" value={fmtRoas(overview.roas)} target={2} actual={overview.roas} />
+                <KpiCard icon={Target} label="ROAS" value={fmtRoas(overview.roas)} target={2} actual={overview.roas} hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="Investimento" value={fmtCurrency(overview.totalSpend)} formula={buildFunnelSpendFormula(overview.totalSpend, f)}>
-                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} />
+                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="Vendas" value={fmtNumber(overview.totalSales)} formula={buildFunnelSalesCountFormula(overview.totalSales, f)}>
-                <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(overview.totalSales)} />
+                <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(overview.totalSales)} hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="Receita" value={fmtCurrency(overview.totalRevenue)} formula={buildFunnelRevenueFormula(overview.totalRevenue, f)}>
-                <KpiCard icon={DollarSign} label="Receita" value={fmtCurrency(overview.totalRevenue)} />
+                <KpiCard icon={DollarSign} label="Receita" value={fmtCurrency(overview.totalRevenue)} hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="CAC" value={fmtCurrency(overview.cac)} formula={buildFunnelCacFormula(overview.cac, f)}>
-                <KpiCard icon={DollarSign} label="CAC" value={fmtCurrency(overview.cac)} />
+                <KpiCard icon={DollarSign} label="CAC" value={fmtCurrency(overview.cac)} hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="Margem" value={fmtCurrency(overview.margin)} formula={buildFunnelMarginFormula(overview.margin, f)}>
-                <KpiCard icon={DollarSign} label="Margem" value={fmtCurrency(overview.margin)} />
+                <KpiCard icon={DollarSign} label="Margem" value={fmtCurrency(overview.margin)} hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="Margem %" value={fmtPercent(overview.marginPercent)} formula={buildFunnelMarginPercentFormula(overview.marginPercent, f)}>
-                <KpiCard icon={BarChart3} label="Margem %" value={fmtPercent(overview.marginPercent)} />
+                <KpiCard icon={BarChart3} label="Margem %" value={fmtPercent(overview.marginPercent)} hintTooltip />
               </MetricTooltip>
             </div>
           );
@@ -283,13 +275,13 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
         return (
           <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
             <MetricTooltip label="Connect Rate" value={overview.connectRate != null ? `${overview.connectRate.toFixed(2)}%` : "—"} formula={buildFunnelRateFormula("Connect Rate", "Landing Page Views ÷ Link Clicks × 100", overview.connectRate, f)}>
-              <RateCard label="Connect Rate" sublabel="Landing Page / Link Clicks" value={overview.connectRate} />
+              <RateCard label="Connect Rate" sublabel="Landing Page / Link Clicks" value={overview.connectRate} hintTooltip />
             </MetricTooltip>
             <MetricTooltip label="Taxa Visita Checkout" value={overview.checkoutRate != null ? `${overview.checkoutRate.toFixed(2)}%` : "—"} formula={buildFunnelRateFormula("Taxa Visita Checkout", "Checkout ÷ Link Clicks × 100", overview.checkoutRate, f)}>
-              <RateCard label="Taxa Visita Checkout" sublabel="Checkout / Link Clicks" value={overview.checkoutRate} />
+              <RateCard label="Taxa Visita Checkout" sublabel="Checkout / Link Clicks" value={overview.checkoutRate} hintTooltip />
             </MetricTooltip>
             <MetricTooltip label="Taxa Conversão Checkout" value={overview.checkoutConversionRate != null ? `${overview.checkoutConversionRate.toFixed(2)}%` : "—"} formula={buildFunnelRateFormula("Taxa Conversão Checkout", "Compra ÷ Checkout × 100", overview.checkoutConversionRate, f)}>
-              <RateCard label="Taxa Conversao Checkout" sublabel="Compra / Checkout" value={overview.checkoutConversionRate} />
+              <RateCard label="Taxa Conversao Checkout" sublabel="Compra / Checkout" value={overview.checkoutConversionRate} hintTooltip />
             </MetricTooltip>
           </div>
         );
@@ -374,15 +366,35 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
       {/* GRÁFICOS EM BARRAS HORIZONTAIS: Receita por canal/público/criativo */}
       {/* ================================================================ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <HBarChart title="Receita por Canal" data={revenueByCampaign} />
-        <HBarChart title="Receita por Publico" data={revenueByAudience} />
-        <HBarChart title="Receita por Criativo" data={revenueByCreative} />
+        <HBarChart
+          title="Receita por Canal"
+          data={revenueByCampaign}
+          funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+          entityType="campaign"
+        />
+        <HBarChart
+          title="Receita por Publico"
+          data={revenueByAudience}
+          funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+          entityType="adset"
+        />
+        <HBarChart
+          title="Receita por Criativo"
+          data={revenueByCreative}
+          funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+          entityType="ad"
+        />
       </div>
 
       {/* ================================================================ */}
       {/* TOP CRIATIVOS                                                    */}
       {/* ================================================================ */}
-      <TopCreativesGallery projectId={projectId} days={days} campaignIds={campaignIds} />
+      <TopCreativesGallery
+        projectId={projectId}
+        days={days}
+        campaignIds={campaignIds}
+        funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+      />
 
       {/* ================================================================ */}
       {/* TABELA DETALHADA COM FILTRO                                      */}
@@ -481,23 +493,23 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
 // SUB-COMPONENTS
 // ============================================================
 
-function KpiCard({ icon: Icon, label, value, target, actual }: {
+function KpiCard({ icon: Icon, label, value, target, actual, hintTooltip }: {
   icon: React.ComponentType<{ className?: string }>; label: string; value: string;
-  target?: number; actual?: number | null;
+  target?: number; actual?: number | null; hintTooltip?: boolean;
 }) {
   const isRoas = target !== undefined;
   const roasOk = isRoas && actual != null && actual >= target;
   const roasBad = isRoas && actual != null && actual < target;
 
   return (
-    <div className={`rounded-xl border p-3 hover:border-border/50 transition-colors ${
+    <div className={`rounded-xl border p-3 hover:border-border/50 transition-colors ${hintTooltip ? "cursor-help" : ""} ${
       roasOk ? "border-emerald-500/30 bg-emerald-500/5" : roasBad ? "border-red-500/30 bg-red-500/5" : "border-border/30 bg-gradient-to-br from-card/80 to-card/40"
     }`}>
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
       </div>
-      <p className="text-xl font-bold tracking-tight">{value}</p>
+      <p className={`text-xl font-bold tracking-tight ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
       {isRoas && (
         <p className="text-[9px] text-muted-foreground mt-0.5">
           Meta: {target}x {roasOk ? <span className="text-emerald-500">OK</span> : <span className="text-red-400">Abaixo</span>}
@@ -507,17 +519,22 @@ function KpiCard({ icon: Icon, label, value, target, actual }: {
   );
 }
 
-function RateCard({ label, sublabel, value }: { label: string; sublabel: string; value: number | null }) {
+function RateCard({ label, sublabel, value, hintTooltip }: { label: string; sublabel: string; value: number | null; hintTooltip?: boolean }) {
   return (
-    <div className="rounded-xl border border-border/30 bg-card/60 p-4">
+    <div className={`rounded-xl border border-border/30 bg-card/60 p-4 ${hintTooltip ? "cursor-help" : ""}`}>
       <p className="text-sm font-semibold">{label}</p>
       <p className="text-[10px] text-muted-foreground mb-2">{sublabel}</p>
-      <p className="text-2xl font-bold">{fmtPercent(value)}</p>
+      <p className={`text-2xl font-bold ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{fmtPercent(value)}</p>
     </div>
   );
 }
 
-function HBarChart({ title, data }: { title: string; data: { name: string; revenue: number }[] }) {
+function HBarChart({ title, data, funnelContext, entityType }: {
+  title: string;
+  data: { name: string; revenue: number }[];
+  funnelContext: { days: number; funnelType: "perpetual"; funnelName?: string };
+  entityType: "campaign" | "adset" | "ad";
+}) {
   if (data.length === 0) {
     return (
       <div className="rounded-xl border border-border/30 bg-card/60 p-5">
@@ -526,15 +543,25 @@ function HBarChart({ title, data }: { title: string; data: { name: string; reven
       </div>
     );
   }
+  const enrichedData = data.map((d) => {
+    const path: EntityPath =
+      entityType === "campaign" ? { campaign: d.name }
+      : entityType === "adset" ? { adset: d.name }
+      : { ad: d.name };
+    return {
+      ...d,
+      formula: enrichFormulaForEntity(buildFunnelRevenueFormula(d.revenue, funnelContext), path),
+    };
+  });
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5">
       <h3 className="text-sm font-semibold mb-4">{title}</h3>
       <ResponsiveContainer width="100%" height={data.length * 36 + 20}>
-        <BarChart data={data} layout="vertical" margin={{ left: 0, right: 10, top: 0, bottom: 0 }}>
+        <BarChart data={enrichedData} layout="vertical" margin={{ left: 0, right: 10, top: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
           <XAxis type="number" tick={{ fontSize: 10, fill: "#fff" }} tickFormatter={(v) => fmtCurrency(v)} />
           <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10, fill: "#fff" }} />
-          <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v) => [fmtCurrency(Number(v)), "Receita"]} />
+          <Tooltip content={<FormulaChartTooltip />} />
           <Bar dataKey="revenue" fill="hsl(150 60% 50%)" radius={[0, 4, 4, 0]} barSize={20} />
         </BarChart>
       </ResponsiveContainer>
