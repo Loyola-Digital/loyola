@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { TrendingUp, Youtube, FileSpreadsheet } from "lucide-react";
+import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -9,6 +9,7 @@ import { LaunchDashboard } from "@/components/funnels/launch-dashboard";
 import { PerpetualDashboard } from "@/components/funnels/perpetual-dashboard";
 import { YouTubeFunnelSection } from "@/components/funnels/youtube-funnel-section";
 import { SurveyFunnelTab } from "@/components/funnels/survey-funnel-tab";
+import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-tab";
 
 export default function FunnelPage() {
   const params = useParams<{ id: string; funnelId: string }>();
@@ -69,6 +70,10 @@ export default function FunnelPage() {
             <FileSpreadsheet className="h-3.5 w-3.5 text-green-600" />
             Pesquisas
           </TabsTrigger>
+          <TabsTrigger value="spreadsheets" className="gap-1.5">
+            <TableIcon className="h-3.5 w-3.5 text-blue-600" />
+            Planilhas
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="meta-ads" className="mt-6">
@@ -85,6 +90,10 @@ export default function FunnelPage() {
 
         <TabsContent value="surveys" className="mt-6">
           <SurveyFunnelTab projectId={params.id} funnelId={params.funnelId} />
+        </TabsContent>
+
+        <TabsContent value="spreadsheets" className="mt-6">
+          <FunnelSpreadsheetsTab projectId={params.id} funnelId={params.funnelId} />
         </TabsContent>
       </Tabs>
     </div>
