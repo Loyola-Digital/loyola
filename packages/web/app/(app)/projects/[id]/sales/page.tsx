@@ -13,6 +13,21 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { useSalesAscension } from "@/lib/hooks/use-sales";
+import { MetricTooltip } from "@/components/metrics/metric-tooltip";
+import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
+import {
+  buildSalesFrontFormula,
+  buildSalesBackFormula,
+  buildAscendedFormula,
+  buildConversionRateFormula,
+  buildAvgDaysFormula,
+  buildRevenueFrontFormula,
+  buildRevenueBackFormula,
+  buildTicketFrontFormula,
+  buildLtvFormula,
+  buildSalesDailyPointFormula,
+  buildCohortPointFormula,
+} from "@/lib/formulas/sales";
 
 interface Props { params: Promise<{ id: string }>; }
 
@@ -76,20 +91,38 @@ export default function ProjectSalesPage({ params }: Props) {
         <>
           {/* Row 1: Volume KPIs */}
           <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
-            <KpiCard icon={ShoppingCart} label="Vendas Front" value={fmt(asc.totalInferior)} sub={asc.inferiorProducts.join(", ")} gradient="from-blue-500/10 to-blue-600/5" border="border-blue-500/20" />
-            <KpiCard icon={ShoppingCart} label="Vendas Back" value={fmt(asc.totalSuperior)} sub={asc.superiorProducts.join(", ")} gradient="from-purple-500/10 to-purple-600/5" border="border-purple-500/20" />
-            <KpiCard icon={TrendingUp} label="Ascenderam" value={fmt(asc.totalAscended)} sub={`${asc.conversionRate.toFixed(1)}% conversao`} gradient="from-emerald-500/10 to-emerald-600/5" border="border-emerald-500/20" />
-            <KpiCard icon={Users} label="Taxa Ascensao" value={`${asc.conversionRate.toFixed(1)}%`} sub="front → back" gradient={asc.conversionRate >= 10 ? "from-emerald-500/10 to-emerald-600/5" : "from-amber-500/10 to-amber-600/5"} border={asc.conversionRate >= 10 ? "border-emerald-500/20" : "border-amber-500/20"} />
-            <KpiCard icon={Clock} label="Tempo Medio" value={`${asc.avgDaysToAscend}d`} sub="para ascender" gradient="from-amber-500/10 to-amber-600/5" border="border-amber-500/20" />
+            <MetricTooltip label="Vendas Front" value={fmt(asc.totalInferior)} formula={buildSalesFrontFormula(asc.totalInferior, asc.inferiorProducts)}>
+              <KpiCard icon={ShoppingCart} label="Vendas Front" value={fmt(asc.totalInferior)} sub={asc.inferiorProducts.join(", ")} gradient="from-blue-500/10 to-blue-600/5" border="border-blue-500/20" />
+            </MetricTooltip>
+            <MetricTooltip label="Vendas Back" value={fmt(asc.totalSuperior)} formula={buildSalesBackFormula(asc.totalSuperior, asc.superiorProducts)}>
+              <KpiCard icon={ShoppingCart} label="Vendas Back" value={fmt(asc.totalSuperior)} sub={asc.superiorProducts.join(", ")} gradient="from-purple-500/10 to-purple-600/5" border="border-purple-500/20" />
+            </MetricTooltip>
+            <MetricTooltip label="Ascenderam" value={fmt(asc.totalAscended)} formula={buildAscendedFormula(asc.totalAscended, asc.totalInferior)}>
+              <KpiCard icon={TrendingUp} label="Ascenderam" value={fmt(asc.totalAscended)} sub={`${asc.conversionRate.toFixed(1)}% conversao`} gradient="from-emerald-500/10 to-emerald-600/5" border="border-emerald-500/20" />
+            </MetricTooltip>
+            <MetricTooltip label="Taxa Ascensão" value={`${asc.conversionRate.toFixed(1)}%`} formula={buildConversionRateFormula(asc.totalAscended, asc.totalInferior)}>
+              <KpiCard icon={Users} label="Taxa Ascensao" value={`${asc.conversionRate.toFixed(1)}%`} sub="front → back" gradient={asc.conversionRate >= 10 ? "from-emerald-500/10 to-emerald-600/5" : "from-amber-500/10 to-amber-600/5"} border={asc.conversionRate >= 10 ? "border-emerald-500/20" : "border-amber-500/20"} />
+            </MetricTooltip>
+            <MetricTooltip label="Tempo Médio" value={`${asc.avgDaysToAscend}d`} formula={buildAvgDaysFormula(asc.avgDaysToAscend)}>
+              <KpiCard icon={Clock} label="Tempo Medio" value={`${asc.avgDaysToAscend}d`} sub="para ascender" gradient="from-amber-500/10 to-amber-600/5" border="border-amber-500/20" />
+            </MetricTooltip>
           </div>
 
           {/* Row 2: Revenue KPIs */}
           {(asc.revenueInferior > 0 || asc.revenueSuperior > 0) && (
             <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-              <KpiCard icon={DollarSign} label="Receita Front" value={fmtCurrency(asc.revenueInferior)} gradient="from-blue-500/10 to-blue-600/5" border="border-blue-500/20" />
-              <KpiCard icon={DollarSign} label="Receita Back" value={fmtCurrency(asc.revenueSuperior)} gradient="from-purple-500/10 to-purple-600/5" border="border-purple-500/20" />
-              <KpiCard icon={DollarSign} label="Ticket Medio Front" value={fmtCurrency(asc.ticketMedioInferior)} gradient="from-cyan-500/10 to-cyan-600/5" border="border-cyan-500/20" />
-              <KpiCard icon={DollarSign} label="LTV Estimado" value={fmtCurrency(asc.ltvEstimado)} sub="front + back por cliente" gradient="from-emerald-500/10 to-emerald-600/5" border="border-emerald-500/20" />
+              <MetricTooltip label="Receita Front" value={fmtCurrency(asc.revenueInferior)} formula={buildRevenueFrontFormula(asc.revenueInferior)}>
+                <KpiCard icon={DollarSign} label="Receita Front" value={fmtCurrency(asc.revenueInferior)} gradient="from-blue-500/10 to-blue-600/5" border="border-blue-500/20" />
+              </MetricTooltip>
+              <MetricTooltip label="Receita Back" value={fmtCurrency(asc.revenueSuperior)} formula={buildRevenueBackFormula(asc.revenueSuperior)}>
+                <KpiCard icon={DollarSign} label="Receita Back" value={fmtCurrency(asc.revenueSuperior)} gradient="from-purple-500/10 to-purple-600/5" border="border-purple-500/20" />
+              </MetricTooltip>
+              <MetricTooltip label="Ticket Médio Front" value={fmtCurrency(asc.ticketMedioInferior)} formula={buildTicketFrontFormula(asc.ticketMedioInferior, asc.totalInferior, asc.revenueInferior)}>
+                <KpiCard icon={DollarSign} label="Ticket Medio Front" value={fmtCurrency(asc.ticketMedioInferior)} gradient="from-cyan-500/10 to-cyan-600/5" border="border-cyan-500/20" />
+              </MetricTooltip>
+              <MetricTooltip label="LTV Estimado" value={fmtCurrency(asc.ltvEstimado)} formula={buildLtvFormula(asc.ltvEstimado)}>
+                <KpiCard icon={DollarSign} label="LTV Estimado" value={fmtCurrency(asc.ltvEstimado)} sub="front + back por cliente" gradient="from-emerald-500/10 to-emerald-600/5" border="border-emerald-500/20" />
+              </MetricTooltip>
             </div>
           )}
 
@@ -127,7 +160,16 @@ export default function ProjectSalesPage({ params }: Props) {
             <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-5">
               <h3 className="text-sm font-semibold mb-4">Vendas por Dia</h3>
               <ResponsiveContainer width="100%" height={250}>
-                <AreaChart data={asc.timeline}>
+                <AreaChart data={asc.timeline.map((d) => {
+                  const label = d.date.slice(5, 10);
+                  return {
+                    ...d,
+                    formulasByKey: {
+                      front: buildSalesDailyPointFormula("Front-end", d.front, label),
+                      back: buildSalesDailyPointFormula("Back-end", d.back, label),
+                    },
+                  };
+                })}>
                   <defs>
                     <linearGradient id="frontGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.4} />
@@ -141,7 +183,7 @@ export default function ProjectSalesPage({ params }: Props) {
                   <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.15} strokeDasharray="4 4" />
                   <XAxis dataKey="date" tickFormatter={(d) => d.slice(5, 10)} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                   <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "#fff" }} />
+                  <Tooltip content={<FormulaChartTooltip />} />
                   <Legend wrapperStyle={{ color: "#fff" }} />
                   <Area type="monotone" dataKey="front" stackId="1" stroke="#3b82f6" strokeWidth={2} fill="url(#frontGrad)" name="Front-end" />
                   <Area type="monotone" dataKey="back" stackId="1" stroke="#8b5cf6" strokeWidth={2} fill="url(#backGrad)" name="Back-end" />
@@ -157,11 +199,17 @@ export default function ProjectSalesPage({ params }: Props) {
               <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-5">
                 <h3 className="text-sm font-semibold mb-4">Cohort Mensal</h3>
                 <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={asc.cohort}>
+                  <BarChart data={asc.cohort.map((c) => ({
+                    ...c,
+                    formulasByKey: {
+                      total: buildCohortPointFormula("Compraram front", c.total, c.month),
+                      ascended: buildCohortPointFormula("Ascenderam", c.ascended, c.month),
+                    },
+                  }))}>
                     <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.15} />
                     <XAxis dataKey="month" tickFormatter={(m) => m.slice(2)} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "11px", color: "#fff" }} />
+                    <Tooltip content={<FormulaChartTooltip />} />
                     <Legend wrapperStyle={{ color: "#fff" }} />
                     <Bar dataKey="total" fill="#3b82f6" name="Compraram front" radius={[4, 4, 0, 0]} />
                     <Bar dataKey="ascended" fill="#10b981" name="Ascenderam" radius={[4, 4, 0, 0]} />
