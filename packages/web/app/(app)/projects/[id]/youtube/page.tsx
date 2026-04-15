@@ -34,6 +34,21 @@ import {
   useGoogleAdsCampaigns,
 } from "@/lib/hooks/use-google-ads-analytics";
 import { useGoogleAdsCampaignPicker } from "@/lib/hooks/use-funnels";
+import { MetricTooltip } from "@/components/metrics/metric-tooltip";
+import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
+import {
+  buildYtSpendFormula,
+  buildYtViewsFormula,
+  buildYtImpressionsFormula,
+  buildYtConversionsFormula,
+  buildYtCpvFormula,
+  buildYtViewRateFormula,
+  buildYtCtrFormula,
+  buildYtCpcFormula,
+  buildYtRetentionFormula,
+  buildYtSpendDailyFormula,
+  buildYtViewsDailyFormula,
+} from "@/lib/formulas/youtube-ads";
 
 function fmtCurrency(val: number | null | undefined): string {
   if (val == null || val === 0) return "—";
@@ -128,16 +143,37 @@ export default function ProjectYouTubePage() {
           {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : overview ? (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-8">
-          <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} />
-          <KpiCard icon={Play} label="Views" value={fmtNumber(overview.totalViews)} />
-          <KpiCard icon={Target} label="CPV" value={fmtCurrency(overview.cpv)} />
-          <KpiCard icon={Eye} label="View Rate" value={fmtPercent(overview.viewRate)} />
-          <KpiCard icon={Eye} label="Impressoes" value={fmtNumber(overview.totalImpressions)} />
-          <KpiCard icon={Percent} label="CTR" value={fmtPercent(overview.ctr)} />
-          <KpiCard icon={MousePointerClick} label="CPC" value={fmtCurrency(overview.cpc)} />
-          <KpiCard icon={TrendingUp} label="Conversoes" value={fmtNumber(overview.conversions)} />
-        </div>
+        (() => {
+          const filters = { days: days > 0 ? days : 30, accountName: linkedAccount?.accountName };
+          return (
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-8">
+              <MetricTooltip label="Investimento" value={fmtCurrency(overview.totalSpend)} formula={buildYtSpendFormula(overview.totalSpend, filters)}>
+                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} />
+              </MetricTooltip>
+              <MetricTooltip label="Views" value={fmtNumber(overview.totalViews)} formula={buildYtViewsFormula(overview.totalViews, filters)}>
+                <KpiCard icon={Play} label="Views" value={fmtNumber(overview.totalViews)} />
+              </MetricTooltip>
+              <MetricTooltip label="CPV" value={fmtCurrency(overview.cpv)} formula={buildYtCpvFormula(overview.totalSpend, overview.totalViews, filters)}>
+                <KpiCard icon={Target} label="CPV" value={fmtCurrency(overview.cpv)} />
+              </MetricTooltip>
+              <MetricTooltip label="View Rate" value={fmtPercent(overview.viewRate)} formula={buildYtViewRateFormula(overview.totalViews, overview.totalImpressions, filters)}>
+                <KpiCard icon={Eye} label="View Rate" value={fmtPercent(overview.viewRate)} />
+              </MetricTooltip>
+              <MetricTooltip label="Impressões" value={fmtNumber(overview.totalImpressions)} formula={buildYtImpressionsFormula(overview.totalImpressions, filters)}>
+                <KpiCard icon={Eye} label="Impressoes" value={fmtNumber(overview.totalImpressions)} />
+              </MetricTooltip>
+              <MetricTooltip label="CTR" value={fmtPercent(overview.ctr)} formula={buildYtCtrFormula(overview.totalClicks, overview.totalImpressions, filters)}>
+                <KpiCard icon={Percent} label="CTR" value={fmtPercent(overview.ctr)} />
+              </MetricTooltip>
+              <MetricTooltip label="CPC" value={fmtCurrency(overview.cpc)} formula={buildYtCpcFormula(overview.totalSpend, overview.totalClicks, filters)}>
+                <KpiCard icon={MousePointerClick} label="CPC" value={fmtCurrency(overview.cpc)} />
+              </MetricTooltip>
+              <MetricTooltip label="Conversões" value={fmtNumber(overview.conversions)} formula={buildYtConversionsFormula(overview.conversions, filters)}>
+                <KpiCard icon={TrendingUp} label="Conversoes" value={fmtNumber(overview.conversions)} />
+              </MetricTooltip>
+            </div>
+          );
+        })()
       ) : null}
 
       {/* Daily chart */}
@@ -147,12 +183,23 @@ export default function ProjectYouTubePage() {
           <Skeleton className="h-56" />
         ) : dailyData && dailyData.length > 0 ? (
           <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={dailyData.map((d) => ({ date: d.date.slice(5, 10), spend: d.spend, views: d.views }))}>
+            <LineChart data={dailyData.map((d) => {
+              const dateLabel = d.date.slice(5, 10);
+              return {
+                date: dateLabel,
+                spend: d.spend,
+                views: d.views,
+                formulasByKey: {
+                  spend: buildYtSpendDailyFormula(d.spend, dateLabel),
+                  views: buildYtViewsDailyFormula(d.views, dateLabel),
+                },
+              };
+            })}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
               <YAxis yAxisId="spend" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
               <YAxis yAxisId="views" orientation="right" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
-              <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "#fff" }} />
+              <Tooltip content={<FormulaChartTooltip />} />
               <Legend wrapperStyle={{ color: "#fff" }} />
               <Line yAxisId="spend" type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={false} name="Spend (R$)" />
               <Line yAxisId="views" type="monotone" dataKey="views" stroke="hsl(0 72% 55%)" strokeWidth={2} dot={false} name="Views" />
@@ -164,27 +211,32 @@ export default function ProjectYouTubePage() {
       </div>
 
       {/* Retention */}
-      {overview?.retention && (overview.retention.p25 > 0 || overview.retention.p100 > 0) && (
-        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-          <h3 className="text-sm font-semibold mb-4">Retencao de Video</h3>
-          <div className="space-y-3">
-            {[
-              { label: "25%", value: overview.retention.p25, color: "bg-blue-500" },
-              { label: "50%", value: overview.retention.p50, color: "bg-blue-400" },
-              { label: "75%", value: overview.retention.p75, color: "bg-amber-500" },
-              { label: "100%", value: overview.retention.p100, color: "bg-emerald-500" },
-            ].map((bar) => (
-              <div key={bar.label} className="flex items-center gap-3">
-                <span className="w-10 text-xs text-muted-foreground text-right">{bar.label}</span>
-                <div className="flex-1 h-6 rounded-md bg-muted/30 overflow-hidden">
-                  <div className={`h-full rounded-md ${bar.color}`} style={{ width: `${Math.max(bar.value * 100, 2)}%` }} />
-                </div>
-                <span className="w-12 text-xs font-medium tabular-nums text-right">{(bar.value * 100).toFixed(1)}%</span>
-              </div>
-            ))}
+      {overview?.retention && (overview.retention.p25 > 0 || overview.retention.p100 > 0) && (() => {
+        const filters = { days: days > 0 ? days : 30, accountName: linkedAccount?.accountName };
+        return (
+          <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+            <h3 className="text-sm font-semibold mb-4">Retencao de Video</h3>
+            <div className="space-y-3">
+              {([
+                { label: "25%" as const, value: overview.retention.p25, color: "bg-blue-500" },
+                { label: "50%" as const, value: overview.retention.p50, color: "bg-blue-400" },
+                { label: "75%" as const, value: overview.retention.p75, color: "bg-amber-500" },
+                { label: "100%" as const, value: overview.retention.p100, color: "bg-emerald-500" },
+              ]).map((bar) => (
+                <MetricTooltip key={bar.label} label={`Retenção ${bar.label}`} value={`${(bar.value * 100).toFixed(1)}%`} formula={buildYtRetentionFormula(bar.label, bar.value, filters)}>
+                  <div className="flex items-center gap-3 cursor-help">
+                    <span className="w-10 text-xs text-muted-foreground text-right">{bar.label}</span>
+                    <div className="flex-1 h-6 rounded-md bg-muted/30 overflow-hidden">
+                      <div className={`h-full rounded-md ${bar.color}`} style={{ width: `${Math.max(bar.value * 100, 2)}%` }} />
+                    </div>
+                    <span className="w-12 text-xs font-medium tabular-nums text-right">{(bar.value * 100).toFixed(1)}%</span>
+                  </div>
+                </MetricTooltip>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Campaigns table */}
       {campaignsLoading ? (
