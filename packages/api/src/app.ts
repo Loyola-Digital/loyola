@@ -39,6 +39,7 @@ import googleAdsAnalyticsRoutes from "./routes/google-ads-analytics.js";
 import youtubeChannelRoutes from "./routes/youtube-channels.js";
 import googleSheetsRoutes from "./routes/google-sheets.js";
 import salesRoutes from "./routes/sales.js";
+import funnelSpreadsheetsRoutes from "./routes/funnel-spreadsheets.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -93,6 +94,7 @@ export async function buildServer() {
   await app.register(youtubeChannelRoutes);
   await app.register(googleSheetsRoutes);
   await app.register(salesRoutes);
+  await app.register(funnelSpreadsheetsRoutes);
 
   return app;
 }
