@@ -309,6 +309,31 @@ export function FunnelSpreadsheetWizardDialog({
                 Indique qual coluna corresponde a cada campo. Pelo menos um campo precisa estar mapeado.
               </p>
 
+              <div className="grid gap-3 grid-cols-2 pt-1">
+                <div className="space-y-1">
+                  <Label className="text-xs">Label (nome amigável) <span className="text-red-500">*</span></Label>
+                  <Input
+                    value={label}
+                    onChange={(e) => setLabel(e.target.value)}
+                    placeholder="Ex: Leads captados abril"
+                    className="h-9 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Tipo</Label>
+                  <Select value={type} onValueChange={(v) => setType(v as FunnelSpreadsheetType)}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="leads">Leads</SelectItem>
+                      <SelectItem value="sales">Vendas</SelectItem>
+                      <SelectItem value="custom">Custom</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               {sheetDataLoading && columns.length === 0 ? (
                 <div className="space-y-2">
                   {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10" />)}
@@ -356,7 +381,16 @@ export function FunnelSpreadsheetWizardDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          {step === "mapping" && !canSave && (
+            <p className="text-xs text-amber-600 sm:mr-auto">
+              {label.trim().length === 0 && mappedCount === 0
+                ? "Preencha o label e mapeie pelo menos 1 campo."
+                : label.trim().length === 0
+                  ? "Preencha o label."
+                  : "Mapeie pelo menos 1 campo."}
+            </p>
+          )}
           <Button variant="outline" onClick={handleClose}>Cancelar</Button>
           {step === "mapping" && (
             <Button
