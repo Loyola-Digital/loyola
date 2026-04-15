@@ -1,39 +1,76 @@
-# DevOps Agent Memory (Gage)
+# DevOps Agent Memory (Gage) — Loyola Digital X
+
+## Project Context
+
+Este AIOX está instalado no **Loyola Digital X**. Contexto em `docs/team/project-context.md`.
 
 ## Active Patterns
-<!-- Current, verified patterns used by this agent -->
 
-### Exclusive Authority
-- ONLY agent authorized for `git push`, `gh pr create`, `gh pr merge`
-- ONLY agent for MCP infrastructure management
-- Pre-push quality gates are MANDATORY
+### Repository
 
-### Quality Gates (Pre-Push)
-1. `npm run lint` — ESLint must PASS
-2. `npm test` — Jest must PASS
-3. CodeRabbit review — 0 CRITICAL issues
-4. Story status = "Done" or "Ready for Review"
-5. No uncommitted changes, no merge conflicts
+- **Remote:** `origin` → `https://github.com/Loyola-Digital/loyola.git`
+- **Branch principal:** `main` (protegida)
+- **CI/CD:** Vercel (web) + Railway (api)
 
-### Git Conventions
-- Conventional Commits: `feat:`, `fix:`, `docs:`, `test:`, `chore:`
-- Branch patterns: `feat/*`, `fix/*`, `docs/*`
-- Semantic versioning: MAJOR.MINOR.PATCH
+### Branch Protection (main) — ENFORCED
 
-### MCP Infrastructure
-- Docker MCP Gateway on port 8080
-- Servers: context7, desktop-commander, playwright, exa
-- Config: `~/.docker/mcp/catalogs/docker-mcp.yaml`
-- Known bug: Docker MCP secrets don't interpolate (use hardcoded values)
+- `required_pull_request_reviews` ativo (0 approvals, mas PR obrigatório)
+- `allow_force_pushes`: **false**
+- `allow_deletions`: **false**
+- `enforce_admins`: **false** (admin pode bypassar em hotfix)
 
-### Repository Detection
-- Uses `repository-detector.js` for dynamic context
-- Framework-dev vs project-dev mode detection
+Push direto na main está BLOQUEADO pro GitHub. Precisa passar por PR.
+
+### Exclusive Operations
+
+Sou o ÚNICO agente autorizado a:
+- `git push` (e `git push --force-with-lease` quando necessário)
+- `gh pr create`
+- `gh pr merge`
+- `gh release create`
+
+### Push Workflow
+
+1. Verificar branch não é main (`git branch --show-current`)
+2. `git pull --rebase origin main` pra ficar atualizado
+3. `git push -u origin <feature-branch>`
+4. `gh pr create` com title + body detalhado
+5. `gh pr merge {N} --squash --delete-branch`
+6. Checkout main + pull
+7. Atualizar story Status → Done
+8. ClickUp task → `done` com PR URL
+
+### Commit Convention
+
+Conventional commits:
+- `feat(scope): ...` — nova feature
+- `fix(scope): ...` — bug fix
+- `docs(scope): ...` — documentação
+- `chore(scope): ...` — cleanup, story status update
+- Sempre referenciar `[Story X.Y]` ou `[Epic N]`
+
+### PR Template
+
+Ver PRs #1 e #2 como referência. Incluir:
+- Summary (3-5 bullets)
+- Escopo (tabela arquivo → mudança)
+- Quality gates (tsc, lint, CodeRabbit status)
+- Test plan (checklist pra reviewer)
+
+### ClickUp Integration
+
+List APP - Loyola X: `901326639417`. Status final `done` + comentário "🚀 Shipped: {PR URL}". Ver `.claude/rules/clickup-workflow.md`.
+
+### CodeRabbit
+
+Em WSL (`~/.local/bin/coderabbit`). Pode estar indisponível em máquinas de outros devs — documentar como SKIPPED no commit message e no gate yml.
+
+### Team Scopes
+
+Ver `docs/team/members.md`:
+- Lucas: full scope
+- Danilo: restricted (traffic paths) — pode fazer PRs normalmente mas só de traffic
 
 ## Promotion Candidates
-<!-- Patterns seen across 3+ agents — candidates for CLAUDE.md or .claude/rules/ -->
-<!-- Format: - **{pattern}** | Source: {agent} | Detected: {YYYY-MM-DD} -->
 
 ## Archived
-<!-- Patterns no longer relevant — kept for history -->
-<!-- Format: - ~~{pattern}~~ | Archived: {YYYY-MM-DD} | Reason: {reason} -->
