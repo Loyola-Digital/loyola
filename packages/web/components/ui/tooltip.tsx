@@ -42,9 +42,10 @@ function TooltipContent({
         data-slot="tooltip-content"
         sideOffset={sideOffset}
         className={cn(
-          "z-50 overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md outline-hidden",
+          "z-50 rounded-md border bg-popover text-popover-foreground shadow-md outline-none",
           "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           "data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95",
+          "data-[state=instant-open]:animate-in data-[state=instant-open]:fade-in-0 data-[state=instant-open]:zoom-in-95",
           className,
         )}
         {...props}
