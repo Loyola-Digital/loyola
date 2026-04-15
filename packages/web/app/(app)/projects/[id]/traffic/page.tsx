@@ -17,6 +17,15 @@ import {
   useTrafficCampaigns,
 } from "@/lib/hooks/use-traffic-analytics";
 import { FunnelCampaignTable } from "@/components/funnels/funnel-campaign-table";
+import { MetricTooltip } from "@/components/metrics/metric-tooltip";
+import {
+  buildSpendFormula,
+  buildImpressionsFormula,
+  buildMetaAdsReachFormula,
+  buildClicksFormula,
+  buildCtrFormula,
+  buildLeadsFormula,
+} from "@/lib/formulas/meta-ads";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -97,14 +106,31 @@ export default function ProjectTrafficPage({ params }: Props) {
           {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : totals ? (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-          <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(totals.spend)} />
-          <KpiCard icon={Eye} label="Impressoes" value={fmtNumber(totals.impressions)} />
-          <KpiCard icon={Radio} label="Alcance" value={fmtNumber(totals.reach)} />
-          <KpiCard icon={MousePointerClick} label="Cliques" value={fmtNumber(totals.clicks)} />
-          <KpiCard icon={Percent} label="CTR" value={fmtPercent(totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0)} />
-          <KpiCard icon={Users} label="Leads" value={fmtNumber(totals.leads)} />
-        </div>
+        (() => {
+          const filters = { days: days > 0 ? days : 30, accountName: linkedAccount?.accountName };
+          return (
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+              <MetricTooltip label="Investimento" value={fmtCurrency(totals.spend)} formula={buildSpendFormula(totals.spend, filters)}>
+                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(totals.spend)} />
+              </MetricTooltip>
+              <MetricTooltip label="Impressões" value={fmtNumber(totals.impressions)} formula={buildImpressionsFormula(totals.impressions, filters)}>
+                <KpiCard icon={Eye} label="Impressoes" value={fmtNumber(totals.impressions)} />
+              </MetricTooltip>
+              <MetricTooltip label="Alcance" value={fmtNumber(totals.reach)} formula={buildMetaAdsReachFormula(totals.reach, filters)}>
+                <KpiCard icon={Radio} label="Alcance" value={fmtNumber(totals.reach)} />
+              </MetricTooltip>
+              <MetricTooltip label="Cliques" value={fmtNumber(totals.clicks)} formula={buildClicksFormula(totals.clicks, filters)}>
+                <KpiCard icon={MousePointerClick} label="Cliques" value={fmtNumber(totals.clicks)} />
+              </MetricTooltip>
+              <MetricTooltip label="CTR" value={fmtPercent(totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0)} formula={buildCtrFormula(totals.clicks, totals.impressions, filters)}>
+                <KpiCard icon={Percent} label="CTR" value={fmtPercent(totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0)} />
+              </MetricTooltip>
+              <MetricTooltip label="Leads" value={fmtNumber(totals.leads)} formula={buildLeadsFormula(totals.leads, filters)}>
+                <KpiCard icon={Users} label="Leads" value={fmtNumber(totals.leads)} />
+              </MetricTooltip>
+            </div>
+          );
+        })()
       ) : null}
 
       {/* Campaign table */}

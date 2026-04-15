@@ -35,6 +35,25 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useMetaAdsAccounts, useMetaAdsDailyInsights } from "@/lib/hooks/use-meta-ads";
+import { MetricTooltip } from "@/components/metrics/metric-tooltip";
+import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
+import type { MetricFormula } from "@/lib/types/metric-formula";
+import {
+  buildSpendFormula,
+  buildImpressionsFormula,
+  buildMetaAdsReachFormula,
+  buildClicksFormula,
+  buildLeadsFormula,
+  buildQualifiedLeadsFormula,
+  buildSalesFormula,
+  buildFrequencyFormula,
+  buildCtrFormula,
+  buildCplFormula,
+  buildCplQualifiedFormula,
+  buildRoasFormula,
+  buildSpendDailyFormula,
+  buildClicksDailyFormula,
+} from "@/lib/formulas/meta-ads";
 import {
   useTrafficCampaigns,
   useTrafficAdSets,
@@ -230,7 +249,7 @@ function FunnelChart({ data }: { data: CampaignAnalyticsResponse }) {
 // SUMMARY CARDS
 // ============================================================
 
-function SummaryCards({ data }: { data: CampaignAnalyticsResponse }) {
+function SummaryCards({ data, days, accountName }: { data: CampaignAnalyticsResponse; days: number; accountName?: string }) {
   const totals = data.campaigns.reduce(
     (acc, c) => ({
       spend: acc.spend + c.spend,
@@ -246,20 +265,21 @@ function SummaryCards({ data }: { data: CampaignAnalyticsResponse }) {
   );
 
   const frequency = totals.reach > 0 ? totals.impressions / totals.reach : 0;
+  const filters = { days, accountName };
 
-  const cards: { label: string; value: string; icon: typeof DollarSign; show: boolean }[] = [
-    { label: "Spend", value: fmtCurrency(totals.spend), icon: DollarSign, show: true },
-    { label: "Impressões", value: fmtNumber(totals.impressions), icon: Eye, show: true },
-    { label: "Alcance", value: fmtNumber(totals.reach), icon: Radio, show: true },
-    { label: "Frequência", value: totals.reach > 0 ? frequency.toFixed(2) : "—", icon: Repeat, show: true },
-    { label: "Cliques", value: fmtNumber(totals.clicks), icon: MousePointerClick, show: true },
-    { label: "CTR", value: fmtPercent(totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0), icon: Percent, show: true },
-    { label: "Leads", value: fmtNumber(totals.leads), icon: Users, show: data.hasCrm },
-    { label: "CPL", value: fmtCurrency(totals.leads > 0 ? totals.spend / totals.leads : null), icon: DollarSign, show: data.hasCrm },
-    { label: "Qualificados", value: fmtNumber(totals.qualified), icon: Users, show: data.hasQualification },
-    { label: "CPL Qual", value: fmtCurrency(totals.qualified > 0 ? totals.spend / totals.qualified : null), icon: DollarSign, show: data.hasQualification },
-    { label: "Vendas", value: fmtNumber(totals.sales), icon: ShoppingCart, show: data.hasSales },
-    { label: "ROAS", value: fmtRoas(totals.spend > 0 ? totals.revenue / totals.spend : null), icon: TrendingUp, show: data.hasSales },
+  const cards: { label: string; value: string; icon: typeof DollarSign; show: boolean; formula?: MetricFormula }[] = [
+    { label: "Spend", value: fmtCurrency(totals.spend), icon: DollarSign, show: true, formula: buildSpendFormula(totals.spend, filters) },
+    { label: "Impressões", value: fmtNumber(totals.impressions), icon: Eye, show: true, formula: buildImpressionsFormula(totals.impressions, filters) },
+    { label: "Alcance", value: fmtNumber(totals.reach), icon: Radio, show: true, formula: buildMetaAdsReachFormula(totals.reach, filters) },
+    { label: "Frequência", value: totals.reach > 0 ? frequency.toFixed(2) : "—", icon: Repeat, show: true, formula: buildFrequencyFormula(totals.impressions, totals.reach, filters) },
+    { label: "Cliques", value: fmtNumber(totals.clicks), icon: MousePointerClick, show: true, formula: buildClicksFormula(totals.clicks, filters) },
+    { label: "CTR", value: fmtPercent(totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0), icon: Percent, show: true, formula: buildCtrFormula(totals.clicks, totals.impressions, filters) },
+    { label: "Leads", value: fmtNumber(totals.leads), icon: Users, show: data.hasCrm, formula: buildLeadsFormula(totals.leads, filters) },
+    { label: "CPL", value: fmtCurrency(totals.leads > 0 ? totals.spend / totals.leads : null), icon: DollarSign, show: data.hasCrm, formula: buildCplFormula(totals.spend, totals.leads, filters) },
+    { label: "Qualificados", value: fmtNumber(totals.qualified), icon: Users, show: data.hasQualification, formula: buildQualifiedLeadsFormula(totals.qualified, filters) },
+    { label: "CPL Qual", value: fmtCurrency(totals.qualified > 0 ? totals.spend / totals.qualified : null), icon: DollarSign, show: data.hasQualification, formula: buildCplQualifiedFormula(totals.spend, totals.qualified, filters) },
+    { label: "Vendas", value: fmtNumber(totals.sales), icon: ShoppingCart, show: data.hasSales, formula: buildSalesFormula(totals.sales, filters) },
+    { label: "ROAS", value: fmtRoas(totals.spend > 0 ? totals.revenue / totals.spend : null), icon: TrendingUp, show: data.hasSales, formula: buildRoasFormula(totals.revenue, totals.spend, filters) },
   ];
 
   const visible = cards.filter((c) => c.show);
@@ -267,13 +287,15 @@ function SummaryCards({ data }: { data: CampaignAnalyticsResponse }) {
   return (
     <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
       {visible.map((card) => (
-        <div key={card.label} className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3 hover:border-border/50 transition-colors">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{card.label}</span>
-            <card.icon className="h-3.5 w-3.5 text-muted-foreground/50" />
+        <MetricTooltip key={card.label} label={card.label} value={card.value} formula={card.formula}>
+          <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3 hover:border-border/50 transition-colors">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{card.label}</span>
+              <card.icon className="h-3.5 w-3.5 text-muted-foreground/50" />
+            </div>
+            <p className="text-xl font-bold tracking-tight">{card.value}</p>
           </div>
-          <p className="text-xl font-bold tracking-tight">{card.value}</p>
-        </div>
+        </MetricTooltip>
       ))}
     </div>
   );
@@ -293,11 +315,20 @@ function DailyChart({ accountId, projectId, campaignId, days }: { accountId: str
   if (isLoading) return <Skeleton className="h-64 rounded-xl" />;
   if (!dailyData || dailyData.length === 0) return null;
 
-  const chartData = dailyData.map((d) => ({
-    date: d.date_start.slice(5, 10),
-    spend: safeNum(d.spend),
-    clicks: safeNum(d.clicks),
-  }));
+  const chartData = dailyData.map((d) => {
+    const dateLabel = d.date_start.slice(5, 10);
+    const spend = safeNum(d.spend);
+    const clicks = safeNum(d.clicks);
+    return {
+      date: dateLabel,
+      spend,
+      clicks,
+      formulasByKey: {
+        spend: buildSpendDailyFormula(spend, dateLabel),
+        clicks: buildClicksDailyFormula(clicks, dateLabel),
+      },
+    };
+  });
 
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5">
@@ -308,7 +339,7 @@ function DailyChart({ accountId, projectId, campaignId, days }: { accountId: str
           <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
           <YAxis yAxisId="spend" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
           <YAxis yAxisId="clicks" orientation="right" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
-          <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "#fff" }} />
+          <Tooltip content={<FormulaChartTooltip />} />
           <Legend wrapperStyle={{ color: "#fff" }} />
           <Line yAxisId="spend" type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={false} name="Spend (R$)" />
           <Line yAxisId="clicks" type="monotone" dataKey="clicks" stroke="hsl(200 80% 60%)" strokeWidth={2} dot={false} name="Cliques" />
@@ -1683,7 +1714,7 @@ function TrafficPageContent() {
           {campaignData && (
             <>
               {/* KPI Overview */}
-              <SummaryCards data={filteredCampaignData!} />
+              <SummaryCards data={filteredCampaignData!} days={days} accountName={accounts?.find((a) => a.id === activeAccountId)?.accountName} />
 
               {/* Visual Performance */}
               <div className="grid gap-5 lg:grid-cols-2">
