@@ -81,7 +81,15 @@ export function FunnelSpreadsheetWizardDialog({
   const filtered = search
     ? spreadsheets.filter((s) => s.name.toLowerCase().includes(search.toLowerCase()))
     : spreadsheets;
-  const columns = sheetData?.headers ?? [];
+  // Filter out empty headers (Radix Select rejects value="") and dedupe
+  // while preserving the first occurrence's display label.
+  const rawHeaders = sheetData?.headers ?? [];
+  const columns = Array.from(
+    new Set(
+      rawHeaders
+        .map((h, i) => (h && h.trim().length > 0 ? h : `Coluna ${i + 1}`))
+    ),
+  );
   const previewRows = (sheetData?.rows ?? []).slice(0, 5);
 
   const step: Step = !selectedSpreadsheet
