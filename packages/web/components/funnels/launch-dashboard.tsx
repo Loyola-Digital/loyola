@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useState, useMemo } from "react";
 import {
   DollarSign,
@@ -363,14 +364,21 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
 // Sub-components
 // ============================================================
 
-function KpiCard({ icon: Icon, label, value, hintTooltip }: {
+const KpiCard = React.forwardRef<HTMLDivElement, {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
   hintTooltip?: boolean;
-}) {
+} & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
+  { icon: Icon, label, value, hintTooltip, className, ...rest },
+  ref,
+) {
   return (
-    <div className={`rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3 hover:border-border/50 transition-colors ${hintTooltip ? "cursor-help" : ""}`}>
+    <div
+      ref={ref}
+      {...rest}
+      className={`rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3 hover:border-border/50 transition-colors ${hintTooltip ? "cursor-help" : ""} ${className ?? ""}`}
+    >
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
@@ -378,7 +386,7 @@ function KpiCard({ icon: Icon, label, value, hintTooltip }: {
       <p className={`text-xl font-bold tracking-tight ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
     </div>
   );
-}
+});
 
 function CampaignDonut({ campaigns, funnelContext }: { campaigns: CampaignAnalytics[]; funnelContext: { days: number; funnelType: "launch"; funnelName?: string } }) {
   const data = campaigns
