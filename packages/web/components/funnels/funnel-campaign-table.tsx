@@ -28,6 +28,67 @@ import {
   type MetaAdCreative,
   type VideoMetrics,
 } from "@/lib/hooks/use-traffic-analytics";
+import { MetricTooltip } from "@/components/metrics/metric-tooltip";
+import {
+  buildFunnelSpendFormula,
+  buildFunnelLeadsFormula,
+  buildFunnelCplFormula,
+  buildFunnelConnectRateFormula,
+  buildFunnelCtrFormula,
+  buildFunnelCpcFormula,
+  buildFunnelCpmFormula,
+  enrichFormulaForEntity,
+  type FunnelFilters,
+  type EntityPath,
+} from "@/lib/formulas/funnels";
+
+type MetricCol = "spend" | "leads" | "cpl" | "connectRate" | "ctr" | "cpc" | "cpm";
+
+function buildRowFormulas(row: CampaignAnalytics, f: FunnelFilters, path: EntityPath) {
+  return {
+    spend: enrichFormulaForEntity(buildFunnelSpendFormula(row.spend, f), path),
+    leads: enrichFormulaForEntity(buildFunnelLeadsFormula(row.leads, f), path),
+    cpl: enrichFormulaForEntity(buildFunnelCplFormula(row.spend, row.leads, f), path),
+    connectRate: enrichFormulaForEntity(buildFunnelConnectRateFormula(row.connectRate, f), path),
+    ctr: enrichFormulaForEntity(buildFunnelCtrFormula(row.ctr, f), path),
+    cpc: enrichFormulaForEntity(buildFunnelCpcFormula(row.cpc, f), path),
+    cpm: enrichFormulaForEntity(buildFunnelCpmFormula(row.cpm, f), path),
+  } satisfies Record<MetricCol, ReturnType<typeof enrichFormulaForEntity>>;
+}
+
+const COL_LABELS: Record<MetricCol, string> = {
+  spend: "Investimento",
+  leads: "Leads",
+  cpl: "CPL",
+  connectRate: "Connect Rate",
+  ctr: "CTR",
+  cpc: "CPC",
+  cpm: "CPM",
+};
+
+function NumericCell({
+  col,
+  value,
+  formulas,
+  className,
+}: {
+  col: MetricCol;
+  value: string;
+  formulas: ReturnType<typeof buildRowFormulas> | null;
+  className: string;
+}) {
+  if (!formulas) return <td className={className}>{value}</td>;
+  const formula = formulas[col];
+  return (
+    <td className={className}>
+      <MetricTooltip label={COL_LABELS[col]} value={value} formula={formula}>
+        <span className={formula ? "cursor-help underline decoration-dotted decoration-border/60 underline-offset-2" : undefined}>
+          {value}
+        </span>
+      </MetricTooltip>
+    </td>
+  );
+}
 
 // ============================================================
 // FORMATTERS
@@ -284,9 +345,10 @@ interface FunnelCampaignTableProps {
   campaigns: CampaignAnalytics[];
   projectId: string;
   days: number;
+  funnel?: FunnelFilters;
 }
 
-export function FunnelCampaignTable({ campaigns, projectId, days }: FunnelCampaignTableProps) {
+export function FunnelCampaignTable({ campaigns, projectId, days, funnel }: FunnelCampaignTableProps) {
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
   const [sortCol, setSortCol] = useState<keyof CampaignAnalytics>("spend");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -348,6 +410,7 @@ export function FunnelCampaignTable({ campaigns, projectId, days }: FunnelCampai
                   onToggle={() => setExpandedCampaign(isExpanded ? null : c.campaignId)}
                   projectId={projectId}
                   days={days}
+                  funnel={funnel}
                 />
               );
             })}
@@ -362,9 +425,11 @@ export function FunnelCampaignTable({ campaigns, projectId, days }: FunnelCampai
 // DRILL-DOWN ROWS
 // ============================================================
 
-function CampaignRow({ campaign: c, isExpanded, onToggle, projectId, days }: {
-  campaign: CampaignAnalytics; isExpanded: boolean; onToggle: () => void; projectId: string; days: number;
+function CampaignRow({ campaign: c, isExpanded, onToggle, projectId, days, funnel }: {
+  campaign: CampaignAnalytics; isExpanded: boolean; onToggle: () => void; projectId: string; days: number; funnel?: FunnelFilters;
 }) {
+  const formulas = funnel ? buildRowFormulas(c, funnel, { campaign: c.campaignName }) : null;
+  const baseCls = "py-2 px-2 text-xs text-right";
   return (
     <>
       <tr className="border-t border-border/20 hover:bg-muted/30 cursor-pointer transition-colors" onClick={onToggle}>
@@ -374,20 +439,30 @@ function CampaignRow({ campaign: c, isExpanded, onToggle, projectId, days }: {
             <span className="truncate max-w-[200px]">{c.campaignName}</span>
           </span>
         </td>
-        <td className="py-2 px-2 text-xs text-right font-medium">{fmtCurrency(c.spend)}</td>
-        <td className="py-2 px-2 text-xs text-right">{fmtNumber(c.leads)}</td>
-        <td className="py-2 px-2 text-xs text-right">{fmtCurrency(c.cpl)}</td>
-        <td className="py-2 px-2 text-xs text-right">{fmtPercent(c.connectRate)}</td>
-        <td className="py-2 px-2 text-xs text-right">{fmtPercent(c.ctr)}</td>
-        <td className="py-2 px-2 text-xs text-right">{fmtCurrency(c.cpc)}</td>
-        <td className="py-2 px-2 text-xs text-right">{fmtCurrency(c.cpm)}</td>
+        <NumericCell col="spend" value={fmtCurrency(c.spend)} formulas={formulas} className={`${baseCls} font-medium`} />
+        <NumericCell col="leads" value={fmtNumber(c.leads)} formulas={formulas} className={baseCls} />
+        <NumericCell col="cpl" value={fmtCurrency(c.cpl)} formulas={formulas} className={baseCls} />
+        <NumericCell col="connectRate" value={fmtPercent(c.connectRate)} formulas={formulas} className={baseCls} />
+        <NumericCell col="ctr" value={fmtPercent(c.ctr)} formulas={formulas} className={baseCls} />
+        <NumericCell col="cpc" value={fmtCurrency(c.cpc)} formulas={formulas} className={baseCls} />
+        <NumericCell col="cpm" value={fmtCurrency(c.cpm)} formulas={formulas} className={baseCls} />
       </tr>
-      {isExpanded && <DrillDownAdSets projectId={projectId} campaignId={c.campaignId} days={days} />}
+      {isExpanded && (
+        <DrillDownAdSets
+          projectId={projectId}
+          campaignId={c.campaignId}
+          days={days}
+          funnel={funnel}
+          campaignName={c.campaignName}
+        />
+      )}
     </>
   );
 }
 
-function DrillDownAdSets({ projectId, campaignId, days }: { projectId: string; campaignId: string; days: number }) {
+function DrillDownAdSets({ projectId, campaignId, days, funnel, campaignName }: {
+  projectId: string; campaignId: string; days: number; funnel?: FunnelFilters; campaignName: string;
+}) {
   const { data, isLoading } = useTrafficAdSets(projectId, campaignId, days);
   if (isLoading) return <tr><td colSpan={8} className="py-2 px-4"><Skeleton className="h-8" /></td></tr>;
   if (!data || data.adsets.length === 0) return <tr><td colSpan={8} className="py-2 px-8 text-xs text-muted-foreground">Nenhum ad set</td></tr>;
@@ -395,14 +470,27 @@ function DrillDownAdSets({ projectId, campaignId, days }: { projectId: string; c
   return (
     <>
       {data.adsets.map((a) => (
-        <DrillDownAdSetRow key={a.campaignId} adset={a} projectId={projectId} days={days} />
+        <DrillDownAdSetRow
+          key={a.campaignId}
+          adset={a}
+          projectId={projectId}
+          days={days}
+          funnel={funnel}
+          campaignName={campaignName}
+        />
       ))}
     </>
   );
 }
 
-function DrillDownAdSetRow({ adset, projectId, days }: { adset: CampaignAnalytics; projectId: string; days: number }) {
+function DrillDownAdSetRow({ adset, projectId, days, funnel, campaignName }: {
+  adset: CampaignAnalytics; projectId: string; days: number; funnel?: FunnelFilters; campaignName: string;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const formulas = funnel
+    ? buildRowFormulas(adset, funnel, { campaign: campaignName, adset: adset.campaignName })
+    : null;
+  const baseCls = "py-1.5 px-2 text-[11px] text-right";
   return (
     <>
       <tr className="border-t border-border/10 bg-muted/20 hover:bg-muted/40 cursor-pointer" onClick={() => setExpanded(!expanded)}>
@@ -412,20 +500,31 @@ function DrillDownAdSetRow({ adset, projectId, days }: { adset: CampaignAnalytic
             <span className="truncate">{adset.campaignName}</span>
           </span>
         </td>
-        <td className="py-1.5 px-2 text-[11px] text-right font-medium">{fmtCurrency(adset.spend)}</td>
-        <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(adset.leads)}</td>
-        <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(adset.cpl)}</td>
-        <td className="py-1.5 px-2 text-[11px] text-right">{fmtPercent(adset.connectRate)}</td>
-        <td className="py-1.5 px-2 text-[11px] text-right">{fmtPercent(adset.ctr)}</td>
-        <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(adset.cpc)}</td>
-        <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(adset.cpm)}</td>
+        <NumericCell col="spend" value={fmtCurrency(adset.spend)} formulas={formulas} className={`${baseCls} font-medium`} />
+        <NumericCell col="leads" value={fmtNumber(adset.leads)} formulas={formulas} className={baseCls} />
+        <NumericCell col="cpl" value={fmtCurrency(adset.cpl)} formulas={formulas} className={baseCls} />
+        <NumericCell col="connectRate" value={fmtPercent(adset.connectRate)} formulas={formulas} className={baseCls} />
+        <NumericCell col="ctr" value={fmtPercent(adset.ctr)} formulas={formulas} className={baseCls} />
+        <NumericCell col="cpc" value={fmtCurrency(adset.cpc)} formulas={formulas} className={baseCls} />
+        <NumericCell col="cpm" value={fmtCurrency(adset.cpm)} formulas={formulas} className={baseCls} />
       </tr>
-      {expanded && <DrillDownAds projectId={projectId} adsetId={adset.campaignId} days={days} />}
+      {expanded && (
+        <DrillDownAds
+          projectId={projectId}
+          adsetId={adset.campaignId}
+          days={days}
+          funnel={funnel}
+          campaignName={campaignName}
+          adsetName={adset.campaignName}
+        />
+      )}
     </>
   );
 }
 
-function DrillDownAds({ projectId, adsetId, days }: { projectId: string; adsetId: string; days: number }) {
+function DrillDownAds({ projectId, adsetId, days, funnel, campaignName, adsetName }: {
+  projectId: string; adsetId: string; days: number; funnel?: FunnelFilters; campaignName: string; adsetName: string;
+}) {
   const { data, isLoading } = useTrafficAds(projectId, adsetId, days);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
@@ -449,45 +548,51 @@ function DrillDownAds({ projectId, adsetId, days }: { projectId: string; adsetId
 
   return (
     <>
-      {data.ads.map((a) => (
-        <tr key={a.campaignId} className="border-t border-border/10 bg-muted/10 hover:bg-muted/30">
-          <td className="py-1.5 px-3 text-[11px] pl-14">
-            <span className="inline-flex items-center gap-2">
-              {(a.creative?.imageUrl || a.creative?.thumbnailUrl) ? (
-                <button
-                  onClick={() => {
-                    const idx = lightboxItems.findIndex((li) => li.id === a.campaignId);
-                    if (idx >= 0) setLightboxIndex(idx);
-                  }}
-                  className="relative shrink-0 rounded-lg overflow-hidden shadow-sm border border-border/20"
-                >
-                  <img src={a.creative.imageUrl || a.creative.thumbnailUrl || ""} alt="" className="w-16 h-16 object-cover" />
-                  {a.creative.objectType === "VIDEO" && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                      <Play className="h-4 w-4 text-white fill-white drop-shadow" />
-                    </div>
-                  )}
-                </button>
-              ) : (
-                <div className="w-16 h-16 rounded-lg bg-muted/40 flex items-center justify-center shrink-0">
-                  <ImageIcon className="h-5 w-5 text-muted-foreground/40" />
-                </div>
-              )}
-              <span className="truncate">{a.campaignName}</span>
-              <CreativeTypeBadge objectType={a.creative?.objectType ?? null} />
-              <CtaBadge ctaType={a.creative?.ctaType ?? null} />
-              {a.videoMetrics && <VideoRetentionSparkline metrics={a.videoMetrics} />}
-            </span>
-          </td>
-          <td className="py-1.5 px-2 text-[11px] text-right font-medium">{fmtCurrency(a.spend)}</td>
-          <td className="py-1.5 px-2 text-[11px] text-right">{fmtNumber(a.leads)}</td>
-          <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(a.cpl)}</td>
-          <td className="py-1.5 px-2 text-[11px] text-right">{fmtPercent(a.connectRate)}</td>
-          <td className="py-1.5 px-2 text-[11px] text-right">{fmtPercent(a.ctr)}</td>
-          <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(a.cpc)}</td>
-          <td className="py-1.5 px-2 text-[11px] text-right">{fmtCurrency(a.cpm)}</td>
-        </tr>
-      ))}
+      {data.ads.map((a) => {
+        const formulas = funnel
+          ? buildRowFormulas(a, funnel, { campaign: campaignName, adset: adsetName, ad: a.campaignName })
+          : null;
+        const baseCls = "py-1.5 px-2 text-[11px] text-right";
+        return (
+          <tr key={a.campaignId} className="border-t border-border/10 bg-muted/10 hover:bg-muted/30">
+            <td className="py-1.5 px-3 text-[11px] pl-14">
+              <span className="inline-flex items-center gap-2">
+                {(a.creative?.imageUrl || a.creative?.thumbnailUrl) ? (
+                  <button
+                    onClick={() => {
+                      const idx = lightboxItems.findIndex((li) => li.id === a.campaignId);
+                      if (idx >= 0) setLightboxIndex(idx);
+                    }}
+                    className="relative shrink-0 rounded-lg overflow-hidden shadow-sm border border-border/20"
+                  >
+                    <img src={a.creative.imageUrl || a.creative.thumbnailUrl || ""} alt="" className="w-16 h-16 object-cover" />
+                    {a.creative.objectType === "VIDEO" && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                        <Play className="h-4 w-4 text-white fill-white drop-shadow" />
+                      </div>
+                    )}
+                  </button>
+                ) : (
+                  <div className="w-16 h-16 rounded-lg bg-muted/40 flex items-center justify-center shrink-0">
+                    <ImageIcon className="h-5 w-5 text-muted-foreground/40" />
+                  </div>
+                )}
+                <span className="truncate">{a.campaignName}</span>
+                <CreativeTypeBadge objectType={a.creative?.objectType ?? null} />
+                <CtaBadge ctaType={a.creative?.ctaType ?? null} />
+                {a.videoMetrics && <VideoRetentionSparkline metrics={a.videoMetrics} />}
+              </span>
+            </td>
+            <NumericCell col="spend" value={fmtCurrency(a.spend)} formulas={formulas} className={`${baseCls} font-medium`} />
+            <NumericCell col="leads" value={fmtNumber(a.leads)} formulas={formulas} className={baseCls} />
+            <NumericCell col="cpl" value={fmtCurrency(a.cpl)} formulas={formulas} className={baseCls} />
+            <NumericCell col="connectRate" value={fmtPercent(a.connectRate)} formulas={formulas} className={baseCls} />
+            <NumericCell col="ctr" value={fmtPercent(a.ctr)} formulas={formulas} className={baseCls} />
+            <NumericCell col="cpc" value={fmtCurrency(a.cpc)} formulas={formulas} className={baseCls} />
+            <NumericCell col="cpm" value={fmtCurrency(a.cpm)} formulas={formulas} className={baseCls} />
+          </tr>
+        );
+      })}
       {lightboxIndex !== null && (
         <tr><td colSpan={8} className="p-0">
           <CreativeLightbox

@@ -226,21 +226,36 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
       {campaignsLoading ? (
         <Skeleton className="h-48 rounded-xl" />
       ) : funnelCampaigns.length > 0 ? (
-        <FunnelCampaignTable campaigns={funnelCampaigns} projectId={projectId} days={days} />
+        <FunnelCampaignTable
+          campaigns={funnelCampaigns}
+          projectId={projectId}
+          days={days}
+          funnel={{ days, funnelType: "launch", funnelName: funnel?.name }}
+        />
       ) : null}
 
       {/* Públicos (agrupados por nome do ad set) */}
       {adsetsLoading ? (
         <Skeleton className="h-48 rounded-xl" />
       ) : adsetData && adsetData.adsets.length > 0 ? (
-        <MetricsTable title="Públicos" rows={adsetData.adsets} />
+        <MetricsTable
+          title="Públicos"
+          rows={adsetData.adsets}
+          funnel={{ days, funnelType: "launch", funnelName: funnel?.name }}
+          entityType="adset"
+        />
       ) : null}
 
       {/* Anúncios (agrupados por nome do ad) */}
       {adsLoading ? (
         <Skeleton className="h-48 rounded-xl" />
       ) : adData && adData.ads.length > 0 ? (
-        <MetricsTable title="Anúncios" rows={adData.ads} />
+        <MetricsTable
+          title="Anúncios"
+          rows={adData.ads}
+          funnel={{ days, funnelType: "launch", funnelName: funnel?.name }}
+          entityType="ad"
+        />
       ) : null}
 
       {/* CTR × CPM — Saturation Chart */}

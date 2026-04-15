@@ -52,6 +52,11 @@ import {
   buildFunnelMarginPercentFormula,
   buildFunnelRateFormula,
   buildFunnelDailyFormula,
+  buildFunnelCtrFormula,
+  buildFunnelCpcFormula,
+  buildFunnelCpmFormula,
+  enrichFormulaForEntity,
+  type EntityPath,
 } from "@/lib/formulas/funnels";
 
 interface PerpetualDashboardProps {
@@ -420,21 +425,47 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
               {tableData.length === 0 ? (
                 <tr><td colSpan={10} className="py-6 text-center text-muted-foreground">Sem dados</td></tr>
               ) : tableData.map((row) => {
+                const f = { days, funnelType: "perpetual" as const, funnelName: funnel?.name };
                 const margin = (row.revenue ?? 0) - row.spend;
                 const marginPct = (row.revenue ?? 0) > 0 ? (margin / row.revenue!) * 100 : null;
                 const marginPerSale = (row.sales ?? 0) > 0 ? margin / row.sales! : null;
+                const path: EntityPath =
+                  tableFilter === "campaign" ? { campaign: row.campaignName }
+                  : tableFilter === "adset" ? { adset: row.campaignName }
+                  : { ad: row.campaignName };
+                const renderCell = (
+                  col: string,
+                  label: string,
+                  value: string,
+                  formula: ReturnType<typeof enrichFormulaForEntity>,
+                  className: string,
+                ) => {
+                  if (!formula) return <td key={col} className={className}>{value}</td>;
+                  return (
+                    <td key={col} className={className}>
+                      <MetricTooltip label={label} value={value} formula={formula}>
+                        <span className="cursor-help underline decoration-dotted decoration-border/60 underline-offset-2">
+                          {value}
+                        </span>
+                      </MetricTooltip>
+                    </td>
+                  );
+                };
+                const cells: Array<[string, string, string, ReturnType<typeof enrichFormulaForEntity>, string]> = [
+                  ["spend", "Investimento", fmtCurrency(row.spend), enrichFormulaForEntity(buildFunnelSpendFormula(row.spend, f), path), "text-right px-2 tabular-nums"],
+                  ["revenue", "Receita", fmtCurrency(row.revenue), enrichFormulaForEntity(buildFunnelRevenueFormula(row.revenue, f), path), "text-right px-2 tabular-nums"],
+                  ["cac", "CAC", fmtCurrency(row.costPerSale), enrichFormulaForEntity(buildFunnelCacFormula(row.costPerSale ?? null, f), path), "text-right px-2 tabular-nums"],
+                  ["roas", "ROAS", fmtRoas(row.roas), enrichFormulaForEntity(buildFunnelRoasFormula(row.roas ?? null, f), path), "text-right px-2 tabular-nums"],
+                  ["marginPct", "Margem %", fmtPercent(marginPct), enrichFormulaForEntity(buildFunnelMarginPercentFormula(marginPct, f), path), "text-right px-2 tabular-nums"],
+                  ["marginPerSale", "Margem/Venda", fmtCurrency(marginPerSale), enrichFormulaForEntity(buildFunnelMarginFormula(marginPerSale, f), path), "text-right px-2 tabular-nums"],
+                  ["ctr", "CTR", fmtPercent(row.ctr), enrichFormulaForEntity(buildFunnelCtrFormula(row.ctr, f), path), "text-right px-2 tabular-nums"],
+                  ["cpc", "CPC", fmtCurrency(row.cpc), enrichFormulaForEntity(buildFunnelCpcFormula(row.cpc, f), path), "text-right px-2 tabular-nums"],
+                  ["cpm", "CPM", fmtCurrency(row.cpm), enrichFormulaForEntity(buildFunnelCpmFormula(row.cpm, f), path), "text-right pl-2 tabular-nums"],
+                ];
                 return (
                   <tr key={row.campaignId} className="border-b border-border/10 hover:bg-muted/5">
                     <td className="py-2 pr-3 font-medium truncate max-w-[200px]">{row.campaignName}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtCurrency(row.spend)}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtCurrency(row.revenue)}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtCurrency(row.costPerSale)}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtRoas(row.roas)}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtPercent(marginPct)}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtCurrency(marginPerSale)}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtPercent(row.ctr)}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtCurrency(row.cpc)}</td>
-                    <td className="text-right pl-2 tabular-nums">{fmtCurrency(row.cpm)}</td>
+                    {cells.map(([col, label, value, formula, cls]) => renderCell(col, label, value, formula, cls))}
                   </tr>
                 );
               })}
