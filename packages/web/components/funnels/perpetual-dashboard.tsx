@@ -40,6 +40,19 @@ import { CampaignSelector } from "./campaign-selector";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import type { Funnel, FunnelCampaign } from "@loyola-x/shared";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
+import { MetricTooltip } from "@/components/metrics/metric-tooltip";
+import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
+import {
+  buildFunnelRoasFormula,
+  buildFunnelSpendFormula,
+  buildFunnelSalesCountFormula,
+  buildFunnelRevenueFormula,
+  buildFunnelCacFormula,
+  buildFunnelMarginFormula,
+  buildFunnelMarginPercentFormula,
+  buildFunnelRateFormula,
+  buildFunnelDailyFormula,
+} from "@/lib/formulas/funnels";
 
 interface PerpetualDashboardProps {
   funnel: Funnel;
@@ -129,12 +142,18 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
       );
       const revenue = revenueEntry ? parseFloat(revenueEntry.value) : 0;
       const margin = revenue - spend;
+      const dateLabel = d.date_start.slice(5, 10);
       return {
-        date: d.date_start.slice(5, 10),
+        date: dateLabel,
         spend,
         revenue,
         margin,
         sales: purchases ? parseInt(purchases.value) : 0,
+        formulasByKey: {
+          spend: buildFunnelDailyFormula("Investimento", "Meta Ads API · spend (time series)", spend, true, dateLabel),
+          revenue: buildFunnelDailyFormula("Receita", "Meta Ads API · action_values.purchase (time series)", revenue, true, dateLabel),
+          margin: buildFunnelDailyFormula("Margem (Receita − Spend)", "Derivado · revenue − spend", margin, true, dateLabel),
+        },
       };
     });
   }, [dailyData]);
@@ -221,27 +240,55 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
           {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : overview ? (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
-          <KpiCard icon={Target} label="ROAS" value={fmtRoas(overview.roas)} target={2} actual={overview.roas} />
-          <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} />
-          <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(overview.totalSales)} />
-          <KpiCard icon={DollarSign} label="Receita" value={fmtCurrency(overview.totalRevenue)} />
-          <KpiCard icon={DollarSign} label="CAC" value={fmtCurrency(overview.cac)} />
-          <KpiCard icon={DollarSign} label="Margem" value={fmtCurrency(overview.margin)} />
-          <KpiCard icon={BarChart3} label="Margem %" value={fmtPercent(overview.marginPercent)} />
-        </div>
+        (() => {
+          const f = { days, funnelType: "perpetual" as const, funnelName: funnel?.name };
+          return (
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
+              <MetricTooltip label="ROAS" value={fmtRoas(overview.roas)} formula={buildFunnelRoasFormula(overview.roas, f)}>
+                <KpiCard icon={Target} label="ROAS" value={fmtRoas(overview.roas)} target={2} actual={overview.roas} />
+              </MetricTooltip>
+              <MetricTooltip label="Investimento" value={fmtCurrency(overview.totalSpend)} formula={buildFunnelSpendFormula(overview.totalSpend, f)}>
+                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} />
+              </MetricTooltip>
+              <MetricTooltip label="Vendas" value={fmtNumber(overview.totalSales)} formula={buildFunnelSalesCountFormula(overview.totalSales, f)}>
+                <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(overview.totalSales)} />
+              </MetricTooltip>
+              <MetricTooltip label="Receita" value={fmtCurrency(overview.totalRevenue)} formula={buildFunnelRevenueFormula(overview.totalRevenue, f)}>
+                <KpiCard icon={DollarSign} label="Receita" value={fmtCurrency(overview.totalRevenue)} />
+              </MetricTooltip>
+              <MetricTooltip label="CAC" value={fmtCurrency(overview.cac)} formula={buildFunnelCacFormula(overview.cac, f)}>
+                <KpiCard icon={DollarSign} label="CAC" value={fmtCurrency(overview.cac)} />
+              </MetricTooltip>
+              <MetricTooltip label="Margem" value={fmtCurrency(overview.margin)} formula={buildFunnelMarginFormula(overview.margin, f)}>
+                <KpiCard icon={DollarSign} label="Margem" value={fmtCurrency(overview.margin)} />
+              </MetricTooltip>
+              <MetricTooltip label="Margem %" value={fmtPercent(overview.marginPercent)} formula={buildFunnelMarginPercentFormula(overview.marginPercent, f)}>
+                <KpiCard icon={BarChart3} label="Margem %" value={fmtPercent(overview.marginPercent)} />
+              </MetricTooltip>
+            </div>
+          );
+        })()
       ) : <EmptyState />}
 
       {/* ================================================================ */}
       {/* TAXAS DE CONVERSÃO                                               */}
       {/* ================================================================ */}
-      {overview && (overview.connectRate || overview.checkoutRate || overview.checkoutConversionRate) && (
-        <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
-          <RateCard label="Connect Rate" sublabel="Landing Page / Link Clicks" value={overview.connectRate} />
-          <RateCard label="Taxa Visita Checkout" sublabel="Checkout / Link Clicks" value={overview.checkoutRate} />
-          <RateCard label="Taxa Conversao Checkout" sublabel="Compra / Checkout" value={overview.checkoutConversionRate} />
-        </div>
-      )}
+      {overview && (overview.connectRate || overview.checkoutRate || overview.checkoutConversionRate) && (() => {
+        const f = { days, funnelType: "perpetual" as const, funnelName: funnel?.name };
+        return (
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
+            <MetricTooltip label="Connect Rate" value={overview.connectRate != null ? `${overview.connectRate.toFixed(2)}%` : "—"} formula={buildFunnelRateFormula("Connect Rate", "Landing Page Views ÷ Link Clicks × 100", overview.connectRate, f)}>
+              <RateCard label="Connect Rate" sublabel="Landing Page / Link Clicks" value={overview.connectRate} />
+            </MetricTooltip>
+            <MetricTooltip label="Taxa Visita Checkout" value={overview.checkoutRate != null ? `${overview.checkoutRate.toFixed(2)}%` : "—"} formula={buildFunnelRateFormula("Taxa Visita Checkout", "Checkout ÷ Link Clicks × 100", overview.checkoutRate, f)}>
+              <RateCard label="Taxa Visita Checkout" sublabel="Checkout / Link Clicks" value={overview.checkoutRate} />
+            </MetricTooltip>
+            <MetricTooltip label="Taxa Conversão Checkout" value={overview.checkoutConversionRate != null ? `${overview.checkoutConversionRate.toFixed(2)}%` : "—"} formula={buildFunnelRateFormula("Taxa Conversão Checkout", "Compra ÷ Checkout × 100", overview.checkoutConversionRate, f)}>
+              <RateCard label="Taxa Conversao Checkout" sublabel="Compra / Checkout" value={overview.checkoutConversionRate} />
+            </MetricTooltip>
+          </div>
+        );
+      })()}
 
       {/* ================================================================ */}
       {/* DESEMPENHO POR CAMPANHA (CANAL)                                  */}
@@ -292,7 +339,7 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
                 <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
-                <Tooltip contentStyle={TOOLTIP_STYLE} />
+                <Tooltip content={<FormulaChartTooltip />} />
                 <Legend wrapperStyle={{ color: "#fff" }} />
                 <Line type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={false} name="Investimento" />
                 <Line type="monotone" dataKey="revenue" stroke="hsl(150 60% 50%)" strokeWidth={2} dot={false} name="Receita" />
@@ -309,7 +356,7 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
                 <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
-                <Tooltip contentStyle={TOOLTIP_STYLE} />
+                <Tooltip content={<FormulaChartTooltip />} />
                 <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="4 4" />
                 <Line type="monotone" dataKey="margin" stroke="hsl(150 60% 50%)" strokeWidth={2} dot={false} name="Margem (R$)" />
               </LineChart>

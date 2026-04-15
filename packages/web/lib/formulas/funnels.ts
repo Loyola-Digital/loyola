@@ -1,0 +1,138 @@
+import { subDays } from "date-fns";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import type { MetricFormula } from "@/lib/types/metric-formula";
+
+/**
+ * Factories puras para dashboards de Funis (Launch + Perpetual).
+ * Agrega dados de múltiplas fontes: Meta Ads API (spend/impressions/clicks/leads),
+ * Google Sheets (sales/revenue), CRM (leads qualificados), etc.
+ */
+
+export interface FunnelFilters {
+  days: number;
+  funnelType?: "launch" | "perpetual";
+  funnelName?: string;
+}
+
+const nf = new Intl.NumberFormat("pt-BR");
+const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtBRL = (v: number): string => brl.format(v);
+
+function period(filters: FunnelFilters): string | undefined {
+  if (filters.days <= 0) return undefined;
+  const until = new Date();
+  const since = subDays(until, filters.days);
+  return `${format(since, "dd/MM", { locale: ptBR })} — ${format(until, "dd/MM", { locale: ptBR })}`;
+}
+
+function note(filters: FunnelFilters): string | undefined {
+  if (filters.funnelName) return `Funil: ${filters.funnelName} (${filters.funnelType ?? "—"})`;
+  return undefined;
+}
+
+// ============================================================
+// LAUNCH KPIs
+// ============================================================
+
+export function buildFunnelSpendFormula(spend: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
+  if (spend == null) return undefined;
+  return { expression: "Σ spend (campanhas do funil)", values: [{ label: "Investimento", value: fmtBRL(spend), source: "Meta Ads API · spend (campanhas vinculadas ao funil)" }], result: fmtBRL(spend), period: period(f), note: note(f) };
+}
+
+export function buildFunnelLeadsFormula(leads: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
+  if (leads == null) return undefined;
+  return { expression: "Σ leads (campanhas do funil)", values: [{ label: "Leads", value: leads, source: "CRM · leads atribuídos ao funil" }], result: nf.format(leads), period: period(f), note: note(f) };
+}
+
+export function buildFunnelCplFormula(spend: number | null | undefined, leads: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
+  if (spend == null || leads == null || leads <= 0) return undefined;
+  const cpl = spend / leads;
+  return { expression: "Spend ÷ Leads", values: [{ label: "Investimento", value: fmtBRL(spend), source: "Meta Ads · spend" }, { label: "Leads", value: leads, source: "CRM" }], result: `${fmtBRL(spend)} ÷ ${nf.format(leads)} = ${fmtBRL(cpl)}`, period: period(f), note: note(f) };
+}
+
+export function buildFunnelConnectRateFormula(rate: number | null, f: FunnelFilters): MetricFormula | undefined {
+  if (rate == null) return undefined;
+  return { expression: "Landing page views ÷ Link clicks × 100", values: [{ label: "Connect Rate", value: `${rate.toFixed(2)}%`, source: "Meta Ads API · landing_page_views e link_click" }], result: `${rate.toFixed(2)}%`, period: period(f), note: note(f) };
+}
+
+export function buildFunnelCtrFormula(ctr: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
+  if (ctr == null) return undefined;
+  return { expression: "Clicks ÷ Impressions × 100", values: [{ label: "CTR", value: `${ctr.toFixed(2)}%`, source: "Meta Ads API · clicks e impressions" }], result: `${ctr.toFixed(2)}%`, period: period(f), note: note(f) };
+}
+
+export function buildFunnelCpcFormula(cpc: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
+  if (cpc == null) return undefined;
+  return { expression: "Spend ÷ Clicks", values: [{ label: "CPC", value: fmtBRL(cpc), source: "Meta Ads API · derivado" }], result: fmtBRL(cpc), period: period(f), note: note(f) };
+}
+
+export function buildFunnelCpmFormula(cpm: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
+  if (cpm == null) return undefined;
+  return { expression: "Spend ÷ Impressions × 1000", values: [{ label: "CPM", value: fmtBRL(cpm), source: "Meta Ads API · derivado" }], result: fmtBRL(cpm), period: period(f), note: note(f) };
+}
+
+// ============================================================
+// PERPETUAL KPIs
+// ============================================================
+
+export function buildFunnelRoasFormula(roas: number | null, f: FunnelFilters): MetricFormula | undefined {
+  if (roas == null) return undefined;
+  return { expression: "Revenue ÷ Spend", values: [{ label: "ROAS", value: `${roas.toFixed(2)}x`, source: "Derivado · (Google Sheets revenue ÷ Meta Ads spend)" }], result: `${roas.toFixed(2)}x`, period: period(f), note: note(f) };
+}
+
+export function buildFunnelSalesCountFormula(sales: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
+  if (sales == null) return undefined;
+  return { expression: "Σ vendas (atribuídas ao funil)", values: [{ label: "Vendas", value: sales, source: "Google Sheets · planilha de vendas" }], result: nf.format(sales), period: period(f), note: note(f) };
+}
+
+export function buildFunnelRevenueFormula(revenue: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
+  if (revenue == null) return undefined;
+  return { expression: "Σ valor das vendas atribuídas", values: [{ label: "Receita", value: fmtBRL(revenue), source: "Google Sheets · valor das vendas" }], result: fmtBRL(revenue), period: period(f), note: note(f) };
+}
+
+export function buildFunnelCacFormula(cac: number | null, f: FunnelFilters): MetricFormula | undefined {
+  if (cac == null) return undefined;
+  return { expression: "Spend ÷ Vendas", values: [{ label: "CAC", value: fmtBRL(cac), source: "Derivado · (spend ÷ sales)" }], result: fmtBRL(cac), period: period(f), note: note(f) };
+}
+
+export function buildFunnelMarginFormula(margin: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
+  if (margin == null) return undefined;
+  return { expression: "Revenue − Spend", values: [{ label: "Margem", value: fmtBRL(margin), source: "Derivado" }], result: fmtBRL(margin), period: period(f), note: note(f) };
+}
+
+export function buildFunnelMarginPercentFormula(marginPercent: number | null, f: FunnelFilters): MetricFormula | undefined {
+  if (marginPercent == null) return undefined;
+  return { expression: "(Revenue − Spend) ÷ Revenue × 100", values: [{ label: "Margem %", value: `${marginPercent.toFixed(2)}%`, source: "Derivado" }], result: `${marginPercent.toFixed(2)}%`, period: period(f), note: note(f) };
+}
+
+// ============================================================
+// Taxa cards (perpetual)
+// ============================================================
+
+export function buildFunnelRateFormula(label: string, sublabel: string, value: number | null, f: FunnelFilters): MetricFormula | undefined {
+  if (value == null) return undefined;
+  return { expression: sublabel, values: [{ label, value: `${value.toFixed(2)}%`, source: "Meta Ads API · derivado" }], result: `${value.toFixed(2)}%`, period: period(f), note: note(f) };
+}
+
+// ============================================================
+// Survey card (launch)
+// ============================================================
+
+export function buildFunnelSurveyFormula(totalResponses: number, totalLeads: number | null | undefined): MetricFormula | undefined {
+  if (totalLeads == null || totalLeads <= 0) return undefined;
+  const rate = (totalResponses / totalLeads) * 100;
+  return { expression: "Respostas da pesquisa ÷ Leads × 100", values: [{ label: "Respostas", value: totalResponses, source: "Google Sheets · pesquisa" }, { label: "Leads", value: totalLeads, source: "CRM · leads do funil" }], result: `${nf.format(totalResponses)} ÷ ${nf.format(totalLeads)} × 100 = ${rate.toFixed(1)}%` };
+}
+
+// ============================================================
+// Daily chart points
+// ============================================================
+
+export function buildFunnelDailyFormula(label: string, apiSource: string, value: number, isCurrency: boolean, dateLabel: string): MetricFormula {
+  return {
+    expression: `${label} do dia ${dateLabel}`,
+    values: [{ label, value: isCurrency ? fmtBRL(value) : nf.format(value), source: apiSource }],
+    result: isCurrency ? fmtBRL(value) : nf.format(value),
+    period: dateLabel,
+  };
+}

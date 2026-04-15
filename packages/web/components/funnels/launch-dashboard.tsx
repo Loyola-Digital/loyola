@@ -45,6 +45,19 @@ import { CampaignSelector } from "./campaign-selector";
 import type { Funnel, FunnelCampaign } from "@loyola-x/shared";
 import { useSurveySummary } from "@/lib/hooks/use-google-sheets";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
+import { MetricTooltip } from "@/components/metrics/metric-tooltip";
+import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
+import {
+  buildFunnelSpendFormula,
+  buildFunnelLeadsFormula,
+  buildFunnelCplFormula,
+  buildFunnelConnectRateFormula,
+  buildFunnelCtrFormula,
+  buildFunnelCpcFormula,
+  buildFunnelCpmFormula,
+  buildFunnelSurveyFormula,
+  buildFunnelDailyFormula,
+} from "@/lib/formulas/funnels";
 import { ClipboardList, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -167,25 +180,46 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
           {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : overview ? (
-        <div className={`grid gap-3 grid-cols-2 sm:grid-cols-4 ${surveyResponseRate !== null ? "lg:grid-cols-8" : "lg:grid-cols-7"}`}>
-          <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} />
-          <KpiCard icon={Users} label="Leads" value={fmtNumber(overview.totalLeads)} />
-          <KpiCard icon={Target} label="CPL" value={fmtCurrency(overview.avgCpl)} />
-          <KpiCard icon={Link2} label="Connect Rate" value={fmtPercent(overview.connectRate)} />
-          <KpiCard icon={Percent} label="CTR" value={fmtPercent(overview.ctr)} />
-          <KpiCard icon={MousePointerClick} label="CPC" value={fmtCurrency(overview.cpc)} />
-          <KpiCard icon={BarChart3} label="CPM" value={fmtCurrency(overview.cpm)} />
-          {surveyResponseRate !== null && (
-            <div className={`rounded-xl border p-3 hover:border-border/50 transition-colors ${surveyResponseRate >= 30 ? "border-emerald-500/30 bg-emerald-500/5" : surveyResponseRate >= 10 ? "border-amber-500/30 bg-amber-500/5" : "border-red-500/30 bg-red-500/5"}`}>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Pesquisa</span>
-                <ClipboardList className="h-3.5 w-3.5 text-muted-foreground/50" />
-              </div>
-              <p className="text-xl font-bold tracking-tight">{surveyResponseRate.toFixed(1)}%</p>
-              <p className="text-[9px] text-muted-foreground">{surveySummary!.totalResponses} de {overview.totalLeads} leads</p>
+        (() => {
+          const f = { days, funnelType: "launch" as const, funnelName: funnel?.name };
+          return (
+            <div className={`grid gap-3 grid-cols-2 sm:grid-cols-4 ${surveyResponseRate !== null ? "lg:grid-cols-8" : "lg:grid-cols-7"}`}>
+              <MetricTooltip label="Investimento" value={fmtCurrency(overview.totalSpend)} formula={buildFunnelSpendFormula(overview.totalSpend, f)}>
+                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} />
+              </MetricTooltip>
+              <MetricTooltip label="Leads" value={fmtNumber(overview.totalLeads)} formula={buildFunnelLeadsFormula(overview.totalLeads, f)}>
+                <KpiCard icon={Users} label="Leads" value={fmtNumber(overview.totalLeads)} />
+              </MetricTooltip>
+              <MetricTooltip label="CPL" value={fmtCurrency(overview.avgCpl)} formula={buildFunnelCplFormula(overview.totalSpend, overview.totalLeads, f)}>
+                <KpiCard icon={Target} label="CPL" value={fmtCurrency(overview.avgCpl)} />
+              </MetricTooltip>
+              <MetricTooltip label="Connect Rate" value={fmtPercent(overview.connectRate)} formula={buildFunnelConnectRateFormula(overview.connectRate, f)}>
+                <KpiCard icon={Link2} label="Connect Rate" value={fmtPercent(overview.connectRate)} />
+              </MetricTooltip>
+              <MetricTooltip label="CTR" value={fmtPercent(overview.ctr)} formula={buildFunnelCtrFormula(overview.ctr, f)}>
+                <KpiCard icon={Percent} label="CTR" value={fmtPercent(overview.ctr)} />
+              </MetricTooltip>
+              <MetricTooltip label="CPC" value={fmtCurrency(overview.cpc)} formula={buildFunnelCpcFormula(overview.cpc, f)}>
+                <KpiCard icon={MousePointerClick} label="CPC" value={fmtCurrency(overview.cpc)} />
+              </MetricTooltip>
+              <MetricTooltip label="CPM" value={fmtCurrency(overview.cpm)} formula={buildFunnelCpmFormula(overview.cpm, f)}>
+                <KpiCard icon={BarChart3} label="CPM" value={fmtCurrency(overview.cpm)} />
+              </MetricTooltip>
+              {surveyResponseRate !== null && surveySummary && (
+                <MetricTooltip label="Pesquisa" value={`${surveyResponseRate.toFixed(1)}%`} formula={buildFunnelSurveyFormula(surveySummary.totalResponses, overview.totalLeads)}>
+                  <div className={`rounded-xl border p-3 hover:border-border/50 transition-colors ${surveyResponseRate >= 30 ? "border-emerald-500/30 bg-emerald-500/5" : surveyResponseRate >= 10 ? "border-amber-500/30 bg-amber-500/5" : "border-red-500/30 bg-red-500/5"}`}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Pesquisa</span>
+                      <ClipboardList className="h-3.5 w-3.5 text-muted-foreground/50" />
+                    </div>
+                    <p className="text-xl font-bold tracking-tight">{surveyResponseRate.toFixed(1)}%</p>
+                    <p className="text-[9px] text-muted-foreground">{surveySummary.totalResponses} de {overview.totalLeads} leads</p>
+                  </div>
+                </MetricTooltip>
+              )}
             </div>
-          )}
-        </div>
+          );
+        })()
       ) : <EmptyState />}
 
       {/* Campanhas do Funil (drill-down com thumbnails) */}
@@ -234,12 +268,25 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
             <Skeleton className="h-48" />
           ) : dailyData && dailyData.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={dailyData.map((d) => ({ date: d.date_start.slice(5, 10), spend: safeNum(d.spend), clicks: safeNum(d.clicks) }))}>
+              <LineChart data={dailyData.map((d) => {
+                const dateLabel = d.date_start.slice(5, 10);
+                const spend = safeNum(d.spend);
+                const clicks = safeNum(d.clicks);
+                return {
+                  date: dateLabel,
+                  spend,
+                  clicks,
+                  formulasByKey: {
+                    spend: buildFunnelDailyFormula("Investimento", "Meta Ads API · spend (time series)", spend, true, dateLabel),
+                    clicks: buildFunnelDailyFormula("Cliques", "Meta Ads API · clicks (time series)", clicks, false, dateLabel),
+                  },
+                };
+              })}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
                 <YAxis yAxisId="spend" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
                 <YAxis yAxisId="clicks" orientation="right" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
-                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "#fff" }} />
+                <Tooltip content={<FormulaChartTooltip />} />
                 <Legend wrapperStyle={{ color: "#fff" }} />
                 <Line yAxisId="spend" type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={false} name="Spend (R$)" />
                 <Line yAxisId="clicks" type="monotone" dataKey="clicks" stroke="hsl(200 80% 60%)" strokeWidth={2} dot={false} name="Cliques" />
