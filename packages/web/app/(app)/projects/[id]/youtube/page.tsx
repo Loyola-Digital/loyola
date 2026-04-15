@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import {
@@ -69,13 +70,16 @@ function fmtPercent(val: number | null | undefined): string {
   return `${val.toFixed(2)}%`;
 }
 
-function KpiCard({ icon: Icon, label, value }: {
+const KpiCard = React.forwardRef<HTMLDivElement, {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
-}) {
+} & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
+  { icon: Icon, label, value, className, ...rest },
+  ref,
+) {
   return (
-    <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3 hover:border-border/50 transition-colors">
+    <div ref={ref} {...rest} className={`rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3 hover:border-border/50 transition-colors ${className ?? ""}`}>
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
@@ -83,7 +87,7 @@ function KpiCard({ icon: Icon, label, value }: {
       <p className="text-xl font-bold tracking-tight">{value}</p>
     </div>
   );
-}
+});
 
 export default function ProjectYouTubePage() {
   const { id: projectId } = useParams<{ id: string }>();

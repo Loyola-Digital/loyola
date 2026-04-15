@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { use, useState } from "react";
 import {
   ArrowUpDown, TrendingUp, Users, Clock, ShoppingCart, Settings, DollarSign, Download, ChevronDown, ChevronRight,
@@ -42,11 +43,19 @@ function fmtCurrency(val: number): string {
   return `R$ ${val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function KpiCard({ icon: Icon, label, value, sub, gradient = "from-card/80 to-card/40", border = "border-border/30" }: {
-  icon: React.ComponentType<{ className?: string }>; label: string; value: string; sub?: string; gradient?: string; border?: string;
-}) {
+const KpiCard = React.forwardRef<HTMLDivElement, {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  sub?: string;
+  gradient?: string;
+  border?: string;
+} & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
+  { icon: Icon, label, value, sub, gradient = "from-card/80 to-card/40", border = "border-border/30", className, ...rest },
+  ref,
+) {
   return (
-    <div className={`rounded-xl border ${border} bg-gradient-to-br ${gradient} p-4`}>
+    <div ref={ref} {...rest} className={`rounded-xl border ${border} bg-gradient-to-br ${gradient} p-4 ${className ?? ""}`}>
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">{label}</span>
         <Icon className="h-4 w-4 text-muted-foreground/50" />
@@ -55,7 +64,7 @@ function KpiCard({ icon: Icon, label, value, sub, gradient = "from-card/80 to-ca
       {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
     </div>
   );
-}
+});
 
 export default function ProjectSalesPage({ params }: Props) {
   const { id: projectId } = use(params);

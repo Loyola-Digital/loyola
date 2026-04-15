@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useState, useMemo } from "react";
 import {
   DollarSign,
@@ -493,18 +494,25 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
 // SUB-COMPONENTS
 // ============================================================
 
-function KpiCard({ icon: Icon, label, value, target, actual, hintTooltip }: {
+const KpiCard = React.forwardRef<HTMLDivElement, {
   icon: React.ComponentType<{ className?: string }>; label: string; value: string;
   target?: number; actual?: number | null; hintTooltip?: boolean;
-}) {
+} & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
+  { icon: Icon, label, value, target, actual, hintTooltip, className, ...rest },
+  ref,
+) {
   const isRoas = target !== undefined;
   const roasOk = isRoas && actual != null && actual >= target;
   const roasBad = isRoas && actual != null && actual < target;
 
   return (
-    <div className={`rounded-xl border p-3 hover:border-border/50 transition-colors ${hintTooltip ? "cursor-help" : ""} ${
-      roasOk ? "border-emerald-500/30 bg-emerald-500/5" : roasBad ? "border-red-500/30 bg-red-500/5" : "border-border/30 bg-gradient-to-br from-card/80 to-card/40"
-    }`}>
+    <div
+      ref={ref}
+      {...rest}
+      className={`rounded-xl border p-3 hover:border-border/50 transition-colors ${hintTooltip ? "cursor-help" : ""} ${
+        roasOk ? "border-emerald-500/30 bg-emerald-500/5" : roasBad ? "border-red-500/30 bg-red-500/5" : "border-border/30 bg-gradient-to-br from-card/80 to-card/40"
+      } ${className ?? ""}`}
+    >
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
@@ -517,17 +525,24 @@ function KpiCard({ icon: Icon, label, value, target, actual, hintTooltip }: {
       )}
     </div>
   );
-}
+});
 
-function RateCard({ label, sublabel, value, hintTooltip }: { label: string; sublabel: string; value: number | null; hintTooltip?: boolean }) {
+const RateCard = React.forwardRef<
+  HTMLDivElement,
+  { label: string; sublabel: string; value: number | null; hintTooltip?: boolean } & React.HTMLAttributes<HTMLDivElement>
+>(function RateCard({ label, sublabel, value, hintTooltip, className, ...rest }, ref) {
   return (
-    <div className={`rounded-xl border border-border/30 bg-card/60 p-4 ${hintTooltip ? "cursor-help" : ""}`}>
+    <div
+      ref={ref}
+      {...rest}
+      className={`rounded-xl border border-border/30 bg-card/60 p-4 ${hintTooltip ? "cursor-help" : ""} ${className ?? ""}`}
+    >
       <p className="text-sm font-semibold">{label}</p>
       <p className="text-[10px] text-muted-foreground mb-2">{sublabel}</p>
       <p className={`text-2xl font-bold ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{fmtPercent(value)}</p>
     </div>
   );
-}
+});
 
 function HBarChart({ title, data, funnelContext, entityType }: {
   title: string;

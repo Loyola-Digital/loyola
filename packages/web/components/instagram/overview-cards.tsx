@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users, UserPlus, UserMinus, Eye,
@@ -93,9 +94,12 @@ interface KpiProps {
   border?: string;
 }
 
-function KpiCard({ icon: Icon, label, value, sub, gradient = "from-card/80 to-card/40", border = "border-border/30" }: KpiProps) {
+const KpiCard = React.forwardRef<HTMLDivElement, KpiProps & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
+  { icon: Icon, label, value, sub, gradient = "from-card/80 to-card/40", border = "border-border/30", className, ...rest },
+  ref,
+) {
   return (
-    <div className={`rounded-xl border ${border} bg-gradient-to-br ${gradient} p-3 hover:border-border/50 transition-colors`}>
+    <div ref={ref} {...rest} className={`rounded-xl border ${border} bg-gradient-to-br ${gradient} p-3 hover:border-border/50 transition-colors ${className ?? ""}`}>
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
@@ -104,7 +108,7 @@ function KpiCard({ icon: Icon, label, value, sub, gradient = "from-card/80 to-ca
       {sub && <p className="text-[9px] text-muted-foreground mt-0.5">{sub}</p>}
     </div>
   );
-}
+});
 
 export function OverviewCards({ profile, insights, isLoading, period }: OverviewCardsProps) {
   if (isLoading) {
