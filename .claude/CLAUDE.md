@@ -146,6 +146,7 @@ O AIOX carrega regras contextuais de `.claude/rules/` automaticamente. Regras co
 | `story-lifecycle.md` | Story status transitions and quality gates |
 | `workflow-execution.md` | 4 primary workflows (SDC, QA Loop, Spec Pipeline, Brownfield) |
 | `clickup-workflow.md` | ClickUp integration — agents register workflow actions (Pedro Valério method) |
+| `team-scopes.md` | Team member identification via `git config user.email` + scope enforcement (soft) — source: `docs/team/members.md` |
 
 > **Diretório:** `.claude/rules/` — rules são carregadas automaticamente pelo Claude Code quando relevantes.
 <!-- AIOX-MANAGED-END: rules-system -->
