@@ -653,3 +653,55 @@ export const salesSpreadsheetMappings = pgTable(
   ]
 );
 
+// ============================================================
+// FUNNEL SPREADSHEETS (EPIC-17 — Planilhas Genéricas no Funil)
+// ============================================================
+
+export const funnelSpreadsheetTypeEnum = pgEnum("funnel_spreadsheet_type", [
+  "leads",
+  "sales",
+  "custom",
+]);
+
+export const funnelSpreadsheets = pgTable(
+  "funnel_spreadsheets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => funnels.id, { onDelete: "cascade" }),
+    label: varchar("label", { length: 255 }).notNull(),
+    type: funnelSpreadsheetTypeEnum("type").notNull(),
+    spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
+    spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
+    sheetName: varchar("sheet_name", { length: 255 }).notNull(),
+    columnMapping: jsonb("column_mapping")
+      .notNull()
+      .$type<{
+        name?: string;
+        email?: string;
+        phone?: string;
+        date?: string;
+        status?: string;
+        value?: string;
+        utm_source?: string;
+        utm_medium?: string;
+        utm_campaign?: string;
+        utm_content?: string;
+        utm_term?: string;
+      }>(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("idx_funnel_spreadsheets_funnel").on(table.funnelId),
+  ]
+);
+
