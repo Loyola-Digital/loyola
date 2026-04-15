@@ -57,6 +57,7 @@ import {
   buildFunnelCpmFormula,
   buildFunnelSurveyFormula,
   buildFunnelDailyFormula,
+  enrichFormulaForEntity,
 } from "@/lib/formulas/funnels";
 import { ClipboardList, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -185,34 +186,34 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
           return (
             <div className={`grid gap-3 grid-cols-2 sm:grid-cols-4 ${surveyResponseRate !== null ? "lg:grid-cols-8" : "lg:grid-cols-7"}`}>
               <MetricTooltip label="Investimento" value={fmtCurrency(overview.totalSpend)} formula={buildFunnelSpendFormula(overview.totalSpend, f)}>
-                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} />
+                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="Leads" value={fmtNumber(overview.totalLeads)} formula={buildFunnelLeadsFormula(overview.totalLeads, f)}>
-                <KpiCard icon={Users} label="Leads" value={fmtNumber(overview.totalLeads)} />
+                <KpiCard icon={Users} label="Leads" value={fmtNumber(overview.totalLeads)} hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="CPL" value={fmtCurrency(overview.avgCpl)} formula={buildFunnelCplFormula(overview.totalSpend, overview.totalLeads, f)}>
-                <KpiCard icon={Target} label="CPL" value={fmtCurrency(overview.avgCpl)} />
+                <KpiCard icon={Target} label="CPL" value={fmtCurrency(overview.avgCpl)} hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="Connect Rate" value={fmtPercent(overview.connectRate)} formula={buildFunnelConnectRateFormula(overview.connectRate, f)}>
-                <KpiCard icon={Link2} label="Connect Rate" value={fmtPercent(overview.connectRate)} />
+                <KpiCard icon={Link2} label="Connect Rate" value={fmtPercent(overview.connectRate)} hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="CTR" value={fmtPercent(overview.ctr)} formula={buildFunnelCtrFormula(overview.ctr, f)}>
-                <KpiCard icon={Percent} label="CTR" value={fmtPercent(overview.ctr)} />
+                <KpiCard icon={Percent} label="CTR" value={fmtPercent(overview.ctr)} hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="CPC" value={fmtCurrency(overview.cpc)} formula={buildFunnelCpcFormula(overview.cpc, f)}>
-                <KpiCard icon={MousePointerClick} label="CPC" value={fmtCurrency(overview.cpc)} />
+                <KpiCard icon={MousePointerClick} label="CPC" value={fmtCurrency(overview.cpc)} hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="CPM" value={fmtCurrency(overview.cpm)} formula={buildFunnelCpmFormula(overview.cpm, f)}>
-                <KpiCard icon={BarChart3} label="CPM" value={fmtCurrency(overview.cpm)} />
+                <KpiCard icon={BarChart3} label="CPM" value={fmtCurrency(overview.cpm)} hintTooltip />
               </MetricTooltip>
               {surveyResponseRate !== null && surveySummary && (
                 <MetricTooltip label="Pesquisa" value={`${surveyResponseRate.toFixed(1)}%`} formula={buildFunnelSurveyFormula(surveySummary.totalResponses, overview.totalLeads)}>
-                  <div className={`rounded-xl border p-3 hover:border-border/50 transition-colors ${surveyResponseRate >= 30 ? "border-emerald-500/30 bg-emerald-500/5" : surveyResponseRate >= 10 ? "border-amber-500/30 bg-amber-500/5" : "border-red-500/30 bg-red-500/5"}`}>
+                  <div className={`rounded-xl border p-3 hover:border-border/50 transition-colors cursor-help ${surveyResponseRate >= 30 ? "border-emerald-500/30 bg-emerald-500/5" : surveyResponseRate >= 10 ? "border-amber-500/30 bg-amber-500/5" : "border-red-500/30 bg-red-500/5"}`}>
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Pesquisa</span>
                       <ClipboardList className="h-3.5 w-3.5 text-muted-foreground/50" />
                     </div>
-                    <p className="text-xl font-bold tracking-tight">{surveyResponseRate.toFixed(1)}%</p>
+                    <p className="text-xl font-bold tracking-tight underline decoration-dotted decoration-muted-foreground/40 underline-offset-4">{surveyResponseRate.toFixed(1)}%</p>
                     <p className="text-[9px] text-muted-foreground">{surveySummary.totalResponses} de {overview.totalLeads} leads</p>
                   </div>
                 </MetricTooltip>
@@ -314,13 +315,21 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
         <div className="rounded-xl border border-border/30 bg-card/60 p-5">
           <h3 className="text-sm font-semibold mb-4">Distribuição de Investimento</h3>
           {funnelCampaigns.length > 0 ? (
-            <CampaignDonut campaigns={funnelCampaigns} />
+            <CampaignDonut
+              campaigns={funnelCampaigns}
+              funnelContext={{ days, funnelType: "launch", funnelName: funnel?.name }}
+            />
           ) : <EmptyState />}
         </div>
       </div>
 
       {/* Top Creatives Gallery */}
-      <TopCreativesGallery projectId={projectId} days={days} campaignIds={campaignIds} />
+      <TopCreativesGallery
+        projectId={projectId}
+        days={days}
+        campaignIds={campaignIds}
+        funnelContext={{ days, funnelType: "launch", funnelName: funnel?.name }}
+      />
 
       {/* Conversion Funnel + Placement */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -354,23 +363,35 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
 // Sub-components
 // ============================================================
 
-function KpiCard({ icon: Icon, label, value }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string }) {
+function KpiCard({ icon: Icon, label, value, hintTooltip }: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  hintTooltip?: boolean;
+}) {
   return (
-    <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3 hover:border-border/50 transition-colors">
+    <div className={`rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3 hover:border-border/50 transition-colors ${hintTooltip ? "cursor-help" : ""}`}>
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
       </div>
-      <p className="text-xl font-bold tracking-tight">{value}</p>
+      <p className={`text-xl font-bold tracking-tight ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
     </div>
   );
 }
 
-function CampaignDonut({ campaigns }: { campaigns: CampaignAnalytics[] }) {
+function CampaignDonut({ campaigns, funnelContext }: { campaigns: CampaignAnalytics[]; funnelContext: { days: number; funnelType: "launch"; funnelName?: string } }) {
   const data = campaigns
     .sort((a, b) => b.spend - a.spend)
     .slice(0, 5)
-    .map((c) => ({ name: c.campaignName, value: c.spend }));
+    .map((c) => ({
+      name: c.campaignName,
+      value: c.spend,
+      formula: enrichFormulaForEntity(
+        buildFunnelSpendFormula(c.spend, funnelContext),
+        { campaign: c.campaignName },
+      ),
+    }));
   const total = data.reduce((s, d) => s + d.value, 0);
 
   return (
@@ -380,7 +401,7 @@ function CampaignDonut({ campaigns }: { campaigns: CampaignAnalytics[] }) {
           <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={70} strokeWidth={1}>
             {data.map((_, i) => <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
           </Pie>
-          <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "11px", color: "#fff" }} formatter={(v) => [fmtCurrency(Number(v)), "Spend"]} />
+          <Tooltip content={<FormulaChartTooltip />} />
         </PieChart>
       </ResponsiveContainer>
       <div className="space-y-1.5 text-xs flex-1 min-w-0">
@@ -446,11 +467,20 @@ function EmptyState() {
 // ============================================================
 
 function CtrCpmChart({ data }: { data: CampaignDailyInsight[] }) {
-  const chartData = data.map((d) => ({
-    date: d.date_start.slice(5, 10),
-    ctr: safeNum(d.ctr),
-    cpm: safeNum(d.cpm),
-  }));
+  const chartData = data.map((d) => {
+    const dateLabel = d.date_start.slice(5, 10);
+    const ctr = safeNum(d.ctr);
+    const cpm = safeNum(d.cpm);
+    return {
+      date: dateLabel,
+      ctr,
+      cpm,
+      formulasByKey: {
+        ctr: buildFunnelDailyFormula("CTR", "Meta Ads API · derivado (clicks ÷ impressions × 100)", ctr, false, dateLabel),
+        cpm: buildFunnelDailyFormula("CPM", "Meta Ads API · derivado (spend ÷ impressions × 1000)", cpm, true, dateLabel),
+      },
+    };
+  });
 
   return (
     <ResponsiveContainer width="100%" height={260}>
@@ -476,20 +506,7 @@ function CtrCpmChart({ data }: { data: CampaignDailyInsight[] }) {
           tickFormatter={(v) => `R$${v.toFixed(0)}`}
           label={{ value: "CPM R$", angle: 90, position: "insideRight", style: { fontSize: 11, fill: "hsl(0 72% 55%)" } }}
         />
-        <Tooltip
-          contentStyle={{
-            backgroundColor: "hsl(var(--card))",
-            border: "1px solid hsl(var(--border))",
-            borderRadius: "8px",
-            fontSize: "12px",
-            color: "#fff",
-          }}
-          formatter={(value, name) => {
-            const v = Number(value);
-            if (name === "CTR") return [`${v.toFixed(2)}%`, name];
-            return [`R$ ${v.toFixed(2)}`, name];
-          }}
-        />
+        <Tooltip content={<FormulaChartTooltip />} />
         <Legend wrapperStyle={{ color: "#fff" }} />
         <Line
           yAxisId="ctr"

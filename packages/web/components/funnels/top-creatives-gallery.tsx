@@ -19,6 +19,14 @@ import {
   type MetaAdCreative,
   type VideoMetrics,
 } from "@/lib/hooks/use-traffic-analytics";
+import { MetricTooltip } from "@/components/metrics/metric-tooltip";
+import {
+  buildFunnelSpendFormula,
+  buildFunnelCtrFormula,
+  buildFunnelCpcFormula,
+  enrichFormulaForEntity,
+} from "@/lib/formulas/funnels";
+import type { MetricFormula } from "@/lib/types/metric-formula";
 
 function fmtCurrency(val: number | null): string {
   if (val === null || val === 0) return "—";
@@ -87,11 +95,12 @@ interface LightboxItem {
   parentInfo?: string;
 }
 
-function CreativeLightbox({ items, initialIndex, projectId, onClose }: {
+function CreativeLightbox({ items, initialIndex, projectId, onClose, funnelContext }: {
   items: LightboxItem[];
   initialIndex: number;
   projectId: string;
   onClose: () => void;
+  funnelContext?: { days: number; funnelType?: "launch" | "perpetual"; funnelName?: string };
 }) {
   const [index, setIndex] = useState(initialIndex);
   const item = items[index];
@@ -214,20 +223,31 @@ function CreativeLightbox({ items, initialIndex, projectId, onClose }: {
 
         {/* Info */}
         <div className="p-4 space-y-3 shrink-0 overflow-y-auto">
-          <div className="grid grid-cols-5 gap-3">
-            {[
-              { label: "Spend", value: fmtCurrency(item.spend) },
-              { label: "Impressões", value: fmtNumber(item.impressions) },
-              { label: "Cliques", value: fmtNumber(item.clicks) },
-              { label: "CTR", value: fmtPercent(item.ctr) },
-              { label: "CPC", value: fmtCurrency(item.cpc) },
-            ].map((m) => (
-              <div key={m.label} className="text-center">
-                <p className="text-[10px] text-muted-foreground">{m.label}</p>
-                <p className="text-sm font-semibold">{m.value}</p>
+          {(() => {
+            const formulas = buildAdFormulas(
+              { spend: item.spend, ctr: item.ctr, cpc: item.cpc, impressions: item.impressions, clicks: item.clicks, campaignName: item.name },
+              funnelContext,
+            );
+            const cells: Array<{ label: string; value: string; formula: MetricFormula | undefined }> = [
+              { label: "Spend", value: fmtCurrency(item.spend), formula: formulas.spend },
+              { label: "Impressões", value: fmtNumber(item.impressions), formula: formulas.impressions },
+              { label: "Cliques", value: fmtNumber(item.clicks), formula: formulas.clicks },
+              { label: "CTR", value: fmtPercent(item.ctr), formula: formulas.ctr },
+              { label: "CPC", value: fmtCurrency(item.cpc), formula: formulas.cpc },
+            ];
+            return (
+              <div className="grid grid-cols-5 gap-3">
+                {cells.map((m) => (
+                  <MetricTooltip key={m.label} label={m.label} value={m.value} formula={m.formula}>
+                    <div className="text-center cursor-help">
+                      <p className="text-[10px] text-muted-foreground">{m.label}</p>
+                      <p className={`text-sm font-semibold ${m.formula ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{m.value}</p>
+                    </div>
+                  </MetricTooltip>
+                ))}
               </div>
-            ))}
-          </div>
+            );
+          })()}
 
           {item.creative.title && <p className="text-sm font-medium">{item.creative.title}</p>}
           {item.creative.body && <p className="text-xs text-muted-foreground line-clamp-3">{item.creative.body}</p>}
@@ -266,9 +286,32 @@ interface TopCreativesGalleryProps {
   projectId: string;
   days: number;
   campaignIds?: string[];
+  funnelContext?: { days: number; funnelType?: "launch" | "perpetual"; funnelName?: string };
 }
 
-export function TopCreativesGallery({ projectId, days, campaignIds }: TopCreativesGalleryProps) {
+function buildAdFormulas(ad: { spend: number; ctr: number; cpc: number; impressions?: number; clicks?: number; campaignName: string }, f?: { days: number; funnelType?: "launch" | "perpetual"; funnelName?: string }) {
+  const funnel = f ?? { days: 30 };
+  const path = { ad: ad.campaignName };
+  const impressionsFormula: MetricFormula | undefined = ad.impressions != null ? {
+    expression: "Σ impressions do criativo",
+    values: [{ label: "Impressões", value: ad.impressions, source: "Meta Ads API · impressions" }],
+    result: new Intl.NumberFormat("pt-BR").format(ad.impressions),
+  } : undefined;
+  const clicksFormula: MetricFormula | undefined = ad.clicks != null ? {
+    expression: "Σ clicks do criativo",
+    values: [{ label: "Cliques", value: ad.clicks, source: "Meta Ads API · clicks" }],
+    result: new Intl.NumberFormat("pt-BR").format(ad.clicks),
+  } : undefined;
+  return {
+    spend: enrichFormulaForEntity(buildFunnelSpendFormula(ad.spend, funnel), path),
+    ctr: enrichFormulaForEntity(buildFunnelCtrFormula(ad.ctr, funnel), path),
+    cpc: enrichFormulaForEntity(buildFunnelCpcFormula(ad.cpc, funnel), path),
+    impressions: enrichFormulaForEntity(impressionsFormula, path),
+    clicks: enrichFormulaForEntity(clicksFormula, path),
+  };
+}
+
+export function TopCreativesGallery({ projectId, days, campaignIds, funnelContext }: TopCreativesGalleryProps) {
   const [metric, setMetric] = useState<TopPerformerMetric>("ctr");
   const [expanded, setExpanded] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -340,24 +383,35 @@ export function TopCreativesGallery({ projectId, days, campaignIds }: TopCreativ
                 className="w-full h-full object-cover"
               />
               {/* Hover overlay */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                <div className="absolute bottom-0 left-0 right-0 p-2.5 text-white">
-                  <div className="grid grid-cols-3 gap-1 text-[10px]">
-                    <div>
-                      <p className="opacity-60">Spend</p>
-                      <p className="font-semibold">{fmtCurrency(ad.spend)}</p>
-                    </div>
-                    <div>
-                      <p className="opacity-60">CTR</p>
-                      <p className="font-semibold">{fmtPercent(ad.ctr)}</p>
-                    </div>
-                    <div>
-                      <p className="opacity-60">CPC</p>
-                      <p className="font-semibold">{fmtCurrency(ad.cpc)}</p>
+              {(() => {
+                const formulas = buildAdFormulas(ad, funnelContext);
+                return (
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="absolute bottom-0 left-0 right-0 p-2.5 text-white">
+                      <div className="grid grid-cols-3 gap-1 text-[10px]">
+                        <MetricTooltip label="Spend" value={fmtCurrency(ad.spend)} formula={formulas.spend}>
+                          <div onClick={(e) => e.stopPropagation()} className="cursor-help">
+                            <p className="opacity-60">Spend</p>
+                            <p className="font-semibold underline decoration-dotted decoration-white/40 underline-offset-4">{fmtCurrency(ad.spend)}</p>
+                          </div>
+                        </MetricTooltip>
+                        <MetricTooltip label="CTR" value={fmtPercent(ad.ctr)} formula={formulas.ctr}>
+                          <div onClick={(e) => e.stopPropagation()} className="cursor-help">
+                            <p className="opacity-60">CTR</p>
+                            <p className="font-semibold underline decoration-dotted decoration-white/40 underline-offset-4">{fmtPercent(ad.ctr)}</p>
+                          </div>
+                        </MetricTooltip>
+                        <MetricTooltip label="CPC" value={fmtCurrency(ad.cpc)} formula={formulas.cpc}>
+                          <div onClick={(e) => e.stopPropagation()} className="cursor-help">
+                            <p className="opacity-60">CPC</p>
+                            <p className="font-semibold underline decoration-dotted decoration-white/40 underline-offset-4">{fmtCurrency(ad.cpc)}</p>
+                          </div>
+                        </MetricTooltip>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
+                );
+              })()}
               {/* Type badge */}
               <div className="absolute top-1.5 left-1.5">
                 <Badge variant="outline" className="text-[9px] px-1 py-0 bg-black/50 text-white border-white/20 backdrop-blur-sm">
@@ -418,6 +472,7 @@ export function TopCreativesGallery({ projectId, days, campaignIds }: TopCreativ
           initialIndex={lightboxIndex}
           projectId={projectId}
           onClose={() => setLightboxIndex(null)}
+          funnelContext={funnelContext}
         />
       )}
     </div>
