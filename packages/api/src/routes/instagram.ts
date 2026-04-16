@@ -630,7 +630,7 @@ export default fp(async function instagramRoutes(fastify) {
         { metric: "shares", params: tsTotal },
         { metric: "saves", params: tsTotal },
         { metric: "replies", params: tsTotal },
-        { metric: "follows_and_unfollows", params: tsTotal },
+        { metric: "follows_and_unfollows", params: `${tsTotal}&breakdown=follow_type` },
         { metric: "profile_links_taps", params: tsTotal },
       ];
 

@@ -59,13 +59,41 @@ function getInsightValue(entries: InsightEntry[] | undefined, name: string): num
   return 0;
 }
 
-/** Get follows/unfollows breakdown from total_value */
+/** Get follows/unfollows breakdown from total_value.
+ *
+ * Meta v25+ requer `breakdown=follow_type` para o metric `follows_and_unfollows`.
+ * A estrutura do response vem como:
+ *   total_value.breakdowns[0].results[] = [
+ *     { dimension_values: ["FOLLOWER"], value: N },      // novos seguidores
+ *     { dimension_values: ["NON_FOLLOWER"], value: N },  // unfollows
+ *   ]
+ *
+ * Mantemos fallback para os formatos legados (objeto simples ou time_series)
+ * caso a Meta volte a aceitar a requisição sem breakdown no futuro.
+ */
 function getFollowsBreakdown(entries: InsightEntry[] | undefined): { gained: number; lost: number } | null {
   if (!entries) return null;
   const entry = entries.find((e) => e.name === "follows_and_unfollows");
   if (!entry) return null;
 
-  // total_value format: { value: { follow: N, unfollow: N } }
+  // v25+ format: total_value.breakdowns[0].results[] com dimension_values
+  const breakdowns = entry.total_value?.breakdowns as
+    | Array<{ results?: Array<{ dimension_values?: string[]; value?: number }> }>
+    | undefined;
+  if (breakdowns && breakdowns.length > 0) {
+    const results = breakdowns[0]?.results ?? [];
+    let gained = 0;
+    let lost = 0;
+    for (const r of results) {
+      const dim = r.dimension_values?.[0];
+      const val = typeof r.value === "number" ? r.value : 0;
+      if (dim === "FOLLOWER") gained = val;
+      else if (dim === "NON_FOLLOWER") lost = val;
+    }
+    if (gained > 0 || lost > 0) return { gained, lost };
+  }
+
+  // Legacy total_value format: { value: { follow: N, unfollow: N } }
   const tv = entry.total_value?.value;
   if (tv && typeof tv === "object") {
     const fv = tv as Record<string, number>;
