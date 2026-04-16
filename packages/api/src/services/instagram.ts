@@ -525,8 +525,11 @@ export default fp(async function instagramServicePlugin(fastify) {
     ];
     await Promise.all(totalValueMetrics.map(async (metric) => {
       try {
+        // `follows_and_unfollows` requer breakdown=follow_type (Meta v25+)
+        // Sem esse parâmetro, a API retorna vazio silenciosamente.
+        const breakdownParam = metric === "follows_and_unfollows" ? "&breakdown=follow_type" : "";
         const result = await graphFetch<InsightsResponse>(
-          `${base}?metric=${metric}${tsParams}&metric_type=total_value`, token
+          `${base}?metric=${metric}${tsParams}&metric_type=total_value${breakdownParam}`, token
         );
         if (result?.data?.length > 0) {
           entries.push(...result.data);
