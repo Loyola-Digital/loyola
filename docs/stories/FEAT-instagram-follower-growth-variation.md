@@ -1,7 +1,7 @@
 # FEAT — Instagram: Variação de Ganhos de Seguidores (período vs anterior)
 
 **Type:** Standalone feature (fora do ciclo de epics numerados)
-**Status:** Ready for Review
+**Status:** Ready for Review (QA: PASS — awaiting @devops push to mark Done)
 **Priority:** Medium
 **Estimate:** S/M
 **Depends on:** —
@@ -185,6 +185,34 @@ Período anterior: 02/04 — 09/04 (+150 seguidores)
 
 ---
 
+## QA Results
+
+**Gate:** PASS
+**Reviewer:** Quinn (@qa)
+**Date:** 2026-04-16
+**Gate File:** `docs/qa/gates/FEAT-instagram-follower-growth-variation.yml`
+
+### 7 Quality Checks
+| # | Check | Status |
+|---|-------|--------|
+| 1 | Code review | ✅ PASS |
+| 2 | Unit tests | ⚠️ CONCERN (LOW — TEST-010) |
+| 3 | Acceptance criteria | ✅ PASS (6/6) |
+| 4 | No regressions | ✅ PASS |
+| 5 | Performance | ✅ PASS |
+| 6 | Security | ✅ PASS |
+| 7 | Documentation | ✅ PASS |
+
+### Risks — RESOLVIDOS
+- **R1 (janela fora da API):** `previousInsights === undefined` → `hasVariationData=false` → `show:false` ✅
+- **R2 (rate limit):** React Query cacheia 30min ✅
+- **R3 (refetch no filtro):** comportamento esperado, aceito
+
+### Notes
+- **DESIGN-002 (LOW):** cálculo de `variation` duplicado (card UI + factory). Aceitável; se virar manutenção, extrair helper puro.
+
+---
+
 ## Change Log
 
 | Date | Change | Author |
@@ -192,3 +220,4 @@ Período anterior: 02/04 — 09/04 (+150 seguidores)
 | 2026-04-16 | Story standalone criada | @sm (River) |
 | 2026-04-16 | PO validation GO — 9.5/10. Status Draft → Ready. | @po (Pax) |
 | 2026-04-16 | Implementation complete — 4 files, tsc+lint clean, CodeRabbit skipped. Status → Ready for Review. | @dev (Dex) |
+| 2026-04-16 | QA Gate PASS — 1 CONCERN LOW (TEST-010 herdado), 1 DESIGN-002 note. Aprovado para @devops. | @qa (Quinn) |
