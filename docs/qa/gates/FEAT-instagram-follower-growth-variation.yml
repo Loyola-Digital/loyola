@@ -1,0 +1,44 @@
+schema: 1
+story: 'FEAT-instagram-follower-growth-variation'
+gate: PASS
+status_reason: 'Feature standalone Instagram — card Variação de Ganhos comparando período atual vs anterior. 6/6 ACs PASS, edge cases tratados (Novo, ambos zero, janela fora da API). Retrocompat via props opcionais. tsc+lint clean. React Query cacheia 2ª chamada (zero overhead percebido).'
+reviewer: 'Quinn'
+updated: '2026-04-16T00:00:00Z'
+top_issues:
+  - id: 'TEST-010'
+    severity: low
+    finding: 'Factory buildFollowerGrowthVariationFormula é pure function testável em 4 cenários (Novo → undefined; ambos zero → result "0%"; previous negativo → Math.abs correto; normal → cálculo padrão). Sem suite de testes no projeto.'
+    suggested_action: 'Consolidar com TEST-008/009 (Epic 16) ao instituir suite Vitest. Não bloqueante.'
+  - id: 'DESIGN-002'
+    severity: low
+    finding: 'Cálculo de variation está duplicado — card UI calcula local para definir cor/icon, factory recalcula para memorial. Aceitável dado que UI precisa do valor pré-render.'
+    suggested_action: 'Se virar problema de manutenção no futuro, extrair helper pure `computeFollowerGrowthVariation(current, previous)` em lib/formulas. Hoje está OK.'
+waiver: { active: false }
+coverage:
+  ac1_card_no_overview: PASS  # 3º card após Saldo Seguidores
+  ac2_edge_cases: PASS  # Novo oculto, ambos zero → 0% stable, negative Math.abs, janela fora → show false
+  ac3_cores_semanticas: PASS  # >5% emerald, ±5% amber, <-5% red, neutro quando sem dados
+  ac4_metric_tooltip: PASS  # buildFollowerGrowthVariationFormula com note de ambos períodos
+  ac5_segunda_chamada_paralela: PASS  # useInstagramInsights 2x com React Query dedupe
+  ac6_sem_regressao: PASS  # props opcionais, KpiCard intocado, cards existentes preservados
+quality_checks:
+  code_review: PASS
+  unit_tests: CONCERN  # TEST-010 low
+  acceptance_criteria: PASS
+  no_regressions: PASS
+  performance: PASS
+  security: PASS
+  documentation: PASS
+risks_resolution:
+  r1_janela_fora_da_api: RESOLVED  # previousInsights undefined → hasVariationData=false → show:false
+  r2_rate_limit: RESOLVED  # React Query cacheia 30min, previous window não muda frequentemente
+  r3_refetch_no_filtro: ACCEPTED  # comportamento esperado, não regressão
+blast_radius:
+  files_modified: 4  # + 1 story doc + 1 gate yml
+  files_new: 0
+  lines_changed: '+315 / -2'
+  risk_level: LOW  # Aditivo, frontend-only, padrão Epic 16
+commit: '1899802'
+branch: 'feature/instagram-follower-growth-variation'
+smoke_test: 'DEFERRED_TO_USER'
+coderabbit_status: 'SKIPPED'
