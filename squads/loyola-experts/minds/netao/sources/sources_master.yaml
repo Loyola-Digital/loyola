@@ -10,7 +10,7 @@ sources:
 
   source_1:
     type: "compiled_summary"
-    title: "A Mente, A Jornada e O Imperio de Netao Bom Beef"
+    title: "A Mente, A Jornada e O Império de Netao Bom Beef"
     format: "text"
     tier: 1
     confidence: 95
@@ -62,7 +62,7 @@ sources:
 
   source_7:
     type: "video_transcription"
-    title: "Como foram meus 10 anos como dono de acougue | Netao Bom Beef"
+    title: "Como foram meus 10 anos como dono de açougue | Netao Bom Beef"
     tier: 1
     confidence: 95
     domains: ["biography", "values", "loyalty", "origin"]
@@ -70,7 +70,7 @@ sources:
 
   source_8:
     type: "video_transcription"
-    title: "Do Acougue a Franquia — O Padrinho Podcast #049"
+    title: "Do Açougue à Franquia — O Padrinho Podcast #049"
     tier: 1
     confidence: 95
     domains: ["business", "franchise", "strategy", "leadership", "finance"]
