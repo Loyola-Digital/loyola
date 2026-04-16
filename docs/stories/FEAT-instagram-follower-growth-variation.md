@@ -1,7 +1,7 @@
 # FEAT — Instagram: Variação de Ganhos de Seguidores (período vs anterior)
 
 **Type:** Standalone feature (fora do ciclo de epics numerados)
-**Status:** Ready for Review (QA: PASS — awaiting @devops push to mark Done)
+**Status:** Done
 **Priority:** Medium
 **Estimate:** S/M
 **Depends on:** —
@@ -221,3 +221,4 @@ Período anterior: 02/04 — 09/04 (+150 seguidores)
 | 2026-04-16 | PO validation GO — 9.5/10. Status Draft → Ready. | @po (Pax) |
 | 2026-04-16 | Implementation complete — 4 files, tsc+lint clean, CodeRabbit skipped. Status → Ready for Review. | @dev (Dex) |
 | 2026-04-16 | QA Gate PASS — 1 CONCERN LOW (TEST-010 herdado), 1 DESIGN-002 note. Aprovado para @devops. | @qa (Quinn) |
+| 2026-04-16 | Shipped — PR #10 squash-merged (commit 0bb2635). Status → Done. | @devops (Gage) |
