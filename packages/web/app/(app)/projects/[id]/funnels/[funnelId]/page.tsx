@@ -10,6 +10,7 @@ import { PerpetualDashboard } from "@/components/funnels/perpetual-dashboard";
 import { YouTubeFunnelSection } from "@/components/funnels/youtube-funnel-section";
 import { SurveyFunnelTab } from "@/components/funnels/survey-funnel-tab";
 import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-tab";
+import { MetaAdsSpreadsheetTab } from "@/components/funnels/meta-ads-spreadsheet-tab";
 
 export default function FunnelPage() {
   const params = useParams<{ id: string; funnelId: string }>();
@@ -59,6 +60,10 @@ export default function FunnelPage() {
               <span className="ml-1 text-[10px] bg-muted rounded-full px-1.5 py-0.5">{metaCount}</span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="meta-ads-2" className="gap-1.5">
+            <TrendingUp className="h-3.5 w-3.5 text-blue-600" />
+            Meta Ads 2
+          </TabsTrigger>
           <TabsTrigger value="youtube-ads" className="gap-1.5">
             <Youtube className="h-3.5 w-3.5 text-red-500" />
             YouTube Ads
@@ -94,6 +99,10 @@ export default function FunnelPage() {
 
         <TabsContent value="spreadsheets" className="mt-6">
           <FunnelSpreadsheetsTab projectId={params.id} funnelId={params.funnelId} />
+        </TabsContent>
+
+        <TabsContent value="meta-ads-2" className="mt-6">
+          <MetaAdsSpreadsheetTab funnel={funnel} projectId={params.id} />
         </TabsContent>
       </Tabs>
     </div>
