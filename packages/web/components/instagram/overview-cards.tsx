@@ -4,7 +4,7 @@ import * as React from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users, UserPlus, UserMinus, Eye,
-  TrendingUp, Heart, Bookmark, Share2, Link2,
+  TrendingUp, TrendingDown, Minus, Heart, Bookmark, Share2, Link2,
 } from "lucide-react";
 import type { InstagramProfile, InsightEntry } from "@/lib/hooks/use-instagram";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -12,6 +12,7 @@ import type { MetricFormula } from "@/lib/types/metric-formula";
 import {
   buildFollowersFormula,
   buildFollowersDeltaFormula,
+  buildFollowerGrowthVariationFormula,
   buildReachFormula,
   buildViewsFormula,
   buildInteractionsFormula,
@@ -28,6 +29,11 @@ interface OverviewCardsProps {
   isLoading: boolean;
   /** Período ativo do filtro — usado para compor o memorial de cada métrica. */
   period?: InstagramPeriod;
+  /** Insights do período anterior (mesma duração, shift pra trás) — opcional.
+   * Quando presente, habilita o card "Variação de Ganhos". */
+  previousInsights?: InsightEntry[];
+  /** Período anterior (compondo with previousInsights). */
+  previousPeriod?: InstagramPeriod;
 }
 
 /** Extract a numeric value from an insight entry — handles both time_series and total_value formats */
@@ -110,7 +116,7 @@ const KpiCard = React.forwardRef<HTMLDivElement, KpiProps & React.HTMLAttributes
   );
 });
 
-export function OverviewCards({ profile, insights, isLoading, period }: OverviewCardsProps) {
+export function OverviewCards({ profile, insights, isLoading, period, previousInsights, previousPeriod }: OverviewCardsProps) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
@@ -127,6 +133,38 @@ export function OverviewCards({ profile, insights, isLoading, period }: Overview
   const followsData = getFollowsBreakdown(insights);
   const followersDelta = followsData ? followsData.gained - followsData.lost : 0;
   const hasFollowData = !!followsData && (followsData.gained > 0 || followsData.lost > 0);
+
+  // Growth variation — compara período atual vs anterior
+  const previousFollowsData = getFollowsBreakdown(previousInsights);
+  const previousDelta = previousFollowsData ? previousFollowsData.gained - previousFollowsData.lost : null;
+  const hasVariationData =
+    hasFollowData &&
+    previousDelta !== null &&
+    !!period &&
+    !!previousPeriod &&
+    !(previousDelta === 0 && followersDelta !== 0); // caso "Novo" — sem % válida
+  const variation = hasVariationData && previousDelta !== 0
+    ? ((followersDelta - previousDelta) / Math.abs(previousDelta)) * 100
+    : 0;
+  const variationColor =
+    !hasVariationData ? "neutral" :
+    variation > 5 ? "positive" :
+    variation < -5 ? "negative" :
+    "stable";
+  const variationGradient =
+    variationColor === "positive" ? "from-emerald-500/10 to-emerald-600/5" :
+    variationColor === "negative" ? "from-red-500/10 to-red-600/5" :
+    variationColor === "stable" ? "from-amber-500/10 to-amber-600/5" :
+    "from-muted/10 to-muted/5";
+  const variationBorder =
+    variationColor === "positive" ? "border-emerald-500/20" :
+    variationColor === "negative" ? "border-red-500/20" :
+    variationColor === "stable" ? "border-amber-500/20" :
+    "border-border/30";
+  const variationIcon =
+    variationColor === "positive" ? TrendingUp :
+    variationColor === "negative" ? TrendingDown :
+    Minus;
 
   // Core metrics
   const totalReach = getInsightValue(insights, "reach");
@@ -171,6 +209,22 @@ export function OverviewCards({ profile, insights, isLoading, period }: Overview
       show: hasFollowData,
       formula: followsData && period
         ? buildFollowersDeltaFormula(followsData.gained, followsData.lost, period)
+        : undefined,
+    },
+    {
+      icon: variationIcon,
+      label: "Variação de Ganhos",
+      value: hasVariationData
+        ? `${variation > 0 ? "+" : ""}${variation.toFixed(1)}%`
+        : "—",
+      sub: hasVariationData && previousDelta !== null
+        ? `${followersDelta >= 0 ? "+" : ""}${fmtNumber(followersDelta)} vs ${previousDelta >= 0 ? "+" : ""}${fmtNumber(previousDelta)}`
+        : undefined,
+      gradient: variationGradient,
+      border: variationBorder,
+      show: hasVariationData,
+      formula: hasVariationData && previousDelta !== null && period && previousPeriod
+        ? buildFollowerGrowthVariationFormula(followersDelta, previousDelta, period, previousPeriod)
         : undefined,
     },
     {

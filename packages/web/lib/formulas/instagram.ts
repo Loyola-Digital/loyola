@@ -251,6 +251,45 @@ export function buildBioClicksFormula(
 }
 
 /**
+ * Variação de ganhos de seguidores entre o período atual e o período anterior
+ * (mesma duração). Retorna `undefined` quando o dado anterior não está
+ * disponível (ex: janela fora do alcance da Meta API).
+ *
+ * Regras dos edge cases:
+ * - ambos 0 → formula com result "0%"
+ * - previous 0 e current != 0 → retorna undefined (caso "Novo" — sem % válida)
+ * - demais casos → (current - previous) ÷ |previous| × 100
+ */
+export function buildFollowerGrowthVariationFormula(
+  currentGain: number,
+  previousGain: number,
+  currentPeriod: InstagramPeriod,
+  previousPeriod: InstagramPeriod,
+): MetricFormula | undefined {
+  if (previousGain === 0 && currentGain !== 0) return undefined;
+  const variation = previousGain === 0 ? 0 : ((currentGain - previousGain) / Math.abs(previousGain)) * 100;
+  const sign = variation > 0 ? "+" : "";
+  return {
+    expression: "(atual − anterior) ÷ |anterior| × 100",
+    values: [
+      {
+        label: "Ganhos no período atual",
+        value: `${currentGain >= 0 ? "+" : ""}${nf.format(currentGain)}`,
+        source: "Instagram Graph API · follows_and_unfollows (período atual)",
+      },
+      {
+        label: "Ganhos no período anterior",
+        value: `${previousGain >= 0 ? "+" : ""}${nf.format(previousGain)}`,
+        source: "Instagram Graph API · follows_and_unfollows (período anterior)",
+      },
+    ],
+    result: `(${nf.format(currentGain)} − ${nf.format(previousGain)}) ÷ |${nf.format(previousGain)}| × 100 = ${sign}${variation.toFixed(1)}%`,
+    period: formatPeriod(currentPeriod),
+    note: `Comparando ${formatPeriod(currentPeriod)} (atual) com ${formatPeriod(previousPeriod)} (anterior)`,
+  };
+}
+
+/**
  * Memorial de um ponto diário do chart (reach/impressions/engaged do dia X).
  */
 export function buildDailyPointFormula(

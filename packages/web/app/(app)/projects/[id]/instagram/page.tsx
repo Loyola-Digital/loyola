@@ -79,6 +79,17 @@ export default function ProjectInstagramPage({ params }: Props) {
     period.since,
     period.until,
   );
+  // Período anterior (mesma duração, shift pra trás) — para card "Variação de Ganhos"
+  const previousPeriodWindow = {
+    since: period.since - (period.until - period.since),
+    until: period.since,
+  };
+  const { data: previousInsights } = useInstagramInsights(
+    selectedAccountId,
+    "day",
+    previousPeriodWindow.since,
+    previousPeriodWindow.until,
+  );
   const { data: media, isLoading: mediaLoading } = useInstagramMedia(selectedAccountId, 25);
   const { data: demographics, isLoading: demographicsLoading, error: demographicsError } = useInstagramDemographics(selectedAccountId);
   const { data: stories, isLoading: storiesLoading } = useInstagramStories(selectedAccountId);
@@ -149,6 +160,8 @@ export default function ProjectInstagramPage({ params }: Props) {
         insights={insights?.data}
         isLoading={profileLoading || insightsLoading}
         period={{ since: period.since, until: period.until }}
+        previousInsights={previousInsights?.data}
+        previousPeriod={previousPeriodWindow}
       />
 
       {/* Reach & Impressions chart */}
