@@ -242,6 +242,7 @@ function FolderPickerDialog({
 
 function GroupedRow({ group }: { group: PageGroup }) {
   const [expanded, setExpanded] = useState(false);
+  const firstFavicon = group.links.find((l) => l.favicon)?.favicon;
 
   return (
     <>
@@ -258,7 +259,18 @@ function GroupedRow({ group }: { group: PageGroup }) {
         </TableCell>
         <TableCell colSpan={2}>
           <div className="flex items-center gap-2">
-            <Globe className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            {firstFavicon ? (
+              <img
+                src={firstFavicon}
+                alt=""
+                className="h-5 w-5 rounded flex-shrink-0"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
+              />
+            ) : (
+              <Globe className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            )}
             <div className="min-w-0">
               <p className="font-medium text-sm truncate">{group.baseUrl}</p>
               <p className="text-xs text-muted-foreground">
