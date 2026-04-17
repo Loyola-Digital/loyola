@@ -5,6 +5,11 @@ export interface FunnelCampaign {
   name: string;
 }
 
+export interface SwitchyFolderRef {
+  id: number;
+  name: string;
+}
+
 export interface Funnel {
   id: string;
   projectId: string;
@@ -14,6 +19,7 @@ export interface Funnel {
   campaigns: FunnelCampaign[];
   googleAdsAccountId: string | null;
   googleAdsCampaigns: FunnelCampaign[];
+  switchyFolderIds: SwitchyFolderRef[];
   createdAt: string;
   updatedAt: string;
 }

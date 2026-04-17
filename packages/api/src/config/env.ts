@@ -19,6 +19,7 @@ const envSchema = z.object({
   GOOGLE_ADS_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_ADS_CLIENT_SECRET: z.string().min(1).optional(),
   GOOGLE_ADS_DEVELOPER_TOKEN: z.string().min(1).optional(),
+  SWITCHY_API_TOKEN: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

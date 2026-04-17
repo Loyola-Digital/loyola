@@ -40,6 +40,7 @@ import youtubeChannelRoutes from "./routes/youtube-channels.js";
 import googleSheetsRoutes from "./routes/google-sheets.js";
 import salesRoutes from "./routes/sales.js";
 import funnelSpreadsheetsRoutes from "./routes/funnel-spreadsheets.js";
+import switchyRoutes from "./routes/switchy.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -95,6 +96,7 @@ export async function buildServer() {
   await app.register(googleSheetsRoutes);
   await app.register(salesRoutes);
   await app.register(funnelSpreadsheetsRoutes);
+  await app.register(switchyRoutes);
 
   return app;
 }

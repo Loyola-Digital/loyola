@@ -245,40 +245,44 @@ export function ProjectFolder({ project, collapsed = false, isHidden = false, on
           </Button>
         </CollapsibleTrigger>
 
-        {isAdmin && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {isAdmin && (
               <DropdownMenuItem asChild>
                 <Link href={`/projects/${project.id}`}>
                   <Settings className="mr-2 h-4 w-4" />
                   Configurações
                 </Link>
               </DropdownMenuItem>
+            )}
+            {isAdmin && (
               <DropdownMenuItem onClick={() => { setEditName(project.name); setEditColor(project.color ?? "#94a3b8"); setShowEditDialog(true); }}>
                 <Pencil className="mr-2 h-4 w-4" />
                 Editar empresa
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleToggleVisibility}>
-                {isHidden ? (
-                  <>
-                    <Eye className="mr-2 h-4 w-4" />
-                    Reexibir empresa
-                  </>
-                ) : (
-                  <>
-                    <EyeOff className="mr-2 h-4 w-4" />
-                    Ocultar empresa
-                  </>
-                )}
-              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onClick={handleToggleVisibility}>
+              {isHidden ? (
+                <>
+                  <Eye className="mr-2 h-4 w-4" />
+                  Reexibir empresa
+                </>
+              ) : (
+                <>
+                  <EyeOff className="mr-2 h-4 w-4" />
+                  Ocultar empresa
+                </>
+              )}
+            </DropdownMenuItem>
+            {isAdmin && (
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
                 onClick={() => setShowDeleteAlert(true)}
@@ -286,9 +290,9 @@ export function ProjectFolder({ project, collapsed = false, isHidden = false, on
                 <Trash2 className="mr-2 h-4 w-4" />
                 Deletar empresa
               </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <AlertDialog open={showDeleteAlert} onOpenChange={setShowDeleteAlert}>

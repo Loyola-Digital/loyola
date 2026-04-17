@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon } from "lucide-react";
+import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2 } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,6 +11,7 @@ import { YouTubeFunnelSection } from "@/components/funnels/youtube-funnel-sectio
 import { SurveyFunnelTab } from "@/components/funnels/survey-funnel-tab";
 import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-tab";
 import { MetaAdsSpreadsheetTab } from "@/components/funnels/meta-ads-spreadsheet-tab";
+import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
 
 export default function FunnelPage() {
   const params = useParams<{ id: string; funnelId: string }>();
@@ -79,6 +80,10 @@ export default function FunnelPage() {
             <TableIcon className="h-3.5 w-3.5 text-blue-600" />
             Planilhas
           </TabsTrigger>
+          <TabsTrigger value="switchy-links" className="gap-1.5">
+            <Link2 className="h-3.5 w-3.5 text-purple-600" />
+            Links
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="meta-ads" className="mt-6">
@@ -103,6 +108,10 @@ export default function FunnelPage() {
 
         <TabsContent value="meta-ads-2" className="mt-6">
           <MetaAdsSpreadsheetTab funnel={funnel} projectId={params.id} />
+        </TabsContent>
+
+        <TabsContent value="switchy-links" className="mt-6">
+          <SwitchyLinksTab projectId={params.id} funnel={funnel} />
         </TabsContent>
       </Tabs>
     </div>

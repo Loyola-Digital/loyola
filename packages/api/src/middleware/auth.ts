@@ -67,6 +67,23 @@ export default fp(async function authPlugin(fastify) {
       }
     }
 
+    // Guard: provisionamento pode falhar silenciosamente se outro usuário já
+    // ocupa o email (constraint unique em users.email). onConflictDoNothing
+    // mata o INSERT e o re-fetch por clerkId volta vazio. Sem esse check,
+    // a linha abaixo explode com "Cannot read properties of undefined (reading 'id')"
+    // e quebra TODAS as rotas autenticadas.
+    if (dbUser.length === 0 || !dbUser[0]) {
+      fastify.log.error(
+        { clerkId, email: `${clerkId}@placeholder.dev` },
+        "[auth] User provisioning failed — likely email conflict with existing user",
+      );
+      reply.code(500).send({
+        error: "Falha no provisionamento de usuário. Contate o suporte.",
+        code: "USER_PROVISION_FAILED",
+      });
+      return;
+    }
+
     request.userId = dbUser[0].id;
     request.userRole = dbUser[0].role;
 
