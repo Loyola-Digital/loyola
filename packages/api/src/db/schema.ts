@@ -558,6 +558,10 @@ export const funnels = pgTable(
       .notNull()
       .default([])
       .$type<{ id: string; name: string }[]>(),
+    switchyFolderIds: jsonb("switchy_folder_ids")
+      .notNull()
+      .default([])
+      .$type<{ id: number; name: string }[]>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
