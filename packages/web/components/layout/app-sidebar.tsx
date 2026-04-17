@@ -145,21 +145,18 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
           ))}
 
         {/* Toggle hidden projects */}
-        {!projectsLoading && hiddenCount > 0 && !collapsed && (
+        {!projectsLoading && hiddenCount > 0 && (
           <Button
             variant="ghost"
-            size="sm"
-            className="justify-start gap-2 mt-1 text-muted-foreground hover:text-foreground h-7"
+            size="icon"
+            className="mt-1 text-muted-foreground hover:text-foreground h-7 w-7"
             onClick={toggleShowHidden}
           >
             {showHidden ? (
-              <EyeOff className="h-3.5 w-3.5 shrink-0" />
+              <EyeOff className="h-3.5 w-3.5" />
             ) : (
-              <Eye className="h-3.5 w-3.5 shrink-0" />
+              <Eye className="h-3.5 w-3.5" />
             )}
-            <span className="text-xs">
-              {showHidden ? "Esconder ocultas" : `Mostrar ocultas (${hiddenCount})`}
-            </span>
           </Button>
         )}
 
