@@ -22,6 +22,7 @@ export interface UpdateFunnelInput {
   campaigns?: FunnelCampaign[];
   googleAdsAccountId?: string | null;
   googleAdsCampaigns?: FunnelCampaign[];
+  switchyFolderIds?: { id: number; name: string }[];
 }
 
 export interface MetaCampaignOption {
