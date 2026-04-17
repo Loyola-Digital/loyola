@@ -13,7 +13,6 @@ import {
   ChevronRight,
   Settings2,
   Check,
-  X,
   Layers,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
