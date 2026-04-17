@@ -16,6 +16,7 @@ import {
   Layers,
   LinkIcon,
   Save,
+  Plus,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -239,66 +240,181 @@ function FolderPickerDialog({
 }
 
 // ============================================================
-// GROUPED VIEW
+// LINK ROW (flat)
+// ============================================================
+
+function LinkRow({
+  link,
+  selecting,
+  picked,
+  onToggle,
+}: {
+  link: SwitchyLink;
+  selecting: boolean;
+  picked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <TableRow
+      className={selecting ? "cursor-pointer" : undefined}
+      onClick={selecting ? onToggle : undefined}
+    >
+      {selecting && (
+        <TableCell>
+          <div
+            className={`h-4 w-4 rounded border flex items-center justify-center ${
+              picked ? "bg-primary border-primary" : "border-muted-foreground/30"
+            }`}
+          >
+            {picked && <Check className="h-3 w-3 text-primary-foreground" />}
+          </div>
+        </TableCell>
+      )}
+      <TableCell>
+        {link.favicon ? (
+          <img
+            src={link.favicon}
+            alt=""
+            className="h-5 w-5 rounded"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = "none";
+            }}
+          />
+        ) : (
+          <Globe className="h-4 w-4 text-muted-foreground" />
+        )}
+      </TableCell>
+      <TableCell>
+        <div className="max-w-[250px]">
+          <p className="font-medium text-sm truncate">
+            {link.title || link.id}
+          </p>
+          <p className="text-xs text-muted-foreground truncate">{link.url}</p>
+        </div>
+      </TableCell>
+      <TableCell>
+        <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+          {shortUrl(link)}
+        </code>
+      </TableCell>
+      <TableCell className="text-right">
+        <span className="font-semibold tabular-nums">
+          {formatClicks(link.clicks)}
+        </span>
+      </TableCell>
+      <TableCell>
+        <span className="text-xs text-muted-foreground">
+          {link.note || "—"}
+        </span>
+      </TableCell>
+      <TableCell>
+        <div className="flex gap-1 flex-wrap">
+          {link.pixels?.map((p) => (
+            <Badge key={p.id} variant="outline" className="text-[10px]">
+              <Tag className="h-2.5 w-2.5 mr-0.5" />
+              {p.platform}
+            </Badge>
+          ))}
+          {(!link.pixels || link.pixels.length === 0) && (
+            <span className="text-xs text-muted-foreground">—</span>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="text-xs text-muted-foreground">
+        {formatDate(link.createdDate)}
+      </TableCell>
+      <TableCell>
+        <a
+          href={`https://${shortUrl(link)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ExternalLink className="h-4 w-4" />
+        </a>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// ============================================================
+// GROUPED ROW
 // ============================================================
 
 function GroupedRow({
   group,
   selecting,
-  pickedUniqs,
-  linkedSet,
-  onToggle,
+  allPicked,
+  onToggleGroup,
 }: {
   group: PageGroup;
   selecting: boolean;
-  pickedUniqs: Set<number>;
-  linkedSet: Set<number>;
-  onToggle: (link: SwitchyLink) => void;
+  allPicked: boolean;
+  onToggleGroup: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const firstFavicon = group.links.find((l) => l.favicon)?.favicon;
-  const linkedCount = group.links.filter((l) => linkedSet.has(l.uniq)).length;
 
   return (
     <>
       <TableRow
         className="cursor-pointer hover:bg-muted/50"
-        onClick={() => setExpanded(!expanded)}
+        onClick={selecting ? onToggleGroup : () => setExpanded(!expanded)}
       >
-        {selecting && <TableCell />}
+        {selecting && (
+          <TableCell>
+            <div
+              className={`h-4 w-4 rounded border flex items-center justify-center ${
+                allPicked ? "bg-primary border-primary" : "border-muted-foreground/30"
+              }`}
+            >
+              {allPicked && <Check className="h-3 w-3 text-primary-foreground" />}
+            </div>
+          </TableCell>
+        )}
         <TableCell>
-          {expanded ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          {!selecting ? (
+            expanded ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            )
           ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          )}
-        </TableCell>
-        <TableCell colSpan={2}>
-          <div className="flex items-center gap-2">
-            {firstFavicon ? (
+            firstFavicon ? (
               <img
                 src={firstFavicon}
                 alt=""
-                className="h-5 w-5 rounded flex-shrink-0"
+                className="h-5 w-5 rounded"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = "none";
                 }}
               />
             ) : (
-              <Globe className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <Globe className="h-4 w-4 text-muted-foreground" />
+            )
+          )}
+        </TableCell>
+        <TableCell colSpan={2}>
+          <div className="flex items-center gap-2">
+            {!selecting && (
+              firstFavicon ? (
+                <img
+                  src={firstFavicon}
+                  alt=""
+                  className="h-5 w-5 rounded flex-shrink-0"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              ) : (
+                <Globe className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              )
             )}
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <p className="font-medium text-sm truncate">{group.baseUrl}</p>
-                {!selecting && linkedCount > 0 && (
-                  <Badge variant="secondary" className="text-[10px]">
-                    <LinkIcon className="h-2.5 w-2.5 mr-0.5" />
-                    {linkedCount}
-                  </Badge>
-                )}
-              </div>
+              <p className="font-medium text-sm truncate">{group.baseUrl}</p>
               <p className="text-xs text-muted-foreground">
-                {group.links.length} link{group.links.length > 1 ? "s" : ""} com UTMs diferentes
+                {group.links.length} link{group.links.length > 1 ? "s" : ""}
               </p>
             </div>
           </div>
@@ -311,30 +427,12 @@ function GroupedRow({
         <TableCell colSpan={4} />
       </TableRow>
       {expanded &&
+        !selecting &&
         group.links.map((link) => {
           const utms = extractUtmParams(link.url);
           const utmKeys = Object.keys(utms);
           return (
-            <TableRow
-              key={link.uniq}
-              className={`bg-muted/30 ${selecting ? "cursor-pointer" : ""}`}
-              onClick={selecting ? () => onToggle(link) : undefined}
-            >
-              {selecting && (
-                <TableCell>
-                  <div
-                    className={`h-4 w-4 rounded border flex items-center justify-center ${
-                      pickedUniqs.has(link.uniq)
-                        ? "bg-primary border-primary"
-                        : "border-muted-foreground/30"
-                    }`}
-                  >
-                    {pickedUniqs.has(link.uniq) && (
-                      <Check className="h-3 w-3 text-primary-foreground" />
-                    )}
-                  </div>
-                </TableCell>
-              )}
+            <TableRow key={link.uniq} className="bg-muted/30">
               <TableCell>
                 {link.favicon ? (
                   <img
@@ -351,12 +449,7 @@ function GroupedRow({
               </TableCell>
               <TableCell>
                 <div className="max-w-[250px] pl-4">
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-sm truncate">{link.title || link.id}</p>
-                    {!selecting && linkedSet.has(link.uniq) && (
-                      <LinkIcon className="h-3 w-3 text-primary flex-shrink-0" />
-                    )}
-                  </div>
+                  <p className="text-sm truncate">{link.title || link.id}</p>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {utmKeys.map((key) => (
                       <Badge
@@ -431,16 +524,20 @@ interface SwitchyLinksTabProps {
 }
 
 export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
+  const savedLinks = funnel.switchyLinkedLinks ?? [];
+  const savedFolders = funnel.switchyFolderIds ?? [];
+  const hasSavedFolders = savedFolders.length > 0;
+  const hasLinkedLinks = savedLinks.length > 0;
+
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(
     funnel.switchyFolderIds?.[0]?.id ?? null,
   );
   const [search, setSearch] = useState("");
-  const [grouped, setGrouped] = useState(false);
+  const [grouped, setGrouped] = useState(true);
   const [selecting, setSelecting] = useState(false);
-  const [pickedUniqs, setPickedUniqs] = useState<Set<number>>(() =>
-    new Set((funnel.switchyLinkedLinks ?? []).map((l) => l.uniq)),
+  const [pickedUniqs, setPickedUniqs] = useState<Set<number>>(
+    () => new Set(savedLinks.map((l) => l.uniq)),
   );
-  const [showOnlyLinked, setShowOnlyLinked] = useState(false);
 
   const { data: allFolders, isLoading: foldersLoading } =
     useSwitchyFolders(projectId);
@@ -450,9 +547,6 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
   );
   const updateFunnel = useUpdateFunnel(projectId, funnel.id);
 
-  const savedFolders = funnel.switchyFolderIds ?? [];
-  const savedLinks = funnel.switchyLinkedLinks ?? [];
-  const hasSavedFolders = savedFolders.length > 0;
   const linkedSet = useMemo(() => new Set(savedLinks.map((l) => l.uniq)), [savedLinks]);
 
   const visibleFolders = useMemo(() => {
@@ -462,10 +556,11 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
     return allFolders.filter((f) => savedIds.has(f.id));
   }, [allFolders, savedFolders, hasSavedFolders]);
 
+  // When selecting, show all links. Otherwise show only linked.
   const filtered = useMemo(() => {
     if (!links) return [];
     let result = links;
-    if (showOnlyLinked && !selecting) {
+    if (!selecting && hasLinkedLinks) {
       result = result.filter((l) => linkedSet.has(l.uniq));
     }
     if (search.trim()) {
@@ -479,7 +574,7 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
       );
     }
     return result;
-  }, [links, search, showOnlyLinked, selecting, linkedSet]);
+  }, [links, search, selecting, hasLinkedLinks, linkedSet]);
 
   const groups = useMemo(() => groupByPage(filtered), [filtered]);
 
@@ -488,14 +583,24 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
     [filtered],
   );
 
-  function togglePick(link: SwitchyLink) {
+  function togglePickGroup(group: PageGroup) {
     setPickedUniqs((prev) => {
       const next = new Set(prev);
-      if (next.has(link.uniq)) {
-        next.delete(link.uniq);
+      const allIn = group.links.every((l) => next.has(l.uniq));
+      if (allIn) {
+        group.links.forEach((l) => next.delete(l.uniq));
       } else {
-        next.add(link.uniq);
+        group.links.forEach((l) => next.add(l.uniq));
       }
+      return next;
+    });
+  }
+
+  function togglePickLink(link: SwitchyLink) {
+    setPickedUniqs((prev) => {
+      const next = new Set(prev);
+      if (next.has(link.uniq)) next.delete(link.uniq);
+      else next.add(link.uniq);
       return next;
     });
   }
@@ -540,25 +645,27 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
     <div className="space-y-6">
       {/* Controls */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-        <Select
-          value={selectedFolderId ? String(selectedFolderId) : "all"}
-          onValueChange={(v) =>
-            setSelectedFolderId(v === "all" ? null : Number(v))
-          }
-        >
-          <SelectTrigger className="w-full sm:w-[300px]">
-            <FolderOpen className="h-4 w-4 mr-2 text-muted-foreground" />
-            <SelectValue placeholder="Selecionar folder" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos os links</SelectItem>
-            {visibleFolders.map((f) => (
-              <SelectItem key={f.id} value={String(f.id)}>
-                {f.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {selecting && (
+          <Select
+            value={selectedFolderId ? String(selectedFolderId) : "all"}
+            onValueChange={(v) =>
+              setSelectedFolderId(v === "all" ? null : Number(v))
+            }
+          >
+            <SelectTrigger className="w-full sm:w-[300px]">
+              <FolderOpen className="h-4 w-4 mr-2 text-muted-foreground" />
+              <SelectValue placeholder="Selecionar folder" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os links</SelectItem>
+              {visibleFolders.map((f) => (
+                <SelectItem key={f.id} value={String(f.id)}>
+                  {f.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -583,20 +690,6 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
             </Label>
           </div>
 
-          {savedLinks.length > 0 && !selecting && (
-            <div className="flex items-center gap-2">
-              <Switch
-                id="linked-toggle"
-                checked={showOnlyLinked}
-                onCheckedChange={setShowOnlyLinked}
-              />
-              <Label htmlFor="linked-toggle" className="text-sm whitespace-nowrap cursor-pointer">
-                <LinkIcon className="h-3.5 w-3.5 inline mr-1" />
-                Vinculados
-              </Label>
-            </div>
-          )}
-
           {selecting ? (
             <div className="flex items-center gap-2">
               <Button size="sm" onClick={handleSaveLinks} className="gap-1.5">
@@ -612,14 +705,14 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
               size="sm"
               variant="outline"
               className="gap-1.5"
-              onClick={() => setSelecting(true)}
+              onClick={() => { setSelecting(true); setPickedUniqs(new Set(savedLinks.map((l) => l.uniq))); }}
             >
-              <LinkIcon className="h-3.5 w-3.5" />
+              <Plus className="h-3.5 w-3.5" />
               Vincular Links
             </Button>
           )}
 
-          {allFolders && (
+          {allFolders && !selecting && (
             <FolderPickerDialog
               allFolders={allFolders}
               selectedFolders={savedFolders}
@@ -629,20 +722,24 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
         </div>
       </div>
 
-      {/* Summary cards */}
+      {/* Summary cards — always based on linked data */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              {grouped ? "Paginas" : "Links"}
+              {grouped ? "Paginas" : "Links Vinculados"}
             </CardTitle>
             <Link2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {grouped ? groups.length : filtered.length}
+              {selecting
+                ? `${pickedUniqs.size} selecionados`
+                : grouped
+                  ? groups.length
+                  : filtered.length}
             </div>
-            {grouped && (
+            {!selecting && grouped && (
               <p className="text-xs text-muted-foreground mt-1">
                 {filtered.length} links no total
               </p>
@@ -667,22 +764,24 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Links Vinculados
+              Folders
             </CardTitle>
-            <LinkIcon className="h-4 w-4 text-muted-foreground" />
+            <FolderOpen className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{savedLinks.length}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {savedLinks.length === 0
-                ? "Nenhum — clique Vincular Links"
-                : `De ${savedFolders.length} folder${savedFolders.length !== 1 ? "s" : ""}`}
+            <div className="text-2xl font-bold">
+              {hasSavedFolders ? savedFolders.length : 0}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1 truncate">
+              {hasSavedFolders
+                ? savedFolders.map((f) => f.name).join(", ")
+                : "Configure folders"}
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Links table */}
+      {/* Table */}
       {linksLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -695,10 +794,12 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
           <p>
             {search
               ? "Nenhum link encontrado para essa busca"
-              : showOnlyLinked
-                ? "Nenhum link vinculado ainda"
+              : !selecting && hasLinkedLinks
+                ? "Nenhum link vinculado nesta folder"
                 : hasSavedFolders
-                  ? "Selecione uma folder para ver os links"
+                  ? selecting
+                    ? "Selecione uma folder para ver os links"
+                    : "Clique em Vincular Links para adicionar"
                   : "Configure as folders deste funil para comecar"}
           </p>
         </div>
@@ -725,111 +826,18 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
                       key={group.baseUrl}
                       group={group}
                       selecting={selecting}
-                      pickedUniqs={pickedUniqs}
-                      linkedSet={linkedSet}
-                      onToggle={togglePick}
+                      allPicked={group.links.every((l) => pickedUniqs.has(l.uniq))}
+                      onToggleGroup={() => togglePickGroup(group)}
                     />
                   ))
                 : filtered.map((link) => (
-                    <TableRow
+                    <LinkRow
                       key={link.uniq}
-                      className={selecting ? "cursor-pointer" : undefined}
-                      onClick={selecting ? () => togglePick(link) : undefined}
-                    >
-                      {selecting && (
-                        <TableCell>
-                          <div
-                            className={`h-4 w-4 rounded border flex items-center justify-center ${
-                              pickedUniqs.has(link.uniq)
-                                ? "bg-primary border-primary"
-                                : "border-muted-foreground/30"
-                            }`}
-                          >
-                            {pickedUniqs.has(link.uniq) && (
-                              <Check className="h-3 w-3 text-primary-foreground" />
-                            )}
-                          </div>
-                        </TableCell>
-                      )}
-                      <TableCell>
-                        {link.favicon ? (
-                          <img
-                            src={link.favicon}
-                            alt=""
-                            className="h-5 w-5 rounded"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display =
-                                "none";
-                            }}
-                          />
-                        ) : (
-                          <Globe className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="max-w-[250px]">
-                          <div className="flex items-center gap-1.5">
-                            <p className="font-medium text-sm truncate">
-                              {link.title || link.id}
-                            </p>
-                            {!selecting && linkedSet.has(link.uniq) && (
-                              <LinkIcon className="h-3 w-3 text-primary flex-shrink-0" />
-                            )}
-                          </div>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {link.url}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
-                          {shortUrl(link)}
-                        </code>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <span className="font-semibold tabular-nums">
-                          {formatClicks(link.clicks)}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-xs text-muted-foreground">
-                          {link.note || "—"}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1 flex-wrap">
-                          {link.pixels?.map((p) => (
-                            <Badge
-                              key={p.id}
-                              variant="outline"
-                              className="text-[10px]"
-                            >
-                              <Tag className="h-2.5 w-2.5 mr-0.5" />
-                              {p.platform}
-                            </Badge>
-                          ))}
-                          {(!link.pixels || link.pixels.length === 0) && (
-                            <span className="text-xs text-muted-foreground">
-                              —
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {formatDate(link.createdDate)}
-                      </TableCell>
-                      <TableCell>
-                        <a
-                          href={`https://${shortUrl(link)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-muted-foreground hover:text-foreground transition-colors"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      </TableCell>
-                    </TableRow>
+                      link={link}
+                      selecting={selecting}
+                      picked={pickedUniqs.has(link.uniq)}
+                      onToggle={() => togglePickLink(link)}
+                    />
                   ))}
             </TableBody>
           </Table>
