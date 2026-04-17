@@ -281,7 +281,20 @@ function GroupedRow({ group }: { group: PageGroup }) {
           const utmKeys = Object.keys(utms);
           return (
             <TableRow key={link.uniq} className="bg-muted/30">
-              <TableCell />
+              <TableCell>
+                {link.favicon ? (
+                  <img
+                    src={link.favicon}
+                    alt=""
+                    className="h-5 w-5 rounded"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <Globe className="h-4 w-4 text-muted-foreground" />
+                )}
+              </TableCell>
               <TableCell>
                 <div className="max-w-[250px] pl-4">
                   <p className="text-sm truncate">{link.title || link.id}</p>
