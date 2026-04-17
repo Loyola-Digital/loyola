@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2 } from "lucide-react";
+import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, BarChart3 } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -12,6 +12,9 @@ import { SurveyFunnelTab } from "@/components/funnels/survey-funnel-tab";
 import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-tab";
 import { MetaAdsSpreadsheetTab } from "@/components/funnels/meta-ads-spreadsheet-tab";
 import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
+import { BbeCaptacaoTab } from "@/components/funnels/bbe-captacao-tab";
+
+const BBE_CAPTACAO_FUNNEL_ID = "5492a226-4378-44fa-8775-dec28140117e";
 
 export default function FunnelPage() {
   const params = useParams<{ id: string; funnelId: string }>();
@@ -42,6 +45,7 @@ export default function FunnelPage() {
   const { funnel, funnelType } = data;
   const metaCount = funnel.campaigns.length;
   const ytCount = funnel.googleAdsCampaigns.length;
+  const showBbeCaptacao = funnel.id === BBE_CAPTACAO_FUNNEL_ID;
 
   return (
     <div className="p-6 space-y-6">
@@ -84,6 +88,12 @@ export default function FunnelPage() {
             <Link2 className="h-3.5 w-3.5 text-purple-600" />
             Links
           </TabsTrigger>
+          {showBbeCaptacao && (
+            <TabsTrigger value="bbe-captacao" className="gap-1.5">
+              <BarChart3 className="h-3.5 w-3.5 text-purple-600" />
+              BBE-Captacao
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="meta-ads" className="mt-6">
@@ -113,6 +123,12 @@ export default function FunnelPage() {
         <TabsContent value="switchy-links" className="mt-6">
           <SwitchyLinksTab projectId={params.id} funnel={funnel} />
         </TabsContent>
+
+        {showBbeCaptacao && (
+          <TabsContent value="bbe-captacao" className="mt-6">
+            <BbeCaptacaoTab />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
