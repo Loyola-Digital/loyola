@@ -23,6 +23,7 @@ export interface UpdateFunnelInput {
   googleAdsAccountId?: string | null;
   googleAdsCampaigns?: FunnelCampaign[];
   switchyFolderIds?: { id: number; name: string }[];
+  switchyLinkedLinks?: { uniq: number; id: string; domain: string }[];
 }
 
 export interface MetaCampaignOption {

@@ -562,6 +562,10 @@ export const funnels = pgTable(
       .notNull()
       .default([])
       .$type<{ id: number; name: string }[]>(),
+    switchyLinkedLinks: jsonb("switchy_linked_links")
+      .notNull()
+      .default([])
+      .$type<{ uniq: number; id: string; domain: string }[]>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

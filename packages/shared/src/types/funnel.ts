@@ -10,6 +10,12 @@ export interface SwitchyFolderRef {
   name: string;
 }
 
+export interface SwitchyLinkRef {
+  uniq: number;
+  id: string;
+  domain: string;
+}
+
 export interface Funnel {
   id: string;
   projectId: string;
@@ -20,6 +26,7 @@ export interface Funnel {
   googleAdsAccountId: string | null;
   googleAdsCampaigns: FunnelCampaign[];
   switchyFolderIds: SwitchyFolderRef[];
+  switchyLinkedLinks: SwitchyLinkRef[];
   createdAt: string;
   updatedAt: string;
 }
