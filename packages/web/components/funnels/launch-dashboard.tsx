@@ -46,6 +46,7 @@ import { CampaignSelector } from "./campaign-selector";
 import type { Funnel, FunnelCampaign } from "@loyola-x/shared";
 import { useSurveySummary } from "@/lib/hooks/use-google-sheets";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
+import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
 import {
@@ -112,6 +113,7 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
   const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
   );
+  const metrics = useCrossedFunnelMetrics(projectId, funnel, days);
   const { data: campaignData, isLoading: campaignsLoading } = useTrafficCampaigns(projectId, days);
   const cids = campaignIds.length > 0 ? campaignIds : null;
   const { data: adsetData, isLoading: adsetsLoading } = useAllAdSets(projectId, days, cids);
@@ -177,7 +179,7 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
       )}
 
       {/* KPI Cards — Meta only */}
-      {overviewLoading ? (
+      {overviewLoading || metrics.isLoading ? (
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
           {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
@@ -186,26 +188,26 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
           const f = { days, funnelType: "launch" as const, funnelName: funnel?.name };
           return (
             <div className={`grid gap-3 grid-cols-2 sm:grid-cols-4 ${surveyResponseRate !== null ? "lg:grid-cols-8" : "lg:grid-cols-7"}`}>
-              <MetricTooltip label="Investimento" value={fmtCurrency(overview.totalSpend)} formula={buildFunnelSpendFormula(overview.totalSpend, f)}>
-                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} hintTooltip />
+              <MetricTooltip label="Investimento" value={fmtCurrency(metrics.spend)} formula={buildFunnelSpendFormula(metrics.spend, f)}>
+                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(metrics.spend)} hintTooltip />
               </MetricTooltip>
-              <MetricTooltip label="Leads" value={fmtNumber(overview.totalLeads)} formula={buildFunnelLeadsFormula(overview.totalLeads, f)}>
-                <KpiCard icon={Users} label="Leads" value={fmtNumber(overview.totalLeads)} hintTooltip />
+              <MetricTooltip label="Leads" value={fmtNumber(metrics.totalLeads)} formula={buildFunnelLeadsFormula(metrics.totalLeads, f)}>
+                <KpiCard icon={Users} label="Leads" value={fmtNumber(metrics.totalLeads)} hintTooltip />
               </MetricTooltip>
-              <MetricTooltip label="CPL" value={fmtCurrency(overview.avgCpl)} formula={buildFunnelCplFormula(overview.totalSpend, overview.totalLeads, f)}>
-                <KpiCard icon={Target} label="CPL" value={fmtCurrency(overview.avgCpl)} hintTooltip />
+              <MetricTooltip label="CPL" value={fmtCurrency(metrics.cplPago)} formula={buildFunnelCplFormula(metrics.spend, metrics.leadsPagos, f)}>
+                <KpiCard icon={Target} label="CPL" value={fmtCurrency(metrics.cplPago)} hintTooltip />
               </MetricTooltip>
-              <MetricTooltip label="Connect Rate" value={fmtPercent(overview.connectRate)} formula={buildFunnelConnectRateFormula(overview.connectRate, f)}>
-                <KpiCard icon={Link2} label="Connect Rate" value={fmtPercent(overview.connectRate)} hintTooltip />
+              <MetricTooltip label="Connect Rate" value={fmtPercent(metrics.connectRate)} formula={buildFunnelConnectRateFormula(metrics.connectRate, f)}>
+                <KpiCard icon={Link2} label="Connect Rate" value={fmtPercent(metrics.connectRate)} hintTooltip />
               </MetricTooltip>
-              <MetricTooltip label="CTR" value={fmtPercent(overview.ctr)} formula={buildFunnelCtrFormula(overview.ctr, f)}>
-                <KpiCard icon={Percent} label="CTR" value={fmtPercent(overview.ctr)} hintTooltip />
+              <MetricTooltip label="CTR" value={fmtPercent(metrics.ctr)} formula={buildFunnelCtrFormula(metrics.ctr, f)}>
+                <KpiCard icon={Percent} label="CTR" value={fmtPercent(metrics.ctr)} hintTooltip />
               </MetricTooltip>
-              <MetricTooltip label="CPC" value={fmtCurrency(overview.cpc)} formula={buildFunnelCpcFormula(overview.cpc, f)}>
-                <KpiCard icon={MousePointerClick} label="CPC" value={fmtCurrency(overview.cpc)} hintTooltip />
+              <MetricTooltip label="CPC" value={fmtCurrency(metrics.cpc)} formula={buildFunnelCpcFormula(metrics.cpc, f)}>
+                <KpiCard icon={MousePointerClick} label="CPC" value={fmtCurrency(metrics.cpc)} hintTooltip />
               </MetricTooltip>
-              <MetricTooltip label="CPM" value={fmtCurrency(overview.cpm)} formula={buildFunnelCpmFormula(overview.cpm, f)}>
-                <KpiCard icon={BarChart3} label="CPM" value={fmtCurrency(overview.cpm)} hintTooltip />
+              <MetricTooltip label="CPM" value={fmtCurrency(metrics.cpm)} formula={buildFunnelCpmFormula(metrics.cpm, f)}>
+                <KpiCard icon={BarChart3} label="CPM" value={fmtCurrency(metrics.cpm)} hintTooltip />
               </MetricTooltip>
               {surveyResponseRate !== null && surveySummary && (
                 <MetricTooltip label="Pesquisa" value={`${surveyResponseRate.toFixed(1)}%`} formula={buildFunnelSurveyFormula(surveySummary.totalResponses, overview.totalLeads)}>
