@@ -197,7 +197,13 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
                   label="Leads"
                   value={metrics.hasLinkedSheet ? fmtNumber(metrics.totalLeads) : "—"}
                   subValue={metrics.hasLinkedSheet
-                    ? `Pagos: ${fmtNumber(metrics.leadsPagos)} · Org: ${fmtNumber(metrics.leadsOrg)} · S/ Track: ${fmtNumber(metrics.leadsSemTrack)}`
+                    ? (
+                      <>
+                        <div>Pagos: {fmtNumber(metrics.leadsPagos)}</div>
+                        <div>Org: {fmtNumber(metrics.leadsOrg)}</div>
+                        <div>S/ Track: {fmtNumber(metrics.leadsSemTrack)}</div>
+                      </>
+                    )
                     : "Vincule uma planilha"}
                   hintTooltip={metrics.hasLinkedSheet}
                 />
@@ -386,7 +392,7 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
-  subValue?: string;
+  subValue?: React.ReactNode;
   hintTooltip?: boolean;
 } & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
   { icon: Icon, label, value, subValue, hintTooltip, className, ...rest },
@@ -404,7 +410,7 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
       </div>
       <p className={`text-xl font-bold tracking-tight ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
       {subValue && (
-        <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{subValue}</p>
+        <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{subValue}</div>
       )}
     </div>
   );
