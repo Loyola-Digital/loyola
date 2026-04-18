@@ -40,14 +40,67 @@ export function buildFunnelSpendFormula(spend: number | null | undefined, f: Fun
   return { expression: "Σ spend (campanhas do funil)", values: [{ label: "Investimento", value: fmtBRL(spend), source: "Meta Ads API · spend (campanhas vinculadas ao funil)" }], result: fmtBRL(spend), period: period(f), note: note(f) };
 }
 
-export function buildFunnelLeadsFormula(leads: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
+export interface LeadsBreakdown {
+  pagos: number;
+  org: number;
+  semTrack: number;
+}
+
+export function buildFunnelLeadsFormula(
+  leads: number | null | undefined,
+  f: FunnelFilters,
+  breakdown?: LeadsBreakdown,
+): MetricFormula | undefined {
   if (leads == null) return undefined;
+  if (breakdown) {
+    return {
+      expression: "Σ linhas da planilha categorizadas por utm_source",
+      values: [
+        { label: "Leads pagos", value: breakdown.pagos, source: "Planilha · utm_source ∈ {meta, meta-ads, google-ads}" },
+        { label: "Leads org", value: breakdown.org, source: "Planilha · utm_source preenchido mas não-pago" },
+        { label: "Leads s/ track", value: breakdown.semTrack, source: "Planilha · utm_source vazio ou coluna não mapeada" },
+        { label: "Total", value: leads, source: "Derivado · pagos + org + s/ track" },
+      ],
+      result: nf.format(leads),
+      period: period(f),
+      note: note(f),
+    };
+  }
   return { expression: "Σ leads (campanhas do funil)", values: [{ label: "Leads", value: leads, source: "CRM · leads atribuídos ao funil" }], result: nf.format(leads), period: period(f), note: note(f) };
 }
 
-export function buildFunnelCplFormula(spend: number | null | undefined, leads: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
+export function buildFunnelCplFormula(
+  spend: number | null | undefined,
+  leads: number | null | undefined,
+  f: FunnelFilters,
+  variant: "pago" | "geral" | "legacy" = "legacy",
+): MetricFormula | undefined {
   if (spend == null || leads == null || leads <= 0) return undefined;
   const cpl = spend / leads;
+  if (variant === "pago") {
+    return {
+      expression: "Spend ÷ Leads pagos",
+      values: [
+        { label: "Investimento", value: fmtBRL(spend), source: "Meta Ads API · Σ spend das campanhas" },
+        { label: "Leads pagos", value: leads, source: "Planilha · utm_source ∈ {meta, meta-ads, google-ads}" },
+      ],
+      result: `${fmtBRL(spend)} ÷ ${nf.format(leads)} = ${fmtBRL(cpl)}`,
+      period: period(f),
+      note: note(f),
+    };
+  }
+  if (variant === "geral") {
+    return {
+      expression: "Spend ÷ Total de leads (pagos + org + s/ track)",
+      values: [
+        { label: "Investimento", value: fmtBRL(spend), source: "Meta Ads API · Σ spend das campanhas" },
+        { label: "Total de leads", value: leads, source: "Planilha · todas as linhas categorizadas" },
+      ],
+      result: `${fmtBRL(spend)} ÷ ${nf.format(leads)} = ${fmtBRL(cpl)}`,
+      period: period(f),
+      note: note(f),
+    };
+  }
   return { expression: "Spend ÷ Leads", values: [{ label: "Investimento", value: fmtBRL(spend), source: "Meta Ads · spend" }, { label: "Leads", value: leads, source: "CRM" }], result: `${fmtBRL(spend)} ÷ ${nf.format(leads)} = ${fmtBRL(cpl)}`, period: period(f), note: note(f) };
 }
 
@@ -58,17 +111,17 @@ export function buildFunnelConnectRateFormula(rate: number | null, f: FunnelFilt
 
 export function buildFunnelCtrFormula(ctr: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
   if (ctr == null) return undefined;
-  return { expression: "Clicks ÷ Impressions × 100", values: [{ label: "CTR", value: `${ctr.toFixed(2)}%`, source: "Meta Ads API · clicks e impressions" }], result: `${ctr.toFixed(2)}%`, period: period(f), note: note(f) };
+  return { expression: "Link clicks ÷ Impressions × 100 (recalculado no frontend)", values: [{ label: "CTR", value: `${ctr.toFixed(2)}%`, source: "Meta Ads API · actions[link_click] e impressions" }], result: `${ctr.toFixed(2)}%`, period: period(f), note: note(f) };
 }
 
 export function buildFunnelCpcFormula(cpc: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
   if (cpc == null) return undefined;
-  return { expression: "Spend ÷ Clicks", values: [{ label: "CPC", value: fmtBRL(cpc), source: "Meta Ads API · derivado" }], result: fmtBRL(cpc), period: period(f), note: note(f) };
+  return { expression: "Spend ÷ Link clicks (recalculado no frontend)", values: [{ label: "CPC", value: fmtBRL(cpc), source: "Meta Ads API · spend ÷ actions[link_click]" }], result: fmtBRL(cpc), period: period(f), note: note(f) };
 }
 
 export function buildFunnelCpmFormula(cpm: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
   if (cpm == null) return undefined;
-  return { expression: "Spend ÷ Impressions × 1000", values: [{ label: "CPM", value: fmtBRL(cpm), source: "Meta Ads API · derivado" }], result: fmtBRL(cpm), period: period(f), note: note(f) };
+  return { expression: "Spend ÷ Impressions × 1000 (recalculado no frontend)", values: [{ label: "CPM", value: fmtBRL(cpm), source: "Meta Ads API · spend e impressions" }], result: fmtBRL(cpm), period: period(f), note: note(f) };
 }
 
 // ============================================================
@@ -121,7 +174,7 @@ export function buildFunnelRateFormula(label: string, sublabel: string, value: n
 export function buildFunnelSurveyFormula(totalResponses: number, totalLeads: number | null | undefined): MetricFormula | undefined {
   if (totalLeads == null || totalLeads <= 0) return undefined;
   const rate = (totalResponses / totalLeads) * 100;
-  return { expression: "Respostas da pesquisa ÷ Leads × 100", values: [{ label: "Respostas", value: totalResponses, source: "Google Sheets · pesquisa" }, { label: "Leads", value: totalLeads, source: "CRM · leads do funil" }], result: `${nf.format(totalResponses)} ÷ ${nf.format(totalLeads)} × 100 = ${rate.toFixed(1)}%` };
+  return { expression: "Respostas da pesquisa ÷ Total de leads × 100", values: [{ label: "Respostas", value: totalResponses, source: "Google Sheets · pesquisa vinculada" }, { label: "Total de leads", value: totalLeads, source: "Planilha vinculada · contagem das linhas categorizadas" }], result: `${nf.format(totalResponses)} ÷ ${nf.format(totalLeads)} × 100 = ${rate.toFixed(1)}%` };
 }
 
 // ============================================================

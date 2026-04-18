@@ -191,7 +191,7 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
               <MetricTooltip label="Investimento" value={fmtCurrency(metrics.spend)} formula={buildFunnelSpendFormula(metrics.spend, f)}>
                 <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(metrics.spend)} hintTooltip />
               </MetricTooltip>
-              <MetricTooltip label="Leads" value={fmtNumber(metrics.totalLeads)} formula={buildFunnelLeadsFormula(metrics.totalLeads, f)}>
+              <MetricTooltip label="Leads" value={fmtNumber(metrics.totalLeads)} formula={buildFunnelLeadsFormula(metrics.totalLeads, f, { pagos: metrics.leadsPagos, org: metrics.leadsOrg, semTrack: metrics.leadsSemTrack })}>
                 <KpiCard
                   icon={Users}
                   label="Leads"
@@ -200,7 +200,7 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
                   hintTooltip
                 />
               </MetricTooltip>
-              <MetricTooltip label="CPL" value={fmtCurrency(metrics.cplPago)} formula={buildFunnelCplFormula(metrics.spend, metrics.leadsPagos, f)}>
+              <MetricTooltip label="CPL" value={fmtCurrency(metrics.cplPago)} formula={buildFunnelCplFormula(metrics.spend, metrics.leadsPagos, f, "pago")}>
                 <KpiCard
                   icon={Target}
                   label="CPL Pago"
