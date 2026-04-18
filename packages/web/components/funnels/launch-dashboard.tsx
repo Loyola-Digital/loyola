@@ -124,8 +124,8 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
     useCampaignDailyInsights(projectId, firstCampaignId, days);
   const { data: surveySummary } = useSurveySummary(projectId, funnel.id);
 
-  const surveyResponseRate = surveySummary && surveySummary.totalResponses > 0 && overview?.totalLeads
-    ? (surveySummary.totalResponses / overview.totalLeads) * 100
+  const surveyResponseRate = surveySummary && surveySummary.totalResponses > 0 && metrics.totalLeads > 0
+    ? (surveySummary.totalResponses / metrics.totalLeads) * 100
     : null;
 
   // Filter campaign table to only funnel campaigns
@@ -222,14 +222,14 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
                 <KpiCard icon={BarChart3} label="CPM" value={fmtCurrency(metrics.cpm)} hintTooltip />
               </MetricTooltip>
               {surveyResponseRate !== null && surveySummary && (
-                <MetricTooltip label="Pesquisa" value={`${surveyResponseRate.toFixed(1)}%`} formula={buildFunnelSurveyFormula(surveySummary.totalResponses, overview.totalLeads)}>
+                <MetricTooltip label="Pesquisa" value={`${surveyResponseRate.toFixed(1)}%`} formula={buildFunnelSurveyFormula(surveySummary.totalResponses, metrics.totalLeads)}>
                   <div className={`rounded-xl border p-3 hover:border-border/50 transition-colors cursor-help ${surveyResponseRate >= 30 ? "border-emerald-500/30 bg-emerald-500/5" : surveyResponseRate >= 10 ? "border-amber-500/30 bg-amber-500/5" : "border-red-500/30 bg-red-500/5"}`}>
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Pesquisa</span>
                       <ClipboardList className="h-3.5 w-3.5 text-muted-foreground/50" />
                     </div>
                     <p className="text-xl font-bold tracking-tight underline decoration-dotted decoration-muted-foreground/40 underline-offset-4">{surveyResponseRate.toFixed(1)}%</p>
-                    <p className="text-[9px] text-muted-foreground">{surveySummary.totalResponses} de {overview.totalLeads} leads</p>
+                    <p className="text-[9px] text-muted-foreground">{surveySummary.totalResponses} de {metrics.totalLeads} leads (planilha)</p>
                   </div>
                 </MetricTooltip>
               )}
