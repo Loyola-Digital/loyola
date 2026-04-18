@@ -25,6 +25,12 @@ import type { CampaignDailyInsight } from "@/lib/hooks/use-traffic-analytics";
 import type { Funnel } from "@loyola-x/shared";
 import type { FunnelSpreadsheetData } from "@/lib/types/funnel-spreadsheet";
 import {
+  PAID_SOURCES,
+  getActionValue,
+  safeDivide,
+} from "@/lib/utils/funnel-metrics";
+import { normaliseDate } from "@/lib/utils/spreadsheet-filters";
+import {
   Table,
   TableBody,
   TableCell,
@@ -64,35 +70,6 @@ interface DailyRow {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const PAID_SOURCES = new Set(["meta", "meta-ads", "google-ads"]);
-
-function getActionValue(
-  actions: { action_type: string; value: string }[] | undefined,
-  type: string,
-): number {
-  if (!actions) return 0;
-  const found = actions.find((a) => a.action_type === type);
-  return found ? parseFloat(found.value) : 0;
-}
-
-function normaliseDate(raw: string | undefined | null): string | null {
-  if (!raw) return null;
-  const trimmed = raw.trim();
-  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
-  const brMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (brMatch) {
-    const [, d, m, y] = brMatch;
-    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
-  }
-  const ts = Date.parse(trimmed);
-  if (!isNaN(ts)) return new Date(ts).toISOString().slice(0, 10);
-  return null;
-}
-
-function safeDivide(num: number, den: number): number | null {
-  return den > 0 ? num / den : null;
-}
 
 function fmtCurrency(v: number | null | undefined): string {
   if (v == null) return "\u2014";
