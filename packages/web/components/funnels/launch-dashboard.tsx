@@ -192,10 +192,22 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
                 <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(metrics.spend)} hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="Leads" value={fmtNumber(metrics.totalLeads)} formula={buildFunnelLeadsFormula(metrics.totalLeads, f)}>
-                <KpiCard icon={Users} label="Leads" value={fmtNumber(metrics.totalLeads)} hintTooltip />
+                <KpiCard
+                  icon={Users}
+                  label="Leads"
+                  value={fmtNumber(metrics.totalLeads)}
+                  subValue={`Pagos: ${fmtNumber(metrics.leadsPagos)} · Org: ${fmtNumber(metrics.leadsOrg)} · S/ Track: ${fmtNumber(metrics.leadsSemTrack)}`}
+                  hintTooltip
+                />
               </MetricTooltip>
               <MetricTooltip label="CPL" value={fmtCurrency(metrics.cplPago)} formula={buildFunnelCplFormula(metrics.spend, metrics.leadsPagos, f)}>
-                <KpiCard icon={Target} label="CPL" value={fmtCurrency(metrics.cplPago)} hintTooltip />
+                <KpiCard
+                  icon={Target}
+                  label="CPL Pago"
+                  value={fmtCurrency(metrics.cplPago)}
+                  subValue={`Geral: ${fmtCurrency(metrics.cplGeral)}`}
+                  hintTooltip
+                />
               </MetricTooltip>
               <MetricTooltip label="Connect Rate" value={fmtPercent(metrics.connectRate)} formula={buildFunnelConnectRateFormula(metrics.connectRate, f)}>
                 <KpiCard icon={Link2} label="Connect Rate" value={fmtPercent(metrics.connectRate)} hintTooltip />
@@ -370,9 +382,10 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
+  subValue?: string;
   hintTooltip?: boolean;
 } & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
-  { icon: Icon, label, value, hintTooltip, className, ...rest },
+  { icon: Icon, label, value, subValue, hintTooltip, className, ...rest },
   ref,
 ) {
   return (
@@ -386,6 +399,9 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
       </div>
       <p className={`text-xl font-bold tracking-tight ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
+      {subValue && (
+        <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{subValue}</p>
+      )}
     </div>
   );
 });
