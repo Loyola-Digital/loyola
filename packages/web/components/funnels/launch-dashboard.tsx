@@ -191,22 +191,26 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
               <MetricTooltip label="Investimento" value={fmtCurrency(metrics.spend)} formula={buildFunnelSpendFormula(metrics.spend, f)}>
                 <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(metrics.spend)} hintTooltip />
               </MetricTooltip>
-              <MetricTooltip label="Leads" value={fmtNumber(metrics.totalLeads)} formula={buildFunnelLeadsFormula(metrics.totalLeads, f, { pagos: metrics.leadsPagos, org: metrics.leadsOrg, semTrack: metrics.leadsSemTrack })}>
+              <MetricTooltip label="Leads" value={metrics.hasLinkedSheet ? fmtNumber(metrics.totalLeads) : "—"} formula={metrics.hasLinkedSheet ? buildFunnelLeadsFormula(metrics.totalLeads, f, { pagos: metrics.leadsPagos, org: metrics.leadsOrg, semTrack: metrics.leadsSemTrack }) : undefined}>
                 <KpiCard
                   icon={Users}
                   label="Leads"
-                  value={fmtNumber(metrics.totalLeads)}
-                  subValue={`Pagos: ${fmtNumber(metrics.leadsPagos)} · Org: ${fmtNumber(metrics.leadsOrg)} · S/ Track: ${fmtNumber(metrics.leadsSemTrack)}`}
-                  hintTooltip
+                  value={metrics.hasLinkedSheet ? fmtNumber(metrics.totalLeads) : "—"}
+                  subValue={metrics.hasLinkedSheet
+                    ? `Pagos: ${fmtNumber(metrics.leadsPagos)} · Org: ${fmtNumber(metrics.leadsOrg)} · S/ Track: ${fmtNumber(metrics.leadsSemTrack)}`
+                    : "Vincule uma planilha"}
+                  hintTooltip={metrics.hasLinkedSheet}
                 />
               </MetricTooltip>
-              <MetricTooltip label="CPL" value={fmtCurrency(metrics.cplPago)} formula={buildFunnelCplFormula(metrics.spend, metrics.leadsPagos, f, "pago")}>
+              <MetricTooltip label="CPL" value={metrics.hasLinkedSheet ? fmtCurrency(metrics.cplPago) : "—"} formula={metrics.hasLinkedSheet ? buildFunnelCplFormula(metrics.spend, metrics.leadsPagos, f, "pago") : undefined}>
                 <KpiCard
                   icon={Target}
                   label="CPL Pago"
-                  value={fmtCurrency(metrics.cplPago)}
-                  subValue={`Geral: ${fmtCurrency(metrics.cplGeral)}`}
-                  hintTooltip
+                  value={metrics.hasLinkedSheet ? fmtCurrency(metrics.cplPago) : "—"}
+                  subValue={metrics.hasLinkedSheet
+                    ? `Geral: ${fmtCurrency(metrics.cplGeral)}`
+                    : "Vincule uma planilha"}
+                  hintTooltip={metrics.hasLinkedSheet}
                 />
               </MetricTooltip>
               <MetricTooltip label="Connect Rate" value={fmtPercent(metrics.connectRate)} formula={buildFunnelConnectRateFormula(metrics.connectRate, f)}>
