@@ -418,10 +418,13 @@ export function TopCreativesGallery({
   const [expanded, setExpanded] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
+  // TODO(@lucas): backend limita `limit` em max=20 (packages/api/src/routes/traffic-analytics.ts:194).
+  // A Story 18.5 especifica N=100 pra ter volume suficiente após agregação por nome.
+  // Solicitar aumento do max pra 100 (z.coerce.number().int().min(1).max(100)) quando possível.
   const { data, isLoading } = useTopPerformers(
     projectId,
     "ctr" as const,
-    100,
+    20,
     days,
     campaignIds?.[0] ?? null,
   );
