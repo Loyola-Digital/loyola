@@ -14,6 +14,9 @@ import {
   Settings2,
   Check,
   Layers,
+  LinkIcon,
+  Save,
+  Plus,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -237,10 +240,119 @@ function FolderPickerDialog({
 }
 
 // ============================================================
-// GROUPED VIEW
+// LINK ROW (flat)
 // ============================================================
 
-function GroupedRow({ group }: { group: PageGroup }) {
+function LinkRow({
+  link,
+  selecting,
+  picked,
+  onToggle,
+}: {
+  link: SwitchyLink;
+  selecting: boolean;
+  picked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <TableRow
+      className={selecting ? "cursor-pointer" : undefined}
+      onClick={selecting ? onToggle : undefined}
+    >
+      {selecting && (
+        <TableCell>
+          <div
+            className={`h-4 w-4 rounded border flex items-center justify-center ${
+              picked ? "bg-primary border-primary" : "border-muted-foreground/30"
+            }`}
+          >
+            {picked && <Check className="h-3 w-3 text-primary-foreground" />}
+          </div>
+        </TableCell>
+      )}
+      <TableCell>
+        {link.favicon ? (
+          <img
+            src={link.favicon}
+            alt=""
+            className="h-5 w-5 rounded"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = "none";
+            }}
+          />
+        ) : (
+          <Globe className="h-4 w-4 text-muted-foreground" />
+        )}
+      </TableCell>
+      <TableCell>
+        <div className="max-w-[250px]">
+          <p className="font-medium text-sm truncate">
+            {link.title || link.id}
+          </p>
+          <p className="text-xs text-muted-foreground truncate">{link.url}</p>
+        </div>
+      </TableCell>
+      <TableCell>
+        <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+          {shortUrl(link)}
+        </code>
+      </TableCell>
+      <TableCell className="text-right">
+        <span className="font-semibold tabular-nums">
+          {formatClicks(link.clicks)}
+        </span>
+      </TableCell>
+      <TableCell>
+        <span className="text-xs text-muted-foreground">
+          {link.note || "—"}
+        </span>
+      </TableCell>
+      <TableCell>
+        <div className="flex gap-1 flex-wrap">
+          {link.pixels?.map((p) => (
+            <Badge key={p.id} variant="outline" className="text-[10px]">
+              <Tag className="h-2.5 w-2.5 mr-0.5" />
+              {p.platform}
+            </Badge>
+          ))}
+          {(!link.pixels || link.pixels.length === 0) && (
+            <span className="text-xs text-muted-foreground">—</span>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="text-xs text-muted-foreground">
+        {formatDate(link.createdDate)}
+      </TableCell>
+      <TableCell>
+        <a
+          href={`https://${shortUrl(link)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ExternalLink className="h-4 w-4" />
+        </a>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// ============================================================
+// GROUPED ROW
+// ============================================================
+
+function GroupedRow({
+  group,
+  selecting,
+  allPicked,
+  onToggleGroup,
+}: {
+  group: PageGroup;
+  selecting: boolean;
+  allPicked: boolean;
+  onToggleGroup: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const firstFavicon = group.links.find((l) => l.favicon)?.favicon;
 
@@ -248,33 +360,61 @@ function GroupedRow({ group }: { group: PageGroup }) {
     <>
       <TableRow
         className="cursor-pointer hover:bg-muted/50"
-        onClick={() => setExpanded(!expanded)}
+        onClick={selecting ? onToggleGroup : () => setExpanded(!expanded)}
       >
+        {selecting && (
+          <TableCell>
+            <div
+              className={`h-4 w-4 rounded border flex items-center justify-center ${
+                allPicked ? "bg-primary border-primary" : "border-muted-foreground/30"
+              }`}
+            >
+              {allPicked && <Check className="h-3 w-3 text-primary-foreground" />}
+            </div>
+          </TableCell>
+        )}
         <TableCell>
-          {expanded ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          {!selecting ? (
+            expanded ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            )
           ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          )}
-        </TableCell>
-        <TableCell colSpan={2}>
-          <div className="flex items-center gap-2">
-            {firstFavicon ? (
+            firstFavicon ? (
               <img
                 src={firstFavicon}
                 alt=""
-                className="h-5 w-5 rounded flex-shrink-0"
+                className="h-5 w-5 rounded"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = "none";
                 }}
               />
             ) : (
-              <Globe className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <Globe className="h-4 w-4 text-muted-foreground" />
+            )
+          )}
+        </TableCell>
+        <TableCell colSpan={2}>
+          <div className="flex items-center gap-2">
+            {!selecting && (
+              firstFavicon ? (
+                <img
+                  src={firstFavicon}
+                  alt=""
+                  className="h-5 w-5 rounded flex-shrink-0"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              ) : (
+                <Globe className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              )
             )}
             <div className="min-w-0">
               <p className="font-medium text-sm truncate">{group.baseUrl}</p>
               <p className="text-xs text-muted-foreground">
-                {group.links.length} link{group.links.length > 1 ? "s" : ""} com UTMs diferentes
+                {group.links.length} link{group.links.length > 1 ? "s" : ""}
               </p>
             </div>
           </div>
@@ -287,6 +427,7 @@ function GroupedRow({ group }: { group: PageGroup }) {
         <TableCell colSpan={4} />
       </TableRow>
       {expanded &&
+        !selecting &&
         group.links.map((link) => {
           const utms = extractUtmParams(link.url);
           const utmKeys = Object.keys(utms);
@@ -383,11 +524,20 @@ interface SwitchyLinksTabProps {
 }
 
 export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
+  const savedLinks = funnel.switchyLinkedLinks ?? [];
+  const savedFolders = funnel.switchyFolderIds ?? [];
+  const hasSavedFolders = savedFolders.length > 0;
+  const hasLinkedLinks = savedLinks.length > 0;
+
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(
     funnel.switchyFolderIds?.[0]?.id ?? null,
   );
   const [search, setSearch] = useState("");
-  const [grouped, setGrouped] = useState(false);
+  const [grouped, setGrouped] = useState(true);
+  const [selecting, setSelecting] = useState(false);
+  const [pickedUniqs, setPickedUniqs] = useState<Set<number>>(
+    () => new Set(savedLinks.map((l) => l.uniq)),
+  );
 
   const { data: allFolders, isLoading: foldersLoading } =
     useSwitchyFolders(projectId);
@@ -397,8 +547,7 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
   );
   const updateFunnel = useUpdateFunnel(projectId, funnel.id);
 
-  const savedFolders = funnel.switchyFolderIds ?? [];
-  const hasSavedFolders = savedFolders.length > 0;
+  const linkedSet = useMemo(() => new Set(savedLinks.map((l) => l.uniq)), [savedLinks]);
 
   const visibleFolders = useMemo(() => {
     if (!allFolders) return [];
@@ -407,18 +556,25 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
     return allFolders.filter((f) => savedIds.has(f.id));
   }, [allFolders, savedFolders, hasSavedFolders]);
 
+  // When selecting, show all links. Otherwise show only linked.
   const filtered = useMemo(() => {
     if (!links) return [];
-    if (!search.trim()) return links;
-    const q = search.toLowerCase();
-    return links.filter(
-      (l) =>
-        l.title?.toLowerCase().includes(q) ||
-        l.id.toLowerCase().includes(q) ||
-        l.url?.toLowerCase().includes(q) ||
-        l.note?.toLowerCase().includes(q),
-    );
-  }, [links, search]);
+    let result = links;
+    if (!selecting && hasLinkedLinks) {
+      result = result.filter((l) => linkedSet.has(l.uniq));
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        (l) =>
+          l.title?.toLowerCase().includes(q) ||
+          l.id.toLowerCase().includes(q) ||
+          l.url?.toLowerCase().includes(q) ||
+          l.note?.toLowerCase().includes(q),
+      );
+    }
+    return result;
+  }, [links, search, selecting, hasLinkedLinks, linkedSet]);
 
   const groups = useMemo(() => groupByPage(filtered), [filtered]);
 
@@ -426,6 +582,43 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
     () => filtered.reduce((sum, l) => sum + (l.clicks ?? 0), 0),
     [filtered],
   );
+
+  function togglePickGroup(group: PageGroup) {
+    setPickedUniqs((prev) => {
+      const next = new Set(prev);
+      const allIn = group.links.every((l) => next.has(l.uniq));
+      if (allIn) {
+        group.links.forEach((l) => next.delete(l.uniq));
+      } else {
+        group.links.forEach((l) => next.add(l.uniq));
+      }
+      return next;
+    });
+  }
+
+  function togglePickLink(link: SwitchyLink) {
+    setPickedUniqs((prev) => {
+      const next = new Set(prev);
+      if (next.has(link.uniq)) next.delete(link.uniq);
+      else next.add(link.uniq);
+      return next;
+    });
+  }
+
+  function handleSaveLinks() {
+    if (!links) return;
+    const selected = links
+      .filter((l) => pickedUniqs.has(l.uniq))
+      .map((l) => ({ uniq: l.uniq, id: l.id, domain: l.domain }));
+    const existing = savedLinks.filter((l) => !links.some((ll) => ll.uniq === l.uniq));
+    updateFunnel.mutate({ switchyLinkedLinks: [...existing, ...selected] });
+    setSelecting(false);
+  }
+
+  function handleCancelSelect() {
+    setPickedUniqs(new Set(savedLinks.map((l) => l.uniq)));
+    setSelecting(false);
+  }
 
   function handleSaveFolders(folders: { id: number; name: string }[]) {
     updateFunnel.mutate({ switchyFolderIds: folders });
@@ -452,25 +645,27 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
     <div className="space-y-6">
       {/* Controls */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-        <Select
-          value={selectedFolderId ? String(selectedFolderId) : "all"}
-          onValueChange={(v) =>
-            setSelectedFolderId(v === "all" ? null : Number(v))
-          }
-        >
-          <SelectTrigger className="w-full sm:w-[300px]">
-            <FolderOpen className="h-4 w-4 mr-2 text-muted-foreground" />
-            <SelectValue placeholder="Selecionar folder" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos os links</SelectItem>
-            {visibleFolders.map((f) => (
-              <SelectItem key={f.id} value={String(f.id)}>
-                {f.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {selecting && (
+          <Select
+            value={selectedFolderId ? String(selectedFolderId) : "all"}
+            onValueChange={(v) =>
+              setSelectedFolderId(v === "all" ? null : Number(v))
+            }
+          >
+            <SelectTrigger className="w-full sm:w-[300px]">
+              <FolderOpen className="h-4 w-4 mr-2 text-muted-foreground" />
+              <SelectValue placeholder="Selecionar folder" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os links</SelectItem>
+              {visibleFolders.map((f) => (
+                <SelectItem key={f.id} value={String(f.id)}>
+                  {f.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -482,7 +677,7 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
           />
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <Switch
               id="group-toggle"
@@ -495,7 +690,29 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
             </Label>
           </div>
 
-          {allFolders && (
+          {selecting ? (
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={handleSaveLinks} className="gap-1.5">
+                <Save className="h-3.5 w-3.5" />
+                Salvar ({pickedUniqs.size})
+              </Button>
+              <Button size="sm" variant="ghost" onClick={handleCancelSelect}>
+                Cancelar
+              </Button>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => { setSelecting(true); setPickedUniqs(new Set(savedLinks.map((l) => l.uniq))); }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Vincular Links
+            </Button>
+          )}
+
+          {allFolders && !selecting && (
             <FolderPickerDialog
               allFolders={allFolders}
               selectedFolders={savedFolders}
@@ -505,20 +722,24 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
         </div>
       </div>
 
-      {/* Summary cards */}
+      {/* Summary cards — always based on linked data */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              {grouped ? "Paginas" : "Links"}
+              {grouped ? "Paginas" : "Links Vinculados"}
             </CardTitle>
             <Link2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {grouped ? groups.length : filtered.length}
+              {selecting
+                ? `${pickedUniqs.size} selecionados`
+                : grouped
+                  ? groups.length
+                  : filtered.length}
             </div>
-            {grouped && (
+            {!selecting && grouped && (
               <p className="text-xs text-muted-foreground mt-1">
                 {filtered.length} links no total
               </p>
@@ -543,24 +764,24 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Folders Vinculadas
+              Folders
             </CardTitle>
             <FolderOpen className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {hasSavedFolders ? savedFolders.length : allFolders?.length ?? 0}
+              {hasSavedFolders ? savedFolders.length : 0}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
+            <p className="text-xs text-muted-foreground mt-1 truncate">
               {hasSavedFolders
                 ? savedFolders.map((f) => f.name).join(", ")
-                : "Todas (configure para filtrar)"}
+                : "Configure folders"}
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Links table */}
+      {/* Table */}
       {linksLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -573,9 +794,13 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
           <p>
             {search
               ? "Nenhum link encontrado para essa busca"
-              : hasSavedFolders
-                ? "Selecione uma folder para ver os links"
-                : "Configure as folders deste funil para comecar"}
+              : !selecting && hasLinkedLinks
+                ? "Nenhum link vinculado nesta folder"
+                : hasSavedFolders
+                  ? selecting
+                    ? "Selecione uma folder para ver os links"
+                    : "Clique em Vincular Links para adicionar"
+                  : "Configure as folders deste funil para comecar"}
           </p>
         </div>
       ) : (
@@ -583,6 +808,7 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
           <Table>
             <TableHeader>
               <TableRow>
+                {selecting && <TableHead className="w-[40px]" />}
                 <TableHead className="w-[40px]" />
                 <TableHead>{grouped ? "Pagina / Link" : "Link"}</TableHead>
                 <TableHead>URL Curta</TableHead>
@@ -596,83 +822,22 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
             <TableBody>
               {grouped
                 ? groups.map((group) => (
-                    <GroupedRow key={group.baseUrl} group={group} />
+                    <GroupedRow
+                      key={group.baseUrl}
+                      group={group}
+                      selecting={selecting}
+                      allPicked={group.links.every((l) => pickedUniqs.has(l.uniq))}
+                      onToggleGroup={() => togglePickGroup(group)}
+                    />
                   ))
                 : filtered.map((link) => (
-                    <TableRow key={link.uniq}>
-                      <TableCell>
-                        {link.favicon ? (
-                          <img
-                            src={link.favicon}
-                            alt=""
-                            className="h-5 w-5 rounded"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display =
-                                "none";
-                            }}
-                          />
-                        ) : (
-                          <Globe className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="max-w-[250px]">
-                          <p className="font-medium text-sm truncate">
-                            {link.title || link.id}
-                          </p>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {link.url}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
-                          {shortUrl(link)}
-                        </code>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <span className="font-semibold tabular-nums">
-                          {formatClicks(link.clicks)}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-xs text-muted-foreground">
-                          {link.note || "—"}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1 flex-wrap">
-                          {link.pixels?.map((p) => (
-                            <Badge
-                              key={p.id}
-                              variant="outline"
-                              className="text-[10px]"
-                            >
-                              <Tag className="h-2.5 w-2.5 mr-0.5" />
-                              {p.platform}
-                            </Badge>
-                          ))}
-                          {(!link.pixels || link.pixels.length === 0) && (
-                            <span className="text-xs text-muted-foreground">
-                              —
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {formatDate(link.createdDate)}
-                      </TableCell>
-                      <TableCell>
-                        <a
-                          href={`https://${shortUrl(link)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      </TableCell>
-                    </TableRow>
+                    <LinkRow
+                      key={link.uniq}
+                      link={link}
+                      selecting={selecting}
+                      picked={pickedUniqs.has(link.uniq)}
+                      onToggle={() => togglePickLink(link)}
+                    />
                   ))}
             </TableBody>
           </Table>
