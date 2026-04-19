@@ -41,9 +41,8 @@ function buildDonutData(campaigns: CampaignAnalytics[]): DonutDatum[] {
     buckets[cat].value += c.spend;
     buckets[cat].campaigns.push(c.campaignName);
   }
-  return (["hot", "cold", "outros"] as Category[])
-    .map((k) => buckets[k])
-    .filter((d) => d.value > 0);
+  // Ordem fixa: Hot → Cold → Outros (pra legenda ficar consistente entre funis)
+  return (["hot", "cold", "outros"] as Category[]).map((k) => buckets[k]);
 }
 
 function fmtCurrencyCompact(v: number): string {
@@ -158,6 +157,8 @@ export function HotColdSpendDonut({
 }: HotColdSpendDonutProps) {
   const data = buildDonutData(campaigns);
   const total = data.reduce((s, d) => s + d.value, 0);
+  // Dados pro donut: filtra categorias de valor zero pra não renderizar fatia vazia
+  const chartData = data.filter((d) => d.value > 0);
 
   if (total === 0) {
     return (
@@ -173,45 +174,52 @@ export function HotColdSpendDonut({
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
       <h3 className="text-sm font-semibold">{title}</h3>
-      <div className="flex items-center gap-4">
-        <ResponsiveContainer width={180} height={180}>
+
+      <div className="flex justify-center">
+        <ResponsiveContainer width={220} height={220}>
           <PieChart>
             <Pie
-              data={data}
+              data={chartData}
               dataKey="value"
               nameKey="name"
               cx="50%"
               cy="50%"
-              innerRadius={45}
-              outerRadius={80}
+              innerRadius={55}
+              outerRadius={100}
               strokeWidth={1}
               label={renderSliceLabel}
               labelLine={false}
             >
-              {data.map((d) => (
+              {chartData.map((d) => (
                 <Cell key={d.key} fill={HOT_COLD_COLORS[d.key]} />
               ))}
             </Pie>
             <Tooltip content={<CustomTooltip />} />
           </PieChart>
         </ResponsiveContainer>
-        <div className="space-y-1.5 text-xs flex-1 min-w-0">
-          {data.map((d) => (
+      </div>
+
+      {/* Legenda abaixo — mostra SEMPRE as 3 categorias (Hot/Cold/Outros) pra
+          referência visual consistente entre funis, mesmo quando valor=0 */}
+      <div className="space-y-1.5 text-xs">
+        {data.map((d) => {
+          const pct = total > 0 ? (d.value / total) * 100 : 0;
+          return (
             <div key={d.key} className="flex items-center gap-2">
               <div
-                className="h-2.5 w-2.5 rounded-full shrink-0"
+                className="h-3 w-3 rounded-sm shrink-0"
                 style={{ backgroundColor: HOT_COLD_COLORS[d.key] }}
               />
-              <span className="truncate flex-1 font-medium">{d.name}</span>
-              <span className="text-muted-foreground tabular-nums shrink-0">
-                {fmtCurrencyCompact(d.value)}
+              <span className="font-medium w-16 shrink-0">{d.name}</span>
+              <span className="text-muted-foreground tabular-nums flex-1">
+                {d.value > 0 ? fmtCurrencyCompact(d.value) : "\u2014"}
               </span>
-              <span className="text-muted-foreground tabular-nums shrink-0 w-10 text-right">
-                {((d.value / total) * 100).toFixed(0)}%
+              <span className="text-muted-foreground tabular-nums shrink-0 w-12 text-right">
+                {pct > 0 ? `${pct.toFixed(0)}%` : "\u2014"}
               </span>
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
     </div>
   );

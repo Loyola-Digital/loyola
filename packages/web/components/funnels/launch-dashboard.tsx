@@ -259,20 +259,18 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
         ) : <EmptyState />}
       </div>
 
-      {/* Donut Hot/Cold/Outros + Funil de Conversão lado-a-lado (Story 18.4) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1">
-          {funnelCampaigns.length > 0 ? (
-            <HotColdSpendDonut campaigns={funnelCampaigns} />
-          ) : (
-            <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-              <h3 className="text-sm font-semibold mb-4">Distribuição de Investimento</h3>
-              <EmptyState />
-            </div>
-          )}
-        </div>
+      {/* Donut Hot/Cold/Outros + Funil de Conversão lado-a-lado 50/50 (Story 18.4) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {funnelCampaigns.length > 0 ? (
+          <HotColdSpendDonut campaigns={funnelCampaigns} />
+        ) : (
+          <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+            <h3 className="text-sm font-semibold mb-4">Distribuição de Investimento</h3>
+            <EmptyState />
+          </div>
+        )}
 
-        <div className="lg:col-span-2 rounded-xl border border-border/30 bg-card/60 p-5">
+        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
           <h3 className="text-sm font-semibold mb-4">Funil de Conversão</h3>
           {overview ? (
             <ConversionFunnel
