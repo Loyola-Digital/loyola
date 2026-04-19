@@ -53,14 +53,30 @@ const EMPTY_BY_QUESTION: Record<SurveyQuestionKey, SurveyQuestionAggregation[]> 
 // ============================================================
 
 /**
- * Encontra o índice da coluna cujo header bate com algum dos matchers
- * (case-insensitive, substring). Retorna -1 se não encontrar.
+ * Normaliza string pra comparação robusta: lowercase + trim + remove acentos +
+ * colapsa whitespace. Permite que matcher "voce e" pegue header "Você é:" e
+ * outras variações de acento/case.
+ */
+function normalizeForMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Encontra o índice da coluna cujo header bate com algum dos matchers.
+ * Compara com normalização que remove acentos e unifica case/whitespace —
+ * tolerante a variações ("Você é:" casa com matcher "voce e").
  */
 function findHeaderIndex(headers: string[], matchers: readonly string[]): number {
-  const normalized = headers.map((h) => h.toLowerCase().trim());
+  const normalized = headers.map(normalizeForMatch);
+  const normalizedMatchers = matchers.map(normalizeForMatch);
   for (let i = 0; i < normalized.length; i++) {
     const h = normalized[i];
-    if (matchers.some((m) => h.includes(m.toLowerCase()))) {
+    if (normalizedMatchers.some((m) => h.includes(m))) {
       return i;
     }
   }
