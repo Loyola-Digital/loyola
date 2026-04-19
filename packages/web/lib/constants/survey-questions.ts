@@ -28,6 +28,11 @@ export const SURVEY_QUESTION_MAP = {
   funcionarios: {
     matchers: ["funcionários", "funcionarios", "colaboradores", "equipe"],
     label: "Nº de funcionários",
+    showIn: ["qualification", "top-creative"] as const,
+  },
+  voce_e: {
+    matchers: ["você é", "voce e", "você e"],
+    label: "Você é",
     showIn: ["qualification"] as const,
   },
 } as const;

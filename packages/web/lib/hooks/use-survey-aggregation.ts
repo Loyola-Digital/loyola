@@ -27,6 +27,7 @@ export interface SurveyQuestionAggregation {
 export interface SurveyAdData {
   faturamento: Array<{ label: string; count: number }>;
   profissao: Array<{ label: string; count: number }>;
+  funcionarios: Array<{ label: string; count: number }>;
 }
 
 export type SurveyDataByAdId = Record<string, SurveyAdData>;
@@ -44,6 +45,7 @@ const EMPTY_BY_QUESTION: Record<SurveyQuestionKey, SurveyQuestionAggregation[]> 
   faturamento: [],
   profissao: [],
   funcionarios: [],
+  voce_e: [],
 };
 
 // ============================================================
@@ -232,22 +234,21 @@ export function useSurveyAggregation(
       faturamento: [],
       profissao: [],
       funcionarios: [],
+      voce_e: [],
     };
     const byAdId: SurveyDataByAdId = {};
     let totalResponses = 0;
-
-    // Pra byQuestion: concatenar todas rows (efetivas) por pergunta, com seus indexes
-    // Estratégia: criar dados já mapeados (chave normalizada) por survey, depois agregar
-    // Pra simplificar, processo por survey e mescla os buckets
 
     const bucketsPerQuestion: Record<SurveyQuestionKey, Map<string, { rawValues: string[]; count: number }>> = {
       faturamento: new Map(),
       profissao: new Map(),
       funcionarios: new Map(),
+      voce_e: new Map(),
     };
     const byAdBuckets: Record<string, {
       faturamento: Map<string, { rawValues: string[]; count: number }>;
       profissao: Map<string, { rawValues: string[]; count: number }>;
+      funcionarios: Map<string, { rawValues: string[]; count: number }>;
     }> = {};
 
     for (let i = 0; i < sheetQueries.length; i++) {
@@ -281,8 +282,8 @@ export function useSurveyAggregation(
         for (const row of effectiveRows) {
           const adId = (row[utmIdx] ?? "").trim();
           if (!adId) continue;
-          const adBucket = byAdBuckets[adId] ?? { faturamento: new Map(), profissao: new Map() };
-          for (const questionKey of ["faturamento", "profissao"] as const) {
+          const adBucket = byAdBuckets[adId] ?? { faturamento: new Map(), profissao: new Map(), funcionarios: new Map() };
+          for (const questionKey of ["faturamento", "profissao", "funcionarios"] as const) {
             const qIdx = colMap.questions[questionKey];
             if (qIdx == null || qIdx < 0) continue;
             const raw = (row[qIdx] ?? "").trim();
@@ -334,6 +335,9 @@ export function useSurveyAggregation(
           .map((b) => ({ label: mostCommonRaw(b.rawValues), count: b.count }))
           .sort((a, b) => b.count - a.count),
         profissao: Array.from(bucket.profissao.values())
+          .map((b) => ({ label: mostCommonRaw(b.rawValues), count: b.count }))
+          .sort((a, b) => b.count - a.count),
+        funcionarios: Array.from(bucket.funcionarios.values())
           .map((b) => ({ label: mostCommonRaw(b.rawValues), count: b.count }))
           .sort((a, b) => b.count - a.count),
       };

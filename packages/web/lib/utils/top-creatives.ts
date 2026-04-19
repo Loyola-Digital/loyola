@@ -180,19 +180,37 @@ export interface TopSurveyAnswer {
 
 /**
  * Agrega respostas de pesquisa dos vários ad_ids de um grupo agregado e retorna
- * o top-1 de cada pergunta-alvo (faturamento, profissão).
+ * o top-1 de cada pergunta-alvo (faturamento, profissão, funcionários).
  *
- * Retorna null quando não há dados da pesquisa pra nenhum ad do grupo.
+ * Retorna null em cada campo quando não há dados da pesquisa pra aquele ad
+ * do grupo (ou aquela pergunta específica ausente).
  */
 export function mergeSurveyForGroup(
-  surveyDataByAdId: Record<string, { faturamento: Array<{ label: string; count: number }>; profissao: Array<{ label: string; count: number }> }> | undefined,
+  surveyDataByAdId:
+    | Record<
+        string,
+        {
+          faturamento: Array<{ label: string; count: number }>;
+          profissao: Array<{ label: string; count: number }>;
+          funcionarios: Array<{ label: string; count: number }>;
+        }
+      >
+    | undefined,
   adIds: string[],
-): { faturamento: TopSurveyAnswer | null; profissao: TopSurveyAnswer | null } {
-  if (!surveyDataByAdId) return { faturamento: null, profissao: null };
+): {
+  faturamento: TopSurveyAnswer | null;
+  profissao: TopSurveyAnswer | null;
+  funcionarios: TopSurveyAnswer | null;
+} {
+  if (!surveyDataByAdId) {
+    return { faturamento: null, profissao: null, funcionarios: null };
+  }
   const fatBucket = new Map<string, number>();
   const profBucket = new Map<string, number>();
+  const funcBucket = new Map<string, number>();
   let totalFat = 0;
   let totalProf = 0;
+  let totalFunc = 0;
   for (const id of adIds) {
     const adData = surveyDataByAdId[id];
     if (!adData) continue;
@@ -204,14 +222,21 @@ export function mergeSurveyForGroup(
       profBucket.set(item.label, (profBucket.get(item.label) ?? 0) + item.count);
       totalProf += item.count;
     }
+    for (const item of adData.funcionarios) {
+      funcBucket.set(item.label, (funcBucket.get(item.label) ?? 0) + item.count);
+      totalFunc += item.count;
+    }
   }
-  let topFat: TopSurveyAnswer | null = null;
-  for (const [label, count] of fatBucket.entries()) {
-    if (!topFat || count > topFat.count) topFat = { label, count, total: totalFat };
+  function top(bucket: Map<string, number>, total: number): TopSurveyAnswer | null {
+    let best: TopSurveyAnswer | null = null;
+    for (const [label, count] of bucket.entries()) {
+      if (!best || count > best.count) best = { label, count, total };
+    }
+    return best;
   }
-  let topProf: TopSurveyAnswer | null = null;
-  for (const [label, count] of profBucket.entries()) {
-    if (!topProf || count > topProf.count) topProf = { label, count, total: totalProf };
-  }
-  return { faturamento: topFat, profissao: topProf };
+  return {
+    faturamento: top(fatBucket, totalFat),
+    profissao: top(profBucket, totalProf),
+    funcionarios: top(funcBucket, totalFunc),
+  };
 }

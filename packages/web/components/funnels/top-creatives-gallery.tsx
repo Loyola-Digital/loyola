@@ -653,25 +653,28 @@ export function TopCreativesGallery({
                 {/* Dados da pesquisa (Story 18.6 sub-feature 3.b) */}
                 {surveyDataByAdId ? (() => {
                   const survey = mergeSurveyForGroup(surveyDataByAdId, c.ids);
-                  if (!survey.faturamento && !survey.profissao) {
+                  if (!survey.faturamento && !survey.profissao && !survey.funcionarios) {
                     return (
                       <p className="text-[10px] text-muted-foreground italic pt-1 border-t border-border/20">
                         — Sem dados de pesquisa
                       </p>
                     );
                   }
+                  function line(emoji: string, top: typeof survey.faturamento) {
+                    if (!top || top.total === 0) return null;
+                    const pct = ((top.count / top.total) * 100).toFixed(0);
+                    return (
+                      <p className="truncate" title={`${top.label} · ${top.count} de ${top.total} (${pct}%)`}>
+                        {emoji} <span className="font-medium">{top.label}</span>
+                        <span className="text-muted-foreground/70"> · {top.count}/{top.total} ({pct}%)</span>
+                      </p>
+                    );
+                  }
                   return (
                     <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/20">
-                      {survey.faturamento && survey.faturamento.total > 0 && (
-                        <p className="truncate" title={survey.faturamento.label}>
-                          💰 {survey.faturamento.label} ({((survey.faturamento.count / survey.faturamento.total) * 100).toFixed(0)}%)
-                        </p>
-                      )}
-                      {survey.profissao && survey.profissao.total > 0 && (
-                        <p className="truncate" title={survey.profissao.label}>
-                          👤 {survey.profissao.label} ({((survey.profissao.count / survey.profissao.total) * 100).toFixed(0)}%)
-                        </p>
-                      )}
+                      {line("💰", survey.faturamento)}
+                      {line("👤", survey.profissao)}
+                      {line("👥", survey.funcionarios)}
                     </div>
                   );
                 })() : null}
