@@ -61,11 +61,12 @@ export function aggregateCreativesByName(
 ): AggregatedCreative[] {
   const groups = new Map<string, TopPerformerAd[]>();
   for (const ad of ads) {
-    if (!ad.campaignName || ad.campaignName.trim() === "") continue;
+    const name = ad.campaignName?.trim();
+    if (!name) continue;
     if (!ad.creative?.imageUrl && !ad.creative?.thumbnailUrl) continue;
-    const list = groups.get(ad.campaignName) ?? [];
+    const list = groups.get(name) ?? [];
     list.push(ad);
-    groups.set(ad.campaignName, list);
+    groups.set(name, list);
   }
 
   const result: AggregatedCreative[] = [];
