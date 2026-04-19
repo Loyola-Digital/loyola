@@ -327,10 +327,9 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
           {overview ? (
             <ConversionFunnel
               impressions={overview.totalImpressions}
-              reach={overview.totalReach}
               linkClicks={overview.totalLinkClicks}
               landingPageViews={overview.totalLandingPageViews}
-              leads={overview.totalLeads}
+              leads={metrics.totalLeads}
             />
           ) : <EmptyState />}
         </div>
