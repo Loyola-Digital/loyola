@@ -193,6 +193,7 @@ export function mergeSurveyForGroup(
           faturamento: Array<{ label: string; count: number }>;
           profissao: Array<{ label: string; count: number }>;
           funcionarios: Array<{ label: string; count: number }>;
+          voce_e: Array<{ label: string; count: number }>;
         }
       >
     | undefined,
@@ -201,30 +202,26 @@ export function mergeSurveyForGroup(
   faturamento: TopSurveyAnswer | null;
   profissao: TopSurveyAnswer | null;
   funcionarios: TopSurveyAnswer | null;
+  voce_e: TopSurveyAnswer | null;
 } {
   if (!surveyDataByAdId) {
-    return { faturamento: null, profissao: null, funcionarios: null };
+    return { faturamento: null, profissao: null, funcionarios: null, voce_e: null };
   }
-  const fatBucket = new Map<string, number>();
-  const profBucket = new Map<string, number>();
-  const funcBucket = new Map<string, number>();
-  let totalFat = 0;
-  let totalProf = 0;
-  let totalFunc = 0;
+  const buckets = {
+    faturamento: new Map<string, number>(),
+    profissao: new Map<string, number>(),
+    funcionarios: new Map<string, number>(),
+    voce_e: new Map<string, number>(),
+  };
+  const totals = { faturamento: 0, profissao: 0, funcionarios: 0, voce_e: 0 };
   for (const id of adIds) {
     const adData = surveyDataByAdId[id];
     if (!adData) continue;
-    for (const item of adData.faturamento) {
-      fatBucket.set(item.label, (fatBucket.get(item.label) ?? 0) + item.count);
-      totalFat += item.count;
-    }
-    for (const item of adData.profissao) {
-      profBucket.set(item.label, (profBucket.get(item.label) ?? 0) + item.count);
-      totalProf += item.count;
-    }
-    for (const item of adData.funcionarios) {
-      funcBucket.set(item.label, (funcBucket.get(item.label) ?? 0) + item.count);
-      totalFunc += item.count;
+    for (const key of ["faturamento", "profissao", "funcionarios", "voce_e"] as const) {
+      for (const item of adData[key]) {
+        buckets[key].set(item.label, (buckets[key].get(item.label) ?? 0) + item.count);
+        totals[key] += item.count;
+      }
     }
   }
   function top(bucket: Map<string, number>, total: number): TopSurveyAnswer | null {
@@ -235,8 +232,9 @@ export function mergeSurveyForGroup(
     return best;
   }
   return {
-    faturamento: top(fatBucket, totalFat),
-    profissao: top(profBucket, totalProf),
-    funcionarios: top(funcBucket, totalFunc),
+    faturamento: top(buckets.faturamento, totals.faturamento),
+    profissao: top(buckets.profissao, totals.profissao),
+    funcionarios: top(buckets.funcionarios, totals.funcionarios),
+    voce_e: top(buckets.voce_e, totals.voce_e),
   };
 }

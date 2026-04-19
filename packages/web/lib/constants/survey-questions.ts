@@ -33,7 +33,7 @@ export const SURVEY_QUESTION_MAP = {
   voce_e: {
     matchers: ["você é", "voce e", "você e"],
     label: "Você é",
-    showIn: ["qualification"] as const,
+    showIn: ["qualification", "top-creative"] as const,
   },
 } as const;
 

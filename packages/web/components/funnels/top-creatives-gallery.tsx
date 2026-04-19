@@ -653,7 +653,12 @@ export function TopCreativesGallery({
                 {/* Dados da pesquisa (Story 18.6 sub-feature 3.b) */}
                 {surveyDataByAdId ? (() => {
                   const survey = mergeSurveyForGroup(surveyDataByAdId, c.ids);
-                  if (!survey.faturamento && !survey.profissao && !survey.funcionarios) {
+                  if (
+                    !survey.faturamento &&
+                    !survey.profissao &&
+                    !survey.funcionarios &&
+                    !survey.voce_e
+                  ) {
                     return (
                       <p className="text-[10px] text-muted-foreground italic pt-1 border-t border-border/20">
                         — Sem dados de pesquisa
@@ -675,6 +680,7 @@ export function TopCreativesGallery({
                       {line("💰", survey.faturamento)}
                       {line("👤", survey.profissao)}
                       {line("👥", survey.funcionarios)}
+                      {line("📋", survey.voce_e)}
                     </div>
                   );
                 })() : null}

@@ -28,6 +28,7 @@ export interface SurveyAdData {
   faturamento: Array<{ label: string; count: number }>;
   profissao: Array<{ label: string; count: number }>;
   funcionarios: Array<{ label: string; count: number }>;
+  voce_e: Array<{ label: string; count: number }>;
 }
 
 export type SurveyDataByAdId = Record<string, SurveyAdData>;
@@ -265,6 +266,7 @@ export function useSurveyAggregation(
       faturamento: Map<string, { rawValues: string[]; count: number }>;
       profissao: Map<string, { rawValues: string[]; count: number }>;
       funcionarios: Map<string, { rawValues: string[]; count: number }>;
+      voce_e: Map<string, { rawValues: string[]; count: number }>;
     }> = {};
 
     for (let i = 0; i < sheetQueries.length; i++) {
@@ -298,8 +300,8 @@ export function useSurveyAggregation(
         for (const row of effectiveRows) {
           const adId = (row[utmIdx] ?? "").trim();
           if (!adId) continue;
-          const adBucket = byAdBuckets[adId] ?? { faturamento: new Map(), profissao: new Map(), funcionarios: new Map() };
-          for (const questionKey of ["faturamento", "profissao", "funcionarios"] as const) {
+          const adBucket = byAdBuckets[adId] ?? { faturamento: new Map(), profissao: new Map(), funcionarios: new Map(), voce_e: new Map() };
+          for (const questionKey of ["faturamento", "profissao", "funcionarios", "voce_e"] as const) {
             const qIdx = colMap.questions[questionKey];
             if (qIdx == null || qIdx < 0) continue;
             const raw = (row[qIdx] ?? "").trim();
@@ -354,6 +356,9 @@ export function useSurveyAggregation(
           .map((b) => ({ label: mostCommonRaw(b.rawValues), count: b.count }))
           .sort((a, b) => b.count - a.count),
         funcionarios: Array.from(bucket.funcionarios.values())
+          .map((b) => ({ label: mostCommonRaw(b.rawValues), count: b.count }))
+          .sort((a, b) => b.count - a.count),
+        voce_e: Array.from(bucket.voce_e.values())
           .map((b) => ({ label: mostCommonRaw(b.rawValues), count: b.count }))
           .sort((a, b) => b.count - a.count),
       };
