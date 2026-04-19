@@ -22,11 +22,19 @@ interface SurveyQualificationSectionProps {
   >;
 }
 
-const QUALIFICATION_QUESTIONS: SurveyQuestionKey[] = [
-  "faturamento",
-  "profissao",
-  "funcionarios",
-];
+/**
+ * Lista de perguntas renderizadas na seção 3.a, derivada do `SURVEY_QUESTION_MAP`
+ * filtrando só as que incluem `"qualification"` em `showIn`. Assim, adicionar
+ * nova pergunta no mapa com `showIn: ["qualification"]` faz ela aparecer aqui
+ * automaticamente — evita bug de "esqueci de adicionar no componente".
+ */
+const QUALIFICATION_QUESTIONS: SurveyQuestionKey[] = (
+  Object.entries(SURVEY_QUESTION_MAP) as Array<
+    [SurveyQuestionKey, (typeof SURVEY_QUESTION_MAP)[SurveyQuestionKey]]
+  >
+)
+  .filter(([, def]) => (def.showIn as readonly string[]).includes("qualification"))
+  .map(([key]) => key);
 
 /**
  * Barra horizontal proporcional ao pct da resposta. Mostra label (esquerda),
