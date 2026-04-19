@@ -40,8 +40,10 @@ import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
 import {
   aggregateCreativesByName,
   enrichWithPaidLeads,
+  mergeSurveyForGroup,
   type AggregatedCreative,
 } from "@/lib/utils/top-creatives";
+import type { SurveyDataByAdId } from "@/lib/hooks/use-survey-aggregation";
 
 // ============================================================
 // Tipos locais e formatters
@@ -401,10 +403,12 @@ interface TopCreativesGalleryProps {
     funnelName?: string;
   };
   /**
-   * Placeholder pra Story 18.6 — dados da pesquisa indexados por ad_id.
-   * Type final vem na 18.6.
+   * Dados da pesquisa agregados por ad_id (Story 18.6).
+   * Quando passado, cada card exibe top-1 de faturamento + profissão abaixo
+   * das métricas (Invest / CTR / CPL). Tipo refinado de `unknown` (Story 18.5)
+   * pra `SurveyDataByAdId` nesta story.
    */
-  surveyDataByAdId?: Record<string, unknown>;
+  surveyDataByAdId?: SurveyDataByAdId;
 }
 
 export function TopCreativesGallery({
@@ -413,6 +417,7 @@ export function TopCreativesGallery({
   campaignIds,
   funnelId,
   funnelContext,
+  surveyDataByAdId,
 }: TopCreativesGalleryProps) {
   const [metric, setMetric] = useState<LocalMetric>("cpl");
   const [expanded, setExpanded] = useState(false);
@@ -644,6 +649,32 @@ export function TopCreativesGallery({
                     </div>
                   </MetricTooltip>
                 </div>
+
+                {/* Dados da pesquisa (Story 18.6 sub-feature 3.b) */}
+                {surveyDataByAdId ? (() => {
+                  const survey = mergeSurveyForGroup(surveyDataByAdId, c.ids);
+                  if (!survey.faturamento && !survey.profissao) {
+                    return (
+                      <p className="text-[10px] text-muted-foreground italic pt-1 border-t border-border/20">
+                        — Sem dados de pesquisa
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/20">
+                      {survey.faturamento && survey.faturamento.total > 0 && (
+                        <p className="truncate" title={survey.faturamento.label}>
+                          💰 {survey.faturamento.label} ({((survey.faturamento.count / survey.faturamento.total) * 100).toFixed(0)}%)
+                        </p>
+                      )}
+                      {survey.profissao && survey.profissao.total > 0 && (
+                        <p className="truncate" title={survey.profissao.label}>
+                          👤 {survey.profissao.label} ({((survey.profissao.count / survey.profissao.total) * 100).toFixed(0)}%)
+                        </p>
+                      )}
+                    </div>
+                  );
+                })() : null}
               </div>
             </div>
           );

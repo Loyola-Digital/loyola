@@ -167,3 +167,51 @@ export function enrichWithPaidLeads(
     };
   });
 }
+
+/**
+ * Top resposta (moda) de uma pergunta pro grupo de ads agregados.
+ * Usado na Story 18.6 (3.b) pra exibir resposta mais frequente por criativo.
+ */
+export interface TopSurveyAnswer {
+  label: string;
+  count: number;
+  total: number;
+}
+
+/**
+ * Agrega respostas de pesquisa dos vários ad_ids de um grupo agregado e retorna
+ * o top-1 de cada pergunta-alvo (faturamento, profissão).
+ *
+ * Retorna null quando não há dados da pesquisa pra nenhum ad do grupo.
+ */
+export function mergeSurveyForGroup(
+  surveyDataByAdId: Record<string, { faturamento: Array<{ label: string; count: number }>; profissao: Array<{ label: string; count: number }> }> | undefined,
+  adIds: string[],
+): { faturamento: TopSurveyAnswer | null; profissao: TopSurveyAnswer | null } {
+  if (!surveyDataByAdId) return { faturamento: null, profissao: null };
+  const fatBucket = new Map<string, number>();
+  const profBucket = new Map<string, number>();
+  let totalFat = 0;
+  let totalProf = 0;
+  for (const id of adIds) {
+    const adData = surveyDataByAdId[id];
+    if (!adData) continue;
+    for (const item of adData.faturamento) {
+      fatBucket.set(item.label, (fatBucket.get(item.label) ?? 0) + item.count);
+      totalFat += item.count;
+    }
+    for (const item of adData.profissao) {
+      profBucket.set(item.label, (profBucket.get(item.label) ?? 0) + item.count);
+      totalProf += item.count;
+    }
+  }
+  let topFat: TopSurveyAnswer | null = null;
+  for (const [label, count] of fatBucket.entries()) {
+    if (!topFat || count > topFat.count) topFat = { label, count, total: totalFat };
+  }
+  let topProf: TopSurveyAnswer | null = null;
+  for (const [label, count] of profBucket.entries()) {
+    if (!topProf || count > topProf.count) topProf = { label, count, total: totalProf };
+  }
+  return { faturamento: topFat, profissao: topProf };
+}
