@@ -554,44 +554,6 @@ export function TopCreativesGallery({
                   alt={c.name}
                   className="w-full h-full object-cover"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="absolute bottom-0 left-0 right-0 p-2.5 text-white">
-                    <div className="grid grid-cols-3 gap-1 text-[10px]">
-                      <MetricTooltip
-                        label="Investimento"
-                        value={fmtCurrency(c.spend)}
-                        formula={spendFormula}
-                      >
-                        <div onClick={(e) => e.stopPropagation()} className="cursor-help">
-                          <p className="opacity-60">Invest.</p>
-                          <p className="font-semibold underline decoration-dotted decoration-white/40 underline-offset-4">
-                            {fmtCurrency(c.spend)}
-                          </p>
-                        </div>
-                      </MetricTooltip>
-                      <MetricTooltip label="CTR" value={fmtPercent(c.ctr)} formula={ctrFormula}>
-                        <div onClick={(e) => e.stopPropagation()} className="cursor-help">
-                          <p className="opacity-60">CTR</p>
-                          <p className="font-semibold underline decoration-dotted decoration-white/40 underline-offset-4">
-                            {fmtPercent(c.ctr)}
-                          </p>
-                        </div>
-                      </MetricTooltip>
-                      <MetricTooltip
-                        label="CPL Pago"
-                        value={fmtCurrency(c.cplPago)}
-                        formula={cplFormula}
-                      >
-                        <div onClick={(e) => e.stopPropagation()} className="cursor-help">
-                          <p className="opacity-60">CPL</p>
-                          <p className="font-semibold underline decoration-dotted decoration-white/40 underline-offset-4">
-                            {fmtCurrency(c.cplPago)}
-                          </p>
-                        </div>
-                      </MetricTooltip>
-                    </div>
-                  </div>
-                </div>
 
                 <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
                   <Badge
@@ -640,17 +602,47 @@ export function TopCreativesGallery({
                 </div>
               </div>
 
-              <div className="p-2.5 space-y-1">
+              <div className="p-2.5 space-y-2">
                 <p className="text-[11px] font-medium truncate" title={c.name}>
                   {c.name}
                 </p>
                 <p className="text-lg font-bold tracking-tight">
                   {formatMetricValue(c, metric)}
                 </p>
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                  <span>{fmtNumber(c.impressions)} impr</span>
-                  <span>{fmtNumber(c.clicks)} clicks</span>
-                  <span>{fmtNumber(c.leadsPagos)} leads</span>
+                <div className="grid grid-cols-3 gap-1 text-[10px] pt-1 border-t border-border/20">
+                  <MetricTooltip label="Investimento" value={fmtCurrency(c.spend)} formula={spendFormula}>
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="cursor-help text-center"
+                    >
+                      <p className="text-muted-foreground">Invest.</p>
+                      <p className="font-semibold underline decoration-dotted decoration-muted-foreground/40 underline-offset-2">
+                        {fmtCurrency(c.spend)}
+                      </p>
+                    </div>
+                  </MetricTooltip>
+                  <MetricTooltip label="CTR" value={fmtPercent(c.ctr)} formula={ctrFormula}>
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="cursor-help text-center"
+                    >
+                      <p className="text-muted-foreground">CTR</p>
+                      <p className="font-semibold underline decoration-dotted decoration-muted-foreground/40 underline-offset-2">
+                        {fmtPercent(c.ctr)}
+                      </p>
+                    </div>
+                  </MetricTooltip>
+                  <MetricTooltip label="CPL Pago" value={fmtCurrency(c.cplPago)} formula={cplFormula}>
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="cursor-help text-center"
+                    >
+                      <p className="text-muted-foreground">CPL</p>
+                      <p className="font-semibold underline decoration-dotted decoration-muted-foreground/40 underline-offset-2">
+                        {fmtCurrency(c.cplPago)}
+                      </p>
+                    </div>
+                  </MetricTooltip>
                 </div>
               </div>
             </div>
