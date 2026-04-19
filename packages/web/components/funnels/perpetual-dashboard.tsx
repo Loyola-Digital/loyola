@@ -394,6 +394,7 @@ export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProp
         projectId={projectId}
         days={days}
         campaignIds={campaignIds}
+        funnelId={funnel.id}
         funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
       />
 
