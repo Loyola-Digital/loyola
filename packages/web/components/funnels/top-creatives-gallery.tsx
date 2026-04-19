@@ -465,8 +465,8 @@ export function TopCreativesGallery({
     return (
       <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
         <Skeleton className="h-5 w-48" />
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-48 rounded-lg" />
           ))}
         </div>
@@ -529,7 +529,7 @@ export function TopCreativesGallery({
         </div>
       )}
 
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         {shown.map((c, i) => {
           const funnel = funnelContext ?? { days: 30 };
           const path = { ad: c.name };
