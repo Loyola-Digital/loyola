@@ -14,7 +14,6 @@ import {
   Settings2,
   Check,
   Layers,
-  LinkIcon,
   Save,
   Plus,
 } from "lucide-react";
