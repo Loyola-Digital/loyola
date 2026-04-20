@@ -63,6 +63,8 @@ import { toast } from "sonner";
 interface LaunchDashboardProps {
   funnel: Funnel;
   projectId: string;
+  /** Quando presente (contexto de etapa), substitui o mutate interno do funil */
+  onCampaignsChange?: (campaigns: FunnelCampaign[]) => void;
 }
 
 function fmtCurrency(val: number | null | undefined): string {
@@ -88,7 +90,7 @@ function safeNum(val: string | undefined): number {
   return val ? parseFloat(val) : 0;
 }
 
-export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
+export function LaunchDashboard({ funnel, projectId, onCampaignsChange }: LaunchDashboardProps) {
   const [days, setDays] = useState(30);
   const [showCampaignManager, setShowCampaignManager] = useState(false);
   const { data: pickerData } = useCampaignPicker(showCampaignManager ? projectId : null);
@@ -152,10 +154,14 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
             accountLinked={pickerData.accountLinked}
             value={funnel.campaigns}
             onChange={(campaigns: FunnelCampaign[]) => {
-              updateFunnel.mutate(
-                { campaigns },
-                { onSuccess: () => toast.success("Campanhas atualizadas!") }
-              );
+              if (onCampaignsChange) {
+                onCampaignsChange(campaigns);
+              } else {
+                updateFunnel.mutate(
+                  { campaigns },
+                  { onSuccess: () => toast.success("Campanhas atualizadas!") }
+                );
+              }
             }}
           />
         </div>

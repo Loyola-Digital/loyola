@@ -16,6 +16,21 @@ export interface SwitchyLinkRef {
   domain: string;
 }
 
+export interface FunnelStage {
+  id: string;
+  funnelId: string;
+  name: string;
+  metaAccountId: string | null;
+  campaigns: FunnelCampaign[];
+  googleAdsAccountId: string | null;
+  googleAdsCampaigns: FunnelCampaign[];
+  switchyFolderIds: SwitchyFolderRef[];
+  switchyLinkedLinks: SwitchyLinkRef[];
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Funnel {
   id: string;
   projectId: string;
