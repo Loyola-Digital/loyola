@@ -47,3 +47,19 @@ export function mostCommonRaw(rawValues: string[]): string {
   }
   return best;
 }
+
+/**
+ * Normaliza email para comparação: lowercase + trim.
+ */
+export function normalizeEmail(email: string): string {
+  return email.toLowerCase().trim();
+}
+
+/**
+ * Extrai os últimos 8 dígitos de um telefone após remover símbolos.
+ * Usada para match duplo (email OU telefone) na validação de leads.
+ */
+export function getLast8DigitsPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return digits.slice(-8);
+}

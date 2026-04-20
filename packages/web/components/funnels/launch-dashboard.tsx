@@ -38,7 +38,6 @@ import { HotColdSpendDonut } from "./hot-cold-spend-donut";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { CampaignSelector } from "./campaign-selector";
 import type { Funnel, FunnelCampaign } from "@loyola-x/shared";
-import { useSurveySummary } from "@/lib/hooks/use-google-sheets";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
@@ -106,10 +105,9 @@ export function LaunchDashboard({ funnel, projectId, onCampaignsChange }: Launch
   const { data: campaignData } = useTrafficCampaigns(projectId, days);
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsights(projectId, firstCampaignId, days);
-  const { data: surveySummary } = useSurveySummary(projectId, funnel.id);
 
-  const surveyResponseRate = surveySummary && surveySummary.totalResponses > 0 && metrics.totalLeads > 0
-    ? (surveySummary.totalResponses / metrics.totalLeads) * 100
+  const surveyResponseRate = survey && survey.matchedResponses > 0 && metrics.totalLeads > 0
+    ? Math.min((survey.matchedResponses / metrics.totalLeads) * 100, 100)
     : null;
 
   // Filter campaign table to only funnel campaigns
@@ -219,15 +217,20 @@ export function LaunchDashboard({ funnel, projectId, onCampaignsChange }: Launch
               <MetricTooltip label="CPM" value={fmtCurrency(metrics.cpm)} formula={buildFunnelCpmFormula(metrics.cpm, f)}>
                 <KpiCard icon={BarChart3} label="CPM" value={fmtCurrency(metrics.cpm)} hintTooltip />
               </MetricTooltip>
-              {surveyResponseRate !== null && surveySummary && (
-                <MetricTooltip label="Pesquisa" value={`${surveyResponseRate.toFixed(1)}%`} formula={buildFunnelSurveyFormula(surveySummary.totalResponses, metrics.totalLeads)}>
+              {surveyResponseRate !== null && survey && (
+                <MetricTooltip
+                  label="Pesquisa"
+                  value={`${surveyResponseRate.toFixed(1)}%`}
+                  formula={buildFunnelSurveyFormula(survey.matchedResponses, metrics.totalLeads)}
+                >
                   <div className={`rounded-xl border p-3 hover:border-border/50 transition-colors cursor-help ${surveyResponseRate >= 30 ? "border-emerald-500/30 bg-emerald-500/5" : surveyResponseRate >= 10 ? "border-amber-500/30 bg-amber-500/5" : "border-red-500/30 bg-red-500/5"}`}>
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Pesquisa</span>
                       <ClipboardList className="h-3.5 w-3.5 text-muted-foreground/50" />
                     </div>
                     <p className="text-xl font-bold tracking-tight underline decoration-dotted decoration-muted-foreground/40 underline-offset-4">{surveyResponseRate.toFixed(1)}%</p>
-                    <p className="text-[9px] text-muted-foreground">{surveySummary.totalResponses} de {metrics.totalLeads} leads (planilha)</p>
+                    <p className="text-[9px] text-muted-foreground">{metrics.totalLeads} leads no total</p>
+                    <p className="text-[9px] text-muted-foreground">{survey.matchedResponses} com match · {survey.unmatchedResponses} sem match</p>
                   </div>
                 </MetricTooltip>
               )}
@@ -310,6 +313,8 @@ export function LaunchDashboard({ funnel, projectId, onCampaignsChange }: Launch
           totalResponses: survey.totalResponses,
           usingFallback: survey.usingFallback,
           fallbackReason: survey.fallbackReason,
+          matchedResponses: survey.matchedResponses,
+          unmatchedResponses: survey.unmatchedResponses,
         }}
       />
     </div>

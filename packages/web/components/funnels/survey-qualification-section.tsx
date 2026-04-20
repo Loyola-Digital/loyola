@@ -18,7 +18,7 @@ interface SurveyQualificationSectionProps {
   /** Dados agregados do hook `useSurveyAggregation` */
   data: Pick<
     UseSurveyAggregationResult,
-    "byQuestion" | "totalResponses" | "usingFallback" | "fallbackReason"
+    "byQuestion" | "totalResponses" | "usingFallback" | "fallbackReason" | "matchedResponses" | "unmatchedResponses"
   >;
 }
 
@@ -134,10 +134,13 @@ export function SurveyQualificationSection({
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <ClipboardList className="h-4 w-4 text-muted-foreground" />
-          <div>
+          <div className="flex-1">
             <h3 className="text-sm font-semibold">Resultados da Pesquisa — Qualificação do público</h3>
             <p className="text-[11px] text-muted-foreground">
-              {data.totalResponses} respostas analisadas
+              {data.totalResponses} respostas analisadas - {data.matchedResponses} com match - {data.unmatchedResponses} sem match
+            </p>
+            <p className="text-[10px] text-muted-foreground/70 mt-1">
+              Apenas respondentes com email ou telefone identificados na planilha de Leads são contabilizados como match. Respostas sem match podem ser leads orgânicos ou emails/telefones diferentes entre etapas.
             </p>
           </div>
         </div>
