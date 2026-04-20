@@ -1,7 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Play, ChevronLeft, ChevronRight, X, ExternalLink, Maximize2 } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
+import {
+  Play,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  ExternalLink,
+  Maximize2,
+  AlertTriangle,
+} from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -14,19 +22,48 @@ import {
 import {
   useTopPerformers,
   useVideoSource,
-  type TopPerformerMetric,
-  type TopPerformerAd,
   type MetaAdCreative,
-  type VideoMetrics,
 } from "@/lib/hooks/use-traffic-analytics";
+import {
+  useFunnelSpreadsheets,
+  useFunnelSpreadsheetData,
+} from "@/lib/hooks/use-funnel-spreadsheets";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import {
   buildFunnelSpendFormula,
   buildFunnelCtrFormula,
-  buildFunnelCpcFormula,
+  buildFunnelCplFormula,
   enrichFormulaForEntity,
 } from "@/lib/formulas/funnels";
 import type { MetricFormula } from "@/lib/types/metric-formula";
+import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
+import {
+  aggregateCreativesByName,
+  enrichWithPaidLeads,
+  mergeSurveyForGroup,
+  type AggregatedCreative,
+} from "@/lib/utils/top-creatives";
+import type { SurveyDataByAdId } from "@/lib/hooks/use-survey-aggregation";
+
+// ============================================================
+// Tipos locais e formatters
+// ============================================================
+
+type LocalMetric = "cpl" | "cplQualified" | "leads" | "ctr";
+
+interface MetricOption {
+  value: LocalMetric;
+  label: string;
+  sortLabel: string;
+  needsReview?: boolean;
+}
+
+const METRIC_OPTIONS: MetricOption[] = [
+  { value: "cpl", label: "CPL", sortLabel: "Menor CPL" },
+  { value: "cplQualified", label: "CPL Qual", sortLabel: "Menor CPL Qualificado", needsReview: true },
+  { value: "leads", label: "Leads", sortLabel: "Mais Leads" },
+  { value: "ctr", label: "CTR", sortLabel: "Maior CTR" },
+];
 
 function fmtCurrency(val: number | null): string {
   if (val === null || val === 0) return "—";
@@ -47,34 +84,55 @@ function fmtPercent(val: number | null): string {
   return `${val.toFixed(2)}%`;
 }
 
-function fmtRoas(val: number | null): string {
-  if (val === null) return "—";
-  return `${val.toFixed(2)}x`;
+function creativeImgSrc(c: MetaAdCreative | null): string {
+  return c?.imageUrl || c?.thumbnailUrl || "";
 }
 
-const METRIC_OPTIONS: { value: TopPerformerMetric; label: string; sortLabel: string }[] = [
-  { value: "roas", label: "ROAS", sortLabel: "Maior ROAS" },
-  { value: "cpl", label: "CPL", sortLabel: "Menor CPL" },
-  { value: "cplQualified", label: "CPL Qual", sortLabel: "Menor CPL Qualificado" },
-  { value: "leads", label: "Leads", sortLabel: "Mais Leads" },
-  { value: "sales", label: "Vendas", sortLabel: "Mais Vendas" },
-  { value: "ctr", label: "CTR", sortLabel: "Maior CTR" },
-];
-
-function formatMetricValue(ad: TopPerformerAd, metric: TopPerformerMetric): string {
+function formatMetricValue(c: AggregatedCreative, metric: LocalMetric): string {
   switch (metric) {
-    case "roas": return fmtRoas(ad.roas);
-    case "cpl": return fmtCurrency(ad.cpl);
-    case "cplQualified": return fmtCurrency(ad.cplQualified);
-    case "leads": return fmtNumber(ad.leads);
-    case "sales": return fmtNumber(ad.sales);
-    case "ctr": return fmtPercent(ad.ctr);
-    default: return "—";
+    case "cpl":
+      return fmtCurrency(c.cplPago);
+    case "cplQualified":
+      return fmtCurrency(c.cplQualified);
+    case "leads":
+      return fmtNumber(c.leadsPagos);
+    case "ctr":
+      return fmtPercent(c.ctr);
+    default:
+      return "—";
   }
 }
 
-function creativeImgSrc(c: MetaAdCreative | null): string {
-  return c?.imageUrl || c?.thumbnailUrl || "";
+/**
+ * Ordena criativos pela métrica selecionada.
+ * - cpl / cplQualified: ASC (menor = melhor); null vai pro final
+ * - leads / ctr: DESC (maior = melhor)
+ */
+function sortByMetric(
+  creatives: AggregatedCreative[],
+  metric: LocalMetric,
+): AggregatedCreative[] {
+  const sorted = [...creatives];
+  if (metric === "cpl") {
+    sorted.sort((a, b) => {
+      if (a.cplPago == null && b.cplPago == null) return 0;
+      if (a.cplPago == null) return 1;
+      if (b.cplPago == null) return -1;
+      return a.cplPago - b.cplPago;
+    });
+  } else if (metric === "cplQualified") {
+    sorted.sort((a, b) => {
+      if (a.cplQualified == null && b.cplQualified == null) return 0;
+      if (a.cplQualified == null) return 1;
+      if (b.cplQualified == null) return -1;
+      return a.cplQualified - b.cplQualified;
+    });
+  } else if (metric === "leads") {
+    sorted.sort((a, b) => b.leadsPagos - a.leadsPagos);
+  } else {
+    sorted.sort((a, b) => b.ctr - a.ctr);
+  }
+  return sorted;
 }
 
 // ============================================================
@@ -89,13 +147,17 @@ interface LightboxItem {
   impressions: number;
   clicks: number;
   ctr: number;
-  cpc: number;
-  reach: number;
-  videoMetrics?: VideoMetrics | null;
+  cplPago: number | null;
   parentInfo?: string;
 }
 
-function CreativeLightbox({ items, initialIndex, projectId, onClose, funnelContext }: {
+function CreativeLightbox({
+  items,
+  initialIndex,
+  projectId,
+  onClose,
+  funnelContext,
+}: {
   items: LightboxItem[];
   initialIndex: number;
   projectId: string;
@@ -124,19 +186,44 @@ function CreativeLightbox({ items, initialIndex, projectId, onClose, funnelConte
   const prev = () => setIndex((i) => (i - 1 + items.length) % items.length);
   const next = () => setIndex((i) => (i + 1) % items.length);
 
+  const funnel = funnelContext ?? { days: 30 };
+  const path = { ad: item.name };
+  const spendFormula = enrichFormulaForEntity(
+    buildFunnelSpendFormula(item.spend, funnel),
+    path,
+  );
+  const ctrFormula = enrichFormulaForEntity(
+    buildFunnelCtrFormula(item.ctr, funnel),
+    path,
+  );
+  const cplFormula = item.cplPago != null
+    ? enrichFormulaForEntity(buildFunnelCplFormula(item.spend, item.clicks > 0 ? item.clicks : 0, funnel, "pago"), path)
+    : undefined;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-3xl w-full m-4 overflow-hidden max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="bg-card border border-border rounded-2xl shadow-2xl max-w-3xl w-full m-4 overflow-hidden max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/30 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <Badge variant="outline" className="text-[9px] px-1 py-0">
-              {item.creative.objectType === "VIDEO" ? "Video" : item.creative.objectType === "CAROUSEL" ? "Carousel" : "Imagem"}
+              {item.creative.objectType === "VIDEO"
+                ? "Video"
+                : item.creative.objectType === "CAROUSEL"
+                  ? "Carousel"
+                  : "Imagem"}
             </Badge>
             <span className="text-sm font-medium truncate">{item.name}</span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-xs text-muted-foreground">{index + 1} / {items.length}</span>
+            <span className="text-xs text-muted-foreground">
+              {index + 1} / {items.length}
+            </span>
             <a
               href={creativeImgSrc(item.creative)}
               target="_blank"
@@ -147,11 +234,12 @@ function CreativeLightbox({ items, initialIndex, projectId, onClose, funnelConte
             >
               <Maximize2 className="h-4 w-4" />
             </a>
-            <button onClick={onClose} className="rounded-full p-1 hover:bg-muted"><X className="h-4 w-4" /></button>
+            <button onClick={onClose} className="rounded-full p-1 hover:bg-muted">
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </div>
 
-        {/* Media */}
         <div className="relative bg-black min-h-[300px] max-h-[60vh] flex items-center justify-center overflow-hidden">
           {isVideo && videoData?.sourceUrl ? (
             <video
@@ -211,29 +299,40 @@ function CreativeLightbox({ items, initialIndex, projectId, onClose, funnelConte
 
           {items.length > 1 && (
             <>
-              <button onClick={(e) => { e.stopPropagation(); prev(); }} className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 hover:bg-black/70 p-2 text-white">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  prev();
+                }}
+                className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 hover:bg-black/70 p-2 text-white"
+              >
                 <ChevronLeft className="h-5 w-5" />
               </button>
-              <button onClick={(e) => { e.stopPropagation(); next(); }} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 hover:bg-black/70 p-2 text-white">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  next();
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 hover:bg-black/70 p-2 text-white"
+              >
                 <ChevronRight className="h-5 w-5" />
               </button>
             </>
           )}
         </div>
 
-        {/* Info */}
         <div className="p-4 space-y-3 shrink-0 overflow-y-auto">
           {(() => {
-            const formulas = buildAdFormulas(
-              { spend: item.spend, ctr: item.ctr, cpc: item.cpc, impressions: item.impressions, clicks: item.clicks, campaignName: item.name },
-              funnelContext,
-            );
-            const cells: Array<{ label: string; value: string; formula: MetricFormula | undefined }> = [
-              { label: "Spend", value: fmtCurrency(item.spend), formula: formulas.spend },
-              { label: "Impressões", value: fmtNumber(item.impressions), formula: formulas.impressions },
-              { label: "Cliques", value: fmtNumber(item.clicks), formula: formulas.clicks },
-              { label: "CTR", value: fmtPercent(item.ctr), formula: formulas.ctr },
-              { label: "CPC", value: fmtCurrency(item.cpc), formula: formulas.cpc },
+            const cells: Array<{
+              label: string;
+              value: string;
+              formula: MetricFormula | undefined;
+            }> = [
+              { label: "Investimento", value: fmtCurrency(item.spend), formula: spendFormula },
+              { label: "Impressões", value: fmtNumber(item.impressions), formula: undefined },
+              { label: "Cliques", value: fmtNumber(item.clicks), formula: undefined },
+              { label: "CTR", value: fmtPercent(item.ctr), formula: ctrFormula },
+              { label: "CPL Pago", value: fmtCurrency(item.cplPago), formula: cplFormula },
             ];
             return (
               <div className="grid grid-cols-5 gap-3">
@@ -241,7 +340,11 @@ function CreativeLightbox({ items, initialIndex, projectId, onClose, funnelConte
                   <MetricTooltip key={m.label} label={m.label} value={m.value} formula={m.formula}>
                     <div className="text-center cursor-help">
                       <p className="text-[10px] text-muted-foreground">{m.label}</p>
-                      <p className={`text-sm font-semibold ${m.formula ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{m.value}</p>
+                      <p
+                        className={`text-sm font-semibold ${m.formula ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}
+                      >
+                        {m.value}
+                      </p>
                     </div>
                   </MetricTooltip>
                 ))}
@@ -250,7 +353,9 @@ function CreativeLightbox({ items, initialIndex, projectId, onClose, funnelConte
           })()}
 
           {item.creative.title && <p className="text-sm font-medium">{item.creative.title}</p>}
-          {item.creative.body && <p className="text-xs text-muted-foreground line-clamp-3">{item.creative.body}</p>}
+          {item.creative.body && (
+            <p className="text-xs text-muted-foreground line-clamp-3">{item.creative.body}</p>
+          )}
 
           {item.creative.linkUrl && (
             <a
@@ -263,8 +368,13 @@ function CreativeLightbox({ items, initialIndex, projectId, onClose, funnelConte
               {(() => {
                 try {
                   const u = new URL(item.creative.linkUrl);
-                  return u.hostname + (u.pathname.length > 1 ? u.pathname.split("/").slice(0, 3).join("/") : "");
-                } catch { return item.creative.linkUrl; }
+                  return (
+                    u.hostname +
+                    (u.pathname.length > 1 ? u.pathname.split("/").slice(0, 3).join("/") : "")
+                  );
+                } catch {
+                  return item.creative.linkUrl;
+                }
               })()}
             </a>
           )}
@@ -286,68 +396,101 @@ interface TopCreativesGalleryProps {
   projectId: string;
   days: number;
   campaignIds?: string[];
-  funnelContext?: { days: number; funnelType?: "launch" | "perpetual"; funnelName?: string };
-}
-
-function buildAdFormulas(ad: { spend: number; ctr: number; cpc: number; impressions?: number; clicks?: number; campaignName: string }, f?: { days: number; funnelType?: "launch" | "perpetual"; funnelName?: string }) {
-  const funnel = f ?? { days: 30 };
-  const path = { ad: ad.campaignName };
-  const impressionsFormula: MetricFormula | undefined = ad.impressions != null ? {
-    expression: "Σ impressions do criativo",
-    values: [{ label: "Impressões", value: ad.impressions, source: "Meta Ads API · impressions" }],
-    result: new Intl.NumberFormat("pt-BR").format(ad.impressions),
-  } : undefined;
-  const clicksFormula: MetricFormula | undefined = ad.clicks != null ? {
-    expression: "Σ clicks do criativo",
-    values: [{ label: "Cliques", value: ad.clicks, source: "Meta Ads API · clicks" }],
-    result: new Intl.NumberFormat("pt-BR").format(ad.clicks),
-  } : undefined;
-  return {
-    spend: enrichFormulaForEntity(buildFunnelSpendFormula(ad.spend, funnel), path),
-    ctr: enrichFormulaForEntity(buildFunnelCtrFormula(ad.ctr, funnel), path),
-    cpc: enrichFormulaForEntity(buildFunnelCpcFormula(ad.cpc, funnel), path),
-    impressions: enrichFormulaForEntity(impressionsFormula, path),
-    clicks: enrichFormulaForEntity(clicksFormula, path),
+  funnelId?: string;
+  funnelContext?: {
+    days: number;
+    funnelType?: "launch" | "perpetual";
+    funnelName?: string;
   };
+  /**
+   * Dados da pesquisa agregados por ad_id (Story 18.6).
+   * Quando passado, cada card exibe top-1 de faturamento + profissão abaixo
+   * das métricas (Invest / CTR / CPL). Tipo refinado de `unknown` (Story 18.5)
+   * pra `SurveyDataByAdId` nesta story.
+   */
+  surveyDataByAdId?: SurveyDataByAdId;
 }
 
-export function TopCreativesGallery({ projectId, days, campaignIds, funnelContext }: TopCreativesGalleryProps) {
-  const [metric, setMetric] = useState<TopPerformerMetric>("ctr");
+export function TopCreativesGallery({
+  projectId,
+  days,
+  campaignIds,
+  funnelId,
+  funnelContext,
+  surveyDataByAdId,
+}: TopCreativesGalleryProps) {
+  const [metric, setMetric] = useState<LocalMetric>("cpl");
   const [expanded, setExpanded] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const { data, isLoading } = useTopPerformers(projectId, metric, 20, days, campaignIds?.[0] ?? null);
 
-  if (isLoading) return (
-    <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
-      <Skeleton className="h-5 w-48" />
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-        {[1, 2, 3, 4].map((i) => (
-          <Skeleton key={i} className="h-48 rounded-lg" />
-        ))}
-      </div>
-    </div>
+  // TODO(@lucas): backend limita `limit` em max=20 (packages/api/src/routes/traffic-analytics.ts:194).
+  // A Story 18.5 especifica N=100 pra ter volume suficiente após agregação por nome.
+  // Solicitar aumento do max pra 100 (z.coerce.number().int().min(1).max(100)) quando possível.
+  const { data, isLoading } = useTopPerformers(
+    projectId,
+    "ctr" as const,
+    20,
+    days,
+    campaignIds?.[0] ?? null,
   );
 
-  if (!data || data.topPerformers.length === 0) return null;
+  const { data: spreadsheetsData } = useFunnelSpreadsheets(projectId, funnelId ?? "");
+  const linkedSheet = useMemo(() => {
+    if (!spreadsheetsData?.spreadsheets) return null;
+    return (
+      spreadsheetsData.spreadsheets.find((s) => s.type === "leads") ??
+      spreadsheetsData.spreadsheets[0] ??
+      null
+    );
+  }, [spreadsheetsData]);
+  const { data: sheetData } = useFunnelSpreadsheetData(
+    projectId,
+    funnelId ?? "",
+    linkedSheet?.id,
+  );
 
-  const withCreatives = data.topPerformers.filter((ad) => ad.creative?.imageUrl || ad.creative?.thumbnailUrl);
-  if (withCreatives.length === 0) return null;
+  const aggregated = useMemo<AggregatedCreative[]>(() => {
+    if (!data) return [];
+    const agg = aggregateCreativesByName(data.topPerformers);
+    if (!sheetData) return agg;
+    const filtered = filterSheetRowsByDays(sheetData, days);
+    const utmContentMapped = !!sheetData.mapping.utm_content;
+    const utmSourceMapped = !!sheetData.mapping.utm_source;
+    return enrichWithPaidLeads(agg, filtered, utmContentMapped, utmSourceMapped);
+  }, [data, sheetData, days]);
 
-  const shown = expanded ? withCreatives : withCreatives.slice(0, 8);
+  const sorted = useMemo(() => sortByMetric(aggregated, metric), [aggregated, metric]);
+
+  if (isLoading) {
+    return (
+      <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
+        <Skeleton className="h-5 w-48" />
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-48 rounded-lg" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (sorted.length === 0) return null;
+
+  const shown = expanded ? sorted : sorted.slice(0, 20);
   const metricLabel = METRIC_OPTIONS.find((m) => m.value === metric)?.sortLabel ?? metric;
+  const selectedOption = METRIC_OPTIONS.find((m) => m.value === metric);
+  const showReviewBadge = !!selectedOption?.needsReview;
 
-  const lightboxItems: LightboxItem[] = withCreatives.map((ad) => ({
-    id: ad.campaignId,
-    name: ad.campaignName,
-    creative: ad.creative!,
-    spend: ad.spend,
-    impressions: ad.impressions,
-    clicks: ad.clicks,
-    ctr: ad.ctr,
-    cpc: ad.cpc,
-    reach: ad.reach,
-    videoMetrics: ad.videoMetrics,
-    parentInfo: `${ad.parentCampaignName} › ${ad.adsetName}`,
+  const lightboxItems: LightboxItem[] = sorted.map((c) => ({
+    id: c.ids[0],
+    name: c.name,
+    creative: c.creative,
+    spend: c.spend,
+    impressions: c.impressions,
+    clicks: c.clicks,
+    ctr: c.ctr,
+    cplPago: c.cplPago,
+    parentInfo: c.parentInfo,
   }));
 
   return (
@@ -355,114 +498,205 @@ export function TopCreativesGallery({ projectId, days, campaignIds, funnelContex
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h3 className="text-sm font-semibold">Top Criativos — {metricLabel}</h3>
-          <p className="text-[11px] text-muted-foreground">{withCreatives.length} criativos com preview</p>
+          <p className="text-[11px] text-muted-foreground">
+            {sorted.length} criativos agregados por nome
+          </p>
         </div>
-        <Select value={metric} onValueChange={(v) => setMetric(v as TopPerformerMetric)}>
-          <SelectTrigger className="h-7 w-[130px] text-xs">
+        <Select value={metric} onValueChange={(v) => setMetric(v as LocalMetric)}>
+          <SelectTrigger className="h-7 w-[150px] text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {METRIC_OPTIONS.map((m) => (
-              <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+              <SelectItem key={m.value} value={m.value}>
+                <span className="flex items-center gap-1.5">
+                  {m.label}
+                  {m.needsReview && <AlertTriangle className="h-3 w-3 text-amber-500" />}
+                </span>
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
 
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-        {shown.map((ad, i) => (
-          <div
-            key={ad.campaignId}
-            className="group rounded-lg border border-border/20 bg-muted/10 overflow-hidden hover:border-border/50 transition-all hover:shadow-md cursor-pointer"
-            onClick={() => setLightboxIndex(i)}
-          >
-            <div className="relative aspect-video bg-muted/30">
-              <img
-                src={creativeImgSrc(ad.creative)}
-                alt={ad.campaignName}
-                className="w-full h-full object-cover"
-              />
-              {/* Hover overlay */}
-              {(() => {
-                const formulas = buildAdFormulas(ad, funnelContext);
-                return (
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="absolute bottom-0 left-0 right-0 p-2.5 text-white">
-                      <div className="grid grid-cols-3 gap-1 text-[10px]">
-                        <MetricTooltip label="Spend" value={fmtCurrency(ad.spend)} formula={formulas.spend}>
-                          <div onClick={(e) => e.stopPropagation()} className="cursor-help">
-                            <p className="opacity-60">Spend</p>
-                            <p className="font-semibold underline decoration-dotted decoration-white/40 underline-offset-4">{fmtCurrency(ad.spend)}</p>
-                          </div>
-                        </MetricTooltip>
-                        <MetricTooltip label="CTR" value={fmtPercent(ad.ctr)} formula={formulas.ctr}>
-                          <div onClick={(e) => e.stopPropagation()} className="cursor-help">
-                            <p className="opacity-60">CTR</p>
-                            <p className="font-semibold underline decoration-dotted decoration-white/40 underline-offset-4">{fmtPercent(ad.ctr)}</p>
-                          </div>
-                        </MetricTooltip>
-                        <MetricTooltip label="CPC" value={fmtCurrency(ad.cpc)} formula={formulas.cpc}>
-                          <div onClick={(e) => e.stopPropagation()} className="cursor-help">
-                            <p className="opacity-60">CPC</p>
-                            <p className="font-semibold underline decoration-dotted decoration-white/40 underline-offset-4">{fmtCurrency(ad.cpc)}</p>
-                          </div>
-                        </MetricTooltip>
-                      </div>
+      {showReviewBadge && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 flex items-start gap-2 text-[11px]">
+          <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+          <p className="text-amber-700 dark:text-amber-400">
+            <span className="font-medium">Métrica em revisão —</span> definição de lead qualificado
+            pendente. Valores exibidos são do backend legado e podem divergir da metodologia atual.
+          </p>
+        </div>
+      )}
+
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        {shown.map((c, i) => {
+          const funnel = funnelContext ?? { days: 30 };
+          const path = { ad: c.name };
+          const spendFormula = enrichFormulaForEntity(
+            buildFunnelSpendFormula(c.spend, funnel),
+            path,
+          );
+          const ctrFormula = enrichFormulaForEntity(
+            buildFunnelCtrFormula(c.ctr, funnel),
+            path,
+          );
+          const cplFormula = c.cplPago != null
+            ? enrichFormulaForEntity(
+                buildFunnelCplFormula(c.spend, c.leadsPagos, funnel, "pago"),
+                path,
+              )
+            : undefined;
+          return (
+            <div
+              key={c.name}
+              className="group rounded-lg border border-border/20 bg-muted/10 overflow-hidden hover:border-border/50 transition-all hover:shadow-md cursor-pointer"
+              onClick={() => setLightboxIndex(i)}
+            >
+              <div className="relative aspect-video bg-muted/30">
+                <img
+                  src={creativeImgSrc(c.creative)}
+                  alt={c.name}
+                  className="w-full h-full object-cover"
+                />
+
+                <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
+                  <Badge
+                    variant="outline"
+                    className="text-[9px] px-1 py-0 bg-black/50 text-white border-white/20 backdrop-blur-sm"
+                  >
+                    {c.creative.objectType === "VIDEO"
+                      ? "Video"
+                      : c.creative.objectType === "CAROUSEL"
+                        ? "Carousel"
+                        : "Imagem"}
+                  </Badge>
+                  {c.ids.length > 1 && (
+                    <Badge
+                      variant="outline"
+                      className="text-[9px] px-1 py-0 bg-blue-500/30 text-white border-blue-200/40 backdrop-blur-sm"
+                      title={`Agregado de ${c.ids.length} versões com mesmo nome`}
+                    >
+                      ×{c.ids.length}
+                    </Badge>
+                  )}
+                </div>
+
+                {c.creative.objectType === "VIDEO" && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="rounded-full bg-black/40 p-2 group-hover:bg-black/60 transition-colors">
+                      <Play className="h-4 w-4 text-white fill-white" />
                     </div>
                   </div>
-                );
-              })()}
-              {/* Type badge */}
-              <div className="absolute top-1.5 left-1.5">
-                <Badge variant="outline" className="text-[9px] px-1 py-0 bg-black/50 text-white border-white/20 backdrop-blur-sm">
-                  {ad.creative?.objectType === "VIDEO" ? "Video" : ad.creative?.objectType === "CAROUSEL" ? "Carousel" : "Imagem"}
-                </Badge>
-              </div>
-              {/* Play icon */}
-              {ad.creative?.objectType === "VIDEO" && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="rounded-full bg-black/40 p-2 group-hover:bg-black/60 transition-colors">
-                    <Play className="h-4 w-4 text-white fill-white" />
-                  </div>
+                )}
+
+                <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
+                  <a
+                    href={creativeImgSrc(c.creative)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity rounded bg-black/50 p-1 text-white hover:bg-black/70 backdrop-blur-sm"
+                    title="Abrir em nova guia"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                  <span className="text-[10px] font-bold bg-black/50 text-white rounded px-1.5 py-0.5 backdrop-blur-sm">
+                    #{i + 1}
+                  </span>
                 </div>
-              )}
-              {/* Rank + open in new tab */}
-              <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
-                <a
-                  href={creativeImgSrc(ad.creative)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="opacity-0 group-hover:opacity-100 transition-opacity rounded bg-black/50 p-1 text-white hover:bg-black/70 backdrop-blur-sm"
-                  title="Abrir em nova guia"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-                <span className="text-[10px] font-bold bg-black/50 text-white rounded px-1.5 py-0.5 backdrop-blur-sm">
-                  #{i + 1}
-                </span>
+              </div>
+
+              <div className="p-2.5 space-y-2">
+                <p className="text-[11px] font-medium truncate" title={c.name}>
+                  {c.name}
+                </p>
+                <p className="text-lg font-bold tracking-tight">
+                  {formatMetricValue(c, metric)}
+                </p>
+                <div className="grid grid-cols-3 gap-1 text-[10px] pt-1 border-t border-border/20">
+                  <MetricTooltip label="Investimento" value={fmtCurrency(c.spend)} formula={spendFormula}>
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="cursor-help text-center"
+                    >
+                      <p className="text-muted-foreground">Invest.</p>
+                      <p className="font-semibold underline decoration-dotted decoration-muted-foreground/40 underline-offset-2">
+                        {fmtCurrency(c.spend)}
+                      </p>
+                    </div>
+                  </MetricTooltip>
+                  <MetricTooltip label="CTR" value={fmtPercent(c.ctr)} formula={ctrFormula}>
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="cursor-help text-center"
+                    >
+                      <p className="text-muted-foreground">CTR</p>
+                      <p className="font-semibold underline decoration-dotted decoration-muted-foreground/40 underline-offset-2">
+                        {fmtPercent(c.ctr)}
+                      </p>
+                    </div>
+                  </MetricTooltip>
+                  <MetricTooltip label="CPL Pago" value={fmtCurrency(c.cplPago)} formula={cplFormula}>
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="cursor-help text-center"
+                    >
+                      <p className="text-muted-foreground">CPL</p>
+                      <p className="font-semibold underline decoration-dotted decoration-muted-foreground/40 underline-offset-2">
+                        {fmtCurrency(c.cplPago)}
+                      </p>
+                    </div>
+                  </MetricTooltip>
+                </div>
+
+                {/* Dados da pesquisa (Story 18.6 sub-feature 3.b) */}
+                {surveyDataByAdId ? (() => {
+                  const survey = mergeSurveyForGroup(surveyDataByAdId, c.ids, c.leadsPagos);
+                  if (
+                    !survey.faturamento &&
+                    !survey.profissao &&
+                    !survey.funcionarios &&
+                    !survey.voce_e
+                  ) {
+                    return (
+                      <p className="text-[10px] text-muted-foreground italic pt-1 border-t border-border/20">
+                        — Sem dados de pesquisa
+                      </p>
+                    );
+                  }
+                  function line(emoji: string, top: typeof survey.faturamento) {
+                    if (!top || top.total === 0) return null;
+                    const pct = ((top.count / top.total) * 100).toFixed(0);
+                    const titleDetail = `${top.label} · ${top.count} de ${top.total} leads (${pct}%) — baseado em ${top.totalResponses} ${top.totalResponses === 1 ? "resposta" : "respostas"} da pesquisa`;
+                    return (
+                      <p className="truncate" title={titleDetail}>
+                        {emoji} <span className="font-medium">{top.label}</span>
+                        <span className="text-muted-foreground/70"> · {top.count}/{top.total} ({pct}%)</span>
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/20">
+                      {line("💰", survey.faturamento)}
+                      {line("👤", survey.profissao)}
+                      {line("👥", survey.funcionarios)}
+                      {line("📋", survey.voce_e)}
+                    </div>
+                  );
+                })() : null}
               </div>
             </div>
-            {/* Info */}
-            <div className="p-2.5 space-y-1">
-              <p className="text-[11px] font-medium truncate" title={ad.campaignName}>{ad.campaignName}</p>
-              <p className="text-lg font-bold tracking-tight">{formatMetricValue(ad, metric)}</p>
-              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                <span>{fmtNumber(ad.impressions)} impr</span>
-                <span>{fmtNumber(ad.clicks)} clicks</span>
-                <span>{fmtNumber(ad.reach)} reach</span>
-              </div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {withCreatives.length > 8 && (
+      {sorted.length > 20 && (
         <button
           onClick={() => setExpanded(!expanded)}
           className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
         >
-          {expanded ? "Mostrar menos" : `Ver todos (${withCreatives.length})`}
+          {expanded ? "Mostrar menos" : `Ver todos (${sorted.length})`}
         </button>
       )}
 
