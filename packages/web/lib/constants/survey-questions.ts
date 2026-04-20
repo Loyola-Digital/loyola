@@ -65,3 +65,28 @@ export const SURVEY_TIMESTAMP_MATCHERS = [
  * Matchers possíveis pra coluna de utm_content (ad_id do Meta Ads).
  */
 export const SURVEY_UTM_CONTENT_MATCHERS = ["utm_content"];
+
+/**
+ * Matchers possíveis pra coluna de email (pra match com planilha de Leads).
+ * Story 18.6: Ajuste de match de Leads.
+ */
+export const SURVEY_EMAIL_MATCHERS = [
+  "email",
+  "e-mail",
+  "e mail",
+  "correo",
+  "endereço de e-mail",
+];
+
+/**
+ * Matchers possíveis pra coluna de telefone (dupla verificação com últimos 8 dígitos).
+ * Story 18.6: Ajuste de match de Leads.
+ */
+export const SURVEY_PHONE_MATCHERS = [
+  "telefone",
+  "phone",
+  "celular",
+  "whatsapp",
+  "número de telefone",
+  "numero de telefone",
+];
