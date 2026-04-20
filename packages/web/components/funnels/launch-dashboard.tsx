@@ -107,8 +107,11 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
     useCampaignDailyInsights(projectId, firstCampaignId, days);
   const { data: surveySummary } = useSurveySummary(projectId, funnel.id);
 
-  const surveyResponseRate = surveySummary && surveySummary.totalResponses > 0 && metrics.totalLeads > 0
-    ? (surveySummary.totalResponses / metrics.totalLeads) * 100
+  // Numerador: matched responses (validadas contra Planilha de Leads)
+  // Denominador: total de leads da planilha
+  // Capped a 100% pra evitar overflow (se houver mais respostas que leads)
+  const surveyResponseRate = survey.matchedResponses > 0 && metrics.totalLeads > 0
+    ? Math.min((survey.matchedResponses / metrics.totalLeads) * 100, 100)
     : null;
 
   // Filter campaign table to only funnel campaigns
