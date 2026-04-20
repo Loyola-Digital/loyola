@@ -63,7 +63,6 @@ import {
 interface PerpetualDashboardProps {
   funnel: Funnel;
   projectId: string;
-  onCampaignsChange?: (campaigns: FunnelCampaign[]) => void;
 }
 
 // ============================================================
@@ -102,7 +101,7 @@ function safeNum(val: string | undefined): number {
 // MAIN COMPONENT
 // ============================================================
 
-export function PerpetualDashboard({ funnel, projectId, onCampaignsChange }: PerpetualDashboardProps) {
+export function PerpetualDashboard({ funnel, projectId }: PerpetualDashboardProps) {
   const [days, setDays] = useState(30);
   const [showCampaignManager, setShowCampaignManager] = useState(false);
   const [tableFilter, setTableFilter] = useState<"campaign" | "adset" | "ad">("campaign");
@@ -225,11 +224,7 @@ export function PerpetualDashboard({ funnel, projectId, onCampaignsChange }: Per
             accountLinked={pickerData.accountLinked}
             value={funnel.campaigns}
             onChange={(campaigns: FunnelCampaign[]) => {
-              if (onCampaignsChange) {
-                onCampaignsChange(campaigns);
-              } else {
-                updateFunnel.mutate({ campaigns }, { onSuccess: () => toast.success("Campanhas atualizadas!") });
-              }
+              updateFunnel.mutate({ campaigns }, { onSuccess: () => toast.success("Campanhas atualizadas!") });
             }}
           />
         </div>
