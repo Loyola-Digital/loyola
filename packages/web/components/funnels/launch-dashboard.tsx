@@ -132,7 +132,6 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   const compCpm = compTotals && compTotals.impressions > 0
     ? (compTotals.spend / compTotals.impressions) * 1000
     : null;
-
   const surveyResponseRate = survey && survey.matchedResponses > 0 && metrics.totalLeads > 0
     ? Math.min((survey.matchedResponses / metrics.totalLeads) * 100, 100)
     : null;
