@@ -77,6 +77,7 @@ export interface Funnel {
   googleAdsCampaigns: FunnelCampaign[];
   switchyFolderIds: SwitchyFolderRef[];
   switchyLinkedLinks: SwitchyLinkRef[];
+  compareFunnelId: string | null;
   createdAt: string;
   updatedAt: string;
 }

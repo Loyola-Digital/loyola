@@ -24,6 +24,7 @@ export interface UpdateFunnelInput {
   googleAdsCampaigns?: FunnelCampaign[];
   switchyFolderIds?: { id: number; name: string }[];
   switchyLinkedLinks?: { uniq: number; id: string; domain: string }[];
+  compareFunnelId?: string | null;
 }
 
 export interface MetaCampaignOption {

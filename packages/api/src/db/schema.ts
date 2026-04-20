@@ -13,6 +13,7 @@ import {
   uniqueIndex,
   unique,
   check,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -566,6 +567,10 @@ export const funnels = pgTable(
       .notNull()
       .default([])
       .$type<{ uniq: number; id: string; domain: string }[]>(),
+    compareFunnelId: uuid("compare_funnel_id").references(
+      (): AnyPgColumn => funnels.id,
+      { onDelete: "set null" }
+    ),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

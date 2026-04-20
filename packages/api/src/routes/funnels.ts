@@ -45,6 +45,7 @@ const updateFunnelSchema = z.object({
   googleAdsCampaigns: z.array(campaignSchema).optional(),
   switchyFolderIds: z.array(switchyFolderSchema).optional(),
   switchyLinkedLinks: z.array(switchyLinkRefSchema).optional(),
+  compareFunnelId: z.string().uuid().nullable().optional(),
 });
 
 const projectIdParamSchema = z.object({
@@ -72,6 +73,7 @@ function funnelShape(f: typeof funnels.$inferSelect) {
     googleAdsCampaigns: f.googleAdsCampaigns ?? [],
     switchyFolderIds: f.switchyFolderIds ?? [],
     switchyLinkedLinks: f.switchyLinkedLinks ?? [],
+    compareFunnelId: f.compareFunnelId ?? null,
     createdAt: f.createdAt,
     updatedAt: f.updatedAt,
   };
@@ -241,7 +243,7 @@ export default fp(async function funnelRoutes(fastify) {
     }
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
-    const { name, type, metaAccountId, campaigns, googleAdsAccountId, googleAdsCampaigns, switchyFolderIds, switchyLinkedLinks } = parseResult.data;
+    const { name, type, metaAccountId, campaigns, googleAdsAccountId, googleAdsCampaigns, switchyFolderIds, switchyLinkedLinks, compareFunnelId } = parseResult.data;
     if (name !== undefined) updates.name = name;
     if (type !== undefined) updates.type = type;
     if (metaAccountId !== undefined) updates.metaAccountId = metaAccountId;
@@ -250,6 +252,7 @@ export default fp(async function funnelRoutes(fastify) {
     if (googleAdsCampaigns !== undefined) updates.googleAdsCampaigns = googleAdsCampaigns;
     if (switchyFolderIds !== undefined) updates.switchyFolderIds = switchyFolderIds;
     if (switchyLinkedLinks !== undefined) updates.switchyLinkedLinks = switchyLinkedLinks;
+    if (compareFunnelId !== undefined) updates.compareFunnelId = compareFunnelId;
 
     const [updated] = await fastify.db
       .update(funnels)
