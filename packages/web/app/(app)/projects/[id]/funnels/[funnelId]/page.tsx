@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StageCard } from "@/components/funnels/stage-card";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 export default function FunnelPage() {
   const params = useParams<{ id: string; funnelId: string }>();
@@ -26,6 +27,7 @@ export default function FunnelPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [stageName, setStageName] = useState("");
+  const [stageType, setStageType] = useState<"free" | "paid">("free");
 
   const { data: funnelData, isLoading: funnelLoading } = useFunnel(params.id, params.funnelId);
   const { data: stages, isLoading: stagesLoading } = useFunnelStages(params.id, params.funnelId);
@@ -81,9 +83,10 @@ export default function FunnelPage() {
 
   async function handleCreate() {
     if (!stageName.trim()) return;
-    await createStage.mutateAsync({ name: stageName.trim() });
+    await createStage.mutateAsync({ name: stageName.trim(), stageType });
     toast.success("Etapa criada");
     setStageName("");
+    setStageType("free");
     setCreateOpen(false);
   }
 
@@ -126,16 +129,49 @@ export default function FunnelPage() {
           <DialogHeader>
             <DialogTitle>Nova Etapa</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Label htmlFor="new-stage-name">Nome da etapa</Label>
-            <Input
-              id="new-stage-name"
-              value={stageName}
-              onChange={(e) => setStageName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-              placeholder="ex: Captação Paga"
-              autoFocus
-            />
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="new-stage-name">Nome da etapa</Label>
+              <Input
+                id="new-stage-name"
+                value={stageName}
+                onChange={(e) => setStageName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+                placeholder="ex: Captação Paga"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo de captação</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setStageType("free")}
+                  className={cn(
+                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                    stageType === "free"
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border hover:bg-muted"
+                  )}
+                >
+                  <span className="font-medium">Gratuita</span>
+                  <span className="text-xs text-muted-foreground">Sem planilhas de vendas</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStageType("paid")}
+                  className={cn(
+                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                    stageType === "paid"
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border hover:bg-muted"
+                  )}
+                >
+                  <span className="font-medium">Paga</span>
+                  <span className="text-xs text-muted-foreground">Com planilhas de vendas</span>
+                </button>
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button>

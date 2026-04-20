@@ -39,7 +39,8 @@ import {
 } from "@/lib/hooks/use-traffic-analytics";
 import { CampaignSelector } from "./campaign-selector";
 import { TopCreativesGallery } from "./top-creatives-gallery";
-import type { Funnel, FunnelCampaign } from "@loyola-x/shared";
+import type { Funnel, FunnelCampaign, StageType } from "@loyola-x/shared";
+import { StageSalesSection } from "./stage-sales-section";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
@@ -63,6 +64,8 @@ import {
 interface PerpetualDashboardProps {
   funnel: Funnel;
   projectId: string;
+  stageId?: string;
+  stageType?: StageType;
   onCampaignsChange?: (campaigns: FunnelCampaign[]) => void;
 }
 
@@ -102,7 +105,7 @@ function safeNum(val: string | undefined): number {
 // MAIN COMPONENT
 // ============================================================
 
-export function PerpetualDashboard({ funnel, projectId, onCampaignsChange }: PerpetualDashboardProps) {
+export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCampaignsChange }: PerpetualDashboardProps) {
   const [days, setDays] = useState(30);
   const [showCampaignManager, setShowCampaignManager] = useState(false);
   const [tableFilter, setTableFilter] = useState<"campaign" | "adset" | "ad">("campaign");
@@ -492,6 +495,30 @@ export function PerpetualDashboard({ funnel, projectId, onCampaignsChange }: Per
           </table>
         </div>
       </div>
+
+      {/* Dashboard Financeiro — apenas etapas pagas (Story 19.6) */}
+      {stageType === "paid" && stageId && (
+        <div className="space-y-6 pt-2 border-t border-border/30">
+          <h3 className="text-base font-semibold">Vendas</h3>
+          <StageSalesSection
+            projectId={projectId}
+            funnelId={funnel.id}
+            stageId={stageId}
+            subtype="capture"
+            title="Vendas de Captação"
+            days={days}
+          />
+          <div className="border-t border-border/20" />
+          <StageSalesSection
+            projectId={projectId}
+            funnelId={funnel.id}
+            stageId={stageId}
+            subtype="main_product"
+            title="Produto Principal"
+            days={days}
+          />
+        </div>
+      )}
     </div>
   );
 }

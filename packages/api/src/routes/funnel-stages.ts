@@ -30,6 +30,7 @@ const switchyLinkRefSchema = z.object({
 
 const createStageSchema = z.object({
   name: z.string().min(1).max(255),
+  stageType: z.enum(["paid", "free"]).default("free"),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).default([]),
   googleAdsAccountId: z.string().uuid().nullable().optional(),
@@ -38,8 +39,15 @@ const createStageSchema = z.object({
   switchyLinkedLinks: z.array(switchyLinkRefSchema).default([]),
 });
 
-const updateStageSchema = createStageSchema.partial().omit({ name: true }).extend({
+const updateStageSchema = z.object({
   name: z.string().min(1).max(255).optional(),
+  stageType: z.enum(["paid", "free"]).optional(),
+  metaAccountId: z.string().uuid().nullable().optional(),
+  campaigns: z.array(campaignSchema).optional(),
+  googleAdsAccountId: z.string().uuid().nullable().optional(),
+  googleAdsCampaigns: z.array(campaignSchema).optional(),
+  switchyFolderIds: z.array(switchyFolderSchema).optional(),
+  switchyLinkedLinks: z.array(switchyLinkRefSchema).optional(),
 });
 
 const paramsSchema = z.object({
@@ -60,6 +68,7 @@ function stageShape(row: typeof funnelStages.$inferSelect) {
     id: row.id,
     funnelId: row.funnelId,
     name: row.name,
+    stageType: (row.stageType ?? "free") as "paid" | "free",
     metaAccountId: row.metaAccountId,
     campaigns: (row.campaigns ?? []) as { id: string; name: string }[],
     googleAdsAccountId: row.googleAdsAccountId,
@@ -178,6 +187,7 @@ export default fp(async function funnelStageRoutes(fastify) {
       .values({
         funnelId: params.data.funnelId,
         name: body.name,
+        stageType: body.stageType ?? "free",
         metaAccountId: body.metaAccountId ?? null,
         campaigns: body.campaigns,
         googleAdsAccountId: body.googleAdsAccountId ?? null,
@@ -221,6 +231,7 @@ export default fp(async function funnelStageRoutes(fastify) {
     const updates: Partial<typeof funnelStages.$inferInsert> = { updatedAt: new Date() };
 
     if (body.name !== undefined) updates.name = body.name;
+    if (body.stageType !== undefined) updates.stageType = body.stageType;
     if (body.metaAccountId !== undefined) updates.metaAccountId = body.metaAccountId;
     if (body.campaigns !== undefined) updates.campaigns = body.campaigns;
     if (body.googleAdsAccountId !== undefined) updates.googleAdsAccountId = body.googleAdsAccountId;

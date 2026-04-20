@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, TrendingUp, Youtube, Pencil, Trash2 } from "lucide-react";
+import { MoreHorizontal, TrendingUp, Youtube, Pencil, Trash2, CreditCard, Gift } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -89,7 +89,12 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
         <CardContent className="p-4">
           <div className="flex items-start justify-between">
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-sm truncate">{stage.name}</p>
+              <div className="flex items-center gap-2 mb-0.5">
+                <p className="font-semibold text-sm truncate">{stage.name}</p>
+                <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${stage.stageType === "paid" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"}`}>
+                  {stage.stageType === "paid" ? "Paga" : "Gratuita"}
+                </span>
+              </div>
               <div className="mt-2 space-y-1">
                 {metaCount > 0 && (
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -130,6 +135,34 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
                   <DropdownMenuItem onClick={() => { setNewName(stage.name); setRenameOpen(true); }}>
                     <Pencil className="h-4 w-4 mr-2" />
                     Renomear
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      const newType = stage.stageType === "paid" ? "free" : "paid";
+                      updateStage.mutate(
+                        { stageType: newType },
+                        {
+                          onSuccess: () =>
+                            toast.success(
+                              newType === "paid"
+                                ? "Etapa alterada para Paga"
+                                : "Etapa alterada para Gratuita"
+                            ),
+                        }
+                      );
+                    }}
+                  >
+                    {stage.stageType === "paid" ? (
+                      <>
+                        <Gift className="h-4 w-4 mr-2" />
+                        Alterar para Gratuita
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard className="h-4 w-4 mr-2" />
+                        Alterar para Paga
+                      </>
+                    )}
                   </DropdownMenuItem>
                   <TooltipProvider>
                     <Tooltip>

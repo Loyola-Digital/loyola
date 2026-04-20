@@ -8,6 +8,7 @@ const STAGE_STALE_TIME = 2 * 60 * 1000; // 2 min
 
 export interface CreateStageInput {
   name: string;
+  stageType?: "paid" | "free";
   metaAccountId?: string | null;
   campaigns?: { id: string; name: string }[];
   googleAdsAccountId?: string | null;

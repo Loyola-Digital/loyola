@@ -15,6 +15,7 @@ import { PerpetualDashboard } from "@/components/funnels/perpetual-dashboard";
 import { YouTubeFunnelSection } from "@/components/funnels/youtube-funnel-section";
 import { SurveyFunnelTab } from "@/components/funnels/survey-funnel-tab";
 import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-tab";
+import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-spreadsheet-section";
 import { MetaAdsSpreadsheetTab } from "@/components/funnels/meta-ads-spreadsheet-tab";
 import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
 import { CampaignSelector } from "@/components/funnels/campaign-selector";
@@ -22,6 +23,7 @@ import { useCampaignPicker } from "@/lib/hooks/use-funnels";
 import { useGoogleAdsCampaignPicker } from "@/lib/hooks/use-funnels";
 import { useState } from "react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import type { Funnel, FunnelCampaign } from "@loyola-x/shared";
 
 export default function StagePage() {
@@ -130,6 +132,49 @@ export default function StagePage() {
                 </div>
               </div>
 
+              {/* Tipo de captação */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Tipo de captação</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateStage.mutate(
+                        { stageType: "free" },
+                        { onSuccess: () => toast.success("Tipo alterado para Gratuita") }
+                      );
+                    }}
+                    className={cn(
+                      "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                      stage.stageType === "free"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border hover:bg-muted"
+                    )}
+                  >
+                    <span className="font-medium">Gratuita</span>
+                    <span className="text-xs text-muted-foreground">Sem planilhas de vendas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateStage.mutate(
+                        { stageType: "paid" },
+                        { onSuccess: () => toast.success("Tipo alterado para Paga") }
+                      );
+                    }}
+                    className={cn(
+                      "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                      stage.stageType === "paid"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border hover:bg-muted"
+                    )}
+                  >
+                    <span className="font-medium">Paga</span>
+                    <span className="text-xs text-muted-foreground">Com planilhas de vendas</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Campanhas Meta */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Campanhas Meta Ads</Label>
@@ -233,6 +278,8 @@ export default function StagePage() {
             <LaunchDashboard
               funnel={stageAsFunnel}
               projectId={params.id}
+              stageId={params.stageId}
+              stageType={stage.stageType}
               onCampaignsChange={(campaigns) => {
                 updateStage.mutate(
                   { campaigns },
@@ -244,6 +291,8 @@ export default function StagePage() {
             <PerpetualDashboard
               funnel={stageAsFunnel}
               projectId={params.id}
+              stageId={params.stageId}
+              stageType={stage.stageType}
               onCampaignsChange={(campaigns) => {
                 updateStage.mutate(
                   { campaigns },
@@ -267,7 +316,29 @@ export default function StagePage() {
         </TabsContent>
 
         <TabsContent value="spreadsheets" className="mt-6">
-          <FunnelSpreadsheetsTab projectId={params.id} funnelId={params.funnelId} />
+          <div className="space-y-6">
+            {stage.stageType === "paid" && (
+              <>
+                <StageSalesSpreadsheetSection
+                  projectId={params.id}
+                  funnelId={params.funnelId}
+                  stageId={params.stageId}
+                  subtype="capture"
+                  title="Captação"
+                />
+                <div className="border-t border-border/30" />
+                <StageSalesSpreadsheetSection
+                  projectId={params.id}
+                  funnelId={params.funnelId}
+                  stageId={params.stageId}
+                  subtype="main_product"
+                  title="Produto Principal"
+                />
+                <div className="border-t border-border/30" />
+              </>
+            )}
+            <FunnelSpreadsheetsTab projectId={params.id} funnelId={params.funnelId} />
+          </div>
         </TabsContent>
 
         <TabsContent value="switchy-links" className="mt-6">

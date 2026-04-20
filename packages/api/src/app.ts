@@ -42,6 +42,8 @@ import salesRoutes from "./routes/sales.js";
 import funnelSpreadsheetsRoutes from "./routes/funnel-spreadsheets.js";
 import switchyRoutes from "./routes/switchy.js";
 import funnelStageRoutes from "./routes/funnel-stages.js";
+import stageSalesSpreadsheetsRoutes from "./routes/stage-sales-spreadsheets.js";
+import stageSalesDataRoutes from "./routes/stage-sales-data.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -99,6 +101,8 @@ export async function buildServer() {
   await app.register(funnelSpreadsheetsRoutes);
   await app.register(switchyRoutes);
   await app.register(funnelStageRoutes);
+  await app.register(stageSalesSpreadsheetsRoutes);
+  await app.register(stageSalesDataRoutes);
 
   return app;
 }

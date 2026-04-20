@@ -613,12 +613,47 @@ export const funnelStages = pgTable(
       .notNull()
       .default([])
       .$type<{ uniq: number; id: string; domain: string }[]>(),
+    stageType: varchar("stage_type", { length: 10 }).notNull().default("free"),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index("idx_funnel_stages_funnel").on(table.funnelId),
+  ]
+);
+
+// ============================================================
+// STAGE SALES SPREADSHEETS (EPIC-19 — Story 19.5)
+// ============================================================
+
+export const stageSalesSpreadsheets = pgTable(
+  "stage_sales_spreadsheets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    subtype: varchar("subtype", { length: 20 }).notNull(),
+    spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
+    spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
+    sheetName: varchar("sheet_name", { length: 255 }).notNull(),
+    columnMapping: jsonb("column_mapping")
+      .notNull()
+      .default({})
+      .$type<{
+        email: string;
+        valorBruto?: string;
+        valorLiquido?: string;
+        formaPagamento?: string;
+        canalOrigem?: string;
+        dataVenda?: string;
+      }>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("uq_stage_sales_spreadsheets_stage_subtype").on(table.stageId, table.subtype),
+    index("idx_stage_sales_spreadsheets_stage").on(table.stageId),
   ]
 );
 

@@ -32,4 +32,16 @@ export type {
   MessageListResponse,
 } from "./types/conversation.js";
 
-export type { FunnelType, FunnelCampaign, SwitchyFolderRef, SwitchyLinkRef, FunnelStage, Funnel } from "./types/funnel.js";
+export type {
+  FunnelType,
+  FunnelCampaign,
+  SwitchyFolderRef,
+  SwitchyLinkRef,
+  StageType,
+  StageSalesSubtype,
+  SaleColumnMapping,
+  StageSalesSpreadsheet,
+  FunnelStage,
+  StageSalesData,
+  Funnel,
+} from "./types/funnel.js";

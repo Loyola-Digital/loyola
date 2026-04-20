@@ -37,7 +37,8 @@ import { LeadsCumulativeChart } from "./leads-cumulative-chart";
 import { HotColdSpendDonut } from "./hot-cold-spend-donut";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { CampaignSelector } from "./campaign-selector";
-import type { Funnel, FunnelCampaign } from "@loyola-x/shared";
+import type { Funnel, FunnelCampaign, StageType } from "@loyola-x/shared";
+import { StageSalesSection } from "./stage-sales-section";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
@@ -62,6 +63,8 @@ import { toast } from "sonner";
 interface LaunchDashboardProps {
   funnel: Funnel;
   projectId: string;
+  stageId?: string;
+  stageType?: StageType;
   onCampaignsChange?: (campaigns: FunnelCampaign[]) => void;
 }
 
@@ -88,7 +91,7 @@ function safeNum(val: string | undefined): number {
   return val ? parseFloat(val) : 0;
 }
 
-export function LaunchDashboard({ funnel, projectId, onCampaignsChange }: LaunchDashboardProps) {
+export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampaignsChange }: LaunchDashboardProps) {
   const [days, setDays] = useState(30);
   const [showCampaignManager, setShowCampaignManager] = useState(false);
   const { data: pickerData } = useCampaignPicker(showCampaignManager ? projectId : null);
@@ -317,6 +320,30 @@ export function LaunchDashboard({ funnel, projectId, onCampaignsChange }: Launch
           unmatchedResponses: survey.unmatchedResponses,
         }}
       />
+
+      {/* Dashboard Financeiro — apenas etapas pagas (Story 19.6) */}
+      {stageType === "paid" && stageId && (
+        <div className="space-y-6 pt-2 border-t border-border/30">
+          <h3 className="text-base font-semibold">Vendas</h3>
+          <StageSalesSection
+            projectId={projectId}
+            funnelId={funnel.id}
+            stageId={stageId}
+            subtype="capture"
+            title="Vendas de Captação"
+            days={days}
+          />
+          <div className="border-t border-border/20" />
+          <StageSalesSection
+            projectId={projectId}
+            funnelId={funnel.id}
+            stageId={stageId}
+            subtype="main_product"
+            title="Produto Principal"
+            days={days}
+          />
+        </div>
+      )}
     </div>
   );
 }
