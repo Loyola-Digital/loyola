@@ -191,7 +191,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   // ---- GET /api/traffic/analytics/:projectId/top-performers ---- (Story 7.8)
   const topPerformersQuerySchema = z.object({
     metric: z.enum(["roas", "cpl", "cplQualified", "leads", "sales", "ctr"]).default("roas"),
-    limit: z.coerce.number().int().min(1).max(20).default(5),
+    limit: z.coerce.number().int().min(1).max(100).default(5),
     days: z.coerce.number().int().min(1).max(90).default(30),
     campaignId: z.string().optional(),
   });
