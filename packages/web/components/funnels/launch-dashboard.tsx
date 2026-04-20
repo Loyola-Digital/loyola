@@ -298,7 +298,13 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
       {/* Dados diários — tabela cruzada (Story 18.3) */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
-        <CrossedFunnelDailyTable rows={metrics.rows} totals={metrics.totals} />
+        <CrossedFunnelDailyTable
+          rows={metrics.rows}
+          totals={metrics.totals}
+          surveyTotal={survey.totalResponses}
+          surveyMatched={survey.matchedResponses}
+          surveyUnmatched={survey.unmatchedResponses}
+        />
       ) : null}
 
       {/* CPL Pago vs CPL Geral (Story 18.4) */}

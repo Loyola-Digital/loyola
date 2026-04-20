@@ -61,6 +61,25 @@ function renderPointLabel(props: any) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function CustomTooltip(props: any) {
+  const { active, payload } = props;
+  if (!active || !payload || payload.length === 0) return null;
+
+  const data = payload[0].payload;
+  return (
+    <div className="rounded-lg border border-border bg-background p-3 shadow-lg space-y-1 text-xs">
+      <div className="font-semibold">{data.date}</div>
+      <div className="text-muted-foreground">Total Leads: {data["Total Leads"]}</div>
+      <div className="border-t border-border/30 pt-1 mt-1">
+        <div className="text-muted-foreground">Leads Pagos: {data["Leads Pagos"]}</div>
+        <div className="text-muted-foreground">Leads Org: {data["Leads Org"]}</div>
+        <div className="text-muted-foreground">Leads s/ Track: {data["Leads s/ Track"]}</div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Gráfico de leads acumulados ao longo do tempo: área de Total + 3 linhas
  * (Pagos / Org / Sem Track).
@@ -88,7 +107,7 @@ export function LeadsCumulativeChart({
             allowDecimals={false}
             allowDataOverflow={false}
           />
-          <Tooltip labelFormatter={(label) => `Dia ${label}`} />
+          <Tooltip content={<CustomTooltip />} />
           <Legend />
           <Area
             type="monotone"
