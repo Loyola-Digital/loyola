@@ -9,9 +9,11 @@ import type { CampaignDailyInsight } from "@/lib/hooks/use-traffic-analytics";
 import type { Funnel } from "@loyola-x/shared";
 import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
 import {
-  categorizeLeads,
-  safeDivide,
-  sumMetaInsights,
+  aggregateMetaDailyByDate,
+  aggregateSpreadsheetByDate,
+  buildDailyRows,
+  computeTotals,
+  type DailyRow,
 } from "@/lib/utils/funnel-metrics";
 
 export interface CrossedFunnelMetrics {
@@ -32,6 +34,18 @@ export interface CrossedFunnelMetrics {
   cplPago: number | null;
   cplGeral: number | null;
 
+  /**
+   * Linhas diárias da tabela cruzada (Story 18.3).
+   * Vazio se não houver dados no período ou sem planilha vinculada.
+   * Ordenado por data ascendente.
+   */
+  rows: DailyRow[];
+  /**
+   * Linha de total agregada — espelha os campos escalares acima mas no formato `DailyRow`
+   * pra uso direto no footer da `CrossedFunnelDailyTable`.
+   */
+  totals: DailyRow;
+
   isLoading: boolean;
   hasLinkedSheet: boolean;
 }
@@ -47,6 +61,10 @@ export interface CrossedFunnelMetrics {
  * - Leads contados por linha da planilha, categorizados por utm_source
  * - CTR/CPC/CPM recalculados no frontend com link_clicks
  * - CPL Pago = spend / leads_pagos; CPL Geral = spend / total_leads
+ *
+ * Story 18.3 estendeu o retorno pra incluir `rows: DailyRow[]` e `totals: DailyRow`
+ * pra alimentar a tabela "Dados diários" (e qualquer outro consumidor que precise
+ * do breakdown dia-a-dia).
  */
 export function useCrossedFunnelMetrics(
   projectId: string,
@@ -91,41 +109,33 @@ export function useCrossedFunnelMetrics(
   const isLoading = metaLoading || sheetsListLoading || sheetDataLoading;
 
   return useMemo<CrossedFunnelMetrics>(() => {
-    const meta = sumMetaInsights(metaData);
+    const metaMap = aggregateMetaDailyByDate(metaData);
 
-    const filteredRows = sheetData ? filterSheetRowsByDays(sheetData, days) : [];
+    const filteredSheetRows = sheetData ? filterSheetRowsByDays(sheetData, days) : [];
+    const dateMapped = !!sheetData?.mapping.date;
     const utmSourceMapped = !!sheetData?.mapping.utm_source;
-    const { leadsPagos, leadsOrg, leadsSemTrack } = categorizeLeads(
-      filteredRows,
-      utmSourceMapped,
-    );
-    const totalLeads = leadsPagos + leadsOrg + leadsSemTrack;
+    const sheetMap = aggregateSpreadsheetByDate(filteredSheetRows, utmSourceMapped, dateMapped);
 
-    const cpm =
-      meta.impressions > 0 ? (meta.spend / meta.impressions) * 1000 : 0;
-    const cpc = safeDivide(meta.spend, meta.linkClicks) ?? 0;
-    const ctr =
-      meta.impressions > 0 ? (meta.linkClicks / meta.impressions) * 100 : 0;
-    const connectRate =
-      meta.linkClicks > 0 ? (meta.lpViews / meta.linkClicks) * 100 : null;
-    const cplPago = safeDivide(meta.spend, leadsPagos);
-    const cplGeral = safeDivide(meta.spend, totalLeads);
+    const rows = buildDailyRows(metaMap, sheetMap);
+    const totals = computeTotals(rows);
 
     return {
-      spend: meta.spend,
-      linkClicks: meta.linkClicks,
-      impressions: meta.impressions,
-      lpViews: meta.lpViews,
-      leadsPagos,
-      leadsOrg,
-      leadsSemTrack,
-      totalLeads,
-      cpm,
-      cpc,
-      ctr,
-      connectRate,
-      cplPago,
-      cplGeral,
+      spend: totals.spend,
+      linkClicks: totals.linkClicks,
+      impressions: totals.impressions,
+      lpViews: totals.lpView,
+      leadsPagos: totals.leadsPagos,
+      leadsOrg: totals.leadsOrg,
+      leadsSemTrack: totals.leadsSemTrack,
+      totalLeads: totals.leadsPagos + totals.leadsOrg + totals.leadsSemTrack,
+      cpm: totals.cpm,
+      cpc: totals.cpc,
+      ctr: totals.ctr,
+      connectRate: totals.connectRate,
+      cplPago: totals.cplPg,
+      cplGeral: totals.cplG,
+      rows,
+      totals,
       isLoading,
       hasLinkedSheet,
     };

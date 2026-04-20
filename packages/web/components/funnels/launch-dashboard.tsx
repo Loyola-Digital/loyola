@@ -30,8 +30,6 @@ import { DayRangePicker } from "@/components/ui/day-range-picker";
 import {
   useTrafficOverview,
   useTrafficCampaigns,
-  useAllAdSets,
-  useAllAds,
   usePlacementBreakdown,
   useCampaignDailyInsights,
   type CampaignAnalytics,
@@ -39,8 +37,7 @@ import {
   type PlacementInsight,
 } from "@/lib/hooks/use-traffic-analytics";
 import { ConversionFunnel } from "./conversion-funnel";
-import { MetricsTable } from "./metrics-table";
-import { FunnelCampaignTable } from "./funnel-campaign-table";
+import { CrossedFunnelDailyTable } from "./crossed-funnel-daily-table";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { CampaignSelector } from "./campaign-selector";
 import type { Funnel, FunnelCampaign } from "@loyola-x/shared";
@@ -114,10 +111,8 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
   );
   const metrics = useCrossedFunnelMetrics(projectId, funnel, days);
-  const { data: campaignData, isLoading: campaignsLoading } = useTrafficCampaigns(projectId, days);
+  const { data: campaignData } = useTrafficCampaigns(projectId, days);
   const cids = campaignIds.length > 0 ? campaignIds : null;
-  const { data: adsetData, isLoading: adsetsLoading } = useAllAdSets(projectId, days, cids);
-  const { data: adData, isLoading: adsLoading } = useAllAds(projectId, days, cids);
   const { data: placementData, isLoading: placementLoading } =
     usePlacementBreakdown(projectId, days, cids);
   const { data: dailyData, isLoading: dailyLoading } =
@@ -248,40 +243,9 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
         })()
       ) : <EmptyState />}
 
-      {/* Campanhas do Funil (drill-down com thumbnails) */}
-      {campaignsLoading ? (
-        <Skeleton className="h-48 rounded-xl" />
-      ) : funnelCampaigns.length > 0 ? (
-        <FunnelCampaignTable
-          campaigns={funnelCampaigns}
-          projectId={projectId}
-          days={days}
-          funnel={{ days, funnelType: "launch", funnelName: funnel?.name }}
-        />
-      ) : null}
-
-      {/* Públicos (agrupados por nome do ad set) */}
-      {adsetsLoading ? (
-        <Skeleton className="h-48 rounded-xl" />
-      ) : adsetData && adsetData.adsets.length > 0 ? (
-        <MetricsTable
-          title="Públicos"
-          rows={adsetData.adsets}
-          funnel={{ days, funnelType: "launch", funnelName: funnel?.name }}
-          entityType="adset"
-        />
-      ) : null}
-
-      {/* Anúncios (agrupados por nome do ad) */}
-      {adsLoading ? (
-        <Skeleton className="h-48 rounded-xl" />
-      ) : adData && adData.ads.length > 0 ? (
-        <MetricsTable
-          title="Anúncios"
-          rows={adData.ads}
-          funnel={{ days, funnelType: "launch", funnelName: funnel?.name }}
-          entityType="ad"
-        />
+      {/* Dados diários — tabela cruzada (Story 18.3) */}
+      {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
+        <CrossedFunnelDailyTable rows={metrics.rows} totals={metrics.totals} />
       ) : null}
 
       {/* CTR × CPM — Saturation Chart */}
