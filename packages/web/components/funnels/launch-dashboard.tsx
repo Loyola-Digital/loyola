@@ -41,6 +41,8 @@ import type { Funnel, FunnelCampaign } from "@loyola-x/shared";
 import { useSurveySummary } from "@/lib/hooks/use-google-sheets";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
+import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
+import { SurveyQualificationSection } from "./survey-qualification-section";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
 import {
@@ -99,6 +101,7 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
   );
   const metrics = useCrossedFunnelMetrics(projectId, funnel, days);
+  const survey = useSurveyAggregation(projectId, funnel.id, days);
   const { data: campaignData } = useTrafficCampaigns(projectId, days);
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsights(projectId, firstCampaignId, days);
@@ -290,6 +293,19 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
         campaignIds={campaignIds}
         funnelId={funnel.id}
         funnelContext={{ days, funnelType: "launch", funnelName: funnel?.name }}
+        surveyDataByAdId={survey.byAdId}
+      />
+
+      {/* Resultados da Pesquisa — Qualificação do público (Story 18.6 sub-feature 3.a) */}
+      <SurveyQualificationSection
+        isLoading={survey.isLoading}
+        hasSurveys={survey.totalResponses > 0 || !!survey.fallbackReason}
+        data={{
+          byQuestion: survey.byQuestion,
+          totalResponses: survey.totalResponses,
+          usingFallback: survey.usingFallback,
+          fallbackReason: survey.fallbackReason,
+        }}
       />
     </div>
   );

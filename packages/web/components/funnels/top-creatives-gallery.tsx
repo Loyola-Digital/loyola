@@ -40,8 +40,10 @@ import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
 import {
   aggregateCreativesByName,
   enrichWithPaidLeads,
+  mergeSurveyForGroup,
   type AggregatedCreative,
 } from "@/lib/utils/top-creatives";
+import type { SurveyDataByAdId } from "@/lib/hooks/use-survey-aggregation";
 
 // ============================================================
 // Tipos locais e formatters
@@ -401,10 +403,12 @@ interface TopCreativesGalleryProps {
     funnelName?: string;
   };
   /**
-   * Placeholder pra Story 18.6 — dados da pesquisa indexados por ad_id.
-   * Type final vem na 18.6.
+   * Dados da pesquisa agregados por ad_id (Story 18.6).
+   * Quando passado, cada card exibe top-1 de faturamento + profissão abaixo
+   * das métricas (Invest / CTR / CPL). Tipo refinado de `unknown` (Story 18.5)
+   * pra `SurveyDataByAdId` nesta story.
    */
-  surveyDataByAdId?: Record<string, unknown>;
+  surveyDataByAdId?: SurveyDataByAdId;
 }
 
 export function TopCreativesGallery({
@@ -413,6 +417,7 @@ export function TopCreativesGallery({
   campaignIds,
   funnelId,
   funnelContext,
+  surveyDataByAdId,
 }: TopCreativesGalleryProps) {
   const [metric, setMetric] = useState<LocalMetric>("cpl");
   const [expanded, setExpanded] = useState(false);
@@ -460,8 +465,8 @@ export function TopCreativesGallery({
     return (
       <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
         <Skeleton className="h-5 w-48" />
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-48 rounded-lg" />
           ))}
         </div>
@@ -524,7 +529,7 @@ export function TopCreativesGallery({
         </div>
       )}
 
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         {shown.map((c, i) => {
           const funnel = funnelContext ?? { days: 30 };
           const path = { ad: c.name };
@@ -644,6 +649,42 @@ export function TopCreativesGallery({
                     </div>
                   </MetricTooltip>
                 </div>
+
+                {/* Dados da pesquisa (Story 18.6 sub-feature 3.b) */}
+                {surveyDataByAdId ? (() => {
+                  const survey = mergeSurveyForGroup(surveyDataByAdId, c.ids, c.leadsPagos);
+                  if (
+                    !survey.faturamento &&
+                    !survey.profissao &&
+                    !survey.funcionarios &&
+                    !survey.voce_e
+                  ) {
+                    return (
+                      <p className="text-[10px] text-muted-foreground italic pt-1 border-t border-border/20">
+                        — Sem dados de pesquisa
+                      </p>
+                    );
+                  }
+                  function line(emoji: string, top: typeof survey.faturamento) {
+                    if (!top || top.total === 0) return null;
+                    const pct = ((top.count / top.total) * 100).toFixed(0);
+                    const titleDetail = `${top.label} · ${top.count} de ${top.total} leads (${pct}%) — baseado em ${top.totalResponses} ${top.totalResponses === 1 ? "resposta" : "respostas"} da pesquisa`;
+                    return (
+                      <p className="truncate" title={titleDetail}>
+                        {emoji} <span className="font-medium">{top.label}</span>
+                        <span className="text-muted-foreground/70"> · {top.count}/{top.total} ({pct}%)</span>
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/20">
+                      {line("💰", survey.faturamento)}
+                      {line("👤", survey.profissao)}
+                      {line("👥", survey.funcionarios)}
+                      {line("📋", survey.voce_e)}
+                    </div>
+                  );
+                })() : null}
               </div>
             </div>
           );
