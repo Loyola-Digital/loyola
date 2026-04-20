@@ -171,29 +171,16 @@ export function enrichWithPaidLeads(
 /**
  * Top resposta (moda) de uma pergunta pro grupo de ads agregados.
  * Usado na Story 18.6 (3.b) pra exibir resposta mais frequente por criativo.
- *
- * Campos:
- * - `label`: versão raw mais comum da opção normalizada
- * - `count`: quantos leads escolheram essa opção
- * - `total`: **total de leads pagos do criativo** (denominador pro cálculo de %)
- * - `totalResponses`: total de respostas da pesquisa desse criativo (pra saber
- *   quantos dos `total` leads respondeu de fato)
  */
 export interface TopSurveyAnswer {
   label: string;
   count: number;
   total: number;
-  totalResponses: number;
 }
 
 /**
  * Agrega respostas de pesquisa dos vários ad_ids de um grupo agregado e retorna
- * o top-1 de cada pergunta-alvo.
- *
- * O denominador do `%` é o **total de leads pagos do criativo** (recebido via
- * `totalLeadsOfGroup`), não o total de respostas da pesquisa. Assim "1/4 (25%)"
- * significa "25% dos 4 leads pagos respondeu essa opção" — muito mais informativo
- * que "1/1 (100%) = das 1 respostas, 100% foi essa".
+ * o top-1 de cada pergunta-alvo (faturamento, profissão, funcionários).
  *
  * Retorna null em cada campo quando não há dados da pesquisa pra aquele ad
  * do grupo (ou aquela pergunta específica ausente).
@@ -211,7 +198,6 @@ export function mergeSurveyForGroup(
       >
     | undefined,
   adIds: string[],
-  totalLeadsOfGroup: number,
 ): {
   faturamento: TopSurveyAnswer | null;
   profissao: TopSurveyAnswer | null;
@@ -227,33 +213,28 @@ export function mergeSurveyForGroup(
     funcionarios: new Map<string, number>(),
     voce_e: new Map<string, number>(),
   };
-  const totalResponses = { faturamento: 0, profissao: 0, funcionarios: 0, voce_e: 0 };
+  const totals = { faturamento: 0, profissao: 0, funcionarios: 0, voce_e: 0 };
   for (const id of adIds) {
     const adData = surveyDataByAdId[id];
     if (!adData) continue;
     for (const key of ["faturamento", "profissao", "funcionarios", "voce_e"] as const) {
       for (const item of adData[key]) {
         buckets[key].set(item.label, (buckets[key].get(item.label) ?? 0) + item.count);
-        totalResponses[key] += item.count;
+        totals[key] += item.count;
       }
     }
   }
-  function top(
-    bucket: Map<string, number>,
-    totalResp: number,
-  ): TopSurveyAnswer | null {
+  function top(bucket: Map<string, number>, total: number): TopSurveyAnswer | null {
     let best: TopSurveyAnswer | null = null;
     for (const [label, count] of bucket.entries()) {
-      if (!best || count > best.count) {
-        best = { label, count, total: totalLeadsOfGroup, totalResponses: totalResp };
-      }
+      if (!best || count > best.count) best = { label, count, total };
     }
     return best;
   }
   return {
-    faturamento: top(buckets.faturamento, totalResponses.faturamento),
-    profissao: top(buckets.profissao, totalResponses.profissao),
-    funcionarios: top(buckets.funcionarios, totalResponses.funcionarios),
-    voce_e: top(buckets.voce_e, totalResponses.voce_e),
+    faturamento: top(buckets.faturamento, totals.faturamento),
+    profissao: top(buckets.profissao, totals.profissao),
+    funcionarios: top(buckets.funcionarios, totals.funcionarios),
+    voce_e: top(buckets.voce_e, totals.voce_e),
   };
 }

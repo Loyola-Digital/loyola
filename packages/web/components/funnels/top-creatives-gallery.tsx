@@ -652,7 +652,7 @@ export function TopCreativesGallery({
 
                 {/* Dados da pesquisa (Story 18.6 sub-feature 3.b) */}
                 {surveyDataByAdId ? (() => {
-                  const survey = mergeSurveyForGroup(surveyDataByAdId, c.ids, c.leadsPagos);
+                  const survey = mergeSurveyForGroup(surveyDataByAdId, c.ids);
                   if (
                     !survey.faturamento &&
                     !survey.profissao &&
@@ -668,9 +668,8 @@ export function TopCreativesGallery({
                   function line(emoji: string, top: typeof survey.faturamento) {
                     if (!top || top.total === 0) return null;
                     const pct = ((top.count / top.total) * 100).toFixed(0);
-                    const titleDetail = `${top.label} · ${top.count} de ${top.total} leads (${pct}%) — baseado em ${top.totalResponses} ${top.totalResponses === 1 ? "resposta" : "respostas"} da pesquisa`;
                     return (
-                      <p className="truncate" title={titleDetail}>
+                      <p className="truncate" title={`${top.label} · ${top.count} de ${top.total} (${pct}%)`}>
                         {emoji} <span className="font-medium">{top.label}</span>
                         <span className="text-muted-foreground/70"> · {top.count}/{top.total} ({pct}%)</span>
                       </p>
