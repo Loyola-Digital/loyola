@@ -28,11 +28,12 @@ function SalesCard({ label, value, highlight }: SalesCardProps) {
 }
 
 interface SalesTableProps {
-  rows: { key: string; label: string; vendas: number; bruto: number; liquido: number }[];
+  rows: { key: string; label: string; vendas: number; bruto: number }[];
   emptyMessage: string;
+  keyLabel: string;
 }
 
-function SalesTable({ rows, emptyMessage }: SalesTableProps) {
+function SalesTable({ rows, emptyMessage, keyLabel }: SalesTableProps) {
   if (rows.length === 0) {
     return <p className="text-xs text-muted-foreground">{emptyMessage}</p>;
   }
@@ -44,10 +45,9 @@ function SalesTable({ rows, emptyMessage }: SalesTableProps) {
       <table className="w-full text-xs">
         <thead className="bg-muted/30">
           <tr>
-            <th className="text-left py-2 px-3 font-medium text-muted-foreground">Origem</th>
+            <th className="text-left py-2 px-3 font-medium text-muted-foreground">{keyLabel}</th>
             <th className="text-right py-2 px-3 font-medium text-muted-foreground">Vendas</th>
             <th className="text-right py-2 px-3 font-medium text-muted-foreground">Bruto</th>
-            <th className="text-right py-2 px-3 font-medium text-muted-foreground">Líquido</th>
           </tr>
         </thead>
         <tbody>
@@ -61,7 +61,6 @@ function SalesTable({ rows, emptyMessage }: SalesTableProps) {
                 </span>
               </td>
               <td className="py-2 px-3 text-right">{formatCurrency(row.bruto)}</td>
-              <td className="py-2 px-3 text-right">{formatCurrency(row.liquido)}</td>
             </tr>
           ))}
         </tbody>
@@ -99,8 +98,8 @@ export function StageSalesSection({
     return (
       <div className="space-y-3">
         <p className="text-sm font-semibold">{title}</p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20" />)}
+        <div className="grid grid-cols-2 gap-3">
+          {[1, 2].map((i) => <Skeleton key={i} className="h-20" />)}
         </div>
         <Skeleton className="h-32" />
       </div>
@@ -125,7 +124,6 @@ export function StageSalesSection({
     label: c.canal,
     vendas: c.vendas,
     bruto: c.bruto,
-    liquido: c.liquido,
   }));
 
   const formaRows = data.porFormaPagamento.map((f) => ({
@@ -133,7 +131,6 @@ export function StageSalesSection({
     label: f.forma,
     vendas: f.vendas,
     bruto: f.bruto,
-    liquido: f.liquido,
   }));
 
   return (
@@ -141,23 +138,21 @@ export function StageSalesSection({
       <p className="text-sm font-semibold">{title}</p>
 
       {/* Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <SalesCard label="Total de Vendas" value={data.totalVendas} highlight />
         <SalesCard label="Faturamento Bruto" value={formatCurrency(data.faturamentoBruto)} />
-        <SalesCard label="Faturamento Líquido" value={formatCurrency(data.faturamentoLiquido)} />
-        <SalesCard label="Ticket Médio Líquido" value={formatCurrency(data.ticketMedioLiquido)} />
       </div>
 
       {/* Canal de Origem */}
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">Por Canal de Origem</p>
-        <SalesTable rows={canalRows} emptyMessage="Sem dados por canal." />
+        <SalesTable rows={canalRows} emptyMessage="Sem dados por canal." keyLabel="Canal" />
       </div>
 
       {/* Forma de Pagamento */}
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">Por Forma de Pagamento</p>
-        <SalesTable rows={formaRows} emptyMessage="Sem dados por forma de pagamento." />
+        <SalesTable rows={formaRows} emptyMessage="Sem dados por forma de pagamento." keyLabel="Forma" />
       </div>
     </div>
   );
