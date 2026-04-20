@@ -288,6 +288,7 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
         projectId={projectId}
         days={days}
         campaignIds={campaignIds}
+        funnelId={funnel.id}
         funnelContext={{ days, funnelType: "launch", funnelName: funnel?.name }}
       />
     </div>
