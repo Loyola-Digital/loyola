@@ -9,10 +9,13 @@ import {
   SURVEY_FALLBACK_THRESHOLD,
   SURVEY_TIMESTAMP_MATCHERS,
   SURVEY_UTM_CONTENT_MATCHERS,
+  SURVEY_EMAIL_MATCHERS,
+  SURVEY_PHONE_MATCHERS,
   type SurveyQuestionKey,
 } from "@/lib/constants/survey-questions";
-import { normalizeAnswer, mostCommonRaw } from "@/lib/utils/normalize-answer";
+import { normalizeAnswer, mostCommonRaw, normalizeEmail, getLast8DigitsPhone } from "@/lib/utils/normalize-answer";
 import { normaliseDate } from "@/lib/utils/spreadsheet-filters";
+import { useFunnelSpreadsheets, useFunnelSpreadsheetData } from "@/lib/hooks/use-funnel-spreadsheets";
 
 // ============================================================
 // Tipos exportados
@@ -40,6 +43,9 @@ export interface UseSurveyAggregationResult {
   usingFallback: boolean;
   fallbackReason?: string;
   isLoading: boolean;
+  matchedLeadIds: Set<string>;
+  matchedResponses: number;
+  unmatchedResponses: number;
 }
 
 const EMPTY_BY_QUESTION: Record<SurveyQuestionKey, SurveyQuestionAggregation[]> = {
@@ -88,6 +94,8 @@ interface ColumnIndexMap {
   questions: Partial<Record<SurveyQuestionKey, number>>;
   timestamp: number;
   utmContent: number;
+  email: number;
+  phone: number;
 }
 
 function mapHeaders(headers: string[]): ColumnIndexMap {
@@ -100,6 +108,8 @@ function mapHeaders(headers: string[]): ColumnIndexMap {
     questions,
     timestamp: findHeaderIndex(headers, SURVEY_TIMESTAMP_MATCHERS),
     utmContent: findHeaderIndex(headers, SURVEY_UTM_CONTENT_MATCHERS),
+    email: findHeaderIndex(headers, SURVEY_EMAIL_MATCHERS),
+    phone: findHeaderIndex(headers, SURVEY_PHONE_MATCHERS),
   };
 }
 
@@ -160,6 +170,18 @@ export function useSurveyAggregation(
   );
   const surveys = surveysData?.surveys ?? [];
 
+  // Carregar lista de spreadsheets para encontrar a planilha de Leads
+  const { data: spreadsheetsData } = useFunnelSpreadsheets(projectId, funnelId);
+  const spreadsheets = spreadsheetsData?.spreadsheets ?? [];
+  const leadsSpreadsheet = spreadsheets.find((s) => s.type === "leads");
+
+  // Carregar dados da planilha de Leads
+  const { data: leadsData } = useFunnelSpreadsheetData(
+    projectId,
+    funnelId,
+    leadsSpreadsheet?.id,
+  );
+
   const sheetQueries = useQueries({
     queries: surveys.map((s) => ({
       queryKey: ["google-sheets-data", s.spreadsheetId, s.sheetName] as const,
@@ -185,6 +207,9 @@ export function useSurveyAggregation(
         totalResponses: 0,
         usingFallback: false,
         isLoading,
+        matchedLeadIds: new Set(),
+        matchedResponses: 0,
+        unmatchedResponses: 0,
       };
     }
 
@@ -217,7 +242,54 @@ export function useSurveyAggregation(
         usingFallback: false,
         fallbackReason: "Sem respostas nas pesquisas vinculadas",
         isLoading: false,
+        matchedLeadIds: new Set(),
+        matchedResponses: 0,
+        unmatchedResponses: 0,
       };
+    }
+
+    // Construir mapa de leads para match rápido
+    type LeadMatch = { leadId: string; createdDate: string };
+    const leadsByEmail = new Map<string, LeadMatch>();
+    const leadsByPhone = new Map<string, LeadMatch>();
+    if (leadsData?.rows) {
+      for (let i = 0; i < leadsData.rows.length; i++) {
+        const row = leadsData.rows[i];
+        const email = row.named.email || "";
+        const phone = row.named.phone || "";
+        const createdDate = row.named.date || "";
+        const leadId = String(i); // Use row index as lead ID
+
+        if (email) {
+          const normalizedEmail = normalizeEmail(email);
+          if (!leadsByEmail.has(normalizedEmail)) {
+            leadsByEmail.set(normalizedEmail, { leadId, createdDate });
+          }
+        }
+        if (phone) {
+          const normalizedPhone = getLast8DigitsPhone(phone);
+          if (normalizedPhone && !leadsByPhone.has(normalizedPhone)) {
+            leadsByPhone.set(normalizedPhone, { leadId, createdDate });
+          }
+        }
+      }
+    }
+
+    // Função para verificar se uma resposta tem match com os leads
+    function findLeadMatch(surveyEmail: string, surveyPhone: string): LeadMatch | null {
+      if (surveyEmail) {
+        const normalizedEmail = normalizeEmail(surveyEmail);
+        const match = leadsByEmail.get(normalizedEmail);
+        if (match) return match;
+      }
+      if (surveyPhone) {
+        const normalizedPhone = getLast8DigitsPhone(surveyPhone);
+        if (normalizedPhone) {
+          const match = leadsByPhone.get(normalizedPhone);
+          if (match) return match;
+        }
+      }
+      return null;
     }
 
     // Filtro por data — faz por-survey pra usar o timestampIdx correto
@@ -255,6 +327,9 @@ export function useSurveyAggregation(
     };
     const byAdId: SurveyDataByAdId = {};
     let totalResponses = 0;
+    const matchedLeadIds = new Set<string>();
+    let matchedResponses = 0;
+    let unmatchedResponses = 0;
 
     const bucketsPerQuestion: Record<SurveyQuestionKey, Map<string, { rawValues: string[]; count: number }>> = {
       faturamento: new Map(),
@@ -275,6 +350,21 @@ export function useSurveyAggregation(
       const colMap = mapHeaders(data.headers);
       const effectiveRows = useFallback ? data.rows : filteredPerSurvey[i];
       totalResponses += effectiveRows.length;
+
+      // Contar matches de leads pra cada resposta
+      const emailIdx = colMap.email;
+      const phoneIdx = colMap.phone;
+      for (const row of effectiveRows) {
+        const surveyEmail = emailIdx >= 0 ? (row[emailIdx] ?? "").trim() : "";
+        const surveyPhone = phoneIdx >= 0 ? (row[phoneIdx] ?? "").trim() : "";
+        const leadMatch = findLeadMatch(surveyEmail, surveyPhone);
+        if (leadMatch) {
+          matchedLeadIds.add(leadMatch.leadId);
+          matchedResponses += 1;
+        } else {
+          unmatchedResponses += 1;
+        }
+      }
 
       // byQuestion: pra cada pergunta mapeada, agregar respostas
       for (const [key, idx] of Object.entries(colMap.questions)) {
@@ -371,6 +461,9 @@ export function useSurveyAggregation(
       usingFallback: useFallback,
       fallbackReason,
       isLoading: false,
+      matchedLeadIds,
+      matchedResponses,
+      unmatchedResponses,
     };
   })();
 
