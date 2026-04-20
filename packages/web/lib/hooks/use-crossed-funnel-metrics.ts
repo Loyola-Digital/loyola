@@ -5,6 +5,7 @@ import {
   useFunnelSpreadsheets,
   useFunnelSpreadsheetData,
 } from "@/lib/hooks/use-funnel-spreadsheets";
+import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import type { CampaignDailyInsight } from "@/lib/hooks/use-traffic-analytics";
 import type { Funnel } from "@loyola-x/shared";
 import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
@@ -33,6 +34,19 @@ export interface CrossedFunnelMetrics {
   connectRate: number | null;
   cplPago: number | null;
   cplGeral: number | null;
+
+  /**
+   * Taxa de Resposta = (Respostas Pesquisa / Leads Totais Dedup) × 100
+   * Capped a 100%. Null se sem surveys vinculadas.
+   */
+  surveyResponseRate: number | null;
+
+  /**
+   * Match Pesquisa x Leads — count de respostas que fizeram match com leads
+   * Null se sem surveys vinculadas.
+   */
+  surveyMatchedResponses: number | null;
+  surveyUnmatchedResponses: number | null;
 
   /**
    * Linhas diárias da tabela cruzada (Story 18.3).
@@ -105,8 +119,11 @@ export function useCrossedFunnelMetrics(
   const { data: sheetData, isLoading: sheetDataLoading } =
     useFunnelSpreadsheetData(projectId, funnel.id, linkedSheet?.id);
 
+  const { totalResponses, matchedResponses, unmatchedResponses, isLoading: surveyLoading } =
+    useSurveyAggregation(projectId, funnel.id, days);
+
   const hasLinkedSheet = !!linkedSheet;
-  const isLoading = metaLoading || sheetsListLoading || sheetDataLoading;
+  const isLoading = metaLoading || sheetsListLoading || sheetDataLoading || surveyLoading;
 
   return useMemo<CrossedFunnelMetrics>(() => {
     const metaMap = aggregateMetaDailyByDate(metaData);
@@ -119,6 +136,12 @@ export function useCrossedFunnelMetrics(
     const rows = buildDailyRows(metaMap, sheetMap);
     const totals = computeTotals(rows);
 
+    const totalLeads = totals.leadsPagos + totals.leadsOrg + totals.leadsSemTrack;
+    const surveyResponseRate =
+      totalResponses > 0 && totalLeads > 0
+        ? Math.min((totalResponses / totalLeads) * 100, 100)
+        : null;
+
     return {
       spend: totals.spend,
       linkClicks: totals.linkClicks,
@@ -127,17 +150,20 @@ export function useCrossedFunnelMetrics(
       leadsPagos: totals.leadsPagos,
       leadsOrg: totals.leadsOrg,
       leadsSemTrack: totals.leadsSemTrack,
-      totalLeads: totals.leadsPagos + totals.leadsOrg + totals.leadsSemTrack,
+      totalLeads,
       cpm: totals.cpm,
       cpc: totals.cpc,
       ctr: totals.ctr,
       connectRate: totals.connectRate,
       cplPago: totals.cplPg,
       cplGeral: totals.cplG,
+      surveyResponseRate,
+      surveyMatchedResponses: matchedResponses > 0 ? matchedResponses : null,
+      surveyUnmatchedResponses: unmatchedResponses > 0 ? unmatchedResponses : null,
       rows,
       totals,
       isLoading,
       hasLinkedSheet,
     };
-  }, [metaData, sheetData, days, isLoading, hasLinkedSheet]);
+  }, [metaData, sheetData, days, isLoading, hasLinkedSheet, totalResponses, matchedResponses, unmatchedResponses]);
 }

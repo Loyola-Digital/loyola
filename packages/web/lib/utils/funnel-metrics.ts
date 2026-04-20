@@ -1,6 +1,7 @@
 import type { CampaignDailyInsight } from "@/lib/hooks/use-traffic-analytics";
 import type { FunnelSpreadsheetRow } from "@/lib/types/funnel-spreadsheet";
 import { normaliseDate } from "@/lib/utils/spreadsheet-filters";
+import { normalizeEmail } from "@/lib/utils/normalize-answer";
 
 /**
  * utm_source values que classificam um lead como "pago" (vindo de mídia paga).
@@ -56,33 +57,45 @@ export function sumMetaInsights(allInsights: CampaignDailyInsight[][]): {
 }
 
 /**
- * Categoriza as linhas da planilha de leads em 3 grupos baseados em `utm_source`:
+ * Categoriza os leads DEDUPLICADOS por e-mail em 3 grupos baseados em `utm_source`:
  *
- * - `leadsPagos`: utm_source ∈ PAID_SOURCES (meta, meta-ads, google-ads)
- * - `leadsOrg`: utm_source preenchido mas não é pago
- * - `leadsSemTrack`: utm_source vazio, ausente ou coluna não mapeada
+ * - `leadsPagos`: e-mail único com utm_source ∈ PAID_SOURCES
+ * - `leadsOrg`: e-mail único com utm_source preenchido mas não pago
+ * - `leadsSemTrack`: e-mail único com utm_source vazio/ausente/não mapeado
  *
- * Quando `utmSourceMapped` é `false` (coluna utm_source não está mapeada pelo usuário),
- * todas as linhas são classificadas como `leadsSemTrack`.
+ * **IMPORTANTE — DEDUPLICAÇÃO:** E-mail único = 1 lead (primeira ocorrência por categoria).
+ * Quando há múltiplas linhas com mesmo e-mail, conta-se apenas 1 por categoria de origem.
+ * Leads sem e-mail recebem ID único com base no índice da linha.
  */
 export function categorizeLeads(
   rows: FunnelSpreadsheetRow[],
   utmSourceMapped: boolean,
 ): { leadsPagos: number; leadsOrg: number; leadsSemTrack: number } {
-  let leadsPagos = 0;
-  let leadsOrg = 0;
-  let leadsSemTrack = 0;
-  for (const row of rows) {
+  const seenEmails = { leadsPagos: new Set<string>(), leadsOrg: new Set<string>(), leadsSemTrack: new Set<string>() };
+
+  for (let idx = 0; idx < rows.length; idx++) {
+    const row = rows[idx];
+    const email = (row.named.email ?? "").trim();
+    const normalizedEmail = email ? normalizeEmail(email) : `__no-email_${idx}`;
     const utmSource = (row.named.utm_source ?? "").trim().toLowerCase();
+
+    let category: "leadsPagos" | "leadsOrg" | "leadsSemTrack";
     if (!utmSource || !utmSourceMapped) {
-      leadsSemTrack += 1;
+      category = "leadsSemTrack";
     } else if (PAID_SOURCES.has(utmSource)) {
-      leadsPagos += 1;
+      category = "leadsPagos";
     } else {
-      leadsOrg += 1;
+      category = "leadsOrg";
     }
+
+    seenEmails[category].add(normalizedEmail);
   }
-  return { leadsPagos, leadsOrg, leadsSemTrack };
+
+  return {
+    leadsPagos: seenEmails.leadsPagos.size,
+    leadsOrg: seenEmails.leadsOrg.size,
+    leadsSemTrack: seenEmails.leadsSemTrack.size,
+  };
 }
 
 /**
@@ -131,6 +144,8 @@ export function aggregateMetaDailyByDate(
 
 /**
  * Agrega linhas da planilha por data, categorizando cada linha em pagos/org/semTrack.
+ * **IMPORTANTE — DEDUPLICAÇÃO:** Por cada data e categoria, conta e-mail único apenas 1x.
+ * Leads sem e-mail recebem ID único com base no índice da linha.
  * Recebe `rows` (já filtradas por data, se o caller quiser) em vez do `FunnelSpreadsheetData`
  * inteiro — fica mais flexível.
  */
@@ -139,23 +154,44 @@ export function aggregateSpreadsheetByDate(
   utmSourceMapped: boolean,
   dateMapped: boolean,
 ): Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number }> {
-  const map = new Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number }>();
-  if (!dateMapped) return map;
-  for (const row of rows) {
+  const map = new Map<string, { seenEmails: { leadsPagos: Set<string>; leadsOrg: Set<string>; leadsSemTrack: Set<string> } }>();
+  if (!dateMapped) return new Map();
+
+  for (let idx = 0; idx < rows.length; idx++) {
+    const row = rows[idx];
     const date = normaliseDate(row.named.date);
     if (!date) continue;
-    const existing = map.get(date) ?? { leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0 };
+
+    const email = (row.named.email ?? "").trim();
+    const normalizedEmail = email ? normalizeEmail(email) : `__no-email_${idx}`;
     const utmSource = (row.named.utm_source ?? "").trim().toLowerCase();
+
+    let category: "leadsPagos" | "leadsOrg" | "leadsSemTrack";
     if (!utmSource || !utmSourceMapped) {
-      existing.leadsSemTrack += 1;
+      category = "leadsSemTrack";
     } else if (PAID_SOURCES.has(utmSource)) {
-      existing.leadsPagos += 1;
+      category = "leadsPagos";
     } else {
-      existing.leadsOrg += 1;
+      category = "leadsOrg";
     }
-    map.set(date, existing);
+
+    const dateEntry = map.get(date) ?? {
+      seenEmails: { leadsPagos: new Set<string>(), leadsOrg: new Set<string>(), leadsSemTrack: new Set<string>() },
+    };
+    dateEntry.seenEmails[category].add(normalizedEmail);
+    map.set(date, dateEntry);
   }
-  return map;
+
+  // Converter Sets em counts
+  const result = new Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number }>();
+  for (const [date, entry] of map) {
+    result.set(date, {
+      leadsPagos: entry.seenEmails.leadsPagos.size,
+      leadsOrg: entry.seenEmails.leadsOrg.size,
+      leadsSemTrack: entry.seenEmails.leadsSemTrack.size,
+    });
+  }
+  return result;
 }
 
 /**
