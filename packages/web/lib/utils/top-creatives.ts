@@ -29,6 +29,10 @@ export interface AggregatedCreative {
 
   /** Leads pagos cruzados com a planilha (utm_content ∈ ids && utm_source ∈ PAID_SOURCES) */
   leadsPagos: number;
+  /** Leads orgânicos (utm_content ∈ ids && utm_source preenchido mas não pago) */
+  leadsOrg: number;
+  /** Leads sem rastreamento (utm_content ∈ ids && utm_source vazio/não mapeado) */
+  leadsSemTrack: number;
   /** CPL Pago = spend / leadsPagos (null se leadsPagos === 0) */
   cplPago: number | null;
 
@@ -103,8 +107,10 @@ export function aggregateCreativesByName(
       parentInfo: `${leader.parentCampaignName} › ${leader.adsetName}`,
       videoMetrics: leader.videoMetrics,
 
-      // Preenchidos depois pelo countPaidLeadsForAds
+      // Preenchidos depois pelo enrichWithPaidLeads
       leadsPagos: 0,
+      leadsOrg: 0,
+      leadsSemTrack: 0,
       cplPago: null,
 
       cplQualified: leadsLegacy > 0 ? cplQualSum / leadsLegacy : null,
@@ -141,6 +147,49 @@ export function countPaidLeadsForAds(
 }
 
 /**
+ * Conta leads por origem (Pagos/Org/SemTrack) para um grupo de ad_ids.
+ * Deduplicação por e-mail normalizado (lowercase + trim) dentro de cada categoria.
+ * Leads sem e-mail recebem key única por índice.
+ */
+export function countLeadsByOriginForAds(
+  rows: FunnelSpreadsheetRow[],
+  adIds: string[],
+  utmContentMapped: boolean,
+  utmSourceMapped: boolean,
+): { leadsPagos: number; leadsOrg: number; leadsSemTrack: number } {
+  if (!utmContentMapped) return { leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0 };
+  const idSet = new Set(adIds);
+  const seen = {
+    leadsPagos: new Set<string>(),
+    leadsOrg: new Set<string>(),
+    leadsSemTrack: new Set<string>(),
+  };
+  let rowIdx = 0;
+  for (const row of rows) {
+    const utmContent = row.named.utm_content ?? "";
+    if (!idSet.has(utmContent)) { rowIdx++; continue; }
+    const email = (row.named.email ?? "").trim().toLowerCase();
+    const key = email || `__no-email_${rowIdx}`;
+    const utmSource = (row.named.utm_source ?? "").trim().toLowerCase();
+    let category: "leadsPagos" | "leadsOrg" | "leadsSemTrack";
+    if (!utmSource || !utmSourceMapped) {
+      category = "leadsSemTrack";
+    } else if (PAID_SOURCES.has(utmSource)) {
+      category = "leadsPagos";
+    } else {
+      category = "leadsOrg";
+    }
+    seen[category].add(key);
+    rowIdx++;
+  }
+  return {
+    leadsPagos: seen.leadsPagos.size,
+    leadsOrg: seen.leadsOrg.size,
+    leadsSemTrack: seen.leadsSemTrack.size,
+  };
+}
+
+/**
  * Enriquece uma lista de `AggregatedCreative` com `leadsPagos` e `cplPago`
  * calculados via cruzamento com linhas da planilha.
  *
@@ -154,7 +203,7 @@ export function enrichWithPaidLeads(
   utmSourceMapped: boolean,
 ): AggregatedCreative[] {
   return creatives.map((c) => {
-    const leadsPagos = countPaidLeadsForAds(
+    const { leadsPagos, leadsOrg, leadsSemTrack } = countLeadsByOriginForAds(
       filteredRows,
       c.ids,
       utmContentMapped,
@@ -163,6 +212,8 @@ export function enrichWithPaidLeads(
     return {
       ...c,
       leadsPagos,
+      leadsOrg,
+      leadsSemTrack,
       cplPago: safeDivide(c.spend, leadsPagos),
     };
   });
