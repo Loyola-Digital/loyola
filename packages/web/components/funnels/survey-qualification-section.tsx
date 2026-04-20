@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ClipboardList, FileSpreadsheet, Info } from "lucide-react";
+import { AlertTriangle, ClipboardList, FileSpreadsheet } from "lucide-react";
 import {
   SURVEY_QUESTION_MAP,
   type SurveyQuestionKey,
@@ -9,12 +9,6 @@ import type {
   SurveyQuestionAggregation,
   UseSurveyAggregationResult,
 } from "@/lib/hooks/use-survey-aggregation";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 interface SurveyQualificationSectionProps {
   /** Estado de loading (se true, renderiza skeleton) */
@@ -24,12 +18,7 @@ interface SurveyQualificationSectionProps {
   /** Dados agregados do hook `useSurveyAggregation` */
   data: Pick<
     UseSurveyAggregationResult,
-    | "byQuestion"
-    | "totalResponses"
-    | "matchedResponses"
-    | "unmatchedResponses"
-    | "usingFallback"
-    | "fallbackReason"
+    "byQuestion" | "totalResponses" | "usingFallback" | "fallbackReason"
   >;
 }
 
@@ -147,30 +136,8 @@ export function SurveyQualificationSection({
           <ClipboardList className="h-4 w-4 text-muted-foreground" />
           <div>
             <h3 className="text-sm font-semibold">Resultados da Pesquisa — Qualificação do público</h3>
-            <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-              {data.matchedResponses} com match
-              {data.unmatchedResponses > 0 && (
-                <>
-                  <span className="text-muted-foreground/50">·</span>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="inline-flex items-center gap-0.5 cursor-help">
-                          {data.unmatchedResponses} sem match
-                          <Info className="h-3 w-3 text-amber-600/60" />
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="right" className="text-xs max-w-xs">
-                        <p>
-                          Respostas da pesquisa cujo email/telefone não aparecem na planilha de Leads.
-                          Pode ser leads que usaram emails diferentes em cada etapa, leads orgânicos ou
-                          leads sem dados de contato registrados.
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </>
-              )}
+            <p className="text-[11px] text-muted-foreground">
+              {data.totalResponses} respostas analisadas
             </p>
           </div>
         </div>

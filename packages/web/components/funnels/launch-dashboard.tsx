@@ -303,8 +303,6 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
         data={{
           byQuestion: survey.byQuestion,
           totalResponses: survey.totalResponses,
-          matchedResponses: survey.matchedResponses,
-          unmatchedResponses: survey.unmatchedResponses,
           usingFallback: survey.usingFallback,
           fallbackReason: survey.fallbackReason,
         }}

@@ -5,21 +5,14 @@ import {
   type SheetData,
 } from "@/lib/hooks/use-google-sheets";
 import {
-  useFunnelSpreadsheets,
-  useFunnelSpreadsheetData,
-} from "@/lib/hooks/use-funnel-spreadsheets";
-import {
   SURVEY_QUESTION_MAP,
   SURVEY_FALLBACK_THRESHOLD,
   SURVEY_TIMESTAMP_MATCHERS,
   SURVEY_UTM_CONTENT_MATCHERS,
-  SURVEY_EMAIL_MATCHERS,
-  SURVEY_PHONE_MATCHERS,
   type SurveyQuestionKey,
 } from "@/lib/constants/survey-questions";
 import { normalizeAnswer, mostCommonRaw } from "@/lib/utils/normalize-answer";
 import { normaliseDate } from "@/lib/utils/spreadsheet-filters";
-import { getPhoneLast8 } from "@/lib/utils/normalize-phone";
 
 // ============================================================
 // Tipos exportados
@@ -44,8 +37,6 @@ export interface UseSurveyAggregationResult {
   byQuestion: Record<SurveyQuestionKey, SurveyQuestionAggregation[]>;
   byAdId: SurveyDataByAdId;
   totalResponses: number;
-  matchedResponses: number;
-  unmatchedResponses: number;
   usingFallback: boolean;
   fallbackReason?: string;
   isLoading: boolean;
@@ -97,8 +88,6 @@ interface ColumnIndexMap {
   questions: Partial<Record<SurveyQuestionKey, number>>;
   timestamp: number;
   utmContent: number;
-  email: number;
-  phone: number;
 }
 
 function mapHeaders(headers: string[]): ColumnIndexMap {
@@ -111,8 +100,6 @@ function mapHeaders(headers: string[]): ColumnIndexMap {
     questions,
     timestamp: findHeaderIndex(headers, SURVEY_TIMESTAMP_MATCHERS),
     utmContent: findHeaderIndex(headers, SURVEY_UTM_CONTENT_MATCHERS),
-    email: findHeaderIndex(headers, SURVEY_EMAIL_MATCHERS),
-    phone: findHeaderIndex(headers, SURVEY_PHONE_MATCHERS),
   };
 }
 
@@ -141,62 +128,6 @@ function filterRowsByDays(
   });
 }
 
-/**
- * Deduplica e indexa leads por email (primary) para match com pesquisa.
- * Retorna Sets de emails e phones (últimos 8 dígitos) encontrados na planilha.
- */
-function buildLeadsIndex(
-  rows: { named: Partial<Record<string, string>> }[],
-): { emails: Set<string>; phones: Set<string> } {
-  const emails = new Set<string>();
-  const phones = new Set<string>();
-  const seenEmails = new Set<string>(); // deduplica por email
-
-  for (const row of rows) {
-    const email = (row.named?.email ?? "").trim().toLowerCase();
-    const phone = (row.named?.phone ?? "").trim();
-
-    // Deduplica por email
-    if (email && !seenEmails.has(email)) {
-      emails.add(email);
-      seenEmails.add(email);
-    }
-
-    // Índice de phones (últimos 8 dígitos)
-    if (phone) {
-      const last8 = getPhoneLast8(phone);
-      if (last8) phones.add(last8);
-    }
-  }
-
-  return { emails, phones };
-}
-
-/**
- * Verifica se uma resposta da pesquisa tem match na planilha de Leads.
- * Usa dupla verificação: email (case-insensitive) ou telefone (últimos 8 dígitos).
- */
-function hasLeadsMatch(
-  surveyEmail: string,
-  surveyPhone: string,
-  leadsIndex: ReturnType<typeof buildLeadsIndex>,
-): boolean {
-  const normalizedEmail = (surveyEmail ?? "").trim().toLowerCase();
-  if (normalizedEmail && leadsIndex.emails.has(normalizedEmail)) {
-    return true;
-  }
-
-  const normalizedPhone = surveyPhone ?? "";
-  if (normalizedPhone) {
-    const last8 = getPhoneLast8(normalizedPhone);
-    if (last8 && leadsIndex.phones.has(last8)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 // ============================================================
 // Hook principal
 // ============================================================
@@ -206,13 +137,9 @@ function hasLeadsMatch(
  *
  * 1. Seção "Resultados da Pesquisa" no fim do dash (3.a) — via `byQuestion`
  *    com breakdown percentual das 3 perguntas (faturamento, profissão,
- *    nº funcionários), mas **apenas de respostas com match na planilha de Leads**
+ *    nº funcionários)
  * 2. Cards do Top Criativos (3.b) — via `byAdId` com top-1 de faturamento
  *    e profissão por `ad_id` cruzado via `utm_content`
- *
- * **Match dupla verificação:** Cada resposta da pesquisa é contabilizada como
- * "matched" apenas se seu email OU telefone (últimos 8 dígitos) aparece na
- * planilha de Leads. Caso contrário, é "unmatched" (lead orgânico ou sem dados).
  *
  * Fallback: se menos de `SURVEY_FALLBACK_THRESHOLD` respostas caírem no
  * período selecionado, usa o histórico completo da planilha + `usingFallback: true`
@@ -233,15 +160,6 @@ export function useSurveyAggregation(
   );
   const surveys = surveysData?.surveys ?? [];
 
-  const { data: spreadsheetsData, isLoading: spreadsheetsLoading } =
-    useFunnelSpreadsheets(projectId, funnelId);
-  const leadsSpreadsheet = spreadsheetsData?.spreadsheets?.find(
-    (s) => s.type === "leads",
-  );
-
-  const { data: leadsData, isLoading: leadsDataLoading } =
-    useFunnelSpreadsheetData(projectId, funnelId, leadsSpreadsheet?.id);
-
   const sheetQueries = useQueries({
     queries: surveys.map((s) => ({
       queryKey: ["google-sheets-data", s.spreadsheetId, s.sheetName] as const,
@@ -255,8 +173,7 @@ export function useSurveyAggregation(
   });
 
   const sheetsLoading = sheetQueries.some((q) => q.isLoading);
-  const isLoading =
-    surveysLoading || sheetsLoading || spreadsheetsLoading || leadsDataLoading;
+  const isLoading = surveysLoading || sheetsLoading;
 
   // Cálculo direto (sem useMemo explícito — ops são O(rows × queries) e queries
   // já cacheadas pelo react-query; overhead de recomputa por render é irrelevante)
@@ -266,8 +183,6 @@ export function useSurveyAggregation(
         byQuestion: { ...EMPTY_BY_QUESTION },
         byAdId: {},
         totalResponses: 0,
-        matchedResponses: 0,
-        unmatchedResponses: 0,
         usingFallback: false,
         isLoading,
       };
@@ -278,8 +193,6 @@ export function useSurveyAggregation(
       questionIndexes: Partial<Record<SurveyQuestionKey, number>>;
       timestampIdx: number;
       utmContentIdx: number;
-      emailIdx: number;
-      phoneIdx: number;
     };
     const allRows: CombinedRow[] = [];
     for (const q of sheetQueries) {
@@ -292,8 +205,6 @@ export function useSurveyAggregation(
           questionIndexes: colMap.questions,
           timestampIdx: colMap.timestamp,
           utmContentIdx: colMap.utmContent,
-          emailIdx: colMap.email,
-          phoneIdx: colMap.phone,
         });
       }
     }
@@ -303,18 +214,11 @@ export function useSurveyAggregation(
         byQuestion: { ...EMPTY_BY_QUESTION },
         byAdId: {},
         totalResponses: 0,
-        matchedResponses: 0,
-        unmatchedResponses: 0,
         usingFallback: false,
         fallbackReason: "Sem respostas nas pesquisas vinculadas",
         isLoading: false,
       };
     }
-
-    // Constrói índice de Leads para match dupla verificação
-    const leadsIndex = leadsData?.rows
-      ? buildLeadsIndex(leadsData.rows)
-      : { emails: new Set<string>(), phones: new Set<string>() };
 
     // Filtro por data — faz por-survey pra usar o timestampIdx correto
     const filteredPerSurvey: string[][][] = [];
@@ -351,8 +255,6 @@ export function useSurveyAggregation(
     };
     const byAdId: SurveyDataByAdId = {};
     let totalResponses = 0;
-    let matchedResponses = 0;
-    let unmatchedResponses = 0;
 
     const bucketsPerQuestion: Record<SurveyQuestionKey, Map<string, { rawValues: string[]; count: number }>> = {
       faturamento: new Map(),
@@ -374,25 +276,11 @@ export function useSurveyAggregation(
       const effectiveRows = useFallback ? data.rows : filteredPerSurvey[i];
       totalResponses += effectiveRows.length;
 
-      // byQuestion: pra cada pergunta mapeada, agregar respostas APENAS se matched
+      // byQuestion: pra cada pergunta mapeada, agregar respostas
       for (const [key, idx] of Object.entries(colMap.questions)) {
         if (idx == null || idx < 0) continue;
         const bucket = bucketsPerQuestion[key as SurveyQuestionKey];
         for (const row of effectiveRows) {
-          // Verifica match com planilha de Leads
-          const email = colMap.email >= 0 ? (row[colMap.email] ?? "").trim() : "";
-          const phone = colMap.phone >= 0 ? (row[colMap.phone] ?? "").trim() : "";
-          const isMatched = hasLeadsMatch(email, phone, leadsIndex);
-
-          if (isMatched) {
-            matchedResponses += 1;
-          } else {
-            unmatchedResponses += 1;
-          }
-
-          // Só conta no bucket se matched
-          if (!isMatched) continue;
-
           const raw = (row[idx] ?? "").trim();
           if (!raw) continue;
           const normKey = normalizeAnswer(raw);
@@ -433,7 +321,6 @@ export function useSurveyAggregation(
     }
 
     // Finaliza byQuestion — converte buckets em Array com top-8 + "Outros"
-    // IMPORTANTE: denominador das % é matchedResponses (respostas com match em Leads)
     for (const key of Object.keys(bucketsPerQuestion) as SurveyQuestionKey[]) {
       const bucket = bucketsPerQuestion[key];
       if (bucket.size === 0) continue;
@@ -441,7 +328,7 @@ export function useSurveyAggregation(
         .map((b) => ({
           label: mostCommonRaw(b.rawValues),
           count: b.count,
-          pct: matchedResponses > 0 ? (b.count / matchedResponses) * 100 : 0,
+          pct: totalResponses > 0 ? (b.count / totalResponses) * 100 : 0,
         }))
         .sort((a, b) => b.count - a.count);
       if (entries.length <= 8) {
@@ -453,7 +340,7 @@ export function useSurveyAggregation(
         top.push({
           label: `Outros (${rest.length})`,
           count: restCount,
-          pct: matchedResponses > 0 ? (restCount / matchedResponses) * 100 : 0,
+          pct: totalResponses > 0 ? (restCount / totalResponses) * 100 : 0,
         });
         byQuestion[key] = top;
       }
@@ -481,8 +368,6 @@ export function useSurveyAggregation(
       byQuestion,
       byAdId,
       totalResponses,
-      matchedResponses,
-      unmatchedResponses,
       usingFallback: useFallback,
       fallbackReason,
       isLoading: false,
