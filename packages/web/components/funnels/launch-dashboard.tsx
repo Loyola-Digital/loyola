@@ -11,6 +11,8 @@ import {
   Target,
   BarChart3,
   Link2,
+  ShoppingCart,
+  Banknote,
 } from "lucide-react";
 import {
   LineChart,
@@ -43,6 +45,7 @@ import { StageSalesSection } from "./stage-sales-section";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
+import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { SurveyQualificationSection } from "./survey-qualification-section";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
@@ -111,6 +114,13 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
     useCampaignDailyInsights(projectId, firstCampaignId, days);
   const { data: compData } = useMetaAdsComparison(
     projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
+  );
+  const { data: salesData } = useStageSalesData(
+    stageType === "paid" ? projectId : null,
+    stageType === "paid" ? funnel.id : null,
+    stageType === "paid" ? (stageId ?? null) : null,
+    "capture",
+    days,
   );
 
   const hasComparison = !!(compData && !compData.semDados);
@@ -295,6 +305,23 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           );
         })()
       ) : <EmptyState />}
+
+      {/* KPI Cards — Vendas & Faturamento (Story 21.3, apenas etapas pagas) */}
+      {stageType === "paid" && stageId && salesData && !salesData.semDados && (
+        <div className="grid gap-3 grid-cols-2">
+          <KpiCard
+            icon={ShoppingCart}
+            label="Vendas"
+            value={fmtNumber(salesData.totalVendas)}
+          />
+          <KpiCard
+            icon={Banknote}
+            label="Faturamento"
+            value={fmtCurrency(salesData.faturamentoBruto)}
+            subValue={salesData.faturamentoLiquido > 0 ? `Líquido: ${fmtCurrency(salesData.faturamentoLiquido)}` : undefined}
+          />
+        </div>
+      )}
 
       {/* Dados diários — tabela cruzada (Story 18.3) */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
