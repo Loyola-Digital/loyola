@@ -37,6 +37,7 @@ import { useHiddenProjectsStore } from "@/lib/stores/hidden-projects-store";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useFunnels, useDeleteFunnel, useUpdateFunnel } from "@/lib/hooks/use-funnels";
+import { useFunnelStages, useCreateStage } from "@/lib/hooks/use-funnel-stages";
 import type { Funnel } from "@loyola-x/shared";
 
 interface ProjectFolderProps {
@@ -64,10 +65,20 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
   const router = useRouter();
   const deleteFunnel = useDeleteFunnel(projectId);
   const updateFunnel = useUpdateFunnel(projectId, funnel.id);
+  const createStage = useCreateStage(projectId, funnel.id);
+  const { data: stages, isLoading: stagesLoading } = useFunnelStages(projectId, funnel.id);
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
+  const [newStageName, setNewStageName] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
 
-  const href = `/projects/${projectId}/funnels/${funnel.id}`;
-  const isActive = pathname.startsWith(href);
+  const funnelHref = `/projects/${projectId}/funnels/${funnel.id}`;
+  const isActiveFunnel = pathname.startsWith(funnelHref);
+  const [open, setOpen] = useState(isActiveFunnel);
+
+  useEffect(() => {
+    if (isActiveFunnel && !open) setOpen(true);
+  }, [isActiveFunnel, open]);
+
   const FunnelIcon = funnel.type === "launch" ? Rocket : Repeat;
   const oppositeType = funnel.type === "launch" ? "perpetual" : "launch";
   const oppositeLabel = funnel.type === "launch" ? "Perpétuo" : "Lançamento";
@@ -76,7 +87,7 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
     try {
       await deleteFunnel.mutateAsync(funnel.id);
       toast.success(`Funil "${funnel.name}" deletado.`);
-      if (pathname.startsWith(href)) {
+      if (pathname.startsWith(funnelHref)) {
         router.push(`/projects/${projectId}`);
       }
     } catch {
@@ -93,50 +104,130 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
     }
   }
 
+  async function handleCreateStage() {
+    if (!newStageName.trim()) return;
+    try {
+      const stage = await createStage.mutateAsync({ name: newStageName.trim() });
+      toast.success("Etapa criada");
+      setNewStageName("");
+      setCreateOpen(false);
+      router.push(`${funnelHref}/stages/${stage.id}`);
+    } catch {
+      toast.error("Erro ao criar etapa.");
+    }
+  }
+
   return (
     <>
-      <div className="group/funnel flex items-center">
-        <Button
-          variant={isActive ? "secondary" : "ghost"}
-          className="flex-1 justify-start gap-2 h-8 text-sm min-w-0"
-          asChild
-        >
-          <Link href={href}>
-            <FunnelIcon className="h-4 w-4 shrink-0" />
-            <span className="truncate">{funnel.name}</span>
-          </Link>
-        </Button>
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <div className="group/funnel flex items-center">
+          <CollapsibleTrigger asChild>
+            <Button
+              variant={isActiveFunnel ? "secondary" : "ghost"}
+              className="flex-1 justify-start gap-1.5 h-8 text-sm min-w-0"
+            >
+              <FunnelIcon className="h-4 w-4 shrink-0" />
+              <span className="truncate flex-1 text-left">{funnel.name}</span>
+              <ChevronRight
+                className={cn(
+                  "h-3 w-3 text-muted-foreground transition-transform shrink-0",
+                  open && "rotate-90"
+                )}
+              />
+            </Button>
+          </CollapsibleTrigger>
 
-        {isAdmin && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          {isAdmin && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="h-6 w-6 p-0 opacity-0 group-hover/funnel:opacity-100 transition-opacity shrink-0"
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleTypeChange} disabled={updateFunnel.isPending}>
+                  {funnel.type === "launch" ? (
+                    <Repeat className="mr-2 h-4 w-4" />
+                  ) : (
+                    <Rocket className="mr-2 h-4 w-4" />
+                  )}
+                  Alterar para {oppositeLabel}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => setShowDeleteAlert(true)}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Deletar funil
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+
+        <CollapsibleContent>
+          <div className="ml-4 flex flex-col gap-0.5 border-l pl-2 py-0.5">
+            {stagesLoading && <Skeleton className="h-6 w-full rounded-md" />}
+
+            {stages?.map((stage) => {
+              const stageHref = `${funnelHref}/stages/${stage.id}`;
+              const isActiveStage = pathname.startsWith(stageHref);
+              return (
+                <Button
+                  key={stage.id}
+                  variant={isActiveStage ? "secondary" : "ghost"}
+                  className="justify-start gap-2 h-7 text-xs min-w-0"
+                  asChild
+                >
+                  <Link href={stageHref}>
+                    <span className="truncate">{stage.name}</span>
+                  </Link>
+                </Button>
+              );
+            })}
+
+            {isAdmin && !createOpen && (
               <Button
                 variant="ghost"
-                className="h-6 w-6 p-0 opacity-0 group-hover/funnel:opacity-100 transition-opacity shrink-0"
+                className="justify-start gap-1.5 h-7 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => { setNewStageName(""); setCreateOpen(true); }}
               >
-                <MoreHorizontal className="h-3.5 w-3.5" />
+                <Plus className="h-3 w-3 shrink-0" />
+                Nova etapa
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleTypeChange} disabled={updateFunnel.isPending}>
-                {funnel.type === "launch" ? (
-                  <Repeat className="mr-2 h-4 w-4" />
-                ) : (
-                  <Rocket className="mr-2 h-4 w-4" />
-                )}
-                Alterar para {oppositeLabel}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onClick={() => setShowDeleteAlert(true)}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Deletar funil
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-      </div>
+            )}
+
+            {isAdmin && createOpen && (
+              <div className="flex gap-1 pt-0.5">
+                <input
+                  autoFocus
+                  className="flex-1 h-6 min-w-0 rounded border border-border bg-background px-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  placeholder="Nome..."
+                  value={newStageName}
+                  onChange={(e) => setNewStageName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleCreateStage();
+                    if (e.key === "Escape") { setCreateOpen(false); setNewStageName(""); }
+                  }}
+                  onBlur={() => { if (!newStageName.trim()) { setCreateOpen(false); } }}
+                />
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 shrink-0"
+                  disabled={createStage.isPending || !newStageName.trim()}
+                  onClick={handleCreateStage}
+                >
+                  <Plus className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
 
       <AlertDialog open={showDeleteAlert} onOpenChange={setShowDeleteAlert}>
         <AlertDialogContent>

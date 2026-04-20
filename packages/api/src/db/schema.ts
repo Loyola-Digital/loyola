@@ -579,6 +579,50 @@ export const funnels = pgTable(
 );
 
 // ============================================================
+// FUNNEL STAGES (EPIC-19)
+// ============================================================
+
+export const funnelStages = pgTable(
+  "funnel_stages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => funnels.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 255 }).notNull(),
+    metaAccountId: uuid("meta_account_id").references(() => metaAdsAccounts.id, {
+      onDelete: "set null",
+    }),
+    campaigns: jsonb("campaigns")
+      .notNull()
+      .default([])
+      .$type<{ id: string; name: string }[]>(),
+    googleAdsAccountId: uuid("google_ads_account_id").references(
+      () => googleAdsAccounts.id,
+      { onDelete: "set null" }
+    ),
+    googleAdsCampaigns: jsonb("google_ads_campaigns")
+      .notNull()
+      .default([])
+      .$type<{ id: string; name: string }[]>(),
+    switchyFolderIds: jsonb("switchy_folder_ids")
+      .notNull()
+      .default([])
+      .$type<{ id: number; name: string }[]>(),
+    switchyLinkedLinks: jsonb("switchy_linked_links")
+      .notNull()
+      .default([])
+      .$type<{ uniq: number; id: string; domain: string }[]>(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_funnel_stages_funnel").on(table.funnelId),
+  ]
+);
+
+// ============================================================
 // FUNNEL SURVEYS (EPIC-14 — Google Sheets)
 // ============================================================
 
