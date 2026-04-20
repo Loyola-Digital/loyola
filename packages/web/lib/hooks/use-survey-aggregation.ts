@@ -374,26 +374,21 @@ export function useSurveyAggregation(
       const effectiveRows = useFallback ? data.rows : filteredPerSurvey[i];
       totalResponses += effectiveRows.length;
 
-      // Conta matched/unmatched UMA VEZ POR ROW (antes do loop de perguntas)
-      const rowMatchStatus = new Map<string[], boolean>();
-      for (const row of effectiveRows) {
-        const email = colMap.email >= 0 ? (row[colMap.email] ?? "").trim() : "";
-        const phone = colMap.phone >= 0 ? (row[colMap.phone] ?? "").trim() : "";
-        const isMatched = hasLeadsMatch(email, phone, leadsIndex);
-        rowMatchStatus.set(row, isMatched);
-        if (isMatched) {
-          matchedResponses += 1;
-        } else {
-          unmatchedResponses += 1;
-        }
-      }
-
       // byQuestion: pra cada pergunta mapeada, agregar respostas APENAS se matched
       for (const [key, idx] of Object.entries(colMap.questions)) {
         if (idx == null || idx < 0) continue;
         const bucket = bucketsPerQuestion[key as SurveyQuestionKey];
         for (const row of effectiveRows) {
-          const isMatched = rowMatchStatus.get(row) ?? false;
+          // Verifica match com planilha de Leads
+          const email = colMap.email >= 0 ? (row[colMap.email] ?? "").trim() : "";
+          const phone = colMap.phone >= 0 ? (row[colMap.phone] ?? "").trim() : "";
+          const isMatched = hasLeadsMatch(email, phone, leadsIndex);
+
+          if (isMatched) {
+            matchedResponses += 1;
+          } else {
+            unmatchedResponses += 1;
+          }
 
           // Só conta no bucket se matched
           if (!isMatched) continue;
