@@ -175,28 +175,30 @@ export function HotColdSpendDonut({
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
       <h3 className="text-sm font-semibold">{title}</h3>
 
-      <div className="flex justify-center">
-        <ResponsiveContainer width={220} height={220}>
-          <PieChart>
-            <Pie
-              data={chartData}
-              dataKey="value"
-              nameKey="name"
-              cx="50%"
-              cy="50%"
-              innerRadius={55}
-              outerRadius={100}
-              strokeWidth={1}
-              label={renderSliceLabel}
-              labelLine={false}
-            >
-              {chartData.map((d) => (
-                <Cell key={d.key} fill={HOT_COLD_COLORS[d.key]} />
-              ))}
-            </Pie>
-            <Tooltip content={<CustomTooltip />} />
-          </PieChart>
-        </ResponsiveContainer>
+      <div className="flex justify-center w-full">
+        <div className="w-full max-w-xs aspect-square">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={chartData}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                innerRadius="35%"
+                outerRadius="85%"
+                strokeWidth={1}
+                label={renderSliceLabel}
+                labelLine={false}
+              >
+                {chartData.map((d) => (
+                  <Cell key={d.key} fill={HOT_COLD_COLORS[d.key]} />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {/* Legenda abaixo — mostra SEMPRE as 3 categorias (Hot/Cold/Outros) pra
