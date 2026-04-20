@@ -21,23 +21,20 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
-  PieChart,
-  Pie,
-  Cell,
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import {
   useTrafficOverview,
   useTrafficCampaigns,
-  usePlacementBreakdown,
   useCampaignDailyInsights,
-  type CampaignAnalytics,
   type CampaignDailyInsight,
-  type PlacementInsight,
 } from "@/lib/hooks/use-traffic-analytics";
 import { ConversionFunnel } from "./conversion-funnel";
 import { CrossedFunnelDailyTable } from "./crossed-funnel-daily-table";
+import { CplComparisonChart } from "./cpl-comparison-chart";
+import { LeadsCumulativeChart } from "./leads-cumulative-chart";
+import { HotColdSpendDonut } from "./hot-cold-spend-donut";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { CampaignSelector } from "./campaign-selector";
 import type { Funnel, FunnelCampaign } from "@loyola-x/shared";
@@ -56,7 +53,6 @@ import {
   buildFunnelCpmFormula,
   buildFunnelSurveyFormula,
   buildFunnelDailyFormula,
-  enrichFormulaForEntity,
 } from "@/lib/formulas/funnels";
 import { ClipboardList, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -66,14 +62,6 @@ interface LaunchDashboardProps {
   funnel: Funnel;
   projectId: string;
 }
-
-const DONUT_COLORS = [
-  "hsl(45 90% 55%)",
-  "hsl(200 80% 60%)",
-  "hsl(150 60% 50%)",
-  "hsl(280 60% 55%)",
-  "hsl(350 70% 55%)",
-];
 
 function fmtCurrency(val: number | null | undefined): string {
   if (val == null || val === 0) return "—";
@@ -112,9 +100,6 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
   );
   const metrics = useCrossedFunnelMetrics(projectId, funnel, days);
   const { data: campaignData } = useTrafficCampaigns(projectId, days);
-  const cids = campaignIds.length > 0 ? campaignIds : null;
-  const { data: placementData, isLoading: placementLoading } =
-    usePlacementBreakdown(projectId, days, cids);
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsights(projectId, firstCampaignId, days);
   const { data: surveySummary } = useSurveySummary(projectId, funnel.id);
@@ -248,6 +233,16 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
         <CrossedFunnelDailyTable rows={metrics.rows} totals={metrics.totals} />
       ) : null}
 
+      {/* CPL Pago vs CPL Geral (Story 18.4) */}
+      {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
+        <CplComparisonChart rows={metrics.rows} />
+      ) : null}
+
+      {/* Leads Acumulados (Story 18.4) */}
+      {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
+        <LeadsCumulativeChart rows={metrics.rows} />
+      ) : null}
+
       {/* CTR × CPM — Saturation Chart */}
       <div className="rounded-xl border border-border/30 bg-card/60 p-5">
         <div className="flex items-center justify-between mb-4">
@@ -264,86 +259,37 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
         ) : <EmptyState />}
       </div>
 
-      {/* Charts row */}
+      {/* Donut Hot/Cold/Outros + Funil de Conversão lado-a-lado 50/50 (Story 18.4) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Spend daily chart */}
-        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-          <h3 className="text-sm font-semibold mb-4">Spend & Cliques Diários</h3>
-          {dailyLoading ? (
-            <Skeleton className="h-48" />
-          ) : dailyData && dailyData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={dailyData.map((d) => {
-                const dateLabel = d.date_start.slice(5, 10);
-                const spend = safeNum(d.spend);
-                const clicks = safeNum(d.clicks);
-                return {
-                  date: dateLabel,
-                  spend,
-                  clicks,
-                  formulasByKey: {
-                    spend: buildFunnelDailyFormula("Investimento", "Meta Ads API · spend (time series)", spend, true, dateLabel),
-                    clicks: buildFunnelDailyFormula("Cliques", "Meta Ads API · clicks (time series)", clicks, false, dateLabel),
-                  },
-                };
-              })}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis yAxisId="spend" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
-                <YAxis yAxisId="clicks" orientation="right" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
-                <Tooltip content={<FormulaChartTooltip />} />
-                <Legend wrapperStyle={{ color: "#fff" }} />
-                <Line yAxisId="spend" type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={false} name="Spend (R$)" />
-                <Line yAxisId="clicks" type="monotone" dataKey="clicks" stroke="hsl(200 80% 60%)" strokeWidth={2} dot={false} name="Cliques" />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : <EmptyState />}
-        </div>
+        {funnelCampaigns.length > 0 ? (
+          <HotColdSpendDonut campaigns={funnelCampaigns} />
+        ) : (
+          <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+            <h3 className="text-sm font-semibold mb-4">Distribuição de Investimento</h3>
+            <EmptyState />
+          </div>
+        )}
 
-        {/* Top 5 campaigns donut */}
         <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-          <h3 className="text-sm font-semibold mb-4">Distribuição de Investimento</h3>
-          {funnelCampaigns.length > 0 ? (
-            <CampaignDonut
-              campaigns={funnelCampaigns}
-              funnelContext={{ days, funnelType: "launch", funnelName: funnel?.name }}
+          <h3 className="text-sm font-semibold mb-4">Funil de Conversão</h3>
+          {overview ? (
+            <ConversionFunnel
+              impressions={overview.totalImpressions}
+              linkClicks={overview.totalLinkClicks}
+              landingPageViews={overview.totalLandingPageViews}
+              leads={metrics.totalLeads}
             />
           ) : <EmptyState />}
         </div>
       </div>
 
-      {/* Top Creatives Gallery */}
+      {/* Top Creatives Gallery — movido pro final do dashboard (Story 18.4) */}
       <TopCreativesGallery
         projectId={projectId}
         days={days}
         campaignIds={campaignIds}
         funnelContext={{ days, funnelType: "launch", funnelName: funnel?.name }}
       />
-
-      {/* Conversion Funnel + Placement */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-          <h3 className="text-sm font-semibold mb-4">Funil de Conversão</h3>
-          {overview ? (
-            <ConversionFunnel
-              impressions={overview.totalImpressions}
-              reach={overview.totalReach}
-              linkClicks={overview.totalLinkClicks}
-              landingPageViews={overview.totalLandingPageViews}
-              leads={overview.totalLeads}
-            />
-          ) : <EmptyState />}
-        </div>
-
-        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-          <h3 className="text-sm font-semibold mb-4">Placements</h3>
-          {placementLoading ? (
-            <Skeleton className="h-48" />
-          ) : placementData?.placements && placementData.placements.length > 0 ? (
-            <PlacementTable placements={placementData.placements} />
-          ) : <EmptyState />}
-        </div>
-      </div>
     </div>
   );
 }
@@ -379,79 +325,6 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
     </div>
   );
 });
-
-function CampaignDonut({ campaigns, funnelContext }: { campaigns: CampaignAnalytics[]; funnelContext: { days: number; funnelType: "launch"; funnelName?: string } }) {
-  const data = campaigns
-    .sort((a, b) => b.spend - a.spend)
-    .slice(0, 5)
-    .map((c) => ({
-      name: c.campaignName,
-      value: c.spend,
-      formula: enrichFormulaForEntity(
-        buildFunnelSpendFormula(c.spend, funnelContext),
-        { campaign: c.campaignName },
-      ),
-    }));
-  const total = data.reduce((s, d) => s + d.value, 0);
-
-  return (
-    <div className="flex items-center gap-4">
-      <ResponsiveContainer width={160} height={160}>
-        <PieChart>
-          <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={70} strokeWidth={1}>
-            {data.map((_, i) => <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
-          </Pie>
-          <Tooltip content={<FormulaChartTooltip />} />
-        </PieChart>
-      </ResponsiveContainer>
-      <div className="space-y-1.5 text-xs flex-1 min-w-0">
-        {data.map((d, i) => (
-          <div key={d.name} className="flex items-center gap-2">
-            <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: DONUT_COLORS[i % DONUT_COLORS.length] }} />
-            <span className="truncate flex-1">{d.name}</span>
-            <span className="text-muted-foreground tabular-nums shrink-0">
-              {total > 0 ? `${((d.value / total) * 100).toFixed(0)}%` : "—"}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PlacementTable({ placements }: { placements: PlacementInsight[] }) {
-  const sorted = [...placements].sort((a, b) => b.spend - a.spend);
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-xs text-muted-foreground border-b">
-            <th className="text-left py-2 font-medium">Placement</th>
-            <th className="text-right py-2 font-medium">Investimento</th>
-            <th className="text-right py-2 font-medium">Leads</th>
-            <th className="text-right py-2 font-medium">CPL</th>
-            <th className="text-right py-2 font-medium">CTR</th>
-            <th className="text-right py-2 font-medium">CPC</th>
-            <th className="text-right py-2 font-medium">CPM</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((p) => (
-            <tr key={`${p.platform}-${p.position}`} className="border-b last:border-0">
-              <td className="py-1.5"><span className="capitalize">{p.platform}</span> / {p.position}</td>
-              <td className="text-right tabular-nums">{fmtCurrency(p.spend)}</td>
-              <td className="text-right tabular-nums">{fmtNumber(p.leads)}</td>
-              <td className="text-right tabular-nums">{fmtCurrency(p.cpl)}</td>
-              <td className="text-right tabular-nums">{fmtPercent(p.ctr)}</td>
-              <td className="text-right tabular-nums">{fmtCurrency(p.cpc)}</td>
-              <td className="text-right tabular-nums">{fmtCurrency(p.cpm)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 function EmptyState() {
   return (
