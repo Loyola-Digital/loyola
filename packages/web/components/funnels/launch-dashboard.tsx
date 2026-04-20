@@ -223,7 +223,8 @@ export function LaunchDashboard({ funnel, projectId }: LaunchDashboardProps) {
                       <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Pesquisa</span>
                       <ClipboardList className="h-3.5 w-3.5 text-muted-foreground/50" />
                     </div>
-                    <p className="text-xl font-bold tracking-tight underline decoration-dotted decoration-muted-foreground/40 underline-offset-4">{survey.matchedResponses}/{metrics.totalLeads}</p>
+                    <p className="text-xl font-bold tracking-tight underline decoration-dotted decoration-muted-foreground/40 underline-offset-4">{surveyResponseRate.toFixed(1)}%</p>
+                    <p className="text-[9px] text-muted-foreground">{metrics.totalLeads} leads no total</p>
                     <p className="text-[9px] text-muted-foreground">{survey.matchedResponses} com match · {survey.unmatchedResponses} sem match</p>
                   </div>
                 </MetricTooltip>
