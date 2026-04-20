@@ -42,6 +42,7 @@ import { TopCreativesGallery } from "./top-creatives-gallery";
 import type { Funnel, FunnelCampaign, StageType } from "@loyola-x/shared";
 import { StageSalesSection } from "./stage-sales-section";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
+import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
 import {
@@ -124,6 +125,17 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     useCampaignDailyInsights(projectId, firstCampaignId, days);
   const { data: adSetsData } = useAllAdSets(projectId, days, campaignIds.length > 0 ? campaignIds : null);
   const { data: adsData } = useAllAds(projectId, days, campaignIds.length > 0 ? campaignIds : null);
+
+  const { data: compData } = useMetaAdsComparison(
+    projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
+  );
+  const hasComparison = !!(compData && !compData.semDados);
+  const compSpend = hasComparison ? compData!.totals.spend : null;
+
+  function calcDelta(current: number | null | undefined, comparison: number | null): number {
+    if (current == null || comparison == null || comparison === 0) return 0;
+    return ((current - comparison) / Math.abs(comparison)) * 100;
+  }
 
   // Filtered campaigns for this funnel
   const funnelCampaigns = useMemo(() => {
@@ -254,7 +266,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                 <KpiCard icon={Target} label="ROAS" value={fmtRoas(overview.roas)} target={2} actual={overview.roas} hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="Investimento" value={fmtCurrency(overview.totalSpend)} formula={buildFunnelSpendFormula(overview.totalSpend, f)}>
-                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} hintTooltip />
+                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} hintTooltip
+                  comparison={compSpend !== null && overview.totalSpend != null ? {
+                    display: fmtCurrency(compSpend),
+                    delta: calcDelta(overview.totalSpend, compSpend),
+                    higherIsBetter: false,
+                  } : undefined}
+                />
               </MetricTooltip>
               <MetricTooltip label="Vendas" value={fmtNumber(overview.totalSales)} formula={buildFunnelSalesCountFormula(overview.totalSales, f)}>
                 <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(overview.totalSales)} hintTooltip />
@@ -530,8 +548,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
 const KpiCard = React.forwardRef<HTMLDivElement, {
   icon: React.ComponentType<{ className?: string }>; label: string; value: string;
   target?: number; actual?: number | null; hintTooltip?: boolean;
+  comparison?: { display: string; delta: number; higherIsBetter: boolean };
 } & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
-  { icon: Icon, label, value, target, actual, hintTooltip, className, ...rest },
+  { icon: Icon, label, value, target, actual, hintTooltip, comparison, className, ...rest },
   ref,
 ) {
   const isRoas = target !== undefined;
@@ -551,6 +570,20 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
       </div>
       <p className={`text-xl font-bold tracking-tight ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
+      {comparison && (
+        <div className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1.5 leading-tight">
+          <span>vs {comparison.display}</span>
+          {comparison.delta !== 0 && (
+            <span className={
+              (comparison.delta > 0) === comparison.higherIsBetter
+                ? "text-emerald-400"
+                : "text-red-400"
+            }>
+              {comparison.delta > 0 ? "▲" : "▼"} {Math.abs(comparison.delta).toFixed(1)}%
+            </span>
+          )}
+        </div>
+      )}
       {isRoas && (
         <p className="text-[9px] text-muted-foreground mt-0.5">
           Meta: {target}x {roasOk ? <span className="text-emerald-500">OK</span> : <span className="text-red-400">Abaixo</span>}

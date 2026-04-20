@@ -81,3 +81,27 @@ export interface Funnel {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface ComparisonDayMetrics {
+  dayIndex: number;
+  impressions: number;
+  clicks: number;
+  spend: number;
+  reach: number;
+  ctr: number;
+  cpc: number;
+}
+
+export interface MetaAdsComparisonData {
+  compareFunnelName: string;
+  compareStageName: string;
+  days: ComparisonDayMetrics[];
+  totals: {
+    impressions: number;
+    clicks: number;
+    spend: number;
+    reach: number;
+  };
+  semDados: boolean;
+  reason?: string;
+}

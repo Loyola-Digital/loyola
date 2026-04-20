@@ -37,7 +37,8 @@ import { LeadsCumulativeChart } from "./leads-cumulative-chart";
 import { HotColdSpendDonut } from "./hot-cold-spend-donut";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { CampaignSelector } from "./campaign-selector";
-import type { Funnel, FunnelCampaign, StageType } from "@loyola-x/shared";
+import type { Funnel, FunnelCampaign, StageType, ComparisonDayMetrics } from "@loyola-x/shared";
+import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { StageSalesSection } from "./stage-sales-section";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
@@ -108,6 +109,29 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   const { data: campaignData } = useTrafficCampaigns(projectId, days);
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsights(projectId, firstCampaignId, days);
+  const { data: compData } = useMetaAdsComparison(
+    projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
+  );
+
+  const hasComparison = !!(compData && !compData.semDados);
+  const compTotals = hasComparison ? compData!.totals : null;
+  const compDays = hasComparison ? compData!.days : null;
+
+  function calcDelta(current: number | null | undefined, comparison: number | null): number {
+    if (current == null || comparison == null || comparison === 0) return 0;
+    return ((current - comparison) / Math.abs(comparison)) * 100;
+  }
+
+  const compSpend = compTotals ? compTotals.spend : null;
+  const compCtr = compTotals && compTotals.impressions > 0
+    ? (compTotals.clicks / compTotals.impressions) * 100
+    : null;
+  const compCpc = compTotals && compTotals.clicks > 0
+    ? compTotals.spend / compTotals.clicks
+    : null;
+  const compCpm = compTotals && compTotals.impressions > 0
+    ? (compTotals.spend / compTotals.impressions) * 1000
+    : null;
 
   const surveyResponseRate = survey && survey.matchedResponses > 0 && metrics.totalLeads > 0
     ? Math.min((survey.matchedResponses / metrics.totalLeads) * 100, 100)
@@ -167,6 +191,13 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         </div>
       )}
 
+      {/* Aviso: etapa equivalente não encontrada no funil de comparação */}
+      {compData && compData.semDados && compData.reason === "no_matching_stage" && (
+        <p className="text-xs text-muted-foreground/70 border border-border/20 rounded-lg px-3 py-2">
+          Nenhuma etapa do tipo equivalente encontrada no funil de comparação.
+        </p>
+      )}
+
       {/* KPI Cards — Meta only */}
       {overviewLoading || metrics.isLoading ? (
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
@@ -178,7 +209,13 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           return (
             <div className={`grid gap-3 grid-cols-2 sm:grid-cols-4 ${surveyResponseRate !== null ? "lg:grid-cols-8" : "lg:grid-cols-7"}`}>
               <MetricTooltip label="Investimento" value={fmtCurrency(metrics.spend)} formula={buildFunnelSpendFormula(metrics.spend, f)}>
-                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(metrics.spend)} hintTooltip />
+                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(metrics.spend)} hintTooltip
+                  comparison={compSpend !== null && metrics.spend != null ? {
+                    display: fmtCurrency(compSpend),
+                    delta: calcDelta(metrics.spend, compSpend),
+                    higherIsBetter: false,
+                  } : undefined}
+                />
               </MetricTooltip>
               <MetricTooltip label="Leads" value={metrics.hasLinkedSheet ? fmtNumber(metrics.totalLeads) : "—"} formula={metrics.hasLinkedSheet ? buildFunnelLeadsFormula(metrics.totalLeads, f, { pagos: metrics.leadsPagos, org: metrics.leadsOrg, semTrack: metrics.leadsSemTrack }) : undefined}>
                 <KpiCard
@@ -212,13 +249,31 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                 <KpiCard icon={Link2} label="Connect Rate" value={fmtPercent(metrics.connectRate)} hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="CTR" value={fmtPercent(metrics.ctr)} formula={buildFunnelCtrFormula(metrics.ctr, f)}>
-                <KpiCard icon={Percent} label="CTR" value={fmtPercent(metrics.ctr)} hintTooltip />
+                <KpiCard icon={Percent} label="CTR" value={fmtPercent(metrics.ctr)} hintTooltip
+                  comparison={compCtr !== null && metrics.ctr != null ? {
+                    display: fmtPercent(compCtr),
+                    delta: calcDelta(metrics.ctr, compCtr),
+                    higherIsBetter: true,
+                  } : undefined}
+                />
               </MetricTooltip>
               <MetricTooltip label="CPC" value={fmtCurrency(metrics.cpc)} formula={buildFunnelCpcFormula(metrics.cpc, f)}>
-                <KpiCard icon={MousePointerClick} label="CPC" value={fmtCurrency(metrics.cpc)} hintTooltip />
+                <KpiCard icon={MousePointerClick} label="CPC" value={fmtCurrency(metrics.cpc)} hintTooltip
+                  comparison={compCpc !== null && metrics.cpc != null ? {
+                    display: fmtCurrency(compCpc),
+                    delta: calcDelta(metrics.cpc, compCpc),
+                    higherIsBetter: false,
+                  } : undefined}
+                />
               </MetricTooltip>
               <MetricTooltip label="CPM" value={fmtCurrency(metrics.cpm)} formula={buildFunnelCpmFormula(metrics.cpm, f)}>
-                <KpiCard icon={BarChart3} label="CPM" value={fmtCurrency(metrics.cpm)} hintTooltip />
+                <KpiCard icon={BarChart3} label="CPM" value={fmtCurrency(metrics.cpm)} hintTooltip
+                  comparison={compCpm !== null && metrics.cpm != null ? {
+                    display: fmtCurrency(compCpm),
+                    delta: calcDelta(metrics.cpm, compCpm),
+                    higherIsBetter: false,
+                  } : undefined}
+                />
               </MetricTooltip>
               {surveyResponseRate !== null && survey && (
                 <MetricTooltip
@@ -269,7 +324,11 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         {dailyLoading ? (
           <Skeleton className="h-56" />
         ) : dailyData && dailyData.length > 0 ? (
-          <CtrCpmChart data={dailyData} />
+          <CtrCpmChart
+            data={dailyData}
+            comparisonDays={compDays ?? undefined}
+            compFunnelName={compData?.compareFunnelName}
+          />
         ) : <EmptyState />}
       </div>
 
@@ -358,8 +417,9 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
   value: string;
   subValue?: React.ReactNode;
   hintTooltip?: boolean;
+  comparison?: { display: string; delta: number; higherIsBetter: boolean };
 } & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
-  { icon: Icon, label, value, subValue, hintTooltip, className, ...rest },
+  { icon: Icon, label, value, subValue, hintTooltip, comparison, className, ...rest },
   ref,
 ) {
   return (
@@ -373,6 +433,20 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
       </div>
       <p className={`text-xl font-bold tracking-tight ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
+      {comparison && (
+        <div className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1.5 leading-tight">
+          <span>vs {comparison.display}</span>
+          {comparison.delta !== 0 && (
+            <span className={
+              (comparison.delta > 0) === comparison.higherIsBetter
+                ? "text-emerald-400"
+                : "text-red-400"
+            }>
+              {comparison.delta > 0 ? "▲" : "▼"} {Math.abs(comparison.delta).toFixed(1)}%
+            </span>
+          )}
+        </div>
+      )}
       {subValue && (
         <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{subValue}</div>
       )}
@@ -393,8 +467,16 @@ function EmptyState() {
 // CTR × CPM — Saturation Chart (ref: Samuel Diogenes)
 // ============================================================
 
-function CtrCpmChart({ data }: { data: CampaignDailyInsight[] }) {
-  const chartData = data.map((d) => {
+function CtrCpmChart({
+  data,
+  comparisonDays,
+  compFunnelName,
+}: {
+  data: CampaignDailyInsight[];
+  comparisonDays?: ComparisonDayMetrics[];
+  compFunnelName?: string;
+}) {
+  const chartData = data.map((d, idx) => {
     const dateLabel = d.date_start.slice(5, 10);
     const ctr = safeNum(d.ctr);
     const cpm = safeNum(d.cpm);
@@ -402,6 +484,7 @@ function CtrCpmChart({ data }: { data: CampaignDailyInsight[] }) {
       date: dateLabel,
       ctr,
       cpm,
+      compCtr: comparisonDays?.[idx]?.ctr ?? undefined,
       formulasByKey: {
         ctr: buildFunnelDailyFormula("CTR", "Meta Ads API · derivado (clicks ÷ impressions × 100)", ctr, false, dateLabel),
         cpm: buildFunnelDailyFormula("CPM", "Meta Ads API · derivado (spend ÷ impressions × 1000)", cpm, true, dateLabel),
@@ -455,6 +538,19 @@ function CtrCpmChart({ data }: { data: CampaignDailyInsight[] }) {
           activeDot={{ r: 5 }}
           name="CPM"
         />
+        {comparisonDays && (
+          <Line
+            yAxisId="ctr"
+            type="monotone"
+            dataKey="compCtr"
+            stroke="hsl(30 100% 60%)"
+            strokeWidth={2}
+            strokeDasharray="5 3"
+            dot={false}
+            activeDot={{ r: 4 }}
+            name={compFunnelName ? `CTR — ${compFunnelName}` : "CTR (Comparação)"}
+          />
+        )}
       </LineChart>
     </ResponsiveContainer>
   );

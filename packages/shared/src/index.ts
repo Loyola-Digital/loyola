@@ -44,4 +44,6 @@ export type {
   FunnelStage,
   StageSalesData,
   Funnel,
+  ComparisonDayMetrics,
+  MetaAdsComparisonData,
 } from "./types/funnel.js";
