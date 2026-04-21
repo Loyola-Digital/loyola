@@ -23,7 +23,7 @@ export function useAuditStatus(funnelId: string | null): UseAuditStatusResult {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["auditStatus", funnelId],
     queryFn: async () => {
-      if (!funnelId) return null;
+      if (!funnelId) return undefined;
 
       const response = await fetch(`/api/funnels/${funnelId}`);
       if (!response.ok) throw new Error("Falha ao carregar status de auditoria");
