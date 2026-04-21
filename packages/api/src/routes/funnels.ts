@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { funnels, projects, projectMembers, metaAdsAccountProjects, metaAdsAccounts, googleAdsAccountProjects, googleAdsAccounts } from "../db/schema.js";
+import { funnels, projects, projectMembers, metaAdsAccountProjects, metaAdsAccounts, googleAdsAccountProjects, googleAdsAccounts, users } from "../db/schema.js";
 import { fetchCampaigns, decryptAccountToken } from "../services/meta-ads.js";
 import { fetchGoogleAdsCampaigns, decryptToken as decryptGoogleToken } from "../services/google-ads.js";
 
@@ -54,6 +54,10 @@ const projectIdParamSchema = z.object({
 
 const funnelParamSchema = z.object({
   projectId: z.string().uuid(),
+  funnelId: z.string().uuid(),
+});
+
+const auditFunnelParamSchema = z.object({
   funnelId: z.string().uuid(),
 });
 
@@ -410,5 +414,59 @@ export default fp(async function funnelRoutes(fastify) {
         error: err instanceof Error ? err.message : String(err),
       };
     }
+  });
+
+  // ---- POST /api/funnels/:funnelId/audit ----
+  fastify.post("/api/funnels/:funnelId/audit", async (request, reply) => {
+    const paramResult = auditFunnelParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.code(400).send({ error: "ID de funil inválido" });
+    }
+
+    if (!request.userId) {
+      return reply.code(401).send({ error: "Não autenticado" });
+    }
+
+    const { funnelId } = paramResult.data;
+
+    // Get current timestamp
+    const now = new Date();
+
+    // Update funnel with audit info
+    const [updated] = await fastify.db
+      .update(funnels)
+      .set({
+        lastAuditAt: now,
+        lastAuditBy: request.userId,
+        auditStatus: "audited",
+      })
+      .where(eq(funnels.id, funnelId))
+      .returning({
+        lastAuditAt: funnels.lastAuditAt,
+        lastAuditBy: funnels.lastAuditBy,
+      });
+
+    if (!updated) {
+      return reply.code(404).send({ error: "Funil não encontrado" });
+    }
+
+    // Get user info for response
+    const [auditUser] = await fastify.db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+      })
+      .from(users)
+      .where(eq(users.id, request.userId))
+      .limit(1);
+
+    return {
+      lastAuditAt: updated.lastAuditAt,
+      lastAuditBy: {
+        id: auditUser?.id,
+        name: auditUser?.name || auditUser?.email || "Usuário desconhecido",
+      },
+    };
   });
 });
