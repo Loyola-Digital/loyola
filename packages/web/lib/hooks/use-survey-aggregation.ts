@@ -294,12 +294,15 @@ export function useSurveyAggregation(
     }
 
     // Filtro por data — faz por-survey pra usar o timestampIdx correto
-    const filteredPerSurvey: string[][][] = [];
+    const filteredPerSurvey: (string[][] | null)[] = [];
     let totalFiltered = 0;
     let someSurveyHasTimestamp = false;
     for (const q of sheetQueries) {
       const data = q.data;
-      if (!data) continue;
+      if (!data) {
+        filteredPerSurvey.push(null);
+        continue;
+      }
       const colMap = mapHeaders(data.headers);
       if (colMap.timestamp >= 0) someSurveyHasTimestamp = true;
       const filtered = filterRowsByDays(data.rows, colMap.timestamp, days);
@@ -351,7 +354,8 @@ export function useSurveyAggregation(
       const data = sheetQueries[i].data;
       if (!data) continue;
       const colMap = mapHeaders(data.headers);
-      const effectiveRows = useFallback ? data.rows : filteredPerSurvey[i];
+      const filtered = filteredPerSurvey[i];
+      const effectiveRows = useFallback ? data.rows : (filtered || []);
       totalResponses += effectiveRows.length;
 
       // Contar matches de leads pra cada resposta
