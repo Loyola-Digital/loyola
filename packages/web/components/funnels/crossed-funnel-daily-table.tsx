@@ -15,6 +15,9 @@ interface CrossedFunnelDailyTableProps {
   rows: DailyRow[];
   totals: DailyRow;
   title?: string;
+  surveyTotal?: number | null;
+  surveyMatched?: number | null;
+  surveyUnmatched?: number | null;
 }
 
 function fmtCurrency(v: number | null | undefined): string {
@@ -67,13 +70,17 @@ export function CrossedFunnelDailyTable({
   rows,
   totals,
   title = "Dados diários",
+  surveyTotal,
+  surveyMatched,
+  surveyUnmatched,
 }: CrossedFunnelDailyTableProps) {
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
       <h3 className="text-sm font-semibold">{title}</h3>
 
-      <div className="rounded-md border overflow-x-auto">
-        <Table>
+      <div className="space-y-3">
+        <div className="rounded-md border overflow-x-auto">
+          <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="sticky left-0 bg-background z-10 min-w-[90px]">Dia</TableHead>
@@ -144,6 +151,26 @@ export function CrossedFunnelDailyTable({
             </TableRow>
           </TableFooter>
         </Table>
+        </div>
+
+        <div className="rounded-md border border-border/30 bg-muted/20 px-4 py-3 space-y-2 text-sm">
+          <div className="flex flex-wrap gap-4">
+            <div>
+              <span className="text-muted-foreground">Leads:</span>
+              <span className="font-medium ml-2">
+                {fmtInt(totals.leadsPagos)} Pagos | {fmtInt(totals.leadsOrg)} Org | {fmtInt(totals.leadsSemTrack)} Sem origem
+              </span>
+            </div>
+            {surveyTotal != null && (
+              <div>
+                <span className="text-muted-foreground">Pesquisa:</span>
+                <span className="font-medium ml-2">
+                  {fmtInt(surveyTotal)} respostas | {fmtInt(surveyMatched)} com match | {fmtInt(surveyUnmatched)} sem match
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

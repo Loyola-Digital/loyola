@@ -41,6 +41,9 @@ function buildCplChartData(rows: DailyRow[]) {
     "CPL Pago": r.cplPg != null ? parseFloat(r.cplPg.toFixed(2)) : null,
     "CPL Geral": r.cplG != null ? parseFloat(r.cplG.toFixed(2)) : null,
     Investimento: parseFloat(r.spend.toFixed(2)),
+    leadsPagos: r.leadsPagos,
+    leadsOrg: r.leadsOrg,
+    leadsSemTrack: r.leadsSemTrack,
   }));
 }
 
@@ -54,6 +57,27 @@ function renderPointLabel(props: any) {
         ? value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })
         : value}
     </text>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function CustomTooltip(props: any) {
+  const { active, payload } = props;
+  if (!active || !payload || payload.length === 0) return null;
+
+  const data = payload[0].payload;
+  return (
+    <div className="rounded-lg border border-border bg-background p-3 shadow-lg space-y-1 text-xs">
+      <div className="font-semibold">{data.date}</div>
+      <div className="text-muted-foreground">Investimento: {fmtCurrency(data.Investimento)}</div>
+      <div className="text-muted-foreground">CPL Pago: {fmtCurrency(data["CPL Pago"])}</div>
+      <div className="text-muted-foreground">CPL Geral: {fmtCurrency(data["CPL Geral"])}</div>
+      <div className="border-t border-border/30 pt-1 mt-1">
+        <div className="text-muted-foreground">
+          Leads: {data.leadsPagos} Pagos | {data.leadsOrg} Org | {data.leadsSemTrack} Sem origem
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -117,10 +141,7 @@ export function CplComparisonChart({
             domain={[0, "auto"]}
             allowDataOverflow={false}
           />
-          <Tooltip
-            formatter={(value) => fmtCurrency(Number(value))}
-            labelFormatter={(label) => `Dia ${label}`}
-          />
+          <Tooltip content={<CustomTooltip />} />
           <Legend />
           <Bar
             yAxisId="invest"

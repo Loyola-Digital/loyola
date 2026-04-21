@@ -650,6 +650,16 @@ export function TopCreativesGallery({
                   </MetricTooltip>
                 </div>
 
+                {/* Breakdown de leads por origem (Story 21.2 — Task 6) */}
+                {(c.leadsPagos > 0 || c.leadsOrg > 0 || c.leadsSemTrack > 0) && (
+                  <div className="text-[10px] text-muted-foreground pt-1 border-t border-border/20">
+                    <span className="font-medium text-foreground/70">Leads: </span>
+                    {c.leadsPagos > 0 && <span>{c.leadsPagos} Pagos</span>}
+                    {c.leadsOrg > 0 && <span>{c.leadsPagos > 0 ? " | " : ""}{c.leadsOrg} Org</span>}
+                    {c.leadsSemTrack > 0 && <span>{(c.leadsPagos > 0 || c.leadsOrg > 0) ? " | " : ""}{c.leadsSemTrack} S/orig</span>}
+                  </div>
+                )}
+
                 {/* Dados da pesquisa (Story 18.6 sub-feature 3.b) */}
                 {surveyDataByAdId ? (() => {
                   const survey = mergeSurveyForGroup(surveyDataByAdId, c.ids, c.leadsPagos);
