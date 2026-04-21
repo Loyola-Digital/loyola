@@ -351,6 +351,7 @@ export function useSurveyAggregation(
       const colMap = mapHeaders(data.headers);
       const effectiveRows = useFallback ? data.rows : filteredPerSurvey[i];
       totalResponses += effectiveRows.length;
+      const matchesBefore = matchedLeadIds.size;
 
       // Contar matches de leads pra cada resposta
       const emailIdx = colMap.email;
@@ -363,6 +364,8 @@ export function useSurveyAggregation(
           matchedLeadIds.add(leadMatch.leadId);
         }
       }
+
+      console.log(`🔍 [Survey ${i}] rows: ${effectiveRows.length}, matched: ${matchedLeadIds.size - matchesBefore}/${effectiveRows.length}, emailIdx: ${emailIdx}, phoneIdx: ${phoneIdx}`);
 
       // byQuestion: pra cada pergunta mapeada, agregar respostas
       for (const [key, idx] of Object.entries(colMap.questions)) {
@@ -454,6 +457,16 @@ export function useSurveyAggregation(
 
     const matchedResponses = matchedLeadIds.size;
     const unmatchedResponses = totalResponses - matchedResponses;
+
+    console.log("🔍 [useSurveyAggregation DEBUG]", {
+      totalResponses,
+      matchedLeadIds_size: matchedLeadIds.size,
+      matchedResponses,
+      unmatchedResponses,
+      useFallback,
+      sheetQueries_length: sheetQueries.length,
+      allRows_length: allRows?.length,
+    });
 
     return {
       byQuestion,
