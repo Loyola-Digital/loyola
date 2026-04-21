@@ -118,6 +118,7 @@ export interface DailyRow {
   leadsSemTrack: number;
   cplPg: number | null;
   cplG: number | null;
+  faturamento: number;
 }
 
 /**
@@ -153,8 +154,8 @@ export function aggregateSpreadsheetByDate(
   rows: FunnelSpreadsheetRow[],
   utmSourceMapped: boolean,
   dateMapped: boolean,
-): Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number }> {
-  const map = new Map<string, { seenEmails: { leadsPagos: Set<string>; leadsOrg: Set<string>; leadsSemTrack: Set<string> } }>();
+): Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number; faturamento: number }> {
+  const map = new Map<string, { seenEmails: { leadsPagos: Set<string>; leadsOrg: Set<string>; leadsSemTrack: Set<string> }; faturamento: number }>();
   if (!dateMapped) return new Map();
 
   for (let idx = 0; idx < rows.length; idx++) {
@@ -165,6 +166,8 @@ export function aggregateSpreadsheetByDate(
     const email = (row.named.email ?? "").trim();
     const normalizedEmail = email ? normalizeEmail(email) : `__no-email_${idx}`;
     const utmSource = (row.named.utm_source ?? "").trim().toLowerCase();
+    const valueStr = (row.named.value ?? "").trim();
+    const value = valueStr ? parseFloat(valueStr.replace(/[^\d.,]/g, "").replace(",", ".")) || 0 : 0;
 
     let category: "leadsPagos" | "leadsOrg" | "leadsSemTrack";
     if (!utmSource || !utmSourceMapped) {
@@ -177,18 +180,21 @@ export function aggregateSpreadsheetByDate(
 
     const dateEntry = map.get(date) ?? {
       seenEmails: { leadsPagos: new Set<string>(), leadsOrg: new Set<string>(), leadsSemTrack: new Set<string>() },
+      faturamento: 0,
     };
     dateEntry.seenEmails[category].add(normalizedEmail);
+    dateEntry.faturamento += value;
     map.set(date, dateEntry);
   }
 
   // Converter Sets em counts
-  const result = new Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number }>();
+  const result = new Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number; faturamento: number }>();
   for (const [date, entry] of map) {
     result.set(date, {
       leadsPagos: entry.seenEmails.leadsPagos.size,
       leadsOrg: entry.seenEmails.leadsOrg.size,
       leadsSemTrack: entry.seenEmails.leadsSemTrack.size,
+      faturamento: entry.faturamento,
     });
   }
   return result;
@@ -201,13 +207,13 @@ export function aggregateSpreadsheetByDate(
  */
 export function buildDailyRows(
   metaMap: Map<string, { spend: number; impressions: number; linkClicks: number; lpView: number }>,
-  sheetMap: Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number }>,
+  sheetMap: Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number; faturamento: number }>,
 ): DailyRow[] {
   const allDates = new Set([...metaMap.keys(), ...sheetMap.keys()]);
   const rows: DailyRow[] = [];
   for (const date of allDates) {
     const meta = metaMap.get(date) ?? { spend: 0, impressions: 0, linkClicks: 0, lpView: 0 };
-    const sheet = sheetMap.get(date) ?? { leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0 };
+    const sheet = sheetMap.get(date) ?? { leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0, faturamento: 0 };
     const totalLeads = sheet.leadsPagos + sheet.leadsOrg + sheet.leadsSemTrack;
     rows.push({
       date,
@@ -225,6 +231,7 @@ export function buildDailyRows(
       leadsSemTrack: sheet.leadsSemTrack,
       cplPg: safeDivide(meta.spend, sheet.leadsPagos),
       cplG: safeDivide(meta.spend, totalLeads),
+      faturamento: sheet.faturamento,
     });
   }
   rows.sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -245,9 +252,10 @@ export function computeTotals(rows: DailyRow[]): DailyRow {
       acc.leadsPagos += r.leadsPagos;
       acc.leadsOrg += r.leadsOrg;
       acc.leadsSemTrack += r.leadsSemTrack;
+      acc.faturamento += r.faturamento;
       return acc;
     },
-    { spend: 0, linkClicks: 0, impressions: 0, lpView: 0, leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0 },
+    { spend: 0, linkClicks: 0, impressions: 0, lpView: 0, leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0, faturamento: 0 },
   );
   const totalLeads = t.leadsPagos + t.leadsOrg + t.leadsSemTrack;
   return {
@@ -266,5 +274,6 @@ export function computeTotals(rows: DailyRow[]): DailyRow {
     leadsSemTrack: t.leadsSemTrack,
     cplPg: safeDivide(t.spend, t.leadsPagos),
     cplG: safeDivide(t.spend, totalLeads),
+    faturamento: t.faturamento,
   };
 }
