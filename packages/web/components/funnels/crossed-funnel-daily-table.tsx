@@ -85,6 +85,7 @@ export function CrossedFunnelDailyTable({
             <TableRow>
               <TableHead className="sticky left-0 bg-background z-10 min-w-[90px]">Dia</TableHead>
               <TableHead className="text-right min-w-[110px]">Investimento</TableHead>
+              <TableHead className="text-right min-w-[110px]">Faturamento</TableHead>
               <TableHead className="text-right min-w-[80px]">Cliques</TableHead>
               <TableHead className="text-right min-w-[100px]">Impressões</TableHead>
               <TableHead className="text-right min-w-[80px]">CPM</TableHead>
@@ -92,7 +93,7 @@ export function CrossedFunnelDailyTable({
               <TableHead className="text-right min-w-[70px]">CTR</TableHead>
               <TableHead className="text-right min-w-[80px]">LP View</TableHead>
               <TableHead className="text-right min-w-[110px]">Connect Rate</TableHead>
-              <TableHead className="text-right min-w-[90px]">Tx Conv.</TableHead>
+              <TableHead className="text-right min-w-[90px]" title="Leads Pagos ÷ Link Clicks × 100">Tx Conv.</TableHead>
               <TableHead className="text-right min-w-[100px]">Leads pagos</TableHead>
               <TableHead className="text-right min-w-[90px]">Leads org</TableHead>
               <TableHead className="text-right min-w-[110px]">Leads s/ track</TableHead>
@@ -110,6 +111,7 @@ export function CrossedFunnelDailyTable({
                     {formatDateLabel(r.date)}
                   </TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.spend)}</TableCell>
+                  <TableCell className="text-right">{fmtCurrency(r.faturamento)}</TableCell>
                   <TableCell className="text-right">{fmtInt(r.linkClicks)}</TableCell>
                   <TableCell className="text-right">{fmtInt(r.impressions)}</TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cpm)}</TableCell>
@@ -132,6 +134,7 @@ export function CrossedFunnelDailyTable({
             <TableRow className="font-semibold">
               <TableCell className="sticky left-0 bg-muted/50 z-10">Total</TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.spend)}</TableCell>
+              <TableCell className="text-right">{fmtCurrency(totals.faturamento)}</TableCell>
               <TableCell className="text-right">{fmtInt(totals.linkClicks)}</TableCell>
               <TableCell className="text-right">{fmtInt(totals.impressions)}</TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.cpm)}</TableCell>

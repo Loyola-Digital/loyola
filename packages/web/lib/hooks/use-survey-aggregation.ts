@@ -211,7 +211,7 @@ export function useSurveyAggregation(
         matchedLeadIds: new Set(),
         matchedResponses: 0,
         unmatchedResponses: 0,
-      };
+      } satisfies UseSurveyAggregationResult;
     }
 
     type CombinedRow = {
@@ -246,7 +246,7 @@ export function useSurveyAggregation(
         matchedLeadIds: new Set(),
         matchedResponses: 0,
         unmatchedResponses: 0,
-      };
+      } satisfies UseSurveyAggregationResult;
     }
 
     // Construir mapa de leads para match rápido
@@ -330,8 +330,6 @@ export function useSurveyAggregation(
     const byAdId: SurveyDataByAdId = {};
     let totalResponses = 0;
     const matchedLeadIds = new Set<string>();
-    let matchedResponses = 0;
-    let unmatchedResponses = 0;
 
     const bucketsPerQuestion: Record<SurveyQuestionKey, Map<string, { rawValues: string[]; count: number }>> = {
       faturamento: new Map(),
@@ -353,6 +351,7 @@ export function useSurveyAggregation(
       const colMap = mapHeaders(data.headers);
       const effectiveRows = useFallback ? data.rows : filteredPerSurvey[i];
       totalResponses += effectiveRows.length;
+      const matchesBefore = matchedLeadIds.size;
 
       // Contar matches de leads pra cada resposta
       const emailIdx = colMap.email;
@@ -363,11 +362,10 @@ export function useSurveyAggregation(
         const leadMatch = findLeadMatch(surveyEmail, surveyPhone);
         if (leadMatch) {
           matchedLeadIds.add(leadMatch.leadId);
-          matchedResponses += 1;
-        } else {
-          unmatchedResponses += 1;
         }
       }
+
+      console.log(`🔍 [Survey ${i}] rows: ${effectiveRows.length}, matched: ${matchedLeadIds.size - matchesBefore}/${effectiveRows.length}, emailIdx: ${emailIdx}, phoneIdx: ${phoneIdx}`);
 
       // byQuestion: pra cada pergunta mapeada, agregar respostas
       for (const [key, idx] of Object.entries(colMap.questions)) {
@@ -456,6 +454,19 @@ export function useSurveyAggregation(
           .sort((a, b) => b.count - a.count),
       };
     }
+
+    const matchedResponses = matchedLeadIds.size;
+    const unmatchedResponses = totalResponses - matchedResponses;
+
+    console.log("🔍 [useSurveyAggregation DEBUG]", {
+      totalResponses,
+      matchedLeadIds_size: matchedLeadIds.size,
+      matchedResponses,
+      unmatchedResponses,
+      useFallback,
+      sheetQueries_length: sheetQueries.length,
+      allRows_length: allRows?.length,
+    });
 
     return {
       byQuestion,
