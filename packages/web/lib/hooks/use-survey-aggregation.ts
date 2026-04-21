@@ -6,15 +6,12 @@ import {
 } from "@/lib/hooks/use-google-sheets";
 import {
   SURVEY_QUESTION_MAP,
-  SURVEY_FALLBACK_THRESHOLD,
-  SURVEY_TIMESTAMP_MATCHERS,
   SURVEY_UTM_CONTENT_MATCHERS,
   SURVEY_EMAIL_MATCHERS,
   SURVEY_PHONE_MATCHERS,
   type SurveyQuestionKey,
 } from "@/lib/constants/survey-questions";
 import { normalizeAnswer, mostCommonRaw, normalizeEmail, getLast8DigitsPhone } from "@/lib/utils/normalize-answer";
-import { normaliseDate } from "@/lib/utils/spreadsheet-filters";
 import { useFunnelSpreadsheets, useFunnelSpreadsheetData } from "@/lib/hooks/use-funnel-spreadsheets";
 
 // ============================================================
@@ -107,37 +104,13 @@ function mapHeaders(headers: string[]): ColumnIndexMap {
   }
   return {
     questions,
-    timestamp: findHeaderIndex(headers, SURVEY_TIMESTAMP_MATCHERS),
+    timestamp: -1,
     utmContent: findHeaderIndex(headers, SURVEY_UTM_CONTENT_MATCHERS),
     email: findHeaderIndex(headers, SURVEY_EMAIL_MATCHERS),
     phone: findHeaderIndex(headers, SURVEY_PHONE_MATCHERS),
   };
 }
 
-/**
- * Filtra linhas de SheetData pela janela retroativa de `days` dias baseada
- * na coluna de timestamp. Se timestampIdx < 0, retorna todas.
- */
-function filterRowsByDays(
-  rows: string[][],
-  timestampIdx: number,
-  days: number,
-): string[][] {
-  if (timestampIdx < 0) return rows;
-  const today = new Date();
-  today.setHours(23, 59, 59, 999);
-  const cutoff = new Date(today);
-  cutoff.setDate(cutoff.getDate() - days);
-  cutoff.setHours(0, 0, 0, 0);
-  const cutoffIso = cutoff.toISOString().slice(0, 10);
-  const todayIso = today.toISOString().slice(0, 10);
-  return rows.filter((row) => {
-    const raw = row[timestampIdx];
-    const normalized = normaliseDate(raw);
-    if (!normalized) return false;
-    return normalized >= cutoffIso && normalized <= todayIso;
-  });
-}
 
 // ============================================================
 // Hook principal
@@ -162,7 +135,6 @@ function filterRowsByDays(
 export function useSurveyAggregation(
   projectId: string,
   funnelId: string,
-  days: number,
 ): UseSurveyAggregationResult {
   const apiClient = useApiClient();
   const { data: surveysData, isLoading: surveysLoading } = useFunnelSurveys(
@@ -308,14 +280,6 @@ export function useSurveyAggregation(
 
     // Fallback nunca é necessário agora (sempre histórico completo)
     const useFallback = false;
-    let fallbackReason: string | undefined;
-    if (useFallback) {
-      if (!someSurveyHasTimestamp) {
-        fallbackReason = "Sem coluna de data — usando histórico total";
-      } else {
-        fallbackReason = `Apenas ${totalFiltered} respostas no período — usando histórico total`;
-      }
-    }
 
     // Processa rows efetivas: se fallback, usa dados crus; senão, usa filtrados
     // Ainda precisa ser por-survey pra respeitar os indexes de cada planilha
@@ -462,7 +426,6 @@ export function useSurveyAggregation(
       byAdId,
       totalResponses,
       usingFallback: useFallback,
-      fallbackReason,
       isLoading: false,
       matchedLeadIds,
       matchedResponses,
