@@ -120,7 +120,7 @@ export function useCrossedFunnelMetrics(
     useFunnelSpreadsheetData(projectId, funnel.id, linkedSheet?.id);
 
   const { totalResponses, matchedResponses, unmatchedResponses, isLoading: surveyLoading } =
-    useSurveyAggregation(projectId, funnel.id, days);
+    useSurveyAggregation(projectId, funnel.id);
 
   const hasLinkedSheet = !!linkedSheet;
   const isLoading = metaLoading || sheetsListLoading || sheetDataLoading || surveyLoading;
