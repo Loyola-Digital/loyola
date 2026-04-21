@@ -293,25 +293,21 @@ export function useSurveyAggregation(
       return null;
     }
 
-    // Filtro por data — faz por-survey pra usar o timestampIdx correto
+    // Pesquisa NÃO usa filtro de data — sempre histórico completo
+    // Meta Ads sim, mas pesquisa é sobre leads/qualificação, não sobre período de gasto
     const filteredPerSurvey: (string[][] | null)[] = [];
-    let totalFiltered = 0;
-    let someSurveyHasTimestamp = false;
     for (const q of sheetQueries) {
       const data = q.data;
       if (!data) {
         filteredPerSurvey.push(null);
         continue;
       }
-      const colMap = mapHeaders(data.headers);
-      if (colMap.timestamp >= 0) someSurveyHasTimestamp = true;
-      const filtered = filterRowsByDays(data.rows, colMap.timestamp, days);
-      filteredPerSurvey.push(filtered);
-      totalFiltered += filtered.length;
+      // Sem filtro de data para pesquisa — sempre usa histórico completo
+      filteredPerSurvey.push(data.rows);
     }
 
-    // Fallback: se poucas respostas OU nenhuma survey tem coluna de data
-    const useFallback = !someSurveyHasTimestamp || totalFiltered < SURVEY_FALLBACK_THRESHOLD;
+    // Fallback nunca é necessário agora (sempre histórico completo)
+    const useFallback = false;
     let fallbackReason: string | undefined;
     if (useFallback) {
       if (!someSurveyHasTimestamp) {
