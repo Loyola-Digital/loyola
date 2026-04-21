@@ -15,6 +15,9 @@ import {
 
 type Permissions = {
   instagram: boolean;
+  traffic: boolean;
+  youtubeAds: boolean;
+  youtubeOrganic: boolean;
   conversations: boolean;
   mind: boolean;
 };
@@ -35,6 +38,9 @@ const createInvitationSchema = z.object({
   email: z.string().email(),
   permissions: z.object({
     instagram: z.boolean(),
+    traffic: z.boolean(),
+    youtubeAds: z.boolean(),
+    youtubeOrganic: z.boolean(),
     conversations: z.boolean(),
     mind: z.boolean(),
   }),

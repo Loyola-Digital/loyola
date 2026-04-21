@@ -33,6 +33,9 @@ const memberParamSchema = z.object({
 const updatePermissionsSchema = z.object({
   permissions: z.object({
     instagram: z.boolean(),
+    traffic: z.boolean(),
+    youtubeAds: z.boolean(),
+    youtubeOrganic: z.boolean(),
     conversations: z.boolean(),
     mind: z.boolean(),
   }),
