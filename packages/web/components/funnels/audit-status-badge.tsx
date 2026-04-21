@@ -4,6 +4,14 @@ import { useState } from "react";
 import { Check, AlertCircle, Loader2 } from "lucide-react";
 import { useAuditStatus } from "@/lib/hooks/use-audit-status";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 
 interface AuditStatusBadgeProps {
@@ -47,13 +55,19 @@ export function AuditStatusBadge({
 }: AuditStatusBadgeProps) {
   const { data, isLoading, audit, isAuditing } = useAuditStatus(funnelId, projectId);
   const [showTooltip, setShowTooltip] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   const isAudited = data?.auditStatus === "audited" && data?.lastAuditAt;
 
-  const handleAudit = async () => {
+  const handleAudit = () => {
+    setShowConfirmDialog(true);
+  };
+
+  const handleConfirmAudit = async () => {
     try {
       await audit();
       toast.success("Dashboard auditado com sucesso!");
+      setShowConfirmDialog(false);
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Erro ao auditar dashboard"
@@ -137,6 +151,26 @@ export function AuditStatusBadge({
           )}
         </div>
       )}
+
+      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Confirmar Auditoria</AlertDialogTitle>
+          <AlertDialogDescription>
+            Tem certeza que deseja marcar este dashboard como auditado?
+          </AlertDialogDescription>
+          <div className="flex gap-3 justify-end mt-6">
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmAudit}
+              disabled={isAuditing}
+              className="gap-2"
+            >
+              {isAuditing && <Loader2 className="h-4 w-4 animate-spin" />}
+              Confirmar
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
