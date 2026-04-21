@@ -24,10 +24,10 @@ function conversionRate(from: number, to: number): string {
   return `${((to / from) * 100).toFixed(1)}%`;
 }
 
-const STAGE_HEIGHT = 55;
-const CONVERSION_GAP = 22;
-const TOTAL_WIDTH = 520;
-const MIN_WIDTH = 160;
+const STAGE_HEIGHT = 45;
+const CONVERSION_GAP = 16;
+const TOTAL_WIDTH = 380;
+const MIN_WIDTH = 120;
 const MARGIN_X = 10;
 const SVG_WIDTH = TOTAL_WIDTH + MARGIN_X * 2;
 
@@ -96,13 +96,14 @@ export function ConversionFunnel({
   }
 
   return (
-    <svg
-      viewBox={`0 0 ${SVG_WIDTH} ${svgHeight}`}
-      className="w-full"
-      preserveAspectRatio="xMidYMid meet"
-      role="img"
-      aria-label="Funil de conversão"
-    >
+    <div className="flex justify-center w-full">
+      <svg
+        viewBox={`0 0 ${SVG_WIDTH} ${svgHeight}`}
+        className="w-full max-w-[480px]"
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label="Funil de conversão"
+      >
       {stages.map((stage, i) => {
         const topW = widthForValue(stage.value);
         const bottomW =
@@ -150,10 +151,10 @@ export function ConversionFunnel({
             {/* Label da etapa (topo do trapézio) */}
             <text
               x={centerX}
-              y={y + 18}
+              y={y + 15}
               textAnchor="middle"
               dominantBaseline="central"
-              fontSize={10}
+              fontSize={9}
               fontWeight={600}
               fill="#fff"
             >
@@ -163,10 +164,10 @@ export function ConversionFunnel({
             {/* Valor absoluto (centro-baixo do trapézio) */}
             <text
               x={centerX}
-              y={y + STAGE_HEIGHT - 22}
+              y={y + STAGE_HEIGHT - 18}
               textAnchor="middle"
               dominantBaseline="central"
-              fontSize={14}
+              fontSize={12}
               fontWeight={700}
               fill="#fff"
             >
@@ -175,6 +176,7 @@ export function ConversionFunnel({
           </g>
         );
       })}
-    </svg>
+      </svg>
+    </div>
   );
 }
