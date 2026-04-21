@@ -93,7 +93,7 @@ export function CrossedFunnelDailyTable({
               <TableHead className="text-right min-w-[70px]">CTR</TableHead>
               <TableHead className="text-right min-w-[80px]">LP View</TableHead>
               <TableHead className="text-right min-w-[110px]">Connect Rate</TableHead>
-              <TableHead className="text-right min-w-[90px]">Tx Conv.</TableHead>
+              <TableHead className="text-right min-w-[90px]" title="Leads Pagos ÷ Link Clicks × 100">Tx Conv.</TableHead>
               <TableHead className="text-right min-w-[100px]">Leads pagos</TableHead>
               <TableHead className="text-right min-w-[90px]">Leads org</TableHead>
               <TableHead className="text-right min-w-[110px]">Leads s/ track</TableHead>

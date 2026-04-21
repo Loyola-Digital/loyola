@@ -211,7 +211,7 @@ export function useSurveyAggregation(
         matchedLeadIds: new Set(),
         matchedResponses: 0,
         unmatchedResponses: 0,
-      };
+      } satisfies UseSurveyAggregationResult;
     }
 
     type CombinedRow = {
@@ -246,7 +246,7 @@ export function useSurveyAggregation(
         matchedLeadIds: new Set(),
         matchedResponses: 0,
         unmatchedResponses: 0,
-      };
+      } satisfies UseSurveyAggregationResult;
     }
 
     // Construir mapa de leads para match rápido
@@ -330,8 +330,6 @@ export function useSurveyAggregation(
     const byAdId: SurveyDataByAdId = {};
     let totalResponses = 0;
     const matchedLeadIds = new Set<string>();
-    let matchedResponses = 0;
-    let unmatchedResponses = 0;
 
     const bucketsPerQuestion: Record<SurveyQuestionKey, Map<string, { rawValues: string[]; count: number }>> = {
       faturamento: new Map(),
@@ -363,9 +361,6 @@ export function useSurveyAggregation(
         const leadMatch = findLeadMatch(surveyEmail, surveyPhone);
         if (leadMatch) {
           matchedLeadIds.add(leadMatch.leadId);
-          matchedResponses += 1;
-        } else {
-          unmatchedResponses += 1;
         }
       }
 
@@ -456,6 +451,9 @@ export function useSurveyAggregation(
           .sort((a, b) => b.count - a.count),
       };
     }
+
+    const matchedResponses = matchedLeadIds.size;
+    const unmatchedResponses = totalResponses - matchedResponses;
 
     return {
       byQuestion,
