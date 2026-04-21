@@ -65,6 +65,23 @@ const auditFunnelParamSchema = z.object({
 // HELPERS
 // ============================================================
 
+function displayUserName(name: string | null | undefined, email: string | null | undefined): string {
+  const looksLikeClerkId = typeof name === "string" && /^user_[A-Za-z0-9]+$/.test(name);
+  const nameIsEmail = name && email && name === email;
+  if (name && !looksLikeClerkId && !nameIsEmail) return name;
+
+  if (email) {
+    const local = email.split("@")[0].split("+")[0];
+    return local
+      .replace(/[._-]+/g, " ")
+      .split(" ")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+  return "Usuário";
+}
+
 function funnelShape(f: typeof funnels.$inferSelect) {
   return {
     id: f.id,
@@ -146,7 +163,7 @@ export default fp(async function funnelRoutes(fastify) {
       if (row.auditUser?.id) {
         result.lastAuditBy = {
           id: row.auditUser.id,
-          name: row.auditUser.name || row.auditUser.email || "Unknown",
+          name: displayUserName(row.auditUser.name, row.auditUser.email),
         };
       }
       return result;
@@ -192,7 +209,7 @@ export default fp(async function funnelRoutes(fastify) {
     if (funnelRow.auditUser?.id) {
       result.lastAuditBy = {
         id: funnelRow.auditUser.id,
-        name: funnelRow.auditUser.name || funnelRow.auditUser.email || "Unknown",
+        name: displayUserName(funnelRow.auditUser.name, funnelRow.auditUser.email),
       };
     }
 
@@ -497,7 +514,7 @@ export default fp(async function funnelRoutes(fastify) {
       lastAuditAt: now.toISOString(),
       lastAuditBy: {
         id: user?.id || userId,
-        name: user?.name || user?.email || "Unknown",
+        name: displayUserName(user?.name, user?.email),
       },
     });
   });
