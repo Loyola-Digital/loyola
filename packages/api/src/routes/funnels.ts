@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { funnels, projects, projectMembers, metaAdsAccountProjects, metaAdsAccounts, googleAdsAccountProjects, googleAdsAccounts } from "../db/schema.js";
+import { funnels, projects, projectMembers, metaAdsAccountProjects, metaAdsAccounts, googleAdsAccountProjects, googleAdsAccounts, users } from "../db/schema.js";
 import { fetchCampaigns, decryptAccountToken } from "../services/meta-ads.js";
 import { fetchGoogleAdsCampaigns, decryptToken as decryptGoogleToken } from "../services/google-ads.js";
 
@@ -57,6 +57,10 @@ const funnelParamSchema = z.object({
   funnelId: z.string().uuid(),
 });
 
+const auditFunnelParamSchema = z.object({
+  funnelId: z.string().uuid(),
+});
+
 // ============================================================
 // HELPERS
 // ============================================================
@@ -74,6 +78,9 @@ function funnelShape(f: typeof funnels.$inferSelect) {
     switchyFolderIds: f.switchyFolderIds ?? [],
     switchyLinkedLinks: f.switchyLinkedLinks ?? [],
     compareFunnelId: f.compareFunnelId ?? null,
+    lastAuditAt: f.lastAuditAt ?? null,
+    lastAuditBy: null as { id: string; name: string } | null,
+    auditStatus: f.auditStatus ?? "pending",
     createdAt: f.createdAt,
     updatedAt: f.updatedAt,
   };
@@ -122,11 +129,28 @@ export default fp(async function funnelRoutes(fastify) {
     }
 
     const rows = await fastify.db
-      .select()
+      .select({
+        funnel: funnels,
+        auditUser: {
+          id: users.id,
+          name: users.name,
+          email: users.email,
+        },
+      })
       .from(funnels)
+      .leftJoin(users, eq(funnels.lastAuditBy, users.id))
       .where(eq(funnels.projectId, paramResult.data.projectId));
 
-    return rows.map(funnelShape);
+    return rows.map((row) => {
+      const result = funnelShape(row.funnel);
+      if (row.auditUser?.id) {
+        result.lastAuditBy = {
+          id: row.auditUser.id,
+          name: row.auditUser.name || row.auditUser.email || "Unknown",
+        };
+      }
+      return result;
+    });
   });
 
   // ---- GET /api/projects/:projectId/funnels/:funnelId ----
@@ -141,9 +165,17 @@ export default fp(async function funnelRoutes(fastify) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
 
-    const [funnel] = await fastify.db
-      .select()
+    const [funnelRow] = await fastify.db
+      .select({
+        funnel: funnels,
+        auditUser: {
+          id: users.id,
+          name: users.name,
+          email: users.email,
+        },
+      })
       .from(funnels)
+      .leftJoin(users, eq(funnels.lastAuditBy, users.id))
       .where(
         and(
           eq(funnels.id, paramResult.data.funnelId),
@@ -152,11 +184,19 @@ export default fp(async function funnelRoutes(fastify) {
       )
       .limit(1);
 
-    if (!funnel) {
+    if (!funnelRow) {
       return reply.code(404).send({ error: "Funil não encontrado" });
     }
 
-    return funnelShape(funnel);
+    const result = funnelShape(funnelRow.funnel);
+    if (funnelRow.auditUser?.id) {
+      result.lastAuditBy = {
+        id: funnelRow.auditUser.id,
+        name: funnelRow.auditUser.name || funnelRow.auditUser.email || "Unknown",
+      };
+    }
+
+    return result;
   });
 
   // ---- POST /api/projects/:projectId/funnels ----
@@ -410,5 +450,55 @@ export default fp(async function funnelRoutes(fastify) {
         error: err instanceof Error ? err.message : String(err),
       };
     }
+  });
+
+  // ---- POST /api/funnels/:funnelId/audit ----
+  fastify.post("/api/funnels/:funnelId/audit", async (request, reply) => {
+    const paramResult = auditFunnelParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.status(400).send({ error: "Invalid funnel ID" });
+    }
+
+    const { funnelId } = paramResult.data;
+    const userId = request.userId;
+
+    if (!userId) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
+
+    const [funnel] = await fastify.db
+      .select()
+      .from(funnels)
+      .where(eq(funnels.id, funnelId))
+      .limit(1);
+
+    if (!funnel) {
+      return reply.status(404).send({ error: "Funnel not found" });
+    }
+
+    const now = new Date();
+    await fastify.db
+      .update(funnels)
+      .set({
+        lastAuditAt: now,
+        lastAuditBy: userId,
+        auditStatus: "audited",
+        updatedAt: now,
+      })
+      .where(eq(funnels.id, funnelId));
+
+    const [user] = await fastify.db
+      .select({ id: users.id, name: users.name, email: users.email })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    return reply.send({
+      lastAuditAt: now.toISOString(),
+      lastAuditBy: {
+        id: user?.id || userId,
+        name: user?.name || user?.email || "Unknown",
+      },
+    });
   });
 });

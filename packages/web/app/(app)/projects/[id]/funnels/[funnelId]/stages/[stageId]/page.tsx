@@ -18,6 +18,7 @@ import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-
 import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-spreadsheet-section";
 import { MetaAdsSpreadsheetTab } from "@/components/funnels/meta-ads-spreadsheet-tab";
 import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
+import { AuditStatusBadge } from "@/components/funnels/audit-status-badge";
 import { CampaignSelector } from "@/components/funnels/campaign-selector";
 import { useCampaignPicker } from "@/lib/hooks/use-funnels";
 import { useGoogleAdsCampaignPicker } from "@/lib/hooks/use-funnels";
@@ -236,6 +237,11 @@ export default function StagePage() {
             </div>
           </SheetContent>
         </Sheet>
+      </div>
+
+      {/* Audit Status - Top Right */}
+      <div className="mb-4 flex justify-end">
+        <AuditStatusBadge funnelId={params.funnelId} projectId={params.id} />
       </div>
 
       {/* Tabs */}
