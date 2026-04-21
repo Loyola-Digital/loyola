@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 interface AuditStatusBadgeProps {
   funnelId: string;
+  projectId: string;
   className?: string;
 }
 
@@ -41,9 +42,10 @@ function formatFullDateTime(date: string): string {
 
 export function AuditStatusBadge({
   funnelId,
+  projectId,
   className = "",
 }: AuditStatusBadgeProps) {
-  const { data, isLoading, audit, isAuditing } = useAuditStatus(funnelId);
+  const { data, isLoading, audit, isAuditing } = useAuditStatus(funnelId, projectId);
   const [showTooltip, setShowTooltip] = useState(false);
 
   const isAudited = data?.auditStatus === "audited" && data?.lastAuditAt;

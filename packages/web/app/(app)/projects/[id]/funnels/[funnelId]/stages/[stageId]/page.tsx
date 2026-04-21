@@ -241,7 +241,7 @@ export default function StagePage() {
 
       {/* Audit Status - Top Right */}
       <div className="mb-4 flex justify-end">
-        <AuditStatusBadge funnelId={params.funnelId} />
+        <AuditStatusBadge funnelId={params.funnelId} projectId={params.id} />
       </div>
 
       {/* Tabs */}
