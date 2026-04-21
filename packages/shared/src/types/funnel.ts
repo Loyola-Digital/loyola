@@ -26,6 +26,17 @@ export interface SaleColumnMapping {
   formaPagamento?: string;
   canalOrigem?: string;
   dataVenda?: string;
+  // UTMs (apenas para planilha de Produto Principal — lead vs venda)
+  utm_campaign_lead?: string;
+  utm_campaign_sales?: string;
+  utm_source_lead?: string;
+  utm_source_sales?: string;
+  utm_medium_lead?: string;
+  utm_medium_sales?: string;
+  utm_content_lead?: string;
+  utm_content_sales?: string;
+  utm_term_lead?: string;
+  utm_term_sales?: string;
 }
 
 export interface StageSalesSpreadsheet {

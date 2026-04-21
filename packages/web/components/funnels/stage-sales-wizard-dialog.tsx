@@ -23,7 +23,7 @@ import type { SaleColumnMapping, StageSalesSubtype } from "@loyola-x/shared";
 // SALE MAPPING FIELDS
 // ============================================================
 
-const SALE_MAPPING_FIELDS: Array<{
+const BASE_SALE_MAPPING_FIELDS: Array<{
   key: keyof SaleColumnMapping;
   label: string;
   required?: boolean;
@@ -35,6 +35,25 @@ const SALE_MAPPING_FIELDS: Array<{
   { key: "canalOrigem", label: "Canal de Origem" },
   { key: "dataVenda", label: "Data da Venda" },
 ];
+
+const UTM_SALE_FIELDS: Array<{
+  key: keyof SaleColumnMapping;
+  label: string;
+  utm: string;
+  type: "lead" | "sales";
+}> = [
+  { key: "utm_campaign_lead", label: "utm_campaign", utm: "campaign", type: "lead" },
+  { key: "utm_campaign_sales", label: "utm_campaign", utm: "campaign", type: "sales" },
+  { key: "utm_source_lead", label: "utm_source", utm: "source", type: "lead" },
+  { key: "utm_source_sales", label: "utm_source", utm: "source", type: "sales" },
+  { key: "utm_medium_lead", label: "utm_medium", utm: "medium", type: "lead" },
+  { key: "utm_medium_sales", label: "utm_medium", utm: "medium", type: "sales" },
+  { key: "utm_content_lead", label: "utm_content", utm: "content", type: "lead" },
+  { key: "utm_content_sales", label: "utm_content", utm: "content", type: "sales" },
+  { key: "utm_term_lead", label: "utm_term", utm: "term", type: "lead" },
+  { key: "utm_term_sales", label: "utm_term", utm: "term", type: "sales" },
+];
+
 
 type Step = "spreadsheet" | "sheet" | "mapping";
 
@@ -274,8 +293,9 @@ export function StageSalesWizardDialog({
                   {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10" />)}
                 </div>
               ) : (
-                <div className="grid gap-3 grid-cols-2 md:grid-cols-3 pt-1">
-                  {SALE_MAPPING_FIELDS.map(({ key, label, required }) => (
+                <>
+                  <div className="grid gap-3 grid-cols-2 md:grid-cols-3 pt-1">
+                    {BASE_SALE_MAPPING_FIELDS.map(({ key, label, required }) => (
                     <div key={key} className="space-y-1">
                       <Label className="text-xs">
                         {label}
@@ -297,7 +317,49 @@ export function StageSalesWizardDialog({
                       </Select>
                     </div>
                   ))}
-                </div>
+                  </div>
+
+                  {subtype === "main_product" && (
+                    <div className="space-y-3 pt-4 border-t">
+                      <p className="text-xs font-medium text-muted-foreground">UTMs (Lead vs Venda)</p>
+                      <div className="grid gap-3 grid-cols-2">
+                        {["campaign", "source", "medium", "content", "term"].map((utm) => (
+                          <div key={utm} className="space-y-2 p-2 rounded border border-border/20 bg-accent/20">
+                            <p className="text-xs font-semibold capitalize">{utm}</p>
+                            <div className="space-y-2">
+                              {["lead", "sales"].map((type) => {
+                                const field = UTM_SALE_FIELDS.find(
+                                  (f) => f.utm === utm && f.type === (type as "lead" | "sales")
+                                );
+                                if (!field) return null;
+                                const label = type === "lead" ? "Lead" : "Venda";
+                                return (
+                                  <div key={field.key} className="space-y-1">
+                                    <Label className="text-xs">utm_{utm} ({label})</Label>
+                                    <Select
+                                      value={mapping[field.key] || "__none__"}
+                                      onValueChange={(v) => updateField(field.key, v)}
+                                    >
+                                      <SelectTrigger className="h-8 text-xs">
+                                        <SelectValue placeholder="—" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="__none__">— Não mapear —</SelectItem>
+                                        {columns.map((col) => (
+                                          <SelectItem key={col} value={col}>{col}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}

@@ -1,0 +1,205 @@
+===================================================================================
+INSTRUÇÕES PARA USAR O SCRIPT resumo_semanal.py
+===================================================================================
+
+1. EXPORTAR O GOOGLE SHEETS COMO ARQUIVO .xlsx
+===============================================
+
+1.1 Acesse o Google Sheets com o painel de controle
+1.2 Vá para: Arquivo > Baixar > Microsoft Excel (.xlsx)
+1.3 Salve o arquivo em um local conhecido (ex: Downloads)
+
+IMPORTANTE: Antes de exportar, configure os filtros:
+  - Vá até a aba "Captação - Ads"
+  - Na linha 1, mude o dropdown de "vendas" para "leads"
+  - Certifique-se que "Público:" está setado corretamente (hot/cold)
+  - DEPOIS disso, exporte o arquivo
+
+
+2. PREPARAR O HISTÓRICO (historico.json)
+========================================
+
+O arquivo historico_template.json já está preparado com:
+  - campanhas_anteriores: dados de campanhas anteriores para comparação
+  - medias_pesquisa: médias históricas das pesquisas anteriores
+
+Se precisar atualizar, edite o JSON com a estrutura:
+
+{
+  "campanhas_anteriores": {
+    "NOME_CAMPANHA": {
+      "CPM": valor_float,
+      "CTR": valor_float (como percentual, ex: 1.56 = 1.56%),
+      "CPC": valor_float
+    }
+  },
+  "medias_pesquisa": {
+    "acima_36_anos": percentual_inteiro,
+    "casadas": percentual_inteiro,
+    "superior_completo": percentual_inteiro,
+    "ate_2_filhos": percentual_inteiro,
+    "catolicas": percentual_inteiro,
+    "renda_acima_5k": percentual_inteiro
+  }
+}
+
+
+3. EXECUTAR O SCRIPT
+====================
+
+Sintaxe:
+  python3 resumo_semanal.py arquivo.xlsx DATA_INICIO DATA_FIM [--historico arquivo.json] [--output saida.txt]
+
+Parâmetros:
+  arquivo.xlsx       - Arquivo exportado do Google Sheets
+  DATA_INICIO        - Data inicial no formato DD/MM/YYYY
+  DATA_FIM           - Data final no formato DD/MM/YYYY
+  --historico        - (Opcional) Arquivo JSON com histórico de campanhas
+  --output           - (Opcional) Arquivo para salvar a saída (padrão: exibe no terminal)
+
+Exemplos:
+
+Exemplo 1: Gerar resumo e exibir no terminal
+  cd /sessions/brave-determined-cray/mnt/Loyola
+  python3 resumo_semanal.py "[FZ-L1-FEV26] - Painel de Controle.xlsx" 19/02 25/02 --historico historico_template.json
+
+Exemplo 2: Gerar resumo e salvar em arquivo
+  python3 resumo_semanal.py "[FZ-L1-FEV26] - Painel de Controle.xlsx" 19/02 25/02 --historico historico_template.json --output resumo_19_25fev.txt
+
+Exemplo 3: Usar datas diferentes
+  python3 resumo_semanal.py painel.xlsx 05/03 11/03 --historico historico.json
+
+
+4. O QUE O SCRIPT FAZ
+=====================
+
+O script automaticamente:
+
+  ✓ Lê a aba "Captação - Macro 2026" e agrega dados por período
+  ✓ Calcula métricas (CPM médio, CTR médio, CPC médio, Connect Rate)
+  ✓ Identifica Connect Rate faltante (None) e calcula como LP View / Cliques
+  ✓ Processa a aba "Captação - Teste LP" com dados de testes de landing pages
+  ✓ Processa a aba "Captação - Ads" e identifica melhores criativos por tipo:
+      - Estáticos (começam com dígito)
+      - Vídeos (começam com 'v')
+      - Carousels (começam com 'c')
+  ✓ Processa a aba "Ads-Cold" (se disponível) para criativos do público frio
+  ✓ Extrai dados da aba "Resultado-Pesquisa" e calcula percentuais de:
+      - Sexo (mulheres)
+      - Idade (acima de 36 anos)
+      - Estado civil (casadas)
+      - Escolaridade (superior completo ou acima)
+      - Filhos (até 2 filhos)
+      - Religião (católicas)
+      - Renda (acima de R$ 5.000)
+  ✓ Compara com médias históricas do arquivo JSON
+  ✓ Formata em português brasileiro (R$ 2.201, 78,8%, etc)
+
+
+5. FORMATO DA SAÍDA
+===================
+
+O resumo é formatado em texto simples com as seguintes seções:
+
+Resumão DD/MM a DD/MM:
+
+Geral (aba - Captação - Macro 2026)
+  - Investimento total
+  - Quantidade e breakdown de leads
+  - CPL pago
+  - Taxa de resposta na pesquisa
+  - Connect Rate
+  - CPM, CTR, CPC com histórico comparativo
+
+Teste de LPs (aba - Captação - Teste LP)
+  - Datas de início do teste
+  - URLs das LPs testadas
+  - Connect Rate por LP
+
+Desempenho de Criativos (aba - Captação - Ads)
+  - Público quente (hot) e frio (cold)
+  - Melhor estático, melhor(es) vídeo(s), melhor carousel
+
+Resultado da Pesquisa (aba Resultado-Pesquisa)
+  - Percentuais de cada categoria com comparativo histórico
+
+
+6. FORMATAÇÃO DE DADOS
+======================
+
+O script trata automaticamente:
+
+  • Percentuais armazenados como decimais (0.0114 = 1.14%)
+    → Multiplica por 100 e formata com vírgula: 1,14%
+
+  • Valores monetários armazenados como floats (83.809695)
+    → Arredonda e formata em português: R$ 84
+
+  • Connect Rate None nas colunas
+    → Calcula como LP View / Cliques
+
+  • Nomes de sheets com espaços em branco e emojis
+    → Usa fuzzy matching para encontrar
+
+  • Ad names envolvidos com underscores duplos
+    → Formata como __nome-do-ad__ na saída
+
+  • URLs de LPs envolvidas com underscores duplos
+    → Formata como __url__ na saída
+
+
+7. NOTAS E LIMITAÇÕES
+=====================
+
+7.1 Filtros de "Captação - Ads"
+  O arquivo exportado do Google Sheets reflete os filtros ativos no momento da exportação.
+  Atualmente mostra "vendas" (ou o que estava ativo).
+
+  SOLUÇÃO: Antes de exportar, configure:
+    1. Vá para a aba "Captação - Ads"
+    2. Mude o dropdown "vendas" → "leads"
+    3. Configure "Público:" = hot ou cold conforme necessário
+    4. EXPORTE
+    5. Se quiser dados de cold também, repita com "cold"
+
+  Se não conseguir acessar os dados raw, o script lerá o que está no arquivo.
+
+7.2 Ads-Cold é de campanha diferente
+  A aba "Ads-Cold" contém dados de uma campanha anterior (Jan-Feb 2026) com
+  nomes de ads diferentes. O script processa normalmente, mas os dados não
+  são da mesma campanha da "Captação - Ads" (Fev 2026).
+
+7.3 Dependências
+  - openpyxl: pip install openpyxl
+  - Python 3.7+
+
+7.4 Performance
+  O script usa read_only=True e data_only=True para otimizar leitura de
+  arquivos grandes (13MB+). Leva alguns segundos na primeira execução.
+
+
+8. TROUBLESHOOTING
+==================
+
+Erro: "Aba 'Captação - Macro 2026' não encontrada"
+  → Verifique o nome da aba no Google Sheets
+  → Certifique-se que foi exportado corretamente
+
+Erro: "Formato de data inválido"
+  → Use exatamente DD/MM/YYYY (ex: 19/02/2026, não 2/19/2026)
+
+Leads aparecem como 0 em "Captação - Ads"
+  → Antes de exportar, mude o dropdown de "vendas" para "leads"
+  → Reexporte o arquivo
+
+Valores monetários aparecem incorretos
+  → O arquivo pode ter decimais diferentes. Verifique a coluna B no Excel
+  → O script assume que os valores estão em reais
+
+Dados em branco
+  → Algumas abas podem não existir no seu arquivo
+  → O script avisa e continua com as abas disponíveis
+
+===================================================================================
+FIM DAS INSTRUÇÕES
+===================================================================================

@@ -1,0 +1,235 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                   RESUMO SEMANAL - COMANDOS RÁPIDOS                        ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+INSTALAÇÃO (primeira vez)
+═════════════════════════════════════════════════════════════════════════════
+
+pip install openpyxl --break-system-packages
+
+python3 test_instalacao.py
+
+
+USO BÁSICO
+═════════════════════════════════════════════════════════════════════════════
+
+python3 resumo_semanal.py -f dados.xlsx -s 01/03/2026 -e 07/03/2026
+
+
+COM HISTÓRICO (RECOMENDADO)
+═════════════════════════════════════════════════════════════════════════════
+
+python3 resumo_semanal.py -f dados.xlsx -s 01/03/2026 -e 07/03/2026 \
+  --historico historico.json
+
+
+COM OUTPUT CUSTOMIZADO
+═════════════════════════════════════════════════════════════════════════════
+
+python3 resumo_semanal.py -f dados.xlsx -s 01/03/2026 -e 07/03/2026 \
+  -o ~/Desktop/resumo_marco.txt
+
+
+AJUDA
+═════════════════════════════════════════════════════════════════════════════
+
+python3 resumo_semanal.py --help
+python3 resumo_semanal.py -h
+
+
+VALIDAÇÃO
+═════════════════════════════════════════════════════════════════════════════
+
+python3 test_instalacao.py
+
+
+ARGUMENTOS
+═════════════════════════════════════════════════════════════════════════════
+
+-f, --file ARQUIVO           Arquivo .xlsx (obrigatório)
+-s, --start DD/MM/YYYY       Data início (obrigatório)
+-e, --end DD/MM/YYYY         Data fim (obrigatório)
+--historico ARQUIVO.json     Arquivo JSON com histórico (opcional)
+-o, --output ARQUIVO.txt     Arquivo de saída (opcional)
+-h, --help                   Mostra ajuda
+
+
+EXEMPLOS COMPLETOS
+═════════════════════════════════════════════════════════════════════════════
+
+# Semana de março
+python3 resumo_semanal.py -f marco_2026.xlsx -s 01/03/2026 -e 07/03/2026
+
+# Com comparação histórica
+python3 resumo_semanal.py -f marco_2026.xlsx -s 01/03/2026 -e 07/03/2026 \
+  --historico historico.json
+
+# Salvando em local específico
+python3 resumo_semanal.py -f marco_2026.xlsx -s 01/03/2026 -e 07/03/2026 \
+  -o /tmp/relatorio_semanal.txt
+
+# Data fixa (incluindo dia 8)
+python3 resumo_semanal.py -f dados.xlsx -s 01/03/2026 -e 08/03/2026
+
+# Toda a primeira quinzena
+python3 resumo_semanal.py -f dados.xlsx -s 01/03/2026 -e 15/03/2026
+
+# Mes inteiro
+python3 resumo_semanal.py -f dados.xlsx -s 01/03/2026 -e 31/03/2026
+
+
+PREPARAÇÃO DO HISTÓRICO
+═════════════════════════════════════════════════════════════════════════════
+
+1. Copiar template:
+   cp historico_template.json historico.json
+
+2. Editar com dados reais:
+   {
+     "campanhas_anteriores": {
+       "FZ-BF25": {"CPM": 18.4, "CTR": 1.56, "CPC": 1.2},
+       "FZF2": {"CPM": 15.5, "CTR": 0.84, "CPC": 1.9}
+     },
+     "medias_pesquisa": {
+       "acima_36_anos": 62,
+       "casadas": 94,
+       "superior_completo": 72,
+       "ate_2_filhos": 65,
+       "catolicas": 86,
+       "renda_acima_5k": 36
+     }
+   }
+
+
+FLUXO RÁPIDO (3 PASSOS)
+═════════════════════════════════════════════════════════════════════════════
+
+1. Exportar Google Sheet como .xlsx
+2. Executar:
+   python3 resumo_semanal.py -f dados.xlsx -s 01/03/2026 -e 07/03/2026 \
+     --historico historico.json
+3. Copiar conteúdo de resumo_07032026.txt para ClickUp
+
+
+VERIFICAÇÃO DE ERROS COMUNS
+═════════════════════════════════════════════════════════════════════════════
+
+Erro: "openpyxl not installed"
+→ pip install openpyxl --break-system-packages
+
+Erro: "Arquivo não encontrado: dados.xlsx"
+→ Verificar caminho do arquivo, usar caminho completo se necessário
+
+Erro: "Formato de data inválido: 03-01-2026"
+→ Usar DD/MM/YYYY, não MM-DD-YYYY ou outro formato
+
+Erro: "Aba 'Captação - Macro 2026' não encontrada"
+→ Verificar nomes exatos das abas no Excel (incluindo espaços)
+
+Resultado em branco/vazio
+→ Verificar se dados existem no período especificado
+
+
+LOCALIZAÇÃO DOS ARQUIVOS
+═════════════════════════════════════════════════════════════════════════════
+
+Windows:
+  cd "C:\Users\seu_usuario\path\to\Loyola"
+
+macOS/Linux:
+  cd ~/path/to/Loyola
+  ou
+  cd /sessions/brave-determined-cray/mnt/Loyola
+
+
+DOCUMENTAÇÃO DISPONÍVEL
+═════════════════════════════════════════════════════════════════════════════
+
+README.md           Documentação técnica completa
+GUIA_RAPIDO.md      Guia em 3 passos
+EXEMPLO_USO.md      Exemplo detalhado com dados reais
+SETUP.md            Setup inicial
+CHECKLIST.md        Checklist antes de usar
+COMANDOS_RAPIDOS.txt Este arquivo
+
+
+ESTRUTURA DO EXCEL ESPERADA
+═════════════════════════════════════════════════════════════════════════════
+
+Abas obrigatórias:
+  □ "Captação - Macro 2026"     (métricas diárias)
+  □ "Resultado-Pesquisa"         (dados demográficos)
+
+Abas opcionais:
+  □ "Captação - Teste LP"        (A/B tests)
+  □ "Captação - Ads"             (criativos hot)
+  □ "Ads-Cold"                   (criativos cold)
+
+
+DATAS EM FORMATOS INCORRETOS - CONVERSÃO
+═════════════════════════════════════════════════════════════════════════════
+
+Incorreto    →    Correto para script
+03/01/2026   →    01/03/2026  (dia/mês/ano)
+2026-03-01   →    01/03/2026  (ISO → DD/MM/YYYY)
+January 3    →    01/03/2026  (português: 1º de março)
+
+
+VALORES DE FORMATAÇÃO ESPERADA
+═════════════════════════════════════════════════════════════════════════════
+
+Moeda:       R$ 1.234,56  (ponto = milhares, vírgula = decimal)
+Percentual:  45% ou 45,5%
+Datas:       DD/MM/YYYY
+
+
+AUTOMAÇÃO (OPCIONAL)
+═════════════════════════════════════════════════════════════════════════════
+
+Linux/macOS (cron) - executar segunda às 9:00
+  0 9 * * 1 python3 /caminho/resumo_semanal.py -f /caminho/dados.xlsx \
+    -s $(date +%d/%m/%Y -d "1 day ago") -e $(date +%d/%m/%Y) \
+    --historico /caminho/historico.json
+
+
+ATUALIZAR HISTÓRICO APÓS CAMPANHA
+═════════════════════════════════════════════════════════════════════════════
+
+1. Notar valores finais de CPM, CTR, CPC da campanha
+2. Notar percentuais finais de pesquisa
+3. Atualizar historico.json com novos valores
+4. Guardar arquivo com data: historico_20260307.json
+
+
+RESUMO DOS ARQUIVOS
+═════════════════════════════════════════════════════════════════════════════
+
+resumo_semanal.py              Script principal (executável)
+test_instalacao.py              Script de validação
+historico_template.json         Template de histórico (copiar)
+README.md                       Documentação técnica
+GUIA_RAPIDO.md                  Guia rápido
+EXEMPLO_USO.md                  Exemplo prático
+SETUP.md                        Setup inicial
+CHECKLIST.md                    Checklist pré-execução
+COMANDOS_RAPIDOS.txt            Este arquivo
+
+
+SUPORTE RÁPIDO
+═════════════════════════════════════════════════════════════════════════════
+
+Problema                 Solução
+────────────────────────────────────────────────────────────────────────────
+Python não encontrado    Instalar Python 3.7+
+openpyxl ausente        pip install openpyxl --break-system-packages
+Aba não encontrada       Verificar nomes exatos no Excel
+Datas inválidas         Usar DD/MM/YYYY
+Valores em branco       Verificar dados no período
+Erro de caminho         Usar caminho absoluto entre aspas
+
+
+═════════════════════════════════════════════════════════════════════════════
+
+Dúvidas? Consulte README.md ou execute: python3 resumo_semanal.py --help
+
+Pronto para usar! 🚀

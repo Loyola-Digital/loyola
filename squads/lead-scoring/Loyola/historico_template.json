@@ -1,0 +1,22 @@
+{
+  "campanhas_anteriores": {
+    "FZ-BF25": {
+      "CPM": 18.4,
+      "CTR": 1.56,
+      "CPC": 1.2
+    },
+    "FZF2": {
+      "CPM": 15.5,
+      "CTR": 0.84,
+      "CPC": 1.9
+    }
+  },
+  "medias_pesquisa": {
+    "acima_36_anos": 62,
+    "casadas": 94,
+    "superior_completo": 72,
+    "ate_2_filhos": 65,
+    "catolicas": 86,
+    "renda_acima_5k": 36
+  }
+}
