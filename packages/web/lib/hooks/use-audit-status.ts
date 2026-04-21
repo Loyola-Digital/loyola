@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useApiClient } from "@/lib/hooks/use-api-client";
 
 interface AuditStatusData {
   lastAuditAt: string | null;
@@ -8,6 +9,12 @@ interface AuditStatusData {
     name: string;
   } | null;
   auditStatus: "pending" | "audited";
+}
+
+interface FunnelAuditFields {
+  lastAuditAt?: string | null;
+  lastAuditBy?: { id: string; name: string } | null;
+  auditStatus?: "pending" | "audited";
 }
 
 interface UseAuditStatusResult {
@@ -22,19 +29,20 @@ export function useAuditStatus(
   funnelId: string | null,
   projectId: string | null,
 ): UseAuditStatusResult {
+  const apiClient = useApiClient();
+
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["auditStatus", projectId, funnelId],
     queryFn: async () => {
       if (!funnelId || !projectId) return undefined;
 
-      const response = await fetch(`/api/projects/${projectId}/funnels/${funnelId}`);
-      if (!response.ok) throw new Error("Falha ao carregar status de auditoria");
-
-      const funnel = await response.json();
+      const funnel = await apiClient<FunnelAuditFields>(
+        `/api/projects/${projectId}/funnels/${funnelId}`,
+      );
       return {
-        lastAuditAt: funnel.lastAuditAt || null,
-        lastAuditBy: funnel.lastAuditBy || null,
-        auditStatus: funnel.auditStatus || "pending",
+        lastAuditAt: funnel.lastAuditAt ?? null,
+        lastAuditBy: funnel.lastAuditBy ?? null,
+        auditStatus: funnel.auditStatus ?? "pending",
       } as AuditStatusData;
     },
     enabled: !!funnelId && !!projectId,
@@ -44,17 +52,10 @@ export function useAuditStatus(
     mutationFn: async () => {
       if (!funnelId) throw new Error("Funil não encontrado");
 
-      const response = await fetch(`/api/funnels/${funnelId}/audit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || "Falha ao registrar auditoria");
-      }
-
-      return response.json();
+      return apiClient<{ lastAuditAt: string; lastAuditBy: { id: string; name: string } }>(
+        `/api/funnels/${funnelId}/audit`,
+        { method: "POST", body: JSON.stringify({}) },
+      );
     },
     onSuccess: () => {
       refetch();
