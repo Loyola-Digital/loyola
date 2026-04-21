@@ -53,6 +53,7 @@ const EMPTY_BY_QUESTION: Record<SurveyQuestionKey, SurveyQuestionAggregation[]> 
   profissao: [],
   funcionarios: [],
   voce_e: [],
+  renda_mensal: [],
 };
 
 // ============================================================
@@ -324,6 +325,7 @@ export function useSurveyAggregation(
       profissao: [],
       funcionarios: [],
       voce_e: [],
+      renda_mensal: [],
     };
     const byAdId: SurveyDataByAdId = {};
     let totalResponses = 0;
@@ -336,6 +338,7 @@ export function useSurveyAggregation(
       profissao: new Map(),
       funcionarios: new Map(),
       voce_e: new Map(),
+      renda_mensal: new Map(),
     };
     const byAdBuckets: Record<string, {
       faturamento: Map<string, { rawValues: string[]; count: number }>;

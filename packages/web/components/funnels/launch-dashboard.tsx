@@ -11,7 +11,6 @@ import {
   Target,
   BarChart3,
   Link2,
-  ShoppingCart,
   Banknote,
 } from "lucide-react";
 import {
@@ -215,8 +214,10 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
       ) : overview ? (
         (() => {
           const f = { days, funnelType: "launch" as const, funnelName: funnel?.name };
+          const showFaturamento = stageType === "paid" && !!stageId && !!salesData && !salesData.semDados;
+          const lgCols = showFaturamento ? (surveyResponseRate !== null ? "lg:grid-cols-9" : "lg:grid-cols-8") : (surveyResponseRate !== null ? "lg:grid-cols-8" : "lg:grid-cols-7");
           return (
-            <div className={`grid gap-3 grid-cols-2 sm:grid-cols-4 ${surveyResponseRate !== null ? "lg:grid-cols-8" : "lg:grid-cols-7"}`}>
+            <div className={`grid gap-3 grid-cols-2 sm:grid-cols-4 ${lgCols}`}>
               <MetricTooltip label="Investimento" value={fmtCurrency(metrics.spend)} formula={buildFunnelSpendFormula(metrics.spend, f)}>
                 <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(metrics.spend)} hintTooltip
                   comparison={compSpend !== null && metrics.spend != null ? {
@@ -226,10 +227,18 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   } : undefined}
                 />
               </MetricTooltip>
+              {showFaturamento && (
+                <KpiCard
+                  icon={Banknote}
+                  label="Faturamento"
+                  value={fmtCurrency(salesData!.faturamentoBruto)}
+                  subValue={salesData!.faturamentoLiquido > 0 ? `Líquido: ${fmtCurrency(salesData!.faturamentoLiquido)}` : undefined}
+                />
+              )}
               <MetricTooltip label="Leads" value={metrics.hasLinkedSheet ? fmtNumber(metrics.totalLeads) : "—"} formula={metrics.hasLinkedSheet ? buildFunnelLeadsFormula(metrics.totalLeads, f, { pagos: metrics.leadsPagos, org: metrics.leadsOrg, semTrack: metrics.leadsSemTrack }) : undefined}>
                 <KpiCard
                   icon={Users}
-                  label="Leads"
+                  label="Leads únicos"
                   value={metrics.hasLinkedSheet ? fmtNumber(metrics.totalLeads) : "—"}
                   subValue={metrics.hasLinkedSheet
                     ? (
@@ -306,23 +315,6 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         })()
       ) : <EmptyState />}
 
-      {/* KPI Cards — Vendas & Faturamento (Story 21.3, apenas etapas pagas) */}
-      {stageType === "paid" && stageId && salesData && !salesData.semDados && (
-        <div className="grid gap-3 grid-cols-2">
-          <KpiCard
-            icon={ShoppingCart}
-            label="Vendas"
-            value={fmtNumber(salesData.totalVendas)}
-          />
-          <KpiCard
-            icon={Banknote}
-            label="Faturamento"
-            value={fmtCurrency(salesData.faturamentoBruto)}
-            subValue={salesData.faturamentoLiquido > 0 ? `Líquido: ${fmtCurrency(salesData.faturamentoLiquido)}` : undefined}
-          />
-        </div>
-      )}
-
       {/* Dados diários — tabela cruzada (Story 18.3) */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
         <CrossedFunnelDailyTable
@@ -388,16 +380,6 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         </div>
       </div>
 
-      {/* Top Creatives Gallery — movido pro final do dashboard (Story 18.4) */}
-      <TopCreativesGallery
-        projectId={projectId}
-        days={days}
-        campaignIds={campaignIds}
-        funnelId={funnel.id}
-        funnelContext={{ days, funnelType: "launch", funnelName: funnel?.name }}
-        surveyDataByAdId={survey.byAdId}
-      />
-
       {/* Resultados da Pesquisa — Qualificação do público (Story 18.6 sub-feature 3.a) */}
       <SurveyQualificationSection
         isLoading={survey.isLoading}
@@ -435,6 +417,16 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           />
         </div>
       )}
+
+      {/* Top Creatives Gallery (Story 18.4) */}
+      <TopCreativesGallery
+        projectId={projectId}
+        days={days}
+        campaignIds={campaignIds}
+        funnelId={funnel.id}
+        funnelContext={{ days, funnelType: "launch", funnelName: funnel?.name }}
+        surveyDataByAdId={survey.byAdId}
+      />
     </div>
   );
 }

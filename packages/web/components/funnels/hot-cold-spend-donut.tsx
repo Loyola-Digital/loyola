@@ -176,7 +176,7 @@ export function HotColdSpendDonut({
       <h3 className="text-sm font-semibold">{title}</h3>
 
       <div className="flex justify-center w-full">
-        <div className="w-full max-w-xs aspect-square">
+        <div className="w-full aspect-square">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie

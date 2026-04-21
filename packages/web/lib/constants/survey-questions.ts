@@ -35,6 +35,11 @@ export const SURVEY_QUESTION_MAP = {
     label: "Você é",
     showIn: ["qualification", "top-creative"] as const,
   },
+  renda_mensal: {
+    matchers: ["renda mensal", "renda", "salário", "salario"],
+    label: "Renda mensal",
+    showIn: ["qualification"] as const,
+  },
 } as const;
 
 export type SurveyQuestionKey = keyof typeof SURVEY_QUESTION_MAP;

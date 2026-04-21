@@ -24,8 +24,8 @@ function conversionRate(from: number, to: number): string {
   return `${((to / from) * 100).toFixed(1)}%`;
 }
 
-const STAGE_HEIGHT = 70;
-const CONVERSION_GAP = 28;
+const STAGE_HEIGHT = 55;
+const CONVERSION_GAP = 22;
 const TOTAL_WIDTH = 520;
 const MIN_WIDTH = 160;
 const MARGIN_X = 10;
@@ -129,7 +129,7 @@ export function ConversionFunnel({
                   y={conversionY - 2}
                   textAnchor="middle"
                   dominantBaseline="central"
-                  fontSize={11}
+                  fontSize={9}
                   fill="currentColor"
                   className="text-muted-foreground"
                 >
@@ -153,7 +153,7 @@ export function ConversionFunnel({
               y={y + 18}
               textAnchor="middle"
               dominantBaseline="central"
-              fontSize={12}
+              fontSize={10}
               fontWeight={600}
               fill="#fff"
             >
@@ -166,7 +166,7 @@ export function ConversionFunnel({
               y={y + STAGE_HEIGHT - 22}
               textAnchor="middle"
               dominantBaseline="central"
-              fontSize={18}
+              fontSize={14}
               fontWeight={700}
               fill="#fff"
             >
