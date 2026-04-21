@@ -78,6 +78,9 @@ function funnelShape(f: typeof funnels.$inferSelect) {
     switchyFolderIds: f.switchyFolderIds ?? [],
     switchyLinkedLinks: f.switchyLinkedLinks ?? [],
     compareFunnelId: f.compareFunnelId ?? null,
+    lastAuditAt: f.lastAuditAt ?? null,
+    lastAuditBy: null as { id: string; name: string } | null,
+    auditStatus: f.auditStatus ?? "pending",
     createdAt: f.createdAt,
     updatedAt: f.updatedAt,
   };
@@ -126,11 +129,28 @@ export default fp(async function funnelRoutes(fastify) {
     }
 
     const rows = await fastify.db
-      .select()
+      .select({
+        funnel: funnels,
+        auditUser: {
+          id: users.id,
+          name: users.name,
+          email: users.email,
+        },
+      })
       .from(funnels)
+      .leftJoin(users, eq(funnels.lastAuditBy, users.id))
       .where(eq(funnels.projectId, paramResult.data.projectId));
 
-    return rows.map(funnelShape);
+    return rows.map((row) => {
+      const result = funnelShape(row.funnel);
+      if (row.auditUser?.id) {
+        result.lastAuditBy = {
+          id: row.auditUser.id,
+          name: row.auditUser.name || row.auditUser.email || "Unknown",
+        };
+      }
+      return result;
+    });
   });
 
   // ---- GET /api/projects/:projectId/funnels/:funnelId ----
@@ -145,9 +165,17 @@ export default fp(async function funnelRoutes(fastify) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
 
-    const [funnel] = await fastify.db
-      .select()
+    const [funnelRow] = await fastify.db
+      .select({
+        funnel: funnels,
+        auditUser: {
+          id: users.id,
+          name: users.name,
+          email: users.email,
+        },
+      })
       .from(funnels)
+      .leftJoin(users, eq(funnels.lastAuditBy, users.id))
       .where(
         and(
           eq(funnels.id, paramResult.data.funnelId),
@@ -156,11 +184,19 @@ export default fp(async function funnelRoutes(fastify) {
       )
       .limit(1);
 
-    if (!funnel) {
+    if (!funnelRow) {
       return reply.code(404).send({ error: "Funil não encontrado" });
     }
 
-    return funnelShape(funnel);
+    const result = funnelShape(funnelRow.funnel);
+    if (funnelRow.auditUser?.id) {
+      result.lastAuditBy = {
+        id: funnelRow.auditUser.id,
+        name: funnelRow.auditUser.name || funnelRow.auditUser.email || "Unknown",
+      };
+    }
+
+    return result;
   });
 
   // ---- POST /api/projects/:projectId/funnels ----
