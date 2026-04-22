@@ -343,7 +343,7 @@ export default function StagePage() {
                 <div className="border-t border-border/30" />
               </>
             )}
-            <FunnelSpreadsheetsTab projectId={params.id} funnelId={params.funnelId} />
+            <FunnelSpreadsheetsTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
           </div>
         </TabsContent>
 

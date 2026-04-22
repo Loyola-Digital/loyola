@@ -22,6 +22,7 @@ export interface ColumnMapping {
 export interface FunnelSpreadsheet {
   id: string;
   funnelId: string;
+  stageId: string | null;
   label: string;
   type: FunnelSpreadsheetType;
   spreadsheetId: string;

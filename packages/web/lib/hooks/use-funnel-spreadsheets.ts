@@ -9,27 +9,34 @@ import type {
   FunnelSpreadsheetType,
 } from "@/lib/types/funnel-spreadsheet";
 
-function listKey(projectId: string, funnelId: string) {
-  return ["funnel-spreadsheets", projectId, funnelId] as const;
+function listKey(projectId: string, funnelId: string, stageId?: string | null) {
+  return ["funnel-spreadsheets", projectId, funnelId, stageId ?? null] as const;
 }
 
 function dataKey(projectId: string, funnelId: string, id: string) {
   return ["funnel-spreadsheets", projectId, funnelId, id, "data"] as const;
 }
 
-export function useFunnelSpreadsheets(projectId: string, funnelId: string) {
+export function useFunnelSpreadsheets(
+  projectId: string,
+  funnelId: string,
+  stageId?: string | null,
+) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: listKey(projectId, funnelId),
-    queryFn: () =>
-      apiClient<{ spreadsheets: FunnelSpreadsheet[] }>(
-        `/api/projects/${projectId}/funnels/${funnelId}/spreadsheets`,
-      ),
+    queryKey: listKey(projectId, funnelId, stageId),
+    queryFn: () => {
+      const qs = stageId ? `?stageId=${encodeURIComponent(stageId)}` : "";
+      return apiClient<{ spreadsheets: FunnelSpreadsheet[] }>(
+        `/api/projects/${projectId}/funnels/${funnelId}/spreadsheets${qs}`,
+      );
+    },
     enabled: Boolean(projectId && funnelId),
   });
 }
 
 export interface CreateFunnelSpreadsheetInput {
+  stageId?: string;
   label: string;
   type: FunnelSpreadsheetType;
   spreadsheetId: string;
@@ -48,7 +55,7 @@ export function useCreateFunnelSpreadsheet(projectId: string, funnelId: string) 
         { method: "POST", body: JSON.stringify(data) },
       ),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: listKey(projectId, funnelId) });
+      qc.invalidateQueries({ queryKey: ["funnel-spreadsheets", projectId, funnelId] });
     },
   });
 }
@@ -73,7 +80,7 @@ export function useUpdateFunnelSpreadsheet(projectId: string, funnelId: string) 
         { method: "PUT", body: JSON.stringify(patch) },
       ),
     onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: listKey(projectId, funnelId) });
+      qc.invalidateQueries({ queryKey: ["funnel-spreadsheets", projectId, funnelId] });
       qc.invalidateQueries({ queryKey: dataKey(projectId, funnelId, variables.id) });
     },
   });
@@ -89,7 +96,7 @@ export function useDeleteFunnelSpreadsheet(projectId: string, funnelId: string) 
         { method: "DELETE" },
       ),
     onSuccess: (_data, id) => {
-      qc.invalidateQueries({ queryKey: listKey(projectId, funnelId) });
+      qc.invalidateQueries({ queryKey: ["funnel-spreadsheets", projectId, funnelId] });
       qc.invalidateQueries({ queryKey: dataKey(projectId, funnelId, id) });
     },
   });
