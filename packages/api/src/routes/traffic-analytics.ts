@@ -189,11 +189,14 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   );
 
   // ---- GET /api/traffic/analytics/:projectId/top-performers ---- (Story 7.8)
+  // `campaignId` (single, legacy) e `campaignIds` (CSV, multi) são aceitos.
+  // Se ambos presentes, `campaignIds` prevalece.
   const topPerformersQuerySchema = z.object({
     metric: z.enum(["roas", "cpl", "cplQualified", "leads", "sales", "ctr"]).default("roas"),
     limit: z.coerce.number().int().min(1).max(100).default(5),
     days: z.coerce.number().int().min(1).max(90).default(30),
     campaignId: z.string().optional(),
+    campaignIds: z.string().optional(),
   });
 
   fastify.get(
@@ -214,13 +217,18 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
       }
 
       try {
+        const idList = queryResult.data.campaignIds
+          ? queryResult.data.campaignIds.split(",").map((s) => s.trim()).filter(Boolean)
+          : queryResult.data.campaignId
+            ? [queryResult.data.campaignId]
+            : undefined;
         const result = await getTopPerformers(
           fastify.db,
           paramResult.data.projectId,
           queryResult.data.metric as TopPerformerMetric,
           queryResult.data.limit,
           queryResult.data.days,
-          queryResult.data.campaignId
+          idList
         );
         return { topPerformers: result, metric: queryResult.data.metric };
       } catch (err) {

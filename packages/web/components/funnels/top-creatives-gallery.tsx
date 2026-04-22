@@ -423,15 +423,15 @@ export function TopCreativesGallery({
   const [expanded, setExpanded] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
-  // TODO(@lucas): backend limita `limit` em max=20 (packages/api/src/routes/traffic-analytics.ts:194).
-  // A Story 18.5 especifica N=100 pra ter volume suficiente após agregação por nome.
-  // Solicitar aumento do max pra 100 (z.coerce.number().int().min(1).max(100)) quando possível.
+  // Story 18.5: limit=20, todas as campanhas do funil/stage (não apenas a 1ª).
+  // Backend aceita `campaignIds` CSV via Meta API IN filter — múltiplas
+  // campanhas num único request.
   const { data, isLoading } = useTopPerformers(
     projectId,
     "ctr" as const,
     20,
     days,
-    campaignIds?.[0] ?? null,
+    campaignIds && campaignIds.length > 0 ? campaignIds : null,
   );
 
   const { data: spreadsheetsData } = useFunnelSpreadsheets(projectId, funnelId ?? "");
