@@ -6,6 +6,7 @@ import {
   funnels,
   projects,
   projectMembers,
+  users,
 } from "../db/schema.js";
 
 // ============================================================
@@ -63,7 +64,27 @@ const stageParamsSchema = paramsSchema.extend({
 // HELPERS
 // ============================================================
 
-function stageShape(row: typeof funnelStages.$inferSelect) {
+function displayUserName(name: string | null | undefined, email: string | null | undefined): string {
+  const looksLikeClerkId = typeof name === "string" && /^user_[A-Za-z0-9]+$/.test(name);
+  const nameIsEmail = name && email && name === email;
+  if (name && !looksLikeClerkId && !nameIsEmail) return name;
+
+  if (email) {
+    const local = email.split("@")[0].split("+")[0];
+    return local
+      .replace(/[._-]+/g, " ")
+      .split(" ")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+  return "Usuário";
+}
+
+function stageShape(
+  row: typeof funnelStages.$inferSelect,
+  auditUser?: { id: string; name: string | null; email: string | null } | null,
+) {
   return {
     id: row.id,
     funnelId: row.funnelId,
@@ -76,6 +97,11 @@ function stageShape(row: typeof funnelStages.$inferSelect) {
     switchyFolderIds: (row.switchyFolderIds ?? []) as { id: number; name: string }[],
     switchyLinkedLinks: (row.switchyLinkedLinks ?? []) as { uniq: number; id: string; domain: string }[],
     sortOrder: row.sortOrder,
+    lastAuditAt: row.lastAuditAt ? row.lastAuditAt.toISOString() : null,
+    lastAuditBy: auditUser?.id
+      ? { id: auditUser.id, name: displayUserName(auditUser.name, auditUser.email) }
+      : null,
+    auditStatus: (row.auditStatus ?? "pending") as "pending" | "audited",
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -124,12 +150,16 @@ export default fp(async function funnelStageRoutes(fastify) {
     if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
 
     const rows = await fastify.db
-      .select()
+      .select({
+        stage: funnelStages,
+        auditUser: { id: users.id, name: users.name, email: users.email },
+      })
       .from(funnelStages)
+      .leftJoin(users, eq(funnelStages.lastAuditBy, users.id))
       .where(eq(funnelStages.funnelId, params.data.funnelId))
       .orderBy(funnelStages.sortOrder, funnelStages.createdAt);
 
-    return rows.map(stageShape);
+    return rows.map((r) => stageShape(r.stage, r.auditUser));
   });
 
   // GET /api/projects/:projectId/funnels/:funnelId/stages/:stageId
@@ -141,8 +171,12 @@ export default fp(async function funnelStageRoutes(fastify) {
     if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
 
     const [row] = await fastify.db
-      .select()
+      .select({
+        stage: funnelStages,
+        auditUser: { id: users.id, name: users.name, email: users.email },
+      })
       .from(funnelStages)
+      .leftJoin(users, eq(funnelStages.lastAuditBy, users.id))
       .where(
         and(
           eq(funnelStages.id, params.data.stageId),
@@ -152,7 +186,7 @@ export default fp(async function funnelStageRoutes(fastify) {
       .limit(1);
 
     if (!row) return reply.code(404).send({ error: "Etapa não encontrada" });
-    return stageShape(row);
+    return stageShape(row.stage, row.auditUser);
   });
 
   // POST /api/projects/:projectId/funnels/:funnelId/stages
@@ -247,6 +281,60 @@ export default fp(async function funnelStageRoutes(fastify) {
 
     return stageShape(row);
   });
+
+  // POST /api/projects/:projectId/funnels/:funnelId/stages/:stageId/audit
+  fastify.post(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/audit",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const userId = request.userId;
+      if (!userId) return reply.code(401).send({ error: "Unauthorized" });
+
+      const project = await getProjectAccess(params.data.projectId, userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const [existing] = await fastify.db
+        .select({ id: funnelStages.id })
+        .from(funnelStages)
+        .where(
+          and(
+            eq(funnelStages.id, params.data.stageId),
+            eq(funnelStages.funnelId, params.data.funnelId)
+          )
+        )
+        .limit(1);
+
+      if (!existing) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const now = new Date();
+      await fastify.db
+        .update(funnelStages)
+        .set({
+          lastAuditAt: now,
+          lastAuditBy: userId,
+          auditStatus: "audited",
+          updatedAt: now,
+        })
+        .where(eq(funnelStages.id, params.data.stageId));
+
+      const [user] = await fastify.db
+        .select({ id: users.id, name: users.name, email: users.email })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      return reply.send({
+        lastAuditAt: now.toISOString(),
+        lastAuditBy: {
+          id: user?.id ?? userId,
+          name: displayUserName(user?.name, user?.email),
+        },
+        auditStatus: "audited" as const,
+      });
+    }
+  );
 
   // DELETE /api/projects/:projectId/funnels/:funnelId/stages/:stageId
   fastify.delete("/api/projects/:projectId/funnels/:funnelId/stages/:stageId", async (request, reply) => {

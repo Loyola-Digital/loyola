@@ -11,7 +11,7 @@ interface AuditStatusData {
   auditStatus: "pending" | "audited";
 }
 
-interface FunnelAuditFields {
+interface StageAuditFields {
   lastAuditAt?: string | null;
   lastAuditBy?: { id: string; name: string } | null;
   auditStatus?: "pending" | "audited";
@@ -26,34 +26,35 @@ interface UseAuditStatusResult {
 }
 
 export function useAuditStatus(
+  stageId: string | null,
   funnelId: string | null,
   projectId: string | null,
 ): UseAuditStatusResult {
   const apiClient = useApiClient();
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["auditStatus", projectId, funnelId],
+    queryKey: ["auditStatus", projectId, funnelId, stageId],
     queryFn: async () => {
-      if (!funnelId || !projectId) return undefined;
+      if (!stageId || !funnelId || !projectId) return undefined;
 
-      const funnel = await apiClient<FunnelAuditFields>(
-        `/api/projects/${projectId}/funnels/${funnelId}`,
+      const stage = await apiClient<StageAuditFields>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}`,
       );
       return {
-        lastAuditAt: funnel.lastAuditAt ?? null,
-        lastAuditBy: funnel.lastAuditBy ?? null,
-        auditStatus: funnel.auditStatus ?? "pending",
+        lastAuditAt: stage.lastAuditAt ?? null,
+        lastAuditBy: stage.lastAuditBy ?? null,
+        auditStatus: stage.auditStatus ?? "pending",
       } as AuditStatusData;
     },
-    enabled: !!funnelId && !!projectId,
+    enabled: !!stageId && !!funnelId && !!projectId,
   });
 
   const auditMutation = useMutation({
     mutationFn: async () => {
-      if (!funnelId) throw new Error("Funil não encontrado");
+      if (!stageId || !funnelId || !projectId) throw new Error("Parâmetros inválidos");
 
-      return apiClient<{ lastAuditAt: string; lastAuditBy: { id: string; name: string } }>(
-        `/api/funnels/${funnelId}/audit`,
+      return apiClient<{ lastAuditAt: string; lastAuditBy: { id: string; name: string }; auditStatus: "audited" }>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/audit`,
         { method: "POST", body: JSON.stringify({}) },
       );
     },
