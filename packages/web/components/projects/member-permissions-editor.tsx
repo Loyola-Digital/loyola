@@ -24,6 +24,20 @@ const MODULE_LABELS: { key: keyof ProjectPermissions; label: string }[] = [
   { key: "mind", label: "Mind" },
 ];
 
+// Garante que todos os 6 campos existem no object enviado ao backend, mesmo
+// se o member.permissions veio de uma linha legacy (pré-expansão do schema)
+// com apenas 3 chaves. O Zod do backend exige todos os campos obrigatórios.
+function normalizePermissions(p: Partial<ProjectPermissions>): ProjectPermissions {
+  return {
+    instagram: p.instagram ?? false,
+    traffic: p.traffic ?? false,
+    youtubeAds: p.youtubeAds ?? false,
+    youtubeOrganic: p.youtubeOrganic ?? false,
+    conversations: p.conversations ?? false,
+    mind: p.mind ?? false,
+  };
+}
+
 export function MemberPermissionsEditor({ projectId }: MemberPermissionsEditorProps) {
   const { data: members, isLoading } = useProjectMembers(projectId);
   const removeMember = useRemoveMember(projectId);
@@ -72,12 +86,12 @@ export function MemberPermissionsEditor({ projectId }: MemberPermissionsEditorPr
               <div key={key} className="flex items-center gap-1.5">
                 <Switch
                   id={`${member.id}-${key}`}
-                  checked={member.permissions[key]}
+                  checked={member.permissions[key] ?? false}
                   disabled={updatePermissions.isPending}
                   onCheckedChange={(checked: boolean) =>
                     updatePermissions.mutate({
                       userId: member.userId,
-                      permissions: { ...member.permissions, [key]: checked },
+                      permissions: normalizePermissions({ ...member.permissions, [key]: checked }),
                     })
                   }
                 />

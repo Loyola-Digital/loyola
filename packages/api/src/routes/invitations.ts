@@ -37,12 +37,12 @@ const tokenParamSchema = z.object({
 const createInvitationSchema = z.object({
   email: z.string().email(),
   permissions: z.object({
-    instagram: z.boolean(),
-    traffic: z.boolean(),
-    youtubeAds: z.boolean(),
-    youtubeOrganic: z.boolean(),
-    conversations: z.boolean(),
-    mind: z.boolean(),
+    instagram: z.boolean().default(false),
+    traffic: z.boolean().default(false),
+    youtubeAds: z.boolean().default(false),
+    youtubeOrganic: z.boolean().default(false),
+    conversations: z.boolean().default(false),
+    mind: z.boolean().default(false),
   }),
 });
 
