@@ -11,7 +11,7 @@ import {
   SURVEY_PHONE_MATCHERS,
   type SurveyQuestionKey,
 } from "@/lib/constants/survey-questions";
-import { normalizeAnswer, mostCommonRaw, normalizeEmail, getLast8DigitsPhone } from "@/lib/utils/normalize-answer";
+import { normalizeAnswer, mostCommonRaw, normalizeEmail, getLast8DigitsPhone, normalizeNumericId } from "@/lib/utils/normalize-answer";
 import { useFunnelSpreadsheets, useFunnelSpreadsheetData } from "@/lib/hooks/use-funnel-spreadsheets";
 
 // ============================================================
@@ -353,7 +353,7 @@ export function useSurveyAggregation(
       const utmIdx = colMap.utmContent;
       if (utmIdx >= 0) {
         for (const row of effectiveRows) {
-          const adId = (row[utmIdx] ?? "").trim();
+          const adId = normalizeNumericId((row[utmIdx] ?? "").trim());
           if (!adId) continue;
           const adBucket = byAdBuckets[adId] ?? { faturamento: new Map(), profissao: new Map(), funcionarios: new Map(), voce_e: new Map() };
           for (const questionKey of ["faturamento", "profissao", "funcionarios", "voce_e"] as const) {

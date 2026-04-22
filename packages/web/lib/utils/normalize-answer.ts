@@ -63,3 +63,24 @@ export function getLast8DigitsPhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   return digits.slice(-8);
 }
+
+/**
+ * Normaliza ID numérico removendo underscore de prefixo quando o restante é
+ * composto apenas por dígitos. Usada para casar UTMs (ex: utm_content com
+ * `_120225436094170123` vindo da planilha Google Sheets, quando a coluna foi
+ * formatada como texto) com IDs do Meta Ads API (`"120225436094170123"`).
+ *
+ * Exemplos:
+ *   "_120225436094170123" → "120225436094170123"
+ *   "120225436094170123"  → "120225436094170123"
+ *   "_abc123"             → "_abc123" (não toca — sufixo não é só dígitos)
+ *   ""                    → ""
+ */
+export function normalizeNumericId(id: string): string {
+  const trimmed = id.trim();
+  if (trimmed.startsWith("_")) {
+    const rest = trimmed.slice(1);
+    if (/^\d+$/.test(rest)) return rest;
+  }
+  return trimmed;
+}
