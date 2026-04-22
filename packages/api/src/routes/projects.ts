@@ -30,14 +30,16 @@ const memberParamSchema = z.object({
   userId: z.string().uuid(),
 });
 
+// Campos tolerantes a ausência (default false) para aceitar payloads legacy
+// que venham com apenas parte dos flags. Handler normaliza antes de persistir.
 const updatePermissionsSchema = z.object({
   permissions: z.object({
-    instagram: z.boolean(),
-    traffic: z.boolean(),
-    youtubeAds: z.boolean(),
-    youtubeOrganic: z.boolean(),
-    conversations: z.boolean(),
-    mind: z.boolean(),
+    instagram: z.boolean().default(false),
+    traffic: z.boolean().default(false),
+    youtubeAds: z.boolean().default(false),
+    youtubeOrganic: z.boolean().default(false),
+    conversations: z.boolean().default(false),
+    mind: z.boolean().default(false),
   }),
 });
 
