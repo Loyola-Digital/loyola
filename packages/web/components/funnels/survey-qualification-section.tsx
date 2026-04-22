@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { AlertTriangle, ClipboardList, FileSpreadsheet } from "lucide-react";
 import {
   SURVEY_QUESTION_MAP,
@@ -7,8 +8,10 @@ import {
 } from "@/lib/constants/survey-questions";
 import type {
   SurveyQuestionAggregation,
+  SurveyOrigin,
   UseSurveyAggregationResult,
 } from "@/lib/hooks/use-survey-aggregation";
+import { cn } from "@/lib/utils";
 
 interface SurveyQualificationSectionProps {
   /** Estado de loading (se true, renderiza skeleton) */
@@ -18,9 +21,15 @@ interface SurveyQualificationSectionProps {
   /** Dados agregados do hook `useSurveyAggregation` */
   data: Pick<
     UseSurveyAggregationResult,
-    "byQuestion" | "totalResponses" | "usingFallback" | "fallbackReason" | "matchedResponses" | "unmatchedResponses"
+    "byQuestion" | "byQuestionByOrigin" | "totalResponses" | "usingFallback" | "fallbackReason" | "matchedResponses" | "unmatchedResponses"
   >;
 }
+
+const ORIGIN_OPTIONS: { value: SurveyOrigin; label: string }[] = [
+  { value: "total", label: "Total" },
+  { value: "pago", label: "Pago" },
+  { value: "organico", label: "Orgânico" },
+];
 
 /**
  * Lista de perguntas renderizadas na seção 3.a, derivada do `SURVEY_QUESTION_MAP`
@@ -82,6 +91,8 @@ export function SurveyQualificationSection({
   hasSurveys,
   data,
 }: SurveyQualificationSectionProps) {
+  const [origin, setOrigin] = useState<SurveyOrigin>("total");
+
   if (isLoading) {
     return (
       <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3 animate-pulse">
@@ -124,14 +135,18 @@ export function SurveyQualificationSection({
     );
   }
 
-  // Perguntas que têm dados (pelo menos 1 resposta)
+  // Agregação ativa conforme filtro de origem (Story 21.6). Fallback pra
+  // byQuestion (total) caso byQuestionByOrigin ausente — robustez.
+  const activeByQuestion = data.byQuestionByOrigin?.[origin] ?? data.byQuestion;
+
+  // Perguntas que têm dados (pelo menos 1 resposta) no bucket ativo
   const questionsWithData = QUALIFICATION_QUESTIONS.filter(
-    (key) => data.byQuestion[key].length > 0,
+    (key) => activeByQuestion[key].length > 0,
   );
 
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-2">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">
           <ClipboardList className="h-4 w-4 text-muted-foreground" />
           <div className="flex-1">
@@ -143,6 +158,29 @@ export function SurveyQualificationSection({
               Apenas respondentes com email ou telefone identificados na planilha de Leads são contabilizados como match. Respostas sem match podem ser leads orgânicos ou emails/telefones diferentes entre etapas.
             </p>
           </div>
+        </div>
+        {/* Filtro por origem — Story 21.6 */}
+        <div
+          role="group"
+          aria-label="Filtrar por origem"
+          className="inline-flex rounded-md border border-border/50 bg-background/40 p-0.5 shadow-sm"
+        >
+          {ORIGIN_OPTIONS.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setOrigin(value)}
+              aria-pressed={origin === value}
+              className={cn(
+                "px-3 py-1 text-[11px] font-medium rounded transition-colors",
+                origin === value
+                  ? "bg-primary/15 text-primary"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/40",
+              )}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -163,7 +201,7 @@ export function SurveyQualificationSection({
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {questionsWithData.map((key) => {
             const def = SURVEY_QUESTION_MAP[key];
-            const items = data.byQuestion[key];
+            const items = activeByQuestion[key];
             return (
               <div key={key} className="space-y-3">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">

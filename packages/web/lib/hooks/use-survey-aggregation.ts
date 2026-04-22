@@ -7,11 +7,13 @@ import {
 import {
   SURVEY_QUESTION_MAP,
   SURVEY_UTM_CONTENT_MATCHERS,
+  SURVEY_UTM_SOURCE_MATCHERS,
   SURVEY_EMAIL_MATCHERS,
   SURVEY_PHONE_MATCHERS,
   type SurveyQuestionKey,
 } from "@/lib/constants/survey-questions";
 import { normalizeAnswer, mostCommonRaw, normalizeEmail, getLast8DigitsPhone, normalizeNumericId } from "@/lib/utils/normalize-answer";
+import { PAID_SOURCES } from "@/lib/utils/funnel-metrics";
 import { useFunnelSpreadsheets, useFunnelSpreadsheetData } from "@/lib/hooks/use-funnel-spreadsheets";
 
 // ============================================================
@@ -33,8 +35,18 @@ export interface SurveyAdData {
 
 export type SurveyDataByAdId = Record<string, SurveyAdData>;
 
+export type SurveyOrigin = "total" | "pago" | "organico";
+
 export interface UseSurveyAggregationResult {
+  /** Agregação total (todas as respostas) — mantida para retrocompatibilidade. */
   byQuestion: Record<SurveyQuestionKey, SurveyQuestionAggregation[]>;
+  /**
+   * Agregações separadas por origem da resposta (Story 21.6).
+   * Uma resposta é `pago` se seu `utm_source` pertence a PAID_SOURCES
+   * (match exato). Caso contrário (incluindo vazio/null), é `organico`.
+   * `total` contém todas as respostas — equivalente a `byQuestion`.
+   */
+  byQuestionByOrigin: Record<SurveyOrigin, Record<SurveyQuestionKey, SurveyQuestionAggregation[]>>;
   byAdId: SurveyDataByAdId;
   totalResponses: number;
   usingFallback: boolean;
@@ -51,6 +63,12 @@ const EMPTY_BY_QUESTION: Record<SurveyQuestionKey, SurveyQuestionAggregation[]> 
   funcionarios: [],
   voce_e: [],
   renda_mensal: [],
+};
+
+const EMPTY_BY_QUESTION_BY_ORIGIN: Record<SurveyOrigin, Record<SurveyQuestionKey, SurveyQuestionAggregation[]>> = {
+  total: EMPTY_BY_QUESTION,
+  pago: EMPTY_BY_QUESTION,
+  organico: EMPTY_BY_QUESTION,
 };
 
 // ============================================================
@@ -92,6 +110,7 @@ interface ColumnIndexMap {
   questions: Partial<Record<SurveyQuestionKey, number>>;
   timestamp: number;
   utmContent: number;
+  utmSource: number;
   email: number;
   phone: number;
 }
@@ -106,9 +125,21 @@ function mapHeaders(headers: string[]): ColumnIndexMap {
     questions,
     timestamp: -1,
     utmContent: findHeaderIndex(headers, SURVEY_UTM_CONTENT_MATCHERS),
+    utmSource: findHeaderIndex(headers, SURVEY_UTM_SOURCE_MATCHERS),
     email: findHeaderIndex(headers, SURVEY_EMAIL_MATCHERS),
     phone: findHeaderIndex(headers, SURVEY_PHONE_MATCHERS),
   };
+}
+
+/**
+ * Classifica uma resposta como "pago" ou "organico" com base no utm_source.
+ * Match exato contra PAID_SOURCES (consistente com dashboard — Story 21.6).
+ * Usa como fallback o utm_source do lead matched (se existir) quando a
+ * planilha de pesquisa não tem coluna de utm_source própria.
+ */
+function classifyOrigin(utmSource: string | undefined | null): "pago" | "organico" {
+  const normalized = (utmSource ?? "").trim().toLowerCase();
+  return PAID_SOURCES.has(normalized) ? "pago" : "organico";
 }
 
 
@@ -176,6 +207,7 @@ export function useSurveyAggregation(
     if (isLoading || sheetQueries.length === 0) {
       return {
         byQuestion: { ...EMPTY_BY_QUESTION },
+        byQuestionByOrigin: EMPTY_BY_QUESTION_BY_ORIGIN,
         byAdId: {},
         totalResponses: 0,
         usingFallback: false,
@@ -210,6 +242,7 @@ export function useSurveyAggregation(
     if (allRows.length === 0) {
       return {
         byQuestion: { ...EMPTY_BY_QUESTION },
+        byQuestionByOrigin: EMPTY_BY_QUESTION_BY_ORIGIN,
         byAdId: {},
         totalResponses: 0,
         usingFallback: false,
@@ -294,12 +327,26 @@ export function useSurveyAggregation(
     let totalResponses = 0;
     const matchedLeadIds = new Set<string>();
 
-    const bucketsPerQuestion: Record<SurveyQuestionKey, Map<string, { rawValues: string[]; count: number }>> = {
-      faturamento: new Map(),
-      profissao: new Map(),
-      funcionarios: new Map(),
-      voce_e: new Map(),
-      renda_mensal: new Map(),
+    // Story 21.6 — buckets por origem (total/pago/organico) em paralelo pra
+    // evitar re-agregação custosa no componente quando o filtro muda.
+    function newBuckets(): Record<SurveyQuestionKey, Map<string, { rawValues: string[]; count: number }>> {
+      return {
+        faturamento: new Map(),
+        profissao: new Map(),
+        funcionarios: new Map(),
+        voce_e: new Map(),
+        renda_mensal: new Map(),
+      };
+    }
+    const bucketsByOrigin: Record<SurveyOrigin, ReturnType<typeof newBuckets>> = {
+      total: newBuckets(),
+      pago: newBuckets(),
+      organico: newBuckets(),
+    };
+    const totalResponsesByOrigin: Record<SurveyOrigin, number> = {
+      total: 0,
+      pago: 0,
+      organico: 0,
     };
     const byAdBuckets: Record<string, {
       faturamento: Map<string, { rawValues: string[]; count: number }>;
@@ -331,22 +378,43 @@ export function useSurveyAggregation(
 
       console.log(`🔍 [Survey ${i}] rows: ${effectiveRows.length}, matched: ${matchedLeadIds.size - matchesBefore}/${effectiveRows.length}, emailIdx: ${emailIdx}, phoneIdx: ${phoneIdx}`);
 
-      // byQuestion: pra cada pergunta mapeada, agregar respostas
+      // Story 21.6 — agrega cada resposta em 3 buckets paralelos (total sempre;
+      // pago ou organico conforme utm_source da linha). Classifica fora do loop
+      // das perguntas pra evitar recomputar a origem por pergunta.
+      const utmSourceIdx = colMap.utmSource;
+      const rowOrigins: Array<"pago" | "organico"> = [];
+      for (const row of effectiveRows) {
+        const utmSource = utmSourceIdx >= 0 ? row[utmSourceIdx] : "";
+        rowOrigins.push(classifyOrigin(utmSource));
+      }
+
+      // byQuestion: pra cada pergunta mapeada, agregar respostas em 3 buckets
       for (const [key, idx] of Object.entries(colMap.questions)) {
         if (idx == null || idx < 0) continue;
-        const bucket = bucketsPerQuestion[key as SurveyQuestionKey];
-        for (const row of effectiveRows) {
-          const raw = (row[idx] ?? "").trim();
+        const questionKey = key as SurveyQuestionKey;
+        for (let r = 0; r < effectiveRows.length; r++) {
+          const raw = (effectiveRows[r][idx] ?? "").trim();
           if (!raw) continue;
           const normKey = normalizeAnswer(raw);
-          const existing = bucket.get(normKey);
-          if (existing) {
-            existing.rawValues.push(raw);
-            existing.count += 1;
-          } else {
-            bucket.set(normKey, { rawValues: [raw], count: 1 });
+          const origin = rowOrigins[r];
+          // Incrementa no bucket total E no bucket da origem (pago ou organico)
+          for (const bucketOrigin of ["total", origin] as const) {
+            const bucket = bucketsByOrigin[bucketOrigin][questionKey];
+            const existing = bucket.get(normKey);
+            if (existing) {
+              existing.rawValues.push(raw);
+              existing.count += 1;
+            } else {
+              bucket.set(normKey, { rawValues: [raw], count: 1 });
+            }
           }
         }
+      }
+
+      // Contagem de respostas por origem (usada pra calcular pct por bucket)
+      for (const origin of rowOrigins) {
+        totalResponsesByOrigin.total += 1;
+        totalResponsesByOrigin[origin] += 1;
       }
 
       // byAdId: só pra faturamento + profissao
@@ -375,30 +443,44 @@ export function useSurveyAggregation(
       }
     }
 
-    // Finaliza byQuestion — converte buckets em Array com top-8 + "Outros"
-    for (const key of Object.keys(bucketsPerQuestion) as SurveyQuestionKey[]) {
-      const bucket = bucketsPerQuestion[key];
-      if (bucket.size === 0) continue;
-      const entries = Array.from(bucket.values())
-        .map((b) => ({
-          label: mostCommonRaw(b.rawValues),
-          count: b.count,
-          pct: totalResponses > 0 ? (b.count / totalResponses) * 100 : 0,
-        }))
-        .sort((a, b) => b.count - a.count);
-      if (entries.length <= 8) {
-        byQuestion[key] = entries;
-      } else {
-        const top = entries.slice(0, 8);
-        const rest = entries.slice(8);
-        const restCount = rest.reduce((s, e) => s + e.count, 0);
-        top.push({
-          label: `Outros (${rest.length})`,
-          count: restCount,
-          pct: totalResponses > 0 ? (restCount / totalResponses) * 100 : 0,
-        });
-        byQuestion[key] = top;
+    // Finaliza byQuestionByOrigin — converte cada bucket (total/pago/organico)
+    // em Array com top-8 + "Outros". Story 21.6.
+    const byQuestionByOrigin: Record<SurveyOrigin, Record<SurveyQuestionKey, SurveyQuestionAggregation[]>> = {
+      total: { faturamento: [], profissao: [], funcionarios: [], voce_e: [], renda_mensal: [] },
+      pago: { faturamento: [], profissao: [], funcionarios: [], voce_e: [], renda_mensal: [] },
+      organico: { faturamento: [], profissao: [], funcionarios: [], voce_e: [], renda_mensal: [] },
+    };
+    for (const origin of ["total", "pago", "organico"] as const) {
+      const buckets = bucketsByOrigin[origin];
+      const denom = totalResponsesByOrigin[origin];
+      for (const key of Object.keys(buckets) as SurveyQuestionKey[]) {
+        const bucket = buckets[key];
+        if (bucket.size === 0) continue;
+        const entries = Array.from(bucket.values())
+          .map((b) => ({
+            label: mostCommonRaw(b.rawValues),
+            count: b.count,
+            pct: denom > 0 ? (b.count / denom) * 100 : 0,
+          }))
+          .sort((a, b) => b.count - a.count);
+        if (entries.length <= 8) {
+          byQuestionByOrigin[origin][key] = entries;
+        } else {
+          const top = entries.slice(0, 8);
+          const rest = entries.slice(8);
+          const restCount = rest.reduce((s, e) => s + e.count, 0);
+          top.push({
+            label: `Outros (${rest.length})`,
+            count: restCount,
+            pct: denom > 0 ? (restCount / denom) * 100 : 0,
+          });
+          byQuestionByOrigin[origin][key] = top;
+        }
       }
+    }
+    // byQuestion mantém comportamento legacy (= total) pra retrocompat
+    for (const key of Object.keys(byQuestion) as SurveyQuestionKey[]) {
+      byQuestion[key] = byQuestionByOrigin.total[key];
     }
 
     // Finaliza byAdId
@@ -434,6 +516,7 @@ export function useSurveyAggregation(
 
     return {
       byQuestion,
+      byQuestionByOrigin,
       byAdId,
       totalResponses,
       usingFallback: useFallback,

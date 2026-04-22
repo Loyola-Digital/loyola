@@ -80,3 +80,11 @@ export const SURVEY_EMAIL_MATCHERS = ["email", "e-mail"];
  * Matchers possíveis pra coluna de phone (usada em match de leads — Story 18.8).
  */
 export const SURVEY_PHONE_MATCHERS = ["telefone", "phone", "celular", "whatsapp"];
+
+/**
+ * Matchers pra coluna de utm_source (Story 21.6 — filtro por origem).
+ * Se a planilha de pesquisa tiver uma coluna utm_source, ela é usada pra
+ * classificar a resposta como Pago/Orgânico. Inclui a variação `"s="` que o
+ * formato Kiwify/n8n usa nesse projeto.
+ */
+export const SURVEY_UTM_SOURCE_MATCHERS = ["utm_source", "utm source", "s=", "source"];
