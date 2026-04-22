@@ -767,6 +767,9 @@ export const funnelSpreadsheets = pgTable(
     funnelId: uuid("funnel_id")
       .notNull()
       .references(() => funnels.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id").references(() => funnelStages.id, {
+      onDelete: "cascade",
+    }),
     label: varchar("label", { length: 255 }).notNull(),
     type: funnelSpreadsheetTypeEnum("type").notNull(),
     spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
@@ -799,6 +802,7 @@ export const funnelSpreadsheets = pgTable(
   },
   (table) => [
     index("idx_funnel_spreadsheets_funnel").on(table.funnelId),
+    index("idx_funnel_spreadsheets_stage").on(table.stageId),
   ]
 );
 

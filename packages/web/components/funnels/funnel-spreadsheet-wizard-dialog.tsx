@@ -54,12 +54,13 @@ type Step = "spreadsheet" | "sheet" | "mapping";
 interface FunnelSpreadsheetWizardDialogProps {
   projectId: string;
   funnelId: string;
+  stageId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
 export function FunnelSpreadsheetWizardDialog({
-  projectId, funnelId, open, onOpenChange,
+  projectId, funnelId, stageId, open, onOpenChange,
 }: FunnelSpreadsheetWizardDialogProps) {
   const { data: spreadsheetsData, isLoading: spreadsheetsLoading } = useSpreadsheets();
   const [selectedSpreadsheet, setSelectedSpreadsheet] = useState<{ id: string; name: string } | null>(null);
@@ -120,6 +121,7 @@ export function FunnelSpreadsheetWizardDialog({
     if (!selectedSpreadsheet || !selectedSheet || !canSave) return;
     createSpreadsheet.mutate(
       {
+        stageId,
         label: label.trim(),
         type,
         spreadsheetId: selectedSpreadsheet.id,

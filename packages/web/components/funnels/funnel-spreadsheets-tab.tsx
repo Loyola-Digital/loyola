@@ -12,11 +12,12 @@ import { FunnelSpreadsheetListItem } from "@/components/funnels/funnel-spreadshe
 interface FunnelSpreadsheetsTabProps {
   projectId: string;
   funnelId: string;
+  stageId?: string;
 }
 
-export function FunnelSpreadsheetsTab({ projectId, funnelId }: FunnelSpreadsheetsTabProps) {
+export function FunnelSpreadsheetsTab({ projectId, funnelId, stageId }: FunnelSpreadsheetsTabProps) {
   const [wizardOpen, setWizardOpen] = useState(false);
-  const { data, isLoading, error } = useFunnelSpreadsheets(projectId, funnelId);
+  const { data, isLoading, error } = useFunnelSpreadsheets(projectId, funnelId, stageId);
 
   useEffect(() => {
     if (error) {
@@ -92,6 +93,7 @@ export function FunnelSpreadsheetsTab({ projectId, funnelId }: FunnelSpreadsheet
       <FunnelSpreadsheetWizardDialog
         projectId={projectId}
         funnelId={funnelId}
+        stageId={stageId}
         open={wizardOpen}
         onOpenChange={setWizardOpen}
       />

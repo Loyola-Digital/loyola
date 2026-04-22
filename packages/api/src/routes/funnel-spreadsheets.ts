@@ -39,6 +39,7 @@ const columnMappingSchema = z
   );
 
 const createSpreadsheetSchema = z.object({
+  stageId: z.string().uuid().optional(),
   label: z.string().min(1).max(255),
   type: z.enum(["leads", "sales", "custom"]),
   spreadsheetId: z.string().min(1),
@@ -48,12 +49,17 @@ const createSpreadsheetSchema = z.object({
 });
 
 const updateSpreadsheetSchema = z.object({
+  stageId: z.string().uuid().nullable().optional(),
   label: z.string().min(1).max(255).optional(),
   type: z.enum(["leads", "sales", "custom"]).optional(),
   spreadsheetId: z.string().min(1).optional(),
   spreadsheetName: z.string().min(1).optional(),
   sheetName: z.string().min(1).optional(),
   columnMapping: columnMappingSchema.optional(),
+});
+
+const listQuerySchema = z.object({
+  stageId: z.string().uuid().optional(),
 });
 
 type ColumnMapping = z.infer<typeof columnMappingSchema>;
@@ -66,6 +72,7 @@ function spreadsheetShape(s: typeof funnelSpreadsheets.$inferSelect) {
   return {
     id: s.id,
     funnelId: s.funnelId,
+    stageId: s.stageId,
     label: s.label,
     type: s.type,
     spreadsheetId: s.spreadsheetId,
@@ -94,19 +101,32 @@ export default fp(async function funnelSpreadsheetsRoutes(fastify) {
   }
 
   // ---- GET /api/projects/:projectId/funnels/:funnelId/spreadsheets ----
+  // Query opcional ?stageId=X filtra planilhas dessa stage. Sem stageId,
+  // retorna todas as planilhas do funil (legacy: dashboards que ainda nao
+  // passam stageId continuam funcionando).
   fastify.get(
     "/api/projects/:projectId/funnels/:funnelId/spreadsheets",
     async (request, reply) => {
       const p = funnelParamSchema.safeParse(request.params);
       if (!p.success) return reply.code(400).send({ error: "Parametros invalidos" });
 
+      const q = listQuerySchema.safeParse(request.query);
+      if (!q.success) return reply.code(400).send({ error: "Query invalida" });
+
       const funnel = await getFunnelInProject(p.data.projectId, p.data.funnelId);
       if (!funnel) return reply.code(404).send({ error: "Funil nao encontrado" });
+
+      const whereClause = q.data.stageId
+        ? and(
+            eq(funnelSpreadsheets.funnelId, p.data.funnelId),
+            eq(funnelSpreadsheets.stageId, q.data.stageId),
+          )
+        : eq(funnelSpreadsheets.funnelId, p.data.funnelId);
 
       const rows = await fastify.db
         .select()
         .from(funnelSpreadsheets)
-        .where(eq(funnelSpreadsheets.funnelId, p.data.funnelId));
+        .where(whereClause);
 
       return { spreadsheets: rows.map(spreadsheetShape) };
     },
@@ -136,6 +156,7 @@ export default fp(async function funnelSpreadsheetsRoutes(fastify) {
         .insert(funnelSpreadsheets)
         .values({
           funnelId: p.data.funnelId,
+          stageId: body.data.stageId ?? null,
           label: body.data.label,
           type: body.data.type,
           spreadsheetId: body.data.spreadsheetId,
@@ -186,6 +207,7 @@ export default fp(async function funnelSpreadsheetsRoutes(fastify) {
       const patch: Partial<typeof funnelSpreadsheets.$inferInsert> = {
         updatedAt: new Date(),
       };
+      if (body.data.stageId !== undefined) patch.stageId = body.data.stageId;
       if (body.data.label !== undefined) patch.label = body.data.label;
       if (body.data.type !== undefined) patch.type = body.data.type;
       if (body.data.spreadsheetId !== undefined) patch.spreadsheetId = body.data.spreadsheetId;
