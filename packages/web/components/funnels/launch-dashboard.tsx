@@ -386,6 +386,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         hasSurveys={survey.totalResponses > 0 || !!survey.fallbackReason}
         data={{
           byQuestion: survey.byQuestion,
+          byQuestionByOrigin: survey.byQuestionByOrigin,
           totalResponses: survey.totalResponses,
           usingFallback: survey.usingFallback,
           fallbackReason: survey.fallbackReason,
