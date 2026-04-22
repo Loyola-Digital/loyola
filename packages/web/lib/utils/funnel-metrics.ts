@@ -11,6 +11,29 @@ import { normalizeEmail } from "@/lib/utils/normalize-answer";
 export const PAID_SOURCES = new Set(["meta", "meta-ads", "google-ads"]);
 
 /**
+ * Taxa de imposto a ser acrescida ao investimento em Meta Ads a partir de 2026.
+ * Aplicada uma única vez durante agregação de dados para evitar duplicação.
+ */
+const META_ADS_TAX_RATE = 1.1215; // 12,15% de acréscimo
+
+/**
+ * Aplica o imposto de 12,15% ao valor de spend se a data for 2026 ou posterior.
+ * A taxa é aplicada uma única vez durante a agregação de dados.
+ *
+ * @param spendValue - Valor de investimento em Meta Ads
+ * @param dateStr - Data no formato YYYY-MM-DD (ex: "2026-04-22")
+ * @returns Valor de spend com imposto aplicado (se aplicável)
+ */
+export function applyMetaAdsTax(spendValue: number, dateStr: string): number {
+  if (!dateStr || spendValue <= 0) return spendValue;
+  const year = parseInt(dateStr.substring(0, 4), 10);
+  if (year >= 2026) {
+    return spendValue * META_ADS_TAX_RATE;
+  }
+  return spendValue;
+}
+
+/**
  * Retorna o value numérico de uma action específica do array `actions[]` do Meta Ads.
  * Usado pra extrair `link_click`, `landing_page_view`, etc.
  */
@@ -47,7 +70,8 @@ export function sumMetaInsights(allInsights: CampaignDailyInsight[][]): {
   let lpViews = 0;
   for (const insights of allInsights) {
     for (const row of insights) {
-      spend += parseFloat(row.spend || "0");
+      const rowSpend = parseFloat(row.spend || "0");
+      spend += applyMetaAdsTax(rowSpend, row.date_start);
       impressions += parseFloat(row.impressions || "0");
       linkClicks += getActionValue(row.actions, "link_click");
       lpViews += getActionValue(row.actions, "landing_page_view");
@@ -132,8 +156,9 @@ export function aggregateMetaDailyByDate(
   for (const insights of allInsights) {
     for (const row of insights) {
       const date = row.date_start.slice(0, 10);
+      const rowSpend = parseFloat(row.spend || "0");
       const existing = map.get(date) ?? { spend: 0, impressions: 0, linkClicks: 0, lpView: 0 };
-      existing.spend += parseFloat(row.spend || "0");
+      existing.spend += applyMetaAdsTax(rowSpend, date);
       existing.impressions += parseFloat(row.impressions || "0");
       existing.linkClicks += getActionValue(row.actions, "link_click");
       existing.lpView += getActionValue(row.actions, "landing_page_view");
