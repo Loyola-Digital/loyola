@@ -411,14 +411,24 @@ export async function fetchAllAdInsights(
   metaAccountId: string,
   accessToken: string,
   days: number = 30,
-  campaignId?: string
+  campaignIds?: string | string[]
 ): Promise<AllAdInsight[]> {
   const datePreset =
     days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
 
-  const filterPart = campaignId
-    ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: campaignId }]))}`
-    : "";
+  // Aceita 1 campanha (string legacy) ou N campanhas (array). Meta Ads API
+  // suporta operator EQUAL (single) ou IN (multi) no param `filtering`.
+  const idList = Array.isArray(campaignIds)
+    ? campaignIds.filter((x): x is string => !!x)
+    : campaignIds
+      ? [campaignIds]
+      : [];
+  const filterPart =
+    idList.length === 0
+      ? ""
+      : idList.length === 1
+        ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: idList[0] }]))}`
+        : `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "IN", value: idList }]))}`;
 
   const fields = "impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,actions,action_values,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions";
 

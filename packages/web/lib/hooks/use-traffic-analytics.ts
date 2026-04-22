@@ -209,15 +209,28 @@ export function useTopPerformers(
   metric: TopPerformerMetric = "roas",
   limit: number = 5,
   days: number = 30,
-  campaignId?: string | null
+  campaignIds?: string | string[] | null,
 ) {
   const apiClient = useApiClient();
-  const campaignParam = campaignId ? `&campaignId=${campaignId}` : "";
+  // Normaliza pra sempre enviar `campaignIds` (CSV) quando houver mais de uma,
+  // `campaignId` (single) pra 1 só — compat com schema atual do backend.
+  const idList = Array.isArray(campaignIds)
+    ? campaignIds.filter(Boolean)
+    : campaignIds
+      ? [campaignIds]
+      : [];
+  const campaignParam =
+    idList.length === 0
+      ? ""
+      : idList.length === 1
+        ? `&campaignId=${encodeURIComponent(idList[0])}`
+        : `&campaignIds=${encodeURIComponent(idList.join(","))}`;
+  const cacheKeyIds = idList.length > 0 ? [...idList].sort().join(",") : null;
   return useQuery({
-    queryKey: ["traffic-top-performers", projectId, metric, limit, days, campaignId],
+    queryKey: ["traffic-top-performers", projectId, metric, limit, days, cacheKeyIds],
     queryFn: () =>
       apiClient<TopPerformersResponse>(
-        `/api/traffic/analytics/${projectId}/top-performers?metric=${metric}&limit=${limit}&days=${days}${campaignParam}`
+        `/api/traffic/analytics/${projectId}/top-performers?metric=${metric}&limit=${limit}&days=${days}${campaignParam}`,
       ),
     enabled: !!projectId,
     staleTime: TRAFFIC_STALE_TIME,
