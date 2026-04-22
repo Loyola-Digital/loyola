@@ -106,7 +106,7 @@ export function buildFunnelCplFormula(
 
 export function buildFunnelConnectRateFormula(rate: number | null, f: FunnelFilters): MetricFormula | undefined {
   if (rate == null) return undefined;
-  return { expression: "Landing page views ÷ Link clicks × 100", values: [{ label: "Connect Rate", value: `${rate.toFixed(2)}%`, source: "Meta Ads API · landing_page_views e link_click" }], result: `${rate.toFixed(2)}%`, period: period(f), note: note(f) };
+  return { expression: "Leads Pagos ÷ Landing page views × 100", values: [{ label: "Connect Rate", value: `${rate.toFixed(2)}%`, source: "Planilha · leads pagos atribuídos; Meta Ads API · landing_page_views" }], result: `${rate.toFixed(2)}%`, period: period(f), note: note(f) };
 }
 
 export function buildFunnelCtrFormula(ctr: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
