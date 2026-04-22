@@ -625,6 +625,11 @@ export const funnelStages = pgTable(
       .$type<{ uniq: number; id: string; domain: string }[]>(),
     stageType: varchar("stage_type", { length: 10 }).notNull().default("free"),
     sortOrder: integer("sort_order").notNull().default(0),
+    lastAuditAt: timestamp("last_audit_at", { withTimezone: true }),
+    lastAuditBy: uuid("last_audit_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    auditStatus: varchar("audit_status", { length: 20 }).default("pending").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },

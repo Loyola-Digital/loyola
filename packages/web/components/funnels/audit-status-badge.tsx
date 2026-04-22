@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 
 interface AuditStatusBadgeProps {
+  stageId: string;
   funnelId: string;
   projectId: string;
   className?: string;
@@ -49,11 +50,12 @@ function formatFullDateTime(date: string): string {
 }
 
 export function AuditStatusBadge({
+  stageId,
   funnelId,
   projectId,
   className = "",
 }: AuditStatusBadgeProps) {
-  const { data, isLoading, audit, isAuditing } = useAuditStatus(funnelId, projectId);
+  const { data, isLoading, audit, isAuditing } = useAuditStatus(stageId, funnelId, projectId);
   const [showTooltip, setShowTooltip] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
