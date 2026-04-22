@@ -5,6 +5,7 @@ import type {
 } from "@/lib/hooks/use-traffic-analytics";
 import type { FunnelSpreadsheetRow } from "@/lib/types/funnel-spreadsheet";
 import { PAID_SOURCES, safeDivide } from "@/lib/utils/funnel-metrics";
+import { normalizeNumericId } from "@/lib/utils/normalize-answer";
 
 /**
  * Representa um criativo agregado — vários `TopPerformerAd` com o mesmo
@@ -135,10 +136,10 @@ export function countPaidLeadsForAds(
   utmSourceMapped: boolean,
 ): number {
   if (!utmContentMapped || !utmSourceMapped) return 0;
-  const idSet = new Set(adIds);
+  const idSet = new Set(adIds.map(normalizeNumericId));
   let count = 0;
   for (const row of rows) {
-    const utmContent = row.named.utm_content ?? "";
+    const utmContent = normalizeNumericId(row.named.utm_content ?? "");
     if (!idSet.has(utmContent)) continue;
     const utmSource = (row.named.utm_source ?? "").trim().toLowerCase();
     if (PAID_SOURCES.has(utmSource)) count += 1;
@@ -158,7 +159,7 @@ export function countLeadsByOriginForAds(
   utmSourceMapped: boolean,
 ): { leadsPagos: number; leadsOrg: number; leadsSemTrack: number } {
   if (!utmContentMapped) return { leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0 };
-  const idSet = new Set(adIds);
+  const idSet = new Set(adIds.map(normalizeNumericId));
   const seen = {
     leadsPagos: new Set<string>(),
     leadsOrg: new Set<string>(),
@@ -166,7 +167,7 @@ export function countLeadsByOriginForAds(
   };
   let rowIdx = 0;
   for (const row of rows) {
-    const utmContent = row.named.utm_content ?? "";
+    const utmContent = normalizeNumericId(row.named.utm_content ?? "");
     if (!idSet.has(utmContent)) { rowIdx++; continue; }
     const email = (row.named.email ?? "").trim().toLowerCase();
     const key = email || `__no-email_${rowIdx}`;
@@ -279,8 +280,8 @@ export function mergeSurveyForGroup(
     voce_e: new Map<string, number>(),
   };
   const totalResponses = { faturamento: 0, profissao: 0, funcionarios: 0, voce_e: 0 };
-  for (const id of adIds) {
-    const adData = surveyDataByAdId[id];
+  for (const rawId of adIds) {
+    const adData = surveyDataByAdId[rawId] ?? surveyDataByAdId[normalizeNumericId(rawId)];
     if (!adData) continue;
     for (const key of ["faturamento", "profissao", "funcionarios", "voce_e"] as const) {
       for (const item of adData[key]) {
