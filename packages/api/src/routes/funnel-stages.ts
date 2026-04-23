@@ -336,6 +336,52 @@ export default fp(async function funnelStageRoutes(fastify) {
     }
   );
 
+  // DELETE /api/projects/:projectId/funnels/:funnelId/stages/:stageId/audit
+  // Cancela (desfaz) a auditoria da etapa — volta pro estado "pending" e
+  // zera lastAuditAt/lastAuditBy. Isolado por stage.
+  fastify.delete(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/audit",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const userId = request.userId;
+      if (!userId) return reply.code(401).send({ error: "Unauthorized" });
+
+      const project = await getProjectAccess(params.data.projectId, userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const [existing] = await fastify.db
+        .select({ id: funnelStages.id })
+        .from(funnelStages)
+        .where(
+          and(
+            eq(funnelStages.id, params.data.stageId),
+            eq(funnelStages.funnelId, params.data.funnelId)
+          )
+        )
+        .limit(1);
+
+      if (!existing) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      await fastify.db
+        .update(funnelStages)
+        .set({
+          lastAuditAt: null,
+          lastAuditBy: null,
+          auditStatus: "pending",
+          updatedAt: new Date(),
+        })
+        .where(eq(funnelStages.id, params.data.stageId));
+
+      return reply.send({
+        lastAuditAt: null,
+        lastAuditBy: null,
+        auditStatus: "pending" as const,
+      });
+    }
+  );
+
   // DELETE /api/projects/:projectId/funnels/:funnelId/stages/:stageId
   fastify.delete("/api/projects/:projectId/funnels/:funnelId/stages/:stageId", async (request, reply) => {
     const params = stageParamsSchema.safeParse(request.params);
