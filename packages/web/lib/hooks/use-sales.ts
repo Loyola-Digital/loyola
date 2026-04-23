@@ -103,7 +103,7 @@ export function useSalesAscension(projectId: string) {
   return useQuery({
     queryKey: ["sales-ascension", projectId],
     queryFn: () => apiClient<{ data: AscensionData | null; message?: string }>(`/api/projects/${projectId}/sales/ascension`),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
   });
 }
 

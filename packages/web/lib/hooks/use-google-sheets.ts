@@ -41,7 +41,7 @@ export function useSpreadsheets() {
   return useQuery({
     queryKey: ["google-sheets-spreadsheets"],
     queryFn: () => apiClient<{ spreadsheets: SpreadsheetInfo[] }>("/api/google-sheets/spreadsheets"),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
   });
 }
 
@@ -51,7 +51,7 @@ export function useSpreadsheetSheets(spreadsheetId: string | null) {
     queryKey: ["google-sheets-sheets", spreadsheetId],
     queryFn: () => apiClient<{ name: string; sheets: SheetInfo[] }>(`/api/google-sheets/spreadsheets/${spreadsheetId}/sheets`),
     enabled: !!spreadsheetId,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
   });
 }
 
@@ -61,7 +61,7 @@ export function useSheetData(spreadsheetId: string | null, sheetName: string | n
     queryKey: ["google-sheets-data", spreadsheetId, sheetName],
     queryFn: () => apiClient<SheetData>(`/api/google-sheets/spreadsheets/${spreadsheetId}/sheets/${encodeURIComponent(sheetName!)}/data`),
     enabled: !!spreadsheetId && !!sheetName,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
   });
 }
 
@@ -101,7 +101,7 @@ export function useSurveySummary(projectId: string, funnelId: string) {
   return useQuery({
     queryKey: ["funnel-surveys-summary", projectId, funnelId],
     queryFn: () => apiClient<SurveySummary>(`/api/projects/${projectId}/funnels/${funnelId}/surveys/summary`),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
   });
 }
 

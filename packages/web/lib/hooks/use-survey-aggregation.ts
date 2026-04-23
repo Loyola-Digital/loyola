@@ -193,7 +193,7 @@ export function useSurveyAggregation(
         apiClient<SheetData>(
           `/api/google-sheets/spreadsheets/${s.spreadsheetId}/sheets/${encodeURIComponent(s.sheetName)}/data`,
         ),
-      staleTime: 5 * 60 * 1000,
+      staleTime: 30 * 1000,
       enabled: !!s.spreadsheetId && !!s.sheetName,
     })),
   });

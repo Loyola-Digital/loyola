@@ -4,7 +4,7 @@ import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery } from "@tanstack/react-query";
 import type { StageSalesData, StageSalesSubtype } from "@loyola-x/shared";
 
-const STALE_TIME = 5 * 60 * 1000;
+const STALE_TIME = 30 * 1000;
 
 export function useStageSalesData(
   projectId: string | null,

@@ -115,6 +115,6 @@ export function useFunnelSpreadsheetData(
         `/api/projects/${projectId}/funnels/${funnelId}/spreadsheets/${id}/data`,
       ),
     enabled: Boolean(projectId && funnelId && id),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
   });
 }

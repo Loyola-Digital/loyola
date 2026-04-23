@@ -94,7 +94,7 @@ export function useCrossedFunnelMetrics(
         apiClient<CampaignDailyInsight[]>(
           `/api/traffic/analytics/${projectId}/campaign-daily?campaignId=${c.id}&days=${days}`,
         ),
-      staleTime: 5 * 60 * 1000,
+      staleTime: 30 * 1000,
       enabled: funnel.campaigns.length > 0,
     })),
   });

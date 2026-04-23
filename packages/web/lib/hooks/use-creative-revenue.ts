@@ -27,7 +27,7 @@ export interface CreativeRevenueData {
   semDados: boolean;
 }
 
-const STALE_TIME = 5 * 60 * 1000;
+const STALE_TIME = 30 * 1000;
 
 export function useCreativeRevenue(
   projectId: string | null,
