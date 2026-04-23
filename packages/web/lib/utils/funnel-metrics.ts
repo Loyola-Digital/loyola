@@ -47,6 +47,22 @@ export function getActionValue(
 }
 
 /**
+ * Extrai checkout initiations do array `actions[]`.
+ * Tenta múltiplas variações do event type de checkout da Meta API,
+ * retornando a primeira que tiver valor > 0.
+ */
+export function getCheckoutValue(
+  actions: { action_type: string; value: string }[] | undefined,
+): number {
+  if (!actions) return 0;
+  for (const type of ["initiate_checkout", "offsite_conversion.fb_pixel_initiate_checkout", "omni_initiate_checkout"]) {
+    const v = getActionValue(actions, type);
+    if (v > 0) return v;
+  }
+  return 0;
+}
+
+/**
  * Divisão segura. Retorna null quando o denominador é zero (em vez de Infinity/NaN)
  * pra permitir que a UI exiba "—" sem tratamento especial.
  */
@@ -63,11 +79,13 @@ export function sumMetaInsights(allInsights: CampaignDailyInsight[][]): {
   impressions: number;
   linkClicks: number;
   lpViews: number;
+  checkoutInitiations: number;
 } {
   let spend = 0;
   let impressions = 0;
   let linkClicks = 0;
   let lpViews = 0;
+  let checkoutInitiations = 0;
   for (const insights of allInsights) {
     for (const row of insights) {
       const rowSpend = parseFloat(row.spend || "0");
@@ -75,9 +93,10 @@ export function sumMetaInsights(allInsights: CampaignDailyInsight[][]): {
       impressions += parseFloat(row.impressions || "0");
       linkClicks += getActionValue(row.actions, "link_click");
       lpViews += getActionValue(row.actions, "landing_page_view");
+      checkoutInitiations += getCheckoutValue(row.actions);
     }
   }
-  return { spend, impressions, linkClicks, lpViews };
+  return { spend, impressions, linkClicks, lpViews, checkoutInitiations };
 }
 
 /**
@@ -135,6 +154,7 @@ export interface DailyRow {
   cpc: number;
   ctr: number;
   lpView: number;
+  checkoutInitiations: number;
   connectRate: number | null;
   txConv: number | null;
   leadsPagos: number;
@@ -151,17 +171,18 @@ export interface DailyRow {
  */
 export function aggregateMetaDailyByDate(
   allInsights: CampaignDailyInsight[][],
-): Map<string, { spend: number; impressions: number; linkClicks: number; lpView: number }> {
-  const map = new Map<string, { spend: number; impressions: number; linkClicks: number; lpView: number }>();
+): Map<string, { spend: number; impressions: number; linkClicks: number; lpView: number; checkoutInitiations: number }> {
+  const map = new Map<string, { spend: number; impressions: number; linkClicks: number; lpView: number; checkoutInitiations: number }>();
   for (const insights of allInsights) {
     for (const row of insights) {
       const date = row.date_start.slice(0, 10);
       const rowSpend = parseFloat(row.spend || "0");
-      const existing = map.get(date) ?? { spend: 0, impressions: 0, linkClicks: 0, lpView: 0 };
+      const existing = map.get(date) ?? { spend: 0, impressions: 0, linkClicks: 0, lpView: 0, checkoutInitiations: 0 };
       existing.spend += applyMetaAdsTax(rowSpend, date);
       existing.impressions += parseFloat(row.impressions || "0");
       existing.linkClicks += getActionValue(row.actions, "link_click");
       existing.lpView += getActionValue(row.actions, "landing_page_view");
+      existing.checkoutInitiations += getCheckoutValue(row.actions);
       map.set(date, existing);
     }
   }
@@ -231,13 +252,13 @@ export function aggregateSpreadsheetByDate(
  * Ordenação: data ascendente.
  */
 export function buildDailyRows(
-  metaMap: Map<string, { spend: number; impressions: number; linkClicks: number; lpView: number }>,
+  metaMap: Map<string, { spend: number; impressions: number; linkClicks: number; lpView: number; checkoutInitiations: number }>,
   sheetMap: Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number; faturamento: number }>,
 ): DailyRow[] {
   const allDates = new Set([...metaMap.keys(), ...sheetMap.keys()]);
   const rows: DailyRow[] = [];
   for (const date of allDates) {
-    const meta = metaMap.get(date) ?? { spend: 0, impressions: 0, linkClicks: 0, lpView: 0 };
+    const meta = metaMap.get(date) ?? { spend: 0, impressions: 0, linkClicks: 0, lpView: 0, checkoutInitiations: 0 };
     const sheet = sheetMap.get(date) ?? { leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0, faturamento: 0 };
     const totalLeads = sheet.leadsPagos + sheet.leadsOrg + sheet.leadsSemTrack;
     rows.push({
@@ -249,6 +270,7 @@ export function buildDailyRows(
       cpc: safeDivide(meta.spend, meta.linkClicks) ?? 0,
       ctr: meta.impressions > 0 ? (meta.linkClicks / meta.impressions) * 100 : 0,
       lpView: meta.lpView,
+      checkoutInitiations: meta.checkoutInitiations,
       connectRate: meta.linkClicks > 0 ? (meta.lpView / meta.linkClicks) * 100 : null,
       txConv: meta.linkClicks > 0 ? (sheet.leadsPagos / meta.linkClicks) * 100 : null,
       leadsPagos: sheet.leadsPagos,
@@ -274,13 +296,14 @@ export function computeTotals(rows: DailyRow[]): DailyRow {
       acc.linkClicks += r.linkClicks;
       acc.impressions += r.impressions;
       acc.lpView += r.lpView;
+      acc.checkoutInitiations += r.checkoutInitiations;
       acc.leadsPagos += r.leadsPagos;
       acc.leadsOrg += r.leadsOrg;
       acc.leadsSemTrack += r.leadsSemTrack;
       acc.faturamento += r.faturamento;
       return acc;
     },
-    { spend: 0, linkClicks: 0, impressions: 0, lpView: 0, leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0, faturamento: 0 },
+    { spend: 0, linkClicks: 0, impressions: 0, lpView: 0, checkoutInitiations: 0, leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0, faturamento: 0 },
   );
   const totalLeads = t.leadsPagos + t.leadsOrg + t.leadsSemTrack;
   return {
@@ -292,6 +315,7 @@ export function computeTotals(rows: DailyRow[]): DailyRow {
     cpc: safeDivide(t.spend, t.linkClicks) ?? 0,
     ctr: t.impressions > 0 ? (t.linkClicks / t.impressions) * 100 : 0,
     lpView: t.lpView,
+    checkoutInitiations: t.checkoutInitiations,
     connectRate: t.linkClicks > 0 ? (t.lpView / t.linkClicks) * 100 : null,
     txConv: t.linkClicks > 0 ? (t.leadsPagos / t.linkClicks) * 100 : null,
     leadsPagos: t.leadsPagos,
