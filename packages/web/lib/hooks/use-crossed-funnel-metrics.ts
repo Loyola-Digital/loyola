@@ -28,6 +28,25 @@ export interface CrossedFunnelMetrics {
   leadsSemTrack: number;
   totalLeads: number;
 
+  /**
+   * Total de vendas da planilha "sales" (captação paga).
+   * Contagem de linhas com data preenchida no período.
+   * Null se planilha de vendas não vinculada.
+   */
+  totalVendas: number | null;
+
+  /**
+   * Número de visitas ao checkout (initiate_checkout events da Meta Ads API).
+   * Null se Meta API indisponível.
+   */
+  checkoutVisits: number | null;
+
+  /**
+   * Taxa de conversão do checkout = (vendas ÷ checkoutVisits) × 100
+   * Null se checkoutVisits = 0 ou se vendas/checkout indisponíveis.
+   */
+  checkoutConversionRate: number | null;
+
   cpm: number;
   cpc: number;
   ctr: number;
@@ -117,14 +136,22 @@ export function useCrossedFunnelMetrics(
     );
   }, [spreadsheetsData]);
 
+  const salesSheet = useMemo(() => {
+    if (!spreadsheetsData?.spreadsheets) return null;
+    return spreadsheetsData.spreadsheets.find((s) => s.type === "sales") ?? null;
+  }, [spreadsheetsData]);
+
   const { data: sheetData, isLoading: sheetDataLoading } =
     useFunnelSpreadsheetData(projectId, funnel.id, linkedSheet?.id);
+
+  const { data: salesSheetData, isLoading: salesSheetDataLoading } =
+    useFunnelSpreadsheetData(projectId, funnel.id, salesSheet?.id);
 
   const { totalResponses, matchedResponses, unmatchedResponses, isLoading: surveyLoading } =
     useSurveyAggregation(projectId, funnel.id, stageId ?? null);
 
   const hasLinkedSheet = !!linkedSheet;
-  const isLoading = metaLoading || sheetsListLoading || sheetDataLoading || surveyLoading;
+  const isLoading = metaLoading || sheetsListLoading || sheetDataLoading || surveyLoading || salesSheetDataLoading;
 
   return useMemo<CrossedFunnelMetrics>(() => {
     const metaMap = aggregateMetaDailyByDate(metaData);
@@ -143,6 +170,27 @@ export function useCrossedFunnelMetrics(
         ? Math.min((totalResponses / totalLeads) * 100, 100)
         : null;
 
+    // Contar vendas: linhas da planilha de captação paga com data preenchida no período
+    let totalVendas: number | null = null;
+    if (salesSheetData) {
+      const filteredSalesRows = filterSheetRowsByDays(salesSheetData, days);
+      const dateCol = salesSheetData.mapping.date;
+      if (dateCol) {
+        totalVendas = filteredSalesRows.filter(
+          (row) => row.named[dateCol as keyof typeof row.named]
+        ).length;
+      }
+    }
+
+    // Visitas ao checkout: initiate_checkout events da Meta Ads (múltiplas variações de event type)
+    const checkoutVisits = totals.checkoutInitiations > 0 ? totals.checkoutInitiations : null;
+
+    // Taxa de conversão do checkout
+    let checkoutConversionRate: number | null = null;
+    if (totalVendas !== null && checkoutVisits !== null && checkoutVisits > 0) {
+      checkoutConversionRate = (totalVendas / checkoutVisits) * 100;
+    }
+
     return {
       spend: totals.spend,
       linkClicks: totals.linkClicks,
@@ -152,6 +200,9 @@ export function useCrossedFunnelMetrics(
       leadsOrg: totals.leadsOrg,
       leadsSemTrack: totals.leadsSemTrack,
       totalLeads,
+      totalVendas,
+      checkoutVisits,
+      checkoutConversionRate,
       cpm: totals.cpm,
       cpc: totals.cpc,
       ctr: totals.ctr,
@@ -166,5 +217,5 @@ export function useCrossedFunnelMetrics(
       isLoading,
       hasLinkedSheet,
     };
-  }, [metaData, sheetData, days, isLoading, hasLinkedSheet, totalResponses, matchedResponses, unmatchedResponses]);
+  }, [metaData, sheetData, salesSheetData, days, isLoading, hasLinkedSheet, totalResponses, matchedResponses, unmatchedResponses]);
 }
