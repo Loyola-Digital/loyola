@@ -84,9 +84,8 @@ function CustomTooltip(props: any) {
  * Gráfico de leads acumulados ao longo do tempo: área de Total + 3 linhas
  * (Pagos / Org / Sem Track).
  *
- * Extraído do MetaAdsSpreadsheetTab (Story 18.1) pra componente reutilizável
- * na Story 18.4. Usado na aba Meta Ads (LaunchDashboard) e também na Meta Ads 2
- * enquanto existir.
+ * Introduzido na Story 18.4 como componente reutilizável. Usado na aba
+ * Meta Ads (LaunchDashboard).
  */
 export function LeadsCumulativeChart({
   rows,
