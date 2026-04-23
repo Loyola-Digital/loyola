@@ -138,7 +138,7 @@ export function useCrossedFunnelMetrics(
 
   const salesSheet = useMemo(() => {
     if (!spreadsheetsData?.spreadsheets) return null;
-    return spreadsheetsData.spreadsheets.find((s) => s.type === "sales") ?? null;
+    return spreadsheetsData.spreadsheets.find((s) => s.type === "sales" || s.type === "custom") ?? null;
   }, [spreadsheetsData]);
 
   const { data: sheetData, isLoading: sheetDataLoading } =
