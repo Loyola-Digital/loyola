@@ -27,8 +27,8 @@ function fmtNumber(val: number): string {
 // SHEETS PICKER DIALOG
 // ============================================================
 
-function SheetsPickerDialog({ projectId, funnelId, open, onOpenChange }: {
-  projectId: string; funnelId: string; open: boolean; onOpenChange: (open: boolean) => void;
+function SheetsPickerDialog({ projectId, funnelId, stageId, open, onOpenChange }: {
+  projectId: string; funnelId: string; stageId?: string; open: boolean; onOpenChange: (open: boolean) => void;
 }) {
   const { data: spreadsheetsData, isLoading: spreadsheetsLoading } = useSpreadsheets();
   const [selectedSpreadsheet, setSelectedSpreadsheet] = useState<{ id: string; name: string } | null>(null);
@@ -42,7 +42,7 @@ function SheetsPickerDialog({ projectId, funnelId, open, onOpenChange }: {
   function handleAddSheet(sheetName: string) {
     if (!selectedSpreadsheet) return;
     addSurvey.mutate(
-      { spreadsheetId: selectedSpreadsheet.id, spreadsheetName: selectedSpreadsheet.name, sheetName },
+      { stageId, spreadsheetId: selectedSpreadsheet.id, spreadsheetName: selectedSpreadsheet.name, sheetName },
       {
         onSuccess: () => { toast.success(`Aba "${sheetName}" vinculada!`); },
         onError: (err) => toast.error(err instanceof Error ? err.message : "Erro"),
@@ -264,13 +264,14 @@ function SurveyDataSection({ survey, projectId, funnelId }: { survey: { id: stri
 interface SurveyFunnelTabProps {
   projectId: string;
   funnelId: string;
+  stageId?: string;
   totalLeads?: number;
 }
 
-export function SurveyFunnelTab({ projectId, funnelId, totalLeads }: SurveyFunnelTabProps) {
+export function SurveyFunnelTab({ projectId, funnelId, stageId, totalLeads }: SurveyFunnelTabProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { data: surveysData, isLoading } = useFunnelSurveys(projectId, funnelId);
-  const { data: summaryData } = useSurveySummary(projectId, funnelId);
+  const { data: surveysData, isLoading } = useFunnelSurveys(projectId, funnelId, stageId);
+  const { data: summaryData } = useSurveySummary(projectId, funnelId, stageId);
 
   const surveys = surveysData?.surveys ?? [];
   const totalResponses = summaryData?.totalResponses ?? 0;
@@ -317,7 +318,7 @@ export function SurveyFunnelTab({ projectId, funnelId, totalLeads }: SurveyFunne
         </div>
       )}
 
-      <SheetsPickerDialog projectId={projectId} funnelId={funnelId} open={pickerOpen} onOpenChange={setPickerOpen} />
+      <SheetsPickerDialog projectId={projectId} funnelId={funnelId} stageId={stageId} open={pickerOpen} onOpenChange={setPickerOpen} />
     </div>
   );
 }

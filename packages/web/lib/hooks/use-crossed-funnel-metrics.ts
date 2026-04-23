@@ -84,6 +84,7 @@ export function useCrossedFunnelMetrics(
   projectId: string,
   funnel: Funnel,
   days: number,
+  stageId?: string | null,
 ): CrossedFunnelMetrics {
   const apiClient = useApiClient();
 
@@ -120,7 +121,7 @@ export function useCrossedFunnelMetrics(
     useFunnelSpreadsheetData(projectId, funnel.id, linkedSheet?.id);
 
   const { totalResponses, matchedResponses, unmatchedResponses, isLoading: surveyLoading } =
-    useSurveyAggregation(projectId, funnel.id);
+    useSurveyAggregation(projectId, funnel.id, stageId ?? null);
 
   const hasLinkedSheet = !!linkedSheet;
   const isLoading = metaLoading || sheetsListLoading || sheetDataLoading || surveyLoading;

@@ -107,8 +107,8 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
   );
-  const metrics = useCrossedFunnelMetrics(projectId, funnel, days);
-  const survey = useSurveyAggregation(projectId, funnel.id);
+  const metrics = useCrossedFunnelMetrics(projectId, funnel, days, stageId ?? null);
+  const survey = useSurveyAggregation(projectId, funnel.id, stageId ?? null);
   const { data: campaignData } = useTrafficCampaigns(projectId, days);
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsights(projectId, firstCampaignId, days);

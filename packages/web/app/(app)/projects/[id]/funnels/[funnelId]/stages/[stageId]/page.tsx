@@ -309,7 +309,7 @@ export default function StagePage() {
         </TabsContent>
 
         <TabsContent value="surveys" className="mt-6">
-          <SurveyFunnelTab projectId={params.id} funnelId={params.funnelId} />
+          <SurveyFunnelTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
         </TabsContent>
 
         <TabsContent value="spreadsheets" className="mt-6">
