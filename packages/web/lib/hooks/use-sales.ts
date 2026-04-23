@@ -46,13 +46,22 @@ export function useSalesProducts(projectId: string) {
   });
 }
 
+// Invalida tanto a lista de produtos (UI) quanto a agregação de ascension
+// (que lê de verdade os dados das planilhas). Sem invalidar ascension, um
+// remap de planilha no projeto continua mostrando dados da planilha antiga
+// até o usuário recarregar a página.
+function invalidateSalesData(qc: ReturnType<typeof useQueryClient>, projectId: string) {
+  qc.invalidateQueries({ queryKey: ["sales-products", projectId] });
+  qc.invalidateQueries({ queryKey: ["sales-ascension", projectId] });
+}
+
 export function useCreateSalesProduct(projectId: string) {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: { name: string; type: "inferior" | "superior" }) =>
       apiClient(`/api/projects/${projectId}/sales/products`, { method: "POST", body: JSON.stringify(data) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-products", projectId] }); },
+    onSuccess: () => { invalidateSalesData(qc, projectId); },
   });
 }
 
@@ -62,7 +71,7 @@ export function useDeleteSalesProduct(projectId: string) {
   return useMutation({
     mutationFn: (productId: string) =>
       apiClient(`/api/projects/${projectId}/sales/products/${productId}`, { method: "DELETE" }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-products", projectId] }); },
+    onSuccess: () => { invalidateSalesData(qc, projectId); },
   });
 }
 
@@ -72,7 +81,7 @@ export function useAddSalesMapping(projectId: string, productId: string) {
   return useMutation({
     mutationFn: (data: { spreadsheetId: string; spreadsheetName: string; sheetName: string; columnMapping: ColumnMapping }) =>
       apiClient(`/api/projects/${projectId}/sales/products/${productId}/mappings`, { method: "POST", body: JSON.stringify(data) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-products", projectId] }); },
+    onSuccess: () => { invalidateSalesData(qc, projectId); },
   });
 }
 
@@ -116,7 +125,7 @@ export function useUpdateSalesMapping(projectId: string, productId: string) {
         method: "PUT",
         body: JSON.stringify({ columnMapping }),
       }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-products", projectId] }); },
+    onSuccess: () => { invalidateSalesData(qc, projectId); },
   });
 }
 
@@ -126,6 +135,6 @@ export function useDeleteSalesMapping(projectId: string, productId: string) {
   return useMutation({
     mutationFn: (mappingId: string) =>
       apiClient(`/api/projects/${projectId}/sales/products/${productId}/mappings/${mappingId}`, { method: "DELETE" }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-products", projectId] }); },
+    onSuccess: () => { invalidateSalesData(qc, projectId); },
   });
 }
