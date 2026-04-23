@@ -31,6 +31,19 @@ export interface ConnectSaleSpreadsheetInput {
   columnMapping: SaleColumnMapping;
 }
 
+// Invalida metadata E os dados agregados (faturamento/vendas/canais). Sem
+// invalidar stage-sales-data, conectar outra planilha mantém os KPIs da
+// planilha antiga em cache até reload.
+function invalidateStageSalesData(
+  qc: ReturnType<typeof useQueryClient>,
+  projectId: string,
+  funnelId: string,
+  stageId: string
+) {
+  qc.invalidateQueries({ queryKey: ["stage-sales-spreadsheets", projectId, funnelId, stageId] });
+  qc.invalidateQueries({ queryKey: ["stage-sales-data", projectId, funnelId, stageId] });
+}
+
 export function useConnectSaleSpreadsheet(
   projectId: string,
   funnelId: string,
@@ -45,9 +58,7 @@ export function useConnectSaleSpreadsheet(
         { method: "POST", body: JSON.stringify(data) }
       ),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["stage-sales-spreadsheets", projectId, funnelId, stageId],
-      });
+      invalidateStageSalesData(queryClient, projectId, funnelId, stageId);
     },
   });
 }
@@ -66,9 +77,7 @@ export function useDisconnectSaleSpreadsheet(
         { method: "DELETE" }
       ),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["stage-sales-spreadsheets", projectId, funnelId, stageId],
-      });
+      invalidateStageSalesData(queryClient, projectId, funnelId, stageId);
     },
   });
 }
