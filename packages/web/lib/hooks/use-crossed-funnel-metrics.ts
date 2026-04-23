@@ -106,7 +106,7 @@ export function useCrossedFunnelMetrics(
     .filter((d): d is CampaignDailyInsight[] => !!d);
 
   const { data: spreadsheetsData, isLoading: sheetsListLoading } =
-    useFunnelSpreadsheets(projectId, funnel.id);
+    useFunnelSpreadsheets(projectId, funnel.id, stageId ?? null);
 
   const linkedSheet = useMemo(() => {
     if (!spreadsheetsData?.spreadsheets) return null;
