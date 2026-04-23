@@ -19,6 +19,6 @@ export function useMetaAdsComparison(
         `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/meta-ads-comparison?days=${days ?? 30}`
       ),
     enabled: !!projectId && !!funnelId && !!stageId && !!compareFunnelId,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
   });
 }

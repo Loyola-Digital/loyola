@@ -140,7 +140,11 @@ export interface SheetData {
 }
 
 const dataCache = new Map<string, { data: SheetData; timestamp: number }>();
-const DATA_CACHE_TTL = 5 * 60 * 1000; // 5 min
+// Cache curto (30s) — apenas pra blindar contra thundering herd quando 5+ hooks
+// do mesmo dashboard montam em paralelo. Não queremos desatualizar planilhas
+// por mais de 30s porque o user edita na planilha e espera ver aqui quase
+// imediatamente.
+const DATA_CACHE_TTL = 30 * 1000;
 
 export async function readSheetData(spreadsheetId: string, sheetName: string): Promise<SheetData> {
   const cacheKey = `${spreadsheetId}:${sheetName}`;
