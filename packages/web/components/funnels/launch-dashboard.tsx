@@ -250,7 +250,6 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   icon={Banknote}
                   label="Faturamento"
                   value={fmtCurrency(salesData!.faturamentoBruto)}
-                  subValue={salesData!.faturamentoLiquido > 0 ? `Líquido: ${fmtCurrency(salesData!.faturamentoLiquido)}` : undefined}
                 />
               )}
               <MetricTooltip label="Leads" value={metrics.hasLinkedSheet ? fmtNumber(metrics.totalLeads) : "—"} formula={metrics.hasLinkedSheet ? buildFunnelLeadsFormula(metrics.totalLeads, f, { pagos: metrics.leadsPagos, org: metrics.leadsOrg, semTrack: metrics.leadsSemTrack }) : undefined}>
