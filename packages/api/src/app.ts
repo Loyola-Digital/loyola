@@ -44,6 +44,7 @@ import switchyRoutes from "./routes/switchy.js";
 import funnelStageRoutes from "./routes/funnel-stages.js";
 import stageSalesSpreadsheetsRoutes from "./routes/stage-sales-spreadsheets.js";
 import stageSalesDataRoutes from "./routes/stage-sales-data.js";
+import creativeRevenueRoutes from "./routes/creative-revenue.js";
 import metaAdsComparisonRoutes from "./routes/meta-ads-comparison.js";
 
 export async function buildServer() {
@@ -104,6 +105,7 @@ export async function buildServer() {
   await app.register(funnelStageRoutes);
   await app.register(stageSalesSpreadsheetsRoutes);
   await app.register(stageSalesDataRoutes);
+  await app.register(creativeRevenueRoutes);
   await app.register(metaAdsComparisonRoutes);
 
   return app;

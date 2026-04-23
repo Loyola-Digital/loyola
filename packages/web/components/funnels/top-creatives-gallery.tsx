@@ -45,6 +45,7 @@ import {
   type AggregatedCreative,
 } from "@/lib/utils/top-creatives";
 import type { SurveyDataByAdId } from "@/lib/hooks/use-survey-aggregation";
+import { useCreativeRevenue } from "@/lib/hooks/use-creative-revenue";
 
 // ============================================================
 // Tipos locais e formatters
@@ -432,6 +433,12 @@ interface TopCreativesGalleryProps {
   days: number;
   campaignIds?: string[];
   funnelId?: string;
+  /**
+   * Stage atual (Story 21.7) — quando presente, ativa o hook
+   * `useCreativeRevenue` que cruza planilha de leads × vendas e exibe
+   * o faturamento real por criativo nos cards.
+   */
+  stageId?: string;
   funnelContext?: {
     days: number;
     funnelType?: "launch" | "perpetual";
@@ -451,12 +458,28 @@ export function TopCreativesGallery({
   days,
   campaignIds,
   funnelId,
+  stageId,
   funnelContext,
   surveyDataByAdId,
 }: TopCreativesGalleryProps) {
   const [metric, setMetric] = useState<LocalMetric>("cpl");
   const [expanded, setExpanded] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  // Story 21.7 — faturamento real por criativo (cruzamento leads × vendas).
+  // Só ativa quando temos funnelId+stageId; hook é no-op (`enabled: false`)
+  // caso contrário, então overhead zero nos dashboards que não passam stageId.
+  const { data: revenueData } = useCreativeRevenue(
+    projectId,
+    funnelId ?? null,
+    stageId ?? null,
+    days,
+  );
+
+  const brlFormatter = useMemo(
+    () => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }),
+    [],
+  );
 
   // Story 18.5: limit=20, todas as campanhas do funil/stage (não apenas a 1ª).
   // Backend aceita `campaignIds` CSV via Meta API IN filter — múltiplas
@@ -694,6 +717,37 @@ export function TopCreativesGallery({
                     {c.leadsSemTrack > 0 && <span>{(c.leadsPagos > 0 || c.leadsOrg > 0) ? " | " : ""}{c.leadsSemTrack} S/orig</span>}
                   </div>
                 )}
+
+                {/* Faturamento real por criativo (Story 21.7). Dedup de email
+                    entre múltiplos ad_ids do mesmo criativo agregado (AC-8). */}
+                {revenueData && !revenueData.semDados ? (() => {
+                  const seenEmails = new Set<string>();
+                  let bruto = 0;
+                  let vendas = 0;
+                  for (const id of c.ids) {
+                    const entry = revenueData.byAdId[id];
+                    if (!entry) continue;
+                    for (let i = 0; i < entry.emails.length; i++) {
+                      const email = entry.emails[i];
+                      if (seenEmails.has(email)) continue;
+                      seenEmails.add(email);
+                      // Share proporcional por venda (cada email conta 1 vez;
+                      // bruto do ad foi somado já por email, então distribui
+                      // pelo count de emails do ad pra pegar o share do email).
+                      bruto += entry.faturamentoBruto / entry.emails.length;
+                      vendas += 1;
+                    }
+                  }
+                  if (bruto <= 0 || vendas === 0) return null;
+                  return (
+                    <div className="text-[10px] pt-1 border-t border-border/20">
+                      <span className="text-foreground/80 font-medium">
+                        💵 Faturado: {brlFormatter.format(bruto)}
+                      </span>
+                      <span className="text-muted-foreground/70"> · {vendas} {vendas === 1 ? "venda" : "vendas"}</span>
+                    </div>
+                  );
+                })() : null}
 
                 {/* Dados da pesquisa (Story 18.6 sub-feature 3.b) */}
                 {surveyDataByAdId ? (() => {
