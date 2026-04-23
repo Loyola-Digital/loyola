@@ -26,6 +26,17 @@ export interface SaleColumnMapping {
   formaPagamento?: string;
   canalOrigem?: string;
   dataVenda?: string;
+  /**
+   * UTMs da venda (opcionais) — quando a planilha de vendas já registra as
+   * UTMs da compra (Kiwify, Hotmart, etc.), mapear aqui permite atribuir
+   * venda diretamente a ad/campanha sem depender do cruzamento por email
+   * com a planilha de leads.
+   */
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_content?: string;
+  utm_term?: string;
 }
 
 export interface StageSalesSpreadsheet {

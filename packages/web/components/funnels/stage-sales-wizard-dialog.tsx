@@ -34,6 +34,11 @@ const SALE_MAPPING_FIELDS: Array<{
   { key: "formaPagamento", label: "Forma de Pagamento" },
   { key: "canalOrigem", label: "Canal de Origem" },
   { key: "dataVenda", label: "Data da Venda" },
+  { key: "utm_source", label: "UTM Source" },
+  { key: "utm_medium", label: "UTM Medium" },
+  { key: "utm_campaign", label: "UTM Campaign" },
+  { key: "utm_content", label: "UTM Content" },
+  { key: "utm_term", label: "UTM Term" },
 ];
 
 type Step = "spreadsheet" | "sheet" | "mapping";

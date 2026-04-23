@@ -663,6 +663,11 @@ export const stageSalesSpreadsheets = pgTable(
         formaPagamento?: string;
         canalOrigem?: string;
         dataVenda?: string;
+        utm_source?: string;
+        utm_medium?: string;
+        utm_campaign?: string;
+        utm_content?: string;
+        utm_term?: string;
       }>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
