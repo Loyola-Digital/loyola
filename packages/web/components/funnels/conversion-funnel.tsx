@@ -5,6 +5,8 @@ interface ConversionFunnelProps {
   linkClicks: number | null;
   landingPageViews: number | null;
   leads: number | null;
+  checkoutVisits?: number | null;
+  sales?: number | null;
 }
 
 interface FunnelStage {
@@ -34,8 +36,7 @@ const SVG_WIDTH = TOTAL_WIDTH + MARGIN_X * 2;
 /**
  * Funil de conversão em formato trapezoidal (SVG custom, zero dependência nova).
  *
- * 4 etapas: Impressões → Cliques no Link → Visualização da LP → Leads.
- * Reach foi removido nesta iteração (Story 18.4).
+ * Até 6 etapas (condicionais): Impressões → Cliques no Link → Visualização da LP → Leads → Visitas Checkout → Vendas.
  *
  * Cada etapa é um trapézio cuja largura do topo é proporcional ao valor da etapa
  * e a largura da base é proporcional ao valor da próxima (conecta visualmente).
@@ -50,6 +51,8 @@ export function ConversionFunnel({
   linkClicks,
   landingPageViews,
   leads,
+  checkoutVisits,
+  sales,
 }: ConversionFunnelProps) {
   const stages: FunnelStage[] = [
     { label: "Impressões", value: impressions, color: "hsl(220 80% 55%)" },
@@ -74,6 +77,20 @@ export function ConversionFunnel({
       label: "Leads",
       value: leads,
       color: "hsl(150 60% 45%)",
+    });
+  }
+  if (checkoutVisits != null && checkoutVisits > 0) {
+    stages.push({
+      label: "Visitas Checkout",
+      value: checkoutVisits,
+      color: "hsl(270 70% 50%)",
+    });
+  }
+  if (sales != null && sales > 0) {
+    stages.push({
+      label: "Vendas",
+      value: sales,
+      color: "hsl(0 85% 50%)",
     });
   }
 
