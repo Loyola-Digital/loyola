@@ -28,6 +28,25 @@ export interface CrossedFunnelMetrics {
   leadsSemTrack: number;
   totalLeads: number;
 
+  /**
+   * Total de vendas da planilha "sales" (captação paga).
+   * Contagem de linhas com data preenchida no período.
+   * Null se planilha de vendas não vinculada.
+   */
+  totalVendas: number | null;
+
+  /**
+   * Número de visitas ao checkout (initiate_checkout events da Meta Ads API).
+   * Null se Meta API indisponível.
+   */
+  checkoutVisits: number | null;
+
+  /**
+   * Taxa de conversão do checkout = (vendas ÷ checkoutVisits) × 100
+   * Null se checkoutVisits = 0 ou se vendas/checkout indisponíveis.
+   */
+  checkoutConversionRate: number | null;
+
   cpm: number;
   cpc: number;
   ctr: number;
@@ -171,6 +190,7 @@ export function useCrossedFunnelMetrics(
     if (totalVendas !== null && checkoutVisits !== null && checkoutVisits > 0) {
       checkoutConversionRate = (totalVendas / checkoutVisits) * 100;
     }
+
     return {
       spend: totals.spend,
       linkClicks: totals.linkClicks,
