@@ -425,6 +425,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         days={days}
         campaignIds={campaignIds}
         funnelId={funnel.id}
+        stageId={stageId}
         funnelContext={{ days, funnelType: "launch", funnelName: funnel?.name }}
         surveyDataByAdId={survey.byAdId}
       />

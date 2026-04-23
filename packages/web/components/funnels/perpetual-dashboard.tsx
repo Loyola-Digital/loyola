@@ -421,6 +421,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         days={days}
         campaignIds={campaignIds}
         funnelId={funnel.id}
+        stageId={stageId}
         funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
       />
 
