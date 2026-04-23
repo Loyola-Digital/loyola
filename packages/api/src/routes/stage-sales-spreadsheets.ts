@@ -26,6 +26,11 @@ const saleColumnMappingSchema = z.object({
   formaPagamento: z.string().optional(),
   canalOrigem: z.string().optional(),
   dataVenda: z.string().optional(),
+  utm_source: z.string().optional(),
+  utm_medium: z.string().optional(),
+  utm_campaign: z.string().optional(),
+  utm_content: z.string().optional(),
+  utm_term: z.string().optional(),
 });
 
 const createSchema = z.object({
@@ -59,6 +64,11 @@ function shapeRow(row: typeof stageSalesSpreadsheets.$inferSelect) {
       formaPagamento?: string;
       canalOrigem?: string;
       dataVenda?: string;
+      utm_source?: string;
+      utm_medium?: string;
+      utm_campaign?: string;
+      utm_content?: string;
+      utm_term?: string;
     },
     createdAt: row.createdAt.toISOString(),
   };
