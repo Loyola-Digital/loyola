@@ -90,19 +90,30 @@ function creativeImgSrc(c: MetaAdCreative | null): string {
   return c?.imageUrl || c?.thumbnailUrl || "";
 }
 
+/** True quando não há imageUrl HD e estamos caindo em thumbnail_url low-res. */
+function isLowResFallback(c: MetaAdCreative | null): boolean {
+  return !c?.imageUrl && !!c?.thumbnailUrl;
+}
+
 /**
  * Thumbnail resiliente a URLs do Meta Ads que já expiraram/404. Se a imagem
  * falha ao carregar, renderiza um placeholder com ícone em vez de um quadrado
  * quebrado. Usa `key={src}` pra re-tentar quando a URL muda entre itens.
+ *
+ * Story 21.7 follow-up: quando só há thumbnail (low-res do Meta, ~128px),
+ * renderiza a versão com `image-rendering: auto` e blur sutil pra disfarçar
+ * a pixelização em vez de esticar áspero.
  */
 function CreativeThumbnail({
   src,
   alt,
   className,
+  isLowRes = false,
 }: {
   src: string;
   alt: string;
   className: string;
+  isLowRes?: boolean;
 }) {
   const [failed, setFailed] = useState(false);
   // Reset fallback quando a src muda (ex: lightbox navegando entre itens)
@@ -120,6 +131,7 @@ function CreativeThumbnail({
       alt={alt}
       className={className}
       onError={() => setFailed(true)}
+      style={isLowRes ? { imageRendering: "auto", filter: "blur(1.5px)" } : undefined}
     />
   );
 }
@@ -616,6 +628,7 @@ export function TopCreativesGallery({
                   src={creativeImgSrc(c.creative)}
                   alt={c.name}
                   className="w-full h-full object-cover"
+                  isLowRes={isLowResFallback(c.creative)}
                 />
 
                 <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
