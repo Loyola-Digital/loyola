@@ -7,6 +7,7 @@ interface ConversionFunnelProps {
   leads: number | null;
   checkoutVisits?: number | null;
   sales?: number | null;
+  leadsLabel?: string;
 }
 
 interface FunnelStage {
@@ -53,6 +54,7 @@ export function ConversionFunnel({
   leads,
   checkoutVisits,
   sales,
+  leadsLabel,
 }: ConversionFunnelProps) {
   const stages: FunnelStage[] = [
     { label: "Impressões", value: impressions, color: "hsl(220 80% 55%)" },
@@ -74,7 +76,7 @@ export function ConversionFunnel({
   }
   if (leads !== null && leads > 0) {
     stages.push({
-      label: "Leads",
+      label: leadsLabel || "Leads",
       value: leads,
       color: "hsl(150 60% 45%)",
     });
