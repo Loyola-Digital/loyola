@@ -176,3 +176,14 @@ export async function readSheetData(spreadsheetId: string, sheetName: string): P
 export function clearSheetDataCache(spreadsheetId: string, sheetName: string): void {
   dataCache.delete(`${spreadsheetId}:${sheetName}`);
 }
+
+/**
+ * Limpa todo o cache de dados de planilhas. Usado pelo botão "Atualizar"
+ * do dashboard quando o user precisa ver dados frescos imediatamente.
+ * Retorna o número de entradas removidas (útil pra logs/debug).
+ */
+export function clearAllSheetDataCache(): number {
+  const size = dataCache.size;
+  dataCache.clear();
+  return size;
+}
