@@ -143,6 +143,26 @@ export function useCrossedFunnelMetrics(
         ? Math.min((totalResponses / totalLeads) * 100, 100)
         : null;
 
+    // Contar vendas: linhas da planilha de captação paga com data preenchida no período
+    let totalVendas: number | null = null;
+    if (salesSheetData) {
+      const filteredSalesRows = filterSheetRowsByDays(salesSheetData, days);
+      const dateCol = salesSheetData.mapping.date;
+      if (dateCol) {
+        totalVendas = filteredSalesRows.filter(
+          (row) => row.named[dateCol as keyof typeof row.named]
+        ).length;
+      }
+    }
+
+    // Visitas ao checkout: initiate_checkout events da Meta Ads (múltiplas variações de event type)
+    const checkoutVisits = totals.checkoutInitiations > 0 ? totals.checkoutInitiations : null;
+
+    // Taxa de conversão do checkout
+    let checkoutConversionRate: number | null = null;
+    if (totalVendas !== null && checkoutVisits !== null && checkoutVisits > 0) {
+      checkoutConversionRate = (totalVendas / checkoutVisits) * 100;
+    }
     return {
       spend: totals.spend,
       linkClicks: totals.linkClicks,
@@ -152,6 +172,9 @@ export function useCrossedFunnelMetrics(
       leadsOrg: totals.leadsOrg,
       leadsSemTrack: totals.leadsSemTrack,
       totalLeads,
+      totalVendas,
+      checkoutVisits,
+      checkoutConversionRate,
       cpm: totals.cpm,
       cpc: totals.cpc,
       ctr: totals.ctr,
@@ -166,5 +189,5 @@ export function useCrossedFunnelMetrics(
       isLoading,
       hasLinkedSheet,
     };
-  }, [metaData, sheetData, days, isLoading, hasLinkedSheet, totalResponses, matchedResponses, unmatchedResponses]);
+  }, [metaData, sheetData, salesSheetData, days, isLoading, hasLinkedSheet, totalResponses, matchedResponses, unmatchedResponses]);
 }
