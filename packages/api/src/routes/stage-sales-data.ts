@@ -250,4 +250,118 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       };
     }
   );
+
+  // GET /api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-data-daily
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-data-daily",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const query = querySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Query inválida" });
+
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const [stage] = await fastify.db
+        .select({ id: funnelStages.id, stageType: funnelStages.stageType })
+        .from(funnelStages)
+        .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+        .where(
+          and(
+            eq(funnelStages.id, params.data.stageId),
+            eq(funnelStages.funnelId, params.data.funnelId),
+            eq(funnels.projectId, params.data.projectId)
+          )
+        )
+        .limit(1);
+
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      if (stage.stageType !== "paid") return { byDay: {} as Record<string, number>, semDados: true };
+
+      const [spreadsheet] = await fastify.db
+        .select()
+        .from(stageSalesSpreadsheets)
+        .where(
+          and(
+            eq(stageSalesSpreadsheets.stageId, params.data.stageId),
+            eq(stageSalesSpreadsheets.subtype, query.data.subtype)
+          )
+        )
+        .limit(1);
+
+      if (!spreadsheet) return { byDay: {} as Record<string, number>, semDados: true };
+
+      const mapping = spreadsheet.columnMapping as {
+        email: string;
+        valorBruto?: string;
+        dataVenda?: string;
+      };
+
+      let sheetData;
+      try {
+        sheetData = await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName);
+      } catch {
+        return { byDay: {} as Record<string, number>, semDados: true };
+      }
+
+      const { headers, rows } = sheetData;
+      if (rows.length === 0) return { byDay: {} as Record<string, number>, semDados: true };
+
+      function colIdx(fieldName: string | undefined): number {
+        if (!fieldName) return -1;
+        return headers.indexOf(fieldName);
+      }
+
+      const emailIdx = colIdx(mapping.email);
+      const brutoIdx = colIdx(mapping.valorBruto);
+      const dataIdx = colIdx(mapping.dataVenda);
+
+      if (emailIdx === -1) return { byDay: {} as Record<string, number>, semDados: true };
+
+      let cutoffDate: Date | null = null;
+      if (query.data.days && dataIdx !== -1) {
+        cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - query.data.days);
+      }
+
+      const emailMap = new Map<string, { bruto: number; lastDate: Date | null }>();
+
+      for (const row of rows) {
+        const email = (row[emailIdx] ?? "").trim().toLowerCase();
+        if (!email) continue;
+
+        if (cutoffDate && dataIdx !== -1) {
+          const dt = parseDate(row[dataIdx]);
+          if (!dt || dt < cutoffDate) continue;
+        }
+
+        const bruto = parseNumber(row[brutoIdx] ?? "");
+        const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
+
+        const existing = emailMap.get(email);
+        if (existing) {
+          existing.bruto += bruto;
+          if (rowDate && (!existing.lastDate || rowDate > existing.lastDate)) {
+            existing.lastDate = rowDate;
+          }
+        } else {
+          emailMap.set(email, { bruto, lastDate: rowDate });
+        }
+      }
+
+      if (emailMap.size === 0) return { byDay: {} as Record<string, number>, semDados: false };
+
+      const byDay: Record<string, number> = {};
+      for (const { bruto, lastDate } of emailMap.values()) {
+        if (!lastDate) continue;
+        const key = lastDate.toISOString().slice(0, 10);
+        byDay[key] = (byDay[key] ?? 0) + bruto;
+      }
+
+      return { byDay, semDados: false };
+    }
+  );
 });

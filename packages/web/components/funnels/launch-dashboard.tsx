@@ -46,6 +46,7 @@ import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
+import { useStageSalesByDay } from "@/lib/hooks/use-stage-sales-by-day";
 import { SurveyQualificationSection } from "./survey-qualification-section";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
@@ -120,6 +121,12 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
     stageType === "paid" ? funnel.id : null,
     stageType === "paid" ? (stageId ?? null) : null,
     "capture",
+    days,
+  );
+  const { data: salesByDayData } = useStageSalesByDay(
+    stageType === "paid" ? projectId : null,
+    stageType === "paid" ? funnel.id : null,
+    stageType === "paid" ? (stageId ?? null) : null,
     days,
   );
 
@@ -327,6 +334,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           surveyTotal={survey.totalResponses}
           surveyMatched={survey.matchedResponses}
           surveyUnmatched={survey.unmatchedResponses}
+          salesByDay={salesByDayData && !salesByDayData.semDados ? salesByDayData.byDay : undefined}
         />
       ) : null}
 

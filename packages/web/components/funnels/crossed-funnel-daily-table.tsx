@@ -18,6 +18,7 @@ interface CrossedFunnelDailyTableProps {
   surveyTotal?: number | null;
   surveyMatched?: number | null;
   surveyUnmatched?: number | null;
+  salesByDay?: Record<string, number>;
 }
 
 function fmtCurrency(v: number | null | undefined): string {
@@ -73,7 +74,11 @@ export function CrossedFunnelDailyTable({
   surveyTotal,
   surveyMatched,
   surveyUnmatched,
+  salesByDay,
 }: CrossedFunnelDailyTableProps) {
+  const salesTotal = salesByDay
+    ? Object.values(salesByDay).reduce((a, b) => a + b, 0)
+    : null;
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
       <h3 className="text-sm font-semibold">{title}</h3>
@@ -111,7 +116,9 @@ export function CrossedFunnelDailyTable({
                     {formatDateLabel(r.date)}
                   </TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.spend)}</TableCell>
-                  <TableCell className="text-right">{fmtCurrency(r.faturamento)}</TableCell>
+                  <TableCell className="text-right">
+                    {fmtCurrency(salesByDay ? (salesByDay[r.date] ?? 0) : r.faturamento)}
+                  </TableCell>
                   <TableCell className="text-right">{fmtInt(r.linkClicks)}</TableCell>
                   <TableCell className="text-right">{fmtInt(r.impressions)}</TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cpm)}</TableCell>
@@ -134,7 +141,9 @@ export function CrossedFunnelDailyTable({
             <TableRow className="font-semibold">
               <TableCell className="sticky left-0 bg-muted/50 z-10">Total</TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.spend)}</TableCell>
-              <TableCell className="text-right">{fmtCurrency(totals.faturamento)}</TableCell>
+              <TableCell className="text-right">
+                {fmtCurrency(salesTotal !== null ? salesTotal : totals.faturamento)}
+              </TableCell>
               <TableCell className="text-right">{fmtInt(totals.linkClicks)}</TableCell>
               <TableCell className="text-right">{fmtInt(totals.impressions)}</TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.cpm)}</TableCell>
