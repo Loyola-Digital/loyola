@@ -256,7 +256,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
               <MetricTooltip label="Leads" value={metrics.hasLinkedSheet ? fmtNumber(metrics.totalLeads) : "—"} formula={metrics.hasLinkedSheet ? buildFunnelLeadsFormula(metrics.totalLeads, f, { pagos: metrics.leadsPagos, org: metrics.leadsOrg, semTrack: metrics.leadsSemTrack }) : undefined}>
                 <KpiCard
                   icon={Users}
-                  label="Leads únicos"
+                  label={stageType === "paid" ? "Leads Popup" : "Leads únicos"}
                   value={metrics.hasLinkedSheet ? fmtNumber(metrics.totalLeads) : "—"}
                   subValue={metrics.hasLinkedSheet
                     ? (
@@ -412,6 +412,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
               leads={metrics.totalLeads}
               checkoutVisits={stageType === "paid" ? metrics.checkoutVisits : null}
               sales={stageType === "paid" ? metrics.totalVendas : null}
+              leadsLabel={stageType === "paid" ? "Leads Popup" : undefined}
             />
           ) : <EmptyState />}
         </div>
