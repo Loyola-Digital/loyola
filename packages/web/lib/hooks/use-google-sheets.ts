@@ -82,6 +82,15 @@ export function useFunnelSurveys(
   });
 }
 
+// Invalida a lista de surveys E a agregação de summary (que lê de verdade as
+// planilhas e calcula totalResponses/responseRate). Sem invalidar o summary,
+// adicionar/remover uma pesquisa mantém os KPIs agregados da planilha antiga
+// em cache até reload.
+function invalidateFunnelSurveys(qc: ReturnType<typeof useQueryClient>, projectId: string, funnelId: string) {
+  qc.invalidateQueries({ queryKey: ["funnel-surveys", projectId, funnelId] });
+  qc.invalidateQueries({ queryKey: ["funnel-surveys-summary", projectId, funnelId] });
+}
+
 export function useAddFunnelSurvey(projectId: string, funnelId: string) {
   const apiClient = useApiClient();
   const qc = useQueryClient();
@@ -91,7 +100,7 @@ export function useAddFunnelSurvey(projectId: string, funnelId: string) {
         method: "POST",
         body: JSON.stringify(data),
       }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["funnel-surveys", projectId, funnelId] }); },
+    onSuccess: () => { invalidateFunnelSurveys(qc, projectId, funnelId); },
   });
 }
 
@@ -101,7 +110,7 @@ export function useRemoveFunnelSurvey(projectId: string, funnelId: string) {
   return useMutation({
     mutationFn: (surveyId: string) =>
       apiClient(`/api/projects/${projectId}/funnels/${funnelId}/surveys/${surveyId}`, { method: "DELETE" }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["funnel-surveys", projectId, funnelId] }); },
+    onSuccess: () => { invalidateFunnelSurveys(qc, projectId, funnelId); },
   });
 }
 
