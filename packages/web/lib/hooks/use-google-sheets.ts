@@ -65,11 +65,20 @@ export function useSheetData(spreadsheetId: string | null, sheetName: string | n
   });
 }
 
-export function useFunnelSurveys(projectId: string, funnelId: string) {
+export function useFunnelSurveys(
+  projectId: string,
+  funnelId: string,
+  stageId?: string | null,
+) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["funnel-surveys", projectId, funnelId],
-    queryFn: () => apiClient<{ surveys: FunnelSurvey[] }>(`/api/projects/${projectId}/funnels/${funnelId}/surveys`),
+    queryKey: ["funnel-surveys", projectId, funnelId, stageId ?? null],
+    queryFn: () => {
+      const qs = stageId ? `?stageId=${encodeURIComponent(stageId)}` : "";
+      return apiClient<{ surveys: FunnelSurvey[] }>(
+        `/api/projects/${projectId}/funnels/${funnelId}/surveys${qs}`,
+      );
+    },
   });
 }
 
@@ -77,7 +86,7 @@ export function useAddFunnelSurvey(projectId: string, funnelId: string) {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { spreadsheetId: string; spreadsheetName: string; sheetName: string }) =>
+    mutationFn: (data: { stageId?: string; spreadsheetId: string; spreadsheetName: string; sheetName: string }) =>
       apiClient(`/api/projects/${projectId}/funnels/${funnelId}/surveys`, {
         method: "POST",
         body: JSON.stringify(data),
@@ -96,11 +105,20 @@ export function useRemoveFunnelSurvey(projectId: string, funnelId: string) {
   });
 }
 
-export function useSurveySummary(projectId: string, funnelId: string) {
+export function useSurveySummary(
+  projectId: string,
+  funnelId: string,
+  stageId?: string | null,
+) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["funnel-surveys-summary", projectId, funnelId],
-    queryFn: () => apiClient<SurveySummary>(`/api/projects/${projectId}/funnels/${funnelId}/surveys/summary`),
+    queryKey: ["funnel-surveys-summary", projectId, funnelId, stageId ?? null],
+    queryFn: () => {
+      const qs = stageId ? `?stageId=${encodeURIComponent(stageId)}` : "";
+      return apiClient<SurveySummary>(
+        `/api/projects/${projectId}/funnels/${funnelId}/surveys/summary${qs}`,
+      );
+    },
     staleTime: 30 * 1000,
   });
 }

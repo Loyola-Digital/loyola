@@ -166,16 +166,18 @@ function classifyOrigin(utmSource: string | undefined | null): "pago" | "organic
 export function useSurveyAggregation(
   projectId: string,
   funnelId: string,
+  stageId?: string | null,
 ): UseSurveyAggregationResult {
   const apiClient = useApiClient();
   const { data: surveysData, isLoading: surveysLoading } = useFunnelSurveys(
     projectId,
     funnelId,
+    stageId,
   );
   const surveys = surveysData?.surveys ?? [];
 
   // Carregar lista de spreadsheets para encontrar a planilha de Leads
-  const { data: spreadsheetsData } = useFunnelSpreadsheets(projectId, funnelId);
+  const { data: spreadsheetsData } = useFunnelSpreadsheets(projectId, funnelId, stageId);
   const spreadsheets = spreadsheetsData?.spreadsheets ?? [];
   const leadsSpreadsheet = spreadsheets.find((s) => s.type === "leads");
 

@@ -63,22 +63,31 @@ export default fp(async function googleSheetsRoutes(fastify) {
 
   // ---- GET /api/projects/:projectId/funnels/:funnelId/surveys ----
   const funnelParamSchema = z.object({ projectId: z.string().uuid(), funnelId: z.string().uuid() });
+  const surveyListQuerySchema = z.object({ stageId: z.string().uuid().optional() });
 
   fastify.get("/api/projects/:projectId/funnels/:funnelId/surveys", async (request, reply) => {
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
     const p = funnelParamSchema.safeParse(request.params);
     if (!p.success) return reply.code(400).send({ error: "Parametros invalidos" });
+    const q = surveyListQuerySchema.safeParse(request.query);
+    if (!q.success) return reply.code(400).send({ error: "Query invalida" });
 
-    const surveys = await fastify.db
-      .select()
-      .from(funnelSurveys)
-      .where(eq(funnelSurveys.funnelId, p.data.funnelId));
+    const whereClause = q.data.stageId
+      ? and(
+          eq(funnelSurveys.funnelId, p.data.funnelId),
+          eq(funnelSurveys.stageId, q.data.stageId),
+        )
+      : eq(funnelSurveys.funnelId, p.data.funnelId);
+
+    const surveys = await fastify.db.select().from(funnelSurveys).where(whereClause);
 
     return { surveys };
   });
 
   // ---- POST /api/projects/:projectId/funnels/:funnelId/surveys ----
+  // stageId opcional — quando passado, pesquisa fica escopada à stage.
   const createSurveySchema = z.object({
+    stageId: z.string().uuid().optional(),
     spreadsheetId: z.string().min(1),
     spreadsheetName: z.string().min(1),
     sheetName: z.string().min(1),
@@ -100,7 +109,13 @@ export default fp(async function googleSheetsRoutes(fastify) {
 
     const [survey] = await fastify.db
       .insert(funnelSurveys)
-      .values({ funnelId: p.data.funnelId, ...body.data })
+      .values({
+        funnelId: p.data.funnelId,
+        stageId: body.data.stageId ?? null,
+        spreadsheetId: body.data.spreadsheetId,
+        spreadsheetName: body.data.spreadsheetName,
+        sheetName: body.data.sheetName,
+      })
       .returning();
 
     return reply.code(201).send(survey);
@@ -129,15 +144,22 @@ export default fp(async function googleSheetsRoutes(fastify) {
   });
 
   // ---- GET /api/projects/:projectId/funnels/:funnelId/surveys/summary ----
+  // Aceita ?stageId=X pra agregar só as pesquisas daquela stage.
   fastify.get("/api/projects/:projectId/funnels/:funnelId/surveys/summary", async (request, reply) => {
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
     const p = funnelParamSchema.safeParse(request.params);
     if (!p.success) return reply.code(400).send({ error: "Parametros invalidos" });
+    const q = surveyListQuerySchema.safeParse(request.query);
+    if (!q.success) return reply.code(400).send({ error: "Query invalida" });
 
-    const surveys = await fastify.db
-      .select()
-      .from(funnelSurveys)
-      .where(eq(funnelSurveys.funnelId, p.data.funnelId));
+    const whereClause = q.data.stageId
+      ? and(
+          eq(funnelSurveys.funnelId, p.data.funnelId),
+          eq(funnelSurveys.stageId, q.data.stageId),
+        )
+      : eq(funnelSurveys.funnelId, p.data.funnelId);
+
+    const surveys = await fastify.db.select().from(funnelSurveys).where(whereClause);
 
     if (surveys.length === 0) return { totalResponses: 0, surveys: [], responseRate: null };
 
