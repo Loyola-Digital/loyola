@@ -7,6 +7,7 @@ import {
   getSpreadsheetSheets,
   readSheetData,
   clearSheetDataCache,
+  clearAllSheetDataCache,
 } from "../services/google-sheets.js";
 
 export default fp(async function googleSheetsRoutes(fastify) {
@@ -35,6 +36,16 @@ export default fp(async function googleSheetsRoutes(fastify) {
     } catch (err) {
       return reply.code(502).send({ error: "Erro ao listar abas", details: err instanceof Error ? err.message : String(err) });
     }
+  });
+
+  // ---- POST /api/google-sheets/invalidate-cache ----
+  // Limpa o cache in-memory de readSheetData. Usado pelo botão "Atualizar"
+  // do dashboard pra forçar refetch de dados frescos da Google Sheets API.
+  fastify.post("/api/google-sheets/invalidate-cache", async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const cleared = clearAllSheetDataCache();
+    fastify.log.info({ cleared }, "[google-sheets] cache invalidated");
+    return { cleared };
   });
 
   // ---- GET /api/google-sheets/spreadsheets/:spreadsheetId/sheets/:sheetName/data ----

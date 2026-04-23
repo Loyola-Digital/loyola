@@ -37,6 +37,7 @@ import { CplComparisonChart } from "./cpl-comparison-chart";
 import { LeadsCumulativeChart } from "./leads-cumulative-chart";
 import { HotColdSpendDonut } from "./hot-cold-spend-donut";
 import { TopCreativesGallery } from "./top-creatives-gallery";
+import { RefreshDataButton } from "./refresh-data-button";
 import { CampaignSelector } from "./campaign-selector";
 import type { Funnel, FunnelCampaign, StageType, ComparisonDayMetrics } from "@loyola-x/shared";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
@@ -163,9 +164,12 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
   return (
     <div className="space-y-6">
-      {/* Header: period selector + campaign manager */}
+      {/* Header: period selector + refresh + campaign manager */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <DayRangePicker days={days} onDaysChange={setDays} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <DayRangePicker days={days} onDaysChange={setDays} />
+          <RefreshDataButton />
+        </div>
         <Button
           variant="outline"
           size="sm"

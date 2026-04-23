@@ -39,6 +39,7 @@ import {
 } from "@/lib/hooks/use-traffic-analytics";
 import { CampaignSelector } from "./campaign-selector";
 import { TopCreativesGallery } from "./top-creatives-gallery";
+import { RefreshDataButton } from "./refresh-data-button";
 import type { Funnel, FunnelCampaign, StageType } from "@loyola-x/shared";
 import { StageSalesSection } from "./stage-sales-section";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
@@ -225,7 +226,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <DayRangePicker days={days} onDaysChange={setDays} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <DayRangePicker days={days} onDaysChange={setDays} />
+          <RefreshDataButton />
+        </div>
         <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setShowCampaignManager(!showCampaignManager)}>
           <Settings2 className="h-3.5 w-3.5" />
           {funnel.campaigns.length} campanha{funnel.campaigns.length !== 1 ? "s" : ""}
