@@ -504,7 +504,7 @@ export function TopCreativesGallery({
     campaignIds && campaignIds.length > 0 ? campaignIds : null,
   );
 
-  const { data: spreadsheetsData } = useFunnelSpreadsheets(projectId, funnelId ?? "");
+  const { data: spreadsheetsData } = useFunnelSpreadsheets(projectId, funnelId ?? "", stageId ?? null);
   const linkedSheet = useMemo(() => {
     if (!spreadsheetsData?.spreadsheets) return null;
     return (
