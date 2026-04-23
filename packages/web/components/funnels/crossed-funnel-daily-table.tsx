@@ -63,8 +63,8 @@ function renderConnectRate(v: number | null) {
  * Connect Rate, Tx Conv., Leads pagos, Leads org, Leads s/ track, Total Leads,
  * CPL Pg, CPL G. Última linha é o total do período via footer.
  *
- * Usado no LaunchDashboard (Story 18.3) e no MetaAdsSpreadsheetTab enquanto existir.
- * Os dados vêm do hook `useCrossedFunnelMetrics` (Story 18.2/18.3).
+ * Usado no LaunchDashboard (Story 18.3). Dados vêm do hook
+ * `useCrossedFunnelMetrics` (Story 18.2/18.3).
  */
 export function CrossedFunnelDailyTable({
   rows,

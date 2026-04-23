@@ -109,9 +109,8 @@ function renderBarLabel(props: any) {
 /**
  * Gráfico combinado: barras de Investimento + linhas de CPL Pago vs CPL Geral.
  *
- * Extraído do MetaAdsSpreadsheetTab (Story 18.1) pra componente reutilizável
- * na Story 18.4. Usado na aba Meta Ads (LaunchDashboard) e também na Meta Ads 2
- * enquanto existir.
+ * Introduzido na Story 18.4 como componente reutilizável. Usado na aba
+ * Meta Ads (LaunchDashboard).
  */
 export function CplComparisonChart({
   rows,

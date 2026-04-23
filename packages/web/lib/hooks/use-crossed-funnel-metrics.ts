@@ -68,7 +68,7 @@ export interface CrossedFunnelMetrics {
  * Hook compartilhado que cruza insights diários do Meta Ads com dados da planilha de leads
  * vinculada ao funil, aplicando janela de `days` em ambas as fontes.
  *
- * É a fonte única de verdade pras métricas do LaunchDashboard e do MetaAdsSpreadsheetTab (Story 18.1).
+ * É a fonte única de verdade pras métricas do LaunchDashboard.
  *
  * Metodologia (alinhada com Story 18.1):
  * - Cliques = actions[link_click] (NÃO total clicks do Meta)

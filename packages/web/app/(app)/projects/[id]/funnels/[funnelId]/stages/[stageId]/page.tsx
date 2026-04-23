@@ -16,7 +16,6 @@ import { YouTubeFunnelSection } from "@/components/funnels/youtube-funnel-sectio
 import { SurveyFunnelTab } from "@/components/funnels/survey-funnel-tab";
 import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-tab";
 import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-spreadsheet-section";
-import { MetaAdsSpreadsheetTab } from "@/components/funnels/meta-ads-spreadsheet-tab";
 import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
 import { AuditStatusBadge } from "@/components/funnels/audit-status-badge";
 import { CampaignSelector } from "@/components/funnels/campaign-selector";
@@ -254,10 +253,6 @@ export default function StagePage() {
               <span className="ml-1 text-[10px] bg-muted rounded-full px-1.5 py-0.5">{metaCount}</span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="meta-ads-2" className="gap-1.5">
-            <TrendingUp className="h-3.5 w-3.5 text-blue-600" />
-            Meta Ads 2
-          </TabsTrigger>
           <TabsTrigger value="youtube-ads" className="gap-1.5">
             <Youtube className="h-3.5 w-3.5 text-red-500" />
             YouTube Ads
@@ -307,10 +302,6 @@ export default function StagePage() {
               }}
             />
           )}
-        </TabsContent>
-
-        <TabsContent value="meta-ads-2" className="mt-6">
-          <MetaAdsSpreadsheetTab funnel={stageAsFunnel} projectId={params.id} />
         </TabsContent>
 
         <TabsContent value="youtube-ads" className="mt-6">
