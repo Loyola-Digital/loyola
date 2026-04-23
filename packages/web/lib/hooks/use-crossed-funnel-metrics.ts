@@ -117,14 +117,22 @@ export function useCrossedFunnelMetrics(
     );
   }, [spreadsheetsData]);
 
+  const salesSheet = useMemo(() => {
+    if (!spreadsheetsData?.spreadsheets) return null;
+    return spreadsheetsData.spreadsheets.find((s) => s.type === "sales") ?? null;
+  }, [spreadsheetsData]);
+
   const { data: sheetData, isLoading: sheetDataLoading } =
     useFunnelSpreadsheetData(projectId, funnel.id, linkedSheet?.id);
+
+  const { data: salesSheetData, isLoading: salesSheetDataLoading } =
+    useFunnelSpreadsheetData(projectId, funnel.id, salesSheet?.id);
 
   const { totalResponses, matchedResponses, unmatchedResponses, isLoading: surveyLoading } =
     useSurveyAggregation(projectId, funnel.id, stageId ?? null);
 
   const hasLinkedSheet = !!linkedSheet;
-  const isLoading = metaLoading || sheetsListLoading || sheetDataLoading || surveyLoading;
+  const isLoading = metaLoading || sheetsListLoading || sheetDataLoading || surveyLoading || salesSheetDataLoading;
 
   return useMemo<CrossedFunnelMetrics>(() => {
     const metaMap = aggregateMetaDailyByDate(metaData);
