@@ -108,20 +108,20 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
   );
-  const metrics = useCrossedFunnelMetrics(projectId, funnel, days, stageId ?? null);
-  const survey = useSurveyAggregation(projectId, funnel.id, stageId ?? null);
-  const { data: campaignData } = useTrafficCampaigns(projectId, days);
-  const { data: dailyData, isLoading: dailyLoading } =
-    useCampaignDailyInsights(projectId, firstCampaignId, days);
-  const { data: compData } = useMetaAdsComparison(
-    projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
-  );
   const { data: salesData } = useStageSalesData(
     stageType === "paid" ? projectId : null,
     stageType === "paid" ? funnel.id : null,
     stageType === "paid" ? (stageId ?? null) : null,
     "capture",
     days,
+  );
+  const metrics = useCrossedFunnelMetrics(projectId, funnel, days, stageId ?? null, salesData && !salesData.semDados ? salesData : null);
+  const survey = useSurveyAggregation(projectId, funnel.id, stageId ?? null);
+  const { data: campaignData } = useTrafficCampaigns(projectId, days);
+  const { data: dailyData, isLoading: dailyLoading } =
+    useCampaignDailyInsights(projectId, firstCampaignId, days);
+  const { data: compData } = useMetaAdsComparison(
+    projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
   );
   const { data: salesByDayData } = useStageSalesByDay(
     stageType === "paid" ? projectId : null,

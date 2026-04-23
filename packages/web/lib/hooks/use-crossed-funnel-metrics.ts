@@ -99,11 +99,16 @@ export interface CrossedFunnelMetrics {
  * pra alimentar a tabela "Dados diários" (e qualquer outro consumidor que precise
  * do breakdown dia-a-dia).
  */
+interface StageSalesData {
+  totalVendas: number;
+}
+
 export function useCrossedFunnelMetrics(
   projectId: string,
   funnel: Funnel,
   days: number,
   stageId?: string | null,
+  stageSalesData?: StageSalesData | null,
 ): CrossedFunnelMetrics {
   const apiClient = useApiClient();
 
@@ -170,9 +175,11 @@ export function useCrossedFunnelMetrics(
         ? Math.min((totalResponses / totalLeads) * 100, 100)
         : null;
 
-    // Contar vendas: linhas da planilha de captação paga com data preenchida no período
+    // Contar vendas: usar stageSalesData se fornecido, senão tentar da planilha de spreadsheet
     let totalVendas: number | null = null;
-    if (salesSheetData) {
+    if (stageSalesData?.totalVendas != null) {
+      totalVendas = stageSalesData.totalVendas;
+    } else if (salesSheetData) {
       const filteredSalesRows = filterSheetRowsByDays(salesSheetData, days);
       const dateCol = salesSheetData.mapping.date;
       if (dateCol) {
@@ -217,5 +224,5 @@ export function useCrossedFunnelMetrics(
       isLoading,
       hasLinkedSheet,
     };
-  }, [metaData, sheetData, salesSheetData, days, isLoading, hasLinkedSheet, totalResponses, matchedResponses, unmatchedResponses]);
+  }, [metaData, sheetData, salesSheetData, stageSalesData, days, isLoading, hasLinkedSheet, totalResponses, matchedResponses, unmatchedResponses]);
 }
