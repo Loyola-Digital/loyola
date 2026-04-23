@@ -108,20 +108,20 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
   );
-  const metrics = useCrossedFunnelMetrics(projectId, funnel, days, stageId ?? null);
-  const survey = useSurveyAggregation(projectId, funnel.id, stageId ?? null);
-  const { data: campaignData } = useTrafficCampaigns(projectId, days);
-  const { data: dailyData, isLoading: dailyLoading } =
-    useCampaignDailyInsights(projectId, firstCampaignId, days);
-  const { data: compData } = useMetaAdsComparison(
-    projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
-  );
   const { data: salesData } = useStageSalesData(
     stageType === "paid" ? projectId : null,
     stageType === "paid" ? funnel.id : null,
     stageType === "paid" ? (stageId ?? null) : null,
     "capture",
     days,
+  );
+  const metrics = useCrossedFunnelMetrics(projectId, funnel, days, stageId ?? null, salesData && !salesData.semDados ? salesData : null);
+  const survey = useSurveyAggregation(projectId, funnel.id, stageId ?? null);
+  const { data: campaignData } = useTrafficCampaigns(projectId, days);
+  const { data: dailyData, isLoading: dailyLoading } =
+    useCampaignDailyInsights(projectId, firstCampaignId, days);
+  const { data: compData } = useMetaAdsComparison(
+    projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
   );
   const { data: salesByDayData } = useStageSalesByDay(
     stageType === "paid" ? projectId : null,
@@ -226,7 +226,14 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         (() => {
           const f = { days, funnelType: "launch" as const, funnelName: funnel?.name };
           const showFaturamento = stageType === "paid" && !!stageId && !!salesData && !salesData.semDados;
-          const lgCols = showFaturamento ? (surveyResponseRate !== null ? "lg:grid-cols-9" : "lg:grid-cols-8") : (surveyResponseRate !== null ? "lg:grid-cols-8" : "lg:grid-cols-7");
+          const showVendaIngressos = metrics.totalVendas !== null;
+          const showTaxaCheckout = metrics.checkoutConversionRate !== null;
+          let lgColCount = 7; // base: Investimento, Leads, CPL, Connect, CTR, CPC, CPM
+          if (showFaturamento) lgColCount++;
+          if (showVendaIngressos) lgColCount++;
+          if (showTaxaCheckout) lgColCount++;
+          if (surveyResponseRate !== null) lgColCount++;
+          const lgCols = `lg:grid-cols-${lgColCount}`;
           return (
             <div className={`grid gap-3 grid-cols-2 sm:grid-cols-4 ${lgCols}`}>
               <MetricTooltip label="Investimento" value={fmtCurrency(metrics.spend)} formula={buildFunnelSpendFormula(metrics.spend, f)}>
@@ -304,6 +311,22 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   } : undefined}
                 />
               </MetricTooltip>
+              {metrics.totalVendas !== null && (
+                <KpiCard
+                  icon={Banknote}
+                  label="Venda ingressos"
+                  value={fmtNumber(metrics.totalVendas)}
+                  subValue={`${metrics.checkoutVisits ? fmtNumber(metrics.checkoutVisits) : "—"} visitas checkout`}
+                />
+              )}
+              {metrics.checkoutConversionRate !== null && (
+                <KpiCard
+                  icon={Percent}
+                  label="Taxa Checkout"
+                  value={fmtPercent(metrics.checkoutConversionRate)}
+                  subValue={metrics.totalVendas !== null && metrics.checkoutVisits ? `${fmtNumber(metrics.totalVendas)} ÷ ${fmtNumber(metrics.checkoutVisits)}` : "—"}
+                />
+              )}
               {surveyResponseRate !== null && survey && (
                 <MetricTooltip
                   label="Pesquisa"
@@ -387,6 +410,8 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
               linkClicks={overview.totalLinkClicks}
               landingPageViews={overview.totalLandingPageViews}
               leads={metrics.totalLeads}
+              checkoutVisits={metrics.checkoutVisits}
+              sales={metrics.totalVendas}
             />
           ) : <EmptyState />}
         </div>
