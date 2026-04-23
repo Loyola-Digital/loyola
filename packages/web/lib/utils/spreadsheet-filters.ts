@@ -10,7 +10,7 @@ export function normaliseDate(raw: string | undefined | null): string | null {
   if (!raw) return null;
   const trimmed = raw.trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
-  const brMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const brMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\D|$)/);
   if (brMatch) {
     const [, d, m, y] = brMatch;
     return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
