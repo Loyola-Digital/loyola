@@ -524,6 +524,13 @@ function getCachedCreative(adId: string): MetaAdCreative | undefined {
     creativeCache.delete(adId);
     return undefined;
   }
+  // Story 21.7 follow-up: invalida entries ruins — vídeos sem picture HD
+  // (cacheados antes da Strategy C) são retratados pra que o refetch puxe
+  // o `picture` do video_id.
+  if (!entry.data.imageUrl && entry.data.videoId) {
+    creativeCache.delete(adId);
+    return undefined;
+  }
   return entry.data;
 }
 
@@ -642,6 +649,11 @@ export async function fetchAdCreatives(
       creativeId: (c as unknown as Record<string, unknown>)._creativeId as string,
     }));
 
+  // Strategy C (Story 21.7 follow-up): vídeos — pega `picture` (frame HD) do
+  // video_id e usa como imageUrl. Antes, vídeos caíam só no thumbnail_url
+  // (low-res 64-128px) e apareciam pixelados no card da galeria.
+  const videosNeedingPreview = results.filter((c) => !c.imageUrl && c.videoId);
+
   await Promise.all([
     // Strategy A: Batch fetch IG media URLs
     (async () => {
@@ -664,6 +676,30 @@ export async function fetchAdCreatives(
           }
         } catch (err) {
           console.error("[fetchAdCreatives] IG media batch failed:", err);
+        }
+      }
+    })(),
+    // Strategy C: Batch fetch video pictures (frame HD do vídeo)
+    (async () => {
+      if (videosNeedingPreview.length === 0) return;
+      const vMap = new Map(videosNeedingPreview.map((c) => [c.videoId as string, c]));
+      const vIdList = Array.from(vMap.keys());
+      for (let i = 0; i < vIdList.length; i += BATCH_SIZE) {
+        const batch = vIdList.slice(i, i + BATCH_SIZE);
+        try {
+          const data = await fetchMeta<Record<string, { id: string; picture?: string }>>(
+            `/?ids=${batch.join(",")}&fields=id,picture`,
+            accessToken
+          );
+          for (const vid of batch) {
+            const c = vMap.get(vid);
+            const meta = data[vid];
+            if (c && meta?.picture) {
+              c.imageUrl = meta.picture;
+            }
+          }
+        } catch (err) {
+          console.error("[fetchAdCreatives] video picture batch failed:", err);
         }
       }
     })(),
