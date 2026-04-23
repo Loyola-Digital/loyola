@@ -23,6 +23,8 @@ interface UseAuditStatusResult {
   isError: boolean;
   audit: () => Promise<void>;
   isAuditing: boolean;
+  cancelAudit: () => Promise<void>;
+  isCancelling: boolean;
 }
 
 export function useAuditStatus(
@@ -72,11 +74,36 @@ export function useAuditStatus(
     }
   }, [auditMutation]);
 
+  const cancelMutation = useMutation({
+    mutationFn: async () => {
+      if (!stageId || !funnelId || !projectId) throw new Error("Parâmetros inválidos");
+
+      return apiClient<{ lastAuditAt: null; lastAuditBy: null; auditStatus: "pending" }>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/audit`,
+        { method: "DELETE" },
+      );
+    },
+    onSuccess: () => {
+      refetch();
+    },
+  });
+
+  const cancelAudit = useCallback(async () => {
+    try {
+      await cancelMutation.mutateAsync();
+    } catch (error) {
+      console.error("Erro ao cancelar auditoria:", error);
+      throw error;
+    }
+  }, [cancelMutation]);
+
   return {
     data,
     isLoading,
     isError,
     audit,
     isAuditing: auditMutation.isPending,
+    cancelAudit,
+    isCancelling: cancelMutation.isPending,
   };
 }

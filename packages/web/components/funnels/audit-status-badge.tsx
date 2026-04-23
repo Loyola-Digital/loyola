@@ -55,9 +55,14 @@ export function AuditStatusBadge({
   projectId,
   className = "",
 }: AuditStatusBadgeProps) {
-  const { data, isLoading, audit, isAuditing } = useAuditStatus(stageId, funnelId, projectId);
+  const { data, isLoading, audit, isAuditing, cancelAudit, isCancelling } = useAuditStatus(
+    stageId,
+    funnelId,
+    projectId,
+  );
   const [showTooltip, setShowTooltip] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
 
   const isAudited = data?.auditStatus === "audited" && data?.lastAuditAt;
 
@@ -73,6 +78,18 @@ export function AuditStatusBadge({
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Erro ao auditar dashboard"
+      );
+    }
+  };
+
+  const handleConfirmCancel = async () => {
+    try {
+      await cancelAudit();
+      toast.success("Auditoria cancelada");
+      setShowCancelDialog(false);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Erro ao cancelar auditoria"
       );
     }
   };
@@ -130,15 +147,26 @@ export function AuditStatusBadge({
               <p className="text-muted-foreground text-xs">
                 <strong>Por:</strong> {data!.lastAuditBy?.name}
               </p>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleAudit();
-                }}
-                className="mt-2 text-xs text-blue-600 hover:underline"
-              >
-                Auditar novamente
-              </button>
+              <div className="mt-2 flex items-center gap-3">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleAudit();
+                  }}
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Auditar novamente
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowCancelDialog(true);
+                  }}
+                  className="text-xs text-red-600 hover:underline"
+                >
+                  Cancelar auditoria
+                </button>
+              </div>
             </>
           ) : (
             <>
@@ -169,6 +197,27 @@ export function AuditStatusBadge({
             >
               {isAuditing && <Loader2 className="h-4 w-4 animate-spin" />}
               Confirmar
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Cancelar Auditoria</AlertDialogTitle>
+          <AlertDialogDescription>
+            Tem certeza que deseja cancelar a auditoria desta etapa? O status volta
+            pra &quot;não auditado&quot; e o registro anterior é apagado.
+          </AlertDialogDescription>
+          <div className="flex gap-3 justify-end mt-6">
+            <AlertDialogCancel>Voltar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmCancel}
+              disabled={isCancelling}
+              className="gap-2 bg-red-600 hover:bg-red-700"
+            >
+              {isCancelling && <Loader2 className="h-4 w-4 animate-spin" />}
+              Cancelar auditoria
             </AlertDialogAction>
           </div>
         </AlertDialogContent>
