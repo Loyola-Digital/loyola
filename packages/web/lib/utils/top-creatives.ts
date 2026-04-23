@@ -24,7 +24,7 @@ export interface AggregatedCreative {
   reach: number;
   ctr: number;
   cpc: number;
-  creative: MetaAdCreative;
+  creative: MetaAdCreative | null;
   parentInfo?: string;
   videoMetrics?: VideoMetrics | null;
 
@@ -68,7 +68,8 @@ export function aggregateCreativesByName(
   for (const ad of ads) {
     const name = ad.campaignName?.trim();
     if (!name) continue;
-    if (!ad.creative?.imageUrl && !ad.creative?.thumbnailUrl) continue;
+    // Ads sem creative/imagem entram mesmo assim — o componente renderiza um
+    // placeholder em vez de esconder o card. Evita sumir com performers legítimos.
     const list = groups.get(name) ?? [];
     list.push(ad);
     groups.set(name, list);
@@ -104,7 +105,7 @@ export function aggregateCreativesByName(
       reach,
       ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
       cpc: safeDivide(spend, clicks) ?? 0,
-      creative: leader.creative!,
+      creative: leader.creative ?? null,
       parentInfo: `${leader.parentCampaignName} › ${leader.adsetName}`,
       videoMetrics: leader.videoMetrics,
 
