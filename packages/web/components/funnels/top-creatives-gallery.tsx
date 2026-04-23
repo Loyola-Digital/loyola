@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Maximize2,
   AlertTriangle,
+  ImageOff,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -88,6 +89,40 @@ function creativeImgSrc(c: MetaAdCreative | null): string {
   return c?.imageUrl || c?.thumbnailUrl || "";
 }
 
+/**
+ * Thumbnail resiliente a URLs do Meta Ads que já expiraram/404. Se a imagem
+ * falha ao carregar, renderiza um placeholder com ícone em vez de um quadrado
+ * quebrado. Usa `key={src}` pra re-tentar quando a URL muda entre itens.
+ */
+function CreativeThumbnail({
+  src,
+  alt,
+  className,
+}: {
+  src: string;
+  alt: string;
+  className: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  // Reset fallback quando a src muda (ex: lightbox navegando entre itens)
+  useEffect(() => { setFailed(false); }, [src]);
+  if (!src || failed) {
+    return (
+      <div className={`${className} flex items-center justify-center bg-muted/30`}>
+        <ImageOff className="h-6 w-6 text-muted-foreground/40" />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function formatMetricValue(c: AggregatedCreative, metric: LocalMetric): string {
   switch (metric) {
     case "cpl":
@@ -142,7 +177,7 @@ function sortByMetric(
 interface LightboxItem {
   id: string;
   name: string;
-  creative: MetaAdCreative;
+  creative: MetaAdCreative | null;
   spend: number;
   impressions: number;
   clicks: number;
@@ -166,11 +201,11 @@ function CreativeLightbox({
 }) {
   const [index, setIndex] = useState(initialIndex);
   const item = items[index];
-  const isVideo = item.creative.objectType === "VIDEO";
+  const isVideo = item.creative?.objectType === "VIDEO";
 
   const { data: videoData } = useVideoSource(
     isVideo ? projectId : null,
-    isVideo ? item.creative.videoId : null,
+    isVideo ? (item.creative?.videoId ?? null) : null,
   );
 
   useEffect(() => {
@@ -212,9 +247,9 @@ function CreativeLightbox({
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/30 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <Badge variant="outline" className="text-[9px] px-1 py-0">
-              {item.creative.objectType === "VIDEO"
+              {item.creative?.objectType === "VIDEO"
                 ? "Video"
-                : item.creative.objectType === "CAROUSEL"
+                : item.creative?.objectType === "CAROUSEL"
                   ? "Carousel"
                   : "Imagem"}
             </Badge>
@@ -262,7 +297,7 @@ function CreativeLightbox({
             />
           ) : isVideo && videoData?.permalinkUrl ? (
             <div className="text-center p-8">
-              <img
+              <CreativeThumbnail
                 src={videoData.picture || creativeImgSrc(item.creative)}
                 alt={item.name}
                 className="max-h-[40vh] object-contain mx-auto rounded-lg mb-4"
@@ -277,7 +312,7 @@ function CreativeLightbox({
               </a>
             </div>
           ) : !isVideo ? (
-            <img
+            <CreativeThumbnail
               src={creativeImgSrc(item.creative)}
               alt={item.name}
               className="w-full max-h-[60vh] object-contain"
@@ -352,12 +387,12 @@ function CreativeLightbox({
             );
           })()}
 
-          {item.creative.title && <p className="text-sm font-medium">{item.creative.title}</p>}
-          {item.creative.body && (
+          {item.creative?.title && <p className="text-sm font-medium">{item.creative.title}</p>}
+          {item.creative?.body && (
             <p className="text-xs text-muted-foreground line-clamp-3">{item.creative.body}</p>
           )}
 
-          {item.creative.linkUrl && (
+          {item.creative?.linkUrl && (
             <a
               href={item.creative.linkUrl}
               target="_blank"
@@ -367,13 +402,13 @@ function CreativeLightbox({
               <ExternalLink className="h-3 w-3 shrink-0" />
               {(() => {
                 try {
-                  const u = new URL(item.creative.linkUrl);
+                  const u = new URL(item.creative!.linkUrl!);
                   return (
                     u.hostname +
                     (u.pathname.length > 1 ? u.pathname.split("/").slice(0, 3).join("/") : "")
                   );
                 } catch {
-                  return item.creative.linkUrl;
+                  return item.creative!.linkUrl;
                 }
               })()}
             </a>
@@ -554,7 +589,7 @@ export function TopCreativesGallery({
               onClick={() => setLightboxIndex(i)}
             >
               <div className="relative aspect-video bg-muted/30">
-                <img
+                <CreativeThumbnail
                   src={creativeImgSrc(c.creative)}
                   alt={c.name}
                   className="w-full h-full object-cover"
@@ -565,9 +600,9 @@ export function TopCreativesGallery({
                     variant="outline"
                     className="text-[9px] px-1 py-0 bg-black/50 text-white border-white/20 backdrop-blur-sm"
                   >
-                    {c.creative.objectType === "VIDEO"
+                    {c.creative?.objectType === "VIDEO"
                       ? "Video"
-                      : c.creative.objectType === "CAROUSEL"
+                      : c.creative?.objectType === "CAROUSEL"
                         ? "Carousel"
                         : "Imagem"}
                   </Badge>
@@ -582,7 +617,7 @@ export function TopCreativesGallery({
                   )}
                 </div>
 
-                {c.creative.objectType === "VIDEO" && (
+                {c.creative?.objectType === "VIDEO" && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="rounded-full bg-black/40 p-2 group-hover:bg-black/60 transition-colors">
                       <Play className="h-4 w-4 text-white fill-white" />
