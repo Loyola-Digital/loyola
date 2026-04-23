@@ -311,7 +311,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   } : undefined}
                 />
               </MetricTooltip>
-              {metrics.totalVendas !== null && (
+              {stageType === "paid" && metrics.totalVendas !== null && (
                 <KpiCard
                   icon={Banknote}
                   label="Venda ingressos"
@@ -319,7 +319,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   subValue={`${metrics.checkoutVisits ? fmtNumber(metrics.checkoutVisits) : "—"} visitas checkout`}
                 />
               )}
-              {metrics.checkoutConversionRate !== null && (
+              {stageType === "paid" && metrics.checkoutConversionRate !== null && (
                 <KpiCard
                   icon={Percent}
                   label="Taxa Checkout"
@@ -410,8 +410,8 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
               linkClicks={overview.totalLinkClicks}
               landingPageViews={overview.totalLandingPageViews}
               leads={metrics.totalLeads}
-              checkoutVisits={metrics.checkoutVisits}
-              sales={metrics.totalVendas}
+              checkoutVisits={stageType === "paid" ? metrics.checkoutVisits : null}
+              sales={stageType === "paid" ? metrics.totalVendas : null}
             />
           ) : <EmptyState />}
         </div>
