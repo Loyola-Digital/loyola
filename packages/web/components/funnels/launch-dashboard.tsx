@@ -219,7 +219,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
       {/* KPI Cards — Meta only */}
       {overviewLoading || metrics.isLoading ? (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-7">
           {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : overview ? (
@@ -228,14 +228,22 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           const showFaturamento = stageType === "paid" && !!stageId && !!salesData && !salesData.semDados;
           const showVendaIngressos = metrics.totalVendas !== null;
           const showTaxaCheckout = metrics.checkoutConversionRate !== null;
-          let lgColCount = 7; // base: Investimento, Leads, CPL, Connect, CTR, CPC, CPM
-          if (showFaturamento) lgColCount++;
-          if (showVendaIngressos) lgColCount++;
-          if (showTaxaCheckout) lgColCount++;
-          if (surveyResponseRate !== null) lgColCount++;
-          const lgCols = `lg:grid-cols-${lgColCount}`;
+          let colCount = 7; // base: Investimento, Leads, CPL, Connect, CTR, CPC, CPM
+          if (showFaturamento) colCount++;
+          if (showVendaIngressos) colCount++;
+          if (showTaxaCheckout) colCount++;
+          if (surveyResponseRate !== null) colCount++;
+          // Mapa estático — Tailwind JIT não detecta classes dinâmicas em template strings.
+          // Breakpoints: xl (1280px) pra grids até 8 cols, 2xl (1536px) pra 9-11 cols.
+          // Em telas < xl (notebooks comuns 1024-1279) quebra em sm:grid-cols-4 pra evitar scroll horizontal.
+          const gridClass =
+            colCount <= 7 ? "grid-cols-2 sm:grid-cols-4 xl:grid-cols-7"
+              : colCount === 8 ? "grid-cols-2 sm:grid-cols-4 xl:grid-cols-8"
+                : colCount === 9 ? "grid-cols-2 sm:grid-cols-4 2xl:grid-cols-9"
+                  : colCount === 10 ? "grid-cols-2 sm:grid-cols-4 2xl:grid-cols-10"
+                    : "grid-cols-2 sm:grid-cols-4 2xl:grid-cols-11";
           return (
-            <div className={`grid gap-3 grid-cols-2 sm:grid-cols-4 ${lgCols}`}>
+            <div className={`grid gap-3 ${gridClass}`}>
               <MetricTooltip label="Investimento" value={fmtCurrency(metrics.spend)} formula={buildFunnelSpendFormula(metrics.spend, f)}>
                 <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(metrics.spend)} hintTooltip
                   comparison={compSpend !== null && metrics.spend != null ? {

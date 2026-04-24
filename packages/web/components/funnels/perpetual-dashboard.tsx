@@ -258,14 +258,14 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       {/* KPIs PRINCIPAIS                                                  */}
       {/* ================================================================ */}
       {overviewLoading ? (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-7">
           {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : overview ? (
         (() => {
           const f = { days, funnelType: "perpetual" as const, funnelName: funnel?.name };
           return (
-            <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-7">
               <MetricTooltip label="ROAS" value={fmtRoas(overview.roas)} formula={buildFunnelRoasFormula(overview.roas, f)}>
                 <KpiCard icon={Target} label="ROAS" value={fmtRoas(overview.roas)} target={2} actual={overview.roas} hintTooltip />
               </MetricTooltip>
