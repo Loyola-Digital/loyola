@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Brain, RefreshCw } from "lucide-react";
+import { Brain, RefreshCw, Bug } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,13 +24,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useFunnelSurveys } from "@/lib/hooks/use-google-sheets";
 import {
   useLeadScoring,
   useSaveLeadScoring,
   useLeadScoringResults,
+  useLeadScoringDebug,
   type BandResult,
   type ProjectInfo,
+  type LeadScoringDebug,
 } from "@/lib/hooks/use-lead-scoring";
 
 interface LeadScoringTabProps {
@@ -112,6 +120,9 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
 
   const [selectedSurveyId, setSelectedSurveyId] = useState<string>("");
   const [jsonText, setJsonText] = useState("");
+  const [debugOpen, setDebugOpen] = useState(false);
+  const { data: debug, isLoading: debugLoading, refetch: refetchDebug } =
+    useLeadScoringDebug(projectId, funnelId, stageId, debugOpen);
 
   useEffect(() => {
     if (saved) {
@@ -228,16 +239,28 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
             Distribuição por Banda
           </h3>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5 text-xs"
-            onClick={() => refetchResults()}
-            disabled={resultsLoading}
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${resultsLoading ? "animate-spin" : ""}`} />
-            Recalcular
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5 text-xs"
+              onClick={() => setDebugOpen(true)}
+              disabled={!saved || !saved.surveyId}
+            >
+              <Bug className="h-3.5 w-3.5" />
+              Diagnosticar
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5 text-xs"
+              onClick={() => refetchResults()}
+              disabled={resultsLoading}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${resultsLoading ? "animate-spin" : ""}`} />
+              Recalcular
+            </Button>
+          </div>
         </div>
 
         {!saved ? (
@@ -260,6 +283,152 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
           <ResultsTable results={results} />
         )}
       </div>
+
+      {/* Debug Dialog */}
+      <Dialog open={debugOpen} onOpenChange={setDebugOpen}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bug className="h-5 w-5" />
+              Diagnóstico do Lead Scoring
+            </DialogTitle>
+          </DialogHeader>
+
+          {debugLoading ? (
+            <Skeleton className="h-64 w-full" />
+          ) : !debug ? (
+            <p className="text-sm text-muted-foreground">Nenhum dado de diagnóstico disponível.</p>
+          ) : (
+            <DebugView debug={debug} onRefresh={refetchDebug} />
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function DebugView({ debug, onRefresh }: { debug: LeadScoringDebug; onRefresh: () => void }) {
+  return (
+    <div className="space-y-6 text-sm">
+      {/* Sheet info */}
+      <section>
+        <h4 className="font-semibold mb-2">Planilha</h4>
+        <div className="rounded-md border p-3 bg-muted/30 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+          <div><span className="text-muted-foreground">Sheet:</span> {debug.sheet_info.sheet_name}</div>
+          <div><span className="text-muted-foreground">Linhas:</span> {debug.sheet_info.total_rows}</div>
+          <div><span className="text-muted-foreground">Headers:</span> {debug.sheet_info.total_headers}</div>
+          <div><span className="text-muted-foreground">Spreadsheet ID:</span> <code className="text-[10px]">{debug.sheet_info.spreadsheet_id.slice(0, 12)}...</code></div>
+        </div>
+      </section>
+
+      {/* Per-question stats */}
+      <section>
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="font-semibold">Estatísticas por Questão</h4>
+          <Button variant="ghost" size="sm" onClick={onRefresh} className="gap-1.5 text-xs">
+            <RefreshCw className="h-3.5 w-3.5" />
+            Atualizar
+          </Button>
+        </div>
+        <div className="space-y-2">
+          {debug.per_question.map((q) => {
+            const total = q.matched_count + q.unmapped_count;
+            const matchedPct = total > 0 ? (q.matched_count / total) * 100 : 0;
+            return (
+              <div key={q.id} className="rounded-md border p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <span className="font-mono text-xs font-bold">{q.id}</span>{" "}
+                    <span className="text-xs text-muted-foreground">({q.label})</span>
+                    {!q.column_found && (
+                      <Badge variant="outline" className="ml-2 bg-red-100 text-red-800 border-red-200 text-[10px]">
+                        COLUNA NÃO ENCONTRADA
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-xs">
+                    <span className={matchedPct < 80 ? "text-orange-600 font-semibold" : "text-green-700"}>
+                      {q.matched_count} matched
+                    </span>
+                    {" / "}
+                    <span className={q.unmapped_count > 0 ? "text-orange-600" : "text-muted-foreground"}>
+                      {q.unmapped_count} unmapped
+                    </span>
+                    {" "}
+                    <span className="text-muted-foreground">({matchedPct.toFixed(1)}%)</span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground italic mb-2 truncate">
+                  → {q.new_survey_column}
+                </p>
+                {q.unmapped_unique_values.length > 0 && (
+                  <div className="bg-orange-50 dark:bg-orange-950/20 rounded p-2 text-[11px]">
+                    <p className="font-semibold text-orange-800 dark:text-orange-300 mb-1">
+                      Valores não-mapeados (top {q.unmapped_unique_values.length}):
+                    </p>
+                    <ul className="space-y-0.5">
+                      {q.unmapped_unique_values.map((v, i) => (
+                        <li key={i} className="flex justify-between gap-3">
+                          <code className="truncate">&quot;{v.value || "(vazio)"}&quot;</code>
+                          <span className="font-medium">{v.count}x</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Sample leads */}
+      <section>
+        <h4 className="font-semibold mb-2">Amostra dos primeiros 5 leads</h4>
+        <div className="space-y-2">
+          {debug.sample_leads.map((s) => (
+            <div key={s.row_idx} className="rounded-md border p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-mono text-xs">Linha #{s.row_idx + 2}</span>
+                <div className="flex gap-2 items-center">
+                  {s.q4_filled && (
+                    <Badge variant="outline" className="text-[10px]">Q4 preenchida</Badge>
+                  )}
+                  <span className="font-bold">Total: {s.total_score.toFixed(2)}</span>
+                </div>
+              </div>
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-muted-foreground">
+                    <th className="text-left">ID</th>
+                    <th className="text-left">Resposta</th>
+                    <th className="text-right">Pts</th>
+                    <th className="text-right">Match</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.breakdown.map((b) => (
+                    <tr key={b.id} className="border-t">
+                      <td className="font-mono py-1">{b.id}</td>
+                      <td className="truncate max-w-xs py-1">
+                        <code className="text-[10px]">&quot;{b.raw ?? "(coluna não encontrada)"}&quot;</code>
+                      </td>
+                      <td className="text-right py-1 font-medium">{b.points.toFixed(2)}</td>
+                      <td className="text-right py-1">
+                        {b.matched ? (
+                          <span className="text-green-700">✓</span>
+                        ) : (
+                          <span className="text-orange-600">unmapped</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

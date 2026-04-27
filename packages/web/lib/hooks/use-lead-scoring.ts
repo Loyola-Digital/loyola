@@ -91,3 +91,45 @@ export function useLeadScoringResults(
     enabled: !!projectId && !!funnelId && !!stageId,
   });
 }
+
+export interface LeadScoringDebug {
+  sheet_info: {
+    spreadsheet_id: string;
+    sheet_name: string;
+    total_rows: number;
+    total_headers: number;
+  };
+  headers: string[];
+  per_question: Array<{
+    id: string;
+    label?: string;
+    new_survey_column?: string;
+    column_index: number;
+    column_found: boolean;
+    matched_count: number;
+    unmapped_count: number;
+    unmapped_default: number;
+    unmapped_unique_values: Array<{ value: string; count: number }>;
+  }>;
+  sample_leads: Array<{
+    row_idx: number;
+    q4_filled: boolean;
+    total_score: number;
+    breakdown: Array<{ id: string; raw: string | null; points: number; matched: boolean }>;
+  }>;
+}
+
+export function useLeadScoringDebug(
+  projectId: string | null,
+  funnelId: string | null,
+  stageId: string | null,
+  enabled: boolean,
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["lead-scoring-debug", projectId, funnelId, stageId],
+    queryFn: () =>
+      apiClient<LeadScoringDebug>(`${base(projectId!, funnelId!, stageId!)}/debug`),
+    enabled: enabled && !!projectId && !!funnelId && !!stageId,
+  });
+}
