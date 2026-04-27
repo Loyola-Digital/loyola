@@ -160,6 +160,43 @@ export function useUpdateMemberPermissions(projectId: string) {
   });
 }
 
+// ============================================================
+// Pending invitations
+// ============================================================
+
+export interface PendingInvitation {
+  id: string;
+  email: string;
+  permissions: ProjectPermissions;
+  expiresAt: string;
+  createdAt: string;
+}
+
+// GET /api/projects/:id/pending-invitations
+export function useProjectPendingInvitations(projectId: string) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["project-pending-invitations", projectId],
+    queryFn: () => apiClient<PendingInvitation[]>(`/api/projects/${projectId}/pending-invitations`),
+    enabled: !!projectId,
+  });
+}
+
+// DELETE /api/projects/:id/invitations/:invitationId
+export function useCancelInvitation(projectId: string) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (invitationId: string) =>
+      apiClient<void>(`/api/projects/${projectId}/invitations/${invitationId}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-pending-invitations", projectId] });
+    },
+  });
+}
+
 // DELETE /api/projects/:id
 export function useDeleteProject() {
   const apiClient = useApiClient();

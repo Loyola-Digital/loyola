@@ -1,12 +1,15 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { Trash2, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import {
   useProjectMembers,
+  useProjectPendingInvitations,
   useRemoveMember,
+  useCancelInvitation,
   useUpdateMemberPermissions,
 } from "@/lib/hooks/use-projects";
 import type { ProjectPermissions } from "@/lib/hooks/use-projects";
@@ -40,10 +43,12 @@ function normalizePermissions(p: Partial<ProjectPermissions>): ProjectPermission
 
 export function MemberPermissionsEditor({ projectId }: MemberPermissionsEditorProps) {
   const { data: members, isLoading } = useProjectMembers(projectId);
+  const { data: pendingInvites, isLoading: loadingInvites } = useProjectPendingInvitations(projectId);
   const removeMember = useRemoveMember(projectId);
+  const cancelInvitation = useCancelInvitation(projectId);
   const updatePermissions = useUpdateMemberPermissions(projectId);
 
-  if (isLoading) {
+  if (isLoading || loadingInvites) {
     return (
       <div className="flex flex-col gap-2">
         <Skeleton className="h-12 w-full" />
@@ -52,7 +57,10 @@ export function MemberPermissionsEditor({ projectId }: MemberPermissionsEditorPr
     );
   }
 
-  if (!members || members.length === 0) {
+  const hasMembers = members && members.length > 0;
+  const hasPending = pendingInvites && pendingInvites.length > 0;
+
+  if (!hasMembers && !hasPending) {
     return (
       <p className="text-sm text-muted-foreground">
         Nenhum membro convidado ainda.
@@ -62,7 +70,7 @@ export function MemberPermissionsEditor({ projectId }: MemberPermissionsEditorPr
 
   return (
     <div className="flex flex-col gap-3">
-      {members.map((member) => (
+      {members?.map((member) => (
         <div key={member.id} className="rounded-md border p-3 flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <div>
@@ -103,6 +111,30 @@ export function MemberPermissionsEditor({ projectId }: MemberPermissionsEditorPr
                 </label>
               </div>
             ))}
+          </div>
+        </div>
+      ))}
+
+      {pendingInvites?.map((invite) => (
+        <div key={invite.id} className="rounded-md border border-dashed border-border/60 p-3 flex items-center justify-between opacity-70">
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+            <div>
+              <p className="text-sm font-medium">{invite.email}</p>
+              <p className="text-xs text-muted-foreground">Convite enviado · aguardando aceite</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="text-xs">Pendente</Badge>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 text-destructive hover:text-destructive"
+              disabled={cancelInvitation.isPending}
+              onClick={() => cancelInvitation.mutate(invite.id)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       ))}

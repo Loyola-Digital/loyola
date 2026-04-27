@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and, ne, isNull, gt } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { randomBytes } from "crypto";
 import {
@@ -238,5 +238,65 @@ export default fp(async function invitationsRoutes(fastify) {
       userId,
       permissions: inv.permissions,
     });
+  });
+
+  // ---- GET /api/projects/:id/pending-invitations ---- lista convites não aceitos
+  fastify.get("/api/projects/:id/pending-invitations", async (request, reply) => {
+    const paramResult = idParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.code(400).send({ error: "ID inválido" });
+    }
+
+    const project = await getProjectIfAllowed(paramResult.data.id, request.userRole);
+    if (!project) {
+      return reply.code(404).send({ error: "Projeto não encontrado" });
+    }
+
+    const now = new Date();
+    const invites = await fastify.db
+      .select({
+        id: projectInvitations.id,
+        email: projectInvitations.email,
+        permissions: projectInvitations.permissions,
+        expiresAt: projectInvitations.expiresAt,
+        createdAt: projectInvitations.createdAt,
+      })
+      .from(projectInvitations)
+      .where(
+        and(
+          eq(projectInvitations.projectId, paramResult.data.id),
+          isNull(projectInvitations.acceptedAt),
+          gt(projectInvitations.expiresAt, now),
+        ),
+      );
+
+    return invites;
+  });
+
+  // ---- DELETE /api/projects/:id/invitations/:invitationId ---- cancela convite pendente
+  fastify.delete("/api/projects/:id/invitations/:invitationId", async (request, reply) => {
+    const paramResult = idParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.code(400).send({ error: "ID inválido" });
+    }
+
+    const { invitationId } = request.params as { invitationId: string };
+
+    const project = await getProjectIfAllowed(paramResult.data.id, request.userRole);
+    if (!project) {
+      return reply.code(404).send({ error: "Projeto não encontrado" });
+    }
+
+    await fastify.db
+      .delete(projectInvitations)
+      .where(
+        and(
+          eq(projectInvitations.id, invitationId),
+          eq(projectInvitations.projectId, paramResult.data.id),
+          isNull(projectInvitations.acceptedAt),
+        ),
+      );
+
+    return reply.code(204).send();
   });
 });
