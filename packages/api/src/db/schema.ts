@@ -705,6 +705,30 @@ export const funnelSurveys = pgTable(
 );
 
 // ============================================================
+// LEAD SCORING SCHEMAS (Story 22.1 — v2 enriquecido)
+// ============================================================
+
+export const stageLeadScoringSchemas = pgTable(
+  "stage_lead_scoring_schemas",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .unique()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    surveyId: uuid("survey_id").references(() => funnelSurveys.id, {
+      onDelete: "set null",
+    }),
+    schemaJson: jsonb("schema_json").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_lead_scoring_stage").on(table.stageId),
+  ]
+);
+
+// ============================================================
 // SALES PRODUCTS & SPREADSHEET MAPPINGS (Settings — Sales Integration)
 // ============================================================
 

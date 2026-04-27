@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2 } from "lucide-react";
+import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,6 +17,7 @@ import { SurveyFunnelTab } from "@/components/funnels/survey-funnel-tab";
 import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-tab";
 import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-spreadsheet-section";
 import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
+import { LeadScoringTab } from "@/components/funnels/lead-scoring-tab";
 import { AuditStatusBadge } from "@/components/funnels/audit-status-badge";
 import { CampaignSelector } from "@/components/funnels/campaign-selector";
 import { useCampaignPicker } from "@/lib/hooks/use-funnels";
@@ -272,6 +273,10 @@ export default function StagePage() {
             <Link2 className="h-3.5 w-3.5 text-purple-600" />
             Links
           </TabsTrigger>
+          <TabsTrigger value="lead-scoring" className="gap-1.5">
+            <Brain className="h-3.5 w-3.5 text-primary" />
+            Lead Scoring
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="meta-ads" className="mt-6">
@@ -340,6 +345,10 @@ export default function StagePage() {
 
         <TabsContent value="switchy-links" className="mt-6">
           <SwitchyLinksTab projectId={params.id} funnel={stageAsFunnel} />
+        </TabsContent>
+
+        <TabsContent value="lead-scoring" className="mt-6">
+          <LeadScoringTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
         </TabsContent>
       </Tabs>
     </div>
