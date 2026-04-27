@@ -77,7 +77,24 @@ type LeadScoringSchema = {
 // ============================================================
 
 function normalizeText(s: string): string {
-  return s.trim().toLowerCase();
+  // NFC + lowercase + trim + colapsa whitespace múltiplo (inclui NBSP)
+  return s
+    .normalize("NFC")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+const NO_ANSWER_SENTINEL = "(sem resposta)";
+
+// Conforme equivalence_notes do schema (Q4): NAN/vazio = "(sem resposta)".
+// Células de planilha vazias devem mapear para o sentinel antes do matching.
+function resolveAnswerCellValue(raw: string | undefined): string {
+  const v = (raw ?? "").trim();
+  if (v === "" || v.toLowerCase() === "nan" || v === "-" || v === "—") {
+    return NO_ANSWER_SENTINEL;
+  }
+  return v;
 }
 
 function isAnswerConditional(a: Answer): a is AnswerConditional {
@@ -111,8 +128,9 @@ function computeBands(
 
   for (const row of rows) {
     let totalScore = 0;
+    // Q4 "filled" = lead respondeu (tem funcionários). Vazio ou "(sem resposta)" = não-filled.
     const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
-    const q4Filled = q4Raw !== "" && q4Raw !== "(sem resposta)";
+    const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
 
     for (const q of questions) {
       const colIdx = colMap.get(q.id) ?? -1;
@@ -121,7 +139,7 @@ function computeBands(
         totalScore += fallback;
         continue;
       }
-      const answer = (row[colIdx] ?? "").trim();
+      const answer = resolveAnswerCellValue(row[colIdx]);
       const match = q.answers.find((a) => normalizeText(a.value) === normalizeText(answer));
       if (!match) {
         totalScore += fallback;
@@ -289,6 +307,145 @@ export default fp(async function leadScoringRoutes(fastify) {
         .returning();
 
       return reply.code(200).send(row);
+    },
+  );
+
+  // GET /api/projects/:projectId/funnels/:funnelId/stages/:stageId/lead-scoring/debug
+  // Diagnóstico: headers, mapping de colunas, % matched/unmapped por questão, leads sample.
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/lead-scoring/debug",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const project = await getProjectAccess(
+        params.data.projectId,
+        request.userId,
+        request.userRole,
+      );
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const stage = await getStage(
+        params.data.stageId,
+        params.data.funnelId,
+        params.data.projectId,
+      );
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const [scoringRow] = await fastify.db
+        .select()
+        .from(stageLeadScoringSchemas)
+        .where(eq(stageLeadScoringSchemas.stageId, params.data.stageId))
+        .limit(1);
+      if (!scoringRow || !scoringRow.surveyId) {
+        return reply.code(404).send({ error: "Schema ou survey não configurado" });
+      }
+
+      const [survey] = await fastify.db
+        .select()
+        .from(funnelSurveys)
+        .where(eq(funnelSurveys.id, scoringRow.surveyId))
+        .limit(1);
+      if (!survey) return reply.code(404).send({ error: "Survey não encontrado" });
+
+      const sheet = await readSheetData(survey.spreadsheetId, survey.sheetName);
+      const schema = scoringRow.schemaJson as LeadScoringSchema;
+      const questions = schema.scoring_model?.questions ?? [];
+
+      // Mapping headers
+      const colMap = new Map<string, number>();
+      for (const q of questions) {
+        const target = q.new_survey_column ? normalizeText(q.new_survey_column) : "";
+        const idx = target ? sheet.headers.findIndex((h) => normalizeText(h) === target) : -1;
+        colMap.set(q.id, idx);
+      }
+
+      // Estatísticas por questão
+      const perQuestion = questions.map((q) => {
+        const idx = colMap.get(q.id) ?? -1;
+        const matchedAnswers = new Map<string, number>();
+        const unmappedAnswers = new Map<string, number>();
+        let matchedCount = 0;
+        let unmappedCount = 0;
+        for (const row of sheet.rows) {
+          if (idx === -1) {
+            unmappedCount++;
+            continue;
+          }
+          const answer = resolveAnswerCellValue(row[idx]);
+          const match = q.answers.find(
+            (a) => normalizeText(a.value) === normalizeText(answer),
+          );
+          if (match) {
+            matchedCount++;
+            matchedAnswers.set(answer, (matchedAnswers.get(answer) ?? 0) + 1);
+          } else {
+            unmappedCount++;
+            unmappedAnswers.set(answer, (unmappedAnswers.get(answer) ?? 0) + 1);
+          }
+        }
+        return {
+          id: q.id,
+          label: q.label,
+          new_survey_column: q.new_survey_column,
+          column_index: idx,
+          column_found: idx !== -1,
+          matched_count: matchedCount,
+          unmapped_count: unmappedCount,
+          unmapped_default: q.unmapped_default ?? 0,
+          unmapped_unique_values: Array.from(unmappedAnswers.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([value, count]) => ({ value, count })),
+        };
+      });
+
+      // Sample de 5 leads com breakdown
+      const q4Idx = colMap.get("Q4") ?? -1;
+      const sampleSize = Math.min(5, sheet.rows.length);
+      const sample: unknown[] = [];
+      for (let i = 0; i < sampleSize; i++) {
+        const row = sheet.rows[i];
+        const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
+        const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
+        let total = 0;
+        const breakdown = questions.map((q) => {
+          const idx = colMap.get(q.id) ?? -1;
+          if (idx === -1) {
+            total += q.unmapped_default ?? 0;
+            return { id: q.id, raw: null, points: q.unmapped_default ?? 0, matched: false };
+          }
+          const answer = resolveAnswerCellValue(row[idx]);
+          const match = q.answers.find(
+            (a) => normalizeText(a.value) === normalizeText(answer),
+          );
+          if (!match) {
+            total += q.unmapped_default ?? 0;
+            return { id: q.id, raw: answer, points: q.unmapped_default ?? 0, matched: false };
+          }
+          let pts: number;
+          if (isAnswerConditional(match)) {
+            pts = q4Filled ? match.points_conditional.if_q4_filled : match.points_conditional.if_q4_empty;
+          } else {
+            pts = match.points;
+          }
+          total += pts;
+          return { id: q.id, raw: answer, points: pts, matched: true };
+        });
+        sample.push({ row_idx: i, q4_filled: q4Filled, total_score: total, breakdown });
+      }
+
+      return {
+        sheet_info: {
+          spreadsheet_id: survey.spreadsheetId,
+          sheet_name: survey.sheetName,
+          total_rows: sheet.rows.length,
+          total_headers: sheet.headers.length,
+        },
+        headers: sheet.headers,
+        per_question: perQuestion,
+        sample_leads: sample,
+      };
     },
   );
 
