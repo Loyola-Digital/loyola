@@ -24,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useProjects } from "@/lib/hooks/use-projects";
 import { useMyMembership } from "@/lib/hooks/use-projects";
 import { useUIStore } from "@/lib/stores/ui-store";
+import { useAutoCloseSidebarOnNavigation } from "@/lib/hooks/use-auto-close-sidebar";
 import { useFunnels } from "@/lib/hooks/use-funnels";
 import type { Project, ProjectPermissions } from "@/lib/hooks/use-projects";
 
@@ -261,6 +262,8 @@ export function GuestSidebar() {
     mql.addEventListener("change", handler);
     return () => mql.removeEventListener("change", handler);
   }, [setSidebarOpen]);
+
+  useAutoCloseSidebarOnNavigation(isMobile);
 
   return (
     <>

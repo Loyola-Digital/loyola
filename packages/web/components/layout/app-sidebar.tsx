@@ -26,6 +26,7 @@ import { CreateProjectDialog } from "@/components/layout/create-project-dialog";
 import { FunnelWizard } from "@/components/funnels/funnel-wizard";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import { GuestSidebar } from "@/components/layout/guest-sidebar";
+import { useAutoCloseSidebarOnNavigation } from "@/lib/hooks/use-auto-close-sidebar";
 
 const navItems = [
   { label: "Minds", href: "/minds", icon: Brain },
@@ -218,6 +219,8 @@ export function AppSidebar() {
     mql.addEventListener("change", handler);
     return () => mql.removeEventListener("change", handler);
   }, []);
+
+  useAutoCloseSidebarOnNavigation(isMobile);
 
   if (role === null) return null;
   if (role === "guest") return <GuestSidebar />;
