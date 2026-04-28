@@ -18,7 +18,7 @@ import { format, parseISO } from "date-fns";
 import { useOrganicPostLinks } from "@/lib/hooks/use-organic-posts";
 import { LinkPostToStageModal } from "@/components/funnels/link-post-to-stage-modal";
 
-type SortKey = "timestamp" | "like_count" | "comments_count";
+type SortKey = "timestamp" | "like_count" | "comments_count" | "engagement_rate";
 
 interface PostsTableProps {
   data?: InstagramMedia[];
@@ -58,11 +58,26 @@ export function PostsTable({
     let diff = 0;
     if (sortKey === "timestamp") {
       diff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+    } else if (sortKey === "engagement_rate") {
+      diff = (a.engagement_rate ?? -1) - (b.engagement_rate ?? -1);
     } else {
       diff = (a[sortKey] ?? 0) - (b[sortKey] ?? 0);
     }
     return sortAsc ? diff : -diff;
   });
+
+  function fmtEngagement(rate: number | null | undefined): string {
+    if (rate == null) return "—";
+    return `${rate.toFixed(2)}%`;
+  }
+
+  function engagementColor(rate: number | null | undefined): string {
+    if (rate == null) return "text-muted-foreground";
+    if (rate >= 10) return "text-green-600 font-medium";
+    if (rate >= 5) return "text-blue-600";
+    if (rate >= 2) return "text-amber-600";
+    return "text-muted-foreground";
+  }
 
   const showLinkColumn = !!projectId;
 
@@ -103,6 +118,17 @@ export function PostsTable({
                     </Button>
                   </TableHead>
                   <TableHead>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="-ml-3 h-8 gap-1"
+                      onClick={() => toggleSort("engagement_rate")}
+                      title="(likes + comments + saves) / reach × 100"
+                    >
+                      Engajamento <ArrowUpDown className="h-3 w-3" />
+                    </Button>
+                  </TableHead>
+                  <TableHead>
                     <Button variant="ghost" size="sm" className="-ml-3 h-8 gap-1" onClick={() => toggleSort("timestamp")}>
                       Data <ArrowUpDown className="h-3 w-3" />
                     </Button>
@@ -131,6 +157,16 @@ export function PostsTable({
                       </TableCell>
                       <TableCell className="text-sm">{post.like_count?.toLocaleString("pt-BR") ?? "—"}</TableCell>
                       <TableCell className="text-sm">{post.comments_count?.toLocaleString("pt-BR") ?? "—"}</TableCell>
+                      <TableCell
+                        className={`text-sm whitespace-nowrap ${engagementColor(post.engagement_rate)}`}
+                        title={
+                          post.reach != null
+                            ? `Reach: ${post.reach.toLocaleString("pt-BR")} · Likes: ${post.like_count ?? 0} · Comments: ${post.comments_count ?? 0} · Saves: ${post.saved ?? 0}`
+                            : "Reach indisponível para este post"
+                        }
+                      >
+                        {fmtEngagement(post.engagement_rate)}
+                      </TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
                         {format(parseISO(post.timestamp), "dd/MM/yy")}
                       </TableCell>

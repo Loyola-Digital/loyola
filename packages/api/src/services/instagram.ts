@@ -56,6 +56,10 @@ interface InstagramMedia {
   timestamp: string;
   like_count?: number;
   comments_count?: number;
+  // Enriched via insights (best-effort — null if API didn't return)
+  reach?: number | null;
+  saved?: number | null;
+  engagement_rate?: number | null;
 }
 
 interface MediaListResponse {
@@ -413,10 +417,61 @@ export default fp(async function instagramServicePlugin(fastify) {
     if (after) path += `&after=${after}`;
 
     const result = await graphFetch<MediaListResponse>(path, token);
+
+    // Enrich each post with reach + saved (from insights) and engagement_rate.
+    // Promise.allSettled so a single insight failure doesn't kill the whole list.
+    const enriched = await Promise.allSettled(
+      result.data.map(async (post) => {
+        const entries = await getMediaInsights(post.id, accountId, post.media_type);
+        const reach = pickInsightValue(entries, "reach");
+        const saved = pickInsightValue(entries, "saved");
+        const likes = post.like_count ?? 0;
+        const comments = post.comments_count ?? 0;
+        let engagementRate: number | null = null;
+        if (reach != null && reach > 0) {
+          engagementRate = ((likes + comments + (saved ?? 0)) / reach) * 100;
+        }
+        return {
+          ...post,
+          reach,
+          saved,
+          engagement_rate: engagementRate,
+        } satisfies InstagramMedia;
+      }),
+    );
+
+    const data: InstagramMedia[] = enriched.map((r, i) =>
+      r.status === "fulfilled"
+        ? r.value
+        : { ...result.data[i], reach: null, saved: null, engagement_rate: null },
+    );
+
     return {
-      data: result.data,
+      data,
       nextCursor: result.paging?.cursors?.after,
     };
+  }
+
+  function pickInsightValue(entries: InsightEntry[], name: string): number | null {
+    const e = entries.find((x) => x.name === name);
+    if (!e) return null;
+    // total_value is the v25.0 shape for non-time-series metrics
+    if (e.total_value && typeof e.total_value.value === "number") {
+      return e.total_value.value;
+    }
+    // fallback: time_series — sum the values
+    if (e.values && e.values.length > 0) {
+      let sum = 0;
+      let any = false;
+      for (const v of e.values) {
+        if (typeof v.value === "number") {
+          sum += v.value;
+          any = true;
+        }
+      }
+      return any ? sum : null;
+    }
+    return null;
   }
 
   async function getMediaInsights(

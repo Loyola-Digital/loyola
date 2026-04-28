@@ -27,6 +27,10 @@ export interface InstagramMedia {
   timestamp: string;
   like_count?: number;
   comments_count?: number;
+  reach?: number | null;
+  saved?: number | null;
+  /** (likes + comments + saves) / reach × 100, ou null se reach indisponível */
+  engagement_rate?: number | null;
 }
 
 export interface InsightValue {
