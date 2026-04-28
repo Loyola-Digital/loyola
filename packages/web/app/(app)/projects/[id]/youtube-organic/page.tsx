@@ -4,7 +4,7 @@ import * as React from "react";
 import { use, useState } from "react";
 import {
   Youtube, Eye, Clock, Users, ThumbsUp, MessageSquare, Share2, Settings,
-  DollarSign,
+  DollarSign, Link2,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -16,6 +16,8 @@ import Link from "next/link";
 import {
   useYouTubeChannels, useYouTubeOverview, useYouTubeDaily, useYouTubeVideos,
 } from "@/lib/hooks/use-youtube-channels";
+import { useOrganicPostLinks } from "@/lib/hooks/use-organic-posts";
+import { LinkPostToStageModal } from "@/components/funnels/link-post-to-stage-modal";
 
 interface Props { params: Promise<{ id: string }>; }
 
@@ -53,6 +55,7 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
 export default function ProjectYouTubeOrganicPage({ params }: Props) {
   const { id: projectId } = use(params);
   const [days, setDays] = useState(30);
+  const [linkModal, setLinkModal] = useState<{ videoId: string; title: string } | null>(null);
 
   const { data: channels } = useYouTubeChannels();
   const linkedChannel = channels?.find((ch) => ch.projects.some((p) => p.projectId === projectId));
@@ -61,6 +64,12 @@ export default function ProjectYouTubeOrganicPage({ params }: Props) {
   const { data: overview, isLoading: overviewLoading } = useYouTubeOverview(channelDbId, days > 0 ? days : 30);
   const { data: dailyData, isLoading: dailyLoading } = useYouTubeDaily(channelDbId, days > 0 ? days : 30);
   const { data: videosData, isLoading: videosLoading } = useYouTubeVideos(channelDbId, 12);
+  const { data: linksMap } = useOrganicPostLinks(projectId, "youtube");
+
+  const linkedCountByVideoId = new Map<string, number>();
+  for (const entry of linksMap ?? []) {
+    linkedCountByVideoId.set(entry.externalId, entry.stageIds.length);
+  }
 
   if (!linkedChannel && channels) {
     return (
@@ -128,22 +137,69 @@ export default function ProjectYouTubeOrganicPage({ params }: Props) {
         <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
           <h3 className="text-sm font-semibold">Videos Recentes</h3>
           <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            {videosData.videos.map((v) => (
-              <a key={v.videoId} href={`https://www.youtube.com/watch?v=${v.videoId}`} target="_blank" rel="noopener noreferrer"
-                className="group rounded-lg border border-border/20 bg-muted/10 overflow-hidden hover:border-border/50 transition-all hover:shadow-md">
-                <div className="relative aspect-video"><img src={v.thumbnailUrl} alt={v.title} className="w-full h-full object-cover" /></div>
-                <div className="p-2.5 space-y-1">
-                  <p className="text-[11px] font-medium line-clamp-2">{v.title}</p>
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                    <span>{fmtNumber(v.viewCount)} views</span>
-                    <span>{fmtNumber(v.likeCount)} likes</span>
-                  </div>
+            {videosData.videos.map((v) => {
+              const linkedCount = linkedCountByVideoId.get(v.videoId) ?? 0;
+              return (
+                <div
+                  key={v.videoId}
+                  className="group relative rounded-lg border border-border/20 bg-muted/10 overflow-hidden hover:border-border/50 transition-all hover:shadow-md"
+                >
+                  <a
+                    href={`https://www.youtube.com/watch?v=${v.videoId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block"
+                  >
+                    <div className="relative aspect-video">
+                      <img src={v.thumbnailUrl} alt={v.title} className="w-full h-full object-cover" />
+                      {linkedCount > 0 && (
+                        <span
+                          className="absolute bottom-1 left-1 inline-flex items-center gap-0.5 rounded-full bg-primary/90 px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground"
+                          title={`Vinculado a ${linkedCount} etapa${linkedCount > 1 ? "s" : ""}`}
+                        >
+                          <Link2 className="h-2.5 w-2.5" />
+                          {linkedCount}
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-2.5 space-y-1">
+                      <p className="text-[11px] font-medium line-clamp-2">{v.title}</p>
+                      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>{fmtNumber(v.viewCount)} views</span>
+                        <span>{fmtNumber(v.likeCount)} likes</span>
+                      </div>
+                    </div>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setLinkModal({ videoId: v.videoId, title: v.title });
+                    }}
+                    className="absolute top-1 right-1 inline-flex h-7 w-7 items-center justify-center rounded-full bg-background/80 text-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-background"
+                    title="Vincular a uma etapa do funil"
+                    aria-label="Vincular a uma etapa do funil"
+                  >
+                    <Link2 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
-              </a>
-            ))}
+              );
+            })}
           </div>
         </div>
       ) : null}
+
+      {linkModal && (
+        <LinkPostToStageModal
+          projectId={projectId}
+          source="youtube"
+          externalId={linkModal.videoId}
+          postTitle={linkModal.title}
+          open={!!linkModal}
+          onOpenChange={(o) => { if (!o) setLinkModal(null); }}
+        />
+      )}
     </div>
   );
 }
