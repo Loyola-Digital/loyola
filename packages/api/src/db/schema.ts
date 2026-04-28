@@ -844,3 +844,33 @@ export const funnelSpreadsheets = pgTable(
   ]
 );
 
+// ============================================================
+// ORGANIC POSTS LINKED TO STAGES (EPIC-23 — Story 23.1)
+// ============================================================
+
+export const organicPostSourceEnum = pgEnum("organic_post_source", ["youtube", "instagram"]);
+
+export const stageOrganicPosts = pgTable(
+  "stage_organic_posts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    source: organicPostSourceEnum("source").notNull(),
+    externalId: varchar("external_id", { length: 100 }).notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("uq_stage_organic_post").on(table.stageId, table.source, table.externalId),
+    index("idx_stage_organic_posts_stage").on(table.stageId),
+    index("idx_stage_organic_posts_project_source").on(table.projectId, table.source),
+  ]
+);
+
