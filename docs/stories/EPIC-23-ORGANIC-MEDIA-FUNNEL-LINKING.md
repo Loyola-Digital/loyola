@@ -1,6 +1,6 @@
 # Epic 23 — Organic Media → Funnel Stage Linking
 
-**Status:** Draft
+**Status:** Done
 **Owner:** @sm → @po → @dev → @qa → @devops
 **Criado em:** 2026-04-28
 
