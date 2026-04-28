@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain } from "lucide-react";
+import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,6 +18,7 @@ import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-
 import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-spreadsheet-section";
 import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
 import { LeadScoringTab } from "@/components/funnels/lead-scoring-tab";
+import { OrganicMediaTab } from "@/components/funnels/organic-media-tab";
 import { AuditStatusBadge } from "@/components/funnels/audit-status-badge";
 import { CampaignSelector } from "@/components/funnels/campaign-selector";
 import { useCampaignPicker } from "@/lib/hooks/use-funnels";
@@ -277,6 +278,10 @@ export default function StagePage() {
             <Brain className="h-3.5 w-3.5 text-primary" />
             Lead Scoring
           </TabsTrigger>
+          <TabsTrigger value="organic-media" className="gap-1.5">
+            <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+            Mídias Orgânicas
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="meta-ads" className="mt-6">
@@ -349,6 +354,10 @@ export default function StagePage() {
 
         <TabsContent value="lead-scoring" className="mt-6">
           <LeadScoringTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
+        </TabsContent>
+
+        <TabsContent value="organic-media" className="mt-6">
+          <OrganicMediaTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
         </TabsContent>
       </Tabs>
     </div>
