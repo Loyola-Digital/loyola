@@ -1,0 +1,81 @@
+storyId: STORY-23.2
+storyPath: docs/stories/23.2.organic-dash-link-stage-button.md
+verdict: PASS
+reviewedBy: '@qa (Quinn)'
+reviewedAt: '2026-04-28'
+branch: feat/23.2-organic-dash-link-button
+
+quality_checks:
+  code_review:
+    status: PASS
+    notes: |
+      - <LinkPostToStageModal> compartilhado entre YouTube e Instagram dashboards.
+      - Hook use-organic-posts.ts com 4 hooks bem nomeados.
+      - YouTube card: card mantém o link externo, botão Link2 sobreposto no canto
+        superior direito (visível em hover) e badge de contagem no canto inferior
+        esquerdo do thumbnail quando vinculado.
+      - Instagram PostsTable: nova coluna "Etapa" condicional (só renderiza se
+        projectId estiver presente — preserva uso na rota /instagram global).
+      - Invalidação de queries cobrindo organic-post-links e stage-organic-posts.
+
+  unit_tests:
+    status: CONCERNS
+    severity: low
+    notes: |
+      Sem testes — segue padrão do projeto.
+
+  acceptance_criteria:
+    status: PASS
+    notes: |
+      AC 1 (modal compartilhado): PASS — desvio aceito do escopo original (chips
+        removíveis foram movidos para 23.3 conforme decisão de simplificação).
+        Modal mostra mensagem clara apontando o usuário para a aba "Mídias
+        Orgânicas" da etapa para desvincular.
+      AC 2 (hooks): PASS — useOrganicPostLinks, useStageOrganicPosts,
+        useLinkOrganicPost, useUnlinkOrganicPost.
+      AC 3 (Dash YouTube): PASS — botão Link2 + badge "vinculado a N etapas".
+      AC 4 (Dash Instagram): PASS — coluna "Etapa" na PostsTable + badge inline.
+      AC 5 (design system): PASS — usa Dialog, Select, Button, Skeleton já no projeto.
+      AC 6 (ESC/click fora fecha): PASS — Dialog primitive default.
+      AC 7 (empty state sem funil): PASS — link "Criar funil" exibido.
+      AC 8 (loading skeletons): PASS.
+      AC 9 (sem gate UI): PASS.
+      AC 10-12 (validação): typecheck PASS, lint PASS, smoke pendente.
+
+  no_regressions:
+    status: PASS
+    notes: |
+      - Web typecheck 0 erros.
+      - PostsTable: prop projectId é opcional, usuários da rota /instagram global
+        permanecem sem coluna "Etapa" e sem fetch de links.
+      - YouTube page: lógica de card preservada (link externo continua funcional);
+        botão Link2 usa preventDefault+stopPropagation.
+
+  performance:
+    status: PASS
+    notes: |
+      - useOrganicPostLinks tem staleTime 5min — evita refetch desnecessário ao trocar de tab.
+      - Modal só dispara queries quando aberto (useFunnels com enabled gate).
+
+  security:
+    status: PASS
+    notes: |
+      - API gate de getProjectAccess já valida no backend (story 23.1).
+      - UI não expõe IDs sensíveis fora do contexto do projeto.
+
+  documentation:
+    status: PASS
+
+issues: []
+
+waivers:
+  - issue: "AC 1 — chips removíveis no modal"
+    reason: |
+      Listar TODAS as etapas onde um post está vinculado exigiria endpoint
+      novo agrupado por externalId × stageId × stageName × funnelName. Para
+      v1, simplificamos: modal foca em VINCULAR, e a desvinculação é feita
+      dentro do dashboard da etapa (Story 23.3, aba "Mídias Orgânicas").
+      UX trade-off documentado e aceitado.
+
+recommendation: |
+  PASS — ready for @devops *push.

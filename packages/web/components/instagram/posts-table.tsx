@@ -12,9 +12,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { RefreshCw, ArrowUpDown } from "lucide-react";
+import { RefreshCw, ArrowUpDown, Link2 } from "lucide-react";
 import type { InstagramMedia } from "@/lib/hooks/use-instagram";
 import { format, parseISO } from "date-fns";
+import { useOrganicPostLinks } from "@/lib/hooks/use-organic-posts";
+import { LinkPostToStageModal } from "@/components/funnels/link-post-to-stage-modal";
 
 type SortKey = "timestamp" | "like_count" | "comments_count";
 
@@ -23,11 +25,25 @@ interface PostsTableProps {
   isLoading: boolean;
   onRefresh?: () => void;
   isRefreshing?: boolean;
+  projectId?: string;
 }
 
-export function PostsTable({ data, isLoading, onRefresh, isRefreshing }: PostsTableProps) {
+export function PostsTable({
+  data,
+  isLoading,
+  onRefresh,
+  isRefreshing,
+  projectId,
+}: PostsTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("timestamp");
   const [sortAsc, setSortAsc] = useState(false);
+  const [linkModal, setLinkModal] = useState<{ mediaId: string; title: string } | null>(null);
+
+  const { data: linksMap } = useOrganicPostLinks(projectId ?? null, "instagram");
+  const linkedCountByMediaId = new Map<string, number>();
+  for (const entry of linksMap ?? []) {
+    linkedCountByMediaId.set(entry.externalId, entry.stageIds.length);
+  }
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -47,6 +63,8 @@ export function PostsTable({ data, isLoading, onRefresh, isRefreshing }: PostsTa
     }
     return sortAsc ? diff : -diff;
   });
+
+  const showLinkColumn = !!projectId;
 
   return (
     <Card>
@@ -89,11 +107,14 @@ export function PostsTable({ data, isLoading, onRefresh, isRefreshing }: PostsTa
                       Data <ArrowUpDown className="h-3 w-3" />
                     </Button>
                   </TableHead>
+                  {showLinkColumn && <TableHead className="w-24 text-right">Etapa</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {sorted.map((post) => {
                   const thumb = post.thumbnail_url ?? post.media_url;
+                  const linkedCount = linkedCountByMediaId.get(post.id) ?? 0;
+                  const captionPreview = post.caption ?? "—";
                   return (
                     <TableRow key={post.id}>
                       <TableCell>
@@ -106,13 +127,37 @@ export function PostsTable({ data, isLoading, onRefresh, isRefreshing }: PostsTa
                         )}
                       </TableCell>
                       <TableCell className="max-w-[200px]">
-                        <p className="truncate text-sm">{post.caption ?? "—"}</p>
+                        <p className="truncate text-sm">{captionPreview}</p>
                       </TableCell>
                       <TableCell className="text-sm">{post.like_count?.toLocaleString("pt-BR") ?? "—"}</TableCell>
                       <TableCell className="text-sm">{post.comments_count?.toLocaleString("pt-BR") ?? "—"}</TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
                         {format(parseISO(post.timestamp), "dd/MM/yy")}
                       </TableCell>
+                      {showLinkColumn && (
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() =>
+                              setLinkModal({
+                                mediaId: post.id,
+                                title:
+                                  captionPreview.length > 80
+                                    ? `${captionPreview.slice(0, 77)}...`
+                                    : captionPreview,
+                              })
+                            }
+                            title="Vincular a uma etapa do funil"
+                          >
+                            <Link2 className="h-3.5 w-3.5" />
+                            {linkedCount > 0 && (
+                              <span className="text-xs font-medium">{linkedCount}</span>
+                            )}
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   );
                 })}
@@ -121,6 +166,17 @@ export function PostsTable({ data, isLoading, onRefresh, isRefreshing }: PostsTa
           </div>
         )}
       </CardContent>
+
+      {projectId && linkModal && (
+        <LinkPostToStageModal
+          projectId={projectId}
+          source="instagram"
+          externalId={linkModal.mediaId}
+          postTitle={linkModal.title}
+          open={!!linkModal}
+          onOpenChange={(o) => { if (!o) setLinkModal(null); }}
+        />
+      )}
     </Card>
   );
 }

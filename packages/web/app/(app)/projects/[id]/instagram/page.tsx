@@ -179,6 +179,7 @@ export default function ProjectInstagramPage({ params }: Props) {
         isLoading={mediaLoading}
         onRefresh={handleRefreshAll}
         isRefreshing={refresh.isPending}
+        projectId={projectId}
       />
 
       {/* Stories + Reels */}
