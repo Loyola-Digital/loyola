@@ -47,3 +47,14 @@ export type {
   ComparisonDayMetrics,
   MetaAdsComparisonData,
 } from "./types/funnel.js";
+
+export type {
+  OrganicPostSource,
+  StageOrganicPost,
+  YouTubeOrganicMetrics,
+  InstagramOrganicMetrics,
+  OrganicPostMetrics,
+  OrganicPostHydration,
+  StageOrganicPostHydrated,
+  OrganicPostLinksMap,
+} from "./types/organic-post.js";
