@@ -1,0 +1,80 @@
+storyId: STORY-23.3
+storyPath: docs/stories/23.3.stage-organic-media-tab.md
+verdict: PASS
+reviewedBy: '@qa (Quinn)'
+reviewedAt: '2026-04-28'
+branch: feat/23.3-stage-organic-media-tab
+
+quality_checks:
+  code_review:
+    status: PASS
+    notes: |
+      - <OrganicMediaTab>: composição limpa (top-level component + OrganicCard
+        + 2 metric line components + FilterButton).
+      - Hook useStageOrganicPosts reusado da 23.2 (refetchOnWindowFocus false).
+      - Filtro client-side por source (useMemo).
+      - AlertDialog confirm para desvincular — pattern consistente com shadcn.
+      - Card multi-source: 2 sub-componentes para metrics line (YouTube vs IG).
+
+  unit_tests:
+    status: CONCERNS
+    severity: low
+    notes: |
+      Sem testes — segue padrão do projeto.
+
+  acceptance_criteria:
+    status: PASS
+    notes: |
+      AC 1 (TabsTrigger): PASS — adicionado depois de Lead Scoring com ícone
+        Sparkles (amber-500). Decisão registrada (vs Megaphone) — Sparkles
+        encaixa com o tom criativo das mídias orgânicas.
+      AC 2 (componente): PASS — grid responsivo 1/2/3 cols.
+      AC 3 (Card YouTube): PASS — thumbnail 16:9, badge YouTube vermelho,
+        métricas views/likes/comments + opcionais watchTime/retention.
+      AC 4 (Card Instagram): PASS — mesma estrutura, badge Instagram pink-500,
+        métricas reach/likes/comments/saved.
+      AC 5 (isStale): PASS — opacity 60%, banner "Post indisponível na fonte"
+        sobre o thumbnail.
+      AC 6 (hydration null): PASS — card minimalista com banner amber, ID
+        exposto pra debug, único botão "Desvincular".
+      AC 7 (loading skeletons): PASS — 3 cards skeleton.
+      AC 8 (empty state): PASS — cross-page links pra YouTube e Instagram dashs.
+      AC 9 (hooks): PASS — useStageOrganicPosts reusado.
+      AC 10 (unlink invalida queries): PASS — invalida ambos:
+        stage-organic-posts e organic-post-links.
+      AC 11 (sort por createdAt desc): PASS — server-side já ordena.
+      AC 12 (filtro 3 botões): PASS — Todos/YouTube/Instagram com contagens.
+      AC 13-15: typecheck PASS, lint PASS, smoke pendente.
+
+  no_regressions:
+    status: PASS
+    notes: |
+      - Web typecheck 0 erros.
+      - Stage page mantém todas as 6 abas anteriores; nova aba é a 7ª.
+      - Nenhuma mudança em routes/services existentes.
+
+  performance:
+    status: PASS
+    notes: |
+      - Tab só dispara fetch quando aba é montada (TabsContent do Radix
+        renderiza condicionalmente quando active).
+      - Cache 5min staleTime + cache server 5min reduzem load.
+      - Filter é client-side com useMemo.
+
+  security:
+    status: PASS
+    notes: |
+      - Endpoints já protegidos pelo gate getProjectAccess (Story 23.1).
+      - URLs externas usam target=_blank rel=noopener noreferrer.
+
+  documentation:
+    status: PASS
+
+issues: []
+
+waivers: []
+
+recommendation: |
+  PASS — ready for @devops *push.
+  Smoke test final manual recomendado: vincular post na Story 23.2 → ver na
+  tab "Mídias Orgânicas" → desvincular → confirmar que sumiu.
