@@ -79,6 +79,24 @@ export function PostsTable({
     return "text-muted-foreground";
   }
 
+  function buildEngagementTooltip(post: InstagramMedia): string {
+    if (post.reach == null || post.reach <= 0) {
+      return "Reach indisponível para este post — engajamento não pode ser calculado.";
+    }
+    const likes = post.like_count ?? 0;
+    const comments = post.comments_count ?? 0;
+    const saved = post.saved ?? 0;
+    const numerator = likes + comments + saved;
+    const rate = post.engagement_rate ?? (numerator / post.reach) * 100;
+    const fmtN = (n: number) => n.toLocaleString("pt-BR");
+    return [
+      "Engajamento = (likes + comments + saves) / reach × 100",
+      `= (${fmtN(likes)} + ${fmtN(comments)} + ${fmtN(saved)}) / ${fmtN(post.reach)} × 100`,
+      `= ${fmtN(numerator)} / ${fmtN(post.reach)} × 100`,
+      `= ${rate.toFixed(2)}%`,
+    ].join("\n");
+  }
+
   const showLinkColumn = !!projectId;
 
   return (
@@ -159,11 +177,7 @@ export function PostsTable({
                       <TableCell className="text-sm">{post.comments_count?.toLocaleString("pt-BR") ?? "—"}</TableCell>
                       <TableCell
                         className={`text-sm whitespace-nowrap ${engagementColor(post.engagement_rate)}`}
-                        title={
-                          post.reach != null
-                            ? `Reach: ${post.reach.toLocaleString("pt-BR")} · Likes: ${post.like_count ?? 0} · Comments: ${post.comments_count ?? 0} · Saves: ${post.saved ?? 0}`
-                            : "Reach indisponível para este post"
-                        }
+                        title={buildEngagementTooltip(post)}
                       >
                         {fmtEngagement(post.engagement_rate)}
                       </TableCell>

@@ -24,6 +24,8 @@ export interface InstagramOrganicMetrics {
   likeCount: number | null;
   commentCount: number | null;
   saved: number | null;
+  /** (likes + comments + saves) / reach × 100, ou null se reach indisponível */
+  engagementRate: number | null;
 }
 
 export type OrganicPostMetrics = YouTubeOrganicMetrics | InstagramOrganicMetrics;

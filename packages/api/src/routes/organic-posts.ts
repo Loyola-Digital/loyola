@@ -226,6 +226,7 @@ function buildInstagramMetricsZero(): InstagramOrganicMetrics {
     likeCount: null,
     commentCount: null,
     saved: null,
+    engagementRate: null,
   };
 }
 
@@ -247,17 +248,26 @@ function buildInstagramHydration(
   const title = caption.length > 80 ? `${caption.slice(0, 77)}...` : caption || null;
   const thumb = media.thumbnail_url ?? media.media_url ?? null;
   const externalUrl = media.permalink ?? `https://www.instagram.com/p/${externalId}/`;
+  const reach = insights?.reach ?? null;
+  const likes = media.like_count ?? null;
+  const comments = media.comments_count ?? null;
+  const saved = insights?.saved ?? null;
+  let engagementRate: number | null = null;
+  if (reach != null && reach > 0) {
+    engagementRate = (((likes ?? 0) + (comments ?? 0) + (saved ?? 0)) / reach) * 100;
+  }
   return {
     isStale: false,
     title,
     thumbnailUrl: thumb,
     externalUrl,
     metrics: {
-      reach: insights?.reach ?? null,
+      reach,
       impressions: insights?.impressions ?? null,
-      likeCount: media.like_count ?? null,
-      commentCount: media.comments_count ?? null,
-      saved: insights?.saved ?? null,
+      likeCount: likes,
+      commentCount: comments,
+      saved,
+      engagementRate,
     },
   };
 }

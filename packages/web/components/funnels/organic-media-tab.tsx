@@ -328,13 +328,52 @@ function YouTubeMetricsLine({ metrics }: { metrics: YouTubeOrganicMetrics }) {
 
 function InstagramMetricsLine({ metrics }: { metrics: InstagramOrganicMetrics }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
-      <span>👁 {fmtNumber(metrics.reach)}</span>
-      <span>❤ {fmtNumber(metrics.likeCount)}</span>
-      <span>💬 {fmtNumber(metrics.commentCount)}</span>
-      <span>🔖 {fmtNumber(metrics.saved)}</span>
+    <div className="space-y-0.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+        <span title="Reach (alcance único)">👁 {fmtNumber(metrics.reach)}</span>
+        <span title="Curtidas">❤ {fmtNumber(metrics.likeCount)}</span>
+        <span title="Comentários">💬 {fmtNumber(metrics.commentCount)}</span>
+        <span title="Saves">🔖 {fmtNumber(metrics.saved)}</span>
+      </div>
+      <div
+        className={`text-[10px] font-medium ${instagramEngagementColor(metrics.engagementRate)}`}
+        title={buildInstagramEngagementTooltip(metrics)}
+      >
+        ⚡ Engajamento: {fmtEngagement(metrics.engagementRate)}
+      </div>
     </div>
   );
+}
+
+function fmtEngagement(rate: number | null | undefined): string {
+  if (rate == null) return "—";
+  return `${rate.toFixed(2)}%`;
+}
+
+function instagramEngagementColor(rate: number | null | undefined): string {
+  if (rate == null) return "text-muted-foreground";
+  if (rate >= 10) return "text-green-600";
+  if (rate >= 5) return "text-blue-500";
+  if (rate >= 2) return "text-amber-500";
+  return "text-muted-foreground";
+}
+
+function buildInstagramEngagementTooltip(m: InstagramOrganicMetrics): string {
+  if (m.reach == null || m.reach <= 0) {
+    return "Reach indisponível para este post — engajamento não pode ser calculado.";
+  }
+  const likes = m.likeCount ?? 0;
+  const comments = m.commentCount ?? 0;
+  const saved = m.saved ?? 0;
+  const numerator = likes + comments + saved;
+  const rate = m.engagementRate ?? (numerator / m.reach) * 100;
+  const fmtN = (n: number) => n.toLocaleString("pt-BR");
+  return [
+    "Engajamento = (likes + comments + saves) / reach × 100",
+    `= (${fmtN(likes)} + ${fmtN(comments)} + ${fmtN(saved)}) / ${fmtN(m.reach)} × 100`,
+    `= ${fmtN(numerator)} / ${fmtN(m.reach)} × 100`,
+    `= ${rate.toFixed(2)}%`,
+  ].join("\n");
 }
 
 // ============================================================
