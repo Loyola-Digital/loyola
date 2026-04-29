@@ -1,6 +1,6 @@
 # Epic 25 — Alerta de Campanhas Órfãs por Match Code
 
-**Status:** Draft
+**Status:** Done
 **Owner:** @sm → @po → @dev → @qa → @devops
 **Criado em:** 2026-04-29
 
