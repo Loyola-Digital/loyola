@@ -445,7 +445,12 @@ export default fp(async function funnelRoutes(fastify) {
 
     if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
 
-    const matchCode = (funnel.matchCode ?? "").trim().toLowerCase();
+    // matchCode default = nome do funil (lowercase). Se o usuário cadastrou um
+    // override em funnel.matchCode, usa esse. Permite nomes longos tipo
+    // "Lançamento DG-PG02 Abril" matchearem só `dg-pg02`.
+    const overrideCode = (funnel.matchCode ?? "").trim().toLowerCase();
+    const fallbackCode = (funnel.name ?? "").trim().toLowerCase();
+    const matchCode = overrideCode.length > 0 ? overrideCode : fallbackCode;
 
     if (!matchCode) {
       return {
