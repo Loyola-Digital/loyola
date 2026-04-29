@@ -185,16 +185,18 @@ export default function FunnelPage() {
 
                 <div className="border-t border-border/30 pt-3 space-y-2">
                   <div>
-                    <p className="text-sm font-medium">Código de match (Meta Ads)</p>
+                    <p className="text-sm font-medium">Código de match (override)</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Texto a buscar no nome das campanhas. Ex: <code className="font-mono text-[10px] bg-muted/50 px-1 rounded">dg-pg02</code>. Vazio = alerta desativado.
+                      Por padrão o sistema usa o <span className="font-medium">nome do funil</span> ({" "}
+                      <code className="font-mono text-[10px] bg-muted/50 px-1 rounded">{funnel.name.toLowerCase()}</code>) para detectar campanhas órfãs.
+                      Use este campo só se quiser sobrescrever (ex: nome do funil longo).
                     </p>
                   </div>
                   <div className="flex gap-1.5">
                     <Input
                       value={matchCodeDraft}
                       onChange={(e) => setMatchCodeDraft(e.target.value)}
-                      placeholder="ex: dg-pg02"
+                      placeholder={`padrão: ${funnel.name.toLowerCase()}`}
                       maxLength={50}
                       className="h-8 text-sm font-mono"
                     />
