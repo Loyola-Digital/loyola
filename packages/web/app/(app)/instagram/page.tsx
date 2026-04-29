@@ -170,6 +170,8 @@ export default function InstagramDashboardPage() {
         isLoading={mediaLoading}
         onRefresh={handleRefreshAll}
         isRefreshing={refresh.isPending}
+        accountInsights={insights?.data}
+        period={{ since: period.since, until: period.until }}
       />
 
       {/* Stories + Reels side by side on large screens */}
