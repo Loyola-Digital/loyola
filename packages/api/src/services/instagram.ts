@@ -60,9 +60,6 @@ interface InstagramMedia {
   reach?: number | null;
   saved?: number | null;
   engagement_rate?: number | null;
-  /** Seguidores ganhos via este post. Graph API só retorna pra FEED em geral;
-   * Reels/Video/Stories costumam vir null (limitação da Meta). */
-  follows?: number | null;
 }
 
 interface MediaListResponse {
@@ -421,14 +418,13 @@ export default fp(async function instagramServicePlugin(fastify) {
 
     const result = await graphFetch<MediaListResponse>(path, token);
 
-    // Enrich each post with reach + saved + follows (from insights) and engagement_rate.
+    // Enrich each post with reach + saved (from insights) and engagement_rate.
     // Promise.allSettled so a single insight failure doesn't kill the whole list.
     const enriched = await Promise.allSettled(
       result.data.map(async (post) => {
         const entries = await getMediaInsights(post.id, accountId, post.media_type);
         const reach = pickInsightValue(entries, "reach");
         const saved = pickInsightValue(entries, "saved");
-        const follows = pickInsightValue(entries, "follows");
         const likes = post.like_count ?? 0;
         const comments = post.comments_count ?? 0;
         let engagementRate: number | null = null;
@@ -440,7 +436,6 @@ export default fp(async function instagramServicePlugin(fastify) {
           reach,
           saved,
           engagement_rate: engagementRate,
-          follows,
         } satisfies InstagramMedia;
       }),
     );
@@ -448,7 +443,7 @@ export default fp(async function instagramServicePlugin(fastify) {
     const data: InstagramMedia[] = enriched.map((r, i) =>
       r.status === "fulfilled"
         ? r.value
-        : { ...result.data[i], reach: null, saved: null, engagement_rate: null, follows: null },
+        : { ...result.data[i], reach: null, saved: null, engagement_rate: null },
     );
 
     return {
@@ -484,65 +479,46 @@ export default fp(async function instagramServicePlugin(fastify) {
     accountId: string,
     mediaType?: string,
   ): Promise<InsightEntry[]> {
-    // CACHE KEY v2: bumpada para invalidar entries parciais salvas pela versão
-    // anterior (que cacheava o resultado de fallbacks com métricas faltando,
-    // quebrando engagement em alguns posts).
-    const cacheKey = `post_insights_v2_${mediaId}`;
+    const cacheKey = `post_insights_${mediaId}`;
     const cached = await getCachedMetric(accountId, cacheKey);
     if (cached) return cached as InsightEntry[];
 
     const { token } = await getDecryptedToken(accountId);
 
-    // Fetch em DOIS chunks paralelos para resiliência:
-    // - core: métricas básicas que TODO post suporta (reach, likes, comments,
-    //   saved, shares). Se essas falharem, engagement quebra — mas elas são
-    //   estáveis há muito tempo na Graph API.
-    // - extras: métricas que podem falhar em posts antigos (follows, views,
-    //   total_interactions, ig_reels_avg_watch_time, etc). Falha de uma não
-    //   afeta as outras.
-    //
-    // Se um chunk falhar inteiro, o outro ainda preenche o que pôde.
-    const coreMetrics = "reach,likes,comments,saved,shares";
-    let extrasMetrics: string;
-    if (mediaType === "VIDEO" || mediaType === "REEL" || mediaType === "REELS") {
-      extrasMetrics = "views,total_interactions,follows,ig_reels_avg_watch_time";
+    // v25.0: metrics depend on media type
+    // Deprecated: impressions (use views), plays
+    let metrics: string;
+    if (mediaType === "VIDEO" || mediaType === "REEL") {
+      metrics = "reach,views,likes,comments,saved,shares,ig_reels_avg_watch_time";
     } else if (mediaType === "STORY") {
-      extrasMetrics = "views,replies,navigation,follows";
+      metrics = "reach,views,replies,shares,follows,navigation";
     } else {
       // FEED (IMAGE, CAROUSEL_ALBUM)
-      extrasMetrics = "views,total_interactions,follows";
+      metrics = "reach,views,likes,comments,saved,shares,follows";
     }
 
-    async function tryFetch(metric: string): Promise<InsightEntry[]> {
+    // Fetch with fallback — some metrics may fail for older posts
+    const entries: InsightEntry[] = [];
+    try {
+      const result = await graphFetch<InsightsResponse>(
+        `/${mediaId}/insights?metric=${metrics}`,
+        token,
+      );
+      entries.push(...result.data);
+    } catch {
+      // Fallback: try minimal set
       try {
         const result = await graphFetch<InsightsResponse>(
-          `/${mediaId}/insights?metric=${metric}`,
+          `/${mediaId}/insights?metric=reach,likes,comments,saved,shares`,
           token,
         );
-        return result.data;
+        entries.push(...result.data);
       } catch {
-        return [];
+        // Media might not support insights (carousel albums, etc.)
       }
     }
 
-    const [coreEntries, extrasEntries] = await Promise.all([
-      tryFetch(coreMetrics),
-      tryFetch(extrasMetrics),
-    ]);
-
-    let entries: InsightEntry[] = [...coreEntries, ...extrasEntries];
-
-    // Se o chunk de extras falhou inteiro, faz uma 2ª tentativa com cada métrica
-    // individualmente (resiliente — algumas vão passar mesmo que outras falhem).
-    if (extrasEntries.length === 0) {
-      const individualResults = await Promise.all(
-        extrasMetrics.split(",").map((m) => tryFetch(m)),
-      );
-      for (const r of individualResults) entries = entries.concat(r);
-    }
-
-    // Só cacheia se o core veio — sem core, engagement quebra e não vale guardar.
-    if (coreEntries.length > 0) {
+    if (entries.length > 0) {
       await setCachedMetric(accountId, cacheKey, entries, CACHE_TTL.post_insights);
     }
     return entries;
