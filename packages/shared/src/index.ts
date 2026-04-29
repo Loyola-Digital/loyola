@@ -58,3 +58,18 @@ export type {
   StageOrganicPostHydrated,
   OrganicPostLinksMap,
 } from "./types/organic-post.js";
+
+export type {
+  PostSummary,
+  AccountReportTotals,
+  AccountReportFollowers,
+  AccountReportMediaDistribution,
+  AccountReportDailyPoint,
+  AccountReportDemographics,
+  AccountReportDeltaItem,
+  AccountReportDelta,
+  AccountReport,
+  MonthlyReportData,
+  InstagramMonthlyReportRecord,
+  InstagramMonthlyReportListItem,
+} from "./types/instagram-report.js";

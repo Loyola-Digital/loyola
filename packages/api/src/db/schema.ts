@@ -874,3 +874,31 @@ export const stageOrganicPosts = pgTable(
   ]
 );
 
+// ============================================================
+// INSTAGRAM MONTHLY REPORTS (EPIC-24 — Story 24.1)
+// ============================================================
+
+export const instagramMonthlyReports = pgTable(
+  "instagram_monthly_reports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    month: varchar("month", { length: 7 }).notNull(), // formato YYYY-MM
+    data: jsonb("data").notNull(),
+    generatedBy: uuid("generated_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    generatedAt: timestamp("generated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("uq_instagram_monthly_report_project_month").on(table.projectId, table.month),
+    index("idx_instagram_monthly_reports_project_generated_at").on(
+      table.projectId,
+      table.generatedAt,
+    ),
+  ]
+);
