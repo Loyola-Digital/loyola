@@ -27,6 +27,7 @@ import { PostsTable } from "@/components/instagram/posts-table";
 import { StoriesSection } from "@/components/instagram/stories-section";
 import { ReelsSection } from "@/components/instagram/reels-section";
 import { AudienceCharts } from "@/components/instagram/audience-charts";
+import { TopPostsByFollowersCard } from "@/components/instagram/top-posts-by-followers-card";
 
 // ============================================================
 // EMPTY STATE
@@ -162,6 +163,12 @@ export default function InstagramDashboardPage() {
         error={insightsError as Error | null}
         onRefresh={handleRefreshAll}
         isRefreshing={refresh.isPending}
+      />
+
+      {/* Top Posts por Seguidores — apenas FEED (Meta não expõe pra Reels) */}
+      <TopPostsByFollowersCard
+        accountId={selectedAccountId}
+        days={Math.max(1, Math.round((period.until - period.since) / 86400))}
       />
 
       {/* Posts table */}

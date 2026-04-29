@@ -680,4 +680,126 @@ export default fp(async function instagramRoutes(fastify) {
       };
     },
   );
+
+  // ============================================================
+  // TOP POSTS BY FOLLOWERS — apenas FEED (foto/carrossel)
+  // ============================================================
+  //
+  // A Meta NÃO suporta `follows` per-Reel — confirmado em testes diretos
+  // com erro "(#100) The Media Insights API does not support the follows
+  // metric for this media product type". Suporta apenas FEED e Stories.
+  //
+  // Este endpoint filtra `media_product_type === "FEED"` (foto + carrossel)
+  // e ignora REELS. Stories seriam outra feature (expiram em 24h, precisam
+  // de captura periódica).
+  fastify.get(
+    "/api/instagram/accounts/:id/top-posts-by-followers",
+    async (request, reply) => {
+      const paramResult = idParamSchema.safeParse(request.params);
+      if (!paramResult.success) return reply.code(400).send({ error: "ID inválido" });
+
+      const querySchema = z.object({
+        days: z.coerce.number().int().min(1).max(365).default(30),
+        limit: z.coerce.number().int().min(1).max(20).default(10),
+      });
+      const queryResult = querySchema.safeParse(request.query);
+      if (!queryResult.success) return reply.code(400).send({ error: "Query inválida" });
+
+      const { id: accountId } = paramResult.data;
+      const { days, limit } = queryResult.data;
+
+      const account = await getAccount(accountId);
+      if (!account) return reply.code(404).send({ error: "Conta não encontrada" });
+
+      const accessToken = decrypt(account.accessTokenEncrypted, account.accessTokenIv);
+      const igUserId = account.instagramUserId;
+
+      // Lista media direto da Graph API com media_product_type pra filtrar
+      let mediaList: Array<{
+        id: string;
+        media_type?: string;
+        media_product_type?: string;
+        timestamp: string;
+        thumbnail_url?: string;
+        media_url?: string;
+        caption?: string;
+        permalink?: string;
+      }> = [];
+      try {
+        const url = `https://graph.instagram.com/v25.0/${igUserId}/media?fields=id,media_type,media_product_type,timestamp,thumbnail_url,media_url,caption,permalink&limit=100&access_token=${accessToken}`;
+        const res = await fetch(url);
+        const data = await res.json() as { data?: typeof mediaList; error?: unknown };
+        if (data.data) mediaList = data.data;
+      } catch (err) {
+        return reply.code(502).send({ error: "Falha ao listar media", details: err instanceof Error ? err.message : String(err) });
+      }
+
+      // Filtra FEED + período
+      const cutoffMs = Date.now() - days * 86_400_000;
+      const eligible = mediaList.filter((m) => {
+        if (m.media_product_type !== "FEED") return false;
+        const t = new Date(m.timestamp).getTime();
+        return !isNaN(t) && t >= cutoffMs;
+      });
+
+      // Pra cada FEED, busca follows com try/catch isolado.
+      // Formato esperado da Meta: { data: [{ name: "follows", values: [{ value: N }] }] }
+      const enriched = await Promise.all(
+        eligible.map(async (m) => {
+          let follows: number | null = null;
+          try {
+            const url = `https://graph.instagram.com/v25.0/${m.id}/insights?metric=follows&access_token=${accessToken}`;
+            const res = await fetch(url);
+            if (res.ok) {
+              const data = await res.json() as {
+                data?: Array<{
+                  name: string;
+                  values?: Array<{ value?: unknown }>;
+                  total_value?: { value?: unknown };
+                }>;
+              };
+              const entry = data.data?.find((e) => e.name === "follows");
+              if (entry) {
+                if (entry.values && entry.values.length > 0) {
+                  for (const v of entry.values) {
+                    if (typeof v.value === "number") {
+                      follows = (follows ?? 0) + v.value;
+                    }
+                  }
+                }
+                if (follows == null && entry.total_value && typeof entry.total_value.value === "number") {
+                  follows = entry.total_value.value;
+                }
+              }
+            }
+          } catch {
+            // ignora — esse post não vai aparecer no ranking
+          }
+          return { ...m, follows };
+        })
+      );
+
+      // Filtra apenas os que retornaram follows > 0 e ordena desc
+      const ranked = enriched
+        .filter((m): m is typeof m & { follows: number } => m.follows != null && m.follows > 0)
+        .sort((a, b) => b.follows - a.follows)
+        .slice(0, limit);
+
+      return {
+        days,
+        totalReelsSkipped: mediaList.filter((m) => m.media_product_type === "REELS").length,
+        totalFeedInPeriod: eligible.length,
+        totalWithData: ranked.length,
+        items: ranked.map((m) => ({
+          id: m.id,
+          mediaType: m.media_type ?? null,
+          timestamp: m.timestamp,
+          thumbnailUrl: m.thumbnail_url ?? m.media_url ?? null,
+          permalink: m.permalink ?? null,
+          caption: m.caption ?? null,
+          follows: m.follows,
+        })),
+      };
+    },
+  );
 });
