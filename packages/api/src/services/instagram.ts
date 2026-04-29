@@ -490,16 +490,17 @@ export default fp(async function instagramServicePlugin(fastify) {
 
     const { token } = await getDecryptedToken(accountId);
 
-    // v25.0: metrics depend on media type
+    // v25.0+: metrics depend on media type. A Meta adicionou `follows` per-post
+    // (incluindo Reels/Video) em janeiro/2026 — usar nas três categorias.
     // Deprecated: impressions (use views), plays
     let metrics: string;
-    if (mediaType === "VIDEO" || mediaType === "REEL") {
-      metrics = "reach,views,likes,comments,saved,shares,ig_reels_avg_watch_time";
+    if (mediaType === "VIDEO" || mediaType === "REEL" || mediaType === "REELS") {
+      metrics = "reach,views,likes,comments,saved,shares,total_interactions,follows,ig_reels_avg_watch_time";
     } else if (mediaType === "STORY") {
       metrics = "reach,views,replies,shares,follows,navigation";
     } else {
       // FEED (IMAGE, CAROUSEL_ALBUM)
-      metrics = "reach,views,likes,comments,saved,shares,follows";
+      metrics = "reach,views,likes,comments,saved,shares,total_interactions,follows";
     }
 
     // Fetch with fallback — some metrics may fail for older posts
@@ -511,15 +512,25 @@ export default fp(async function instagramServicePlugin(fastify) {
       );
       entries.push(...result.data);
     } catch {
-      // Fallback: try minimal set
+      // Fallback 1: tenta sem total_interactions e ig_reels_avg_watch_time
+      // (alguns posts antigos podem rejeitar essas métricas mesmo após adoção)
       try {
         const result = await graphFetch<InsightsResponse>(
-          `/${mediaId}/insights?metric=reach,likes,comments,saved,shares`,
+          `/${mediaId}/insights?metric=reach,likes,comments,saved,shares,follows`,
           token,
         );
         entries.push(...result.data);
       } catch {
-        // Media might not support insights (carousel albums, etc.)
+        // Fallback 2: minimal set sem follows
+        try {
+          const result = await graphFetch<InsightsResponse>(
+            `/${mediaId}/insights?metric=reach,likes,comments,saved,shares`,
+            token,
+          );
+          entries.push(...result.data);
+        } catch {
+          // Media might not support insights (carousel albums, etc.)
+        }
       }
     }
 

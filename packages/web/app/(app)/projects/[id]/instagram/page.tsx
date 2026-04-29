@@ -199,8 +199,6 @@ export default function ProjectInstagramPage({ params }: Props) {
         onRefresh={handleRefreshAll}
         isRefreshing={refresh.isPending}
         projectId={projectId}
-        accountInsights={insights?.data}
-        period={{ since: period.since, until: period.until }}
       />
 
       {/* Stories + Reels */}

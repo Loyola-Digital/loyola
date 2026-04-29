@@ -13,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RefreshCw, ArrowUpDown, Link2, UserPlus } from "lucide-react";
-import type { InstagramMedia, InsightEntry } from "@/lib/hooks/use-instagram";
+import type { InstagramMedia } from "@/lib/hooks/use-instagram";
 import { format, parseISO } from "date-fns";
 import { useOrganicPostLinks } from "@/lib/hooks/use-organic-posts";
 import { LinkPostToStageModal } from "@/components/funnels/link-post-to-stage-modal";
@@ -26,53 +26,6 @@ interface PostsTableProps {
   onRefresh?: () => void;
   isRefreshing?: boolean;
   projectId?: string;
-  /** Insights account-level para fallback estimado de follows quando o post é Reel/Video. */
-  accountInsights?: InsightEntry[];
-  /** Janela do PeriodSelector — usado para normalizar a estimativa. */
-  period?: { since: number; until: number };
-}
-
-interface FollowEstimateContext {
-  /** Net follows total do período (gained - lost). Null se indisponível. */
-  netFollows: number | null;
-  /** Soma de reach dos posts in-period (denominador da estimativa). */
-  totalReachInPeriod: number;
-}
-
-/**
- * Lê follows_and_unfollows com breakdown=follow_type (v25+) ou formatos legados,
- * retornando net = gained - lost. Idêntico ao helper no overview-cards mas isolado
- * pra evitar import cruzado.
- */
-function computeNetFollows(insights: InsightEntry[] | undefined): number | null {
-  if (!insights) return null;
-  const entry = insights.find((e) => e.name === "follows_and_unfollows");
-  if (!entry) return null;
-
-  const breakdowns = entry.total_value?.breakdowns as
-    | Array<{ results?: Array<{ dimension_values?: string[]; value?: number }> }>
-    | undefined;
-  if (breakdowns && breakdowns.length > 0) {
-    let gained = 0;
-    let lost = 0;
-    for (const r of breakdowns[0]?.results ?? []) {
-      const dim = r.dimension_values?.[0];
-      const val = typeof r.value === "number" ? r.value : 0;
-      if (dim === "FOLLOWER") gained = val;
-      else if (dim === "NON_FOLLOWER") lost = val;
-    }
-    return gained - lost;
-  }
-  const tv = entry.total_value?.value;
-  if (tv && typeof tv === "object") {
-    const fv = tv as Record<string, number>;
-    return (fv.follow ?? 0) - (fv.unfollow ?? 0);
-  }
-  if (entry.values?.[0]?.value && typeof entry.values[0].value === "object") {
-    const fv = entry.values[0].value as Record<string, number>;
-    return (fv.follow ?? 0) - (fv.unfollow ?? 0);
-  }
-  return null;
 }
 
 export function PostsTable({
@@ -81,48 +34,10 @@ export function PostsTable({
   onRefresh,
   isRefreshing,
   projectId,
-  accountInsights,
-  period,
 }: PostsTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("timestamp");
   const [sortAsc, setSortAsc] = useState(false);
   const [linkModal, setLinkModal] = useState<{ mediaId: string; title: string } | null>(null);
-
-  // Contexto pra fallback estimado de follows (Reels/Video não expõem per-post na Graph API)
-  const followsCtx: FollowEstimateContext = (() => {
-    const netFollows = computeNetFollows(accountInsights);
-    let totalReachInPeriod = 0;
-    if (data && period) {
-      for (const p of data) {
-        const ts = Math.floor(new Date(p.timestamp).getTime() / 1000);
-        if (ts >= period.since && ts <= period.until && (p.reach ?? 0) > 0) {
-          totalReachInPeriod += p.reach ?? 0;
-        }
-      }
-    }
-    return { netFollows, totalReachInPeriod };
-  })();
-
-  function getDisplayFollows(post: InstagramMedia): {
-    value: number | null;
-    estimated: boolean;
-  } {
-    if (post.follows != null) return { value: post.follows, estimated: false };
-    if (
-      followsCtx.netFollows == null ||
-      followsCtx.totalReachInPeriod <= 0 ||
-      !period ||
-      !post.reach ||
-      post.reach <= 0
-    ) {
-      return { value: null, estimated: false };
-    }
-    const ts = Math.floor(new Date(post.timestamp).getTime() / 1000);
-    if (ts < period.since || ts > period.until) return { value: null, estimated: false };
-    const share = post.reach / followsCtx.totalReachInPeriod;
-    const estimated = Math.round(share * followsCtx.netFollows);
-    return { value: estimated, estimated: true };
-  }
 
   const { data: linksMap } = useOrganicPostLinks(projectId ?? null, "instagram");
   const linkedCountByMediaId = new Map<string, number>();
@@ -146,19 +61,16 @@ export function PostsTable({
     } else if (sortKey === "engagement_rate") {
       diff = (a.engagement_rate ?? -1) - (b.engagement_rate ?? -1);
     } else if (sortKey === "follows") {
-      const av = getDisplayFollows(a).value ?? -1;
-      const bv = getDisplayFollows(b).value ?? -1;
-      diff = av - bv;
+      diff = (a.follows ?? -1) - (b.follows ?? -1);
     } else {
       diff = (a[sortKey] ?? 0) - (b[sortKey] ?? 0);
     }
     return sortAsc ? diff : -diff;
   });
 
-  function fmtFollows(v: number | null | undefined, estimated: boolean): string {
+  function fmtFollows(v: number | null | undefined): string {
     if (v == null) return "—";
-    const formatted = v > 0 ? `+${v.toLocaleString("pt-BR")}` : v.toLocaleString("pt-BR");
-    return estimated ? `~${formatted}` : formatted;
+    return v > 0 ? `+${v.toLocaleString("pt-BR")}` : v.toLocaleString("pt-BR");
   }
 
   function followsColor(v: number | null | undefined): string {
@@ -167,31 +79,6 @@ export function PostsTable({
     if (v >= 10) return "text-emerald-500";
     if (v > 0) return "text-foreground";
     return "text-muted-foreground";
-  }
-
-  function buildFollowsTooltip(
-    post: InstagramMedia,
-    display: { value: number | null; estimated: boolean },
-  ): string {
-    if (display.value == null) {
-      return "Métrica indisponível — sem dado real (Graph API não expõe para Reels) e sem dados de follows do período para estimar.";
-    }
-    if (!display.estimated) {
-      return `${display.value} novo(s) seguidor(es) via este post (dado real da Graph API)`;
-    }
-    // Estimativa
-    const reach = post.reach ?? 0;
-    const pct = followsCtx.totalReachInPeriod > 0
-      ? ((reach / followsCtx.totalReachInPeriod) * 100).toFixed(1)
-      : "0";
-    return [
-      "Estimativa proporcional ao alcance:",
-      `Net follows do período: ${followsCtx.netFollows ?? 0}`,
-      `Alcance deste post: ${reach.toLocaleString("pt-BR")} (${pct}% do período)`,
-      `Estimado: ~${display.value} seguidor(es)`,
-      "",
-      "Graph API não expõe follows per-Reel; a estimativa atribui novos seguidores proporcionalmente ao alcance.",
-    ].join("\n");
   }
 
   function fmtEngagement(rate: number | null | undefined): string {
@@ -322,13 +209,14 @@ export function PostsTable({
                         {fmtEngagement(post.engagement_rate)}
                       </TableCell>
                       <TableCell
-                        className={`text-sm whitespace-nowrap ${followsColor(getDisplayFollows(post).value)}`}
-                        title={buildFollowsTooltip(post, getDisplayFollows(post))}
+                        className={`text-sm whitespace-nowrap ${followsColor(post.follows)}`}
+                        title={
+                          post.follows == null
+                            ? "Aguardando refresh do cache (clica em Atualizar) — Meta adicionou per-post follows em Reels em jan/2026."
+                            : `${post.follows} novo(s) seguidor(es) via este post (Graph API)`
+                        }
                       >
-                        {(() => {
-                          const d = getDisplayFollows(post);
-                          return fmtFollows(d.value, d.estimated);
-                        })()}
+                        {fmtFollows(post.follows)}
                       </TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
                         {format(parseISO(post.timestamp), "dd/MM/yy")}
