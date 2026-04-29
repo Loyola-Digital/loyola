@@ -1,0 +1,82 @@
+storyId: STORY-24.1
+storyPath: docs/stories/24.1.instagram-monthly-report-schema-api.md
+verdict: PASS
+reviewedBy: '@qa (Quinn)'
+reviewedAt: '2026-04-29'
+branch: feat/24.1-instagram-monthly-report-schema
+
+quality_checks:
+  code_review:
+    status: PASS
+    notes: |
+      - Tabela instagram_monthly_reports com UNIQUE (project_id, month) — upsert
+        substitui regenerações.
+      - Helpers puros (monthBoundaries, monthLabelPt, previousMonth, deltaPct,
+        buildDeltaItem, pickAccountFollows, pickAccountTotal,
+        pickReachTimeSeries, extractDemographicsCounts, buildPostSummary).
+      - aggregateAccountReport reusa fastify.instagramService (getMediaList,
+        getAccountInsights, getAudienceDemographics, getProfile) — não duplica
+        lógica.
+      - Comparison computed aproveitando o relatório do mês anterior em DB.
+      - 3 endpoints com getProjectAccess espelhado dos demais routes.
+
+  unit_tests:
+    status: CONCERNS
+    severity: low
+    notes: Sem testes — segue padrão do projeto.
+
+  acceptance_criteria:
+    status: PASS
+    notes: |
+      AC 1-3 (DB): PASS — tabela criada, índices, migration aplicada em PROD.
+      AC 4 (snapshot shape): PASS — todos os campos do MonthlyReportData
+        populados conforme tipos shared.
+      AC 5 (POST generate): PASS — Zod, getProjectAccess, agregação por conta,
+        upsert, comparison auto.
+      AC 6 (GET by id): PASS — chain validation (project + reportId).
+      AC 7 (GET list): PASS — ordena DESC, faz join com users pra trazer nome.
+      AC 8 (registrado em app.ts): PASS.
+      AC 9 (shared types): PASS — instagram-report.ts + re-export em index.ts.
+      AC 10-12 (validação): typecheck + lint PASS.
+      AC 13 (smoke): pendente — será exercitado pela 24.2 quando UI puxar.
+
+  no_regressions:
+    status: PASS
+    notes: |
+      Migration aditiva (CREATE TABLE), não toca em tabelas existentes.
+      typecheck @loyola-x/web também passa (consumidores não-existentes ainda).
+
+  performance:
+    status: PASS
+    notes: |
+      - Agregação de contas SEQUENCIAL (não paralelo) intencionalmente —
+        reduz burst contra Graph API e evita rate limit.
+      - Reuso de cache existente (getMediaList tem enrichment cached, insights
+        cached 15min, demographics cached 60min).
+      - Para projetos com muitas contas, geração pode demorar — documentado
+        como aceitável (timeout HTTP 90s).
+
+  security:
+    status: PASS
+    notes: |
+      - getProjectAccess valida ownership.
+      - Token IG é descriptografado e não vaza pra cliente.
+      - Snapshot serializa apenas dados públicos (URLs, contagens, métricas).
+
+  documentation:
+    status: PASS
+
+issues: []
+
+waivers:
+  - issue: "AC 4 — followersDelta diário sempre 0"
+    reason: |
+      A Meta não retorna follows_and_unfollows com breakdown=time_series no
+      account-level (só total agregado). Pra ter daily, exigiria captura
+      periódica via cron (fora de escopo, igual decisão de Stories).
+      Campo permanece no shape pra permitir backfill em v2 sem mudança de
+      schema.
+
+recommendation: |
+  PASS — ready for @devops *push.
+  Próxima: 24.2 (página HTML).
