@@ -38,11 +38,9 @@ const slideVariants = {
   }),
 };
 
-/** Extract funnel prefix from name: "fz-l1-fev26" from "fz-l1-fev26--vendas--broad" */
-function extractPrefix(campaignName: string): string {
-  const idx = campaignName.indexOf("--");
-  return idx > 0 ? campaignName.slice(0, idx).trim() : campaignName.trim();
-}
+// Auto-match agora usa substring case-insensitive (mesma regra do banner
+// de órfãs do Epic 25). Suporta convenções diversas: `[DG-PG02] Hot Abril`,
+// `dg-pg02--vendas--broad`, `Lançamento DG-PG02`, etc.
 
 export function FunnelWizard({
   projectId,
@@ -63,18 +61,19 @@ export function FunnelWizard({
   // Auto-match campaigns when entering step 2
   const allCampaigns = campaignData?.campaigns ?? [];
 
-  // When step changes to 1 (campaign step), auto-select matching campaigns
+  // When step changes to 1 (campaign step), auto-select campanhas cujo nome
+  // contém o nome do funil (substring case-insensitive). Mesma regra do
+  // banner de órfãs do Epic 25.
   useEffect(() => {
     if (step === 1 && name.length >= 3 && allCampaigns.length > 0 && !autoMatched) {
-      const prefix = name.toLowerCase().trim();
-      const matched = allCampaigns.filter((c) => {
-        const campaignPrefix = extractPrefix(c.name).toLowerCase();
-        return campaignPrefix === prefix || c.name.toLowerCase().startsWith(prefix + "--");
-      });
+      const code = name.toLowerCase().trim();
+      const matched = allCampaigns.filter((c) =>
+        c.name.toLowerCase().includes(code),
+      );
       if (matched.length > 0) {
         setCampaigns(matched.map((c) => ({ id: c.id, name: c.name })));
         setAutoMatched(true);
-        toast.success(`${matched.length} campanha${matched.length > 1 ? "s" : ""} encontrada${matched.length > 1 ? "s" : ""} com prefixo "${name}"`);
+        toast.success(`${matched.length} campanha${matched.length > 1 ? "s" : ""} encontrada${matched.length > 1 ? "s" : ""} com "${name}"`);
       }
     }
   }, [step, name, allCampaigns, autoMatched]);
@@ -183,7 +182,7 @@ export function FunnelWizard({
                     )}
                     <p className="text-xs text-muted-foreground">
                       <Sparkles className="inline h-3 w-3 mr-1" />
-                      Use o mesmo prefixo das campanhas no Meta (ex: fz-l1-fev26) — o sistema auto-seleciona as campanhas correspondentes.
+                      Use o mesmo código que aparece no nome das campanhas Meta (ex: dg-pg02). O sistema auto-seleciona todas as campanhas que contêm esse código no nome.
                     </p>
                   </div>
 
@@ -234,7 +233,7 @@ export function FunnelWizard({
                   </label>
                   <p className="text-xs text-muted-foreground">
                     {autoMatched
-                      ? `Auto-selecionadas pelo prefixo "${name}". Ajuste se necessário.`
+                      ? `Auto-selecionadas: campanhas que contêm "${name}" no nome. Ajuste se necessário.`
                       : "Selecione as campanhas do lançamento. Opcional — vincule depois."}
                   </p>
                   <CampaignSelector
