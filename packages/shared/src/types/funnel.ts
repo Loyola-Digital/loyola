@@ -89,6 +89,9 @@ export interface Funnel {
   switchyFolderIds: SwitchyFolderRef[];
   switchyLinkedLinks: SwitchyLinkRef[];
   compareFunnelId: string | null;
+  /** Substring case-insensitive a buscar em campaign.name pra detectar
+   * campanhas órfãs (Epic 25). Null = alerta desativado. */
+  matchCode: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -101,6 +104,26 @@ export interface ComparisonDayMetrics {
   reach: number;
   ctr: number;
   cpc: number;
+}
+
+export interface OrphanCampaign {
+  id: string;
+  name: string;
+  status: string;
+  objective?: string;
+}
+
+export interface OrphanStageGroup {
+  stageName: string;
+  orphans: OrphanCampaign[];
+}
+
+export interface OrphanCampaignsResponse {
+  hasMatchCode: boolean;
+  matchCode: string | null;
+  totalMatching: number;
+  orphans: OrphanCampaign[];
+  byStage: Record<string, OrphanStageGroup>;
 }
 
 export interface MetaAdsComparisonData {

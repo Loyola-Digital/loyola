@@ -20,6 +20,7 @@ import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
 import { LeadScoringTab } from "@/components/funnels/lead-scoring-tab";
 import { OrganicMediaTab } from "@/components/funnels/organic-media-tab";
 import { AuditStatusBadge } from "@/components/funnels/audit-status-badge";
+import { OrphanCampaignsBanner } from "@/components/funnels/orphan-campaigns-banner";
 import { CampaignSelector } from "@/components/funnels/campaign-selector";
 import { useCampaignPicker } from "@/lib/hooks/use-funnels";
 import { useGoogleAdsCampaignPicker } from "@/lib/hooks/use-funnels";
@@ -244,6 +245,13 @@ export default function StagePage() {
       <div className="mb-4 flex justify-end">
         <AuditStatusBadge stageId={params.stageId} funnelId={params.funnelId} projectId={params.id} />
       </div>
+
+      {/* Banner de campanhas órfãs nesta etapa (Epic 25) */}
+      <OrphanCampaignsBanner
+        projectId={params.id}
+        funnelId={params.funnelId}
+        stageId={params.stageId}
+      />
 
       {/* Tabs */}
       <Tabs defaultValue="meta-ads">

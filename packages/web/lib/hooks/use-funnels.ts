@@ -2,7 +2,7 @@
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Funnel, FunnelType, FunnelCampaign } from "@loyola-x/shared";
+import type { Funnel, FunnelType, FunnelCampaign, OrphanCampaignsResponse } from "@loyola-x/shared";
 
 // ============================================================
 // TYPES
@@ -25,6 +25,20 @@ export interface UpdateFunnelInput {
   switchyFolderIds?: { id: number; name: string }[];
   switchyLinkedLinks?: { uniq: number; id: string; domain: string }[];
   compareFunnelId?: string | null;
+  matchCode?: string | null;
+}
+
+export function useOrphanCampaigns(projectId: string | null, funnelId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["orphan-campaigns", projectId, funnelId],
+    queryFn: () =>
+      apiClient<OrphanCampaignsResponse>(
+        `/api/projects/${projectId}/funnels/${funnelId}/orphan-campaigns`,
+      ),
+    enabled: !!projectId && !!funnelId,
+    staleTime: 60 * 1000, // 1min — só pra evitar refetch em hover/scroll
+  });
 }
 
 export interface MetaCampaignOption {

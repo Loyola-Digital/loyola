@@ -571,6 +571,7 @@ export const funnels = pgTable(
       (): AnyPgColumn => funnels.id,
       { onDelete: "set null" }
     ),
+    matchCode: varchar("match_code", { length: 50 }),
     lastAuditAt: timestamp("last_audit_at", { withTimezone: true }),
     lastAuditBy: uuid("last_audit_by").references(() => users.id, {
       onDelete: "set null",
