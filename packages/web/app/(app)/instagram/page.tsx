@@ -88,7 +88,22 @@ export default function InstagramDashboardPage() {
     previousPeriodWindow.since,
     previousPeriodWindow.until,
   );
-  const { data: media, isLoading: mediaLoading } = useInstagramMedia(selectedAccountId, 25);
+  const { data: media, isLoading: mediaLoading } = useInstagramMedia(selectedAccountId, 100);
+  const postsInPeriod = media?.data
+    ? media.data.filter((p) => {
+        const ts = Math.floor(new Date(p.timestamp).getTime() / 1000);
+        return ts >= period.since && ts <= period.until;
+      }).length
+    : null;
+  const postsCountTruncated = !!(
+    media?.data &&
+    media.data.length >= 100 &&
+    (() => {
+      const oldest = media.data[media.data.length - 1];
+      const oldestTs = Math.floor(new Date(oldest.timestamp).getTime() / 1000);
+      return oldestTs >= period.since;
+    })()
+  );
   const { data: demographics, isLoading: demographicsLoading, error: demographicsError } = useInstagramDemographics(selectedAccountId);
   const { data: stories, isLoading: storiesLoading } = useInstagramStories(selectedAccountId);
   const { data: reels, isLoading: reelsLoading } = useInstagramReels(selectedAccountId);
@@ -136,6 +151,8 @@ export default function InstagramDashboardPage() {
         period={{ since: period.since, until: period.until }}
         previousInsights={previousInsights?.data}
         previousPeriod={previousPeriodWindow}
+        postsInPeriod={postsInPeriod}
+        postsCountTruncated={postsCountTruncated}
       />
 
       {/* Reach & Impressions chart */}
