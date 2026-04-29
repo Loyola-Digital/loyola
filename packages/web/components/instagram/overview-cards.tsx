@@ -4,7 +4,7 @@ import * as React from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users, UserPlus, UserMinus, Eye,
-  TrendingUp, TrendingDown, Minus, Heart, Bookmark, Share2, Link2,
+  TrendingUp, TrendingDown, Minus, Heart, Bookmark, Share2, Link2, ImageIcon,
 } from "lucide-react";
 import type { InstagramProfile, InsightEntry } from "@/lib/hooks/use-instagram";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -34,6 +34,10 @@ interface OverviewCardsProps {
   previousInsights?: InsightEntry[];
   /** Período anterior (compondo with previousInsights). */
   previousPeriod?: InstagramPeriod;
+  /** Total de posts publicados dentro do período (calculado upstream a partir de media). */
+  postsInPeriod?: number | null;
+  /** True quando a janela de media puxada não cobre todo o período (count pode ser maior que postsInPeriod). */
+  postsCountTruncated?: boolean;
 }
 
 /** Extract a numeric value from an insight entry — handles both time_series and total_value formats */
@@ -144,7 +148,7 @@ const KpiCard = React.forwardRef<HTMLDivElement, KpiProps & React.HTMLAttributes
   );
 });
 
-export function OverviewCards({ profile, insights, isLoading, period, previousInsights, previousPeriod }: OverviewCardsProps) {
+export function OverviewCards({ profile, insights, isLoading, period, previousInsights, previousPeriod, postsInPeriod, postsCountTruncated }: OverviewCardsProps) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
@@ -254,6 +258,15 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
       formula: hasVariationData && previousDelta !== null && period && previousPeriod
         ? buildFollowerGrowthVariationFormula(followersDelta, previousDelta, period, previousPeriod)
         : undefined,
+    },
+    {
+      icon: ImageIcon,
+      label: "Posts",
+      value: postsInPeriod != null ? `${fmtNumber(postsInPeriod)}${postsCountTruncated ? "+" : ""}` : "—",
+      sub: postsCountTruncated ? "limite de 100 posts atingido" : "publicados no período",
+      gradient: "from-rose-500/10 to-rose-600/5",
+      border: "border-rose-500/20",
+      show: postsInPeriod != null,
     },
     {
       icon: Eye,
