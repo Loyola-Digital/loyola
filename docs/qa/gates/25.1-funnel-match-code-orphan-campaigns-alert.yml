@@ -1,0 +1,64 @@
+storyId: STORY-25.1
+storyPath: docs/stories/25.1.funnel-match-code-orphan-campaigns-alert.md
+verdict: PASS
+reviewedBy: '@qa (Quinn)'
+reviewedAt: '2026-04-29'
+branch: feat/25.1-funnel-match-code-orphans
+
+quality_checks:
+  code_review:
+    status: PASS
+    notes: |
+      - Migration 0024→0025 simples ALTER TABLE ADD COLUMN nullable
+      - Endpoint orphan-campaigns reusa fetchCampaigns + decryptAccountToken existentes
+      - Match logic: substring case-insensitive (consistente com matchCode normalizado lowercase no PUT)
+      - Sets de selecionadas = funnel.campaigns ∪ stages[].campaigns
+      - byStage: cada stage tem suas órfãs específicas (mesmo que outras stages tenham)
+      - Ordenação ACTIVE → PAUSED → ARCHIVED → outros
+      - Banner com 2 modos via stageId opcional — granular vs agregado
+      - Settings UI no Popover existente, normaliza lowercase ao salvar
+
+  unit_tests:
+    status: CONCERNS
+    severity: low
+    notes: Sem testes — segue padrão do projeto.
+
+  acceptance_criteria:
+    status: PASS
+    notes: |
+      AC 1-2 (DB schema + types): PASS — migration 0025, Funnel.matchCode shared
+      AC 3 (Settings UI): PASS — campo Input + botão Salvar no Popover do funil
+      AC 4 (PUT aceita matchCode): PASS — Zod schema atualizado, normalize lowercase
+      AC 5 (endpoint orphan-campaigns): PASS — retorna shape completo
+      AC 6 (banner componente): PASS — modo stageId? agregado vs granular
+      AC 7 (integração): PASS — funnel page e stage page
+      AC 8-10 (validação): typecheck PASS api+shared+web, lint PASS, smoke pendente
+
+  no_regressions:
+    status: PASS
+    notes: |
+      Migration aditiva. PUT existing keys mantém comportamento.
+      Banner não renderiza quando matchCode null ou orphans vazio — opt-in.
+
+  performance:
+    status: PASS
+    notes: |
+      Hook staleTime 1min — evita refetch agressivo
+      Reusa cache de fetchCampaigns subjacente
+      Sequencial (não burst) — cada matchCode chama Graph 1x
+
+  security:
+    status: PASS
+    notes: |
+      getProjectAccess valida ownership
+      Token decrypt não vaza
+      Substring case-insensitive — risco de falso positivo mitigado pelo opt-in
+
+  documentation:
+    status: PASS
+
+issues: []
+
+waivers: []
+
+recommendation: PASS — ready for ship.

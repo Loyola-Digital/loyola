@@ -46,6 +46,9 @@ export type {
   Funnel,
   ComparisonDayMetrics,
   MetaAdsComparisonData,
+  OrphanCampaign,
+  OrphanStageGroup,
+  OrphanCampaignsResponse,
 } from "./types/funnel.js";
 
 export type {

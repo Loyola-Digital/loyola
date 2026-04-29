@@ -29,6 +29,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StageCard } from "@/components/funnels/stage-card";
+import { OrphanCampaignsBanner } from "@/components/funnels/orphan-campaigns-banner";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -40,8 +41,16 @@ export default function FunnelPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [stageName, setStageName] = useState("");
   const [stageType, setStageType] = useState<"free" | "paid">("free");
+  const [matchCodeDraft, setMatchCodeDraft] = useState<string>("");
 
   const { data: funnelData, isLoading: funnelLoading } = useFunnel(params.id, params.funnelId);
+
+  // Sync draft com valor real quando funil carrega
+  useEffect(() => {
+    if (funnelData?.funnel) {
+      setMatchCodeDraft(funnelData.funnel.matchCode ?? "");
+    }
+  }, [funnelData?.funnel]);
   const { data: stages, isLoading: stagesLoading } = useFunnelStages(params.id, params.funnelId);
   const { data: allFunnels } = useFunnels(params.id);
   const createStage = useCreateStage(params.id, params.funnelId);
@@ -106,6 +115,17 @@ export default function FunnelPage() {
     );
   }
 
+  function handleSaveMatchCode() {
+    const next = matchCodeDraft.trim();
+    updateFunnel.mutate(
+      { matchCode: next.length > 0 ? next.toLowerCase() : null },
+      {
+        onSuccess: () => toast.success(next ? "Código de match salvo" : "Código de match removido"),
+        onError: (err) => toast.error(err instanceof Error ? err.message : "Erro ao salvar"),
+      },
+    );
+  }
+
   async function handleCreate() {
     if (!stageName.trim()) return;
     await createStage.mutateAsync({ name: stageName.trim(), stageType });
@@ -137,8 +157,8 @@ export default function FunnelPage() {
                 <Settings2 className="h-4 w-4" />
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-72" align="end">
-              <div className="space-y-3">
+            <PopoverContent className="w-80" align="end">
+              <div className="space-y-4">
                 <div>
                   <p className="text-sm font-medium">Funil de Comparação</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -162,6 +182,32 @@ export default function FunnelPage() {
                     ))}
                   </SelectContent>
                 </Select>
+
+                <div className="border-t border-border/30 pt-3 space-y-2">
+                  <div>
+                    <p className="text-sm font-medium">Código de match (Meta Ads)</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Texto a buscar no nome das campanhas. Ex: <code className="font-mono text-[10px] bg-muted/50 px-1 rounded">dg-pg02</code>. Vazio = alerta desativado.
+                    </p>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <Input
+                      value={matchCodeDraft}
+                      onChange={(e) => setMatchCodeDraft(e.target.value)}
+                      placeholder="ex: dg-pg02"
+                      maxLength={50}
+                      className="h-8 text-sm font-mono"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleSaveMatchCode}
+                      disabled={updateFunnel.isPending || matchCodeDraft.trim().toLowerCase() === (funnel.matchCode ?? "")}
+                      className="h-8"
+                    >
+                      Salvar
+                    </Button>
+                  </div>
+                </div>
               </div>
             </PopoverContent>
           </Popover>
@@ -171,6 +217,9 @@ export default function FunnelPage() {
           </Button>
         </div>
       </div>
+
+      {/* Banner de campanhas órfãs (Epic 25) */}
+      <OrphanCampaignsBanner projectId={params.id} funnelId={params.funnelId} />
 
       {/* Stage grid */}
       {!stages || stages.length === 0 ? (

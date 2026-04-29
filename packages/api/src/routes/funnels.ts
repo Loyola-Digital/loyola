@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { funnels, projects, projectMembers, metaAdsAccountProjects, metaAdsAccounts, googleAdsAccountProjects, googleAdsAccounts, users } from "../db/schema.js";
+import { funnels, funnelStages, projects, projectMembers, metaAdsAccountProjects, metaAdsAccounts, googleAdsAccountProjects, googleAdsAccounts, users } from "../db/schema.js";
 import { fetchCampaigns, decryptAccountToken } from "../services/meta-ads.js";
 import { fetchGoogleAdsCampaigns, decryptToken as decryptGoogleToken } from "../services/google-ads.js";
 
@@ -46,6 +46,7 @@ const updateFunnelSchema = z.object({
   switchyFolderIds: z.array(switchyFolderSchema).optional(),
   switchyLinkedLinks: z.array(switchyLinkRefSchema).optional(),
   compareFunnelId: z.string().uuid().nullable().optional(),
+  matchCode: z.string().max(50).nullable().optional(),
 });
 
 const projectIdParamSchema = z.object({
@@ -95,6 +96,7 @@ function funnelShape(f: typeof funnels.$inferSelect) {
     switchyFolderIds: f.switchyFolderIds ?? [],
     switchyLinkedLinks: f.switchyLinkedLinks ?? [],
     compareFunnelId: f.compareFunnelId ?? null,
+    matchCode: f.matchCode ?? null,
     lastAuditAt: f.lastAuditAt ?? null,
     lastAuditBy: null as { id: string; name: string } | null,
     auditStatus: f.auditStatus ?? "pending",
@@ -300,7 +302,7 @@ export default fp(async function funnelRoutes(fastify) {
     }
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
-    const { name, type, metaAccountId, campaigns, googleAdsAccountId, googleAdsCampaigns, switchyFolderIds, switchyLinkedLinks, compareFunnelId } = parseResult.data;
+    const { name, type, metaAccountId, campaigns, googleAdsAccountId, googleAdsCampaigns, switchyFolderIds, switchyLinkedLinks, compareFunnelId, matchCode } = parseResult.data;
     if (name !== undefined) updates.name = name;
     if (type !== undefined) updates.type = type;
     if (metaAccountId !== undefined) updates.metaAccountId = metaAccountId;
@@ -310,6 +312,11 @@ export default fp(async function funnelRoutes(fastify) {
     if (switchyFolderIds !== undefined) updates.switchyFolderIds = switchyFolderIds;
     if (switchyLinkedLinks !== undefined) updates.switchyLinkedLinks = switchyLinkedLinks;
     if (compareFunnelId !== undefined) updates.compareFunnelId = compareFunnelId;
+    if (matchCode !== undefined) {
+      // Normaliza pra lowercase e trim. String vazia vira null pra desativar alerta.
+      const normalized = (matchCode ?? "").trim().toLowerCase();
+      updates.matchCode = normalized.length > 0 ? normalized : null;
+    }
 
     const [updated] = await fastify.db
       .update(funnels)
@@ -411,6 +418,140 @@ export default fp(async function funnelRoutes(fastify) {
         details: err instanceof Error ? err.message : String(err),
       });
     }
+  });
+
+  // ---- GET /api/projects/:projectId/funnels/:funnelId/orphan-campaigns (Epic 25) ----
+  // Detecta campanhas Meta Ads cujo nome contém o `match_code` do funil mas NÃO
+  // estão selecionadas em nenhuma etapa (e nem no funil legacy). Retorna ainda
+  // o breakdown por stage pra UI da etapa diferenciar "órfãs no funil inteiro"
+  // de "órfãs nesta etapa específica".
+  fastify.get("/api/projects/:projectId/funnels/:funnelId/orphan-campaigns", async (request, reply) => {
+    const paramResult = funnelParamSchema.safeParse(request.params);
+    if (!paramResult.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const project = await getProjectAccess(paramResult.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+    const [funnel] = await fastify.db
+      .select()
+      .from(funnels)
+      .where(
+        and(
+          eq(funnels.id, paramResult.data.funnelId),
+          eq(funnels.projectId, paramResult.data.projectId),
+        ),
+      )
+      .limit(1);
+
+    if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
+
+    const matchCode = (funnel.matchCode ?? "").trim().toLowerCase();
+
+    if (!matchCode) {
+      return {
+        hasMatchCode: false,
+        matchCode: null,
+        totalMatching: 0,
+        orphans: [],
+        byStage: {},
+      };
+    }
+
+    // Lista campanhas Meta da conta vinculada ao projeto
+    const [link] = await fastify.db
+      .select({ accountId: metaAdsAccountProjects.accountId })
+      .from(metaAdsAccountProjects)
+      .where(eq(metaAdsAccountProjects.projectId, paramResult.data.projectId))
+      .limit(1);
+
+    if (!link) {
+      return { hasMatchCode: true, matchCode, totalMatching: 0, orphans: [], byStage: {} };
+    }
+
+    const [account] = await fastify.db
+      .select()
+      .from(metaAdsAccounts)
+      .where(eq(metaAdsAccounts.id, link.accountId))
+      .limit(1);
+
+    if (!account) {
+      return { hasMatchCode: true, matchCode, totalMatching: 0, orphans: [], byStage: {} };
+    }
+
+    let allCampaigns: Array<{ id: string; name: string; status: string; objective?: string }> = [];
+    try {
+      const token = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
+      const fetched = await fetchCampaigns(account.metaAccountId, token);
+      allCampaigns = fetched.map((c) => ({
+        id: c.id,
+        name: c.name,
+        status: c.status,
+        objective: c.objective,
+      }));
+    } catch (err) {
+      return reply.code(502).send({
+        error: "Erro ao buscar campanhas da Meta",
+        details: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Filtra: campanhas cujo nome contém o matchCode (case-insensitive) E não estão DELETED
+    const matching = allCampaigns.filter((c) => {
+      if (c.status === "DELETED") return false;
+      return c.name.toLowerCase().includes(matchCode);
+    });
+
+    // Carrega stages do funil
+    const stages = await fastify.db
+      .select()
+      .from(funnelStages)
+      .where(eq(funnelStages.funnelId, paramResult.data.funnelId));
+
+    // Sets de IDs selecionados
+    const selectedAtFunnel = new Set((funnel.campaigns ?? []).map((c) => c.id));
+    const selectedAtAnyStage = new Set<string>();
+    for (const stage of stages) {
+      for (const c of stage.campaigns ?? []) {
+        selectedAtAnyStage.add(c.id);
+      }
+    }
+    const selectedAnywhere = new Set<string>([...selectedAtFunnel, ...selectedAtAnyStage]);
+
+    // Órfãs (nível funil) = matchcam o code mas NÃO estão selecionadas em lugar nenhum
+    const orphans = matching.filter((c) => !selectedAnywhere.has(c.id));
+
+    // Ordenação: ACTIVE primeiro, PAUSED, ARCHIVED
+    const statusRank: Record<string, number> = { ACTIVE: 0, PAUSED: 1, ARCHIVED: 2 };
+    orphans.sort((a, b) => {
+      const ra = statusRank[a.status] ?? 99;
+      const rb = statusRank[b.status] ?? 99;
+      if (ra !== rb) return ra - rb;
+      return a.name.localeCompare(b.name);
+    });
+
+    // byStage: pra cada stage, lista campanhas matching que NÃO estão nessa stage
+    // (mesmo que estejam em outras — do ponto de vista DESTA stage, são órfãs)
+    const byStage: Record<string, { stageName: string; orphans: typeof orphans }> = {};
+    for (const stage of stages) {
+      const selectedHere = new Set((stage.campaigns ?? []).map((c) => c.id));
+      const orphansHere = matching
+        .filter((c) => !selectedHere.has(c.id))
+        .sort((a, b) => {
+          const ra = statusRank[a.status] ?? 99;
+          const rb = statusRank[b.status] ?? 99;
+          if (ra !== rb) return ra - rb;
+          return a.name.localeCompare(b.name);
+        });
+      byStage[stage.id] = { stageName: stage.name, orphans: orphansHere };
+    }
+
+    return {
+      hasMatchCode: true,
+      matchCode,
+      totalMatching: matching.length,
+      orphans,
+      byStage,
+    };
   });
 
   // ---- GET /api/projects/:projectId/google-ads-campaigns ----
