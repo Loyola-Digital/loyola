@@ -326,3 +326,57 @@ export function computeTotals(rows: DailyRow[]): DailyRow {
     faturamento: t.faturamento,
   };
 }
+
+// ============================================================
+// HOT/COLD AGGREGATION BY UTM_TERM
+// ============================================================
+
+export interface HotColdAggregate {
+  hot: number;
+  cold: number;
+  outros: number;
+  total: number;
+  /** Sample of utm_term values per category (truncated for display). */
+  items: {
+    hot: string[];
+    cold: string[];
+    outros: string[];
+  };
+}
+
+/**
+ * Categoriza linhas de planilha em Hot/Cold/Outros pelo `utm_term`.
+ * - Contém "hot" (case-insensitive) → Hot
+ * - Contém "cold" (case-insensitive) → Cold
+ * - Caso contrário (incluindo vazio ou ausente) → Outros
+ */
+export function aggregateHotColdByUtmTerm(
+  rows: FunnelSpreadsheetRow[],
+): HotColdAggregate {
+  const result: HotColdAggregate = {
+    hot: 0,
+    cold: 0,
+    outros: 0,
+    total: 0,
+    items: { hot: [], cold: [], outros: [] },
+  };
+
+  for (const row of rows) {
+    const term = (row.named.utm_term ?? "").trim();
+    const normalized = term.toLowerCase();
+    let category: "hot" | "cold" | "outros";
+    if (normalized.includes("hot")) category = "hot";
+    else if (normalized.includes("cold")) category = "cold";
+    else category = "outros";
+
+    result[category]++;
+    result.total++;
+    // Keep up to 50 distinct samples per bucket for tooltip preview.
+    if (result.items[category].length < 50 && term.length > 0) {
+      if (!result.items[category].includes(term)) {
+        result.items[category].push(term);
+      }
+    }
+  }
+  return result;
+}

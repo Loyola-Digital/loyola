@@ -14,7 +14,9 @@ import {
   aggregateSpreadsheetByDate,
   buildDailyRows,
   computeTotals,
+  aggregateHotColdByUtmTerm,
   type DailyRow,
+  type HotColdAggregate,
 } from "@/lib/utils/funnel-metrics";
 
 export interface CrossedFunnelMetrics {
@@ -78,6 +80,18 @@ export interface CrossedFunnelMetrics {
    * pra uso direto no footer da `CrossedFunnelDailyTable`.
    */
   totals: DailyRow;
+
+  /**
+   * Distribuição Hot/Cold/Outros dos LEADS (categorizado pelo utm_term da planilha de leads).
+   * Null se não houver planilha de leads vinculada ou se a coluna utm_term não estiver mapeada.
+   */
+  hotColdLeads: HotColdAggregate | null;
+
+  /**
+   * Distribuição Hot/Cold/Outros dos COMPRADORES (categorizado pelo utm_term da planilha de vendas).
+   * Null se não houver planilha de vendas vinculada ou se a coluna utm_term não estiver mapeada.
+   */
+  hotColdBuyers: HotColdAggregate | null;
 
   isLoading: boolean;
   hasLinkedSheet: boolean;
@@ -189,6 +203,19 @@ export function useCrossedFunnelMetrics(
       }
     }
 
+    // Hot/Cold por utm_term — leads
+    let hotColdLeads: HotColdAggregate | null = null;
+    if (sheetData?.mapping.utm_term) {
+      hotColdLeads = aggregateHotColdByUtmTerm(filteredSheetRows);
+    }
+
+    // Hot/Cold por utm_term — compradores
+    let hotColdBuyers: HotColdAggregate | null = null;
+    if (salesSheetData?.mapping.utm_term) {
+      const filteredSalesRows = filterSheetRowsByDays(salesSheetData, days);
+      hotColdBuyers = aggregateHotColdByUtmTerm(filteredSalesRows);
+    }
+
     // Visitas ao checkout: initiate_checkout events da Meta Ads (múltiplas variações de event type)
     const checkoutVisits = totals.checkoutInitiations > 0 ? totals.checkoutInitiations : null;
 
@@ -221,6 +248,8 @@ export function useCrossedFunnelMetrics(
       surveyUnmatchedResponses: unmatchedResponses > 0 ? unmatchedResponses : null,
       rows,
       totals,
+      hotColdLeads,
+      hotColdBuyers,
       isLoading,
       hasLinkedSheet,
     };

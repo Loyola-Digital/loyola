@@ -36,6 +36,7 @@ import { CrossedFunnelDailyTable } from "./crossed-funnel-daily-table";
 import { CplComparisonChart } from "./cpl-comparison-chart";
 import { LeadsCumulativeChart } from "./leads-cumulative-chart";
 import { HotColdSpendDonut } from "./hot-cold-spend-donut";
+import { HotColdCountDonut } from "./hot-cold-count-donut";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { RefreshDataButton } from "./refresh-data-button";
 import { CampaignSelector } from "./campaign-selector";
@@ -424,6 +425,43 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           ) : <EmptyState />}
         </div>
       </div>
+
+      {/* Hot/Cold Leads (sempre) + Hot/Cold Compradores (apenas paid) — categorização por utm_term */}
+      {(metrics.hotColdLeads || metrics.hotColdBuyers) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {metrics.hotColdLeads ? (
+            <HotColdCountDonut
+              aggregate={metrics.hotColdLeads}
+              title="Distribuição de Leads (Hot/Cold)"
+              noun={{ singular: "lead", plural: "leads" }}
+            />
+          ) : (
+            <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+              <h3 className="text-sm font-semibold mb-4">Distribuição de Leads (Hot/Cold)</h3>
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Mapeie a coluna <span className="font-mono">utm_term</span> na planilha de leads para ver a distribuição.
+              </p>
+            </div>
+          )}
+
+          {stageType === "paid" && (
+            metrics.hotColdBuyers ? (
+              <HotColdCountDonut
+                aggregate={metrics.hotColdBuyers}
+                title="Distribuição de Compradores (Hot/Cold)"
+                noun={{ singular: "comprador", plural: "compradores" }}
+              />
+            ) : (
+              <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+                <h3 className="text-sm font-semibold mb-4">Distribuição de Compradores (Hot/Cold)</h3>
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  Mapeie a coluna <span className="font-mono">utm_term</span> na planilha de vendas para ver a distribuição.
+                </p>
+              </div>
+            )
+          )}
+        </div>
+      )}
 
       {/* Resultados da Pesquisa — Qualificação do público (Story 18.6 sub-feature 3.a) */}
       <SurveyQualificationSection
