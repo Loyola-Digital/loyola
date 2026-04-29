@@ -48,6 +48,7 @@ import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics"
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { useStageSalesByDay } from "@/lib/hooks/use-stage-sales-by-day";
+import { useStageHotColdBuyers } from "@/lib/hooks/use-stage-hot-cold-buyers";
 import { SurveyQualificationSection } from "./survey-qualification-section";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
@@ -110,6 +111,13 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
   );
   const { data: salesData } = useStageSalesData(
+    stageType === "paid" ? projectId : null,
+    stageType === "paid" ? funnel.id : null,
+    stageType === "paid" ? (stageId ?? null) : null,
+    "capture",
+    days,
+  );
+  const { data: stageHotColdBuyers } = useStageHotColdBuyers(
     stageType === "paid" ? projectId : null,
     stageType === "paid" ? funnel.id : null,
     stageType === "paid" ? (stageId ?? null) : null,
@@ -444,10 +452,23 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             </div>
           )}
 
-          {stageType === "paid" && (
-            metrics.hotColdBuyers ? (
+          {stageType === "paid" && (() => {
+            // Prioriza planilha de stage_sales (Captação) — onde o usuário mapeia utm_term.
+            // Fallback pra planilha funnel-spreadsheet (sales/custom) caso a stage não tenha
+            // mapping mas o funil tenha.
+            const stageBuyers = stageHotColdBuyers?.hasMapping
+              ? {
+                  hot: stageHotColdBuyers.hot,
+                  cold: stageHotColdBuyers.cold,
+                  outros: stageHotColdBuyers.outros,
+                  total: stageHotColdBuyers.total,
+                  items: stageHotColdBuyers.items,
+                }
+              : null;
+            const buyers = stageBuyers ?? metrics.hotColdBuyers;
+            return buyers ? (
               <HotColdCountDonut
-                aggregate={metrics.hotColdBuyers}
+                aggregate={buyers}
                 title="Distribuição de Compradores (Hot/Cold)"
                 noun={{ singular: "comprador", plural: "compradores" }}
               />
@@ -455,11 +476,11 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
               <div className="rounded-xl border border-border/30 bg-card/60 p-5">
                 <h3 className="text-sm font-semibold mb-4">Distribuição de Compradores (Hot/Cold)</h3>
                 <p className="py-8 text-center text-sm text-muted-foreground">
-                  Mapeie a coluna <span className="font-mono">utm_term</span> na planilha de vendas para ver a distribuição.
+                  Mapeie a coluna <span className="font-mono">utm_term</span> na planilha de vendas (Captação) para ver a distribuição.
                 </p>
               </div>
-            )
-          )}
+            );
+          })()}
         </div>
       )}
 

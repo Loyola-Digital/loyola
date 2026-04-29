@@ -251,6 +251,149 @@ export default fp(async function stageSalesDataRoutes(fastify) {
     }
   );
 
+  // GET /api/projects/:projectId/funnels/:funnelId/stages/:stageId/hot-cold-buyers
+  // Retorna distribuição Hot/Cold/Outros dos compradores agrupando pelo utm_term
+  // da planilha de stage-sales (subtype capture ou main_product). Dedupe por email
+  // (1 comprador, mesmo que apareça em múltiplas linhas).
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/hot-cold-buyers",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const query = querySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Query inválida" });
+
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const [stage] = await fastify.db
+        .select({ id: funnelStages.id, stageType: funnelStages.stageType })
+        .from(funnelStages)
+        .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+        .where(
+          and(
+            eq(funnelStages.id, params.data.stageId),
+            eq(funnelStages.funnelId, params.data.funnelId),
+            eq(funnels.projectId, params.data.projectId)
+          )
+        )
+        .limit(1);
+
+      const empty = {
+        hot: 0,
+        cold: 0,
+        outros: 0,
+        total: 0,
+        items: { hot: [] as string[], cold: [] as string[], outros: [] as string[] },
+        hasMapping: false as const,
+        semDados: true as const,
+      };
+
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+      if (stage.stageType !== "paid") return empty;
+
+      const [spreadsheet] = await fastify.db
+        .select()
+        .from(stageSalesSpreadsheets)
+        .where(
+          and(
+            eq(stageSalesSpreadsheets.stageId, params.data.stageId),
+            eq(stageSalesSpreadsheets.subtype, query.data.subtype)
+          )
+        )
+        .limit(1);
+
+      if (!spreadsheet) return empty;
+
+      const mapping = spreadsheet.columnMapping as {
+        email: string;
+        dataVenda?: string;
+        utm_term?: string;
+      };
+
+      if (!mapping.utm_term) {
+        return { ...empty, hasMapping: false as const };
+      }
+
+      let sheetData;
+      try {
+        sheetData = await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName);
+      } catch {
+        return { ...empty, hasMapping: true as const };
+      }
+
+      const { headers, rows } = sheetData;
+      if (rows.length === 0) {
+        return { ...empty, hasMapping: true as const, semDados: false as const };
+      }
+
+      function colIdx(fieldName: string | undefined): number {
+        if (!fieldName) return -1;
+        return headers.indexOf(fieldName);
+      }
+
+      const emailIdx = colIdx(mapping.email);
+      const dataIdx = colIdx(mapping.dataVenda);
+      const utmTermIdx = colIdx(mapping.utm_term);
+
+      if (emailIdx === -1 || utmTermIdx === -1) {
+        return { ...empty, hasMapping: true as const, semDados: false as const };
+      }
+
+      let cutoffDate: Date | null = null;
+      if (query.data.days && dataIdx !== -1) {
+        cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - query.data.days);
+      }
+
+      // Dedup por email — 1 comprador único, mesmo que comprou várias vezes.
+      // Usa a última utm_term observada (ordem natural do array de rows).
+      const emailToTerm = new Map<string, string>();
+      for (const row of rows) {
+        const email = (row[emailIdx] ?? "").trim().toLowerCase();
+        if (!email) continue;
+
+        if (cutoffDate && dataIdx !== -1) {
+          const dt = parseDate(row[dataIdx]);
+          if (!dt || dt < cutoffDate) continue;
+        }
+
+        const term = (row[utmTermIdx] ?? "").trim();
+        emailToTerm.set(email, term);
+      }
+
+      const result = {
+        hot: 0,
+        cold: 0,
+        outros: 0,
+        total: 0,
+        items: { hot: [] as string[], cold: [] as string[], outros: [] as string[] },
+        hasMapping: true as const,
+        semDados: false as const,
+      };
+
+      for (const term of emailToTerm.values()) {
+        const normalized = term.toLowerCase();
+        let category: "hot" | "cold" | "outros";
+        if (normalized.includes("hot")) category = "hot";
+        else if (normalized.includes("cold")) category = "cold";
+        else category = "outros";
+
+        result[category]++;
+        result.total++;
+
+        if (term.length > 0 && result.items[category].length < 50) {
+          if (!result.items[category].includes(term)) {
+            result.items[category].push(term);
+          }
+        }
+      }
+
+      return result;
+    }
+  );
+
   // GET /api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-data-daily
   fastify.get(
     "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-data-daily",
