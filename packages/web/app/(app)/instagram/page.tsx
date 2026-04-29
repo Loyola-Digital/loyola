@@ -24,7 +24,6 @@ import {
 import { OverviewCards } from "@/components/instagram/overview-cards";
 import { ReachChart } from "@/components/instagram/reach-chart";
 import { PostsTable } from "@/components/instagram/posts-table";
-import { TopPostsByFollowersCard } from "@/components/instagram/top-posts-by-followers-card";
 import { StoriesSection } from "@/components/instagram/stories-section";
 import { ReelsSection } from "@/components/instagram/reels-section";
 import { AudienceCharts } from "@/components/instagram/audience-charts";
@@ -163,12 +162,6 @@ export default function InstagramDashboardPage() {
         error={insightsError as Error | null}
         onRefresh={handleRefreshAll}
         isRefreshing={refresh.isPending}
-      />
-
-      {/* Top Posts por Seguidores — feature isolada (endpoint próprio) */}
-      <TopPostsByFollowersCard
-        accountId={selectedAccountId}
-        days={Math.max(1, Math.round((period.until - period.since) / 86400))}
       />
 
       {/* Posts table */}
