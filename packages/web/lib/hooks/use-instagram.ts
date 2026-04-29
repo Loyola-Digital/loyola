@@ -31,8 +31,6 @@ export interface InstagramMedia {
   saved?: number | null;
   /** (likes + comments + saves) / reach × 100, ou null se reach indisponível */
   engagement_rate?: number | null;
-  /** Seguidores ganhos via este post (Graph API limita: FEED retorna; Reels/Video/Stories costumam vir null). */
-  follows?: number | null;
 }
 
 export interface InsightValue {

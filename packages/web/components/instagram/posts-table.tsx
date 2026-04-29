@@ -12,13 +12,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { RefreshCw, ArrowUpDown, Link2, UserPlus } from "lucide-react";
+import { RefreshCw, ArrowUpDown, Link2 } from "lucide-react";
 import type { InstagramMedia } from "@/lib/hooks/use-instagram";
 import { format, parseISO } from "date-fns";
 import { useOrganicPostLinks } from "@/lib/hooks/use-organic-posts";
 import { LinkPostToStageModal } from "@/components/funnels/link-post-to-stage-modal";
 
-type SortKey = "timestamp" | "like_count" | "comments_count" | "engagement_rate" | "follows";
+type SortKey = "timestamp" | "like_count" | "comments_count" | "engagement_rate";
 
 interface PostsTableProps {
   data?: InstagramMedia[];
@@ -60,26 +60,11 @@ export function PostsTable({
       diff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
     } else if (sortKey === "engagement_rate") {
       diff = (a.engagement_rate ?? -1) - (b.engagement_rate ?? -1);
-    } else if (sortKey === "follows") {
-      diff = (a.follows ?? -1) - (b.follows ?? -1);
     } else {
       diff = (a[sortKey] ?? 0) - (b[sortKey] ?? 0);
     }
     return sortAsc ? diff : -diff;
   });
-
-  function fmtFollows(v: number | null | undefined): string {
-    if (v == null) return "—";
-    return v > 0 ? `+${v.toLocaleString("pt-BR")}` : v.toLocaleString("pt-BR");
-  }
-
-  function followsColor(v: number | null | undefined): string {
-    if (v == null) return "text-muted-foreground";
-    if (v >= 50) return "text-emerald-600 font-medium";
-    if (v >= 10) return "text-emerald-500";
-    if (v > 0) return "text-foreground";
-    return "text-muted-foreground";
-  }
 
   function fmtEngagement(rate: number | null | undefined): string {
     if (rate == null) return "—";
@@ -162,18 +147,6 @@ export function PostsTable({
                     </Button>
                   </TableHead>
                   <TableHead>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="-ml-3 h-8 gap-1"
-                      onClick={() => toggleSort("follows")}
-                      title="Seguidores ganhos via este post (Graph API)"
-                    >
-                      <UserPlus className="h-3 w-3" />
-                      Seguidores <ArrowUpDown className="h-3 w-3" />
-                    </Button>
-                  </TableHead>
-                  <TableHead>
                     <Button variant="ghost" size="sm" className="-ml-3 h-8 gap-1" onClick={() => toggleSort("timestamp")}>
                       Data <ArrowUpDown className="h-3 w-3" />
                     </Button>
@@ -207,16 +180,6 @@ export function PostsTable({
                         title={buildEngagementTooltip(post)}
                       >
                         {fmtEngagement(post.engagement_rate)}
-                      </TableCell>
-                      <TableCell
-                        className={`text-sm whitespace-nowrap ${followsColor(post.follows)}`}
-                        title={
-                          post.follows == null
-                            ? "Aguardando refresh do cache (clica em Atualizar) — Meta adicionou per-post follows em Reels em jan/2026."
-                            : `${post.follows} novo(s) seguidor(es) via este post (Graph API)`
-                        }
-                      >
-                        {fmtFollows(post.follows)}
                       </TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
                         {format(parseISO(post.timestamp), "dd/MM/yy")}
