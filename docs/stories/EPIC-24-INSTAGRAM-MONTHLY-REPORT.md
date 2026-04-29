@@ -1,6 +1,6 @@
 # Epic 24 — Relatório Mensal de Instagram
 
-**Status:** Draft
+**Status:** Done
 **Owner:** @sm → @po → @dev → @qa → @devops
 **Criado em:** 2026-04-29
 
