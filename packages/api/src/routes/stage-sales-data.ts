@@ -462,47 +462,45 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       const brutoIdx = colIdx(mapping.valorBruto);
       const dataIdx = colIdx(mapping.dataVenda);
 
-      if (emailIdx === -1) return { byDay: {} as Record<string, number>, semDados: true };
+      if (dataIdx === -1) return { byDay: {} as Record<string, number>, semDados: true };
 
       let cutoffDate: Date | null = null;
-      if (query.data.days && dataIdx !== -1) {
+      if (query.data.days) {
         cutoffDate = new Date();
         cutoffDate.setDate(cutoffDate.getDate() - query.data.days);
       }
 
-      const emailMap = new Map<string, { bruto: number; lastDate: Date | null }>();
+      // Faturamento por dia = soma do bruto de TODAS as linhas na data da própria
+      // linha. Sem dedup por email — cada linha é uma transação distinta. Local
+      // date (não UTC) pra evitar shift de vendas BRT pós-21h pro dia seguinte.
+      const byDay: Record<string, number> = {};
+      let counted = 0;
 
       for (const row of rows) {
-        const email = (row[emailIdx] ?? "").trim().toLowerCase();
-        if (!email) continue;
+        const rowDate = parseDate(row[dataIdx]);
+        if (!rowDate) continue;
+        if (cutoffDate && rowDate < cutoffDate) continue;
 
-        if (cutoffDate && dataIdx !== -1) {
-          const dt = parseDate(row[dataIdx]);
-          if (!dt || dt < cutoffDate) continue;
+        // Mantém filtro de email vazio: linhas sem email são geralmente eventos
+        // não-venda (boleto gerado, carrinho, etc) e poluiriam o faturamento.
+        // Se o cliente quiser incluí-las, removemos o guard depois.
+        if (emailIdx !== -1) {
+          const email = (row[emailIdx] ?? "").trim();
+          if (!email) continue;
         }
 
         const bruto = parseNumber(row[brutoIdx] ?? "");
-        const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
+        if (bruto <= 0) continue;
 
-        const existing = emailMap.get(email);
-        if (existing) {
-          existing.bruto += bruto;
-          if (rowDate && (!existing.lastDate || rowDate > existing.lastDate)) {
-            existing.lastDate = rowDate;
-          }
-        } else {
-          emailMap.set(email, { bruto, lastDate: rowDate });
-        }
-      }
-
-      if (emailMap.size === 0) return { byDay: {} as Record<string, number>, semDados: false };
-
-      const byDay: Record<string, number> = {};
-      for (const { bruto, lastDate } of emailMap.values()) {
-        if (!lastDate) continue;
-        const key = lastDate.toISOString().slice(0, 10);
+        const y = rowDate.getFullYear();
+        const m = String(rowDate.getMonth() + 1).padStart(2, "0");
+        const d = String(rowDate.getDate()).padStart(2, "0");
+        const key = `${y}-${m}-${d}`;
         byDay[key] = (byDay[key] ?? 0) + bruto;
+        counted++;
       }
+
+      if (counted === 0) return { byDay: {} as Record<string, number>, semDados: false };
 
       return { byDay, semDados: false };
     }
