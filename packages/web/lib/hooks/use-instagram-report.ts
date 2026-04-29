@@ -1,7 +1,7 @@
 "use client";
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
   InstagramMonthlyReportRecord,
   InstagramMonthlyReportListItem,
@@ -33,5 +33,23 @@ export function useInstagramReports(projectId: string | null) {
       ),
     enabled: !!projectId,
     staleTime: 5 * 60 * 1000, // 5min
+  });
+}
+
+export function useGenerateInstagramReport(projectId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { month: string }) =>
+      apiClient<InstagramMonthlyReportRecord>(
+        `/api/projects/${projectId}/reports/instagram/generate`,
+        {
+          method: "POST",
+          body: JSON.stringify({ month: input.month }),
+        },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["instagram-reports", projectId] });
+    },
   });
 }

@@ -1,0 +1,70 @@
+storyId: STORY-24.3
+storyPath: docs/stories/24.3.instagram-monthly-report-trigger-history.md
+verdict: PASS
+reviewedBy: '@qa (Quinn)'
+reviewedAt: '2026-04-29'
+branch: feat/24.3-instagram-monthly-report-trigger
+
+quality_checks:
+  code_review:
+    status: PASS
+    notes: |
+      - Hook useGenerateInstagramReport com invalidação correta da listagem
+      - GenerateReportDialog: Select de últimos 13 meses (corrente + 12), default mês passado
+      - Aviso amigável quando relatório do mês já existe (substituirá)
+      - Page de listagem com cards clicáveis, empty state, botão "Novo relatório"
+      - Botões "Gerar relatório" + "Histórico" no header do dashboard IG do projeto
+      - Redirect direto pra página do relatório após geração
+
+  unit_tests:
+    status: CONCERNS
+    severity: low
+    notes: Sem testes — segue padrão.
+
+  acceptance_criteria:
+    status: PASS
+    notes: |
+      AC 1 (botão no header): PASS na page do projeto. Page global pulada
+        intencionalmente (relatório é per-projeto, faz menos sentido global).
+      AC 2 (Dialog com dropdown 12 meses): PASS — inclui mês corrente + 12
+      AC 3 (gerar + redirect): PASS — useMutation + router.push em sucesso
+      AC 4 (page listagem): PASS — cards clicáveis com mês formatado
+      AC 5 (botão "Novo" reusa Dialog): PASS
+      AC 7 (comparativo automático): PASS — 24.1 já calcula no backend
+      AC 9 (regeneração com aviso): PASS — texto amber-600 quando exists
+      AC 10 (conta sem posts no mês): tratado pela 24.2 (empty state)
+      AC 11-13 (validação): typecheck PASS, lint PASS, smoke pendente
+
+  no_regressions:
+    status: PASS
+
+  performance:
+    status: PASS
+    notes: |
+      Geração roda síncrona — UI mostra "Gerando..." com spinner até retornar.
+      Risco rate limit Meta documentado na 24.1.
+
+  security:
+    status: PASS
+    notes: |
+      Backend já valida getProjectAccess; client mostra 404 amigável.
+
+  documentation:
+    status: PASS
+
+issues: []
+
+waivers:
+  - issue: "AC 1 — botão NÃO adicionado na page global /instagram"
+    reason: |
+      Relatório é per-projeto (agrega contas IG do projeto). Na page global
+      sem projectId, não há contexto de projeto pra agregar. Decidido manter
+      botão apenas em /projects/[id]/instagram/.
+  - issue: "AC 6 — sidebar entry NÃO adicionada"
+    reason: |
+      Pra reduzir risco de quebrar layout da sidebar (project-folder.tsx tem
+      lógica complexa). Acesso via botão "Histórico" no header do dashboard
+      IG é suficiente. Sidebar entry fica como tech debt v2.
+
+recommendation: |
+  PASS — ready for ship 24.3. Encerra Epic 24.

@@ -29,6 +29,8 @@ import { StoriesSection } from "@/components/instagram/stories-section";
 import { ReelsSection } from "@/components/instagram/reels-section";
 import { AudienceCharts } from "@/components/instagram/audience-charts";
 import { TopPostsByFollowersCard } from "@/components/instagram/top-posts-by-followers-card";
+import { GenerateReportDialog } from "@/components/instagram/generate-report-dialog";
+import { FileText } from "lucide-react";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -58,6 +60,7 @@ function ProjectEmptyState() {
 
 export default function ProjectInstagramPage({ params }: Props) {
   const { id: projectId } = use(params);
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
 
   const { data: projects } = useProjects();
   const project = projects?.find((p) => p.id === projectId);
@@ -153,6 +156,16 @@ export default function ProjectInstagramPage({ params }: Props) {
           <PeriodSelector value={period} onChange={setPeriod} />
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setReportDialogOpen(true)} className="gap-1.5">
+            <FileText className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Gerar relatório</span>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/projects/${projectId}/reports/instagram`}>
+              <FileText className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Histórico</span>
+            </Link>
+          </Button>
           <Button variant="outline" size="sm" asChild>
             <Link href="/settings/instagram">
               <Settings className="h-3.5 w-3.5" />
@@ -232,6 +245,8 @@ export default function ProjectInstagramPage({ params }: Props) {
         onRefresh={handleRefreshAll}
         isRefreshing={refresh.isPending}
       />
+
+      <GenerateReportDialog projectId={projectId} open={reportDialogOpen} onOpenChange={setReportDialogOpen} />
     </div>
   );
 }
