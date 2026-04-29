@@ -113,6 +113,9 @@ export function useUpdateFunnel(projectId: string, funnelId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["funnels", projectId] });
       queryClient.invalidateQueries({ queryKey: ["funnel", projectId, funnelId] });
+      // Banner de campanhas órfãs (Epic 25) — invalidar quando matchCode,
+      // nome do funil ou campaigns mudam
+      queryClient.invalidateQueries({ queryKey: ["orphan-campaigns", projectId, funnelId] });
     },
   });
 }
