@@ -60,6 +60,9 @@ interface InstagramMedia {
   reach?: number | null;
   saved?: number | null;
   engagement_rate?: number | null;
+  /** Seguidores ganhos via este post. Graph API só retorna pra FEED em geral;
+   * Reels/Video/Stories costumam vir null (limitação da Meta). */
+  follows?: number | null;
 }
 
 interface MediaListResponse {
@@ -418,13 +421,14 @@ export default fp(async function instagramServicePlugin(fastify) {
 
     const result = await graphFetch<MediaListResponse>(path, token);
 
-    // Enrich each post with reach + saved (from insights) and engagement_rate.
+    // Enrich each post with reach + saved + follows (from insights) and engagement_rate.
     // Promise.allSettled so a single insight failure doesn't kill the whole list.
     const enriched = await Promise.allSettled(
       result.data.map(async (post) => {
         const entries = await getMediaInsights(post.id, accountId, post.media_type);
         const reach = pickInsightValue(entries, "reach");
         const saved = pickInsightValue(entries, "saved");
+        const follows = pickInsightValue(entries, "follows");
         const likes = post.like_count ?? 0;
         const comments = post.comments_count ?? 0;
         let engagementRate: number | null = null;
@@ -436,6 +440,7 @@ export default fp(async function instagramServicePlugin(fastify) {
           reach,
           saved,
           engagement_rate: engagementRate,
+          follows,
         } satisfies InstagramMedia;
       }),
     );
@@ -443,7 +448,7 @@ export default fp(async function instagramServicePlugin(fastify) {
     const data: InstagramMedia[] = enriched.map((r, i) =>
       r.status === "fulfilled"
         ? r.value
-        : { ...result.data[i], reach: null, saved: null, engagement_rate: null },
+        : { ...result.data[i], reach: null, saved: null, engagement_rate: null, follows: null },
     );
 
     return {
