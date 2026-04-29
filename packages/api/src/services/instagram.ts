@@ -484,57 +484,65 @@ export default fp(async function instagramServicePlugin(fastify) {
     accountId: string,
     mediaType?: string,
   ): Promise<InsightEntry[]> {
-    const cacheKey = `post_insights_${mediaId}`;
+    // CACHE KEY v2: bumpada para invalidar entries parciais salvas pela versão
+    // anterior (que cacheava o resultado de fallbacks com métricas faltando,
+    // quebrando engagement em alguns posts).
+    const cacheKey = `post_insights_v2_${mediaId}`;
     const cached = await getCachedMetric(accountId, cacheKey);
     if (cached) return cached as InsightEntry[];
 
     const { token } = await getDecryptedToken(accountId);
 
-    // v25.0+: metrics depend on media type. A Meta adicionou `follows` per-post
-    // (incluindo Reels/Video) em janeiro/2026 — usar nas três categorias.
-    // Deprecated: impressions (use views), plays
-    let metrics: string;
+    // Fetch em DOIS chunks paralelos para resiliência:
+    // - core: métricas básicas que TODO post suporta (reach, likes, comments,
+    //   saved, shares). Se essas falharem, engagement quebra — mas elas são
+    //   estáveis há muito tempo na Graph API.
+    // - extras: métricas que podem falhar em posts antigos (follows, views,
+    //   total_interactions, ig_reels_avg_watch_time, etc). Falha de uma não
+    //   afeta as outras.
+    //
+    // Se um chunk falhar inteiro, o outro ainda preenche o que pôde.
+    const coreMetrics = "reach,likes,comments,saved,shares";
+    let extrasMetrics: string;
     if (mediaType === "VIDEO" || mediaType === "REEL" || mediaType === "REELS") {
-      metrics = "reach,views,likes,comments,saved,shares,total_interactions,follows,ig_reels_avg_watch_time";
+      extrasMetrics = "views,total_interactions,follows,ig_reels_avg_watch_time";
     } else if (mediaType === "STORY") {
-      metrics = "reach,views,replies,shares,follows,navigation";
+      extrasMetrics = "views,replies,navigation,follows";
     } else {
       // FEED (IMAGE, CAROUSEL_ALBUM)
-      metrics = "reach,views,likes,comments,saved,shares,total_interactions,follows";
+      extrasMetrics = "views,total_interactions,follows";
     }
 
-    // Fetch with fallback — some metrics may fail for older posts
-    const entries: InsightEntry[] = [];
-    try {
-      const result = await graphFetch<InsightsResponse>(
-        `/${mediaId}/insights?metric=${metrics}`,
-        token,
-      );
-      entries.push(...result.data);
-    } catch {
-      // Fallback 1: tenta sem total_interactions e ig_reels_avg_watch_time
-      // (alguns posts antigos podem rejeitar essas métricas mesmo após adoção)
+    async function tryFetch(metric: string): Promise<InsightEntry[]> {
       try {
         const result = await graphFetch<InsightsResponse>(
-          `/${mediaId}/insights?metric=reach,likes,comments,saved,shares,follows`,
+          `/${mediaId}/insights?metric=${metric}`,
           token,
         );
-        entries.push(...result.data);
+        return result.data;
       } catch {
-        // Fallback 2: minimal set sem follows
-        try {
-          const result = await graphFetch<InsightsResponse>(
-            `/${mediaId}/insights?metric=reach,likes,comments,saved,shares`,
-            token,
-          );
-          entries.push(...result.data);
-        } catch {
-          // Media might not support insights (carousel albums, etc.)
-        }
+        return [];
       }
     }
 
-    if (entries.length > 0) {
+    const [coreEntries, extrasEntries] = await Promise.all([
+      tryFetch(coreMetrics),
+      tryFetch(extrasMetrics),
+    ]);
+
+    let entries: InsightEntry[] = [...coreEntries, ...extrasEntries];
+
+    // Se o chunk de extras falhou inteiro, faz uma 2ª tentativa com cada métrica
+    // individualmente (resiliente — algumas vão passar mesmo que outras falhem).
+    if (extrasEntries.length === 0) {
+      const individualResults = await Promise.all(
+        extrasMetrics.split(",").map((m) => tryFetch(m)),
+      );
+      for (const r of individualResults) entries = entries.concat(r);
+    }
+
+    // Só cacheia se o core veio — sem core, engagement quebra e não vale guardar.
+    if (coreEntries.length > 0) {
       await setCachedMetric(accountId, cacheKey, entries, CACHE_TTL.post_insights);
     }
     return entries;
