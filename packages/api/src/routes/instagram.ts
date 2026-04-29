@@ -740,31 +740,51 @@ export default fp(async function instagramRoutes(fastify) {
 
       // Pra cada post, busca SÓ follows com try/catch isolado.
       // Falha de um não afeta os outros — Promise.all com fallback null.
+      // v25 da Meta exige `metric_type=total_value` para a maioria das métricas
+      // de mídia. Tenta em cascata: total_value → sem param → time_series.
       const enriched = await Promise.all(
         eligible.map(async (m) => {
           let follows: number | null = null;
-          try {
-            const url = `https://graph.instagram.com/v25.0/${m.id}/insights?metric=follows&access_token=${accessToken}`;
+
+          async function tryFetch(extraParams: string): Promise<number | null> {
+            const url = `https://graph.instagram.com/v25.0/${m.id}/insights?metric=follows${extraParams}&access_token=${accessToken}`;
             const res = await fetch(url);
-            if (res.ok) {
-              const data = await res.json() as { data?: Array<{ name: string; total_value?: { value?: unknown }; values?: Array<{ value?: unknown }> }> };
-              const entry = data.data?.find((e) => e.name === "follows");
-              if (entry) {
-                if (entry.total_value && typeof entry.total_value.value === "number") {
-                  follows = entry.total_value.value;
-                } else if (entry.values && entry.values.length > 0) {
-                  let sum = 0;
-                  let any = false;
-                  for (const v of entry.values) {
-                    if (typeof v.value === "number") {
-                      sum += v.value;
-                      any = true;
-                    }
-                  }
-                  follows = any ? sum : null;
+            if (!res.ok) return null;
+            const data = await res.json() as {
+              data?: Array<{
+                name: string;
+                total_value?: { value?: unknown };
+                values?: Array<{ value?: unknown }>;
+              }>;
+              error?: unknown;
+            };
+            if (data.error || !data.data) return null;
+            const entry = data.data.find((e) => e.name === "follows");
+            if (!entry) return null;
+            // total_value (v25 default)
+            if (entry.total_value && typeof entry.total_value.value === "number") {
+              return entry.total_value.value;
+            }
+            // time_series
+            if (entry.values && entry.values.length > 0) {
+              let sum = 0;
+              let any = false;
+              for (const v of entry.values) {
+                if (typeof v.value === "number") {
+                  sum += v.value;
+                  any = true;
                 }
               }
+              return any ? sum : null;
             }
+            return null;
+          }
+
+          try {
+            // Tenta na ordem que a Meta documenta como mais comum
+            follows = await tryFetch("&metric_type=total_value");
+            if (follows == null) follows = await tryFetch("");
+            if (follows == null) follows = await tryFetch("&metric_type=time_series");
           } catch {
             // ignora — esse post simplesmente não vai aparecer no ranking
           }
@@ -791,6 +811,75 @@ export default fp(async function instagramRoutes(fastify) {
           caption: m.caption ?? null,
           follows: m.follows,
         })),
+      };
+    },
+  );
+
+  // ============================================================
+  // DEBUG: RAW response da Graph API para per-post follows
+  // ============================================================
+  // Útil pra diagnosticar quando o endpoint principal não retorna nada.
+  // Tenta 4 variações de query string e retorna o raw response da Meta
+  // pra cada uma. Use só pra debug.
+  fastify.get(
+    "/api/instagram/accounts/:id/debug-post-follows",
+    async (request, reply) => {
+      const paramResult = idParamSchema.safeParse(request.params);
+      if (!paramResult.success) return reply.code(400).send({ error: "ID inválido" });
+
+      const account = await getAccount(paramResult.data.id);
+      if (!account) return reply.code(404).send({ error: "Conta não encontrada" });
+
+      const accessToken = decrypt(account.accessTokenEncrypted, account.accessTokenIv);
+      const igUserId = account.instagramUserId;
+
+      // Pega 3 posts mais recentes
+      let posts: Array<{ id: string; media_type?: string; timestamp: string }> = [];
+      try {
+        const res = await fetch(
+          `https://graph.instagram.com/v25.0/${igUserId}/media?fields=id,media_type,timestamp&limit=3&access_token=${accessToken}`
+        );
+        const data = await res.json() as { data?: typeof posts };
+        posts = data.data ?? [];
+      } catch (err) {
+        return { error: "media list failed", details: err instanceof Error ? err.message : String(err) };
+      }
+
+      const variations = [
+        { name: "A_metric_only", qs: "metric=follows" },
+        { name: "B_metric_total_value", qs: "metric=follows&metric_type=total_value" },
+        { name: "C_metric_time_series_period_day", qs: "metric=follows&metric_type=time_series&period=day" },
+        { name: "D_metric_with_breakdown", qs: "metric=follows&breakdown=follow_type&metric_type=total_value" },
+        { name: "E_total_interactions_only", qs: "metric=total_interactions&metric_type=total_value" },
+      ];
+
+      const results: Record<string, unknown> = {};
+
+      for (const post of posts) {
+        const postResults: Record<string, unknown> = {
+          mediaType: post.media_type,
+          timestamp: post.timestamp,
+        };
+        for (const v of variations) {
+          try {
+            const url = `https://graph.instagram.com/v25.0/${post.id}/insights?${v.qs}&access_token=${accessToken}`;
+            const res = await fetch(url);
+            const status = res.status;
+            const body = await res.json();
+            postResults[v.name] = { status, body };
+          } catch (err) {
+            postResults[v.name] = { error: err instanceof Error ? err.message : String(err) };
+          }
+        }
+        results[post.id] = postResults;
+      }
+
+      return {
+        igUserId,
+        accountName: account.accountName,
+        tokenStart: accessToken.substring(0, 12) + "...",
+        posts_tested: posts.length,
+        results,
       };
     },
   );
