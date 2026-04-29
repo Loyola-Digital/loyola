@@ -60,6 +60,8 @@ export function useCreateStage(projectId: string, funnelId: string) {
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["funnel-stages", projectId, funnelId] });
+      // Banner de campanhas órfãs (Epic 25) precisa re-checar quando stage muda
+      queryClient.invalidateQueries({ queryKey: ["orphan-campaigns", projectId, funnelId] });
     },
   });
 }
@@ -76,6 +78,9 @@ export function useUpdateStage(projectId: string, funnelId: string, stageId: str
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["funnel-stages", projectId, funnelId] });
       queryClient.invalidateQueries({ queryKey: ["funnel-stage", projectId, funnelId, stageId] });
+      // Banner de campanhas órfãs (Epic 25) precisa re-checar quando campanhas
+      // da etapa mudam — sem isso, banner persiste até F5
+      queryClient.invalidateQueries({ queryKey: ["orphan-campaigns", projectId, funnelId] });
     },
   });
 }
@@ -91,6 +96,7 @@ export function useDeleteStage(projectId: string, funnelId: string) {
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["funnel-stages", projectId, funnelId] });
+      queryClient.invalidateQueries({ queryKey: ["orphan-campaigns", projectId, funnelId] });
     },
   });
 }
