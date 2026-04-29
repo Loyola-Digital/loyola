@@ -680,4 +680,118 @@ export default fp(async function instagramRoutes(fastify) {
       };
     },
   );
+
+  // ============================================================
+  // TOP POSTS BY FOLLOWERS — endpoint isolado
+  // ============================================================
+  //
+  // Não usa fastify.instagramService.getMediaList nem getMediaInsights —
+  // faz tudo em chamadas diretas à Graph API com try/catch granular,
+  // pra garantir que falha em uma métrica não derrube nada.
+
+  fastify.get(
+    "/api/instagram/accounts/:id/top-posts-by-followers",
+    async (request, reply) => {
+      const paramResult = idParamSchema.safeParse(request.params);
+      if (!paramResult.success) return reply.code(400).send({ error: "ID inválido" });
+
+      const querySchema = z.object({
+        days: z.coerce.number().int().min(1).max(365).default(30),
+        limit: z.coerce.number().int().min(1).max(20).default(10),
+      });
+      const queryResult = querySchema.safeParse(request.query);
+      if (!queryResult.success) return reply.code(400).send({ error: "Query inválida" });
+
+      const { id: accountId } = paramResult.data;
+      const { days, limit } = queryResult.data;
+
+      const account = await getAccount(accountId);
+      if (!account) return reply.code(404).send({ error: "Conta não encontrada" });
+
+      // Token + igUserId direto, sem passar pelo service
+      const accessToken = decrypt(account.accessTokenEncrypted, account.accessTokenIv);
+      const igUserId = account.instagramUserId;
+
+      // Lista media direto da Graph API (sem enrichment do getMediaList).
+      let mediaList: Array<{
+        id: string;
+        media_type?: string;
+        timestamp: string;
+        thumbnail_url?: string;
+        media_url?: string;
+        caption?: string;
+        permalink?: string;
+      }> = [];
+      try {
+        const url = `https://graph.instagram.com/v25.0/${igUserId}/media?fields=id,media_type,timestamp,thumbnail_url,media_url,caption,permalink&limit=100&access_token=${accessToken}`;
+        const res = await fetch(url);
+        const data = await res.json() as { data?: typeof mediaList; error?: unknown };
+        if (data.data) mediaList = data.data;
+      } catch (err) {
+        return reply.code(502).send({ error: "Falha ao listar media", details: err instanceof Error ? err.message : String(err) });
+      }
+
+      // Filtra pelo período
+      const cutoffMs = Date.now() - days * 86_400_000;
+      const eligible = mediaList.filter((m) => {
+        const t = new Date(m.timestamp).getTime();
+        return !isNaN(t) && t >= cutoffMs;
+      });
+
+      // Pra cada post, busca SÓ follows com try/catch isolado.
+      // Falha de um não afeta os outros — Promise.all com fallback null.
+      const enriched = await Promise.all(
+        eligible.map(async (m) => {
+          let follows: number | null = null;
+          try {
+            const url = `https://graph.instagram.com/v25.0/${m.id}/insights?metric=follows&access_token=${accessToken}`;
+            const res = await fetch(url);
+            if (res.ok) {
+              const data = await res.json() as { data?: Array<{ name: string; total_value?: { value?: unknown }; values?: Array<{ value?: unknown }> }> };
+              const entry = data.data?.find((e) => e.name === "follows");
+              if (entry) {
+                if (entry.total_value && typeof entry.total_value.value === "number") {
+                  follows = entry.total_value.value;
+                } else if (entry.values && entry.values.length > 0) {
+                  let sum = 0;
+                  let any = false;
+                  for (const v of entry.values) {
+                    if (typeof v.value === "number") {
+                      sum += v.value;
+                      any = true;
+                    }
+                  }
+                  follows = any ? sum : null;
+                }
+              }
+            }
+          } catch {
+            // ignora — esse post simplesmente não vai aparecer no ranking
+          }
+          return { ...m, follows };
+        })
+      );
+
+      // Filtra apenas os que retornaram follows > 0 e ordena desc
+      const ranked = enriched
+        .filter((m): m is typeof m & { follows: number } => m.follows != null && m.follows > 0)
+        .sort((a, b) => b.follows - a.follows)
+        .slice(0, limit);
+
+      return {
+        days,
+        totalEligible: eligible.length,
+        totalWithData: ranked.length,
+        items: ranked.map((m) => ({
+          id: m.id,
+          mediaType: m.media_type ?? null,
+          timestamp: m.timestamp,
+          thumbnailUrl: m.thumbnail_url ?? m.media_url ?? null,
+          permalink: m.permalink ?? null,
+          caption: m.caption ?? null,
+          follows: m.follows,
+        })),
+      };
+    },
+  );
 });
