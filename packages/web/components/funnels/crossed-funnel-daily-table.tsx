@@ -60,9 +60,12 @@ function renderConnectRate(v: number | null) {
 /**
  * Tabela diária cruzada (Meta Ads + planilha de leads).
  *
- * 16 colunas: Dia, Investimento, Cliques, Impressões, CPM, CPC, CTR, LP View,
- * Connect Rate, Tx Conv., Leads pagos, Leads org, Leads s/ track, Total Leads,
- * CPL Pg, CPL G. Última linha é o total do período via footer.
+ * Ordem das colunas: Dia, Investimento, Faturamento, Cliques, Impressões,
+ * Total Leads, CPL Pg, CPL G, CPM, CPC, CTR, LP View, Connect Rate, Tx Conv.,
+ * Leads pagos, Leads org, Leads s/ track. Última linha é o total via footer.
+ *
+ * Total Leads + CPL Pg/G ficam logo após Impressões para destacar a métrica
+ * de custo de aquisição cedo na leitura.
  *
  * Usado no LaunchDashboard (Story 18.3). Dados vêm do hook
  * `useCrossedFunnelMetrics` (Story 18.2/18.3).
@@ -93,6 +96,9 @@ export function CrossedFunnelDailyTable({
               <TableHead className="text-right min-w-[110px]">Faturamento</TableHead>
               <TableHead className="text-right min-w-[80px]">Cliques</TableHead>
               <TableHead className="text-right min-w-[100px]">Impressões</TableHead>
+              <TableHead className="text-right min-w-[100px] font-semibold">Total Leads</TableHead>
+              <TableHead className="text-right min-w-[90px]">CPL Pg</TableHead>
+              <TableHead className="text-right min-w-[80px]">CPL G</TableHead>
               <TableHead className="text-right min-w-[80px]">CPM</TableHead>
               <TableHead className="text-right min-w-[80px]">CPC</TableHead>
               <TableHead className="text-right min-w-[70px]">CTR</TableHead>
@@ -102,9 +108,6 @@ export function CrossedFunnelDailyTable({
               <TableHead className="text-right min-w-[100px]">Leads pagos</TableHead>
               <TableHead className="text-right min-w-[90px]">Leads org</TableHead>
               <TableHead className="text-right min-w-[110px]">Leads s/ track</TableHead>
-              <TableHead className="text-right min-w-[100px] font-semibold">Total Leads</TableHead>
-              <TableHead className="text-right min-w-[90px]">CPL Pg</TableHead>
-              <TableHead className="text-right min-w-[80px]">CPL G</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -121,6 +124,9 @@ export function CrossedFunnelDailyTable({
                   </TableCell>
                   <TableCell className="text-right">{fmtInt(r.linkClicks)}</TableCell>
                   <TableCell className="text-right">{fmtInt(r.impressions)}</TableCell>
+                  <TableCell className="text-right font-medium">{fmtInt(totalLeads)}</TableCell>
+                  <TableCell className="text-right">{fmtCurrency(r.cplPg)}</TableCell>
+                  <TableCell className="text-right">{fmtCurrency(r.cplG)}</TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cpm)}</TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cpc)}</TableCell>
                   <TableCell className="text-right">{fmtPercent(r.ctr)}</TableCell>
@@ -130,9 +136,6 @@ export function CrossedFunnelDailyTable({
                   <TableCell className="text-right">{fmtInt(r.leadsPagos)}</TableCell>
                   <TableCell className="text-right">{fmtInt(r.leadsOrg)}</TableCell>
                   <TableCell className="text-right">{fmtInt(r.leadsSemTrack)}</TableCell>
-                  <TableCell className="text-right font-medium">{fmtInt(totalLeads)}</TableCell>
-                  <TableCell className="text-right">{fmtCurrency(r.cplPg)}</TableCell>
-                  <TableCell className="text-right">{fmtCurrency(r.cplG)}</TableCell>
                 </TableRow>
               );
             })}
@@ -146,6 +149,11 @@ export function CrossedFunnelDailyTable({
               </TableCell>
               <TableCell className="text-right">{fmtInt(totals.linkClicks)}</TableCell>
               <TableCell className="text-right">{fmtInt(totals.impressions)}</TableCell>
+              <TableCell className="text-right font-semibold">
+                {fmtInt(totals.leadsPagos + totals.leadsOrg + totals.leadsSemTrack)}
+              </TableCell>
+              <TableCell className="text-right">{fmtCurrency(totals.cplPg)}</TableCell>
+              <TableCell className="text-right">{fmtCurrency(totals.cplG)}</TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.cpm)}</TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.cpc)}</TableCell>
               <TableCell className="text-right">{fmtPercent(totals.ctr)}</TableCell>
@@ -155,11 +163,6 @@ export function CrossedFunnelDailyTable({
               <TableCell className="text-right">{fmtInt(totals.leadsPagos)}</TableCell>
               <TableCell className="text-right">{fmtInt(totals.leadsOrg)}</TableCell>
               <TableCell className="text-right">{fmtInt(totals.leadsSemTrack)}</TableCell>
-              <TableCell className="text-right">
-                {fmtInt(totals.leadsPagos + totals.leadsOrg + totals.leadsSemTrack)}
-              </TableCell>
-              <TableCell className="text-right">{fmtCurrency(totals.cplPg)}</TableCell>
-              <TableCell className="text-right">{fmtCurrency(totals.cplG)}</TableCell>
             </TableRow>
           </TableFooter>
         </Table>
