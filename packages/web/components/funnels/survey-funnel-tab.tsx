@@ -16,6 +16,7 @@ import {
   useSpreadsheets, useSpreadsheetSheets, useSheetData,
   useFunnelSurveys, useAddFunnelSurvey, useRemoveFunnelSurvey,
   useRefreshSheetData, useSurveySummary,
+  type SurveyType,
 } from "@/lib/hooks/use-google-sheets";
 
 function fmtNumber(val: number): string {
@@ -27,8 +28,8 @@ function fmtNumber(val: number): string {
 // SHEETS PICKER DIALOG
 // ============================================================
 
-function SheetsPickerDialog({ projectId, funnelId, stageId, open, onOpenChange }: {
-  projectId: string; funnelId: string; stageId?: string; open: boolean; onOpenChange: (open: boolean) => void;
+function SheetsPickerDialog({ projectId, funnelId, stageId, surveyType, open, onOpenChange }: {
+  projectId: string; funnelId: string; stageId?: string; surveyType: SurveyType; open: boolean; onOpenChange: (open: boolean) => void;
 }) {
   const { data: spreadsheetsData, isLoading: spreadsheetsLoading } = useSpreadsheets();
   const [selectedSpreadsheet, setSelectedSpreadsheet] = useState<{ id: string; name: string } | null>(null);
@@ -42,7 +43,7 @@ function SheetsPickerDialog({ projectId, funnelId, stageId, open, onOpenChange }
   function handleAddSheet(sheetName: string) {
     if (!selectedSpreadsheet) return;
     addSurvey.mutate(
-      { stageId, spreadsheetId: selectedSpreadsheet.id, spreadsheetName: selectedSpreadsheet.name, sheetName },
+      { stageId, spreadsheetId: selectedSpreadsheet.id, spreadsheetName: selectedSpreadsheet.name, sheetName, surveyType },
       {
         onSuccess: () => { toast.success(`Aba "${sheetName}" vinculada!`); },
         onError: (err) => toast.error(err instanceof Error ? err.message : "Erro"),
@@ -61,8 +62,8 @@ function SheetsPickerDialog({ projectId, funnelId, stageId, open, onOpenChange }
       <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <FileSpreadsheet className="h-5 w-5 text-green-600" />
-            Vincular planilha de pesquisa
+            <FileSpreadsheet className={`h-5 w-5 ${surveyType === "organic" ? "text-amber-600" : "text-green-600"}`} />
+            {surveyType === "organic" ? "Vincular planilha de pesquisa orgânica" : "Vincular planilha de pesquisa"}
           </DialogTitle>
         </DialogHeader>
 
@@ -266,16 +267,22 @@ interface SurveyFunnelTabProps {
   funnelId: string;
   stageId?: string;
   totalLeads?: number;
+  surveyType?: SurveyType;
 }
 
-export function SurveyFunnelTab({ projectId, funnelId, stageId, totalLeads }: SurveyFunnelTabProps) {
+export function SurveyFunnelTab({ projectId, funnelId, stageId, totalLeads, surveyType = "paid" }: SurveyFunnelTabProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { data: surveysData, isLoading } = useFunnelSurveys(projectId, funnelId, stageId);
-  const { data: summaryData } = useSurveySummary(projectId, funnelId, stageId);
+  const { data: surveysData, isLoading } = useFunnelSurveys(projectId, funnelId, stageId, surveyType);
+  const { data: summaryData } = useSurveySummary(projectId, funnelId, stageId, surveyType);
 
   const surveys = surveysData?.surveys ?? [];
   const totalResponses = summaryData?.totalResponses ?? 0;
   const responseRate = totalLeads && totalLeads > 0 ? (totalResponses / totalLeads) * 100 : null;
+  const isOrganic = surveyType === "organic";
+  const emptyMessage = isOrganic
+    ? "Vincule uma planilha do Google Sheets com as respostas dos seus alunos (pessoas captadas fora de tráfego pago)."
+    : "Vincule uma planilha do Google Sheets para acompanhar respostas de pesquisa.";
+  const emptyTitle = isOrganic ? "Nenhuma pesquisa orgânica vinculada" : "Nenhuma pesquisa vinculada";
 
   return (
     <div className="space-y-4">
@@ -306,9 +313,9 @@ export function SurveyFunnelTab({ projectId, funnelId, stageId, totalLeads }: Su
         <div className="space-y-2"><Skeleton className="h-16" /><Skeleton className="h-16" /></div>
       ) : surveys.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border/30 p-8 text-center">
-          <FileSpreadsheet className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
-          <p className="font-medium">Nenhuma pesquisa vinculada</p>
-          <p className="text-sm text-muted-foreground mt-1">Vincule uma planilha do Google Sheets para acompanhar respostas de pesquisa.</p>
+          <FileSpreadsheet className={`h-8 w-8 mx-auto mb-3 ${isOrganic ? "text-amber-600/60" : "text-muted-foreground"}`} />
+          <p className="font-medium">{emptyTitle}</p>
+          <p className="text-sm text-muted-foreground mt-1">{emptyMessage}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -318,7 +325,7 @@ export function SurveyFunnelTab({ projectId, funnelId, stageId, totalLeads }: Su
         </div>
       )}
 
-      <SheetsPickerDialog projectId={projectId} funnelId={funnelId} stageId={stageId} open={pickerOpen} onOpenChange={setPickerOpen} />
+      <SheetsPickerDialog projectId={projectId} funnelId={funnelId} stageId={stageId} surveyType={surveyType} open={pickerOpen} onOpenChange={setPickerOpen} />
     </div>
   );
 }

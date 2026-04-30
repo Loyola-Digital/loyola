@@ -111,7 +111,7 @@ const SCHEMA_PLACEHOLDER = `{
 }`;
 
 export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabProps) {
-  const { data: surveysData } = useFunnelSurveys(projectId, funnelId, stageId);
+  const { data: surveysData } = useFunnelSurveys(projectId, funnelId, stageId, "paid");
   const { data: saved, isLoading } = useLeadScoring(projectId, funnelId, stageId);
   const { data: results, isLoading: resultsLoading, refetch: refetchResults } =
     useLeadScoringResults(projectId, funnelId, stageId);

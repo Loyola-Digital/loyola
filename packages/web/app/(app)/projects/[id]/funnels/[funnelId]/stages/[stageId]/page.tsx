@@ -327,7 +327,41 @@ export default function StagePage() {
         </TabsContent>
 
         <TabsContent value="surveys" className="mt-6">
-          <SurveyFunnelTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
+          <div className="space-y-8">
+            <section className="space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <FileSpreadsheet className="h-4 w-4 text-green-600" />
+                  Pesquisa
+                </h3>
+                <p className="text-xs text-muted-foreground">Respostas de leads captados via tráfego pago.</p>
+              </div>
+              <SurveyFunnelTab
+                projectId={params.id}
+                funnelId={params.funnelId}
+                stageId={params.stageId}
+                surveyType="paid"
+              />
+            </section>
+
+            <div className="border-t border-border/30" />
+
+            <section className="space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-amber-500" />
+                  Pesquisa Orgânica
+                </h3>
+                <p className="text-xs text-muted-foreground">Respostas de alunos / pessoas não captadas via tráfego pago.</p>
+              </div>
+              <SurveyFunnelTab
+                projectId={params.id}
+                funnelId={params.funnelId}
+                stageId={params.stageId}
+                surveyType="organic"
+              />
+            </section>
+          </div>
         </TabsContent>
 
         <TabsContent value="spreadsheets" className="mt-6">

@@ -173,6 +173,7 @@ export function useSurveyAggregation(
     projectId,
     funnelId,
     stageId,
+    "paid",
   );
   const surveys = surveysData?.surveys ?? [];
 
