@@ -16,6 +16,7 @@ import { YouTubeFunnelSection } from "@/components/funnels/youtube-funnel-sectio
 import { SurveyFunnelTab } from "@/components/funnels/survey-funnel-tab";
 import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-tab";
 import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-spreadsheet-section";
+import { GroupsSpreadsheetCard } from "@/components/funnels/groups-spreadsheet-card";
 import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
 import { LeadScoringTab } from "@/components/funnels/lead-scoring-tab";
 import { OrganicMediaTab } from "@/components/funnels/organic-media-tab";
@@ -387,6 +388,8 @@ export default function StagePage() {
               </>
             )}
             <FunnelSpreadsheetsTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
+            <div className="border-t border-border/30" />
+            <GroupsSpreadsheetCard projectId={params.id} funnelId={params.funnelId} />
           </div>
         </TabsContent>
 
