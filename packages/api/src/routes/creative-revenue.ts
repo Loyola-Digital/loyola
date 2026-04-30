@@ -42,7 +42,10 @@ function parseDate(val: string | undefined): Date | null {
   const brMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\D|$)/);
   if (brMatch) {
     const [, d, m, y] = brMatch;
-    const dt = new Date(`${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`);
+    const dd = parseInt(d, 10);
+    const mm = parseInt(m, 10);
+    const yy = parseInt(y, 10);
+    const dt = new Date(yy, mm - 1, dd);
     return isNaN(dt.getTime()) ? null : dt;
   }
   const dt = new Date(trimmed);

@@ -160,11 +160,16 @@ export function useCrossedFunnelMetrics(
     return spreadsheetsData.spreadsheets.find((s) => s.type === "sales" || s.type === "custom") ?? null;
   }, [spreadsheetsData]);
 
+  const campaignNames = useMemo(
+    () => funnel.campaigns.map((c) => c.name),
+    [funnel.campaigns],
+  );
+
   const { data: sheetData, isLoading: sheetDataLoading } =
-    useFunnelSpreadsheetData(projectId, funnel.id, linkedSheet?.id);
+    useFunnelSpreadsheetData(projectId, funnel.id, linkedSheet?.id, campaignNames);
 
   const { data: salesSheetData, isLoading: salesSheetDataLoading } =
-    useFunnelSpreadsheetData(projectId, funnel.id, salesSheet?.id);
+    useFunnelSpreadsheetData(projectId, funnel.id, salesSheet?.id, campaignNames);
 
   const { totalResponses, matchedResponses, unmatchedResponses, isLoading: surveyLoading } =
     useSurveyAggregation(projectId, funnel.id, stageId ?? null);

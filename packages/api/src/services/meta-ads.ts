@@ -253,18 +253,34 @@ export async function fetchCampaignDailyInsights(
   metaAccountId: string,
   accessToken: string,
   campaignId: string,
-  days: number = 30
+  days: number = 30,
+  startDate?: string,
+  endDate?: string
 ): Promise<MetaDailyInsight[]> {
-  const datePreset =
-    days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
   const filtering = encodeURIComponent(
     JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: campaignId }])
   );
-  const res = await fetchMeta<{ data: MetaDailyInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,actions,action_values&date_preset=${datePreset}&time_increment=1&level=campaign&filtering=${filtering}`,
-    accessToken
-  );
-  return res.data ?? [];
+
+  let queryPath = `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,actions,action_values&time_increment=1&level=campaign&filtering=${filtering}`;
+
+  // Use custom dates if provided, otherwise use date_preset
+  if (startDate && endDate) {
+    queryPath += `&since=${startDate}&until=${endDate}`;
+  } else {
+    const datePreset =
+      days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
+    queryPath += `&date_preset=${datePreset}`;
+  }
+
+  const res = await fetchMeta<{ data: MetaDailyInsight[] }>(queryPath, accessToken);
+
+  // Filter out invalid zero-value rows (no impressions = no data)
+  const filtered = (res.data ?? []).filter((d) => {
+    const impressions = parseFloat(d.impressions || "0");
+    return impressions > 0;
+  });
+
+  return filtered;
 }
 
 export async function fetchCampaignInsights(

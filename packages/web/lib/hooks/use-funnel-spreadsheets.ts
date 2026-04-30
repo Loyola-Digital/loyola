@@ -106,14 +106,19 @@ export function useFunnelSpreadsheetData(
   projectId: string,
   funnelId: string,
   id: string | null | undefined,
+  campaignNames?: string[] | null,
 ) {
   const apiClient = useApiClient();
   return useQuery({
     queryKey: dataKey(projectId, funnelId, id ?? ""),
-    queryFn: () =>
-      apiClient<FunnelSpreadsheetData>(
-        `/api/projects/${projectId}/funnels/${funnelId}/spreadsheets/${id}/data`,
-      ),
+    queryFn: () => {
+      let url = `/api/projects/${projectId}/funnels/${funnelId}/spreadsheets/${id}/data`;
+      if (campaignNames && campaignNames.length > 0) {
+        const qs = new URLSearchParams(campaignNames.map(n => ["campaignName", n])).toString();
+        url += `?${qs}`;
+      }
+      return apiClient<FunnelSpreadsheetData>(url);
+    },
     enabled: Boolean(projectId && funnelId && id),
     staleTime: 30 * 1000,
   });

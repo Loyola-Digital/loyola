@@ -714,9 +714,11 @@ export async function getCampaignDailyInsights(
   db: Database,
   projectId: string,
   campaignId: string,
-  days: number
+  days: number,
+  startDate?: string,
+  endDate?: string
 ): Promise<MetaDailyInsight[]> {
-  const cacheKey = `analytics:${projectId}:campaign-daily:${campaignId}:${days}`;
+  const cacheKey = `analytics:${projectId}:campaign-daily:${campaignId}:${days}:${startDate ?? ""}:${endDate ?? ""}`;
   const cached = getCached<MetaDailyInsight[]>(cacheKey);
   if (cached) return cached;
 
@@ -727,7 +729,9 @@ export async function getCampaignDailyInsights(
     metaAccount.metaAccountId,
     metaAccount.accessToken,
     campaignId,
-    days
+    days,
+    startDate,
+    endDate
   );
 
   setCache(cacheKey, result);
