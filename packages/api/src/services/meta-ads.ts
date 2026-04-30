@@ -284,7 +284,9 @@ export async function fetchCampaignDailyInsights(
 }
 
 // Bulk version: time-series por dia somando N campanhas. Retorna 1 linha por
-// (campanha, dia) — agregação por dia é responsabilidade do caller.
+// (campanha, dia) — agregação por dia é responsabilidade do caller. PAGINAÇÃO
+// obrigatória: N campanhas × até 90 dias = pode passar de 25 (limite default
+// da Meta) e perder dias mais recentes na primeira página.
 export async function fetchCampaignDailyInsightsForIds(
   metaAccountId: string,
   accessToken: string,
@@ -299,7 +301,7 @@ export async function fetchCampaignDailyInsightsForIds(
     JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }])
   );
 
-  let queryPath = `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,actions,action_values&time_increment=1&level=campaign&filtering=${filtering}`;
+  let queryPath = `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,actions,action_values&time_increment=1&level=campaign&limit=500&filtering=${filtering}`;
 
   if (startDate && endDate) {
     queryPath += `&since=${startDate}&until=${endDate}`;
@@ -309,9 +311,32 @@ export async function fetchCampaignDailyInsightsForIds(
     queryPath += `&date_preset=${datePreset}`;
   }
 
-  const res = await fetchMeta<{ data: MetaDailyInsight[] }>(queryPath, accessToken);
+  type PageResponse = { data: MetaDailyInsight[]; paging?: { next?: string } };
+  const allResults: MetaDailyInsight[] = [];
+  let nextPath: string | null = queryPath;
+  let useFullUrl = false;
 
-  const filtered = (res.data ?? []).filter((d) => {
+  while (nextPath) {
+    let res: PageResponse;
+    if (useFullUrl) {
+      checkRateLimit();
+      const raw = await fetch(nextPath);
+      res = (await raw.json()) as PageResponse;
+    } else {
+      res = await fetchMeta<PageResponse>(nextPath, accessToken);
+    }
+    allResults.push(...(res.data ?? []));
+    const nextUrl = res.paging?.next;
+    // Hard cap: N campanhas × 90 dias = ~450 linhas no pior caso.
+    if (nextUrl && allResults.length < 2000) {
+      nextPath = nextUrl;
+      useFullUrl = true;
+    } else {
+      nextPath = null;
+    }
+  }
+
+  const filtered = allResults.filter((d) => {
     const impressions = parseFloat(d.impressions || "0");
     return impressions > 0;
   });
