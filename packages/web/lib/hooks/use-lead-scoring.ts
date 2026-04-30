@@ -78,6 +78,42 @@ export function useSaveLeadScoring(
   });
 }
 
+export interface DimensionCount {
+  name: string;
+  count: number;
+}
+
+export interface BandOriginBreakdown {
+  bandId: string;
+  bandDescription: string;
+  total: number;
+  byPlacement: DimensionCount[];
+  byTemperatura: DimensionCount[];
+  byEstrategia: DimensionCount[];
+  byCriativo: DimensionCount[];
+  topUtmTerms: DimensionCount[];
+  withoutTerm: number;
+}
+
+export interface LeadScoringOrigins {
+  byBand: Record<string, BandOriginBreakdown>;
+  semDados: boolean;
+}
+
+export function useLeadScoringOrigins(
+  projectId: string | null,
+  funnelId: string | null,
+  stageId: string | null,
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["lead-scoring-origins", projectId, funnelId, stageId],
+    queryFn: () =>
+      apiClient<LeadScoringOrigins>(`${base(projectId!, funnelId!, stageId!)}/origins`),
+    enabled: !!projectId && !!funnelId && !!stageId,
+  });
+}
+
 export function useLeadScoringResults(
   projectId: string | null,
   funnelId: string | null,

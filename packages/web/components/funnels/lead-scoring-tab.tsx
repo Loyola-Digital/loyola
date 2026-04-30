@@ -40,6 +40,7 @@ import {
   type ProjectInfo,
   type LeadScoringDebug,
 } from "@/lib/hooks/use-lead-scoring";
+import { LeadOriginsByBand } from "@/components/funnels/lead-origins-by-band";
 
 interface LeadScoringTabProps {
   projectId: string;
@@ -283,6 +284,11 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
           <ResultsTable results={results} />
         )}
       </div>
+
+      {/* Origens por banda (utm_term parsing) */}
+      {results && !results.semDados && (
+        <LeadOriginsByBand projectId={projectId} funnelId={funnelId} stageId={stageId} />
+      )}
 
       {/* Debug Dialog */}
       <Dialog open={debugOpen} onOpenChange={setDebugOpen}>

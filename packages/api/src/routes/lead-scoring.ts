@@ -195,6 +195,192 @@ function computeBands(
 }
 
 // ============================================================
+// UTM TERM PARSER (Epic Lead Scoring Origins)
+// ============================================================
+//
+// Exemplo de utm_term observado:
+//   Instagram_Feed_dg-pg02-abr-26--vendas-captacao--2026-04-18—cold--cbo--estaticos - estatico
+//
+// Heurísticas (não estruturais — robustas a variações):
+//   placement   = primeiro padrão tipo "X_Y" (ex: Instagram_Feed, Facebook_Stories)
+//   temperatura = match (cold | hot | warm)
+//   estrategia  = match (cbo | abo)
+//   criativo    = match (estaticos | videos[-...] | imagens | carrossel | reels[-...])
+
+interface ParsedUtmTerm {
+  placement: string | null;
+  temperatura: string | null;
+  estrategia: string | null;
+  criativo: string | null;
+}
+
+function parseUtmTerm(raw: string): ParsedUtmTerm {
+  const t = (raw ?? "").trim();
+  if (!t) return { placement: null, temperatura: null, estrategia: null, criativo: null };
+
+  // Normaliza separadores especiais (em-dash, en-dash) pra hyphen-hyphen
+  const normalized = t.replace(/—/g, "--").replace(/–/g, "--");
+  const lower = normalized.toLowerCase();
+
+  // Placement: primeiro padrão "Word_Word" (ex: Instagram_Feed)
+  const placementMatch = normalized.match(/([A-Za-z]+_[A-Za-z]+)/);
+  const placement = placementMatch ? placementMatch[1] : null;
+
+  const tempMatch = lower.match(/\b(cold|hot|warm)\b/);
+  const temperatura = tempMatch ? tempMatch[1] : null;
+
+  const stratMatch = lower.match(/\b(cbo|abo)\b/);
+  const estrategia = stratMatch ? stratMatch[1] : null;
+
+  const creativeMatch = lower.match(/\b(estatico[s]?|videos?[-\w]*|reels?[-\w]*|imagen[s]?|carrossel\w*)\b/);
+  const criativo = creativeMatch ? creativeMatch[1] : null;
+
+  return { placement, temperatura, estrategia, criativo };
+}
+
+interface DimensionCount {
+  name: string;
+  count: number;
+}
+
+interface BandOriginBreakdown {
+  bandId: string;
+  bandDescription: string;
+  total: number;
+  byPlacement: DimensionCount[];
+  byTemperatura: DimensionCount[];
+  byEstrategia: DimensionCount[];
+  byCriativo: DimensionCount[];
+  topUtmTerms: DimensionCount[];
+  /** Quantos leads desta banda têm utm_term vazio/ausente */
+  withoutTerm: number;
+}
+
+function findUtmTermColumn(headers: string[]): number {
+  // Detecta coluna utm_term automaticamente — case-insensitive, várias variações
+  for (let i = 0; i < headers.length; i++) {
+    const h = (headers[i] ?? "").toLowerCase().trim();
+    if (h === "utm_term" || h === "utm term" || h === "term" || h.endsWith("_term") || h.includes("utm_term")) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function aggregateDimension(
+  termsByBand: Map<string, string[]>,
+  bandId: string,
+  pick: (parsed: ParsedUtmTerm) => string | null,
+): DimensionCount[] {
+  const counts = new Map<string, number>();
+  for (const term of termsByBand.get(bandId) ?? []) {
+    const parsed = parseUtmTerm(term);
+    const v = pick(parsed);
+    if (!v) continue;
+    counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+function computeOriginsByBand(
+  schema: LeadScoringSchema,
+  sheet: { headers: string[]; rows: string[][] },
+): { byBand: Record<string, BandOriginBreakdown>; semDados: false } {
+  const questions = schema.scoring_model?.questions ?? [];
+  const bands = schema.bands ?? [];
+  const { headers, rows } = sheet;
+
+  const utmTermIdx = findUtmTermColumn(headers);
+
+  // Reusa o mapeamento de colunas do scoring (mesma lógica do computeBands)
+  const colMap = new Map<string, number>();
+  for (const q of questions) {
+    if (!q.new_survey_column) {
+      colMap.set(q.id, -1);
+      continue;
+    }
+    const target = normalizeText(q.new_survey_column);
+    const idx = headers.findIndex((h) => normalizeText(h) === target);
+    colMap.set(q.id, idx);
+  }
+  const q4Idx = colMap.get("Q4") ?? -1;
+
+  // Pra cada banda, lista de utm_terms (vazios entram como "")
+  const termsByBand = new Map<string, string[]>();
+  const withoutTermByBand = new Map<string, number>();
+  for (const b of bands) {
+    termsByBand.set(b.id, []);
+    withoutTermByBand.set(b.id, 0);
+  }
+
+  for (const row of rows) {
+    let totalScore = 0;
+    const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
+    const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
+
+    for (const q of questions) {
+      const colIdx = colMap.get(q.id) ?? -1;
+      const fallback = q.unmapped_default ?? 0;
+      if (colIdx === -1) {
+        totalScore += fallback;
+        continue;
+      }
+      const answer = resolveAnswerCellValue(row[colIdx]);
+      const match = q.answers.find((a) => normalizeText(a.value) === normalizeText(answer));
+      if (!match) {
+        totalScore += fallback;
+        continue;
+      }
+      if (isAnswerConditional(match)) {
+        const rule = match.points_conditional;
+        totalScore += q4Filled ? rule.if_q4_filled : rule.if_q4_empty;
+      } else {
+        totalScore += match.points;
+      }
+    }
+
+    let band = bands.find((b) => totalScore >= b.range.min && totalScore < b.range.max);
+    if (!band) band = bands.find((b) => totalScore === b.range.max);
+    if (!band) continue; // unclassified — skip
+
+    const term = utmTermIdx === -1 ? "" : (row[utmTermIdx] ?? "").trim();
+    if (term) {
+      termsByBand.get(band.id)!.push(term);
+    } else {
+      withoutTermByBand.set(band.id, (withoutTermByBand.get(band.id) ?? 0) + 1);
+    }
+  }
+
+  // Agrega por banda
+  const byBand: Record<string, BandOriginBreakdown> = {};
+  for (const b of bands) {
+    const terms = termsByBand.get(b.id) ?? [];
+    const utmCounts = new Map<string, number>();
+    for (const t of terms) utmCounts.set(t, (utmCounts.get(t) ?? 0) + 1);
+    const topUtmTerms = Array.from(utmCounts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b2) => b2.count - a.count)
+      .slice(0, 20);
+
+    byBand[b.id] = {
+      bandId: b.id,
+      bandDescription: b.description ?? "",
+      total: terms.length + (withoutTermByBand.get(b.id) ?? 0),
+      byPlacement: aggregateDimension(termsByBand, b.id, (p) => p.placement),
+      byTemperatura: aggregateDimension(termsByBand, b.id, (p) => p.temperatura),
+      byEstrategia: aggregateDimension(termsByBand, b.id, (p) => p.estrategia),
+      byCriativo: aggregateDimension(termsByBand, b.id, (p) => p.criativo),
+      topUtmTerms,
+      withoutTerm: withoutTermByBand.get(b.id) ?? 0,
+    };
+  }
+
+  return { byBand, semDados: false };
+}
+
+// ============================================================
 // ROUTES
 // ============================================================
 
@@ -446,6 +632,62 @@ export default fp(async function leadScoringRoutes(fastify) {
         per_question: perQuestion,
         sample_leads: sample,
       };
+    },
+  );
+
+  // GET /api/projects/:projectId/funnels/:funnelId/stages/:stageId/lead-scoring/origins
+  // Retorna breakdown de origem (utm_term parseado) dos leads agrupados por banda.
+  // Útil pra ver de onde os leads "A" estão vindo: placement, temperatura, criativo, etc.
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/lead-scoring/origins",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const project = await getProjectAccess(
+        params.data.projectId,
+        request.userId,
+        request.userRole,
+      );
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const stage = await getStage(
+        params.data.stageId,
+        params.data.funnelId,
+        params.data.projectId,
+      );
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const EMPTY_ORIGINS = { byBand: {} as Record<string, BandOriginBreakdown>, semDados: true as const };
+
+      const [scoringRow] = await fastify.db
+        .select()
+        .from(stageLeadScoringSchemas)
+        .where(eq(stageLeadScoringSchemas.stageId, params.data.stageId))
+        .limit(1);
+
+      if (!scoringRow || !scoringRow.surveyId) return EMPTY_ORIGINS;
+
+      const [survey] = await fastify.db
+        .select()
+        .from(funnelSurveys)
+        .where(eq(funnelSurveys.id, scoringRow.surveyId))
+        .limit(1);
+
+      if (!survey) return EMPTY_ORIGINS;
+
+      let sheetData: { headers: string[]; rows: string[][] };
+      try {
+        const res = await readSheetData(survey.spreadsheetId, survey.sheetName);
+        sheetData = { headers: res.headers, rows: res.rows };
+      } catch {
+        return EMPTY_ORIGINS;
+      }
+
+      if (sheetData.rows.length === 0) return EMPTY_ORIGINS;
+
+      const schema = scoringRow.schemaJson as LeadScoringSchema;
+      return computeOriginsByBand(schema, sheetData);
     },
   );
 
