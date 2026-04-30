@@ -59,6 +59,7 @@ const EMPTY_RESPONSE = {
   ticketMedioLiquido: 0,
   porCanal: [] as { canal: string; vendas: number; bruto: number; liquido: number }[],
   porFormaPagamento: [] as { forma: string; vendas: number; bruto: number; liquido: number }[],
+  porUtmSource: [] as { fonte: string; vendas: number; bruto: number; liquido: number }[],
   semDados: true,
 };
 
