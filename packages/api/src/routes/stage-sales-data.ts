@@ -134,6 +134,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         valorLiquido?: string;
         formaPagamento?: string;
         canalOrigem?: string;
+        utm_source?: string;
         dataVenda?: string;
       };
 
@@ -160,6 +161,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       const liquidoIdx = colIdx(mapping.valorLiquido);
       const formaIdx = colIdx(mapping.formaPagamento);
       const canalIdx = colIdx(mapping.canalOrigem);
+      const utmSourceIdx = colIdx(mapping.utm_source);
       const dataIdx = colIdx(mapping.dataVenda);
 
       if (emailIdx === -1) {
@@ -174,7 +176,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       const emailMap = new Map<
         string,
-        { bruto: number; liquido: number; forma: string; canal: string; lastDate: Date | null }
+        { bruto: number; liquido: number; forma: string; canal: string; utmSource: string | null; lastDate: Date | null }
       >();
 
       for (const row of rows) {
@@ -190,6 +192,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         const liquido = parseNumber(row[liquidoIdx] ?? "");
         const forma = (row[formaIdx] ?? "Não informado").trim() || "Não informado";
         const canal = (row[canalIdx] ?? "Não informado").trim() || "Não informado";
+        const utmSource = (row[utmSourceIdx] ?? "").trim() || null;
         const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
 
         const existing = emailMap.get(email);
@@ -199,10 +202,11 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           if (rowDate && (!existing.lastDate || rowDate > existing.lastDate)) {
             existing.forma = forma;
             existing.canal = canal;
+            existing.utmSource = utmSource;
             existing.lastDate = rowDate;
           }
         } else {
-          emailMap.set(email, { bruto, liquido, forma, canal, lastDate: rowDate });
+          emailMap.set(email, { bruto, liquido, forma, canal, utmSource, lastDate: rowDate });
         }
       }
 
@@ -214,8 +218,9 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       let totalLiquido = 0;
       const canalMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const formaMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+      const utmSourceMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
 
-      for (const { bruto, liquido, forma, canal } of emailMap.values()) {
+      for (const { bruto, liquido, forma, canal, utmSource } of emailMap.values()) {
         totalBruto += bruto;
         totalLiquido += liquido;
 
@@ -230,6 +235,13 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         formaEntry.bruto += bruto;
         formaEntry.liquido += liquido;
         formaMap.set(forma, formaEntry);
+
+        const fonte = utmSource === "meta" ? "Pago" : utmSource ? "Orgânico" : "Sem Track";
+        const utmEntry = utmSourceMap.get(fonte) ?? { vendas: 0, bruto: 0, liquido: 0 };
+        utmEntry.vendas += 1;
+        utmEntry.bruto += bruto;
+        utmEntry.liquido += liquido;
+        utmSourceMap.set(fonte, utmEntry);
       }
 
       const totalVendas = emailMap.size;
@@ -245,6 +257,9 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           .sort((a, b) => b.vendas - a.vendas),
         porFormaPagamento: Array.from(formaMap.entries())
           .map(([forma, v]) => ({ forma, ...v }))
+          .sort((a, b) => b.vendas - a.vendas),
+        porUtmSource: Array.from(utmSourceMap.entries())
+          .map(([fonte, v]) => ({ fonte, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
         semDados: false,
       };

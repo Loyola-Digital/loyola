@@ -267,6 +267,32 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   icon={Banknote}
                   label="Faturamento"
                   value={fmtCurrency(salesData!.faturamentoBruto)}
+                  subValue={
+                    salesData?.porUtmSource && salesData.porUtmSource.length > 0
+                      ? (() => {
+                          const total = salesData!.faturamentoBruto;
+                          const byFonte = new Map(
+                            salesData!.porUtmSource.map(item => [item.fonte, item])
+                          );
+                          const order = ["Pago", "Orgânico", "Sem Track"];
+                          return (
+                            <>
+                              {order.map(fonte => {
+                                const item = byFonte.get(fonte);
+                                if (!item) return null;
+                                const pct = total > 0 ? ((item.bruto / total) * 100).toFixed(0) : "0";
+                                return (
+                                  <div key={fonte}>
+                                    {fonte}: {fmtCurrency(item.bruto)} ({pct}%)
+                                  </div>
+                                );
+                              })}
+                            </>
+                          );
+                        })()
+                      : "Nenhum dado"
+                  }
+                  hintTooltip={!!salesData?.porUtmSource && salesData.porUtmSource.length > 0}
                 />
               )}
               <MetricTooltip label="Leads" value={metrics.hasLinkedSheet ? fmtNumber(metrics.totalLeads) : "—"} formula={metrics.hasLinkedSheet ? buildFunnelLeadsFormula(metrics.totalLeads, f, { pagos: metrics.leadsPagos, org: metrics.leadsOrg, semTrack: metrics.leadsSemTrack }) : undefined}>
