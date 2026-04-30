@@ -50,6 +50,7 @@ import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { useStageSalesByDay } from "@/lib/hooks/use-stage-sales-by-day";
 import { useStageHotColdBuyers } from "@/lib/hooks/use-stage-hot-cold-buyers";
 import { SurveyQualificationSection } from "./survey-qualification-section";
+import { GroupsDashboardSection } from "./groups-dashboard-section";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
 import {
@@ -547,6 +548,9 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           />
         </div>
       )}
+
+      {/* Grupos — tracking de participantes via planilha (Story 26.1) */}
+      <GroupsDashboardSection projectId={projectId} funnelId={funnel.id} />
 
       {/* Top Creatives Gallery (Story 18.4) */}
       <TopCreativesGallery

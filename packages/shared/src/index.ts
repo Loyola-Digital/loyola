@@ -76,3 +76,12 @@ export type {
   InstagramMonthlyReportRecord,
   InstagramMonthlyReportListItem,
 } from "./types/instagram-report.js";
+
+export type {
+  FunnelGroupsSpreadsheetLink,
+  FunnelGroupsSyncResult,
+  FunnelGroupsDailyPoint,
+  FunnelGroupsCampaignSeries,
+  FunnelGroupsKpis,
+  FunnelGroupsDailyResponse,
+} from "./types/funnel-groups.js";
