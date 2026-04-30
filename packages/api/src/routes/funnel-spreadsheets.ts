@@ -307,7 +307,7 @@ export default fp(async function funnelSpreadsheetsRoutes(fastify) {
         }
 
         // Enrich rows with named fields based on mapping
-        const enrichedRows = data.rows.map((row) => {
+        let enrichedRows = data.rows.map((row) => {
           const named: Record<string, string> = {};
           for (const key of mappingKeys) {
             const idx = colIndex[key];
@@ -317,6 +317,17 @@ export default fp(async function funnelSpreadsheetsRoutes(fastify) {
           }
           return { values: row, named };
         });
+
+        // Filter by campaign names if provided
+        const query = request.query as Record<string, unknown>;
+        const campaignNames = query.campaignName;
+        if (campaignNames) {
+          const allowedCampaigns = Array.isArray(campaignNames) ? (campaignNames as string[]) : [String(campaignNames)];
+          enrichedRows = enrichedRows.filter((row) => {
+            const utm_campaign = row.named.utm_campaign?.trim();
+            return utm_campaign && allowedCampaigns.includes(utm_campaign);
+          });
+        }
 
         return {
           headers: data.headers,
