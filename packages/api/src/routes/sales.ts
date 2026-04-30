@@ -241,9 +241,11 @@ export default fp(async function salesRoutes(fastify) {
       // Try DD/MM/YYYY or D/M/YYYY (with optional time)
       const brMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(.*)$/);
       if (brMatch) {
-        const [, day, month, year, time] = brMatch;
-        const timePart = time?.trim() || "00:00:00";
-        const d = new Date(`${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}T${timePart}`);
+        const [, day, month, year] = brMatch;
+        const dd = parseInt(day, 10);
+        const mm = parseInt(month, 10);
+        const yy = parseInt(year, 10);
+        const d = new Date(yy, mm - 1, dd);
         if (!isNaN(d.getTime())) return d;
       }
       // Try ISO or other formats
