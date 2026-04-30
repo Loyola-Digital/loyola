@@ -28,7 +28,7 @@ import { DayRangePicker } from "@/components/ui/day-range-picker";
 import {
   useTrafficOverview,
   useTrafficCampaigns,
-  useCampaignDailyInsights,
+  useCampaignDailyInsightsBulk,
   type CampaignDailyInsight,
 } from "@/lib/hooks/use-traffic-analytics";
 import { ConversionFunnel } from "./conversion-funnel";
@@ -105,7 +105,6 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   const updateFunnel = useUpdateFunnel(projectId, funnel.id);
   const campaignIds = funnel.campaigns.map((c) => c.id);
   const campaignIdSet = new Set(campaignIds);
-  const firstCampaignId = campaignIds[0] ?? null;
 
   const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
@@ -128,7 +127,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   const survey = useSurveyAggregation(projectId, funnel.id, stageId ?? null);
   const { data: campaignData } = useTrafficCampaigns(projectId, days);
   const { data: dailyData, isLoading: dailyLoading } =
-    useCampaignDailyInsights(projectId, firstCampaignId, days);
+    useCampaignDailyInsightsBulk(projectId, campaignIds.length > 0 ? campaignIds : null, days);
   const { data: compData } = useMetaAdsComparison(
     projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
   );
