@@ -254,15 +254,18 @@ export interface CampaignDailyInsight {
 export function useCampaignDailyInsights(
   projectId: string | null,
   campaignId: string | null,
-  days: number = 30
+  days: number = 30,
+  startDate?: string,
+  endDate?: string
 ) {
   const apiClient = useApiClient();
+  let queryString = `/api/traffic/analytics/${projectId}/campaign-daily?campaignId=${campaignId}&days=${days}`;
+  if (startDate) queryString += `&startDate=${startDate}`;
+  if (endDate) queryString += `&endDate=${endDate}`;
+
   return useQuery({
-    queryKey: ["traffic-campaign-daily", projectId, campaignId, days],
-    queryFn: () =>
-      apiClient<CampaignDailyInsight[]>(
-        `/api/traffic/analytics/${projectId}/campaign-daily?campaignId=${campaignId}&days=${days}`
-      ),
+    queryKey: ["traffic-campaign-daily", projectId, campaignId, days, startDate, endDate],
+    queryFn: () => apiClient<CampaignDailyInsight[]>(queryString),
     enabled: !!projectId && !!campaignId,
     staleTime: TRAFFIC_STALE_TIME,
   });

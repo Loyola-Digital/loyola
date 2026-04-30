@@ -316,6 +316,8 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   const campaignDailyQuerySchema = z.object({
     campaignId: z.string().min(1),
     days: z.coerce.number().int().min(1).max(90).default(30),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
   });
 
   fastify.get(
@@ -340,7 +342,9 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
           fastify.db,
           paramResult.data.projectId,
           queryResult.data.campaignId,
-          queryResult.data.days
+          queryResult.data.days,
+          queryResult.data.startDate,
+          queryResult.data.endDate
         );
         return result;
       } catch (err) {
