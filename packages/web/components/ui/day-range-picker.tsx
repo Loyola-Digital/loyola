@@ -14,8 +14,6 @@ import {
 } from "@/components/ui/popover";
 
 const PRESETS = [
-  { label: "Hoje", days: 1 },
-  { label: "3 dias", days: 3 },
   { label: "7 dias", days: 7 },
   { label: "14 dias", days: 14 },
   { label: "30 dias", days: 30 },
