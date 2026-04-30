@@ -32,7 +32,7 @@ import { toast } from "sonner";
 import {
   useTrafficOverview,
   useTrafficCampaigns,
-  useCampaignDailyInsights,
+  useCampaignDailyInsightsBulk,
   useAllAdSets,
   useAllAds,
   type CampaignAnalytics,
@@ -115,7 +115,6 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const updateFunnel = useUpdateFunnel(projectId, funnel.id);
   const campaignIds = funnel.campaigns.map((c) => c.id);
   const campaignIdSet = new Set(campaignIds);
-  const firstCampaignId = campaignIds[0] ?? null;
 
   // Data hooks
   const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
@@ -123,7 +122,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   );
   const { data: campaignData, isLoading: campaignsLoading } = useTrafficCampaigns(projectId, days);
   const { data: dailyData, isLoading: dailyLoading } =
-    useCampaignDailyInsights(projectId, firstCampaignId, days);
+    useCampaignDailyInsightsBulk(projectId, campaignIds.length > 0 ? campaignIds : null, days);
   const { data: adSetsData } = useAllAdSets(projectId, days, campaignIds.length > 0 ? campaignIds : null);
   const { data: adsData } = useAllAds(projectId, days, campaignIds.length > 0 ? campaignIds : null);
 

@@ -10,6 +10,7 @@ import {
   getAllAdSetsForProject,
   getAllAdsForProject,
   getCampaignDailyInsights,
+  getCampaignDailyInsightsBulk,
   getPlacementBreakdown,
   invalidateProjectCache,
   type TopPerformerMetric,
@@ -313,8 +314,12 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   );
 
   // ---- GET /api/traffic/analytics/:projectId/campaign-daily ---- (Story 8.3)
+  // Aceita `campaignId` (singular, legacy) OU `campaignIds` (CSV). Quando lista,
+  // agrega N campanhas por dia — usado pelos dashboards de funil pra somar todas
+  // as campanhas selecionadas.
   const campaignDailyQuerySchema = z.object({
-    campaignId: z.string().min(1),
+    campaignId: z.string().optional(),
+    campaignIds: z.string().optional(),
     days: z.coerce.number().int().min(1).max(90).default(30),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
@@ -334,14 +339,35 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
 
       const queryResult = campaignDailyQuerySchema.safeParse(request.query);
       if (!queryResult.success) {
-        return reply.code(400).send({ error: "campaignId obrigatorio" });
+        return reply.code(400).send({ error: "parâmetros inválidos" });
+      }
+
+      const idsList = queryResult.data.campaignIds
+        ?.split(",")
+        .map((s) => s.trim())
+        .filter(Boolean) ?? [];
+
+      if (idsList.length === 0 && !queryResult.data.campaignId) {
+        return reply.code(400).send({ error: "campaignId ou campaignIds obrigatório" });
       }
 
       try {
+        if (idsList.length > 0) {
+          const result = await getCampaignDailyInsightsBulk(
+            fastify.db,
+            paramResult.data.projectId,
+            idsList,
+            queryResult.data.days,
+            queryResult.data.startDate,
+            queryResult.data.endDate
+          );
+          return result;
+        }
+
         const result = await getCampaignDailyInsights(
           fastify.db,
           paramResult.data.projectId,
-          queryResult.data.campaignId,
+          queryResult.data.campaignId!,
           queryResult.data.days,
           queryResult.data.startDate,
           queryResult.data.endDate

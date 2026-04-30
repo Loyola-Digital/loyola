@@ -283,6 +283,42 @@ export async function fetchCampaignDailyInsights(
   return filtered;
 }
 
+// Bulk version: time-series por dia somando N campanhas. Retorna 1 linha por
+// (campanha, dia) — agregação por dia é responsabilidade do caller.
+export async function fetchCampaignDailyInsightsForIds(
+  metaAccountId: string,
+  accessToken: string,
+  campaignIds: string[],
+  days: number = 30,
+  startDate?: string,
+  endDate?: string
+): Promise<MetaDailyInsight[]> {
+  if (campaignIds.length === 0) return [];
+
+  const filtering = encodeURIComponent(
+    JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }])
+  );
+
+  let queryPath = `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,actions,action_values&time_increment=1&level=campaign&filtering=${filtering}`;
+
+  if (startDate && endDate) {
+    queryPath += `&since=${startDate}&until=${endDate}`;
+  } else {
+    const datePreset =
+      days <= 7 ? "last_7d" : days <= 14 ? "last_14d" : days <= 30 ? "last_30d" : "last_90d";
+    queryPath += `&date_preset=${datePreset}`;
+  }
+
+  const res = await fetchMeta<{ data: MetaDailyInsight[] }>(queryPath, accessToken);
+
+  const filtered = (res.data ?? []).filter((d) => {
+    const impressions = parseFloat(d.impressions || "0");
+    return impressions > 0;
+  });
+
+  return filtered;
+}
+
 export async function fetchCampaignInsights(
   metaAccountId: string,
   accessToken: string,
