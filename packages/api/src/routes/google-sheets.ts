@@ -79,9 +79,18 @@ export default fp(async function googleSheetsRoutes(fastify) {
     const filters = [eq(funnelSurveys.funnelId, p.data.funnelId)];
     if (q.data.stageId) filters.push(eq(funnelSurveys.stageId, q.data.stageId));
     if (q.data.surveyType) filters.push(eq(funnelSurveys.surveyType, q.data.surveyType));
-    const whereClause = filters.length === 1 ? filters[0] : and(...filters);
+    const whereClause = and(...filters);
 
-    const surveys = await fastify.db.select().from(funnelSurveys).where(whereClause);
+    let surveys = await fastify.db.select().from(funnelSurveys).where(whereClause);
+
+    // Defesa em profundidade — garante isolamento entre funil/etapa/tipo
+    // mesmo se o filtro SQL falhar por qualquer motivo (cache, build stale, etc).
+    surveys = surveys.filter((s) => {
+      if (s.funnelId !== p.data.funnelId) return false;
+      if (q.data.stageId && s.stageId !== q.data.stageId) return false;
+      if (q.data.surveyType && s.surveyType !== q.data.surveyType) return false;
+      return true;
+    });
 
     return { surveys };
   });
@@ -161,9 +170,17 @@ export default fp(async function googleSheetsRoutes(fastify) {
     const filters = [eq(funnelSurveys.funnelId, p.data.funnelId)];
     if (q.data.stageId) filters.push(eq(funnelSurveys.stageId, q.data.stageId));
     if (q.data.surveyType) filters.push(eq(funnelSurveys.surveyType, q.data.surveyType));
-    const whereClause = filters.length === 1 ? filters[0] : and(...filters);
+    const whereClause = and(...filters);
 
-    const surveys = await fastify.db.select().from(funnelSurveys).where(whereClause);
+    let surveys = await fastify.db.select().from(funnelSurveys).where(whereClause);
+
+    // Defesa em profundidade — garante isolamento entre funil/etapa/tipo
+    surveys = surveys.filter((s) => {
+      if (s.funnelId !== p.data.funnelId) return false;
+      if (q.data.stageId && s.stageId !== q.data.stageId) return false;
+      if (q.data.surveyType && s.surveyType !== q.data.surveyType) return false;
+      return true;
+    });
 
     if (surveys.length === 0) return { totalResponses: 0, surveys: [], responseRate: null };
 
