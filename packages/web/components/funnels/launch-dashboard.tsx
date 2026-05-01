@@ -124,19 +124,27 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
     "capture",
     days,
   );
-  const metrics = useCrossedFunnelMetrics(projectId, funnel, days, stageId ?? null, salesData && !salesData.semDados ? salesData : null);
+  const { data: salesByDayData } = useStageSalesByDay(
+    stageType === "paid" ? projectId : null,
+    stageType === "paid" ? funnel.id : null,
+    stageType === "paid" ? (stageId ?? null) : null,
+    days,
+  );
+  const salesByDay = salesByDayData && !salesByDayData.semDados ? salesByDayData.byDay : null;
+  const metrics = useCrossedFunnelMetrics(
+    projectId,
+    funnel,
+    days,
+    stageId ?? null,
+    salesData && !salesData.semDados ? salesData : null,
+    salesByDay,
+  );
   const survey = useSurveyAggregation(projectId, funnel.id, stageId ?? null);
   const { data: campaignData } = useTrafficCampaigns(projectId, days);
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsightsBulk(projectId, campaignIds.length > 0 ? campaignIds : null, days);
   const { data: compData } = useMetaAdsComparison(
     projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
-  );
-  const { data: salesByDayData } = useStageSalesByDay(
-    stageType === "paid" ? projectId : null,
-    stageType === "paid" ? funnel.id : null,
-    stageType === "paid" ? (stageId ?? null) : null,
-    days,
   );
 
   const hasComparison = !!(compData && !compData.semDados);
@@ -399,7 +407,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           surveyTotal={survey.totalResponses}
           surveyMatched={survey.matchedResponses}
           surveyUnmatched={survey.unmatchedResponses}
-          salesByDay={salesByDayData && !salesByDayData.semDados ? salesByDayData.byDay : undefined}
+          salesByDay={salesByDay ?? undefined}
         />
       ) : null}
 
