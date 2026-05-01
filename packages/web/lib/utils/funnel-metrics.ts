@@ -254,8 +254,10 @@ export function aggregateSpreadsheetByDate(
 export function buildDailyRows(
   metaMap: Map<string, { spend: number; impressions: number; linkClicks: number; lpView: number; checkoutInitiations: number }>,
   sheetMap: Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number; faturamento: number }>,
+  extraDates?: Iterable<string>,
 ): DailyRow[] {
   const allDates = new Set([...metaMap.keys(), ...sheetMap.keys()]);
+  if (extraDates) for (const d of extraDates) allDates.add(d);
   const rows: DailyRow[] = [];
   for (const date of allDates) {
     const meta = metaMap.get(date) ?? { spend: 0, impressions: 0, linkClicks: 0, lpView: 0, checkoutInitiations: 0 };

@@ -123,6 +123,7 @@ export function useCrossedFunnelMetrics(
   days: number,
   stageId?: string | null,
   stageSalesData?: StageSalesData | null,
+  salesByDay?: Record<string, number> | null,
 ): CrossedFunnelMetrics {
   const apiClient = useApiClient();
 
@@ -185,7 +186,8 @@ export function useCrossedFunnelMetrics(
     const utmSourceMapped = !!sheetData?.mapping.utm_source;
     const sheetMap = aggregateSpreadsheetByDate(filteredSheetRows, utmSourceMapped, dateMapped);
 
-    const rows = buildDailyRows(metaMap, sheetMap);
+    const salesDates = salesByDay ? Object.keys(salesByDay) : undefined;
+    const rows = buildDailyRows(metaMap, sheetMap, salesDates);
     const totals = computeTotals(rows);
 
     const totalLeads = totals.leadsPagos + totals.leadsOrg + totals.leadsSemTrack;
@@ -258,5 +260,5 @@ export function useCrossedFunnelMetrics(
       isLoading,
       hasLinkedSheet,
     };
-  }, [metaData, sheetData, salesSheetData, stageSalesData, days, isLoading, hasLinkedSheet, totalResponses, matchedResponses, unmatchedResponses]);
+  }, [metaData, sheetData, salesSheetData, stageSalesData, salesByDay, days, isLoading, hasLinkedSheet, totalResponses, matchedResponses, unmatchedResponses]);
 }
