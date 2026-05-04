@@ -90,7 +90,7 @@ function renderTotalLeadsCell(
             </span>
           </div>
           <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground">Org\u00E2nicos</span>
+            <span className="text-muted-foreground">{"Org\u00E2nicos"}</span>
             <span className="font-medium tabular-nums">
               {fmtInt(org)} ({pct(org).toFixed(1)}%)
             </span>
