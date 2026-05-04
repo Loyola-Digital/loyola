@@ -126,7 +126,7 @@ export function StageSalesSection({
     bruto: c.bruto,
   }));
 
-  const mediumRows = data.porUtmMedium.map((m) => ({
+  const mediumRows = (data.porUtmMedium ?? []).map((m) => ({
     key: m.medium,
     label: m.medium,
     vendas: m.vendas,

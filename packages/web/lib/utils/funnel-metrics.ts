@@ -322,7 +322,7 @@ export function computeTotals(rows: DailyRow[]): DailyRow {
       acc.leadsOrg += r.leadsOrg;
       acc.leadsSemTrack += r.leadsSemTrack;
       acc.faturamento += r.faturamento;
-      for (const [medium, count] of Object.entries(r.leadsByMedium)) {
+      for (const [medium, count] of Object.entries(r.leadsByMedium ?? {})) {
         totalsByMedium[medium] = (totalsByMedium[medium] ?? 0) + count;
       }
       return acc;

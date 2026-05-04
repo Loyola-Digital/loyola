@@ -64,13 +64,13 @@ function renderConnectRate(v: number | null) {
 
 function renderTotalLeadsCell(
   totalLeads: number,
-  leadsByMedium: Record<string, number>,
+  leadsByMedium: Record<string, number> | undefined,
 ) {
   const display = fmtInt(totalLeads);
   if (totalLeads === 0) {
     return <span className="font-medium">{display}</span>;
   }
-  const entries = Object.entries(leadsByMedium).sort((a, b) => b[1] - a[1]);
+  const entries = Object.entries(leadsByMedium ?? {}).sort((a, b) => b[1] - a[1]);
   if (entries.length === 0) {
     return <span className="font-medium">{display}</span>;
   }
