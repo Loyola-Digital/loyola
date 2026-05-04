@@ -64,12 +64,14 @@ function renderConnectRate(v: number | null) {
 
 function renderTotalLeadsCell(
   totalLeads: number,
-  pagos: number,
-  org: number,
-  semTrack: number,
+  leadsByMedium: Record<string, number>,
 ) {
   const display = fmtInt(totalLeads);
   if (totalLeads === 0) {
+    return <span className="font-medium">{display}</span>;
+  }
+  const entries = Object.entries(leadsByMedium).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) {
     return <span className="font-medium">{display}</span>;
   }
   const pct = (n: number) => (totalLeads > 0 ? (n / totalLeads) * 100 : 0);
@@ -81,26 +83,16 @@ function renderTotalLeadsCell(
         </span>
       </TooltipTrigger>
       <TooltipContent className="px-3 py-2 text-xs">
-        <div className="font-semibold mb-1.5">Origem dos leads</div>
-        <div className="space-y-1 min-w-[160px]">
-          <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground">Pagos</span>
-            <span className="font-medium tabular-nums">
-              {fmtInt(pagos)} ({pct(pagos).toFixed(1)}%)
-            </span>
-          </div>
-          <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground">{"Org\u00E2nicos"}</span>
-            <span className="font-medium tabular-nums">
-              {fmtInt(org)} ({pct(org).toFixed(1)}%)
-            </span>
-          </div>
-          <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground">Sem track</span>
-            <span className="font-medium tabular-nums">
-              {fmtInt(semTrack)} ({pct(semTrack).toFixed(1)}%)
-            </span>
-          </div>
+        <div className="font-semibold mb-1.5">Leads por medium</div>
+        <div className="space-y-1 min-w-[180px]">
+          {entries.map(([medium, count]) => (
+            <div key={medium} className="flex justify-between gap-4">
+              <span className="text-muted-foreground">{medium}</span>
+              <span className="font-medium tabular-nums">
+                {fmtInt(count)} ({pct(count).toFixed(1)}%)
+              </span>
+            </div>
+          ))}
         </div>
       </TooltipContent>
     </Tooltip>
@@ -175,12 +167,7 @@ export function CrossedFunnelDailyTable({
                   <TableCell className="text-right">{fmtInt(r.linkClicks)}</TableCell>
                   <TableCell className="text-right">{fmtInt(r.impressions)}</TableCell>
                   <TableCell className="text-right">
-                    {renderTotalLeadsCell(
-                      totalLeads,
-                      r.leadsPagos,
-                      r.leadsOrg,
-                      r.leadsSemTrack,
-                    )}
+                    {renderTotalLeadsCell(totalLeads, r.leadsByMedium)}
                   </TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cplPg)}</TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cplG)}</TableCell>
@@ -209,9 +196,7 @@ export function CrossedFunnelDailyTable({
               <TableCell className="text-right">
                 {renderTotalLeadsCell(
                   totals.leadsPagos + totals.leadsOrg + totals.leadsSemTrack,
-                  totals.leadsPagos,
-                  totals.leadsOrg,
-                  totals.leadsSemTrack,
+                  totals.leadsByMedium,
                 )}
               </TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.cplPg)}</TableCell>

@@ -126,6 +126,13 @@ export function StageSalesSection({
     bruto: c.bruto,
   }));
 
+  const mediumRows = data.porUtmMedium.map((m) => ({
+    key: m.medium,
+    label: m.medium,
+    vendas: m.vendas,
+    bruto: m.bruto,
+  }));
+
   const formaRows = data.porFormaPagamento.map((f) => ({
     key: f.forma,
     label: f.forma,
@@ -147,6 +154,12 @@ export function StageSalesSection({
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">Por Canal de Origem</p>
         <SalesTable rows={canalRows} emptyMessage="Sem dados por canal." keyLabel="Canal" />
+      </div>
+
+      {/* Por Medium (utm_medium) */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">Por Medium</p>
+        <SalesTable rows={mediumRows} emptyMessage="Sem dados de medium (mapeie a coluna utm_medium na planilha)." keyLabel="Medium" />
       </div>
 
       {/* Forma de Pagamento */}

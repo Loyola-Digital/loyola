@@ -75,6 +75,7 @@ export interface StageSalesData {
   porCanal: { canal: string; vendas: number; bruto: number; liquido: number }[];
   porFormaPagamento: { forma: string; vendas: number; bruto: number; liquido: number }[];
   porUtmSource: { fonte: string; vendas: number; bruto: number; liquido: number }[];
+  porUtmMedium: { medium: string; vendas: number; bruto: number; liquido: number }[];
   semDados: boolean;
 }
 
