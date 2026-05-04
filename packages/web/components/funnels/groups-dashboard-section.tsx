@@ -81,6 +81,25 @@ export function GroupsDashboardSection({ projectId, funnelId }: Props) {
 
   const sync = useSyncFunnelGroups(projectId, funnelId);
 
+  const data = dailyQuery.data;
+  const campaigns = data?.campaigns ?? [];
+  const filteredCampaigns =
+    campaignFilter === "__all__"
+      ? campaigns
+      : campaigns.filter((c) => c.campaignId === campaignFilter);
+
+  const tableRows = useMemo(() => {
+    type Row = FunnelGroupsDailyPoint & { campaignId: string; campaignName: string };
+    const rows: Row[] = [];
+    for (const c of filteredCampaigns) {
+      for (const p of c.series) {
+        rows.push({ ...p, campaignId: c.campaignId, campaignName: c.campaignName });
+      }
+    }
+    rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    return rows;
+  }, [filteredCampaigns]);
+
   function handleSync() {
     sync.mutate(undefined, {
       onSuccess: (r) => {
@@ -102,27 +121,8 @@ export function GroupsDashboardSection({ projectId, funnelId }: Props) {
   if (linkQuery.isLoading || !isLinked) return null;
 
   const link = linkQuery.data!;
-  const data = dailyQuery.data;
   const kpis = data?.kpis;
   const aggSeries = data?.aggregate.series ?? [];
-  const campaigns = data?.campaigns ?? [];
-
-  const filteredCampaigns =
-    campaignFilter === "__all__"
-      ? campaigns
-      : campaigns.filter((c) => c.campaignId === campaignFilter);
-
-  const tableRows = useMemo(() => {
-    type Row = FunnelGroupsDailyPoint & { campaignId: string; campaignName: string };
-    const rows: Row[] = [];
-    for (const c of filteredCampaigns) {
-      for (const p of c.series) {
-        rows.push({ ...p, campaignId: c.campaignId, campaignName: c.campaignName });
-      }
-    }
-    rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-    return rows;
-  }, [filteredCampaigns]);
 
   return (
     <div className="rounded-lg border border-border/40 bg-card/40 p-6 space-y-6">
