@@ -9,11 +9,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import type { DailyRow } from "@/lib/utils/funnel-metrics";
 
 interface CrossedFunnelDailyTableProps {
@@ -75,27 +70,18 @@ function renderTotalLeadsCell(
     return <span className="font-medium">{display}</span>;
   }
   const pct = (n: number) => (totalLeads > 0 ? (n / totalLeads) * 100 : 0);
+  const tooltipText =
+    "Leads por medium:\n" +
+    entries
+      .map(([m, c]) => `  ${m}: ${fmtInt(c)} (${pct(c).toFixed(1)}%)`)
+      .join("\n");
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="font-medium cursor-help underline decoration-dotted decoration-muted-foreground/40 underline-offset-4">
-          {display}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent className="px-3 py-2 text-xs">
-        <div className="font-semibold mb-1.5">Leads por medium</div>
-        <div className="space-y-1 min-w-[180px]">
-          {entries.map(([medium, count]) => (
-            <div key={medium} className="flex justify-between gap-4">
-              <span className="text-muted-foreground">{medium}</span>
-              <span className="font-medium tabular-nums">
-                {fmtInt(count)} ({pct(count).toFixed(1)}%)
-              </span>
-            </div>
-          ))}
-        </div>
-      </TooltipContent>
-    </Tooltip>
+    <span
+      className="font-medium cursor-help underline decoration-dotted decoration-muted-foreground/40 underline-offset-4"
+      title={tooltipText}
+    >
+      {display}
+    </span>
   );
 }
 
