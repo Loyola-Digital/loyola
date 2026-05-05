@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { TrendingUp, ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
+import { useState, useRef } from "react";
+import { TrendingUp, ArrowUpDown, ChevronUp, ChevronDown, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -65,12 +65,28 @@ export function LeadScoringCampaignTables({
   const [days, setDays] = useState(30);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+  const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set());
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const resizeRef = useRef<{ column: string; startX: number; startWidth: number } | null>(null);
+
   const { data, loading, error } = useLeadScoringCampaignBreakdown(
     projectId,
     funnelId,
     stageId,
     days,
   );
+
+  const toggleCampaignExpansion = (utmCampaign: string) => {
+    setExpandedCampaigns((prev) => {
+      const next = new Set(prev);
+      if (next.has(utmCampaign)) {
+        next.delete(utmCampaign);
+      } else {
+        next.add(utmCampaign);
+      }
+      return next;
+    });
+  };
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -85,6 +101,37 @@ export function LeadScoringCampaignTables({
       setSortKey(key);
       setSortDirection("asc");
     }
+  };
+
+  const getColumnWidth = (column: string, defaultWidth: number): number => {
+    return columnWidths[column] ?? defaultWidth;
+  };
+
+  const handleMouseDown = (column: string, defaultWidth: number) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    resizeRef.current = {
+      column,
+      startX: e.clientX,
+      startWidth: columnWidths[column] ?? defaultWidth,
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!resizeRef.current) return;
+    const delta = e.clientX - resizeRef.current.startX;
+    const newWidth = Math.max(60, resizeRef.current.startWidth + delta);
+    setColumnWidths((prev) => ({
+      ...prev,
+      [resizeRef.current!.column]: newWidth,
+    }));
+  };
+
+  const handleMouseUp = () => {
+    resizeRef.current = null;
+    document.removeEventListener("mousemove", handleMouseMove);
+    document.removeEventListener("mouseup", handleMouseUp);
   };
 
   const getSortedRows = () => {
@@ -214,7 +261,7 @@ export function LeadScoringCampaignTables({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="sticky left-0 bg-background z-10 min-w-[160px]">
+                  <TableHead className="sticky left-0 bg-background z-10 relative group" style={{ width: getColumnWidth("campaignName", 160) }}>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -224,8 +271,12 @@ export function LeadScoringCampaignTables({
                       Campanha
                       {renderSortIcon("campaignName")}
                     </Button>
+                    <div
+                      onMouseDown={handleMouseDown("campaignName", 160)}
+                      className="absolute right-0 top-0 h-full w-1 bg-border opacity-0 group-hover:opacity-100 hover:opacity-100 cursor-col-resize hover:bg-primary transition-all"
+                    />
                   </TableHead>
-                  <TableHead className="text-right min-w-[100px]">
+                  <TableHead className="text-right relative group" style={{ width: getColumnWidth("spend", 100) }}>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -235,8 +286,12 @@ export function LeadScoringCampaignTables({
                       Investido
                       {renderSortIcon("spend")}
                     </Button>
+                    <div
+                      onMouseDown={handleMouseDown("spend", 100)}
+                      className="absolute right-0 top-0 h-full w-1 bg-border opacity-0 group-hover:opacity-100 hover:opacity-100 cursor-col-resize hover:bg-primary transition-all"
+                    />
                   </TableHead>
-                  <TableHead className="text-right min-w-[80px]">
+                  <TableHead className="text-right relative group" style={{ width: getColumnWidth("totalLeads", 80) }}>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -246,8 +301,12 @@ export function LeadScoringCampaignTables({
                       Leads
                       {renderSortIcon("totalLeads")}
                     </Button>
+                    <div
+                      onMouseDown={handleMouseDown("totalLeads", 80)}
+                      className="absolute right-0 top-0 h-full w-1 bg-border opacity-0 group-hover:opacity-100 hover:opacity-100 cursor-col-resize hover:bg-primary transition-all"
+                    />
                   </TableHead>
-                  <TableHead className="text-right min-w-[90px]">
+                  <TableHead className="text-right relative group" style={{ width: getColumnWidth("cpl", 90) }}>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -257,8 +316,12 @@ export function LeadScoringCampaignTables({
                       CPL
                       {renderSortIcon("cpl")}
                     </Button>
+                    <div
+                      onMouseDown={handleMouseDown("cpl", 90)}
+                      className="absolute right-0 top-0 h-full w-1 bg-border opacity-0 group-hover:opacity-100 hover:opacity-100 cursor-col-resize hover:bg-primary transition-all"
+                    />
                   </TableHead>
-                  <TableHead className="text-right min-w-[100px]">
+                  <TableHead className="text-right relative group" style={{ width: getColumnWidth("cplIdeal", 100) }}>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -268,39 +331,90 @@ export function LeadScoringCampaignTables({
                       CPL Ideal
                       {renderSortIcon("cplIdeal")}
                     </Button>
+                    <div
+                      onMouseDown={handleMouseDown("cplIdeal", 100)}
+                      className="absolute right-0 top-0 h-full w-1 bg-border opacity-0 group-hover:opacity-100 hover:opacity-100 cursor-col-resize hover:bg-primary transition-all"
+                    />
                   </TableHead>
                   {bandIds.map((bid) => (
-                    <TableHead key={`${bid}-pct`} className="text-right min-w-[90px]">
+                    <TableHead key={`${bid}-pct`} className="text-right relative group" style={{ width: getColumnWidth(`band-${bid}`, 90) }}>
                       % Band {bid}
+                      <div
+                        onMouseDown={handleMouseDown(`band-${bid}`, 90)}
+                        className="absolute right-0 top-0 h-full w-1 bg-border opacity-0 group-hover:opacity-100 hover:opacity-100 cursor-col-resize hover:bg-primary transition-all"
+                      />
                     </TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedRows.map((row) => (
-                  <TableRow key={row.utmCampaign}>
-                    <TableCell className="sticky left-0 bg-background z-10 font-medium truncate">
-                      {row.campaignName}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {fmtCurrency(row.spend)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm font-medium">
-                      {fmtInt(row.totalLeads)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {fmtCurrency(row.cpl)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {fmtCurrency(row.cplIdeal)}
-                    </TableCell>
-                    {bandIds.map((bid) => (
-                      <TableCell key={`${row.utmCampaign}-${bid}-pct`} className="text-right text-sm">
-                        {fmtPercent(row.bands[bid]?.pct)}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
+                {paginatedRows.map((row) => {
+                  const isExpanded = expandedCampaigns.has(row.utmCampaign);
+                  const adsets = data?.adsetsBycampaign?.[row.utmCampaign] ?? [];
+                  return (
+                    <>
+                      <TableRow key={row.utmCampaign}>
+                        <TableCell className="sticky left-0 bg-background z-10 font-medium truncate">
+                          <div className="flex items-center gap-2">
+                            {adsets.length > 0 && (
+                              <button
+                                onClick={() => toggleCampaignExpansion(row.utmCampaign)}
+                                className="p-0 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                              >
+                                <ChevronRight
+                                  className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                                />
+                              </button>
+                            )}
+                            {adsets.length === 0 && <div className="w-4" />}
+                            <span>{row.campaignName}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          {fmtCurrency(row.spend)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-medium">
+                          {fmtInt(row.totalLeads)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          {fmtCurrency(row.cpl)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          {fmtCurrency(row.cplIdeal)}
+                        </TableCell>
+                        {bandIds.map((bid) => (
+                          <TableCell key={`${row.utmCampaign}-${bid}-pct`} className="text-right text-sm">
+                            {fmtPercent(row.bands[bid]?.pct)}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                      {isExpanded && adsets.length > 0 && (
+                        <TableRow className="bg-muted/30">
+                          <TableCell colSpan={5 + bandIds.length} className="p-3">
+                            <div className="pl-4 space-y-2">
+                              <p className="text-xs font-semibold text-muted-foreground">Adsets e Ads:</p>
+                              {adsets.map((adset) => (
+                                <div key={adset.id} className="pl-2 border-l border-muted">
+                                  <p className="text-xs font-medium text-foreground">{adset.name}</p>
+                                  <p className="text-xs text-muted-foreground">Status: {adset.status}</p>
+                                  {adset.ads.length > 0 && (
+                                    <div className="ml-2 mt-1 space-y-1">
+                                      {adset.ads.map((ad) => (
+                                        <div key={ad.id} className="text-xs text-muted-foreground">
+                                          • {ad.name} ({ad.status})
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -317,7 +431,7 @@ export function LeadScoringCampaignTables({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="sticky left-0 bg-background z-10 min-w-[160px]">
+                  <TableHead className="sticky left-0 bg-background z-10 relative group" style={{ width: getColumnWidth("campaignName", 160) }}>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -327,8 +441,12 @@ export function LeadScoringCampaignTables({
                       Campanha
                       {renderSortIcon("campaignName")}
                     </Button>
+                    <div
+                      onMouseDown={handleMouseDown("campaignName", 160)}
+                      className="absolute right-0 top-0 h-full w-1 bg-border opacity-0 group-hover:opacity-100 hover:opacity-100 cursor-col-resize hover:bg-primary transition-all"
+                    />
                   </TableHead>
-                  <TableHead className="text-right min-w-[100px]">
+                  <TableHead className="text-right relative group" style={{ width: getColumnWidth("spend", 100) }}>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -338,8 +456,12 @@ export function LeadScoringCampaignTables({
                       Investido
                       {renderSortIcon("spend")}
                     </Button>
+                    <div
+                      onMouseDown={handleMouseDown("spend", 100)}
+                      className="absolute right-0 top-0 h-full w-1 bg-border opacity-0 group-hover:opacity-100 hover:opacity-100 cursor-col-resize hover:bg-primary transition-all"
+                    />
                   </TableHead>
-                  <TableHead className="text-right min-w-[80px]">
+                  <TableHead className="text-right relative group" style={{ width: getColumnWidth("totalLeads", 80) }}>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -349,8 +471,12 @@ export function LeadScoringCampaignTables({
                       Leads
                       {renderSortIcon("totalLeads")}
                     </Button>
+                    <div
+                      onMouseDown={handleMouseDown("totalLeads", 80)}
+                      className="absolute right-0 top-0 h-full w-1 bg-border opacity-0 group-hover:opacity-100 hover:opacity-100 cursor-col-resize hover:bg-primary transition-all"
+                    />
                   </TableHead>
-                  <TableHead className="text-right min-w-[90px]">
+                  <TableHead className="text-right relative group" style={{ width: getColumnWidth("cpl", 90) }}>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -360,42 +486,101 @@ export function LeadScoringCampaignTables({
                       CPL Total
                       {renderSortIcon("cpl")}
                     </Button>
+                    <div
+                      onMouseDown={handleMouseDown("cpl", 90)}
+                      className="absolute right-0 top-0 h-full w-1 bg-border opacity-0 group-hover:opacity-100 hover:opacity-100 cursor-col-resize hover:bg-primary transition-all"
+                    />
                   </TableHead>
                   {bandIds.map((bid) => (
                     <div key={`col-${bid}`} className="contents">
-                      <TableHead className="text-right min-w-[100px]">CPL {bid}</TableHead>
-                      <TableHead className="text-right min-w-[90px]">% {bid}</TableHead>
+                      <TableHead className="text-right relative group" style={{ width: getColumnWidth(`cpl-${bid}`, 100) }}>
+                        CPL {bid}
+                        <div
+                          onMouseDown={handleMouseDown(`cpl-${bid}`, 100)}
+                          className="absolute right-0 top-0 h-full w-1 bg-border opacity-0 group-hover:opacity-100 hover:opacity-100 cursor-col-resize hover:bg-primary transition-all"
+                        />
+                      </TableHead>
+                      <TableHead className="text-right relative group" style={{ width: getColumnWidth(`pct-${bid}`, 90) }}>
+                        % {bid}
+                        <div
+                          onMouseDown={handleMouseDown(`pct-${bid}`, 90)}
+                          className="absolute right-0 top-0 h-full w-1 bg-border opacity-0 group-hover:opacity-100 hover:opacity-100 cursor-col-resize hover:bg-primary transition-all"
+                        />
+                      </TableHead>
                     </div>
                   ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedRows.map((row) => (
-                  <TableRow key={row.utmCampaign}>
-                    <TableCell className="sticky left-0 bg-background z-10 font-medium truncate">
-                      {row.campaignName}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {fmtCurrency(row.spend)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm font-medium">
-                      {fmtInt(row.totalLeads)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {fmtCurrency(row.cpl)}
-                    </TableCell>
-                    {bandIds.map((bid) => (
-                      <div key={`row-${row.utmCampaign}-${bid}`} className="contents">
-                        <TableCell className="text-right text-sm">
-                          {fmtCurrency(row.bands[bid]?.cplFaixa)}
+                {paginatedRows.map((row) => {
+                  const isExpanded = expandedCampaigns.has(row.utmCampaign);
+                  const adsets = data?.adsetsBycampaign?.[row.utmCampaign] ?? [];
+                  return (
+                    <>
+                      <TableRow key={row.utmCampaign}>
+                        <TableCell className="sticky left-0 bg-background z-10 font-medium truncate">
+                          <div className="flex items-center gap-2">
+                            {adsets.length > 0 && (
+                              <button
+                                onClick={() => toggleCampaignExpansion(row.utmCampaign)}
+                                className="p-0 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                              >
+                                <ChevronRight
+                                  className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                                />
+                              </button>
+                            )}
+                            {adsets.length === 0 && <div className="w-4" />}
+                            <span>{row.campaignName}</span>
+                          </div>
                         </TableCell>
                         <TableCell className="text-right text-sm">
-                          {fmtPercent(row.bands[bid]?.pct)}
+                          {fmtCurrency(row.spend)}
                         </TableCell>
-                      </div>
-                    ))}
-                  </TableRow>
-                ))}
+                        <TableCell className="text-right text-sm font-medium">
+                          {fmtInt(row.totalLeads)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          {fmtCurrency(row.cpl)}
+                        </TableCell>
+                        {bandIds.map((bid) => (
+                          <div key={`row-${row.utmCampaign}-${bid}`} className="contents">
+                            <TableCell className="text-right text-sm">
+                              {fmtCurrency(row.bands[bid]?.cplFaixa)}
+                            </TableCell>
+                            <TableCell className="text-right text-sm">
+                              {fmtPercent(row.bands[bid]?.pct)}
+                            </TableCell>
+                          </div>
+                        ))}
+                      </TableRow>
+                      {isExpanded && adsets.length > 0 && (
+                        <TableRow className="bg-muted/30">
+                          <TableCell colSpan={4 + bandIds.length * 2} className="p-3">
+                            <div className="pl-4 space-y-2">
+                              <p className="text-xs font-semibold text-muted-foreground">Adsets e Ads:</p>
+                              {adsets.map((adset) => (
+                                <div key={adset.id} className="pl-2 border-l border-muted">
+                                  <p className="text-xs font-medium text-foreground">{adset.name}</p>
+                                  <p className="text-xs text-muted-foreground">Status: {adset.status}</p>
+                                  {adset.ads.length > 0 && (
+                                    <div className="ml-2 mt-1 space-y-1">
+                                      {adset.ads.map((ad) => (
+                                        <div key={ad.id} className="text-xs text-muted-foreground">
+                                          • {ad.name} ({ad.status})
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
