@@ -76,6 +76,12 @@ export interface StageSalesData {
   porFormaPagamento: { forma: string; vendas: number; bruto: number; liquido: number }[];
   porUtmSource: { fonte: string; vendas: number; bruto: number; liquido: number }[];
   porUtmMedium: { medium: string; vendas: number; bruto: number; liquido: number }[];
+  /**
+   * Agregação por utm_term. Quando utm_term carrega o adset_id (padrão Loyola),
+   * o frontend resolve pra adset_name via Meta API e re-agrupa pelos mesmos
+   * nomes de adset.
+   */
+  porUtmTerm: { term: string; vendas: number; bruto: number; liquido: number }[];
   semDados: boolean;
 }
 

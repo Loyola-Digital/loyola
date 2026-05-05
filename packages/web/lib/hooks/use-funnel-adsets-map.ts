@@ -102,3 +102,26 @@ export function resolveSalesByMediumByAdsets<
   }
   return Array.from(grouped.values()).sort((a, b) => b.vendas - a.vendas);
 }
+
+/**
+ * Versão pra arrays `{ term, vendas, bruto, liquido }` (utm_term em vendas).
+ * Mesmo padrão de resolveSalesByMediumByAdsets — utm_term carrega adset_id no
+ * setup Loyola, então fazemos lookup pro nome humano e re-agrupamos.
+ */
+export function resolveSalesByTermByAdsets<
+  T extends { term: string; vendas: number; bruto: number; liquido: number },
+>(items: T[], adsetsMap: Map<string, string>): T[] {
+  const grouped = new Map<string, T>();
+  for (const item of items) {
+    const label = adsetsMap.get(item.term) ?? item.term;
+    const existing = grouped.get(label);
+    if (existing) {
+      existing.vendas += item.vendas;
+      existing.bruto += item.bruto;
+      existing.liquido += item.liquido;
+    } else {
+      grouped.set(label, { ...item, term: label });
+    }
+  }
+  return Array.from(grouped.values()).sort((a, b) => b.vendas - a.vendas);
+}
