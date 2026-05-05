@@ -668,10 +668,46 @@ async function computeCampaignBandBreakdown(
     });
   }
 
-  // Sort by total leads descending
-  rows_data.sort((a, b) => b.totalLeads - a.totalLeads);
+  // Group by campaign name (consolidate duplicates)
+  const groupedByName = new Map<string, CampaignBandRow>();
+  for (const row of rows_data) {
+    const existing = groupedByName.get(row.campaignName);
+    if (existing) {
+      existing.spend += row.spend;
+      existing.totalLeads += row.totalLeads;
+      existing.cpl = existing.totalLeads > 0 ? existing.spend / existing.totalLeads : null;
+      for (const band of bands) {
+        const bandId = band.id;
+        const count = (row.bands[bandId]?.count ?? 0) + (existing.bands[bandId]?.count ?? 0);
+        const pct = existing.totalLeads > 0 ? (count / existing.totalLeads) * 100 : 0;
+        const cplFaixa = count > 0 ? existing.spend / count : null;
+        existing.bands[bandId] = { count, pct, cplFaixa };
+      }
+      // Recalculate CPL Ideal with aggregated data
+      let cplIdeal: number | null = null;
+      const project = schema.project;
+      const conversionRates = schema.cpl_ideal?.conversion_rates ?? {};
+      if (project?.ticket && project?.roas && project.roas > 0) {
+        const ticketPerRoas = project.ticket / project.roas;
+        let ponderatedFactor = 0;
+        for (const band of bands) {
+          const convRate = conversionRates[band.id] ?? 0;
+          const bandPct = (existing.bands[band.id]?.count ?? 0) / Math.max(existing.totalLeads, 1);
+          ponderatedFactor += convRate * bandPct;
+        }
+        cplIdeal = ticketPerRoas * ponderatedFactor;
+      }
+      existing.cplIdeal = cplIdeal;
+    } else {
+      groupedByName.set(row.campaignName, row);
+    }
+  }
 
-  return { rows: rows_data, semDados: rows_data.length === 0 };
+  const finalRows = Array.from(groupedByName.values());
+  // Sort by total leads descending
+  finalRows.sort((a, b) => b.totalLeads - a.totalLeads);
+
+  return { rows: finalRows, semDados: finalRows.length === 0 };
 }
 
 function findUtmMediumColumn(headers: string[]): number {
@@ -832,9 +868,45 @@ async function computeAdsetBandBreakdown(
     });
   }
 
-  rows_data.sort((a, b) => b.totalLeads - a.totalLeads);
+  // Group by adset name (consolidate duplicates)
+  const groupedByName = new Map<string, AdsetBandRow>();
+  for (const row of rows_data) {
+    const existing = groupedByName.get(row.adsetName);
+    if (existing) {
+      existing.spend += row.spend;
+      existing.totalLeads += row.totalLeads;
+      existing.cpl = existing.totalLeads > 0 ? existing.spend / existing.totalLeads : null;
+      for (const band of bands) {
+        const bandId = band.id;
+        const count = (row.bands[bandId]?.count ?? 0) + (existing.bands[bandId]?.count ?? 0);
+        const pct = existing.totalLeads > 0 ? (count / existing.totalLeads) * 100 : 0;
+        const cplFaixa = count > 0 ? existing.spend / count : null;
+        existing.bands[bandId] = { count, pct, cplFaixa };
+      }
+      // Recalculate CPL Ideal with aggregated data
+      let cplIdeal: number | null = null;
+      const project = schema.project;
+      const conversionRates = schema.cpl_ideal?.conversion_rates ?? {};
+      if (project?.ticket && project?.roas && project.roas > 0) {
+        const ticketPerRoas = project.ticket / project.roas;
+        let ponderatedFactor = 0;
+        for (const band of bands) {
+          const convRate = conversionRates[band.id] ?? 0;
+          const bandPct = (existing.bands[band.id]?.count ?? 0) / Math.max(existing.totalLeads, 1);
+          ponderatedFactor += convRate * bandPct;
+        }
+        cplIdeal = ticketPerRoas * ponderatedFactor;
+      }
+      existing.cplIdeal = cplIdeal;
+    } else {
+      groupedByName.set(row.adsetName, row);
+    }
+  }
 
-  return { rows: rows_data, semDados: rows_data.length === 0 };
+  const finalRows = Array.from(groupedByName.values());
+  finalRows.sort((a, b) => b.totalLeads - a.totalLeads);
+
+  return { rows: finalRows, semDados: finalRows.length === 0 };
 }
 
 async function computeAdBandBreakdown(
@@ -975,9 +1047,45 @@ async function computeAdBandBreakdown(
     });
   }
 
-  rows_data.sort((a, b) => b.totalLeads - a.totalLeads);
+  // Group by ad name (consolidate duplicates)
+  const groupedByName = new Map<string, AdBandRow>();
+  for (const row of rows_data) {
+    const existing = groupedByName.get(row.adName);
+    if (existing) {
+      existing.spend += row.spend;
+      existing.totalLeads += row.totalLeads;
+      existing.cpl = existing.totalLeads > 0 ? existing.spend / existing.totalLeads : null;
+      for (const band of bands) {
+        const bandId = band.id;
+        const count = (row.bands[bandId]?.count ?? 0) + (existing.bands[bandId]?.count ?? 0);
+        const pct = existing.totalLeads > 0 ? (count / existing.totalLeads) * 100 : 0;
+        const cplFaixa = count > 0 ? existing.spend / count : null;
+        existing.bands[bandId] = { count, pct, cplFaixa };
+      }
+      // Recalculate CPL Ideal with aggregated data
+      let cplIdeal: number | null = null;
+      const project = schema.project;
+      const conversionRates = schema.cpl_ideal?.conversion_rates ?? {};
+      if (project?.ticket && project?.roas && project.roas > 0) {
+        const ticketPerRoas = project.ticket / project.roas;
+        let ponderatedFactor = 0;
+        for (const band of bands) {
+          const convRate = conversionRates[band.id] ?? 0;
+          const bandPct = (existing.bands[band.id]?.count ?? 0) / Math.max(existing.totalLeads, 1);
+          ponderatedFactor += convRate * bandPct;
+        }
+        cplIdeal = ticketPerRoas * ponderatedFactor;
+      }
+      existing.cplIdeal = cplIdeal;
+    } else {
+      groupedByName.set(row.adName, row);
+    }
+  }
 
-  return { rows: rows_data, semDados: rows_data.length === 0 };
+  const finalRows = Array.from(groupedByName.values());
+  finalRows.sort((a, b) => b.totalLeads - a.totalLeads);
+
+  return { rows: finalRows, semDados: finalRows.length === 0 };
 }
 
 // ============================================================
