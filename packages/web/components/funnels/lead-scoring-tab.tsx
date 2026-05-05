@@ -41,6 +41,7 @@ import {
   type LeadScoringDebug,
 } from "@/lib/hooks/use-lead-scoring";
 import { LeadOriginsByBand } from "@/components/funnels/lead-origins-by-band";
+import { LeadScoringCampaignTables } from "@/components/funnels/lead-scoring-campaign-tables";
 
 interface LeadScoringTabProps {
   projectId: string;
@@ -295,6 +296,11 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
       {/* Origens por banda (utm_term parsing) */}
       {results && !results.semDados && (
         <LeadOriginsByBand projectId={projectId} funnelId={funnelId} stageId={stageId} />
+      )}
+
+      {/* Breakdown de campanhas por banda (utm_campaign × scoring faixa) */}
+      {results && !results.semDados && (
+        <LeadScoringCampaignTables projectId={projectId} funnelId={funnelId} stageId={stageId} />
       )}
 
       {/* Debug Dialog */}

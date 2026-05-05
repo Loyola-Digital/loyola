@@ -8,8 +8,11 @@ import {
   funnels,
   projects,
   projectMembers,
+  metaAdsAccountProjects,
+  metaAdsAccounts,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import { fetchCampaignInsights, decryptAccountToken } from "../services/meta-ads.js";
 
 // ============================================================
 // SCHEMAS
@@ -78,6 +81,27 @@ type LeadScoringSchema = {
     per_band?: Record<string, { cpl: number; breakeven: number }>;
   };
 };
+
+interface BandBreakdown {
+  count: number;
+  pct: number;
+  cplFaixa: number | null;
+}
+
+interface CampaignBandRow {
+  utmCampaign: string;
+  campaignName: string;
+  spend: number;
+  totalLeads: number;
+  cpl: number | null;
+  cplIdeal: number | null;
+  bands: Record<string, BandBreakdown>;
+}
+
+interface CampaignBandBreakdownResponse {
+  rows: CampaignBandRow[];
+  semDados: boolean;
+}
 
 // ============================================================
 // SCORING ALGORITHM (função pura)
@@ -335,6 +359,17 @@ function findUtmTermColumn(headers: string[]): number {
   return -1;
 }
 
+function findUtmCampaignColumn(headers: string[]): number {
+  // Detecta coluna utm_campaign automaticamente — case-insensitive, várias variações
+  for (let i = 0; i < headers.length; i++) {
+    const h = (headers[i] ?? "").toLowerCase().trim();
+    if (h === "utm_campaign" || h === "utm campaign" || h === "campaign" || h.endsWith("_campaign") || h.includes("utm_campaign")) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 function aggregateDimension(
   termsByBand: Map<string, string[]>,
   bandId: string,
@@ -440,6 +475,122 @@ function computeOriginsByBand(
   }
 
   return { byBand, semDados: false };
+}
+
+async function computeCampaignBandBreakdown(
+  schema: LeadScoringSchema,
+  sheet: { headers: string[]; rows: string[][] },
+  campaignInsights: { campaign_name: string; spend: string }[] | null,
+): Promise<CampaignBandBreakdownResponse> {
+  const questions = schema.scoring_model?.questions ?? [];
+  const bands = schema.bands ?? [];
+  const { headers, rows } = sheet;
+
+  const utmCampaignIdx = findUtmCampaignColumn(headers);
+  if (utmCampaignIdx === -1) {
+    return { rows: [], semDados: true };
+  }
+
+  // Mapeamento de colunas (reutiliza lógica do computeBands)
+  const colMap = new Map<string, number>();
+  for (const q of questions) {
+    if (!q.new_survey_column) {
+      colMap.set(q.id, -1);
+      continue;
+    }
+    const target = normalizeText(q.new_survey_column);
+    const idx = headers.findIndex((h) => normalizeText(h) === target);
+    colMap.set(q.id, idx);
+  }
+  const q4Idx = colMap.get("Q4") ?? -1;
+
+  // Estrutura: Map<utm_campaign, Map<bandId, count>>
+  const leadsByUtmCampaignBand = new Map<string, Map<string, number>>();
+
+  for (const row of rows) {
+    const utmCampaign = (row[utmCampaignIdx] ?? "").trim();
+    if (!utmCampaign) continue;
+
+    let totalScore = 0;
+    const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
+    const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
+
+    for (const q of questions) {
+      const colIdx = colMap.get(q.id) ?? -1;
+      const fallback = q.unmapped_default ?? 0;
+      if (colIdx === -1) {
+        totalScore += fallback;
+        continue;
+      }
+      const answer = resolveAnswerCellValue(row[colIdx]);
+      const match = q.answers.find((a) => normalizeText(a.value) === normalizeText(answer));
+      if (!match) {
+        totalScore += fallback;
+        continue;
+      }
+      if (isAnswerConditional(match)) {
+        const rule = match.points_conditional;
+        totalScore += q4Filled ? rule.if_q4_filled : rule.if_q4_empty;
+      } else {
+        totalScore += match.points;
+      }
+    }
+
+    let band = bands.find((b) => totalScore >= b.range.min && totalScore < b.range.max);
+    if (!band) band = bands.find((b) => totalScore === b.range.max);
+    if (!band) continue;
+
+    if (!leadsByUtmCampaignBand.has(utmCampaign)) {
+      leadsByUtmCampaignBand.set(utmCampaign, new Map());
+    }
+    const bandCounts = leadsByUtmCampaignBand.get(utmCampaign)!;
+    bandCounts.set(band.id, (bandCounts.get(band.id) ?? 0) + 1);
+  }
+
+  // Map Meta Ads campaign_name → spend (case-insensitive)
+  const spendByNormalizedName = new Map<string, number>();
+  if (campaignInsights) {
+    for (const insight of campaignInsights) {
+      const normalized = normalizeText(insight.campaign_name);
+      const spend = parseFloat(insight.spend || "0");
+      spendByNormalizedName.set(normalized, (spendByNormalizedName.get(normalized) ?? 0) + spend);
+    }
+  }
+
+  // Build response rows
+  const rows_data: CampaignBandRow[] = [];
+  for (const [utmCampaign, bandCounts] of leadsByUtmCampaignBand) {
+    const totalLeads = Array.from(bandCounts.values()).reduce((a, b) => a + b, 0);
+    const normalizedUtm = normalizeText(utmCampaign);
+    const spend = spendByNormalizedName.get(normalizedUtm) ?? 0;
+    const cpl = totalLeads > 0 ? spend / totalLeads : null;
+
+    // CPL Ideal global
+    const cplIdeal = schema.cpl_ideal?.global ?? null;
+
+    const bandBreakdown: Record<string, BandBreakdown> = {};
+    for (const band of bands) {
+      const count = bandCounts.get(band.id) ?? 0;
+      const pct = totalLeads > 0 ? (count / totalLeads) * 100 : 0;
+      const cplFaixa = count > 0 ? spend / count : null;
+      bandBreakdown[band.id] = { count, pct, cplFaixa };
+    }
+
+    rows_data.push({
+      utmCampaign,
+      campaignName: utmCampaign, // Fallback to utm_campaign if no match
+      spend,
+      totalLeads,
+      cpl,
+      cplIdeal,
+      bands: bandBreakdown,
+    });
+  }
+
+  // Sort by total leads descending
+  rows_data.sort((a, b) => b.totalLeads - a.totalLeads);
+
+  return { rows: rows_data, semDados: rows_data.length === 0 };
 }
 
 // ============================================================
@@ -810,6 +961,104 @@ export default fp(async function leadScoringRoutes(fastify) {
 
       const schema = scoringRow.schemaJson as LeadScoringSchema;
       return computeBands(schema, sheetData);
+    },
+  );
+
+  // GET /api/projects/:projectId/funnels/:funnelId/stages/:stageId/lead-scoring/campaign-breakdown?days=30
+  // Breakdown de leads por campanha (via utm_campaign) × banda de scoring (A/B/C/D)
+  // Cruzamento: utm_campaign da planilha → campaign_name do Meta Ads API
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/lead-scoring/campaign-breakdown",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const querySchema = z.object({ days: z.coerce.number().int().min(1).max(90).default(30) });
+      const query = querySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Query inválida" });
+
+      const project = await getProjectAccess(
+        params.data.projectId,
+        request.userId,
+        request.userRole,
+      );
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const stage = await getStage(
+        params.data.stageId,
+        params.data.funnelId,
+        params.data.projectId,
+      );
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const EMPTY = { rows: [], semDados: true };
+
+      const [scoringRow] = await fastify.db
+        .select()
+        .from(stageLeadScoringSchemas)
+        .where(eq(stageLeadScoringSchemas.stageId, params.data.stageId))
+        .limit(1);
+
+      if (!scoringRow || !scoringRow.surveyId) return EMPTY;
+
+      const [survey] = await fastify.db
+        .select()
+        .from(funnelSurveys)
+        .where(eq(funnelSurveys.id, scoringRow.surveyId))
+        .limit(1);
+
+      if (!survey) return EMPTY;
+
+      let sheetData: { headers: string[]; rows: string[][] };
+      try {
+        const res = await readSheetData(survey.spreadsheetId, survey.sheetName);
+        sheetData = { headers: res.headers, rows: res.rows };
+      } catch {
+        return EMPTY;
+      }
+
+      if (sheetData.rows.length === 0) return EMPTY;
+
+      // Get Meta Ads account linked to this project (if exists)
+      let campaignInsights: { campaign_name: string; spend: string }[] | null = null;
+      try {
+        const [accountLink] = await fastify.db
+          .select()
+          .from(metaAdsAccountProjects)
+          .where(eq(metaAdsAccountProjects.projectId, params.data.projectId))
+          .limit(1);
+
+        if (accountLink) {
+          const [account] = await fastify.db
+            .select()
+            .from(metaAdsAccounts)
+            .where(eq(metaAdsAccounts.id, accountLink.accountId))
+            .limit(1);
+
+          if (account) {
+            const decryptedToken = decryptAccountToken(
+              account.accessTokenEncrypted,
+              account.accessTokenIv,
+            );
+            const insights = await fetchCampaignInsights(
+              account.metaAccountId,
+              decryptedToken,
+              query.data.days,
+            );
+            // Map insights to format used by computeCampaignBandBreakdown
+            campaignInsights = insights.map((i) => ({
+              campaign_name: i.campaign_name,
+              spend: i.spend ?? "0",
+            }));
+          }
+        }
+      } catch {
+        // If Meta Ads API fails, continue without campaign spend data
+        campaignInsights = null;
+      }
+
+      const schema = scoringRow.schemaJson as LeadScoringSchema;
+      return computeCampaignBandBreakdown(schema, sheetData, campaignInsights);
     },
   );
 });
