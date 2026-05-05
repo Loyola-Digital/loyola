@@ -54,6 +54,7 @@ import {
   useFunnelGroupsLink,
   useFunnelGroupsDaily,
 } from "@/lib/hooks/use-funnel-groups";
+import { useOrganicLeadsByDay } from "@/lib/hooks/use-organic-leads-by-day";
 import { SurveyQualificationSection } from "./survey-qualification-section";
 import { GroupsDashboardSection } from "./groups-dashboard-section";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -170,6 +171,9 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   });
   const groupsKpis = groupsDailyQuery.data?.kpis ?? null;
   const showGroupParticipants = isGroupsLinked && groupsKpis !== null && groupsKpis.participants > 0;
+
+  // Pesquisas orgânicas: linha "Leads Gratuitos" no chart de Leads Acumulados
+  const organicLeads = useOrganicLeadsByDay(projectId, funnel.id, stageId ?? null);
 
   const hasComparison = !!(compData && !compData.semDados);
   const compTotals = hasComparison ? compData!.totals : null;
@@ -468,7 +472,10 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
       {/* Leads Acumulados (Story 18.4) */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
-        <LeadsCumulativeChart rows={metrics.rows} />
+        <LeadsCumulativeChart
+          rows={metrics.rows}
+          leadsGratuitosByDay={organicLeads.hasOrganicSurveys ? organicLeads.byDay : undefined}
+        />
       ) : null}
 
       {/* CTR × CPM — Saturation Chart */}
