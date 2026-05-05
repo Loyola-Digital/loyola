@@ -372,7 +372,7 @@ function DebugView({ debug, onRefresh }: { debug: LeadScoringDebug; onRefresh: (
                   </div>
                 </div>
                 <p className="text-[11px] text-muted-foreground italic mb-2 truncate">
-                  → {q.new_survey_column}
+                  → {q.matched_alias ?? q.new_survey_column ?? q.label ?? "(sem alias)"}
                 </p>
                 {q.unmapped_unique_values.length > 0 && (
                   <div className="bg-orange-50 dark:bg-orange-950/20 rounded p-2 text-[11px]">

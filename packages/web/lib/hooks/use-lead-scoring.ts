@@ -140,6 +140,8 @@ export interface LeadScoringDebug {
     id: string;
     label?: string;
     new_survey_column?: string;
+    /** Alias do schema que casou com o header da planilha (null se nenhum). */
+    matched_alias?: string | null;
     column_index: number;
     column_found: boolean;
     matched_count: number;

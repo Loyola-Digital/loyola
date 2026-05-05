@@ -118,21 +118,30 @@ function normalizeForMatch(s: string): string {
  * 1) tenta `new_survey_column` (campo legacy de schemas antigos);
  * 2) tenta cada item de `column_aliases[]` (schema v2);
  * 3) tenta `label` como fallback.
- * Retorna -1 se nenhum match.
+ * Retorna `{ idx, matchedAlias }` — `matchedAlias` é o candidato exato que
+ * casou (útil pra debug diagnostic). Se idx === -1, matchedAlias é null.
  */
-function findQuestionColumnIndex(headers: string[], q: ScoringQuestion): number {
+function findQuestionColumn(
+  headers: string[],
+  q: ScoringQuestion,
+): { idx: number; matchedAlias: string | null } {
   const candidates: string[] = [];
   if (q.new_survey_column) candidates.push(q.new_survey_column);
   if (q.column_aliases?.length) candidates.push(...q.column_aliases);
   if (q.label) candidates.push(q.label);
-  if (candidates.length === 0) return -1;
+  if (candidates.length === 0) return { idx: -1, matchedAlias: null };
   const normalizedHeaders = headers.map(normalizeForMatch);
   for (const candidate of candidates) {
     const target = normalizeForMatch(candidate);
     const idx = normalizedHeaders.indexOf(target);
-    if (idx !== -1) return idx;
+    if (idx !== -1) return { idx, matchedAlias: candidate };
   }
-  return -1;
+  return { idx: -1, matchedAlias: null };
+}
+
+/** Retorna só o índice — atalho usado pelos paths que não precisam do alias. */
+function findQuestionColumnIndex(headers: string[], q: ScoringQuestion): number {
+  return findQuestionColumn(headers, q).idx;
 }
 
 /**
@@ -591,15 +600,19 @@ export default fp(async function leadScoringRoutes(fastify) {
       const schema = scoringRow.schemaJson as LeadScoringSchema;
       const questions = schema.scoring_model?.questions ?? [];
 
-      // Mapping headers
+      // Mapping headers — guarda alias matchado pra debug
       const colMap = new Map<string, number>();
+      const aliasMap = new Map<string, string | null>();
       for (const q of questions) {
-        colMap.set(q.id, findQuestionColumnIndex(sheet.headers, q));
+        const resolved = findQuestionColumn(sheet.headers, q);
+        colMap.set(q.id, resolved.idx);
+        aliasMap.set(q.id, resolved.matchedAlias);
       }
 
       // Estatísticas por questão
       const perQuestion = questions.map((q) => {
         const idx = colMap.get(q.id) ?? -1;
+        const matchedAlias = aliasMap.get(q.id) ?? null;
         const matchedAnswers = new Map<string, number>();
         const unmappedAnswers = new Map<string, number>();
         let matchedCount = 0;
@@ -623,6 +636,7 @@ export default fp(async function leadScoringRoutes(fastify) {
           id: q.id,
           label: q.label,
           new_survey_column: q.new_survey_column,
+          matched_alias: matchedAlias,
           column_index: idx,
           column_found: idx !== -1,
           matched_count: matchedCount,
