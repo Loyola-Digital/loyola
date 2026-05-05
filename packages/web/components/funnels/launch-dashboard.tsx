@@ -173,6 +173,28 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   const groupsKpis = groupsDailyQuery.data?.kpis ?? null;
   const showGroupParticipants = isGroupsLinked && groupsKpis !== null && groupsKpis.participants > 0;
 
+  // Breakdown por campanha (cada campanha = "grupo" no contexto Loyola) pra
+  // mostrar no tooltip do card "Pessoas no grupo". Pega o último ponto da
+  // série de cada campanha e ordena por participantes desc.
+  const groupsBreakdownTooltip = useMemo(() => {
+    const campaigns = groupsDailyQuery.data?.campaigns ?? [];
+    if (campaigns.length === 0) return undefined;
+    const rows = campaigns
+      .map((c) => {
+        const last = c.series[c.series.length - 1];
+        return { name: c.campaignName, participants: last?.participants ?? 0 };
+      })
+      .filter((r) => r.participants > 0)
+      .sort((a, b) => b.participants - a.participants);
+    if (rows.length === 0) return undefined;
+    return (
+      "Por grupo:\n" +
+      rows
+        .map((r) => `  ${r.name}: ${r.participants.toLocaleString("pt-BR")}`)
+        .join("\n")
+    );
+  }, [groupsDailyQuery.data]);
+
   // Pesquisas orgânicas: linha "Leads Gratuitos" no chart de Leads Acumulados
   const organicLeads = useOrganicLeadsByDay(projectId, funnel.id, stageId ?? null);
 
@@ -435,6 +457,8 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   icon={UserCheck}
                   label="Pessoas no grupo"
                   value={fmtNumber(groupsKpis.participants)}
+                  hintTooltip={!!groupsBreakdownTooltip}
+                  title={groupsBreakdownTooltip}
                   subValue={
                     <>
                       {groupsKpis.deltaParticipants !== 0 && (
