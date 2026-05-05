@@ -283,12 +283,15 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         </p>
       )}
 
-      {/* KPI Cards — Meta only */}
+      {/* KPI Cards — Meta only.
+          Se overview vier null (Meta API sem dados pro range escolhido — comum em
+          filtros estreitos como "Hoje" antes do dado processar), renderiza cards
+          com zeros em vez de esconder a seção. */}
       {overviewLoading || metrics.isLoading ? (
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-7">
           {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
-      ) : overview ? (
+      ) : (
         (() => {
           const f = { days, funnelType: "launch" as const, funnelName: funnel?.name };
           const showFaturamento = stageType === "paid" && !!stageId && !!salesData && !salesData.semDados;
@@ -492,7 +495,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             </div>
           );
         })()
-      ) : <EmptyState />}
+      )}
 
       {/* Dados diários — tabela cruzada (Story 18.3) */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
@@ -553,17 +556,15 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
         <div className="rounded-xl border border-border/30 bg-card/60 p-5">
           <h3 className="text-sm font-semibold mb-4">Funil de Conversão</h3>
-          {overview ? (
-            <ConversionFunnel
-              impressions={overview.totalImpressions}
-              linkClicks={overview.totalLinkClicks}
-              landingPageViews={overview.totalLandingPageViews}
-              leads={metrics.totalLeads}
-              checkoutVisits={stageType === "paid" ? metrics.checkoutVisits : null}
-              sales={stageType === "paid" ? metrics.totalVendas : null}
-              leadsLabel={stageType === "paid" ? "Leads Popup" : undefined}
-            />
-          ) : <EmptyState />}
+          <ConversionFunnel
+            impressions={overview?.totalImpressions ?? 0}
+            linkClicks={overview?.totalLinkClicks ?? null}
+            landingPageViews={overview?.totalLandingPageViews ?? null}
+            leads={metrics.totalLeads}
+            checkoutVisits={stageType === "paid" ? metrics.checkoutVisits : null}
+            sales={stageType === "paid" ? metrics.totalVendas : null}
+            leadsLabel={stageType === "paid" ? "Leads Popup" : undefined}
+          />
         </div>
       </div>
 
