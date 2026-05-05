@@ -370,6 +370,17 @@ function findUtmCampaignColumn(headers: string[]): number {
   return -1;
 }
 
+function findUtmSourceColumn(headers: string[]): number {
+  // Detecta coluna utm_source automaticamente — case-insensitive, várias variações
+  for (let i = 0; i < headers.length; i++) {
+    const h = (headers[i] ?? "").toLowerCase().trim();
+    if (h === "utm_source" || h === "utm source" || h === "source" || h.endsWith("_source") || h.includes("utm_source")) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 function aggregateDimension(
   termsByBand: Map<string, string[]>,
   bandId: string,
@@ -487,7 +498,9 @@ async function computeCampaignBandBreakdown(
   const { headers, rows } = sheet;
 
   const utmCampaignIdx = findUtmCampaignColumn(headers);
-  if (utmCampaignIdx === -1) {
+  const utmSourceIdx = findUtmSourceColumn(headers);
+
+  if (utmCampaignIdx === -1 || utmSourceIdx === -1) {
     return { rows: [], semDados: true };
   }
 
@@ -505,10 +518,18 @@ async function computeCampaignBandBreakdown(
   const q4Idx = colMap.get("Q4") ?? -1;
 
   // Estrutura: Map<utm_campaign, Map<bandId, count>>
+  // Apenas leads com utm_source = "meta" (case-insensitive)
   const leadsByUtmCampaignBand = new Map<string, Map<string, number>>();
 
   for (const row of rows) {
+    const utmSource = (row[utmSourceIdx] ?? "").trim();
     const utmCampaign = (row[utmCampaignIdx] ?? "").trim();
+
+    // Filtrar: apenas utm_source = "meta"
+    if (normalizeText(utmSource) !== normalizeText("meta")) {
+      continue;
+    }
+
     if (!utmCampaign) continue;
 
     let totalScore = 0;
@@ -547,13 +568,23 @@ async function computeCampaignBandBreakdown(
     bandCounts.set(band.id, (bandCounts.get(band.id) ?? 0) + 1);
   }
 
-  // Map Meta Ads campaign_name → spend (case-insensitive)
-  const spendByNormalizedName = new Map<string, number>();
+  // Map Meta Ads campaign_name → { campaign_name, spend } (case-insensitive match on campaign_name)
+  // Este map permite lookup: normalizeText(utm_campaign) → campaign_name + spend
+  const campaignDataByNormalizedName = new Map<string, { campaign_name: string; spend: number }>();
   if (campaignInsights) {
     for (const insight of campaignInsights) {
       const normalized = normalizeText(insight.campaign_name);
       const spend = parseFloat(insight.spend || "0");
-      spendByNormalizedName.set(normalized, (spendByNormalizedName.get(normalized) ?? 0) + spend);
+      // Se já existe entrada com esse nome normalizado, somar spend (múltiplas impressões do mesmo campaign)
+      const existing = campaignDataByNormalizedName.get(normalized);
+      if (existing) {
+        existing.spend += spend;
+      } else {
+        campaignDataByNormalizedName.set(normalized, {
+          campaign_name: insight.campaign_name,
+          spend,
+        });
+      }
     }
   }
 
@@ -562,7 +593,12 @@ async function computeCampaignBandBreakdown(
   for (const [utmCampaign, bandCounts] of leadsByUtmCampaignBand) {
     const totalLeads = Array.from(bandCounts.values()).reduce((a, b) => a + b, 0);
     const normalizedUtm = normalizeText(utmCampaign);
-    const spend = spendByNormalizedName.get(normalizedUtm) ?? 0;
+
+    // Procurar campaign_name do Meta Ads pelo utm_campaign
+    const campaignData = campaignDataByNormalizedName.get(normalizedUtm);
+    const campaignName = campaignData?.campaign_name ?? utmCampaign; // Fallback para utm_campaign se não encontrar
+    const spend = campaignData?.spend ?? 0;
+
     const cpl = totalLeads > 0 ? spend / totalLeads : null;
 
     // CPL Ideal global
@@ -578,7 +614,7 @@ async function computeCampaignBandBreakdown(
 
     rows_data.push({
       utmCampaign,
-      campaignName: utmCampaign, // Fallback to utm_campaign if no match
+      campaignName, // Meta Ads campaign_name, não utm_campaign
       spend,
       totalLeads,
       cpl,
