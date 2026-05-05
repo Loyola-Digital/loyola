@@ -12,7 +12,7 @@ import {
   metaAdsAccounts,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
-import { fetchCampaignInsights, fetchAdSets, fetchAds, decryptAccountToken } from "../services/meta-ads.js";
+import { fetchCampaignInsights, decryptAccountToken } from "../services/meta-ads.js";
 
 // ============================================================
 // SCHEMAS
@@ -99,22 +99,8 @@ interface CampaignBandRow {
   bands: Record<string, BandBreakdown>;
 }
 
-interface AdDetail {
-  id: string;
-  name: string;
-  status: string;
-}
-
-interface AdsetDetail {
-  id: string;
-  name: string;
-  status: string;
-  ads: AdDetail[];
-}
-
 interface CampaignBandBreakdownResponse {
   rows: CampaignBandRow[];
-  adsetsBycampaign: Record<string, AdsetDetail[]>; // Grouped by campaign_id (utm_campaign)
   semDados: boolean;
 }
 
@@ -507,7 +493,6 @@ async function computeCampaignBandBreakdown(
   schema: LeadScoringSchema,
   sheet: { headers: string[]; rows: string[][] },
   campaignInsights: { campaign_id: string; campaign_name: string; spend: string }[] | null,
-  adsetsBycampaign?: Record<string, AdsetDetail[]>,
 ): Promise<CampaignBandBreakdownResponse> {
   const questions = schema.scoring_model?.questions ?? [];
   const bands = schema.bands ?? [];
@@ -517,7 +502,7 @@ async function computeCampaignBandBreakdown(
   const utmSourceIdx = findUtmSourceColumn(headers);
 
   if (utmCampaignIdx === -1 || utmSourceIdx === -1) {
-    return { rows: [], adsetsBycampaign: {}, semDados: true };
+    return { rows: [], semDados: true };
   }
 
   // Mapeamento de colunas (reutiliza lógica do computeBands)
@@ -656,11 +641,7 @@ async function computeCampaignBandBreakdown(
   // Sort by total leads descending
   rows_data.sort((a, b) => b.totalLeads - a.totalLeads);
 
-  return {
-    rows: rows_data,
-    adsetsBycampaign: adsetsBycampaign ?? {},
-    semDados: rows_data.length === 0,
-  };
+  return { rows: rows_data, semDados: rows_data.length === 0 };
 }
 
 // ============================================================
@@ -1091,8 +1072,6 @@ export default fp(async function leadScoringRoutes(fastify) {
 
       // Get Meta Ads account linked to this project (if exists)
       let campaignInsights: { campaign_id: string; campaign_name: string; spend: string }[] | null = null;
-      let adsetsBycampaign: Record<string, AdsetDetail[]> = {};
-
       try {
         const [accountLink] = await fastify.db
           .select()
@@ -1123,42 +1102,6 @@ export default fp(async function leadScoringRoutes(fastify) {
               campaign_name: i.campaign_name,
               spend: i.spend ?? "0",
             }));
-
-            // Fetch adsets and ads for each campaign
-            for (const insight of insights) {
-              try {
-                const adsets = await fetchAdSets(
-                  account.metaAccountId,
-                  decryptedToken,
-                  insight.campaign_id,
-                );
-
-                const adsetDetails: AdsetDetail[] = [];
-                for (const adset of adsets) {
-                  const ads = await fetchAds(
-                    account.metaAccountId,
-                    decryptedToken,
-                    adset.id,
-                  );
-
-                  adsetDetails.push({
-                    id: adset.id,
-                    name: adset.name,
-                    status: adset.status,
-                    ads: ads.map((ad) => ({
-                      id: ad.id,
-                      name: ad.name,
-                      status: ad.status,
-                    })),
-                  });
-                }
-
-                adsetsBycampaign[insight.campaign_id] = adsetDetails;
-              } catch {
-                // If adsets/ads fetch fails for this campaign, continue
-                adsetsBycampaign[insight.campaign_id] = [];
-              }
-            }
           }
         }
       } catch {
@@ -1167,7 +1110,7 @@ export default fp(async function leadScoringRoutes(fastify) {
       }
 
       const schema = scoringRow.schemaJson as LeadScoringSchema;
-      return computeCampaignBandBreakdown(schema, sheetData, campaignInsights, adsetsBycampaign);
+      return computeCampaignBandBreakdown(schema, sheetData, campaignInsights);
     },
   );
 });

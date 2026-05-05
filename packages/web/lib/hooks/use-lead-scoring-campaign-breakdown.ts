@@ -6,19 +6,6 @@ export interface BandBreakdown {
   cplFaixa: number | null;
 }
 
-export interface AdDetail {
-  id: string;
-  name: string;
-  status: string;
-}
-
-export interface AdsetDetail {
-  id: string;
-  name: string;
-  status: string;
-  ads: AdDetail[];
-}
-
 export interface CampaignBandRow {
   utmCampaign: string;
   campaignName: string;
@@ -31,7 +18,6 @@ export interface CampaignBandRow {
 
 export interface CampaignBandBreakdownResponse {
   rows: CampaignBandRow[];
-  adsetsBycampaign: Record<string, AdsetDetail[]>;
   semDados: boolean;
 }
 
