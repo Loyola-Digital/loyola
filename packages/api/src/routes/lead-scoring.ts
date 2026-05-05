@@ -12,7 +12,7 @@ import {
   metaAdsAccounts,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
-import { fetchCampaignInsights, fetchAdSets, fetchAds, decryptAccountToken } from "../services/meta-ads.js";
+import { fetchCampaignInsights, fetchAllAdSetInsights, fetchAllAdInsights, decryptAccountToken } from "../services/meta-ads.js";
 
 // ============================================================
 // SCHEMAS
@@ -89,19 +89,6 @@ interface BandBreakdown {
   cplFaixa: number | null;
 }
 
-interface AdDetail {
-  id: string;
-  name: string;
-  status: string;
-}
-
-interface AdsetDetail {
-  id: string;
-  name: string;
-  status: string;
-  ads: AdDetail[];
-}
-
 interface CampaignBandRow {
   utmCampaign: string;
   campaignName: string;
@@ -114,7 +101,36 @@ interface CampaignBandRow {
 
 interface CampaignBandBreakdownResponse {
   rows: CampaignBandRow[];
-  adsetsBycampaign: Record<string, AdsetDetail[]>;
+  semDados: boolean;
+}
+
+interface AdsetBandRow {
+  utmMedium: string;
+  adsetName: string;
+  spend: number;
+  totalLeads: number;
+  cpl: number | null;
+  cplIdeal: number | null;
+  bands: Record<string, BandBreakdown>;
+}
+
+interface AdsetBandBreakdownResponse {
+  rows: AdsetBandRow[];
+  semDados: boolean;
+}
+
+interface AdBandRow {
+  utmContent: string;
+  adName: string;
+  spend: number;
+  totalLeads: number;
+  cpl: number | null;
+  cplIdeal: number | null;
+  bands: Record<string, BandBreakdown>;
+}
+
+interface AdBandBreakdownResponse {
+  rows: AdBandRow[];
   semDados: boolean;
 }
 
@@ -507,7 +523,6 @@ async function computeCampaignBandBreakdown(
   schema: LeadScoringSchema,
   sheet: { headers: string[]; rows: string[][] },
   campaignInsights: { campaign_id: string; campaign_name: string; spend: string }[] | null,
-  adsetsBycampaign?: Record<string, AdsetDetail[]>,
 ): Promise<CampaignBandBreakdownResponse> {
   const questions = schema.scoring_model?.questions ?? [];
   const bands = schema.bands ?? [];
@@ -517,7 +532,7 @@ async function computeCampaignBandBreakdown(
   const utmSourceIdx = findUtmSourceColumn(headers);
 
   if (utmCampaignIdx === -1 || utmSourceIdx === -1) {
-    return { rows: [], adsetsBycampaign: {}, semDados: true };
+    return { rows: [], semDados: true };
   }
 
   // Mapeamento de colunas (reutiliza lógica do computeBands)
@@ -656,11 +671,313 @@ async function computeCampaignBandBreakdown(
   // Sort by total leads descending
   rows_data.sort((a, b) => b.totalLeads - a.totalLeads);
 
-  return {
-    rows: rows_data,
-    adsetsBycampaign: adsetsBycampaign ?? {},
-    semDados: rows_data.length === 0
-  };
+  return { rows: rows_data, semDados: rows_data.length === 0 };
+}
+
+function findUtmMediumColumn(headers: string[]): number {
+  for (let i = 0; i < headers.length; i++) {
+    const h = (headers[i] ?? "").toLowerCase().trim();
+    if (h === "utm_medium" || h === "utm medium" || h === "medium" || h.endsWith("_medium") || h.includes("utm_medium")) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function findUtmContentColumn(headers: string[]): number {
+  for (let i = 0; i < headers.length; i++) {
+    const h = (headers[i] ?? "").toLowerCase().trim();
+    if (h === "utm_content" || h === "utm content" || h === "content" || h.endsWith("_content") || h.includes("utm_content")) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+async function computeAdsetBandBreakdown(
+  schema: LeadScoringSchema,
+  sheet: { headers: string[]; rows: string[][] },
+  adsetInsights: { adset_id: string; adset_name: string; spend: string }[] | null,
+): Promise<AdsetBandBreakdownResponse> {
+  const questions = schema.scoring_model?.questions ?? [];
+  const bands = schema.bands ?? [];
+  const { headers, rows } = sheet;
+
+  const utmMediumIdx = findUtmMediumColumn(headers);
+  const utmSourceIdx = findUtmSourceColumn(headers);
+
+  if (utmMediumIdx === -1 || utmSourceIdx === -1) {
+    return { rows: [], semDados: true };
+  }
+
+  const colMap = new Map<string, number>();
+  for (const q of questions) {
+    if (!q.new_survey_column) {
+      colMap.set(q.id, -1);
+      continue;
+    }
+    const target = normalizeText(q.new_survey_column);
+    const idx = headers.findIndex((h) => normalizeText(h) === target);
+    colMap.set(q.id, idx);
+  }
+  const q4Idx = colMap.get("Q4") ?? -1;
+
+  const leadsByUtmMediumBand = new Map<string, Map<string, number>>();
+
+  for (const row of rows) {
+    const utmSource = (row[utmSourceIdx] ?? "").trim();
+    const utmMedium = (row[utmMediumIdx] ?? "").trim();
+
+    if (normalizeText(utmSource) !== normalizeText("meta")) {
+      continue;
+    }
+
+    if (!utmMedium) continue;
+
+    let totalScore = 0;
+    const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
+    const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
+
+    for (const q of questions) {
+      const colIdx = colMap.get(q.id) ?? -1;
+      const fallback = q.unmapped_default ?? 0;
+      if (colIdx === -1) {
+        totalScore += fallback;
+        continue;
+      }
+      const answer = resolveAnswerCellValue(row[colIdx]);
+      const match = q.answers.find((a) => normalizeText(a.value) === normalizeText(answer));
+      if (!match) {
+        totalScore += fallback;
+        continue;
+      }
+      if (isAnswerConditional(match)) {
+        const rule = match.points_conditional;
+        totalScore += q4Filled ? rule.if_q4_filled : rule.if_q4_empty;
+      } else {
+        totalScore += match.points;
+      }
+    }
+
+    let band = bands.find((b) => totalScore >= b.range.min && totalScore < b.range.max);
+    if (!band) band = bands.find((b) => totalScore === b.range.max);
+    if (!band) continue;
+
+    if (!leadsByUtmMediumBand.has(utmMedium)) {
+      leadsByUtmMediumBand.set(utmMedium, new Map());
+    }
+    const bandCounts = leadsByUtmMediumBand.get(utmMedium)!;
+    bandCounts.set(band.id, (bandCounts.get(band.id) ?? 0) + 1);
+  }
+
+  const adsetDataByAdsetId = new Map<string, { adset_name: string; spend: number }>();
+  if (adsetInsights) {
+    for (const insight of adsetInsights) {
+      const spend = parseFloat(insight.spend || "0");
+      const existing = adsetDataByAdsetId.get(insight.adset_id);
+      if (existing) {
+        existing.spend += spend;
+      } else {
+        adsetDataByAdsetId.set(insight.adset_id, {
+          adset_name: insight.adset_name,
+          spend,
+        });
+      }
+    }
+  }
+
+  const rows_data: AdsetBandRow[] = [];
+  for (const [utmMedium, bandCounts] of leadsByUtmMediumBand) {
+    const totalLeads = Array.from(bandCounts.values()).reduce((a, b) => a + b, 0);
+
+    const adsetData = adsetDataByAdsetId.get(utmMedium);
+    const adsetName = adsetData?.adset_name ?? utmMedium;
+    const spend = adsetData?.spend ?? 0;
+
+    const cpl = totalLeads > 0 ? spend / totalLeads : null;
+
+    let cplIdeal: number | null = null;
+    const project = schema.project;
+    const conversionRates = schema.cpl_ideal?.conversion_rates ?? {};
+
+    if (project?.ticket && project?.roas && project.roas > 0) {
+      const ticketPerRoas = project.ticket / project.roas;
+      let ponderatedFactor = 0;
+
+      for (const band of bands) {
+        const convRate = conversionRates[band.id] ?? 0;
+        const bandPct = (bandCounts.get(band.id) ?? 0) / Math.max(totalLeads, 1);
+        ponderatedFactor += convRate * bandPct;
+      }
+
+      cplIdeal = ticketPerRoas * ponderatedFactor;
+    }
+
+    const bandBreakdown: Record<string, BandBreakdown> = {};
+    for (const band of bands) {
+      const count = bandCounts.get(band.id) ?? 0;
+      const pct = totalLeads > 0 ? (count / totalLeads) * 100 : 0;
+      const cplFaixa = count > 0 ? spend / count : null;
+      bandBreakdown[band.id] = { count, pct, cplFaixa };
+    }
+
+    rows_data.push({
+      utmMedium,
+      adsetName,
+      spend,
+      totalLeads,
+      cpl,
+      cplIdeal,
+      bands: bandBreakdown,
+    });
+  }
+
+  rows_data.sort((a, b) => b.totalLeads - a.totalLeads);
+
+  return { rows: rows_data, semDados: rows_data.length === 0 };
+}
+
+async function computeAdBandBreakdown(
+  schema: LeadScoringSchema,
+  sheet: { headers: string[]; rows: string[][] },
+  adInsights: { ad_id: string; ad_name: string; spend: string }[] | null,
+): Promise<AdBandBreakdownResponse> {
+  const questions = schema.scoring_model?.questions ?? [];
+  const bands = schema.bands ?? [];
+  const { headers, rows } = sheet;
+
+  const utmContentIdx = findUtmContentColumn(headers);
+  const utmSourceIdx = findUtmSourceColumn(headers);
+
+  if (utmContentIdx === -1 || utmSourceIdx === -1) {
+    return { rows: [], semDados: true };
+  }
+
+  const colMap = new Map<string, number>();
+  for (const q of questions) {
+    if (!q.new_survey_column) {
+      colMap.set(q.id, -1);
+      continue;
+    }
+    const target = normalizeText(q.new_survey_column);
+    const idx = headers.findIndex((h) => normalizeText(h) === target);
+    colMap.set(q.id, idx);
+  }
+  const q4Idx = colMap.get("Q4") ?? -1;
+
+  const leadsByUtmContentBand = new Map<string, Map<string, number>>();
+
+  for (const row of rows) {
+    const utmSource = (row[utmSourceIdx] ?? "").trim();
+    const utmContent = (row[utmContentIdx] ?? "").trim();
+
+    if (normalizeText(utmSource) !== normalizeText("meta")) {
+      continue;
+    }
+
+    if (!utmContent) continue;
+
+    let totalScore = 0;
+    const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
+    const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
+
+    for (const q of questions) {
+      const colIdx = colMap.get(q.id) ?? -1;
+      const fallback = q.unmapped_default ?? 0;
+      if (colIdx === -1) {
+        totalScore += fallback;
+        continue;
+      }
+      const answer = resolveAnswerCellValue(row[colIdx]);
+      const match = q.answers.find((a) => normalizeText(a.value) === normalizeText(answer));
+      if (!match) {
+        totalScore += fallback;
+        continue;
+      }
+      if (isAnswerConditional(match)) {
+        const rule = match.points_conditional;
+        totalScore += q4Filled ? rule.if_q4_filled : rule.if_q4_empty;
+      } else {
+        totalScore += match.points;
+      }
+    }
+
+    let band = bands.find((b) => totalScore >= b.range.min && totalScore < b.range.max);
+    if (!band) band = bands.find((b) => totalScore === b.range.max);
+    if (!band) continue;
+
+    if (!leadsByUtmContentBand.has(utmContent)) {
+      leadsByUtmContentBand.set(utmContent, new Map());
+    }
+    const bandCounts = leadsByUtmContentBand.get(utmContent)!;
+    bandCounts.set(band.id, (bandCounts.get(band.id) ?? 0) + 1);
+  }
+
+  const adDataByAdId = new Map<string, { ad_name: string; spend: number }>();
+  if (adInsights) {
+    for (const insight of adInsights) {
+      const spend = parseFloat(insight.spend || "0");
+      const existing = adDataByAdId.get(insight.ad_id);
+      if (existing) {
+        existing.spend += spend;
+      } else {
+        adDataByAdId.set(insight.ad_id, {
+          ad_name: insight.ad_name,
+          spend,
+        });
+      }
+    }
+  }
+
+  const rows_data: AdBandRow[] = [];
+  for (const [utmContent, bandCounts] of leadsByUtmContentBand) {
+    const totalLeads = Array.from(bandCounts.values()).reduce((a, b) => a + b, 0);
+
+    const adData = adDataByAdId.get(utmContent);
+    const adName = adData?.ad_name ?? utmContent;
+    const spend = adData?.spend ?? 0;
+
+    const cpl = totalLeads > 0 ? spend / totalLeads : null;
+
+    let cplIdeal: number | null = null;
+    const project = schema.project;
+    const conversionRates = schema.cpl_ideal?.conversion_rates ?? {};
+
+    if (project?.ticket && project?.roas && project.roas > 0) {
+      const ticketPerRoas = project.ticket / project.roas;
+      let ponderatedFactor = 0;
+
+      for (const band of bands) {
+        const convRate = conversionRates[band.id] ?? 0;
+        const bandPct = (bandCounts.get(band.id) ?? 0) / Math.max(totalLeads, 1);
+        ponderatedFactor += convRate * bandPct;
+      }
+
+      cplIdeal = ticketPerRoas * ponderatedFactor;
+    }
+
+    const bandBreakdown: Record<string, BandBreakdown> = {};
+    for (const band of bands) {
+      const count = bandCounts.get(band.id) ?? 0;
+      const pct = totalLeads > 0 ? (count / totalLeads) * 100 : 0;
+      const cplFaixa = count > 0 ? spend / count : null;
+      bandBreakdown[band.id] = { count, pct, cplFaixa };
+    }
+
+    rows_data.push({
+      utmContent,
+      adName,
+      spend,
+      totalLeads,
+      cpl,
+      cplIdeal,
+      bands: bandBreakdown,
+    });
+  }
+
+  rows_data.sort((a, b) => b.totalLeads - a.totalLeads);
+
+  return { rows: rows_data, semDados: rows_data.length === 0 };
 }
 
 // ============================================================
@@ -1061,7 +1378,7 @@ export default fp(async function leadScoringRoutes(fastify) {
       );
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      const EMPTY = { rows: [], adsetsBycampaign: {}, semDados: true };
+      const EMPTY = { rows: [], semDados: true };
 
       const [scoringRow] = await fastify.db
         .select()
@@ -1091,7 +1408,6 @@ export default fp(async function leadScoringRoutes(fastify) {
 
       // Get Meta Ads account linked to this project (if exists)
       let campaignInsights: { campaign_id: string; campaign_name: string; spend: string }[] | null = null;
-      let adsetsBycampaign: Record<string, AdsetDetail[]> = {};
 
       try {
         const [accountLink] = await fastify.db
@@ -1125,51 +1441,7 @@ export default fp(async function leadScoringRoutes(fastify) {
                 campaign_name: i.campaign_name,
                 spend: i.spend ?? "0",
               }));
-
-              // Fetch adsets and ads for each campaign
-              for (const insight of insights) {
-                try {
-                  const adsets = await fetchAdSets(
-                    account.metaAccountId,
-                    decryptedToken,
-                    insight.campaign_id,
-                  );
-
-                  const adsetDetails: AdsetDetail[] = [];
-                  for (const adset of adsets) {
-                    try {
-                      const ads = await fetchAds(
-                        account.metaAccountId,
-                        decryptedToken,
-                        adset.id,
-                      );
-                      adsetDetails.push({
-                        id: adset.id,
-                        name: adset.name,
-                        status: adset.status,
-                        ads: ads.map((ad) => ({
-                          id: ad.id,
-                          name: ad.name,
-                          status: ad.status,
-                        })),
-                      });
-                    } catch {
-                      // If ads fetch fails for this adset, include adset without ads
-                      adsetDetails.push({
-                        id: adset.id,
-                        name: adset.name,
-                        status: adset.status,
-                        ads: [],
-                      });
-                    }
-                  }
-                  adsetsBycampaign[insight.campaign_id] = adsetDetails;
-                } catch {
-                  // If adsets fetch fails for this campaign, continue without adsets
-                  adsetsBycampaign[insight.campaign_id] = [];
-                }
-              }
-            } catch (error) {
+            } catch {
               // If campaign insights fetch fails, continue without spend data
               campaignInsights = null;
             }
@@ -1181,7 +1453,213 @@ export default fp(async function leadScoringRoutes(fastify) {
       }
 
       const schema = scoringRow.schemaJson as LeadScoringSchema;
-      return computeCampaignBandBreakdown(schema, sheetData, campaignInsights, adsetsBycampaign);
+      return computeCampaignBandBreakdown(schema, sheetData, campaignInsights);
+    },
+  );
+
+  // GET /api/projects/:projectId/funnels/:funnelId/stages/:stageId/lead-scoring/adset-breakdown?days=30
+  // Breakdown de leads por adset (via utm_medium) × banda de scoring (A/B/C/D)
+  // Cruzamento: utm_medium da planilha → adset_name do Meta Ads API
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/lead-scoring/adset-breakdown",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const querySchema = z.object({ days: z.coerce.number().int().min(1).max(90).default(30) });
+      const query = querySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Query inválida" });
+
+      const project = await getProjectAccess(
+        params.data.projectId,
+        request.userId,
+        request.userRole,
+      );
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const stage = await getStage(
+        params.data.stageId,
+        params.data.funnelId,
+        params.data.projectId,
+      );
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const EMPTY = { rows: [], semDados: true };
+
+      const [scoringRow] = await fastify.db
+        .select()
+        .from(stageLeadScoringSchemas)
+        .where(eq(stageLeadScoringSchemas.stageId, params.data.stageId))
+        .limit(1);
+
+      if (!scoringRow || !scoringRow.surveyId) return EMPTY;
+
+      const [survey] = await fastify.db
+        .select()
+        .from(funnelSurveys)
+        .where(eq(funnelSurveys.id, scoringRow.surveyId))
+        .limit(1);
+
+      if (!survey) return EMPTY;
+
+      let sheetData: { headers: string[]; rows: string[][] };
+      try {
+        const res = await readSheetData(survey.spreadsheetId, survey.sheetName);
+        sheetData = { headers: res.headers, rows: res.rows };
+      } catch {
+        return EMPTY;
+      }
+
+      if (sheetData.rows.length === 0) return EMPTY;
+
+      // Get Meta Ads account linked to this project (if exists)
+      let adsetInsights: { adset_id: string; adset_name: string; spend: string }[] | null = null;
+
+      try {
+        const [accountLink] = await fastify.db
+          .select()
+          .from(metaAdsAccountProjects)
+          .where(eq(metaAdsAccountProjects.projectId, params.data.projectId))
+          .limit(1);
+
+        if (accountLink) {
+          const [account] = await fastify.db
+            .select()
+            .from(metaAdsAccounts)
+            .where(eq(metaAdsAccounts.id, accountLink.accountId))
+            .limit(1);
+
+          if (account) {
+            const decryptedToken = decryptAccountToken(
+              account.accessTokenEncrypted,
+              account.accessTokenIv,
+            );
+
+            try {
+              const insights = await fetchAllAdSetInsights(
+                account.metaAccountId,
+                decryptedToken,
+                query.data.days,
+              );
+              adsetInsights = insights.map((i: { adset_id: string; adset_name: string; spend?: string }) => ({
+                adset_id: i.adset_id,
+                adset_name: i.adset_name,
+                spend: i.spend ?? "0",
+              }));
+            } catch {
+              adsetInsights = null;
+            }
+          }
+        }
+      } catch {
+        adsetInsights = null;
+      }
+
+      const schema = scoringRow.schemaJson as LeadScoringSchema;
+      return computeAdsetBandBreakdown(schema, sheetData, adsetInsights);
+    },
+  );
+
+  // GET /api/projects/:projectId/funnels/:funnelId/stages/:stageId/lead-scoring/ad-breakdown?days=30
+  // Breakdown de leads por ad (via utm_content) × banda de scoring (A/B/C/D)
+  // Cruzamento: utm_content da planilha → ad_name do Meta Ads API
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/lead-scoring/ad-breakdown",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const querySchema = z.object({ days: z.coerce.number().int().min(1).max(90).default(30) });
+      const query = querySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Query inválida" });
+
+      const project = await getProjectAccess(
+        params.data.projectId,
+        request.userId,
+        request.userRole,
+      );
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const stage = await getStage(
+        params.data.stageId,
+        params.data.funnelId,
+        params.data.projectId,
+      );
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const EMPTY = { rows: [], semDados: true };
+
+      const [scoringRow] = await fastify.db
+        .select()
+        .from(stageLeadScoringSchemas)
+        .where(eq(stageLeadScoringSchemas.stageId, params.data.stageId))
+        .limit(1);
+
+      if (!scoringRow || !scoringRow.surveyId) return EMPTY;
+
+      const [survey] = await fastify.db
+        .select()
+        .from(funnelSurveys)
+        .where(eq(funnelSurveys.id, scoringRow.surveyId))
+        .limit(1);
+
+      if (!survey) return EMPTY;
+
+      let sheetData: { headers: string[]; rows: string[][] };
+      try {
+        const res = await readSheetData(survey.spreadsheetId, survey.sheetName);
+        sheetData = { headers: res.headers, rows: res.rows };
+      } catch {
+        return EMPTY;
+      }
+
+      if (sheetData.rows.length === 0) return EMPTY;
+
+      // Get Meta Ads account linked to this project (if exists)
+      let adInsights: { ad_id: string; ad_name: string; spend: string }[] | null = null;
+
+      try {
+        const [accountLink] = await fastify.db
+          .select()
+          .from(metaAdsAccountProjects)
+          .where(eq(metaAdsAccountProjects.projectId, params.data.projectId))
+          .limit(1);
+
+        if (accountLink) {
+          const [account] = await fastify.db
+            .select()
+            .from(metaAdsAccounts)
+            .where(eq(metaAdsAccounts.id, accountLink.accountId))
+            .limit(1);
+
+          if (account) {
+            const decryptedToken = decryptAccountToken(
+              account.accessTokenEncrypted,
+              account.accessTokenIv,
+            );
+
+            try {
+              const insights = await fetchAllAdInsights(
+                account.metaAccountId,
+                decryptedToken,
+                query.data.days,
+              );
+              adInsights = insights.map((i: { ad_id: string; ad_name: string; spend?: string }) => ({
+                ad_id: i.ad_id,
+                ad_name: i.ad_name,
+                spend: i.spend ?? "0",
+              }));
+            } catch {
+              adInsights = null;
+            }
+          }
+        }
+      } catch {
+        adInsights = null;
+      }
+
+      const schema = scoringRow.schemaJson as LeadScoringSchema;
+      return computeAdBandBreakdown(schema, sheetData, adInsights);
     },
   );
 });

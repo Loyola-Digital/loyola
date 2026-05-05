@@ -11,22 +11,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { useLeadScoringCampaignBreakdown } from "@/lib/hooks/use-lead-scoring-campaign-breakdown";
+import { useLeadScoringAdBreakdown } from "@/lib/hooks/use-lead-scoring-ad-breakdown";
 
-interface LeadScoringCampaignTableProps {
+interface LeadScoringAdTableProps {
   projectId: string;
   funnelId: string;
   stageId: string;
   days: number;
-  onDaysChange?: (days: number) => void;
 }
 
 function fmtCurrency(v: number | null | undefined): string {
@@ -48,30 +40,21 @@ function fmtInt(v: number | null | undefined): string {
   return v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 }
 
-const DAY_OPTIONS = [
-  { value: 7, label: "Últimos 7 dias" },
-  { value: 14, label: "Últimos 14 dias" },
-  { value: 30, label: "Últimos 30 dias" },
-  { value: 60, label: "Últimos 60 dias" },
-  { value: 90, label: "Últimos 90 dias" },
-];
-
-type SortKey = "campaignName" | "spend" | "totalLeads" | "cpl" | "cplIdeal";
+type SortKey = "adName" | "spend" | "totalLeads" | "cpl" | "cplIdeal";
 type SortDirection = "asc" | "desc" | null;
 
-export function LeadScoringCampaignTable({
+export function LeadScoringAdTable({
   projectId,
   funnelId,
   stageId,
   days,
-  onDaysChange,
-}: LeadScoringCampaignTableProps) {
+}: LeadScoringAdTableProps) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
   const resizeRef = useRef<{ column: string; startX: number; startWidth: number } | null>(null);
 
-  const { data, loading, error } = useLeadScoringCampaignBreakdown(
+  const { data, loading, error } = useLeadScoringAdBreakdown(
     projectId,
     funnelId,
     stageId,
@@ -133,9 +116,9 @@ export function LeadScoringCampaignTable({
       let bVal: number = 0;
 
       switch (sortKey) {
-        case "campaignName": {
-          const aName = a.campaignName || "";
-          const bName = b.campaignName || "";
+        case "adName": {
+          const aName = a.adName || "";
+          const bName = b.adName || "";
           return sortDirection === "asc" ? aName.localeCompare(bName) : bName.localeCompare(aName);
         }
         case "spend":
@@ -184,7 +167,7 @@ export function LeadScoringCampaignTable({
     return (
       <div className="rounded-xl border border-red-200 bg-red-50/50 dark:bg-red-950/20 p-5">
         <p className="text-sm text-red-700 dark:text-red-400">
-          Erro ao carregar breakdown de campanhas: {error}
+          Erro ao carregar breakdown de ads: {error}
         </p>
       </div>
     );
@@ -194,7 +177,7 @@ export function LeadScoringCampaignTable({
     return (
       <div className="rounded-xl border border-border/30 bg-card/60 p-5">
         <p className="text-sm text-muted-foreground">
-          Nenhum dado de utm_campaign encontrado na planilha de pesquisa.
+          Nenhum dado de utm_content encontrado na planilha de pesquisa.
         </p>
       </div>
     );
@@ -205,7 +188,7 @@ export function LeadScoringCampaignTable({
     return (
       <div className="rounded-xl border border-border/30 bg-card/60 p-5">
         <p className="text-sm text-muted-foreground">
-          Nenhuma campanha com leads associados.
+          Nenhum ad com leads associados.
         </p>
       </div>
     );
@@ -215,30 +198,9 @@ export function LeadScoringCampaignTable({
 
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Breakdown de Leads por Campanha</h3>
-        </div>
-        {onDaysChange && (
-          <div className="flex items-center gap-2">
-            <label htmlFor="campaign-days-select" className="text-xs text-muted-foreground">
-              Período:
-            </label>
-            <Select value={days.toString()} onValueChange={(v) => onDaysChange(parseInt(v))}>
-              <SelectTrigger id="campaign-days-select" className="w-[160px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {DAY_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value.toString()}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+      <div className="flex items-center gap-2">
+        <TrendingUp className="h-4 w-4 text-primary" />
+        <h3 className="text-sm font-semibold">Breakdown de Leads por Ad</h3>
       </div>
 
       {/* Tabela 1: Distribuição por Faixa */}
@@ -251,18 +213,18 @@ export function LeadScoringCampaignTable({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="sticky left-0 bg-background z-10 relative group" style={{ width: getColumnWidth("campaignName", 160) }}>
+                  <TableHead className="sticky left-0 bg-background z-10 relative group" style={{ width: getColumnWidth("adName", 160) }}>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleSort("campaignName")}
+                      onClick={() => handleSort("adName")}
                       className="h-8 gap-1"
                     >
-                      Campanha
-                      {renderSortIcon("campaignName")}
+                      Ad
+                      {renderSortIcon("adName")}
                     </Button>
                     <div
-                      onMouseDown={handleMouseDown("campaignName", 160)}
+                      onMouseDown={handleMouseDown("adName", 160)}
                       className="absolute right-0 top-0 h-full w-1 bg-border opacity-0 group-hover:opacity-100 hover:opacity-100 cursor-col-resize hover:bg-primary transition-all"
                     />
                   </TableHead>
@@ -339,9 +301,9 @@ export function LeadScoringCampaignTable({
               </TableHeader>
               <TableBody>
                 {paginatedRows.map((row) => (
-                  <TableRow key={row.utmCampaign}>
+                  <TableRow key={row.utmContent}>
                     <TableCell className="sticky left-0 bg-background z-10 font-medium truncate">
-                      {row.campaignName}
+                      {row.adName}
                     </TableCell>
                     <TableCell className="text-right text-sm">
                       {fmtCurrency(row.spend)}
@@ -356,7 +318,7 @@ export function LeadScoringCampaignTable({
                       {fmtCurrency(row.cplIdeal)}
                     </TableCell>
                     {bandIds.map((bid) => (
-                      <TableCell key={`${row.utmCampaign}-${bid}-pct`} className="text-right text-sm">
+                      <TableCell key={`${row.utmContent}-${bid}-pct`} className="text-right text-sm">
                         {fmtPercent(row.bands[bid]?.pct)}
                       </TableCell>
                     ))}
@@ -378,18 +340,18 @@ export function LeadScoringCampaignTable({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="sticky left-0 bg-background z-10 relative group" style={{ width: getColumnWidth("campaignName", 160) }}>
+                  <TableHead className="sticky left-0 bg-background z-10 relative group" style={{ width: getColumnWidth("adName", 160) }}>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleSort("campaignName")}
+                      onClick={() => handleSort("adName")}
                       className="h-8 gap-1"
                     >
-                      Campanha
-                      {renderSortIcon("campaignName")}
+                      Ad
+                      {renderSortIcon("adName")}
                     </Button>
                     <div
-                      onMouseDown={handleMouseDown("campaignName", 160)}
+                      onMouseDown={handleMouseDown("adName", 160)}
                       className="absolute right-0 top-0 h-full w-1 bg-border opacity-0 group-hover:opacity-100 hover:opacity-100 cursor-col-resize hover:bg-primary transition-all"
                     />
                   </TableHead>
@@ -460,9 +422,9 @@ export function LeadScoringCampaignTable({
               </TableHeader>
               <TableBody>
                 {paginatedRows.map((row) => (
-                  <TableRow key={row.utmCampaign}>
+                  <TableRow key={row.utmContent}>
                     <TableCell className="sticky left-0 bg-background z-10 font-medium truncate">
-                      {row.campaignName}
+                      {row.adName}
                     </TableCell>
                     <TableCell className="text-right text-sm">
                       {fmtCurrency(row.spend)}
@@ -474,7 +436,7 @@ export function LeadScoringCampaignTable({
                       {fmtCurrency(row.cpl)}
                     </TableCell>
                     {bandIds.map((bid) => (
-                      <div key={`row-${row.utmCampaign}-${bid}`} className="contents">
+                      <div key={`row-${row.utmContent}-${bid}`} className="contents">
                         <TableCell className="text-right text-sm">
                           {fmtCurrency(row.bands[bid]?.cplFaixa)}
                         </TableCell>
