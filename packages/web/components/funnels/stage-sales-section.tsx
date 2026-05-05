@@ -3,6 +3,7 @@
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { StageSalesSubtype } from "@loyola-x/shared";
+import { resolveSalesByMediumByAdsets } from "@/lib/hooks/use-funnel-adsets-map";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("pt-BR", {
@@ -76,6 +77,12 @@ interface StageSalesSectionProps {
   subtype: StageSalesSubtype;
   title: string;
   days?: number;
+  /**
+   * Map de adset_id → adset_name vindo da Meta API. Quando informado, a tabela
+   * "Por Medium" resolve `utm_medium` (que armazena o adset_id) pro nome
+   * humano e re-agrupa pelos mesmos nomes de adset.
+   */
+  adsetsMap?: Map<string, string>;
 }
 
 export function StageSalesSection({
@@ -85,6 +92,7 @@ export function StageSalesSection({
   subtype,
   title,
   days,
+  adsetsMap,
 }: StageSalesSectionProps) {
   const { data, isLoading, isError } = useStageSalesData(
     projectId,
@@ -126,7 +134,12 @@ export function StageSalesSection({
     bruto: c.bruto,
   }));
 
-  const mediumRows = (data.porUtmMedium ?? []).map((m) => ({
+  // Resolve adset_id → adset_name e re-agrupa pelos mesmos nomes (vários IDs
+  // podem ter o mesmo nome em campanhas duplicadas).
+  const resolvedMedium = adsetsMap
+    ? resolveSalesByMediumByAdsets(data.porUtmMedium ?? [], adsetsMap)
+    : (data.porUtmMedium ?? []);
+  const mediumRows = resolvedMedium.map((m) => ({
     key: m.medium,
     label: m.medium,
     vendas: m.vendas,

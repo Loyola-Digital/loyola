@@ -55,6 +55,7 @@ import {
   useFunnelGroupsDaily,
 } from "@/lib/hooks/use-funnel-groups";
 import { useOrganicLeadsByDay } from "@/lib/hooks/use-organic-leads-by-day";
+import { useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { SurveyQualificationSection } from "./survey-qualification-section";
 import { GroupsDashboardSection } from "./groups-dashboard-section";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -174,6 +175,11 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
   // Pesquisas orgânicas: linha "Leads Gratuitos" no chart de Leads Acumulados
   const organicLeads = useOrganicLeadsByDay(projectId, funnel.id, stageId ?? null);
+
+  // Map adset_id → adset_name pra resolver utm_medium nos tooltips e tabelas.
+  // utm_medium na planilha de leads/vendas armazena o adset_id; aqui resolvemos
+  // pro nome humano e re-agrupamos pelos mesmos nomes.
+  const { adsetsMap } = useFunnelAdsetsMap(projectId, campaignIds, days);
 
   const hasComparison = !!(compData && !compData.semDados);
   const compTotals = hasComparison ? compData!.totals : null;
@@ -462,6 +468,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           surveyMatched={survey.matchedResponses}
           surveyUnmatched={survey.unmatchedResponses}
           salesByDay={salesByDay ?? undefined}
+          adsetsMap={adsetsMap}
         />
       ) : null}
 
@@ -602,6 +609,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             subtype="capture"
             title="Vendas de Captação"
             days={days}
+            adsetsMap={adsetsMap}
           />
           <div className="border-t border-border/20" />
           <StageSalesSection
@@ -611,6 +619,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             subtype="main_product"
             title="Produto Principal"
             days={days}
+            adsetsMap={adsetsMap}
           />
         </div>
       )}
