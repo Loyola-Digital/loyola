@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import {
-  FileSpreadsheet, Plus, Trash2, ChevronDown, ChevronRight, RefreshCw, Search, ClipboardList,
+  FileSpreadsheet, Plus, Trash2, ChevronDown, ChevronRight, RefreshCw, Search, ClipboardList, Settings2,
 } from "lucide-react";
+import { SurveyMappingDialog } from "./survey-mapping-dialog";
+import type { FunnelSurvey } from "@/lib/hooks/use-google-sheets";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -136,13 +138,15 @@ function SheetsPickerDialog({ projectId, funnelId, stageId, surveyType, open, on
 // SURVEY DATA SECTION (collapsible)
 // ============================================================
 
-function SurveyDataSection({ survey, projectId, funnelId }: { survey: { id: string; spreadsheetId: string; spreadsheetName: string; sheetName: string }; projectId: string; funnelId: string }) {
+function SurveyDataSection({ survey, projectId, funnelId }: { survey: FunnelSurvey; projectId: string; funnelId: string }) {
   const [open, setOpen] = useState(false);
+  const [mappingOpen, setMappingOpen] = useState(false);
   const { data, isLoading } = useSheetData(open ? survey.spreadsheetId : null, open ? survey.sheetName : null);
   const removeSurvey = useRemoveFunnelSurvey(projectId, funnelId);
   const refreshData = useRefreshSheetData();
   const [page, setPage] = useState(0);
   const pageSize = 20;
+  const mappedQuestionsCount = survey.columnMapping?.questions?.length ?? 0;
 
   const rows = data?.rows ?? [];
   const headers = data?.headers ?? [];
@@ -173,8 +177,15 @@ function SurveyDataSection({ survey, projectId, funnelId }: { survey: { id: stri
           <span className="text-sm font-medium">{survey.spreadsheetName}</span>
           <span className="text-xs text-muted-foreground">/ {survey.sheetName}</span>
           {data && <Badge variant="secondary" className="text-[10px]">{fmtNumber(data.totalRows)} respostas</Badge>}
+          {mappedQuestionsCount > 0 && (
+            <Badge variant="outline" className="text-[10px]">{mappedQuestionsCount} pergunta{mappedQuestionsCount > 1 ? "s" : ""} mapeada{mappedQuestionsCount > 1 ? "s" : ""}</Badge>
+          )}
         </div>
         <div className="flex items-center gap-1">
+          <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs" onClick={(e) => { e.stopPropagation(); setMappingOpen(true); }}>
+            <Settings2 className="h-3.5 w-3.5" />
+            Mapear
+          </Button>
           <Button size="icon" variant="ghost" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); refreshData.mutate({ spreadsheetId: survey.spreadsheetId, sheetName: survey.sheetName }); }}>
             <RefreshCw className={`h-3.5 w-3.5 ${refreshData.isPending ? "animate-spin" : ""}`} />
           </Button>
@@ -186,6 +197,14 @@ function SurveyDataSection({ survey, projectId, funnelId }: { survey: { id: stri
           </Button>
         </div>
       </button>
+
+      <SurveyMappingDialog
+        projectId={projectId}
+        funnelId={funnelId}
+        survey={survey}
+        open={mappingOpen}
+        onOpenChange={setMappingOpen}
+      />
 
       {open && (
         <div className="border-t border-border/20 p-4 space-y-4">

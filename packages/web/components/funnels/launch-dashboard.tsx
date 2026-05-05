@@ -575,6 +575,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         data={{
           byQuestion: survey.byQuestion,
           byQuestionByOrigin: survey.byQuestionByOrigin,
+          questions: survey.questions,
           totalResponses: survey.totalResponses,
           usingFallback: survey.usingFallback,
           fallbackReason: survey.fallbackReason,

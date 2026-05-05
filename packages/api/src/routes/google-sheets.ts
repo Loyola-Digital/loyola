@@ -149,6 +149,44 @@ export default fp(async function googleSheetsRoutes(fastify) {
     return { success: true };
   });
 
+  // ---- PATCH /api/projects/:projectId/funnels/:funnelId/surveys/:surveyId/mapping ----
+  // Atualiza o columnMapping da survey: utm_*, email, phone, timestamp, questions[].
+  // Substitui o mapping inteiro (não faz merge parcial).
+  const surveyQuestionSchema = z.object({
+    columnName: z.string().min(1),
+    label: z.string().min(1),
+    showInDashboard: z.boolean(),
+  });
+  const surveyMappingSchema = z.object({
+    utm_source: z.string().optional(),
+    utm_medium: z.string().optional(),
+    utm_campaign: z.string().optional(),
+    utm_content: z.string().optional(),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+    timestamp: z.string().optional(),
+    questions: z.array(surveyQuestionSchema).optional(),
+  });
+
+  fastify.patch(
+    "/api/projects/:projectId/funnels/:funnelId/surveys/:surveyId/mapping",
+    async (request, reply) => {
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+      const { surveyId } = request.params as { surveyId: string };
+      const body = surveyMappingSchema.safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: "Dados invalidos", details: body.error.format() });
+
+      const [updated] = await fastify.db
+        .update(funnelSurveys)
+        .set({ columnMapping: body.data })
+        .where(eq(funnelSurveys.id, surveyId))
+        .returning();
+
+      if (!updated) return reply.code(404).send({ error: "Pesquisa nao encontrada" });
+      return updated;
+    },
+  );
+
   // ---- POST /api/google-sheets/spreadsheets/:spreadsheetId/sheets/:sheetName/refresh ----
   fastify.post("/api/google-sheets/spreadsheets/:spreadsheetId/sheets/:sheetName/refresh", async (request, reply) => {
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });

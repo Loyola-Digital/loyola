@@ -698,6 +698,19 @@ export const funnelSurveys = pgTable(
     spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
     sheetName: varchar("sheet_name", { length: 255 }).notNull(),
     surveyType: surveyTypeEnum("survey_type").notNull().default("paid"),
+    columnMapping: jsonb("column_mapping")
+      .notNull()
+      .$type<{
+        utm_source?: string;
+        utm_medium?: string;
+        utm_campaign?: string;
+        utm_content?: string;
+        email?: string;
+        phone?: string;
+        timestamp?: string;
+        questions?: Array<{ columnName: string; label: string; showInDashboard: boolean }>;
+      }>()
+      .default({}),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

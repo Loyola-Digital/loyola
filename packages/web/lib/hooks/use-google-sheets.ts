@@ -22,13 +22,32 @@ export interface SheetData {
 
 export type SurveyType = "paid" | "organic";
 
+export interface SurveyQuestionConfig {
+  columnName: string;
+  label: string;
+  showInDashboard: boolean;
+}
+
+export interface SurveyColumnMapping {
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_content?: string;
+  email?: string;
+  phone?: string;
+  timestamp?: string;
+  questions?: SurveyQuestionConfig[];
+}
+
 export interface FunnelSurvey {
   id: string;
   funnelId: string;
+  stageId: string | null;
   spreadsheetId: string;
   spreadsheetName: string;
   sheetName: string;
   surveyType: SurveyType;
+  columnMapping: SurveyColumnMapping;
   createdAt: string;
   responses?: number;
 }
@@ -127,6 +146,19 @@ export function useRemoveFunnelSurvey(projectId: string, funnelId: string) {
   return useMutation({
     mutationFn: (surveyId: string) =>
       apiClient(`/api/projects/${projectId}/funnels/${funnelId}/surveys/${surveyId}`, { method: "DELETE" }),
+    onSuccess: () => { invalidateFunnelSurveys(qc, projectId, funnelId); },
+  });
+}
+
+export function useUpdateSurveyMapping(projectId: string, funnelId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ surveyId, mapping }: { surveyId: string; mapping: SurveyColumnMapping }) =>
+      apiClient<FunnelSurvey>(
+        `/api/projects/${projectId}/funnels/${funnelId}/surveys/${surveyId}/mapping`,
+        { method: "PATCH", body: JSON.stringify(mapping) },
+      ),
     onSuccess: () => { invalidateFunnelSurveys(qc, projectId, funnelId); },
   });
 }
