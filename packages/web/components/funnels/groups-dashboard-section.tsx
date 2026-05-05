@@ -83,10 +83,35 @@ export function GroupsDashboardSection({ projectId, funnelId }: Props) {
 
   const data = dailyQuery.data;
   const campaigns = data?.campaigns ?? [];
-  const filteredCampaigns =
-    campaignFilter === "__all__"
-      ? campaigns
-      : campaigns.filter((c) => c.campaignId === campaignFilter);
+  const isAllCampaigns = campaignFilter === "__all__";
+  const filteredCampaigns = isAllCampaigns
+    ? campaigns
+    : campaigns.filter((c) => c.campaignId === campaignFilter);
+
+  // Quando filtra por campanha, recalcula KPIs e aggSeries a partir da
+  // campaign individual. Quando "Todas as campanhas", usa o agregado do backend.
+  const filteredAggSeries = useMemo<FunnelGroupsDailyPoint[]>(() => {
+    if (isAllCampaigns) return data?.aggregate.series ?? [];
+    const c = campaigns.find((c) => c.campaignId === campaignFilter);
+    return c?.series ?? [];
+  }, [isAllCampaigns, campaignFilter, data, campaigns]);
+
+  const filteredKpis = useMemo(() => {
+    if (isAllCampaigns) return data?.kpis ?? null;
+    if (filteredAggSeries.length === 0) return null;
+    const last = filteredAggSeries[filteredAggSeries.length - 1];
+    return {
+      participants: last.participants,
+      deltaParticipants: last.deltaParticipants,
+      deltaInput: last.deltaInput,
+      deltaOutput: last.deltaOutput,
+      groupFull: last.groupFull,
+      groupOpen: last.groupOpen,
+      groupTotal: last.groupTotal,
+      clicksTotal: filteredAggSeries.reduce((s, p) => s + p.clicksTotal, 0),
+      asOf: last.date,
+    };
+  }, [isAllCampaigns, filteredAggSeries, data]);
 
   const tableRows = useMemo(() => {
     type Row = FunnelGroupsDailyPoint & { campaignId: string; campaignName: string };
@@ -121,8 +146,6 @@ export function GroupsDashboardSection({ projectId, funnelId }: Props) {
   if (linkQuery.isLoading || !isLinked) return null;
 
   const link = linkQuery.data!;
-  const kpis = data?.kpis;
-  const aggSeries = data?.aggregate.series ?? [];
 
   return (
     <div className="rounded-lg border border-border/40 bg-card/40 p-6 space-y-6">
@@ -145,7 +168,22 @@ export function GroupsDashboardSection({ projectId, funnelId }: Props) {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {campaigns.length > 0 && (
+            <Select value={campaignFilter} onValueChange={setCampaignFilter}>
+              <SelectTrigger className="h-8 w-[260px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">Todas as campanhas</SelectItem>
+                {campaigns.map((c) => (
+                  <SelectItem key={c.campaignId} value={c.campaignId}>
+                    {c.campaignName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Select value={String(days)} onValueChange={(v) => setDays(Number(v) as 7 | 14 | 30)}>
             <SelectTrigger className="h-8 w-[110px]">
               <SelectValue />
@@ -169,40 +207,40 @@ export function GroupsDashboardSection({ projectId, funnelId }: Props) {
             <Skeleton key={i} className="h-20" />
           ))}
         </div>
-      ) : kpis ? (
+      ) : filteredKpis ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <KpiCard
             icon={<Users className="h-4 w-4" />}
             label="Participantes"
-            value={fmt(kpis.participants)}
-            sublabel={kpis.asOf ? `até ${formatDateBR(kpis.asOf)}` : null}
+            value={fmt(filteredKpis.participants)}
+            sublabel={filteredKpis.asOf ? `até ${formatDateBR(filteredKpis.asOf)}` : null}
             color="purple"
           />
           <KpiCard
             icon={<ArrowDownToLine className="h-4 w-4" />}
             label="Entrou no dia"
-            value={fmtSigned(kpis.deltaInput)}
+            value={fmtSigned(filteredKpis.deltaInput)}
             sublabel="vs. dia anterior"
             color="green"
           />
           <KpiCard
             icon={<ArrowUpFromLine className="h-4 w-4" />}
             label="Saiu no dia"
-            value={fmtSigned(kpis.deltaOutput)}
+            value={fmtSigned(filteredKpis.deltaOutput)}
             sublabel="vs. dia anterior"
             color="red"
           />
           <KpiCard
             icon={<TrendingUp className="h-4 w-4" />}
             label="Saldo do dia"
-            value={fmtSigned(kpis.deltaParticipants)}
-            sublabel={`${fmt(kpis.groupOpen)} grupos abertos · ${fmt(kpis.groupFull)} lotados`}
-            color={kpis.deltaParticipants >= 0 ? "green" : "red"}
+            value={fmtSigned(filteredKpis.deltaParticipants)}
+            sublabel={`${fmt(filteredKpis.groupOpen)} grupos abertos · ${fmt(filteredKpis.groupFull)} lotados`}
+            color={filteredKpis.deltaParticipants >= 0 ? "green" : "red"}
           />
         </div>
       ) : null}
 
-      {aggSeries.length > 0 && <EvolutionChart series={aggSeries} />}
+      {filteredAggSeries.length > 0 && <EvolutionChart series={filteredAggSeries} />}
 
       {campaigns.length === 0 ? (
         <div className="text-sm text-muted-foreground text-center py-8 border border-dashed border-border/40 rounded">
@@ -212,19 +250,11 @@ export function GroupsDashboardSection({ projectId, funnelId }: Props) {
         <div>
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-sm font-semibold">Detalhamento diário</h4>
-            <Select value={campaignFilter} onValueChange={setCampaignFilter}>
-              <SelectTrigger className="h-8 w-[280px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">Todas as campanhas</SelectItem>
-                {campaigns.map((c) => (
-                  <SelectItem key={c.campaignId} value={c.campaignId}>
-                    {c.campaignName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {!isAllCampaigns && (
+              <span className="text-xs text-muted-foreground">
+                Filtrado por: {campaigns.find((c) => c.campaignId === campaignFilter)?.campaignName ?? ""}
+              </span>
+            )}
           </div>
           <div className="rounded-md border border-border/40 overflow-hidden">
             <Table>
