@@ -79,6 +79,7 @@ type LeadScoringSchema = {
     global?: number;
     weighted_factor?: number;
     per_band?: Record<string, { cpl: number; breakeven: number }>;
+    conversion_rates?: Record<string, number>; // Conv.A, Conv.B, Conv.C, Conv.D (0-1)
   };
 };
 
@@ -599,8 +600,24 @@ async function computeCampaignBandBreakdown(
 
     const cpl = totalLeads > 0 ? spend / totalLeads : null;
 
-    // CPL Ideal global
-    const cplIdeal = schema.cpl_ideal?.global ?? null;
+    // CPL Ideal = (Ticket / ROAS) × Fator de conversão ponderado
+    // Fator = Conv.A × %A + Conv.B × %B + Conv.C × %C + Conv.D × %D
+    let cplIdeal: number | null = null;
+    const project = schema.project;
+    const conversionRates = schema.cpl_ideal?.conversion_rates ?? {};
+
+    if (project?.ticket && project?.roas && project.roas > 0) {
+      const ticketPerRoas = project.ticket / project.roas; // Usually = 2
+      let ponderatedFactor = 0;
+
+      for (const band of bands) {
+        const convRate = conversionRates[band.id] ?? 0;
+        const bandPct = (bandCounts.get(band.id) ?? 0) / Math.max(totalLeads, 1);
+        ponderatedFactor += convRate * bandPct;
+      }
+
+      cplIdeal = ticketPerRoas * ponderatedFactor;
+    }
 
     const bandBreakdown: Record<string, BandBreakdown> = {};
     for (const band of bands) {

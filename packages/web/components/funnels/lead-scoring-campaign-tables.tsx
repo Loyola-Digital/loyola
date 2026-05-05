@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { TrendingUp } from "lucide-react";
+import { TrendingUp, ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { useLeadScoringCampaignBreakdown } from "@/lib/hooks/use-lead-scoring-campaign-breakdown";
 
 interface LeadScoringCampaignTablesProps {
@@ -53,18 +54,85 @@ const DAY_OPTIONS = [
   { value: 90, label: "Últimos 90 dias" },
 ];
 
+type SortKey = "campaignName" | "spend" | "totalLeads" | "cpl" | "cplIdeal";
+type SortDirection = "asc" | "desc" | null;
+
 export function LeadScoringCampaignTables({
   projectId,
   funnelId,
   stageId,
 }: LeadScoringCampaignTablesProps) {
   const [days, setDays] = useState(30);
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
   const { data, loading, error } = useLeadScoringCampaignBreakdown(
     projectId,
     funnelId,
     stageId,
     days,
   );
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      // Toggle direction or reset
+      if (sortDirection === "asc") {
+        setSortDirection("desc");
+      } else if (sortDirection === "desc") {
+        setSortKey(null);
+        setSortDirection(null);
+      }
+    } else {
+      setSortKey(key);
+      setSortDirection("asc");
+    }
+  };
+
+  const getSortedRows = () => {
+    if (!data?.rows || !sortKey || !sortDirection) {
+      return data?.rows ?? [];
+    }
+
+    const sorted = [...data.rows].sort((a, b) => {
+      let aVal: number = 0;
+      let bVal: number = 0;
+
+      switch (sortKey) {
+        case "campaignName":
+          const aName = a.campaignName || "";
+          const bName = b.campaignName || "";
+          return sortDirection === "asc" ? aName.localeCompare(bName) : bName.localeCompare(aName);
+        case "spend":
+          aVal = a.spend ?? 0;
+          bVal = b.spend ?? 0;
+          break;
+        case "totalLeads":
+          aVal = a.totalLeads ?? 0;
+          bVal = b.totalLeads ?? 0;
+          break;
+        case "cpl":
+          aVal = a.cpl ?? 0;
+          bVal = b.cpl ?? 0;
+          break;
+        case "cplIdeal":
+          aVal = a.cplIdeal ?? 0;
+          bVal = b.cplIdeal ?? 0;
+          break;
+      }
+
+      return sortDirection === "asc" ? aVal - bVal : bVal - aVal;
+    });
+
+    return sorted;
+  };
+
+  const sortedRows = getSortedRows();
+  const paginatedRows = sortedRows.slice(0, 10); // Limit to 10 rows
+
+  const renderSortIcon = (key: SortKey) => {
+    if (sortKey !== key) return <ArrowUpDown className="h-4 w-4 opacity-40" />;
+    if (sortDirection === "asc") return <ChevronUp className="h-4 w-4" />;
+    return <ChevronDown className="h-4 w-4" />;
+  };
 
   if (loading) {
     return (
@@ -138,108 +206,198 @@ export function LeadScoringCampaignTables({
       {/* Tabela 1: Distribuição por Faixa */}
       <div className="space-y-2">
         <p className="text-xs font-semibold text-muted-foreground">
-          Tabela 1: Distribuição de Leads por Faixa (%)
+          Tabela 1: Distribuição de Leads por Faixa (%) — Mostrando 1 a {Math.min(10, sortedRows.length)} de {sortedRows.length}
         </p>
-        <div className="rounded-md border overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="sticky left-0 bg-background z-10 min-w-[160px]">
-                  Campanha
-                </TableHead>
-                <TableHead className="text-right min-w-[100px]">Investido</TableHead>
-                <TableHead className="text-right min-w-[80px]">Leads</TableHead>
-                <TableHead className="text-right min-w-[90px]">CPL</TableHead>
-                <TableHead className="text-right min-w-[100px]">CPL Ideal</TableHead>
-                {bandIds.map((bid) => (
-                  <TableHead key={`${bid}-pct`} className="text-right min-w-[90px]">
-                    % Band {bid}
+        <div className="rounded-md border overflow-y-auto max-h-[500px]">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="sticky left-0 bg-background z-10 min-w-[160px]">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSort("campaignName")}
+                      className="h-8 gap-1"
+                    >
+                      Campanha
+                      {renderSortIcon("campaignName")}
+                    </Button>
                   </TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.utmCampaign}>
-                  <TableCell className="sticky left-0 bg-background z-10 font-medium truncate">
-                    {row.campaignName}
-                  </TableCell>
-                  <TableCell className="text-right text-sm">
-                    {fmtCurrency(row.spend)}
-                  </TableCell>
-                  <TableCell className="text-right text-sm font-medium">
-                    {fmtInt(row.totalLeads)}
-                  </TableCell>
-                  <TableCell className="text-right text-sm">
-                    {fmtCurrency(row.cpl)}
-                  </TableCell>
-                  <TableCell className="text-right text-sm">
-                    {fmtCurrency(row.cplIdeal)}
-                  </TableCell>
+                  <TableHead className="text-right min-w-[100px]">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSort("spend")}
+                      className="h-8 gap-1 ml-auto"
+                    >
+                      Investido
+                      {renderSortIcon("spend")}
+                    </Button>
+                  </TableHead>
+                  <TableHead className="text-right min-w-[80px]">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSort("totalLeads")}
+                      className="h-8 gap-1 ml-auto"
+                    >
+                      Leads
+                      {renderSortIcon("totalLeads")}
+                    </Button>
+                  </TableHead>
+                  <TableHead className="text-right min-w-[90px]">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSort("cpl")}
+                      className="h-8 gap-1 ml-auto"
+                    >
+                      CPL
+                      {renderSortIcon("cpl")}
+                    </Button>
+                  </TableHead>
+                  <TableHead className="text-right min-w-[100px]">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSort("cplIdeal")}
+                      className="h-8 gap-1 ml-auto"
+                    >
+                      CPL Ideal
+                      {renderSortIcon("cplIdeal")}
+                    </Button>
+                  </TableHead>
                   {bandIds.map((bid) => (
-                    <TableCell key={`${row.utmCampaign}-${bid}-pct`} className="text-right text-sm">
-                      {fmtPercent(row.bands[bid]?.pct)}
-                    </TableCell>
+                    <TableHead key={`${bid}-pct`} className="text-right min-w-[90px]">
+                      % Band {bid}
+                    </TableHead>
                   ))}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {paginatedRows.map((row) => (
+                  <TableRow key={row.utmCampaign}>
+                    <TableCell className="sticky left-0 bg-background z-10 font-medium truncate">
+                      {row.campaignName}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">
+                      {fmtCurrency(row.spend)}
+                    </TableCell>
+                    <TableCell className="text-right text-sm font-medium">
+                      {fmtInt(row.totalLeads)}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">
+                      {fmtCurrency(row.cpl)}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">
+                      {fmtCurrency(row.cplIdeal)}
+                    </TableCell>
+                    {bandIds.map((bid) => (
+                      <TableCell key={`${row.utmCampaign}-${bid}-pct`} className="text-right text-sm">
+                        {fmtPercent(row.bands[bid]?.pct)}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       </div>
 
       {/* Tabela 2: Breakdown Financeiro por Faixa */}
       <div className="space-y-2">
         <p className="text-xs font-semibold text-muted-foreground">
-          Tabela 2: Custo por Faixa (CPL/Faixa + %)
+          Tabela 2: Custo por Faixa (CPL/Faixa + %) — Mostrando 1 a {Math.min(10, sortedRows.length)} de {sortedRows.length}
         </p>
-        <div className="rounded-md border overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="sticky left-0 bg-background z-10 min-w-[160px]">
-                  Campanha
-                </TableHead>
-                <TableHead className="text-right min-w-[100px]">Investido</TableHead>
-                <TableHead className="text-right min-w-[80px]">Leads</TableHead>
-                <TableHead className="text-right min-w-[90px]">CPL Total</TableHead>
-                {bandIds.map((bid) => (
-                  <div key={`col-${bid}`} className="contents">
-                    <TableHead className="text-right min-w-[100px]">CPL {bid}</TableHead>
-                    <TableHead className="text-right min-w-[90px]">% {bid}</TableHead>
-                  </div>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.utmCampaign}>
-                  <TableCell className="sticky left-0 bg-background z-10 font-medium truncate">
-                    {row.campaignName}
-                  </TableCell>
-                  <TableCell className="text-right text-sm">
-                    {fmtCurrency(row.spend)}
-                  </TableCell>
-                  <TableCell className="text-right text-sm font-medium">
-                    {fmtInt(row.totalLeads)}
-                  </TableCell>
-                  <TableCell className="text-right text-sm">
-                    {fmtCurrency(row.cpl)}
-                  </TableCell>
+        <div className="rounded-md border overflow-y-auto max-h-[500px]">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="sticky left-0 bg-background z-10 min-w-[160px]">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSort("campaignName")}
+                      className="h-8 gap-1"
+                    >
+                      Campanha
+                      {renderSortIcon("campaignName")}
+                    </Button>
+                  </TableHead>
+                  <TableHead className="text-right min-w-[100px]">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSort("spend")}
+                      className="h-8 gap-1 ml-auto"
+                    >
+                      Investido
+                      {renderSortIcon("spend")}
+                    </Button>
+                  </TableHead>
+                  <TableHead className="text-right min-w-[80px]">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSort("totalLeads")}
+                      className="h-8 gap-1 ml-auto"
+                    >
+                      Leads
+                      {renderSortIcon("totalLeads")}
+                    </Button>
+                  </TableHead>
+                  <TableHead className="text-right min-w-[90px]">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSort("cpl")}
+                      className="h-8 gap-1 ml-auto"
+                    >
+                      CPL Total
+                      {renderSortIcon("cpl")}
+                    </Button>
+                  </TableHead>
                   {bandIds.map((bid) => (
-                    <div key={`row-${row.utmCampaign}-${bid}`} className="contents">
-                      <TableCell className="text-right text-sm">
-                        {fmtCurrency(row.bands[bid]?.cplFaixa)}
-                      </TableCell>
-                      <TableCell className="text-right text-sm">
-                        {fmtPercent(row.bands[bid]?.pct)}
-                      </TableCell>
+                    <div key={`col-${bid}`} className="contents">
+                      <TableHead className="text-right min-w-[100px]">CPL {bid}</TableHead>
+                      <TableHead className="text-right min-w-[90px]">% {bid}</TableHead>
                     </div>
                   ))}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {paginatedRows.map((row) => (
+                  <TableRow key={row.utmCampaign}>
+                    <TableCell className="sticky left-0 bg-background z-10 font-medium truncate">
+                      {row.campaignName}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">
+                      {fmtCurrency(row.spend)}
+                    </TableCell>
+                    <TableCell className="text-right text-sm font-medium">
+                      {fmtInt(row.totalLeads)}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">
+                      {fmtCurrency(row.cpl)}
+                    </TableCell>
+                    {bandIds.map((bid) => (
+                      <div key={`row-${row.utmCampaign}-${bid}`} className="contents">
+                        <TableCell className="text-right text-sm">
+                          {fmtCurrency(row.bands[bid]?.cplFaixa)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          {fmtPercent(row.bands[bid]?.pct)}
+                        </TableCell>
+                      </div>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       </div>
     </div>
