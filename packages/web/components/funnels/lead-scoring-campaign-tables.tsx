@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { TrendingUp, ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
+import { TrendingUp, ArrowUpDown, ChevronUp, ChevronDown, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -65,6 +65,7 @@ export function LeadScoringCampaignTables({
   const [days, setDays] = useState(30);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+  const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set());
   const { data, loading, error } = useLeadScoringCampaignBreakdown(
     projectId,
     funnelId,
@@ -87,6 +88,18 @@ export function LeadScoringCampaignTables({
     }
   };
 
+  const toggleCampaignExpansion = (utmCampaign: string) => {
+    setExpandedCampaigns((prev) => {
+      const next = new Set(prev);
+      if (next.has(utmCampaign)) {
+        next.delete(utmCampaign);
+      } else {
+        next.add(utmCampaign);
+      }
+      return next;
+    });
+  };
+
   const getSortedRows = () => {
     if (!data?.rows || !sortKey || !sortDirection) {
       return data?.rows ?? [];
@@ -97,10 +110,11 @@ export function LeadScoringCampaignTables({
       let bVal: number = 0;
 
       switch (sortKey) {
-        case "campaignName":
+        case "campaignName": {
           const aName = a.campaignName || "";
           const bName = b.campaignName || "";
           return sortDirection === "asc" ? aName.localeCompare(bName) : bName.localeCompare(aName);
+        }
         case "spend":
           aVal = a.spend ?? 0;
           bVal = b.spend ?? 0;
@@ -276,30 +290,73 @@ export function LeadScoringCampaignTables({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedRows.map((row) => (
-                  <TableRow key={row.utmCampaign}>
-                    <TableCell className="sticky left-0 bg-background z-10 font-medium truncate">
-                      {row.campaignName}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {fmtCurrency(row.spend)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm font-medium">
-                      {fmtInt(row.totalLeads)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {fmtCurrency(row.cpl)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {fmtCurrency(row.cplIdeal)}
-                    </TableCell>
-                    {bandIds.map((bid) => (
-                      <TableCell key={`${row.utmCampaign}-${bid}-pct`} className="text-right text-sm">
-                        {fmtPercent(row.bands[bid]?.pct)}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
+                {paginatedRows.map((row) => {
+                  const isExpanded = expandedCampaigns.has(row.utmCampaign);
+                  const adsets = data?.adsetsBycampaign?.[row.utmCampaign] ?? [];
+                  return (
+                    <>
+                      <TableRow key={row.utmCampaign}>
+                        <TableCell className="sticky left-0 bg-background z-10 font-medium truncate">
+                          <div className="flex items-center gap-2">
+                            {adsets.length > 0 && (
+                              <button
+                                onClick={() => toggleCampaignExpansion(row.utmCampaign)}
+                                className="p-0 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                              >
+                                <ChevronRight
+                                  className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                                />
+                              </button>
+                            )}
+                            {adsets.length === 0 && <div className="w-4" />}
+                            <span>{row.campaignName}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          {fmtCurrency(row.spend)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-medium">
+                          {fmtInt(row.totalLeads)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          {fmtCurrency(row.cpl)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          {fmtCurrency(row.cplIdeal)}
+                        </TableCell>
+                        {bandIds.map((bid) => (
+                          <TableCell key={`${row.utmCampaign}-${bid}-pct`} className="text-right text-sm">
+                            {fmtPercent(row.bands[bid]?.pct)}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                      {isExpanded && adsets.length > 0 && (
+                        <TableRow className="bg-muted/30">
+                          <TableCell colSpan={5 + bandIds.length} className="p-3">
+                            <div className="pl-4 space-y-2">
+                              <p className="text-xs font-semibold text-muted-foreground">Adsets e Ads:</p>
+                              {adsets.map((adset) => (
+                                <div key={adset.id} className="pl-2 border-l border-muted">
+                                  <p className="text-xs font-medium text-foreground">{adset.name}</p>
+                                  <p className="text-xs text-muted-foreground">Status: {adset.status}</p>
+                                  {adset.ads.length > 0 && (
+                                    <div className="ml-2 mt-1 space-y-1">
+                                      {adset.ads.map((ad) => (
+                                        <div key={ad.id} className="text-xs text-muted-foreground">
+                                          • {ad.name} ({ad.status})
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -369,32 +426,75 @@ export function LeadScoringCampaignTables({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedRows.map((row) => (
-                  <TableRow key={row.utmCampaign}>
-                    <TableCell className="sticky left-0 bg-background z-10 font-medium truncate">
-                      {row.campaignName}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {fmtCurrency(row.spend)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm font-medium">
-                      {fmtInt(row.totalLeads)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {fmtCurrency(row.cpl)}
-                    </TableCell>
-                    {bandIds.map((bid) => (
-                      <div key={`row-${row.utmCampaign}-${bid}`} className="contents">
-                        <TableCell className="text-right text-sm">
-                          {fmtCurrency(row.bands[bid]?.cplFaixa)}
+                {paginatedRows.map((row) => {
+                  const isExpanded = expandedCampaigns.has(row.utmCampaign);
+                  const adsets = data?.adsetsBycampaign?.[row.utmCampaign] ?? [];
+                  return (
+                    <>
+                      <TableRow key={row.utmCampaign}>
+                        <TableCell className="sticky left-0 bg-background z-10 font-medium truncate">
+                          <div className="flex items-center gap-2">
+                            {adsets.length > 0 && (
+                              <button
+                                onClick={() => toggleCampaignExpansion(row.utmCampaign)}
+                                className="p-0 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                              >
+                                <ChevronRight
+                                  className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                                />
+                              </button>
+                            )}
+                            {adsets.length === 0 && <div className="w-4" />}
+                            <span>{row.campaignName}</span>
+                          </div>
                         </TableCell>
                         <TableCell className="text-right text-sm">
-                          {fmtPercent(row.bands[bid]?.pct)}
+                          {fmtCurrency(row.spend)}
                         </TableCell>
-                      </div>
-                    ))}
-                  </TableRow>
-                ))}
+                        <TableCell className="text-right text-sm font-medium">
+                          {fmtInt(row.totalLeads)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          {fmtCurrency(row.cpl)}
+                        </TableCell>
+                        {bandIds.map((bid) => (
+                          <div key={`row-${row.utmCampaign}-${bid}`} className="contents">
+                            <TableCell className="text-right text-sm">
+                              {fmtCurrency(row.bands[bid]?.cplFaixa)}
+                            </TableCell>
+                            <TableCell className="text-right text-sm">
+                              {fmtPercent(row.bands[bid]?.pct)}
+                            </TableCell>
+                          </div>
+                        ))}
+                      </TableRow>
+                      {isExpanded && adsets.length > 0 && (
+                        <TableRow className="bg-muted/30">
+                          <TableCell colSpan={4 + bandIds.length * 2} className="p-3">
+                            <div className="pl-4 space-y-2">
+                              <p className="text-xs font-semibold text-muted-foreground">Adsets e Ads:</p>
+                              {adsets.map((adset) => (
+                                <div key={adset.id} className="pl-2 border-l border-muted">
+                                  <p className="text-xs font-medium text-foreground">{adset.name}</p>
+                                  <p className="text-xs text-muted-foreground">Status: {adset.status}</p>
+                                  {adset.ads.length > 0 && (
+                                    <div className="ml-2 mt-1 space-y-1">
+                                      {adset.ads.map((ad) => (
+                                        <div key={ad.id} className="text-xs text-muted-foreground">
+                                          • {ad.name} ({ad.status})
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
