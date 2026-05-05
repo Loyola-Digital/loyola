@@ -449,48 +449,12 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                 </MetricTooltip>
               )}
               {showGroupParticipants && groupsKpis && (
-                <div className="relative group">
-                  <KpiCard
-                    icon={UserCheck}
-                    label="Pessoas no grupo"
-                    value={fmtNumber(groupsKpis.participants)}
-                    hintTooltip={groupsBreakdownRows.length > 0}
-                    subValue={
-                      <>
-                        {groupsKpis.deltaParticipants !== 0 && (
-                          <div className={groupsKpis.deltaParticipants > 0 ? "text-emerald-400" : "text-red-400"}>
-                            {groupsKpis.deltaParticipants > 0 ? "▲" : "▼"} {fmtNumber(Math.abs(groupsKpis.deltaParticipants))} no período
-                          </div>
-                        )}
-                        {groupsKpis.asOf && (
-                          <div className="text-muted-foreground">
-                            {(() => {
-                              const [y, m, d] = groupsKpis.asOf.split("-");
-                              return `Última sync: ${d}/${m}/${y.slice(2)}`;
-                            })()}
-                          </div>
-                        )}
-                      </>
-                    }
-                  />
-                  {groupsBreakdownRows.length > 0 && (
-                    <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1 z-50 hidden group-hover:block">
-                      <div className="rounded-md border border-border bg-popover text-popover-foreground shadow-lg p-3 text-xs min-w-[240px] max-w-[320px]">
-                        <div className="font-semibold mb-1.5">Por grupo</div>
-                        <div className="space-y-1">
-                          {groupsBreakdownRows.map((r) => (
-                            <div key={r.name} className="flex justify-between gap-3">
-                              <span className="text-muted-foreground truncate flex-1">{r.name}</span>
-                              <span className="font-medium tabular-nums shrink-0">
-                                {r.participants.toLocaleString("pt-BR")}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <GroupsKpiCardWithTooltip
+                  participants={groupsKpis.participants}
+                  deltaParticipants={groupsKpis.deltaParticipants}
+                  asOf={groupsKpis.asOf}
+                  rows={groupsBreakdownRows}
+                />
               )}
             </div>
           );
@@ -729,6 +693,94 @@ function EmptyState() {
     <div className="py-8 text-center">
       <p className="text-sm text-muted-foreground">Sem dados no período selecionado.</p>
       <p className="text-xs text-muted-foreground mt-1">Tente selecionar um período diferente.</p>
+    </div>
+  );
+}
+
+/**
+ * Wrapper do KpiCard "Pessoas no grupo" que mostra tooltip com breakdown
+ * por grupo seguindo a posição do cursor. Usa position fixed com offset
+ * pra ficar próximo do mouse (CSS-only não permite isso — precisa state).
+ */
+function GroupsKpiCardWithTooltip({
+  participants,
+  deltaParticipants,
+  asOf,
+  rows,
+}: {
+  participants: number;
+  deltaParticipants: number;
+  asOf: string | null;
+  rows: { name: string; participants: number }[];
+}) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const hasTooltip = rows.length > 0;
+
+  // Clamp posição pra não cortar nas bordas direita/inferior da viewport.
+  // Tooltip ~280px de largura × ~24px*N+44 de altura. Estimativa simples: se
+  // cursor está no quarto direito da viewport, mostra à esquerda do cursor.
+  function clampPosition(p: { x: number; y: number }): { x: number; y: number } {
+    if (typeof window === "undefined") return p;
+    const TOOLTIP_W = 280;
+    const TOOLTIP_H = Math.max(120, 24 * rows.length + 60);
+    const margin = 8;
+    const x = p.x + 12 + TOOLTIP_W > window.innerWidth - margin
+      ? p.x - TOOLTIP_W - 12
+      : p.x + 12;
+    const y = p.y + 12 + TOOLTIP_H > window.innerHeight - margin
+      ? p.y - TOOLTIP_H - 12
+      : p.y + 12;
+    return { x: Math.max(margin, x), y: Math.max(margin, y) };
+  }
+
+  const clamped = pos ? clampPosition(pos) : null;
+
+  return (
+    <div
+      onMouseMove={hasTooltip ? (e) => setPos({ x: e.clientX, y: e.clientY }) : undefined}
+      onMouseLeave={() => setPos(null)}
+    >
+      <KpiCard
+        icon={UserCheck}
+        label="Pessoas no grupo"
+        value={participants.toLocaleString("pt-BR")}
+        hintTooltip={hasTooltip}
+        subValue={
+          <>
+            {deltaParticipants !== 0 && (
+              <div className={deltaParticipants > 0 ? "text-emerald-400" : "text-red-400"}>
+                {deltaParticipants > 0 ? "▲" : "▼"} {Math.abs(deltaParticipants).toLocaleString("pt-BR")} no período
+              </div>
+            )}
+            {asOf && (
+              <div className="text-muted-foreground">
+                {(() => {
+                  const [y, m, d] = asOf.split("-");
+                  return `Última sync: ${d}/${m}/${y.slice(2)}`;
+                })()}
+              </div>
+            )}
+          </>
+        }
+      />
+      {hasTooltip && clamped && (
+        <div
+          className="fixed pointer-events-none z-50 rounded-md border border-border bg-popover text-popover-foreground shadow-lg p-3 text-xs min-w-[240px] max-w-[320px]"
+          style={{ left: clamped.x, top: clamped.y }}
+        >
+          <div className="font-semibold mb-1.5">Por grupo</div>
+          <div className="space-y-1">
+            {rows.map((r) => (
+              <div key={r.name} className="flex justify-between gap-3">
+                <span className="text-muted-foreground truncate flex-1">{r.name}</span>
+                <span className="font-medium tabular-nums shrink-0">
+                  {r.participants.toLocaleString("pt-BR")}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
