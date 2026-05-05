@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Brain, RefreshCw, Bug } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -125,10 +125,17 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
   const { data: debug, isLoading: debugLoading, refetch: refetchDebug } =
     useLeadScoringDebug(projectId, funnelId, stageId, debugOpen);
 
+  // Carrega o schema do servidor APENAS quando muda de versao (updatedAt
+  // diferente). Antes, o useEffect disparava em qualquer re-fetch do React
+  // Query (window-focus, mount, etc) e sobrescrevia a edicao do user em
+  // andamento — bug "esta sobscrevendo com o antigo mesmo eu clicando em
+  // salvar".
+  const lastLoadedUpdatedAtRef = useRef<string | null>(null);
   useEffect(() => {
-    if (saved) {
+    if (saved && saved.updatedAt !== lastLoadedUpdatedAtRef.current) {
       setSelectedSurveyId(saved.surveyId ?? "");
       setJsonText(JSON.stringify(saved.schemaJson, null, 2));
+      lastLoadedUpdatedAtRef.current = saved.updatedAt;
     }
   }, [saved]);
 
