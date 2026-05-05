@@ -333,34 +333,37 @@ function KpiCard({
 }
 
 function EvolutionChart({ series }: { series: FunnelGroupsDailyPoint[] }) {
+  // maxAbs absorve negativos (esperado em deltas problemáticos da fonte) e
+  // garante denominador >= 1 para evitar divisão por zero.
   const maxAbs = Math.max(
     1,
     ...series.map((s) => Math.max(Math.abs(s.deltaInput), Math.abs(s.deltaOutput)))
   );
+  const MAX_BAR_PX = 90;
 
   return (
     <div className="rounded-md border border-border/40 bg-card/30 p-4">
       <h4 className="text-xs uppercase font-medium tracking-wider text-muted-foreground mb-3">
         Entradas vs. Saídas (diário)
       </h4>
-      <div className="flex items-end gap-1 h-28">
+      <div className="flex items-end gap-1 min-h-[120px]">
         {series.map((s) => {
-          const inH = (s.deltaInput / maxAbs) * 100;
-          const outH = (s.deltaOutput / maxAbs) * 100;
+          const inH = Math.round((Math.abs(s.deltaInput) / maxAbs) * MAX_BAR_PX);
+          const outH = Math.round((Math.abs(s.deltaOutput) / maxAbs) * MAX_BAR_PX);
           return (
             <div
               key={s.date}
-              className="flex-1 flex flex-col items-center justify-end gap-0.5 group relative"
+              className="flex-1 flex flex-col items-center justify-end gap-0.5 min-w-0"
               title={`${formatDateBR(s.date)} · entrou ${fmtSigned(s.deltaInput)} · saiu ${fmtSigned(s.deltaOutput)}`}
             >
-              <div className="flex flex-col w-full items-center gap-0.5">
+              <div className="flex flex-col w-full items-stretch gap-0.5">
                 <div
-                  className="w-full bg-green-500/70 rounded-t-sm transition-all"
-                  style={{ height: `${Math.max(2, inH * 0.9)}%` }}
+                  className="w-full bg-green-500/70 rounded-t-sm"
+                  style={{ height: `${Math.max(2, inH)}px` }}
                 />
                 <div
-                  className="w-full bg-red-500/70 rounded-b-sm transition-all"
-                  style={{ height: `${Math.max(2, outH * 0.9)}%` }}
+                  className="w-full bg-red-500/70 rounded-b-sm"
+                  style={{ height: `${Math.max(2, outH)}px` }}
                 />
               </div>
               <div className="text-[9px] text-muted-foreground rotate-[-30deg] mt-1 origin-left whitespace-nowrap">
