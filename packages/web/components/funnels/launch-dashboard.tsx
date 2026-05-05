@@ -176,23 +176,16 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   // Breakdown por campanha (cada campanha = "grupo" no contexto Loyola) pra
   // mostrar no tooltip do card "Pessoas no grupo". Pega o último ponto da
   // série de cada campanha e ordena por participantes desc.
-  const groupsBreakdownTooltip = useMemo(() => {
+  const groupsBreakdownRows = useMemo(() => {
     const campaigns = groupsDailyQuery.data?.campaigns ?? [];
-    if (campaigns.length === 0) return undefined;
-    const rows = campaigns
+    if (campaigns.length === 0) return [];
+    return campaigns
       .map((c) => {
         const last = c.series[c.series.length - 1];
         return { name: c.campaignName, participants: last?.participants ?? 0 };
       })
       .filter((r) => r.participants > 0)
       .sort((a, b) => b.participants - a.participants);
-    if (rows.length === 0) return undefined;
-    return (
-      "Por grupo:\n" +
-      rows
-        .map((r) => `  ${r.name}: ${r.participants.toLocaleString("pt-BR")}`)
-        .join("\n")
-    );
   }, [groupsDailyQuery.data]);
 
   // Pesquisas orgânicas: linha "Leads Gratuitos" no chart de Leads Acumulados
@@ -453,30 +446,50 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                 </MetricTooltip>
               )}
               {showGroupParticipants && groupsKpis && (
-                <KpiCard
-                  icon={UserCheck}
-                  label="Pessoas no grupo"
-                  value={fmtNumber(groupsKpis.participants)}
-                  hintTooltip={!!groupsBreakdownTooltip}
-                  title={groupsBreakdownTooltip}
-                  subValue={
-                    <>
-                      {groupsKpis.deltaParticipants !== 0 && (
-                        <div className={groupsKpis.deltaParticipants > 0 ? "text-emerald-400" : "text-red-400"}>
-                          {groupsKpis.deltaParticipants > 0 ? "▲" : "▼"} {fmtNumber(Math.abs(groupsKpis.deltaParticipants))} no período
+                <div className="relative group">
+                  <KpiCard
+                    icon={UserCheck}
+                    label="Pessoas no grupo"
+                    value={fmtNumber(groupsKpis.participants)}
+                    hintTooltip={groupsBreakdownRows.length > 0}
+                    subValue={
+                      <>
+                        {groupsKpis.deltaParticipants !== 0 && (
+                          <div className={groupsKpis.deltaParticipants > 0 ? "text-emerald-400" : "text-red-400"}>
+                            {groupsKpis.deltaParticipants > 0 ? "▲" : "▼"} {fmtNumber(Math.abs(groupsKpis.deltaParticipants))} no período
+                          </div>
+                        )}
+                        {groupsKpis.asOf && (
+                          <div className="text-muted-foreground">
+                            {(() => {
+                              const [y, m, d] = groupsKpis.asOf.split("-");
+                              return `Última sync: ${d}/${m}/${y.slice(2)}`;
+                            })()}
+                          </div>
+                        )}
+                      </>
+                    }
+                  />
+                  {groupsBreakdownRows.length > 0 && (
+                    <div
+                      className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 z-50 invisible opacity-0 group-hover/groupcard:visible group-hover/groupcard:opacity-100 transition-opacity duration-75"
+                    >
+                      <div className="rounded-md border border-border bg-popover text-popover-foreground shadow-lg p-3 text-xs min-w-[220px]">
+                        <div className="font-semibold mb-1.5">Por grupo</div>
+                        <div className="space-y-1">
+                          {groupsBreakdownRows.map((r) => (
+                            <div key={r.name} className="flex justify-between gap-3">
+                              <span className="text-muted-foreground truncate flex-1">{r.name}</span>
+                              <span className="font-medium tabular-nums shrink-0">
+                                {r.participants.toLocaleString("pt-BR")}
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                      )}
-                      {groupsKpis.asOf && (
-                        <div className="text-muted-foreground">
-                          {(() => {
-                            const [y, m, d] = groupsKpis.asOf.split("-");
-                            return `Última sync: ${d}/${m}/${y.slice(2)}`;
-                          })()}
-                        </div>
-                      )}
-                    </>
-                  }
-                />
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           );
