@@ -12,6 +12,7 @@ import {
   BarChart3,
   Link2,
   Banknote,
+  UserCheck,
 } from "lucide-react";
 import {
   LineChart,
@@ -49,6 +50,10 @@ import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { useStageSalesByDay } from "@/lib/hooks/use-stage-sales-by-day";
 import { useStageHotColdBuyers } from "@/lib/hooks/use-stage-hot-cold-buyers";
+import {
+  useFunnelGroupsLink,
+  useFunnelGroupsDaily,
+} from "@/lib/hooks/use-funnel-groups";
 import { SurveyQualificationSection } from "./survey-qualification-section";
 import { GroupsDashboardSection } from "./groups-dashboard-section";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -146,6 +151,25 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   const { data: compData } = useMetaAdsComparison(
     projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
   );
+
+  // Grupos: card "Pessoas no grupo" (último relatório). Renderiza só se vinculado.
+  const groupsLinkQuery = useFunnelGroupsLink(projectId, funnel.id);
+  const isGroupsLinked = !!groupsLinkQuery.data;
+  const groupsDateRange = useMemo(() => {
+    const to = new Date();
+    const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+    return {
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+    };
+  }, [days]);
+  const groupsDailyQuery = useFunnelGroupsDaily(projectId, funnel.id, {
+    from: groupsDateRange.from,
+    to: groupsDateRange.to,
+    enabled: isGroupsLinked,
+  });
+  const groupsKpis = groupsDailyQuery.data?.kpis ?? null;
+  const showGroupParticipants = isGroupsLinked && groupsKpis !== null && groupsKpis.participants > 0;
 
   const hasComparison = !!(compData && !compData.semDados);
   const compTotals = hasComparison ? compData!.totals : null;
@@ -250,15 +274,17 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           if (showVendaIngressos) colCount++;
           if (showTaxaCheckout) colCount++;
           if (surveyResponseRate !== null) colCount++;
+          if (showGroupParticipants) colCount++;
           // Mapa estático — Tailwind JIT não detecta classes dinâmicas em template strings.
-          // Breakpoints: xl (1280px) pra grids até 8 cols, 2xl (1536px) pra 9-11 cols.
+          // Breakpoints: xl (1280px) pra grids até 8 cols, 2xl (1536px) pra 9-12 cols.
           // Em telas < xl (notebooks comuns 1024-1279) quebra em sm:grid-cols-4 pra evitar scroll horizontal.
           const gridClass =
             colCount <= 7 ? "grid-cols-2 sm:grid-cols-4 xl:grid-cols-7"
               : colCount === 8 ? "grid-cols-2 sm:grid-cols-4 xl:grid-cols-8"
                 : colCount === 9 ? "grid-cols-2 sm:grid-cols-4 2xl:grid-cols-9"
                   : colCount === 10 ? "grid-cols-2 sm:grid-cols-4 2xl:grid-cols-10"
-                    : "grid-cols-2 sm:grid-cols-4 2xl:grid-cols-11";
+                    : colCount === 11 ? "grid-cols-2 sm:grid-cols-4 2xl:grid-cols-11"
+                      : "grid-cols-2 sm:grid-cols-4 2xl:grid-cols-12";
           return (
             <div className={`grid gap-3 ${gridClass}`}>
               <MetricTooltip label="Investimento" value={fmtCurrency(metrics.spend)} formula={buildFunnelSpendFormula(metrics.spend, f)}>
@@ -393,6 +419,30 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                     <p className="text-[9px] text-muted-foreground">{survey.matchedResponses} com match · {survey.unmatchedResponses} sem match</p>
                   </div>
                 </MetricTooltip>
+              )}
+              {showGroupParticipants && groupsKpis && (
+                <KpiCard
+                  icon={UserCheck}
+                  label="Pessoas no grupo"
+                  value={fmtNumber(groupsKpis.participants)}
+                  subValue={
+                    <>
+                      {groupsKpis.deltaParticipants !== 0 && (
+                        <div className={groupsKpis.deltaParticipants > 0 ? "text-emerald-400" : "text-red-400"}>
+                          {groupsKpis.deltaParticipants > 0 ? "▲" : "▼"} {fmtNumber(Math.abs(groupsKpis.deltaParticipants))} no período
+                        </div>
+                      )}
+                      {groupsKpis.asOf && (
+                        <div className="text-muted-foreground">
+                          {(() => {
+                            const [y, m, d] = groupsKpis.asOf.split("-");
+                            return `Última sync: ${d}/${m}/${y.slice(2)}`;
+                          })()}
+                        </div>
+                      )}
+                    </>
+                  }
+                />
               )}
             </div>
           );
