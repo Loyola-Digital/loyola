@@ -29,7 +29,7 @@ describe("Lead Scoring Campaign Breakdown Calculations", () => {
 
   // Helper: valida que CPL por faixa = spend / count_faixa
   function validateCplPerBand(row: TestCampaignBandRow): boolean {
-    for (const [bandId, band] of Object.entries(row.bands)) {
+    for (const [, band] of Object.entries(row.bands)) {
       if (band.count === 0) {
         // Se não há leads nessa faixa, cplFaixa deve ser null
         if (band.cplFaixa !== null) return false;
