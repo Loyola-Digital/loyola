@@ -491,7 +491,7 @@ function computeOriginsByBand(
 async function computeCampaignBandBreakdown(
   schema: LeadScoringSchema,
   sheet: { headers: string[]; rows: string[][] },
-  campaignInsights: { campaign_name: string; spend: string }[] | null,
+  campaignInsights: { campaign_id: string; campaign_name: string; spend: string }[] | null,
 ): Promise<CampaignBandBreakdownResponse> {
   const questions = schema.scoring_model?.questions ?? [];
   const bands = schema.bands ?? [];
@@ -568,19 +568,17 @@ async function computeCampaignBandBreakdown(
     bandCounts.set(band.id, (bandCounts.get(band.id) ?? 0) + 1);
   }
 
-  // Map Meta Ads campaign_name → { campaign_name, spend } (case-insensitive match on campaign_name)
-  // Este map permite lookup: normalizeText(utm_campaign) → campaign_name + spend
-  const campaignDataByNormalizedName = new Map<string, { campaign_name: string; spend: number }>();
+  // Map campaign_id (from Meta Ads) → { campaign_name, spend }
+  // utm_campaign in spreadsheet is the campaign_id from Meta Ads
+  const campaignDataByCampaignId = new Map<string, { campaign_name: string; spend: number }>();
   if (campaignInsights) {
     for (const insight of campaignInsights) {
-      const normalized = normalizeText(insight.campaign_name);
       const spend = parseFloat(insight.spend || "0");
-      // Se já existe entrada com esse nome normalizado, somar spend (múltiplas impressões do mesmo campaign)
-      const existing = campaignDataByNormalizedName.get(normalized);
+      const existing = campaignDataByCampaignId.get(insight.campaign_id);
       if (existing) {
         existing.spend += spend;
       } else {
-        campaignDataByNormalizedName.set(normalized, {
+        campaignDataByCampaignId.set(insight.campaign_id, {
           campaign_name: insight.campaign_name,
           spend,
         });
@@ -592,11 +590,11 @@ async function computeCampaignBandBreakdown(
   const rows_data: CampaignBandRow[] = [];
   for (const [utmCampaign, bandCounts] of leadsByUtmCampaignBand) {
     const totalLeads = Array.from(bandCounts.values()).reduce((a, b) => a + b, 0);
-    const normalizedUtm = normalizeText(utmCampaign);
 
-    // Procurar campaign_name do Meta Ads pelo utm_campaign
-    const campaignData = campaignDataByNormalizedName.get(normalizedUtm);
-    const campaignName = campaignData?.campaign_name ?? utmCampaign; // Fallback para utm_campaign se não encontrar
+    // utm_campaign is campaign_id from Meta Ads
+    // Look up campaign_name and spend using campaign_id (utm_campaign) as key
+    const campaignData = campaignDataByCampaignId.get(utmCampaign);
+    const campaignName = campaignData?.campaign_name ?? utmCampaign; // Fallback to utm_campaign if not found
     const spend = campaignData?.spend ?? 0;
 
     const cpl = totalLeads > 0 ? spend / totalLeads : null;
@@ -1056,7 +1054,7 @@ export default fp(async function leadScoringRoutes(fastify) {
       if (sheetData.rows.length === 0) return EMPTY;
 
       // Get Meta Ads account linked to this project (if exists)
-      let campaignInsights: { campaign_name: string; spend: string }[] | null = null;
+      let campaignInsights: { campaign_id: string; campaign_name: string; spend: string }[] | null = null;
       try {
         const [accountLink] = await fastify.db
           .select()
@@ -1083,6 +1081,7 @@ export default fp(async function leadScoringRoutes(fastify) {
             );
             // Map insights to format used by computeCampaignBandBreakdown
             campaignInsights = insights.map((i) => ({
+              campaign_id: i.campaign_id,
               campaign_name: i.campaign_name,
               spend: i.spend ?? "0",
             }));
