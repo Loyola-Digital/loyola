@@ -7,6 +7,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -147,6 +148,35 @@ export function LeadScoringAdTable({
 
   const sortedRows = getSortedRows();
   const paginatedRows = sortedRows.slice(0, 10);
+
+  const calculateTotals = () => {
+    const totals = {
+      spend: 0,
+      totalLeads: 0,
+      bands: {} as Record<string, { count: number; pct: number }>,
+    };
+
+    for (const row of sortedRows) {
+      totals.spend += row.spend;
+      totals.totalLeads += row.totalLeads;
+      for (const [bandId, breakdown] of Object.entries(row.bands)) {
+        if (!totals.bands[bandId]) {
+          totals.bands[bandId] = { count: 0, pct: 0 };
+        }
+        totals.bands[bandId].count += breakdown.count;
+      }
+    }
+
+    for (const bandId in totals.bands) {
+      totals.bands[bandId].pct = totals.totalLeads > 0
+        ? (totals.bands[bandId].count / totals.totalLeads) * 100
+        : 0;
+    }
+
+    return totals;
+  };
+
+  const totals = calculateTotals();
 
   const renderSortIcon = (key: SortKey) => {
     if (sortKey !== key) return <ArrowUpDown className="h-4 w-4 opacity-40" />;
@@ -325,6 +355,28 @@ export function LeadScoringAdTable({
                   </TableRow>
                 ))}
               </TableBody>
+              <TableFooter>
+                <TableRow className="font-semibold bg-muted/50">
+                  <TableCell className="sticky left-0 bg-muted/50 z-10">
+                    Total ({sortedRows.length})
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {fmtCurrency(totals.spend)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {fmtInt(totals.totalLeads)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {totals.totalLeads > 0 ? fmtCurrency(totals.spend / totals.totalLeads) : "—"}
+                  </TableCell>
+                  <TableCell />
+                  {bandIds.map((bid) => (
+                    <TableCell key={`total-${bid}-pct`} className="text-right">
+                      {fmtPercent(totals.bands[bid]?.pct)}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableFooter>
             </Table>
           </div>
         </div>
@@ -448,6 +500,32 @@ export function LeadScoringAdTable({
                   </TableRow>
                 ))}
               </TableBody>
+              <TableFooter>
+                <TableRow className="font-semibold bg-muted/50">
+                  <TableCell className="sticky left-0 bg-muted/50 z-10">
+                    Total ({sortedRows.length})
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {fmtCurrency(totals.spend)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {fmtInt(totals.totalLeads)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {totals.totalLeads > 0 ? fmtCurrency(totals.spend / totals.totalLeads) : "—"}
+                  </TableCell>
+                  {bandIds.map((bid) => (
+                    <div key={`total-row-${bid}`} className="contents">
+                      <TableCell className="text-right">
+                        {totals.totalLeads > 0 ? fmtCurrency((totals.spend / totals.totalLeads) * (totals.bands[bid]?.count ?? 0) / totals.totalLeads) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {fmtPercent(totals.bands[bid]?.pct)}
+                      </TableCell>
+                    </div>
+                  ))}
+                </TableRow>
+              </TableFooter>
             </Table>
           </div>
         </div>
