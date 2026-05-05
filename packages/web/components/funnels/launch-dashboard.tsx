@@ -474,7 +474,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                     }
                   />
                   {groupsBreakdownRows.length > 0 && (
-                    <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 hidden group-hover:block">
+                    <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1 z-50 hidden group-hover:block">
                       <div className="rounded-md border border-border bg-popover text-popover-foreground shadow-lg p-3 text-xs min-w-[240px] max-w-[320px]">
                         <div className="font-semibold mb-1.5">Por grupo</div>
                         <div className="space-y-1">
