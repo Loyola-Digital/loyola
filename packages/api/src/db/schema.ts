@@ -969,3 +969,26 @@ export const funnelGroupSnapshots = pgTable(
     index("idx_group_snapshots_campaign").on(table.funnelId, table.campaignId),
   ]
 );
+
+// ============================================================
+// FUNNEL BATCH TURNS (EPIC-27 — Story 27.1)
+// ============================================================
+
+export const funnelBatchTurns = pgTable(
+  "funnel_batch_turns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => funnels.id, { onDelete: "cascade" }),
+    date: date("date").notNull(),
+    label: varchar("label", { length: 255 }).notNull(),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("uq_batch_turns_funnel_date").on(table.funnelId, table.date),
+    index("idx_batch_turns_funnel").on(table.funnelId),
+  ]
+);

@@ -469,6 +469,8 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           surveyUnmatched={survey.unmatchedResponses}
           salesByDay={salesByDay ?? undefined}
           adsetsMap={adsetsMap}
+          projectId={projectId}
+          funnelId={funnel.id}
         />
       ) : null}
 

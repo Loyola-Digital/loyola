@@ -50,6 +50,7 @@ import leadScoringRoutes from "./routes/lead-scoring.js";
 import organicPostsRoutes from "./routes/organic-posts.js";
 import instagramReportsRoutes from "./routes/instagram-reports.js";
 import funnelGroupsRoutes from "./routes/funnel-groups.js";
+import funnelBatchTurnsRoutes from "./routes/funnel-batch-turns.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -115,6 +116,7 @@ export async function buildServer() {
   await app.register(organicPostsRoutes);
   await app.register(instagramReportsRoutes);
   await app.register(funnelGroupsRoutes);
+  await app.register(funnelBatchTurnsRoutes);
 
   return app;
 }
