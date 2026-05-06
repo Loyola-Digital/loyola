@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Brain, RefreshCw, Bug } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -111,7 +111,7 @@ const SCHEMA_PLACEHOLDER = `{
 }`;
 
 export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabProps) {
-  const { data: surveysData } = useFunnelSurveys(projectId, funnelId, stageId);
+  const { data: surveysData } = useFunnelSurveys(projectId, funnelId, stageId, "paid");
   const { data: saved, isLoading } = useLeadScoring(projectId, funnelId, stageId);
   const { data: results, isLoading: resultsLoading, refetch: refetchResults } =
     useLeadScoringResults(projectId, funnelId, stageId);
@@ -125,10 +125,17 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
   const { data: debug, isLoading: debugLoading, refetch: refetchDebug } =
     useLeadScoringDebug(projectId, funnelId, stageId, debugOpen);
 
+  // Carrega o schema do servidor APENAS quando muda de versao (updatedAt
+  // diferente). Antes, o useEffect disparava em qualquer re-fetch do React
+  // Query (window-focus, mount, etc) e sobrescrevia a edicao do user em
+  // andamento — bug "esta sobscrevendo com o antigo mesmo eu clicando em
+  // salvar".
+  const lastLoadedUpdatedAtRef = useRef<string | null>(null);
   useEffect(() => {
-    if (saved) {
+    if (saved && saved.updatedAt !== lastLoadedUpdatedAtRef.current) {
       setSelectedSurveyId(saved.surveyId ?? "");
       setJsonText(JSON.stringify(saved.schemaJson, null, 2));
+      lastLoadedUpdatedAtRef.current = saved.updatedAt;
     }
   }, [saved]);
 
@@ -365,7 +372,7 @@ function DebugView({ debug, onRefresh }: { debug: LeadScoringDebug; onRefresh: (
                   </div>
                 </div>
                 <p className="text-[11px] text-muted-foreground italic mb-2 truncate">
-                  → {q.new_survey_column}
+                  → {q.matched_alias ?? q.new_survey_column ?? q.label ?? "(sem alias)"}
                 </p>
                 {q.unmapped_unique_values.length > 0 && (
                   <div className="bg-orange-50 dark:bg-orange-950/20 rounded p-2 text-[11px]">

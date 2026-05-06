@@ -63,7 +63,11 @@ export default fp(async function googleSheetsRoutes(fastify) {
 
   // ---- GET /api/projects/:projectId/funnels/:funnelId/surveys ----
   const funnelParamSchema = z.object({ projectId: z.string().uuid(), funnelId: z.string().uuid() });
-  const surveyListQuerySchema = z.object({ stageId: z.string().uuid().optional() });
+  const surveyTypeSchema = z.enum(["paid", "organic"]);
+  const surveyListQuerySchema = z.object({
+    stageId: z.string().uuid().optional(),
+    surveyType: surveyTypeSchema.optional(),
+  });
 
   fastify.get("/api/projects/:projectId/funnels/:funnelId/surveys", async (request, reply) => {
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
@@ -72,25 +76,34 @@ export default fp(async function googleSheetsRoutes(fastify) {
     const q = surveyListQuerySchema.safeParse(request.query);
     if (!q.success) return reply.code(400).send({ error: "Query invalida" });
 
-    const whereClause = q.data.stageId
-      ? and(
-          eq(funnelSurveys.funnelId, p.data.funnelId),
-          eq(funnelSurveys.stageId, q.data.stageId),
-        )
-      : eq(funnelSurveys.funnelId, p.data.funnelId);
+    const filters = [eq(funnelSurveys.funnelId, p.data.funnelId)];
+    if (q.data.stageId) filters.push(eq(funnelSurveys.stageId, q.data.stageId));
+    if (q.data.surveyType) filters.push(eq(funnelSurveys.surveyType, q.data.surveyType));
+    const whereClause = and(...filters);
 
-    const surveys = await fastify.db.select().from(funnelSurveys).where(whereClause);
+    let surveys = await fastify.db.select().from(funnelSurveys).where(whereClause);
+
+    // Defesa em profundidade — garante isolamento entre funil/etapa/tipo
+    // mesmo se o filtro SQL falhar por qualquer motivo (cache, build stale, etc).
+    surveys = surveys.filter((s) => {
+      if (s.funnelId !== p.data.funnelId) return false;
+      if (q.data.stageId && s.stageId !== q.data.stageId) return false;
+      if (q.data.surveyType && s.surveyType !== q.data.surveyType) return false;
+      return true;
+    });
 
     return { surveys };
   });
 
   // ---- POST /api/projects/:projectId/funnels/:funnelId/surveys ----
   // stageId opcional — quando passado, pesquisa fica escopada à stage.
+  // surveyType: "paid" (padrão) ou "organic" (alunos / não captados via tráfego).
   const createSurveySchema = z.object({
     stageId: z.string().uuid().optional(),
     spreadsheetId: z.string().min(1),
     spreadsheetName: z.string().min(1),
     sheetName: z.string().min(1),
+    surveyType: surveyTypeSchema.optional(),
   });
 
   fastify.post("/api/projects/:projectId/funnels/:funnelId/surveys", async (request, reply) => {
@@ -115,6 +128,7 @@ export default fp(async function googleSheetsRoutes(fastify) {
         spreadsheetId: body.data.spreadsheetId,
         spreadsheetName: body.data.spreadsheetName,
         sheetName: body.data.sheetName,
+        surveyType: body.data.surveyType ?? "paid",
       })
       .returning();
 
@@ -135,6 +149,44 @@ export default fp(async function googleSheetsRoutes(fastify) {
     return { success: true };
   });
 
+  // ---- PATCH /api/projects/:projectId/funnels/:funnelId/surveys/:surveyId/mapping ----
+  // Atualiza o columnMapping da survey: utm_*, email, phone, timestamp, questions[].
+  // Substitui o mapping inteiro (não faz merge parcial).
+  const surveyQuestionSchema = z.object({
+    columnName: z.string().min(1),
+    label: z.string().min(1),
+    showInDashboard: z.boolean(),
+  });
+  const surveyMappingSchema = z.object({
+    utm_source: z.string().optional(),
+    utm_medium: z.string().optional(),
+    utm_campaign: z.string().optional(),
+    utm_content: z.string().optional(),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+    timestamp: z.string().optional(),
+    questions: z.array(surveyQuestionSchema).optional(),
+  });
+
+  fastify.patch(
+    "/api/projects/:projectId/funnels/:funnelId/surveys/:surveyId/mapping",
+    async (request, reply) => {
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+      const { surveyId } = request.params as { surveyId: string };
+      const body = surveyMappingSchema.safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: "Dados invalidos", details: body.error.format() });
+
+      const [updated] = await fastify.db
+        .update(funnelSurveys)
+        .set({ columnMapping: body.data })
+        .where(eq(funnelSurveys.id, surveyId))
+        .returning();
+
+      if (!updated) return reply.code(404).send({ error: "Pesquisa nao encontrada" });
+      return updated;
+    },
+  );
+
   // ---- POST /api/google-sheets/spreadsheets/:spreadsheetId/sheets/:sheetName/refresh ----
   fastify.post("/api/google-sheets/spreadsheets/:spreadsheetId/sheets/:sheetName/refresh", async (request, reply) => {
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
@@ -145,6 +197,7 @@ export default fp(async function googleSheetsRoutes(fastify) {
 
   // ---- GET /api/projects/:projectId/funnels/:funnelId/surveys/summary ----
   // Aceita ?stageId=X pra agregar só as pesquisas daquela stage.
+  // Aceita ?surveyType=paid|organic pra filtrar por tipo.
   fastify.get("/api/projects/:projectId/funnels/:funnelId/surveys/summary", async (request, reply) => {
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
     const p = funnelParamSchema.safeParse(request.params);
@@ -152,14 +205,20 @@ export default fp(async function googleSheetsRoutes(fastify) {
     const q = surveyListQuerySchema.safeParse(request.query);
     if (!q.success) return reply.code(400).send({ error: "Query invalida" });
 
-    const whereClause = q.data.stageId
-      ? and(
-          eq(funnelSurveys.funnelId, p.data.funnelId),
-          eq(funnelSurveys.stageId, q.data.stageId),
-        )
-      : eq(funnelSurveys.funnelId, p.data.funnelId);
+    const filters = [eq(funnelSurveys.funnelId, p.data.funnelId)];
+    if (q.data.stageId) filters.push(eq(funnelSurveys.stageId, q.data.stageId));
+    if (q.data.surveyType) filters.push(eq(funnelSurveys.surveyType, q.data.surveyType));
+    const whereClause = and(...filters);
 
-    const surveys = await fastify.db.select().from(funnelSurveys).where(whereClause);
+    let surveys = await fastify.db.select().from(funnelSurveys).where(whereClause);
+
+    // Defesa em profundidade — garante isolamento entre funil/etapa/tipo
+    surveys = surveys.filter((s) => {
+      if (s.funnelId !== p.data.funnelId) return false;
+      if (q.data.stageId && s.stageId !== q.data.stageId) return false;
+      if (q.data.surveyType && s.surveyType !== q.data.surveyType) return false;
+      return true;
+    });
 
     if (surveys.length === 0) return { totalResponses: 0, surveys: [], responseRate: null };
 

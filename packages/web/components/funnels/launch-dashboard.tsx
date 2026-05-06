@@ -12,6 +12,7 @@ import {
   BarChart3,
   Link2,
   Banknote,
+  UserCheck,
 } from "lucide-react";
 import {
   LineChart,
@@ -28,7 +29,7 @@ import { DayRangePicker } from "@/components/ui/day-range-picker";
 import {
   useTrafficOverview,
   useTrafficCampaigns,
-  useCampaignDailyInsights,
+  useCampaignDailyInsightsBulk,
   type CampaignDailyInsight,
 } from "@/lib/hooks/use-traffic-analytics";
 import { ConversionFunnel } from "./conversion-funnel";
@@ -49,7 +50,14 @@ import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { useStageSalesByDay } from "@/lib/hooks/use-stage-sales-by-day";
 import { useStageHotColdBuyers } from "@/lib/hooks/use-stage-hot-cold-buyers";
+import {
+  useFunnelGroupsLink,
+  useFunnelGroupsDaily,
+} from "@/lib/hooks/use-funnel-groups";
+import { useOrganicLeadsByDay } from "@/lib/hooks/use-organic-leads-by-day";
+import { useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { SurveyQualificationSection } from "./survey-qualification-section";
+import { GroupsDashboardSection } from "./groups-dashboard-section";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
 import {
@@ -105,7 +113,6 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   const updateFunnel = useUpdateFunnel(projectId, funnel.id);
   const campaignIds = funnel.campaigns.map((c) => c.id);
   const campaignIdSet = new Set(campaignIds);
-  const firstCampaignId = campaignIds[0] ?? null;
 
   const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
@@ -124,20 +131,70 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
     "capture",
     days,
   );
-  const metrics = useCrossedFunnelMetrics(projectId, funnel, days, stageId ?? null, salesData && !salesData.semDados ? salesData : null);
-  const survey = useSurveyAggregation(projectId, funnel.id, stageId ?? null);
-  const { data: campaignData } = useTrafficCampaigns(projectId, days);
-  const { data: dailyData, isLoading: dailyLoading } =
-    useCampaignDailyInsights(projectId, firstCampaignId, days);
-  const { data: compData } = useMetaAdsComparison(
-    projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
-  );
   const { data: salesByDayData } = useStageSalesByDay(
     stageType === "paid" ? projectId : null,
     stageType === "paid" ? funnel.id : null,
     stageType === "paid" ? (stageId ?? null) : null,
     days,
   );
+  const salesByDay = salesByDayData && !salesByDayData.semDados ? salesByDayData.byDay : null;
+  const metrics = useCrossedFunnelMetrics(
+    projectId,
+    funnel,
+    days,
+    stageId ?? null,
+    salesData && !salesData.semDados ? salesData : null,
+    salesByDay,
+  );
+  const survey = useSurveyAggregation(projectId, funnel.id, stageId ?? null);
+  const { data: campaignData } = useTrafficCampaigns(projectId, days);
+  const { data: dailyData, isLoading: dailyLoading } =
+    useCampaignDailyInsightsBulk(projectId, campaignIds.length > 0 ? campaignIds : null, days);
+  const { data: compData } = useMetaAdsComparison(
+    projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
+  );
+
+  // Grupos: card "Pessoas no grupo" (último relatório). Renderiza só se vinculado.
+  const groupsLinkQuery = useFunnelGroupsLink(projectId, funnel.id);
+  const isGroupsLinked = !!groupsLinkQuery.data;
+  const groupsDateRange = useMemo(() => {
+    const to = new Date();
+    const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+    return {
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+    };
+  }, [days]);
+  const groupsDailyQuery = useFunnelGroupsDaily(projectId, funnel.id, {
+    from: groupsDateRange.from,
+    to: groupsDateRange.to,
+    enabled: isGroupsLinked,
+  });
+  const groupsKpis = groupsDailyQuery.data?.kpis ?? null;
+  const showGroupParticipants = isGroupsLinked && groupsKpis !== null && groupsKpis.participants > 0;
+
+  // Breakdown por campanha (cada campanha = "grupo" no contexto Loyola) pra
+  // mostrar no tooltip do card "Pessoas no grupo". Pega o último ponto da
+  // série de cada campanha e ordena por participantes desc.
+  const groupsBreakdownRows = useMemo(() => {
+    const campaigns = groupsDailyQuery.data?.campaigns ?? [];
+    if (campaigns.length === 0) return [];
+    return campaigns
+      .map((c) => {
+        const last = c.series[c.series.length - 1];
+        return { name: c.campaignName, participants: last?.participants ?? 0 };
+      })
+      .filter((r) => r.participants > 0)
+      .sort((a, b) => b.participants - a.participants);
+  }, [groupsDailyQuery.data]);
+
+  // Pesquisas orgânicas: linha "Leads Gratuitos" no chart de Leads Acumulados
+  const organicLeads = useOrganicLeadsByDay(projectId, funnel.id, stageId ?? null);
+
+  // Map adset_id → adset_name pra resolver utm_medium nos tooltips e tabelas.
+  // utm_medium na planilha de leads/vendas armazena o adset_id; aqui resolvemos
+  // pro nome humano e re-agrupamos pelos mesmos nomes.
+  const { adsetsMap } = useFunnelAdsetsMap(projectId, campaignIds, days);
 
   const hasComparison = !!(compData && !compData.semDados);
   const compTotals = hasComparison ? compData!.totals : null;
@@ -226,12 +283,15 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         </p>
       )}
 
-      {/* KPI Cards — Meta only */}
+      {/* KPI Cards — Meta only.
+          Se overview vier null (Meta API sem dados pro range escolhido — comum em
+          filtros estreitos como "Hoje" antes do dado processar), renderiza cards
+          com zeros em vez de esconder a seção. */}
       {overviewLoading || metrics.isLoading ? (
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-7">
           {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
-      ) : overview ? (
+      ) : (
         (() => {
           const f = { days, funnelType: "launch" as const, funnelName: funnel?.name };
           const showFaturamento = stageType === "paid" && !!stageId && !!salesData && !salesData.semDados;
@@ -242,15 +302,17 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           if (showVendaIngressos) colCount++;
           if (showTaxaCheckout) colCount++;
           if (surveyResponseRate !== null) colCount++;
+          if (showGroupParticipants) colCount++;
           // Mapa estático — Tailwind JIT não detecta classes dinâmicas em template strings.
-          // Breakpoints: xl (1280px) pra grids até 8 cols, 2xl (1536px) pra 9-11 cols.
+          // Breakpoints: xl (1280px) pra grids até 8 cols, 2xl (1536px) pra 9-12 cols.
           // Em telas < xl (notebooks comuns 1024-1279) quebra em sm:grid-cols-4 pra evitar scroll horizontal.
           const gridClass =
             colCount <= 7 ? "grid-cols-2 sm:grid-cols-4 xl:grid-cols-7"
               : colCount === 8 ? "grid-cols-2 sm:grid-cols-4 xl:grid-cols-8"
                 : colCount === 9 ? "grid-cols-2 sm:grid-cols-4 2xl:grid-cols-9"
                   : colCount === 10 ? "grid-cols-2 sm:grid-cols-4 2xl:grid-cols-10"
-                    : "grid-cols-2 sm:grid-cols-4 2xl:grid-cols-11";
+                    : colCount === 11 ? "grid-cols-2 sm:grid-cols-4 2xl:grid-cols-11"
+                      : "grid-cols-2 sm:grid-cols-4 2xl:grid-cols-12";
           return (
             <div className={`grid gap-3 ${gridClass}`}>
               <MetricTooltip label="Investimento" value={fmtCurrency(metrics.spend)} formula={buildFunnelSpendFormula(metrics.spend, f)}>
@@ -384,10 +446,18 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   </div>
                 </MetricTooltip>
               )}
+              {showGroupParticipants && groupsKpis && (
+                <GroupsKpiCardWithTooltip
+                  participants={groupsKpis.participants}
+                  deltaParticipants={groupsKpis.deltaParticipants}
+                  asOf={groupsKpis.asOf}
+                  rows={groupsBreakdownRows}
+                />
+              )}
             </div>
           );
         })()
-      ) : <EmptyState />}
+      )}
 
       {/* Dados diários — tabela cruzada (Story 18.3) */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
@@ -397,7 +467,8 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           surveyTotal={survey.totalResponses}
           surveyMatched={survey.matchedResponses}
           surveyUnmatched={survey.unmatchedResponses}
-          salesByDay={salesByDayData && !salesByDayData.semDados ? salesByDayData.byDay : undefined}
+          salesByDay={salesByDay ?? undefined}
+          adsetsMap={adsetsMap}
         />
       ) : null}
 
@@ -408,7 +479,10 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
       {/* Leads Acumulados (Story 18.4) */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
-        <LeadsCumulativeChart rows={metrics.rows} />
+        <LeadsCumulativeChart
+          rows={metrics.rows}
+          leadsGratuitosByDay={organicLeads.hasOrganicSurveys ? organicLeads.byDay : undefined}
+        />
       ) : null}
 
       {/* CTR × CPM — Saturation Chart */}
@@ -444,17 +518,15 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
         <div className="rounded-xl border border-border/30 bg-card/60 p-5">
           <h3 className="text-sm font-semibold mb-4">Funil de Conversão</h3>
-          {overview ? (
-            <ConversionFunnel
-              impressions={overview.totalImpressions}
-              linkClicks={overview.totalLinkClicks}
-              landingPageViews={overview.totalLandingPageViews}
-              leads={metrics.totalLeads}
-              checkoutVisits={stageType === "paid" ? metrics.checkoutVisits : null}
-              sales={stageType === "paid" ? metrics.totalVendas : null}
-              leadsLabel={stageType === "paid" ? "Leads Popup" : undefined}
-            />
-          ) : <EmptyState />}
+          <ConversionFunnel
+            impressions={overview?.totalImpressions ?? 0}
+            linkClicks={overview?.totalLinkClicks ?? null}
+            landingPageViews={overview?.totalLandingPageViews ?? null}
+            leads={metrics.totalLeads}
+            checkoutVisits={stageType === "paid" ? metrics.checkoutVisits : null}
+            sales={stageType === "paid" ? metrics.totalVendas : null}
+            leadsLabel={stageType === "paid" ? "Leads Popup" : undefined}
+          />
         </div>
       </div>
 
@@ -515,6 +587,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         data={{
           byQuestion: survey.byQuestion,
           byQuestionByOrigin: survey.byQuestionByOrigin,
+          questions: survey.questions,
           totalResponses: survey.totalResponses,
           usingFallback: survey.usingFallback,
           fallbackReason: survey.fallbackReason,
@@ -534,6 +607,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             subtype="capture"
             title="Vendas de Captação"
             days={days}
+            adsetsMap={adsetsMap}
           />
           <div className="border-t border-border/20" />
           <StageSalesSection
@@ -543,9 +617,13 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             subtype="main_product"
             title="Produto Principal"
             days={days}
+            adsetsMap={adsetsMap}
           />
         </div>
       )}
+
+      {/* Grupos — tracking de participantes via planilha (Story 26.1) */}
+      <GroupsDashboardSection projectId={projectId} funnelId={funnel.id} />
 
       {/* Top Creatives Gallery (Story 18.4) */}
       <TopCreativesGallery
@@ -613,6 +691,94 @@ function EmptyState() {
     <div className="py-8 text-center">
       <p className="text-sm text-muted-foreground">Sem dados no período selecionado.</p>
       <p className="text-xs text-muted-foreground mt-1">Tente selecionar um período diferente.</p>
+    </div>
+  );
+}
+
+/**
+ * Wrapper do KpiCard "Pessoas no grupo" que mostra tooltip com breakdown
+ * por grupo seguindo a posição do cursor. Usa position fixed com offset
+ * pra ficar próximo do mouse (CSS-only não permite isso — precisa state).
+ */
+function GroupsKpiCardWithTooltip({
+  participants,
+  deltaParticipants,
+  asOf,
+  rows,
+}: {
+  participants: number;
+  deltaParticipants: number;
+  asOf: string | null;
+  rows: { name: string; participants: number }[];
+}) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const hasTooltip = rows.length > 0;
+
+  // Clamp posição pra não cortar nas bordas direita/inferior da viewport.
+  // Tooltip ~280px de largura × ~24px*N+44 de altura. Estimativa simples: se
+  // cursor está no quarto direito da viewport, mostra à esquerda do cursor.
+  function clampPosition(p: { x: number; y: number }): { x: number; y: number } {
+    if (typeof window === "undefined") return p;
+    const TOOLTIP_W = 280;
+    const TOOLTIP_H = Math.max(120, 24 * rows.length + 60);
+    const margin = 8;
+    const x = p.x + 12 + TOOLTIP_W > window.innerWidth - margin
+      ? p.x - TOOLTIP_W - 12
+      : p.x + 12;
+    const y = p.y + 12 + TOOLTIP_H > window.innerHeight - margin
+      ? p.y - TOOLTIP_H - 12
+      : p.y + 12;
+    return { x: Math.max(margin, x), y: Math.max(margin, y) };
+  }
+
+  const clamped = pos ? clampPosition(pos) : null;
+
+  return (
+    <div
+      onMouseMove={hasTooltip ? (e) => setPos({ x: e.clientX, y: e.clientY }) : undefined}
+      onMouseLeave={() => setPos(null)}
+    >
+      <KpiCard
+        icon={UserCheck}
+        label="Pessoas no grupo"
+        value={participants.toLocaleString("pt-BR")}
+        hintTooltip={hasTooltip}
+        subValue={
+          <>
+            {deltaParticipants !== 0 && (
+              <div className={deltaParticipants > 0 ? "text-emerald-400" : "text-red-400"}>
+                {deltaParticipants > 0 ? "▲" : "▼"} {Math.abs(deltaParticipants).toLocaleString("pt-BR")} no período
+              </div>
+            )}
+            {asOf && (
+              <div className="text-muted-foreground">
+                {(() => {
+                  const [y, m, d] = asOf.split("-");
+                  return `Última sync: ${d}/${m}/${y.slice(2)}`;
+                })()}
+              </div>
+            )}
+          </>
+        }
+      />
+      {hasTooltip && clamped && (
+        <div
+          className="fixed pointer-events-none z-50 rounded-md border border-border bg-popover text-popover-foreground shadow-lg p-3 text-xs min-w-[240px] max-w-[320px]"
+          style={{ left: clamped.x, top: clamped.y }}
+        >
+          <div className="font-semibold mb-1.5">Por grupo</div>
+          <div className="space-y-1">
+            {rows.map((r) => (
+              <div key={r.name} className="flex justify-between gap-3">
+                <span className="text-muted-foreground truncate flex-1">{r.name}</span>
+                <span className="font-medium tabular-nums shrink-0">
+                  {r.participants.toLocaleString("pt-BR")}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

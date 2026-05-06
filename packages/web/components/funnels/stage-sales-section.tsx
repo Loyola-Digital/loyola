@@ -3,6 +3,7 @@
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { StageSalesSubtype } from "@loyola-x/shared";
+import { resolveSalesByMediumByAdsets, resolveSalesByTermByAdsets } from "@/lib/hooks/use-funnel-adsets-map";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("pt-BR", {
@@ -76,6 +77,12 @@ interface StageSalesSectionProps {
   subtype: StageSalesSubtype;
   title: string;
   days?: number;
+  /**
+   * Map de adset_id → adset_name vindo da Meta API. Quando informado, a tabela
+   * "Por Medium" resolve `utm_medium` (que armazena o adset_id) pro nome
+   * humano e re-agrupa pelos mesmos nomes de adset.
+   */
+  adsetsMap?: Map<string, string>;
 }
 
 export function StageSalesSection({
@@ -85,6 +92,7 @@ export function StageSalesSection({
   subtype,
   title,
   days,
+  adsetsMap,
 }: StageSalesSectionProps) {
   const { data, isLoading, isError } = useStageSalesData(
     projectId,
@@ -126,6 +134,29 @@ export function StageSalesSection({
     bruto: c.bruto,
   }));
 
+  // Resolve adset_id → adset_name e re-agrupa pelos mesmos nomes (vários IDs
+  // podem ter o mesmo nome em campanhas duplicadas).
+  const resolvedMedium = adsetsMap
+    ? resolveSalesByMediumByAdsets(data.porUtmMedium ?? [], adsetsMap)
+    : (data.porUtmMedium ?? []);
+  const mediumRows = resolvedMedium.map((m) => ({
+    key: m.medium,
+    label: m.medium,
+    vendas: m.vendas,
+    bruto: m.bruto,
+  }));
+
+  // utm_term carrega adset_id no setup Loyola — mesma resolução que medium.
+  const resolvedTerm = adsetsMap
+    ? resolveSalesByTermByAdsets(data.porUtmTerm ?? [], adsetsMap)
+    : (data.porUtmTerm ?? []);
+  const termRows = resolvedTerm.map((t) => ({
+    key: t.term,
+    label: t.term,
+    vendas: t.vendas,
+    bruto: t.bruto,
+  }));
+
   const formaRows = data.porFormaPagamento.map((f) => ({
     key: f.forma,
     label: f.forma,
@@ -147,6 +178,18 @@ export function StageSalesSection({
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">Por Canal de Origem</p>
         <SalesTable rows={canalRows} emptyMessage="Sem dados por canal." keyLabel="Canal" />
+      </div>
+
+      {/* Por Medium (utm_medium) */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">Por Medium</p>
+        <SalesTable rows={mediumRows} emptyMessage="Sem dados de medium (mapeie a coluna utm_medium na planilha)." keyLabel="Medium" />
+      </div>
+
+      {/* Por Adset (utm_term resolve pra adset_name via Meta API) */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">Por Adset (utm_term)</p>
+        <SalesTable rows={termRows} emptyMessage="Sem dados de utm_term (mapeie a coluna utm_term na planilha)." keyLabel="Adset" />
       </div>
 
       {/* Forma de Pagamento */}

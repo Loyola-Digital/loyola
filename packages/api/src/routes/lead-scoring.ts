@@ -30,9 +30,10 @@ const putBodySchema = z.object({
 // TYPES (espelham o schema JSON v2 enriquecido)
 // ============================================================
 
-type AnswerStatic = { value: string; points: number };
+type AnswerStatic = { value: string; points: number; aliases?: string[] };
 type AnswerConditional = {
   value: string;
+  aliases?: string[];
   points_conditional: {
     if_q4_filled: number;
     if_q4_empty: number;
@@ -45,6 +46,12 @@ type ScoringQuestion = {
   id: string;
   label?: string;
   new_survey_column?: string;
+  /**
+   * Variações do header da planilha que devem casar com a coluna desta pergunta.
+   * Match é case-insensitive, accent-insensitive e ignora pontuação final
+   * (`?`, `!`, `.`). O primeiro alias que existir nos headers é usado.
+   */
+  column_aliases?: string[];
   weight?: number;
   max_points?: number;
   answers: Answer[];
@@ -85,6 +92,73 @@ function normalizeText(s: string): string {
     .toLowerCase();
 }
 
+/**
+ * Normalização "forte" pra match de header de planilha vs aliases do schema.
+ * Remove acentos (NFD + strip combining marks), pontuação final típica
+ * (`?`, `!`, `.`, `:`), colapsa whitespace e lowercase.
+ *
+ * Necessário porque o schema costuma listar variações tipo:
+ *   "Qual é o seu nível de escolaridade?"
+ *   "Qual e o seu nivel de escolaridade?"
+ *   "Qual o seu nível de escolaridade?"
+ * — e o header da planilha pode ter qualquer uma dessas formas.
+ */
+function normalizeForMatch(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(new RegExp("[\\u0300-\\u036f]", "g"), "")
+    .replace(/[?!.:;]+$/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+/**
+ * Resolve o índice da coluna na planilha para uma question:
+ * 1) tenta `new_survey_column` (campo legacy de schemas antigos);
+ * 2) tenta cada item de `column_aliases[]` (schema v2);
+ * 3) tenta `label` como fallback.
+ * Retorna `{ idx, matchedAlias }` — `matchedAlias` é o candidato exato que
+ * casou (útil pra debug diagnostic). Se idx === -1, matchedAlias é null.
+ */
+function findQuestionColumn(
+  headers: string[],
+  q: ScoringQuestion,
+): { idx: number; matchedAlias: string | null } {
+  const candidates: string[] = [];
+  if (q.new_survey_column) candidates.push(q.new_survey_column);
+  if (q.column_aliases?.length) candidates.push(...q.column_aliases);
+  if (q.label) candidates.push(q.label);
+  if (candidates.length === 0) return { idx: -1, matchedAlias: null };
+  const normalizedHeaders = headers.map(normalizeForMatch);
+  for (const candidate of candidates) {
+    const target = normalizeForMatch(candidate);
+    const idx = normalizedHeaders.indexOf(target);
+    if (idx !== -1) return { idx, matchedAlias: candidate };
+  }
+  return { idx: -1, matchedAlias: null };
+}
+
+/** Retorna só o índice — atalho usado pelos paths que não precisam do alias. */
+function findQuestionColumnIndex(headers: string[], q: ScoringQuestion): number {
+  return findQuestionColumn(headers, q).idx;
+}
+
+/**
+ * Procura o `Answer` cujo `value` ou algum dos `aliases[]` casa com a resposta
+ * lida da planilha. Match usa `normalizeForMatch` (acentos/pontuação tolerantes).
+ */
+function findAnswerMatch(answers: Answer[], rawValue: string): Answer | undefined {
+  const target = normalizeForMatch(rawValue);
+  return answers.find((a) => {
+    if (normalizeForMatch(a.value) === target) return true;
+    if (a.aliases?.length) {
+      return a.aliases.some((alias) => normalizeForMatch(alias) === target);
+    }
+    return false;
+  });
+}
+
 const NO_ANSWER_SENTINEL = "(sem resposta)";
 
 // Conforme equivalence_notes do schema (Q4): NAN/vazio = "(sem resposta)".
@@ -112,13 +186,7 @@ function computeBands(
   // Mapa: questionId -> índice da coluna na planilha
   const colMap = new Map<string, number>();
   for (const q of questions) {
-    if (!q.new_survey_column) {
-      colMap.set(q.id, -1);
-      continue;
-    }
-    const target = normalizeText(q.new_survey_column);
-    const idx = headers.findIndex((h) => normalizeText(h) === target);
-    colMap.set(q.id, idx);
+    colMap.set(q.id, findQuestionColumnIndex(headers, q));
   }
   const q4Idx = colMap.get("Q4") ?? -1;
 
@@ -140,7 +208,7 @@ function computeBands(
         continue;
       }
       const answer = resolveAnswerCellValue(row[colIdx]);
-      const match = q.answers.find((a) => normalizeText(a.value) === normalizeText(answer));
+      const match = findAnswerMatch(q.answers, answer);
       if (!match) {
         totalScore += fallback;
         continue;
@@ -297,13 +365,7 @@ function computeOriginsByBand(
   // Reusa o mapeamento de colunas do scoring (mesma lógica do computeBands)
   const colMap = new Map<string, number>();
   for (const q of questions) {
-    if (!q.new_survey_column) {
-      colMap.set(q.id, -1);
-      continue;
-    }
-    const target = normalizeText(q.new_survey_column);
-    const idx = headers.findIndex((h) => normalizeText(h) === target);
-    colMap.set(q.id, idx);
+    colMap.set(q.id, findQuestionColumnIndex(headers, q));
   }
   const q4Idx = colMap.get("Q4") ?? -1;
 
@@ -328,7 +390,7 @@ function computeOriginsByBand(
         continue;
       }
       const answer = resolveAnswerCellValue(row[colIdx]);
-      const match = q.answers.find((a) => normalizeText(a.value) === normalizeText(answer));
+      const match = findAnswerMatch(q.answers, answer);
       if (!match) {
         totalScore += fallback;
         continue;
@@ -538,17 +600,19 @@ export default fp(async function leadScoringRoutes(fastify) {
       const schema = scoringRow.schemaJson as LeadScoringSchema;
       const questions = schema.scoring_model?.questions ?? [];
 
-      // Mapping headers
+      // Mapping headers — guarda alias matchado pra debug
       const colMap = new Map<string, number>();
+      const aliasMap = new Map<string, string | null>();
       for (const q of questions) {
-        const target = q.new_survey_column ? normalizeText(q.new_survey_column) : "";
-        const idx = target ? sheet.headers.findIndex((h) => normalizeText(h) === target) : -1;
-        colMap.set(q.id, idx);
+        const resolved = findQuestionColumn(sheet.headers, q);
+        colMap.set(q.id, resolved.idx);
+        aliasMap.set(q.id, resolved.matchedAlias);
       }
 
       // Estatísticas por questão
       const perQuestion = questions.map((q) => {
         const idx = colMap.get(q.id) ?? -1;
+        const matchedAlias = aliasMap.get(q.id) ?? null;
         const matchedAnswers = new Map<string, number>();
         const unmappedAnswers = new Map<string, number>();
         let matchedCount = 0;
@@ -559,9 +623,7 @@ export default fp(async function leadScoringRoutes(fastify) {
             continue;
           }
           const answer = resolveAnswerCellValue(row[idx]);
-          const match = q.answers.find(
-            (a) => normalizeText(a.value) === normalizeText(answer),
-          );
+          const match = findAnswerMatch(q.answers, answer);
           if (match) {
             matchedCount++;
             matchedAnswers.set(answer, (matchedAnswers.get(answer) ?? 0) + 1);
@@ -574,6 +636,7 @@ export default fp(async function leadScoringRoutes(fastify) {
           id: q.id,
           label: q.label,
           new_survey_column: q.new_survey_column,
+          matched_alias: matchedAlias,
           column_index: idx,
           column_found: idx !== -1,
           matched_count: matchedCount,
@@ -602,9 +665,7 @@ export default fp(async function leadScoringRoutes(fastify) {
             return { id: q.id, raw: null, points: q.unmapped_default ?? 0, matched: false };
           }
           const answer = resolveAnswerCellValue(row[idx]);
-          const match = q.answers.find(
-            (a) => normalizeText(a.value) === normalizeText(answer),
-          );
+          const match = findAnswerMatch(q.answers, answer);
           if (!match) {
             total += q.unmapped_default ?? 0;
             return { id: q.id, raw: answer, points: q.unmapped_default ?? 0, matched: false };

@@ -2,7 +2,9 @@ import { useQueries } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import {
   useFunnelSurveys,
+  type FunnelSurvey,
   type SheetData,
+  type SurveyColumnMapping,
 } from "@/lib/hooks/use-google-sheets";
 import {
   SURVEY_QUESTION_MAP,
@@ -10,7 +12,6 @@ import {
   SURVEY_UTM_SOURCE_MATCHERS,
   SURVEY_EMAIL_MATCHERS,
   SURVEY_PHONE_MATCHERS,
-  type SurveyQuestionKey,
 } from "@/lib/constants/survey-questions";
 import { normalizeAnswer, mostCommonRaw, normalizeEmail, getLast8DigitsPhone, normalizeNumericId } from "@/lib/utils/normalize-answer";
 import { PAID_SOURCES } from "@/lib/utils/funnel-metrics";
@@ -26,6 +27,20 @@ export interface SurveyQuestionAggregation {
   pct: number;
 }
 
+/**
+ * Metadata de uma pergunta dinâmica vinda do mapping da survey.
+ * `key` é o nome da coluna na planilha (usado como chave em `byQuestion`).
+ * `label` é o texto custom que o usuário definiu pra exibir no dashboard.
+ */
+export interface SurveyQuestionMeta {
+  key: string;
+  label: string;
+}
+
+/**
+ * Legacy: top-creatives-gallery ainda usa 4 perguntas hardcoded.
+ * Migração pra dinâmico fica pra story futura.
+ */
 export interface SurveyAdData {
   faturamento: Array<{ label: string; count: number }>;
   profissao: Array<{ label: string; count: number }>;
@@ -38,62 +53,48 @@ export type SurveyDataByAdId = Record<string, SurveyAdData>;
 export type SurveyOrigin = "total" | "pago" | "organico";
 
 export interface UseSurveyAggregationResult {
-  /** Agregação total (todas as respostas) — mantida para retrocompatibilidade. */
-  byQuestion: Record<SurveyQuestionKey, SurveyQuestionAggregation[]>;
   /**
-   * Agregações separadas por origem da resposta (Story 21.6).
-   * Uma resposta é `pago` se seu `utm_source` pertence a PAID_SOURCES
-   * (match exato). Caso contrário (incluindo vazio/null), é `organico`.
-   * `total` contém todas as respostas — equivalente a `byQuestion`.
+   * Agregação total por pergunta. Chaves são `columnName` quando vindo de mapping
+   * customizado, ou as keys legacy (`faturamento`, `profissao`, etc) quando
+   * fallback pra matchers hardcoded.
    */
-  byQuestionByOrigin: Record<SurveyOrigin, Record<SurveyQuestionKey, SurveyQuestionAggregation[]>>;
+  byQuestion: Record<string, SurveyQuestionAggregation[]>;
+  /**
+   * Mesma agregação separada por origem (total/pago/organico).
+   * `pago` se utm_source ∈ PAID_SOURCES, senão `organico`.
+   */
+  byQuestionByOrigin: Record<SurveyOrigin, Record<string, SurveyQuestionAggregation[]>>;
+  /**
+   * Metadata das perguntas exibidas no dashboard (key + label).
+   * Vem do mapping de cada survey filtrado por `showInDashboard: true`.
+   * Se nenhuma survey tem mapping, deriva das 5 perguntas legacy.
+   */
+  questions: SurveyQuestionMeta[];
+  /** Legacy — top-creatives-gallery ainda consome */
   byAdId: SurveyDataByAdId;
   totalResponses: number;
-  usingFallback: boolean;
-  fallbackReason?: string;
-  isLoading: boolean;
-  matchedLeadIds: Set<string>;
   matchedResponses: number;
   unmatchedResponses: number;
+  matchedLeadIds: Set<string>;
+  isLoading: boolean;
+  /** True quando alguma survey caiu em fallback pros matchers legacy. */
+  usingFallback: boolean;
+  fallbackReason?: string;
 }
-
-const EMPTY_BY_QUESTION: Record<SurveyQuestionKey, SurveyQuestionAggregation[]> = {
-  faturamento: [],
-  profissao: [],
-  funcionarios: [],
-  voce_e: [],
-  renda_mensal: [],
-};
-
-const EMPTY_BY_QUESTION_BY_ORIGIN: Record<SurveyOrigin, Record<SurveyQuestionKey, SurveyQuestionAggregation[]>> = {
-  total: EMPTY_BY_QUESTION,
-  pago: EMPTY_BY_QUESTION,
-  organico: EMPTY_BY_QUESTION,
-};
 
 // ============================================================
 // Helpers internos
 // ============================================================
 
-/**
- * Normaliza string pra comparação robusta: lowercase + trim + remove acentos +
- * colapsa whitespace. Permite que matcher "voce e" pegue header "Você é:" e
- * outras variações de acento/case.
- */
 function normalizeForMatch(s: string): string {
   return s
     .toLowerCase()
     .trim()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(new RegExp("[\\u0300-\\u036f]", "g"), "")
     .replace(/\s+/g, " ");
 }
 
-/**
- * Encontra o índice da coluna cujo header bate com algum dos matchers.
- * Compara com normalização que remove acentos e unifica case/whitespace —
- * tolerante a variações ("Você é:" casa com matcher "voce e").
- */
 function findHeaderIndex(headers: string[], matchers: readonly string[]): number {
   const normalized = headers.map(normalizeForMatch);
   const normalizedMatchers = matchers.map(normalizeForMatch);
@@ -106,8 +107,25 @@ function findHeaderIndex(headers: string[], matchers: readonly string[]): number
   return -1;
 }
 
-interface ColumnIndexMap {
-  questions: Partial<Record<SurveyQuestionKey, number>>;
+/**
+ * Resolve o índice de uma coluna pelo nome exato (do mapping). Case-insensitive
+ * e tolerante a whitespace, mas não usa fuzzy match — o nome vem do select da UI
+ * que lista os headers reais.
+ */
+function findHeaderIndexByName(headers: string[], columnName: string | undefined): number {
+  if (!columnName) return -1;
+  const normalized = normalizeForMatch(columnName);
+  for (let i = 0; i < headers.length; i++) {
+    if (normalizeForMatch(headers[i]) === normalized) return i;
+  }
+  return -1;
+}
+
+interface SurveyColumnIndexes {
+  /** Map de questionKey → columnIndex. questionKey é columnName (mapping custom) ou key legacy. */
+  questions: Map<string, number>;
+  /** Labels customizados pelo user — quando ausente, usa o columnName/legacy label. */
+  questionLabels: Map<string, string>;
   timestamp: number;
   utmContent: number;
   utmSource: number;
@@ -115,54 +133,86 @@ interface ColumnIndexMap {
   phone: number;
 }
 
-function mapHeaders(headers: string[]): ColumnIndexMap {
-  const questions: Partial<Record<SurveyQuestionKey, number>> = {};
-  for (const [key, def] of Object.entries(SURVEY_QUESTION_MAP)) {
-    const idx = findHeaderIndex(headers, def.matchers);
-    if (idx >= 0) questions[key as SurveyQuestionKey] = idx;
+/**
+ * Resolve column indexes pra UMA survey. Estratégia:
+ * - Se `survey.columnMapping.questions` existe e tem itens → usa mapping custom
+ *   (chaves dinâmicas, label custom).
+ * - Senão → fallback pra matchers hardcoded em SURVEY_QUESTION_MAP (5 perguntas
+ *   legacy: faturamento, profissao, funcionarios, voce_e, renda_mensal).
+ *
+ * UTMs e email/phone/timestamp seguem mesma lógica (mapping primeiro, fallback
+ * pros matchers).
+ */
+function resolveColumnIndexes(
+  headers: string[],
+  mapping: SurveyColumnMapping | undefined,
+): { indexes: SurveyColumnIndexes; usedFallback: boolean } {
+  const questions = new Map<string, number>();
+  const questionLabels = new Map<string, string>();
+  let usedFallback = false;
+
+  // Perguntas: mapping custom > fallback matchers
+  const mappedQuestions = mapping?.questions?.filter((q) => q.showInDashboard) ?? [];
+  if (mappedQuestions.length > 0) {
+    for (const q of mappedQuestions) {
+      const idx = findHeaderIndexByName(headers, q.columnName);
+      if (idx >= 0) {
+        questions.set(q.columnName, idx);
+        questionLabels.set(q.columnName, q.label);
+      }
+    }
+  } else {
+    usedFallback = true;
+    // Fallback legacy — 5 perguntas hardcoded
+    for (const [key, def] of Object.entries(SURVEY_QUESTION_MAP)) {
+      const idx = findHeaderIndex(headers, def.matchers);
+      if (idx >= 0) {
+        questions.set(key, idx);
+        questionLabels.set(key, def.label);
+      }
+    }
   }
+
+  // UTMs e identificadores: mapping > matcher
+  const utmContent = mapping?.utm_content
+    ? findHeaderIndexByName(headers, mapping.utm_content)
+    : findHeaderIndex(headers, SURVEY_UTM_CONTENT_MATCHERS);
+  const utmSource = mapping?.utm_source
+    ? findHeaderIndexByName(headers, mapping.utm_source)
+    : findHeaderIndex(headers, SURVEY_UTM_SOURCE_MATCHERS);
+  const email = mapping?.email
+    ? findHeaderIndexByName(headers, mapping.email)
+    : findHeaderIndex(headers, SURVEY_EMAIL_MATCHERS);
+  const phone = mapping?.phone
+    ? findHeaderIndexByName(headers, mapping.phone)
+    : findHeaderIndex(headers, SURVEY_PHONE_MATCHERS);
+
   return {
-    questions,
-    timestamp: -1,
-    utmContent: findHeaderIndex(headers, SURVEY_UTM_CONTENT_MATCHERS),
-    utmSource: findHeaderIndex(headers, SURVEY_UTM_SOURCE_MATCHERS),
-    email: findHeaderIndex(headers, SURVEY_EMAIL_MATCHERS),
-    phone: findHeaderIndex(headers, SURVEY_PHONE_MATCHERS),
+    indexes: {
+      questions,
+      questionLabels,
+      timestamp: -1,
+      utmContent,
+      utmSource,
+      email,
+      phone,
+    },
+    usedFallback,
   };
 }
 
-/**
- * Classifica uma resposta como "pago" ou "organico" com base no utm_source.
- * Match exato contra PAID_SOURCES (consistente com dashboard — Story 21.6).
- * Usa como fallback o utm_source do lead matched (se existir) quando a
- * planilha de pesquisa não tem coluna de utm_source própria.
- */
 function classifyOrigin(utmSource: string | undefined | null): "pago" | "organico" {
   const normalized = (utmSource ?? "").trim().toLowerCase();
   return PAID_SOURCES.has(normalized) ? "pago" : "organico";
 }
 
+// Legacy keys que `byAdId` usa — mantido pra compat com top-creatives-gallery
+const LEGACY_AD_ID_KEYS = ["faturamento", "profissao", "funcionarios", "voce_e"] as const;
 
 // ============================================================
 // Hook principal
 // ============================================================
 
-/**
- * Agrega respostas da(s) pesquisa(s) Tally vinculada(s) ao funil pra alimentar:
- *
- * 1. Seção "Resultados da Pesquisa" no fim do dash (3.a) — via `byQuestion`
- *    com breakdown percentual das 3 perguntas (faturamento, profissão,
- *    nº funcionários)
- * 2. Cards do Top Criativos (3.b) — via `byAdId` com top-1 de faturamento
- *    e profissão por `ad_id` cruzado via `utm_content`
- *
- * Fallback: se menos de `SURVEY_FALLBACK_THRESHOLD` respostas caírem no
- * período selecionado, usa o histórico completo da planilha + `usingFallback: true`
- * pra UI exibir badge amarelo.
- *
- * Multi-survey: se o funil tem N surveys vinculadas, TODAS são processadas e
- * as respostas são concatenadas antes da agregação.
- */
 export function useSurveyAggregation(
   projectId: string,
   funnelId: string,
@@ -173,15 +223,14 @@ export function useSurveyAggregation(
     projectId,
     funnelId,
     stageId,
+    "paid",
   );
-  const surveys = surveysData?.surveys ?? [];
+  const surveys: FunnelSurvey[] = surveysData?.surveys ?? [];
 
-  // Carregar lista de spreadsheets para encontrar a planilha de Leads
+  // Carrega planilha de Leads pra match de respostas → leads
   const { data: spreadsheetsData } = useFunnelSpreadsheets(projectId, funnelId, stageId);
   const spreadsheets = spreadsheetsData?.spreadsheets ?? [];
   const leadsSpreadsheet = spreadsheets.find((s) => s.type === "leads");
-
-  // Carregar dados da planilha de Leads
   const { data: leadsData } = useFunnelSpreadsheetData(
     projectId,
     funnelId,
@@ -203,13 +252,19 @@ export function useSurveyAggregation(
   const sheetsLoading = sheetQueries.some((q) => q.isLoading);
   const isLoading = surveysLoading || sheetsLoading;
 
-  // Cálculo direto (sem useMemo explícito — ops são O(rows × queries) e queries
-  // já cacheadas pelo react-query; overhead de recomputa por render é irrelevante)
   const result: UseSurveyAggregationResult = (() => {
+    const emptyByQuestion: Record<string, SurveyQuestionAggregation[]> = {};
+    const emptyByOrigin: Record<SurveyOrigin, Record<string, SurveyQuestionAggregation[]>> = {
+      total: {},
+      pago: {},
+      organico: {},
+    };
+
     if (isLoading || sheetQueries.length === 0) {
       return {
-        byQuestion: { ...EMPTY_BY_QUESTION },
-        byQuestionByOrigin: EMPTY_BY_QUESTION_BY_ORIGIN,
+        byQuestion: emptyByQuestion,
+        byQuestionByOrigin: emptyByOrigin,
+        questions: [],
         byAdId: {},
         totalResponses: 0,
         usingFallback: false,
@@ -217,46 +272,18 @@ export function useSurveyAggregation(
         matchedLeadIds: new Set(),
         matchedResponses: 0,
         unmatchedResponses: 0,
-      } satisfies UseSurveyAggregationResult;
+      };
     }
 
-    type CombinedRow = {
-      row: string[];
-      questionIndexes: Partial<Record<SurveyQuestionKey, number>>;
-      timestampIdx: number;
-      utmContentIdx: number;
-    };
-    const allRows: CombinedRow[] = [];
-    for (const q of sheetQueries) {
+    // Pré-resolve column indexes por survey
+    const perSurveyIndexes = sheetQueries.map((q, i) => {
       const data = q.data;
-      if (!data) continue;
-      const colMap = mapHeaders(data.headers);
-      for (const row of data.rows) {
-        allRows.push({
-          row,
-          questionIndexes: colMap.questions,
-          timestampIdx: colMap.timestamp,
-          utmContentIdx: colMap.utmContent,
-        });
-      }
-    }
+      if (!data) return null;
+      const survey = surveys[i];
+      return resolveColumnIndexes(data.headers, survey.columnMapping);
+    });
 
-    if (allRows.length === 0) {
-      return {
-        byQuestion: { ...EMPTY_BY_QUESTION },
-        byQuestionByOrigin: EMPTY_BY_QUESTION_BY_ORIGIN,
-        byAdId: {},
-        totalResponses: 0,
-        usingFallback: false,
-        fallbackReason: "Sem respostas nas pesquisas vinculadas",
-        isLoading: false,
-        matchedLeadIds: new Set(),
-        matchedResponses: 0,
-        unmatchedResponses: 0,
-      } satisfies UseSurveyAggregationResult;
-    }
-
-    // Construir mapa de leads para match rápido
+    // Build mapa de leads pra match
     type LeadMatch = { leadId: string; createdDate: string };
     const leadsByEmail = new Map<string, LeadMatch>();
     const leadsByPhone = new Map<string, LeadMatch>();
@@ -266,7 +293,7 @@ export function useSurveyAggregation(
         const email = row.named.email || "";
         const phone = row.named.phone || "";
         const createdDate = row.named.date || "";
-        const leadId = String(i); // Use row index as lead ID
+        const leadId = String(i);
 
         if (email) {
           const normalizedEmail = normalizeEmail(email);
@@ -283,7 +310,6 @@ export function useSurveyAggregation(
       }
     }
 
-    // Função para verificar se uma resposta tem match com os leads
     function findLeadMatch(surveyEmail: string, surveyPhone: string): LeadMatch | null {
       if (surveyEmail) {
         const normalizedEmail = normalizeEmail(surveyEmail);
@@ -300,108 +326,79 @@ export function useSurveyAggregation(
       return null;
     }
 
-    // Pesquisa NÃO usa filtro de data — sempre histórico completo
-    // Meta Ads sim, mas pesquisa é sobre leads/qualificação, não sobre período de gasto
-    const filteredPerSurvey: (string[][] | null)[] = [];
-    for (const q of sheetQueries) {
-      const data = q.data;
-      if (!data) {
-        filteredPerSurvey.push(null);
-        continue;
-      }
-      // Sem filtro de data para pesquisa — sempre usa histórico completo
-      filteredPerSurvey.push(data.rows);
-    }
-
-    // Fallback nunca é necessário agora (sempre histórico completo)
-    const useFallback = false;
-
-    // Processa rows efetivas: se fallback, usa dados crus; senão, usa filtrados
-    // Ainda precisa ser por-survey pra respeitar os indexes de cada planilha
-    const byQuestion: Record<SurveyQuestionKey, SurveyQuestionAggregation[]> = {
-      faturamento: [],
-      profissao: [],
-      funcionarios: [],
-      voce_e: [],
-      renda_mensal: [],
-    };
-    const byAdId: SurveyDataByAdId = {};
-    let totalResponses = 0;
-    const matchedLeadIds = new Set<string>();
-
-    // Story 21.6 — buckets por origem (total/pago/organico) em paralelo pra
-    // evitar re-agregação custosa no componente quando o filtro muda.
-    function newBuckets(): Record<SurveyQuestionKey, Map<string, { rawValues: string[]; count: number }>> {
-      return {
-        faturamento: new Map(),
-        profissao: new Map(),
-        funcionarios: new Map(),
-        voce_e: new Map(),
-        renda_mensal: new Map(),
-      };
-    }
-    const bucketsByOrigin: Record<SurveyOrigin, ReturnType<typeof newBuckets>> = {
-      total: newBuckets(),
-      pago: newBuckets(),
-      organico: newBuckets(),
+    // Aggregation buckets — chaves dinâmicas
+    type Bucket = Map<string, { rawValues: string[]; count: number }>;
+    const bucketsByOrigin: Record<SurveyOrigin, Map<string, Bucket>> = {
+      total: new Map(),
+      pago: new Map(),
+      organico: new Map(),
     };
     const totalResponsesByOrigin: Record<SurveyOrigin, number> = {
       total: 0,
       pago: 0,
       organico: 0,
     };
-    const byAdBuckets: Record<string, {
-      faturamento: Map<string, { rawValues: string[]; count: number }>;
-      profissao: Map<string, { rawValues: string[]; count: number }>;
-      funcionarios: Map<string, { rawValues: string[]; count: number }>;
-      voce_e: Map<string, { rawValues: string[]; count: number }>;
-    }> = {};
+
+    function getBucket(origin: SurveyOrigin, questionKey: string): Bucket {
+      let map = bucketsByOrigin[origin].get(questionKey);
+      if (!map) {
+        map = new Map();
+        bucketsByOrigin[origin].set(questionKey, map);
+      }
+      return map;
+    }
+
+    // Legacy byAdId (4 keys hardcoded — mantido pra top-creatives)
+    const byAdBuckets: Record<string, Record<typeof LEGACY_AD_ID_KEYS[number], Bucket>> = {};
+
+    let totalResponses = 0;
+    const matchedLeadIds = new Set<string>();
+    let anyFallback = false;
+
+    // Coleta meta de questions (key, label) — uniao de todos os surveys
+    const questionsMeta = new Map<string, string>(); // key → label
 
     for (let i = 0; i < sheetQueries.length; i++) {
       const data = sheetQueries[i].data;
       if (!data) continue;
-      const colMap = mapHeaders(data.headers);
-      const filtered = filteredPerSurvey[i];
-      const effectiveRows = useFallback ? data.rows : (filtered || []);
-      totalResponses += effectiveRows.length;
-      const matchesBefore = matchedLeadIds.size;
+      const resolved = perSurveyIndexes[i];
+      if (!resolved) continue;
+      const { indexes, usedFallback } = resolved;
+      if (usedFallback) anyFallback = true;
 
-      // Contar matches de leads pra cada resposta
-      const emailIdx = colMap.email;
-      const phoneIdx = colMap.phone;
-      for (const row of effectiveRows) {
-        const surveyEmail = emailIdx >= 0 ? (row[emailIdx] ?? "").trim() : "";
-        const surveyPhone = phoneIdx >= 0 ? (row[phoneIdx] ?? "").trim() : "";
-        const leadMatch = findLeadMatch(surveyEmail, surveyPhone);
-        if (leadMatch) {
-          matchedLeadIds.add(leadMatch.leadId);
-        }
+      // Atualiza meta global de perguntas
+      for (const [key, label] of indexes.questionLabels) {
+        if (!questionsMeta.has(key)) questionsMeta.set(key, label);
       }
 
-      console.log(`🔍 [Survey ${i}] rows: ${effectiveRows.length}, matched: ${matchedLeadIds.size - matchesBefore}/${effectiveRows.length}, emailIdx: ${emailIdx}, phoneIdx: ${phoneIdx}`);
+      const effectiveRows = data.rows;
+      totalResponses += effectiveRows.length;
 
-      // Story 21.6 — agrega cada resposta em 3 buckets paralelos (total sempre;
-      // pago ou organico conforme utm_source da linha). Classifica fora do loop
-      // das perguntas pra evitar recomputar a origem por pergunta.
-      const utmSourceIdx = colMap.utmSource;
+      // Match leads
+      for (const row of effectiveRows) {
+        const surveyEmail = indexes.email >= 0 ? (row[indexes.email] ?? "").trim() : "";
+        const surveyPhone = indexes.phone >= 0 ? (row[indexes.phone] ?? "").trim() : "";
+        const leadMatch = findLeadMatch(surveyEmail, surveyPhone);
+        if (leadMatch) matchedLeadIds.add(leadMatch.leadId);
+      }
+
+      // Origem por linha (pago/organico)
       const rowOrigins: Array<"pago" | "organico"> = [];
       for (const row of effectiveRows) {
-        const utmSource = utmSourceIdx >= 0 ? row[utmSourceIdx] : "";
+        const utmSource = indexes.utmSource >= 0 ? row[indexes.utmSource] : "";
         rowOrigins.push(classifyOrigin(utmSource));
       }
 
-      // byQuestion: pra cada pergunta mapeada, agregar respostas em 3 buckets
-      for (const [key, idx] of Object.entries(colMap.questions)) {
-        if (idx == null || idx < 0) continue;
-        const questionKey = key as SurveyQuestionKey;
+      // Aggregate por pergunta
+      for (const [questionKey, columnIdx] of indexes.questions) {
+        if (columnIdx < 0) continue;
         for (let r = 0; r < effectiveRows.length; r++) {
-          const raw = (effectiveRows[r][idx] ?? "").trim();
+          const raw = (effectiveRows[r][columnIdx] ?? "").trim();
           if (!raw) continue;
           const normKey = normalizeAnswer(raw);
           const origin = rowOrigins[r];
-          // Incrementa no bucket total E no bucket da origem (pago ou organico)
           for (const bucketOrigin of ["total", origin] as const) {
-            const bucket = bucketsByOrigin[bucketOrigin][questionKey];
+            const bucket = getBucket(bucketOrigin, questionKey);
             const existing = bucket.get(normKey);
             if (existing) {
               existing.rawValues.push(raw);
@@ -413,31 +410,35 @@ export function useSurveyAggregation(
         }
       }
 
-      // Contagem de respostas por origem (usada pra calcular pct por bucket)
+      // Total responses por origem
       for (const origin of rowOrigins) {
         totalResponsesByOrigin.total += 1;
         totalResponsesByOrigin[origin] += 1;
       }
 
-      // byAdId: só pra faturamento + profissao
-      const utmIdx = colMap.utmContent;
-      if (utmIdx >= 0) {
+      // Legacy byAdId — só funciona se os 4 questionKeys legacy existirem nos indexes
+      if (indexes.utmContent >= 0) {
         for (const row of effectiveRows) {
-          const adId = normalizeNumericId((row[utmIdx] ?? "").trim());
+          const adId = normalizeNumericId((row[indexes.utmContent] ?? "").trim());
           if (!adId) continue;
-          const adBucket = byAdBuckets[adId] ?? { faturamento: new Map(), profissao: new Map(), funcionarios: new Map(), voce_e: new Map() };
-          for (const questionKey of ["faturamento", "profissao", "funcionarios", "voce_e"] as const) {
-            const qIdx = colMap.questions[questionKey];
+          const adBucket = byAdBuckets[adId] ?? {
+            faturamento: new Map(),
+            profissao: new Map(),
+            funcionarios: new Map(),
+            voce_e: new Map(),
+          };
+          for (const legacyKey of LEGACY_AD_ID_KEYS) {
+            const qIdx = indexes.questions.get(legacyKey);
             if (qIdx == null || qIdx < 0) continue;
             const raw = (row[qIdx] ?? "").trim();
             if (!raw) continue;
             const normKey = normalizeAnswer(raw);
-            const existing = adBucket[questionKey].get(normKey);
+            const existing = adBucket[legacyKey].get(normKey);
             if (existing) {
               existing.rawValues.push(raw);
               existing.count += 1;
             } else {
-              adBucket[questionKey].set(normKey, { rawValues: [raw], count: 1 });
+              adBucket[legacyKey].set(normKey, { rawValues: [raw], count: 1 });
             }
           }
           byAdBuckets[adId] = adBucket;
@@ -445,18 +446,16 @@ export function useSurveyAggregation(
       }
     }
 
-    // Finaliza byQuestionByOrigin — converte cada bucket (total/pago/organico)
-    // em Array com top-8 + "Outros". Story 21.6.
-    const byQuestionByOrigin: Record<SurveyOrigin, Record<SurveyQuestionKey, SurveyQuestionAggregation[]>> = {
-      total: { faturamento: [], profissao: [], funcionarios: [], voce_e: [], renda_mensal: [] },
-      pago: { faturamento: [], profissao: [], funcionarios: [], voce_e: [], renda_mensal: [] },
-      organico: { faturamento: [], profissao: [], funcionarios: [], voce_e: [], renda_mensal: [] },
+    // Finaliza byQuestionByOrigin com top-8 + Outros
+    const byQuestionByOrigin: Record<SurveyOrigin, Record<string, SurveyQuestionAggregation[]>> = {
+      total: {},
+      pago: {},
+      organico: {},
     };
     for (const origin of ["total", "pago", "organico"] as const) {
       const buckets = bucketsByOrigin[origin];
       const denom = totalResponsesByOrigin[origin];
-      for (const key of Object.keys(buckets) as SurveyQuestionKey[]) {
-        const bucket = buckets[key];
+      for (const [key, bucket] of buckets) {
         if (bucket.size === 0) continue;
         const entries = Array.from(bucket.values())
           .map((b) => ({
@@ -480,12 +479,11 @@ export function useSurveyAggregation(
         }
       }
     }
-    // byQuestion mantém comportamento legacy (= total) pra retrocompat
-    for (const key of Object.keys(byQuestion) as SurveyQuestionKey[]) {
-      byQuestion[key] = byQuestionByOrigin.total[key];
-    }
+
+    const byQuestion = byQuestionByOrigin.total;
 
     // Finaliza byAdId
+    const byAdId: SurveyDataByAdId = {};
     for (const [adId, bucket] of Object.entries(byAdBuckets)) {
       byAdId[adId] = {
         faturamento: Array.from(bucket.faturamento.values())
@@ -506,22 +504,20 @@ export function useSurveyAggregation(
     const matchedResponses = matchedLeadIds.size;
     const unmatchedResponses = totalResponses - matchedResponses;
 
-    console.log("🔍 [useSurveyAggregation DEBUG]", {
-      totalResponses,
-      matchedLeadIds_size: matchedLeadIds.size,
-      matchedResponses,
-      unmatchedResponses,
-      useFallback,
-      sheetQueries_length: sheetQueries.length,
-      allRows_length: allRows?.length,
-    });
+    const questions: SurveyQuestionMeta[] = Array.from(questionsMeta.entries()).map(
+      ([key, label]) => ({ key, label }),
+    );
 
     return {
       byQuestion,
       byQuestionByOrigin,
+      questions,
       byAdId,
       totalResponses,
-      usingFallback: useFallback,
+      usingFallback: anyFallback,
+      fallbackReason: anyFallback
+        ? "Pesquisa sem mapping configurado — usando detecção automática legada. Configure o mapping em Pesquisas → Mapear pra usar perguntas custom."
+        : undefined,
       isLoading: false,
       matchedLeadIds,
       matchedResponses,

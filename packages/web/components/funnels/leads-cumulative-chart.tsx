@@ -17,12 +17,19 @@ import type { DailyRow } from "@/lib/utils/funnel-metrics";
 interface LeadsCumulativeChartProps {
   rows: DailyRow[];
   title?: string;
+  /**
+   * Map de YYYY-MM-DD para count de leads gratuitos (das pesquisas orgânicas
+   * vinculadas) que entraram naquele dia. Quando informado, renderiza linha
+   * adicional "Leads Gratuitos" no gráfico cumulativo.
+   */
+  leadsGratuitosByDay?: Record<string, number>;
 }
 
 const LEADS_COLORS = {
   pagos: "hsl(220 80% 55%)",
   org: "hsl(150 60% 50%)",
   semTrack: "hsl(40 90% 55%)",
+  gratuitos: "hsl(280 70% 60%)",
 };
 
 function formatDateShort(d: string) {
@@ -30,20 +37,30 @@ function formatDateShort(d: string) {
   return `${day}/${m}`;
 }
 
-function buildLeadsCumulativeData(rows: DailyRow[]) {
+function buildLeadsCumulativeData(
+  rows: DailyRow[],
+  leadsGratuitosByDay?: Record<string, number>,
+) {
   let cumPagos = 0;
   let cumOrg = 0;
   let cumSemTrack = 0;
+  let cumGratuitos = 0;
+  const showGratuitos = !!leadsGratuitosByDay;
   return rows.map((r) => {
     cumPagos += r.leadsPagos;
     cumOrg += r.leadsOrg;
     cumSemTrack += r.leadsSemTrack;
+    if (showGratuitos) {
+      cumGratuitos += leadsGratuitosByDay![r.date] ?? 0;
+    }
+    const totalDay = cumPagos + cumOrg + cumSemTrack + (showGratuitos ? cumGratuitos : 0);
     return {
       date: formatDateShort(r.date),
       "Leads Pagos": cumPagos,
       "Leads Org": cumOrg,
       "Leads s/ Track": cumSemTrack,
-      "Total Leads": cumPagos + cumOrg + cumSemTrack,
+      ...(showGratuitos ? { "Leads Gratuitos": cumGratuitos } : {}),
+      "Total Leads": totalDay,
     };
   });
 }
@@ -67,6 +84,7 @@ function CustomTooltip(props: any) {
   if (!active || !payload || payload.length === 0) return null;
 
   const data = payload[0].payload;
+  const hasGratuitos = data["Leads Gratuitos"] !== undefined;
   return (
     <div className="rounded-lg border border-border bg-background p-3 shadow-lg space-y-1 text-xs">
       <div className="font-semibold">{data.date}</div>
@@ -75,6 +93,9 @@ function CustomTooltip(props: any) {
         <div className="text-muted-foreground">Leads Pagos: {data["Leads Pagos"]}</div>
         <div className="text-muted-foreground">Leads Org: {data["Leads Org"]}</div>
         <div className="text-muted-foreground">Leads s/ Track: {data["Leads s/ Track"]}</div>
+        {hasGratuitos && (
+          <div className="text-muted-foreground">Leads Gratuitos: {data["Leads Gratuitos"]}</div>
+        )}
       </div>
     </div>
   );
@@ -90,8 +111,10 @@ function CustomTooltip(props: any) {
 export function LeadsCumulativeChart({
   rows,
   title = "Leads Acumulados",
+  leadsGratuitosByDay,
 }: LeadsCumulativeChartProps) {
-  const data = buildLeadsCumulativeData(rows);
+  const data = buildLeadsCumulativeData(rows, leadsGratuitosByDay);
+  const showGratuitos = !!leadsGratuitosByDay;
 
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-2">
@@ -147,6 +170,17 @@ export function LeadsCumulativeChart({
           >
             <LabelList content={renderPointLabel} />
           </Line>
+          {showGratuitos && (
+            <Line
+              type="monotone"
+              dataKey="Leads Gratuitos"
+              stroke={LEADS_COLORS.gratuitos}
+              strokeWidth={2}
+              dot={{ r: 3 }}
+            >
+              <LabelList content={renderPointLabel} />
+            </Line>
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>

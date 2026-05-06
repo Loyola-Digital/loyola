@@ -12,6 +12,7 @@ import {
   fetchAllAdInsights,
   fetchAdCreatives,
   fetchCampaignDailyInsights,
+  fetchCampaignDailyInsightsForIds,
   fetchPlacementBreakdown,
   decryptAccountToken,
   type MetaAdSetInsight,
@@ -736,6 +737,107 @@ export async function getCampaignDailyInsights(
 
   setCache(cacheKey, result);
   return result;
+}
+
+// Agrega daily insights de N campanhas em uma série única por dia.
+// Soma spend/impressions/clicks/reach + actions + action_values; CTR/CPM/CPC
+// são derivados (não somáveis).
+export async function getCampaignDailyInsightsBulk(
+  db: Database,
+  projectId: string,
+  campaignIds: string[],
+  days: number,
+  startDate?: string,
+  endDate?: string
+): Promise<MetaDailyInsight[]> {
+  if (campaignIds.length === 0) return [];
+
+  const sortedIds = [...campaignIds].sort();
+  const cacheKey = `analytics:${projectId}:campaign-daily-bulk:${sortedIds.join(",")}:${days}:${startDate ?? ""}:${endDate ?? ""}`;
+  const cached = getCached<MetaDailyInsight[]>(cacheKey);
+  if (cached) return cached;
+
+  const metaAccount = await getMetaAccountForProject(db, projectId);
+  if (!metaAccount) return [];
+
+  const raw = await fetchCampaignDailyInsightsForIds(
+    metaAccount.metaAccountId,
+    metaAccount.accessToken,
+    campaignIds,
+    days,
+    startDate,
+    endDate
+  );
+
+  // Agrega por date_start
+  type Bucket = {
+    date_start: string;
+    date_stop: string;
+    impressions: number;
+    reach: number;
+    clicks: number;
+    spend: number;
+    actions: Map<string, number>;
+    actionValues: Map<string, number>;
+  };
+
+  const buckets = new Map<string, Bucket>();
+  for (const row of raw) {
+    let b = buckets.get(row.date_start);
+    if (!b) {
+      b = {
+        date_start: row.date_start,
+        date_stop: row.date_stop,
+        impressions: 0,
+        reach: 0,
+        clicks: 0,
+        spend: 0,
+        actions: new Map(),
+        actionValues: new Map(),
+      };
+      buckets.set(row.date_start, b);
+    }
+    b.impressions += parseFloat(row.impressions || "0");
+    b.reach += parseFloat(row.reach || "0");
+    b.clicks += parseFloat(row.clicks || "0");
+    b.spend += parseFloat(row.spend || "0");
+    for (const a of row.actions ?? []) {
+      b.actions.set(a.action_type, (b.actions.get(a.action_type) ?? 0) + parseFloat(a.value || "0"));
+    }
+    for (const a of row.action_values ?? []) {
+      b.actionValues.set(a.action_type, (b.actionValues.get(a.action_type) ?? 0) + parseFloat(a.value || "0"));
+    }
+  }
+
+  const aggregated: MetaDailyInsight[] = Array.from(buckets.values())
+    .sort((a, b) => a.date_start.localeCompare(b.date_start))
+    .map((b) => {
+      const ctr = b.impressions > 0 ? (b.clicks / b.impressions) * 100 : 0;
+      const cpc = b.clicks > 0 ? b.spend / b.clicks : 0;
+      const cpm = b.impressions > 0 ? (b.spend / b.impressions) * 1000 : 0;
+      return {
+        date_start: b.date_start,
+        date_stop: b.date_stop,
+        impressions: String(b.impressions),
+        reach: String(b.reach),
+        clicks: String(b.clicks),
+        spend: b.spend.toFixed(2),
+        ctr: ctr.toFixed(4),
+        cpc: cpc.toFixed(4),
+        cpm: cpm.toFixed(4),
+        actions: Array.from(b.actions.entries()).map(([action_type, value]) => ({
+          action_type,
+          value: String(value),
+        })),
+        action_values: Array.from(b.actionValues.entries()).map(([action_type, value]) => ({
+          action_type,
+          value: value.toFixed(2),
+        })),
+      };
+    });
+
+  setCache(cacheKey, aggregated);
+  return aggregated;
 }
 
 // ============================================================

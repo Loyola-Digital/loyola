@@ -20,12 +20,34 @@ export interface SheetData {
   totalRows: number;
 }
 
+export type SurveyType = "paid" | "organic";
+
+export interface SurveyQuestionConfig {
+  columnName: string;
+  label: string;
+  showInDashboard: boolean;
+}
+
+export interface SurveyColumnMapping {
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_content?: string;
+  email?: string;
+  phone?: string;
+  timestamp?: string;
+  questions?: SurveyQuestionConfig[];
+}
+
 export interface FunnelSurvey {
   id: string;
   funnelId: string;
+  stageId: string | null;
   spreadsheetId: string;
   spreadsheetName: string;
   sheetName: string;
+  surveyType: SurveyType;
+  columnMapping: SurveyColumnMapping;
   createdAt: string;
   responses?: number;
 }
@@ -65,18 +87,26 @@ export function useSheetData(spreadsheetId: string | null, sheetName: string | n
   });
 }
 
+function buildSurveyQuery(stageId?: string | null, surveyType?: SurveyType | null): string {
+  const params = new URLSearchParams();
+  if (stageId) params.set("stageId", stageId);
+  if (surveyType) params.set("surveyType", surveyType);
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
+
 export function useFunnelSurveys(
   projectId: string,
   funnelId: string,
   stageId?: string | null,
+  surveyType?: SurveyType | null,
 ) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["funnel-surveys", projectId, funnelId, stageId ?? null],
+    queryKey: ["funnel-surveys", projectId, funnelId, stageId ?? null, surveyType ?? null],
     queryFn: () => {
-      const qs = stageId ? `?stageId=${encodeURIComponent(stageId)}` : "";
       return apiClient<{ surveys: FunnelSurvey[] }>(
-        `/api/projects/${projectId}/funnels/${funnelId}/surveys${qs}`,
+        `/api/projects/${projectId}/funnels/${funnelId}/surveys${buildSurveyQuery(stageId, surveyType)}`,
       );
     },
   });
@@ -95,7 +125,13 @@ export function useAddFunnelSurvey(projectId: string, funnelId: string) {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { stageId?: string; spreadsheetId: string; spreadsheetName: string; sheetName: string }) =>
+    mutationFn: (data: {
+      stageId?: string;
+      spreadsheetId: string;
+      spreadsheetName: string;
+      sheetName: string;
+      surveyType?: SurveyType;
+    }) =>
       apiClient(`/api/projects/${projectId}/funnels/${funnelId}/surveys`, {
         method: "POST",
         body: JSON.stringify(data),
@@ -114,18 +150,31 @@ export function useRemoveFunnelSurvey(projectId: string, funnelId: string) {
   });
 }
 
+export function useUpdateSurveyMapping(projectId: string, funnelId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ surveyId, mapping }: { surveyId: string; mapping: SurveyColumnMapping }) =>
+      apiClient<FunnelSurvey>(
+        `/api/projects/${projectId}/funnels/${funnelId}/surveys/${surveyId}/mapping`,
+        { method: "PATCH", body: JSON.stringify(mapping) },
+      ),
+    onSuccess: () => { invalidateFunnelSurveys(qc, projectId, funnelId); },
+  });
+}
+
 export function useSurveySummary(
   projectId: string,
   funnelId: string,
   stageId?: string | null,
+  surveyType?: SurveyType | null,
 ) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["funnel-surveys-summary", projectId, funnelId, stageId ?? null],
+    queryKey: ["funnel-surveys-summary", projectId, funnelId, stageId ?? null, surveyType ?? null],
     queryFn: () => {
-      const qs = stageId ? `?stageId=${encodeURIComponent(stageId)}` : "";
       return apiClient<SurveySummary>(
-        `/api/projects/${projectId}/funnels/${funnelId}/surveys/summary${qs}`,
+        `/api/projects/${projectId}/funnels/${funnelId}/surveys/summary${buildSurveyQuery(stageId, surveyType)}`,
       );
     },
     staleTime: 30 * 1000,

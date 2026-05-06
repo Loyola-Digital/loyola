@@ -60,6 +60,8 @@ const EMPTY_RESPONSE = {
   porCanal: [] as { canal: string; vendas: number; bruto: number; liquido: number }[],
   porFormaPagamento: [] as { forma: string; vendas: number; bruto: number; liquido: number }[],
   porUtmSource: [] as { fonte: string; vendas: number; bruto: number; liquido: number }[],
+  porUtmMedium: [] as { medium: string; vendas: number; bruto: number; liquido: number }[],
+  porUtmTerm: [] as { term: string; vendas: number; bruto: number; liquido: number }[],
   semDados: true,
 };
 
@@ -139,6 +141,8 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         formaPagamento?: string;
         canalOrigem?: string;
         utm_source?: string;
+        utm_medium?: string;
+        utm_term?: string;
         dataVenda?: string;
       };
 
@@ -166,6 +170,8 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       const formaIdx = colIdx(mapping.formaPagamento);
       const canalIdx = colIdx(mapping.canalOrigem);
       const utmSourceIdx = colIdx(mapping.utm_source);
+      const utmMediumIdx = colIdx(mapping.utm_medium);
+      const utmTermIdx = colIdx(mapping.utm_term);
       const dataIdx = colIdx(mapping.dataVenda);
 
       if (emailIdx === -1) {
@@ -180,7 +186,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       const emailMap = new Map<
         string,
-        { bruto: number; liquido: number; forma: string; canal: string; utmSource: string | null; lastDate: Date | null }
+        { bruto: number; liquido: number; forma: string; canal: string; utmSource: string | null; utmMedium: string | null; utmTerm: string | null; lastDate: Date | null }
       >();
 
       for (const row of rows) {
@@ -197,6 +203,8 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         const forma = (row[formaIdx] ?? "Não informado").trim() || "Não informado";
         const canal = (row[canalIdx] ?? "Não informado").trim() || "Não informado";
         const utmSource = (row[utmSourceIdx] ?? "").trim() || null;
+        const utmMedium = utmMediumIdx !== -1 ? ((row[utmMediumIdx] ?? "").trim() || null) : null;
+        const utmTerm = utmTermIdx !== -1 ? ((row[utmTermIdx] ?? "").trim() || null) : null;
         const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
 
         const existing = emailMap.get(email);
@@ -207,10 +215,12 @@ export default fp(async function stageSalesDataRoutes(fastify) {
             existing.forma = forma;
             existing.canal = canal;
             existing.utmSource = utmSource;
+            existing.utmMedium = utmMedium;
+            existing.utmTerm = utmTerm;
             existing.lastDate = rowDate;
           }
         } else {
-          emailMap.set(email, { bruto, liquido, forma, canal, utmSource, lastDate: rowDate });
+          emailMap.set(email, { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, lastDate: rowDate });
         }
       }
 
@@ -223,8 +233,10 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       const canalMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const formaMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const utmSourceMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+      const utmMediumMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+      const utmTermMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
 
-      for (const { bruto, liquido, forma, canal, utmSource } of emailMap.values()) {
+      for (const { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm } of emailMap.values()) {
         totalBruto += bruto;
         totalLiquido += liquido;
 
@@ -246,6 +258,20 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         utmEntry.bruto += bruto;
         utmEntry.liquido += liquido;
         utmSourceMap.set(fonte, utmEntry);
+
+        const mediumKey = utmMedium ?? "Não informado";
+        const mediumEntry = utmMediumMap.get(mediumKey) ?? { vendas: 0, bruto: 0, liquido: 0 };
+        mediumEntry.vendas += 1;
+        mediumEntry.bruto += bruto;
+        mediumEntry.liquido += liquido;
+        utmMediumMap.set(mediumKey, mediumEntry);
+
+        const termKey = utmTerm ?? "Não informado";
+        const termEntry = utmTermMap.get(termKey) ?? { vendas: 0, bruto: 0, liquido: 0 };
+        termEntry.vendas += 1;
+        termEntry.bruto += bruto;
+        termEntry.liquido += liquido;
+        utmTermMap.set(termKey, termEntry);
       }
 
       const totalVendas = emailMap.size;
@@ -264,6 +290,12 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           .sort((a, b) => b.vendas - a.vendas),
         porUtmSource: Array.from(utmSourceMap.entries())
           .map(([fonte, v]) => ({ fonte, ...v }))
+          .sort((a, b) => b.vendas - a.vendas),
+        porUtmMedium: Array.from(utmMediumMap.entries())
+          .map(([medium, v]) => ({ medium, ...v }))
+          .sort((a, b) => b.vendas - a.vendas),
+        porUtmTerm: Array.from(utmTermMap.entries())
+          .map(([term, v]) => ({ term, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
         semDados: false,
       };

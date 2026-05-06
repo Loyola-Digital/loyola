@@ -271,6 +271,30 @@ export function useCampaignDailyInsights(
   });
 }
 
+// Bulk: agrega daily insights de N campanhas por dia. Usado pelos dashboards
+// de funil que somam todas as campanhas selecionadas.
+export function useCampaignDailyInsightsBulk(
+  projectId: string | null,
+  campaignIds: string[] | null,
+  days: number = 30,
+  startDate?: string,
+  endDate?: string
+) {
+  const apiClient = useApiClient();
+  const sortedIds = campaignIds ? [...campaignIds].sort() : [];
+  const idsKey = sortedIds.join(",");
+  let queryString = `/api/traffic/analytics/${projectId}/campaign-daily?campaignIds=${idsKey}&days=${days}`;
+  if (startDate) queryString += `&startDate=${startDate}`;
+  if (endDate) queryString += `&endDate=${endDate}`;
+
+  return useQuery({
+    queryKey: ["traffic-campaign-daily-bulk", projectId, idsKey, days, startDate, endDate],
+    queryFn: () => apiClient<CampaignDailyInsight[]>(queryString),
+    enabled: !!projectId && sortedIds.length > 0,
+    staleTime: TRAFFIC_STALE_TIME,
+  });
+}
+
 export interface PlacementInsight {
   platform: string;
   position: string;

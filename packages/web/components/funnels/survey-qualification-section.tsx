@@ -2,10 +2,6 @@
 
 import { useState } from "react";
 import { AlertTriangle, ClipboardList, FileSpreadsheet } from "lucide-react";
-import {
-  SURVEY_QUESTION_MAP,
-  type SurveyQuestionKey,
-} from "@/lib/constants/survey-questions";
 import type {
   SurveyQuestionAggregation,
   SurveyOrigin,
@@ -21,7 +17,7 @@ interface SurveyQualificationSectionProps {
   /** Dados agregados do hook `useSurveyAggregation` */
   data: Pick<
     UseSurveyAggregationResult,
-    "byQuestion" | "byQuestionByOrigin" | "totalResponses" | "usingFallback" | "fallbackReason" | "matchedResponses" | "unmatchedResponses"
+    "byQuestion" | "byQuestionByOrigin" | "questions" | "totalResponses" | "usingFallback" | "fallbackReason" | "matchedResponses" | "unmatchedResponses"
   >;
 }
 
@@ -30,20 +26,6 @@ const ORIGIN_OPTIONS: { value: SurveyOrigin; label: string }[] = [
   { value: "pago", label: "Pago" },
   { value: "organico", label: "Orgânico" },
 ];
-
-/**
- * Lista de perguntas renderizadas na seção 3.a, derivada do `SURVEY_QUESTION_MAP`
- * filtrando só as que incluem `"qualification"` em `showIn`. Assim, adicionar
- * nova pergunta no mapa com `showIn: ["qualification"]` faz ela aparecer aqui
- * automaticamente — evita bug de "esqueci de adicionar no componente".
- */
-const QUALIFICATION_QUESTIONS: SurveyQuestionKey[] = (
-  Object.entries(SURVEY_QUESTION_MAP) as Array<
-    [SurveyQuestionKey, (typeof SURVEY_QUESTION_MAP)[SurveyQuestionKey]]
-  >
-)
-  .filter(([, def]) => (def.showIn as readonly string[]).includes("qualification"))
-  .map(([key]) => key);
 
 /**
  * Barra horizontal proporcional ao pct da resposta. Mostra label (esquerda),
@@ -139,9 +121,10 @@ export function SurveyQualificationSection({
   // byQuestion (total) caso byQuestionByOrigin ausente — robustez.
   const activeByQuestion = data.byQuestionByOrigin?.[origin] ?? data.byQuestion;
 
-  // Perguntas que têm dados (pelo menos 1 resposta) no bucket ativo
-  const questionsWithData = QUALIFICATION_QUESTIONS.filter(
-    (key) => activeByQuestion[key].length > 0,
+  // Perguntas que têm dados (pelo menos 1 resposta) no bucket ativo.
+  // `questions` vem do mapping configurado pelo usuário (ou fallback legacy).
+  const questionsWithData = data.questions.filter(
+    (q) => (activeByQuestion[q.key] ?? []).length > 0,
   );
 
   return (
@@ -195,17 +178,18 @@ export function SurveyQualificationSection({
 
       {questionsWithData.length === 0 ? (
         <p className="py-4 text-center text-sm text-muted-foreground">
-          Nenhuma das perguntas mapeadas foi encontrada nas planilhas vinculadas.
+          {data.questions.length === 0
+            ? "Nenhuma pergunta mapeada. Configure o mapping em Pesquisas → Mapear pra escolher quais colunas exibir."
+            : "Nenhuma das perguntas mapeadas tem respostas no período."}
         </p>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {questionsWithData.map((key) => {
-            const def = SURVEY_QUESTION_MAP[key];
-            const items = activeByQuestion[key];
+          {questionsWithData.map((q) => {
+            const items = activeByQuestion[q.key] ?? [];
             return (
-              <div key={key} className="space-y-3">
+              <div key={q.key} className="space-y-3">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  {def.label}
+                  {q.label}
                 </h4>
                 <div className="space-y-2">
                   {items.map((item, i) => (

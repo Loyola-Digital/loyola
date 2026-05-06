@@ -163,6 +163,12 @@ export interface DailyRow {
   cplPg: number | null;
   cplG: number | null;
   faturamento: number;
+  /**
+   * Breakdown de leads por utm_medium no dia. Chaves são valores de utm_medium
+   * (lowercase, trimmed) ou "(sem medium)" pra leads sem medium mapeado/preenchido.
+   * Counts são deduplicados por email normalizado, igual ao agregado total de leads.
+   */
+  leadsByMedium: Record<string, number>;
 }
 
 /**
@@ -200,8 +206,8 @@ export function aggregateSpreadsheetByDate(
   rows: FunnelSpreadsheetRow[],
   utmSourceMapped: boolean,
   dateMapped: boolean,
-): Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number; faturamento: number }> {
-  const map = new Map<string, { seenEmails: { leadsPagos: Set<string>; leadsOrg: Set<string>; leadsSemTrack: Set<string> }; faturamento: number }>();
+): Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number; faturamento: number; leadsByMedium: Record<string, number> }> {
+  const map = new Map<string, { seenEmails: { leadsPagos: Set<string>; leadsOrg: Set<string>; leadsSemTrack: Set<string> }; mediumEmails: Map<string, Set<string>>; faturamento: number }>();
   if (!dateMapped) return new Map();
 
   for (let idx = 0; idx < rows.length; idx++) {
@@ -212,6 +218,8 @@ export function aggregateSpreadsheetByDate(
     const email = (row.named.email ?? "").trim();
     const normalizedEmail = email ? normalizeEmail(email) : `__no-email_${idx}`;
     const utmSource = (row.named.utm_source ?? "").trim().toLowerCase();
+    const utmMediumRaw = (row.named.utm_medium ?? "").trim().toLowerCase();
+    const mediumKey = utmMediumRaw || "(sem medium)";
     const valueStr = (row.named.value ?? "").trim();
     const value = valueStr ? parseFloat(valueStr.replace(/[^\d.,]/g, "").replace(",", ".")) || 0 : 0;
 
@@ -226,21 +234,30 @@ export function aggregateSpreadsheetByDate(
 
     const dateEntry = map.get(date) ?? {
       seenEmails: { leadsPagos: new Set<string>(), leadsOrg: new Set<string>(), leadsSemTrack: new Set<string>() },
+      mediumEmails: new Map<string, Set<string>>(),
       faturamento: 0,
     };
     dateEntry.seenEmails[category].add(normalizedEmail);
+    const mediumSet = dateEntry.mediumEmails.get(mediumKey) ?? new Set<string>();
+    mediumSet.add(normalizedEmail);
+    dateEntry.mediumEmails.set(mediumKey, mediumSet);
     dateEntry.faturamento += value;
     map.set(date, dateEntry);
   }
 
   // Converter Sets em counts
-  const result = new Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number; faturamento: number }>();
+  const result = new Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number; faturamento: number; leadsByMedium: Record<string, number> }>();
   for (const [date, entry] of map) {
+    const leadsByMedium: Record<string, number> = {};
+    for (const [medium, set] of entry.mediumEmails) {
+      leadsByMedium[medium] = set.size;
+    }
     result.set(date, {
       leadsPagos: entry.seenEmails.leadsPagos.size,
       leadsOrg: entry.seenEmails.leadsOrg.size,
       leadsSemTrack: entry.seenEmails.leadsSemTrack.size,
       faturamento: entry.faturamento,
+      leadsByMedium,
     });
   }
   return result;
@@ -253,13 +270,15 @@ export function aggregateSpreadsheetByDate(
  */
 export function buildDailyRows(
   metaMap: Map<string, { spend: number; impressions: number; linkClicks: number; lpView: number; checkoutInitiations: number }>,
-  sheetMap: Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number; faturamento: number }>,
+  sheetMap: Map<string, { leadsPagos: number; leadsOrg: number; leadsSemTrack: number; faturamento: number; leadsByMedium: Record<string, number> }>,
+  extraDates?: Iterable<string>,
 ): DailyRow[] {
   const allDates = new Set([...metaMap.keys(), ...sheetMap.keys()]);
+  if (extraDates) for (const d of extraDates) allDates.add(d);
   const rows: DailyRow[] = [];
   for (const date of allDates) {
     const meta = metaMap.get(date) ?? { spend: 0, impressions: 0, linkClicks: 0, lpView: 0, checkoutInitiations: 0 };
-    const sheet = sheetMap.get(date) ?? { leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0, faturamento: 0 };
+    const sheet = sheetMap.get(date) ?? { leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0, faturamento: 0, leadsByMedium: {} };
     const totalLeads = sheet.leadsPagos + sheet.leadsOrg + sheet.leadsSemTrack;
     rows.push({
       date,
@@ -279,6 +298,7 @@ export function buildDailyRows(
       cplPg: safeDivide(meta.spend, sheet.leadsPagos),
       cplG: safeDivide(meta.spend, totalLeads),
       faturamento: sheet.faturamento,
+      leadsByMedium: sheet.leadsByMedium,
     });
   }
   rows.sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -290,6 +310,7 @@ export function buildDailyRows(
  * Retorna uma `DailyRow` com `date === "Total"` pra usar no footer da tabela.
  */
 export function computeTotals(rows: DailyRow[]): DailyRow {
+  const totalsByMedium: Record<string, number> = {};
   const t = rows.reduce(
     (acc, r) => {
       acc.spend += r.spend;
@@ -301,6 +322,9 @@ export function computeTotals(rows: DailyRow[]): DailyRow {
       acc.leadsOrg += r.leadsOrg;
       acc.leadsSemTrack += r.leadsSemTrack;
       acc.faturamento += r.faturamento;
+      for (const [medium, count] of Object.entries(r.leadsByMedium ?? {})) {
+        totalsByMedium[medium] = (totalsByMedium[medium] ?? 0) + count;
+      }
       return acc;
     },
     { spend: 0, linkClicks: 0, impressions: 0, lpView: 0, checkoutInitiations: 0, leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0, faturamento: 0 },
@@ -324,6 +348,7 @@ export function computeTotals(rows: DailyRow[]): DailyRow {
     cplPg: safeDivide(t.spend, t.leadsPagos),
     cplG: safeDivide(t.spend, totalLeads),
     faturamento: t.faturamento,
+    leadsByMedium: totalsByMedium,
   };
 }
 

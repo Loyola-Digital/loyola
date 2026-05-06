@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import {
-  FileSpreadsheet, Plus, Trash2, ChevronDown, ChevronRight, RefreshCw, Search, ClipboardList,
+  FileSpreadsheet, Plus, Trash2, ChevronDown, ChevronRight, RefreshCw, Search, ClipboardList, Settings2,
 } from "lucide-react";
+import { SurveyMappingDialog } from "./survey-mapping-dialog";
+import type { FunnelSurvey } from "@/lib/hooks/use-google-sheets";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,6 +18,7 @@ import {
   useSpreadsheets, useSpreadsheetSheets, useSheetData,
   useFunnelSurveys, useAddFunnelSurvey, useRemoveFunnelSurvey,
   useRefreshSheetData, useSurveySummary,
+  type SurveyType,
 } from "@/lib/hooks/use-google-sheets";
 
 function fmtNumber(val: number): string {
@@ -27,8 +30,8 @@ function fmtNumber(val: number): string {
 // SHEETS PICKER DIALOG
 // ============================================================
 
-function SheetsPickerDialog({ projectId, funnelId, stageId, open, onOpenChange }: {
-  projectId: string; funnelId: string; stageId?: string; open: boolean; onOpenChange: (open: boolean) => void;
+function SheetsPickerDialog({ projectId, funnelId, stageId, surveyType, open, onOpenChange }: {
+  projectId: string; funnelId: string; stageId?: string; surveyType: SurveyType; open: boolean; onOpenChange: (open: boolean) => void;
 }) {
   const { data: spreadsheetsData, isLoading: spreadsheetsLoading } = useSpreadsheets();
   const [selectedSpreadsheet, setSelectedSpreadsheet] = useState<{ id: string; name: string } | null>(null);
@@ -42,7 +45,7 @@ function SheetsPickerDialog({ projectId, funnelId, stageId, open, onOpenChange }
   function handleAddSheet(sheetName: string) {
     if (!selectedSpreadsheet) return;
     addSurvey.mutate(
-      { stageId, spreadsheetId: selectedSpreadsheet.id, spreadsheetName: selectedSpreadsheet.name, sheetName },
+      { stageId, spreadsheetId: selectedSpreadsheet.id, spreadsheetName: selectedSpreadsheet.name, sheetName, surveyType },
       {
         onSuccess: () => { toast.success(`Aba "${sheetName}" vinculada!`); },
         onError: (err) => toast.error(err instanceof Error ? err.message : "Erro"),
@@ -61,8 +64,8 @@ function SheetsPickerDialog({ projectId, funnelId, stageId, open, onOpenChange }
       <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <FileSpreadsheet className="h-5 w-5 text-green-600" />
-            Vincular planilha de pesquisa
+            <FileSpreadsheet className={`h-5 w-5 ${surveyType === "organic" ? "text-amber-600" : "text-green-600"}`} />
+            {surveyType === "organic" ? "Vincular planilha de pesquisa orgânica" : "Vincular planilha de pesquisa"}
           </DialogTitle>
         </DialogHeader>
 
@@ -135,13 +138,15 @@ function SheetsPickerDialog({ projectId, funnelId, stageId, open, onOpenChange }
 // SURVEY DATA SECTION (collapsible)
 // ============================================================
 
-function SurveyDataSection({ survey, projectId, funnelId }: { survey: { id: string; spreadsheetId: string; spreadsheetName: string; sheetName: string }; projectId: string; funnelId: string }) {
+function SurveyDataSection({ survey, projectId, funnelId }: { survey: FunnelSurvey; projectId: string; funnelId: string }) {
   const [open, setOpen] = useState(false);
+  const [mappingOpen, setMappingOpen] = useState(false);
   const { data, isLoading } = useSheetData(open ? survey.spreadsheetId : null, open ? survey.sheetName : null);
   const removeSurvey = useRemoveFunnelSurvey(projectId, funnelId);
   const refreshData = useRefreshSheetData();
   const [page, setPage] = useState(0);
   const pageSize = 20;
+  const mappedQuestionsCount = survey.columnMapping?.questions?.length ?? 0;
 
   const rows = data?.rows ?? [];
   const headers = data?.headers ?? [];
@@ -172,8 +177,15 @@ function SurveyDataSection({ survey, projectId, funnelId }: { survey: { id: stri
           <span className="text-sm font-medium">{survey.spreadsheetName}</span>
           <span className="text-xs text-muted-foreground">/ {survey.sheetName}</span>
           {data && <Badge variant="secondary" className="text-[10px]">{fmtNumber(data.totalRows)} respostas</Badge>}
+          {mappedQuestionsCount > 0 && (
+            <Badge variant="outline" className="text-[10px]">{mappedQuestionsCount} pergunta{mappedQuestionsCount > 1 ? "s" : ""} mapeada{mappedQuestionsCount > 1 ? "s" : ""}</Badge>
+          )}
         </div>
         <div className="flex items-center gap-1">
+          <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs" onClick={(e) => { e.stopPropagation(); setMappingOpen(true); }}>
+            <Settings2 className="h-3.5 w-3.5" />
+            Mapear
+          </Button>
           <Button size="icon" variant="ghost" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); refreshData.mutate({ spreadsheetId: survey.spreadsheetId, sheetName: survey.sheetName }); }}>
             <RefreshCw className={`h-3.5 w-3.5 ${refreshData.isPending ? "animate-spin" : ""}`} />
           </Button>
@@ -185,6 +197,14 @@ function SurveyDataSection({ survey, projectId, funnelId }: { survey: { id: stri
           </Button>
         </div>
       </button>
+
+      <SurveyMappingDialog
+        projectId={projectId}
+        funnelId={funnelId}
+        survey={survey}
+        open={mappingOpen}
+        onOpenChange={setMappingOpen}
+      />
 
       {open && (
         <div className="border-t border-border/20 p-4 space-y-4">
@@ -266,16 +286,22 @@ interface SurveyFunnelTabProps {
   funnelId: string;
   stageId?: string;
   totalLeads?: number;
+  surveyType?: SurveyType;
 }
 
-export function SurveyFunnelTab({ projectId, funnelId, stageId, totalLeads }: SurveyFunnelTabProps) {
+export function SurveyFunnelTab({ projectId, funnelId, stageId, totalLeads, surveyType = "paid" }: SurveyFunnelTabProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { data: surveysData, isLoading } = useFunnelSurveys(projectId, funnelId, stageId);
-  const { data: summaryData } = useSurveySummary(projectId, funnelId, stageId);
+  const { data: surveysData, isLoading } = useFunnelSurveys(projectId, funnelId, stageId, surveyType);
+  const { data: summaryData } = useSurveySummary(projectId, funnelId, stageId, surveyType);
 
   const surveys = surveysData?.surveys ?? [];
   const totalResponses = summaryData?.totalResponses ?? 0;
   const responseRate = totalLeads && totalLeads > 0 ? (totalResponses / totalLeads) * 100 : null;
+  const isOrganic = surveyType === "organic";
+  const emptyMessage = isOrganic
+    ? "Vincule uma planilha do Google Sheets com as respostas dos seus alunos (pessoas captadas fora de tráfego pago)."
+    : "Vincule uma planilha do Google Sheets para acompanhar respostas de pesquisa.";
+  const emptyTitle = isOrganic ? "Nenhuma pesquisa orgânica vinculada" : "Nenhuma pesquisa vinculada";
 
   return (
     <div className="space-y-4">
@@ -306,9 +332,9 @@ export function SurveyFunnelTab({ projectId, funnelId, stageId, totalLeads }: Su
         <div className="space-y-2"><Skeleton className="h-16" /><Skeleton className="h-16" /></div>
       ) : surveys.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border/30 p-8 text-center">
-          <FileSpreadsheet className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
-          <p className="font-medium">Nenhuma pesquisa vinculada</p>
-          <p className="text-sm text-muted-foreground mt-1">Vincule uma planilha do Google Sheets para acompanhar respostas de pesquisa.</p>
+          <FileSpreadsheet className={`h-8 w-8 mx-auto mb-3 ${isOrganic ? "text-amber-600/60" : "text-muted-foreground"}`} />
+          <p className="font-medium">{emptyTitle}</p>
+          <p className="text-sm text-muted-foreground mt-1">{emptyMessage}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -318,7 +344,7 @@ export function SurveyFunnelTab({ projectId, funnelId, stageId, totalLeads }: Su
         </div>
       )}
 
-      <SheetsPickerDialog projectId={projectId} funnelId={funnelId} stageId={stageId} open={pickerOpen} onOpenChange={setPickerOpen} />
+      <SheetsPickerDialog projectId={projectId} funnelId={funnelId} stageId={stageId} surveyType={surveyType} open={pickerOpen} onOpenChange={setPickerOpen} />
     </div>
   );
 }

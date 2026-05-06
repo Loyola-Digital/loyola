@@ -682,6 +682,8 @@ export const stageSalesSpreadsheets = pgTable(
 // FUNNEL SURVEYS (EPIC-14 — Google Sheets)
 // ============================================================
 
+export const surveyTypeEnum = pgEnum("survey_type", ["paid", "organic"]);
+
 export const funnelSurveys = pgTable(
   "funnel_surveys",
   {
@@ -695,6 +697,20 @@ export const funnelSurveys = pgTable(
     spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
     spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
     sheetName: varchar("sheet_name", { length: 255 }).notNull(),
+    surveyType: surveyTypeEnum("survey_type").notNull().default("paid"),
+    columnMapping: jsonb("column_mapping")
+      .notNull()
+      .$type<{
+        utm_source?: string;
+        utm_medium?: string;
+        utm_campaign?: string;
+        utm_content?: string;
+        email?: string;
+        phone?: string;
+        timestamp?: string;
+        questions?: Array<{ columnName: string; label: string; showInDashboard: boolean }>;
+      }>()
+      .default({}),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -702,6 +718,7 @@ export const funnelSurveys = pgTable(
   (table) => [
     index("idx_funnel_surveys_funnel").on(table.funnelId),
     index("idx_funnel_surveys_stage").on(table.stageId),
+    index("idx_funnel_surveys_type").on(table.surveyType),
   ]
 );
 
@@ -901,5 +918,54 @@ export const instagramMonthlyReports = pgTable(
       table.projectId,
       table.generatedAt,
     ),
+  ]
+);
+
+// ============================================================
+// FUNNEL GROUPS TRACKING (EPIC-26 — Story 26.1)
+// ============================================================
+
+export const funnelGroupsSpreadsheets = pgTable(
+  "funnel_groups_spreadsheets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .unique()
+      .references(() => funnels.id, { onDelete: "cascade" }),
+    spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
+    spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
+    sheetName: varchar("sheet_name", { length: 255 }).notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_funnel_groups_spreadsheets_funnel").on(table.funnelId),
+  ]
+);
+
+export const funnelGroupSnapshots = pgTable(
+  "funnel_group_snapshots",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => funnels.id, { onDelete: "cascade" }),
+    campaignId: varchar("campaign_id", { length: 255 }).notNull(),
+    campaignName: varchar("campaign_name", { length: 500 }).notNull(),
+    snapshotAt: timestamp("snapshot_at", { withTimezone: true }).notNull(),
+    clicksTotal: integer("clicks_total").notNull().default(0),
+    groupFull: integer("group_full").notNull().default(0),
+    groupOpen: integer("group_open").notNull().default(0),
+    groupTotal: integer("group_total").notNull().default(0),
+    inputAmount: integer("input_amount").notNull().default(0),
+    outputAmount: integer("output_amount").notNull().default(0),
+    participantsAmount: integer("participants_amount").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("uq_group_snapshots_unique").on(table.funnelId, table.campaignId, table.snapshotAt),
+    index("idx_group_snapshots_funnel_date").on(table.funnelId, table.snapshotAt),
+    index("idx_group_snapshots_campaign").on(table.funnelId, table.campaignId),
   ]
 );

@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { DailyRow } from "@/lib/utils/funnel-metrics";
+import { resolveMediumByAdsets } from "@/lib/hooks/use-funnel-adsets-map";
 
 interface CrossedFunnelDailyTableProps {
   rows: DailyRow[];
@@ -19,6 +20,13 @@ interface CrossedFunnelDailyTableProps {
   surveyMatched?: number | null;
   surveyUnmatched?: number | null;
   salesByDay?: Record<string, number>;
+  /**
+   * Map de adset_id → adset_name vindo da Meta API. Quando informado, o
+   * tooltip de Total Leads resolve `utm_medium` (que armazena o adset_id)
+   * pro nome humano e re-agrupa pelos mesmos nomes (vários IDs com
+   * mesmo nome viram uma linha só).
+   */
+  adsetsMap?: Map<string, string>;
 }
 
 function fmtCurrency(v: number | null | undefined): string {
@@ -57,6 +65,38 @@ function renderConnectRate(v: number | null) {
   );
 }
 
+function renderTotalLeadsCell(
+  totalLeads: number,
+  leadsByMedium: Record<string, number> | undefined,
+  adsetsMap?: Map<string, string>,
+) {
+  const display = fmtInt(totalLeads);
+  if (totalLeads === 0) {
+    return <span className="font-medium">{display}</span>;
+  }
+  const resolved = adsetsMap && leadsByMedium
+    ? resolveMediumByAdsets(leadsByMedium, adsetsMap)
+    : (leadsByMedium ?? {});
+  const entries = Object.entries(resolved).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) {
+    return <span className="font-medium">{display}</span>;
+  }
+  const pct = (n: number) => (totalLeads > 0 ? (n / totalLeads) * 100 : 0);
+  const tooltipText =
+    "Leads por adset:\n" +
+    entries
+      .map(([m, c]) => `  ${m}: ${fmtInt(c)} (${pct(c).toFixed(1)}%)`)
+      .join("\n");
+  return (
+    <span
+      className="font-medium cursor-help underline decoration-dotted decoration-muted-foreground/40 underline-offset-4"
+      title={tooltipText}
+    >
+      {display}
+    </span>
+  );
+}
+
 /**
  * Tabela diária cruzada (Meta Ads + planilha de leads).
  *
@@ -78,6 +118,7 @@ export function CrossedFunnelDailyTable({
   surveyMatched,
   surveyUnmatched,
   salesByDay,
+  adsetsMap,
 }: CrossedFunnelDailyTableProps) {
   const salesTotal = salesByDay
     ? Object.values(salesByDay).reduce((a, b) => a + b, 0)
@@ -124,7 +165,9 @@ export function CrossedFunnelDailyTable({
                   </TableCell>
                   <TableCell className="text-right">{fmtInt(r.linkClicks)}</TableCell>
                   <TableCell className="text-right">{fmtInt(r.impressions)}</TableCell>
-                  <TableCell className="text-right font-medium">{fmtInt(totalLeads)}</TableCell>
+                  <TableCell className="text-right">
+                    {renderTotalLeadsCell(totalLeads, r.leadsByMedium, adsetsMap)}
+                  </TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cplPg)}</TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cplG)}</TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cpm)}</TableCell>
@@ -149,8 +192,12 @@ export function CrossedFunnelDailyTable({
               </TableCell>
               <TableCell className="text-right">{fmtInt(totals.linkClicks)}</TableCell>
               <TableCell className="text-right">{fmtInt(totals.impressions)}</TableCell>
-              <TableCell className="text-right font-semibold">
-                {fmtInt(totals.leadsPagos + totals.leadsOrg + totals.leadsSemTrack)}
+              <TableCell className="text-right">
+                {renderTotalLeadsCell(
+                  totals.leadsPagos + totals.leadsOrg + totals.leadsSemTrack,
+                  totals.leadsByMedium,
+                  adsetsMap,
+                )}
               </TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.cplPg)}</TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.cplG)}</TableCell>
