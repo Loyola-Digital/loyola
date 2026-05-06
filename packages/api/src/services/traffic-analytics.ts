@@ -15,6 +15,7 @@ import {
   fetchCampaignDailyInsightsForIds,
   fetchPlacementBreakdown,
   decryptAccountToken,
+  todayInTimezone,
   type MetaAdSetInsight,
   type MetaAdInsight,
   type MetaAdCreative,
@@ -89,7 +90,8 @@ export interface OverviewAnalytics {
 // CACHE
 // ============================================================
 
-const CACHE_TTL = 15 * 60 * 1000; // 15 min
+const CACHE_TTL_DEFAULT = 15 * 60 * 1000; // 15 min — dados estáveis
+const CACHE_TTL_TODAY = 2 * 60 * 1000;    // 2 min — range inclui hoje
 
 interface CacheEntry<T> {
   data: T;
@@ -98,10 +100,10 @@ interface CacheEntry<T> {
 
 const cache = new Map<string, CacheEntry<unknown>>();
 
-function getCached<T>(key: string): T | null {
+function getCached<T>(key: string, ttl: number = CACHE_TTL_DEFAULT): T | null {
   const entry = cache.get(key);
   if (!entry) return null;
-  if (Date.now() - entry.timestamp > CACHE_TTL) {
+  if (Date.now() - entry.timestamp > ttl) {
     cache.delete(key);
     return null;
   }
@@ -110,6 +112,24 @@ function getCached<T>(key: string): T | null {
 
 function setCache<T>(key: string, data: T): void {
   cache.set(key, { data, timestamp: Date.now() });
+}
+
+/**
+ * Decide se o range solicitado inclui o dia atual (no fuso da conta Meta).
+ * Quando inclui, queremos TTL curto — dados de "hoje" mudam o tempo todo
+ * conforme Meta processa eventos.
+ */
+function rangeIncludesToday(
+  days: number,
+  startDate?: string,
+  endDate?: string,
+): boolean {
+  const today = todayInTimezone();
+  if (startDate && endDate) {
+    return endDate >= today;
+  }
+  // Quando só usa `days`, dateRangeFromDays sempre define until=today.
+  return days >= 1;
 }
 
 function parseActionCount(actions: { action_type: string; value: string }[] | undefined, type: string): number {
@@ -720,7 +740,8 @@ export async function getCampaignDailyInsights(
   endDate?: string
 ): Promise<MetaDailyInsight[]> {
   const cacheKey = `analytics:${projectId}:campaign-daily:${campaignId}:${days}:${startDate ?? ""}:${endDate ?? ""}`;
-  const cached = getCached<MetaDailyInsight[]>(cacheKey);
+  const ttl = rangeIncludesToday(days, startDate, endDate) ? CACHE_TTL_TODAY : CACHE_TTL_DEFAULT;
+  const cached = getCached<MetaDailyInsight[]>(cacheKey, ttl);
   if (cached) return cached;
 
   const metaAccount = await getMetaAccountForProject(db, projectId);
@@ -754,7 +775,8 @@ export async function getCampaignDailyInsightsBulk(
 
   const sortedIds = [...campaignIds].sort();
   const cacheKey = `analytics:${projectId}:campaign-daily-bulk:${sortedIds.join(",")}:${days}:${startDate ?? ""}:${endDate ?? ""}`;
-  const cached = getCached<MetaDailyInsight[]>(cacheKey);
+  const ttl = rangeIncludesToday(days, startDate, endDate) ? CACHE_TTL_TODAY : CACHE_TTL_DEFAULT;
+  const cached = getCached<MetaDailyInsight[]>(cacheKey, ttl);
   if (cached) return cached;
 
   const metaAccount = await getMetaAccountForProject(db, projectId);
