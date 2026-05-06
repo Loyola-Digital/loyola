@@ -1,7 +1,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useApiClient } from "@/lib/hooks/use-api-client";
-import type { AdSetAnalyticsResponse, CampaignAnalytics } from "@/lib/hooks/use-traffic-analytics";
+import type { AdSetAnalyticsResponse } from "@/lib/hooks/use-traffic-analytics";
 
 interface UseFunnelAdsetsMapResult {
   /** Map de adset_id → adset_name vindo da Meta API. */
