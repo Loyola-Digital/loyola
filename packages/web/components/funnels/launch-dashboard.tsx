@@ -27,7 +27,6 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import {
-  useAllAds,
   useTrafficOverview,
   useTrafficCampaigns,
   useCampaignDailyInsightsBulk,
@@ -56,7 +55,7 @@ import {
   useFunnelGroupsDaily,
 } from "@/lib/hooks/use-funnel-groups";
 import { useOrganicLeadsByDay } from "@/lib/hooks/use-organic-leads-by-day";
-import { buildAdsMap, useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
+import { useFunnelAdNamesMap, useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { SurveyQualificationSection } from "./survey-qualification-section";
 import { GroupsDashboardSection } from "./groups-dashboard-section";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -196,9 +195,9 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   // utm_medium na planilha de leads/vendas armazena o adset_id; aqui resolvemos
   // pro nome humano e re-agrupamos pelos mesmos nomes.
   const { adsetsMap } = useFunnelAdsetsMap(projectId, campaignIds, days);
-  // Map ad_id → ad_name pra resolver utm_content na tabela "Por Content (Ad)".
-  const { data: allAdsData } = useAllAds(projectId, days, campaignIds.length > 0 ? campaignIds : null);
-  const adsMap = useMemo(() => buildAdsMap(allAdsData?.ads), [allAdsData]);
+  // Map ad_id → ad_name (todos os pares, sem agregar por nome) pra resolver
+  // utm_content na tabela "Por Content (Ad)".
+  const { adsMap } = useFunnelAdNamesMap(projectId, campaignIds, days);
 
   const hasComparison = !!(compData && !compData.semDados);
   const compTotals = hasComparison ? compData!.totals : null;
