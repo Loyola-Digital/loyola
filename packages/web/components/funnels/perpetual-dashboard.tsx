@@ -42,7 +42,7 @@ import { TopCreativesGallery } from "./top-creatives-gallery";
 import { RefreshDataButton } from "./refresh-data-button";
 import type { Funnel, FunnelCampaign, StageType } from "@loyola-x/shared";
 import { StageSalesSection } from "./stage-sales-section";
-import { buildAdsMap } from "@/lib/hooks/use-funnel-adsets-map";
+import { useFunnelAdNamesMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -126,8 +126,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     useCampaignDailyInsightsBulk(projectId, campaignIds.length > 0 ? campaignIds : null, days);
   const { data: adSetsData } = useAllAdSets(projectId, days, campaignIds.length > 0 ? campaignIds : null);
   const { data: adsData } = useAllAds(projectId, days, campaignIds.length > 0 ? campaignIds : null);
-  // Map ad_id → ad_name pra resolver utm_content na tabela "Por Content (Ad)".
-  const adsMap = useMemo(() => buildAdsMap(adsData?.ads), [adsData]);
+  // Map ad_id → ad_name (todos os pares, sem agregar por nome) pra resolver
+  // utm_content na tabela "Por Content (Ad)".
+  const { adsMap } = useFunnelAdNamesMap(projectId, campaignIds, days);
 
   const { data: compData } = useMetaAdsComparison(
     projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,

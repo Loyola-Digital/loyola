@@ -692,6 +692,49 @@ export async function getAllAdsForProject(
   return result;
 }
 
+/**
+ * Retorna mapa puro `ad_id → ad_name` de TODOS os ads (sem agregar por nome).
+ * Usado pra resolver `utm_content` (ad_id) pra nome humano em planilhas — vários
+ * ad_ids distintos podem ter o mesmo ad_name (mesmo criativo em adsets/campanhas
+ * diferentes), então preservamos cada par.
+ */
+export async function getAdNameMapForProject(
+  db: Database,
+  projectId: string,
+  days: number,
+  campaignIds?: string[]
+): Promise<{ map: Record<string, string> }> {
+  const cacheKey = `analytics:${projectId}:adnamemap:${days}:${campaignIds?.sort().join(",") ?? "all"}`;
+  type Result = { map: Record<string, string> };
+  const cached = getCached<Result>(cacheKey);
+  if (cached) return cached;
+
+  const metaAccount = await getMetaAccountForProject(db, projectId);
+  if (!metaAccount) {
+    return { map: {} };
+  }
+
+  const allAds = await fetchAllAdInsights(
+    metaAccount.metaAccountId,
+    metaAccount.accessToken,
+    days
+  );
+
+  const idSet = campaignIds ? new Set(campaignIds) : null;
+  const filtered = idSet ? allAds.filter((a) => idSet.has(a.campaign_id)) : allAds;
+
+  const map: Record<string, string> = {};
+  for (const a of filtered) {
+    if (!a.ad_id || !a.ad_name) continue;
+    if (map[a.ad_id]) continue;
+    map[a.ad_id] = a.ad_name.trim();
+  }
+
+  const result: Result = { map };
+  setCache(cacheKey, result);
+  return result;
+}
+
 // Helper to build a consistent analytics row
 function buildAnalyticsRow(
   id: string, name: string, spend: number, impressions: number, clicks: number,
