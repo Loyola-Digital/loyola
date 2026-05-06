@@ -42,6 +42,7 @@ import { TopCreativesGallery } from "./top-creatives-gallery";
 import { RefreshDataButton } from "./refresh-data-button";
 import type { Funnel, FunnelCampaign, StageType } from "@loyola-x/shared";
 import { StageSalesSection } from "./stage-sales-section";
+import { buildAdsMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -125,6 +126,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     useCampaignDailyInsightsBulk(projectId, campaignIds.length > 0 ? campaignIds : null, days);
   const { data: adSetsData } = useAllAdSets(projectId, days, campaignIds.length > 0 ? campaignIds : null);
   const { data: adsData } = useAllAds(projectId, days, campaignIds.length > 0 ? campaignIds : null);
+  // Map ad_id → ad_name pra resolver utm_content na tabela "Por Content (Ad)".
+  const adsMap = useMemo(() => buildAdsMap(adsData?.ads), [adsData]);
 
   const { data: compData } = useMetaAdsComparison(
     projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
@@ -529,6 +532,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             subtype="capture"
             title="Vendas de Captação"
             days={days}
+            adsMap={adsMap}
           />
           <div className="border-t border-border/20" />
           <StageSalesSection
@@ -538,6 +542,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             subtype="main_product"
             title="Produto Principal"
             days={days}
+            adsMap={adsMap}
           />
         </div>
       )}

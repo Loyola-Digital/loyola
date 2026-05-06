@@ -1,7 +1,7 @@
-import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { useApiClient } from "@/lib/hooks/use-api-client";
-import type { AdSetAnalyticsResponse } from "@/lib/hooks/use-traffic-analytics";
+import type { AdSetAnalyticsResponse, CampaignAnalytics } from "@/lib/hooks/use-traffic-analytics";
 
 interface UseFunnelAdsetsMapResult {
   /** Map de adset_id → adset_name vindo da Meta API. */
@@ -121,6 +121,47 @@ export function resolveSalesByTermByAdsets<
       existing.liquido += item.liquido;
     } else {
       grouped.set(label, { ...item, term: label });
+    }
+  }
+  return Array.from(grouped.values()).sort((a, b) => b.vendas - a.vendas);
+}
+
+/**
+ * Constrói Map ad_id → ad_name a partir do response de `/all-ads`. No payload,
+ * `campaignId` e `campaignName` carregam ad_id e ad_name (backend reusa o shape
+ * CampaignAnalytics).
+ */
+export function buildAdsMap(
+  ads: (CampaignAnalytics & { parentCampaignName: string })[] | undefined,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!ads) return map;
+  for (const a of ads) {
+    if (a.campaignId && a.campaignName && !map.has(a.campaignId)) {
+      map.set(a.campaignId, a.campaignName);
+    }
+  }
+  return map;
+}
+
+/**
+ * Versão pra arrays `{ content, vendas, bruto, liquido }` (utm_content em
+ * vendas). utm_content carrega ad_id no setup Loyola — fazemos lookup pro nome
+ * humano e re-agrupamos pelos mesmos nomes de ad.
+ */
+export function resolveSalesByContentByAds<
+  T extends { content: string; vendas: number; bruto: number; liquido: number },
+>(items: T[], adsMap: Map<string, string>): T[] {
+  const grouped = new Map<string, T>();
+  for (const item of items) {
+    const label = adsMap.get(item.content) ?? item.content;
+    const existing = grouped.get(label);
+    if (existing) {
+      existing.vendas += item.vendas;
+      existing.bruto += item.bruto;
+      existing.liquido += item.liquido;
+    } else {
+      grouped.set(label, { ...item, content: label });
     }
   }
   return Array.from(grouped.values()).sort((a, b) => b.vendas - a.vendas);
