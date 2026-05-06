@@ -3,7 +3,7 @@
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { StageSalesSubtype } from "@loyola-x/shared";
-import { resolveSalesByMediumByAdsets, resolveSalesByTermByAdsets } from "@/lib/hooks/use-funnel-adsets-map";
+import { resolveSalesByContentByAds, resolveSalesByMediumByAdsets } from "@/lib/hooks/use-funnel-adsets-map";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("pt-BR", {
@@ -79,10 +79,16 @@ interface StageSalesSectionProps {
   days?: number;
   /**
    * Map de adset_id → adset_name vindo da Meta API. Quando informado, a tabela
-   * "Por Medium" resolve `utm_medium` (que armazena o adset_id) pro nome
-   * humano e re-agrupa pelos mesmos nomes de adset.
+   * "Por Medium (Adset)" resolve `utm_medium` (que armazena o adset_id) pro
+   * nome humano e re-agrupa pelos mesmos nomes de adset.
    */
   adsetsMap?: Map<string, string>;
+  /**
+   * Map de ad_id → ad_name vindo da Meta API. Quando informado, a tabela
+   * "Por Content (Ad)" resolve `utm_content` (que armazena o ad_id) pro nome
+   * humano e re-agrupa pelos mesmos nomes de ad.
+   */
+  adsMap?: Map<string, string>;
 }
 
 export function StageSalesSection({
@@ -93,6 +99,7 @@ export function StageSalesSection({
   title,
   days,
   adsetsMap,
+  adsMap,
 }: StageSalesSectionProps) {
   const { data, isLoading, isError } = useStageSalesData(
     projectId,
@@ -146,15 +153,16 @@ export function StageSalesSection({
     bruto: m.bruto,
   }));
 
-  // utm_term carrega adset_id no setup Loyola — mesma resolução que medium.
-  const resolvedTerm = adsetsMap
-    ? resolveSalesByTermByAdsets(data.porUtmTerm ?? [], adsetsMap)
-    : (data.porUtmTerm ?? []);
-  const termRows = resolvedTerm.map((t) => ({
-    key: t.term,
-    label: t.term,
-    vendas: t.vendas,
-    bruto: t.bruto,
+  // utm_content carrega ad_id no setup Loyola — resolve pra ad_name via Meta
+  // API e re-agrupa pelos mesmos nomes (ad_ids diferentes c/ mesmo nome → soma).
+  const resolvedContent = adsMap
+    ? resolveSalesByContentByAds(data.porUtmContent ?? [], adsMap)
+    : (data.porUtmContent ?? []);
+  const contentRows = resolvedContent.map((c) => ({
+    key: c.content,
+    label: c.content,
+    vendas: c.vendas,
+    bruto: c.bruto,
   }));
 
   const formaRows = data.porFormaPagamento.map((f) => ({
@@ -180,16 +188,16 @@ export function StageSalesSection({
         <SalesTable rows={canalRows} emptyMessage="Sem dados por canal." keyLabel="Canal" />
       </div>
 
-      {/* Por Medium (utm_medium) */}
+      {/* Por Medium (utm_medium → adset_name via Meta API) */}
       <div className="space-y-2">
-        <p className="text-xs font-medium text-muted-foreground">Por Medium</p>
-        <SalesTable rows={mediumRows} emptyMessage="Sem dados de medium (mapeie a coluna utm_medium na planilha)." keyLabel="Medium" />
+        <p className="text-xs font-medium text-muted-foreground">Por Medium (Adset)</p>
+        <SalesTable rows={mediumRows} emptyMessage="Sem dados de medium (mapeie a coluna utm_medium na planilha)." keyLabel="Adset" />
       </div>
 
-      {/* Por Adset (utm_term resolve pra adset_name via Meta API) */}
+      {/* Por Content (utm_content → ad_name via Meta API) */}
       <div className="space-y-2">
-        <p className="text-xs font-medium text-muted-foreground">Por Adset (utm_term)</p>
-        <SalesTable rows={termRows} emptyMessage="Sem dados de utm_term (mapeie a coluna utm_term na planilha)." keyLabel="Adset" />
+        <p className="text-xs font-medium text-muted-foreground">Por Content (Ad)</p>
+        <SalesTable rows={contentRows} emptyMessage="Sem dados de utm_content (mapeie a coluna utm_content na planilha)." keyLabel="Ad" />
       </div>
 
       {/* Forma de Pagamento */}

@@ -82,6 +82,12 @@ export interface StageSalesData {
    * nomes de adset.
    */
   porUtmTerm: { term: string; vendas: number; bruto: number; liquido: number }[];
+  /**
+   * Agregação por utm_content. utm_content carrega o ad_id (padrão Loyola); o
+   * frontend resolve pra ad_name via Meta API e re-agrupa pelos mesmos nomes
+   * de ad (ad_ids diferentes com mesmo nome → mesma linha).
+   */
+  porUtmContent: { content: string; vendas: number; bruto: number; liquido: number }[];
   semDados: boolean;
 }
 
