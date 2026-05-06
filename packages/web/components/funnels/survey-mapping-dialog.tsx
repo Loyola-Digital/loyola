@@ -64,7 +64,10 @@ export function SurveyMappingDialog({
   );
   const updateMapping = useUpdateSurveyMapping(projectId, funnelId);
 
-  const headers = sheetData?.headers ?? [];
+  const headers = useMemo(
+    () => (sheetData?.headers ?? []).filter((h) => typeof h === "string" && h.trim().length > 0),
+    [sheetData?.headers],
+  );
 
   // Estado local do mapping — inicia com o atual da survey
   const [fields, setFields] = useState<Partial<Record<FieldKey, string>>>({});
