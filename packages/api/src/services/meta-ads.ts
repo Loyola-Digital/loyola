@@ -9,31 +9,73 @@ const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 const RATE_LIMIT_MAX = 200;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
+/**
+ * Timezone usado pra calcular "hoje" e o range since/until.
+ * Meta API recebe esse mesmo timezone explícito via `time_range.time_zone`
+ * pra interpretar o range no fuso da conta — evita o bug onde dados do dia
+ * atual sumiam quando o servidor (UTC) e a conta (SP) estavam em dias
+ * diferentes.
+ *
+ * Hardcoded em SP porque Loyola atende só clientes brasileiros. Se um dia
+ * precisar generalizar, vira coluna em meta_ads_accounts.
+ */
+const ACCOUNT_TIMEZONE = "America/Sao_Paulo";
+
 // ============================================================
 // DATE HELPERS
 // ============================================================
 
 /**
- * Converte `days` em range { since, until } no formato YYYY-MM-DD que o Meta
- * Graph API espera. days=1 → since=until=hoje (filtra apenas o dia atual).
- *
- * Substituí o uso de `date_preset` (last_7d/last_14d/last_30d/last_90d) que
- * arredondava ranges menores pra cima — `days=1` (Hoje) caía em "last_7d",
- * mostrando 7 dias quando o user pediu só 1. Now `since`/`until` calculam o
- * range exato.
- *
- * Timezone: usa UTC (`toISOString().slice(0,10)`). A Meta API converte pro
- * timezone da conta no servidor — se a conta está em America/Sao_Paulo,
- * pode haver até 3h de defasagem entre "hoje" no UTC e "hoje" do anunciante,
- * geralmente só impactando filtros do próprio dia.
+ * Retorna a data atual no formato YYYY-MM-DD no timezone passado.
+ * Usa Intl.DateTimeFormat com `en-CA` (que já produz YYYY-MM-DD) pra evitar
+ * parsing manual.
  */
-function dateRangeFromDays(days: number): { since: string; until: string } {
-  const today = new Date();
-  const until = today.toISOString().slice(0, 10);
-  const start = new Date(today);
-  start.setUTCDate(today.getUTCDate() - Math.max(0, days - 1));
-  const since = start.toISOString().slice(0, 10);
+export function todayInTimezone(timezone: string = ACCOUNT_TIMEZONE): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+/**
+ * Subtrai N dias de uma data YYYY-MM-DD usando UTC midnight (suficiente
+ * pra aritmética de dias inteiros — o timezone só importa pra definir o
+ * "hoje" inicial).
+ */
+function subtractDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const utc = Date.UTC(y, m - 1, d);
+  const past = new Date(utc - days * 24 * 60 * 60 * 1000);
+  return past.toISOString().slice(0, 10);
+}
+
+/**
+ * Converte `days` em range { since, until } no formato YYYY-MM-DD calculado
+ * no timezone da conta Meta. days=1 → since=until=hoje (1 dia, hoje só).
+ *
+ * Antes calculava em UTC e dependia da Meta converter — quebrava em janelas
+ * de horário onde "hoje" UTC ≠ "hoje" SP. Agora `until` é sempre o dia atual
+ * no fuso da conta.
+ */
+function dateRangeFromDays(
+  days: number,
+  timezone: string = ACCOUNT_TIMEZONE,
+): { since: string; until: string } {
+  const until = todayInTimezone(timezone);
+  const since = subtractDays(until, Math.max(0, days - 1));
   return { since, until };
+}
+
+/**
+ * Monta o parâmetro `time_range` URL-encoded pra passar pra Meta API.
+ * Meta NÃO aceita `time_zone` dentro do JSON (erro #100). O TZ é definido
+ * pela conta no Business Manager — basta calcular since/until no MESMO fuso
+ * (SP via dateRangeFromDays) que a Meta interpreta corretamente.
+ */
+function buildTimeRangeParam(since: string, until: string): string {
+  return encodeURIComponent(JSON.stringify({ since, until }));
 }
 
 // ============================================================
@@ -221,8 +263,9 @@ export async function fetchInsights(
   days: number = 30
 ): Promise<MetaInsight[]> {
   const { since, until } = dateRangeFromDays(days);
+  const timeRange = buildTimeRangeParam(since, until);
   const res = await fetchMeta<{ data: MetaInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm&since=${since}&until=${until}&level=account`,
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm&time_range=${timeRange}&level=account`,
     accessToken
   );
   return res.data ?? [];
@@ -268,8 +311,9 @@ export async function fetchDailyInsights(
   days: number = 30
 ): Promise<MetaDailyInsight[]> {
   const { since, until } = dateRangeFromDays(days);
+  const timeRange = buildTimeRangeParam(since, until);
   const res = await fetchMeta<{ data: MetaDailyInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm&since=${since}&until=${until}&time_increment=1&level=account`,
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm&time_range=${timeRange}&time_increment=1&level=account`,
     accessToken
   );
   return res.data ?? [];
@@ -290,22 +334,17 @@ export async function fetchCampaignDailyInsights(
   let queryPath = `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,actions,action_values&time_increment=1&level=campaign&filtering=${filtering}`;
 
   // Use custom dates if provided, otherwise compute from days
-  if (startDate && endDate) {
-    queryPath += `&since=${startDate}&until=${endDate}`;
-  } else {
-    const { since, until } = dateRangeFromDays(days);
-    queryPath += `&since=${since}&until=${until}`;
-  }
+  const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
+  const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
+  queryPath += `&time_range=${buildTimeRangeParam(since, until)}`;
 
   const res = await fetchMeta<{ data: MetaDailyInsight[] }>(queryPath, accessToken);
 
-  // Filter out invalid zero-value rows (no impressions = no data)
-  const filtered = (res.data ?? []).filter((d) => {
-    const impressions = parseFloat(d.impressions || "0");
-    return impressions > 0;
-  });
-
-  return filtered;
+  // Antes filtrávamos `impressions > 0`, mas isso derrubava o dia atual
+  // enquanto a Meta ainda estava processando dados (resultava em "spend
+  // R$ 0" no dashboard até o dia seguinte). Agora deixamos passar — o
+  // frontend exibe o dia com 0 e atualiza assim que a Meta popular.
+  return res.data ?? [];
 }
 
 // Bulk version: time-series por dia somando N campanhas. Retorna 1 linha por
@@ -328,12 +367,9 @@ export async function fetchCampaignDailyInsightsForIds(
 
   let queryPath = `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,actions,action_values&time_increment=1&level=campaign&limit=500&filtering=${filtering}`;
 
-  if (startDate && endDate) {
-    queryPath += `&since=${startDate}&until=${endDate}`;
-  } else {
-    const { since, until } = dateRangeFromDays(days);
-    queryPath += `&since=${since}&until=${until}`;
-  }
+  const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
+  const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
+  queryPath += `&time_range=${buildTimeRangeParam(since, until)}`;
 
   type PageResponse = { data: MetaDailyInsight[]; paging?: { next?: string } };
   const allResults: MetaDailyInsight[] = [];
@@ -360,12 +396,9 @@ export async function fetchCampaignDailyInsightsForIds(
     }
   }
 
-  const filtered = allResults.filter((d) => {
-    const impressions = parseFloat(d.impressions || "0");
-    return impressions > 0;
-  });
-
-  return filtered;
+  // Não filtramos `impressions > 0` aqui — antes derrubava o dia atual
+  // quando a Meta ainda estava processando. Frontend lida com 0 graciosamente.
+  return allResults;
 }
 
 export async function fetchCampaignInsights(
@@ -374,8 +407,9 @@ export async function fetchCampaignInsights(
   days: number = 30
 ): Promise<MetaCampaignInsight[]> {
   const { since, until } = dateRangeFromDays(days);
+  const timeRange = buildTimeRangeParam(since, until);
   const res = await fetchMeta<{ data: MetaCampaignInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,campaign_id,campaign_name,actions,action_values&since=${since}&until=${until}&level=campaign`,
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,campaign_id,campaign_name,actions,action_values&time_range=${timeRange}&level=campaign`,
     accessToken
   );
   return res.data ?? [];
@@ -388,13 +422,14 @@ export async function fetchAdSetInsights(
   days: number = 30
 ): Promise<MetaAdSetInsight[]> {
   const { since, until } = dateRangeFromDays(days);
+  const timeRange = buildTimeRangeParam(since, until);
   const filtering = encodeURIComponent(
     JSON.stringify([
       { field: "campaign.id", operator: "EQUAL", value: campaignId },
     ])
   );
   const res = await fetchMeta<{ data: MetaAdSetInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,adset_id,adset_name,actions,action_values&since=${since}&until=${until}&level=adset&filtering=${filtering}`,
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,adset_id,adset_name,actions,action_values&time_range=${timeRange}&level=adset&filtering=${filtering}`,
     accessToken
   );
   return res.data ?? [];
@@ -406,11 +441,12 @@ export async function fetchAllAdSetInsights(
   days: number = 30
 ): Promise<MetaAdSetInsight[]> {
   const { since, until } = dateRangeFromDays(days);
+  const timeRange = buildTimeRangeParam(since, until);
   const fields = "impressions,reach,clicks,spend,ctr,cpc,cpm,adset_id,adset_name,campaign_id,campaign_name,actions,action_values";
 
   type PageResponse = { data: MetaAdSetInsight[]; paging?: { next?: string } };
   const allResults: MetaAdSetInsight[] = [];
-  let nextPath: string | null = `/act_${metaAccountId}/insights?fields=${fields}&since=${since}&until=${until}&level=adset&limit=200`;
+  let nextPath: string | null = `/act_${metaAccountId}/insights?fields=${fields}&time_range=${timeRange}&level=adset&limit=200`;
   let useFullUrl = false;
 
   while (nextPath) {
@@ -467,13 +503,14 @@ export async function fetchAdInsights(
   days: number = 30
 ): Promise<MetaAdInsight[]> {
   const { since, until } = dateRangeFromDays(days);
+  const timeRange = buildTimeRangeParam(since, until);
   const filtering = encodeURIComponent(
     JSON.stringify([
       { field: "adset.id", operator: "EQUAL", value: adsetId },
     ])
   );
   const res = await fetchMeta<{ data: RawAdInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name,actions,action_values,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions&since=${since}&until=${until}&level=ad&filtering=${filtering}`,
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name,actions,action_values,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions&time_range=${timeRange}&level=ad&filtering=${filtering}`,
     accessToken
   );
   return (res.data ?? []).map((raw) => ({
@@ -511,6 +548,7 @@ export async function fetchAllAdInsights(
   campaignIds?: string | string[]
 ): Promise<AllAdInsight[]> {
   const { since, until } = dateRangeFromDays(days);
+  const timeRange = buildTimeRangeParam(since, until);
 
   // Aceita 1 campanha (string legacy) ou N campanhas (array). Meta Ads API
   // suporta operator EQUAL (single) ou IN (multi) no param `filtering`.
@@ -531,7 +569,7 @@ export async function fetchAllAdInsights(
   // Paginate — Meta defaults to 25 results per page
   type PageResponse = { data: RawAllAdInsight[]; paging?: { next?: string } };
   const allResults: AllAdInsight[] = [];
-  let nextPath: string | null = `/act_${metaAccountId}/insights?fields=${fields}&since=${since}&until=${until}&level=ad&limit=200${filterPart}`;
+  let nextPath: string | null = `/act_${metaAccountId}/insights?fields=${fields}&time_range=${timeRange}&level=ad&limit=200${filterPart}`;
   let useFullUrl = false;
 
   while (nextPath) {
@@ -588,12 +626,13 @@ export async function fetchPlacementBreakdown(
   campaignId?: string
 ): Promise<MetaPlacementInsight[]> {
   const { since, until } = dateRangeFromDays(days);
+  const timeRange = buildTimeRangeParam(since, until);
   const filtering = campaignId
     ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: campaignId }]))}`
     : "";
   const level = campaignId ? "campaign" : "account";
   const res = await fetchMeta<{ data: MetaPlacementInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=spend,impressions,clicks,ctr,cpc,cpm,actions,action_values&breakdowns=publisher_platform,platform_position&since=${since}&until=${until}&level=${level}${filtering}`,
+    `/act_${metaAccountId}/insights?fields=spend,impressions,clicks,ctr,cpc,cpm,actions,action_values&breakdowns=publisher_platform,platform_position&time_range=${timeRange}&level=${level}${filtering}`,
     accessToken
   );
   return res.data ?? [];
