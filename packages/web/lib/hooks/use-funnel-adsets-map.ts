@@ -1,4 +1,4 @@
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import type { AdSetAnalyticsResponse, CampaignAnalytics } from "@/lib/hooks/use-traffic-analytics";
@@ -126,22 +126,48 @@ export function resolveSalesByTermByAdsets<
   return Array.from(grouped.values()).sort((a, b) => b.vendas - a.vendas);
 }
 
+interface AdNameMapResponse {
+  map: Record<string, string>;
+}
+
 /**
- * Constrói Map ad_id → ad_name a partir do response de `/all-ads`. No payload,
- * `campaignId` e `campaignName` carregam ad_id e ad_name (backend reusa o shape
- * CampaignAnalytics).
+ * Hook que retorna Map<ad_id, ad_name> de TODOS os ads das campanhas do funil
+ * (sem agregar por nome). Usa o endpoint `/ad-name-map` que preserva todos os
+ * pares (vários ad_ids podem ter o mesmo nome — mesmo criativo em adsets/
+ * campanhas diferentes).
+ *
+ * Necessário pra resolver `utm_content` (ad_id) → ad_name na tabela "Por Content
+ * (Ad)" da seção de vendas — `useAllAds` agrega por nome e não serve aqui.
  */
-export function buildAdsMap(
-  ads: (CampaignAnalytics & { parentCampaignName: string })[] | undefined,
-): Map<string, string> {
-  const map = new Map<string, string>();
-  if (!ads) return map;
-  for (const a of ads) {
-    if (a.campaignId && a.campaignName && !map.has(a.campaignId)) {
-      map.set(a.campaignId, a.campaignName);
+export function useFunnelAdNamesMap(
+  projectId: string,
+  campaignIds: string[],
+  days: number = 30,
+) {
+  const apiClient = useApiClient();
+  const enabled = !!projectId && campaignIds.length > 0;
+  const ids = campaignIds.slice().sort().join(",");
+
+  const query = useQuery({
+    queryKey: ["funnel-ad-names-map", projectId, ids, days] as const,
+    queryFn: () =>
+      apiClient<AdNameMapResponse>(
+        `/api/traffic/analytics/${projectId}/ad-name-map?days=${days}&campaignIds=${encodeURIComponent(ids)}`,
+      ),
+    staleTime: 60 * 1000,
+    enabled,
+  });
+
+  const adsMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!query.data?.map) return map;
+    for (const [id, name] of Object.entries(query.data.map)) {
+      if (id && name) map.set(id, name);
     }
-  }
-  return map;
+    return map;
+  }, [query.data]);
+
+  return { adsMap, isLoading: query.isLoading };
 }
 
 /**
