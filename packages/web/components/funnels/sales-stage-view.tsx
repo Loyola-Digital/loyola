@@ -9,7 +9,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
-import { StageSalesSpreadsheetSection } from "./stage-sales-spreadsheet-section";
+import { MultiSalesSpreadsheets } from "./multi-sales-spreadsheets";
 import { StageSalesSection } from "./stage-sales-section";
 import { useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { toast } from "sonner";
@@ -123,12 +123,10 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
         </TabsContent>
 
         <TabsContent value="spreadsheet" className="mt-6">
-          <StageSalesSpreadsheetSection
+          <MultiSalesSpreadsheets
             projectId={projectId}
             funnelId={funnelId}
             stageId={stage.id}
-            subtype="sales"
-            title="Planilha de Vendas"
           />
         </TabsContent>
       </Tabs>

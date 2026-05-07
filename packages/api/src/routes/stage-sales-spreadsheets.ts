@@ -155,15 +155,18 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
 
       const body = bodyResult.data;
 
-      // Upsert: delete existing record for this subtype, then insert
-      await fastify.db
-        .delete(stageSalesSpreadsheets)
-        .where(
-          and(
-            eq(stageSalesSpreadsheets.stageId, params.data.stageId),
-            eq(stageSalesSpreadsheets.subtype, body.subtype)
-          )
-        );
+      // Subtype 'sales' permite N planilhas por stage (etapa do tipo Vendas).
+      // Capture/main_product seguem comportamento de upsert (1 por subtype).
+      if (body.subtype !== "sales") {
+        await fastify.db
+          .delete(stageSalesSpreadsheets)
+          .where(
+            and(
+              eq(stageSalesSpreadsheets.stageId, params.data.stageId),
+              eq(stageSalesSpreadsheets.subtype, body.subtype)
+            )
+          );
+      }
 
       const [row] = await fastify.db
         .insert(stageSalesSpreadsheets)
@@ -182,6 +185,7 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
   );
 
   // DELETE /api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-spreadsheets/:subtype
+  // Deleta TODAS as planilhas do subtype (legado — capture/main_product têm só 1).
   fastify.delete(
     "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-spreadsheets/:subtype",
     async (request, reply) => {
@@ -202,6 +206,36 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
           and(
             eq(stageSalesSpreadsheets.stageId, params.data.stageId),
             eq(stageSalesSpreadsheets.subtype, params.data.subtype)
+          )
+        );
+
+      return reply.code(204).send();
+    }
+  );
+
+  // DELETE /api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-spreadsheets/by-id/:id
+  // Deleta uma planilha específica por id (necessário pra etapa Vendas que tem N).
+  fastify.delete(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-spreadsheets/by-id/:id",
+    async (request, reply) => {
+      const byIdParamsSchema = paramsSchema.extend({ id: z.string().uuid() });
+      const params = byIdParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const stage = await getStage(params.data.stageId, params.data.funnelId, params.data.projectId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      await fastify.db
+        .delete(stageSalesSpreadsheets)
+        .where(
+          and(
+            eq(stageSalesSpreadsheets.id, params.data.id),
+            eq(stageSalesSpreadsheets.stageId, params.data.stageId)
           )
         );
 

@@ -120,7 +120,9 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         return { ...EMPTY_RESPONSE, semDados: true };
       }
 
-      const [spreadsheet] = await fastify.db
+      // Para subtype 'sales' uma stage pode ter N planilhas; busca todas e
+      // agrega. Pra capture/main_product há no máximo 1 planilha.
+      const spreadsheets = await fastify.db
         .select()
         .from(stageSalesSpreadsheets)
         .where(
@@ -128,106 +130,113 @@ export default fp(async function stageSalesDataRoutes(fastify) {
             eq(stageSalesSpreadsheets.stageId, params.data.stageId),
             eq(stageSalesSpreadsheets.subtype, query.data.subtype)
           )
-        )
-        .limit(1);
+        );
 
-      if (!spreadsheet) {
-        return { ...EMPTY_RESPONSE, semDados: true };
-      }
-
-      const mapping = spreadsheet.columnMapping as {
-        email: string;
-        valorBruto?: string;
-        valorLiquido?: string;
-        formaPagamento?: string;
-        canalOrigem?: string;
-        utm_source?: string;
-        utm_medium?: string;
-        utm_term?: string;
-        utm_content?: string;
-        dataVenda?: string;
-      };
-
-      let sheetData;
-      try {
-        sheetData = await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName);
-      } catch {
-        return { ...EMPTY_RESPONSE, semDados: true };
-      }
-
-      const { headers, rows } = sheetData;
-
-      if (rows.length === 0) {
-        return { ...EMPTY_RESPONSE, semDados: true };
-      }
-
-      function colIdx(fieldName: string | undefined): number {
-        if (!fieldName) return -1;
-        return headers.indexOf(fieldName);
-      }
-
-      const emailIdx = colIdx(mapping.email);
-      const brutoIdx = colIdx(mapping.valorBruto);
-      const liquidoIdx = colIdx(mapping.valorLiquido);
-      const formaIdx = colIdx(mapping.formaPagamento);
-      const canalIdx = colIdx(mapping.canalOrigem);
-      const utmSourceIdx = colIdx(mapping.utm_source);
-      const utmMediumIdx = colIdx(mapping.utm_medium);
-      const utmTermIdx = colIdx(mapping.utm_term);
-      const utmContentIdx = colIdx(mapping.utm_content);
-      const dataIdx = colIdx(mapping.dataVenda);
-
-      if (emailIdx === -1) {
+      if (spreadsheets.length === 0) {
         return { ...EMPTY_RESPONSE, semDados: true };
       }
 
       let cutoffDate: Date | null = null;
-      if (query.data.days && dataIdx !== -1) {
+      if (query.data.days) {
         cutoffDate = new Date();
         cutoffDate.setDate(cutoffDate.getDate() - query.data.days);
       }
 
+      // emailMap usa chave composta (spreadsheetId|email) — mesma pessoa em
+      // planilhas diferentes vira 2 vendas separadas, mesmo email na mesma
+      // planilha (Kiwify multi-row, etc) é deduplicado pra 1.
       const emailMap = new Map<
         string,
         { bruto: number; liquido: number; forma: string; canal: string; utmSource: string | null; utmMedium: string | null; utmTerm: string | null; utmContent: string | null; lastDate: Date | null }
       >();
 
-      for (const row of rows) {
-        const email = (row[emailIdx] ?? "").trim().toLowerCase();
-        if (!email) continue;
+      let anyHasDateFilter = false;
 
-        if (cutoffDate && dataIdx !== -1) {
-          const dt = parseDate(row[dataIdx]);
-          if (!dt || dt < cutoffDate) continue;
+      for (const spreadsheet of spreadsheets) {
+        const mapping = spreadsheet.columnMapping as {
+          email: string;
+          valorBruto?: string;
+          valorLiquido?: string;
+          formaPagamento?: string;
+          canalOrigem?: string;
+          utm_source?: string;
+          utm_medium?: string;
+          utm_term?: string;
+          utm_content?: string;
+          dataVenda?: string;
+        };
+
+        let sheetData;
+        try {
+          sheetData = await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName);
+        } catch {
+          continue; // se uma planilha falha, pula e segue agregando as outras
         }
 
-        const bruto = parseNumber(row[brutoIdx] ?? "");
-        const liquido = parseNumber(row[liquidoIdx] ?? "");
-        const forma = (row[formaIdx] ?? "Não informado").trim() || "Não informado";
-        const canal = (row[canalIdx] ?? "Não informado").trim() || "Não informado";
-        const utmSource = (row[utmSourceIdx] ?? "").trim() || null;
-        const utmMedium = utmMediumIdx !== -1 ? ((row[utmMediumIdx] ?? "").trim() || null) : null;
-        const utmTerm = utmTermIdx !== -1 ? ((row[utmTermIdx] ?? "").trim() || null) : null;
-        const utmContent = utmContentIdx !== -1 ? ((row[utmContentIdx] ?? "").trim() || null) : null;
-        const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
+        const { headers, rows } = sheetData;
+        if (rows.length === 0) continue;
 
-        const existing = emailMap.get(email);
-        if (existing) {
-          existing.bruto += bruto;
-          existing.liquido += liquido;
-          if (rowDate && (!existing.lastDate || rowDate > existing.lastDate)) {
-            existing.forma = forma;
-            existing.canal = canal;
-            existing.utmSource = utmSource;
-            existing.utmMedium = utmMedium;
-            existing.utmTerm = utmTerm;
-            existing.utmContent = utmContent;
-            existing.lastDate = rowDate;
+        function colIdx(fieldName: string | undefined): number {
+          if (!fieldName) return -1;
+          return headers.indexOf(fieldName);
+        }
+
+        const emailIdx = colIdx(mapping.email);
+        const brutoIdx = colIdx(mapping.valorBruto);
+        const liquidoIdx = colIdx(mapping.valorLiquido);
+        const formaIdx = colIdx(mapping.formaPagamento);
+        const canalIdx = colIdx(mapping.canalOrigem);
+        const utmSourceIdx = colIdx(mapping.utm_source);
+        const utmMediumIdx = colIdx(mapping.utm_medium);
+        const utmTermIdx = colIdx(mapping.utm_term);
+        const utmContentIdx = colIdx(mapping.utm_content);
+        const dataIdx = colIdx(mapping.dataVenda);
+
+        if (emailIdx === -1) continue;
+        if (dataIdx !== -1) anyHasDateFilter = true;
+
+        for (const row of rows) {
+          const email = (row[emailIdx] ?? "").trim().toLowerCase();
+          if (!email) continue;
+
+          if (cutoffDate && dataIdx !== -1) {
+            const dt = parseDate(row[dataIdx]);
+            if (!dt || dt < cutoffDate) continue;
           }
-        } else {
-          emailMap.set(email, { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate: rowDate });
+
+          const bruto = parseNumber(row[brutoIdx] ?? "");
+          const liquido = parseNumber(row[liquidoIdx] ?? "");
+          const forma = (row[formaIdx] ?? "Não informado").trim() || "Não informado";
+          const canal = (row[canalIdx] ?? "Não informado").trim() || "Não informado";
+          const utmSource = (row[utmSourceIdx] ?? "").trim() || null;
+          const utmMedium = utmMediumIdx !== -1 ? ((row[utmMediumIdx] ?? "").trim() || null) : null;
+          const utmTerm = utmTermIdx !== -1 ? ((row[utmTermIdx] ?? "").trim() || null) : null;
+          const utmContent = utmContentIdx !== -1 ? ((row[utmContentIdx] ?? "").trim() || null) : null;
+          const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
+
+          const compositeKey = `${spreadsheet.id}|${email}`;
+          const existing = emailMap.get(compositeKey);
+          if (existing) {
+            existing.bruto += bruto;
+            existing.liquido += liquido;
+            if (rowDate && (!existing.lastDate || rowDate > existing.lastDate)) {
+              existing.forma = forma;
+              existing.canal = canal;
+              existing.utmSource = utmSource;
+              existing.utmMedium = utmMedium;
+              existing.utmTerm = utmTerm;
+              existing.utmContent = utmContent;
+              existing.lastDate = rowDate;
+            }
+          } else {
+            emailMap.set(compositeKey, { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate: rowDate });
+          }
         }
       }
+
+      // Suprime warning se nenhuma planilha tinha mapping de data (var é
+      // declarada pra documentar a intenção, mesmo se não usada hoje).
+      void anyHasDateFilter;
 
       if (emailMap.size === 0) {
         return { ...EMPTY_RESPONSE, semDados: false };
@@ -491,7 +500,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       if (stage.stageType !== "paid" && stage.stageType !== "sales") return { byDay: {} as Record<string, number>, semDados: true };
 
-      const [spreadsheet] = await fastify.db
+      const spreadsheets = await fastify.db
         .select()
         .from(stageSalesSpreadsheets)
         .where(
@@ -499,37 +508,9 @@ export default fp(async function stageSalesDataRoutes(fastify) {
             eq(stageSalesSpreadsheets.stageId, params.data.stageId),
             eq(stageSalesSpreadsheets.subtype, query.data.subtype)
           )
-        )
-        .limit(1);
+        );
 
-      if (!spreadsheet) return { byDay: {} as Record<string, number>, semDados: true };
-
-      const mapping = spreadsheet.columnMapping as {
-        email: string;
-        valorBruto?: string;
-        dataVenda?: string;
-      };
-
-      let sheetData;
-      try {
-        sheetData = await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName);
-      } catch {
-        return { byDay: {} as Record<string, number>, semDados: true };
-      }
-
-      const { headers, rows } = sheetData;
-      if (rows.length === 0) return { byDay: {} as Record<string, number>, semDados: true };
-
-      function colIdx(fieldName: string | undefined): number {
-        if (!fieldName) return -1;
-        return headers.indexOf(fieldName);
-      }
-
-      const emailIdx = colIdx(mapping.email);
-      const brutoIdx = colIdx(mapping.valorBruto);
-      const dataIdx = colIdx(mapping.dataVenda);
-
-      if (dataIdx === -1) return { byDay: {} as Record<string, number>, semDados: true };
+      if (spreadsheets.length === 0) return { byDay: {} as Record<string, number>, semDados: true };
 
       let cutoffDate: Date | null = null;
       if (query.data.days) {
@@ -538,10 +519,39 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       }
 
       // Faturamento por dia = soma do bruto de TODAS as linhas na data da própria
-      // linha. Sem dedup por email — cada linha é uma transação distinta. Local
-      // date (não UTC) pra evitar shift de vendas BRT pós-21h pro dia seguinte.
+      // linha (de TODAS as planilhas conectadas). Sem dedup por email — cada
+      // linha é uma transação distinta. Local date (não UTC) pra evitar shift
+      // de vendas BRT pós-21h pro dia seguinte.
       const byDay: Record<string, number> = {};
       let counted = 0;
+
+      for (const spreadsheet of spreadsheets) {
+        const mapping = spreadsheet.columnMapping as {
+          email: string;
+          valorBruto?: string;
+          dataVenda?: string;
+        };
+
+        let sheetData;
+        try {
+          sheetData = await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName);
+        } catch {
+          continue;
+        }
+
+        const { headers, rows } = sheetData;
+        if (rows.length === 0) continue;
+
+        function colIdx(fieldName: string | undefined): number {
+          if (!fieldName) return -1;
+          return headers.indexOf(fieldName);
+        }
+
+        const emailIdx = colIdx(mapping.email);
+        const brutoIdx = colIdx(mapping.valorBruto);
+        const dataIdx = colIdx(mapping.dataVenda);
+
+        if (dataIdx === -1) continue;
 
       for (const row of rows) {
         const rowDate = parseDate(row[dataIdx]);
@@ -565,6 +575,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         const key = `${y}-${m}-${d}`;
         byDay[key] = (byDay[key] ?? 0) + bruto;
         counted++;
+      }
       }
 
       if (counted === 0) return { byDay: {} as Record<string, number>, semDados: false };
