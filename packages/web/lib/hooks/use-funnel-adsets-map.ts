@@ -1,4 +1,4 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import type { AdSetAnalyticsResponse } from "@/lib/hooks/use-traffic-analytics";
@@ -126,69 +126,3 @@ export function resolveSalesByTermByAdsets<
   return Array.from(grouped.values()).sort((a, b) => b.vendas - a.vendas);
 }
 
-interface AdNameMapResponse {
-  map: Record<string, string>;
-}
-
-/**
- * Hook que retorna Map<ad_id, ad_name> de TODOS os ads das campanhas do funil
- * (sem agregar por nome). Usa o endpoint `/ad-name-map` que preserva todos os
- * pares (vários ad_ids podem ter o mesmo nome — mesmo criativo em adsets/
- * campanhas diferentes).
- *
- * Necessário pra resolver `utm_content` (ad_id) → ad_name na tabela "Por Content
- * (Ad)" da seção de vendas — `useAllAds` agrega por nome e não serve aqui.
- */
-export function useFunnelAdNamesMap(
-  projectId: string,
-  campaignIds: string[],
-  days: number = 30,
-) {
-  const apiClient = useApiClient();
-  const enabled = !!projectId && campaignIds.length > 0;
-  const ids = campaignIds.slice().sort().join(",");
-
-  const query = useQuery({
-    queryKey: ["funnel-ad-names-map", projectId, ids, days] as const,
-    queryFn: () =>
-      apiClient<AdNameMapResponse>(
-        `/api/traffic/analytics/${projectId}/ad-name-map?days=${days}&campaignIds=${encodeURIComponent(ids)}`,
-      ),
-    staleTime: 60 * 1000,
-    enabled,
-  });
-
-  const adsMap = useMemo(() => {
-    const map = new Map<string, string>();
-    if (!query.data?.map) return map;
-    for (const [id, name] of Object.entries(query.data.map)) {
-      if (id && name) map.set(id, name);
-    }
-    return map;
-  }, [query.data]);
-
-  return { adsMap, isLoading: query.isLoading };
-}
-
-/**
- * Versão pra arrays `{ content, vendas, bruto, liquido }` (utm_content em
- * vendas). utm_content carrega ad_id no setup Loyola — fazemos lookup pro nome
- * humano e re-agrupamos pelos mesmos nomes de ad.
- */
-export function resolveSalesByContentByAds<
-  T extends { content: string; vendas: number; bruto: number; liquido: number },
->(items: T[], adsMap: Map<string, string>): T[] {
-  const grouped = new Map<string, T>();
-  for (const item of items) {
-    const label = adsMap.get(item.content) ?? item.content;
-    const existing = grouped.get(label);
-    if (existing) {
-      existing.vendas += item.vendas;
-      existing.bruto += item.bruto;
-      existing.liquido += item.liquido;
-    } else {
-      grouped.set(label, { ...item, content: label });
-    }
-  }
-  return Array.from(grouped.values()).sort((a, b) => b.vendas - a.vendas);
-}
