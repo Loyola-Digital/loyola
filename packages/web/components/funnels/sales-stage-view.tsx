@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Settings2, FileSpreadsheet } from "lucide-react";
+import { Settings2, BarChart3, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { StageSalesSpreadsheetSection } from "./stage-sales-spreadsheet-section";
@@ -96,36 +97,41 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
         </div>
       </div>
 
-      {/* Planilha de vendas */}
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <FileSpreadsheet className="h-4 w-4 text-green-600" />
-          <h3 className="text-sm font-semibold">Planilha de Vendas</h3>
-        </div>
-        <StageSalesSpreadsheetSection
-          projectId={projectId}
-          funnelId={funnelId}
-          stageId={stage.id}
-          subtype="sales"
-          title="Conexão"
-        />
-      </section>
+      {/* Tabs: Dashboard | Planilha */}
+      <Tabs defaultValue="dashboard" className="w-full">
+        <TabsList>
+          <TabsTrigger value="dashboard" className="gap-1.5">
+            <BarChart3 className="h-3.5 w-3.5 text-primary" />
+            Dashboard
+          </TabsTrigger>
+          <TabsTrigger value="spreadsheet" className="gap-1.5">
+            <FileSpreadsheet className="h-3.5 w-3.5 text-green-600" />
+            Planilha
+          </TabsTrigger>
+        </TabsList>
 
-      <div className="border-t border-border/30" />
+        <TabsContent value="dashboard" className="mt-6">
+          <StageSalesSection
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+            subtype="sales"
+            title="Vendas"
+            days={days}
+            adsetsMap={adsetsMap}
+          />
+        </TabsContent>
 
-      {/* Dashboard de vendas */}
-      <section className="space-y-3">
-        <h3 className="text-base font-semibold">Dashboard</h3>
-        <StageSalesSection
-          projectId={projectId}
-          funnelId={funnelId}
-          stageId={stage.id}
-          subtype="sales"
-          title="Vendas"
-          days={days}
-          adsetsMap={adsetsMap}
-        />
-      </section>
+        <TabsContent value="spreadsheet" className="mt-6">
+          <StageSalesSpreadsheetSection
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+            subtype="sales"
+            title="Planilha de Vendas"
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
