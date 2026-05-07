@@ -1,0 +1,131 @@
+"use client";
+
+import { useState } from "react";
+import { Settings2, FileSpreadsheet } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { DayRangePicker } from "@/components/ui/day-range-picker";
+import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
+import { StageSalesSpreadsheetSection } from "./stage-sales-spreadsheet-section";
+import { StageSalesSection } from "./stage-sales-section";
+import { useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
+import { toast } from "sonner";
+import type { FunnelStage } from "@loyola-x/shared";
+
+interface SalesStageViewProps {
+  projectId: string;
+  funnelId: string;
+  funnelName: string;
+  stage: FunnelStage;
+}
+
+export function SalesStageView({ projectId, funnelId, funnelName, stage }: SalesStageViewProps) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [stageName, setStageName] = useState("");
+  const [days, setDays] = useState(30);
+
+  const updateStage = useUpdateStage(projectId, funnelId, stage.id);
+
+  // Resolve utm_medium → adset_name na tabela "Por Medium (Adset)" reusando
+  // o adsetsMap das campanhas do funil (etapa sales não tem campanhas próprias).
+  const campaignIds: string[] = [];
+  const { adsetsMap } = useFunnelAdsetsMap(projectId, campaignIds, days);
+
+  async function handleSaveName() {
+    if (!stageName.trim() || stageName.trim() === stage.name) return;
+    await updateStage.mutateAsync({ name: stageName.trim() });
+    toast.success("Nome atualizado");
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-muted-foreground mb-0.5">{funnelName}</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold">{stage.name}</h1>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+              Vendas
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground">Etapa de vendas — apenas planilha, sem tráfego.</p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <DayRangePicker days={days} onDaysChange={setDays} />
+
+          <Sheet open={settingsOpen} onOpenChange={(open) => {
+            setSettingsOpen(open);
+            if (open) setStageName(stage.name);
+          }}>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5">
+                <Settings2 className="h-3.5 w-3.5" />
+                Configurar
+              </Button>
+            </SheetTrigger>
+            <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle>Configurações da Etapa</SheetTitle>
+              </SheetHeader>
+              <div className="space-y-6 mt-6">
+                <div className="space-y-2">
+                  <Label htmlFor="settings-stage-name">Nome da etapa</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="settings-stage-name"
+                      value={stageName}
+                      onChange={(e) => setStageName(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleSaveName()}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleSaveName}
+                      disabled={updateStage.isPending || !stageName.trim() || stageName.trim() === stage.name}
+                    >
+                      Salvar
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
+      </div>
+
+      {/* Planilha de vendas */}
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <FileSpreadsheet className="h-4 w-4 text-green-600" />
+          <h3 className="text-sm font-semibold">Planilha de Vendas</h3>
+        </div>
+        <StageSalesSpreadsheetSection
+          projectId={projectId}
+          funnelId={funnelId}
+          stageId={stage.id}
+          subtype="sales"
+          title="Conexão"
+        />
+      </section>
+
+      <div className="border-t border-border/30" />
+
+      {/* Dashboard de vendas */}
+      <section className="space-y-3">
+        <h3 className="text-base font-semibold">Dashboard</h3>
+        <StageSalesSection
+          projectId={projectId}
+          funnelId={funnelId}
+          stageId={stage.id}
+          subtype="sales"
+          title="Vendas"
+          days={days}
+          adsetsMap={adsetsMap}
+        />
+      </section>
+    </div>
+  );
+}

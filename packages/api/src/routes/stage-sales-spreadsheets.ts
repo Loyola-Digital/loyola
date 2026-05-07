@@ -34,7 +34,7 @@ const saleColumnMappingSchema = z.object({
 });
 
 const createSchema = z.object({
-  subtype: z.enum(["capture", "main_product"]),
+  subtype: z.enum(["capture", "main_product", "sales"]),
   spreadsheetId: z.string().min(1),
   spreadsheetName: z.string().min(1),
   sheetName: z.string().min(1),
@@ -42,7 +42,7 @@ const createSchema = z.object({
 });
 
 const deleteParamsSchema = paramsSchema.extend({
-  subtype: z.enum(["capture", "main_product"]),
+  subtype: z.enum(["capture", "main_product", "sales"]),
 });
 
 // ============================================================
@@ -53,7 +53,7 @@ function shapeRow(row: typeof stageSalesSpreadsheets.$inferSelect) {
   return {
     id: row.id,
     stageId: row.stageId,
-    subtype: row.subtype as "capture" | "main_product",
+    subtype: row.subtype as "capture" | "main_product" | "sales",
     spreadsheetId: row.spreadsheetId,
     spreadsheetName: row.spreadsheetName,
     sheetName: row.sheetName,
