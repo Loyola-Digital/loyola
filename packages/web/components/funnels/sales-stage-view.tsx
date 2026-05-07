@@ -9,11 +9,14 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
+import { useCampaignPicker } from "@/lib/hooks/use-funnels";
 import { MultiSalesSpreadsheets } from "./multi-sales-spreadsheets";
 import { StageSalesSection } from "./stage-sales-section";
+import { CampaignSelector } from "./campaign-selector";
+import { SalesMetaKpis } from "./sales-meta-kpis";
 import { useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { toast } from "sonner";
-import type { FunnelStage } from "@loyola-x/shared";
+import type { FunnelCampaign, FunnelStage } from "@loyola-x/shared";
 
 interface SalesStageViewProps {
   projectId: string;
@@ -29,10 +32,11 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
 
   const updateStage = useUpdateStage(projectId, funnelId, stage.id);
 
-  // Resolve utm_medium → adset_name na tabela "Por Medium (Adset)" reusando
-  // o adsetsMap das campanhas do funil (etapa sales não tem campanhas próprias).
-  const campaignIds: string[] = [];
+  // Etapa sales tem campanhas Meta próprias (vinculadas via settings) pra
+  // calcular ROAS/CPA/CPL cruzando com a planilha de vendas.
+  const campaignIds = stage.campaigns.map((c) => c.id);
   const { adsetsMap } = useFunnelAdsetsMap(projectId, campaignIds, days);
+  const { data: metaPicker } = useCampaignPicker(settingsOpen ? projectId : null);
 
   async function handleSaveName() {
     if (!stageName.trim() || stageName.trim() === stage.name) return;
@@ -91,6 +95,28 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
                     </Button>
                   </div>
                 </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Campanhas Meta Ads</Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Vincule as campanhas que representam o investimento dessa etapa pra calcular ROAS, CPA e CPL.
+                  </p>
+                  {metaPicker ? (
+                    <CampaignSelector
+                      campaigns={metaPicker.campaigns ?? []}
+                      accountLinked={metaPicker.accountLinked}
+                      value={stage.campaigns}
+                      onChange={(campaigns: FunnelCampaign[]) => {
+                        updateStage.mutate(
+                          { campaigns },
+                          { onSuccess: () => toast.success("Campanhas atualizadas") },
+                        );
+                      }}
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Carregando campanhas...</p>
+                  )}
+                </div>
               </div>
             </SheetContent>
           </Sheet>
@@ -110,7 +136,14 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="dashboard" className="mt-6">
+        <TabsContent value="dashboard" className="mt-6 space-y-6">
+          <SalesMetaKpis
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+            campaignIds={campaignIds}
+            days={days}
+          />
           <StageSalesSection
             projectId={projectId}
             funnelId={funnelId}
