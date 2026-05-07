@@ -673,7 +673,9 @@ export const stageSalesSpreadsheets = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    unique("uq_stage_sales_spreadsheets_stage_subtype").on(table.stageId, table.subtype),
+    // UNIQUE total foi dropado (migration 0031) — etapas tipo "sales" precisam
+    // de N planilhas por stage. Capture/main_product seguem com partial UNIQUE
+    // criado por SQL: WHERE subtype IN ('capture', 'main_product').
     index("idx_stage_sales_spreadsheets_stage").on(table.stageId),
   ]
 );

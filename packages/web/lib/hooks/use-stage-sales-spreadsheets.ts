@@ -81,3 +81,24 @@ export function useDisconnectSaleSpreadsheet(
     },
   });
 }
+
+// Deleta planilha específica por id (etapa Vendas tem N planilhas com
+// subtype='sales'; subtype-only delete apagaria todas).
+export function useDeleteSaleSpreadsheetById(
+  projectId: string,
+  funnelId: string,
+  stageId: string
+) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient<void>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/sales-spreadsheets/by-id/${id}`,
+        { method: "DELETE" }
+      ),
+    onSuccess: () => {
+      invalidateStageSalesData(queryClient, projectId, funnelId, stageId);
+    },
+  });
+}
