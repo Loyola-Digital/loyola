@@ -40,7 +40,7 @@ export default function FunnelPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [stageName, setStageName] = useState("");
-  const [stageType, setStageType] = useState<"free" | "paid">("free");
+  const [stageType, setStageType] = useState<"free" | "paid" | "sales">("free");
   const [matchCodeDraft, setMatchCodeDraft] = useState<string>("");
 
   const { data: funnelData, isLoading: funnelLoading } = useFunnel(params.id, params.funnelId);
@@ -133,6 +133,12 @@ export default function FunnelPage() {
     setStageName("");
     setStageType("free");
     setCreateOpen(false);
+  }
+
+  function stageTypePlaceholder(type: "free" | "paid" | "sales"): string {
+    if (type === "paid") return "ex: Captação Paga";
+    if (type === "sales") return "ex: Vendas Produto Principal";
+    return "ex: Captação Orgânica";
   }
 
   return (
@@ -254,13 +260,13 @@ export default function FunnelPage() {
                 value={stageName}
                 onChange={(e) => setStageName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                placeholder="ex: Captação Paga"
+                placeholder={stageTypePlaceholder(stageType)}
                 autoFocus
               />
             </div>
             <div className="space-y-2">
-              <Label>Tipo de captação</Label>
-              <div className="grid grid-cols-2 gap-2">
+              <Label>Tipo de etapa</Label>
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setStageType("free")}
@@ -272,7 +278,7 @@ export default function FunnelPage() {
                   )}
                 >
                   <span className="font-medium">Gratuita</span>
-                  <span className="text-xs text-muted-foreground">Sem planilhas de vendas</span>
+                  <span className="text-xs text-muted-foreground">Captação orgânica</span>
                 </button>
                 <button
                   type="button"
@@ -285,7 +291,20 @@ export default function FunnelPage() {
                   )}
                 >
                   <span className="font-medium">Paga</span>
-                  <span className="text-xs text-muted-foreground">Com planilhas de vendas</span>
+                  <span className="text-xs text-muted-foreground">Captação + tráfego</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStageType("sales")}
+                  className={cn(
+                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                    stageType === "sales"
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border hover:bg-muted"
+                  )}
+                >
+                  <span className="font-medium">Vendas</span>
+                  <span className="text-xs text-muted-foreground">Só planilha de vendas</span>
                 </button>
               </div>
             </div>

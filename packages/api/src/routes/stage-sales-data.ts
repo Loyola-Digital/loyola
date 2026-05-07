@@ -21,7 +21,7 @@ const paramsSchema = z.object({
 });
 
 const querySchema = z.object({
-  subtype: z.enum(["capture", "main_product"]).default("capture"),
+  subtype: z.enum(["capture", "main_product", "sales"]).default("capture"),
   days: z.coerce.number().int().positive().optional(),
 });
 
@@ -116,7 +116,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      if (stage.stageType !== "paid") {
+      if (stage.stageType !== "paid" && stage.stageType !== "sales") {
         return { ...EMPTY_RESPONSE, semDados: true };
       }
 
@@ -358,7 +358,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       };
 
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
-      if (stage.stageType !== "paid") return empty;
+      if (stage.stageType !== "paid" && stage.stageType !== "sales") return empty;
 
       const [spreadsheet] = await fastify.db
         .select()
@@ -489,7 +489,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      if (stage.stageType !== "paid") return { byDay: {} as Record<string, number>, semDados: true };
+      if (stage.stageType !== "paid" && stage.stageType !== "sales") return { byDay: {} as Record<string, number>, semDados: true };
 
       const [spreadsheet] = await fastify.db
         .select()
