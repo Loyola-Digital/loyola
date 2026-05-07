@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, TrendingUp, Youtube, Pencil, Trash2, CreditCard, Gift } from "lucide-react";
+import { MoreHorizontal, TrendingUp, Youtube, Pencil, Trash2, CreditCard, Gift, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -91,31 +91,44 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
                 <p className="font-semibold text-sm truncate">{stage.name}</p>
-                <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${stage.stageType === "paid" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"}`}>
-                  {stage.stageType === "paid" ? "Paga" : "Gratuita"}
+                <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                  stage.stageType === "paid" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                  : stage.stageType === "sales" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                  : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                }`}>
+                  {stage.stageType === "paid" ? "Paga" : stage.stageType === "sales" ? "Vendas" : "Gratuita"}
                 </span>
               </div>
               <div className="mt-2 space-y-1">
-                {metaCount > 0 && (
+                {stage.stageType === "sales" ? (
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <TrendingUp className="h-3 w-3 shrink-0" />
-                    <span>Meta: {metaCount} campanha{metaCount !== 1 ? "s" : ""}</span>
+                    <DollarSign className="h-3 w-3 shrink-0 text-emerald-600" />
+                    <span>Etapa de vendas</span>
                   </div>
-                )}
-                {googleCount > 0 && (
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Youtube className="h-3 w-3 shrink-0" />
-                    <span>Google: {googleCount} campanha{googleCount !== 1 ? "s" : ""}</span>
-                  </div>
-                )}
-                {switchyCount > 0 && (
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <span className="text-purple-500 font-bold text-[10px]">S</span>
-                    <span>Switchy: {switchyCount} link{switchyCount !== 1 ? "s" : ""}</span>
-                  </div>
-                )}
-                {metaCount === 0 && googleCount === 0 && switchyCount === 0 && (
-                  <p className="text-xs text-muted-foreground">Sem configuração</p>
+                ) : (
+                  <>
+                    {metaCount > 0 && (
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <TrendingUp className="h-3 w-3 shrink-0" />
+                        <span>Meta: {metaCount} campanha{metaCount !== 1 ? "s" : ""}</span>
+                      </div>
+                    )}
+                    {googleCount > 0 && (
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Youtube className="h-3 w-3 shrink-0" />
+                        <span>Google: {googleCount} campanha{googleCount !== 1 ? "s" : ""}</span>
+                      </div>
+                    )}
+                    {switchyCount > 0 && (
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="text-purple-500 font-bold text-[10px]">S</span>
+                        <span>Switchy: {switchyCount} link{switchyCount !== 1 ? "s" : ""}</span>
+                      </div>
+                    )}
+                    {metaCount === 0 && googleCount === 0 && switchyCount === 0 && (
+                      <p className="text-xs text-muted-foreground">Sem configuração</p>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -136,34 +149,36 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
                     <Pencil className="h-4 w-4 mr-2" />
                     Renomear
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => {
-                      const newType = stage.stageType === "paid" ? "free" : "paid";
-                      updateStage.mutate(
-                        { stageType: newType },
-                        {
-                          onSuccess: () =>
-                            toast.success(
-                              newType === "paid"
-                                ? "Etapa alterada para Paga"
-                                : "Etapa alterada para Gratuita"
-                            ),
-                        }
-                      );
-                    }}
-                  >
-                    {stage.stageType === "paid" ? (
-                      <>
-                        <Gift className="h-4 w-4 mr-2" />
-                        Alterar para Gratuita
-                      </>
-                    ) : (
-                      <>
-                        <CreditCard className="h-4 w-4 mr-2" />
-                        Alterar para Paga
-                      </>
-                    )}
-                  </DropdownMenuItem>
+                  {stage.stageType !== "sales" && (
+                    <DropdownMenuItem
+                      onClick={() => {
+                        const newType = stage.stageType === "paid" ? "free" : "paid";
+                        updateStage.mutate(
+                          { stageType: newType },
+                          {
+                            onSuccess: () =>
+                              toast.success(
+                                newType === "paid"
+                                  ? "Etapa alterada para Paga"
+                                  : "Etapa alterada para Gratuita"
+                              ),
+                          }
+                        );
+                      }}
+                    >
+                      {stage.stageType === "paid" ? (
+                        <>
+                          <Gift className="h-4 w-4 mr-2" />
+                          Alterar para Gratuita
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard className="h-4 w-4 mr-2" />
+                          Alterar para Paga
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                  )}
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>

@@ -16,6 +16,7 @@ import { YouTubeFunnelSection } from "@/components/funnels/youtube-funnel-sectio
 import { SurveyFunnelTab } from "@/components/funnels/survey-funnel-tab";
 import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-tab";
 import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-spreadsheet-section";
+import { SalesStageView } from "@/components/funnels/sales-stage-view";
 import { GroupsSpreadsheetCard } from "@/components/funnels/groups-spreadsheet-card";
 import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
 import { LeadScoringTab } from "@/components/funnels/lead-scoring-tab";
@@ -67,6 +68,19 @@ export default function StagePage() {
   }
 
   const { funnel, funnelType } = funnelData;
+
+  // Etapa do tipo "sales" tem dashboard simplificado próprio — só vendas, sem
+  // tabs/tráfego/leads. Render dedicado.
+  if (stage.stageType === "sales") {
+    return (
+      <SalesStageView
+        projectId={params.id}
+        funnelId={params.funnelId}
+        funnelName={funnel.name}
+        stage={stage}
+      />
+    );
+  }
 
   // Monta um objeto Funnel mesclando config da etapa — dashboards recebem isso
   const stageAsFunnel: Funnel = {
