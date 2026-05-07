@@ -150,7 +150,7 @@ export default function StagePage() {
                 </div>
               </div>
 
-              {/* Tipo de captação */}
+              {/* Tipo de etapa (Vendas é separado — cria via "Nova Etapa") */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Tipo de captação</Label>
                 <div className="grid grid-cols-2 gap-2">
@@ -170,7 +170,7 @@ export default function StagePage() {
                     )}
                   >
                     <span className="font-medium">Gratuita</span>
-                    <span className="text-xs text-muted-foreground">Sem planilhas de vendas</span>
+                    <span className="text-xs text-muted-foreground">Captação orgânica</span>
                   </button>
                   <button
                     type="button"
@@ -188,9 +188,12 @@ export default function StagePage() {
                     )}
                   >
                     <span className="font-medium">Paga</span>
-                    <span className="text-xs text-muted-foreground">Com planilhas de vendas</span>
+                    <span className="text-xs text-muted-foreground">Captação + tráfego</span>
                   </button>
                 </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Pra criar etapa do tipo <span className="font-medium">Vendas</span>, use &quot;Nova Etapa&quot; na tela do funil.
+                </p>
               </div>
 
               {/* Campanhas Meta */}
