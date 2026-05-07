@@ -55,7 +55,7 @@ import {
   useFunnelGroupsDaily,
 } from "@/lib/hooks/use-funnel-groups";
 import { useOrganicLeadsByDay } from "@/lib/hooks/use-organic-leads-by-day";
-import { useFunnelAdNamesMap, useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
+import { useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { SurveyQualificationSection } from "./survey-qualification-section";
 import { GroupsDashboardSection } from "./groups-dashboard-section";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -195,9 +195,6 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   // utm_medium na planilha de leads/vendas armazena o adset_id; aqui resolvemos
   // pro nome humano e re-agrupamos pelos mesmos nomes.
   const { adsetsMap } = useFunnelAdsetsMap(projectId, campaignIds, days);
-  // Map ad_id → ad_name (todos os pares, sem agregar por nome) pra resolver
-  // utm_content na tabela "Por Content (Ad)".
-  const { adsMap } = useFunnelAdNamesMap(projectId, campaignIds, days);
 
   const hasComparison = !!(compData && !compData.semDados);
   const compTotals = hasComparison ? compData!.totals : null;
@@ -472,6 +469,8 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           surveyUnmatched={survey.unmatchedResponses}
           salesByDay={salesByDay ?? undefined}
           adsetsMap={adsetsMap}
+          projectId={projectId}
+          funnelId={funnel.id}
         />
       ) : null}
 
@@ -611,7 +610,6 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             title="Vendas de Captação"
             days={days}
             adsetsMap={adsetsMap}
-            adsMap={adsMap}
           />
           <div className="border-t border-border/20" />
           <StageSalesSection
@@ -622,7 +620,6 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             title="Produto Principal"
             days={days}
             adsetsMap={adsetsMap}
-            adsMap={adsMap}
           />
         </div>
       )}

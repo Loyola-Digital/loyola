@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Table,
   TableBody,
@@ -11,6 +12,13 @@ import {
 } from "@/components/ui/table";
 import type { DailyRow } from "@/lib/utils/funnel-metrics";
 import { resolveMediumByAdsets } from "@/lib/hooks/use-funnel-adsets-map";
+import {
+  useFunnelBatchTurns,
+  useCreateFunnelBatchTurn,
+  useUpdateFunnelBatchTurn,
+  useDeleteFunnelBatchTurn,
+  type FunnelBatchTurn,
+} from "@/lib/hooks/use-funnel-batch-turns";
 
 interface CrossedFunnelDailyTableProps {
   rows: DailyRow[];
@@ -27,10 +35,17 @@ interface CrossedFunnelDailyTableProps {
    * mesmo nome viram uma linha só).
    */
   adsetsMap?: Map<string, string>;
+  /**
+   * Quando `projectId` e `funnelId` forem informados, habilita a marcação
+   * manual de "virada de lote" (subida de preço, fim de bônus etc) via
+   * clique direito na linha. Marcações persistem no DB.
+   */
+  projectId?: string;
+  funnelId?: string;
 }
 
 function fmtCurrency(v: number | null | undefined): string {
-  if (v == null) return "\u2014";
+  if (v == null) return "—";
   return v.toLocaleString("pt-BR", {
     style: "currency",
     currency: "BRL",
@@ -39,12 +54,12 @@ function fmtCurrency(v: number | null | undefined): string {
 }
 
 function fmtPercent(v: number | null | undefined): string {
-  if (v == null) return "\u2014";
+  if (v == null) return "—";
   return `${v.toFixed(2)}%`;
 }
 
 function fmtInt(v: number | null | undefined): string {
-  if (v == null) return "\u2014";
+  if (v == null) return "—";
   return v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 }
 
@@ -55,11 +70,11 @@ function formatDateLabel(d: string) {
 }
 
 function renderConnectRate(v: number | null) {
-  if (v == null) return "\u2014";
+  if (v == null) return "—";
   const warn = v < 70;
   return (
     <span className={warn ? "text-amber-600 font-medium" : ""}>
-      {warn ? "\u26A0\uFE0F " : ""}
+      {warn ? "⚠️ " : ""}
       {fmtPercent(v)}
     </span>
   );
@@ -97,6 +112,13 @@ function renderTotalLeadsCell(
   );
 }
 
+interface ContextMenuState {
+  date: string;
+  turn: FunnelBatchTurn | null;
+  x: number;
+  y: number;
+}
+
 /**
  * Tabela diária cruzada (Meta Ads + planilha de leads).
  *
@@ -106,6 +128,9 @@ function renderTotalLeadsCell(
  *
  * Total Leads + CPL Pg/G ficam logo após Impressões para destacar a métrica
  * de custo de aquisição cedo na leitura.
+ *
+ * Quando `projectId` e `funnelId` forem informados, ativa marcação manual de
+ * "virada de lote" via clique direito (Story 27.1).
  *
  * Usado no LaunchDashboard (Story 18.3). Dados vêm do hook
  * `useCrossedFunnelMetrics` (Story 18.2/18.3).
@@ -119,10 +144,84 @@ export function CrossedFunnelDailyTable({
   surveyUnmatched,
   salesByDay,
   adsetsMap,
+  projectId,
+  funnelId,
 }: CrossedFunnelDailyTableProps) {
   const salesTotal = salesByDay
     ? Object.values(salesByDay).reduce((a, b) => a + b, 0)
     : null;
+
+  const batchTurnsEnabled = !!projectId && !!funnelId;
+  const turnsQuery = useFunnelBatchTurns(projectId ?? "", funnelId ?? "");
+  const createTurn = useCreateFunnelBatchTurn(projectId ?? "", funnelId ?? "");
+  const updateTurn = useUpdateFunnelBatchTurn(projectId ?? "", funnelId ?? "");
+  const deleteTurn = useDeleteFunnelBatchTurn(projectId ?? "", funnelId ?? "");
+
+  const turnsByDate = useMemo(() => {
+    const map = new Map<string, FunnelBatchTurn>();
+    if (batchTurnsEnabled && turnsQuery.data) {
+      for (const t of turnsQuery.data) map.set(t.date, t);
+    }
+    return map;
+  }, [batchTurnsEnabled, turnsQuery.data]);
+
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenu(null);
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenu(null);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [menu]);
+
+  function handleRowContextMenu(e: React.MouseEvent, date: string) {
+    if (!batchTurnsEnabled) return;
+    e.preventDefault();
+    const turn = turnsByDate.get(date) ?? null;
+    setMenu({ date, turn, x: e.clientX, y: e.clientY });
+  }
+
+  function handleMark(date: string) {
+    setMenu(null);
+    const label = window.prompt(
+      `Virada de lote em ${formatDateLabel(date)}\nDigite um label (ex: "Lote 2 → 3", "Início bônus"):`,
+      "",
+    );
+    if (label && label.trim()) {
+      createTurn.mutate({ date, label: label.trim() });
+    }
+  }
+
+  function handleEdit(turn: FunnelBatchTurn) {
+    setMenu(null);
+    const label = window.prompt(
+      `Editar label da virada em ${formatDateLabel(turn.date)}:`,
+      turn.label,
+    );
+    if (label && label.trim() && label.trim() !== turn.label) {
+      updateTurn.mutate({ id: turn.id, label: label.trim() });
+    }
+  }
+
+  function handleDelete(turn: FunnelBatchTurn) {
+    setMenu(null);
+    if (window.confirm(`Remover virada de lote em ${formatDateLabel(turn.date)}?`)) {
+      deleteTurn.mutate(turn.id);
+    }
+  }
+
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
       <h3 className="text-sm font-semibold">{title}</h3>
@@ -154,10 +253,26 @@ export function CrossedFunnelDailyTable({
           <TableBody>
             {rows.map((r) => {
               const totalLeads = r.leadsPagos + r.leadsOrg + r.leadsSemTrack;
+              const turn = turnsByDate.get(r.date);
               return (
-                <TableRow key={r.date}>
+                <TableRow
+                  key={r.date}
+                  onContextMenu={(e) => handleRowContextMenu(e, r.date)}
+                  className={turn ? "border-l-4 border-l-amber-500/70" : undefined}
+                >
                   <TableCell className="sticky left-0 bg-background z-10 font-medium">
-                    {formatDateLabel(r.date)}
+                    <span className="inline-flex items-center gap-1.5">
+                      {turn && (
+                        <span
+                          className="cursor-help"
+                          title={`Virada de lote: ${turn.label}`}
+                          aria-label={`Virada de lote: ${turn.label}`}
+                        >
+                          📦
+                        </span>
+                      )}
+                      {formatDateLabel(r.date)}
+                    </span>
                   </TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.spend)}</TableCell>
                   <TableCell className="text-right">
@@ -215,6 +330,12 @@ export function CrossedFunnelDailyTable({
         </Table>
         </div>
 
+        {batchTurnsEnabled && (
+          <p className="text-xs text-muted-foreground">
+            Dica: clique direito numa linha de data pra marcar virada de lote.
+          </p>
+        )}
+
         <div className="rounded-md border border-border/30 bg-muted/20 px-4 py-3 space-y-2 text-sm">
           <div className="flex flex-wrap gap-4">
             <div>
@@ -234,6 +355,46 @@ export function CrossedFunnelDailyTable({
           </div>
         </div>
       </div>
+
+      {menu && (
+        <div
+          ref={menuRef}
+          className="fixed z-50 min-w-[200px] rounded-md border border-border bg-popover text-popover-foreground shadow-md py-1 text-sm"
+          style={{ left: menu.x, top: menu.y }}
+          role="menu"
+        >
+          {menu.turn ? (
+            <>
+              <div className="px-3 py-1.5 text-xs text-muted-foreground border-b border-border/50 mb-1">
+                <div className="font-medium text-foreground">📦 {menu.turn.label}</div>
+                <div className="text-[11px]">{formatDateLabel(menu.turn.date)}</div>
+              </div>
+              <button
+                type="button"
+                className="w-full text-left px-3 py-1.5 hover:bg-accent hover:text-accent-foreground"
+                onClick={() => handleEdit(menu.turn!)}
+              >
+                ✏️ Editar label
+              </button>
+              <button
+                type="button"
+                className="w-full text-left px-3 py-1.5 hover:bg-accent hover:text-accent-foreground text-destructive"
+                onClick={() => handleDelete(menu.turn!)}
+              >
+                🗑️ Remover virada
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="w-full text-left px-3 py-1.5 hover:bg-accent hover:text-accent-foreground"
+              onClick={() => handleMark(menu.date)}
+            >
+              📦 Marcar virada de lote
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

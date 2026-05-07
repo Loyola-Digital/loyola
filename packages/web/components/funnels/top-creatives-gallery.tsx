@@ -51,7 +51,7 @@ import { useCreativeRevenue } from "@/lib/hooks/use-creative-revenue";
 // Tipos locais e formatters
 // ============================================================
 
-type LocalMetric = "cpl" | "cplQualified" | "leads" | "ctr";
+type LocalMetric = "cpl" | "cplQualified" | "leads" | "ctr" | "spend";
 
 interface MetricOption {
   value: LocalMetric;
@@ -65,6 +65,7 @@ const METRIC_OPTIONS: MetricOption[] = [
   { value: "cplQualified", label: "CPL Qual", sortLabel: "Menor CPL Qualificado", needsReview: true },
   { value: "leads", label: "Leads", sortLabel: "Mais Leads" },
   { value: "ctr", label: "CTR", sortLabel: "Maior CTR" },
+  { value: "spend", label: "Investimento", sortLabel: "Maior Investimento" },
 ];
 
 function fmtCurrency(val: number | null): string {
@@ -146,6 +147,8 @@ function formatMetricValue(c: AggregatedCreative, metric: LocalMetric): string {
       return fmtNumber(c.leadsPagos);
     case "ctr":
       return fmtPercent(c.ctr);
+    case "spend":
+      return fmtCurrency(c.spend);
     default:
       return "—";
   }
@@ -154,7 +157,7 @@ function formatMetricValue(c: AggregatedCreative, metric: LocalMetric): string {
 /**
  * Ordena criativos pela métrica selecionada.
  * - cpl / cplQualified: ASC (menor = melhor); null vai pro final
- * - leads / ctr: DESC (maior = melhor)
+ * - leads / ctr / spend: DESC (maior = melhor)
  */
 function sortByMetric(
   creatives: AggregatedCreative[],
@@ -177,6 +180,8 @@ function sortByMetric(
     });
   } else if (metric === "leads") {
     sorted.sort((a, b) => b.leadsPagos - a.leadsPagos);
+  } else if (metric === "spend") {
+    sorted.sort((a, b) => b.spend - a.spend);
   } else {
     sorted.sort((a, b) => b.ctr - a.ctr);
   }
