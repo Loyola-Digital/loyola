@@ -12,8 +12,10 @@ import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { useCampaignPicker } from "@/lib/hooks/use-funnels";
 import { MultiSalesSpreadsheets } from "./multi-sales-spreadsheets";
 import { StageSalesSection } from "./stage-sales-section";
+import { StageSalesSpreadsheetSection } from "./stage-sales-spreadsheet-section";
 import { CampaignSelector } from "./campaign-selector";
 import { SalesMetaKpis } from "./sales-meta-kpis";
+import { SalesConversionCard } from "./sales-conversion-card";
 import { useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { toast } from "sonner";
 import type { FunnelCampaign, FunnelStage } from "@loyola-x/shared";
@@ -144,23 +146,60 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
             campaignIds={campaignIds}
             days={days}
           />
+          <SalesConversionCard
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+          />
           <StageSalesSection
             projectId={projectId}
             funnelId={funnelId}
             stageId={stage.id}
-            subtype="sales"
-            title="Vendas"
+            subtype="main_product"
+            title="Produto Principal"
+            days={days}
+            adsetsMap={adsetsMap}
+          />
+          <StageSalesSection
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+            subtype="capture"
+            title="Produto de Captação"
             days={days}
             adsetsMap={adsetsMap}
           />
         </TabsContent>
 
-        <TabsContent value="spreadsheet" className="mt-6">
-          <MultiSalesSpreadsheets
+        <TabsContent value="spreadsheet" className="mt-6 space-y-4">
+          <StageSalesSpreadsheetSection
             projectId={projectId}
             funnelId={funnelId}
             stageId={stage.id}
+            subtype="capture"
+            title="Produto de Captação"
           />
+          <div className="border-t border-border/30" />
+          <StageSalesSpreadsheetSection
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+            subtype="main_product"
+            title="Produto Principal"
+          />
+          <div className="border-t border-border/30 pt-4" />
+          <details className="group">
+            <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground select-none">
+              Outras planilhas (avançado)
+            </summary>
+            <div className="mt-3">
+              <MultiSalesSpreadsheets
+                projectId={projectId}
+                funnelId={funnelId}
+                stageId={stage.id}
+              />
+            </div>
+          </details>
         </TabsContent>
       </Tabs>
     </div>
