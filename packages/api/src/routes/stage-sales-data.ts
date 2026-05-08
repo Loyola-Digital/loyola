@@ -343,6 +343,113 @@ export default fp(async function stageSalesDataRoutes(fastify) {
     }
   );
 
+  // GET /api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-conversion
+  // Cruza compradores entre planilhas capture e main_product da mesma etapa.
+  // Retorna: count por categoria, cross (intersecção de emails) e taxa.
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-conversion",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const empty = {
+        captureBuyers: 0,
+        mainBuyers: 0,
+        crossBuyers: 0,
+        captureRevenue: 0,
+        mainRevenue: 0,
+        crossRevenue: 0,
+        conversionRate: 0,
+        hasCapture: false,
+        hasMain: false,
+      };
+
+      const [stage] = await fastify.db
+        .select({ id: funnelStages.id })
+        .from(funnelStages)
+        .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+        .where(
+          and(
+            eq(funnelStages.id, params.data.stageId),
+            eq(funnelStages.funnelId, params.data.funnelId),
+            eq(funnels.projectId, params.data.projectId)
+          )
+        )
+        .limit(1);
+
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const sheets = await fastify.db
+        .select()
+        .from(stageSalesSpreadsheets)
+        .where(eq(stageSalesSpreadsheets.stageId, params.data.stageId));
+
+      const captureSheets = sheets.filter((s) => s.subtype === "capture");
+      const mainSheets = sheets.filter((s) => s.subtype === "main_product");
+
+      if (captureSheets.length === 0 && mainSheets.length === 0) {
+        return empty;
+      }
+
+      async function buildBuyers(
+        list: typeof sheets,
+      ): Promise<Map<string, number>> {
+        const result = new Map<string, number>();
+        for (const sheet of list) {
+          const mapping = sheet.columnMapping as { email: string; valorBruto?: string };
+          let sheetData;
+          try {
+            sheetData = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
+          } catch {
+            continue;
+          }
+          const { headers, rows } = sheetData;
+          const emailIdx = headers.indexOf(mapping.email);
+          const brutoIdx = mapping.valorBruto ? headers.indexOf(mapping.valorBruto) : -1;
+          if (emailIdx === -1) continue;
+          for (const row of rows) {
+            const email = (row[emailIdx] ?? "").trim().toLowerCase();
+            if (!email) continue;
+            const valor = brutoIdx !== -1 ? parseNumber(row[brutoIdx] ?? "") : 0;
+            result.set(email, (result.get(email) ?? 0) + valor);
+          }
+        }
+        return result;
+      }
+
+      const captureBuyers = await buildBuyers(captureSheets);
+      const mainBuyers = await buildBuyers(mainSheets);
+
+      let crossBuyers = 0;
+      let crossRevenue = 0;
+      for (const email of captureBuyers.keys()) {
+        if (mainBuyers.has(email)) {
+          crossBuyers++;
+          crossRevenue += mainBuyers.get(email) ?? 0;
+        }
+      }
+
+      const captureRevenue = Array.from(captureBuyers.values()).reduce((a, b) => a + b, 0);
+      const mainRevenue = Array.from(mainBuyers.values()).reduce((a, b) => a + b, 0);
+      const conversionRate = captureBuyers.size > 0 ? (crossBuyers / captureBuyers.size) * 100 : 0;
+
+      return {
+        captureBuyers: captureBuyers.size,
+        mainBuyers: mainBuyers.size,
+        crossBuyers,
+        captureRevenue,
+        mainRevenue,
+        crossRevenue,
+        conversionRate,
+        hasCapture: captureSheets.length > 0,
+        hasMain: mainSheets.length > 0,
+      };
+    }
+  );
+
   // GET /api/projects/:projectId/funnels/:funnelId/stages/:stageId/hot-cold-buyers
   // Retorna distribuição Hot/Cold/Outros dos compradores agrupando pelo utm_term
   // da planilha de stage-sales (subtype capture ou main_product). Dedupe por email

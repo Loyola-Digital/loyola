@@ -591,8 +591,9 @@ export async function fetchAllAdInsights(
     }
 
     // Meta returns full absolute URL for next page (may use different API version)
+    // Continue pagination to fetch ALL ads (needed for accurate top performer sorting)
     const nextUrl: string | undefined = res.paging?.next;
-    if (nextUrl && allResults.length < 500) {
+    if (nextUrl) {
       nextPath = nextUrl;
       useFullUrl = true;
     } else {

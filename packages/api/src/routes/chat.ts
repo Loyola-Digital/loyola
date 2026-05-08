@@ -165,7 +165,7 @@ export default fp(async function chatRoutes(fastify) {
         history.reverse();
 
         // Build system prompt via MindEngine (tier 2)
-        let systemPrompt = await fastify.mindEngine.buildPrompt(mindId, 2);
+        const systemPrompt = await fastify.mindEngine.buildPrompt(mindId, 2);
 
         // Detect /mindName mentions in the user message
         const mentionRegex = /\/(\w[\w-]*)/g;
