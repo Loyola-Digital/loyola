@@ -1,8 +1,7 @@
 import { readFile } from "node:fs/promises";
 import fp from "fastify-plugin";
-import { sql, eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { MindDetail } from "@loyola-x/shared";
-import { projectMembers, projectMinds } from "../db/schema.js";
 
 export default fp(async function mindsRoutes(fastify) {
   fastify.get("/api/minds", async (request) => {

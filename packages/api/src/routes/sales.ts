@@ -303,7 +303,7 @@ export default fp(async function salesRoutes(fastify) {
     let revenueInferior = 0;
     let revenueSuperior = 0;
     for (const sale of inferiorSales) {
-      const raw = (sale.value ?? "0").replace(/[^\d.,\-]/g, "");
+      const raw = (sale.value ?? "0").replace(/[^\d.,-]/g, "");
         // Detect format: if comma exists → Brazilian (dot=thousands, comma=decimal)
         // Otherwise dot is the decimal separator
         const v = raw.includes(",")
@@ -312,7 +312,7 @@ export default fp(async function salesRoutes(fastify) {
       if (!isNaN(v)) revenueInferior += v;
     }
     for (const sale of superiorSales) {
-      const raw = (sale.value ?? "0").replace(/[^\d.,\-]/g, "");
+      const raw = (sale.value ?? "0").replace(/[^\d.,-]/g, "");
         // Detect format: if comma exists → Brazilian (dot=thousands, comma=decimal)
         // Otherwise dot is the decimal separator
         const v = raw.includes(",")
