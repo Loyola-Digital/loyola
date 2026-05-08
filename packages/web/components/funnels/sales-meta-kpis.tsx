@@ -111,6 +111,10 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
   const cpa = totalVendas > 0 && spend > 0 ? spend / totalVendas : null;
   const margem = spend > 0 ? faturamento - spend : null;
 
+  const ticketMedioPago = salesData?.ticketMedioPago ?? 0;
+  const ticketMedioOrganico = salesData?.ticketMedioOrganico ?? 0;
+  const ticketMedioSemTrack = salesData?.ticketMedioSemTrack ?? 0;
+
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
@@ -132,6 +136,11 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
         <KpiCard icon={MousePointerClick} label="Cliques" value={fmtNumber(clicks)} />
         <KpiCard icon={Users} label="Leads Meta" value={fmtNumber(leadsMeta)} />
         <KpiCard icon={TrendingUp} label="CTR / CPM" value={`${fmtPercent(ctr)} • ${fmtCurrency(cpm)}`} />
+      </div>
+      <div className="grid grid-cols-3 gap-2 mt-4">
+        <KpiCard icon={ShoppingCart} label="Ticket Pago" value={fmtCurrency(ticketMedioPago)} />
+        <KpiCard icon={ShoppingCart} label="Ticket Orgânico" value={fmtCurrency(ticketMedioOrganico)} />
+        <KpiCard icon={ShoppingCart} label="Ticket Sem Track" value={fmtCurrency(ticketMedioSemTrack)} />
       </div>
     </div>
   );

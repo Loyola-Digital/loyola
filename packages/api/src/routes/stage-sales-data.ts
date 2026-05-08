@@ -57,6 +57,9 @@ const EMPTY_RESPONSE = {
   faturamentoLiquido: 0,
   ticketMedioBruto: 0,
   ticketMedioLiquido: 0,
+  ticketMedioPago: 0,
+  ticketMedioOrganico: 0,
+  ticketMedioSemTrack: 0,
   porCanal: [] as { canal: string; vendas: number; bruto: number; liquido: number }[],
   porFormaPagamento: [] as { forma: string; vendas: number; bruto: number; liquido: number }[],
   porUtmSource: [] as { fonte: string; vendas: number; bruto: number; liquido: number }[],
@@ -298,12 +301,25 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       const totalVendas = emailMap.size;
 
+      // Calcular ticket médio por origem (Pago/Orgânico/Sem Track)
+      const utmSourceArray = Array.from(utmSourceMap.entries());
+      const pagoData = utmSourceArray.find(([fonte]) => fonte === "Pago")?.[1];
+      const organicoData = utmSourceArray.find(([fonte]) => fonte === "Orgânico")?.[1];
+      const semTrackData = utmSourceArray.find(([fonte]) => fonte === "Sem Track")?.[1];
+
+      const ticketMedioPago = pagoData && pagoData.vendas > 0 ? pagoData.bruto / pagoData.vendas : 0;
+      const ticketMedioOrganico = organicoData && organicoData.vendas > 0 ? organicoData.bruto / organicoData.vendas : 0;
+      const ticketMedioSemTrack = semTrackData && semTrackData.vendas > 0 ? semTrackData.bruto / semTrackData.vendas : 0;
+
       return {
         totalVendas,
         faturamentoBruto: totalBruto,
         faturamentoLiquido: totalLiquido,
         ticketMedioBruto: totalVendas > 0 ? totalBruto / totalVendas : 0,
         ticketMedioLiquido: totalVendas > 0 ? totalLiquido / totalVendas : 0,
+        ticketMedioPago,
+        ticketMedioOrganico,
+        ticketMedioSemTrack,
         porCanal: Array.from(canalMap.entries())
           .map(([canal, v]) => ({ canal, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
