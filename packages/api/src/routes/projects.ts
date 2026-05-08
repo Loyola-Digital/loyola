@@ -389,7 +389,7 @@ export default fp(async function projectRoutes(fastify) {
   // GET /api/projects/:id/minds — List minds linked to project
   fastify.get(
     "/api/projects/:id/minds",
-    async (request, reply) => {
+    async (request) => {
       const { id } = idParamSchema.parse(request.params);
 
       const linked = await fastify.db

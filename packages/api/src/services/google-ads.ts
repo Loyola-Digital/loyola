@@ -86,11 +86,6 @@ async function getAccessToken(
 // GOOGLE ADS API FETCH
 // ============================================================
 
-interface GoogleAdsSearchResponse {
-  results?: Record<string, unknown>[];
-  fieldMask?: string;
-}
-
 async function queryGoogleAds(
   customerId: string,
   developerToken: string,

@@ -10,7 +10,6 @@ import { encrypt } from "../services/encryption.js";
 import {
   validateGoogleAdsAccount,
   normalizeCustomerId,
-  decryptToken,
   getGoogleOAuthUrl,
   exchangeGoogleCode,
   listAccessibleAccounts,
