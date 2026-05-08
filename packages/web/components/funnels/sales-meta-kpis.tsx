@@ -1,6 +1,6 @@
 "use client";
 
-import { DollarSign, Eye, MousePointerClick, ShoppingCart, Target, TrendingUp, Users, Zap } from "lucide-react";
+import { ArrowRight, DollarSign, Eye, FileText, MousePointerClick, Percent, ShoppingCart, Target, TrendingUp, Zap } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTrafficOverview } from "@/lib/hooks/use-traffic-analytics";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
@@ -100,20 +100,25 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
   const spend = overview?.totalSpend ?? 0;
   const impressions = overview?.totalImpressions ?? 0;
   const clicks = overview?.totalLinkClicks ?? overview?.totalClicks ?? 0;
-  const leadsMeta = overview?.totalLeads ?? null;
+  const lpViews = overview?.totalLandingPageViews ?? null;
+  const checkouts = overview?.totalCheckouts ?? null;
   const ctr = overview?.ctr ?? null;
   const cpm = overview?.cpm ?? null;
-  const avgCpl = overview?.avgCpl ?? null;
 
   const totalVendas = salesData?.totalVendas ?? 0;
   const faturamento = salesData?.faturamentoBruto ?? 0;
   const roas = spend > 0 ? faturamento / spend : null;
-  const cpa = totalVendas > 0 && spend > 0 ? spend / totalVendas : null;
+  const cpv = totalVendas > 0 && spend > 0 ? spend / totalVendas : null;
   const margem = spend > 0 ? faturamento - spend : null;
 
+  // Taxas de conversão do funil de venda
+  const taxaLpCheckout = lpViews && lpViews > 0 && checkouts != null ? (checkouts / lpViews) * 100 : null;
+  const taxaCheckoutVenda = checkouts && checkouts > 0 && totalVendas > 0 ? (totalVendas / checkouts) * 100 : null;
+
   return (
-    <div className="space-y-2">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+    <div className="space-y-4">
+      {/* Cards principais */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
         <KpiCard icon={DollarSign} label="Faturamento" value={fmtCurrency(faturamento)} highlight />
         <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(totalVendas)} />
         <KpiCard icon={Zap} label="Spend Meta" value={fmtCurrency(spend)} />
@@ -124,15 +129,70 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
           hint={margem != null ? `Margem: ${fmtCurrency(margem)}` : undefined}
           highlight
         />
-        <KpiCard icon={Target} label="CPA" value={fmtCurrency(cpa)} hint="Spend / vendas" />
-        <KpiCard icon={Users} label="CPL" value={fmtCurrency(avgCpl)} />
+        <KpiCard icon={Target} label="CPV" value={fmtCurrency(cpv)} hint="Custo por venda" />
       </div>
+
+      {/* Funil de conversão: Impressões → Cliques → LP Views → Checkouts → Vendas */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Funil de Conversão</p>
+        <div className="flex items-stretch gap-1">
+          <FunnelStage icon={Eye} label="Impressões" value={fmtNumber(impressions)} />
+          <FunnelArrow />
+          <FunnelStage icon={MousePointerClick} label="Cliques" value={fmtNumber(clicks)} />
+          <FunnelArrow />
+          <FunnelStage icon={FileText} label="LP Views" value={fmtNumber(lpViews)} />
+          <FunnelArrow />
+          <FunnelStage icon={ShoppingCart} label="Checkouts" value={fmtNumber(checkouts)} />
+          <FunnelArrow />
+          <FunnelStage icon={DollarSign} label="Vendas" value={fmtNumber(totalVendas)} highlight />
+        </div>
+      </div>
+
+      {/* Taxas de conversão e métricas Meta */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <KpiCard icon={Eye} label="Impressões" value={fmtNumber(impressions)} />
-        <KpiCard icon={MousePointerClick} label="Cliques" value={fmtNumber(clicks)} />
-        <KpiCard icon={Users} label="Leads Meta" value={fmtNumber(leadsMeta)} />
-        <KpiCard icon={TrendingUp} label="CTR / CPM" value={`${fmtPercent(ctr)} • ${fmtCurrency(cpm)}`} />
+        <KpiCard
+          icon={Percent}
+          label="LP → Checkout"
+          value={fmtPercent(taxaLpCheckout)}
+          hint="Checkouts / LP Views"
+        />
+        <KpiCard
+          icon={Percent}
+          label="Checkout → Venda"
+          value={fmtPercent(taxaCheckoutVenda)}
+          hint="Vendas / Checkouts"
+          highlight
+        />
+        <KpiCard icon={TrendingUp} label="CTR" value={fmtPercent(ctr)} />
+        <KpiCard icon={DollarSign} label="CPM" value={fmtCurrency(cpm)} />
       </div>
+    </div>
+  );
+}
+
+interface FunnelStageProps {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  highlight?: boolean;
+}
+
+function FunnelStage({ icon: Icon, label, value, highlight }: FunnelStageProps) {
+  return (
+    <div className={`flex-1 rounded-lg border p-3 space-y-1 min-w-0 ${highlight ? "border-primary/40 bg-primary/5" : "border-border/50"}`}>
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <Icon className="h-3 w-3" />
+        <span className="truncate">{label}</span>
+      </div>
+      <p className={`text-sm font-bold ${highlight ? "text-primary" : ""}`}>{value}</p>
+    </div>
+  );
+}
+
+function FunnelArrow() {
+  return (
+    <div className="flex items-center text-muted-foreground/50 shrink-0">
+      <ArrowRight className="h-4 w-4" />
     </div>
   );
 }
