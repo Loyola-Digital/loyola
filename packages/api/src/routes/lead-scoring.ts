@@ -83,15 +83,6 @@ type LeadScoringSchema = {
 // SCORING ALGORITHM (função pura)
 // ============================================================
 
-function normalizeText(s: string): string {
-  // NFC + lowercase + trim + colapsa whitespace múltiplo (inclui NBSP)
-  return s
-    .normalize("NFC")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
-}
-
 /**
  * Normalização "forte" pra match de header de planilha vs aliases do schema.
  * Remove acentos (NFD + strip combining marks), pontuação final típica
