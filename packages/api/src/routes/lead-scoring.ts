@@ -83,6 +83,15 @@ type LeadScoringSchema = {
   };
 };
 
+function normalizeText(s: string): string {
+  // NFC + lowercase + trim + colapsa whitespace múltiplo (inclui NBSP)
+  return s
+    .normalize("NFC")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
 interface BandBreakdown {
   count: number;
   pct: number;
