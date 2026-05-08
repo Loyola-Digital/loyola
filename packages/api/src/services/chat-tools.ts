@@ -678,7 +678,6 @@ export async function executeChatTool(
       const mindName = input.mind_name as string;
       const question = input.question as string;
       const context = (input.context as string) ?? "";
-      const previousExchange = (input.previous_exchange as string) ?? "";
 
       if (!mindName || !question) return "Erro: mind_name e question são obrigatórios";
 

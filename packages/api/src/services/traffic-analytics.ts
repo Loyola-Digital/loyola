@@ -16,12 +16,9 @@ import {
   fetchPlacementBreakdown,
   decryptAccountToken,
   todayInTimezone,
-  type MetaAdSetInsight,
-  type MetaAdInsight,
   type MetaAdCreative,
   type MetaDailyInsight,
   type VideoMetrics,
-  type AllAdInsight,
   type MetaCampaignInsight,
 } from "./meta-ads.js";
 
@@ -358,7 +355,7 @@ export async function getProjectAdSetAnalytics(
   }
 
   // Story 9.1: Try hierarchical first, fallback to flat query for ASC campaigns
-  let adsetInsights = await fetchAdSetInsights(metaAccount.metaAccountId, metaAccount.accessToken, campaignId, days);
+  const adsetInsights = await fetchAdSetInsights(metaAccount.metaAccountId, metaAccount.accessToken, campaignId, days);
 
   // ASC fallback: if no adsets found, aggregate from flat ad query
   if (adsetInsights.length === 0) {
