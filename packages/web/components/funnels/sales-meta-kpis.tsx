@@ -111,6 +111,10 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
   const cpv = totalVendas > 0 && spend > 0 ? spend / totalVendas : null;
   const margem = spend > 0 ? faturamento - spend : null;
 
+  const ticketMedioPago = salesData?.ticketMedioPago ?? 0;
+  const ticketMedioOrganico = salesData?.ticketMedioOrganico ?? 0;
+  const ticketMedioSemTrack = salesData?.ticketMedioSemTrack ?? 0;
+
   // Taxas de conversão do funil de venda
   const taxaLpCheckout = lpViews && lpViews > 0 && checkouts != null ? (checkouts / lpViews) * 100 : null;
   const taxaCheckoutVenda = checkouts && checkouts > 0 && totalVendas > 0 ? (totalVendas / checkouts) * 100 : null;
@@ -165,6 +169,11 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
         />
         <KpiCard icon={TrendingUp} label="CTR" value={fmtPercent(ctr)} />
         <KpiCard icon={DollarSign} label="CPM" value={fmtCurrency(cpm)} />
+      </div>
+      <div className="grid grid-cols-3 gap-2 mt-4">
+        <KpiCard icon={ShoppingCart} label="Ticket Pago" value={fmtCurrency(ticketMedioPago)} />
+        <KpiCard icon={ShoppingCart} label="Ticket Orgânico" value={fmtCurrency(ticketMedioOrganico)} />
+        <KpiCard icon={ShoppingCart} label="Ticket Sem Track" value={fmtCurrency(ticketMedioSemTrack)} />
       </div>
     </div>
   );
