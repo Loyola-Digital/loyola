@@ -7,6 +7,7 @@ import {
   funnelStages,
   funnels,
   projects,
+  projectMembers,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 
