@@ -25,6 +25,16 @@ const paramsSchema = z.object({
   stageId: z.string().uuid(),
 });
 
+// Cache em memória dos participantes pra evitar refazer 2 chamadas Zoom +
+// agregação cada vez. TTL 10min — dados de Reports da Zoom são imutáveis
+// uma vez que reunião encerrou.
+interface CachedParticipants {
+  data: unknown;
+  expiresAt: number;
+}
+const participantsCache = new Map<string, CachedParticipants>();
+const PARTICIPANTS_TTL = 10 * 60 * 1000;
+
 export default fp(async function zoomStageRoutes(fastify) {
   async function getProjectAccess(projectId: string, userId: string, userRole: string) {
     if (userRole === "guest") {
@@ -313,6 +323,13 @@ export default fp(async function zoomStageRoutes(fastify) {
       .limit(1);
     if (!meetingRow) return reply.code(404).send({ error: "Reunião não vinculada" });
 
+    // Cache hit?
+    const cacheKey = `${params.data.stageId}:${meetingRow.id}`;
+    const cached = participantsCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+
     try {
       const decrypted = decryptZoomConnection(conn);
       const token = await getServerToServerToken(decrypted.accountId, decrypted.clientId, decrypted.clientSecret);
@@ -323,16 +340,14 @@ export default fp(async function zoomStageRoutes(fastify) {
       // entrada 2x se a Zoom listar em mais de uma instância.
       const allUuids = await resolveMeetingUuids(token, meetingRow.meetingId);
       const aggregated = new Map<string, ZoomParticipantRaw>();
-      const allAttempts: { endpoint: string; status: number | null; participantCount: number }[] = [];
       let detectedSource: "webinar" | "meeting" = "meeting";
 
       for (const uuid of allUuids) {
-        const { participants: instanceParticipants, source, attempts } = await fetchAllParticipants(
+        const { participants: instanceParticipants, source } = await fetchAllParticipants(
           token,
           meetingRow.meetingId,
           uuid,
         );
-        allAttempts.push(...attempts);
         if (source === "webinar") detectedSource = "webinar";
         for (const p of instanceParticipants) {
           const key = `${p.name ?? ""}|${p.join_time ?? ""}`;
@@ -346,13 +361,11 @@ export default fp(async function zoomStageRoutes(fastify) {
         meetingId: meetingRow.meetingId,
         instancesFound: allUuids.length,
         totalParticipants: participants.length,
-        attempts: allAttempts,
       });
 
-      return {
+      const response = {
         source: detectedSource,
         instancesFound: allUuids.length,
-        attempts: allAttempts,
         participants: participants.map((p) => ({
           id: p.id ?? null,
           name: p.name ?? "",
@@ -364,6 +377,9 @@ export default fp(async function zoomStageRoutes(fastify) {
         })),
         total: participants.length,
       };
+
+      participantsCache.set(cacheKey, { data: response, expiresAt: Date.now() + PARTICIPANTS_TTL });
+      return response;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return reply.code(502).send({ error: "Erro ao consultar Zoom", details: message });

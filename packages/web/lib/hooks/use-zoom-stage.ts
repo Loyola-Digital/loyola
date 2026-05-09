@@ -3,7 +3,7 @@
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-const STALE = 60 * 1000;
+const STALE = 10 * 60 * 1000; // 10min — mesma TTL do cache backend
 
 interface ZoomConnectionResponse {
   connected: boolean;
