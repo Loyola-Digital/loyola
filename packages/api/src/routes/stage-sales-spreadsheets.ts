@@ -8,6 +8,7 @@ import {
   projects,
   projectMembers,
 } from "../db/schema.js";
+import { clearSheetDataCache } from "../services/google-sheets.js";
 
 // ============================================================
 // SCHEMAS
@@ -155,9 +156,29 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
 
       const body = bodyResult.data;
 
+      // Invalida cache da planilha NOVA (se já tem dado em cache de outro lugar)
+      clearSheetDataCache(body.spreadsheetId, body.sheetName);
+
       // Subtype 'sales' permite N planilhas por stage (etapa do tipo Vendas).
       // Capture/main_product seguem comportamento de upsert (1 por subtype).
       if (body.subtype !== "sales") {
+        // Pega planilha antiga pra invalidar cache dela também (caso usuário
+        // esteja trocando de planilha — o cache antigo ainda retornaria dados
+        // velhos por até 30s)
+        const [oldSheet] = await fastify.db
+          .select({ spreadsheetId: stageSalesSpreadsheets.spreadsheetId, sheetName: stageSalesSpreadsheets.sheetName })
+          .from(stageSalesSpreadsheets)
+          .where(
+            and(
+              eq(stageSalesSpreadsheets.stageId, params.data.stageId),
+              eq(stageSalesSpreadsheets.subtype, body.subtype)
+            )
+          )
+          .limit(1);
+        if (oldSheet) {
+          clearSheetDataCache(oldSheet.spreadsheetId, oldSheet.sheetName);
+        }
+
         await fastify.db
           .delete(stageSalesSpreadsheets)
           .where(
