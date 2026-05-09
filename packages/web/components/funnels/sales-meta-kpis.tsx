@@ -74,13 +74,55 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
     campaignIds.length > 0 ? campaignIds : null,
     days,
   );
-  const { data: salesData, isLoading: salesLoading } = useStageSalesData(
-    projectId,
-    funnelId,
-    stageId,
-    "sales",
-    days,
-  );
+  // Etapa Vendas pode ter 3 subtypes de planilha: capture, main_product, sales.
+  // Busca os 3 em paralelo e soma os totais — assim os cards não dependem de
+  // qual subtype o usuário usou.
+  const captureSales = useStageSalesData(projectId, funnelId, stageId, "capture", days);
+  const mainSales = useStageSalesData(projectId, funnelId, stageId, "main_product", days);
+  const salesSales = useStageSalesData(projectId, funnelId, stageId, "sales", days);
+
+  const salesData = useMemo(() => {
+    const sources = [captureSales.data, mainSales.data, salesSales.data].filter(
+      (d): d is NonNullable<typeof d> => !!d && !d.semDados,
+    );
+    if (sources.length === 0) return null;
+    let totalVendas = 0;
+    let faturamentoBruto = 0;
+    let faturamentoLiquido = 0;
+    let ticketPagoNum = 0;
+    let ticketPagoCount = 0;
+    let ticketOrgNum = 0;
+    let ticketOrgCount = 0;
+    let ticketSemTrackNum = 0;
+    let ticketSemTrackCount = 0;
+    for (const s of sources) {
+      totalVendas += s.totalVendas ?? 0;
+      faturamentoBruto += s.faturamentoBruto ?? 0;
+      faturamentoLiquido += s.faturamentoLiquido ?? 0;
+      // Ticket médio precisa ser ponderado — se cada source dá um ticket, soma
+      // (faturamento * vendas) e divide pela soma das vendas no fim
+      const tp = s.ticketMedioPago ?? 0;
+      const to = s.ticketMedioOrganico ?? 0;
+      const ts = s.ticketMedioSemTrack ?? 0;
+      const v = s.totalVendas ?? 0;
+      ticketPagoNum += tp * v;
+      ticketPagoCount += tp > 0 ? v : 0;
+      ticketOrgNum += to * v;
+      ticketOrgCount += to > 0 ? v : 0;
+      ticketSemTrackNum += ts * v;
+      ticketSemTrackCount += ts > 0 ? v : 0;
+    }
+    return {
+      totalVendas,
+      faturamentoBruto,
+      faturamentoLiquido,
+      ticketMedioPago: ticketPagoCount > 0 ? ticketPagoNum / ticketPagoCount : 0,
+      ticketMedioOrganico: ticketOrgCount > 0 ? ticketOrgNum / ticketOrgCount : 0,
+      ticketMedioSemTrack: ticketSemTrackCount > 0 ? ticketSemTrackNum / ticketSemTrackCount : 0,
+    };
+  }, [captureSales.data, mainSales.data, salesSales.data]);
+
+  const salesLoading = captureSales.isLoading || mainSales.isLoading || salesSales.isLoading;
 
   const metaTotals = useMemo(() => {
     if (!dailyData) return { spend: 0, impressions: 0, linkClicks: 0, lpViews: 0, checkoutInitiations: 0 };
