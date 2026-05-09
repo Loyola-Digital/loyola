@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, TrendingUp, Youtube, Pencil, Trash2, CreditCard, Gift, DollarSign } from "lucide-react";
+import { MoreHorizontal, TrendingUp, Youtube, Pencil, Trash2, CreditCard, Gift, DollarSign, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -94,9 +94,10 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
                 <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
                   stage.stageType === "paid" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
                   : stage.stageType === "sales" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                  : stage.stageType === "cpl" ? "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400"
                   : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                 }`}>
-                  {stage.stageType === "paid" ? "Paga" : stage.stageType === "sales" ? "Vendas" : "Gratuita"}
+                  {stage.stageType === "paid" ? "Paga" : stage.stageType === "sales" ? "Vendas" : stage.stageType === "cpl" ? "CPL" : "Gratuita"}
                 </span>
               </div>
               <div className="mt-2 space-y-1">
@@ -104,6 +105,11 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <DollarSign className="h-3 w-3 shrink-0 text-emerald-600" />
                     <span>Etapa de vendas</span>
+                  </div>
+                ) : stage.stageType === "cpl" ? (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Video className="h-3 w-3 shrink-0 text-sky-500" />
+                    <span>Reuniões Zoom</span>
                   </div>
                 ) : (
                   <>
@@ -149,7 +155,7 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
                     <Pencil className="h-4 w-4 mr-2" />
                     Renomear
                   </DropdownMenuItem>
-                  {stage.stageType !== "sales" && (
+                  {stage.stageType !== "sales" && stage.stageType !== "cpl" && (
                     <DropdownMenuItem
                       onClick={() => {
                         const newType = stage.stageType === "paid" ? "free" : "paid";

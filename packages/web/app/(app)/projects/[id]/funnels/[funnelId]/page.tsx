@@ -40,7 +40,7 @@ export default function FunnelPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [stageName, setStageName] = useState("");
-  const [stageType, setStageType] = useState<"free" | "paid" | "sales">("free");
+  const [stageType, setStageType] = useState<"free" | "paid" | "sales" | "cpl">("free");
   const [matchCodeDraft, setMatchCodeDraft] = useState<string>("");
 
   const { data: funnelData, isLoading: funnelLoading } = useFunnel(params.id, params.funnelId);
@@ -135,9 +135,10 @@ export default function FunnelPage() {
     setCreateOpen(false);
   }
 
-  function stageTypePlaceholder(type: "free" | "paid" | "sales"): string {
+  function stageTypePlaceholder(type: "free" | "paid" | "sales" | "cpl"): string {
     if (type === "paid") return "ex: Captação Paga";
     if (type === "sales") return "ex: Vendas Produto Principal";
+    if (type === "cpl") return "ex: CPL Aula 1";
     return "ex: Captação Orgânica";
   }
 
@@ -266,7 +267,7 @@ export default function FunnelPage() {
             </div>
             <div className="space-y-2">
               <Label>Tipo de etapa</Label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setStageType("free")}
@@ -305,6 +306,19 @@ export default function FunnelPage() {
                 >
                   <span className="font-medium">Vendas</span>
                   <span className="text-xs text-muted-foreground">Só planilha de vendas</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStageType("cpl")}
+                  className={cn(
+                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                    stageType === "cpl"
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border hover:bg-muted"
+                  )}
+                >
+                  <span className="font-medium">CPL</span>
+                  <span className="text-xs text-muted-foreground">Reuniões Zoom + retenção</span>
                 </button>
               </div>
             </div>
