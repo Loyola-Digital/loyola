@@ -15,6 +15,7 @@ import {
   getServerToServerToken,
   listPastMeetings,
   resolveMeetingUuids,
+  type ZoomParticipantRaw,
 } from "../services/zoom.js";
 import { encrypt } from "../services/encryption.js";
 
@@ -315,16 +316,43 @@ export default fp(async function zoomStageRoutes(fastify) {
     try {
       const decrypted = decryptZoomConnection(conn);
       const token = await getServerToServerToken(decrypted.accountId, decrypted.clientId, decrypted.clientSecret);
-      const { participants, source, attempts } = await fetchAllParticipants(
-        token,
-        meetingRow.meetingId,
-        meetingRow.meetingUuid,
-      );
-      // Log das tentativas pra debug — aparece no console do API server
-      fastify.log.info({ msg: "Zoom participants fetch attempts", meetingId: meetingRow.meetingId, attempts });
+
+      // Pega TODAS as instâncias (large meetings recorrentes ou com host
+      // multi-entry geralmente têm várias UUIDs). Agrega participantes de
+      // cada instância — dedup por `name|join_time` pra não contar a mesma
+      // entrada 2x se a Zoom listar em mais de uma instância.
+      const allUuids = await resolveMeetingUuids(token, meetingRow.meetingId);
+      const aggregated = new Map<string, ZoomParticipantRaw>();
+      const allAttempts: { endpoint: string; status: number | null; participantCount: number }[] = [];
+      let detectedSource: "webinar" | "meeting" = "meeting";
+
+      for (const uuid of allUuids) {
+        const { participants: instanceParticipants, source, attempts } = await fetchAllParticipants(
+          token,
+          meetingRow.meetingId,
+          uuid,
+        );
+        allAttempts.push(...attempts);
+        if (source === "webinar") detectedSource = "webinar";
+        for (const p of instanceParticipants) {
+          const key = `${p.name ?? ""}|${p.join_time ?? ""}`;
+          if (!aggregated.has(key)) aggregated.set(key, p);
+        }
+      }
+
+      const participants = Array.from(aggregated.values());
+      fastify.log.info({
+        msg: "Zoom participants fetch",
+        meetingId: meetingRow.meetingId,
+        instancesFound: allUuids.length,
+        totalParticipants: participants.length,
+        attempts: allAttempts,
+      });
+
       return {
-        source,
-        attempts,
+        source: detectedSource,
+        instancesFound: allUuids.length,
+        attempts: allAttempts,
         participants: participants.map((p) => ({
           id: p.id ?? null,
           name: p.name ?? "",
