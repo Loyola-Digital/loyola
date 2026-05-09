@@ -328,12 +328,23 @@ export default fp(async function zoomStageRoutes(fastify) {
       }
       const persons = Array.from(personMap.values()).sort((a, b) => b.durationSeconds - a.durationSeconds);
 
+      // Sessions raw (mínimo necessário pra reconstruir curvas temporais).
+      // Mantém só joinTime/leaveTime/duration — sem nome/email/etc.
+      const rawSessions = allSessions
+        .filter((s) => s.join_time && s.leave_time)
+        .map((s) => ({
+          joinTime: s.join_time as string,
+          leaveTime: s.leave_time as string,
+          durationSeconds: s.duration ?? 0,
+        }));
+
       const cachedData = {
         source: detectedSource,
         instancesFound: allUuids.length,
         totalSessions: allSessions.length,
         participants: persons,
         total: persons.length,
+        rawSessions,
       };
 
       await fastify.db

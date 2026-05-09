@@ -130,12 +130,19 @@ export function useUnlinkZoomMeeting(projectId: string, funnelId: string, stageI
   });
 }
 
+export interface ZoomRawSession {
+  joinTime: string;
+  leaveTime: string;
+  durationSeconds: number;
+}
+
 export interface ZoomParticipantsResponse {
   participants: ZoomParticipant[];
   total: number;
   totalSessions?: number;
   instancesFound?: number;
   source?: "webinar" | "meeting";
+  rawSessions?: ZoomRawSession[];
   syncing?: boolean;
   lastSyncedAt?: string | null;
   syncError?: string | null;
