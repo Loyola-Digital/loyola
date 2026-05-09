@@ -115,7 +115,7 @@ export interface AdAnalyticsResponse {
 // HOOKS
 // ============================================================
 
-const TRAFFIC_STALE_TIME = 5 * 60 * 1000; // 5min — avoid redundant refetches on tab focus / remount
+const TRAFFIC_STALE_TIME = 15 * 60 * 1000; // 15min — avoid redundant refetches on tab focus / remount; backend cacheia 30min então mais agressivo aqui não ajuda
 const CREATIVE_STALE_TIME = 30 * 60 * 1000; // 30min — creatives rarely change
 
 export function useTrafficOverview(projectId: string | null, days: number = 30, campaignIds?: string[] | null) {
