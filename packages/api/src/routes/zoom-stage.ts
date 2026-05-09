@@ -25,15 +25,9 @@ const paramsSchema = z.object({
   stageId: z.string().uuid(),
 });
 
-// Cache em memória dos participantes pra evitar refazer 2 chamadas Zoom +
-// agregação cada vez. TTL 10min — dados de Reports da Zoom são imutáveis
-// uma vez que reunião encerrou.
-interface CachedParticipants {
-  data: unknown;
-  expiresAt: number;
-}
-const participantsCache = new Map<string, CachedParticipants>();
-const PARTICIPANTS_TTL = 10 * 60 * 1000;
+// Estado de sync ativo em memória (true = sincronizando agora, false/missing
+// = idle). Persistente entre requests do mesmo processo. Reset em restart.
+const syncingMeetings = new Set<string>();
 
 export default fp(async function zoomStageRoutes(fastify) {
   async function getProjectAccess(projectId: string, userId: string, userRole: string) {
@@ -213,6 +207,117 @@ export default fp(async function zoomStageRoutes(fastify) {
     };
   });
 
+  // ============================================================
+  // Sync helper — paraleliza instâncias e salva cached_data no DB
+  // ============================================================
+  async function syncMeetingParticipants(
+    accountId: string,
+    clientId: string,
+    clientSecret: string,
+    meetingRowId: string,
+    meetingNumericId: string,
+  ): Promise<void> {
+    if (syncingMeetings.has(meetingRowId)) return;
+    syncingMeetings.add(meetingRowId);
+    try {
+      const token = await getServerToServerToken(accountId, clientId, clientSecret);
+      const allUuids = await resolveMeetingUuids(token, meetingNumericId);
+
+      // 1ª chamada: detecta source pra memoizar nas próximas instâncias
+      const firstResult = await fetchAllParticipants(token, meetingNumericId, allUuids[0]);
+      const detectedSource = firstResult.source;
+
+      // Demais instâncias em PARALELO usando preferSource
+      const restResults = allUuids.length > 1
+        ? await Promise.all(
+            allUuids.slice(1).map((uuid) =>
+              fetchAllParticipants(token, meetingNumericId, uuid, detectedSource),
+            ),
+          )
+        : [];
+
+      const allSessions: ZoomParticipantRaw[] = [];
+      const allInstanceResults = [firstResult, ...restResults];
+      for (const inst of allInstanceResults) {
+        const seen = new Set<string>();
+        for (const p of inst.participants) {
+          const key = `${p.name ?? ""}|${p.join_time ?? ""}|${p.leave_time ?? ""}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          allSessions.push(p);
+        }
+      }
+
+      // Dedup por pessoa
+      interface AggregatedPerson {
+        id: string | null;
+        name: string;
+        email: string | null;
+        joinTime: string | null;
+        leaveTime: string | null;
+        durationSeconds: number;
+        sessions: number;
+        status: string | null;
+      }
+      const personMap = new Map<string, AggregatedPerson>();
+      for (const s of allSessions) {
+        const email = (s.user_email ?? "").trim().toLowerCase();
+        const name = (s.name ?? "").trim();
+        const key = email || name.toLowerCase() || `${s.id ?? ""}`;
+        if (!key) continue;
+        const existing = personMap.get(key);
+        if (existing) {
+          existing.durationSeconds += s.duration ?? 0;
+          existing.sessions += 1;
+          if (s.join_time && (!existing.joinTime || s.join_time < existing.joinTime)) existing.joinTime = s.join_time;
+          if (s.leave_time && (!existing.leaveTime || s.leave_time > existing.leaveTime)) existing.leaveTime = s.leave_time;
+        } else {
+          personMap.set(key, {
+            id: s.id ?? null,
+            name: name || email,
+            email: email || null,
+            joinTime: s.join_time ?? null,
+            leaveTime: s.leave_time ?? null,
+            durationSeconds: s.duration ?? 0,
+            sessions: 1,
+            status: s.status ?? null,
+          });
+        }
+      }
+      const persons = Array.from(personMap.values()).sort((a, b) => b.durationSeconds - a.durationSeconds);
+
+      const cachedData = {
+        source: detectedSource,
+        instancesFound: allUuids.length,
+        totalSessions: allSessions.length,
+        participants: persons,
+        total: persons.length,
+      };
+
+      await fastify.db
+        .update(funnelStageZoomMeetings)
+        .set({ cachedData, lastSyncedAt: new Date(), syncError: null })
+        .where(eq(funnelStageZoomMeetings.id, meetingRowId));
+
+      fastify.log.info({
+        msg: "Zoom sync done",
+        meetingId: meetingNumericId,
+        instances: allUuids.length,
+        sessions: allSessions.length,
+        persons: persons.length,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      fastify.log.error({ msg: "Zoom sync failed", meetingId: meetingNumericId, error: message });
+      await fastify.db
+        .update(funnelStageZoomMeetings)
+        .set({ syncError: message })
+        .where(eq(funnelStageZoomMeetings.id, meetingRowId));
+    } finally {
+      syncingMeetings.delete(meetingRowId);
+    }
+  }
+
   // ------------ POST link meeting ------------
   fastify.post("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/zoom/meetings", async (request, reply) => {
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
@@ -257,7 +362,7 @@ export default fp(async function zoomStageRoutes(fastify) {
       }
       void pastUrl;
 
-      await fastify.db
+      const [insertedRow] = await fastify.db
         .insert(funnelStageZoomMeetings)
         .values({
           stageId: params.data.stageId,
@@ -267,14 +372,24 @@ export default fp(async function zoomStageRoutes(fastify) {
           label: body.data.label,
           startTime,
           durationMinutes,
-          lastSyncedAt: new Date(),
         })
         .onConflictDoUpdate({
           target: [funnelStageZoomMeetings.stageId, funnelStageZoomMeetings.meetingUuid],
-          set: { label: body.data.label, lastSyncedAt: new Date() },
-        });
+          set: { label: body.data.label },
+        })
+        .returning();
 
-      return { success: true, meetingUuid: targetUuid };
+      // Dispara sync em background — não-bloqueante
+      const meetingRowId = insertedRow.id;
+      void syncMeetingParticipants(
+        decrypted.accountId,
+        decrypted.clientId,
+        decrypted.clientSecret,
+        meetingRowId,
+        body.data.meetingId,
+      );
+
+      return { success: true, meetingUuid: targetUuid, meetingRowId, syncing: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return reply.code(502).send({ error: "Erro ao vincular reunião", details: message });
@@ -323,105 +438,77 @@ export default fp(async function zoomStageRoutes(fastify) {
       .limit(1);
     if (!meetingRow) return reply.code(404).send({ error: "Reunião não vinculada" });
 
-    // Cache hit?
-    const cacheKey = `${params.data.stageId}:${meetingRow.id}`;
-    const cached = participantsCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.data;
-    }
+    const isSyncing = syncingMeetings.has(meetingRow.id);
+    const cached = meetingRow.cachedData as Record<string, unknown> | null;
 
-    try {
-      const decrypted = decryptZoomConnection(conn);
-      const token = await getServerToServerToken(decrypted.accountId, decrypted.clientId, decrypted.clientSecret);
-
-      const allUuids = await resolveMeetingUuids(token, meetingRow.meetingId);
-
-      // 1ª passagem: coleta TODAS as sessões (entry/exit como linhas separadas)
-      const allSessions: ZoomParticipantRaw[] = [];
-      let detectedSource: "webinar" | "meeting" = "meeting";
-
-      for (const uuid of allUuids) {
-        const { participants: instanceParticipants, source } = await fetchAllParticipants(
-          token,
-          meetingRow.meetingId,
-          uuid,
-        );
-        if (source === "webinar") detectedSource = "webinar";
-        // Dedup exato dentro da MESMA instância (evita inflar se Zoom duplicar)
-        const seen = new Set<string>();
-        for (const p of instanceParticipants) {
-          const key = `${p.name ?? ""}|${p.join_time ?? ""}|${p.leave_time ?? ""}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          allSessions.push(p);
-        }
-      }
-
-      // 2ª passagem: deduplica por PESSOA (nome ou email) e SOMA duração das
-      // sessões. Pessoas que saíram e voltaram viram 1 linha com tempo total.
-      interface AggregatedPerson {
-        id: string | null;
-        name: string;
-        email: string | null;
-        joinTime: string | null;
-        leaveTime: string | null;
-        durationSeconds: number;
-        sessions: number;
-        status: string | null;
-      }
-      const personMap = new Map<string, AggregatedPerson>();
-      for (const s of allSessions) {
-        const email = (s.user_email ?? "").trim().toLowerCase();
-        const name = (s.name ?? "").trim();
-        const key = email || name.toLowerCase() || `${s.id ?? ""}`;
-        if (!key) continue;
-
-        const existing = personMap.get(key);
-        if (existing) {
-          existing.durationSeconds += s.duration ?? 0;
-          existing.sessions += 1;
-          if (s.join_time && (!existing.joinTime || s.join_time < existing.joinTime)) {
-            existing.joinTime = s.join_time;
-          }
-          if (s.leave_time && (!existing.leaveTime || s.leave_time > existing.leaveTime)) {
-            existing.leaveTime = s.leave_time;
-          }
-        } else {
-          personMap.set(key, {
-            id: s.id ?? null,
-            name: name || email,
-            email: email || null,
-            joinTime: s.join_time ?? null,
-            leaveTime: s.leave_time ?? null,
-            durationSeconds: s.duration ?? 0,
-            sessions: 1,
-            status: s.status ?? null,
-          });
-        }
-      }
-
-      const persons = Array.from(personMap.values()).sort((a, b) => b.durationSeconds - a.durationSeconds);
-      fastify.log.info({
-        msg: "Zoom participants fetch",
-        meetingId: meetingRow.meetingId,
-        instancesFound: allUuids.length,
-        totalSessions: allSessions.length,
-        uniquePersons: persons.length,
-      });
-
-      const response = {
-        source: detectedSource,
-        instancesFound: allUuids.length,
-        totalSessions: allSessions.length,
-        participants: persons,
-        total: persons.length,
+    // Cache hit no DB → retorna direto (instantâneo)
+    if (cached) {
+      return {
+        ...cached,
+        syncing: isSyncing,
+        lastSyncedAt: meetingRow.lastSyncedAt?.toISOString() ?? null,
+        syncError: null,
       };
-
-      participantsCache.set(cacheKey, { data: response, expiresAt: Date.now() + PARTICIPANTS_TTL });
-      return response;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return reply.code(502).send({ error: "Erro ao consultar Zoom", details: message });
     }
+
+    // Sem cache: dispara sync em background se ainda não está rolando
+    if (!isSyncing) {
+      const decrypted = decryptZoomConnection(conn);
+      void syncMeetingParticipants(
+        decrypted.accountId,
+        decrypted.clientId,
+        decrypted.clientSecret,
+        meetingRow.id,
+        meetingRow.meetingId,
+      );
+    }
+
+    // Retorna 202 (accepted) com info de "sincronizando"
+    return reply.code(202).send({
+      syncing: true,
+      participants: [],
+      total: 0,
+      message: "Sincronizando dados do Zoom — pode levar até 30s. Recarregue em alguns segundos.",
+      syncError: meetingRow.syncError,
+    });
+  });
+
+  // ------------ POST manual sync ------------
+  fastify.post("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/zoom/meetings/:meetingRowId/sync", async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const extParams = paramsSchema.extend({ meetingRowId: z.string().uuid() });
+    const params = extParams.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+    const conn = await getConnection(params.data.stageId);
+    if (!conn) return reply.code(404).send({ error: "Conexão Zoom não configurada" });
+
+    const [meetingRow] = await fastify.db
+      .select()
+      .from(funnelStageZoomMeetings)
+      .where(
+        and(
+          eq(funnelStageZoomMeetings.id, params.data.meetingRowId),
+          eq(funnelStageZoomMeetings.stageId, params.data.stageId),
+        ),
+      )
+      .limit(1);
+    if (!meetingRow) return reply.code(404).send({ error: "Reunião não vinculada" });
+
+    if (syncingMeetings.has(meetingRow.id)) {
+      return { syncing: true, alreadyRunning: true };
+    }
+
+    const decrypted = decryptZoomConnection(conn);
+    void syncMeetingParticipants(
+      decrypted.accountId,
+      decrypted.clientId,
+      decrypted.clientSecret,
+      meetingRow.id,
+      meetingRow.meetingId,
+    );
+    return { syncing: true };
   });
 });

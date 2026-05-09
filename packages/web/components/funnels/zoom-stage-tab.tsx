@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, Unlink, Users, Video } from "lucide-react";
+import { Loader2, Plus, RefreshCw, Trash2, Unlink, Users, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,7 @@ import {
   useUnlinkZoomMeeting,
   useZoomPastMeetings,
   useZoomMeetingParticipants,
+  useZoomMeetingSync,
   type ZoomLinkedMeeting,
 } from "@/lib/hooks/use-zoom-stage";
 
@@ -367,6 +368,9 @@ function ZoomMeetingDashboard({
   meeting,
 }: Props & { meeting: ZoomLinkedMeeting }) {
   const participants = useZoomMeetingParticipants(projectId, funnelId, stageId, meeting.id);
+  const sync = useZoomMeetingSync(projectId, funnelId, stageId);
+
+  const data = participants.data;
 
   if (participants.isLoading) {
     return (
@@ -377,17 +381,57 @@ function ZoomMeetingDashboard({
     );
   }
 
-  if (participants.error) {
+  // Sincronizando em background — primeira vez ou reload manual
+  if (data?.syncing) {
     return (
-      <p className="text-xs text-destructive">
-        {participants.error instanceof Error ? participants.error.message : "Erro ao buscar participantes"}
-      </p>
+      <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          <p className="text-sm font-medium">Sincronizando dados do Zoom...</p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {data.message ?? "Reuniões grandes podem levar até 30s. A página atualiza sozinha quando terminar."}
+        </p>
+      </div>
     );
   }
 
-  const data = participants.data;
+  if (participants.error) {
+    return (
+      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-2">
+        <p className="text-xs text-destructive">
+          {participants.error instanceof Error ? participants.error.message : "Erro ao buscar participantes"}
+        </p>
+        <Button size="sm" variant="outline" onClick={() => sync.mutate(meeting.id)} disabled={sync.isPending}>
+          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+          Tentar novamente
+        </Button>
+      </div>
+    );
+  }
+
+  if (data?.syncError) {
+    return (
+      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-2">
+        <p className="text-xs text-destructive">{data.syncError}</p>
+        <Button size="sm" variant="outline" onClick={() => sync.mutate(meeting.id)} disabled={sync.isPending}>
+          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+          Tentar novamente
+        </Button>
+      </div>
+    );
+  }
+
   if (!data || data.participants.length === 0) {
-    return <p className="text-sm text-muted-foreground">Nenhum participante retornado.</p>;
+    return (
+      <div className="space-y-2">
+        <p className="text-sm text-muted-foreground">Nenhum participante retornado.</p>
+        <Button size="sm" variant="outline" onClick={() => sync.mutate(meeting.id)} disabled={sync.isPending}>
+          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+          Forçar sincronização
+        </Button>
+      </div>
+    );
   }
 
   const meetingDuration = data.participants.reduce((acc, p) => Math.max(acc, p.durationSeconds), 0);
@@ -409,6 +453,23 @@ function ZoomMeetingDashboard({
             {data.instancesFound} instâncias
           </span>
         )}
+        <span className="ml-auto flex items-center gap-2">
+          {data.lastSyncedAt && (
+            <span className="text-[10px] text-muted-foreground">
+              Sync: {fmtTime(data.lastSyncedAt)}
+            </span>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 gap-1"
+            onClick={() => sync.mutate(meeting.id)}
+            disabled={sync.isPending}
+          >
+            <RefreshCw className={`h-3 w-3 ${sync.isPending ? "animate-spin" : ""}`} />
+            <span className="text-[11px]">Sync</span>
+          </Button>
+        </span>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <Stat label="Pessoas únicas" value={String(data.total)} />

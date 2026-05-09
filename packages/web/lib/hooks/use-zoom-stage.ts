@@ -130,6 +130,18 @@ export function useUnlinkZoomMeeting(projectId: string, funnelId: string, stageI
   });
 }
 
+export interface ZoomParticipantsResponse {
+  participants: ZoomParticipant[];
+  total: number;
+  totalSessions?: number;
+  instancesFound?: number;
+  source?: "webinar" | "meeting";
+  syncing?: boolean;
+  lastSyncedAt?: string | null;
+  syncError?: string | null;
+  message?: string;
+}
+
 export function useZoomMeetingParticipants(
   projectId: string,
   funnelId: string,
@@ -140,14 +152,30 @@ export function useZoomMeetingParticipants(
   return useQuery({
     queryKey: ["zoom-participants", projectId, funnelId, stageId, meetingRowId],
     queryFn: () =>
-      apiClient<{
-        participants: ZoomParticipant[];
-        total: number;
-        totalSessions?: number;
-        instancesFound?: number;
-        source: "webinar" | "meeting";
-      }>(`${base(projectId, funnelId, stageId)}/meetings/${meetingRowId}/participants`),
+      apiClient<ZoomParticipantsResponse>(
+        `${base(projectId, funnelId, stageId)}/meetings/${meetingRowId}/participants`,
+      ),
     enabled: !!meetingRowId,
     staleTime: STALE,
+    // Polling 3s enquanto syncing=true (background sync rodando)
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return data?.syncing ? 3000 : false;
+    },
+  });
+}
+
+export function useZoomMeetingSync(projectId: string, funnelId: string, stageId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (meetingRowId: string) =>
+      apiClient<{ syncing: boolean; alreadyRunning?: boolean }>(
+        `${base(projectId, funnelId, stageId)}/meetings/${meetingRowId}/sync`,
+        { method: "POST" },
+      ),
+    onSuccess: (_data, meetingRowId) => {
+      qc.invalidateQueries({ queryKey: ["zoom-participants", projectId, funnelId, stageId, meetingRowId] });
+    },
   });
 }
