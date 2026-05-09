@@ -31,8 +31,17 @@ const querySchema = z.object({
 
 function parseNumber(val: string | undefined): number {
   if (!val) return 0;
-  const cleaned = val.replace(/[^\d.,]/g, "").replace(",", ".");
-  return parseFloat(cleaned) || 0;
+  // Remove R$, espaços e qualquer coisa que não seja dígito, ponto ou vírgula
+  const cleaned = val.replace(/[^\d.,]/g, "");
+  if (!cleaned) return 0;
+  // Detecta formato pt-BR (vírgula como decimal): "6.000,00" → 6000.00
+  // Formato US (ponto como decimal): "6000.00" → 6000.00
+  // Heurística: se tem vírgula, ela é o separador decimal; pontos são milhares.
+  const hasComma = cleaned.includes(",");
+  const normalized = hasComma
+    ? cleaned.replace(/\./g, "").replace(",", ".") // pt-BR: remove pontos, vírgula → ponto
+    : cleaned; // sem vírgula: assume já tá em formato US
+  return parseFloat(normalized) || 0;
 }
 
 function parseDate(val: string | undefined): Date | null {
