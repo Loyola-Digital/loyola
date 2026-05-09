@@ -398,15 +398,23 @@ function ZoomMeetingDashboard({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <Users className="h-4 w-4 text-primary" />
         <h3 className="text-sm font-semibold">{meeting.label || meeting.topic || `Meeting ${meeting.meetingId}`}</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-muted text-muted-foreground">
           {data.source === "webinar" ? "Webinar" : "Meeting"}
         </span>
+        {data.instancesFound && data.instancesFound > 1 && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+            {data.instancesFound} instâncias
+          </span>
+        )}
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        <Stat label="Participantes" value={String(data.total)} />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <Stat label="Pessoas únicas" value={String(data.total)} />
+        {data.totalSessions != null && data.totalSessions !== data.total && (
+          <Stat label="Total de sessões" value={String(data.totalSessions)} />
+        )}
         <Stat label="Tempo médio" value={fmtDuration(Math.round(avgRetention))} />
         <Stat label="Maior duração" value={fmtDuration(meetingDuration)} />
       </div>
@@ -418,7 +426,8 @@ function ZoomMeetingDashboard({
               <th className="text-left py-2 px-3 font-medium text-muted-foreground">Email</th>
               <th className="text-left py-2 px-3 font-medium text-muted-foreground">Entrou</th>
               <th className="text-left py-2 px-3 font-medium text-muted-foreground">Saiu</th>
-              <th className="text-right py-2 px-3 font-medium text-muted-foreground">Duração</th>
+              <th className="text-right py-2 px-3 font-medium text-muted-foreground">Sessões</th>
+              <th className="text-right py-2 px-3 font-medium text-muted-foreground">Duração total</th>
               <th className="text-right py-2 px-3 font-medium text-muted-foreground">Retenção</th>
             </tr>
           </thead>
@@ -431,6 +440,7 @@ function ZoomMeetingDashboard({
                   <td className="py-2 px-3 text-muted-foreground">{p.email ?? "—"}</td>
                   <td className="py-2 px-3 text-muted-foreground">{fmtTime(p.joinTime)}</td>
                   <td className="py-2 px-3 text-muted-foreground">{fmtTime(p.leaveTime)}</td>
+                  <td className="py-2 px-3 text-right text-muted-foreground">{p.sessions ?? 1}</td>
                   <td className="py-2 px-3 text-right">{fmtDuration(p.durationSeconds)}</td>
                   <td className="py-2 px-3 text-right">
                     <span className={ret > 80 ? "text-emerald-600 font-medium" : ret > 50 ? "text-amber-600" : "text-muted-foreground"}>
