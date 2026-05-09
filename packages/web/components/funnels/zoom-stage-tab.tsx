@@ -401,6 +401,9 @@ function ZoomMeetingDashboard({
       <div className="flex items-center gap-2">
         <Users className="h-4 w-4 text-primary" />
         <h3 className="text-sm font-semibold">{meeting.label || meeting.topic || `Meeting ${meeting.meetingId}`}</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-muted text-muted-foreground">
+          {data.source === "webinar" ? "Webinar" : "Meeting"}
+        </span>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         <Stat label="Participantes" value={String(data.total)} />

@@ -106,12 +106,15 @@ export interface ZoomParticipantRaw {
   status?: string;
 }
 
-export async function fetchAllParticipants(token: string, meetingUuid: string): Promise<ZoomParticipantRaw[]> {
+async function fetchParticipantsFromEndpoint(
+  token: string,
+  baseUrl: string,
+): Promise<ZoomParticipantRaw[]> {
   const all: ZoomParticipantRaw[] = [];
-  const encoded = encodeMeetingUuid(meetingUuid);
   let nextPageToken = "";
-  for (let i = 0; i < 20; i++) {
-    const url = new URL(`https://api.zoom.us/v2/report/meetings/${encoded}/participants`);
+  // 50 iterações * 300/page = 15000 participantes max — cobre webinars grandes
+  for (let i = 0; i < 50; i++) {
+    const url = new URL(baseUrl);
     url.searchParams.set("page_size", "300");
     if (nextPageToken) url.searchParams.set("next_page_token", nextPageToken);
     const res = await fetch(url.toString(), {
@@ -119,7 +122,9 @@ export async function fetchAllParticipants(token: string, meetingUuid: string): 
     });
     if (!res.ok) {
       const detail = await res.text();
-      throw new Error(`Zoom Reports API falhou (${res.status}): ${detail.slice(0, 200)}`);
+      const err: Error & { status?: number } = new Error(`Zoom API ${res.status}: ${detail.slice(0, 200)}`);
+      err.status = res.status;
+      throw err;
     }
     const data = (await res.json()) as { participants?: ZoomParticipantRaw[]; next_page_token?: string };
     if (data.participants) all.push(...data.participants);
@@ -127,6 +132,42 @@ export async function fetchAllParticipants(token: string, meetingUuid: string): 
     nextPageToken = data.next_page_token;
   }
   return all;
+}
+
+/**
+ * Tenta buscar participantes como Webinar primeiro (encoded uuid). Se 404 (não
+ * é webinar), cai pra Meeting. Usuário com 1900+ participantes geralmente é
+ * webinar — Reports API de meeting limita ao plano default. Webinar Reports
+ * exige scope `report:read:list_webinar_participants:admin` + Webinar add-on.
+ */
+export async function fetchAllParticipants(token: string, meetingUuid: string): Promise<{
+  participants: ZoomParticipantRaw[];
+  source: "webinar" | "meeting";
+}> {
+  const encoded = encodeMeetingUuid(meetingUuid);
+  // 1ª tentativa: webinar
+  try {
+    const webinarParticipants = await fetchParticipantsFromEndpoint(
+      token,
+      `https://api.zoom.us/v2/report/webinars/${encoded}/participants`,
+    );
+    // Se retornou alguma coisa, é webinar válido
+    if (webinarParticipants.length > 0) {
+      return { participants: webinarParticipants, source: "webinar" };
+    }
+    // Vazio mas sem erro? Pode ser webinar sem participantes ou meeting — segue pro fallback
+  } catch (err) {
+    const status = (err as Error & { status?: number }).status;
+    // 404/400 = não é webinar (segue pro fallback). Outro erro = relança.
+    if (status !== 404 && status !== 400) throw err;
+  }
+
+  // 2ª tentativa: meeting
+  const meetingParticipants = await fetchParticipantsFromEndpoint(
+    token,
+    `https://api.zoom.us/v2/report/meetings/${encoded}/participants`,
+  );
+  return { participants: meetingParticipants, source: "meeting" };
 }
 
 export interface ZoomPastMeeting {

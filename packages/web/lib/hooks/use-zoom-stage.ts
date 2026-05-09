@@ -139,7 +139,7 @@ export function useZoomMeetingParticipants(
   return useQuery({
     queryKey: ["zoom-participants", projectId, funnelId, stageId, meetingRowId],
     queryFn: () =>
-      apiClient<{ participants: ZoomParticipant[]; total: number }>(
+      apiClient<{ participants: ZoomParticipant[]; total: number; source: "webinar" | "meeting" }>(
         `${base(projectId, funnelId, stageId)}/meetings/${meetingRowId}/participants`,
       ),
     enabled: !!meetingRowId,
