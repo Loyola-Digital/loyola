@@ -16,7 +16,7 @@ export interface SwitchyLinkRef {
   domain: string;
 }
 
-export type StageType = "paid" | "free" | "sales";
+export type StageType = "paid" | "free" | "sales" | "cpl";
 export type StageSalesSubtype = "capture" | "main_product" | "sales";
 
 export interface SaleColumnMapping {
