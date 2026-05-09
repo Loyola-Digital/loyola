@@ -1031,6 +1031,8 @@ export const funnelStageZoomMeetings = pgTable(
     startTime: timestamp("start_time", { withTimezone: true }),
     durationMinutes: integer("duration_minutes"),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    cachedData: jsonb("cached_data"),
+    syncError: text("sync_error"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

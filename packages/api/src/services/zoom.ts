@@ -141,54 +141,50 @@ interface ParticipantsAttempt {
 }
 
 /**
- * Tenta buscar participantes em ordem: webinar/numericId → webinar/uuid →
- * meeting/uuid → meeting/id. Aceita ambos identificadores porque a API Zoom
- * é inconsistente entre endpoints: alguns aceitam só ID numérico, outros só
- * UUID, e o tipo de evento (webinar vs meeting) determina qual endpoint usar.
- *
- * Webinars com 1000+ participantes precisam scope
- * `report:read:list_webinar_participants:admin` + Webinar add-on. Sem isso,
- * webinar endpoint retorna 401/403 e o fallback meeting retorna apenas
- * panelists/host (~30 pessoas).
+ * Tenta os 4 endpoints em PARALELO (Promise.allSettled). Quem retornar mais
+ * participantes ganha. Se preferSource for passado (vem da primeira instância
+ * da reunião), tenta só endpoints daquele source pra economizar.
  */
 export async function fetchAllParticipants(
   token: string,
   meetingId: string,
   meetingUuid: string,
+  preferSource?: "webinar" | "meeting",
 ): Promise<{
   participants: ZoomParticipantRaw[];
   source: "webinar" | "meeting";
-  attempts: { endpoint: string; status: number | null; participantCount: number }[];
 }> {
   const encoded = encodeMeetingUuid(meetingUuid);
-  const attempts: ParticipantsAttempt[] = [
+  const allAttempts: ParticipantsAttempt[] = [
     { endpoint: `https://api.zoom.us/v2/report/webinars/${meetingId}/participants`, source: "webinar", identifier: "id" },
     { endpoint: `https://api.zoom.us/v2/report/webinars/${encoded}/participants`, source: "webinar", identifier: "uuid" },
     { endpoint: `https://api.zoom.us/v2/report/meetings/${encoded}/participants`, source: "meeting", identifier: "uuid" },
     { endpoint: `https://api.zoom.us/v2/report/meetings/${meetingId}/participants`, source: "meeting", identifier: "id" },
   ];
+  // Memoização: se a primeira instância detectou source, só tenta endpoints
+  // daquele source — economiza 50% das chamadas em reuniões com múltiplas
+  // instâncias.
+  const attempts = preferSource ? allAttempts.filter((a) => a.source === preferSource) : allAttempts;
 
-  const log: { endpoint: string; status: number | null; participantCount: number }[] = [];
-
-  for (const attempt of attempts) {
-    try {
+  const results = await Promise.allSettled(
+    attempts.map(async (attempt) => {
       const participants = await fetchParticipantsFromEndpoint(token, attempt.endpoint);
-      log.push({ endpoint: attempt.endpoint, status: 200, participantCount: participants.length });
-      if (participants.length > 0) {
-        return { participants, source: attempt.source, attempts: log };
+      return { participants, source: attempt.source };
+    }),
+  );
+
+  // Pega o resultado com mais participantes
+  let best: { participants: ZoomParticipantRaw[]; source: "webinar" | "meeting" } | null = null;
+  for (const r of results) {
+    if (r.status === "fulfilled" && r.value.participants.length > 0) {
+      if (!best || r.value.participants.length > best.participants.length) {
+        best = r.value;
       }
-      // Vazio mas sem erro: registra e tenta próxima
-    } catch (err) {
-      const status = (err as Error & { status?: number }).status ?? null;
-      log.push({ endpoint: attempt.endpoint, status, participantCount: 0 });
-      // 401/403 = scope ou plano faltando; 404 = endpoint errado pro tipo. Segue.
-      // Outro erro: continua tentando os próximos endpoints (pode ser rate limit num só)
     }
   }
 
-  // Se chegou aqui, todas as tentativas retornaram vazio ou erro. Retorna o
-  // último resultado (vazio) com source="meeting" como default.
-  return { participants: [], source: "meeting", attempts: log };
+  if (best) return best;
+  return { participants: [], source: preferSource ?? "meeting" };
 }
 
 export interface ZoomPastMeeting {
