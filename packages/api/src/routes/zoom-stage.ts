@@ -315,8 +315,9 @@ export default fp(async function zoomStageRoutes(fastify) {
     try {
       const decrypted = decryptZoomConnection(conn);
       const token = await getServerToServerToken(decrypted.accountId, decrypted.clientId, decrypted.clientSecret);
-      const participants = await fetchAllParticipants(token, meetingRow.meetingUuid);
+      const { participants, source } = await fetchAllParticipants(token, meetingRow.meetingUuid);
       return {
+        source,
         participants: participants.map((p) => ({
           id: p.id ?? null,
           name: p.name ?? "",
