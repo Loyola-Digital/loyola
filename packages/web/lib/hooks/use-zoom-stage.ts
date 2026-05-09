@@ -39,6 +39,7 @@ export interface ZoomParticipant {
   joinTime: string | null;
   leaveTime: string | null;
   durationSeconds: number;
+  sessions?: number;
   status: string | null;
 }
 
@@ -139,9 +140,13 @@ export function useZoomMeetingParticipants(
   return useQuery({
     queryKey: ["zoom-participants", projectId, funnelId, stageId, meetingRowId],
     queryFn: () =>
-      apiClient<{ participants: ZoomParticipant[]; total: number; source: "webinar" | "meeting" }>(
-        `${base(projectId, funnelId, stageId)}/meetings/${meetingRowId}/participants`,
-      ),
+      apiClient<{
+        participants: ZoomParticipant[];
+        total: number;
+        totalSessions?: number;
+        instancesFound?: number;
+        source: "webinar" | "meeting";
+      }>(`${base(projectId, funnelId, stageId)}/meetings/${meetingRowId}/participants`),
     enabled: !!meetingRowId,
     staleTime: STALE,
   });

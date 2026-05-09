@@ -334,12 +334,10 @@ export default fp(async function zoomStageRoutes(fastify) {
       const decrypted = decryptZoomConnection(conn);
       const token = await getServerToServerToken(decrypted.accountId, decrypted.clientId, decrypted.clientSecret);
 
-      // Pega TODAS as instâncias (large meetings recorrentes ou com host
-      // multi-entry geralmente têm várias UUIDs). Agrega participantes de
-      // cada instância — dedup por `name|join_time` pra não contar a mesma
-      // entrada 2x se a Zoom listar em mais de uma instância.
       const allUuids = await resolveMeetingUuids(token, meetingRow.meetingId);
-      const aggregated = new Map<string, ZoomParticipantRaw>();
+
+      // 1ª passagem: coleta TODAS as sessões (entry/exit como linhas separadas)
+      const allSessions: ZoomParticipantRaw[] = [];
       let detectedSource: "webinar" | "meeting" = "meeting";
 
       for (const uuid of allUuids) {
@@ -349,33 +347,74 @@ export default fp(async function zoomStageRoutes(fastify) {
           uuid,
         );
         if (source === "webinar") detectedSource = "webinar";
+        // Dedup exato dentro da MESMA instância (evita inflar se Zoom duplicar)
+        const seen = new Set<string>();
         for (const p of instanceParticipants) {
-          const key = `${p.name ?? ""}|${p.join_time ?? ""}`;
-          if (!aggregated.has(key)) aggregated.set(key, p);
+          const key = `${p.name ?? ""}|${p.join_time ?? ""}|${p.leave_time ?? ""}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          allSessions.push(p);
         }
       }
 
-      const participants = Array.from(aggregated.values());
+      // 2ª passagem: deduplica por PESSOA (nome ou email) e SOMA duração das
+      // sessões. Pessoas que saíram e voltaram viram 1 linha com tempo total.
+      interface AggregatedPerson {
+        id: string | null;
+        name: string;
+        email: string | null;
+        joinTime: string | null;
+        leaveTime: string | null;
+        durationSeconds: number;
+        sessions: number;
+        status: string | null;
+      }
+      const personMap = new Map<string, AggregatedPerson>();
+      for (const s of allSessions) {
+        const email = (s.user_email ?? "").trim().toLowerCase();
+        const name = (s.name ?? "").trim();
+        const key = email || name.toLowerCase() || `${s.id ?? ""}`;
+        if (!key) continue;
+
+        const existing = personMap.get(key);
+        if (existing) {
+          existing.durationSeconds += s.duration ?? 0;
+          existing.sessions += 1;
+          if (s.join_time && (!existing.joinTime || s.join_time < existing.joinTime)) {
+            existing.joinTime = s.join_time;
+          }
+          if (s.leave_time && (!existing.leaveTime || s.leave_time > existing.leaveTime)) {
+            existing.leaveTime = s.leave_time;
+          }
+        } else {
+          personMap.set(key, {
+            id: s.id ?? null,
+            name: name || email,
+            email: email || null,
+            joinTime: s.join_time ?? null,
+            leaveTime: s.leave_time ?? null,
+            durationSeconds: s.duration ?? 0,
+            sessions: 1,
+            status: s.status ?? null,
+          });
+        }
+      }
+
+      const persons = Array.from(personMap.values()).sort((a, b) => b.durationSeconds - a.durationSeconds);
       fastify.log.info({
         msg: "Zoom participants fetch",
         meetingId: meetingRow.meetingId,
         instancesFound: allUuids.length,
-        totalParticipants: participants.length,
+        totalSessions: allSessions.length,
+        uniquePersons: persons.length,
       });
 
       const response = {
         source: detectedSource,
         instancesFound: allUuids.length,
-        participants: participants.map((p) => ({
-          id: p.id ?? null,
-          name: p.name ?? "",
-          email: p.user_email ?? null,
-          joinTime: p.join_time ?? null,
-          leaveTime: p.leave_time ?? null,
-          durationSeconds: p.duration ?? 0,
-          status: p.status ?? null,
-        })),
-        total: participants.length,
+        totalSessions: allSessions.length,
+        participants: persons,
+        total: persons.length,
       };
 
       participantsCache.set(cacheKey, { data: response, expiresAt: Date.now() + PARTICIPANTS_TTL });
