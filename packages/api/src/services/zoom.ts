@@ -134,40 +134,61 @@ async function fetchParticipantsFromEndpoint(
   return all;
 }
 
+interface ParticipantsAttempt {
+  endpoint: string;
+  source: "webinar" | "meeting";
+  identifier: "id" | "uuid";
+}
+
 /**
- * Tenta buscar participantes como Webinar primeiro (encoded uuid). Se 404 (não
- * é webinar), cai pra Meeting. Usuário com 1900+ participantes geralmente é
- * webinar — Reports API de meeting limita ao plano default. Webinar Reports
- * exige scope `report:read:list_webinar_participants:admin` + Webinar add-on.
+ * Tenta buscar participantes em ordem: webinar/numericId → webinar/uuid →
+ * meeting/uuid → meeting/id. Aceita ambos identificadores porque a API Zoom
+ * é inconsistente entre endpoints: alguns aceitam só ID numérico, outros só
+ * UUID, e o tipo de evento (webinar vs meeting) determina qual endpoint usar.
+ *
+ * Webinars com 1000+ participantes precisam scope
+ * `report:read:list_webinar_participants:admin` + Webinar add-on. Sem isso,
+ * webinar endpoint retorna 401/403 e o fallback meeting retorna apenas
+ * panelists/host (~30 pessoas).
  */
-export async function fetchAllParticipants(token: string, meetingUuid: string): Promise<{
+export async function fetchAllParticipants(
+  token: string,
+  meetingId: string,
+  meetingUuid: string,
+): Promise<{
   participants: ZoomParticipantRaw[];
   source: "webinar" | "meeting";
+  attempts: { endpoint: string; status: number | null; participantCount: number }[];
 }> {
   const encoded = encodeMeetingUuid(meetingUuid);
-  // 1ª tentativa: webinar
-  try {
-    const webinarParticipants = await fetchParticipantsFromEndpoint(
-      token,
-      `https://api.zoom.us/v2/report/webinars/${encoded}/participants`,
-    );
-    // Se retornou alguma coisa, é webinar válido
-    if (webinarParticipants.length > 0) {
-      return { participants: webinarParticipants, source: "webinar" };
+  const attempts: ParticipantsAttempt[] = [
+    { endpoint: `https://api.zoom.us/v2/report/webinars/${meetingId}/participants`, source: "webinar", identifier: "id" },
+    { endpoint: `https://api.zoom.us/v2/report/webinars/${encoded}/participants`, source: "webinar", identifier: "uuid" },
+    { endpoint: `https://api.zoom.us/v2/report/meetings/${encoded}/participants`, source: "meeting", identifier: "uuid" },
+    { endpoint: `https://api.zoom.us/v2/report/meetings/${meetingId}/participants`, source: "meeting", identifier: "id" },
+  ];
+
+  const log: { endpoint: string; status: number | null; participantCount: number }[] = [];
+
+  for (const attempt of attempts) {
+    try {
+      const participants = await fetchParticipantsFromEndpoint(token, attempt.endpoint);
+      log.push({ endpoint: attempt.endpoint, status: 200, participantCount: participants.length });
+      if (participants.length > 0) {
+        return { participants, source: attempt.source, attempts: log };
+      }
+      // Vazio mas sem erro: registra e tenta próxima
+    } catch (err) {
+      const status = (err as Error & { status?: number }).status ?? null;
+      log.push({ endpoint: attempt.endpoint, status, participantCount: 0 });
+      // 401/403 = scope ou plano faltando; 404 = endpoint errado pro tipo. Segue.
+      // Outro erro: continua tentando os próximos endpoints (pode ser rate limit num só)
     }
-    // Vazio mas sem erro? Pode ser webinar sem participantes ou meeting — segue pro fallback
-  } catch (err) {
-    const status = (err as Error & { status?: number }).status;
-    // 404/400 = não é webinar (segue pro fallback). Outro erro = relança.
-    if (status !== 404 && status !== 400) throw err;
   }
 
-  // 2ª tentativa: meeting
-  const meetingParticipants = await fetchParticipantsFromEndpoint(
-    token,
-    `https://api.zoom.us/v2/report/meetings/${encoded}/participants`,
-  );
-  return { participants: meetingParticipants, source: "meeting" };
+  // Se chegou aqui, todas as tentativas retornaram vazio ou erro. Retorna o
+  // último resultado (vazio) com source="meeting" como default.
+  return { participants: [], source: "meeting", attempts: log };
 }
 
 export interface ZoomPastMeeting {

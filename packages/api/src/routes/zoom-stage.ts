@@ -315,9 +315,16 @@ export default fp(async function zoomStageRoutes(fastify) {
     try {
       const decrypted = decryptZoomConnection(conn);
       const token = await getServerToServerToken(decrypted.accountId, decrypted.clientId, decrypted.clientSecret);
-      const { participants, source } = await fetchAllParticipants(token, meetingRow.meetingUuid);
+      const { participants, source, attempts } = await fetchAllParticipants(
+        token,
+        meetingRow.meetingId,
+        meetingRow.meetingUuid,
+      );
+      // Log das tentativas pra debug — aparece no console do API server
+      fastify.log.info({ msg: "Zoom participants fetch attempts", meetingId: meetingRow.meetingId, attempts });
       return {
         source,
+        attempts,
         participants: participants.map((p) => ({
           id: p.id ?? null,
           name: p.name ?? "",
