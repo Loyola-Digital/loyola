@@ -24,6 +24,7 @@ import {
   useZoomMeetingSync,
   type ZoomLinkedMeeting,
 } from "@/lib/hooks/use-zoom-stage";
+import { ZoomMeetingAnalytics } from "./zoom-meeting-analytics";
 
 interface Props {
   projectId: string;
@@ -479,6 +480,9 @@ function ZoomMeetingDashboard({
         <Stat label="Tempo médio" value={fmtDuration(Math.round(avgRetention))} />
         <Stat label="Maior duração" value={fmtDuration(meetingDuration)} />
       </div>
+
+      <ZoomMeetingAnalytics participants={data.participants} rawSessions={data.rawSessions} />
+
       <div className="overflow-x-auto rounded-lg border border-border/30">
         <table className="w-full text-xs">
           <thead className="bg-muted/30">
