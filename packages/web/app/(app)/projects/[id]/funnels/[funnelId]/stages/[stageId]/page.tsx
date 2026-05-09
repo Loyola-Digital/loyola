@@ -150,10 +150,10 @@ export default function StagePage() {
                 </div>
               </div>
 
-              {/* Tipo de etapa (Vendas é separado — cria via "Nova Etapa") */}
+              {/* Tipo de etapa */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Tipo de captação</Label>
-                <div className="grid grid-cols-2 gap-2">
+                <Label className="text-sm font-medium">Tipo de etapa</Label>
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -164,7 +164,7 @@ export default function StagePage() {
                     }}
                     className={cn(
                       "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
-                      stage.stageType === "free"
+                      (stage.stageType as string) === "free"
                         ? "border-primary bg-primary/5 text-primary"
                         : "border-border hover:bg-muted"
                     )}
@@ -182,7 +182,7 @@ export default function StagePage() {
                     }}
                     className={cn(
                       "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
-                      stage.stageType === "paid"
+                      (stage.stageType as string) === "paid"
                         ? "border-primary bg-primary/5 text-primary"
                         : "border-border hover:bg-muted"
                     )}
@@ -190,10 +190,25 @@ export default function StagePage() {
                     <span className="font-medium">Paga</span>
                     <span className="text-xs text-muted-foreground">Captação + tráfego</span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateStage.mutate(
+                        { stageType: "sales" },
+                        { onSuccess: () => toast.success("Tipo alterado para Vendas") }
+                      );
+                    }}
+                    className={cn(
+                      "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                      (stage.stageType as string) === "sales"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border hover:bg-muted"
+                    )}
+                  >
+                    <span className="font-medium">Vendas</span>
+                    <span className="text-xs text-muted-foreground">Só planilha de vendas</span>
+                  </button>
                 </div>
-                <p className="text-[11px] text-muted-foreground">
-                  Pra criar etapa do tipo <span className="font-medium">Vendas</span>, use &quot;Nova Etapa&quot; na tela do funil.
-                </p>
               </div>
 
               {/* Campanhas Meta */}
