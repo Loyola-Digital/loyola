@@ -29,6 +29,30 @@ const paramsSchema = z.object({
 // = idle). Persistente entre requests do mesmo processo. Reset em restart.
 const syncingMeetings = new Set<string>();
 
+// Nomes genéricos do Zoom — quando aparecem sem email, são placeholders pra
+// múltiplas pessoas distintas. NÃO podem ser deduplicados (cada sessão = uma
+// pessoa diferente).
+const GENERIC_ZOOM_NAMES = [
+  /^usu[aá]rio do zoom$/i,
+  /^zoom user$/i,
+  /^convidado$/i,
+  /^guest$/i,
+  /^anonymous$/i,
+  /^an[oô]nimo$/i,
+  /^participant\s*\d*$/i,
+  /^attendee\s*\d*$/i,
+  /^iphone$/i,
+  /^ipad$/i,
+  /^android$/i,
+  /^iphone\s+de.*$/i,
+];
+
+function isGenericName(name: string): boolean {
+  const trimmed = name.trim();
+  if (!trimmed) return true;
+  return GENERIC_ZOOM_NAMES.some((re) => re.test(trimmed));
+}
+
 export default fp(async function zoomStageRoutes(fastify) {
   async function getProjectAccess(projectId: string, userId: string, userRole: string) {
     if (userRole === "guest") {
@@ -260,11 +284,29 @@ export default fp(async function zoomStageRoutes(fastify) {
         status: string | null;
       }
       const personMap = new Map<string, AggregatedPerson>();
+      // Sessões genéricas (sem email + nome placeholder) NÃO são deduplicadas.
+      // Cada uma vira uma "pessoa" separada na lista. Usa contador pra chave
+      // única.
+      let genericCounter = 0;
       for (const s of allSessions) {
         const email = (s.user_email ?? "").trim().toLowerCase();
         const name = (s.name ?? "").trim();
-        const key = email || name.toLowerCase() || `${s.id ?? ""}`;
-        if (!key) continue;
+
+        // Estratégia de dedup:
+        // - Email existe → dedup por email (mais confiável)
+        // - Email vazio + nome NÃO genérico → dedup por nome
+        // - Email vazio + nome genérico ("Usuário do Zoom" etc) → NÃO dedup
+        let key: string;
+        if (email) {
+          key = `email:${email}`;
+        } else if (name && !isGenericName(name)) {
+          key = `name:${name.toLowerCase()}`;
+        } else {
+          // Nome genérico ou ausente: cada sessão é tratada como pessoa única
+          genericCounter++;
+          key = `generic:${genericCounter}`;
+        }
+
         const existing = personMap.get(key);
         if (existing) {
           existing.durationSeconds += s.duration ?? 0;
@@ -274,7 +316,7 @@ export default fp(async function zoomStageRoutes(fastify) {
         } else {
           personMap.set(key, {
             id: s.id ?? null,
-            name: name || email,
+            name: name || email || "Sem nome",
             email: email || null,
             joinTime: s.join_time ?? null,
             leaveTime: s.leave_time ?? null,
