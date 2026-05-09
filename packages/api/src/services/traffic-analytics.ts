@@ -87,8 +87,8 @@ export interface OverviewAnalytics {
 // CACHE
 // ============================================================
 
-const CACHE_TTL_DEFAULT = 15 * 60 * 1000; // 15 min — dados estáveis
-const CACHE_TTL_TODAY = 2 * 60 * 1000;    // 2 min — range inclui hoje
+const CACHE_TTL_DEFAULT = 30 * 60 * 1000; // 30 min — dados estáveis
+const CACHE_TTL_TODAY = 5 * 60 * 1000;    // 5 min — range inclui hoje
 
 interface CacheEntry<T> {
   data: T;

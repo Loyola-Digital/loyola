@@ -1,7 +1,5 @@
-import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { useApiClient } from "@/lib/hooks/use-api-client";
-import type { AdSetAnalyticsResponse } from "@/lib/hooks/use-traffic-analytics";
+import { useAllAdSets } from "@/lib/hooks/use-traffic-analytics";
 
 interface UseFunnelAdsetsMapResult {
   /** Map de adset_id → adset_name vindo da Meta API. */
@@ -14,51 +12,35 @@ interface UseFunnelAdsetsMapResult {
  * vinculadas ao funil. Usado pra resolver `utm_medium` (que armazena o adset_id)
  * pro nome humano do adset.
  *
- * Uma campanha pode ter N adsets; o hook faz uma query paralela por campanha
- * via React Query. Cache de 60s evita refetch agressivo já que adsets mudam
- * pouco.
+ * Reusa o endpoint /all-adsets (1 request agregado) — antes fazia N requests
+ * (1 por campanha) o que estourava rate limit Meta em funis com muitas
+ * campanhas. Cache backend é 15min default.
  *
- * Retorna Map vazio enquanto carrega — o consumidor faz fallback pro
- * id literal se a chave não estiver presente.
+ * Retorna Map vazio enquanto carrega — o consumidor faz fallback pro id
+ * literal se a chave não estiver presente.
  */
 export function useFunnelAdsetsMap(
   projectId: string,
   campaignIds: string[],
   days: number = 30,
 ): UseFunnelAdsetsMapResult {
-  const apiClient = useApiClient();
-
-  const queries = useQueries({
-    queries: campaignIds.map((campaignId) => ({
-      queryKey: ["funnel-adsets-map", projectId, campaignId, days] as const,
-      queryFn: () =>
-        apiClient<AdSetAnalyticsResponse>(
-          `/api/traffic/analytics/${projectId}/adsets?campaignId=${campaignId}&days=${days}`,
-        ),
-      staleTime: 60 * 1000,
-      enabled: !!projectId && campaignIds.length > 0,
-    })),
-  });
+  const ids = campaignIds.length > 0 ? campaignIds : null;
+  const query = useAllAdSets(projectId, days, ids);
 
   const adsetsMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const q of queries) {
-      const data = q.data;
-      if (!data?.adsets) continue;
-      for (const a of data.adsets) {
-        // No response de adsets, `campaignId` e `campaignName` na verdade carregam
-        // adset_id e adset_name (o backend reusa CampaignAnalytics shape).
-        if (a.campaignId && a.campaignName && !map.has(a.campaignId)) {
-          map.set(a.campaignId, a.campaignName);
-        }
+    if (!query.data?.adsets) return map;
+    for (const a of query.data.adsets) {
+      // No response de all-adsets, `campaignId` e `campaignName` na verdade
+      // carregam adset_id e adset_name (backend reusa CampaignAnalytics shape).
+      if (a.campaignId && a.campaignName && !map.has(a.campaignId)) {
+        map.set(a.campaignId, a.campaignName);
       }
     }
     return map;
-  }, [queries]);
+  }, [query.data]);
 
-  const isLoading = queries.some((q) => q.isLoading);
-
-  return { adsetsMap, isLoading };
+  return { adsetsMap, isLoading: query.isLoading };
 }
 
 /**
