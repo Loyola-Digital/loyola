@@ -100,3 +100,18 @@ export function useDeleteStage(projectId: string, funnelId: string) {
     },
   });
 }
+
+export function useReorderStages(projectId: string, funnelId: string) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (stageIds: string[]) =>
+      apiClient<{ success: boolean }>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/reorder`,
+        { method: "POST", body: JSON.stringify({ stageIds }) }
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["funnel-stages", projectId, funnelId] });
+    },
+  });
+}

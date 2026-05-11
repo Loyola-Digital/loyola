@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { StageCard } from "@/components/funnels/stage-card";
+import { SortableStageGrid } from "@/components/funnels/sortable-stage-grid";
 import { OrphanCampaignsBanner } from "@/components/funnels/orphan-campaigns-banner";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -230,21 +230,15 @@ export default function FunnelPage() {
       {/* Banner de campanhas órfãs (Epic 25) */}
       <OrphanCampaignsBanner projectId={params.id} funnelId={params.funnelId} />
 
-      {/* Stage grid */}
+      {/* Stage grid (drag-and-drop pra reordenar) */}
       {!stages || stages.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nenhuma etapa cadastrada.</p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-          {stages.map((stage) => (
-            <StageCard
-              key={stage.id}
-              stage={stage}
-              projectId={params.id}
-              funnelId={params.funnelId}
-              isLastStage={stages.length === 1}
-            />
-          ))}
-        </div>
+        <SortableStageGrid
+          stages={stages}
+          projectId={params.id}
+          funnelId={params.funnelId}
+        />
       )}
 
       {/* Dialog Nova Etapa */}

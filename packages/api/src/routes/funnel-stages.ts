@@ -282,6 +282,56 @@ export default fp(async function funnelStageRoutes(fastify) {
     return stageShape(row);
   });
 
+  // POST /api/projects/:projectId/funnels/:funnelId/stages/reorder
+  // Body: { stageIds: string[] } — nova ordem das etapas
+  fastify.post(
+    "/api/projects/:projectId/funnels/:funnelId/stages/reorder",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const userId = request.userId;
+      if (!userId) return reply.code(401).send({ error: "Unauthorized" });
+
+      const bodySchema = z.object({
+        stageIds: z.array(z.string().uuid()).min(1),
+      });
+      const body = bodySchema.safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: "Body inválido", details: body.error.flatten() });
+
+      const project = await getProjectAccess(params.data.projectId, userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      // Verifica que todas as stages pertencem ao funil
+      const existing = await fastify.db
+        .select({ id: funnelStages.id })
+        .from(funnelStages)
+        .where(eq(funnelStages.funnelId, params.data.funnelId));
+      const existingIds = new Set(existing.map((r) => r.id));
+      for (const id of body.data.stageIds) {
+        if (!existingIds.has(id)) {
+          return reply.code(400).send({ error: `Stage ${id} não pertence ao funil` });
+        }
+      }
+
+      // Atualiza sortOrder de cada stage de acordo com a posição na lista
+      const now = new Date();
+      for (let i = 0; i < body.data.stageIds.length; i++) {
+        await fastify.db
+          .update(funnelStages)
+          .set({ sortOrder: i, updatedAt: now })
+          .where(
+            and(
+              eq(funnelStages.id, body.data.stageIds[i]),
+              eq(funnelStages.funnelId, params.data.funnelId)
+            )
+          );
+      }
+
+      return { success: true };
+    }
+  );
+
   // POST /api/projects/:projectId/funnels/:funnelId/stages/:stageId/audit
   fastify.post(
     "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/audit",
