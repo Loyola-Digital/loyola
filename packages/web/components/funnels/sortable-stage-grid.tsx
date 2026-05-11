@@ -106,21 +106,20 @@ function SortableStageCard({ stage, projectId, funnelId, isLastStage }: Sortable
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="relative">
-      {/* Drag handle no canto superior esquerdo do card */}
+    <div ref={setNodeRef} style={style} className="relative group/sortable">
+      {/* Drag handle: sempre visível com opacidade média; intensifica no hover */}
       <button
         type="button"
         {...attributes}
         {...listeners}
-        className="absolute top-2 left-2 z-10 p-1 rounded hover:bg-muted/50 cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute top-2 left-2 z-20 p-1 rounded bg-background/80 hover:bg-muted cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-foreground opacity-60 sm:opacity-0 sm:group-hover/sortable:opacity-100 transition-opacity"
         aria-label="Arrastar pra reordenar"
         onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <GripVertical className="h-4 w-4" />
       </button>
-      <div className="group">
-        <StageCard stage={stage} projectId={projectId} funnelId={funnelId} isLastStage={isLastStage} />
-      </div>
+      <StageCard stage={stage} projectId={projectId} funnelId={funnelId} isLastStage={isLastStage} />
     </div>
   );
 }
