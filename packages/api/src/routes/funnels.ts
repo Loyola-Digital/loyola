@@ -3,6 +3,7 @@ import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { funnels, funnelStages, projects, projectMembers, metaAdsAccountProjects, metaAdsAccounts, googleAdsAccountProjects, googleAdsAccounts, users } from "../db/schema.js";
 import { fetchCampaigns, decryptAccountToken } from "../services/meta-ads.js";
+import { resolveStagePhaseSuffix } from "../services/stage-phase.js";
 import { fetchGoogleAdsCampaigns, decryptToken as decryptGoogleToken } from "../services/google-ads.js";
 
 // ============================================================
@@ -535,12 +536,21 @@ export default fp(async function funnelRoutes(fastify) {
     });
 
     // byStage: pra cada stage, lista campanhas matching que NÃO estão nessa stage
-    // (mesmo que estejam em outras — do ponto de vista DESTA stage, são órfãs)
+    // (mesmo que estejam em outras — do ponto de vista DESTA stage, são órfãs).
+    // Story 28.1: além do matchCode do funil, filtra também pelo phaseSuffix
+    // resolvido a partir de funnel.type + stage.stageType + stage.name. Quando
+    // suffix é null (perpétuo, cpl, nome ambíguo) cai no comportamento legacy.
     const byStage: Record<string, { stageName: string; orphans: typeof orphans }> = {};
     for (const stage of stages) {
+      const phaseSuffix = resolveStagePhaseSuffix(
+        funnel.type as "launch" | "perpetual",
+        (stage.stageType ?? "free") as "paid" | "free" | "sales" | "cpl",
+        stage.name,
+      );
       const selectedHere = new Set((stage.campaigns ?? []).map((c) => c.id));
       const orphansHere = matching
         .filter((c) => !selectedHere.has(c.id))
+        .filter((c) => !phaseSuffix || c.name.toLowerCase().includes(phaseSuffix))
         .sort((a, b) => {
           const ra = statusRank[a.status] ?? 99;
           const rb = statusRank[b.status] ?? 99;
