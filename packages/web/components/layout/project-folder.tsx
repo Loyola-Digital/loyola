@@ -37,8 +37,24 @@ import { useHiddenProjectsStore } from "@/lib/stores/hidden-projects-store";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useFunnels, useDeleteFunnel, useUpdateFunnel } from "@/lib/hooks/use-funnels";
-import { useFunnelStages, useCreateStage } from "@/lib/hooks/use-funnel-stages";
-import type { Funnel } from "@loyola-x/shared";
+import { useFunnelStages, useCreateStage, useReorderStages } from "@/lib/hooks/use-funnel-stages";
+import type { Funnel, FunnelStage } from "@loyola-x/shared";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical } from "lucide-react";
 
 interface ProjectFolderProps {
   project: Project;
@@ -172,22 +188,16 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
           <div className="ml-4 flex flex-col gap-0.5 border-l pl-2 py-0.5">
             {stagesLoading && <Skeleton className="h-6 w-full rounded-md" />}
 
-            {stages?.map((stage) => {
-              const stageHref = `${funnelHref}/stages/${stage.id}`;
-              const isActiveStage = pathname.startsWith(stageHref);
-              return (
-                <Button
-                  key={stage.id}
-                  variant={isActiveStage ? "secondary" : "ghost"}
-                  className="justify-start gap-2 h-7 text-xs min-w-0"
-                  asChild
-                >
-                  <Link href={stageHref}>
-                    <span className="truncate">{stage.name}</span>
-                  </Link>
-                </Button>
-              );
-            })}
+            {stages && stages.length > 0 && (
+              <SortableStageList
+                stages={stages}
+                projectId={projectId}
+                funnelId={funnel.id}
+                funnelHref={funnelHref}
+                pathname={pathname}
+                canReorder={isAdmin}
+              />
+            )}
 
             {isAdmin && !createOpen && (
               <Button
@@ -542,5 +552,147 @@ export function ProjectFolder({ project, collapsed = false, isHidden = false, on
         </div>
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+// ============================================================
+// SortableStageList — lista vertical drag-and-drop das etapas
+// ============================================================
+
+interface SortableStageListProps {
+  stages: FunnelStage[];
+  projectId: string;
+  funnelId: string;
+  funnelHref: string;
+  pathname: string;
+  canReorder: boolean;
+}
+
+function SortableStageList({
+  stages,
+  projectId,
+  funnelId,
+  funnelHref,
+  pathname,
+  canReorder,
+}: SortableStageListProps) {
+  const reorder = useReorderStages(projectId, funnelId);
+  const [ordered, setOrdered] = useState(stages);
+  useEffect(() => setOrdered(stages), [stages]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = ordered.findIndex((s) => s.id === active.id);
+    const newIndex = ordered.findIndex((s) => s.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const next = arrayMove(ordered, oldIndex, newIndex);
+    setOrdered(next);
+    reorder.mutate(next.map((s) => s.id), {
+      onError: () => {
+        setOrdered(stages);
+        toast.error("Erro ao reordenar");
+      },
+    });
+  }
+
+  if (!canReorder) {
+    return (
+      <>
+        {ordered.map((stage) => (
+          <StageNavItem key={stage.id} stage={stage} funnelHref={funnelHref} pathname={pathname} />
+        ))}
+      </>
+    );
+  }
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={ordered.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+        {ordered.map((stage) => (
+          <SortableStageNavItem
+            key={stage.id}
+            stage={stage}
+            funnelHref={funnelHref}
+            pathname={pathname}
+          />
+        ))}
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+function StageNavItem({
+  stage,
+  funnelHref,
+  pathname,
+}: {
+  stage: FunnelStage;
+  funnelHref: string;
+  pathname: string;
+}) {
+  const stageHref = `${funnelHref}/stages/${stage.id}`;
+  const isActive = pathname.startsWith(stageHref);
+  return (
+    <Button
+      variant={isActive ? "secondary" : "ghost"}
+      className="justify-start gap-2 h-7 text-xs min-w-0"
+      asChild
+    >
+      <Link href={stageHref}>
+        <span className="truncate">{stage.name}</span>
+      </Link>
+    </Button>
+  );
+}
+
+function SortableStageNavItem({
+  stage,
+  funnelHref,
+  pathname,
+}: {
+  stage: FunnelStage;
+  funnelHref: string;
+  pathname: string;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: stage.id,
+  });
+  const stageHref = `${funnelHref}/stages/${stage.id}`;
+  const isActive = pathname.startsWith(stageHref);
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : "auto",
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="group/stage relative flex items-center">
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="absolute left-0 z-10 p-0.5 rounded cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground opacity-0 group-hover/stage:opacity-100 transition-opacity"
+        aria-label="Arrastar pra reordenar"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <GripVertical className="h-3 w-3" />
+      </button>
+      <Button
+        variant={isActive ? "secondary" : "ghost"}
+        className="justify-start gap-2 h-7 text-xs min-w-0 flex-1 group-hover/stage:pl-5 transition-[padding]"
+        asChild
+      >
+        <Link href={stageHref}>
+          <span className="truncate">{stage.name}</span>
+        </Link>
+      </Button>
+    </div>
   );
 }
