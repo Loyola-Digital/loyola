@@ -280,6 +280,17 @@ export function buildDailyRows(
     const meta = metaMap.get(date) ?? { spend: 0, impressions: 0, linkClicks: 0, lpView: 0, checkoutInitiations: 0 };
     const sheet = sheetMap.get(date) ?? { leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0, faturamento: 0, leadsByMedium: {} };
     const totalLeads = sheet.leadsPagos + sheet.leadsOrg + sheet.leadsSemTrack;
+    // Story 28.3: pula linhas 100% zeradas — uma data que existe em uma fonte
+    // (ex: planilha de vendas com a data mas sem venda) mas não tem dado em
+    // nenhuma das métricas significativas só polui a leitura da tabela.
+    const hasData =
+      meta.spend > 0 ||
+      meta.impressions > 0 ||
+      meta.linkClicks > 0 ||
+      meta.lpView > 0 ||
+      totalLeads > 0 ||
+      sheet.faturamento > 0;
+    if (!hasData) continue;
     rows.push({
       date,
       spend: meta.spend,
