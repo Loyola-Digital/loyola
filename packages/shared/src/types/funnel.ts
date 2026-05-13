@@ -21,6 +21,13 @@ export type StageSalesSubtype = "capture" | "main_product" | "sales";
 
 export interface SaleColumnMapping {
   email: string;
+  /**
+   * Story 28.4: identificador único da transação (Kiwify/Hotmart `ID` ou
+   * `Transaction`). Quando mapeado, o backend deduplica vendas por este
+   * campo em vez de email — resolve casos de recompras/retries onde o mesmo
+   * email gera múltiplas transações reais que não devem ser somadas.
+   */
+  transactionId?: string;
   valorBruto?: string;
   valorLiquido?: string;
   formaPagamento?: string;
@@ -92,6 +99,21 @@ export interface StageSalesData {
    */
   porUtmContent: { content: string; vendas: number; bruto: number; liquido: number }[];
   semDados: boolean;
+  /**
+   * Story 28.4: counters de instrumentação. Só é preenchido quando o request
+   * inclui `?debug=1`. Permite investigar discrepâncias entre o que a planilha
+   * tem e o que o dashboard exibe — onde linhas foram descartadas, quantas
+   * keys de dedup ficaram após agregação.
+   */
+  debug?: {
+    spreadsheetsLoaded: { id: string; name: string; totalRows: number; validRows: number }[];
+    totalRowsRead: number;
+    skippedEmailEmpty: number;
+    skippedDateInvalid: number;
+    skippedDateOutOfRange: number;
+    uniqueDedupeKeys: number;
+    dedupeStrategy: "email" | "transactionId" | "mixed";
+  };
 }
 
 export interface Funnel {

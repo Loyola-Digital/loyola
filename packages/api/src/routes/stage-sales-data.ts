@@ -23,6 +23,8 @@ const paramsSchema = z.object({
 const querySchema = z.object({
   subtype: z.enum(["capture", "main_product", "sales"]).default("capture"),
   days: z.coerce.number().int().positive().optional(),
+  // Story 28.4: quando `1`, response inclui campo `debug` com counters de instrumentação
+  debug: z.coerce.boolean().optional(),
 });
 
 // ============================================================
@@ -154,9 +156,10 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         cutoffDate.setDate(cutoffDate.getDate() - query.data.days);
       }
 
-      // emailMap usa chave composta (spreadsheetId|email) — mesma pessoa em
-      // planilhas diferentes vira 2 vendas separadas, mesmo email na mesma
-      // planilha (Kiwify multi-row, etc) é deduplicado pra 1.
+      // emailMap usa chave composta (spreadsheetId|<email|tx>|<value>) — mesma
+      // pessoa em planilhas diferentes vira 2 vendas separadas; quando
+      // `transactionId` está mapeado (Story 28.4) deduplicamos por transação
+      // (resolve recompras Kiwify), senão fallback pra email (legacy behavior).
       const emailMap = new Map<
         string,
         { bruto: number; liquido: number; forma: string; canal: string; utmSource: string | null; utmMedium: string | null; utmTerm: string | null; utmContent: string | null; lastDate: Date | null }
@@ -164,9 +167,21 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       let anyHasDateFilter = false;
 
+      // Story 28.4: counters de instrumentação (sempre coletados; só retornados se ?debug=1)
+      const debugCounters = {
+        spreadsheetsLoaded: [] as { id: string; name: string; totalRows: number; validRows: number }[],
+        totalRowsRead: 0,
+        skippedEmailEmpty: 0,
+        skippedDateInvalid: 0,
+        skippedDateOutOfRange: 0,
+      };
+      let anyUsedTxId = false;
+      let anyUsedEmail = false;
+
       for (const spreadsheet of spreadsheets) {
         const mapping = spreadsheet.columnMapping as {
           email: string;
+          transactionId?: string;
           valorBruto?: string;
           valorLiquido?: string;
           formaPagamento?: string;
@@ -194,6 +209,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         }
 
         const emailIdx = colIdx(mapping.email);
+        const txIdx = colIdx(mapping.transactionId);
         const brutoIdx = colIdx(mapping.valorBruto);
         const liquidoIdx = colIdx(mapping.valorLiquido);
         const formaIdx = colIdx(mapping.formaPagamento);
@@ -207,13 +223,17 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         if (emailIdx === -1) continue;
         if (dataIdx !== -1) anyHasDateFilter = true;
 
+        let validRowsForSheet = 0;
+
         for (const row of rows) {
+          debugCounters.totalRowsRead += 1;
           const email = (row[emailIdx] ?? "").trim().toLowerCase();
-          if (!email) continue;
+          if (!email) { debugCounters.skippedEmailEmpty += 1; continue; }
 
           if (cutoffDate && dataIdx !== -1) {
             const dt = parseDate(row[dataIdx]);
-            if (!dt || dt < cutoffDate) continue;
+            if (!dt) { debugCounters.skippedDateInvalid += 1; continue; }
+            if (dt < cutoffDate) { debugCounters.skippedDateOutOfRange += 1; continue; }
           }
 
           const bruto = parseNumber(row[brutoIdx] ?? "");
@@ -226,8 +246,17 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           const utmContent = utmContentIdx !== -1 ? ((row[utmContentIdx] ?? "").trim() || null) : null;
           const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
 
-          const compositeKey = `${spreadsheet.id}|${email}`;
-          const existing = emailMap.get(compositeKey);
+          // Story 28.4: dedup por transactionId quando mapeado e preenchido,
+          // senão fallback pra email (comportamento legacy)
+          const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
+          const dedupKey = txId
+            ? `${spreadsheet.id}|tx|${txId}`
+            : `${spreadsheet.id}|email|${email}`;
+          if (txId) anyUsedTxId = true; else anyUsedEmail = true;
+
+          validRowsForSheet += 1;
+
+          const existing = emailMap.get(dedupKey);
           if (existing) {
             existing.bruto += bruto;
             existing.liquido += liquido;
@@ -241,9 +270,16 @@ export default fp(async function stageSalesDataRoutes(fastify) {
               existing.lastDate = rowDate;
             }
           } else {
-            emailMap.set(compositeKey, { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate: rowDate });
+            emailMap.set(dedupKey, { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate: rowDate });
           }
         }
+
+        debugCounters.spreadsheetsLoaded.push({
+          id: spreadsheet.id,
+          name: spreadsheet.spreadsheetName,
+          totalRows: rows.length,
+          validRows: validRowsForSheet,
+        });
       }
 
       // Suprime warning se nenhuma planilha tinha mapping de data (var é
@@ -348,6 +384,20 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           .map(([content, v]) => ({ content, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
         semDados: false,
+        // Story 28.4: debug counters só quando ?debug=1
+        ...(query.data.debug
+          ? {
+              debug: {
+                ...debugCounters,
+                uniqueDedupeKeys: emailMap.size,
+                dedupeStrategy: (anyUsedTxId && anyUsedEmail
+                  ? "mixed"
+                  : anyUsedTxId
+                  ? "transactionId"
+                  : "email") as "email" | "transactionId" | "mixed",
+              },
+            }
+          : {}),
       };
     }
   );
