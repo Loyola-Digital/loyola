@@ -38,8 +38,9 @@ export interface SurveyQuestionMeta {
 }
 
 /**
- * Legacy: top-creatives-gallery ainda usa 4 perguntas hardcoded.
- * Migração pra dinâmico fica pra story futura.
+ * Legacy: 4 perguntas hardcoded. Mantido por retrocompat — pesquisas sem
+ * `columnMapping` (legacy) continuam populando esses campos via fallback.
+ * Galeria nova consome `SurveyDataByAdIdDynamic` (Story 28.2).
  */
 export interface SurveyAdData {
   faturamento: Array<{ label: string; count: number }>;
@@ -49,6 +50,15 @@ export interface SurveyAdData {
 }
 
 export type SurveyDataByAdId = Record<string, SurveyAdData>;
+
+/**
+ * Story 28.2: mapeamento dinâmico de respostas por ad_id, indexado pela
+ * `questionKey` (columnName do mapping ou key legacy). Substitui a versão
+ * legacy hardcoded de 4 perguntas — agora as perguntas exibidas vêm do
+ * mapping configurado pelo usuário (`showInDashboard: true`).
+ */
+export type SurveyAdDataDynamic = Record<string, Array<{ label: string; count: number }>>;
+export type SurveyDataByAdIdDynamic = Record<string, SurveyAdDataDynamic>;
 
 export type SurveyOrigin = "total" | "pago" | "organico";
 
@@ -70,8 +80,15 @@ export interface UseSurveyAggregationResult {
    * Se nenhuma survey tem mapping, deriva das 5 perguntas legacy.
    */
   questions: SurveyQuestionMeta[];
-  /** Legacy — top-creatives-gallery ainda consome */
+  /** Legacy — pesquisas sem mapping ou consumers antigos */
   byAdId: SurveyDataByAdId;
+  /**
+   * Story 28.2: respostas por ad_id, indexadas pela questionKey do mapping
+   * (ou key legacy quando fallback). Cada pergunta é uma lista ordenada por
+   * count desc. Top-creatives-gallery prefere este sobre `byAdId` quando
+   * `questions[]` está populado.
+   */
+  byAdIdDynamic: SurveyDataByAdIdDynamic;
   totalResponses: number;
   matchedResponses: number;
   unmatchedResponses: number;
@@ -266,6 +283,7 @@ export function useSurveyAggregation(
         byQuestionByOrigin: emptyByOrigin,
         questions: [],
         byAdId: {},
+        byAdIdDynamic: {},
         totalResponses: 0,
         usingFallback: false,
         isLoading,
@@ -350,6 +368,9 @@ export function useSurveyAggregation(
 
     // Legacy byAdId (4 keys hardcoded — mantido pra top-creatives)
     const byAdBuckets: Record<string, Record<typeof LEGACY_AD_ID_KEYS[number], Bucket>> = {};
+    // Story 28.2: byAdIdDynamic (qualquer key do mapping — substitui o legacy
+    // como source primário pra top-creatives-gallery)
+    const byAdBucketsDynamic: Record<string, Map<string, Bucket>> = {};
 
     let totalResponses = 0;
     const matchedLeadIds = new Set<string>();
@@ -416,11 +437,13 @@ export function useSurveyAggregation(
         totalResponsesByOrigin[origin] += 1;
       }
 
-      // Legacy byAdId — só funciona se os 4 questionKeys legacy existirem nos indexes
+      // byAdId — legacy (4 keys hardcoded) + dynamic (todas as questions do mapping)
       if (indexes.utmContent >= 0) {
         for (const row of effectiveRows) {
           const adId = normalizeNumericId((row[indexes.utmContent] ?? "").trim());
           if (!adId) continue;
+
+          // Legacy: 4 keys hardcoded (mantido por retrocompat)
           const adBucket = byAdBuckets[adId] ?? {
             faturamento: new Map(),
             profissao: new Map(),
@@ -442,6 +465,31 @@ export function useSurveyAggregation(
             }
           }
           byAdBuckets[adId] = adBucket;
+
+          // Dynamic: todas as questions do mapping (Story 28.2)
+          let dynamicForAd = byAdBucketsDynamic[adId];
+          if (!dynamicForAd) {
+            dynamicForAd = new Map();
+            byAdBucketsDynamic[adId] = dynamicForAd;
+          }
+          for (const [questionKey, qIdx] of indexes.questions) {
+            if (qIdx < 0) continue;
+            const raw = (row[qIdx] ?? "").trim();
+            if (!raw) continue;
+            const normKey = normalizeAnswer(raw);
+            let bucket = dynamicForAd.get(questionKey);
+            if (!bucket) {
+              bucket = new Map();
+              dynamicForAd.set(questionKey, bucket);
+            }
+            const existing = bucket.get(normKey);
+            if (existing) {
+              existing.rawValues.push(raw);
+              existing.count += 1;
+            } else {
+              bucket.set(normKey, { rawValues: [raw], count: 1 });
+            }
+          }
         }
       }
     }
@@ -482,7 +530,7 @@ export function useSurveyAggregation(
 
     const byQuestion = byQuestionByOrigin.total;
 
-    // Finaliza byAdId
+    // Finaliza byAdId (legacy)
     const byAdId: SurveyDataByAdId = {};
     for (const [adId, bucket] of Object.entries(byAdBuckets)) {
       byAdId[adId] = {
@@ -501,6 +549,18 @@ export function useSurveyAggregation(
       };
     }
 
+    // Finaliza byAdIdDynamic (Story 28.2)
+    const byAdIdDynamic: SurveyDataByAdIdDynamic = {};
+    for (const [adId, questionMap] of Object.entries(byAdBucketsDynamic)) {
+      const adData: SurveyAdDataDynamic = {};
+      for (const [questionKey, bucket] of questionMap) {
+        adData[questionKey] = Array.from(bucket.values())
+          .map((b) => ({ label: mostCommonRaw(b.rawValues), count: b.count }))
+          .sort((a, b) => b.count - a.count);
+      }
+      byAdIdDynamic[adId] = adData;
+    }
+
     const matchedResponses = matchedLeadIds.size;
     const unmatchedResponses = totalResponses - matchedResponses;
 
@@ -513,6 +573,7 @@ export function useSurveyAggregation(
       byQuestionByOrigin,
       questions,
       byAdId,
+      byAdIdDynamic,
       totalResponses,
       usingFallback: anyFallback,
       fallbackReason: anyFallback
