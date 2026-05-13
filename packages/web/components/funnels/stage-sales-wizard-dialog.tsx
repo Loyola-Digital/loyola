@@ -29,6 +29,9 @@ const SALE_MAPPING_FIELDS: Array<{
   required?: boolean;
 }> = [
   { key: "email", label: "Email", required: true },
+  // Story 28.4: txId opcional pra deduplicar por transação (Kiwify ID/Transaction)
+  // em vez de email. Sem isso, recompras do mesmo lead são fundidas numa só.
+  { key: "transactionId", label: "ID da Transação (recomendado)" },
   { key: "valorBruto", label: "Valor Bruto" },
   { key: "valorLiquido", label: "Valor Líquido" },
   { key: "formaPagamento", label: "Forma de Pagamento" },
