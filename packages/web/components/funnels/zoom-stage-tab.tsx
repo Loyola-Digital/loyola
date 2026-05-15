@@ -481,7 +481,7 @@ function ZoomMeetingDashboard({
         <Stat label="Maior duração" value={fmtDuration(meetingDuration)} />
       </div>
 
-      <ZoomMeetingAnalytics participants={data.participants} rawSessions={data.rawSessions} />
+      <ZoomMeetingAnalytics participants={data.participants} rawSessions={data.rawSessions} chat={data.chat} />
 
       <div className="overflow-x-auto rounded-lg border border-border/30">
         <table className="w-full text-xs">
