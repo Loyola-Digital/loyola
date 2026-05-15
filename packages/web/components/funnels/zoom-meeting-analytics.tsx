@@ -60,8 +60,9 @@ export function ZoomMeetingAnalytics({ participants, rawSessions }: Props) {
     if (totalMinutes <= 0) return null;
 
     // Bucket por minuto absoluto desde minStart. Pra cada minuto, conta sessões
-    // ativas (start <= minute < end).
-    const points: { minute: number; concurrent: number; retention: number }[] = [];
+    // ativas (start <= minute < end). Story 28.5: também guarda `clockTime` (HH:mm
+    // do navegador) pra plotar no eixo X em vez de "minuto-desde-início".
+    const points: { minute: number; clockTime: string; concurrent: number; retention: number }[] = [];
     const peakConcurrent = participants.length || 1;
     for (let m = 0; m <= Math.min(totalMinutes, 240); m++) {
       const t = minStart + m * 60000;
@@ -69,8 +70,14 @@ export function ZoomMeetingAnalytics({ participants, rawSessions }: Props) {
       for (const sess of sessionsAbs) {
         if (sess.start <= t && t < sess.end) concurrent++;
       }
+      const clockTime = new Date(t).toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
       points.push({
         minute: m,
+        clockTime,
         concurrent,
         retention: peakConcurrent > 0 ? (concurrent / peakConcurrent) * 100 : 0,
       });
@@ -78,6 +85,12 @@ export function ZoomMeetingAnalytics({ participants, rawSessions }: Props) {
 
     return points;
   }, [rawSessions, meetingDuration, participants.length]);
+
+  // Story 28.5: interval pros XAxis distribui ~12 ticks no eixo evitando overlap.
+  const temporalTickInterval = useMemo(
+    () => (temporalData ? Math.max(0, Math.floor(temporalData.length / 12)) : 0),
+    [temporalData],
+  );
 
   // ============================================================
   // 3: Hot/Warm/Cold/Bounce (precisa só participants)
@@ -146,8 +159,8 @@ export function ZoomMeetingAnalytics({ participants, rawSessions }: Props) {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                   <XAxis
-                    dataKey="minute"
-                    tickFormatter={(v) => `${v}min`}
+                    dataKey="clockTime"
+                    interval={temporalTickInterval}
                     fontSize={10}
                     tick={{ fill: "currentColor" }}
                   />
@@ -159,7 +172,10 @@ export function ZoomMeetingAnalytics({ participants, rawSessions }: Props) {
                   />
                   <Tooltip
                     formatter={(v) => `${Number(v).toFixed(1)}%`}
-                    labelFormatter={(v) => `Minuto ${v}`}
+                    labelFormatter={(label, payload) => {
+                      const minute = payload?.[0]?.payload?.minute;
+                      return minute !== undefined ? `${label} (min ${minute})` : String(label);
+                    }}
                     contentStyle={{ fontSize: "11px" }}
                   />
                   <Area
@@ -187,14 +203,17 @@ export function ZoomMeetingAnalytics({ participants, rawSessions }: Props) {
                 <LineChart data={temporalData}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                   <XAxis
-                    dataKey="minute"
-                    tickFormatter={(v) => `${v}min`}
+                    dataKey="clockTime"
+                    interval={temporalTickInterval}
                     fontSize={10}
                     tick={{ fill: "currentColor" }}
                   />
                   <YAxis fontSize={10} tick={{ fill: "currentColor" }} />
                   <Tooltip
-                    labelFormatter={(v) => `Minuto ${v}`}
+                    labelFormatter={(label, payload) => {
+                      const minute = payload?.[0]?.payload?.minute;
+                      return minute !== undefined ? `${label} (min ${minute})` : String(label);
+                    }}
                     contentStyle={{ fontSize: "11px" }}
                   />
                   <Line
