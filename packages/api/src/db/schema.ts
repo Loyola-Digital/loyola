@@ -994,3 +994,49 @@ export const funnelBatchTurns = pgTable(
     index("idx_batch_turns_funnel").on(table.funnelId),
   ]
 );
+
+// ============================================================
+// ZOOM INTEGRATION (Story 19.8 — stage-level)
+// ============================================================
+
+export const funnelStageZoomConnections = pgTable(
+  "funnel_stage_zoom_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .unique()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    accountId: varchar("account_id", { length: 255 }).notNull(),
+    clientId: varchar("client_id", { length: 255 }).notNull(),
+    clientSecretEncrypted: text("client_secret_encrypted").notNull(),
+    clientSecretIv: text("client_secret_iv").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_zoom_connections_stage").on(table.stageId)]
+);
+
+export const funnelStageZoomMeetings = pgTable(
+  "funnel_stage_zoom_meetings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    meetingId: varchar("meeting_id", { length: 64 }).notNull(),
+    meetingUuid: varchar("meeting_uuid", { length: 255 }).notNull(),
+    topic: varchar("topic", { length: 500 }),
+    label: varchar("label", { length: 255 }),
+    startTime: timestamp("start_time", { withTimezone: true }),
+    durationMinutes: integer("duration_minutes"),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    cachedData: jsonb("cached_data"),
+    syncError: text("sync_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_zoom_meetings_stage_uuid").on(table.stageId, table.meetingUuid),
+    index("idx_zoom_meetings_stage").on(table.stageId),
+  ]
+);

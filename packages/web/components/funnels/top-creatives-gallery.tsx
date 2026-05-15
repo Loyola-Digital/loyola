@@ -42,9 +42,14 @@ import {
   aggregateCreativesByName,
   enrichWithPaidLeads,
   mergeSurveyForGroup,
+  mergeSurveyDynamicForGroup,
   type AggregatedCreative,
 } from "@/lib/utils/top-creatives";
-import type { SurveyDataByAdId } from "@/lib/hooks/use-survey-aggregation";
+import type {
+  SurveyDataByAdId,
+  SurveyDataByAdIdDynamic,
+  SurveyQuestionMeta,
+} from "@/lib/hooks/use-survey-aggregation";
 import { useCreativeRevenue } from "@/lib/hooks/use-creative-revenue";
 
 // ============================================================
@@ -120,9 +125,12 @@ function CreativeThumbnail({
   // Reset fallback quando a src muda (ex: lightbox navegando entre itens)
   useEffect(() => { setFailed(false); }, [src]);
   if (!src || failed) {
+    // Story 28.2: placeholder com contraste explícito (antes ficava preto chapado
+    // em dark mode porque `bg-muted/30` empilhado no parent + ícone /40 opacity).
     return (
-      <div className={`${className} flex items-center justify-center bg-muted/30`}>
-        <ImageOff className="h-6 w-6 text-muted-foreground/40" />
+      <div className={`${className} flex flex-col items-center justify-center gap-1 bg-muted/70 text-muted-foreground`}>
+        <ImageOff className="h-8 w-8" />
+        <span className="text-[10px] font-medium">Sem preview</span>
       </div>
     );
   }
@@ -134,6 +142,105 @@ function CreativeThumbnail({
       onError={() => setFailed(true)}
       style={isLowRes ? { imageRendering: "auto", filter: "blur(1.5px)" } : undefined}
     />
+  );
+}
+
+/**
+ * Story 28.2: heurística de emoji por questionKey/label da pesquisa. Mantém
+ * os ícones familiares pras 4 perguntas legacy (faturamento/profissao/etc) e
+ * usa um genérico pra qualquer pergunta custom configurada via mapping.
+ */
+function emojiForQuestion(key: string, label: string): string {
+  const haystack = `${key} ${label}`.toLowerCase();
+  if (/fatur|renda|receita|mensal/.test(haystack)) return "💰";
+  if (/profiss[aã]o|cargo|trabalh/.test(haystack)) return "👤";
+  if (/func[ií]on|equipe|colaborad|time|tamanho/.test(haystack)) return "👥";
+  if (/voc[eê]\s*[eé]|perfil|segment|categori/.test(haystack)) return "📋";
+  if (/cidade|estado|local|regi[aã]o/.test(haystack)) return "📍";
+  if (/idade|anos/.test(haystack)) return "🎂";
+  return "📊";
+}
+
+/**
+ * Story 28.2: renderiza o bloco de pesquisa de um card. Prefere o caminho
+ * dinâmico (questions[] + byAdIdDynamic) e cai pro legacy 4-keys quando só
+ * `surveyDataByAdId` está disponível. Limita a 5 linhas pra não estourar o card.
+ */
+const MAX_SURVEY_LINES_PER_CARD = 5;
+
+function renderSurveyBlock(
+  c: AggregatedCreative,
+  dynamic: SurveyDataByAdIdDynamic | undefined,
+  questions: SurveyQuestionMeta[] | undefined,
+  legacy: SurveyDataByAdId | undefined,
+) {
+  const hasDynamic = !!(dynamic && questions && questions.length > 0);
+
+  if (hasDynamic) {
+    const keys = questions!.map((q) => q.key);
+    const merged = mergeSurveyDynamicForGroup(dynamic, keys, c.ids, c.leadsPagos);
+    const lines = questions!
+      .map((q) => ({ meta: q, top: merged[q.key] }))
+      .filter((x) => x.top && x.top.total > 0 && x.top.count > 0);
+
+    if (lines.length === 0) {
+      return (
+        <p className="text-[10px] text-muted-foreground italic pt-1 border-t border-border/20">
+          — Sem dados de pesquisa
+        </p>
+      );
+    }
+
+    return (
+      <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/20">
+        {lines.slice(0, MAX_SURVEY_LINES_PER_CARD).map(({ meta, top }) => {
+          const t = top!;
+          const pct = ((t.count / t.total) * 100).toFixed(0);
+          const titleDetail = `${meta.label}: ${t.label} · ${t.count} de ${t.total} leads (${pct}%) — baseado em ${t.totalResponses} ${t.totalResponses === 1 ? "resposta" : "respostas"}`;
+          return (
+            <p key={meta.key} className="truncate" title={titleDetail}>
+              {emojiForQuestion(meta.key, meta.label)} <span className="font-medium">{t.label}</span>
+              <span className="text-muted-foreground/70"> · {t.count}/{t.total} ({pct}%)</span>
+            </p>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Fallback legacy (pesquisas sem mapping configurado)
+  if (!legacy) return null;
+  const survey = mergeSurveyForGroup(legacy, c.ids, c.leadsPagos);
+  if (
+    !survey.faturamento &&
+    !survey.profissao &&
+    !survey.funcionarios &&
+    !survey.voce_e
+  ) {
+    return (
+      <p className="text-[10px] text-muted-foreground italic pt-1 border-t border-border/20">
+        — Sem dados de pesquisa
+      </p>
+    );
+  }
+  function line(emoji: string, top: typeof survey.faturamento) {
+    if (!top || top.total === 0) return null;
+    const pct = ((top.count / top.total) * 100).toFixed(0);
+    const titleDetail = `${top.label} · ${top.count} de ${top.total} leads (${pct}%) — baseado em ${top.totalResponses} ${top.totalResponses === 1 ? "resposta" : "respostas"} da pesquisa`;
+    return (
+      <p className="truncate" title={titleDetail}>
+        {emoji} <span className="font-medium">{top.label}</span>
+        <span className="text-muted-foreground/70"> · {top.count}/{top.total} ({pct}%)</span>
+      </p>
+    );
+  }
+  return (
+    <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/20">
+      {line("💰", survey.faturamento)}
+      {line("👤", survey.profissao)}
+      {line("👥", survey.funcionarios)}
+      {line("📋", survey.voce_e)}
+    </div>
   );
 }
 
@@ -462,12 +569,22 @@ interface TopCreativesGalleryProps {
     funnelName?: string;
   };
   /**
-   * Dados da pesquisa agregados por ad_id (Story 18.6).
-   * Quando passado, cada card exibe top-1 de faturamento + profissão abaixo
-   * das métricas (Invest / CTR / CPL). Tipo refinado de `unknown` (Story 18.5)
-   * pra `SurveyDataByAdId` nesta story.
+   * Dados da pesquisa agregados por ad_id (Story 18.6 — legacy).
+   * Mantido por retrocompat com pesquisas sem `columnMapping` configurado.
+   * Story 28.2: prefira `surveyDataByAdIdDynamic` + `surveyQuestions`.
    */
   surveyDataByAdId?: SurveyDataByAdId;
+  /**
+   * Story 28.2: respostas dinâmicas por ad_id, indexadas pela questionKey do
+   * mapping. Quando combinado com `surveyQuestions`, a galeria renderiza N
+   * linhas custom em vez das 4 perguntas hardcoded legacy.
+   */
+  surveyDataByAdIdDynamic?: SurveyDataByAdIdDynamic;
+  /**
+   * Story 28.2: lista de perguntas com `showInDashboard: true` do mapping.
+   * Vem direto de `useSurveyAggregation().questions`.
+   */
+  surveyQuestions?: SurveyQuestionMeta[];
 }
 
 export function TopCreativesGallery({
@@ -478,6 +595,8 @@ export function TopCreativesGallery({
   stageId,
   funnelContext,
   surveyDataByAdId,
+  surveyDataByAdIdDynamic,
+  surveyQuestions,
 }: TopCreativesGalleryProps) {
   const [metric, setMetric] = useState<LocalMetric>("cpl");
   const [expanded, setExpanded] = useState(false);
@@ -767,41 +886,13 @@ export function TopCreativesGallery({
                   );
                 })() : null}
 
-                {/* Dados da pesquisa (Story 18.6 sub-feature 3.b) */}
-                {surveyDataByAdId ? (() => {
-                  const survey = mergeSurveyForGroup(surveyDataByAdId, c.ids, c.leadsPagos);
-                  if (
-                    !survey.faturamento &&
-                    !survey.profissao &&
-                    !survey.funcionarios &&
-                    !survey.voce_e
-                  ) {
-                    return (
-                      <p className="text-[10px] text-muted-foreground italic pt-1 border-t border-border/20">
-                        — Sem dados de pesquisa
-                      </p>
-                    );
-                  }
-                  function line(emoji: string, top: typeof survey.faturamento) {
-                    if (!top || top.total === 0) return null;
-                    const pct = ((top.count / top.total) * 100).toFixed(0);
-                    const titleDetail = `${top.label} · ${top.count} de ${top.total} leads (${pct}%) — baseado em ${top.totalResponses} ${top.totalResponses === 1 ? "resposta" : "respostas"} da pesquisa`;
-                    return (
-                      <p className="truncate" title={titleDetail}>
-                        {emoji} <span className="font-medium">{top.label}</span>
-                        <span className="text-muted-foreground/70"> · {top.count}/{top.total} ({pct}%)</span>
-                      </p>
-                    );
-                  }
-                  return (
-                    <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/20">
-                      {line("💰", survey.faturamento)}
-                      {line("👤", survey.profissao)}
-                      {line("👥", survey.funcionarios)}
-                      {line("📋", survey.voce_e)}
-                    </div>
-                  );
-                })() : null}
+                {/* Dados da pesquisa (Story 28.2: dinâmico via mapping; fallback legacy) */}
+                {renderSurveyBlock(
+                  c,
+                  surveyDataByAdIdDynamic,
+                  surveyQuestions,
+                  surveyDataByAdId,
+                )}
               </div>
             </div>
           );

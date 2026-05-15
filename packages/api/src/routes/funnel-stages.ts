@@ -7,7 +7,14 @@ import {
   projects,
   projectMembers,
   users,
+  metaAdsAccountProjects,
+  metaAdsAccounts,
 } from "../db/schema.js";
+import { decryptAccountToken } from "../services/meta-ads.js";
+import {
+  resolveStagePhaseSuffix,
+  findMatchingCampaignsForStage,
+} from "../services/stage-phase.js";
 
 // ============================================================
 // SCHEMAS
@@ -31,7 +38,7 @@ const switchyLinkRefSchema = z.object({
 
 const createStageSchema = z.object({
   name: z.string().min(1).max(255),
-  stageType: z.enum(["paid", "free", "sales"]).default("free"),
+  stageType: z.enum(["paid", "free", "sales", "cpl"]).default("free"),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).default([]),
   googleAdsAccountId: z.string().uuid().nullable().optional(),
@@ -42,7 +49,7 @@ const createStageSchema = z.object({
 
 const updateStageSchema = z.object({
   name: z.string().min(1).max(255).optional(),
-  stageType: z.enum(["paid", "free", "sales"]).optional(),
+  stageType: z.enum(["paid", "free", "sales", "cpl"]).optional(),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).optional(),
   googleAdsAccountId: z.string().uuid().nullable().optional(),
@@ -89,7 +96,7 @@ function stageShape(
     id: row.id,
     funnelId: row.funnelId,
     name: row.name,
-    stageType: (row.stageType ?? "free") as "paid" | "free" | "sales",
+    stageType: (row.stageType ?? "free") as "paid" | "free" | "sales" | "cpl",
     metaAccountId: row.metaAccountId,
     campaigns: (row.campaigns ?? []) as { id: string; name: string }[],
     googleAdsAccountId: row.googleAdsAccountId,
@@ -131,11 +138,54 @@ export default fp(async function funnelStageRoutes(fastify) {
 
   async function getFunnel(funnelId: string, projectId: string) {
     const [funnel] = await fastify.db
-      .select({ id: funnels.id })
+      .select({
+        id: funnels.id,
+        name: funnels.name,
+        type: funnels.type,
+        matchCode: funnels.matchCode,
+      })
       .from(funnels)
       .where(and(eq(funnels.id, funnelId), eq(funnels.projectId, projectId)))
       .limit(1);
     return funnel ?? null;
+  }
+
+  /**
+   * Resolve o matchCode efetivo do funil: override do user em `matchCode`,
+   * fallback pro próprio nome do funil (lowercased), null se ambos vazios.
+   * Mesmo critério usado em `/orphan-campaigns`.
+   */
+  function effectiveMatchCode(funnel: { name: string | null; matchCode: string | null }): string | null {
+    const override = (funnel.matchCode ?? "").trim().toLowerCase();
+    if (override.length > 0) return override;
+    const fallback = (funnel.name ?? "").trim().toLowerCase();
+    return fallback.length > 0 ? fallback : null;
+  }
+
+  /**
+   * Pega o metaAccountId + token decifrado da conta Meta vinculada ao projeto.
+   * Retorna null se não tem conta vinculada (sem erro — auto-popular cai pra
+   * lista vazia).
+   */
+  async function getMetaAccountForProject(projectId: string) {
+    const [link] = await fastify.db
+      .select({ accountId: metaAdsAccountProjects.accountId })
+      .from(metaAdsAccountProjects)
+      .where(eq(metaAdsAccountProjects.projectId, projectId))
+      .limit(1);
+    if (!link) return null;
+    const [account] = await fastify.db
+      .select()
+      .from(metaAdsAccounts)
+      .where(eq(metaAdsAccounts.id, link.accountId))
+      .limit(1);
+    if (!account) return null;
+    try {
+      const token = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
+      return { metaAccountId: account.metaAccountId, accessToken: token };
+    } catch {
+      return null;
+    }
   }
 
   // GET /api/projects/:projectId/funnels/:funnelId/stages
@@ -216,6 +266,32 @@ export default fp(async function funnelStageRoutes(fastify) {
       ? Math.max(...existing.map((r) => r.sortOrder)) + 1
       : 0;
 
+    // Auto-popular `campaigns` quando o cliente não passou nenhuma. Só roda
+    // quando a heurística de fase é confiante (phaseSuffix != null) E temos
+    // conta Meta vinculada no projeto. Falhas silenciam pra []  — criação da
+    // stage NÃO deve depender da Meta API.
+    let resolvedCampaigns = body.campaigns;
+    if (resolvedCampaigns.length === 0) {
+      const stageTypeFinal = body.stageType ?? "free";
+      const phaseSuffix = resolveStagePhaseSuffix(funnel.type as "launch" | "perpetual", stageTypeFinal, body.name);
+      const matchCode = effectiveMatchCode(funnel);
+      if (phaseSuffix && matchCode) {
+        const meta = await getMetaAccountForProject(params.data.projectId);
+        if (meta) {
+          try {
+            resolvedCampaigns = await findMatchingCampaignsForStage(
+              meta.metaAccountId,
+              meta.accessToken,
+              matchCode,
+              phaseSuffix,
+            );
+          } catch (err) {
+            fastify.log.warn({ err }, "[funnel-stages] auto-popular campaigns falhou — seguindo com []");
+          }
+        }
+      }
+    }
+
     const [row] = await fastify.db
       .insert(funnelStages)
       .values({
@@ -223,7 +299,7 @@ export default fp(async function funnelStageRoutes(fastify) {
         name: body.name,
         stageType: body.stageType ?? "free",
         metaAccountId: body.metaAccountId ?? null,
-        campaigns: body.campaigns,
+        campaigns: resolvedCampaigns,
         googleAdsAccountId: body.googleAdsAccountId ?? null,
         googleAdsCampaigns: body.googleAdsCampaigns,
         switchyFolderIds: body.switchyFolderIds,
@@ -281,6 +357,56 @@ export default fp(async function funnelStageRoutes(fastify) {
 
     return stageShape(row);
   });
+
+  // POST /api/projects/:projectId/funnels/:funnelId/stages/reorder
+  // Body: { stageIds: string[] } — nova ordem das etapas
+  fastify.post(
+    "/api/projects/:projectId/funnels/:funnelId/stages/reorder",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const userId = request.userId;
+      if (!userId) return reply.code(401).send({ error: "Unauthorized" });
+
+      const bodySchema = z.object({
+        stageIds: z.array(z.string().uuid()).min(1),
+      });
+      const body = bodySchema.safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: "Body inválido", details: body.error.flatten() });
+
+      const project = await getProjectAccess(params.data.projectId, userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      // Verifica que todas as stages pertencem ao funil
+      const existing = await fastify.db
+        .select({ id: funnelStages.id })
+        .from(funnelStages)
+        .where(eq(funnelStages.funnelId, params.data.funnelId));
+      const existingIds = new Set(existing.map((r) => r.id));
+      for (const id of body.data.stageIds) {
+        if (!existingIds.has(id)) {
+          return reply.code(400).send({ error: `Stage ${id} não pertence ao funil` });
+        }
+      }
+
+      // Atualiza sortOrder de cada stage de acordo com a posição na lista
+      const now = new Date();
+      for (let i = 0; i < body.data.stageIds.length; i++) {
+        await fastify.db
+          .update(funnelStages)
+          .set({ sortOrder: i, updatedAt: now })
+          .where(
+            and(
+              eq(funnelStages.id, body.data.stageIds[i]),
+              eq(funnelStages.funnelId, params.data.funnelId)
+            )
+          );
+      }
+
+      return { success: true };
+    }
+  );
 
   // POST /api/projects/:projectId/funnels/:funnelId/stages/:stageId/audit
   fastify.post(

@@ -8,7 +8,7 @@ const STAGE_STALE_TIME = 2 * 60 * 1000; // 2 min
 
 export interface CreateStageInput {
   name: string;
-  stageType?: "paid" | "free" | "sales";
+  stageType?: "paid" | "free" | "sales" | "cpl";
   metaAccountId?: string | null;
   campaigns?: { id: string; name: string }[];
   googleAdsAccountId?: string | null;
@@ -97,6 +97,21 @@ export function useDeleteStage(projectId: string, funnelId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["funnel-stages", projectId, funnelId] });
       queryClient.invalidateQueries({ queryKey: ["orphan-campaigns", projectId, funnelId] });
+    },
+  });
+}
+
+export function useReorderStages(projectId: string, funnelId: string) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (stageIds: string[]) =>
+      apiClient<{ success: boolean }>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/reorder`,
+        { method: "POST", body: JSON.stringify({ stageIds }) }
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["funnel-stages", projectId, funnelId] });
     },
   });
 }

@@ -21,6 +21,7 @@ import { GroupsSpreadsheetCard } from "@/components/funnels/groups-spreadsheet-c
 import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
 import { LeadScoringTab } from "@/components/funnels/lead-scoring-tab";
 import { OrganicMediaTab } from "@/components/funnels/organic-media-tab";
+import { CplStageView } from "@/components/funnels/cpl-stage-view";
 import { AuditStatusBadge } from "@/components/funnels/audit-status-badge";
 import { OrphanCampaignsBanner } from "@/components/funnels/orphan-campaigns-banner";
 import { CampaignSelector } from "@/components/funnels/campaign-selector";
@@ -74,6 +75,18 @@ export default function StagePage() {
   if (stage.stageType === "sales") {
     return (
       <SalesStageView
+        projectId={params.id}
+        funnelId={params.funnelId}
+        funnelName={funnel.name}
+        stage={stage}
+      />
+    );
+  }
+
+  // Etapa do tipo "cpl" — foco em retenção de reuniões Zoom. Render dedicado.
+  if (stage.stageType === "cpl") {
+    return (
+      <CplStageView
         projectId={params.id}
         funnelId={params.funnelId}
         funnelName={funnel.name}
@@ -150,9 +163,9 @@ export default function StagePage() {
                 </div>
               </div>
 
-              {/* Tipo de etapa (Vendas é separado — cria via "Nova Etapa") */}
+              {/* Tipo de etapa */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Tipo de captação</Label>
+                <Label className="text-sm font-medium">Tipo de etapa</Label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -164,7 +177,7 @@ export default function StagePage() {
                     }}
                     className={cn(
                       "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
-                      stage.stageType === "free"
+                      (stage.stageType as string) === "free"
                         ? "border-primary bg-primary/5 text-primary"
                         : "border-border hover:bg-muted"
                     )}
@@ -182,7 +195,7 @@ export default function StagePage() {
                     }}
                     className={cn(
                       "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
-                      stage.stageType === "paid"
+                      (stage.stageType as string) === "paid"
                         ? "border-primary bg-primary/5 text-primary"
                         : "border-border hover:bg-muted"
                     )}
@@ -190,10 +203,43 @@ export default function StagePage() {
                     <span className="font-medium">Paga</span>
                     <span className="text-xs text-muted-foreground">Captação + tráfego</span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateStage.mutate(
+                        { stageType: "sales" },
+                        { onSuccess: () => toast.success("Tipo alterado para Vendas") }
+                      );
+                    }}
+                    className={cn(
+                      "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                      (stage.stageType as string) === "sales"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border hover:bg-muted"
+                    )}
+                  >
+                    <span className="font-medium">Vendas</span>
+                    <span className="text-xs text-muted-foreground">Só planilha de vendas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateStage.mutate(
+                        { stageType: "cpl" },
+                        { onSuccess: () => toast.success("Tipo alterado para CPL") }
+                      );
+                    }}
+                    className={cn(
+                      "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                      (stage.stageType as string) === "cpl"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border hover:bg-muted"
+                    )}
+                  >
+                    <span className="font-medium">CPL</span>
+                    <span className="text-xs text-muted-foreground">Reuniões Zoom + retenção</span>
+                  </button>
                 </div>
-                <p className="text-[11px] text-muted-foreground">
-                  Pra criar etapa do tipo <span className="font-medium">Vendas</span>, use &quot;Nova Etapa&quot; na tela do funil.
-                </p>
               </div>
 
               {/* Campanhas Meta */}

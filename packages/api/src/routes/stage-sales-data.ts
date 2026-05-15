@@ -23,6 +23,8 @@ const paramsSchema = z.object({
 const querySchema = z.object({
   subtype: z.enum(["capture", "main_product", "sales"]).default("capture"),
   days: z.coerce.number().int().positive().optional(),
+  // Story 28.4: quando `1`, response inclui campo `debug` com counters de instrumentação
+  debug: z.coerce.boolean().optional(),
 });
 
 // ============================================================
@@ -31,8 +33,17 @@ const querySchema = z.object({
 
 function parseNumber(val: string | undefined): number {
   if (!val) return 0;
-  const cleaned = val.replace(/[^\d.,]/g, "").replace(",", ".");
-  return parseFloat(cleaned) || 0;
+  // Remove R$, espaços e qualquer coisa que não seja dígito, ponto ou vírgula
+  const cleaned = val.replace(/[^\d.,]/g, "");
+  if (!cleaned) return 0;
+  // Detecta formato pt-BR (vírgula como decimal): "6.000,00" → 6000.00
+  // Formato US (ponto como decimal): "6000.00" → 6000.00
+  // Heurística: se tem vírgula, ela é o separador decimal; pontos são milhares.
+  const hasComma = cleaned.includes(",");
+  const normalized = hasComma
+    ? cleaned.replace(/\./g, "").replace(",", ".") // pt-BR: remove pontos, vírgula → ponto
+    : cleaned; // sem vírgula: assume já tá em formato US
+  return parseFloat(normalized) || 0;
 }
 
 function parseDate(val: string | undefined): Date | null {
@@ -57,6 +68,9 @@ const EMPTY_RESPONSE = {
   faturamentoLiquido: 0,
   ticketMedioBruto: 0,
   ticketMedioLiquido: 0,
+  ticketMedioPago: 0,
+  ticketMedioOrganico: 0,
+  ticketMedioSemTrack: 0,
   porCanal: [] as { canal: string; vendas: number; bruto: number; liquido: number }[],
   porFormaPagamento: [] as { forma: string; vendas: number; bruto: number; liquido: number }[],
   porUtmSource: [] as { fonte: string; vendas: number; bruto: number; liquido: number }[],
@@ -142,9 +156,10 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         cutoffDate.setDate(cutoffDate.getDate() - query.data.days);
       }
 
-      // emailMap usa chave composta (spreadsheetId|email) — mesma pessoa em
-      // planilhas diferentes vira 2 vendas separadas, mesmo email na mesma
-      // planilha (Kiwify multi-row, etc) é deduplicado pra 1.
+      // emailMap usa chave composta (spreadsheetId|<email|tx>|<value>) — mesma
+      // pessoa em planilhas diferentes vira 2 vendas separadas; quando
+      // `transactionId` está mapeado (Story 28.4) deduplicamos por transação
+      // (resolve recompras Kiwify), senão fallback pra email (legacy behavior).
       const emailMap = new Map<
         string,
         { bruto: number; liquido: number; forma: string; canal: string; utmSource: string | null; utmMedium: string | null; utmTerm: string | null; utmContent: string | null; lastDate: Date | null }
@@ -152,9 +167,21 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       let anyHasDateFilter = false;
 
+      // Story 28.4: counters de instrumentação (sempre coletados; só retornados se ?debug=1)
+      const debugCounters = {
+        spreadsheetsLoaded: [] as { id: string; name: string; totalRows: number; validRows: number }[],
+        totalRowsRead: 0,
+        skippedEmailEmpty: 0,
+        skippedDateInvalid: 0,
+        skippedDateOutOfRange: 0,
+      };
+      let anyUsedTxId = false;
+      let anyUsedEmail = false;
+
       for (const spreadsheet of spreadsheets) {
         const mapping = spreadsheet.columnMapping as {
           email: string;
+          transactionId?: string;
           valorBruto?: string;
           valorLiquido?: string;
           formaPagamento?: string;
@@ -182,6 +209,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         }
 
         const emailIdx = colIdx(mapping.email);
+        const txIdx = colIdx(mapping.transactionId);
         const brutoIdx = colIdx(mapping.valorBruto);
         const liquidoIdx = colIdx(mapping.valorLiquido);
         const formaIdx = colIdx(mapping.formaPagamento);
@@ -195,13 +223,17 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         if (emailIdx === -1) continue;
         if (dataIdx !== -1) anyHasDateFilter = true;
 
+        let validRowsForSheet = 0;
+
         for (const row of rows) {
+          debugCounters.totalRowsRead += 1;
           const email = (row[emailIdx] ?? "").trim().toLowerCase();
-          if (!email) continue;
+          if (!email) { debugCounters.skippedEmailEmpty += 1; continue; }
 
           if (cutoffDate && dataIdx !== -1) {
             const dt = parseDate(row[dataIdx]);
-            if (!dt || dt < cutoffDate) continue;
+            if (!dt) { debugCounters.skippedDateInvalid += 1; continue; }
+            if (dt < cutoffDate) { debugCounters.skippedDateOutOfRange += 1; continue; }
           }
 
           const bruto = parseNumber(row[brutoIdx] ?? "");
@@ -214,8 +246,17 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           const utmContent = utmContentIdx !== -1 ? ((row[utmContentIdx] ?? "").trim() || null) : null;
           const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
 
-          const compositeKey = `${spreadsheet.id}|${email}`;
-          const existing = emailMap.get(compositeKey);
+          // Story 28.4: dedup por transactionId quando mapeado e preenchido,
+          // senão fallback pra email (comportamento legacy)
+          const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
+          const dedupKey = txId
+            ? `${spreadsheet.id}|tx|${txId}`
+            : `${spreadsheet.id}|email|${email}`;
+          if (txId) anyUsedTxId = true; else anyUsedEmail = true;
+
+          validRowsForSheet += 1;
+
+          const existing = emailMap.get(dedupKey);
           if (existing) {
             existing.bruto += bruto;
             existing.liquido += liquido;
@@ -229,9 +270,16 @@ export default fp(async function stageSalesDataRoutes(fastify) {
               existing.lastDate = rowDate;
             }
           } else {
-            emailMap.set(compositeKey, { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate: rowDate });
+            emailMap.set(dedupKey, { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate: rowDate });
           }
         }
+
+        debugCounters.spreadsheetsLoaded.push({
+          id: spreadsheet.id,
+          name: spreadsheet.spreadsheetName,
+          totalRows: rows.length,
+          validRows: validRowsForSheet,
+        });
       }
 
       // Suprime warning se nenhuma planilha tinha mapping de data (var é
@@ -298,12 +346,25 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       const totalVendas = emailMap.size;
 
+      // Calcular ticket médio por origem (Pago/Orgânico/Sem Track)
+      const utmSourceArray = Array.from(utmSourceMap.entries());
+      const pagoData = utmSourceArray.find(([fonte]) => fonte === "Pago")?.[1];
+      const organicoData = utmSourceArray.find(([fonte]) => fonte === "Orgânico")?.[1];
+      const semTrackData = utmSourceArray.find(([fonte]) => fonte === "Sem Track")?.[1];
+
+      const ticketMedioPago = pagoData && pagoData.vendas > 0 ? pagoData.bruto / pagoData.vendas : 0;
+      const ticketMedioOrganico = organicoData && organicoData.vendas > 0 ? organicoData.bruto / organicoData.vendas : 0;
+      const ticketMedioSemTrack = semTrackData && semTrackData.vendas > 0 ? semTrackData.bruto / semTrackData.vendas : 0;
+
       return {
         totalVendas,
         faturamentoBruto: totalBruto,
         faturamentoLiquido: totalLiquido,
         ticketMedioBruto: totalVendas > 0 ? totalBruto / totalVendas : 0,
         ticketMedioLiquido: totalVendas > 0 ? totalLiquido / totalVendas : 0,
+        ticketMedioPago,
+        ticketMedioOrganico,
+        ticketMedioSemTrack,
         porCanal: Array.from(canalMap.entries())
           .map(([canal, v]) => ({ canal, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
@@ -323,6 +384,127 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           .map(([content, v]) => ({ content, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
         semDados: false,
+        // Story 28.4: debug counters só quando ?debug=1
+        ...(query.data.debug
+          ? {
+              debug: {
+                ...debugCounters,
+                uniqueDedupeKeys: emailMap.size,
+                dedupeStrategy: (anyUsedTxId && anyUsedEmail
+                  ? "mixed"
+                  : anyUsedTxId
+                  ? "transactionId"
+                  : "email") as "email" | "transactionId" | "mixed",
+              },
+            }
+          : {}),
+      };
+    }
+  );
+
+  // GET /api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-conversion
+  // Cruza compradores entre planilhas capture e main_product da mesma etapa.
+  // Retorna: count por categoria, cross (intersecção de emails) e taxa.
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-conversion",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const empty = {
+        captureBuyers: 0,
+        mainBuyers: 0,
+        crossBuyers: 0,
+        captureRevenue: 0,
+        mainRevenue: 0,
+        crossRevenue: 0,
+        conversionRate: 0,
+        hasCapture: false,
+        hasMain: false,
+      };
+
+      const [stage] = await fastify.db
+        .select({ id: funnelStages.id })
+        .from(funnelStages)
+        .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+        .where(
+          and(
+            eq(funnelStages.id, params.data.stageId),
+            eq(funnelStages.funnelId, params.data.funnelId),
+            eq(funnels.projectId, params.data.projectId)
+          )
+        )
+        .limit(1);
+
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const sheets = await fastify.db
+        .select()
+        .from(stageSalesSpreadsheets)
+        .where(eq(stageSalesSpreadsheets.stageId, params.data.stageId));
+
+      const captureSheets = sheets.filter((s) => s.subtype === "capture");
+      const mainSheets = sheets.filter((s) => s.subtype === "main_product");
+
+      if (captureSheets.length === 0 && mainSheets.length === 0) {
+        return empty;
+      }
+
+      async function buildBuyers(
+        list: typeof sheets,
+      ): Promise<Map<string, number>> {
+        const result = new Map<string, number>();
+        for (const sheet of list) {
+          const mapping = sheet.columnMapping as { email: string; valorBruto?: string };
+          let sheetData;
+          try {
+            sheetData = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
+          } catch {
+            continue;
+          }
+          const { headers, rows } = sheetData;
+          const emailIdx = headers.indexOf(mapping.email);
+          const brutoIdx = mapping.valorBruto ? headers.indexOf(mapping.valorBruto) : -1;
+          if (emailIdx === -1) continue;
+          for (const row of rows) {
+            const email = (row[emailIdx] ?? "").trim().toLowerCase();
+            if (!email) continue;
+            const valor = brutoIdx !== -1 ? parseNumber(row[brutoIdx] ?? "") : 0;
+            result.set(email, (result.get(email) ?? 0) + valor);
+          }
+        }
+        return result;
+      }
+
+      const captureBuyers = await buildBuyers(captureSheets);
+      const mainBuyers = await buildBuyers(mainSheets);
+
+      let crossBuyers = 0;
+      let crossRevenue = 0;
+      for (const email of captureBuyers.keys()) {
+        if (mainBuyers.has(email)) {
+          crossBuyers++;
+          crossRevenue += mainBuyers.get(email) ?? 0;
+        }
+      }
+
+      const captureRevenue = Array.from(captureBuyers.values()).reduce((a, b) => a + b, 0);
+      const mainRevenue = Array.from(mainBuyers.values()).reduce((a, b) => a + b, 0);
+      const conversionRate = captureBuyers.size > 0 ? (crossBuyers / captureBuyers.size) * 100 : 0;
+
+      return {
+        captureBuyers: captureBuyers.size,
+        mainBuyers: mainBuyers.size,
+        crossBuyers,
+        captureRevenue,
+        mainRevenue,
+        crossRevenue,
+        conversionRate,
+        hasCapture: captureSheets.length > 0,
+        hasMain: mainSheets.length > 0,
       };
     }
   );

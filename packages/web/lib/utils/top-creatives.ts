@@ -310,3 +310,57 @@ export function mergeSurveyForGroup(
     voce_e: top(buckets.voce_e, totalResponses.voce_e),
   };
 }
+
+/**
+ * Story 28.2: versão dinâmica do `mergeSurveyForGroup`. Aceita um conjunto
+ * arbitrário de `questionKeys` (vindas do mapping configurado) e retorna o top-1
+ * de cada uma. Substitui o `mergeSurveyForGroup` quando a pesquisa usa mapping
+ * dinâmico — galera nova passa a renderizar as perguntas custom do usuário.
+ */
+export function mergeSurveyDynamicForGroup(
+  surveyDataByAdId: Record<string, Record<string, Array<{ label: string; count: number }>>> | undefined,
+  questionKeys: string[],
+  adIds: string[],
+  totalLeadsOfGroup: number,
+): Record<string, TopSurveyAnswer | null> {
+  const result: Record<string, TopSurveyAnswer | null> = {};
+  if (!surveyDataByAdId || questionKeys.length === 0) {
+    for (const k of questionKeys) result[k] = null;
+    return result;
+  }
+  const buckets = new Map<string, Map<string, number>>();
+  const totalResponses = new Map<string, number>();
+  for (const k of questionKeys) {
+    buckets.set(k, new Map());
+    totalResponses.set(k, 0);
+  }
+  for (const rawId of adIds) {
+    const adData = surveyDataByAdId[rawId] ?? surveyDataByAdId[normalizeNumericId(rawId)];
+    if (!adData) continue;
+    for (const key of questionKeys) {
+      const entries = adData[key];
+      if (!entries) continue;
+      const bucket = buckets.get(key)!;
+      for (const item of entries) {
+        bucket.set(item.label, (bucket.get(item.label) ?? 0) + item.count);
+        totalResponses.set(key, (totalResponses.get(key) ?? 0) + item.count);
+      }
+    }
+  }
+  for (const key of questionKeys) {
+    const bucket = buckets.get(key)!;
+    let best: TopSurveyAnswer | null = null;
+    for (const [label, count] of bucket.entries()) {
+      if (!best || count > best.count) {
+        best = {
+          label,
+          count,
+          total: totalLeadsOfGroup,
+          totalResponses: totalResponses.get(key) ?? 0,
+        };
+      }
+    }
+    result[key] = best;
+  }
+  return result;
+}

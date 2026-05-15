@@ -41,6 +41,9 @@ import {
   type LeadScoringDebug,
 } from "@/lib/hooks/use-lead-scoring";
 import { LeadOriginsByBand } from "@/components/funnels/lead-origins-by-band";
+import { LeadScoringCampaignTable } from "@/components/funnels/lead-scoring-campaign-tables";
+import { LeadScoringAdsetTable } from "@/components/funnels/lead-scoring-adset-table";
+import { LeadScoringAdTable } from "@/components/funnels/lead-scoring-ad-table";
 
 interface LeadScoringTabProps {
   projectId: string;
@@ -122,6 +125,7 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
   const [selectedSurveyId, setSelectedSurveyId] = useState<string>("");
   const [jsonText, setJsonText] = useState("");
   const [debugOpen, setDebugOpen] = useState(false);
+  const [breakdownDays, setBreakdownDays] = useState(30);
   const { data: debug, isLoading: debugLoading, refetch: refetchDebug } =
     useLeadScoringDebug(projectId, funnelId, stageId, debugOpen);
 
@@ -295,6 +299,31 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
       {/* Origens por banda (utm_term parsing) */}
       {results && !results.semDados && (
         <LeadOriginsByBand projectId={projectId} funnelId={funnelId} stageId={stageId} />
+      )}
+
+      {/* Breakdown de campanhas, adsets e ads por banda */}
+      {results && !results.semDados && (
+        <div className="space-y-8">
+          <LeadScoringCampaignTable
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stageId}
+            days={breakdownDays}
+            onDaysChange={setBreakdownDays}
+          />
+          <LeadScoringAdsetTable
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stageId}
+            days={breakdownDays}
+          />
+          <LeadScoringAdTable
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stageId}
+            days={breakdownDays}
+          />
+        </div>
       )}
 
       {/* Debug Dialog */}

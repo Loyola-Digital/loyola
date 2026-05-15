@@ -1,9 +1,11 @@
 "use client";
 
+import { useMemo } from "react";
 import { ArrowRight, DollarSign, Eye, FileText, MousePointerClick, Percent, ShoppingCart, Target, TrendingUp, Zap } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useTrafficOverview } from "@/lib/hooks/use-traffic-analytics";
+import { useCampaignDailyInsightsBulk } from "@/lib/hooks/use-traffic-analytics";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
+import { sumMetaInsights } from "@/lib/utils/funnel-metrics";
 
 interface SalesMetaKpisProps {
   projectId: string;
@@ -63,18 +65,35 @@ function KpiCard({ icon: Icon, label, value, hint, highlight }: KpiCardProps) {
  * pra calcular ROAS, CPA, CPL e demais KPIs financeiros da etapa Vendas.
  */
 export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days }: SalesMetaKpisProps) {
-  const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
+  // Usa /campaign-daily?campaignIds=... (mesma fonte que o dashboard de
+  // Captação Paga via useCrossedFunnelMetrics) pra garantir que o "Spend Meta"
+  // bate com o "Investimento" da captação. Inclui taxa Meta Ads 12.15% (2026+)
+  // aplicada por sumMetaInsights/applyMetaAdsTax.
+  const { data: dailyData, isLoading: dailyLoading } = useCampaignDailyInsightsBulk(
     projectId,
-    days,
     campaignIds.length > 0 ? campaignIds : null,
-  );
-  const { data: salesData, isLoading: salesLoading } = useStageSalesData(
-    projectId,
-    funnelId,
-    stageId,
-    "sales",
     days,
   );
+  // Cards principais (Faturamento/Vendas/ROAS/CPV/Tickets) refletem o produto
+  // PRINCIPAL — captação é produto isca e não conta pro ROAS. Se a etapa só
+  // tem subtype="sales" (sem main_product), usa esse como fallback.
+  const mainSales = useStageSalesData(projectId, funnelId, stageId, "main_product", days);
+  const salesSales = useStageSalesData(projectId, funnelId, stageId, "sales", days);
+
+  const salesData = useMemo(() => {
+    const main = mainSales.data && !mainSales.data.semDados ? mainSales.data : null;
+    const sales = salesSales.data && !salesSales.data.semDados ? salesSales.data : null;
+    // Prioriza main_product. Se não tem, usa sales (caso usuário só conectou
+    // 1 planilha como "Outras"). Captação NUNCA entra aqui.
+    return main ?? sales ?? null;
+  }, [mainSales.data, salesSales.data]);
+
+  const salesLoading = mainSales.isLoading || salesSales.isLoading;
+
+  const metaTotals = useMemo(() => {
+    if (!dailyData) return { spend: 0, impressions: 0, linkClicks: 0, lpViews: 0, checkoutInitiations: 0 };
+    return sumMetaInsights([dailyData]);
+  }, [dailyData]);
 
   if (campaignIds.length === 0) {
     return (
@@ -87,7 +106,7 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
     );
   }
 
-  if (overviewLoading || salesLoading) {
+  if (dailyLoading || salesLoading) {
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         {Array.from({ length: 6 }).map((_, i) => (
@@ -97,19 +116,23 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
     );
   }
 
-  const spend = overview?.totalSpend ?? 0;
-  const impressions = overview?.totalImpressions ?? 0;
-  const clicks = overview?.totalLinkClicks ?? overview?.totalClicks ?? 0;
-  const lpViews = overview?.totalLandingPageViews ?? null;
-  const checkouts = overview?.totalCheckouts ?? null;
-  const ctr = overview?.ctr ?? null;
-  const cpm = overview?.cpm ?? null;
+  const spend = metaTotals.spend;
+  const impressions = metaTotals.impressions;
+  const clicks = metaTotals.linkClicks;
+  const lpViews = metaTotals.lpViews > 0 ? metaTotals.lpViews : null;
+  const checkouts = metaTotals.checkoutInitiations > 0 ? metaTotals.checkoutInitiations : null;
+  const ctr = impressions > 0 ? (clicks / impressions) * 100 : null;
+  const cpm = impressions > 0 ? (spend * 1000) / impressions : null;
 
   const totalVendas = salesData?.totalVendas ?? 0;
   const faturamento = salesData?.faturamentoBruto ?? 0;
   const roas = spend > 0 ? faturamento / spend : null;
   const cpv = totalVendas > 0 && spend > 0 ? spend / totalVendas : null;
   const margem = spend > 0 ? faturamento - spend : null;
+
+  const ticketMedioPago = salesData?.ticketMedioPago ?? 0;
+  const ticketMedioOrganico = salesData?.ticketMedioOrganico ?? 0;
+  const ticketMedioSemTrack = salesData?.ticketMedioSemTrack ?? 0;
 
   // Taxas de conversão do funil de venda
   const taxaLpCheckout = lpViews && lpViews > 0 && checkouts != null ? (checkouts / lpViews) * 100 : null;
@@ -165,6 +188,11 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
         />
         <KpiCard icon={TrendingUp} label="CTR" value={fmtPercent(ctr)} />
         <KpiCard icon={DollarSign} label="CPM" value={fmtCurrency(cpm)} />
+      </div>
+      <div className="grid grid-cols-3 gap-2 mt-4">
+        <KpiCard icon={ShoppingCart} label="Ticket Pago" value={fmtCurrency(ticketMedioPago)} />
+        <KpiCard icon={ShoppingCart} label="Ticket Orgânico" value={fmtCurrency(ticketMedioOrganico)} />
+        <KpiCard icon={ShoppingCart} label="Ticket Sem Track" value={fmtCurrency(ticketMedioSemTrack)} />
       </div>
     </div>
   );
