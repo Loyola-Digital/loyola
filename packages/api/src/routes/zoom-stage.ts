@@ -12,9 +12,11 @@ import {
 import {
   decryptZoomConnection,
   fetchAllParticipants,
+  fetchMeetingChat,
   getServerToServerToken,
   listPastMeetings,
   resolveMeetingUuids,
+  type ZoomChatMessage,
   type ZoomParticipantRaw,
 } from "../services/zoom.js";
 import { encrypt } from "../services/encryption.js";
@@ -260,6 +262,27 @@ export default fp(async function zoomStageRoutes(fastify) {
           )
         : [];
 
+      // Story 28.6: busca chat de TODAS instâncias em paralelo. Graceful — se
+      // chat não estiver disponível pra esta conta/reunião, retorna [] (sync de
+      // participants segue normal). Mesclamos resultados de instâncias múltiplas
+      // (Large Meetings agregadas).
+      const chatResults = await Promise.allSettled(
+        allUuids.map((uuid) => fetchMeetingChat(token, meetingNumericId, uuid)),
+      );
+      const chatMap = new Map<string, ZoomChatMessage>();
+      for (const r of chatResults) {
+        if (r.status === "fulfilled") {
+          for (const msg of r.value) {
+            // Dedup por (sender + dateTime + message) — instâncias podem repetir
+            const key = `${msg.sender}|${msg.dateTime}|${msg.message}`;
+            if (!chatMap.has(key)) chatMap.set(key, msg);
+          }
+        }
+      }
+      const chat = Array.from(chatMap.values()).sort((a, b) =>
+        a.dateTime.localeCompare(b.dateTime),
+      );
+
       const allSessions: ZoomParticipantRaw[] = [];
       const allInstanceResults = [firstResult, ...restResults];
       for (const inst of allInstanceResults) {
@@ -345,6 +368,8 @@ export default fp(async function zoomStageRoutes(fastify) {
         participants: persons,
         total: persons.length,
         rawSessions,
+        // Story 28.6: chat persistido pra sobreviver ao corte da API em 22/05
+        chat,
       };
 
       await fastify.db
@@ -358,6 +383,7 @@ export default fp(async function zoomStageRoutes(fastify) {
         instances: allUuids.length,
         sessions: allSessions.length,
         persons: persons.length,
+        chatMessages: chat.length,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

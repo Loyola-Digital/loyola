@@ -136,6 +136,17 @@ export interface ZoomRawSession {
   durationSeconds: number;
 }
 
+/**
+ * Story 28.6: mensagem do chat in-meeting. Persistido em
+ * `cached_data.chat` no DB pra sobreviver ao corte da API Zoom em 22/05.
+ */
+export interface ZoomChatMessage {
+  sender: string;
+  senderEmail?: string;
+  dateTime: string; // ISO 8601
+  message: string;
+}
+
 export interface ZoomParticipantsResponse {
   participants: ZoomParticipant[];
   total: number;
@@ -143,6 +154,7 @@ export interface ZoomParticipantsResponse {
   instancesFound?: number;
   source?: "webinar" | "meeting";
   rawSessions?: ZoomRawSession[];
+  chat?: ZoomChatMessage[];
   syncing?: boolean;
   lastSyncedAt?: string | null;
   syncError?: string | null;

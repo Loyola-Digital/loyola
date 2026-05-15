@@ -6,11 +6,13 @@ import {
   PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
-import type { ZoomParticipant, ZoomRawSession } from "@/lib/hooks/use-zoom-stage";
+import type { ZoomParticipant, ZoomRawSession, ZoomChatMessage } from "@/lib/hooks/use-zoom-stage";
+import { ZoomMeetingChat } from "./zoom-meeting-chat";
 
 interface Props {
   participants: ZoomParticipant[];
   rawSessions?: ZoomRawSession[];
+  chat?: ZoomChatMessage[];
 }
 
 function fmtMin(seconds: number): string {
@@ -27,7 +29,7 @@ function fmtMin(seconds: number): string {
  * 3. Distribuição Hot/Warm/Cold/Bounce — donut
  * 4. Histograma de Duração — bar chart por buckets
  */
-export function ZoomMeetingAnalytics({ participants, rawSessions }: Props) {
+export function ZoomMeetingAnalytics({ participants, rawSessions, chat }: Props) {
   // Tempo total da reunião = maior duração observada (proxy)
   const meetingDuration = useMemo(
     () => participants.reduce((max, p) => Math.max(max, p.durationSeconds), 0),
@@ -330,6 +332,9 @@ export function ZoomMeetingAnalytics({ participants, rawSessions }: Props) {
               </ResponsiveContainer>
             </div>
           )}
+
+          {/* 5. Chat da Reunião (Story 28.6) — ocupa as 2 colunas */}
+          {chat !== undefined && <ZoomMeetingChat messages={chat} />}
         </div>
       </div>
     </div>

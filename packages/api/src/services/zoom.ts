@@ -206,3 +206,104 @@ export async function listPastMeetings(token: string): Promise<ZoomPastMeeting[]
   const data = (await res.json()) as { meetings?: ZoomPastMeeting[] };
   return data.meetings ?? [];
 }
+
+// ============================================================
+// Story 28.6 — Chat das reuniões (arquivar antes do corte da API em 22/05)
+// ============================================================
+
+export interface ZoomChatMessage {
+  sender: string;
+  senderEmail?: string;
+  dateTime: string; // ISO 8601
+  message: string;
+}
+
+interface ZoomChatRaw {
+  sender?: string;
+  sender_email?: string;
+  date_time?: string;
+  message?: string;
+}
+
+/**
+ * Busca chat da reunião. Tenta endpoints alternativos em ordem:
+ *
+ * 1. /metrics/meetings/{id}/chat — disponível em contas Plus/Enterprise
+ * 2. /past_meetings/{id}/chat — requer "Save chat to cloud" habilitado
+ *
+ * Retorna `[]` graceful quando:
+ * - Ambos endpoints retornam 404 (chat não habilitado / não disponível)
+ * - Chat existe mas vazio
+ *
+ * Propaga erro quando:
+ * - 5xx (problema do Zoom, sync deve falhar)
+ * - 401/403 (credenciais inválidas, fix urgente)
+ *
+ * Pagina internamente até pegar todas as mensagens (page_size=300 × 20 max).
+ */
+export async function fetchMeetingChat(
+  token: string,
+  meetingId: string,
+  meetingUuid: string,
+): Promise<ZoomChatMessage[]> {
+  const encoded = encodeMeetingUuid(meetingUuid);
+  const endpoints = [
+    `https://api.zoom.us/v2/metrics/meetings/${encoded}/chat`,
+    `https://api.zoom.us/v2/metrics/meetings/${meetingId}/chat`,
+    `https://api.zoom.us/v2/past_meetings/${encoded}/chat_messages`,
+    `https://api.zoom.us/v2/past_meetings/${meetingId}/chat_messages`,
+  ];
+
+  for (const baseUrl of endpoints) {
+    try {
+      const all: ZoomChatRaw[] = [];
+      let nextPageToken = "";
+      for (let i = 0; i < 20; i++) {
+        const url = new URL(baseUrl);
+        url.searchParams.set("page_size", "300");
+        if (nextPageToken) url.searchParams.set("next_page_token", nextPageToken);
+        const res = await fetch(url.toString(), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          // 404 / 400: endpoint não existe pra esta conta, tenta próximo
+          if (res.status === 404 || res.status === 400) break;
+          const detail = await res.text();
+          const err: Error & { status?: number } = new Error(
+            `Zoom chat ${res.status}: ${detail.slice(0, 200)}`,
+          );
+          err.status = res.status;
+          throw err;
+        }
+        const data = (await res.json()) as {
+          chat_messages?: ZoomChatRaw[];
+          messages?: ZoomChatRaw[];
+          next_page_token?: string;
+        };
+        const msgs = data.chat_messages ?? data.messages ?? [];
+        if (msgs.length > 0) all.push(...msgs);
+        if (!data.next_page_token) break;
+        nextPageToken = data.next_page_token;
+      }
+      if (all.length > 0) {
+        return all
+          .filter((m) => m.date_time && m.message)
+          .map((m) => ({
+            sender: m.sender ?? "Desconhecido",
+            senderEmail: m.sender_email,
+            dateTime: m.date_time as string,
+            message: m.message as string,
+          }))
+          .sort((a, b) => a.dateTime.localeCompare(b.dateTime));
+      }
+      // Endpoint respondeu ok mas sem mensagens — tenta próximo (alguns
+      // endpoints devolvem 200 com array vazio mesmo quando chat existe)
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      // 4xx (exceto 404/400) ou 5xx propagam pro caller decidir
+      if (status && status >= 500) throw err;
+      // Outros erros: continua tentando próximo endpoint
+    }
+  }
+  return [];
+}
