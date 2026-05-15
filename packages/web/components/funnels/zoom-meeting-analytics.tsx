@@ -153,22 +153,24 @@ export function ZoomMeetingAnalytics({ participants, rawSessions }: Props) {
                 <AreaChart data={temporalData}>
                   <defs>
                     <linearGradient id="retGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.5} />
-                      <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                      <stop offset="0%" stopColor="hsl(210 90% 60%)" stopOpacity={0.5} />
+                      <stop offset="100%" stopColor="hsl(210 90% 60%)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
                   <XAxis
                     dataKey="clockTime"
                     interval={temporalTickInterval}
                     fontSize={10}
-                    tick={{ fill: "currentColor" }}
+                    stroke="hsl(var(--muted-foreground))"
+                    tick={{ fill: "hsl(var(--muted-foreground))" }}
                   />
                   <YAxis
                     tickFormatter={(v) => `${v.toFixed(0)}%`}
                     domain={[0, 100]}
                     fontSize={10}
-                    tick={{ fill: "currentColor" }}
+                    stroke="hsl(var(--muted-foreground))"
+                    tick={{ fill: "hsl(var(--muted-foreground))" }}
                   />
                   <Tooltip
                     formatter={(v) => `${Number(v).toFixed(1)}%`}
@@ -176,12 +178,20 @@ export function ZoomMeetingAnalytics({ participants, rawSessions }: Props) {
                       const minute = payload?.[0]?.payload?.minute;
                       return minute !== undefined ? `${label} (min ${minute})` : String(label);
                     }}
-                    contentStyle={{ fontSize: "11px" }}
+                    contentStyle={{
+                      fontSize: "11px",
+                      backgroundColor: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "8px",
+                      color: "hsl(var(--foreground))",
+                    }}
+                    labelStyle={{ color: "hsl(var(--foreground))" }}
+                    itemStyle={{ color: "hsl(var(--foreground))" }}
                   />
                   <Area
                     type="monotone"
                     dataKey="retention"
-                    stroke="hsl(var(--primary))"
+                    stroke="hsl(210 90% 60%)"
                     fill="url(#retGradient)"
                     strokeWidth={2}
                   />
@@ -201,25 +211,38 @@ export function ZoomMeetingAnalytics({ participants, rawSessions }: Props) {
               </div>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={temporalData}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
                   <XAxis
                     dataKey="clockTime"
                     interval={temporalTickInterval}
                     fontSize={10}
-                    tick={{ fill: "currentColor" }}
+                    stroke="hsl(var(--muted-foreground))"
+                    tick={{ fill: "hsl(var(--muted-foreground))" }}
                   />
-                  <YAxis fontSize={10} tick={{ fill: "currentColor" }} />
+                  <YAxis
+                    fontSize={10}
+                    stroke="hsl(var(--muted-foreground))"
+                    tick={{ fill: "hsl(var(--muted-foreground))" }}
+                  />
                   <Tooltip
                     labelFormatter={(label, payload) => {
                       const minute = payload?.[0]?.payload?.minute;
                       return minute !== undefined ? `${label} (min ${minute})` : String(label);
                     }}
-                    contentStyle={{ fontSize: "11px" }}
+                    contentStyle={{
+                      fontSize: "11px",
+                      backgroundColor: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "8px",
+                      color: "hsl(var(--foreground))",
+                    }}
+                    labelStyle={{ color: "hsl(var(--foreground))" }}
+                    itemStyle={{ color: "hsl(var(--foreground))" }}
                   />
                   <Line
                     type="monotone"
                     dataKey="concurrent"
-                    stroke="hsl(var(--primary))"
+                    stroke="hsl(210 90% 60%)"
                     strokeWidth={2}
                     dot={false}
                     name="Pessoas online"
@@ -278,14 +301,31 @@ export function ZoomMeetingAnalytics({ participants, rawSessions }: Props) {
               </div>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={histogramData}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                  <XAxis dataKey="name" fontSize={10} tick={{ fill: "currentColor" }} />
-                  <YAxis fontSize={10} tick={{ fill: "currentColor" }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
+                  <XAxis
+                    dataKey="name"
+                    fontSize={10}
+                    stroke="hsl(var(--muted-foreground))"
+                    tick={{ fill: "hsl(var(--muted-foreground))" }}
+                  />
+                  <YAxis
+                    fontSize={10}
+                    stroke="hsl(var(--muted-foreground))"
+                    tick={{ fill: "hsl(var(--muted-foreground))" }}
+                  />
                   <Tooltip
                     labelFormatter={(label) => `Faixa: ${label}`}
-                    contentStyle={{ fontSize: "11px" }}
+                    contentStyle={{
+                      fontSize: "11px",
+                      backgroundColor: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "8px",
+                      color: "hsl(var(--foreground))",
+                    }}
+                    labelStyle={{ color: "hsl(var(--foreground))" }}
+                    itemStyle={{ color: "hsl(var(--foreground))" }}
                   />
-                  <Bar dataKey="count" fill="hsl(var(--primary))" name="Pessoas" />
+                  <Bar dataKey="count" fill="hsl(210 90% 60%)" name="Pessoas" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
