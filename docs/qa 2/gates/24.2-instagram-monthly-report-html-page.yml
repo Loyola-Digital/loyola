@@ -1,0 +1,68 @@
+storyId: STORY-24.2
+storyPath: docs/stories/24.2.instagram-monthly-report-html-page.md
+verdict: PASS
+reviewedBy: '@qa (Quinn)'
+reviewedAt: '2026-04-29'
+branch: feat/24.2-instagram-monthly-report-html
+
+quality_checks:
+  code_review:
+    status: PASS
+    notes: |
+      - 1 page route + 1 hook + 1 componente principal com sub-componentes inline
+      - Sub-componentes bem nomeados: MetricCard, FollowersBalanceCard,
+        MediaDistributionCard, DailyTrendCard, RankingList, DemographicsSection
+      - Tabs de conta quando >1 conta no projeto
+      - Print CSS via classes tailwind print:* (break-before-page, hidden)
+      - Fórmulas e formatação consistentes com OverviewCards do projeto
+
+  unit_tests:
+    status: CONCERNS
+    severity: low
+    notes: Sem testes — segue padrão.
+
+  acceptance_criteria:
+    status: PASS
+    notes: |
+      AC 1 (route): page criada em /projects/[id]/reports/instagram/[reportId]/
+      AC 2-3 (header + identidade): PASS
+      AC 4 (totais com delta): MetricCard com TrendingUp/Down/Minus + cor
+      AC 5 (saldo seguidores destaque): FollowersBalanceCard full-width gradient
+      AC 6 (distribuição): bar horizontal Reels vs FEED com %
+      AC 7 (gráfico diário): Recharts LineChart com reach (followersDelta=0
+        documentado como waiver na 24.1)
+      AC 8-11 (4 rankings): RankingList reusable, top/bottom × engagement/reach
+      AC 12 (demografia): 3 colunas idade/cidades/países, empty state amigável
+      AC 13-15 (estados): skeleton, 404 amigável, conta sem posts
+      AC 16 (sem posts): "Sem publicações no período"
+      AC 17 (compartilhamento): copia URL pra clipboard (auth Clerk faz o resto)
+      AC 18 (print CSS): print:hidden no botão e tabs, print:break-before-page
+      AC 19-21 (validação): typecheck PASS, lint PASS, smoke pendente
+
+  no_regressions:
+    status: PASS
+    notes: |
+      Page nova em route nova. Sem mudança em PostsTable/OverviewCards/etc.
+
+  performance:
+    status: PASS
+    notes: |
+      - useInstagramReport com staleTime 1h (relatório é snapshot, raro mudar)
+      - Imagens vêm de CDN do IG (sem proxy do app)
+      - Recharts ResponsiveContainer com altura fixa (não recalcula desperdício)
+
+  security:
+    status: PASS
+    notes: |
+      - Backend (24.1) já valida getProjectAccess por reportId
+      - Page tem 404 amigável quando sem acesso
+
+  documentation:
+    status: PASS
+
+issues: []
+
+waivers: []
+
+recommendation: |
+  PASS — ready for ship 24.2. Próxima: 24.3 (trigger + histórico).

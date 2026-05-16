@@ -1,0 +1,45 @@
+schema: 1
+story: "1.2.3"
+story_title: "Conversation Service — CRUD + Histórico"
+gate: PASS
+status_reason: "8/8 ACs atendidos. Service com separation of concerns limpa (service vs routes), resolveUserId centralizado, ownership check em todas as operações, cursor pagination correta, Promise.all para queries paralelas. Nenhum issue CRITICAL ou HIGH. typecheck e lint passam."
+reviewer: "Quinn (Test Architect)"
+updated: "2026-03-13T23:55:00Z"
+
+quality_score: 96
+
+top_issues: []
+
+waiver:
+  active: false
+
+expires: "2026-03-27T23:55:00Z"
+
+evidence:
+  tests_reviewed: 0
+  risks_identified: 0
+  trace:
+    ac_covered: [1, 2, 3, 4, 5, 6, 7, 8]
+    ac_gaps: []
+
+nfr_validation:
+  security:
+    status: PASS
+    notes: "Ownership check em todas as operações. IDOR prevenido via userId scoping. Input validation com Zod (UUID, numeric bounds). Drizzle ORM parametrizado."
+  performance:
+    status: PASS
+    notes: "Queries alinham com partial indexes existentes. Promise.all para data+count. Cursor pagination para messages. Nenhum N+1."
+  reliability:
+    status: PASS
+    notes: "Error handling consistente com 400/404. Graceful handling de cursor inválido. Soft delete preserva dados."
+  maintainability:
+    status: PASS
+    notes: "Clean separation service/routes. Type declarations inline (padrão existente). Zod schemas reutilizáveis. AC refs em comentários."
+
+recommendations:
+  immediate: []
+  future:
+    - action: "Considerar retornar 400 quando cursor 'before' referencia messageId inexistente (atualmente silently ignored)"
+      refs: ["packages/api/src/services/conversation.ts:115"]
+    - action: "Considerar selecionar campos específicos no list endpoint para excluir deletedAt do response"
+      refs: ["packages/api/src/services/conversation.ts:65"]

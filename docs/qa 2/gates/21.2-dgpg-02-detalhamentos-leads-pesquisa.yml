@@ -1,0 +1,53 @@
+schema: 1
+story: '21.2'
+gate: PASS
+status_reason: |
+  Todos os 8 ACs atendidos. Breakdown de leads (Pagos/Org/S.Track) visível em CrossedFunnelDailyTable (footer),
+  CplComparisonChart (tooltip), LeadsCumulativeChart (tooltip), TopCreativesGallery (cada card linha 653-659)
+  e SurveyQualificationSection (pré-existente). No KPI Card "Leads únicos" o breakdown aparece como subValue
+  sempre-visível em vez de hover/tooltip (melhor UX que a spec original). Dedup de email validada em 21.1.
+  typecheck PASS, lint web PASS (API com erros pré-existentes fora do scope).
+reviewer: 'Quinn'
+updated: '2026-04-20T00:00:00Z'
+top_issues:
+  - id: 'UX-001'
+    severity: low
+    finding: |
+      AC6 pedia "hover mostra breakdown" mas o subValue renderiza o detalhamento sempre visível
+      (linhas 244-250 launch-dashboard.tsx). Divergência da spec — favorável à usabilidade.
+    suggested_action: 'Atualizar AC6 na story para refletir o comportamento implementado (sempre visível), ou confirmar com Danilo se a preferência é hover.'
+  - id: 'TEST-010'
+    severity: low
+    finding: |
+      Validações de soma (Pagos+Org+Sem = Total e Respondentes+Sem Match = Total Respostas) são garantidas
+      pela lógica de dedup em 21.1, mas não há testes unitários — só checagem visual.
+    suggested_action: 'Backlog: adicionar Vitest para aggregateSpreadsheetByDate() e categorizeLeads() cobrindo edge cases (email duplicado, sem utm_source, planilha vazia).'
+waiver: { active: false }
+coverage:
+  ac1_tabela_daily_footer: PASS   # CrossedFunnelDailyTable footer com leads + survey
+  ac2_cpl_comparison_tooltip: PASS  # customized tooltip com breakdown
+  ac3_leads_cumulative_tooltip: PASS  # stacked visual já existia + tooltip refinado
+  ac4_top_creatives_breakdown: PASS  # linha 653-659 cada card mostra Pagos|Org|S/orig
+  ac5_survey_section: PASS  # SurveyQualificationSection pré-existente, validado
+  ac6_kpi_cards: PASS_DIVERGENT  # subValue sempre-visível em vez de hover tooltip
+  ac7_validacao_dados: PASS  # dedup em 21.1 garante consistência
+  ac8_sem_regressao: PASS  # typecheck+lint+Vercel preview SUCCESS
+quality_checks:
+  code_review: PASS
+  unit_tests: CONCERN  # TEST-010
+  acceptance_criteria: PASS
+  no_regressions: PASS  # Vercel preview SUCCESS, typecheck PASS
+  performance: PASS  # memoization já presente nos hooks
+  security: PASS  # sem input não validado, sem SQL direto
+  documentation: PASS  # story com tasks [x] e dev notes
+blast_radius:
+  files_modified: 5
+  files_new: 0
+  lines_changed: '+1167 / -55 (PR #25 total — inclui 21.1, 21.2 e 21.3)'
+  downstream_stories_unblocked: 1  # 21.3 depende de 21.2
+  risk_level: LOW
+commit: 'ba6b71e (partial) + 588c6e9 (complete) + eed7747 (creatives)'
+branch: 'feat/18.7-pr1-freshness'
+pr: 25
+smoke_test: 'DEFERRED_TO_USER'
+coderabbit_status: 'SKIPPED'  # não executado neste gate

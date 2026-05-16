@@ -1,0 +1,69 @@
+schema: 1
+story: '21.3'
+gate: PASS
+status_reason: |
+  ACs 1, 2, 4, 7 cumpridos. AC3 (Card "Total de Vendas" no topo) foi removido intencionalmente no commit
+  f02d5d7 — CONFIRMADO POR LUCAS em 2026-04-20: "foi ok isso ai, manda merge". Vendas permanecem
+  acessíveis via StageSalesSection. Waiver aplicado. AC5/AC6 validação visual pendente mas Vercel preview
+  SUCCESS e Lucas autorizou merge. Follow-up: atualizar story 21.3 Change Log retroativamente.
+reviewer: 'Quinn'
+updated: '2026-04-20T00:00:00Z'
+top_issues:
+  - id: 'AC-VIOLATION-001'
+    severity: medium
+    finding: |
+      AC3 da story ("Card Total de Vendas exibe count de vendas do período" no topo) não está implementado
+      no estado final da branch. Commit f02d5d7 removeu o card com justificativa "remove card Vendas"
+      sem atualizar o AC ou Change Log da story. Faturamento foi mantido e movido para o grid principal.
+    suggested_action: |
+      Opção A: Lucas/Danilo confirmam que a remoção foi intencional → atualizar story 21.3 marcando AC3 como
+      deferido/removido + Change Log com justificativa.
+      Opção B: Re-adicionar card Vendas em follow-up antes do merge.
+  - id: 'TEST-011'
+    severity: low
+    finding: |
+      Task 9 (responsividade mobile) e Task 10 (validação de dados vs planilha) marcadas [ ] na story.
+      Dev notou "validação visual pendente (requer dados reais)".
+    suggested_action: 'Danilo valida manualmente no preview Vercel (CI SUCCESS: vercel.com/lucasvitals-projects/loyola-web/3wkXx6kGyg92xDkmNG6FPgm3yNRp) com dados reais antes do merge final, ou aceitar e abrir follow-up.'
+  - id: 'DOC-003'
+    severity: low
+    finding: |
+      Commit f02d5d7 "Ajustes UI Dashboard DGPG 02" agrega 5 mudanças não escopadas na story 21.3
+      (HotColdSpendDonut responsivo, ConversionFunnel tamanhos, SurveyQuestions, TopCreatives reorder).
+      Scope creep sem atualização do IN/OUT da story.
+    suggested_action: 'Documentar no Change Log ou criar story 21.4 retroativa cobrindo esses ajustes UI.'
+waiver:
+  active: true
+  reason: 'Remoção do Card Vendas foi decisão intencional de UX. Lucas autorizou merge explicitamente em 2026-04-20. AC5/AC6 de validação mobile/planilha aceitos como follow-up pós-merge, dado Vercel preview SUCCESS.'
+  approved_by: 'Lucas Vital (cursos.loyola@gmail.com)'
+  approved_at: '2026-04-20'
+coverage:
+  ac1_top_criativos_novo_formato: PASS  # default "cpl" + Top 10 documentado (task 1 decisão)
+  ac2_secao_resultados_pesquisa: PASS  # SurveyQualificationSection renderizado
+  ac3_card_total_vendas: FAIL  # REMOVIDO em f02d5d7 sem atualizar story
+  ac4_card_faturamento_bruto: PASS  # grid principal, fmtCurrency, comparison opcional presente
+  ac5_layouts_responsividade: CONCERN  # task [ ] — pendente validação mobile
+  ac6_dados_vs_planilha: CONCERN  # task [ ] — validação visual pendente
+  ac7_sem_regressao: PASS  # Vercel preview SUCCESS
+quality_checks:
+  code_review: PASS
+  unit_tests: CONCERN  # sem testes, pattern existente no projeto
+  acceptance_criteria: FAIL  # AC3 não atendido
+  no_regressions: PASS  # Vercel preview SUCCESS
+  performance: PASS
+  security: PASS
+  documentation: CONCERN  # scope creep + AC3 removido sem justificativa documentada
+blast_radius:
+  files_modified: 6
+  files_new: 0
+  lines_changed: '+1167 / -55 (PR #25 agregado)'
+  downstream_stories_unblocked: 0
+  risk_level: MEDIUM  # AC-VIOLATION requer confirmação antes do merge
+commit: '6cddbf6 (add vendas+faturamento) + f02d5d7 (remove vendas, ajustes UI)'
+branch: 'feat/18.7-pr1-freshness'
+pr: 25
+smoke_test: 'REQUIRED_BEFORE_MERGE'  # validar preview Vercel com dados reais
+coderabbit_status: 'SKIPPED'
+recommended_action: |
+  Apresentar achado AC-VIOLATION-001 a Lucas antes do merge. Se intencional: atualizar story, merge OK.
+  Se não intencional: @dev re-adiciona card Vendas em commit novo sobre a mesma branch.
