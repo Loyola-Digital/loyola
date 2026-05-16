@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import {
   ComposedChart,
   Area,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -33,15 +32,18 @@ function formatDateShort(d: string) {
   return `${day}/${m}`;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function CustomTooltip(props: any) {
-  const { active, payload } = props;
+interface TooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: Record<string, number> }>;
+}
+
+function CustomTooltip({ active, payload }: TooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
 
   const data = payload[0].payload;
   return (
     <div className="rounded-lg border border-border bg-background p-3 shadow-lg space-y-1 text-xs">
-      <div className="font-semibold">{formatDateShort(data.date)}</div>
+      <div className="font-semibold">{data.date}</div>
       <div className="border-t border-border/30 pt-1 mt-1">
         {data.leadsReais > 0 && (
           <div className="text-muted-foreground">Leads Reais: {Math.round(data.leadsReais)}</div>

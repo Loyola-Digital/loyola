@@ -30,8 +30,9 @@ export function calculateTendency(rows: DailyRow[], dataFinal: string): number[]
   const lastAccumulated = rows.reduce((sum, row) => sum + row.leadsPagos + row.leadsOrg, 0);
 
   const tendency: number[] = [];
-  let currentDate = new Date(rows[0].date);
-  let dayIndex = 0;
+  const startDate = new Date(rows[0].date);
+  // eslint-disable-next-line prefer-const
+  let currentDate = startDate;
 
   while (currentDate <= finalDate) {
     const dateStr = currentDate.toISOString().split("T")[0];
@@ -47,7 +48,6 @@ export function calculateTendency(rows: DailyRow[], dataFinal: string): number[]
     }
 
     currentDate.setDate(currentDate.getDate() + 1);
-    dayIndex++;
   }
 
   return tendency;
@@ -81,13 +81,12 @@ export function calculateMeta(
 
   const metaDiaria = metaTotal / periodoCapt;
   const meta: number[] = [];
+  // eslint-disable-next-line prefer-const
   let currentDate = new Date(firstDate);
-  let dayIndex = 1;
 
-  while (currentDate <= finalDate) {
+  for (let dayIndex = 1; currentDate <= finalDate; dayIndex++) {
     meta.push(metaDiaria * dayIndex);
     currentDate.setDate(currentDate.getDate() + 1);
-    dayIndex++;
   }
 
   return meta;
@@ -121,10 +120,10 @@ export function expandChartData(
   const firstDate = new Date(rows[0].date);
   const finalDate = new Date(dataFinal);
   const result = [];
+  // eslint-disable-next-line prefer-const
   let currentDate = new Date(firstDate);
-  let dayIndex = 0;
 
-  while (currentDate <= finalDate) {
+  for (let dayIndex = 0; currentDate <= finalDate; dayIndex++) {
     const dateStr = currentDate.toISOString().split("T")[0];
     const historyRow = rows.find((r) => r.date === dateStr);
 
@@ -152,7 +151,6 @@ export function expandChartData(
     }
 
     currentDate.setDate(currentDate.getDate() + 1);
-    dayIndex++;
   }
 
   return result;
