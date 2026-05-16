@@ -36,6 +36,7 @@ import { ConversionFunnel } from "./conversion-funnel";
 import { CrossedFunnelDailyTable } from "./crossed-funnel-daily-table";
 import { CplComparisonChart } from "./cpl-comparison-chart";
 import { LeadsCumulativeChart } from "./leads-cumulative-chart";
+import { LeadsTrendAndGoalChart } from "./leads-trend-and-goal-chart";
 import { HotColdSpendDonut } from "./hot-cold-spend-donut";
 import { HotColdCountDonut } from "./hot-cold-count-donut";
 import { TopCreativesGallery } from "./top-creatives-gallery";
@@ -485,6 +486,11 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           rows={metrics.rows}
           leadsGratuitosByDay={organicLeads.hasOrganicSurveys ? organicLeads.byDay : undefined}
         />
+      ) : null}
+
+      {/* Leads: Tendência + Meta (Story 18.19) */}
+      {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
+        <LeadsTrendAndGoalChart rows={metrics.rows} />
       ) : null}
 
       {/* CTR × CPM — Saturation Chart */}
