@@ -13,18 +13,21 @@ export function calculateDailyAverage(rows: DailyRow[]): number {
 }
 
 /**
- * Calcula a projeção de tendência (cinza pontilhada)
+ * Calcula a projeção de tendência CUMULATIVA (cinza pontilhada)
  * Baseado na média diária do histórico, projeta até a data final
+ *
+ * **Valores retornados: CUMULATIVOS**
+ * - Cada posição do array representa o acumulado até aquele dia
+ * - Histórico: soma real dos leads pagos + orgânicos até o dia
+ * - Projeção futura: lastAccumulated + mediaDiaria * daysFromEnd
  *
  * **Lógica de passado vs futuro:**
  * - Hoje (new Date()) é considerado o último dia do PASSADO/realizado
  * - Amanhã+ é considerado FUTURO/projeção
- * - Dados históricos até hoje usam valores reais
- * - A partir de amanhã, usa projeção: lastAccumulated + mediaDiaria * daysFromEnd
  *
  * @param rows - Array histórico de dias
  * @param dataFinal - Data final do lançamento (YYYY-MM-DD)
- * @returns Array de valores projetados para cada dia
+ * @returns Array de valores CUMULATIVOS projetados para cada dia
  */
 export function calculateTendency(rows: DailyRow[], dataFinal: string): number[] {
   if (rows.length === 0) return [];
@@ -44,6 +47,7 @@ export function calculateTendency(rows: DailyRow[], dataFinal: string): number[]
   const startDate = new Date(rows[0].date);
   // eslint-disable-next-line prefer-const
   let currentDate = startDate;
+  let cumulativeTotal = 0;
 
   while (currentDate <= finalDate) {
     const dateStr = currentDate.toISOString().split("T")[0];
@@ -51,7 +55,10 @@ export function calculateTendency(rows: DailyRow[], dataFinal: string): number[]
 
     if (historyRow && currentDate <= today) {
       // Dados reais do PASSADO (até hoje inclusive)
-      tendency.push(historyRow.leadsPagos + historyRow.leadsOrg);
+      // Acumula os leads reais
+      const dailyLeads = historyRow.leadsPagos + historyRow.leadsOrg;
+      cumulativeTotal += dailyLeads;
+      tendency.push(cumulativeTotal);
     } else {
       // Projeção FUTURA (a partir de amanhã)
       const daysFromEnd = Math.floor((currentDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
@@ -125,27 +132,32 @@ export function expandChartData(
 }> {
   if (rows.length === 0) return [];
 
-  const tendency = calculateTendency(rows, dataFinal);
-  const meta = calculateMeta(rows, dataFinal, metaTotal);
+  const tendency = calculateTendency(rows, dataFinal); // Agora retorna CUMULATIVO
+  const meta = calculateMeta(rows, dataFinal, metaTotal); // Já é CUMULATIVO
 
   const firstDate = new Date(rows[0].date);
   const finalDate = new Date(dataFinal);
   const result = [];
   // eslint-disable-next-line prefer-const
   let currentDate = new Date(firstDate);
+  let cumulativeLeads = 0; // Para acumular leadsReais
 
   for (let dayIndex = 0; currentDate <= finalDate; dayIndex++) {
     const dateStr = currentDate.toISOString().split("T")[0];
     const historyRow = rows.find((r) => r.date === dateStr);
 
     if (historyRow) {
+      // Acumula leads reais (pagos + orgânicos + sem track)
+      const dailyLeads = historyRow.leadsPagos + historyRow.leadsOrg + historyRow.leadsSemTrack;
+      cumulativeLeads += dailyLeads;
+
       result.push({
         date: dateStr,
         leadsPagos: historyRow.leadsPagos,
         leadsOrg: historyRow.leadsOrg,
         leadsSemTrack: historyRow.leadsSemTrack,
-        leadsReais: historyRow.leadsPagos + historyRow.leadsOrg + historyRow.leadsSemTrack,
-        tendencia: tendency[dayIndex] ?? 0,
+        leadsReais: cumulativeLeads, // CUMULATIVO
+        tendencia: tendency[dayIndex] ?? 0, // Agora é CUMULATIVO
         meta: meta[dayIndex] ?? 0,
       });
     } else {
@@ -155,8 +167,8 @@ export function expandChartData(
         leadsPagos: 0,
         leadsOrg: 0,
         leadsSemTrack: 0,
-        leadsReais: 0,
-        tendencia: tendency[dayIndex] ?? 0,
+        leadsReais: cumulativeLeads, // Mantém o acumulado (sem novos leads)
+        tendencia: tendency[dayIndex] ?? 0, // Já é CUMULATIVO de calculateTendency
         meta: meta[dayIndex] ?? 0,
       });
     }
