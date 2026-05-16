@@ -142,7 +142,6 @@ interface AdBandBreakdownResponse {
   rows: AdBandRow[];
   semDados: boolean;
 }
-
 // ============================================================
 // SCORING ALGORITHM (função pura)
 // ============================================================
