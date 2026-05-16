@@ -19,6 +19,16 @@ interface LeadsTrendAndGoalChartProps {
   title?: string;
 }
 
+interface ChartDataPoint {
+  date: string;
+  leadsPagos: number;
+  leadsOrg: number;
+  leadsSemTrack: number;
+  leadsReais: number;
+  tendencia: number;
+  meta: number;
+}
+
 const COLORS = {
   reais: "hsl(220 80% 55%)",
   tendencia: "#CCCCCC",
@@ -59,6 +69,42 @@ function CustomTooltip({ active, payload }: TooltipProps) {
   );
 }
 
+interface CustomDotProps {
+  cx?: number;
+  cy?: number;
+  payload?: { leadsReais?: number; tendencia?: number; meta?: number };
+  dataKey?: string;
+  color?: string;
+}
+
+// Renderiza labels dos valores nos pontos do gráfico
+function CustomDot({ cx = 0, cy = 0, payload, dataKey, color }: CustomDotProps) {
+  if (!payload || !dataKey) return null;
+
+  const value = payload[dataKey as keyof typeof payload] as number | undefined;
+  if (!value || value === 0) return null;
+
+  const yOffset = -12;
+  const fontSize = 10;
+
+  return (
+    <>
+      <circle cx={cx} cy={cy} r={3} fill={color} />
+      <text
+        x={cx}
+        y={cy + yOffset}
+        textAnchor="middle"
+        fill={color}
+        fontSize={fontSize}
+        fontWeight={500}
+        className="pointer-events-none"
+      >
+        {Math.round(value).toLocaleString("pt-BR")}
+      </text>
+    </>
+  );
+}
+
 /**
  * Wrapper que estende LeadsCumulativeChart com gráfico de tendência e meta.
  * - Inputs: Data Final do Lançamento, Meta Total de Leads
@@ -68,7 +114,7 @@ function CustomTooltip({ active, payload }: TooltipProps) {
 export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Tendência vs Meta" }: LeadsTrendAndGoalChartProps) {
   const [dataFinal, setDataFinal] = useState<string>("");
   const [metaTotal, setMetaTotal] = useState<number>(0);
-  const [chartData, setChartData] = useState<any[]>([]);
+  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [mounted, setMounted] = useState(false);
 
   // Carregar localStorage ao montar
@@ -182,7 +228,9 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Tendênc
               stroke={COLORS.reais}
               strokeWidth={2}
               name="Leads Reais"
-              dot={false}
+              dot={(props) => (
+                <CustomDot {...props} dataKey="leadsReais" color={COLORS.reais} />
+              )}
             />
 
             {/* Área de Tendência (cinza pontilhada) */}
@@ -195,7 +243,9 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Tendênc
               strokeWidth={2}
               strokeDasharray="5 5"
               name="Tendência de Leads"
-              dot={false}
+              dot={(props) => (
+                <CustomDot {...props} dataKey="tendencia" color={COLORS.tendenciaStroke} />
+              )}
             />
 
             {/* Área de Meta (vermelho) */}
@@ -207,7 +257,9 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Tendênc
               stroke={COLORS.metaStroke}
               strokeWidth={2}
               name="Meta de Leads"
-              dot={false}
+              dot={(props) => (
+                <CustomDot {...props} dataKey="meta" color={COLORS.metaStroke} />
+              )}
             />
           </ComposedChart>
         </ResponsiveContainer>

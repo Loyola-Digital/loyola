@@ -15,6 +15,13 @@ export function calculateDailyAverage(rows: DailyRow[]): number {
 /**
  * Calcula a projeção de tendência (cinza pontilhada)
  * Baseado na média diária do histórico, projeta até a data final
+ *
+ * **Lógica de passado vs futuro:**
+ * - Hoje (new Date()) é considerado o último dia do PASSADO/realizado
+ * - Amanhã+ é considerado FUTURO/projeção
+ * - Dados históricos até hoje usam valores reais
+ * - A partir de amanhã, usa projeção: lastAccumulated + mediaDiaria * daysFromEnd
+ *
  * @param rows - Array histórico de dias
  * @param dataFinal - Data final do lançamento (YYYY-MM-DD)
  * @returns Array de valores projetados para cada dia
@@ -23,10 +30,14 @@ export function calculateTendency(rows: DailyRow[], dataFinal: string): number[]
   if (rows.length === 0) return [];
 
   const mediaDiaria = calculateDailyAverage(rows);
-  const lastDate = new Date(rows[rows.length - 1].date);
+
+  // Hoje é o limite entre passado (realizado) e futuro (projeção)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Reset time para comparação correta
+
   const finalDate = new Date(dataFinal);
 
-  // Leads acumulados até hoje (último dia do histórico)
+  // Leads acumulados até hoje (passado realizado)
   const lastAccumulated = rows.reduce((sum, row) => sum + row.leadsPagos + row.leadsOrg, 0);
 
   const tendency: number[] = [];
@@ -38,12 +49,12 @@ export function calculateTendency(rows: DailyRow[], dataFinal: string): number[]
     const dateStr = currentDate.toISOString().split("T")[0];
     const historyRow = rows.find((r) => r.date === dateStr);
 
-    if (historyRow && currentDate <= lastDate) {
-      // Dados reais do passado
+    if (historyRow && currentDate <= today) {
+      // Dados reais do PASSADO (até hoje inclusive)
       tendency.push(historyRow.leadsPagos + historyRow.leadsOrg);
     } else {
-      // Projeção futura
-      const daysFromEnd = Math.floor((currentDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+      // Projeção FUTURA (a partir de amanhã)
+      const daysFromEnd = Math.floor((currentDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
       tendency.push(lastAccumulated + mediaDiaria * daysFromEnd);
     }
 

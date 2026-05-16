@@ -1,0 +1,53 @@
+schema: 1
+story: '16.9'
+gate: PASS
+status_reason: 'Epic 16 final closure. 4 grupos cobertos (visual hints, 3 gráficos, ConversionFunnel, TopCreativesGallery). 2 factories novas puras com guards. Retrocompat via hintTooltip? e funnelContext? opcionais. tsc+lint clean. Click handlers dos cards de creative preservados via stopPropagation.'
+reviewer: 'Quinn'
+updated: '2026-04-15T00:00:00Z'
+top_issues:
+  - id: 'TEST-009'
+    severity: low
+    finding: 'buildFunnelStageFormula e buildFunnelStageConversionFormula são pure functions trivialmente testáveis (4 casos: stage simples, conversion fromValue=0 → undefined, conversion fromValue>0 → objeto correto com formato rate, edge case toValue=0). Sem suite de testes no projeto.'
+    suggested_action: 'Backlog debt TEST-008 (da 16.8) agora engloba também 16.9. Priorizar criar suite Vitest/Jest cobrindo todas as factories de funnels.ts quando o projeto instituir infraestrutura.'
+  - id: 'PERF-004'
+    severity: low
+    finding: 'buildAdFormulas em top-creatives-gallery.tsx é chamada dentro de shown.map() e dentro do lightbox render — cria novo objeto por ad. Radix Tooltip já faz lazy mount; factories são O(1). Em listas >50 ads, considerar memoização.'
+    suggested_action: 'Micro-refactor opcional: useMemo para formulas por ad se tela listar muitos. Não-bloqueante.'
+  - id: 'DESIGN-001'
+    severity: low
+    finding: 'buildAdFormulas tem default funnelContext = { days: 30 } quando opcional omitido. Na prática Launch+Perpetual SEMPRE passam, então default nunca entra. Defensivo mas potencialmente confuso.'
+    suggested_action: 'Considerar tornar funnelContext obrigatório na prop se a garantia de uso for permanente, removendo o default. Não-bloqueante.'
+waiver: { active: false }
+coverage:
+  ac1_kpi_cards_visual_hint: PASS  # 8 launch + 7 perpetual + 3 rate + survey
+  ac2_graficos_formulachart: PASS  # CampaignDonut, CtrCpmChart, HBarChart (x3)
+  ac3_conversionfunnel_memorial: PASS  # valor absoluto + taxa por stage
+  ac4_topcreatives_memorial: PASS  # 3 overlay + 5 lightbox
+  ac5_sem_regressao: PASS  # sort/expand/lightbox preservados
+  ac6_cobertura_total_epic_16: PASS  # TODO elemento numérico tem hover + visual cue
+quality_checks:
+  code_review: PASS
+  unit_tests: CONCERN  # TEST-009 low, herdado
+  acceptance_criteria: PASS
+  no_regressions: PASS  # stopPropagation bem colocado, onClick de card preservado
+  performance: PASS  # lazy tooltips + factories O(1)
+  security: PASS
+  documentation: PASS  # consistente com padrão do arquivo
+risks_resolution:
+  r1_visual_conflict: RESOLVED  # decoration-muted-foreground/40 sutil no non-hover state
+  r2_lightbox_conflict: RESOLVED  # onClick stopPropagation nos divs de metric do card overlay
+  r3_stages_dinamicos: RESOLVED  # factories com guard fromValue<=0; stages com value=0 não renderizam
+blast_radius:
+  files_modified: 5  # + 1 story doc + 1 gate yml
+  files_new: 0
+  lines_changed: '+506 / -108'
+  downstream_stories_unblocked: 0  # Epic 16 agora fecha DEFINITIVAMENTE
+  risk_level: LOW  # Aditivo, retrocompat completa, padrão alinhado com 16.7+16.8
+commit: '96a0a93'
+branch: 'feature/16.9-funnels-visual-hints-and-charts'
+smoke_test: 'DEFERRED_TO_USER'
+coderabbit_status: 'SKIPPED'  # binário indisponível no WSL — tsc+lint baseline documentada
+epic_16_closure:
+  stories_shipped: 7  # 16.1, 16.2, 16.3, 16.4, 16.5, 16.7, 16.8, 16.9 (16.6 WAIVED)
+  total_gates: '7 PASS / 0 FAIL / 1 WAIVED'
+  coverage: 'TODOS os dashboards (Instagram, Meta Ads, YouTube, Sales, Funis) cobertos ao fim. Conversas WAIVED por não ter métricas.'

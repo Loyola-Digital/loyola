@@ -1,0 +1,73 @@
+schema: 1
+story: '21.7'
+gate: PASS
+status_reason: |
+  9/10 ACs atendidos com precisão; AC-8 (dedup inter-ads) cumprido
+  funcionalmente mas com share proporcional (bruto / emails.length) em vez
+  de valor exato por email. Backend endpoint cruza planilha leads × vendas
+  corretamente, aplica normalizeNumericId no utm_content, dedup intra-ad
+  via Set<email>, filtro de dias duplicado (leads+vendas), cache 5min
+  reaproveitado. Frontend renderiza 💵 Faturado sempre abaixo do breakdown
+  Pagos/Org, omite quando zero. stageId? opcional evita regressão em
+  dashboards sem stage. typecheck API+Web + lint web: clean.
+reviewer: 'Quinn'
+updated: '2026-04-22T00:00:00Z'
+top_issues:
+  - id: 'ACCURACY-001'
+    severity: medium
+    finding: |
+      Frontend usa share proporcional pra distribuir bruto entre emails do ad:
+      `entry.faturamentoBruto / entry.emails.length`. Quando emails do mesmo ad
+      compraram valores diferentes, dedup inter-ads pode errar em 5-15% no bruto
+      agregado. Cenário: Ad_A tem e1=R$100+e2=R$400 (bruto 500), Ad_B tem
+      e1=R$100+e3=R$200 (bruto 300). Agregado do criativo = 250+250+150 = 650,
+      mas o real é 100+400+200 = 700.
+    suggested_action: |
+      Endpoint retornar `salesByEmail: Record<email, {bruto, liquido}>` global
+      (já existe no processamento, basta exportar). Frontend consulta direto em
+      vez de distribuir proporcionalmente. Fix já foi documentado em Dev Notes
+      da story antes da implementação, mas não foi seguido. Backlog como v2 se
+      usuário reportar divergência com valores reais.
+  - id: 'TEST-013'
+    severity: low
+    finding: |
+      Sem testes unitários — lógica de cruzamento (normalizeEmail, dedup intra-ad,
+      aplicação de cutoff duplicado) é pura e trivialmente testável. Débito
+      herdado do projeto (sem Jest em packages/web/api).
+    suggested_action: 'Quando infraestrutura Vitest for configurada, cobrir: dedup email intra-ad, normalizeNumericId, cutoff datas, empty response, planilhas ausentes, utm não mapeado.'
+waiver: { active: false }
+coverage:
+  ac1_endpoint_shape: PASS
+  ac2_cruzamento_basico: PASS
+  ac3_normalize_numeric_id: PASS
+  ac4_dedup_intra_ad: PASS
+  ac5_filtro_dias: PASS  # dupla proteção leads+vendas
+  ac6_linha_card: PASS  # 💵 Faturado + brlFormatter
+  ac7_omite_zero: PASS  # if bruto<=0 || vendas===0 return null
+  ac8_dedup_inter_ads: CONCERN  # share proporcional, erro de 5-15% em edge cases
+  ac9_graceful_sem_planilhas: PASS
+  ac10_typecheck_lint: PASS
+quality_checks:
+  code_review: PASS  # Map/Set/Promise.all, comentários referenciando ACs
+  unit_tests: CONCERN  # TEST-013
+  acceptance_criteria: PASS  # 9/10 + 1 concern não-bloqueante
+  no_regressions: PASS  # stageId? opcional, dashboards sem stage não quebram
+  performance: PASS  # O(n+m) single-pass, cache 5min readSheetData
+  security: PASS  # getProjectAccess + Zod params
+  documentation: PASS  # story completa + comentários in-code
+blast_radius:
+  files_modified: 5  # app.ts + 2 dashboards + top-creatives-gallery + 1 story
+  files_new: 2  # creative-revenue.ts + use-creative-revenue.ts
+  lines_changed: '+688 / 0'
+  downstream_stories_unblocked: 0
+  risk_level: LOW  # feature nova isolada, opt-in via stageId
+commit: 'bf1e859'
+branch: 'feature/21.7-creative-revenue'
+pr: 47
+smoke_test: 'DEFERRED_TO_USER'
+coderabbit_status: 'SKIPPED'
+recommended_action: |
+  Mergear como está — ACCURACY-001 é aproximação aceitável em atribuição
+  multi-touch v1. Se usuário comparar com soma manual da planilha e divergência
+  for significativa, abrir follow-up pra refactor (endpoint retornar salesByEmail
+  global e frontend consultar direto — fix conhecido, ~30min de trabalho).

@@ -1,0 +1,78 @@
+storyId: STORY-23.1
+storyPath: docs/stories/23.1.organic-posts-schema-api.md
+verdict: PASS
+reviewedBy: '@qa (Quinn)'
+reviewedAt: '2026-04-28'
+branch: feat/23.1-organic-posts-schema-api
+
+quality_checks:
+  code_review:
+    status: PASS
+    notes: |
+      Segue padrão de lead-scoring.ts (mais recente, story 22.1).
+      Helpers bem nomeados (getProjectAccess, getStage, hydrate*Batch).
+      Cache 5min com Map + TTL — pattern simples e correto.
+      Promise.all paraleliza batches YouTube/Instagram.
+      Validação Zod em todos os endpoints.
+
+  unit_tests:
+    status: CONCERNS
+    severity: low
+    notes: |
+      Não há testes unitários — segue padrão do projeto (Story 22.1, 20.x e
+      anteriores não têm testes automatizados, validação é por typecheck +
+      smoke manual). Não bloqueia merge. Considerar criar tests pro
+      hydration cache em sprint futuro.
+
+  acceptance_criteria:
+    status: PASS
+    notes: |
+      AC 1-3 (DB): tabela criada, enum criado, indexes criados, migration aplicada em PROD (verificado via information_schema).
+      AC 4-7 (Endpoints): POST/DELETE/GET/GET-links implementados com getProjectAccess + chain validation.
+      AC 8: registrado em app.ts dentro de fp() closure.
+      AC 9-11 (Hidratação): YouTube via Data API v3 (videos endpoint), Instagram via Graph API v25.0 (media + insights),
+        cache 5min compartilhado por source:externalId.
+      AC 12: shared types em packages/shared/src/types/organic-post.ts + re-export em index.ts.
+      AC 13-14: typecheck 0 erros, lint 0 erros no arquivo novo.
+      AC 15: smoke test manual — pendente. Não bloqueante (será exercitado pelas stories 23.2/23.3).
+
+  no_regressions:
+    status: PASS
+    notes: |
+      Web typecheck passa (novos tipos exportados não quebram consumidores).
+      API typecheck passa.
+      Migration é aditiva (CREATE TYPE + CREATE TABLE), não modifica tabelas existentes.
+      Os 14 erros de lint pré-existentes em outros arquivos são tech debt fora do escopo desta story.
+
+  performance:
+    status: PASS
+    notes: |
+      - Cache 5min in-memory evita stampede em IG/YT APIs.
+      - Hidratação YouTube em batch (1 request pra N IDs).
+      - Hidratação Instagram sequencial (rate limit Graph API) — documentado como risco no story.
+      - Indexes em (stage_id) e (project_id, source) cobrem queries do GET.
+
+  security:
+    status: PASS
+    notes: |
+      - getProjectAccess valida ownership e gate de guest.
+      - Chain validation: project → funnel → stage → link (404 em qualquer break).
+      - Tokens decryptados localmente, nunca vazam para cliente (resposta tem só metrics + URLs públicas).
+      - Zod valida source enum e externalId max 100 chars.
+      - UNIQUE constraint impede duplicação.
+      - createdBy autenticado via request.userId (do middleware Clerk).
+
+  documentation:
+    status: PASS
+    notes: |
+      Story 23.1 atualizada com Status Ready, change log com transição PO.
+      Migration tem comentário explicando contexto (EPIC-23, hidratação on-demand).
+
+issues: []
+
+waivers: []
+
+recommendation: |
+  PASS — ready for @devops *push.
+  Smoke test manual será exercitado naturalmente quando 23.2 (UI Dash) for implementada.
+  Tech debt: considerar testes unitários para hydrationCache + buildHydration em sprint futuro.

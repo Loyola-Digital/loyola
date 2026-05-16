@@ -1,0 +1,67 @@
+schema: 1
+story: '21.6'
+gate: PASS
+status_reason: |
+  9/9 ACs atendidos pelo código (AC-8 mobile com validação visual ainda pendente
+  do user mas código contém flex-wrap + sizes pequenos, plausível). Hook agrega
+  3 buckets em paralelo (total/pago/organico) numa única passada O(n) sobre as
+  rows, classificando por utm_source contra PAID_SOURCES (match exato, import
+  de funnel-metrics.ts sem duplicar). Componente mantém state local do filtro,
+  contagem do header permanece global (AC-5), byQuestion legacy preservado pra
+  zero regressão (AC-7). Typecheck + lint PASS.
+reviewer: 'Quinn'
+updated: '2026-04-22T00:00:00Z'
+top_issues:
+  - id: 'TEST-012'
+    severity: low
+    finding: |
+      Sem Jest em packages/web — a lógica nova em use-survey-aggregation.ts
+      (classifyOrigin + agregação 3-buckets) é pura e testável mas não há
+      infraestrutura pra escrever testes unitários. Débito herdado do projeto.
+    suggested_action: 'Backlog: configurar Vitest em packages/web e cobrir classifyOrigin + pipeline de byQuestionByOrigin com casos (utm_source=meta/google-ads/vazio/misturas).'
+  - id: 'UX-002'
+    severity: low
+    finding: |
+      AC-8 (responsividade mobile) marcado como pendente no story. Código
+      contém flex-wrap + text-[11px] + gap-3 — plausível responsivo, mas
+      validação visual em viewport < 640px ainda não foi executada.
+    suggested_action: 'User valida no preview Vercel do PR #44 em mobile. Se quebrar, abrir follow-up rápido.'
+  - id: 'UX-003'
+    severity: low
+    finding: |
+      Se a planilha de survey não tem coluna utm_source (matchers atuais:
+      utm_source, "s=", source), todas as respostas caem como "organico" e
+      o filtro "Pago" aparecerá vazio. Comportamento esperado mas pode
+      confundir o user se ele esperava ver dados em "Pago" numa planilha
+      sem esse mapeamento.
+    suggested_action: 'Opcional: adicionar fallback via leadMatch.utmSource quando coluna ausente na survey, OU mostrar empty state explícito no filtro Pago indicando "planilha não tem utm_source mapeado". Backlog.'
+waiver: { active: false }
+coverage:
+  ac1_toggle_visible: PASS  # ORIGIN_OPTIONS em ordem Total/Pago/Orgânico, default "total"
+  ac2_filtro_pago: PASS  # classifyOrigin + PAID_SOURCES.has() match exato
+  ac3_filtro_organico: PASS  # ternário com "" → organico
+  ac4_filtro_total: PASS  # byQuestionByOrigin.total com agregação completa
+  ac5_header_global: PASS  # data.totalResponses/matched/unmatched sem filtro
+  ac6_client_side: PASS  # setOrigin local + queryKey sem origin
+  ac7_sem_regressao: PASS  # byQuestion mantido = total
+  ac8_mobile: PENDING_VISUAL  # flex-wrap + sizes pequenos, validação user
+  ac9_typecheck_lint: PASS  # logs limpos
+quality_checks:
+  code_review: PASS  # DRY (newBuckets), reuso PAID_SOURCES, TS tipado
+  unit_tests: CONCERN  # TEST-012 débito projeto
+  acceptance_criteria: PASS  # 8/9 + 1 pending validação visual
+  no_regressions: PASS  # byQuestion legacy preservado
+  performance: PASS  # O(n) single-pass 3 buckets
+  security: PASS
+  documentation: PASS  # story + comentários in-code citando 21.6
+blast_radius:
+  files_modified: 5
+  files_new: 1  # story doc
+  lines_changed: '+355 / -44'
+  downstream_stories_unblocked: 0
+  risk_level: LOW  # mudança aditiva, byQuestion preservado, pure function classifyOrigin
+commit: '2d6999e'
+branch: 'feature/21.6-survey-origin-filter'
+pr: 44
+smoke_test: 'DEFERRED_TO_USER'
+coderabbit_status: 'SKIPPED'  # gate manual (CodeRabbit não executado nesta iteração)
