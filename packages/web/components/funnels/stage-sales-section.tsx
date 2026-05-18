@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { StageSalesSubtype } from "@loyola-x/shared";
@@ -11,6 +13,18 @@ function formatCurrency(value: number): string {
     minimumFractionDigits: 2,
   }).format(value);
 }
+
+/**
+ * Story 28.7 hotfix: detecta Meta ID numérico (15+ dígitos) vs UTM textual
+ * literal (`social`, `org`, `link_in_bio`, etc). Só Meta IDs reais devem
+ * mostrar badge "não resolvido" quando o backend falha — textual é UTM
+ * válida configurada manualmente, não é erro.
+ */
+function isMetaNumericId(value: string): boolean {
+  return /^\d{15,}$/.test(value.trim());
+}
+
+const TABLE_DEFAULT_TOP_N = 10;
 
 interface SalesCardProps {
   label: string;
@@ -31,14 +45,20 @@ interface SalesTableProps {
   rows: { key: string; label: string; vendas: number; bruto: number; unresolved?: boolean }[];
   emptyMessage: string;
   keyLabel: string;
+  /** Story 28.7 hotfix: limita render a Top N rows com botão "ver todos" pra tabelas longas. */
+  topN?: number;
 }
 
-function SalesTable({ rows, emptyMessage, keyLabel }: SalesTableProps) {
+function SalesTable({ rows, emptyMessage, keyLabel, topN = TABLE_DEFAULT_TOP_N }: SalesTableProps) {
+  const [expanded, setExpanded] = useState(false);
+
   if (rows.length === 0) {
     return <p className="text-xs text-muted-foreground">{emptyMessage}</p>;
   }
 
   const totalVendas = rows.reduce((s, r) => s + r.vendas, 0);
+  const showCollapse = rows.length > topN;
+  const visibleRows = showCollapse && !expanded ? rows.slice(0, topN) : rows;
 
   return (
     <div className="overflow-x-auto rounded-lg border border-border/30">
@@ -51,32 +71,53 @@ function SalesTable({ rows, emptyMessage, keyLabel }: SalesTableProps) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {visibleRows.map((row) => (
             <tr key={row.key} className="border-t border-border/10">
               <td className="py-2 px-3 font-medium">
-                <span className={row.unresolved ? "font-mono text-muted-foreground" : undefined}>
+                <span
+                  className={row.unresolved ? "font-mono text-muted-foreground" : "break-all"}
+                >
                   {row.label}
                 </span>
                 {row.unresolved && (
                   <span
-                    className="ml-2 text-[10px] text-amber-500"
-                    title="Nome não resolvido — id não encontrado no cache nem na Meta API"
+                    className="ml-2 text-[10px] text-amber-500 whitespace-nowrap"
+                    title="Meta ID não resolvido — ad/adset pode ter sido deletado ou estar em outra conta"
                   >
-                    ⚠️ não resolvido
+                    ⚠️ id sem nome
                   </span>
                 )}
               </td>
-              <td className="py-2 px-3 text-right text-muted-foreground">
+              <td className="py-2 px-3 text-right text-muted-foreground whitespace-nowrap">
                 {row.vendas}
                 <span className="text-[10px] ml-1">
                   ({totalVendas > 0 ? ((row.vendas / totalVendas) * 100).toFixed(0) : 0}%)
                 </span>
               </td>
-              <td className="py-2 px-3 text-right">{formatCurrency(row.bruto)}</td>
+              <td className="py-2 px-3 text-right whitespace-nowrap">{formatCurrency(row.bruto)}</td>
             </tr>
           ))}
         </tbody>
       </table>
+      {showCollapse && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="w-full flex items-center justify-center gap-1 py-1.5 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/30 border-t border-border/10 transition-colors"
+        >
+          {expanded ? (
+            <>
+              <ChevronUp className="h-3 w-3" />
+              Mostrar menos
+            </>
+          ) : (
+            <>
+              <ChevronDown className="h-3 w-3" />
+              Ver todos ({rows.length})
+            </>
+          )}
+        </button>
+      )}
     </div>
   );
 }
@@ -145,17 +186,17 @@ export function StageSalesSection({
     bruto: c.bruto,
   }));
 
-  // Story 28.7: backend resolve adset_name via cache persistente em
-  // `porUtmMedium[i].name`. `adsetsMap` fica como fallback secundário pra cobrir
-  // o caso onde o backend não resolveu (sem conta Meta vinculada ao projeto, ou
-  // API down) — caller continua passando o map por enquanto pra retrocompat.
+  // Story 28.7: backend resolve adset_name via cache persistente. `adsetsMap`
+  // fica como fallback. Badge "id sem nome" SÓ aparece pra Meta IDs numéricos
+  // que falharam — UTMs textuais (`social`, `org`, `captacao`) são válidas e
+  // não devem ser marcadas como erro.
   const mediumRows = (data.porUtmMedium ?? [])
     .filter((m) => m.medium !== "Não informado")
     .map((m) => {
       const backendResolved = m.name !== m.medium;
       const fallback = !backendResolved ? adsetsMap?.get(m.medium) : undefined;
       const finalLabel = backendResolved ? m.name : fallback || m.medium;
-      const unresolved = !backendResolved && !fallback;
+      const unresolved = !backendResolved && !fallback && isMetaNumericId(m.medium);
       return {
         key: m.medium,
         label: finalLabel,
@@ -172,15 +213,15 @@ export function StageSalesSection({
     bruto: f.bruto,
   }));
 
-  // Story 28.7: tabelas "Por Term (Adset)" e "Por Content (Ad)" restauradas.
-  // Backend resolve via cache persistente; quando `name === id`, mostra badge
-  // de "não resolvido" pra o gestor saber que aquele item específico falhou.
+  // Story 28.7: badge "id sem nome" só pra Meta IDs numéricos que não
+  // resolveram (ad/adset deletado ou em outra conta). UTM textual literal é
+  // sempre válida.
   const termRows = (data.porUtmTerm ?? [])
     .filter((t) => t.term !== "Não informado")
     .map((t) => ({
       key: t.term,
       label: t.name,
-      unresolved: t.name === t.term,
+      unresolved: t.name === t.term && isMetaNumericId(t.term),
       vendas: t.vendas,
       bruto: t.bruto,
     }));
@@ -189,7 +230,7 @@ export function StageSalesSection({
     .map((c) => ({
       key: c.content,
       label: c.name,
-      unresolved: c.name === c.content,
+      unresolved: c.name === c.content && isMetaNumericId(c.content),
       vendas: c.vendas,
       bruto: c.bruto,
     }));
