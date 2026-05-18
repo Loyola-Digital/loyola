@@ -115,7 +115,6 @@ function SortableStageCard({ stage, projectId, funnelId, isLastStage }: Sortable
         className="absolute top-2 left-2 z-20 p-1 rounded bg-background/80 hover:bg-muted cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-foreground opacity-60 sm:opacity-0 sm:group-hover/sortable:opacity-100 transition-opacity"
         aria-label="Arrastar pra reordenar"
         onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
       >
         <GripVertical className="h-4 w-4" />
       </button>
