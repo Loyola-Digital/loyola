@@ -36,6 +36,21 @@ import { useUserRole } from "@/lib/hooks/use-user-role";
 import { useHiddenProjectsStore } from "@/lib/stores/hidden-projects-store";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useFunnels, useDeleteFunnel, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useFunnelStages, useCreateStage, useReorderStages } from "@/lib/hooks/use-funnel-stages";
 import type { Funnel, FunnelStage } from "@loyola-x/shared";
@@ -86,6 +101,11 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
   const [newStageName, setNewStageName] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [matchCodeDraft, setMatchCodeDraft] = useState<string>(funnel.matchCode ?? "");
+  const { data: allFunnels } = useFunnels(projectId);
+  const otherFunnels = (allFunnels ?? []).filter((f) => f.id !== funnel.id);
+  const compareFunnelName = otherFunnels.find((f) => f.id === funnel.compareFunnelId)?.name;
 
   const funnelHref = `/projects/${projectId}/funnels/${funnel.id}`;
   const isActiveFunnel = pathname.startsWith(funnelHref);
@@ -133,6 +153,33 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
     }
   }
 
+  function handleOpenSettings() {
+    setMatchCodeDraft(funnel.matchCode ?? "");
+    setSettingsOpen(true);
+  }
+
+  function handleCompareFunnelChange(value: string) {
+    const id = value === "none" ? null : value;
+    updateFunnel.mutate(
+      { compareFunnelId: id },
+      {
+        onSuccess: () => toast.success(id ? "Funil de comparação vinculado" : "Funil de comparação removido"),
+        onError: (err) => toast.error(err instanceof Error ? err.message : "Erro ao salvar"),
+      },
+    );
+  }
+
+  function handleSaveMatchCode() {
+    const next = matchCodeDraft.trim();
+    updateFunnel.mutate(
+      { matchCode: next.length > 0 ? next.toLowerCase() : null },
+      {
+        onSuccess: () => toast.success(next ? "Código de match salvo" : "Código de match removido"),
+        onError: (err) => toast.error(err instanceof Error ? err.message : "Erro ao salvar"),
+      },
+    );
+  }
+
   return (
     <>
       <Collapsible open={open} onOpenChange={setOpen}>
@@ -164,6 +211,10 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleOpenSettings}>
+                  <Settings className="mr-2 h-4 w-4" />
+                  Configurações
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleTypeChange} disabled={updateFunnel.isPending}>
                   {funnel.type === "launch" ? (
                     <Repeat className="mr-2 h-4 w-4" />
@@ -258,6 +309,80 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Configurações do Funil</DialogTitle>
+            <DialogDescription>
+              {funnel.name}
+              {compareFunnelName && (
+                <span className="block text-xs text-muted-foreground/70 mt-0.5">
+                  Comparando com <span className="font-medium">{compareFunnelName}</span>
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Funil de Comparação</Label>
+              <p className="text-xs text-muted-foreground">
+                Exibe métricas do Meta Ads deste funil como benchmark.
+              </p>
+              <Select
+                value={funnel.compareFunnelId ?? "none"}
+                onValueChange={handleCompareFunnelChange}
+                disabled={updateFunnel.isPending}
+              >
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder="Selecionar funil..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nenhum</SelectItem>
+                  {otherFunnels.map((f) => (
+                    <SelectItem key={f.id} value={f.id}>
+                      {f.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2 border-t border-border/30 pt-3">
+              <Label className="text-sm font-medium">Código de match (override)</Label>
+              <p className="text-xs text-muted-foreground">
+                Por padrão o sistema usa o <span className="font-medium">nome do funil</span>
+                {" "}(<code className="font-mono text-[10px] bg-muted/50 px-1 rounded">{funnel.name.toLowerCase()}</code>)
+                {" "}para detectar campanhas órfãs. Sobrescreva só se quiser um valor diferente.
+              </p>
+              <div className="flex gap-1.5">
+                <Input
+                  value={matchCodeDraft}
+                  onChange={(e) => setMatchCodeDraft(e.target.value)}
+                  placeholder={`padrão: ${funnel.name.toLowerCase()}`}
+                  maxLength={50}
+                  className="h-9 text-sm font-mono"
+                />
+                <Button
+                  size="sm"
+                  onClick={handleSaveMatchCode}
+                  disabled={updateFunnel.isPending || matchCodeDraft.trim().toLowerCase() === (funnel.matchCode ?? "")}
+                  className="h-9"
+                >
+                  Salvar
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSettingsOpen(false)}>
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
