@@ -13,6 +13,7 @@ import {
   uniqueIndex,
   unique,
   check,
+  primaryKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -1015,6 +1016,25 @@ export const funnelStageZoomConnections = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index("idx_zoom_connections_stage").on(table.stageId)]
+);
+
+// Story 28.7: cache persistente de nomes Meta (ad/adset/campaign) — substitui
+// resolução in-memory que estourava rate limit Meta. TTL aplicado no código (24h).
+export const metaEntityNamesCache = pgTable(
+  "meta_entity_names_cache",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    entityType: varchar("entity_type", { length: 20 }).notNull(),
+    entityId: varchar("entity_id", { length: 64 }).notNull(),
+    entityName: varchar("entity_name", { length: 500 }).notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.entityType, table.entityId] }),
+    index("idx_meta_names_cache_lookup").on(table.projectId, table.entityType, table.lastSyncedAt),
+  ]
 );
 
 export const funnelStageZoomMeetings = pgTable(

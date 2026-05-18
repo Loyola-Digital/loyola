@@ -928,3 +928,105 @@ export async function fetchVideoSource(
 export function decryptAccountToken(encrypted: string, iv: string): string {
   return decrypt(encrypted, iv);
 }
+
+// ============================================================
+// Story 28.7 — Cache de nomes Meta (ad/adset/campaign)
+// ============================================================
+
+export type MetaEntityType = "ad" | "adset" | "campaign";
+
+export interface CachedEntityName {
+  entityId: string;
+  entityName: string;
+}
+
+export interface ResolveEntityNamesCacheAdapter {
+  /** Lê do cache os entries ainda válidos (TTL aplicado pelo caller). */
+  loadCached(ids: string[]): Promise<CachedEntityName[]>;
+  /** Persiste novos entries (upsert). */
+  saveToCache(entries: CachedEntityName[]): Promise<void>;
+}
+
+const META_NAMES_BATCH_LIMIT = 50; // Meta `/?ids=` aceita até 50 ids por request
+const META_NAMES_BATCH_THROTTLE_MS = 200;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Resolve N ids Meta (ad/adset/campaign) em nomes, com cache-first + batch API
+ * com throttle. Estratégia:
+ *
+ * 1. Pergunta ao adapter o que já tem em cache válido
+ * 2. Lista de faltantes vira chamadas batch `/?ids=<csv>&fields=id,name`
+ *    em lotes de 50 (limite Meta)
+ * 3. Entre batches, sleep 200ms (throttle conservador — 50 ids/batch × 200ms
+ *    = 250 ids/segundo, muito abaixo de 200 req/h)
+ * 4. Upsert no cache via adapter
+ * 5. Fallback: ids que falharam silenciosamente recebem name = id (caller
+ *    diferencia via comparação id === name)
+ *
+ * @returns Map<id, name> com todos os ids solicitados (cache + recém + fallback)
+ */
+export async function resolveEntityNames(
+  ids: string[],
+  accessToken: string,
+  cache: ResolveEntityNamesCacheAdapter,
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (ids.length === 0) return result;
+
+  const unique = Array.from(new Set(ids.filter((id) => id && id.trim().length > 0)));
+  if (unique.length === 0) return result;
+
+  // 1. Carrega cache
+  try {
+    const cached = await cache.loadCached(unique);
+    for (const c of cached) result.set(c.entityId, c.entityName);
+  } catch (err) {
+    console.error("[resolveEntityNames] cache load failed (proceeding without cache)", err);
+  }
+
+  // 2. Faltantes
+  const missing = unique.filter((id) => !result.has(id));
+  if (missing.length === 0) return result;
+
+  // 3. Batch Meta API
+  const fresh: CachedEntityName[] = [];
+  for (let i = 0; i < missing.length; i += META_NAMES_BATCH_LIMIT) {
+    const batch = missing.slice(i, i + META_NAMES_BATCH_LIMIT);
+    try {
+      const data = await fetchMeta<Record<string, { id: string; name: string }>>(
+        `/?ids=${batch.join(",")}&fields=id,name`,
+        accessToken,
+      );
+      for (const id of batch) {
+        const entry = data[id];
+        if (entry?.name) {
+          result.set(id, entry.name);
+          fresh.push({ entityId: id, entityName: entry.name });
+        }
+      }
+    } catch (err) {
+      console.error(`[resolveEntityNames] batch ${i / META_NAMES_BATCH_LIMIT + 1} failed (continuing)`, err);
+    }
+    if (i + META_NAMES_BATCH_LIMIT < missing.length) {
+      await sleep(META_NAMES_BATCH_THROTTLE_MS);
+    }
+  }
+
+  // 4. Upsert
+  if (fresh.length > 0) {
+    try {
+      await cache.saveToCache(fresh);
+    } catch (err) {
+      console.error("[resolveEntityNames] cache save failed (returning results anyway)", err);
+    }
+  }
+
+  // 5. Fallback: ids que não resolveram caem em si mesmos (caller detecta via id === name)
+  for (const id of unique) if (!result.has(id)) result.set(id, id);
+
+  return result;
+}

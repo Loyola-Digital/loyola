@@ -29,7 +29,7 @@ function SalesCard({ label, value, highlight }: SalesCardProps) {
 }
 
 interface SalesTableProps {
-  rows: { key: string; label: string; vendas: number; bruto: number }[];
+  rows: { key: string; label: string; vendas: number; bruto: number; unresolved?: boolean }[];
   emptyMessage: string;
   keyLabel: string;
 }
@@ -54,7 +54,19 @@ function SalesTable({ rows, emptyMessage, keyLabel }: SalesTableProps) {
         <tbody>
           {rows.map((row) => (
             <tr key={row.key} className="border-t border-border/10">
-              <td className="py-2 px-3 font-medium">{row.label}</td>
+              <td className="py-2 px-3 font-medium">
+                <span className={row.unresolved ? "font-mono text-muted-foreground" : undefined}>
+                  {row.label}
+                </span>
+                {row.unresolved && (
+                  <span
+                    className="ml-2 text-[10px] text-amber-500"
+                    title="Nome não resolvido — id não encontrado no cache nem na Meta API"
+                  >
+                    ⚠️ não resolvido
+                  </span>
+                )}
+              </td>
               <td className="py-2 px-3 text-right text-muted-foreground">
                 {row.vendas}
                 <span className="text-[10px] ml-1">
@@ -153,6 +165,28 @@ export function StageSalesSection({
     bruto: f.bruto,
   }));
 
+  // Story 28.7: tabelas "Por Term (Adset)" e "Por Content (Ad)" restauradas.
+  // Backend resolve via cache persistente; quando `name === id`, mostra badge
+  // de "não resolvido" pra o gestor saber que aquele item específico falhou.
+  const termRows = (data.porUtmTerm ?? [])
+    .filter((t) => t.term !== "Não informado")
+    .map((t) => ({
+      key: t.term,
+      label: t.name,
+      unresolved: t.name === t.term,
+      vendas: t.vendas,
+      bruto: t.bruto,
+    }));
+  const contentRows = (data.porUtmContent ?? [])
+    .filter((c) => c.content !== "Não informado")
+    .map((c) => ({
+      key: c.content,
+      label: c.name,
+      unresolved: c.name === c.content,
+      vendas: c.vendas,
+      bruto: c.bruto,
+    }));
+
   return (
     <div className="space-y-4">
       <p className="text-sm font-semibold">{title}</p>
@@ -173,6 +207,26 @@ export function StageSalesSection({
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">Por Medium (Adset)</p>
         <SalesTable rows={mediumRows} emptyMessage="Sem dados de medium (mapeie a coluna utm_medium na planilha)." keyLabel="Adset" />
+      </div>
+
+      {/* Story 28.7: Por Term (utm_term → adset_name via cache Meta) */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">Por Adset (utm_term)</p>
+        <SalesTable
+          rows={termRows}
+          emptyMessage="Sem dados de term (mapeie a coluna utm_term na planilha)."
+          keyLabel="Adset"
+        />
+      </div>
+
+      {/* Story 28.7: Por Content (utm_content → ad_name via cache Meta) */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">Por Content (Ad)</p>
+        <SalesTable
+          rows={contentRows}
+          emptyMessage="Sem dados de content (mapeie a coluna utm_content na planilha)."
+          keyLabel="Anúncio"
+        />
       </div>
 
       {/* Forma de Pagamento */}
