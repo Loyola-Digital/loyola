@@ -3,7 +3,6 @@
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { StageSalesSubtype } from "@loyola-x/shared";
-import { resolveSalesByMediumByAdsets } from "@/lib/hooks/use-funnel-adsets-map";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("pt-BR", {
@@ -29,7 +28,7 @@ function SalesCard({ label, value, highlight }: SalesCardProps) {
 }
 
 interface SalesTableProps {
-  rows: { key: string; label: string; vendas: number; bruto: number }[];
+  rows: { key: string; label: string; vendas: number; bruto: number; unresolved?: boolean }[];
   emptyMessage: string;
   keyLabel: string;
 }
@@ -54,7 +53,19 @@ function SalesTable({ rows, emptyMessage, keyLabel }: SalesTableProps) {
         <tbody>
           {rows.map((row) => (
             <tr key={row.key} className="border-t border-border/10">
-              <td className="py-2 px-3 font-medium">{row.label}</td>
+              <td className="py-2 px-3 font-medium">
+                <span className={row.unresolved ? "font-mono text-muted-foreground" : undefined}>
+                  {row.label}
+                </span>
+                {row.unresolved && (
+                  <span
+                    className="ml-2 text-[10px] text-amber-500"
+                    title="Nome não resolvido — id não encontrado no cache nem na Meta API"
+                  >
+                    ⚠️ não resolvido
+                  </span>
+                )}
+              </td>
               <td className="py-2 px-3 text-right text-muted-foreground">
                 {row.vendas}
                 <span className="text-[10px] ml-1">
@@ -134,17 +145,25 @@ export function StageSalesSection({
     bruto: c.bruto,
   }));
 
-  // Resolve adset_id → adset_name e re-agrupa pelos mesmos nomes (vários IDs
-  // podem ter o mesmo nome em campanhas duplicadas).
-  const resolvedMedium = adsetsMap
-    ? resolveSalesByMediumByAdsets(data.porUtmMedium ?? [], adsetsMap)
-    : (data.porUtmMedium ?? []);
-  const mediumRows = resolvedMedium.map((m) => ({
-    key: m.medium,
-    label: m.medium,
-    vendas: m.vendas,
-    bruto: m.bruto,
-  }));
+  // Story 28.7: backend resolve adset_name via cache persistente em
+  // `porUtmMedium[i].name`. `adsetsMap` fica como fallback secundário pra cobrir
+  // o caso onde o backend não resolveu (sem conta Meta vinculada ao projeto, ou
+  // API down) — caller continua passando o map por enquanto pra retrocompat.
+  const mediumRows = (data.porUtmMedium ?? [])
+    .filter((m) => m.medium !== "Não informado")
+    .map((m) => {
+      const backendResolved = m.name !== m.medium;
+      const fallback = !backendResolved ? adsetsMap?.get(m.medium) : undefined;
+      const finalLabel = backendResolved ? m.name : fallback || m.medium;
+      const unresolved = !backendResolved && !fallback;
+      return {
+        key: m.medium,
+        label: finalLabel,
+        unresolved,
+        vendas: m.vendas,
+        bruto: m.bruto,
+      };
+    });
 
   const formaRows = data.porFormaPagamento.map((f) => ({
     key: f.forma,
@@ -152,6 +171,28 @@ export function StageSalesSection({
     vendas: f.vendas,
     bruto: f.bruto,
   }));
+
+  // Story 28.7: tabelas "Por Term (Adset)" e "Por Content (Ad)" restauradas.
+  // Backend resolve via cache persistente; quando `name === id`, mostra badge
+  // de "não resolvido" pra o gestor saber que aquele item específico falhou.
+  const termRows = (data.porUtmTerm ?? [])
+    .filter((t) => t.term !== "Não informado")
+    .map((t) => ({
+      key: t.term,
+      label: t.name,
+      unresolved: t.name === t.term,
+      vendas: t.vendas,
+      bruto: t.bruto,
+    }));
+  const contentRows = (data.porUtmContent ?? [])
+    .filter((c) => c.content !== "Não informado")
+    .map((c) => ({
+      key: c.content,
+      label: c.name,
+      unresolved: c.name === c.content,
+      vendas: c.vendas,
+      bruto: c.bruto,
+    }));
 
   return (
     <div className="space-y-4">
@@ -173,6 +214,26 @@ export function StageSalesSection({
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">Por Medium (Adset)</p>
         <SalesTable rows={mediumRows} emptyMessage="Sem dados de medium (mapeie a coluna utm_medium na planilha)." keyLabel="Adset" />
+      </div>
+
+      {/* Story 28.7: Por Term (utm_term → adset_name via cache Meta) */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">Por Adset (utm_term)</p>
+        <SalesTable
+          rows={termRows}
+          emptyMessage="Sem dados de term (mapeie a coluna utm_term na planilha)."
+          keyLabel="Adset"
+        />
+      </div>
+
+      {/* Story 28.7: Por Content (utm_content → ad_name via cache Meta) */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">Por Content (Ad)</p>
+        <SalesTable
+          rows={contentRows}
+          emptyMessage="Sem dados de content (mapeie a coluna utm_content na planilha)."
+          keyLabel="Anúncio"
+        />
       </div>
 
       {/* Forma de Pagamento */}

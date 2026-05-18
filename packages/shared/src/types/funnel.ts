@@ -85,19 +85,24 @@ export interface StageSalesData {
   porCanal: { canal: string; vendas: number; bruto: number; liquido: number }[];
   porFormaPagamento: { forma: string; vendas: number; bruto: number; liquido: number }[];
   porUtmSource: { fonte: string; vendas: number; bruto: number; liquido: number }[];
-  porUtmMedium: { medium: string; vendas: number; bruto: number; liquido: number }[];
+  /**
+   * Agregação por utm_medium. utm_medium carrega o adset_id (padrão Loyola).
+   * Backend resolve pra adset_name via cache persistente (Story 28.7) — quando
+   * não resolveu, `name === medium` (fallback).
+   */
+  porUtmMedium: { medium: string; name: string; vendas: number; bruto: number; liquido: number }[];
   /**
    * Agregação por utm_term. Quando utm_term carrega o adset_id (padrão Loyola),
-   * o frontend resolve pra adset_name via Meta API e re-agrupa pelos mesmos
-   * nomes de adset.
+   * o backend resolve pra adset_name via Meta API (cache persistente, Story
+   * 28.7) e preenche `name`. Quando não resolveu, `name === term` (fallback).
    */
-  porUtmTerm: { term: string; vendas: number; bruto: number; liquido: number }[];
+  porUtmTerm: { term: string; name: string; vendas: number; bruto: number; liquido: number }[];
   /**
    * Agregação por utm_content. utm_content carrega o ad_id (padrão Loyola); o
-   * frontend resolve pra ad_name via Meta API e re-agrupa pelos mesmos nomes
-   * de ad (ad_ids diferentes com mesmo nome → mesma linha).
+   * backend resolve pra ad_name via Meta API (cache persistente, Story 28.7).
+   * Quando não resolveu, `name === content` (fallback).
    */
-  porUtmContent: { content: string; vendas: number; bruto: number; liquido: number }[];
+  porUtmContent: { content: string; name: string; vendas: number; bruto: number; liquido: number }[];
   semDados: boolean;
   /**
    * Story 28.4: counters de instrumentação. Só é preenchido quando o request

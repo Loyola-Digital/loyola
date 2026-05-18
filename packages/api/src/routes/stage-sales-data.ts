@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray, gte, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   stageSalesSpreadsheets,
@@ -7,8 +7,21 @@ import {
   funnels,
   projects,
   projectMembers,
+  metaAdsAccountProjects,
+  metaAdsAccounts,
+  metaEntityNamesCache,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import {
+  decryptAccountToken,
+  resolveEntityNames,
+  type MetaEntityType,
+  type ResolveEntityNamesCacheAdapter,
+} from "../services/meta-ads.js";
+
+// Story 28.7: TTL do cache de nomes Meta (ad/adset/campaign). Names são MUITO
+// estáveis (criativo raramente muda de nome após criado), então 24h é seguro.
+const META_NAMES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // ============================================================
 // SCHEMAS
@@ -85,6 +98,88 @@ const EMPTY_RESPONSE = {
 // ============================================================
 
 export default fp(async function stageSalesDataRoutes(fastify) {
+  /**
+   * Story 28.7: Adapter de cache de nomes Meta. Encapsula leitura/escrita do
+   * `meta_entity_names_cache` com TTL aplicado. Retornado pra cada `(projectId,
+   * entityType)` — o `resolveEntityNames` chama load/save sem saber de Drizzle.
+   */
+  function makeMetaNamesCacheAdapter(
+    projectId: string,
+    entityType: MetaEntityType,
+  ): ResolveEntityNamesCacheAdapter {
+    return {
+      async loadCached(ids: string[]) {
+        if (ids.length === 0) return [];
+        const cutoff = new Date(Date.now() - META_NAMES_CACHE_TTL_MS);
+        const rows = await fastify.db
+          .select({
+            entityId: metaEntityNamesCache.entityId,
+            entityName: metaEntityNamesCache.entityName,
+          })
+          .from(metaEntityNamesCache)
+          .where(
+            and(
+              eq(metaEntityNamesCache.projectId, projectId),
+              eq(metaEntityNamesCache.entityType, entityType),
+              inArray(metaEntityNamesCache.entityId, ids),
+              gte(metaEntityNamesCache.lastSyncedAt, cutoff),
+            ),
+          );
+        return rows;
+      },
+      async saveToCache(entries) {
+        if (entries.length === 0) return;
+        await fastify.db
+          .insert(metaEntityNamesCache)
+          .values(
+            entries.map((e) => ({
+              projectId,
+              entityType,
+              entityId: e.entityId,
+              entityName: e.entityName,
+              lastSyncedAt: new Date(),
+            })),
+          )
+          .onConflictDoUpdate({
+            target: [
+              metaEntityNamesCache.projectId,
+              metaEntityNamesCache.entityType,
+              metaEntityNamesCache.entityId,
+            ],
+            set: {
+              entityName: sql`EXCLUDED.entity_name`,
+              lastSyncedAt: sql`EXCLUDED.last_synced_at`,
+            },
+          });
+      },
+    };
+  }
+
+  /**
+   * Story 28.7: pega o access token Meta do projeto. Retorna null se projeto
+   * não tem conta Meta vinculada — caller deve degradar gracefully (sem
+   * resolver names, fallback id puro).
+   */
+  async function getProjectMetaToken(projectId: string): Promise<string | null> {
+    const [link] = await fastify.db
+      .select({ accountId: metaAdsAccountProjects.accountId })
+      .from(metaAdsAccountProjects)
+      .where(eq(metaAdsAccountProjects.projectId, projectId))
+      .limit(1);
+    if (!link) return null;
+    const [account] = await fastify.db
+      .select()
+      .from(metaAdsAccounts)
+      .where(eq(metaAdsAccounts.id, link.accountId))
+      .limit(1);
+    if (!account) return null;
+    try {
+      return decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
+    } catch {
+      return null;
+    }
+  }
+
   async function getProjectAccess(projectId: string, userId: string, userRole: string) {
     if (userRole === "guest") {
       const [member] = await fastify.db
@@ -356,6 +451,40 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       const ticketMedioOrganico = organicoData && organicoData.vendas > 0 ? organicoData.bruto / organicoData.vendas : 0;
       const ticketMedioSemTrack = semTrackData && semTrackData.vendas > 0 ? semTrackData.bruto / semTrackData.vendas : 0;
 
+      // Story 28.7: resolve utm_medium + utm_term (ambos carregam adset_id no
+      // padrão Loyola) e utm_content (ad_id) em nomes via cache persistente +
+      // batch Meta API. Graceful: sem conta Meta vinculada OU resolve falha,
+      // ids viram fallback no name (caller detecta via `id === name`).
+      //
+      // Otimização: utm_medium e utm_term costumam ter overlap (mesmo adset_id),
+      // mas chamamos separado por clareza — o cache deduplica entre keys da
+      // tabela, então não há request Meta duplicado.
+      const mediumIds = Array.from(utmMediumMap.keys()).filter((k) => k !== "Não informado");
+      const termIds = Array.from(utmTermMap.keys()).filter((k) => k !== "Não informado");
+      const contentIds = Array.from(utmContentMap.keys()).filter((k) => k !== "Não informado");
+      const metaToken = await getProjectMetaToken(params.data.projectId);
+      let mediumNames = new Map<string, string>();
+      let termNames = new Map<string, string>();
+      let contentNames = new Map<string, string>();
+      if (metaToken && (mediumIds.length > 0 || termIds.length > 0 || contentIds.length > 0)) {
+        const adsetAdapter = makeMetaNamesCacheAdapter(params.data.projectId, "adset");
+        const adAdapter = makeMetaNamesCacheAdapter(params.data.projectId, "ad");
+        const [resolvedMedium, resolvedTerm, resolvedContent] = await Promise.all([
+          mediumIds.length > 0
+            ? resolveEntityNames(mediumIds, metaToken, adsetAdapter)
+            : Promise.resolve(new Map<string, string>()),
+          termIds.length > 0
+            ? resolveEntityNames(termIds, metaToken, adsetAdapter)
+            : Promise.resolve(new Map<string, string>()),
+          contentIds.length > 0
+            ? resolveEntityNames(contentIds, metaToken, adAdapter)
+            : Promise.resolve(new Map<string, string>()),
+        ]);
+        mediumNames = resolvedMedium;
+        termNames = resolvedTerm;
+        contentNames = resolvedContent;
+      }
+
       return {
         totalVendas,
         faturamentoBruto: totalBruto,
@@ -375,13 +504,13 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           .map(([fonte, v]) => ({ fonte, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
         porUtmMedium: Array.from(utmMediumMap.entries())
-          .map(([medium, v]) => ({ medium, ...v }))
+          .map(([medium, v]) => ({ medium, name: mediumNames.get(medium) ?? medium, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
         porUtmTerm: Array.from(utmTermMap.entries())
-          .map(([term, v]) => ({ term, ...v }))
+          .map(([term, v]) => ({ term, name: termNames.get(term) ?? term, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
         porUtmContent: Array.from(utmContentMap.entries())
-          .map(([content, v]) => ({ content, ...v }))
+          .map(([content, v]) => ({ content, name: contentNames.get(content) ?? content, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
         semDados: false,
         // Story 28.4: debug counters só quando ?debug=1
