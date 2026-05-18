@@ -451,31 +451,36 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       const ticketMedioOrganico = organicoData && organicoData.vendas > 0 ? organicoData.bruto / organicoData.vendas : 0;
       const ticketMedioSemTrack = semTrackData && semTrackData.vendas > 0 ? semTrackData.bruto / semTrackData.vendas : 0;
 
-      // Story 28.7: resolve utm_term (adset_id) e utm_content (ad_id) em nomes
-      // usando cache persistente + batch Meta API. Graceful: se projeto não tem
-      // conta Meta vinculada OU resolve falha, ids viram fallback no name.
+      // Story 28.7: resolve utm_medium + utm_term (ambos carregam adset_id no
+      // padrão Loyola) e utm_content (ad_id) em nomes via cache persistente +
+      // batch Meta API. Graceful: sem conta Meta vinculada OU resolve falha,
+      // ids viram fallback no name (caller detecta via `id === name`).
+      //
+      // Otimização: utm_medium e utm_term costumam ter overlap (mesmo adset_id),
+      // mas chamamos separado por clareza — o cache deduplica entre keys da
+      // tabela, então não há request Meta duplicado.
+      const mediumIds = Array.from(utmMediumMap.keys()).filter((k) => k !== "Não informado");
       const termIds = Array.from(utmTermMap.keys()).filter((k) => k !== "Não informado");
       const contentIds = Array.from(utmContentMap.keys()).filter((k) => k !== "Não informado");
       const metaToken = await getProjectMetaToken(params.data.projectId);
+      let mediumNames = new Map<string, string>();
       let termNames = new Map<string, string>();
       let contentNames = new Map<string, string>();
-      if (metaToken && (termIds.length > 0 || contentIds.length > 0)) {
-        const [resolvedTerm, resolvedContent] = await Promise.all([
+      if (metaToken && (mediumIds.length > 0 || termIds.length > 0 || contentIds.length > 0)) {
+        const adsetAdapter = makeMetaNamesCacheAdapter(params.data.projectId, "adset");
+        const adAdapter = makeMetaNamesCacheAdapter(params.data.projectId, "ad");
+        const [resolvedMedium, resolvedTerm, resolvedContent] = await Promise.all([
+          mediumIds.length > 0
+            ? resolveEntityNames(mediumIds, metaToken, adsetAdapter)
+            : Promise.resolve(new Map<string, string>()),
           termIds.length > 0
-            ? resolveEntityNames(
-                termIds,
-                metaToken,
-                makeMetaNamesCacheAdapter(params.data.projectId, "adset"),
-              )
+            ? resolveEntityNames(termIds, metaToken, adsetAdapter)
             : Promise.resolve(new Map<string, string>()),
           contentIds.length > 0
-            ? resolveEntityNames(
-                contentIds,
-                metaToken,
-                makeMetaNamesCacheAdapter(params.data.projectId, "ad"),
-              )
+            ? resolveEntityNames(contentIds, metaToken, adAdapter)
             : Promise.resolve(new Map<string, string>()),
         ]);
+        mediumNames = resolvedMedium;
         termNames = resolvedTerm;
         contentNames = resolvedContent;
       }
@@ -499,7 +504,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           .map(([fonte, v]) => ({ fonte, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
         porUtmMedium: Array.from(utmMediumMap.entries())
-          .map(([medium, v]) => ({ medium, ...v }))
+          .map(([medium, v]) => ({ medium, name: mediumNames.get(medium) ?? medium, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
         porUtmTerm: Array.from(utmTermMap.entries())
           .map(([term, v]) => ({ term, name: termNames.get(term) ?? term, ...v }))

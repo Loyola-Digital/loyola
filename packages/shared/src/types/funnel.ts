@@ -85,7 +85,12 @@ export interface StageSalesData {
   porCanal: { canal: string; vendas: number; bruto: number; liquido: number }[];
   porFormaPagamento: { forma: string; vendas: number; bruto: number; liquido: number }[];
   porUtmSource: { fonte: string; vendas: number; bruto: number; liquido: number }[];
-  porUtmMedium: { medium: string; vendas: number; bruto: number; liquido: number }[];
+  /**
+   * Agregação por utm_medium. utm_medium carrega o adset_id (padrão Loyola).
+   * Backend resolve pra adset_name via cache persistente (Story 28.7) — quando
+   * não resolveu, `name === medium` (fallback).
+   */
+  porUtmMedium: { medium: string; name: string; vendas: number; bruto: number; liquido: number }[];
   /**
    * Agregação por utm_term. Quando utm_term carrega o adset_id (padrão Loyola),
    * o backend resolve pra adset_name via Meta API (cache persistente, Story

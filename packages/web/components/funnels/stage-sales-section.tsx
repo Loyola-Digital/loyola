@@ -3,7 +3,6 @@
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { StageSalesSubtype } from "@loyola-x/shared";
-import { resolveSalesByMediumByAdsets } from "@/lib/hooks/use-funnel-adsets-map";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("pt-BR", {
@@ -146,17 +145,25 @@ export function StageSalesSection({
     bruto: c.bruto,
   }));
 
-  // Resolve adset_id → adset_name e re-agrupa pelos mesmos nomes (vários IDs
-  // podem ter o mesmo nome em campanhas duplicadas).
-  const resolvedMedium = adsetsMap
-    ? resolveSalesByMediumByAdsets(data.porUtmMedium ?? [], adsetsMap)
-    : (data.porUtmMedium ?? []);
-  const mediumRows = resolvedMedium.map((m) => ({
-    key: m.medium,
-    label: m.medium,
-    vendas: m.vendas,
-    bruto: m.bruto,
-  }));
+  // Story 28.7: backend resolve adset_name via cache persistente em
+  // `porUtmMedium[i].name`. `adsetsMap` fica como fallback secundário pra cobrir
+  // o caso onde o backend não resolveu (sem conta Meta vinculada ao projeto, ou
+  // API down) — caller continua passando o map por enquanto pra retrocompat.
+  const mediumRows = (data.porUtmMedium ?? [])
+    .filter((m) => m.medium !== "Não informado")
+    .map((m) => {
+      const backendResolved = m.name !== m.medium;
+      const fallback = !backendResolved ? adsetsMap?.get(m.medium) : undefined;
+      const finalLabel = backendResolved ? m.name : fallback || m.medium;
+      const unresolved = !backendResolved && !fallback;
+      return {
+        key: m.medium,
+        label: finalLabel,
+        unresolved,
+        vendas: m.vendas,
+        bruto: m.bruto,
+      };
+    });
 
   const formaRows = data.porFormaPagamento.map((f) => ({
     key: f.forma,
