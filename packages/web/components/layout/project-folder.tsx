@@ -805,7 +805,6 @@ function SortableStageNavItem({
         className="absolute left-0 z-10 p-0.5 rounded cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground opacity-0 group-hover/stage:opacity-100 transition-opacity"
         aria-label="Arrastar pra reordenar"
         onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
       >
         <GripVertical className="h-3 w-3" />
       </button>
