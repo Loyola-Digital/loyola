@@ -222,6 +222,83 @@ export function enrichWithPaidLeads(
 }
 
 /**
+ * Story 8.9: resultado do cálculo do limiar de relevância estatística.
+ *
+ * - `mode: 'cpa'` — há vendas no período. threshold = 2 × (sum(spend) / sum(vendas)).
+ * - `mode: 'spend'` — fallback sem vendas. threshold = 2 × (sum(spend) / count(spend>0)).
+ * - `mode: 'disabled'` — lista vazia ou spend total = 0. Filtro inativo.
+ *
+ * `cpaMedio` só é populado em `mode: 'cpa'`.
+ */
+export interface RelevanceThreshold {
+  threshold: number;
+  mode: "cpa" | "spend" | "disabled";
+  cpaMedio: number | null;
+}
+
+/**
+ * Story 8.9: calcula o limiar de gasto a partir do qual um criativo tem
+ * relevância estatística no período. Regra (validada com Lucas, 2026-05-19):
+ *
+ *   threshold = 2 × CPA agregado do período
+ *   onde CPA agregado = sum(spend) / sum(vendas) sobre todos os criativos
+ *
+ * Fallback (sum(vendas) === 0): usa gasto médio em vez de CPA.
+ * Fallback duplo (lista vazia ou spend total = 0): desativa o filtro.
+ *
+ * Função PURA — não muta a lista de entrada. Cálculo client-side, leve.
+ */
+export function computeRelevanceThreshold(
+  creatives: AggregatedCreative[],
+): RelevanceThreshold {
+  if (creatives.length === 0) {
+    return { threshold: 0, mode: "disabled", cpaMedio: null };
+  }
+  const totalSpend = creatives.reduce((s, c) => s + c.spend, 0);
+  if (totalSpend === 0) {
+    return { threshold: 0, mode: "disabled", cpaMedio: null };
+  }
+  const totalSales = creatives.reduce((s, c) => s + c.salesLegacy, 0);
+  if (totalSales > 0) {
+    const cpaMedio = totalSpend / totalSales;
+    return { threshold: 2 * cpaMedio, mode: "cpa", cpaMedio };
+  }
+  // Fallback: sem vendas no período → usa gasto médio entre criativos com spend > 0
+  const withSpend = creatives.filter((c) => c.spend > 0).length;
+  if (withSpend === 0) {
+    return { threshold: 0, mode: "disabled", cpaMedio: null };
+  }
+  const gastoMedio = totalSpend / withSpend;
+  return { threshold: 2 * gastoMedio, mode: "spend", cpaMedio: null };
+}
+
+/**
+ * Story 8.9: aplica o filtro de relevância sobre uma lista agregada.
+ * Criativos com `spend < threshold` são separados. Retorna a lista visível
+ * e a contagem de ocultos pra o indicador no UI.
+ *
+ * Se `mode === 'disabled'`, retorna a lista inteira intacta (filtro inativo).
+ */
+export function applyRelevanceFilter(
+  creatives: AggregatedCreative[],
+  threshold: RelevanceThreshold,
+): { visible: AggregatedCreative[]; hiddenCount: number } {
+  if (threshold.mode === "disabled") {
+    return { visible: creatives, hiddenCount: 0 };
+  }
+  const visible: AggregatedCreative[] = [];
+  let hiddenCount = 0;
+  for (const c of creatives) {
+    if (c.spend >= threshold.threshold) {
+      visible.push(c);
+    } else {
+      hiddenCount += 1;
+    }
+  }
+  return { visible, hiddenCount };
+}
+
+/**
  * Top resposta (moda) de uma pergunta pro grupo de ads agregados.
  * Usado na Story 18.6 (3.b) pra exibir resposta mais frequente por criativo.
  *
