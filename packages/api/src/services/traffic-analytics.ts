@@ -193,7 +193,7 @@ export function invalidateProjectCache(projectId: string): void {
 // CORE ANALYTICS
 // ============================================================
 
-async function getMetaAccountForProject(
+export async function getMetaAccountForProject(
   db: Database,
   projectId: string
 ): Promise<{ metaAccountId: string; accessToken: string } | null> {
@@ -446,7 +446,7 @@ export async function getProjectAdAnalytics(
 // TOP PERFORMERS (Story 7.8)
 // ============================================================
 
-export type TopPerformerMetric = "roas" | "cpl" | "cplQualified" | "leads" | "sales" | "ctr";
+export type TopPerformerMetric = "roas" | "cpl" | "cplQualified" | "leads" | "sales" | "ctr" | "spend";
 
 export interface TopPerformerAd extends CampaignAnalytics {
   adsetName: string;
@@ -500,7 +500,7 @@ export async function getTopPerformers(
   });
 
   // Sort by metric
-  const descMetrics: TopPerformerMetric[] = ["roas", "leads", "sales", "ctr"];
+  const descMetrics: TopPerformerMetric[] = ["roas", "leads", "sales", "ctr", "spend"];
   const isDesc = descMetrics.includes(metric);
 
   const filtered = ads.filter((a) => {
@@ -540,6 +540,7 @@ function getMetricValue(a: CampaignAnalytics, metric: TopPerformerMetric): numbe
     case "leads": return a.leads;
     case "sales": return a.sales;
     case "ctr": return a.ctr;
+    case "spend": return a.spend;
     default: return null;
   }
 }
