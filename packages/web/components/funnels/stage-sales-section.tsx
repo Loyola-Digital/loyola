@@ -24,6 +24,21 @@ function isMetaNumericId(value: string): boolean {
   return /^\d{15,}$/.test(value.trim());
 }
 
+/**
+ * Story 28.7 hotfix (19/05): filtra UTMs com valor inválido/ausente que
+ * passariam pelo `!== "Não informado"` (strings vazias, literais "null",
+ * "undefined", whitespace). Casa com `sanitizeUtmValue` no backend pra
+ * cobrir caches antigos antes do redeploy.
+ */
+function isValidUtmKey(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const trimmed = String(value).trim();
+  if (!trimmed) return false;
+  if (trimmed === "Não informado") return false;
+  const lower = trimmed.toLowerCase();
+  return lower !== "null" && lower !== "undefined" && lower !== "-" && lower !== "n/a" && lower !== "na";
+}
+
 const TABLE_DEFAULT_TOP_N = 10;
 
 interface SalesCardProps {
@@ -191,11 +206,11 @@ export function StageSalesSection({
   // que falharam — UTMs textuais (`social`, `org`, `captacao`) são válidas e
   // não devem ser marcadas como erro.
   const mediumRows = (data.porUtmMedium ?? [])
-    .filter((m) => m.medium !== "Não informado")
+    .filter((m) => isValidUtmKey(m.medium))
     .map((m) => {
-      const backendResolved = m.name !== m.medium;
+      const backendResolved = !!m.name && m.name !== m.medium;
       const fallback = !backendResolved ? adsetsMap?.get(m.medium) : undefined;
-      const finalLabel = backendResolved ? m.name : fallback || m.medium;
+      const finalLabel = (backendResolved ? m.name : fallback || m.medium) || "(sem identificação)";
       const unresolved = !backendResolved && !fallback && isMetaNumericId(m.medium);
       return {
         key: m.medium,
@@ -215,21 +230,22 @@ export function StageSalesSection({
 
   // Story 28.7: badge "id sem nome" só pra Meta IDs numéricos que não
   // resolveram (ad/adset deletado ou em outra conta). UTM textual literal é
-  // sempre válida.
+  // sempre válida. Fallback `(sem identificação)` cobre casos onde name/id
+  // chegam vazios (planilhas antigas, pre-sanitize backend).
   const termRows = (data.porUtmTerm ?? [])
-    .filter((t) => t.term !== "Não informado")
+    .filter((t) => isValidUtmKey(t.term))
     .map((t) => ({
       key: t.term,
-      label: t.name,
+      label: t.name || t.term || "(sem identificação)",
       unresolved: t.name === t.term && isMetaNumericId(t.term),
       vendas: t.vendas,
       bruto: t.bruto,
     }));
   const contentRows = (data.porUtmContent ?? [])
-    .filter((c) => c.content !== "Não informado")
+    .filter((c) => isValidUtmKey(c.content))
     .map((c) => ({
       key: c.content,
-      label: c.name,
+      label: c.name || c.content || "(sem identificação)",
       unresolved: c.name === c.content && isMetaNumericId(c.content),
       vendas: c.vendas,
       bruto: c.bruto,
