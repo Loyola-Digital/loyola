@@ -1,0 +1,155 @@
+/**
+ * Story 18.24: Calculadora de Métricas de Criativos
+ * Funções puras para calcular ROAS, CPL, CTR, CPC, CPM, % de gasto
+ */
+
+export interface CreativeMetrics {
+  adId: string;
+  adName: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  leads: number;
+  revenue: number;
+  utmTerm: string | null;
+  totalSpend?: number; // para cálculo de percentual
+}
+
+export interface CalculatedMetrics {
+  adId: string;
+  adName: string;
+  spend: number;
+  spendPercent: number; // %
+  impressions: number;
+  clicks: number;
+  ctr: number; // Cliques / Impressões * 100
+  cpc: number | null; // Invest / Cliques
+  cpm: number | null; // (Invest / Impressões) * 1000
+  leads: number;
+  cpl: number | null; // Invest / Leads
+  revenue: number;
+  roas: number | null; // Faturamento / Invest
+  utmTerm: string | null;
+  temperature: "hot" | "cold" | "unknown";
+}
+
+/**
+ * Calcula temperatura do público baseado em utm_term
+ */
+export function calculateTemperature(
+  utmTerm: string | null | undefined
+): "hot" | "cold" | "unknown" {
+  if (!utmTerm) return "unknown";
+  const term = utmTerm.toLowerCase();
+  if (term.includes("hot")) return "hot";
+  if (term.includes("cold")) return "cold";
+  return "unknown";
+}
+
+/**
+ * Calcula CTR (Click-Through Rate)
+ * Cliques / Impressões * 100
+ */
+export function calculateCtr(clicks: number, impressions: number): number {
+  if (impressions === 0) return 0;
+  return (clicks / impressions) * 100;
+}
+
+/**
+ * Calcula CPC (Cost Per Click)
+ * Invest / Cliques
+ * Retorna null se Cliques = 0
+ */
+export function calculateCpc(spend: number, clicks: number): number | null {
+  if (clicks === 0) return null;
+  return spend / clicks;
+}
+
+/**
+ * Calcula CPM (Cost Per Mille/Thousand Impressions)
+ * (Invest / Impressões) * 1000
+ * Retorna null se Impressões = 0
+ */
+export function calculateCpm(spend: number, impressions: number): number | null {
+  if (impressions === 0) return null;
+  return (spend / impressions) * 1000;
+}
+
+/**
+ * Calcula CPL (Cost Per Lead)
+ * Invest / Leads
+ * Retorna null se Leads = 0
+ */
+export function calculateCpl(spend: number, leads: number): number | null {
+  if (leads === 0) return null;
+  return spend / leads;
+}
+
+/**
+ * Calcula ROAS (Return on Ad Spend)
+ * Faturamento / Invest
+ * Retorna null se Invest = 0
+ */
+export function calculateRoas(revenue: number, spend: number): number | null {
+  if (spend === 0) return null;
+  return revenue / spend;
+}
+
+/**
+ * Calcula percentual de gasto em relação ao total
+ * (Spend desta row / Total Spend) * 100
+ */
+export function calculateSpendPercent(spend: number, totalSpend: number): number {
+  if (totalSpend === 0) return 0;
+  return (spend / totalSpend) * 100;
+}
+
+/**
+ * Calcula todas as métricas para um criativo
+ */
+export function calculateCreativeMetrics(
+  creative: CreativeMetrics
+): CalculatedMetrics {
+  const totalSpend = creative.totalSpend || creative.spend;
+
+  return {
+    adId: creative.adId,
+    adName: creative.adName,
+    spend: creative.spend,
+    spendPercent: calculateSpendPercent(creative.spend, totalSpend),
+    impressions: creative.impressions,
+    clicks: creative.clicks,
+    ctr: calculateCtr(creative.clicks, creative.impressions),
+    cpc: calculateCpc(creative.spend, creative.clicks),
+    cpm: calculateCpm(creative.spend, creative.impressions),
+    leads: creative.leads,
+    cpl: calculateCpl(creative.spend, creative.leads),
+    revenue: creative.revenue,
+    roas: calculateRoas(creative.revenue, creative.spend),
+    utmTerm: creative.utmTerm,
+    temperature: calculateTemperature(creative.utmTerm),
+  };
+}
+
+/**
+ * Formata número para exibição (com fallback "—" para valores inválidos)
+ */
+export function formatMetricValue(
+  value: number | null | undefined,
+  type: "currency" | "percentage" | "number" = "number"
+): string {
+  if (value === null || value === undefined || isNaN(value)) {
+    return "—";
+  }
+
+  switch (type) {
+    case "currency":
+      return `R$ ${value.toFixed(2)}`;
+    case "percentage":
+      return `${value.toFixed(2)}%`;
+    case "number":
+      if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+      if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+      return value.toLocaleString("pt-BR");
+  }
+}
