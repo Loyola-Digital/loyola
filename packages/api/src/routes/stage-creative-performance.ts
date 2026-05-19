@@ -289,13 +289,42 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           }
         }
 
-        // 6. Monta a resposta — uma linha por ad do Meta, enriquecida com
-        // leads/revenue/utmTerm quando ha match nas planilhas.
-        const creatives: CreativePerformanceResponse[] = [];
-        for (const ad of allAds) {
-          const adId = ad.ad_id;
-          const leadsAgg = leadsByAdId.get(adId);
+        // 6. Agrupa por ad_name e agrega métricas
+        // Map: adName → { spend, impressions, clicks, adIds, utmTermsByAdId }
+        const groupedByAdName = new Map<
+          string,
+          {
+            spend: number;
+            impressions: number;
+            clicks: number;
+            adIds: Set<string>;
+            utmTermsByAdId: Map<string, string | null>;
+          }
+        >();
 
+        for (const ad of allAds) {
+          const adName = ad.ad_name;
+          let group = groupedByAdName.get(adName);
+
+          if (!group) {
+            group = {
+              spend: 0,
+              impressions: 0,
+              clicks: 0,
+              adIds: new Set(),
+              utmTermsByAdId: new Map(),
+            };
+            groupedByAdName.set(adName, group);
+          }
+
+          const adId = ad.ad_id;
+          group.spend += parseFloat(ad.spend || "0");
+          group.impressions += parseFloat(ad.impressions || "0");
+          group.clicks += parseFloat(ad.clicks || "0");
+          group.adIds.add(adId);
+
+          // Captura utmTerm para cada adId dentro do grupo
+          const leadsAgg = leadsByAdId.get(adId);
           let topUtmTerm: string | null = null;
           if (leadsAgg && leadsAgg.utmTermCounts.size > 0) {
             let bestCount = -1;
@@ -306,15 +335,53 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               }
             }
           }
+          group.utmTermsByAdId.set(adId, topUtmTerm);
+        }
+
+        // 7. Monta resposta agrupada — uma linha por ad_name
+        const creatives: CreativePerformanceResponse[] = [];
+        for (const [adName, group] of groupedByAdName.entries()) {
+          // Agrupa leads e revenue por ad_name (soma de todos adIds no grupo)
+          let totalLeads = 0;
+          let totalRevenue = 0;
+          const allUtmTerms = new Map<string, number>();
+
+          for (const adId of group.adIds) {
+            const leadsAgg = leadsByAdId.get(adId);
+            if (leadsAgg) {
+              totalLeads += leadsAgg.count;
+              // Agrega contagem de utm_terms
+              for (const [term, count] of leadsAgg.utmTermCounts.entries()) {
+                allUtmTerms.set(term, (allUtmTerms.get(term) ?? 0) + count);
+              }
+            }
+            const revenue = revenueByAdId.get(adId) ?? 0;
+            totalRevenue += revenue;
+          }
+
+          // Determina topUtmTerm (moda agregada)
+          let topUtmTerm: string | null = null;
+          if (allUtmTerms.size > 0) {
+            let bestCount = -1;
+            for (const [term, count] of allUtmTerms.entries()) {
+              if (count > bestCount) {
+                bestCount = count;
+                topUtmTerm = term;
+              }
+            }
+          }
+
+          // Usa primeiro adId como representante
+          const firstAdId = Array.from(group.adIds)[0] || "";
 
           creatives.push({
-            adId,
-            adName: ad.ad_name,
-            spend: parseFloat(ad.spend || "0"),
-            impressions: parseFloat(ad.impressions || "0"),
-            clicks: parseFloat(ad.clicks || "0"),
-            leads: leadsAgg?.count ?? 0,
-            revenue: revenueByAdId.get(adId) ?? 0,
+            adId: firstAdId,
+            adName,
+            spend: group.spend,
+            impressions: group.impressions,
+            clicks: group.clicks,
+            leads: totalLeads,
+            revenue: totalRevenue,
             utmTerm: topUtmTerm,
           });
         }
