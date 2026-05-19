@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
+import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { StageSalesSubtype } from "@loyola-x/shared";
 
@@ -292,6 +293,18 @@ export function StageSalesSection({
           keyLabel="Anúncio"
         />
       </div>
+
+      {/* Story 18.24: Tabela de Desempenho de Criativos */}
+      {subtype === "capture" && (
+        <div className="space-y-2 border-t pt-4 mt-4">
+          <p className="text-xs font-medium text-muted-foreground">Desempenho de Criativos (Meta Ads)</p>
+          <StageCreativePerformanceTable
+            funnelId={funnelId}
+            stageId={stageId}
+            days={days}
+          />
+        </div>
+      )}
 
       {/* Forma de Pagamento */}
       <div className="space-y-2">

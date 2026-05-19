@@ -193,7 +193,7 @@ export function invalidateProjectCache(projectId: string): void {
 // CORE ANALYTICS
 // ============================================================
 
-async function getMetaAccountForProject(
+export async function getMetaAccountForProject(
   db: Database,
   projectId: string
 ): Promise<{ metaAccountId: string; accessToken: string } | null> {
