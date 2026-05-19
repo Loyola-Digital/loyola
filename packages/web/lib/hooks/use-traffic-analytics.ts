@@ -183,7 +183,7 @@ export function useTrafficAds(
 // TOP PERFORMERS & ALL ADSETS (Story 7.8)
 // ============================================================
 
-export type TopPerformerMetric = "roas" | "cpl" | "cplQualified" | "leads" | "sales" | "ctr";
+export type TopPerformerMetric = "roas" | "cpl" | "cplQualified" | "leads" | "sales" | "ctr" | "spend";
 
 export interface TopPerformerAd extends CampaignAnalytics {
   adsetName: string;

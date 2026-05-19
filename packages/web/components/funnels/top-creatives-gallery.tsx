@@ -623,13 +623,15 @@ export function TopCreativesGallery({
     [],
   );
 
-  // Story 18.5: limit=20, todas as campanhas do funil/stage (não apenas a 1ª).
-  // Backend aceita `campaignIds` CSV via Meta API IN filter — múltiplas
-  // campanhas num único request.
+  // Hotfix pos-Story 8.9: buscamos por SPEND desc (limit=100) em vez de CTR.
+  // Rationale: o filtro de relevancia estatistica trabalha sobre spend, e o
+  // ranking por CTR favorecia criativos pequenos com CTR anomalo, deixando
+  // grandes spenders fora do payload. Limit=100 e o teto do backend e cobre
+  // qualquer conta realista do produto.
   const { data, isLoading } = useTopPerformers(
     projectId,
-    "ctr" as const,
-    20,
+    "spend" as const,
+    100,
     days,
     campaignIds && campaignIds.length > 0 ? campaignIds : null,
   );

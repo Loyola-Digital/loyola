@@ -193,7 +193,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   // `campaignId` (single, legacy) e `campaignIds` (CSV, multi) são aceitos.
   // Se ambos presentes, `campaignIds` prevalece.
   const topPerformersQuerySchema = z.object({
-    metric: z.enum(["roas", "cpl", "cplQualified", "leads", "sales", "ctr"]).default("roas"),
+    metric: z.enum(["roas", "cpl", "cplQualified", "leads", "sales", "ctr", "spend"]).default("roas"),
     limit: z.coerce.number().int().min(1).max(100).default(5),
     days: z.coerce.number().int().min(1).max(90).default(30),
     campaignId: z.string().optional(),
