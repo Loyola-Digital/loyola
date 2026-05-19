@@ -10,7 +10,6 @@ import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { funnels, funnelStages } from "../db/schema.js";
-import { fetchAdInsights, decryptAccountToken } from "../services/meta-ads.js";
 
 // ============================================================
 // SCHEMAS
@@ -28,17 +27,6 @@ const querySchema = z.object({
 // ============================================================
 // TYPES
 // ============================================================
-
-interface AdMetric {
-  meta_adid: string;
-  meta_adname: string;
-  spend: number;
-  impressions: number;
-  clicks: number;
-  leads: number;
-  revenue: number;
-  utm_term: string | null;
-}
 
 interface CreativePerformanceResponse {
   adId: string;
