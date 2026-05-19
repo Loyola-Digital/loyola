@@ -253,18 +253,18 @@ export function StageCreativePerformanceTable({
                       {row.adName}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.spend, "currency")}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.spend, "currency", { compact: true })}</TableCell>
                   <TableCell className="text-right tabular-nums text-muted-foreground">
                     {formatMetricValue(row.spendPercent, "percentage")}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.impressions, "number")}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.clicks, "number")}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.impressions, "number", { compact: true })}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.clicks, "number", { compact: true })}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatMetricValue(row.ctr, "percentage")}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatMetricValue(row.cpc, "currency")}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatMetricValue(row.cpm, "currency")}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatMetricValue(row.leads, "number")}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatMetricValue(row.cpl, "currency")}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.revenue, "currency")}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.revenue, "currency", { compact: true })}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">
                     {row.roas != null ? `${row.roas.toFixed(2)}x` : "—"}
                   </TableCell>

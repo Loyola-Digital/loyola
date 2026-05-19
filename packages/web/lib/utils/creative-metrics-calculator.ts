@@ -131,12 +131,27 @@ export function calculateCreativeMetrics(
   };
 }
 
+const BRL_FORMATTER = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+});
+
+const INT_FORMATTER = new Intl.NumberFormat("pt-BR", {
+  maximumFractionDigits: 0,
+});
+
 /**
- * Formata número para exibição (com fallback "—" para valores inválidos)
+ * Formata número para exibição (com fallback "—" para valores inválidos).
+ *
+ * - `currency`: BRL completo (R$ 120.786,80). `compact: true` usa K/M
+ *   (R$ 14,3K) — usado em celulas estreitas da tabela.
+ * - `percentage`: 2 casas decimais com %.
+ * - `number`: inteiro com separador de milhar. `compact: true` usa K/M.
  */
 export function formatMetricValue(
   value: number | null | undefined,
-  type: "currency" | "percentage" | "number" = "number"
+  type: "currency" | "percentage" | "number" = "number",
+  options: { compact?: boolean } = {}
 ): string {
   if (value === null || value === undefined || isNaN(value)) {
     return "—";
@@ -144,12 +159,18 @@ export function formatMetricValue(
 
   switch (type) {
     case "currency":
-      return `R$ ${value.toFixed(2)}`;
+      if (options.compact) {
+        if (value >= 1_000_000) return `R$ ${(value / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}M`;
+        if (value >= 1_000) return `R$ ${(value / 1_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}K`;
+      }
+      return BRL_FORMATTER.format(value);
     case "percentage":
       return `${value.toFixed(2)}%`;
     case "number":
-      if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-      if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-      return value.toLocaleString("pt-BR");
+      if (options.compact) {
+        if (value >= 1_000_000) return `${(value / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}M`;
+        if (value >= 1_000) return `${(value / 1_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}K`;
+      }
+      return INT_FORMATTER.format(value);
   }
 }
