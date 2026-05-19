@@ -43,6 +43,8 @@ import {
   enrichWithPaidLeads,
   mergeSurveyForGroup,
   mergeSurveyDynamicForGroup,
+  computeRelevanceThreshold,
+  applyRelevanceFilter,
   type AggregatedCreative,
 } from "@/lib/utils/top-creatives";
 import type {
@@ -601,6 +603,10 @@ export function TopCreativesGallery({
   const [metric, setMetric] = useState<LocalMetric>("cpl");
   const [expanded, setExpanded] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  // Story 8.9: filtro de relevância estatística. Default OFF = filtro ATIVO
+  // (esconde criativos sem volume estatístico). Não persiste entre sessões —
+  // o threshold é dinâmico por período, persistir confundiria.
+  const [showAll, setShowAll] = useState(false);
 
   // Story 21.7 — faturamento real por criativo (cruzamento leads × vendas).
   // Só ativa quando temos funnelId+stageId; hook é no-op (`enabled: false`)
@@ -653,7 +659,21 @@ export function TopCreativesGallery({
     return enrichWithPaidLeads(agg, filtered, utmContentMapped, utmSourceMapped);
   }, [data, sheetData, days]);
 
-  const sorted = useMemo(() => sortByMetric(aggregated, metric), [aggregated, metric]);
+  // Story 8.9: limiar de relevância estatística calculado sobre o conjunto
+  // agregado completo. threshold = 2 × CPA agregado (ou 2 × gasto médio se
+  // sem vendas). Filtro escondido quando mode === 'disabled'.
+  const relevanceThreshold = useMemo(
+    () => computeRelevanceThreshold(aggregated),
+    [aggregated],
+  );
+  const { visible: relevantCreatives, hiddenCount } = useMemo(() => {
+    if (showAll) return { visible: aggregated, hiddenCount: 0 };
+    return applyRelevanceFilter(aggregated, relevanceThreshold);
+  }, [aggregated, relevanceThreshold, showAll]);
+  const sorted = useMemo(
+    () => sortByMetric(relevantCreatives, metric),
+    [relevantCreatives, metric],
+  );
 
   if (isLoading) {
     return (
@@ -668,7 +688,10 @@ export function TopCreativesGallery({
     );
   }
 
-  if (sorted.length === 0) return null;
+  // Story 8.9: se nada agregado, esconde o card inteiro. Mas se há criativos
+  // agregados e o que zerou foi o filtro de relevância, mantemos o header pra
+  // o usuário ter como destogglar.
+  if (aggregated.length === 0) return null;
 
   const shown = expanded ? sorted : sorted.slice(0, 20);
   const metricLabel = METRIC_OPTIONS.find((m) => m.value === metric)?.sortLabel ?? metric;
@@ -693,24 +716,70 @@ export function TopCreativesGallery({
         <div>
           <h3 className="text-sm font-semibold">Top Criativos — {metricLabel}</h3>
           <p className="text-[11px] text-muted-foreground">
-            {sorted.length} criativos agregados por nome
+            {sorted.length} {sorted.length === 1 ? "criativo" : "criativos"} agregados por nome
+            {!showAll && hiddenCount > 0 && (
+              <>
+                {" · "}
+                <button
+                  type="button"
+                  onClick={() => setShowAll(true)}
+                  className="underline decoration-dotted underline-offset-2 hover:text-foreground transition-colors"
+                  title={
+                    relevanceThreshold.mode === "cpa"
+                      ? `Threshold = 2× CPA do período (${brlFormatter.format(relevanceThreshold.cpaMedio ?? 0)})`
+                      : "Sem vendas no período — usando 2× gasto médio"
+                  }
+                  aria-label="Mostrar criativos com baixo gasto"
+                >
+                  {hiddenCount} {hiddenCount === 1 ? "oculto" : "ocultos"} por baixo gasto (&lt; {brlFormatter.format(relevanceThreshold.threshold)})
+                </button>
+              </>
+            )}
           </p>
         </div>
-        <Select value={metric} onValueChange={(v) => setMetric(v as LocalMetric)}>
-          <SelectTrigger className="h-7 w-[150px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {METRIC_OPTIONS.map((m) => (
-              <SelectItem key={m.value} value={m.value}>
-                <span className="flex items-center gap-1.5">
-                  {m.label}
-                  {m.needsReview && <AlertTriangle className="h-3 w-3 text-amber-500" />}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          {/* Story 8.9: toggle relevância estatística. Só aparece quando o
+              filtro está aplicável (mode !== 'disabled') ou já foi destogglado. */}
+          {(relevanceThreshold.mode !== "disabled" || showAll) && (
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              className={`h-7 px-2.5 rounded-md border text-[11px] font-medium transition-colors ${
+                showAll
+                  ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
+                  : "border-border/40 bg-transparent text-muted-foreground hover:bg-muted/50"
+              }`}
+              aria-label={
+                showAll
+                  ? "Esconder criativos com baixo gasto"
+                  : "Mostrar criativos com baixo gasto"
+              }
+              aria-pressed={showAll}
+              title={
+                showAll
+                  ? "Filtro de relevância desativado — mostrando todos os criativos"
+                  : "Mostrando apenas criativos com gasto estatisticamente relevante"
+              }
+            >
+              {showAll ? "Mostrando todos" : "Mostrar todos"}
+            </button>
+          )}
+          <Select value={metric} onValueChange={(v) => setMetric(v as LocalMetric)}>
+            <SelectTrigger className="h-7 w-[150px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {METRIC_OPTIONS.map((m) => (
+                <SelectItem key={m.value} value={m.value}>
+                  <span className="flex items-center gap-1.5">
+                    {m.label}
+                    {m.needsReview && <AlertTriangle className="h-3 w-3 text-amber-500" />}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {showReviewBadge && (
@@ -720,6 +789,22 @@ export function TopCreativesGallery({
             <span className="font-medium">Métrica em revisão —</span> definição de lead qualificado
             pendente. Valores exibidos são do backend legado e podem divergir da metodologia atual.
           </p>
+        </div>
+      )}
+
+      {/* Story 8.9: estado vazio quando filtro de relevância escondeu tudo */}
+      {sorted.length === 0 && hiddenCount > 0 && (
+        <div className="rounded-md border border-dashed border-border/40 px-4 py-6 text-center">
+          <p className="text-xs text-muted-foreground">
+            Nenhum criativo com gasto estatisticamente relevante no período.
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowAll(true)}
+            className="mt-2 text-xs underline decoration-dotted underline-offset-2 hover:text-foreground"
+          >
+            Mostrar todos os {hiddenCount} criativos
+          </button>
         </div>
       )}
 
