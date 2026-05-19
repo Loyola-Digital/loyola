@@ -59,6 +59,20 @@ function parseNumber(val: string | undefined): number {
   return parseFloat(normalized) || 0;
 }
 
+/**
+ * Story 28.7 hotfix (19/05): planilhas as vezes carregam UTMs com strings
+ * literais "null", "undefined", "-", "n/a" — vindas de bugs de tracking ou
+ * sync ETL. Trata como ausente (null) pra evitar bucket vazio no agregado.
+ */
+function sanitizeUtmValue(val: string | undefined | null): string | null {
+  if (val == null) return null;
+  const trimmed = String(val).trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (lower === "null" || lower === "undefined" || lower === "-" || lower === "n/a" || lower === "na") return null;
+  return trimmed;
+}
+
 function parseDate(val: string | undefined): Date | null {
   if (!val) return null;
   const trimmed = val.trim();
@@ -335,10 +349,10 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           const liquido = parseNumber(row[liquidoIdx] ?? "");
           const forma = (row[formaIdx] ?? "Não informado").trim() || "Não informado";
           const canal = (row[canalIdx] ?? "Não informado").trim() || "Não informado";
-          const utmSource = (row[utmSourceIdx] ?? "").trim() || null;
-          const utmMedium = utmMediumIdx !== -1 ? ((row[utmMediumIdx] ?? "").trim() || null) : null;
-          const utmTerm = utmTermIdx !== -1 ? ((row[utmTermIdx] ?? "").trim() || null) : null;
-          const utmContent = utmContentIdx !== -1 ? ((row[utmContentIdx] ?? "").trim() || null) : null;
+          const utmSource = sanitizeUtmValue(row[utmSourceIdx]);
+          const utmMedium = utmMediumIdx !== -1 ? sanitizeUtmValue(row[utmMediumIdx]) : null;
+          const utmTerm = utmTermIdx !== -1 ? sanitizeUtmValue(row[utmTermIdx]) : null;
+          const utmContent = utmContentIdx !== -1 ? sanitizeUtmValue(row[utmContentIdx]) : null;
           const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
 
           // Story 28.4: dedup por transactionId quando mapeado e preenchido,
