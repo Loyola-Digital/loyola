@@ -33,6 +33,16 @@ export interface StageCreativePerformanceResponse {
     totalLeads: number;
     totalRevenue: number;
   };
+  /**
+   * Transparencia: filtro de campanha aplicado pelo backend.
+   * - `source: 'stage'` -> usou funnelStages.campaigns
+   * - `source: 'funnel'` -> stage estava vazio, caiu pra funnels.campaigns
+   * - `source: 'none'` -> nem stage nem funnel tem campanha (resposta vazia)
+   */
+  appliedFilter?: {
+    source: "stage" | "funnel" | "none";
+    campaigns: { id: string; name: string }[];
+  };
 }
 
 interface UseStageCreativePerformanceOptions {

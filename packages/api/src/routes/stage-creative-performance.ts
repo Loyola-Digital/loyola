@@ -143,10 +143,11 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         // cai pra funnel.campaigns que e onde a config Meta vive no projeto.
         // Sem filtro => fetchAllAdInsights traria a conta Meta inteira (bug
         // original: tabela mostrava ads de outros lancamentos).
-        const stageCampaignIds = (stage.campaigns ?? []).map((c) => c.id);
-        const funnelCampaignIds = (funnel.campaigns ?? []).map((c) => c.id);
-        const campaignIdsForFetch =
-          stageCampaignIds.length > 0 ? stageCampaignIds : funnelCampaignIds;
+        const stageCampaigns = stage.campaigns ?? [];
+        const funnelCampaigns = funnel.campaigns ?? [];
+        const usingStage = stageCampaigns.length > 0;
+        const appliedCampaigns = usingStage ? stageCampaigns : funnelCampaigns;
+        const campaignIdsForFetch = appliedCampaigns.map((c) => c.id);
 
         // Sem campanhas configuradas em nenhum nivel -> resposta vazia.
         // Evita o pior caso (puxar TODOS os ads da conta).
@@ -157,6 +158,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             days,
             creatives: [],
             summary: { totalSpend: 0, totalLeads: 0, totalRevenue: 0 },
+            appliedFilter: { source: "none" as const, campaigns: [] },
           });
         }
 
@@ -316,32 +318,37 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           }
         }
 
-        // 6. Agrupa por ad_id (chave que conecta Meta Ads com planilha de leads)
-        // Map: adId → { adName, spend, impressions, clicks }
-        const groupedByAdId = new Map<
-          string,
-          {
-            adName: string;
-            spend: number;
-            impressions: number;
-            clicks: number;
-          }
-        >();
+        // 6. Agrupa por ad_name (mesmo padrao da Top Creatives Gallery).
+        // Quando o mesmo criativo e usado em N adsets, Meta cria N ad_ids
+        // distintos com mesmo ad_name. Agrupar por ad_id quebra essa visao
+        // (mesmo nome aparece N vezes). Agrupar por ad_name consolida no
+        // criativo unico — match com a galeria.
+        type AdNameGroup = {
+          adName: string;
+          adIds: string[]; // pra cruzamento com leads/revenue
+          spend: number;
+          impressions: number;
+          clicks: number;
+        };
+        const groupedByName = new Map<string, AdNameGroup>();
 
         for (const ad of filteredAds) {
           const adId = ad.ad_id || "";
+          const adName = (ad.ad_name || "").trim() || "(sem nome)";
           if (!adId) continue;
 
-          let group = groupedByAdId.get(adId);
+          let group = groupedByName.get(adName);
           if (!group) {
             group = {
-              adName: (ad.ad_name || "(sem nome)").trim(),
+              adName,
+              adIds: [],
               spend: 0,
               impressions: 0,
               clicks: 0,
             };
-            groupedByAdId.set(adId, group);
+            groupedByName.set(adName, group);
           }
+          group.adIds.push(adId);
 
           const spend = parseFloat(ad.spend || "0");
           const impressions = parseFloat(ad.impressions || "0");
@@ -352,36 +359,46 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           if (!isNaN(clicks)) group.clicks += clicks;
         }
 
-        // 7. Monta resposta — uma linha por adId.
+        // 7. Monta resposta — uma linha por ad_name.
         // O filtro de campanha ja foi aplicado no fetchAllAdInsights (Meta API
-        // filtra por campaign.id deterministicamente). O double-filter via
-        // utm_campaign fuzzy match foi removido aqui — era frágil e escondia
-        // ads validos quando o utm_campaign da planilha nao bate exatamente
-        // com o nome no Meta (capitalizacao, hifen, etc).
+        // filtra por campaign.id deterministicamente).
+        // Leads/revenue/utmTerm consolidam de TODOS os ad_ids que compartilham
+        // o mesmo nome (mesma logica da Top Creatives Gallery).
         const creatives: CreativePerformanceResponse[] = [];
-        for (const [adId, group] of groupedByAdId.entries()) {
-          const leadsAgg = leadsByAdId.get(adId);
+        for (const group of groupedByName.values()) {
           let totalLeads = 0;
-          let topUtmTerm: string | null = null;
+          let totalRevenue = 0;
+          const aggregatedTermCounts = new Map<string, number>();
 
-          if (leadsAgg) {
-            totalLeads = leadsAgg.count;
-            // Determina topUtmTerm (moda)
-            if (leadsAgg.utmTermCounts.size > 0) {
-              let bestCount = -1;
+          for (const adId of group.adIds) {
+            const leadsAgg = leadsByAdId.get(adId);
+            if (leadsAgg) {
+              totalLeads += leadsAgg.count;
               for (const [term, count] of leadsAgg.utmTermCounts.entries()) {
-                if (count > bestCount) {
-                  bestCount = count;
-                  topUtmTerm = term;
-                }
+                aggregatedTermCounts.set(
+                  term,
+                  (aggregatedTermCounts.get(term) ?? 0) + count,
+                );
+              }
+            }
+            totalRevenue += revenueByAdId.get(adId) ?? 0;
+          }
+
+          // Determina topUtmTerm (moda) sobre o conjunto agregado
+          let topUtmTerm: string | null = null;
+          if (aggregatedTermCounts.size > 0) {
+            let bestCount = -1;
+            for (const [term, count] of aggregatedTermCounts.entries()) {
+              if (count > bestCount) {
+                bestCount = count;
+                topUtmTerm = term;
               }
             }
           }
 
-          const totalRevenue = revenueByAdId.get(adId) ?? 0;
-
+          // adId representativo = primeiro adId do grupo (uso pra link Ads Library)
           creatives.push({
-            adId,
+            adId: group.adIds[0],
             adName: group.adName,
             spend: group.spend,
             impressions: group.impressions,
@@ -405,6 +422,12 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             totalSpend,
             totalLeads,
             totalRevenue,
+          },
+          // Transparencia: mostra ao frontend qual filtro de campanha foi
+          // aplicado, pra usuario poder validar que esta vendo o conjunto certo.
+          appliedFilter: {
+            source: usingStage ? ("stage" as const) : ("funnel" as const),
+            campaigns: appliedCampaigns,
           },
         });
       } catch (error) {
