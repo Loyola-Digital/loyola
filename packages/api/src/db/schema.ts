@@ -14,6 +14,7 @@ import {
   unique,
   check,
   primaryKey,
+  numeric,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -1065,6 +1066,61 @@ export const metaAdCreativesCache = pgTable(
   (table) => [
     primaryKey({ columns: [table.projectId, table.adId] }),
     index("idx_meta_ad_creatives_lookup").on(table.projectId, table.lastSyncedAt),
+  ]
+);
+
+// Story 18.26 Fase 3: cache persistente de insights diários por campanha.
+// Insights de dias passados (>7 dias atrás) NÃO mudam mais pela Meta —
+// servem do DB indefinidamente. Dias 1-7 atrás: TTL 24h. Dia atual: TTL 30min
+// (Meta ainda processa). Caller aplica TTL no SELECT.
+export const metaCampaignInsightsDaily = pgTable(
+  "meta_campaign_insights_daily",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    campaignId: varchar("campaign_id", { length: 64 }).notNull(),
+    dateStart: varchar("date_start", { length: 10 }).notNull(), // YYYY-MM-DD
+    spend: numeric("spend").notNull().default("0"),
+    impressions: numeric("impressions").notNull().default("0"),
+    reach: numeric("reach").notNull().default("0"),
+    clicks: numeric("clicks").notNull().default("0"),
+    actions: jsonb("actions").$type<{ action_type: string; value: string }[]>(),
+    actionValues: jsonb("action_values").$type<{ action_type: string; value: string }[]>(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.campaignId, table.dateStart] }),
+    index("idx_meta_campaign_insights_lookup").on(table.projectId, table.campaignId, table.dateStart),
+  ]
+);
+
+// Story 18.26 Fase 3: análogo pra insights por ad.
+export const metaAdInsightsDaily = pgTable(
+  "meta_ad_insights_daily",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    adId: varchar("ad_id", { length: 64 }).notNull(),
+    dateStart: varchar("date_start", { length: 10 }).notNull(),
+    adsetId: varchar("adset_id", { length: 64 }),
+    adsetName: varchar("adset_name", { length: 500 }),
+    campaignId: varchar("campaign_id", { length: 64 }),
+    campaignName: varchar("campaign_name", { length: 500 }),
+    adName: varchar("ad_name", { length: 500 }),
+    spend: numeric("spend").notNull().default("0"),
+    impressions: numeric("impressions").notNull().default("0"),
+    reach: numeric("reach").notNull().default("0"),
+    clicks: numeric("clicks").notNull().default("0"),
+    actions: jsonb("actions").$type<{ action_type: string; value: string }[]>(),
+    actionValues: jsonb("action_values").$type<{ action_type: string; value: string }[]>(),
+    videoMetrics: jsonb("video_metrics"),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.adId, table.dateStart] }),
+    index("idx_meta_ad_insights_campaign").on(table.projectId, table.campaignId, table.dateStart),
   ]
 );
 
