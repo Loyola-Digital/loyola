@@ -13,10 +13,11 @@ import {
   getCampaignDailyInsightsBulk,
   getPlacementBreakdown,
   invalidateProjectCache,
+  makeAdCreativeCacheAdapter,
   type TopPerformerMetric,
 } from "../services/traffic-analytics.js";
 import {
-  fetchAdCreatives,
+  fetchAdCreativesWithCache,
   fetchVideoSource,
   decryptAccountToken,
   resolveEntityNames,
@@ -610,10 +611,12 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
           account.accessTokenEncrypted,
           account.accessTokenIv
         );
-        const creatives = await fetchAdCreatives(
+        // Story 18.26 Fase 2: DB cache 24h
+        const creatives = await fetchAdCreativesWithCache(
+          makeAdCreativeCacheAdapter(fastify.db, paramResult.data.projectId),
           account.metaAccountId,
           accessToken,
-          adIds
+          adIds,
         );
         return { creatives };
       } catch (err) {

@@ -1037,6 +1037,37 @@ export const metaEntityNamesCache = pgTable(
   ]
 );
 
+// Story 18.26 Fase 2: cache persistente de creative metadata Meta (imagem,
+// video_id, title, body, link_url, cta_type, object_type). Names já cobertos
+// pelo meta_entity_names_cache acima — esta tabela complementa com o resto
+// dos campos do creative endpoint que mudam raramente. TTL 24h no código.
+export const metaAdCreativesCache = pgTable(
+  "meta_ad_creatives_cache",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    adId: varchar("ad_id", { length: 64 }).notNull(),
+    creative: jsonb("creative")
+      .notNull()
+      .$type<{
+        imageUrl?: string | null;
+        thumbnailUrl?: string | null;
+        videoId?: string | null;
+        title?: string | null;
+        body?: string | null;
+        linkUrl?: string | null;
+        ctaType?: string | null;
+        objectType?: string | null;
+      }>(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.adId] }),
+    index("idx_meta_ad_creatives_lookup").on(table.projectId, table.lastSyncedAt),
+  ]
+);
+
 export const funnelStageZoomMeetings = pgTable(
   "funnel_stage_zoom_meetings",
   {
