@@ -306,7 +306,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         >();
 
         for (const ad of filteredAds) {
-          const adName = ad.ad_name || "(sem nome)";
+          const adName = (ad.ad_name || "(sem nome)").trim();
           let group = groupedByAdName.get(adName);
 
           if (!group) {
