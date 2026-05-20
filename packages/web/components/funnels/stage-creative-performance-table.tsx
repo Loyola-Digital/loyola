@@ -162,13 +162,27 @@ export function StageCreativePerformanceTable({
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
       {/* Header: titulo + filtros */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
+        <div className="min-w-0">
           <h3 className="text-sm font-semibold">Desempenho de Criativos</h3>
           <p className="text-[11px] text-muted-foreground">
             {totalRows} {totalRows === 1 ? "criativo" : "criativos"} · ordenado por{" "}
             {COLUMNS.find((c) => c.key === sortCol)?.label.toLowerCase() ?? sortCol} (
             {sortDir === "desc" ? "maior → menor" : "menor → maior"})
           </p>
+          {/* Transparencia: mostra qual filtro de campanha esta ativo */}
+          {data?.appliedFilter && data.appliedFilter.campaigns.length > 0 && (
+            <p
+              className="text-[10px] text-muted-foreground/80 mt-1 truncate"
+              title={data.appliedFilter.campaigns.map((c) => c.name).join(" · ")}
+            >
+              Filtro: {data.appliedFilter.source === "stage" ? "campanhas da etapa" : "campanhas do funil"} ({data.appliedFilter.campaigns.length}) ·{" "}
+              {data.appliedFilter.campaigns
+                .slice(0, 2)
+                .map((c) => c.name)
+                .join(", ")}
+              {data.appliedFilter.campaigns.length > 2 ? ` +${data.appliedFilter.campaigns.length - 2}` : ""}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Filtro temperatura */}
