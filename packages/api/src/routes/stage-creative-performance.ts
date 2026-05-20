@@ -134,20 +134,14 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           });
         }
 
-        // 3. Fetch insights de todos os ads e filtra pelos campaigns do stage
-        const allAds = await fetchAllAdInsights(
+        // 3. Fetch insights dos ads, filtrado pelos campaigns do stage
+        const stageCampaignIds = (stage.campaigns || []).map((c) => c.id);
+        const filteredAds = await fetchAllAdInsights(
           metaAccount.metaAccountId,
           metaAccount.accessToken,
           days,
+          stageCampaignIds.length > 0 ? stageCampaignIds : undefined,
         );
-
-        // Filtra ads pelos campaigns configurados no stage
-        const campaignIds = new Set(
-          (stage.campaigns || []).map((c) => c.id)
-        );
-        const filteredAds = campaignIds.size > 0
-          ? allAds.filter((ad) => ad.campaign_id && campaignIds.has(ad.campaign_id))
-          : allAds;
 
         // 4. Planilhas de leads e vendas do stage (mesmo padrao do creative-revenue)
         const [leadsSheet] = await fastify.db
