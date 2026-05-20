@@ -1030,3 +1030,64 @@ export async function resolveEntityNames(
 
   return result;
 }
+
+// ============================================================
+// AD CREATIVE CACHE (Story 18.26 Fase 2)
+// ============================================================
+
+/**
+ * Story 18.26 Fase 2: adapter pra cache persistente de creative metadata.
+ * Mesmo padrão do ResolveEntityNamesCacheAdapter — meta-ads.ts permanece
+ * framework-agnostic (sem importar Drizzle); o caller injeta o adapter.
+ */
+export interface AdCreativeCacheAdapter {
+  loadCached(adIds: string[]): Promise<MetaAdCreative[]>;
+  saveToCache(creatives: MetaAdCreative[]): Promise<void>;
+}
+
+/**
+ * Story 18.26 Fase 2: DB-first wrapper de fetchAdCreatives.
+ *
+ * 1. Carrega creatives ainda válidos no cache via adapter
+ * 2. Chama fetchAdCreatives() só pros adIds faltantes (Meta API)
+ * 3. Upsert os recém-buscados no cache
+ * 4. Retorna a união (cache + fresh)
+ *
+ * Caller passa adapter que aplica TTL no SELECT (24h padrão alinhado com
+ * meta_entity_names_cache).
+ */
+export async function fetchAdCreativesWithCache(
+  adapter: AdCreativeCacheAdapter,
+  metaAccountId: string,
+  accessToken: string,
+  adIds: string[],
+): Promise<MetaAdCreative[]> {
+  if (adIds.length === 0) return [];
+  const unique = Array.from(new Set(adIds.filter((x) => x && x.trim())));
+  if (unique.length === 0) return [];
+
+  // 1. Cache hit
+  let cached: MetaAdCreative[] = [];
+  try {
+    cached = await adapter.loadCached(unique);
+  } catch (err) {
+    console.error("[fetchAdCreativesWithCache] cache load failed (proceeding without)", err);
+  }
+  const cachedIds = new Set(cached.map((c) => c.adId));
+  const missing = unique.filter((id) => !cachedIds.has(id));
+  if (missing.length === 0) return cached;
+
+  // 2. Meta API pros faltantes (já tem in-memory cache interno + batch + throttle)
+  const fresh = await fetchAdCreatives(metaAccountId, accessToken, missing);
+
+  // 3. Persiste fresh no DB
+  if (fresh.length > 0) {
+    try {
+      await adapter.saveToCache(fresh);
+    } catch (err) {
+      console.error("[fetchAdCreativesWithCache] cache save failed (returning anyway)", err);
+    }
+  }
+
+  return [...cached, ...fresh];
+}

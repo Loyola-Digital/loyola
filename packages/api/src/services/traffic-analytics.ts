@@ -1,8 +1,9 @@
-import { eq } from "drizzle-orm";
+import { eq, and, inArray, gte, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
   metaAdsAccounts,
   metaAdsAccountProjects,
+  metaAdCreativesCache,
 } from "../db/schema.js";
 import {
   fetchCampaignInsights,
@@ -10,17 +11,87 @@ import {
   fetchAllAdSetInsights,
   fetchAdInsights,
   fetchAllAdInsights,
-  fetchAdCreatives,
+  fetchAdCreativesWithCache,
   fetchCampaignDailyInsights,
   fetchCampaignDailyInsightsForIds,
   fetchPlacementBreakdown,
   decryptAccountToken,
   todayInTimezone,
+  type AdCreativeCacheAdapter,
   type MetaAdCreative,
   type MetaDailyInsight,
   type VideoMetrics,
   type MetaCampaignInsight,
 } from "./meta-ads.js";
+
+// Story 18.26 Fase 2: TTL alinhado com meta_entity_names_cache (24h)
+const META_AD_CREATIVES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+export function makeAdCreativeCacheAdapter(
+  db: Database,
+  projectId: string,
+): AdCreativeCacheAdapter {
+  return {
+    async loadCached(adIds) {
+      if (adIds.length === 0) return [];
+      const cutoff = new Date(Date.now() - META_AD_CREATIVES_CACHE_TTL_MS);
+      const rows = await db
+        .select({
+          adId: metaAdCreativesCache.adId,
+          creative: metaAdCreativesCache.creative,
+        })
+        .from(metaAdCreativesCache)
+        .where(
+          and(
+            eq(metaAdCreativesCache.projectId, projectId),
+            inArray(metaAdCreativesCache.adId, adIds),
+            gte(metaAdCreativesCache.lastSyncedAt, cutoff),
+          ),
+        );
+      // Reconstitui MetaAdCreative do jsonb persistido
+      return rows.map((r) => ({
+        adId: r.adId,
+        thumbnailUrl: r.creative?.thumbnailUrl ?? null,
+        imageUrl: r.creative?.imageUrl ?? null,
+        title: r.creative?.title ?? null,
+        body: r.creative?.body ?? null,
+        linkUrl: r.creative?.linkUrl ?? null,
+        ctaType: r.creative?.ctaType ?? null,
+        objectType: r.creative?.objectType ?? null,
+        videoId: r.creative?.videoId ?? null,
+      })) as MetaAdCreative[];
+    },
+    async saveToCache(creatives) {
+      if (creatives.length === 0) return;
+      await db
+        .insert(metaAdCreativesCache)
+        .values(
+          creatives.map((c) => ({
+            projectId,
+            adId: c.adId,
+            creative: {
+              thumbnailUrl: c.thumbnailUrl,
+              imageUrl: c.imageUrl,
+              videoId: c.videoId,
+              title: c.title,
+              body: c.body,
+              linkUrl: c.linkUrl,
+              ctaType: c.ctaType,
+              objectType: c.objectType,
+            },
+            lastSyncedAt: new Date(),
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [metaAdCreativesCache.projectId, metaAdCreativesCache.adId],
+          set: {
+            creative: sql`EXCLUDED.creative`,
+            lastSyncedAt: sql`EXCLUDED.last_synced_at`,
+          },
+        });
+    },
+  };
+}
 
 // ============================================================
 // TYPES
@@ -427,10 +498,15 @@ export async function getProjectAdAnalytics(
     return { ...buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, leads > 0 ? leads : null, null, null, reach, lc > 0 ? lc : null, lpv > 0 ? lpv : null), creative: null as MetaAdCreative | null, videoMetrics: a.videoMetrics ?? null };
   });
 
-  // Fetch creatives for all ads in drill-down
+  // Fetch creatives for all ads in drill-down (Story 18.26 Fase 2: DB cache 24h)
   try {
     const adIds = ads.map((a) => a.campaignId);
-    const creatives = await fetchAdCreatives(metaAccount.metaAccountId, metaAccount.accessToken, adIds);
+    const creatives = await fetchAdCreativesWithCache(
+      makeAdCreativeCacheAdapter(db, projectId),
+      metaAccount.metaAccountId,
+      metaAccount.accessToken,
+      adIds,
+    );
     const creativeMap = new Map(creatives.map((c) => [c.adId, c]));
     for (const ad of ads) {
       ad.creative = creativeMap.get(ad.campaignId) ?? null;
@@ -516,10 +592,15 @@ export async function getTopPerformers(
 
   const topAds = filtered.slice(0, limit);
 
-  // Fetch creatives for top ads only (rate limit friendly)
+  // Fetch creatives for top ads only — Story 18.26 Fase 2: DB cache 24h
   try {
     const adIds = topAds.map((a) => a.campaignId); // campaignId is actually the ad_id from buildAnalyticsRow
-    const creatives = await fetchAdCreatives(metaAccount.metaAccountId, metaAccount.accessToken, adIds);
+    const creatives = await fetchAdCreativesWithCache(
+      makeAdCreativeCacheAdapter(db, projectId),
+      metaAccount.metaAccountId,
+      metaAccount.accessToken,
+      adIds,
+    );
     const creativeMap = new Map(creatives.map((c) => [c.adId, c]));
     for (const ad of topAds) {
       ad.creative = creativeMap.get(ad.campaignId) ?? null;
