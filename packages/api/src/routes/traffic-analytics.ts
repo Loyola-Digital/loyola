@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, and, inArray, gte, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   getProjectOverview,
@@ -19,8 +19,14 @@ import {
   fetchAdCreatives,
   fetchVideoSource,
   decryptAccountToken,
+  resolveEntityNames,
+  type MetaEntityType,
+  type ResolveEntityNamesCacheAdapter,
 } from "../services/meta-ads.js";
-import { metaAdsAccounts, metaAdsAccountProjects } from "../db/schema.js";
+import { metaAdsAccounts, metaAdsAccountProjects, metaEntityNamesCache } from "../db/schema.js";
+
+// Story 18.26 Fase 1: TTL alinhado com stage-sales-data.ts (Story 28.7).
+const META_NAMES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // ============================================================
 // SCHEMAS
@@ -239,6 +245,139 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
         });
       }
     }
+  );
+
+  // ---- POST /api/traffic/analytics/:projectId/meta-names/resolve ---- (Story 18.26 Fase 1)
+  // Resolve Meta entity ids (ad/adset/campaign) -> nomes. DB-first (cache 24h
+  // via meta_entity_names_cache, Story 28.7), batch Meta API com throttle pros
+  // faltantes. Usar quando o caller ja tem os ids (ex: utm_medium/utm_content
+  // da planilha) e so precisa do nome humano — evita chamar /all-adsets que
+  // re-busca insights da Meta API a cada hit.
+  const metaNamesResolveBodySchema = z.object({
+    entityType: z.enum(["ad", "adset", "campaign"]),
+    ids: z.array(z.string()).max(500), // hard cap pra evitar abuso
+  });
+
+  fastify.post(
+    "/api/traffic/analytics/:projectId/meta-names/resolve",
+    async (request, reply) => {
+      if (request.userRole === "guest") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+      const bodyResult = metaNamesResolveBodySchema.safeParse(request.body);
+      if (!bodyResult.success) {
+        return reply.code(400).send({ error: "body invalido", details: bodyResult.error.flatten() });
+      }
+      const projectId = paramResult.data.projectId;
+      const { entityType, ids } = bodyResult.data;
+      const uniqueIds = Array.from(new Set(ids.filter((x) => x && x.trim().length > 0)));
+      if (uniqueIds.length === 0) {
+        return { names: {} as Record<string, string> };
+      }
+
+      // Adapter contra meta_entity_names_cache (mesmo padrao de stage-sales-data.ts)
+      const adapter: ResolveEntityNamesCacheAdapter = {
+        async loadCached(idsToLoad) {
+          if (idsToLoad.length === 0) return [];
+          const cutoff = new Date(Date.now() - META_NAMES_CACHE_TTL_MS);
+          const rows = await fastify.db
+            .select({
+              entityId: metaEntityNamesCache.entityId,
+              entityName: metaEntityNamesCache.entityName,
+            })
+            .from(metaEntityNamesCache)
+            .where(
+              and(
+                eq(metaEntityNamesCache.projectId, projectId),
+                eq(metaEntityNamesCache.entityType, entityType as MetaEntityType),
+                inArray(metaEntityNamesCache.entityId, idsToLoad),
+                gte(metaEntityNamesCache.lastSyncedAt, cutoff),
+              ),
+            );
+          return rows;
+        },
+        async saveToCache(entries) {
+          if (entries.length === 0) return;
+          await fastify.db
+            .insert(metaEntityNamesCache)
+            .values(
+              entries.map((e) => ({
+                projectId,
+                entityType: entityType as MetaEntityType,
+                entityId: e.entityId,
+                entityName: e.entityName,
+                lastSyncedAt: new Date(),
+              })),
+            )
+            .onConflictDoUpdate({
+              target: [
+                metaEntityNamesCache.projectId,
+                metaEntityNamesCache.entityType,
+                metaEntityNamesCache.entityId,
+              ],
+              set: {
+                entityName: sql`EXCLUDED.entity_name`,
+                lastSyncedAt: sql`EXCLUDED.last_synced_at`,
+              },
+            });
+        },
+      };
+
+      // Obtem access token do projeto
+      const [link] = await fastify.db
+        .select({ accountId: metaAdsAccountProjects.accountId })
+        .from(metaAdsAccountProjects)
+        .where(eq(metaAdsAccountProjects.projectId, projectId))
+        .limit(1);
+      if (!link) {
+        return { names: {} as Record<string, string> };
+      }
+      const [account] = await fastify.db
+        .select()
+        .from(metaAdsAccounts)
+        .where(eq(metaAdsAccounts.id, link.accountId))
+        .limit(1);
+      if (!account) {
+        return { names: {} as Record<string, string> };
+      }
+      let accessToken: string;
+      try {
+        accessToken = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
+      } catch {
+        return { names: {} as Record<string, string> };
+      }
+
+      try {
+        const resolved = await resolveEntityNames(uniqueIds, accessToken, adapter);
+        const namesRecord: Record<string, string> = {};
+        for (const [id, name] of resolved.entries()) {
+          namesRecord[id] = name;
+        }
+        // Log de hit/miss (Story 18.26 AC-10)
+        const cacheHits = await adapter.loadCached(uniqueIds);
+        request.log.info(
+          {
+            projectId,
+            entityType,
+            requested: uniqueIds.length,
+            cacheHits: cacheHits.length,
+            resolved: resolved.size,
+          },
+          "meta-names/resolve",
+        );
+        return { names: namesRecord };
+      } catch (err) {
+        request.log.error(err, "meta-names/resolve failed");
+        return reply.code(502).send({
+          error: "Erro ao resolver nomes Meta",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
   );
 
   // ---- GET /api/traffic/analytics/:projectId/all-adsets ---- (Story 7.8)
