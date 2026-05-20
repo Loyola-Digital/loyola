@@ -108,7 +108,11 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         }
 
         const [funnel] = await fastify.db
-          .select({ id: funnels.id, projectId: funnels.projectId })
+          .select({
+            id: funnels.id,
+            projectId: funnels.projectId,
+            campaigns: funnels.campaigns,
+          })
           .from(funnels)
           .where(eq(funnels.id, funnelId))
           .limit(1);
@@ -134,13 +138,33 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           });
         }
 
-        // 3. Fetch insights dos ads, filtrado pelos campaigns do stage
-        const stageCampaignIds = (stage.campaigns || []).map((c) => c.id);
+        // 3. Fetch insights filtrado por campaign IDs.
+        // Stage pode ter campaigns proprias (override por etapa). Senao,
+        // cai pra funnel.campaigns que e onde a config Meta vive no projeto.
+        // Sem filtro => fetchAllAdInsights traria a conta Meta inteira (bug
+        // original: tabela mostrava ads de outros lancamentos).
+        const stageCampaignIds = (stage.campaigns ?? []).map((c) => c.id);
+        const funnelCampaignIds = (funnel.campaigns ?? []).map((c) => c.id);
+        const campaignIdsForFetch =
+          stageCampaignIds.length > 0 ? stageCampaignIds : funnelCampaignIds;
+
+        // Sem campanhas configuradas em nenhum nivel -> resposta vazia.
+        // Evita o pior caso (puxar TODOS os ads da conta).
+        if (campaignIdsForFetch.length === 0) {
+          return reply.code(200).send({
+            stageId,
+            stageType: stage.stageType,
+            days,
+            creatives: [],
+            summary: { totalSpend: 0, totalLeads: 0, totalRevenue: 0 },
+          });
+        }
+
         const filteredAds = await fetchAllAdInsights(
           metaAccount.metaAccountId,
           metaAccount.accessToken,
           days,
-          stageCampaignIds.length > 0 ? stageCampaignIds : undefined,
+          campaignIdsForFetch,
         );
 
         // 4. Planilhas de leads e vendas do stage (mesmo padrao do creative-revenue)
@@ -173,7 +197,6 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           { count: number; emails: Set<string>; utmTermCounts: Map<string, number> }
         >();
         const revenueByAdId = new Map<string, number>();
-        const campaignsByAdId = new Map<string, Set<string>>();
 
         if (leadsSheet && salesSheet) {
           let leadsData, salesData;
@@ -217,11 +240,6 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               leadsMapping.utm_content,
             );
             const leadUtmTermIdx = findCol(leadsData.headers, leadsMapping.utm_term);
-            // Adiciona suporte a utm_campaign para filtro de campanha (fallback: usa utm_term)
-            const leadUtmCampaignIdx = findCol(
-              leadsData.headers,
-              "utm_campaign",
-            );
             const saleEmailIdx = findCol(salesData.headers, salesMapping.email);
             const saleBrutoIdx = findCol(salesData.headers, salesMapping.valorBruto);
             const saleLiquidoIdx = findCol(
@@ -263,10 +281,6 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
                   leadUtmTermIdx !== -1
                     ? (row[leadUtmTermIdx] ?? "").trim()
                     : "";
-                const utmCampaign =
-                  leadUtmCampaignIdx !== -1
-                    ? (row[leadUtmCampaignIdx] ?? "").trim()
-                    : "";
 
                 let agg = leadsByAdId.get(adId);
                 if (!agg) {
@@ -283,13 +297,6 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
                     utmTerm,
                     (agg.utmTermCounts.get(utmTerm) ?? 0) + 1,
                   );
-                }
-                // Track utm_campaign para filtro de campanha
-                if (utmCampaign) {
-                  if (!campaignsByAdId.has(adId)) {
-                    campaignsByAdId.set(adId, new Set());
-                  }
-                  campaignsByAdId.get(adId)!.add(utmCampaign);
                 }
                 if (!email) continue;
 
@@ -345,27 +352,14 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           if (!isNaN(clicks)) group.clicks += clicks;
         }
 
-        // 7. Monta resposta filtrada por campanha — uma linha por adId
+        // 7. Monta resposta — uma linha por adId.
+        // O filtro de campanha ja foi aplicado no fetchAllAdInsights (Meta API
+        // filtra por campaign.id deterministicamente). O double-filter via
+        // utm_campaign fuzzy match foi removido aqui — era frágil e escondia
+        // ads validos quando o utm_campaign da planilha nao bate exatamente
+        // com o nome no Meta (capitalizacao, hifen, etc).
         const creatives: CreativePerformanceResponse[] = [];
         for (const [adId, group] of groupedByAdId.entries()) {
-          // Filtra por utm_campaign se existirem campaigns filtradas no stage
-          // Se stage.campaigns vazio ou sem campaigns na planilha, inclui todos
-          const adCampaigns = campaignsByAdId.get(adId) ?? new Set<string>();
-          const stageCampaignNames = (stage.campaigns || [])
-            .map((c) => (typeof c === 'object' && c !== null && 'name' in c ? (c as any).name : null))
-            .filter((n): n is string => Boolean(n));
-
-          // Se há campaigns no stage e o adId não tem nenhuma dessas campaigns, pula
-          if (stageCampaignNames.length > 0 && adCampaigns.size > 0) {
-            const hasMatchingCampaign = Array.from(adCampaigns).some(
-              (adCamp: string) =>
-                stageCampaignNames.some((stageCamp: string) =>
-                  adCamp.includes(stageCamp) || stageCamp.includes(adCamp)
-                )
-            );
-            if (!hasMatchingCampaign) continue;
-          }
-
           const leadsAgg = leadsByAdId.get(adId);
           let totalLeads = 0;
           let topUtmTerm: string | null = null;
