@@ -1,12 +1,12 @@
 import { useMemo } from "react";
-import { useQueries } from "@tanstack/react-query";
-import { useApiClient } from "@/lib/hooks/use-api-client";
 import {
   useFunnelSpreadsheets,
   useFunnelSpreadsheetData,
 } from "@/lib/hooks/use-funnel-spreadsheets";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
-import type { CampaignDailyInsight } from "@/lib/hooks/use-traffic-analytics";
+import {
+  useCampaignDailyInsightsBulk,
+} from "@/lib/hooks/use-traffic-analytics";
 import type { Funnel } from "@loyola-x/shared";
 import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
 import {
@@ -125,24 +125,25 @@ export function useCrossedFunnelMetrics(
   stageSalesData?: StageSalesData | null,
   salesByDay?: Record<string, number> | null,
 ): CrossedFunnelMetrics {
-  const apiClient = useApiClient();
-
-  const campaignQueries = useQueries({
-    queries: funnel.campaigns.map((c) => ({
-      queryKey: ["traffic-campaign-daily", projectId, c.id, days] as const,
-      queryFn: () =>
-        apiClient<CampaignDailyInsight[]>(
-          `/api/traffic/analytics/${projectId}/campaign-daily?campaignId=${c.id}&days=${days}`,
-        ),
-      staleTime: 30 * 1000,
-      enabled: funnel.campaigns.length > 0,
-    })),
-  });
-
-  const metaLoading = campaignQueries.some((q) => q.isLoading);
-  const metaData = campaignQueries
-    .map((q) => q.data)
-    .filter((d): d is CampaignDailyInsight[] => !!d);
+  // Hotfix rate-limit: usa endpoint bulk (1 request com filter IN no Meta API)
+  // em vez de N requests por campanha (useQueries). Funis com 16+ campanhas
+  // estavam batendo no rate limit da Meta API a cada render.
+  const campaignIds = useMemo(
+    () => funnel.campaigns.map((c) => c.id),
+    [funnel.campaigns],
+  );
+  const { data: bulkData, isLoading: metaLoading } = useCampaignDailyInsightsBulk(
+    projectId,
+    campaignIds.length > 0 ? campaignIds : null,
+    days,
+  );
+  // aggregateMetaDailyByDate espera CampaignDailyInsight[][] (1 série por
+  // campanha). O bulk ja vem agregado por dia (1 serie unica), entao
+  // envelopamos num singleton — semanticamente equivalente.
+  const metaData = useMemo(
+    () => (bulkData ? [bulkData] : []),
+    [bulkData],
+  );
 
   const { data: spreadsheetsData, isLoading: sheetsListLoading } =
     useFunnelSpreadsheets(projectId, funnel.id, stageId ?? null);
