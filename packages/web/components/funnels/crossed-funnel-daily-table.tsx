@@ -11,7 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { DailyRow } from "@/lib/utils/funnel-metrics";
-import { resolveMediumByAdsets } from "@/lib/hooks/use-funnel-adsets-map";
+import { resolveMediumByAdsets, useResolveAdsetNames } from "@/lib/hooks/use-funnel-adsets-map";
 import {
   useFunnelBatchTurns,
   useCreateFunnelBatchTurn,
@@ -151,6 +151,37 @@ export function CrossedFunnelDailyTable({
     ? Object.values(salesByDay).reduce((a, b) => a + b, 0)
     : null;
 
+  // Story 18.26 Fase 1.5: resolve adset names dos ids que aparecem em
+  // leadsByMedium das rows usando o cache DB (meta_entity_names_cache 24h).
+  // Vai muito mais leve que o /all-adsets do useFunnelAdsetsMap (que pega
+  // tambem insights). Faz merge com o adsetsMap da prop pra manter compat.
+  const adsetIdsFromRows = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of rows) {
+      const byMedium = row.leadsByMedium;
+      if (byMedium) {
+        for (const id of Object.keys(byMedium)) {
+          if (id && id.trim()) set.add(id);
+        }
+      }
+    }
+    return Array.from(set);
+  }, [rows]);
+  const { adsetsMap: resolvedAdsetsMap } = useResolveAdsetNames(
+    projectId ?? "",
+    projectId ? adsetIdsFromRows : [],
+  );
+  const effectiveAdsetsMap = useMemo(() => {
+    // Prefere o resolvedAdsetsMap (cache DB) sobre o adsetsMap da prop
+    // (pode estar vazio ou ainda carregando). Cai pro prop quando o
+    // resolved nao tem o id (compat).
+    if (resolvedAdsetsMap.size === 0) return adsetsMap;
+    if (!adsetsMap || adsetsMap.size === 0) return resolvedAdsetsMap;
+    const merged = new Map(adsetsMap);
+    for (const [id, name] of resolvedAdsetsMap.entries()) merged.set(id, name);
+    return merged;
+  }, [resolvedAdsetsMap, adsetsMap]);
+
   const batchTurnsEnabled = !!projectId && !!funnelId;
   const turnsQuery = useFunnelBatchTurns(projectId ?? "", funnelId ?? "");
   const createTurn = useCreateFunnelBatchTurn(projectId ?? "", funnelId ?? "");
@@ -281,7 +312,7 @@ export function CrossedFunnelDailyTable({
                   <TableCell className="text-right">{fmtInt(r.linkClicks)}</TableCell>
                   <TableCell className="text-right">{fmtInt(r.impressions)}</TableCell>
                   <TableCell className="text-right">
-                    {renderTotalLeadsCell(totalLeads, r.leadsByMedium, adsetsMap)}
+                    {renderTotalLeadsCell(totalLeads, r.leadsByMedium, effectiveAdsetsMap)}
                   </TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cplPg)}</TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cplG)}</TableCell>
@@ -311,7 +342,7 @@ export function CrossedFunnelDailyTable({
                 {renderTotalLeadsCell(
                   totals.leadsPagos + totals.leadsOrg + totals.leadsSemTrack,
                   totals.leadsByMedium,
-                  adsetsMap,
+                  effectiveAdsetsMap,
                 )}
               </TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.cplPg)}</TableCell>
