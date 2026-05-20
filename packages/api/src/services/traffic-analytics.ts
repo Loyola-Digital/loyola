@@ -13,7 +13,6 @@ import {
   fetchAllAdInsights,
   fetchAdCreativesWithCache,
   fetchCampaignDailyInsights,
-  fetchCampaignDailyInsightsForIds,
   fetchPlacementBreakdown,
   decryptAccountToken,
   todayInTimezone,
@@ -23,6 +22,7 @@ import {
   type VideoMetrics,
   type MetaCampaignInsight,
 } from "./meta-ads.js";
+import { fetchCampaignDailyInsightsForIdsWithCache } from "./meta-insights-cache.js";
 
 // Story 18.26 Fase 2: TTL alinhado com meta_entity_names_cache (24h)
 const META_AD_CREATIVES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -861,7 +861,12 @@ export async function getCampaignDailyInsightsBulk(
   const metaAccount = await getMetaAccountForProject(db, projectId);
   if (!metaAccount) return [];
 
-  const raw = await fetchCampaignDailyInsightsForIds(
+  // Story 18.26 Fase 3: DB-first cache. Dias > 7 dias atras vem do Postgres
+  // (TTL infinito), dias 1-7 (TTL 24h), dia atual (TTL 30min). Reduz
+  // chamadas Meta a 0 quando todo o range esta cacheado.
+  const raw = await fetchCampaignDailyInsightsForIdsWithCache(
+    db,
+    projectId,
     metaAccount.metaAccountId,
     metaAccount.accessToken,
     campaignIds,
