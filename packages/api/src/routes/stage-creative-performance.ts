@@ -95,6 +95,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           .select({
             id: funnelStages.id,
             stageType: funnelStages.stageType,
+            campaigns: funnelStages.campaigns,
           })
           .from(funnelStages)
           .where(
@@ -133,11 +134,13 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           });
         }
 
-        // 3. Fetch insights de TODOS os ads do periodo (sem filtro de campanha)
-        const allAds = await fetchAllAdInsights(
+        // 3. Fetch insights dos ads, filtrado pelos campaigns do stage
+        const stageCampaignIds = (stage.campaigns || []).map((c) => c.id);
+        const filteredAds = await fetchAllAdInsights(
           metaAccount.metaAccountId,
           metaAccount.accessToken,
           days,
+          stageCampaignIds.length > 0 ? stageCampaignIds : undefined,
         );
 
         // 4. Planilhas de leads e vendas do stage (mesmo padrao do creative-revenue)
@@ -302,8 +305,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           }
         >();
 
-        for (const ad of allAds) {
-          const adName = ad.ad_name;
+        for (const ad of filteredAds) {
+          const adName = (ad.ad_name || "(sem nome)").trim();
           let group = groupedByAdName.get(adName);
 
           if (!group) {
@@ -317,10 +320,17 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             groupedByAdName.set(adName, group);
           }
 
-          const adId = ad.ad_id;
-          group.spend += parseFloat(ad.spend || "0");
-          group.impressions += parseFloat(ad.impressions || "0");
-          group.clicks += parseFloat(ad.clicks || "0");
+          const adId = ad.ad_id || "";
+          if (!adId) continue;
+
+          const spend = parseFloat(ad.spend || "0");
+          const impressions = parseFloat(ad.impressions || "0");
+          const clicks = parseFloat(ad.clicks || "0");
+
+          if (!isNaN(spend)) group.spend += spend;
+          if (!isNaN(impressions)) group.impressions += impressions;
+          if (!isNaN(clicks)) group.clicks += clicks;
+
           group.adIds.add(adId);
 
           // Captura utmTerm para cada adId dentro do grupo
@@ -386,15 +396,19 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           });
         }
 
+        const totalSpend = creatives.reduce((s, c) => s + (c.spend || 0), 0);
+        const totalLeads = creatives.reduce((s, c) => s + (c.leads || 0), 0);
+        const totalRevenue = creatives.reduce((s, c) => s + (c.revenue || 0), 0);
+
         return reply.code(200).send({
           stageId,
           stageType: stage.stageType,
           days,
           creatives,
           summary: {
-            totalSpend: creatives.reduce((s, c) => s + c.spend, 0),
-            totalLeads: creatives.reduce((s, c) => s + c.leads, 0),
-            totalRevenue: creatives.reduce((s, c) => s + c.revenue, 0),
+            totalSpend,
+            totalLeads,
+            totalRevenue,
           },
         });
       } catch (error) {
