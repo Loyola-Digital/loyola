@@ -48,6 +48,12 @@ interface TooltipProps {
   payload?: Array<{ payload: ChartDataPoint }>;
 }
 
+interface DotProps {
+  cx?: number;
+  cy?: number;
+  payload?: ChartDataPoint;
+}
+
 function CustomTooltip({ active, payload }: TooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
 
@@ -278,9 +284,9 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
               dataKey="cumulative"
               stroke={COLORS.lineReal}
               strokeWidth={2.5}
-              dot={(props: any) => {
+              dot={(props: DotProps) => {
                 const { cx, cy, payload } = props;
-                if (payload.isProjection) return null; // Não renderizar dots na projeção
+                if (!payload || payload.isProjection || cx === undefined || cy === undefined) return null;
                 return (
                   <g key={`dot-${payload.date}`}>
                     <circle cx={cx} cy={cy} r={3} fill={COLORS.lineReal} stroke="white" strokeWidth={1} />
@@ -302,9 +308,9 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
               stroke={COLORS.lineProjection}
               strokeWidth={2.5}
               strokeDasharray="5 5"
-              dot={(props: any) => {
+              dot={(props: DotProps) => {
                 const { cx, cy, payload } = props;
-                if (!payload.isProjection) return null; // Não renderizar dots no real
+                if (!payload || !payload.isProjection || cx === undefined || cy === undefined) return null;
                 return (
                   <g key={`dot-${payload.date}`}>
                     <circle cx={cx} cy={cy} r={3} fill={COLORS.lineProjection} stroke="white" strokeWidth={1} />
