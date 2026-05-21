@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import {
   ComposedChart,
+  Bar,
+  Line,
   Area,
   XAxis,
   YAxis,
@@ -10,31 +12,30 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  ReferenceLine,
 } from "recharts";
 import type { DailyRow } from "@/lib/utils/funnel-metrics";
-import { expandChartData } from "@/lib/utils/lead-trend-calculations";
+import { expandChartDataV2, type ChartDataPoint, calculateProjectionPercentage } from "@/lib/utils/lead-trend-calculations";
 
 interface LeadsTrendAndGoalChartProps {
   rows: DailyRow[];
   title?: string;
 }
 
-interface ChartDataPoint {
-  date: string;
-  leadsPagos: number;
-  leadsOrg: number;
-  leadsSemTrack: number;
-  leadsReais: number;
-  tendencia: number;
-  meta: number;
-}
-
 const COLORS = {
-  reais: "hsl(220 80% 55%)",
-  tendencia: "#CCCCCC",
-  tendenciaStroke: "#999999",
-  meta: "#FF8A8A",
-  metaStroke: "#FF6B6B",
+  line: "#4F46E5", // Azul principal
+  lineProjection: "#4F46E5", // Mesmo azul (transparency varia)
+  band: "#4F46E5", // Azul claro para banda
+  meta: "#999999", // Cinza para meta
+  bandFill: "#4F46E5",
+};
+
+const OPACITIES = {
+  dailyReal: 0.85,
+  dailyProjected: 0.35,
+  bandFill: 0.15,
+  metaLine: 0.6,
+  markerLine: 0.8,
 };
 
 function formatDateShort(d: string) {
@@ -44,77 +45,59 @@ function formatDateShort(d: string) {
 
 interface TooltipProps {
   active?: boolean;
-  payload?: Array<{ payload: Record<string, number> }>;
+  payload?: Array<{ payload: ChartDataPoint }>;
 }
 
 function CustomTooltip({ active, payload }: TooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
 
   const data = payload[0].payload;
+  const isProjection = data.cumulativeProjected !== null;
+
   return (
     <div className="rounded-lg border border-border bg-background p-3 shadow-lg space-y-1 text-xs">
-      <div className="font-semibold">{data.date}</div>
-      <div className="border-t border-border/30 pt-1 mt-1">
-        {data.leadsReais > 0 && (
-          <div className="text-muted-foreground">Leads Reais: {Math.round(data.leadsReais)}</div>
+      <div className="font-semibold">{formatDateShort(data.date)}</div>
+      <div className="border-t border-border/30 pt-1 mt-1 space-y-1">
+        {isProjection ? (
+          <>
+            <div className="text-amber-600 font-medium">Projetado</div>
+            <div className="text-muted-foreground">
+              Acumulado: {Math.round(data.cumulativeProjected || 0)}
+            </div>
+            <div className="text-muted-foreground">
+              Barra: {Math.round(data.dailyProjected || 0)}/dia
+            </div>
+            {data.bandUpper && (
+              <div className="text-muted-foreground text-xs">
+                Faixa: ±{Math.round((data.bandUpper - (data.cumulativeProjected || 0)) * 100) / 100}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="text-green-600 font-medium">Real</div>
+            <div className="text-muted-foreground">
+              Acumulado: {Math.round(data.cumulativeReal || 0)}
+            </div>
+            <div className="text-muted-foreground">
+              Barra: {Math.round(data.dailyReal || 0)}/dia
+            </div>
+          </>
         )}
-        {data.tendencia > 0 && (
-          <div className="text-muted-foreground">Tendência: {Math.round(data.tendencia)}</div>
-        )}
-        {data.meta > 0 && (
-          <div className="text-muted-foreground">Meta: {Math.round(data.meta)}</div>
-        )}
+        <div className="text-muted-foreground border-t border-border/20 pt-1 mt-1">
+          Meta: {Math.round(data.meta)}
+        </div>
       </div>
     </div>
   );
 }
 
-interface CustomDotProps {
-  cx?: number;
-  cy?: number;
-  payload?: { leadsReais?: number; tendencia?: number; meta?: number };
-  dataKey?: string;
-  color?: string;
-}
-
-// Renderiza labels dos valores nos pontos do gráfico
-function CustomDot({ cx = 0, cy = 0, payload, dataKey, color }: CustomDotProps) {
-  if (!payload || !dataKey) return null;
-
-  const value = payload[dataKey as keyof typeof payload] as number | undefined;
-  if (!value || value === 0) return null;
-
-  const yOffset = -12;
-  const fontSize = 10;
-
-  return (
-    <>
-      <circle cx={cx} cy={cy} r={3} fill={color} />
-      <text
-        x={cx}
-        y={cy + yOffset}
-        textAnchor="middle"
-        fill={color}
-        fontSize={fontSize}
-        fontWeight={500}
-        className="pointer-events-none"
-      >
-        {Math.round(value).toLocaleString("pt-BR")}
-      </text>
-    </>
-  );
-}
-
-/**
- * Wrapper que estende LeadsCumulativeChart com gráfico de tendência e meta.
- * - Inputs: Data Final do Lançamento, Meta Total de Leads
- * - Calcula: Tendência (cinza pontilhada), Meta (vermelho cumulativo)
- * - Renderiza: 3 áreas sobrepostas (Reais, Tendência, Meta)
- */
-export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Tendência vs Meta" }: LeadsTrendAndGoalChartProps) {
+export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeção vs Meta" }: LeadsTrendAndGoalChartProps) {
   const [dataFinal, setDataFinal] = useState<string>("");
   const [metaTotal, setMetaTotal] = useState<number>(0);
+  const [windowSize, setWindowSize] = useState<number>(5);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
+  const [projectionPercentage, setProjectionPercentage] = useState<number>(0);
   const [mounted, setMounted] = useState(false);
 
   // Carregar localStorage ao montar
@@ -123,11 +106,11 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Tendênc
     if (typeof window !== "undefined") {
       const savedDataFinal = localStorage.getItem("leadsTrendDataFinal");
       const savedMetaTotal = localStorage.getItem("leadsTrendMetaTotal");
+      const savedWindowSize = localStorage.getItem("leadsTrendWindowSize");
 
       if (savedDataFinal) {
         setDataFinal(savedDataFinal);
       } else {
-        // Padrão: +20 dias a partir de hoje
         const defaultDate = new Date();
         defaultDate.setDate(defaultDate.getDate() + 20);
         const defaultDateStr = defaultDate.toISOString().split("T")[0];
@@ -137,6 +120,10 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Tendênc
       if (savedMetaTotal) {
         setMetaTotal(parseFloat(savedMetaTotal));
       }
+
+      if (savedWindowSize) {
+        setWindowSize(parseInt(savedWindowSize, 10));
+      }
     }
   }, []);
 
@@ -145,16 +132,23 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Tendênc
     if (!dataFinal || rows.length === 0 || !mounted) return;
 
     try {
-      const expanded = expandChartData(rows, dataFinal, metaTotal);
+      const start = performance.now();
+      const expanded = expandChartDataV2(rows, dataFinal, metaTotal, windowSize);
+      const end = performance.now();
+      console.log(`[18.19] Cálculo completado em ${Math.round(end - start)}ms`);
+
       const formatted = expanded.map((item) => ({
         ...item,
         date: formatDateShort(item.date),
       }));
       setChartData(formatted);
+
+      const percentage = calculateProjectionPercentage(expanded);
+      setProjectionPercentage(percentage);
     } catch (error) {
       console.error("Erro ao calcular dados do gráfico:", error);
     }
-  }, [rows, dataFinal, metaTotal, mounted]);
+  }, [rows, dataFinal, metaTotal, windowSize, mounted]);
 
   // Persistir inputs no localStorage
   const handleDataFinalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -169,17 +163,32 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Tendênc
     localStorage.setItem("leadsTrendMetaTotal", value.toString());
   };
 
+  const handleWindowSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = Math.max(2, Math.min(30, parseInt(e.target.value, 10) || 5));
+    setWindowSize(value);
+    localStorage.setItem("leadsTrendWindowSize", value.toString());
+  };
+
   if (!mounted) return null;
 
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
-      <h3 className="text-sm font-semibold">{title}</h3>
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {projectionPercentage > 0 && (
+          <div className="text-xs">
+            <span className={projectionPercentage >= 100 ? "text-green-600" : "text-amber-600"}>
+              Projeção: {Math.round(projectionPercentage)}% da meta
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* Inputs */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div className="space-y-1">
           <label htmlFor="data-final" className="block text-xs font-medium text-muted-foreground">
-            Data Final do Lançamento
+            Data Final
           </label>
           <input
             id="data-final"
@@ -191,7 +200,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Tendênc
         </div>
         <div className="space-y-1">
           <label htmlFor="meta-total" className="block text-xs font-medium text-muted-foreground">
-            Meta Total de Leads
+            Meta Total
           </label>
           <input
             id="meta-total"
@@ -199,6 +208,20 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Tendênc
             value={metaTotal}
             onChange={handleMetaTotalChange}
             placeholder="0"
+            className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="window-size" className="block text-xs font-medium text-muted-foreground">
+            Janela (dias) <span className="text-xs text-muted-foreground/70">2-30</span>
+          </label>
+          <input
+            id="window-size"
+            type="number"
+            value={windowSize}
+            onChange={handleWindowSizeChange}
+            min="2"
+            max="30"
             className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
           />
         </div>
@@ -217,50 +240,83 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Tendênc
               allowDataOverflow={false}
             />
             <Tooltip content={<CustomTooltip />} />
-            <Legend />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
 
-            {/* Área de Leads Reais (azul) */}
-            <Area
-              type="monotone"
-              dataKey="leadsReais"
-              fill={COLORS.reais}
-              fillOpacity={0.2}
-              stroke={COLORS.reais}
-              strokeWidth={2}
-              name="Leads Reais"
-              dot={(props) => (
-                <CustomDot {...props} dataKey="leadsReais" color={COLORS.reais} />
-              )}
+            {/* Barras diárias: Real */}
+            <Bar
+              dataKey="dailyReal"
+              fill={COLORS.line}
+              opacity={OPACITIES.dailyReal}
+              name="Leads Reais (Dia)"
+              radius={[2, 2, 0, 0]}
             />
 
-            {/* Área de Tendência (cinza pontilhada) */}
+            {/* Barras diárias: Projeção */}
+            <Bar
+              dataKey="dailyProjected"
+              fill={COLORS.lineProjection}
+              opacity={OPACITIES.dailyProjected}
+              name="Leads Projetados (Dia)"
+              radius={[2, 2, 0, 0]}
+            />
+
+            {/* Banda de Confiança (translúcida) */}
             <Area
               type="monotone"
-              dataKey="tendencia"
-              fill={COLORS.tendencia}
-              fillOpacity={0.15}
-              stroke={COLORS.tendenciaStroke}
-              strokeWidth={2}
+              dataKey="bandUpper"
+              fill={COLORS.bandFill}
+              stroke="none"
+              fillOpacity={OPACITIES.bandFill}
+              isAnimationActive={false}
+              legendType="none"
+              name="Banda de Confiança"
+            />
+
+            {/* Linha acumulada: Real (sólida com dots) */}
+            <Line
+              type="monotone"
+              dataKey="cumulativeReal"
+              stroke={COLORS.line}
+              strokeWidth={2.5}
+              dot={{ fill: COLORS.line, r: 3, strokeWidth: 0 }}
+              activeDot={{ r: 5 }}
+              isAnimationActive={false}
+              name="Real"
+            />
+
+            {/* Linha acumulada: Projeção (tracejada com dots) */}
+            <Line
+              type="monotone"
+              dataKey="cumulativeProjected"
+              stroke={COLORS.lineProjection}
+              strokeWidth={2.5}
               strokeDasharray="5 5"
-              name="Tendência de Leads"
-              dot={(props) => (
-                <CustomDot {...props} dataKey="tendencia" color={COLORS.tendenciaStroke} />
-              )}
+              dot={{ fill: COLORS.lineProjection, r: 3, strokeWidth: 0 }}
+              activeDot={{ r: 5 }}
+              isAnimationActive={false}
+              name="Projeção"
             />
 
-            {/* Área de Meta (vermelho) */}
-            <Area
-              type="monotone"
-              dataKey="meta"
-              fill={COLORS.meta}
-              fillOpacity={0.2}
-              stroke={COLORS.metaStroke}
-              strokeWidth={2}
-              name="Meta de Leads"
-              dot={(props) => (
-                <CustomDot {...props} dataKey="meta" color={COLORS.metaStroke} />
-              )}
+            {/* Meta: Linha Horizontal */}
+            <ReferenceLine
+              y={metaTotal}
+              stroke={COLORS.meta}
+              strokeWidth={1}
+              opacity={OPACITIES.metaLine}
+              label={{ value: "Meta", position: "right", fontSize: 11, fill: COLORS.meta }}
+              name="Meta Total"
             />
+
+            {/* Marcador "Hoje" (primeiro ponto projetado) */}
+            {chartData.length > 0 && chartData[0].cumulativeProjected === null && (
+              <ReferenceLine
+                x={chartData.find((p) => p.dailyProjected !== null)?.date}
+                stroke={COLORS.meta}
+                opacity={OPACITIES.markerLine}
+                label={{ value: "Hoje", position: "top", fontSize: 10, fill: COLORS.meta }}
+                strokeDasharray="3 3"
+              />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       ) : (

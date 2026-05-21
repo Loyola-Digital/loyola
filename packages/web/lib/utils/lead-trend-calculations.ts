@@ -1,95 +1,274 @@
 import type { DailyRow } from "./funnel-metrics";
 
 /**
- * Calcula a média diária de leads (Pago + Orgânico, excluindo "Sem Track")
- * @param rows - Array de dias com dados de leads
- * @returns Média diária de leads pagos + orgânicos
+ * Deriva a série diária a partir do acumulado
+ * d[i] = C[i] - C[i-1], onde d[0] = C[0]
  */
+export function calculateDailyFromCumulative(cumulatives: number[]): number[] {
+  if (cumulatives.length === 0) return [];
+
+  const daily: number[] = [cumulatives[0]];
+  for (let i = 1; i < cumulatives.length; i++) {
+    daily.push(cumulatives[i] - cumulatives[i - 1]);
+  }
+  return daily;
+}
+
+/**
+ * Calcula run-rate PONDERADA dos últimos N dias
+ * Pesos lineares: 1, 2, ..., N
+ * r = Σ(d[i] * w[i]) / Σ(w), onde Σ(w) = N * (N+1) / 2
+ */
+export function calculateRunRateWeighted(dailySeries: number[], windowSize: number): number {
+  if (dailySeries.length === 0 || windowSize <= 0) return 0;
+
+  // Usar apenas os últimos N dias (ou menos se não houver N dias)
+  const effectiveWindow = Math.min(windowSize, dailySeries.length);
+  const lastDays = dailySeries.slice(-effectiveWindow);
+
+  // Calcular pesos lineares
+  let numerator = 0;
+  for (let i = 0; i < lastDays.length; i++) {
+    const weight = i + 1; // pesos: 1, 2, 3, ...
+    numerator += lastDays[i] * weight;
+  }
+
+  // Denominador = soma dos pesos = N * (N+1) / 2
+  const denominator = (effectiveWindow * (effectiveWindow + 1)) / 2;
+
+  return denominator > 0 ? numerator / denominator : 0;
+}
+
+/**
+ * Calcula desvio padrão da série diária (últimos N dias)
+ */
+export function calculateSigma(dailySeries: number[], windowSize: number): number {
+  if (dailySeries.length === 0 || windowSize <= 0) return 0;
+
+  const effectiveWindow = Math.min(windowSize, dailySeries.length);
+  const lastDays = dailySeries.slice(-effectiveWindow);
+
+  // Calcular média
+  const mean = lastDays.reduce((sum, val) => sum + val, 0) / lastDays.length;
+
+  // Calcular variância
+  const variance = lastDays.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / lastDays.length;
+
+  return Math.sqrt(variance);
+}
+
+/**
+ * Projeta acumulado futuro com banda de confiança
+ * C[t+k] = C[t] + r * k
+ * banda[t+k] = C[t+k] ± sigma * sqrt(k)
+ */
+export interface ProjectionPoint {
+  date: string;
+  cumulativeProjected: number;
+  bandUpper: number;
+  bandLower: number;
+}
+
+export function projectAccumulated(
+  lastCumulative: number,
+  runRate: number,
+  daysAhead: number,
+  sigma: number,
+  startDate: Date,
+): ProjectionPoint[] {
+  const result: ProjectionPoint[] = [];
+
+  for (let k = 1; k <= daysAhead; k++) {
+    const futureDate = new Date(startDate);
+    futureDate.setDate(futureDate.getDate() + k);
+
+    const cumulativeProjected = lastCumulative + runRate * k;
+    const bandHalfWidth = sigma * Math.sqrt(k);
+    const bandUpper = cumulativeProjected + bandHalfWidth;
+    const bandLower = Math.max(0, cumulativeProjected - bandHalfWidth); // Não permitir negativos
+
+    const dateStr = futureDate.toISOString().split("T")[0];
+    result.push({
+      date: dateStr,
+      cumulativeProjected,
+      bandUpper,
+      bandLower,
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Expande dados do gráfico com nova estrutura:
+ * - dailyReal: barra diária real (até ontem)
+ * - dailyProjected: barra diária projetada (de hoje em diante)
+ * - cumulativeReal: linha sólida azul (até ontem)
+ * - cumulativeProjected: linha tracejada azul (de hoje em diante)
+ * - bandUpper/bandLower: banda de confiança (apenas projeção)
+ * - meta: linha horizontal de meta
+ */
+export interface ChartDataPoint {
+  date: string;
+  dailyReal: number | null;
+  dailyProjected: number | null;
+  cumulativeReal: number | null;
+  cumulativeProjected: number | null;
+  bandUpper: number | null;
+  bandLower: number | null;
+  meta: number;
+}
+
+export function expandChartDataV2(
+  rows: DailyRow[],
+  dataFinal: string,
+  metaTotal: number,
+  windowSize: number = 5,
+): ChartDataPoint[] {
+  if (rows.length === 0) return [];
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const finalDate = new Date(dataFinal);
+  finalDate.setHours(0, 0, 0, 0);
+
+  // Calcular série diária real
+  const cumulatives: number[] = [];
+  let cumSum = 0;
+  for (const row of rows) {
+    cumSum += row.leadsPagos + row.leadsOrg + row.leadsSemTrack;
+    cumulatives.push(cumSum);
+  }
+
+  const dailySeries = calculateDailyFromCumulative(cumulatives);
+
+  // Calcular run-rate e sigma
+  const runRate = calculateRunRateWeighted(dailySeries, windowSize);
+  const sigma = calculateSigma(dailySeries, windowSize);
+
+  // Calcular meta cumulativa
+  const firstDate = new Date(rows[0].date);
+  const periodDays = Math.floor((finalDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  const dailyMeta = metaTotal / periodDays;
+
+  // Calcular dados do gráfico
+  const result: ChartDataPoint[] = [];
+  let cumulativeReal = 0;
+  const todayStr = today.toISOString().split("T")[0];
+
+  for (let dayIndex = 0; dayIndex <= Math.floor((finalDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)); dayIndex++) {
+    const currentDate = new Date(firstDate);
+    currentDate.setDate(currentDate.getDate() + dayIndex);
+
+    const dateStr = currentDate.toISOString().split("T")[0];
+    const historyRow = rows.find((r) => r.date === dateStr);
+
+    const metaCumulative = dailyMeta * (dayIndex + 1);
+
+    if (historyRow && dateStr <= todayStr) {
+      // PASSADO/REAL: até hoje (inclusive)
+      const dailyReal = historyRow.leadsPagos + historyRow.leadsOrg + historyRow.leadsSemTrack;
+      cumulativeReal += dailyReal;
+
+      result.push({
+        date: dateStr,
+        dailyReal,
+        dailyProjected: null,
+        cumulativeReal,
+        cumulativeProjected: null,
+        bandUpper: null,
+        bandLower: null,
+        meta: metaCumulative,
+      });
+    } else {
+      // FUTURO/PROJEÇÃO: a partir de amanhã
+      const daysAhead = Math.floor((new Date(dateStr).getTime() - new Date(todayStr).getTime()) / (1000 * 60 * 60 * 24));
+      const cumulativeProjected = cumulativeReal + runRate * daysAhead;
+      const bandHalfWidth = sigma * Math.sqrt(Math.max(1, daysAhead));
+
+      result.push({
+        date: dateStr,
+        dailyReal: null,
+        dailyProjected: runRate,
+        cumulativeReal: null,
+        cumulativeProjected,
+        bandUpper: cumulativeProjected + bandHalfWidth,
+        bandLower: Math.max(0, cumulativeProjected - bandHalfWidth),
+        meta: metaCumulative,
+      });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Calcula projeção final vs meta (em percentual)
+ */
+export function calculateProjectionPercentage(chartData: ChartDataPoint[]): number {
+  if (chartData.length === 0) return 0;
+
+  const lastPoint = chartData[chartData.length - 1];
+  const finalCumulative = lastPoint.cumulativeProjected ?? lastPoint.cumulativeReal ?? 0;
+  const meta = lastPoint.meta;
+
+  return meta > 0 ? (finalCumulative / meta) * 100 : 0;
+}
+
+// Manter compatibilidade com funções antigas (deprecated)
 export function calculateDailyAverage(rows: DailyRow[]): number {
   if (rows.length === 0) return 0;
-
   const totalLeads = rows.reduce((sum, row) => sum + row.leadsPagos + row.leadsOrg, 0);
   return totalLeads / rows.length;
 }
 
-/**
- * Calcula a projeção de tendência CUMULATIVA (cinza pontilhada)
- * Baseado na média diária do histórico, projeta até a data final
- *
- * **Valores retornados: CUMULATIVOS**
- * - Cada posição do array representa o acumulado até aquele dia
- * - Histórico: soma real dos leads pagos + orgânicos até o dia
- * - Projeção futura: lastAccumulated + mediaDiaria * daysFromEnd
- *
- * **Lógica de passado vs futuro:**
- * - Hoje (new Date()) é considerado o último dia do PASSADO/realizado
- * - Amanhã+ é considerado FUTURO/projeção
- *
- * @param rows - Array histórico de dias
- * @param dataFinal - Data final do lançamento (YYYY-MM-DD)
- * @returns Array de valores CUMULATIVOS projetados para cada dia
- */
 export function calculateTendency(rows: DailyRow[], dataFinal: string): number[] {
-  if (rows.length === 0) return [];
+  // Manter para compatibilidade, mas será deprecado
+  const cumulatives = rows.map((_, i) => {
+    let sum = 0;
+    for (let j = 0; j <= i; j++) {
+      sum += rows[j].leadsPagos + rows[j].leadsOrg;
+    }
+    return sum;
+  });
 
   const mediaDiaria = calculateDailyAverage(rows);
-
-  // Hoje é o limite entre passado (realizado) e futuro (projeção)
   const today = new Date();
-  today.setHours(0, 0, 0, 0); // Reset time para comparação correta
+  today.setHours(0, 0, 0, 0);
 
   const finalDate = new Date(dataFinal);
-
-  // Leads acumulados até hoje (passado realizado)
-  const lastAccumulated = rows.reduce((sum, row) => sum + row.leadsPagos + row.leadsOrg, 0);
+  const lastAccumulated = cumulatives[cumulatives.length - 1] || 0;
 
   const tendency: number[] = [];
-  const startDate = new Date(rows[0].date);
-  // eslint-disable-next-line prefer-const
-  let currentDate = startDate;
   let cumulativeTotal = 0;
+  const startDate = new Date(rows[0].date);
 
-  while (currentDate <= finalDate) {
+  for (let dayIndex = 0; dayIndex <= Math.floor((finalDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)); dayIndex++) {
+    const currentDate = new Date(startDate);
+    currentDate.setDate(currentDate.getDate() + dayIndex);
+
     const dateStr = currentDate.toISOString().split("T")[0];
     const historyRow = rows.find((r) => r.date === dateStr);
 
     if (historyRow && currentDate <= today) {
-      // Dados reais do PASSADO (até hoje inclusive)
-      // Acumula os leads reais
       const dailyLeads = historyRow.leadsPagos + historyRow.leadsOrg;
       cumulativeTotal += dailyLeads;
       tendency.push(cumulativeTotal);
     } else {
-      // Projeção FUTURA (a partir de amanhã)
       const daysFromEnd = Math.floor((currentDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
       tendency.push(lastAccumulated + mediaDiaria * daysFromEnd);
     }
-
-    currentDate.setDate(currentDate.getDate() + 1);
   }
 
   return tendency;
 }
 
-/**
- * Calcula a meta cumulativa (vermelho sólido)
- * Divide a meta total pelo período e acumula dia a dia
- * @param rows - Array histórico de dias
- * @param dataFinal - Data final do lançamento (YYYY-MM-DD)
- * @param metaTotal - Meta total de leads a capturar
- * @returns Array de valores cumulativos da meta para cada dia
- */
-export function calculateMeta(
-  rows: DailyRow[],
-  dataFinal: string,
-  metaTotal: number,
-): number[] {
+export function calculateMeta(rows: DailyRow[], dataFinal: string, metaTotal: number): number[] {
   if (rows.length === 0 || metaTotal <= 0) return [];
 
   const firstDate = new Date(rows[0].date);
   const finalDate = new Date(dataFinal);
-
-  // Período de captação em dias
   const periodoCapt = Math.floor((finalDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
   if (periodoCapt <= 0) {
@@ -99,24 +278,14 @@ export function calculateMeta(
 
   const metaDiaria = metaTotal / periodoCapt;
   const meta: number[] = [];
-  // eslint-disable-next-line prefer-const
-  let currentDate = new Date(firstDate);
 
-  for (let dayIndex = 1; currentDate <= finalDate; dayIndex++) {
+  for (let dayIndex = 1; dayIndex <= periodoCapt; dayIndex++) {
     meta.push(metaDiaria * dayIndex);
-    currentDate.setDate(currentDate.getDate() + 1);
   }
 
   return meta;
 }
 
-/**
- * Expande os dados do gráfico com colunas de tendência e meta
- * @param rows - Array histórico
- * @param dataFinal - Data final
- * @param metaTotal - Meta total
- * @returns Array de objetos com reais, tendência e meta
- */
 export function expandChartData(
   rows: DailyRow[],
   dataFinal: string,
@@ -132,22 +301,22 @@ export function expandChartData(
 }> {
   if (rows.length === 0) return [];
 
-  const tendency = calculateTendency(rows, dataFinal); // Agora retorna CUMULATIVO
-  const meta = calculateMeta(rows, dataFinal, metaTotal); // Já é CUMULATIVO
+  const tendency = calculateTendency(rows, dataFinal);
+  const meta = calculateMeta(rows, dataFinal, metaTotal);
 
   const firstDate = new Date(rows[0].date);
   const finalDate = new Date(dataFinal);
   const result = [];
-  // eslint-disable-next-line prefer-const
-  let currentDate = new Date(firstDate);
-  let cumulativeLeads = 0; // Para acumular leadsReais
+  let cumulativeLeads = 0;
 
-  for (let dayIndex = 0; currentDate <= finalDate; dayIndex++) {
+  for (let dayIndex = 0; dayIndex <= Math.floor((finalDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)); dayIndex++) {
+    const currentDate = new Date(firstDate);
+    currentDate.setDate(currentDate.getDate() + dayIndex);
+
     const dateStr = currentDate.toISOString().split("T")[0];
     const historyRow = rows.find((r) => r.date === dateStr);
 
     if (historyRow) {
-      // Acumula leads reais (pagos + orgânicos + sem track)
       const dailyLeads = historyRow.leadsPagos + historyRow.leadsOrg + historyRow.leadsSemTrack;
       cumulativeLeads += dailyLeads;
 
@@ -156,24 +325,21 @@ export function expandChartData(
         leadsPagos: historyRow.leadsPagos,
         leadsOrg: historyRow.leadsOrg,
         leadsSemTrack: historyRow.leadsSemTrack,
-        leadsReais: cumulativeLeads, // CUMULATIVO
-        tendencia: tendency[dayIndex] ?? 0, // Agora é CUMULATIVO
+        leadsReais: cumulativeLeads,
+        tendencia: tendency[dayIndex] ?? 0,
         meta: meta[dayIndex] ?? 0,
       });
     } else {
-      // Dia sem dados históricos (projeção)
       result.push({
         date: dateStr,
         leadsPagos: 0,
         leadsOrg: 0,
         leadsSemTrack: 0,
-        leadsReais: cumulativeLeads, // Mantém o acumulado (sem novos leads)
-        tendencia: tendency[dayIndex] ?? 0, // Já é CUMULATIVO de calculateTendency
+        leadsReais: cumulativeLeads,
+        tendencia: tendency[dayIndex] ?? 0,
         meta: meta[dayIndex] ?? 0,
       });
     }
-
-    currentDate.setDate(currentDate.getDate() + 1);
   }
 
   return result;
