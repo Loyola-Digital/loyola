@@ -23,11 +23,11 @@ interface LeadsTrendAndGoalChartProps {
 }
 
 const COLORS = {
-  line: "#4F46E5", // Azul principal
-  lineProjection: "#4F46E5", // Mesmo azul (transparency varia)
-  band: "#4F46E5", // Azul claro para banda
-  meta: "#999999", // Cinza para meta
-  bandFill: "#4F46E5",
+  lineReal: "#2563EB", // Azul escuro para real
+  lineProjection: "#60A5FA", // Azul claro para projeção
+  band: "#BFDBFE", // Azul muito claro para banda
+  meta: "#EF4444", // Vermelho para meta
+  bandFill: "#60A5FA",
 };
 
 const OPACITIES = {
@@ -52,7 +52,7 @@ function CustomTooltip({ active, payload }: TooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
 
   const data = payload[0].payload;
-  const isProjection = data.cumulativeProjected !== null;
+  const isProjection = data.isProjection;
 
   return (
     <div className="rounded-lg border border-border bg-background p-3 shadow-lg space-y-1 text-xs">
@@ -60,24 +60,24 @@ function CustomTooltip({ active, payload }: TooltipProps) {
       <div className="border-t border-border/30 pt-1 mt-1 space-y-1">
         {isProjection ? (
           <>
-            <div className="text-amber-600 font-medium">Projetado</div>
+            <div className="font-medium" style={{ color: "#F59E0B" }}>🔮 Projetado</div>
             <div className="text-muted-foreground">
-              Acumulado: {Math.round(data.cumulativeProjected || 0)}
+              Acumulado: {Math.round(data.cumulative)}
             </div>
             <div className="text-muted-foreground">
               Barra: {Math.round(data.dailyProjected || 0)}/dia
             </div>
             {data.bandUpper && (
               <div className="text-muted-foreground text-xs">
-                Faixa: ±{Math.round((data.bandUpper - (data.cumulativeProjected || 0)) * 100) / 100}
+                Banda: ±{Math.round((data.bandUpper - data.cumulative) * 100) / 100}
               </div>
             )}
           </>
         ) : (
           <>
-            <div className="text-green-600 font-medium">Real</div>
+            <div className="font-medium" style={{ color: "#10B981" }}>✓ Real</div>
             <div className="text-muted-foreground">
-              Acumulado: {Math.round(data.cumulativeReal || 0)}
+              Acumulado: {Math.round(data.cumulative)}
             </div>
             <div className="text-muted-foreground">
               Barra: {Math.round(data.dailyReal || 0)}/dia
@@ -245,7 +245,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
             {/* Barras diárias: Real */}
             <Bar
               dataKey="dailyReal"
-              fill={COLORS.line}
+              fill={COLORS.lineReal}
               opacity={OPACITIES.dailyReal}
               name="Leads Reais (Dia)"
               radius={[2, 2, 0, 0]}
@@ -264,7 +264,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
             <Area
               type="monotone"
               dataKey="bandUpper"
-              fill={COLORS.bandFill}
+              fill={COLORS.band}
               stroke="none"
               fillOpacity={OPACITIES.bandFill}
               isAnimationActive={false}
@@ -272,26 +272,48 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
               name="Banda de Confiança"
             />
 
-            {/* Linha acumulada: Real (sólida com dots) */}
+            {/* Linha Real: Sólida Azul Escuro */}
             <Line
               type="monotone"
-              dataKey="cumulativeReal"
-              stroke={COLORS.line}
+              dataKey="cumulative"
+              stroke={COLORS.lineReal}
               strokeWidth={2.5}
-              dot={{ fill: COLORS.line, r: 3, strokeWidth: 0 }}
+              dot={(props: any) => {
+                const { cx, cy, payload } = props;
+                if (payload.isProjection) return null; // Não renderizar dots na projeção
+                return (
+                  <g key={`dot-${payload.date}`}>
+                    <circle cx={cx} cy={cy} r={3} fill={COLORS.lineReal} stroke="white" strokeWidth={1} />
+                    <text x={cx} y={cy - 12} textAnchor="middle" fontSize={11} fill={COLORS.lineReal} fontWeight="600">
+                      {Math.round(payload.cumulative)}
+                    </text>
+                  </g>
+                );
+              }}
               activeDot={{ r: 5 }}
               isAnimationActive={false}
               name="Real"
             />
 
-            {/* Linha acumulada: Projeção (tracejada com dots) */}
+            {/* Linha Projeção: Tracejada Azul Claro */}
             <Line
               type="monotone"
-              dataKey="cumulativeProjected"
+              dataKey="cumulative"
               stroke={COLORS.lineProjection}
               strokeWidth={2.5}
               strokeDasharray="5 5"
-              dot={{ fill: COLORS.lineProjection, r: 3, strokeWidth: 0 }}
+              dot={(props: any) => {
+                const { cx, cy, payload } = props;
+                if (!payload.isProjection) return null; // Não renderizar dots no real
+                return (
+                  <g key={`dot-${payload.date}`}>
+                    <circle cx={cx} cy={cy} r={3} fill={COLORS.lineProjection} stroke="white" strokeWidth={1} />
+                    <text x={cx} y={cy - 12} textAnchor="middle" fontSize={11} fill={COLORS.lineProjection} fontWeight="600">
+                      {Math.round(payload.cumulative)}
+                    </text>
+                  </g>
+                );
+              }}
               activeDot={{ r: 5 }}
               isAnimationActive={false}
               name="Projeção"
@@ -301,19 +323,19 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
             <ReferenceLine
               y={metaTotal}
               stroke={COLORS.meta}
-              strokeWidth={1}
-              opacity={OPACITIES.metaLine}
-              label={{ value: "Meta", position: "right", fontSize: 11, fill: COLORS.meta }}
+              strokeWidth={2}
+              opacity={0.8}
+              label={{ value: "Meta", position: "right", fontSize: 11, fill: COLORS.meta, fontWeight: "bold" }}
               name="Meta Total"
             />
 
             {/* Marcador "Hoje" (primeiro ponto projetado) */}
-            {chartData.length > 0 && chartData[0].cumulativeProjected === null && (
+            {chartData.length > 0 && chartData[0].isProjection === false && (
               <ReferenceLine
-                x={chartData.find((p) => p.dailyProjected !== null)?.date}
-                stroke={COLORS.meta}
-                opacity={OPACITIES.markerLine}
-                label={{ value: "Hoje", position: "top", fontSize: 10, fill: COLORS.meta }}
+                x={chartData.find((p) => p.isProjection)?.date}
+                stroke="#999999"
+                opacity={0.5}
+                label={{ value: "Hoje", position: "top", fontSize: 10, fill: "#999999" }}
                 strokeDasharray="3 3"
               />
             )}

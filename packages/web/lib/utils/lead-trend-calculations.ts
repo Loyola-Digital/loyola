@@ -114,6 +114,8 @@ export interface ChartDataPoint {
   dailyProjected: number | null;
   cumulativeReal: number | null;
   cumulativeProjected: number | null;
+  cumulative: number; // Unified field: cumulativeReal OR cumulativeProjected
+  isProjection: boolean; // true if this row is projected
   bandUpper: number | null;
   bandLower: number | null;
   meta: number;
@@ -177,6 +179,8 @@ export function expandChartDataV2(
         dailyProjected: null,
         cumulativeReal,
         cumulativeProjected: null,
+        cumulative: cumulativeReal,
+        isProjection: false,
         bandUpper: null,
         bandLower: null,
         meta: metaCumulative,
@@ -193,6 +197,8 @@ export function expandChartDataV2(
         dailyProjected: runRate,
         cumulativeReal: null,
         cumulativeProjected,
+        cumulative: cumulativeProjected,
+        isProjection: true,
         bandUpper: cumulativeProjected + bandHalfWidth,
         bandLower: Math.max(0, cumulativeProjected - bandHalfWidth),
         meta: metaCumulative,
