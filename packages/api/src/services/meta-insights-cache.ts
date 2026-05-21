@@ -151,22 +151,24 @@ async function upsertCampaignInsights(
 ): Promise<void> {
   if (rows.length === 0) return;
   const now = new Date();
+  const values = rows
+    .map((r) => ({
+      projectId,
+      campaignId: r.campaign_id ?? defaultCampaignId ?? "",
+      dateStart: r.date_start.slice(0, 10),
+      spend: r.spend ?? "0",
+      impressions: r.impressions ?? "0",
+      reach: r.reach ?? "0",
+      clicks: r.clicks ?? "0",
+      actions: r.actions ?? null,
+      actionValues: r.action_values ?? null,
+      lastSyncedAt: now,
+    }))
+    .filter((r) => r.campaignId);
+  if (values.length === 0) return;
   await db
     .insert(metaCampaignInsightsDaily)
-    .values(
-      rows.map((r) => ({
-        projectId,
-        campaignId: r.campaign_id ?? defaultCampaignId ?? "",
-        dateStart: r.date_start.slice(0, 10),
-        spend: r.spend ?? "0",
-        impressions: r.impressions ?? "0",
-        reach: r.reach ?? "0",
-        clicks: r.clicks ?? "0",
-        actions: r.actions ?? null,
-        actionValues: r.action_values ?? null,
-        lastSyncedAt: now,
-      })).filter((r) => r.campaignId),
-    )
+    .values(values)
     .onConflictDoUpdate({
       target: [
         metaCampaignInsightsDaily.projectId,
