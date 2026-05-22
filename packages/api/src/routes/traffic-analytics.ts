@@ -41,6 +41,8 @@ const daysQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(365).default(30),
   campaignId: z.string().optional(),
   campaignIds: z.string().optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 const campaignQuerySchema = z.object({
@@ -76,13 +78,17 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
       const campaignIds = queryResult.success
         ? queryResult.data.campaignIds?.split(",").filter(Boolean) ?? (queryResult.data.campaignId ? [queryResult.data.campaignId] : undefined)
         : undefined;
+      const startDate = queryResult.success ? queryResult.data.startDate : undefined;
+      const endDate = queryResult.success ? queryResult.data.endDate : undefined;
 
       try {
         const overview = await getProjectOverview(
           fastify.db,
           paramResult.data.projectId,
           days,
-          campaignIds
+          campaignIds,
+          startDate,
+          endDate,
         );
         return overview;
       } catch (err) {

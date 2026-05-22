@@ -25,8 +25,15 @@ import {
   ReferenceLine,
   BarChart,
   Bar,
+  LabelList,
 } from "recharts";
+import { PLATFORM_FEE_RATES } from "@loyola-x/shared";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip as UITooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -90,6 +97,16 @@ function fmtCurrency(val: number | null | undefined): string {
   return `R$ ${val.toFixed(2)}`;
 }
 
+// Story 29.8: formato compacto pra labels dos pontos no gráfico (evita poluir)
+function fmtCurrencyCompact(val: number | null | undefined): string {
+  if (val == null) return "—";
+  const abs = Math.abs(val);
+  const sign = val < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}R$${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}R$${(abs / 1_000).toFixed(1)}K`;
+  return `${sign}R$${abs.toFixed(0)}`;
+}
+
 function fmtNumber(val: number | null | undefined): string {
   if (val == null) return "—";
   if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}M`;
@@ -117,25 +134,48 @@ function safeNum(val: string | undefined): number {
 
 export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCampaignsChange }: PerpetualDashboardProps) {
   const [days, setDays] = useState(30);
+  // Fix 1 (29.8): quando usuario seleciona range custom no calendario, guarda
+  // startDate/endDate explicitos e propaga pros hooks. Sem isso, days sozinho
+  // sempre busca "X dias retroativos de hoje" — ignorando datas no passado.
+  const [customRange, setCustomRange] = useState<{ startDate: string; endDate: string } | null>(null);
   const [showCampaignManager, setShowCampaignManager] = useState(false);
   const [showSpreadsheetWizard, setShowSpreadsheetWizard] = useState(false);
   const [tableFilter, setTableFilter] = useState<"campaign" | "adset" | "ad">("campaign");
   const { data: perpetualSpreadsheet } = usePerpetualSpreadsheet(projectId, funnel.id);
-  const { data: salesData } = usePerpetualSalesData(projectId, funnel.id, days);
-  const { data: salesDataDaily } = usePerpetualSalesDataDaily(projectId, funnel.id, days);
+  const { data: salesData } = usePerpetualSalesData(
+    projectId,
+    funnel.id,
+    days,
+    customRange?.startDate,
+    customRange?.endDate,
+  );
+  const { data: salesDataDaily } = usePerpetualSalesDataDaily(
+    projectId,
+    funnel.id,
+    days,
+    customRange?.startDate,
+    customRange?.endDate,
+  );
   const usingSpreadsheet = !!perpetualSpreadsheet && !!salesData && !salesData.semDados;
   const { data: pickerData } = useCampaignPicker(showCampaignManager ? projectId : null);
   const updateFunnel = useUpdateFunnel(projectId, funnel.id);
   const campaignIds = funnel.campaigns.map((c) => c.id);
   const campaignIdSet = new Set(campaignIds);
 
-  // Data hooks
+  // Data hooks — Fix 1 (29.8): propaga startDate/endDate quando custom range
   const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
+    customRange?.startDate, customRange?.endDate,
   );
   const { data: campaignData, isLoading: campaignsLoading } = useTrafficCampaigns(projectId, days);
   const { data: dailyData, isLoading: dailyLoading } =
-    useCampaignDailyInsightsBulk(projectId, campaignIds.length > 0 ? campaignIds : null, days);
+    useCampaignDailyInsightsBulk(
+      projectId,
+      campaignIds.length > 0 ? campaignIds : null,
+      days,
+      customRange?.startDate,
+      customRange?.endDate,
+    );
   const { data: adSetsData } = useAllAdSets(projectId, days, campaignIds.length > 0 ? campaignIds : null);
   const { data: adsData } = useAllAds(projectId, days, campaignIds.length > 0 ? campaignIds : null);
 
@@ -180,10 +220,12 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   }, [campaignData, campaignIdSet]);
 
   // Daily chart data: investment + margin
-  // Epic 29 Story 29.4: quando planilha conectada, Receita/Margem usam planilha; spend continua Meta.
+  // Story 29.4 + 29.7: quando planilha conectada, Receita vem da planilha e
+  // Margem usa receita líquida (descontou fees Kiwify/Hotmart). Spend continua Meta.
   const dailyChartData = useMemo(() => {
     if (!dailyData) return [];
     const sheetByDay = usingSpreadsheet ? salesDataDaily?.byDay ?? {} : {};
+    const feeRate = usingSpreadsheet && salesData ? salesData.feeRate : 0;
     return dailyData.map((d) => {
       const spend = safeNum(d.spend);
       const purchases = d.actions?.find((a) =>
@@ -194,8 +236,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       );
       const metaRevenue = metaRevenueEntry ? parseFloat(metaRevenueEntry.value) : 0;
       const sheetRevenue = sheetByDay[d.date_start] ?? 0;
-      const revenue = usingSpreadsheet ? sheetRevenue : metaRevenue;
-      const margin = revenue - spend;
+      const revenueBruto = usingSpreadsheet ? sheetRevenue : metaRevenue;
+      // Margem usa receita liquida (descontou fees platform) — consistente com KPI
+      const revenueLiquida = revenueBruto * (1 - feeRate);
+      const margin = revenueLiquida - spend;
       const dateLabel = d.date_start.slice(5, 10);
       const revenueSource = usingSpreadsheet
         ? "Planilha · faturamento bruto por dia"
@@ -203,17 +247,17 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       return {
         date: dateLabel,
         spend,
-        revenue,
+        revenue: revenueBruto,
         margin,
         sales: purchases ? parseInt(purchases.value) : 0,
         formulasByKey: {
           spend: buildFunnelDailyFormula("Investimento", "Meta Ads API · spend (time series)", spend, true, dateLabel),
-          revenue: buildFunnelDailyFormula("Receita", revenueSource, revenue, true, dateLabel),
-          margin: buildFunnelDailyFormula("Margem (Receita − Spend)", "Derivado · revenue − spend", margin, true, dateLabel),
+          revenue: buildFunnelDailyFormula("Receita", revenueSource, revenueBruto, true, dateLabel),
+          margin: buildFunnelDailyFormula("Margem (Líquida − Spend)", "Derivado · (revenue × (1−feeRate)) − spend", margin, true, dateLabel),
         },
       };
     });
-  }, [dailyData, usingSpreadsheet, salesDataDaily]);
+  }, [dailyData, usingSpreadsheet, salesDataDaily, salesData]);
 
   // Revenue by audience (ad sets)
   const revenueByAudience = useMemo(() => {
@@ -235,18 +279,34 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       .map((a) => ({ name: a.campaignName.length > 25 ? a.campaignName.slice(0, 25) + "..." : a.campaignName, revenue: a.revenue ?? 0 }));
   }, [adsData]);
 
-  // Epic 29 Story 29.5: Receita por Origem (utm_source bruto da planilha)
-  const revenueByUtmSource = useMemo(() => {
+  // Story 29.8: 3 gráficos por UTM da planilha — Canal (utm_source) /
+  // Público (utm_medium) / Criativo (utm_content). Substituem os 3 antigos
+  // que vinham do Meta (campaign/adset/ad).
+  const revenueByCanal = useMemo(() => {
     if (!usingSpreadsheet || !salesData) return [];
-    return salesData.porUtmSource
-      .slice(0, 8)
-      .map((u) => ({
-        name: u.source.length > 25 ? u.source.slice(0, 25) + "..." : u.source,
-        revenue: u.bruto,
-      }));
+    return salesData.porUtmSource.slice(0, 8).map((u) => ({
+      name: u.source.length > 25 ? u.source.slice(0, 25) + "..." : u.source,
+      revenue: u.bruto,
+    }));
   }, [salesData, usingSpreadsheet]);
 
-  // Revenue by channel (campaigns)
+  const revenueByPublico = useMemo(() => {
+    if (!usingSpreadsheet || !salesData) return [];
+    return salesData.porUtmMedium.slice(0, 8).map((u) => ({
+      name: u.medium.length > 25 ? u.medium.slice(0, 25) + "..." : u.medium,
+      revenue: u.bruto,
+    }));
+  }, [salesData, usingSpreadsheet]);
+
+  const revenueByCriativo = useMemo(() => {
+    if (!usingSpreadsheet || !salesData) return [];
+    return salesData.porUtmContent.slice(0, 8).map((u) => ({
+      name: u.content.length > 25 ? u.content.slice(0, 25) + "..." : u.content,
+      revenue: u.bruto,
+    }));
+  }, [salesData, usingSpreadsheet]);
+
+  // Legacy (Meta-based) — mantido pra quando NÃO há planilha conectada
   const revenueByCampaign = useMemo(() => {
     return funnelCampaigns
       .filter((c) => c.revenue && c.revenue > 0)
@@ -280,7 +340,11 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
-          <DayRangePicker days={days} onDaysChange={setDays} />
+          <DayRangePicker
+            days={days}
+            onDaysChange={setDays}
+            onRangeChange={setCustomRange}
+          />
           <RefreshDataButton />
           <Button
             variant="outline"
@@ -370,9 +434,14 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
               <MetricTooltip label="CAC" value={fmtCurrency(m.cac)} formula={buildFunnelCacFormula(m.cac, f)}>
                 <KpiCard icon={DollarSign} label="CAC" value={fmtCurrency(m.cac)} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
-              <MetricTooltip label="Margem" value={fmtCurrency(m.margin)} formula={buildFunnelMarginFormula(m.margin, f)}>
+              <MarginBreakdownTooltip
+                receitaBruta={m.totalRevenue}
+                spend={m.totalSpend}
+                margin={m.margin}
+                platform={usingSpreadsheet ? salesData?.platform : null}
+              >
                 <KpiCard icon={DollarSign} label="Margem" value={fmtCurrency(m.margin)} hintTooltip fromSheet={fromSheet} />
-              </MetricTooltip>
+              </MarginBreakdownTooltip>
               <MetricTooltip label="Margem %" value={fmtPercent(m.marginPercent)} formula={buildFunnelMarginPercentFormula(m.marginPercent, f)}>
                 <KpiCard icon={BarChart3} label="Margem %" value={fmtPercent(m.marginPercent)} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
@@ -445,15 +514,19 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         <div className="rounded-xl border border-border/30 bg-card/60 p-5">
           <h3 className="text-sm font-semibold mb-4">Investimento no Tempo</h3>
           {dailyLoading ? <Skeleton className="h-48" /> : dailyChartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={dailyChartData}>
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={dailyChartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
+                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => fmtCurrencyCompact(v)} />
                 <Tooltip content={<FormulaChartTooltip />} />
                 <Legend wrapperStyle={{ color: "#fff" }} />
-                <Line type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={false} name="Investimento" />
-                <Line type="monotone" dataKey="revenue" stroke="hsl(150 60% 50%)" strokeWidth={2} dot={false} name="Receita" />
+                <Line type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={{ r: 3, fill: "hsl(47 98% 54%)" }} name="Investimento">
+                  <LabelList dataKey="spend" position="top" offset={8} fontSize={9} fill="hsl(47 98% 60%)" formatter={(v: unknown) => fmtCurrencyCompact(typeof v === "number" ? v : Number(v ?? 0))} />
+                </Line>
+                <Line type="monotone" dataKey="revenue" stroke="hsl(150 60% 50%)" strokeWidth={2} dot={{ r: 3, fill: "hsl(150 60% 50%)" }} name="Receita">
+                  <LabelList dataKey="revenue" position="bottom" offset={8} fontSize={9} fill="hsl(150 60% 60%)" formatter={(v: unknown) => fmtCurrencyCompact(typeof v === "number" ? v : Number(v ?? 0))} />
+                </Line>
               </LineChart>
             </ResponsiveContainer>
           ) : <EmptyState />}
@@ -462,14 +535,16 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         <div className="rounded-xl border border-border/30 bg-card/60 p-5">
           <h3 className="text-sm font-semibold mb-4">Margem no Tempo</h3>
           {dailyLoading ? <Skeleton className="h-48" /> : dailyChartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={dailyChartData}>
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={dailyChartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
+                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => fmtCurrencyCompact(v)} />
                 <Tooltip content={<FormulaChartTooltip />} />
                 <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="4 4" />
-                <Line type="monotone" dataKey="margin" stroke="hsl(150 60% 50%)" strokeWidth={2} dot={false} name="Margem (R$)" />
+                <Line type="monotone" dataKey="margin" stroke="hsl(150 60% 50%)" strokeWidth={2} dot={{ r: 3, fill: "hsl(150 60% 50%)" }} name="Margem (R$)">
+                  <LabelList dataKey="margin" position="top" offset={8} fontSize={9} fill="hsl(150 60% 60%)" formatter={(v: unknown) => fmtCurrencyCompact(typeof v === "number" ? v : Number(v ?? 0))} />
+                </Line>
               </LineChart>
             </ResponsiveContainer>
           ) : <EmptyState />}
@@ -477,35 +552,54 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       </div>
 
       {/* ================================================================ */}
-      {/* GRÁFICOS EM BARRAS HORIZONTAIS: Receita por origem/canal/público/criativo */}
+      {/* GRÁFICOS EM BARRAS HORIZONTAIS — Story 29.8: 3 gráficos via UTM da planilha
+            Canal (utm_source) / Público (utm_medium) / Criativo (utm_content).
+            Sem planilha: fallback pros gráficos Meta legacy (campaign/adset/ad). */}
       {/* ================================================================ */}
-      <div className={`grid grid-cols-1 gap-6 ${usingSpreadsheet ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
-        {usingSpreadsheet && (
-          <HBarChart
-            title="Receita por Origem (UTM)"
-            data={revenueByUtmSource}
-            funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
-            entityType="campaign"
-          />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {usingSpreadsheet ? (
+          <>
+            <HBarChart
+              title="Receita por Canal (utm_source)"
+              data={revenueByCanal}
+              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+              entityType="campaign"
+            />
+            <HBarChart
+              title="Receita por Público (utm_medium)"
+              data={revenueByPublico}
+              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+              entityType="adset"
+            />
+            <HBarChart
+              title="Receita por Criativo (utm_content)"
+              data={revenueByCriativo}
+              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+              entityType="ad"
+            />
+          </>
+        ) : (
+          <>
+            <HBarChart
+              title="Receita por Canal"
+              data={revenueByCampaign}
+              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+              entityType="campaign"
+            />
+            <HBarChart
+              title="Receita por Publico"
+              data={revenueByAudience}
+              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+              entityType="adset"
+            />
+            <HBarChart
+              title="Receita por Criativo"
+              data={revenueByCreative}
+              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+              entityType="ad"
+            />
+          </>
         )}
-        <HBarChart
-          title="Receita por Canal"
-          data={revenueByCampaign}
-          funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
-          entityType="campaign"
-        />
-        <HBarChart
-          title="Receita por Publico"
-          data={revenueByAudience}
-          funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
-          entityType="adset"
-        />
-        <HBarChart
-          title="Receita por Criativo"
-          data={revenueByCreative}
-          funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
-          entityType="ad"
-        />
       </div>
 
       {/* ================================================================ */}
@@ -640,6 +734,98 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
 // ============================================================
 // SUB-COMPONENTS
 // ============================================================
+
+// Story 29.8: Tooltip detalhado da Margem mostrando breakdown completo dos
+// fees por plataforma (reembolso, marketplace, imposto, outros) em R$ + spend.
+const PLATFORM_FEE_BREAKDOWN: Record<string, { label: string; rate: number }[]> = {
+  kiwify: [
+    { label: "Reembolso", rate: 0.04 },
+    { label: "Marketplace (Kiwify)", rate: 0.0499 },
+    { label: "Imposto", rate: 0.11 },
+    { label: "Outros custos", rate: 0.01 },
+  ],
+  hotmart: [
+    { label: "Reembolso", rate: 0.04 },
+    { label: "Marketplace (Hotmart)", rate: 0.10 },
+    { label: "Imposto", rate: 0.11 },
+    { label: "Outros custos", rate: 0.01 },
+  ],
+};
+
+function MarginBreakdownTooltip({
+  receitaBruta,
+  spend,
+  margin,
+  platform,
+  children,
+}: {
+  receitaBruta: number | null | undefined;
+  spend: number | null | undefined;
+  margin: number | null | undefined;
+  platform: string | null | undefined;
+  children: React.ReactNode;
+}) {
+  const bruto = receitaBruta ?? 0;
+  const sp = spend ?? 0;
+  const breakdown = platform ? PLATFORM_FEE_BREAKDOWN[platform] : null;
+  const totalFeeRate = breakdown ? breakdown.reduce((s, b) => s + b.rate, 0) : 0;
+  const receitaLiquida = bruto * (1 - totalFeeRate);
+
+  return (
+    <UITooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="top" className="p-0 max-w-[360px]">
+        <div className="bg-popover text-popover-foreground text-xs p-3 space-y-2 rounded-md border border-border">
+          <div className="font-semibold text-sm border-b border-border/30 pb-1.5">
+            Memorial: Margem
+          </div>
+          <div className="space-y-1">
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Receita Bruta</span>
+              <span className="tabular-nums font-medium">{fmtCurrency(bruto)}</span>
+            </div>
+
+            {breakdown && (
+              <>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider pt-1.5 border-t border-border/20">
+                  Descontos da plataforma ({platform})
+                </div>
+                {breakdown.map((b) => {
+                  const valor = bruto * b.rate;
+                  return (
+                    <div key={b.label} className="flex justify-between gap-4 text-[11px]">
+                      <span className="text-muted-foreground">
+                        − {b.label} ({(b.rate * 100).toFixed(2)}%)
+                      </span>
+                      <span className="tabular-nums text-red-400">
+                        −{fmtCurrency(valor)}
+                      </span>
+                    </div>
+                  );
+                })}
+                <div className="flex justify-between gap-4 pt-1.5 border-t border-border/20">
+                  <span className="font-medium">Receita Líquida</span>
+                  <span className="tabular-nums font-medium">{fmtCurrency(receitaLiquida)}</span>
+                </div>
+              </>
+            )}
+
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">− Investimento (Meta)</span>
+              <span className="tabular-nums text-red-400">−{fmtCurrency(sp)}</span>
+            </div>
+            <div className="flex justify-between gap-4 pt-1.5 border-t border-border/30">
+              <span className="font-semibold">= Margem</span>
+              <span className={`tabular-nums font-semibold ${(margin ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                {fmtCurrency(margin)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </TooltipContent>
+    </UITooltip>
+  );
+}
 
 const KpiCard = React.forwardRef<HTMLDivElement, {
   icon: React.ComponentType<{ className?: string }>; label: string; value: string;

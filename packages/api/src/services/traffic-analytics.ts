@@ -303,9 +303,12 @@ export async function getProjectOverview(
   db: Database,
   projectId: string,
   days: number,
-  campaignIds?: string[]
+  campaignIds?: string[],
+  startDate?: string,
+  endDate?: string,
 ): Promise<OverviewAnalytics> {
-  const cacheKey = `analytics:${projectId}:overview:${days}:${campaignIds?.sort().join(",") ?? "all"}`;
+  const rangeKey = startDate && endDate ? `${startDate}_${endDate}` : `d${days}`;
+  const cacheKey = `analytics:${projectId}:overview:${rangeKey}:${campaignIds?.sort().join(",") ?? "all"}`;
   const cached = getCached<OverviewAnalytics>(cacheKey);
   if (cached) return cached;
 
@@ -317,7 +320,9 @@ export async function getProjectOverview(
   const allCampaigns = await fetchCampaignInsights(
     metaAccount.metaAccountId,
     metaAccount.accessToken,
-    days
+    days,
+    startDate,
+    endDate,
   );
 
   const idSet = campaignIds ? new Set(campaignIds) : null;

@@ -25,12 +25,28 @@ const PRESETS = [
 interface DayRangePickerProps {
   days: number;
   onDaysChange: (days: number) => void;
+  /**
+   * Story 29.8: callback opcional pra range customizado (datas explicitas).
+   * Quando user seleciona range no calendario, recebe `{startDate, endDate}` em
+   * YYYY-MM-DD. Quando user escolhe preset (7/14/30/etc), recebe `null`.
+   * Componentes que ignoram esse callback caem no comportamento legacy
+   * (days retroativos sempre a partir de hoje).
+   */
+  onRangeChange?: (range: { startDate: string; endDate: string } | null) => void;
   maxDays?: number;
+}
+
+function toLocalYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 export function DayRangePicker({
   days,
   onDaysChange,
+  onRangeChange,
   maxDays = 365,
 }: DayRangePickerProps) {
   const [open, setOpen] = useState(false);
@@ -51,6 +67,7 @@ export function DayRangePicker({
   function handlePreset(preset: typeof PRESETS[number]) {
     setCustomRange(null);
     onDaysChange(preset.days);
+    onRangeChange?.(null);
     setOpen(false);
   }
 
@@ -59,6 +76,10 @@ export function DayRangePicker({
     const diffDays = differenceInDays(range.to, range.from) + 1;
     setCustomRange({ from: range.from, to: range.to });
     onDaysChange(diffDays);
+    onRangeChange?.({
+      startDate: toLocalYMD(range.from),
+      endDate: toLocalYMD(range.to),
+    });
     setOpen(false);
   }
 

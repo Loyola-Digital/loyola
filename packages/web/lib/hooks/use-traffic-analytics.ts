@@ -118,14 +118,25 @@ export interface AdAnalyticsResponse {
 const TRAFFIC_STALE_TIME = 15 * 60 * 1000; // 15min — avoid redundant refetches on tab focus / remount; backend cacheia 30min então mais agressivo aqui não ajuda
 const CREATIVE_STALE_TIME = 30 * 60 * 1000; // 30min — creatives rarely change
 
-export function useTrafficOverview(projectId: string | null, days: number = 30, campaignIds?: string[] | null) {
+export function useTrafficOverview(
+  projectId: string | null,
+  days: number = 30,
+  campaignIds?: string[] | null,
+  startDate?: string,
+  endDate?: string,
+) {
   const apiClient = useApiClient();
   const campaignParam = campaignIds && campaignIds.length > 0 ? `&campaignIds=${campaignIds.join(",")}` : "";
+  // Fix 1 (29.8): quando startDate/endDate, usa range explicito (custom no passado).
+  // Senao usa days retroativos.
+  const rangeParam = startDate && endDate
+    ? `startDate=${startDate}&endDate=${endDate}`
+    : `days=${days}`;
   return useQuery({
-    queryKey: ["traffic-overview", projectId, days, campaignIds],
+    queryKey: ["traffic-overview", projectId, days, campaignIds, startDate, endDate],
     queryFn: () =>
       apiClient<OverviewAnalytics>(
-        `/api/traffic/analytics/${projectId}/overview?days=${days}${campaignParam}`
+        `/api/traffic/analytics/${projectId}/overview?${rangeParam}${campaignParam}`
       ),
     enabled: !!projectId,
     staleTime: TRAFFIC_STALE_TIME,

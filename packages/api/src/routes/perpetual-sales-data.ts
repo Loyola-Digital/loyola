@@ -21,6 +21,8 @@ const paramsSchema = z.object({
 
 const querySchema = z.object({
   days: z.coerce.number().int().positive().optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 // ---- helpers (copiados de stage-sales-data — refactor DRY pode esperar) ----
@@ -81,6 +83,8 @@ const EMPTY_SALES_DATA = {
   ticketMedioBruto: 0,
   ticketMedioLiquido: 0,
   porUtmSource: [] as { source: string; vendas: number; bruto: number; liquido: number }[],
+  porUtmMedium: [] as { medium: string; vendas: number; bruto: number; liquido: number }[],
+  porUtmContent: [] as { content: string; vendas: number; bruto: number; liquido: number }[],
   porFormaPagamento: [] as { forma: string; vendas: number; bruto: number; liquido: number }[],
   semDados: true,
 };
@@ -158,6 +162,8 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         valorLiquido?: string;
         formaPagamento?: string;
         utm_source?: string;
+        utm_medium?: string;
+        utm_content?: string;
         dataVenda?: string;
       };
 
@@ -180,35 +186,55 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       const liquidoIdx = colIdx(mapping.valorLiquido);
       const formaIdx = colIdx(mapping.formaPagamento);
       const utmSourceIdx = colIdx(mapping.utm_source);
+      const utmMediumIdx = colIdx(mapping.utm_medium);
+      const utmContentIdx = colIdx(mapping.utm_content);
       const dataIdx = colIdx(mapping.dataVenda);
 
       if (emailIdx === -1) return { ...EMPTY_SALES_DATA, semDados: true };
 
-      let cutoffDate: Date | null = null;
-      if (query.data.days && dataIdx !== -1) {
-        cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - query.data.days);
+      // Fix 1 (29.8): suporta startDate/endDate explicitos (custom range no passado)
+      // OU days retroativos (presets). Sem nenhum dos dois = todos os dados.
+      let cutoffStart: Date | null = null;
+      let cutoffEnd: Date | null = null;
+      if (query.data.startDate && query.data.endDate && dataIdx !== -1) {
+        cutoffStart = new Date(query.data.startDate + "T00:00:00");
+        cutoffEnd = new Date(query.data.endDate + "T23:59:59");
+      } else if (query.data.days && dataIdx !== -1) {
+        cutoffStart = new Date();
+        cutoffStart.setDate(cutoffStart.getDate() - query.data.days);
       }
 
       // Dedup por transactionId quando mapeado, senão por email (Story 28.4 pattern)
       const dedupMap = new Map<
         string,
-        { bruto: number; liquido: number; forma: string; utmSource: string; lastDate: Date | null }
+        {
+          bruto: number;
+          liquido: number;
+          forma: string;
+          utmSource: string;
+          utmMedium: string;
+          utmContent: string;
+          lastDate: Date | null;
+        }
       >();
 
       for (const row of rows) {
         const email = (row[emailIdx] ?? "").trim().toLowerCase();
         if (!email) continue;
 
-        if (cutoffDate && dataIdx !== -1) {
+        if ((cutoffStart || cutoffEnd) && dataIdx !== -1) {
           const dt = parseDate(row[dataIdx]);
-          if (!dt || dt < cutoffDate) continue;
+          if (!dt) continue;
+          if (cutoffStart && dt < cutoffStart) continue;
+          if (cutoffEnd && dt > cutoffEnd) continue;
         }
 
         const bruto = parseNumber(row[brutoIdx] ?? "");
         const liquido = parseNumber(row[liquidoIdx] ?? "");
         const forma = (row[formaIdx] ?? "").trim() || "Não informado";
         const utmSource = sanitizeUtmValue(row[utmSourceIdx]) ?? SEM_ORIGEM_LABEL;
+        const utmMedium = sanitizeUtmValue(row[utmMediumIdx]) ?? SEM_ORIGEM_LABEL;
+        const utmContent = sanitizeUtmValue(row[utmContentIdx]) ?? SEM_ORIGEM_LABEL;
         const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
 
         const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
@@ -221,10 +247,12 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
           if (rowDate && (!existing.lastDate || rowDate > existing.lastDate)) {
             existing.forma = forma;
             existing.utmSource = utmSource;
+            existing.utmMedium = utmMedium;
+            existing.utmContent = utmContent;
             existing.lastDate = rowDate;
           }
         } else {
-          dedupMap.set(dedupKey, { bruto, liquido, forma, utmSource, lastDate: rowDate });
+          dedupMap.set(dedupKey, { bruto, liquido, forma, utmSource, utmMedium, utmContent, lastDate: rowDate });
         }
       }
 
@@ -232,24 +260,31 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
 
       let totalBruto = 0;
       let totalLiquido = 0;
-      const utmMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+      const utmSourceMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+      const utmMediumMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+      const utmContentMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const formaMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
 
-      for (const { bruto, liquido, forma, utmSource } of dedupMap.values()) {
+      const addToMap = (
+        m: Map<string, { vendas: number; bruto: number; liquido: number }>,
+        key: string,
+        bruto: number,
+        liquido: number,
+      ) => {
+        const e = m.get(key) ?? { vendas: 0, bruto: 0, liquido: 0 };
+        e.vendas += 1;
+        e.bruto += bruto;
+        e.liquido += liquido;
+        m.set(key, e);
+      };
+
+      for (const { bruto, liquido, forma, utmSource, utmMedium, utmContent } of dedupMap.values()) {
         totalBruto += bruto;
         totalLiquido += liquido;
-
-        const utmEntry = utmMap.get(utmSource) ?? { vendas: 0, bruto: 0, liquido: 0 };
-        utmEntry.vendas += 1;
-        utmEntry.bruto += bruto;
-        utmEntry.liquido += liquido;
-        utmMap.set(utmSource, utmEntry);
-
-        const formaEntry = formaMap.get(forma) ?? { vendas: 0, bruto: 0, liquido: 0 };
-        formaEntry.vendas += 1;
-        formaEntry.bruto += bruto;
-        formaEntry.liquido += liquido;
-        formaMap.set(forma, formaEntry);
+        addToMap(utmSourceMap, utmSource, bruto, liquido);
+        addToMap(utmMediumMap, utmMedium, bruto, liquido);
+        addToMap(utmContentMap, utmContent, bruto, liquido);
+        addToMap(formaMap, forma, bruto, liquido);
       }
 
       const totalVendas = dedupMap.size;
@@ -266,8 +301,14 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         feeRate,
         ticketMedioBruto: totalVendas > 0 ? totalBruto / totalVendas : 0,
         ticketMedioLiquido: totalVendas > 0 ? totalLiquido / totalVendas : 0,
-        porUtmSource: Array.from(utmMap.entries())
+        porUtmSource: Array.from(utmSourceMap.entries())
           .map(([source, v]) => ({ source, ...v }))
+          .sort((a, b) => b.bruto - a.bruto),
+        porUtmMedium: Array.from(utmMediumMap.entries())
+          .map(([medium, v]) => ({ medium, ...v }))
+          .sort((a, b) => b.bruto - a.bruto),
+        porUtmContent: Array.from(utmContentMap.entries())
+          .map(([content, v]) => ({ content, ...v }))
           .sort((a, b) => b.bruto - a.bruto),
         porFormaPagamento: Array.from(formaMap.entries())
           .map(([forma, v]) => ({ forma, ...v }))
@@ -321,10 +362,15 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
 
       if (dataIdx === -1) return { byDay: {} as Record<string, number>, semDados: true };
 
-      let cutoffDate: Date | null = null;
-      if (query.data.days) {
-        cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - query.data.days);
+      // Fix 1 (29.8): suporta startDate/endDate ou days retroativos
+      let cutoffStart: Date | null = null;
+      let cutoffEnd: Date | null = null;
+      if (query.data.startDate && query.data.endDate) {
+        cutoffStart = new Date(query.data.startDate + "T00:00:00");
+        cutoffEnd = new Date(query.data.endDate + "T23:59:59");
+      } else if (query.data.days) {
+        cutoffStart = new Date();
+        cutoffStart.setDate(cutoffStart.getDate() - query.data.days);
       }
 
       const byDay: Record<string, number> = {};
@@ -333,7 +379,8 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       for (const row of rows) {
         const rowDate = parseDate(row[dataIdx]);
         if (!rowDate) continue;
-        if (cutoffDate && rowDate < cutoffDate) continue;
+        if (cutoffStart && rowDate < cutoffStart) continue;
+        if (cutoffEnd && rowDate > cutoffEnd) continue;
 
         if (emailIdx !== -1) {
           const email = (row[emailIdx] ?? "").trim();

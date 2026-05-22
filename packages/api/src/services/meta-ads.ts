@@ -528,9 +528,14 @@ export async function fetchCampaignDailyInsightsForIds(
 export async function fetchCampaignInsights(
   metaAccountId: string,
   accessToken: string,
-  days: number = 30
+  days: number = 30,
+  startDate?: string,
+  endDate?: string,
 ): Promise<MetaCampaignInsight[]> {
-  const { since, until } = dateRangeFromDays(days);
+  // Fix 1 (29.8): aceita startDate/endDate explicito (custom range no passado).
+  // Quando passado, ignora `days` retroativos.
+  const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
+  const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
   const timeRange = buildTimeRangeParam(since, until);
   const res = await fetchMeta<{ data: MetaCampaignInsight[] }>(
     `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,campaign_id,campaign_name,actions,action_values&time_range=${timeRange}&level=campaign`,
