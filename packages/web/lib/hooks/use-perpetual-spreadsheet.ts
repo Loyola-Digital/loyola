@@ -2,7 +2,7 @@
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { PerpetualSpreadsheet, SaleColumnMapping } from "@loyola-x/shared";
+import type { PerpetualSpreadsheet, SaleColumnMapping, SalesPlatform } from "@loyola-x/shared";
 
 const STALE_TIME = 2 * 60 * 1000;
 
@@ -27,6 +27,7 @@ export interface UpsertPerpetualSpreadsheetInput {
   spreadsheetName: string;
   sheetName: string;
   columnMapping: SaleColumnMapping;
+  platform?: SalesPlatform | null;
 }
 
 function invalidatePerpetualSpreadsheet(

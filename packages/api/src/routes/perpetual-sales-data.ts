@@ -58,10 +58,26 @@ function parseDate(val: string | undefined): Date | null {
   return isNaN(dt.getTime()) ? null : dt;
 }
 
+// Story 29.7: fee rates por plataforma (Kiwify=20.99% / Hotmart=26% / Other=0%)
+const PLATFORM_FEE_RATES: Record<string, number> = {
+  kiwify: 0.2099,
+  hotmart: 0.26,
+  other: 0,
+};
+
+function applyPlatformFee(bruto: number, platform: string | null): number {
+  if (!platform) return bruto;
+  const rate = PLATFORM_FEE_RATES[platform] ?? 0;
+  return bruto * (1 - rate);
+}
+
 const EMPTY_SALES_DATA = {
   totalVendas: 0,
   faturamentoBruto: 0,
   faturamentoLiquido: 0,
+  faturamentoLiquidoCalculado: 0,
+  platform: null as string | null,
+  feeRate: 0,
   ticketMedioBruto: 0,
   ticketMedioLiquido: 0,
   porUtmSource: [] as { source: string; vendas: number; bruto: number; liquido: number }[],
@@ -237,11 +253,17 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       }
 
       const totalVendas = dedupMap.size;
+      const platform = spreadsheet.platform;
+      const feeRate = platform ? PLATFORM_FEE_RATES[platform] ?? 0 : 0;
+      const faturamentoLiquidoCalculado = applyPlatformFee(totalBruto, platform);
 
       return {
         totalVendas,
         faturamentoBruto: totalBruto,
         faturamentoLiquido: totalLiquido,
+        faturamentoLiquidoCalculado,
+        platform,
+        feeRate,
         ticketMedioBruto: totalVendas > 0 ? totalBruto / totalVendas : 0,
         ticketMedioLiquido: totalVendas > 0 ? totalLiquido / totalVendas : 0,
         porUtmSource: Array.from(utmMap.entries())

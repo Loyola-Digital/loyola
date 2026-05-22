@@ -833,6 +833,10 @@ export const funnelSpreadsheets = pgTable(
     }),
     label: varchar("label", { length: 255 }).notNull(),
     type: funnelSpreadsheetTypeEnum("type").notNull(),
+    // Story 29.7: plataforma de pagamento (relevante pra perpetual_sales) —
+    // determina o fee% descontado da Receita Bruta pra calcular Margem real.
+    // Null = sem desconto (compatibilidade com lançamentos antigos).
+    platform: varchar("platform", { length: 20 }),
     spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
     spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
     sheetName: varchar("sheet_name", { length: 255 }).notNull(),

@@ -58,6 +58,26 @@ export interface StageSalesSpreadsheet {
 }
 
 /**
+ * Story 29.7: plataforma de pagamento — determina o fee% descontado da
+ * Receita Bruta pra calcular Margem real.
+ *
+ * Componentes de fee (somados):
+ * - Reembolso: 4%
+ * - Marketplace: 4.99% (Kiwify) | 10% (Hotmart)
+ * - Imposto: 11%
+ * - Outros custos: 1%
+ *
+ * Totais: Kiwify=20.99% / Hotmart=26% / Other=0%
+ */
+export type SalesPlatform = "kiwify" | "hotmart" | "other";
+
+export const PLATFORM_FEE_RATES: Record<SalesPlatform, number> = {
+  kiwify: 0.2099,
+  hotmart: 0.26,
+  other: 0,
+};
+
+/**
  * Epic 29 — Planilha de vendas conectada a um funil de tipo perpétuo.
  * 1 por funil (sem stage). Mesmo mapper de colunas do StageSalesSpreadsheet.
  */
@@ -68,6 +88,8 @@ export interface PerpetualSpreadsheet {
   spreadsheetName: string;
   sheetName: string;
   columnMapping: SaleColumnMapping;
+  /** Story 29.7: plataforma de pagamento (null = sem desconto de fees) */
+  platform: SalesPlatform | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -81,6 +103,10 @@ export interface PerpetualSalesData {
   totalVendas: number;
   faturamentoBruto: number;
   faturamentoLiquido: number;
+  /** Story 29.7: bruto × (1 − feeRate) — sempre confiável (calculado server) */
+  faturamentoLiquidoCalculado: number;
+  platform: SalesPlatform | null;
+  feeRate: number;
   ticketMedioBruto: number;
   ticketMedioLiquido: number;
   porUtmSource: { source: string; vendas: number; bruto: number; liquido: number }[];

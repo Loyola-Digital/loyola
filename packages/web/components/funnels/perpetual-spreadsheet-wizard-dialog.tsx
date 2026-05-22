@@ -20,7 +20,7 @@ import {
   useConnectPerpetualSpreadsheet,
   useDisconnectPerpetualSpreadsheet,
 } from "@/lib/hooks/use-perpetual-spreadsheet";
-import type { PerpetualSpreadsheet, SaleColumnMapping } from "@loyola-x/shared";
+import type { PerpetualSpreadsheet, SaleColumnMapping, SalesPlatform } from "@loyola-x/shared";
 
 // Mesmos campos do StageSalesWizard — utm_source é o destaque pro perpetual.
 const PERPETUAL_MAPPING_FIELDS: Array<{
@@ -58,6 +58,7 @@ export function PerpetualSpreadsheetWizardDialog({
   const [selectedSpreadsheet, setSelectedSpreadsheet] = useState<{ id: string; name: string } | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
   const [mapping, setMapping] = useState<Partial<SaleColumnMapping>>({});
+  const [platform, setPlatform] = useState<SalesPlatform | "">("");
   const [search, setSearch] = useState("");
   const [directLink, setDirectLink] = useState("");
 
@@ -67,6 +68,7 @@ export function PerpetualSpreadsheetWizardDialog({
       setSelectedSpreadsheet({ id: current.spreadsheetId, name: current.spreadsheetName });
       setSelectedSheet(current.sheetName);
       setMapping(current.columnMapping ?? {});
+      setPlatform(current.platform ?? "");
     }
   }, [open, current]);
 
@@ -97,6 +99,7 @@ export function PerpetualSpreadsheetWizardDialog({
     setSelectedSpreadsheet(null);
     setSelectedSheet(null);
     setMapping({});
+    setPlatform("");
     setSearch("");
     setDirectLink("");
   }
@@ -126,6 +129,7 @@ export function PerpetualSpreadsheetWizardDialog({
         spreadsheetName: sheetsData?.name ?? selectedSpreadsheet.name,
         sheetName: selectedSheet,
         columnMapping: mapping as SaleColumnMapping,
+        platform: platform || null,
       },
       {
         onSuccess: () => {
@@ -294,6 +298,27 @@ export function PerpetualSpreadsheetWizardDialog({
               <p className="text-xs text-muted-foreground">
                 Mapeie as colunas da sua planilha. <strong>Email</strong> é obrigatório. Recomendamos mapear <strong>UTM Source</strong> para análise de origem da receita.
               </p>
+
+              {/* Story 29.7: plataforma de pagamento — define fee% descontado da Receita Bruta */}
+              <div className="rounded-lg border border-border/40 bg-muted/20 p-3 space-y-2">
+                <div>
+                  <Label className="text-xs font-medium">Plataforma de Pagamento</Label>
+                  <p className="text-[10px] text-muted-foreground">
+                    Define os percentuais descontados da Receita Bruta pra calcular Margem real.
+                  </p>
+                </div>
+                <Select value={platform || "__none__"} onValueChange={(v) => setPlatform(v === "__none__" ? "" : (v as SalesPlatform))}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Selecionar plataforma..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Sem desconto de fees</SelectItem>
+                    <SelectItem value="kiwify">Kiwify (−20.99%: reembolso 4% + marketplace 4.99% + imposto 11% + outros 1%)</SelectItem>
+                    <SelectItem value="hotmart">Hotmart (−26%: reembolso 4% + marketplace 10% + imposto 11% + outros 1%)</SelectItem>
+                    <SelectItem value="other">Outra plataforma (sem desconto automático)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
               {sheetDataLoading && columns.length === 0 ? (
                 <div className="space-y-2">

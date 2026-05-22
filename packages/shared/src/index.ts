@@ -42,6 +42,7 @@ export type {
   SaleColumnMapping,
   StageSalesSpreadsheet,
   PerpetualSpreadsheet,
+  SalesPlatform,
   PerpetualSalesData,
   PerpetualSalesDataDaily,
   FunnelStage,
@@ -53,6 +54,8 @@ export type {
   OrphanStageGroup,
   OrphanCampaignsResponse,
 } from "./types/funnel.js";
+
+export { PLATFORM_FEE_RATES } from "./types/funnel.js";
 
 export type {
   OrganicPostSource,

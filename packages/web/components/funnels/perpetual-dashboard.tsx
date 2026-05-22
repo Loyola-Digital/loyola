@@ -152,12 +152,16 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
 
   // Epic 29 Story 29.4 — quando planilha conectada, sobrescreve vendas/receita/CAC/margem/ROAS
   // com dados da planilha. Spend continua Meta. Sem planilha = fallback Meta integral.
+  // Story 29.7: Margem usa faturamentoLiquidoCalculado (descontou fees da plataforma).
   const effectiveMetrics = useMemo(() => {
     if (!overview) return null;
     if (!usingSpreadsheet || !salesData) return overview;
     const sales = salesData.totalVendas;
     const revenue = salesData.faturamentoBruto;
-    const margin = revenue - overview.totalSpend;
+    // Receita líquida descontando fees Kiwify/Hotmart (Story 29.7). Quando platform=null
+    // ou other, faturamentoLiquidoCalculado === bruto.
+    const netRevenue = salesData.faturamentoLiquidoCalculado;
+    const margin = netRevenue - overview.totalSpend;
     return {
       ...overview,
       totalSales: sales,

@@ -33,11 +33,14 @@ const columnMappingSchema = z.object({
   utm_term: z.string().optional(),
 });
 
+const platformSchema = z.enum(["kiwify", "hotmart", "other"]);
+
 const upsertSchema = z.object({
   spreadsheetId: z.string().min(1),
   spreadsheetName: z.string().min(1),
   sheetName: z.string().min(1),
   columnMapping: columnMappingSchema,
+  platform: platformSchema.nullable().optional(),
 });
 
 function shapeRow(row: typeof funnelSpreadsheets.$inferSelect) {
@@ -48,6 +51,7 @@ function shapeRow(row: typeof funnelSpreadsheets.$inferSelect) {
     spreadsheetName: row.spreadsheetName,
     sheetName: row.sheetName,
     columnMapping: row.columnMapping as z.infer<typeof columnMappingSchema>,
+    platform: (row.platform ?? null) as "kiwify" | "hotmart" | "other" | null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -157,6 +161,7 @@ export default fp(async function perpetualSpreadsheetsRoutes(fastify) {
             spreadsheetName: body.spreadsheetName,
             sheetName: body.sheetName,
             columnMapping: body.columnMapping,
+            platform: body.platform ?? null,
             updatedAt: new Date(),
           })
           .where(eq(funnelSpreadsheets.id, existing.id))
@@ -175,6 +180,7 @@ export default fp(async function perpetualSpreadsheetsRoutes(fastify) {
           spreadsheetName: body.spreadsheetName,
           sheetName: body.sheetName,
           columnMapping: body.columnMapping,
+          platform: body.platform ?? null,
           createdBy: request.userId,
         })
         .returning();
