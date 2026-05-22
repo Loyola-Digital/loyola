@@ -217,15 +217,6 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
             <YAxis
-              yAxisId="left"
-              tick={{ fontSize: 11 }}
-              domain={[0, "auto"]}
-              allowDecimals={false}
-              allowDataOverflow={false}
-            />
-            <YAxis
-              yAxisId="right"
-              orientation="right"
               tick={{ fontSize: 11 }}
               domain={[0, "auto"]}
               allowDecimals={false}
@@ -236,7 +227,6 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
 
             {/* Barras diárias: Real */}
             <Bar
-              yAxisId="left"
               dataKey="dailyReal"
               fill={COLORS.bars}
               opacity={OPACITIES.dailyReal}
@@ -247,7 +237,6 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
 
             {/* Barras diárias: Projeção */}
             <Bar
-              yAxisId="left"
               dataKey="dailyProjected"
               fill={COLORS.bars}
               opacity={OPACITIES.dailyProjected}
@@ -258,7 +247,6 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
 
             {/* Banda de Confiança (translúcida) */}
             <Area
-              yAxisId="left"
               type="monotone"
               dataKey="bandUpper"
               fill={COLORS.band}
@@ -271,7 +259,6 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
 
             {/* Linha Real: Sólida Azul Escuro */}
             <Line
-              yAxisId="left"
               type="monotone"
               dataKey="cumulative"
               stroke={COLORS.lineReal}
@@ -295,7 +282,6 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
 
             {/* Linha Projeção: Tracejada Azul Claro */}
             <Line
-              yAxisId="left"
               type="monotone"
               dataKey="cumulative"
               stroke={COLORS.lineProjection}
@@ -320,13 +306,23 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
 
             {/* Meta: Linha Acumulada */}
             <Line
-              yAxisId="right"
               type="monotone"
               dataKey="meta"
               stroke={COLORS.meta}
               strokeWidth={2.5}
               strokeDasharray="5 5"
-              dot={false}
+              dot={(props: DotProps) => {
+                const { cx, cy, payload } = props;
+                if (!payload || cx === undefined || cy === undefined) return null;
+                return (
+                  <g key={`meta-dot-${payload.date}`}>
+                    <circle cx={cx} cy={cy} r={2.5} fill={COLORS.meta} stroke="white" strokeWidth={1} />
+                    <text x={cx} y={cy - 12} textAnchor="middle" fontSize={8} fill={COLORS.meta} fontWeight="600">
+                      {Math.round(payload.meta)}
+                    </text>
+                  </g>
+                );
+              }}
               isAnimationActive={false}
               name="Meta Acumulada"
             />
