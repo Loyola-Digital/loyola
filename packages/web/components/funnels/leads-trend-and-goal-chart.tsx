@@ -213,32 +213,20 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
       {/* Gráfico */}
       {chartData.length > 0 ? (
         <ResponsiveContainer width="100%" height={360}>
-          <ComposedChart data={chartData} margin={{ top: 20, right: 30, bottom: 5, left: 10 }}>
+          <ComposedChart data={chartData} margin={{ top: 20, right: 80, bottom: 5, left: 10 }}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
             <YAxis
-              yAxisId="left"
               tick={{ fontSize: 11 }}
               domain={[0, "auto"]}
               allowDecimals={false}
               allowDataOverflow={false}
-              label={{ value: "Leads", angle: -90, position: "insideLeft" }}
-            />
-            <YAxis
-              yAxisId="right"
-              orientation="right"
-              tick={{ fontSize: 11 }}
-              domain={[0, "auto"]}
-              allowDecimals={false}
-              allowDataOverflow={false}
-              label={{ value: "Meta", angle: 90, position: "insideRight" }}
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
 
             {/* Barras diárias: Real */}
             <Bar
-              yAxisId="left"
               dataKey="dailyReal"
               fill={COLORS.bars}
               opacity={OPACITIES.dailyReal}
@@ -321,16 +309,17 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
             />
 
             {/* Meta: Linha Horizontal */}
-            <ReferenceLine
-              yAxisId="right"
-              y={metaTotal}
-              stroke={COLORS.meta}
-              strokeWidth={2.5}
-              strokeDasharray="5 5"
-              opacity={1}
-              label={{ value: "Meta", position: "right", fontSize: 12, fill: COLORS.meta, fontWeight: "bold" }}
-              name="Meta Total"
-            />
+            {metaTotal > 0 && (
+              <ReferenceLine
+                y={metaTotal}
+                stroke={COLORS.meta}
+                strokeWidth={3}
+                strokeDasharray="5 5"
+                opacity={1}
+                label={{ value: `Meta: ${metaTotal}`, position: "right", fontSize: 12, fill: COLORS.meta, fontWeight: "bold" }}
+                name="Meta Total"
+              />
+            )}
 
             {/* Marcador "Hoje" (primeiro ponto projetado) */}
             {chartData.length > 0 && chartData[0].isProjection === false && (
