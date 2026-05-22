@@ -217,6 +217,15 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Proje√ß√
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
             <YAxis
+              yAxisId="left"
+              tick={{ fontSize: 11 }}
+              domain={[0, "auto"]}
+              allowDecimals={false}
+              allowDataOverflow={false}
+            />
+            <YAxis
+              yAxisId="right"
+              orientation="right"
               tick={{ fontSize: 11 }}
               domain={[0, "auto"]}
               allowDecimals={false}
@@ -227,6 +236,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Proje√ß√
 
             {/* Barras di√°rias: Real */}
             <Bar
+              yAxisId="left"
               dataKey="dailyReal"
               fill={COLORS.bars}
               opacity={OPACITIES.dailyReal}
@@ -311,6 +321,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Proje√ß√
             {/* Meta: Linha Horizontal */}
             {metaTotal > 0 && (
               <ReferenceLine
+                yAxisId="right"
                 y={metaTotal}
                 stroke={COLORS.meta}
                 strokeWidth={3}
