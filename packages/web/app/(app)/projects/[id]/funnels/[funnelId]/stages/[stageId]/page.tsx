@@ -117,11 +117,15 @@ export default function StagePage() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
+      {/* Header — pra perpetual, esconde noção de stage (1 dashboard só) */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs text-muted-foreground mb-0.5">{funnel.name}</p>
-          <h1 className="text-2xl font-bold">{stage.name}</h1>
+          {funnelType !== "perpetual" && (
+            <p className="text-xs text-muted-foreground mb-0.5">{funnel.name}</p>
+          )}
+          <h1 className="text-2xl font-bold">
+            {funnelType === "perpetual" ? funnel.name : stage.name}
+          </h1>
           <p className="text-sm text-muted-foreground">
             {funnelType === "launch" ? "Funil de Lançamento" : "Funil Perpétuo"}
           </p>

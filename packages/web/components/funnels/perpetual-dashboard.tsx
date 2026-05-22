@@ -10,6 +10,8 @@ import {
   BarChart3,
   Filter,
   Settings2,
+  FileSpreadsheet,
+  CheckCircle2,
 } from "lucide-react";
 import {
   LineChart,
@@ -40,6 +42,12 @@ import {
 import { CampaignSelector } from "./campaign-selector";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { RefreshDataButton } from "./refresh-data-button";
+import { PerpetualSpreadsheetWizardDialog } from "./perpetual-spreadsheet-wizard-dialog";
+import { usePerpetualSpreadsheet } from "@/lib/hooks/use-perpetual-spreadsheet";
+import {
+  usePerpetualSalesData,
+  usePerpetualSalesDataDaily,
+} from "@/lib/hooks/use-perpetual-sales-data";
 import type { Funnel, FunnelCampaign, StageType } from "@loyola-x/shared";
 import { StageSalesSection } from "./stage-sales-section";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
@@ -110,7 +118,12 @@ function safeNum(val: string | undefined): number {
 export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCampaignsChange }: PerpetualDashboardProps) {
   const [days, setDays] = useState(30);
   const [showCampaignManager, setShowCampaignManager] = useState(false);
+  const [showSpreadsheetWizard, setShowSpreadsheetWizard] = useState(false);
   const [tableFilter, setTableFilter] = useState<"campaign" | "adset" | "ad">("campaign");
+  const { data: perpetualSpreadsheet } = usePerpetualSpreadsheet(projectId, funnel.id);
+  const { data: salesData } = usePerpetualSalesData(projectId, funnel.id, days);
+  const { data: salesDataDaily } = usePerpetualSalesDataDaily(projectId, funnel.id, days);
+  const usingSpreadsheet = !!perpetualSpreadsheet && !!salesData && !salesData.semDados;
   const { data: pickerData } = useCampaignPicker(showCampaignManager ? projectId : null);
   const updateFunnel = useUpdateFunnel(projectId, funnel.id);
   const campaignIds = funnel.campaigns.map((c) => c.id);
@@ -137,6 +150,25 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     return ((current - comparison) / Math.abs(comparison)) * 100;
   }
 
+  // Epic 29 Story 29.4 — quando planilha conectada, sobrescreve vendas/receita/CAC/margem/ROAS
+  // com dados da planilha. Spend continua Meta. Sem planilha = fallback Meta integral.
+  const effectiveMetrics = useMemo(() => {
+    if (!overview) return null;
+    if (!usingSpreadsheet || !salesData) return overview;
+    const sales = salesData.totalVendas;
+    const revenue = salesData.faturamentoBruto;
+    const margin = revenue - overview.totalSpend;
+    return {
+      ...overview,
+      totalSales: sales,
+      totalRevenue: revenue,
+      cac: sales > 0 ? overview.totalSpend / sales : null,
+      margin,
+      marginPercent: revenue > 0 ? (margin / revenue) * 100 : null,
+      roas: overview.totalSpend > 0 ? revenue / overview.totalSpend : null,
+    };
+  }, [overview, salesData, usingSpreadsheet]);
+
   // Filtered campaigns for this funnel
   const funnelCampaigns = useMemo(() => {
     if (!campaignData) return [];
@@ -144,19 +176,26 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   }, [campaignData, campaignIdSet]);
 
   // Daily chart data: investment + margin
+  // Epic 29 Story 29.4: quando planilha conectada, Receita/Margem usam planilha; spend continua Meta.
   const dailyChartData = useMemo(() => {
     if (!dailyData) return [];
+    const sheetByDay = usingSpreadsheet ? salesDataDaily?.byDay ?? {} : {};
     return dailyData.map((d) => {
       const spend = safeNum(d.spend);
       const purchases = d.actions?.find((a) =>
         a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase"
       );
-      const revenueEntry = d.action_values?.find((a) =>
+      const metaRevenueEntry = d.action_values?.find((a) =>
         a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase"
       );
-      const revenue = revenueEntry ? parseFloat(revenueEntry.value) : 0;
+      const metaRevenue = metaRevenueEntry ? parseFloat(metaRevenueEntry.value) : 0;
+      const sheetRevenue = sheetByDay[d.date_start] ?? 0;
+      const revenue = usingSpreadsheet ? sheetRevenue : metaRevenue;
       const margin = revenue - spend;
       const dateLabel = d.date_start.slice(5, 10);
+      const revenueSource = usingSpreadsheet
+        ? "Planilha · faturamento bruto por dia"
+        : "Meta Ads API · action_values.purchase (time series)";
       return {
         date: dateLabel,
         spend,
@@ -165,12 +204,12 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         sales: purchases ? parseInt(purchases.value) : 0,
         formulasByKey: {
           spend: buildFunnelDailyFormula("Investimento", "Meta Ads API · spend (time series)", spend, true, dateLabel),
-          revenue: buildFunnelDailyFormula("Receita", "Meta Ads API · action_values.purchase (time series)", revenue, true, dateLabel),
+          revenue: buildFunnelDailyFormula("Receita", revenueSource, revenue, true, dateLabel),
           margin: buildFunnelDailyFormula("Margem (Receita − Spend)", "Derivado · revenue − spend", margin, true, dateLabel),
         },
       };
     });
-  }, [dailyData]);
+  }, [dailyData, usingSpreadsheet, salesDataDaily]);
 
   // Revenue by audience (ad sets)
   const revenueByAudience = useMemo(() => {
@@ -191,6 +230,17 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       .slice(0, 8)
       .map((a) => ({ name: a.campaignName.length > 25 ? a.campaignName.slice(0, 25) + "..." : a.campaignName, revenue: a.revenue ?? 0 }));
   }, [adsData]);
+
+  // Epic 29 Story 29.5: Receita por Origem (utm_source bruto da planilha)
+  const revenueByUtmSource = useMemo(() => {
+    if (!usingSpreadsheet || !salesData) return [];
+    return salesData.porUtmSource
+      .slice(0, 8)
+      .map((u) => ({
+        name: u.source.length > 25 ? u.source.slice(0, 25) + "..." : u.source,
+        revenue: u.bruto,
+      }));
+  }, [salesData, usingSpreadsheet]);
 
   // Revenue by channel (campaigns)
   const revenueByCampaign = useMemo(() => {
@@ -228,12 +278,39 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         <div className="flex items-center gap-2 flex-wrap">
           <DayRangePicker days={days} onDaysChange={setDays} />
           <RefreshDataButton />
+          <Button
+            variant="outline"
+            size="sm"
+            className={`gap-1.5 text-xs ${perpetualSpreadsheet ? "border-emerald-500/40 text-emerald-400 hover:text-emerald-300" : ""}`}
+            onClick={() => setShowSpreadsheetWizard(true)}
+          >
+            {perpetualSpreadsheet ? (
+              <>
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span className="max-w-[180px] truncate">{perpetualSpreadsheet.spreadsheetName}</span>
+                <span className="text-muted-foreground/70">(editar)</span>
+              </>
+            ) : (
+              <>
+                <FileSpreadsheet className="h-3.5 w-3.5" />
+                Conectar planilha
+              </>
+            )}
+          </Button>
         </div>
         <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setShowCampaignManager(!showCampaignManager)}>
           <Settings2 className="h-3.5 w-3.5" />
           {funnel.campaigns.length} campanha{funnel.campaigns.length !== 1 ? "s" : ""}
         </Button>
       </div>
+
+      <PerpetualSpreadsheetWizardDialog
+        projectId={projectId}
+        funnelId={funnel.id}
+        current={perpetualSpreadsheet ?? null}
+        open={showSpreadsheetWizard}
+        onOpenChange={setShowSpreadsheetWizard}
+      />
 
       {showCampaignManager && pickerData && (
         <div className="rounded-xl border border-border/30 bg-card/60 p-4 space-y-3">
@@ -260,37 +337,40 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-7">
           {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
-      ) : overview ? (
+      ) : effectiveMetrics ? (
         (() => {
           const f = { days, funnelType: "perpetual" as const, funnelName: funnel?.name };
+          const m = effectiveMetrics;
+          // Marca KPIs cuja fonte mudou pra planilha
+          const fromSheet = usingSpreadsheet;
           return (
             <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-7">
-              <MetricTooltip label="ROAS" value={fmtRoas(overview.roas)} formula={buildFunnelRoasFormula(overview.roas, f)}>
-                <KpiCard icon={Target} label="ROAS" value={fmtRoas(overview.roas)} target={2} actual={overview.roas} hintTooltip />
+              <MetricTooltip label="ROAS" value={fmtRoas(m.roas)} formula={buildFunnelRoasFormula(m.roas, f)}>
+                <KpiCard icon={Target} label="ROAS" value={fmtRoas(m.roas)} target={2} actual={m.roas} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
-              <MetricTooltip label="Investimento" value={fmtCurrency(overview.totalSpend)} formula={buildFunnelSpendFormula(overview.totalSpend, f)}>
-                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(overview.totalSpend)} hintTooltip
-                  comparison={compSpend !== null && overview.totalSpend != null ? {
+              <MetricTooltip label="Investimento" value={fmtCurrency(m.totalSpend)} formula={buildFunnelSpendFormula(m.totalSpend, f)}>
+                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(m.totalSpend)} hintTooltip
+                  comparison={compSpend !== null && m.totalSpend != null ? {
                     display: fmtCurrency(compSpend),
-                    delta: calcDelta(overview.totalSpend, compSpend),
+                    delta: calcDelta(m.totalSpend, compSpend),
                     higherIsBetter: false,
                   } : undefined}
                 />
               </MetricTooltip>
-              <MetricTooltip label="Vendas" value={fmtNumber(overview.totalSales)} formula={buildFunnelSalesCountFormula(overview.totalSales, f)}>
-                <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(overview.totalSales)} hintTooltip />
+              <MetricTooltip label="Vendas" value={fmtNumber(m.totalSales)} formula={buildFunnelSalesCountFormula(m.totalSales, f)}>
+                <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(m.totalSales)} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
-              <MetricTooltip label="Receita" value={fmtCurrency(overview.totalRevenue)} formula={buildFunnelRevenueFormula(overview.totalRevenue, f)}>
-                <KpiCard icon={DollarSign} label="Receita" value={fmtCurrency(overview.totalRevenue)} hintTooltip />
+              <MetricTooltip label="Receita" value={fmtCurrency(m.totalRevenue)} formula={buildFunnelRevenueFormula(m.totalRevenue, f)}>
+                <KpiCard icon={DollarSign} label="Receita" value={fmtCurrency(m.totalRevenue)} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
-              <MetricTooltip label="CAC" value={fmtCurrency(overview.cac)} formula={buildFunnelCacFormula(overview.cac, f)}>
-                <KpiCard icon={DollarSign} label="CAC" value={fmtCurrency(overview.cac)} hintTooltip />
+              <MetricTooltip label="CAC" value={fmtCurrency(m.cac)} formula={buildFunnelCacFormula(m.cac, f)}>
+                <KpiCard icon={DollarSign} label="CAC" value={fmtCurrency(m.cac)} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
-              <MetricTooltip label="Margem" value={fmtCurrency(overview.margin)} formula={buildFunnelMarginFormula(overview.margin, f)}>
-                <KpiCard icon={DollarSign} label="Margem" value={fmtCurrency(overview.margin)} hintTooltip />
+              <MetricTooltip label="Margem" value={fmtCurrency(m.margin)} formula={buildFunnelMarginFormula(m.margin, f)}>
+                <KpiCard icon={DollarSign} label="Margem" value={fmtCurrency(m.margin)} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
-              <MetricTooltip label="Margem %" value={fmtPercent(overview.marginPercent)} formula={buildFunnelMarginPercentFormula(overview.marginPercent, f)}>
-                <KpiCard icon={BarChart3} label="Margem %" value={fmtPercent(overview.marginPercent)} hintTooltip />
+              <MetricTooltip label="Margem %" value={fmtPercent(m.marginPercent)} formula={buildFunnelMarginPercentFormula(m.marginPercent, f)}>
+                <KpiCard icon={BarChart3} label="Margem %" value={fmtPercent(m.marginPercent)} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
             </div>
           );
@@ -393,9 +473,17 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       </div>
 
       {/* ================================================================ */}
-      {/* GRÁFICOS EM BARRAS HORIZONTAIS: Receita por canal/público/criativo */}
+      {/* GRÁFICOS EM BARRAS HORIZONTAIS: Receita por origem/canal/público/criativo */}
       {/* ================================================================ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className={`grid grid-cols-1 gap-6 ${usingSpreadsheet ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
+        {usingSpreadsheet && (
+          <HBarChart
+            title="Receita por Origem (UTM)"
+            data={revenueByUtmSource}
+            funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+            entityType="campaign"
+          />
+        )}
         <HBarChart
           title="Receita por Canal"
           data={revenueByCampaign}
@@ -553,8 +641,9 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
   icon: React.ComponentType<{ className?: string }>; label: string; value: string;
   target?: number; actual?: number | null; hintTooltip?: boolean;
   comparison?: { display: string; delta: number; higherIsBetter: boolean };
+  fromSheet?: boolean;
 } & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
-  { icon: Icon, label, value, target, actual, hintTooltip, comparison, className, ...rest },
+  { icon: Icon, label, value, target, actual, hintTooltip, comparison, fromSheet, className, ...rest },
   ref,
 ) {
   const isRoas = target !== undefined;
@@ -565,10 +654,13 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
     <div
       ref={ref}
       {...rest}
-      className={`rounded-xl border p-3 hover:border-border/50 transition-colors ${hintTooltip ? "cursor-help" : ""} ${
+      className={`relative rounded-xl border p-3 hover:border-border/50 transition-colors ${hintTooltip ? "cursor-help" : ""} ${
         roasOk ? "border-emerald-500/30 bg-emerald-500/5" : roasBad ? "border-red-500/30 bg-red-500/5" : "border-border/30 bg-gradient-to-br from-card/80 to-card/40"
       } ${className ?? ""}`}
     >
+      {fromSheet && (
+        <span className="absolute top-1 right-1 text-[9px] text-emerald-400/80" title="Dado vindo da planilha conectada">📄</span>
+      )}
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />

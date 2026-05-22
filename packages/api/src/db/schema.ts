@@ -818,6 +818,7 @@ export const funnelSpreadsheetTypeEnum = pgEnum("funnel_spreadsheet_type", [
   "leads",
   "sales",
   "custom",
+  "perpetual_sales",
 ]);
 
 export const funnelSpreadsheets = pgTable(
@@ -844,6 +845,9 @@ export const funnelSpreadsheets = pgTable(
         date?: string;
         status?: string;
         value?: string;
+        valorBruto?: string;
+        valorLiquido?: string;
+        formaPagamento?: string;
         utm_source?: string;
         utm_medium?: string;
         utm_campaign?: string;

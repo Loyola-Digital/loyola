@@ -220,10 +220,12 @@ export default function FunnelPage() {
               </div>
             </PopoverContent>
           </Popover>
-          <Button size="sm" className="gap-1.5" onClick={() => { setStageName(""); setCreateOpen(true); }}>
-            <Plus className="h-4 w-4" />
-            Nova Etapa
-          </Button>
+          {funnelData.funnelType !== "perpetual" && (
+            <Button size="sm" className="gap-1.5" onClick={() => { setStageName(""); setCreateOpen(true); }}>
+              <Plus className="h-4 w-4" />
+              Nova Etapa
+            </Button>
+          )}
         </div>
       </div>
 
@@ -241,7 +243,8 @@ export default function FunnelPage() {
         />
       )}
 
-      {/* Dialog Nova Etapa */}
+      {/* Dialog Nova Etapa — só pra launch (perpetual não tem stages) */}
+      {funnelData.funnelType !== "perpetual" && (
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -325,6 +328,7 @@ export default function FunnelPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      )}
     </div>
   );
 }

@@ -57,6 +57,46 @@ export interface StageSalesSpreadsheet {
   createdAt: string;
 }
 
+/**
+ * Epic 29 — Planilha de vendas conectada a um funil de tipo perpétuo.
+ * 1 por funil (sem stage). Mesmo mapper de colunas do StageSalesSpreadsheet.
+ */
+export interface PerpetualSpreadsheet {
+  id: string;
+  funnelId: string;
+  spreadsheetId: string;
+  spreadsheetName: string;
+  sheetName: string;
+  columnMapping: SaleColumnMapping;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Epic 29 Story 29.3 — Métricas agregadas da planilha de vendas do perpétuo.
+ * porUtmSource é BRUTO (sem normalização Pago/Orgânico) — granularidade total
+ * pro time identificar qual canal específico converte.
+ */
+export interface PerpetualSalesData {
+  totalVendas: number;
+  faturamentoBruto: number;
+  faturamentoLiquido: number;
+  ticketMedioBruto: number;
+  ticketMedioLiquido: number;
+  porUtmSource: { source: string; vendas: number; bruto: number; liquido: number }[];
+  porFormaPagamento: { forma: string; vendas: number; bruto: number; liquido: number }[];
+  semDados: boolean;
+}
+
+/**
+ * Série diária de receita bruta da planilha. Chave = data local (YYYY-MM-DD).
+ * Sem dedup — cada linha da planilha é uma transação distinta.
+ */
+export interface PerpetualSalesDataDaily {
+  byDay: Record<string, number>;
+  semDados: boolean;
+}
+
 export interface FunnelStage {
   id: string;
   funnelId: string;

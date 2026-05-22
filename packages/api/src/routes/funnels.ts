@@ -260,6 +260,25 @@ export default fp(async function funnelRoutes(fastify) {
       })
       .returning();
 
+    // Epic 29 Story 29.6: perpetual não tem conceito de stages — auto-cria 1
+    // stage default invisível pra reusar toda a infra de tabs/dashboards sem
+    // expor essa noção pro usuário. Launch segue comportamento normal (sem
+    // stage até o user criar).
+    if (type === "perpetual") {
+      await fastify.db.insert(funnelStages).values({
+        funnelId: funnel.id,
+        name: funnel.name,
+        stageType: "paid",
+        metaAccountId: funnel.metaAccountId,
+        campaigns: funnel.campaigns,
+        googleAdsAccountId: funnel.googleAdsAccountId,
+        googleAdsCampaigns: funnel.googleAdsCampaigns,
+        switchyFolderIds: funnel.switchyFolderIds,
+        switchyLinkedLinks: funnel.switchyLinkedLinks,
+        sortOrder: 0,
+      });
+    }
+
     return reply.code(201).send(funnelShape(funnel));
   });
 

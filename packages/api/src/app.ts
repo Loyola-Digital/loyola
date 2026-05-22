@@ -44,6 +44,8 @@ import switchyRoutes from "./routes/switchy.js";
 import funnelStageRoutes from "./routes/funnel-stages.js";
 import stageSalesSpreadsheetsRoutes from "./routes/stage-sales-spreadsheets.js";
 import stageSalesDataRoutes from "./routes/stage-sales-data.js";
+import perpetualSpreadsheetsRoutes from "./routes/perpetual-spreadsheets.js";
+import perpetualSalesDataRoutes from "./routes/perpetual-sales-data.js";
 import creativeRevenueRoutes from "./routes/creative-revenue.js";
 import metaAdsComparisonRoutes from "./routes/meta-ads-comparison.js";
 import leadScoringRoutes from "./routes/lead-scoring.js";
@@ -112,6 +114,8 @@ export async function buildServer() {
   await app.register(funnelStageRoutes);
   await app.register(stageSalesSpreadsheetsRoutes);
   await app.register(stageSalesDataRoutes);
+  await app.register(perpetualSpreadsheetsRoutes);
+  await app.register(perpetualSalesDataRoutes);
   await app.register(creativeRevenueRoutes);
   await app.register(metaAdsComparisonRoutes);
   await app.register(leadScoringRoutes);
