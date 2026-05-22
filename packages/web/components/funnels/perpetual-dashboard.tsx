@@ -27,7 +27,6 @@ import {
   Bar,
   LabelList,
 } from "recharts";
-import { PLATFORM_FEE_RATES } from "@loyola-x/shared";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip as UITooltip,
