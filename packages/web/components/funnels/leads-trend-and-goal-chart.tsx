@@ -242,7 +242,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
               opacity={OPACITIES.dailyReal}
               name="Leads Reais (Dia)"
               radius={[2, 2, 0, 0]}
-              label={{ position: "top", formatter: (value: unknown) => (typeof value === 'number' ? Math.round(value) : "") }}
+              label={{ position: "top", fontSize: 9, formatter: (value: unknown) => (typeof value === 'number' ? Math.round(value) : "") }}
             />
 
             {/* Barras diárias: Projeção */}
@@ -253,7 +253,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
               opacity={OPACITIES.dailyProjected}
               name="Leads Projetados (Dia)"
               radius={[2, 2, 0, 0]}
-              label={{ position: "top", formatter: (value: unknown) => (typeof value === 'number' ? Math.round(value) : "") }}
+              label={{ position: "top", fontSize: 9, formatter: (value: unknown) => (typeof value === 'number' ? Math.round(value) : "") }}
             />
 
             {/* Banda de Confiança (translúcida) */}
@@ -318,19 +318,18 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
               name="Projeção"
             />
 
-            {/* Meta: Linha Horizontal */}
-            {metaTotal > 0 && (
-              <ReferenceLine
-                yAxisId="right"
-                y={metaTotal}
-                stroke={COLORS.meta}
-                strokeWidth={3}
-                strokeDasharray="5 5"
-                opacity={1}
-                label={{ value: `Meta: ${metaTotal}`, position: "right", fontSize: 12, fill: COLORS.meta, fontWeight: "bold" }}
-                name="Meta Total"
-              />
-            )}
+            {/* Meta: Linha Acumulada */}
+            <Line
+              yAxisId="right"
+              type="monotone"
+              dataKey="meta"
+              stroke={COLORS.meta}
+              strokeWidth={2.5}
+              strokeDasharray="5 5"
+              dot={false}
+              isAnimationActive={false}
+              name="Meta Acumulada"
+            />
 
             {/* Marcador "Hoje" (primeiro ponto projetado) */}
             {chartData.length > 0 && chartData[0].isProjection === false && (
