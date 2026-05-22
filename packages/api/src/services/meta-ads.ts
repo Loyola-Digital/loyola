@@ -250,11 +250,45 @@ export async function fetchCampaigns(
   metaAccountId: string,
   accessToken: string
 ): Promise<MetaCampaign[]> {
-  const res = await fetchMeta<{ data: MetaCampaign[] }>(
-    `/act_${metaAccountId}/campaigns?fields=id,name,status,objective,daily_budget,lifetime_budget&limit=100`,
-    accessToken
+  // Por padrão a Meta API esconde campanhas ARCHIVED/DELETED. Pra Loyola
+  // precisamos do histórico completo (campanhas antigas paused/archived que
+  // ainda têm spend e leads relevantes). Filtering explícito + paginação.
+  const filtering = encodeURIComponent(
+    JSON.stringify([
+      {
+        field: "effective_status",
+        operator: "IN",
+        value: ["ACTIVE", "PAUSED", "ARCHIVED", "IN_PROCESS", "WITH_ISSUES"],
+      },
+    ])
   );
-  return res.data ?? [];
+
+  type PageResponse = { data: MetaCampaign[]; paging?: { next?: string } };
+  const allResults: MetaCampaign[] = [];
+  let nextPath: string | null =
+    `/act_${metaAccountId}/campaigns?fields=id,name,status,objective,daily_budget,lifetime_budget&filtering=${filtering}&limit=200`;
+  let useFullUrl = false;
+
+  while (nextPath) {
+    let res: PageResponse;
+    if (useFullUrl) {
+      const raw = await fetch(nextPath);
+      res = (await raw.json()) as PageResponse;
+    } else {
+      res = await fetchMeta<PageResponse>(nextPath, accessToken);
+    }
+    allResults.push(...(res.data ?? []));
+    // Hard cap defensivo — contas extremamente antigas podem ter milhares de
+    // campanhas; 2000 é mais do que suficiente pro Loyola e evita loop infinito.
+    if (res.paging?.next && allResults.length < 2000) {
+      nextPath = res.paging.next;
+      useFullUrl = true;
+    } else {
+      nextPath = null;
+    }
+  }
+
+  return allResults;
 }
 
 export async function fetchInsights(
