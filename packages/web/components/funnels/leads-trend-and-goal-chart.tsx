@@ -101,10 +101,10 @@ function CustomTooltip({ active, payload }: TooltipProps) {
 export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeção vs Meta" }: LeadsTrendAndGoalChartProps) {
   const [dataFinal, setDataFinal] = useState<string>("");
   const [metaTotal, setMetaTotal] = useState<number>(0);
-  const [windowSize, setWindowSize] = useState<number>(5);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [projectionPercentage, setProjectionPercentage] = useState<number>(0);
   const [mounted, setMounted] = useState(false);
+  const windowSize = 5; // Fixado em 5 dias
 
   // Carregar localStorage ao montar
   useEffect(() => {
@@ -112,7 +112,6 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
     if (typeof window !== "undefined") {
       const savedDataFinal = localStorage.getItem("leadsTrendDataFinal");
       const savedMetaTotal = localStorage.getItem("leadsTrendMetaTotal");
-      const savedWindowSize = localStorage.getItem("leadsTrendWindowSize");
 
       if (savedDataFinal) {
         setDataFinal(savedDataFinal);
@@ -125,10 +124,6 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
 
       if (savedMetaTotal) {
         setMetaTotal(parseFloat(savedMetaTotal));
-      }
-
-      if (savedWindowSize) {
-        setWindowSize(parseInt(savedWindowSize, 10));
       }
     }
   }, []);
@@ -154,7 +149,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
     } catch (error) {
       console.error("Erro ao calcular dados do gráfico:", error);
     }
-  }, [rows, dataFinal, metaTotal, windowSize, mounted]);
+  }, [rows, dataFinal, metaTotal, mounted]);
 
   // Persistir inputs no localStorage
   const handleDataFinalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -167,12 +162,6 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
     const value = parseInt(e.target.value, 10) || 0;
     setMetaTotal(value);
     localStorage.setItem("leadsTrendMetaTotal", value.toString());
-  };
-
-  const handleWindowSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = Math.max(2, Math.min(30, parseInt(e.target.value, 10) || 5));
-    setWindowSize(value);
-    localStorage.setItem("leadsTrendWindowSize", value.toString());
   };
 
   if (!mounted) return null;
@@ -191,7 +180,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
       </div>
 
       {/* Inputs */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1">
           <label htmlFor="data-final" className="block text-xs font-medium text-muted-foreground">
             Data Final
@@ -214,20 +203,6 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
             value={metaTotal}
             onChange={handleMetaTotalChange}
             placeholder="0"
-            className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
-          />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="window-size" className="block text-xs font-medium text-muted-foreground">
-            Janela (dias) <span className="text-xs text-muted-foreground/70">2-30</span>
-          </label>
-          <input
-            id="window-size"
-            type="number"
-            value={windowSize}
-            onChange={handleWindowSizeChange}
-            min="2"
-            max="30"
             className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
           />
         </div>
@@ -255,6 +230,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
               opacity={OPACITIES.dailyReal}
               name="Leads Reais (Dia)"
               radius={[2, 2, 0, 0]}
+              label={{ position: "top", formatter: (value: unknown) => (typeof value === 'number' ? Math.round(value) : "") }}
             />
 
             {/* Barras diárias: Projeção */}
@@ -264,6 +240,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
               opacity={OPACITIES.dailyProjected}
               name="Leads Projetados (Dia)"
               radius={[2, 2, 0, 0]}
+              label={{ position: "top", formatter: (value: unknown) => (typeof value === 'number' ? Math.round(value) : "") }}
             />
 
             {/* Banda de Confiança (translúcida) */}
