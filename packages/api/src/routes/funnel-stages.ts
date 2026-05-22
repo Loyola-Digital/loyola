@@ -11,6 +11,7 @@ import {
   metaAdsAccounts,
 } from "../db/schema.js";
 import { decryptAccountToken } from "../services/meta-ads.js";
+import { triggerBackgroundSyncForNewCampaigns } from "../services/meta-insights-cache.js";
 import {
   resolveStagePhaseSuffix,
   findMatchingCampaignsForStage,
@@ -134,6 +135,40 @@ export default fp(async function funnelStageRoutes(fastify) {
       .where(eq(projects.id, projectId))
       .limit(1);
     return project ?? null;
+  }
+
+  // Epic 30 Story 30.2: fire-and-forget background sync histórico Meta (365d)
+  // pra campanhas recém-vinculadas a uma stage.
+  async function fireBackgroundMetaSync(
+    projectId: string,
+    metaAccountIdSelected: string,
+    newCampaignIds: string[],
+  ): Promise<void> {
+    if (newCampaignIds.length === 0) return;
+    try {
+      const [link] = await fastify.db
+        .select({ accountId: metaAdsAccountProjects.accountId })
+        .from(metaAdsAccountProjects)
+        .where(eq(metaAdsAccountProjects.projectId, projectId))
+        .limit(1);
+      if (!link) return;
+      const [account] = await fastify.db
+        .select()
+        .from(metaAdsAccounts)
+        .where(eq(metaAdsAccounts.id, link.accountId))
+        .limit(1);
+      if (!account) return;
+      const token = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
+      triggerBackgroundSyncForNewCampaigns(
+        fastify.db,
+        projectId,
+        metaAccountIdSelected,
+        token,
+        newCampaignIds,
+      );
+    } catch (err) {
+      fastify.log.error({ err, projectId }, "Failed to trigger Meta background sync (stage)");
+    }
   }
 
   async function getFunnel(funnelId: string, projectId: string) {
@@ -354,6 +389,17 @@ export default fp(async function funnelStageRoutes(fastify) {
       .set(updates)
       .where(eq(funnelStages.id, params.data.stageId))
       .returning();
+
+    // Epic 30 Story 30.2: detecta campanhas adicionadas e dispara sync histórico.
+    if (body.campaigns !== undefined && row.metaAccountId) {
+      const oldIds = new Set((existing.campaigns ?? []).map((c) => c.id));
+      const newCampaignIds = (row.campaigns ?? [])
+        .map((c) => c.id)
+        .filter((id) => !oldIds.has(id));
+      if (newCampaignIds.length > 0) {
+        void fireBackgroundMetaSync(params.data.projectId, row.metaAccountId, newCampaignIds);
+      }
+    }
 
     return stageShape(row);
   });

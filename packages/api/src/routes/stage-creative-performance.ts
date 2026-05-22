@@ -26,7 +26,7 @@ const paramsSchema = z.object({
 });
 
 const querySchema = z.object({
-  days: z.coerce.number().int().min(1).max(90).default(30),
+  days: z.coerce.number().int().min(1).max(365).default(30),
 });
 
 interface CreativePerformanceResponse {

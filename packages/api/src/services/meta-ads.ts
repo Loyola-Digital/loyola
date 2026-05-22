@@ -78,6 +78,40 @@ function buildTimeRangeParam(since: string, until: string): string {
   return encodeURIComponent(JSON.stringify({ since, until }));
 }
 
+/**
+ * Epic 30 Story 30.1: divide um range [since, until] em chunks de até 90 dias.
+ * Meta API com time_increment=1 (daily) rejeita ranges > 90 dias. Pra ranges
+ * maiores (perpetuals de 365 dias), divide e busca em paralelo, depois concatena.
+ *
+ * Retorna chunks ORDENADOS do mais antigo pro mais recente.
+ */
+const META_DAILY_MAX_RANGE_DAYS = 90;
+
+export function chunkDateRange(
+  since: string,
+  until: string,
+  maxDaysPerChunk: number = META_DAILY_MAX_RANGE_DAYS,
+): Array<{ since: string; until: string }> {
+  const sinceMs = new Date(since + "T00:00:00Z").getTime();
+  const untilMs = new Date(until + "T00:00:00Z").getTime();
+  if (untilMs < sinceMs) return [];
+  const dayMs = 24 * 60 * 60 * 1000;
+  const totalDays = Math.floor((untilMs - sinceMs) / dayMs) + 1;
+  if (totalDays <= maxDaysPerChunk) return [{ since, until }];
+
+  const chunks: Array<{ since: string; until: string }> = [];
+  let chunkStart = sinceMs;
+  while (chunkStart <= untilMs) {
+    const chunkEnd = Math.min(chunkStart + (maxDaysPerChunk - 1) * dayMs, untilMs);
+    chunks.push({
+      since: new Date(chunkStart).toISOString().slice(0, 10),
+      until: new Date(chunkEnd).toISOString().slice(0, 10),
+    });
+    chunkStart = chunkEnd + dayMs;
+  }
+  return chunks;
+}
+
 // ============================================================
 // RATE LIMITER (per-process, same pattern as instagram.ts)
 // ============================================================
@@ -353,6 +387,22 @@ export async function fetchDailyInsights(
   return res.data ?? [];
 }
 
+async function fetchCampaignDailyInsightsSingleRange(
+  metaAccountId: string,
+  accessToken: string,
+  campaignId: string,
+  since: string,
+  until: string,
+): Promise<MetaDailyInsight[]> {
+  const filtering = encodeURIComponent(
+    JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: campaignId }])
+  );
+
+  const queryPath = `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,actions,action_values&time_increment=1&level=campaign&filtering=${filtering}&time_range=${buildTimeRangeParam(since, until)}`;
+  const res = await fetchMeta<{ data: MetaDailyInsight[] }>(queryPath, accessToken);
+  return res.data ?? [];
+}
+
 export async function fetchCampaignDailyInsights(
   metaAccountId: string,
   accessToken: string,
@@ -361,48 +411,44 @@ export async function fetchCampaignDailyInsights(
   startDate?: string,
   endDate?: string
 ): Promise<MetaDailyInsight[]> {
-  const filtering = encodeURIComponent(
-    JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: campaignId }])
-  );
-
-  let queryPath = `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,actions,action_values&time_increment=1&level=campaign&filtering=${filtering}`;
-
-  // Use custom dates if provided, otherwise compute from days
   const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
   const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
-  queryPath += `&time_range=${buildTimeRangeParam(since, until)}`;
 
-  const res = await fetchMeta<{ data: MetaDailyInsight[] }>(queryPath, accessToken);
+  // Epic 30 Story 30.1: chunked fetch quando range > 90 dias (Meta limit)
+  const chunks = chunkDateRange(since, until);
+  const results = await Promise.allSettled(
+    chunks.map((c) =>
+      fetchCampaignDailyInsightsSingleRange(metaAccountId, accessToken, campaignId, c.since, c.until),
+    ),
+  );
 
-  // Antes filtrávamos `impressions > 0`, mas isso derrubava o dia atual
-  // enquanto a Meta ainda estava processando dados (resultava em "spend
-  // R$ 0" no dashboard até o dia seguinte). Agora deixamos passar — o
-  // frontend exibe o dia com 0 e atualiza assim que a Meta popular.
-  return res.data ?? [];
+  const allResults: MetaDailyInsight[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === "fulfilled") allResults.push(...r.value);
+    else console.error(`[meta] chunk ${chunks[i].since}..${chunks[i].until} falhou:`, r.reason);
+  }
+  return allResults;
 }
 
 // Bulk version: time-series por dia somando N campanhas. Retorna 1 linha por
 // (campanha, dia) — agregação por dia é responsabilidade do caller. PAGINAÇÃO
 // obrigatória: N campanhas × até 90 dias = pode passar de 25 (limite default
 // da Meta) e perder dias mais recentes na primeira página.
-export async function fetchCampaignDailyInsightsForIds(
+// Internal: single-range (≤90d) fetch — chamada por `fetchCampaignDailyInsightsForIds`
+// pra cada chunk quando range > 90 dias.
+async function fetchCampaignDailyInsightsForIdsSingleRange(
   metaAccountId: string,
   accessToken: string,
   campaignIds: string[],
-  days: number = 30,
-  startDate?: string,
-  endDate?: string
+  since: string,
+  until: string,
 ): Promise<MetaDailyInsight[]> {
-  if (campaignIds.length === 0) return [];
-
   const filtering = encodeURIComponent(
     JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }])
   );
 
   let queryPath = `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,actions,action_values&time_increment=1&level=campaign&limit=500&filtering=${filtering}`;
-
-  const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
-  const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
   queryPath += `&time_range=${buildTimeRangeParam(since, until)}`;
 
   type PageResponse = { data: MetaDailyInsight[]; paging?: { next?: string } };
@@ -421,7 +467,7 @@ export async function fetchCampaignDailyInsightsForIds(
     }
     allResults.push(...(res.data ?? []));
     const nextUrl = res.paging?.next;
-    // Hard cap: N campanhas × 90 dias = ~450 linhas no pior caso.
+    // Hard cap: N campanhas × 90 dias = ~450 linhas no pior caso por chunk.
     if (nextUrl && allResults.length < 2000) {
       nextPath = nextUrl;
       useFullUrl = true;
@@ -430,8 +476,52 @@ export async function fetchCampaignDailyInsightsForIds(
     }
   }
 
-  // Não filtramos `impressions > 0` aqui — antes derrubava o dia atual
-  // quando a Meta ainda estava processando. Frontend lida com 0 graciosamente.
+  return allResults;
+}
+
+export async function fetchCampaignDailyInsightsForIds(
+  metaAccountId: string,
+  accessToken: string,
+  campaignIds: string[],
+  days: number = 30,
+  startDate?: string,
+  endDate?: string
+): Promise<MetaDailyInsight[]> {
+  if (campaignIds.length === 0) return [];
+
+  const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
+  const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
+
+  // Epic 30 Story 30.1: ranges > 90 dias (perpetuals de 1 ano) são divididos em
+  // chunks paralelos. Quando ≤ 90, vira 1 chamada só (zero overhead).
+  const chunks = chunkDateRange(since, until);
+  const results = await Promise.allSettled(
+    chunks.map((c) =>
+      fetchCampaignDailyInsightsForIdsSingleRange(
+        metaAccountId,
+        accessToken,
+        campaignIds,
+        c.since,
+        c.until,
+      ),
+    ),
+  );
+
+  // Graceful: chunks que falham são logados via console.error mas não derrubam
+  // o resto (perpetual de 1 ano = melhor receber 270 dias do que erro 502).
+  const allResults: MetaDailyInsight[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === "fulfilled") {
+      allResults.push(...r.value);
+    } else {
+      console.error(
+        `[meta] chunk ${chunks[i].since}..${chunks[i].until} falhou:`,
+        r.reason,
+      );
+    }
+  }
+
   return allResults;
 }
 

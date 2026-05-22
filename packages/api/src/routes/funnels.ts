@@ -3,6 +3,7 @@ import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { funnels, funnelStages, projects, projectMembers, metaAdsAccountProjects, metaAdsAccounts, googleAdsAccountProjects, googleAdsAccounts, users } from "../db/schema.js";
 import { fetchCampaigns, decryptAccountToken } from "../services/meta-ads.js";
+import { triggerBackgroundSyncForNewCampaigns } from "../services/meta-insights-cache.js";
 import { resolveStagePhaseSuffix } from "../services/stage-phase.js";
 import { fetchGoogleAdsCampaigns, decryptToken as decryptGoogleToken } from "../services/google-ads.js";
 
@@ -134,6 +135,44 @@ export default fp(async function funnelRoutes(fastify) {
       .limit(1);
 
     return project ?? null;
+  }
+
+  // Epic 30 Story 30.2: helper pra disparar background sync histórico Meta.
+  // Resolve token a partir do metaAccountId (link projeto → account) e dispara
+  // fire-and-forget. Erro de resolução é logado e não bloqueia.
+  async function fireBackgroundMetaSync(
+    projectId: string,
+    metaAccountIdSelected: string,
+    newCampaignIds: string[],
+  ): Promise<void> {
+    if (newCampaignIds.length === 0) return;
+    try {
+      // Resolver account vinculada ao project (mesma pattern de outras routes)
+      const [link] = await fastify.db
+        .select({ accountId: metaAdsAccountProjects.accountId })
+        .from(metaAdsAccountProjects)
+        .where(eq(metaAdsAccountProjects.projectId, projectId))
+        .limit(1);
+      if (!link) return;
+
+      const [account] = await fastify.db
+        .select()
+        .from(metaAdsAccounts)
+        .where(eq(metaAdsAccounts.id, link.accountId))
+        .limit(1);
+      if (!account) return;
+
+      const token = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
+      triggerBackgroundSyncForNewCampaigns(
+        fastify.db,
+        projectId,
+        metaAccountIdSelected,
+        token,
+        newCampaignIds,
+      );
+    } catch (err) {
+      fastify.log.error({ err, projectId }, "Failed to trigger Meta background sync");
+    }
   }
 
   // ---- GET /api/projects/:projectId/funnels ----
@@ -279,6 +318,13 @@ export default fp(async function funnelRoutes(fastify) {
       });
     }
 
+    // Epic 30 Story 30.2: dispara background sync histórico (365d) das campanhas
+    // recém-vinculadas. Fire-and-forget — não bloqueia a resposta.
+    if (funnel.metaAccountId && funnel.campaigns.length > 0) {
+      const campaignIds = funnel.campaigns.map((c) => c.id);
+      void fireBackgroundMetaSync(funnel.projectId, funnel.metaAccountId, campaignIds);
+    }
+
     return reply.code(201).send(funnelShape(funnel));
   });
 
@@ -307,7 +353,7 @@ export default fp(async function funnelRoutes(fastify) {
     }
 
     const [existing] = await fastify.db
-      .select({ id: funnels.id })
+      .select()
       .from(funnels)
       .where(
         and(
@@ -343,6 +389,22 @@ export default fp(async function funnelRoutes(fastify) {
       .set(updates)
       .where(eq(funnels.id, paramResult.data.funnelId))
       .returning();
+
+    // Epic 30 Story 30.2: detecta campanhas adicionadas e dispara sync histórico.
+    // metaAccountId pode mudar tb — se mudou, sincroniza todas as novas. Senão,
+    // sincroniza só os IDs adicionados em relação ao estado anterior.
+    if (campaigns !== undefined) {
+      const effectiveMetaAccountId = updated.metaAccountId;
+      if (effectiveMetaAccountId) {
+        const oldIds = new Set((existing.campaigns ?? []).map((c) => c.id));
+        const newCampaignIds = (updated.campaigns ?? [])
+          .map((c) => c.id)
+          .filter((id) => !oldIds.has(id));
+        if (newCampaignIds.length > 0) {
+          void fireBackgroundMetaSync(updated.projectId, effectiveMetaAccountId, newCampaignIds);
+        }
+      }
+    }
 
     return funnelShape(updated);
   });

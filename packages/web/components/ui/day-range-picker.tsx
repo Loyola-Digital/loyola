@@ -18,6 +18,8 @@ const PRESETS = [
   { label: "14 dias", days: 14 },
   { label: "30 dias", days: 30 },
   { label: "90 dias", days: 90 },
+  { label: "180 dias", days: 180 },
+  { label: "365 dias", days: 365 },
 ];
 
 interface DayRangePickerProps {

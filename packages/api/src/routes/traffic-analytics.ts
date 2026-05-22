@@ -38,19 +38,19 @@ const projectIdParamSchema = z.object({
 });
 
 const daysQuerySchema = z.object({
-  days: z.coerce.number().int().min(1).max(90).default(30),
+  days: z.coerce.number().int().min(1).max(365).default(30),
   campaignId: z.string().optional(),
   campaignIds: z.string().optional(),
 });
 
 const campaignQuerySchema = z.object({
   campaignId: z.string().min(1),
-  days: z.coerce.number().int().min(1).max(90).default(30),
+  days: z.coerce.number().int().min(1).max(365).default(30),
 });
 
 const adsetQuerySchema = z.object({
   adsetId: z.string().min(1),
-  days: z.coerce.number().int().min(1).max(90).default(30),
+  days: z.coerce.number().int().min(1).max(365).default(30),
 });
 
 // ============================================================
@@ -202,7 +202,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   const topPerformersQuerySchema = z.object({
     metric: z.enum(["roas", "cpl", "cplQualified", "leads", "sales", "ctr", "spend"]).default("roas"),
     limit: z.coerce.number().int().min(1).max(100).default(5),
-    days: z.coerce.number().int().min(1).max(90).default(30),
+    days: z.coerce.number().int().min(1).max(365).default(30),
     campaignId: z.string().optional(),
     campaignIds: z.string().optional(),
   });
@@ -460,7 +460,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   const campaignDailyQuerySchema = z.object({
     campaignId: z.string().optional(),
     campaignIds: z.string().optional(),
-    days: z.coerce.number().int().min(1).max(90).default(30),
+    days: z.coerce.number().int().min(1).max(365).default(30),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
   });

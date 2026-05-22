@@ -36,7 +36,7 @@ const linkParamSchema = z.object({
 });
 
 const insightsQuerySchema = z.object({
-  days: z.coerce.number().int().min(1).max(90).default(30),
+  days: z.coerce.number().int().min(1).max(365).default(30),
 });
 
 // ============================================================
@@ -326,7 +326,7 @@ export default fp(async function metaAdsRoutes(fastify) {
 
     const querySchema = z.object({
       campaignId: z.string().min(1),
-      days: z.coerce.number().int().min(1).max(90).default(30),
+      days: z.coerce.number().int().min(1).max(365).default(30),
     });
     const queryResult = querySchema.safeParse(request.query);
     if (!queryResult.success) {
@@ -373,7 +373,7 @@ export default fp(async function metaAdsRoutes(fastify) {
 
     const querySchema = z.object({
       adsetId: z.string().min(1),
-      days: z.coerce.number().int().min(1).max(90).default(30),
+      days: z.coerce.number().int().min(1).max(365).default(30),
     });
     const queryResult = querySchema.safeParse(request.query);
     if (!queryResult.success) {

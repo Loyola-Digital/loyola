@@ -1467,7 +1467,7 @@ export default fp(async function leadScoringRoutes(fastify) {
       const params = paramsSchema.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
 
-      const querySchema = z.object({ days: z.coerce.number().int().min(1).max(90).default(30) });
+      const querySchema = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
       const query = querySchema.safeParse(request.query);
       if (!query.success) return reply.code(400).send({ error: "Query inválida" });
 
@@ -1573,7 +1573,7 @@ export default fp(async function leadScoringRoutes(fastify) {
       const params = paramsSchema.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
 
-      const querySchema = z.object({ days: z.coerce.number().int().min(1).max(90).default(30) });
+      const querySchema = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
       const query = querySchema.safeParse(request.query);
       if (!query.success) return reply.code(400).send({ error: "Query inválida" });
 
@@ -1676,7 +1676,7 @@ export default fp(async function leadScoringRoutes(fastify) {
       const params = paramsSchema.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
 
-      const querySchema = z.object({ days: z.coerce.number().int().min(1).max(90).default(30) });
+      const querySchema = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
       const query = querySchema.safeParse(request.query);
       if (!query.success) return reply.code(400).send({ error: "Query inválida" });
 

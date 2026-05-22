@@ -241,3 +241,68 @@ export async function fetchCampaignDailyInsightsForIdsWithCache(
   const cachedClean: MetaDailyInsight[] = cached.map(({ campaign_id: _unused, ...rest }) => rest);
   return [...cachedClean, ...fresh];
 }
+
+/**
+ * Epic 30 Story 30.2: Background sync histórico de uma ou mais campanhas.
+ *
+ * Disparada fire-and-forget quando user vincula campanha nova a um funnel.
+ * Popula meta_campaign_insights_daily com 365 dias retroativos pra que
+ * dashboards subsequentes carreguem instantâneos.
+ *
+ * Idempotente: chama `fetchCampaignDailyInsightsForIdsWithCache` que pula
+ * dias já fresh no cache. Re-chamar não desperdiça API.
+ *
+ * SEM PROPAGAÇÃO de erros: captura tudo internamente, loga e segue.
+ */
+export async function syncCampaignHistoryInBackground(
+  db: Database,
+  projectId: string,
+  metaAccountId: string,
+  accessToken: string,
+  campaignIds: string[],
+  days: number = 365,
+): Promise<void> {
+  if (campaignIds.length === 0) return;
+  try {
+    await fetchCampaignDailyInsightsForIdsWithCache(
+      db,
+      projectId,
+      metaAccountId,
+      accessToken,
+      campaignIds,
+      days,
+    );
+    console.log(
+      `[meta-sync] backfilled ${campaignIds.length} campaign(s) × ${days}d for project ${projectId}`,
+    );
+  } catch (err) {
+    console.error(
+      `[meta-sync] failed for project ${projectId} campaigns ${campaignIds.join(",")}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
+/**
+ * Helper fire-and-forget: dispara sync sem bloquear a request.
+ * Erros são swallowed (já tratados internamente em syncCampaignHistoryInBackground).
+ */
+export function triggerBackgroundSyncForNewCampaigns(
+  db: Database,
+  projectId: string,
+  metaAccountId: string,
+  accessToken: string,
+  newCampaignIds: string[],
+  days: number = 365,
+): void {
+  if (newCampaignIds.length === 0) return;
+  // void = explicit fire-and-forget; promise resolve não é aguardado
+  void syncCampaignHistoryInBackground(
+    db,
+    projectId,
+    metaAccountId,
+    accessToken,
+    newCampaignIds,
+    days,
+  );
+}
