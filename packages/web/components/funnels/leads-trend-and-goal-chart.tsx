@@ -217,16 +217,28 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
             <YAxis
+              yAxisId="left"
               tick={{ fontSize: 11 }}
               domain={[0, "auto"]}
               allowDecimals={false}
               allowDataOverflow={false}
+              label={{ value: "Leads", angle: -90, position: "insideLeft" }}
+            />
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              tick={{ fontSize: 11 }}
+              domain={[0, "auto"]}
+              allowDecimals={false}
+              allowDataOverflow={false}
+              label={{ value: "Meta", angle: 90, position: "insideRight" }}
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
 
             {/* Barras diárias: Real */}
             <Bar
+              yAxisId="left"
               dataKey="dailyReal"
               fill={COLORS.bars}
               opacity={OPACITIES.dailyReal}
@@ -237,6 +249,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
 
             {/* Barras diárias: Projeção */}
             <Bar
+              yAxisId="left"
               dataKey="dailyProjected"
               fill={COLORS.bars}
               opacity={OPACITIES.dailyProjected}
@@ -247,6 +260,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
 
             {/* Banda de Confiança (translúcida) */}
             <Area
+              yAxisId="left"
               type="monotone"
               dataKey="bandUpper"
               fill={COLORS.band}
@@ -259,6 +273,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
 
             {/* Linha Real: Sólida Azul Escuro */}
             <Line
+              yAxisId="left"
               type="monotone"
               dataKey="cumulative"
               stroke={COLORS.lineReal}
@@ -282,6 +297,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
 
             {/* Linha Projeção: Tracejada Azul Claro */}
             <Line
+              yAxisId="left"
               type="monotone"
               dataKey="cumulative"
               stroke={COLORS.lineProjection}
@@ -306,6 +322,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
 
             {/* Meta: Linha Horizontal */}
             <ReferenceLine
+              yAxisId="right"
               y={metaTotal}
               stroke={COLORS.meta}
               strokeWidth={2.5}
