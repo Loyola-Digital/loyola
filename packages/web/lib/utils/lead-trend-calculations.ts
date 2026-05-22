@@ -1,6 +1,21 @@
 import type { DailyRow } from "./funnel-metrics";
 
 /**
+ * Retorna YYYY-MM-DD em horário LOCAL (BRT no Brasil).
+ *
+ * Fix do bug "hoje aparece como dia anterior": `date.toISOString().split("T")[0]`
+ * converte pra UTC primeiro, então quando é 00h00 BRT (UTC-3), `toISOString()`
+ * já passou pro dia anterior em UTC. Usar getFullYear/getMonth/getDate mantém
+ * a data no fuso local.
+ */
+function toLocalYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
  * Deriva a série diária a partir do acumulado
  * d[i] = C[i] - C[i-1], onde d[0] = C[0]
  */
@@ -87,7 +102,7 @@ export function projectAccumulated(
     const bandUpper = cumulativeProjected + bandHalfWidth;
     const bandLower = Math.max(0, cumulativeProjected - bandHalfWidth); // Não permitir negativos
 
-    const dateStr = futureDate.toISOString().split("T")[0];
+    const dateStr = toLocalYMD(futureDate);
     result.push({
       date: dateStr,
       cumulativeProjected,
@@ -157,13 +172,13 @@ export function expandChartDataV2(
   // Calcular dados do gráfico
   const result: ChartDataPoint[] = [];
   let cumulativeReal = 0;
-  const todayStr = today.toISOString().split("T")[0];
+  const todayStr = toLocalYMD(today);
 
   for (let dayIndex = 0; dayIndex <= Math.floor((finalDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)); dayIndex++) {
     const currentDate = new Date(firstDate);
     currentDate.setDate(currentDate.getDate() + dayIndex);
 
-    const dateStr = currentDate.toISOString().split("T")[0];
+    const dateStr = toLocalYMD(currentDate);
     const historyRow = rows.find((r) => r.date === dateStr);
 
     const metaCumulative = dailyMeta * (dayIndex + 1);
@@ -254,7 +269,7 @@ export function calculateTendency(rows: DailyRow[], dataFinal: string): number[]
     const currentDate = new Date(startDate);
     currentDate.setDate(currentDate.getDate() + dayIndex);
 
-    const dateStr = currentDate.toISOString().split("T")[0];
+    const dateStr = toLocalYMD(currentDate);
     const historyRow = rows.find((r) => r.date === dateStr);
 
     if (historyRow && currentDate <= today) {
@@ -319,7 +334,7 @@ export function expandChartData(
     const currentDate = new Date(firstDate);
     currentDate.setDate(currentDate.getDate() + dayIndex);
 
-    const dateStr = currentDate.toISOString().split("T")[0];
+    const dateStr = toLocalYMD(currentDate);
     const historyRow = rows.find((r) => r.date === dateStr);
 
     if (historyRow) {
