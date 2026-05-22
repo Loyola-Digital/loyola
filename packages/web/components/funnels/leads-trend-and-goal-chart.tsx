@@ -308,10 +308,10 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Proje√ß√
             <ReferenceLine
               y={metaTotal}
               stroke={COLORS.meta}
-              strokeWidth={2}
+              strokeWidth={2.5}
               strokeDasharray="5 5"
-              opacity={0.8}
-              label={{ value: "Meta", position: "right", fontSize: 11, fill: COLORS.meta, fontWeight: "bold" }}
+              opacity={1}
+              label={{ value: "Meta", position: "right", fontSize: 12, fill: COLORS.meta, fontWeight: "bold" }}
               name="Meta Total"
             />
 
