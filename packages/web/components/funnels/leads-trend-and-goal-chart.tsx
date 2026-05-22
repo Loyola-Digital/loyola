@@ -20,6 +20,7 @@ import { expandChartDataV2, type ChartDataPoint, calculateProjectionPercentage }
 interface LeadsTrendAndGoalChartProps {
   rows: DailyRow[];
   title?: string;
+  funnelId: string;
 }
 
 const COLORS = {
@@ -100,7 +101,7 @@ function CustomTooltip({ active, payload }: TooltipProps) {
   );
 }
 
-export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeção vs Meta" }: LeadsTrendAndGoalChartProps) {
+export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeção vs Meta", funnelId }: LeadsTrendAndGoalChartProps) {
   const [dataFinal, setDataFinal] = useState<string>("");
   const [metaTotal, setMetaTotal] = useState<number>(0);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -108,12 +109,15 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
   const [mounted, setMounted] = useState(false);
   const windowSize = 5; // Fixado em 5 dias
 
+  const storageKeyDataFinal = `leadsTrendDataFinal_${funnelId}`;
+  const storageKeyMetaTotal = `leadsTrendMetaTotal_${funnelId}`;
+
   // Carregar localStorage ao montar
   useEffect(() => {
     setMounted(true);
     if (typeof window !== "undefined") {
-      const savedDataFinal = localStorage.getItem("leadsTrendDataFinal");
-      const savedMetaTotal = localStorage.getItem("leadsTrendMetaTotal");
+      const savedDataFinal = localStorage.getItem(storageKeyDataFinal);
+      const savedMetaTotal = localStorage.getItem(storageKeyMetaTotal);
 
       if (savedDataFinal) {
         setDataFinal(savedDataFinal);
@@ -128,7 +132,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
         setMetaTotal(parseFloat(savedMetaTotal));
       }
     }
-  }, []);
+  }, [storageKeyDataFinal, storageKeyMetaTotal]);
 
   // Calcular dados do gráfico quando inputs mudam
   useEffect(() => {
@@ -157,13 +161,13 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
   const handleDataFinalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setDataFinal(value);
-    localStorage.setItem("leadsTrendDataFinal", value);
+    localStorage.setItem(storageKeyDataFinal, value);
   };
 
   const handleMetaTotalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value, 10) || 0;
     setMetaTotal(value);
-    localStorage.setItem("leadsTrendMetaTotal", value.toString());
+    localStorage.setItem(storageKeyMetaTotal, value.toString());
   };
 
   if (!mounted) return null;
