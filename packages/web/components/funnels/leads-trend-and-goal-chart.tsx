@@ -27,13 +27,15 @@ const COLORS = {
   lineProjection: "#60A5FA", // Azul claro para projeção
   band: "#BFDBFE", // Azul muito claro para banda
   meta: "#EF4444", // Vermelho para meta
-  bandFill: "#60A5FA",
+  bandFill: "#BFDBFE",
+  bars: "#A0A0A0", // Cinza para barras (segundo plano)
+  projectionText: "#F59E0B", // Laranja para números projetados
 };
 
 const OPACITIES = {
   dailyReal: 0.85,
   dailyProjected: 0.35,
-  bandFill: 0.15,
+  bandFill: 0.11, // 25% mais transparente que 0.15
   metaLine: 0.6,
   markerLine: 0.8,
 };
@@ -226,7 +228,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
             {/* Barras diárias: Real */}
             <Bar
               dataKey="dailyReal"
-              fill={COLORS.lineReal}
+              fill={COLORS.bars}
               opacity={OPACITIES.dailyReal}
               name="Leads Reais (Dia)"
               radius={[2, 2, 0, 0]}
@@ -236,7 +238,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
             {/* Barras diárias: Projeção */}
             <Bar
               dataKey="dailyProjected"
-              fill={COLORS.lineProjection}
+              fill={COLORS.bars}
               opacity={OPACITIES.dailyProjected}
               name="Leads Projetados (Dia)"
               radius={[2, 2, 0, 0]}
@@ -291,7 +293,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
                 return (
                   <g key={`dot-${payload.date}`}>
                     <circle cx={cx} cy={cy} r={3} fill={COLORS.lineProjection} stroke="white" strokeWidth={1} />
-                    <text x={cx} y={cy - 12} textAnchor="middle" fontSize={11} fill={COLORS.lineProjection} fontWeight="600">
+                    <text x={cx} y={cy - 12} textAnchor="middle" fontSize={11} fill={COLORS.projectionText} fontWeight="600">
                       {Math.round(payload.cumulative)}
                     </text>
                   </g>
@@ -307,6 +309,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
               y={metaTotal}
               stroke={COLORS.meta}
               strokeWidth={2}
+              strokeDasharray="5 5"
               opacity={0.8}
               label={{ value: "Meta", position: "right", fontSize: 11, fill: COLORS.meta, fontWeight: "bold" }}
               name="Meta Total"
