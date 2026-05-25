@@ -183,7 +183,9 @@ export function expandChartDataV2(
 
     const metaCumulative = dailyMeta * (dayIndex + 1);
 
-    if (historyRow && dateStr <= todayStr) {
+    const isFuture = dateStr > todayStr;
+
+    if (historyRow && !isFuture) {
       // PASSADO/REAL: até hoje (inclusive)
       const dailyReal = historyRow.leadsPagos + historyRow.leadsOrg + historyRow.leadsSemTrack;
       cumulativeReal += dailyReal;
@@ -191,6 +193,22 @@ export function expandChartDataV2(
       result.push({
         date: dateStr,
         dailyReal,
+        dailyProjected: null,
+        cumulativeReal,
+        cumulativeProjected: null,
+        cumulative: cumulativeReal,
+        isProjection: false,
+        bandUpper: null,
+        bandLower: null,
+        meta: metaCumulative,
+      });
+    } else if (!isFuture) {
+      // PASSADO SEM dado (gap nas rows) — tratar como 0, NÃO projetar pra trás
+      // (bug: antes caia no else e projetava com daysAhead negativo, gerando
+      // valores tipo -145 no primeiro ponto)
+      result.push({
+        date: dateStr,
+        dailyReal: 0,
         dailyProjected: null,
         cumulativeReal,
         cumulativeProjected: null,

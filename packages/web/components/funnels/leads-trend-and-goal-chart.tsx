@@ -16,11 +16,18 @@ import {
 } from "recharts";
 import type { DailyRow } from "@/lib/utils/funnel-metrics";
 import { expandChartDataV2, type ChartDataPoint, calculateProjectionPercentage } from "@/lib/utils/lead-trend-calculations";
+import { useUpdateFunnel } from "@/lib/hooks/use-funnels";
+import type { Funnel } from "@loyola-x/shared";
 
 interface LeadsTrendAndGoalChartProps {
   rows: DailyRow[];
   title?: string;
   funnelId: string;
+  /** Story 18.19 fix: passa o funnel pra ler `leadsGoalMeta`/`leadsGoalDataFinal`
+   * do DB. Quando omitido, cai pro comportamento legacy (localStorage). */
+  funnel?: Funnel;
+  /** projectId necessário pro useUpdateFunnel (quando funnel é passado) */
+  projectId?: string;
 }
 
 const COLORS = {
@@ -101,7 +108,7 @@ function CustomTooltip({ active, payload }: TooltipProps) {
   );
 }
 
-export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeção vs Meta", funnelId }: LeadsTrendAndGoalChartProps) {
+export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeção vs Meta", funnelId, funnel, projectId }: LeadsTrendAndGoalChartProps) {
   const [dataFinal, setDataFinal] = useState<string>("");
   const [metaTotal, setMetaTotal] = useState<number>(0);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -109,30 +116,47 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
   const [mounted, setMounted] = useState(false);
   const windowSize = 5; // Fixado em 5 dias
 
+  // Story 18.19 fix: persistir no DB quando funnel+projectId disponíveis,
+  // fallback localStorage senão (retrocompatibilidade).
+  const usingDb = !!funnel && !!projectId;
+  const updateFunnel = useUpdateFunnel(projectId ?? "", funnelId);
   const storageKeyDataFinal = `leadsTrendDataFinal_${funnelId}`;
   const storageKeyMetaTotal = `leadsTrendMetaTotal_${funnelId}`;
 
-  // Carregar localStorage ao montar
+  // Hidratar valores ao montar / quando funnel atualiza
   useEffect(() => {
     setMounted(true);
+    if (usingDb && funnel) {
+      // Source-of-truth = DB
+      if (funnel.leadsGoalDataFinal) {
+        setDataFinal(funnel.leadsGoalDataFinal);
+      } else {
+        const d = new Date();
+        d.setDate(d.getDate() + 20);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        setDataFinal(`${y}-${m}-${day}`);
+      }
+      setMetaTotal(funnel.leadsGoalMeta ?? 0);
+      return;
+    }
+    // Fallback legacy: localStorage
     if (typeof window !== "undefined") {
       const savedDataFinal = localStorage.getItem(storageKeyDataFinal);
       const savedMetaTotal = localStorage.getItem(storageKeyMetaTotal);
-
-      if (savedDataFinal) {
-        setDataFinal(savedDataFinal);
-      } else {
-        const defaultDate = new Date();
-        defaultDate.setDate(defaultDate.getDate() + 20);
-        const defaultDateStr = defaultDate.toISOString().split("T")[0];
-        setDataFinal(defaultDateStr);
+      if (savedDataFinal) setDataFinal(savedDataFinal);
+      else {
+        const d = new Date();
+        d.setDate(d.getDate() + 20);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        setDataFinal(`${y}-${m}-${day}`);
       }
-
-      if (savedMetaTotal) {
-        setMetaTotal(parseFloat(savedMetaTotal));
-      }
+      if (savedMetaTotal) setMetaTotal(parseFloat(savedMetaTotal));
     }
-  }, [storageKeyDataFinal, storageKeyMetaTotal]);
+  }, [usingDb, funnel, storageKeyDataFinal, storageKeyMetaTotal]);
 
   // Calcular dados do gráfico quando inputs mudam
   useEffect(() => {
@@ -157,17 +181,25 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
     }
   }, [rows, dataFinal, metaTotal, mounted]);
 
-  // Persistir inputs no localStorage
+  // Persistir inputs — DB quando disponível, senão localStorage
   const handleDataFinalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setDataFinal(value);
-    localStorage.setItem(storageKeyDataFinal, value);
+    if (usingDb) {
+      updateFunnel.mutate({ leadsGoalDataFinal: value || null });
+    } else {
+      localStorage.setItem(storageKeyDataFinal, value);
+    }
   };
 
   const handleMetaTotalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value, 10) || 0;
     setMetaTotal(value);
-    localStorage.setItem(storageKeyMetaTotal, value.toString());
+    if (usingDb) {
+      updateFunnel.mutate({ leadsGoalMeta: value });
+    } else {
+      localStorage.setItem(storageKeyMetaTotal, value.toString());
+    }
   };
 
   if (!mounted) return null;

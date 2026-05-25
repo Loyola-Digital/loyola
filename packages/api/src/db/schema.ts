@@ -574,6 +574,10 @@ export const funnels = pgTable(
       { onDelete: "set null" }
     ),
     matchCode: varchar("match_code", { length: 50 }),
+    /** Story 18.19 fix: persistir Meta Total e Data Final do gráfico
+     * "Leads: Reais vs Projeção vs Meta" no DB (antes em localStorage). */
+    leadsGoalMeta: integer("leads_goal_meta"),
+    leadsGoalDataFinal: date("leads_goal_data_final"),
     lastAuditAt: timestamp("last_audit_at", { withTimezone: true }),
     lastAuditBy: uuid("last_audit_by").references(() => users.id, {
       onDelete: "set null",

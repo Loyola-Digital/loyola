@@ -49,6 +49,9 @@ const updateFunnelSchema = z.object({
   switchyLinkedLinks: z.array(switchyLinkRefSchema).optional(),
   compareFunnelId: z.string().uuid().nullable().optional(),
   matchCode: z.string().max(50).nullable().optional(),
+  // Story 18.19 fix: Meta Total + Data Final do gráfico de tendência
+  leadsGoalMeta: z.number().int().nonnegative().nullable().optional(),
+  leadsGoalDataFinal: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 });
 
 const projectIdParamSchema = z.object({
@@ -99,6 +102,8 @@ function funnelShape(f: typeof funnels.$inferSelect) {
     switchyLinkedLinks: f.switchyLinkedLinks ?? [],
     compareFunnelId: f.compareFunnelId ?? null,
     matchCode: f.matchCode ?? null,
+    leadsGoalMeta: f.leadsGoalMeta ?? null,
+    leadsGoalDataFinal: f.leadsGoalDataFinal ?? null,
     lastAuditAt: f.lastAuditAt ?? null,
     lastAuditBy: null as { id: string; name: string } | null,
     auditStatus: f.auditStatus ?? "pending",
@@ -368,7 +373,7 @@ export default fp(async function funnelRoutes(fastify) {
     }
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
-    const { name, type, metaAccountId, campaigns, googleAdsAccountId, googleAdsCampaigns, switchyFolderIds, switchyLinkedLinks, compareFunnelId, matchCode } = parseResult.data;
+    const { name, type, metaAccountId, campaigns, googleAdsAccountId, googleAdsCampaigns, switchyFolderIds, switchyLinkedLinks, compareFunnelId, matchCode, leadsGoalMeta, leadsGoalDataFinal } = parseResult.data;
     if (name !== undefined) updates.name = name;
     if (type !== undefined) updates.type = type;
     if (metaAccountId !== undefined) updates.metaAccountId = metaAccountId;
@@ -383,6 +388,8 @@ export default fp(async function funnelRoutes(fastify) {
       const normalized = (matchCode ?? "").trim().toLowerCase();
       updates.matchCode = normalized.length > 0 ? normalized : null;
     }
+    if (leadsGoalMeta !== undefined) updates.leadsGoalMeta = leadsGoalMeta;
+    if (leadsGoalDataFinal !== undefined) updates.leadsGoalDataFinal = leadsGoalDataFinal;
 
     const [updated] = await fastify.db
       .update(funnels)

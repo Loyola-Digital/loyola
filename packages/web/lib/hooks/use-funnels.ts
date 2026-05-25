@@ -26,6 +26,9 @@ export interface UpdateFunnelInput {
   switchyLinkedLinks?: { uniq: number; id: string; domain: string }[];
   compareFunnelId?: string | null;
   matchCode?: string | null;
+  /** Story 18.19 fix: Meta Total + Data Final do gráfico de tendência */
+  leadsGoalMeta?: number | null;
+  leadsGoalDataFinal?: string | null;
 }
 
 export function useOrphanCampaigns(projectId: string | null, funnelId: string | null) {

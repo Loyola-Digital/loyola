@@ -490,7 +490,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
       {/* Leads: Tendência + Meta (Story 18.19) */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
-        <LeadsTrendAndGoalChart rows={metrics.rows} funnelId={funnel.id} />
+        <LeadsTrendAndGoalChart rows={metrics.rows} funnelId={funnel.id} funnel={funnel} projectId={projectId} />
       ) : null}
 
       {/* CTR × CPM — Saturation Chart */}

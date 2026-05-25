@@ -205,6 +205,10 @@ export interface Funnel {
   /** Substring case-insensitive a buscar em campaign.name pra detectar
    * campanhas órfãs (Epic 25). Null = alerta desativado. */
   matchCode: string | null;
+  /** Story 18.19 fix: Meta Total + Data Final do gráfico
+   * "Leads: Reais vs Projeção vs Meta" — persistido no DB (era localStorage). */
+  leadsGoalMeta: number | null;
+  leadsGoalDataFinal: string | null;
   createdAt: string;
   updatedAt: string;
 }
