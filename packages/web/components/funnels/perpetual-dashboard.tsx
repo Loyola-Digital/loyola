@@ -106,6 +106,20 @@ function fmtCurrencyCompact(val: number | null | undefined): string {
   return `${sign}R$${abs.toFixed(0)}`;
 }
 
+// Story 29.9: imposto sobre Meta Ads vigente a partir de 01/01/2026 (12.15%).
+// Spend bruto da API Meta NÃO inclui esse imposto — precisa adicionar pra ter
+// custo real. Aplicado per dia (data >= effective). Pra dias anteriores, sem tax.
+const META_TAX_EFFECTIVE_DATE = "2026-01-01";
+const META_TAX_RATE = 0.1215;
+
+function applyMetaTax(spend: number, dateIsoYmd: string): number {
+  return dateIsoYmd >= META_TAX_EFFECTIVE_DATE ? spend * (1 + META_TAX_RATE) : spend;
+}
+
+function metaTaxAmount(spend: number, dateIsoYmd: string): number {
+  return dateIsoYmd >= META_TAX_EFFECTIVE_DATE ? spend * META_TAX_RATE : 0;
+}
+
 function fmtNumber(val: number | null | undefined): string {
   if (val == null) return "—";
   if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}M`;
@@ -189,29 +203,6 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     return ((current - comparison) / Math.abs(comparison)) * 100;
   }
 
-  // Epic 29 Story 29.4 — quando planilha conectada, sobrescreve vendas/receita/CAC/margem/ROAS
-  // com dados da planilha. Spend continua Meta. Sem planilha = fallback Meta integral.
-  // Story 29.7: Margem usa faturamentoLiquidoCalculado (descontou fees da plataforma).
-  const effectiveMetrics = useMemo(() => {
-    if (!overview) return null;
-    if (!usingSpreadsheet || !salesData) return overview;
-    const sales = salesData.totalVendas;
-    const revenue = salesData.faturamentoBruto;
-    // Receita líquida descontando fees Kiwify/Hotmart (Story 29.7). Quando platform=null
-    // ou other, faturamentoLiquidoCalculado === bruto.
-    const netRevenue = salesData.faturamentoLiquidoCalculado;
-    const margin = netRevenue - overview.totalSpend;
-    return {
-      ...overview,
-      totalSales: sales,
-      totalRevenue: revenue,
-      cac: sales > 0 ? overview.totalSpend / sales : null,
-      margin,
-      marginPercent: revenue > 0 ? (margin / revenue) * 100 : null,
-      roas: overview.totalSpend > 0 ? revenue / overview.totalSpend : null,
-    };
-  }, [overview, salesData, usingSpreadsheet]);
-
   // Filtered campaigns for this funnel
   const funnelCampaigns = useMemo(() => {
     if (!campaignData) return [];
@@ -221,12 +212,19 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // Daily chart data: investment + margin
   // Story 29.4 + 29.7: quando planilha conectada, Receita vem da planilha e
   // Margem usa receita líquida (descontou fees Kiwify/Hotmart). Spend continua Meta.
+  // Story 29.9: spend ganha imposto 12.15% para dias >= 2026-01-01.
+  //             Receita falla pra Meta se planilha não tem dataVenda mapeada.
   const dailyChartData = useMemo(() => {
     if (!dailyData) return [];
-    const sheetByDay = usingSpreadsheet ? salesDataDaily?.byDay ?? {} : {};
+    // Fallback: planilha sem dataVenda OU sem rows válidas no range → Meta revenue
+    const sheetHasDaily = usingSpreadsheet && salesDataDaily && !salesDataDaily.semDados
+      && Object.keys(salesDataDaily.byDay ?? {}).length > 0;
+    const sheetByDay = sheetHasDaily ? salesDataDaily!.byDay : {};
     const feeRate = usingSpreadsheet && salesData ? salesData.feeRate : 0;
     return dailyData.map((d) => {
-      const spend = safeNum(d.spend);
+      const spendBruto = safeNum(d.spend);
+      const spendComTax = applyMetaTax(spendBruto, d.date_start);
+      const taxAmount = metaTaxAmount(spendBruto, d.date_start);
       const purchases = d.actions?.find((a) =>
         a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase"
       );
@@ -235,28 +233,82 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       );
       const metaRevenue = metaRevenueEntry ? parseFloat(metaRevenueEntry.value) : 0;
       const sheetRevenue = sheetByDay[d.date_start] ?? 0;
-      const revenueBruto = usingSpreadsheet ? sheetRevenue : metaRevenue;
-      // Margem usa receita liquida (descontou fees platform) — consistente com KPI
+      // Quando usingSpreadsheet mas sem daily da planilha (não mapeou dataVenda),
+      // usa Meta como fallback no gráfico — KPI Receita já mostra total da planilha.
+      const revenueBruto = sheetHasDaily ? sheetRevenue : metaRevenue;
       const revenueLiquida = revenueBruto * (1 - feeRate);
-      const margin = revenueLiquida - spend;
+      const margin = revenueLiquida - spendComTax;
       const dateLabel = d.date_start.slice(5, 10);
-      const revenueSource = usingSpreadsheet
+      const revenueSource = sheetHasDaily
         ? "Planilha · faturamento bruto por dia"
-        : "Meta Ads API · action_values.purchase (time series)";
+        : usingSpreadsheet
+          ? "Meta Ads · action_values.purchase (fallback: planilha sem dataVenda)"
+          : "Meta Ads API · action_values.purchase (time series)";
+      const spendSource = taxAmount > 0
+        ? `Meta Ads spend + 12.15% imposto (a partir de ${META_TAX_EFFECTIVE_DATE})`
+        : "Meta Ads API · spend (time series)";
       return {
         date: dateLabel,
-        spend,
+        spend: spendComTax,
+        spendBruto,
+        spendTax: taxAmount,
         revenue: revenueBruto,
         margin,
         sales: purchases ? parseInt(purchases.value) : 0,
         formulasByKey: {
-          spend: buildFunnelDailyFormula("Investimento", "Meta Ads API · spend (time series)", spend, true, dateLabel),
+          spend: buildFunnelDailyFormula("Investimento", spendSource, spendComTax, true, dateLabel),
           revenue: buildFunnelDailyFormula("Receita", revenueSource, revenueBruto, true, dateLabel),
-          margin: buildFunnelDailyFormula("Margem (Líquida − Spend)", "Derivado · (revenue × (1−feeRate)) − spend", margin, true, dateLabel),
+          margin: buildFunnelDailyFormula("Margem (Líquida − Spend c/ tax)", "Derivado · (revenue × (1−feeRate)) − (spend × 1.1215)", margin, true, dateLabel),
         },
       };
     });
   }, [dailyData, usingSpreadsheet, salesDataDaily, salesData]);
+
+  // Story 29.9: agregados com tax aplicado — sobrescreve totalSpend do overview
+  // (que vem sem tax do Meta). Total tax exposto pra tooltip do KPI Investimento.
+  const spendAggregates = useMemo(() => {
+    let totalSpendBruto = 0;
+    let totalTax = 0;
+    for (const d of dailyChartData) {
+      totalSpendBruto += d.spendBruto ?? 0;
+      totalTax += d.spendTax ?? 0;
+    }
+    return {
+      totalSpendBruto,
+      totalTax,
+      totalSpendComTax: totalSpendBruto + totalTax,
+      hasTax: totalTax > 0,
+    };
+  }, [dailyChartData]);
+
+  // Epic 29 Story 29.4 — quando planilha conectada, sobrescreve vendas/receita/CAC/margem/ROAS
+  // com dados da planilha. Spend continua Meta.
+  // Story 29.7: Margem usa faturamentoLiquidoCalculado (descontou fees plataforma).
+  // Story 29.9: spend Meta ganha imposto 12.15% para dias >= 2026-01-01 (via spendAggregates).
+  const effectiveMetrics = useMemo(() => {
+    if (!overview) return null;
+    const effectiveSpend = spendAggregates.totalSpendComTax > 0
+      ? spendAggregates.totalSpendComTax
+      : overview.totalSpend;
+
+    if (!usingSpreadsheet || !salesData) {
+      return { ...overview, totalSpend: effectiveSpend };
+    }
+    const sales = salesData.totalVendas;
+    const revenue = salesData.faturamentoBruto;
+    const netRevenue = salesData.faturamentoLiquidoCalculado;
+    const margin = netRevenue - effectiveSpend;
+    return {
+      ...overview,
+      totalSpend: effectiveSpend,
+      totalSales: sales,
+      totalRevenue: revenue,
+      cac: sales > 0 ? effectiveSpend / sales : null,
+      margin,
+      marginPercent: revenue > 0 ? (margin / revenue) * 100 : null,
+      roas: effectiveSpend > 0 ? revenue / effectiveSpend : null,
+    };
+  }, [overview, salesData, usingSpreadsheet, spendAggregates]);
 
   // Revenue by audience (ad sets)
   const revenueByAudience = useMemo(() => {
@@ -415,7 +467,12 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
               <MetricTooltip label="ROAS" value={fmtRoas(m.roas)} formula={buildFunnelRoasFormula(m.roas, f)}>
                 <KpiCard icon={Target} label="ROAS" value={fmtRoas(m.roas)} target={2} actual={m.roas} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
-              <MetricTooltip label="Investimento" value={fmtCurrency(m.totalSpend)} formula={buildFunnelSpendFormula(m.totalSpend, f)}>
+              <InvestmentBreakdownTooltip
+                spendBruto={spendAggregates.totalSpendBruto}
+                spendTax={spendAggregates.totalTax}
+                spendComTax={m.totalSpend}
+                hasTax={spendAggregates.hasTax}
+              >
                 <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(m.totalSpend)} hintTooltip
                   comparison={compSpend !== null && m.totalSpend != null ? {
                     display: fmtCurrency(compSpend),
@@ -423,7 +480,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                     higherIsBetter: false,
                   } : undefined}
                 />
-              </MetricTooltip>
+              </InvestmentBreakdownTooltip>
               <MetricTooltip label="Vendas" value={fmtNumber(m.totalSales)} formula={buildFunnelSalesCountFormula(m.totalSales, f)}>
                 <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(m.totalSales)} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
@@ -822,6 +879,64 @@ function MarginBreakdownTooltip({
                 {fmtCurrency(margin)}
               </span>
             </div>
+          </div>
+        </div>
+      </TooltipContent>
+    </UITooltip>
+  );
+}
+
+// Story 29.9: Tooltip do Investimento mostra breakdown Meta spend + imposto 12.15%
+function InvestmentBreakdownTooltip({
+  spendBruto,
+  spendTax,
+  spendComTax,
+  hasTax,
+  children,
+}: {
+  spendBruto: number;
+  spendTax: number;
+  spendComTax: number;
+  hasTax: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <UITooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="top" className="p-0 max-w-[360px]">
+        <div className="bg-popover text-popover-foreground text-xs p-3 space-y-2 rounded-md border border-border">
+          <div className="font-semibold text-sm border-b border-border/30 pb-1.5">
+            Memorial: Investimento
+          </div>
+          <div className="space-y-1">
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Meta Ads (spend bruto)</span>
+              <span className="tabular-nums font-medium">{fmtCurrency(spendBruto)}</span>
+            </div>
+            {hasTax && (
+              <>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider pt-1.5 border-t border-border/20">
+                  Imposto sobre Meta Ads (a partir de {META_TAX_EFFECTIVE_DATE})
+                </div>
+                <div className="flex justify-between gap-4 text-[11px]">
+                  <span className="text-muted-foreground">
+                    + Imposto ({(META_TAX_RATE * 100).toFixed(2)}%)
+                  </span>
+                  <span className="tabular-nums text-amber-400">
+                    +{fmtCurrency(spendTax)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 pt-1.5 border-t border-border/30">
+                  <span className="font-semibold">= Investimento total</span>
+                  <span className="tabular-nums font-semibold">{fmtCurrency(spendComTax)}</span>
+                </div>
+              </>
+            )}
+            {!hasTax && (
+              <div className="text-[10px] text-muted-foreground pt-1 italic">
+                Período sem incidência de imposto (anterior a {META_TAX_EFFECTIVE_DATE}).
+              </div>
+            )}
           </div>
         </div>
       </TooltipContent>
