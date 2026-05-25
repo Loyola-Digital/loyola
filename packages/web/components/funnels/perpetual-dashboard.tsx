@@ -611,6 +611,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         funnelId={funnel.id}
         stageId={stageId}
         funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+        defaultShowAll
+        startDate={customRange?.startDate}
+        endDate={customRange?.endDate}
       />
 
       {/* ================================================================ */}

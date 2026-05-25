@@ -542,7 +542,9 @@ export async function getTopPerformers(
   metric: TopPerformerMetric,
   limit: number,
   days: number,
-  campaignIds?: string | string[]
+  campaignIds?: string | string[],
+  startDate?: string,
+  endDate?: string,
 ): Promise<TopPerformerAd[]> {
   // Normaliza em array pra cache key e delegação
   const idList = Array.isArray(campaignIds)
@@ -550,7 +552,8 @@ export async function getTopPerformers(
     : campaignIds
       ? [campaignIds]
       : [];
-  const cacheKey = `analytics:${projectId}:top:${metric}:${limit}:${days}:${
+  const rangeKey = startDate && endDate ? `${startDate}_${endDate}` : `d${days}`;
+  const cacheKey = `analytics:${projectId}:top:${metric}:${limit}:${rangeKey}:${
     idList.length > 0 ? [...idList].sort().join(",") : "all"
   }`;
   const cached = getCached<TopPerformerAd[]>(cacheKey);
@@ -564,7 +567,9 @@ export async function getTopPerformers(
     metaAccount.metaAccountId,
     metaAccount.accessToken,
     days,
-    idList.length > 0 ? idList : undefined
+    idList.length > 0 ? idList : undefined,
+    startDate,
+    endDate,
   );
 
   if (allAds.length === 0) return [];

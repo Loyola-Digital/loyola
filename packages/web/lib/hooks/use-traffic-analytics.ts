@@ -221,6 +221,8 @@ export function useTopPerformers(
   limit: number = 5,
   days: number = 30,
   campaignIds?: string | string[] | null,
+  startDate?: string,
+  endDate?: string,
 ) {
   const apiClient = useApiClient();
   // Normaliza pra sempre enviar `campaignIds` (CSV) quando houver mais de uma,
@@ -236,12 +238,16 @@ export function useTopPerformers(
       : idList.length === 1
         ? `&campaignId=${encodeURIComponent(idList[0])}`
         : `&campaignIds=${encodeURIComponent(idList.join(","))}`;
+  // Story 29.8 ext: custom range alcança o ranking de criativos
+  const rangeParam = startDate && endDate
+    ? `&startDate=${startDate}&endDate=${endDate}`
+    : "";
   const cacheKeyIds = idList.length > 0 ? [...idList].sort().join(",") : null;
   return useQuery({
-    queryKey: ["traffic-top-performers", projectId, metric, limit, days, cacheKeyIds],
+    queryKey: ["traffic-top-performers", projectId, metric, limit, days, cacheKeyIds, startDate, endDate],
     queryFn: () =>
       apiClient<TopPerformersResponse>(
-        `/api/traffic/analytics/${projectId}/top-performers?metric=${metric}&limit=${limit}&days=${days}${campaignParam}`,
+        `/api/traffic/analytics/${projectId}/top-performers?metric=${metric}&limit=${limit}&days=${days}${campaignParam}${rangeParam}`,
       ),
     enabled: !!projectId,
     staleTime: TRAFFIC_STALE_TIME,

@@ -587,6 +587,16 @@ interface TopCreativesGalleryProps {
    * Vem direto de `useSurveyAggregation().questions`.
    */
   surveyQuestions?: SurveyQuestionMeta[];
+  /**
+   * Story 29.8 ext: pra perpetuals, vendas reais vem da PLANILHA não do Pixel.
+   * Filtro de relevância (Story 8.9) usa CPA derivado do Pixel — fica
+   * artificialmente alto e esconde quase todos os criativos. Passar `true`
+   * desabilita o filtro por padrão (user pode toggle no UI se quiser).
+   */
+  defaultShowAll?: boolean;
+  /** Story 29.8 ext: custom range no passado (ex: abril) propaga pro ranking */
+  startDate?: string;
+  endDate?: string;
 }
 
 export function TopCreativesGallery({
@@ -599,6 +609,9 @@ export function TopCreativesGallery({
   surveyDataByAdId,
   surveyDataByAdIdDynamic,
   surveyQuestions,
+  defaultShowAll = false,
+  startDate,
+  endDate,
 }: TopCreativesGalleryProps) {
   const [metric, setMetric] = useState<LocalMetric>("cpl");
   const [expanded, setExpanded] = useState(false);
@@ -606,7 +619,9 @@ export function TopCreativesGallery({
   // Story 8.9: filtro de relevância estatística. Default OFF = filtro ATIVO
   // (esconde criativos sem volume estatístico). Não persiste entre sessões —
   // o threshold é dinâmico por período, persistir confundiria.
-  const [showAll, setShowAll] = useState(false);
+  // Story 29.8 ext: perpetuals desabilitam por default (vendas vem da planilha,
+  // não do Pixel — CPA do Pixel é underreported e o threshold fica abusivo).
+  const [showAll, setShowAll] = useState(defaultShowAll);
 
   // Story 21.7 — faturamento real por criativo (cruzamento leads × vendas).
   // Só ativa quando temos funnelId+stageId; hook é no-op (`enabled: false`)
@@ -634,6 +649,8 @@ export function TopCreativesGallery({
     100,
     days,
     campaignIds && campaignIds.length > 0 ? campaignIds : null,
+    startDate,
+    endDate,
   );
 
   const { data: spreadsheetsData } = useFunnelSpreadsheets(projectId, funnelId ?? "", stageId ?? null);

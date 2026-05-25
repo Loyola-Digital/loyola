@@ -211,6 +211,8 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
     days: z.coerce.number().int().min(1).max(365).default(30),
     campaignId: z.string().optional(),
     campaignIds: z.string().optional(),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   });
 
   fastify.get(
@@ -242,7 +244,9 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
           queryResult.data.metric as TopPerformerMetric,
           queryResult.data.limit,
           queryResult.data.days,
-          idList
+          idList,
+          queryResult.data.startDate,
+          queryResult.data.endDate,
         );
         return { topPerformers: result, metric: queryResult.data.metric };
       } catch (err) {

@@ -674,9 +674,13 @@ export async function fetchAllAdInsights(
   metaAccountId: string,
   accessToken: string,
   days: number = 30,
-  campaignIds?: string | string[]
+  campaignIds?: string | string[],
+  startDate?: string,
+  endDate?: string,
 ): Promise<AllAdInsight[]> {
-  const { since, until } = dateRangeFromDays(days);
+  // Story 29.8 ext: custom range alcança o ranking de criativos
+  const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
+  const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
   const timeRange = buildTimeRangeParam(since, until);
 
   // Aceita 1 campanha (string legacy) ou N campanhas (array). Meta Ads API
