@@ -1159,3 +1159,36 @@ export const funnelStageZoomMeetings = pgTable(
     index("idx_zoom_meetings_stage").on(table.stageId),
   ]
 );
+
+// ============================================================
+// SPRINT DASHBOARD (Epic 31 — ClickUp Integration)
+// ============================================================
+// Singleton: 1 row global na Loyola toda. UNIQUE(singleton=true) garante
+// que só pode existir uma config (qualquer tentativa de insert duplica
+// dá conflict).
+export const sprintDashboardConfig = pgTable(
+  "sprint_dashboard_config",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    singleton: boolean("singleton").notNull().default(true),
+    blocks: jsonb("blocks").notNull().default([]).$type<Array<{
+      id: string;
+      title: string;
+      color: string;
+      clickupListIds: string[];
+      filters: {
+        statuses?: string[];
+        tags?: string[];
+        assigneeIds?: string[];
+      };
+      groupBy?: "status" | "tag" | "assignee" | null;
+      sortOrder: number;
+    }>>(),
+    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("sprint_dashboard_config_singleton_uniq").on(table.singleton),
+  ]
+);

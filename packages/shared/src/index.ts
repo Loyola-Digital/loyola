@@ -58,6 +58,12 @@ export type {
 export { PLATFORM_FEE_RATES } from "./types/funnel.js";
 
 export type {
+  SprintDashboardBlockFilters,
+  SprintDashboardBlock,
+  SprintDashboardConfig,
+} from "./types/sprint-dashboard.js";
+
+export type {
   OrganicPostSource,
   StageOrganicPost,
   YouTubeOrganicMetrics,

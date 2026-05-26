@@ -21,6 +21,10 @@ interface ClickUpService {
   getTask(taskId: string): Promise<ClickUpTask | null>;
   searchTasks(teamId: string, query: string): Promise<ClickUpTask[]>;
   createTask(params: CreateTaskParams): Promise<{ id: string; url: string }>;
+  /** Epic 31: atualiza apenas o status de uma task (write-through). */
+  updateTaskStatus(taskId: string, status: string): Promise<void>;
+  /** Epic 31: status disponíveis pra uma lista (pra UI do builder). */
+  getListStatuses(listId: string): Promise<Array<{ status: string; color: string; orderindex: number; type: string }>>;
 }
 
 interface ClickUpTeam {
@@ -49,13 +53,17 @@ interface ClickUpTask {
   id: string;
   name: string;
   description: string;
-  status: { status: string };
+  status: { status: string; color?: string };
   priority: { id: string; priority: string } | null;
   tags: Array<{ name: string }>;
   url: string;
   date_created: string;
   date_updated: string;
-  assignees: Array<{ username: string }>;
+  /** Unix ms (string) — pode ser null pra tasks sem due date. */
+  due_date?: string | null;
+  /** Unix ms (string) — pode ser null. */
+  start_date?: string | null;
+  assignees: Array<{ id?: number; username: string; email?: string; profilePicture?: string | null }>;
   list?: { id: string; name: string };
   folder?: { id: string; name: string };
   space?: { id: string };
@@ -179,6 +187,24 @@ export default fp(async function clickupService(fastify) {
     return { id: data.id, url: data.url };
   }
 
+  // Epic 31 Story 31.3 — write-through de status pra ClickUp
+  async function updateTaskStatus(taskId: string, status: string): Promise<void> {
+    await fetchApi(`/task/${taskId}`, {
+      method: "PUT",
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  // Epic 31 — statuses disponíveis de uma lista (pra builder)
+  async function getListStatuses(
+    listId: string,
+  ): Promise<Array<{ status: string; color: string; orderindex: number; type: string }>> {
+    const data = await fetchApi<{ statuses: Array<{ status: string; color: string; orderindex: number; type: string }> }>(
+      `/list/${listId}`,
+    );
+    return data.statuses ?? [];
+  }
+
   if (!token) {
     fastify.log.warn(
       "CLICKUP_API_TOKEN not set — ClickUp integration disabled",
@@ -197,5 +223,7 @@ export default fp(async function clickupService(fastify) {
     getTask,
     searchTasks,
     createTask,
+    updateTaskStatus,
+    getListStatuses,
   });
 });
