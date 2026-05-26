@@ -26,6 +26,8 @@ type ClickUpTaskSimple = {
   assignees: Array<{ id: number | null; name: string; avatar: string | null }>;
   listId: string;
   listName: string;
+  folderId: string | null;
+  folderName: string | null;
 };
 type TasksCacheEntry = { tasks: ClickUpTaskSimple[]; expiresAt: number };
 const tasksCache = new Map<string, TasksCacheEntry>();
@@ -169,6 +171,8 @@ export default fp(async function sprintDashboardRoutes(fastify) {
           })),
           listId,
           listName: t.list?.name ?? "",
+          folderId: t.folder?.id ?? null,
+          folderName: t.folder?.name ?? null,
         });
       }
     }
@@ -299,8 +303,8 @@ export default fp(async function sprintDashboardRoutes(fastify) {
   // Story 31.6 — Metrics-resumo do header (eventos próximos)
   // ============================================================
 
-  // Reusa o cache de tasks. Retorna tasks com due_date nos próximos 14d,
-  // ordenadas crescente. Caller usa pra render do header.
+  // Agrega tasks por FOLDER (= lançamento no padrão Loyola). Cada folder
+  // vira um card no header com contadores: total / overdue / in_progress / done.
   fastify.get("/api/sprint-dashboard/metrics", async (request, reply) => {
     const guestErr = denyGuest(request);
     if (guestErr) return reply.code(403).send(guestErr);
@@ -316,44 +320,80 @@ export default fp(async function sprintDashboardRoutes(fastify) {
       ),
     );
     if (allListIds.length === 0) {
-      return { upcomingEvents: [], activeProjectsCount: 0 };
+      return { byFolder: [], activeProjectsCount: 0 };
     }
 
     try {
       const tasks = await fetchTasksFromLists(allListIds);
       const now = Date.now();
-      const horizonMs = 14 * 24 * 60 * 60 * 1000;
-      const upcomingEvents = tasks
-        .filter((t) => t.dueDate)
-        .map((t) => ({
-          taskId: t.id,
-          name: t.name,
-          dueDate: t.dueDate!,
-          status: t.status,
-          listName: t.listName,
-          url: t.url,
-        }))
-        .filter((e) => {
-          const ms = Number(e.dueDate);
-          return Number.isFinite(ms) && ms >= now - horizonMs && ms <= now + horizonMs;
-        })
-        .sort((a, b) => Number(a.dueDate) - Number(b.dueDate))
-        .slice(0, 10);
+      const finalStatuses = new Set(["done", "closed", "cancelado", "concluído", "concluido", "complete", "completed"]);
 
-      // Projetos ativos = blocks distintos com >=1 task no estado não final
-      const finalStatuses = new Set(["done", "closed", "cancelado", "concluído", "concluido"]);
-      const activeBlockIds = new Set<string>();
-      for (const block of config.blocks ?? []) {
-        const listSet = new Set(block.clickupListIds);
-        const hasActive = tasks.some(
-          (t) => listSet.has(t.listId) && !finalStatuses.has(t.status.toLowerCase()),
-        );
-        if (hasActive) activeBlockIds.add(block.id);
+      // Agrupa por folderId (fallback pra listId quando folder é null = folderless list)
+      type FolderAgg = {
+        folderId: string;
+        folderName: string;
+        total: number;
+        done: number;
+        overdue: number;
+        inProgress: number;
+        upcoming: number; // due dentro de 7 dias mas ainda não overdue
+        nextDueDate: number | null; // unix ms da próxima task com due_date
+        nextDueTaskName: string | null;
+      };
+      const map = new Map<string, FolderAgg>();
+
+      for (const t of tasks) {
+        // Quando task não tem folder (folderless list), usa listId+listName como pseudo-folder
+        const fid = t.folderId ?? `list:${t.listId}`;
+        const fname = t.folderName ?? t.listName;
+        const agg = map.get(fid) ?? {
+          folderId: fid,
+          folderName: fname,
+          total: 0,
+          done: 0,
+          overdue: 0,
+          inProgress: 0,
+          upcoming: 0,
+          nextDueDate: null,
+          nextDueTaskName: null,
+        };
+        agg.total += 1;
+        const isDone = finalStatuses.has(t.status.toLowerCase());
+        if (isDone) {
+          agg.done += 1;
+        } else {
+          agg.inProgress += 1;
+          if (t.dueDate) {
+            const ms = Number(t.dueDate);
+            if (Number.isFinite(ms)) {
+              if (ms < now) {
+                agg.overdue += 1;
+              } else if (ms <= now + 7 * 24 * 60 * 60 * 1000) {
+                agg.upcoming += 1;
+              }
+              if (agg.nextDueDate === null || ms < agg.nextDueDate) {
+                agg.nextDueDate = ms;
+                agg.nextDueTaskName = t.name;
+              }
+            }
+          }
+        }
+        map.set(fid, agg);
       }
 
+      // Ordena: folders com overdue primeiro, depois upcoming, depois alfabético
+      const byFolder = Array.from(map.values()).sort((a, b) => {
+        if (a.overdue !== b.overdue) return b.overdue - a.overdue;
+        if (a.upcoming !== b.upcoming) return b.upcoming - a.upcoming;
+        return a.folderName.localeCompare(b.folderName);
+      });
+
+      // Projetos ativos = folders com >=1 task ainda aberta
+      const activeProjectsCount = byFolder.filter((f) => f.inProgress > 0).length;
+
       return {
-        upcomingEvents,
-        activeProjectsCount: activeBlockIds.size,
+        byFolder,
+        activeProjectsCount,
       };
     } catch (err) {
       return reply.code(502).send({

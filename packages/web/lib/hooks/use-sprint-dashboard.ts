@@ -52,6 +52,8 @@ export interface ClickUpTaskShape {
   assignees: Array<{ id: number | null; name: string; avatar: string | null }>;
   listId: string;
   listName: string;
+  folderId: string | null;
+  folderName: string | null;
 }
 
 export function useSprintDashboardTasks(listIds: string[] | null) {
@@ -119,15 +121,20 @@ export function useUpdateTask() {
 // Metrics (Story 31.6)
 // ============================================================
 
+export interface SprintFolderMetric {
+  folderId: string;
+  folderName: string;
+  total: number;
+  done: number;
+  overdue: number;
+  inProgress: number;
+  upcoming: number;
+  nextDueDate: number | null;
+  nextDueTaskName: string | null;
+}
+
 export interface SprintDashboardMetrics {
-  upcomingEvents: Array<{
-    taskId: string;
-    name: string;
-    dueDate: string;
-    status: string;
-    listName: string;
-    url: string;
-  }>;
+  byFolder: SprintFolderMetric[];
   activeProjectsCount: number;
 }
 

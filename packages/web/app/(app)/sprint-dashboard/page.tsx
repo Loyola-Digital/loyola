@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LayoutGrid, Settings2, RefreshCw, Calendar, AlertCircle } from "lucide-react";
+import { LayoutGrid, Settings2, RefreshCw, AlertCircle, AlertTriangle, Clock, Check } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
@@ -160,48 +160,153 @@ function MetricsHeader({
   blockCount,
   activeCount,
 }: {
-  metrics: { upcomingEvents: Array<{ taskId: string; name: string; dueDate: string; status: string; listName: string; url: string }>; activeProjectsCount: number } | undefined;
+  metrics: { byFolder: Array<{ folderId: string; folderName: string; total: number; done: number; overdue: number; inProgress: number; upcoming: number; nextDueDate: number | null; nextDueTaskName: string | null }>; activeProjectsCount: number } | undefined;
   blockCount: number;
   activeCount: number | undefined;
 }) {
-  const upcoming = (metrics?.upcomingEvents ?? []).slice(0, 5);
+  const folders = metrics?.byFolder ?? [];
   return (
-    <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-5">
-      <MetricCard label="Projetos ativos" value={String(activeCount ?? "—")} sub={`${blockCount} bloco(s) configurado(s)`} />
-      {upcoming.map((e) => {
-        const ms = Number(e.dueDate);
-        const date = Number.isFinite(ms) ? new Date(ms) : null;
-        return (
-          <a
-            key={e.taskId}
-            href={e.url}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-xl border border-border/40 bg-card/60 p-3 hover:border-border transition-colors"
-          >
-            <div className="flex items-center gap-1 text-[11px] text-muted-foreground mb-1">
-              <Calendar className="h-3 w-3" />
-              <span className="truncate">{e.listName}</span>
-            </div>
-            <div className="text-[15px] font-semibold tabular-nums">
-              {date ? format(date, "dd/MM", { locale: ptBR }) : "—"}
-            </div>
-            <div className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
-              {e.name}
-            </div>
-          </a>
-        );
-      })}
+    <div className="space-y-3">
+      {/* Resumo geral — 1 linha de 3 cards */}
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
+        <MetricCard
+          label="Projetos ativos"
+          value={String(activeCount ?? "—")}
+          sub={`${blockCount} bloco(s) configurado(s)`}
+        />
+        <MetricCard
+          label="Tasks em atraso"
+          value={String(folders.reduce((s, f) => s + f.overdue, 0))}
+          sub={`${folders.filter((f) => f.overdue > 0).length} lançamento(s) afetado(s)`}
+          tone={folders.reduce((s, f) => s + f.overdue, 0) > 0 ? "danger" : "neutral"}
+        />
+        <MetricCard
+          label="Tasks em progresso"
+          value={String(folders.reduce((s, f) => s + f.inProgress, 0))}
+          sub={`${folders.reduce((s, f) => s + f.done, 0)} concluída(s)`}
+        />
+      </div>
+
+      {/* Cards por folder/lançamento */}
+      {folders.length > 0 && (
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {folders.map((f) => (
+            <FolderMetricCard key={f.folderId} folder={f} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function MetricCard({ label, value, sub }: { label: string; value: string; sub: string }) {
+function MetricCard({
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  tone?: "neutral" | "danger";
+}) {
+  const valueColor = tone === "danger" && value !== "0" ? "text-red-400" : "";
   return (
     <div className="rounded-xl border border-border/40 bg-card/60 p-3">
       <div className="text-[11px] text-muted-foreground mb-1">{label}</div>
-      <div className="text-xl font-bold">{value}</div>
+      <div className={`text-xl font-bold ${valueColor}`}>{value}</div>
       <div className="text-[10px] text-muted-foreground mt-0.5">{sub}</div>
+    </div>
+  );
+}
+
+function FolderMetricCard({
+  folder,
+}: {
+  folder: { folderId: string; folderName: string; total: number; done: number; overdue: number; inProgress: number; upcoming: number; nextDueDate: number | null; nextDueTaskName: string | null };
+}) {
+  const completionPct = folder.total > 0 ? Math.round((folder.done / folder.total) * 100) : 0;
+  const nextDue = folder.nextDueDate ? new Date(folder.nextDueDate) : null;
+
+  return (
+    <div className="rounded-xl border border-border/40 bg-card/60 p-3 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="text-xs font-semibold leading-tight line-clamp-2 flex-1">
+          {folder.folderName}
+        </h3>
+        <span className="text-[10px] text-muted-foreground shrink-0">
+          {completionPct}%
+        </span>
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-1 rounded-full bg-muted/30 overflow-hidden">
+        <div
+          className="h-full bg-emerald-500 transition-all"
+          style={{ width: `${completionPct}%` }}
+        />
+      </div>
+
+      {/* Counters */}
+      <div className="grid grid-cols-3 gap-1 text-center">
+        <CounterPill
+          icon={<AlertTriangle className="h-2.5 w-2.5" />}
+          label="Atraso"
+          value={folder.overdue}
+          tone="danger"
+        />
+        <CounterPill
+          icon={<Clock className="h-2.5 w-2.5" />}
+          label="Progr."
+          value={folder.inProgress}
+          tone="warning"
+        />
+        <CounterPill
+          icon={<Check className="h-2.5 w-2.5" />}
+          label="Done"
+          value={folder.done}
+          tone="success"
+        />
+      </div>
+
+      {nextDue && folder.nextDueTaskName && (
+        <div className="text-[10px] text-muted-foreground pt-1 border-t border-border/20">
+          Próximo: <span className="font-medium">{format(nextDue, "dd/MM", { locale: ptBR })}</span>{" "}
+          <span className="opacity-70">· {folder.nextDueTaskName}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CounterPill({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  tone: "danger" | "warning" | "success";
+}) {
+  const colorClass =
+    value === 0
+      ? "text-muted-foreground/60"
+      : tone === "danger"
+        ? "text-red-400"
+        : tone === "warning"
+          ? "text-amber-400"
+          : "text-emerald-500";
+  return (
+    <div className="flex flex-col items-center justify-center py-1 rounded bg-muted/20">
+      <span className={`flex items-center gap-0.5 text-[14px] font-bold tabular-nums ${colorClass}`}>
+        {icon}
+        {value}
+      </span>
+      <span className="text-[9px] text-muted-foreground uppercase tracking-wider">
+        {label}
+      </span>
     </div>
   );
 }
