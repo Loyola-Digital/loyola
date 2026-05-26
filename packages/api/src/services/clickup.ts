@@ -23,8 +23,17 @@ interface ClickUpService {
   createTask(params: CreateTaskParams): Promise<{ id: string; url: string }>;
   /** Epic 31: atualiza apenas o status de uma task (write-through). */
   updateTaskStatus(taskId: string, status: string): Promise<void>;
+  /** Epic 31 v2: atualiza campos arbitrários (status, name, due_date) numa só call. */
+  updateTask(taskId: string, partial: UpdateTaskPartial): Promise<void>;
   /** Epic 31: status disponíveis pra uma lista (pra UI do builder). */
   getListStatuses(listId: string): Promise<Array<{ status: string; color: string; orderindex: number; type: string }>>;
+}
+
+interface UpdateTaskPartial {
+  status?: string;
+  name?: string;
+  /** Unix ms (number). Pode ser null pra remover a data. */
+  due_date?: number | null;
 }
 
 interface ClickUpTeam {
@@ -195,6 +204,25 @@ export default fp(async function clickupService(fastify) {
     });
   }
 
+  // Epic 31 v2 — edit completo (status + nome + due_date). ClickUp aceita
+  // múltiplos campos no mesmo PUT.
+  async function updateTask(taskId: string, partial: UpdateTaskPartial): Promise<void> {
+    const body: Record<string, unknown> = {};
+    if (partial.status !== undefined) body.status = partial.status;
+    if (partial.name !== undefined) body.name = partial.name;
+    if (partial.due_date !== undefined) {
+      body.due_date = partial.due_date; // null = remove; number = unix ms
+      // due_date_time=true diz pro ClickUp respeitar o horário; sem isso
+      // ele zera pra meia-noite UTC.
+      body.due_date_time = partial.due_date !== null;
+    }
+    if (Object.keys(body).length === 0) return;
+    await fetchApi(`/task/${taskId}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  }
+
   // Epic 31 — statuses disponíveis de uma lista (pra builder)
   async function getListStatuses(
     listId: string,
@@ -224,6 +252,7 @@ export default fp(async function clickupService(fastify) {
     searchTasks,
     createTask,
     updateTaskStatus,
+    updateTask,
     getListStatuses,
   });
 });

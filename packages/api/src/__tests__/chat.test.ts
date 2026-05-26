@@ -145,6 +145,7 @@ const mockClickupPlugin = fp(async (fastify) => {
     searchTasks: vi.fn(),
     createTask: vi.fn(),
     updateTaskStatus: vi.fn(),
+    updateTask: vi.fn(),
     getListStatuses: vi.fn(),
   });
 });

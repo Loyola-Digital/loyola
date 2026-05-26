@@ -14,6 +14,8 @@ interface SprintBlockCardProps {
   loading: boolean;
   onToggleStatus: (taskId: string, newStatus: string) => void;
   statusUpdating: boolean;
+  /** Abre o dialog de edit (status / nome / due_date) pra essa task */
+  onEditTask?: (task: ClickUpTaskShape) => void;
 }
 
 const DONE_STATUSES = new Set([
@@ -57,6 +59,7 @@ export function SprintBlockCard({
   loading,
   onToggleStatus,
   statusUpdating,
+  onEditTask,
 }: SprintBlockCardProps) {
   const [optimisticDone, setOptimisticDone] = useState<Set<string>>(new Set());
 
@@ -167,11 +170,13 @@ export function SprintBlockCard({
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <span
-                            className={`text-xs ${done ? "line-through text-muted-foreground" : ""}`}
+                          <button
+                            onClick={() => onEditTask?.(t)}
+                            className={`text-xs text-left hover:underline decoration-dotted ${done ? "line-through text-muted-foreground" : ""}`}
+                            title="Editar status / nome / data"
                           >
                             {t.name}
-                          </span>
+                          </button>
                           <a
                             href={t.url}
                             target="_blank"

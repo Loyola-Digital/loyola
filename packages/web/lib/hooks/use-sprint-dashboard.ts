@@ -88,6 +88,33 @@ export function useUpdateTaskStatus() {
   });
 }
 
+export interface UpdateTaskInput {
+  taskId: string;
+  status?: string;
+  name?: string;
+  /** Unix ms — null remove, undefined não toca */
+  dueDate?: number | null;
+}
+
+export function useUpdateTask() {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, ...rest }: UpdateTaskInput) =>
+      apiClient<{ ok: boolean; taskId: string }>(
+        `/api/sprint-dashboard/task/${taskId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify(rest),
+        },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sprint-dashboard-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["sprint-dashboard-metrics"] });
+    },
+  });
+}
+
 // ============================================================
 // Metrics (Story 31.6)
 // ============================================================

@@ -16,12 +16,14 @@ import {
 } from "@/lib/hooks/use-sprint-dashboard";
 import { SprintBuilderDialog } from "@/components/sprint-dashboard/sprint-builder-dialog";
 import { SprintBlockCard } from "@/components/sprint-dashboard/sprint-block-card";
+import { TaskEditDialog } from "@/components/sprint-dashboard/task-edit-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 
 export default function SprintDashboardPage() {
   const role = useUserRole();
   const queryClient = useQueryClient();
   const [builderOpen, setBuilderOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<ClickUpTaskShape | null>(null);
 
   const { data: config, isLoading: configLoading } = useSprintDashboardConfig();
   const { data: metrics } = useSprintDashboardMetrics();
@@ -135,10 +137,20 @@ export default function SprintDashboardPage() {
               loading={tasksLoading}
               onToggleStatus={(taskId, newStatus) => updateStatus.mutate({ taskId, status: newStatus })}
               statusUpdating={updateStatus.isPending}
+              onEditTask={(task) => setEditingTask(task)}
             />
           ))}
         </div>
       )}
+
+      {/* Edit dialog (status + nome + due_date) */}
+      <TaskEditDialog
+        task={editingTask}
+        open={!!editingTask}
+        onOpenChange={(open) => {
+          if (!open) setEditingTask(null);
+        }}
+      />
     </div>
   );
 }

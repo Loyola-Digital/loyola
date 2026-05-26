@@ -221,7 +221,51 @@ export default fp(async function sprintDashboardRoutes(fastify) {
     taskId: z.string().min(1),
   });
 
-  // ---- PUT /api/sprint-dashboard/task/:taskId/status ----
+  // ---- PUT /api/sprint-dashboard/task/:taskId ----
+  // Update completo: status / nome / due date numa só chamada.
+  const updateTaskBodySchema = z.object({
+    status: z.string().min(1).optional(),
+    name: z.string().min(1).max(500).optional(),
+    /** Unix ms (number) — null remove a data, undefined não toca. */
+    dueDate: z.union([z.number().int(), z.null()]).optional(),
+  });
+
+  fastify.put("/api/sprint-dashboard/task/:taskId", async (request, reply) => {
+    const guestErr = denyGuest(request);
+    if (guestErr) return reply.code(403).send(guestErr);
+    if (!fastify.clickupService.isConfigured()) {
+      return reply.code(503).send({ error: "ClickUp não configurado" });
+    }
+
+    const params = updateStatusParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const body = updateTaskBodySchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: "Body inválido", details: body.error.flatten() });
+    }
+
+    if (Object.keys(body.data).length === 0) {
+      return reply.code(400).send({ error: "Nenhum campo pra atualizar" });
+    }
+
+    try {
+      await fastify.clickupService.updateTask(params.data.taskId, {
+        status: body.data.status,
+        name: body.data.name,
+        due_date: body.data.dueDate,
+      });
+      tasksCache.clear();
+      return { ok: true, taskId: params.data.taskId };
+    } catch (err) {
+      return reply.code(502).send({
+        error: "Erro ao atualizar task no ClickUp",
+        details: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  // ---- PUT /api/sprint-dashboard/task/:taskId/status ---- (legacy, mantido por compat)
   fastify.put("/api/sprint-dashboard/task/:taskId/status", async (request, reply) => {
     const guestErr = denyGuest(request);
     if (guestErr) return reply.code(403).send(guestErr);
