@@ -371,7 +371,9 @@ export default fp(async function sprintDashboardRoutes(fastify) {
               } else if (ms <= now + 7 * 24 * 60 * 60 * 1000) {
                 agg.upcoming += 1;
               }
-              if (agg.nextDueDate === null || ms < agg.nextDueDate) {
+              // "Próxima" entrega = menor due_date NO FUTURO (>= now). Tasks
+              // em atraso não contam aqui — já são reportadas no counter overdue.
+              if (ms >= now && (agg.nextDueDate === null || ms < agg.nextDueDate)) {
                 agg.nextDueDate = ms;
                 agg.nextDueTaskName = t.name;
               }
