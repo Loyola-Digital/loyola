@@ -24,6 +24,7 @@ import { OrganicMediaTab } from "@/components/funnels/organic-media-tab";
 import { CplStageView } from "@/components/funnels/cpl-stage-view";
 import { AuditStatusBadge } from "@/components/funnels/audit-status-badge";
 import { OrphanCampaignsBanner } from "@/components/funnels/orphan-campaigns-banner";
+import { StageLeadInputs } from "@/components/funnels/stage-lead-inputs";
 import { CampaignSelector } from "@/components/funnels/campaign-selector";
 import { useCampaignPicker } from "@/lib/hooks/use-funnels";
 import { useGoogleAdsCampaignPicker } from "@/lib/hooks/use-funnels";
@@ -320,6 +321,14 @@ export default function StagePage() {
         funnelId={params.funnelId}
         stageId={params.stageId}
       />
+
+      {/* Inputs de Projeção por Etapa — Story 18.27 */}
+      <div className="border-t pt-6">
+        <StageLeadInputs 
+          funnelId={params.funnelId} 
+          stages={[stage]} 
+        />
+      </div>
 
       {/* Tabs */}
       <Tabs defaultValue="meta-ads">

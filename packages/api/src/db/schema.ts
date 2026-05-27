@@ -637,11 +637,14 @@ export const funnelStages = pgTable(
       onDelete: "set null",
     }),
     auditStatus: varchar("audit_status", { length: 20 }).default("pending").notNull(),
+    projectionEndDate: date("projection_end_date"),
+    leadGoal: integer("lead_goal"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index("idx_funnel_stages_funnel").on(table.funnelId),
+    index("idx_funnel_stages_projection").on(table.projectionEndDate),
   ]
 );
 
