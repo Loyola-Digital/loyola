@@ -37,7 +37,7 @@ interface SurveyMappingDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-type FieldKey = "utm_source" | "utm_medium" | "utm_campaign" | "utm_content" | "email" | "phone" | "timestamp";
+type FieldKey = "utm_source" | "utm_medium" | "utm_campaign" | "utm_content" | "email" | "phone" | "timestamp" | "faixa";
 
 const FIELD_LABELS: Record<FieldKey, string> = {
   utm_source: "UTM Source",
@@ -47,6 +47,9 @@ const FIELD_LABELS: Record<FieldKey, string> = {
   email: "Email",
   phone: "Telefone",
   timestamp: "Data/Timestamp",
+  // Story 18.17: coluna com faixa pré-calculada (A/B/C/D) — alimenta o gráfico
+  // de Lead Scoring sem precisar reprocessar via scoring_model.
+  faixa: "Faixa pré-calculada (A/B/C/D)",
 };
 
 const NONE_VALUE = "__none__";
@@ -76,7 +79,7 @@ export function SurveyMappingDialog({
   // Reset state quando dialog abre ou survey muda
   useEffect(() => {
     if (open) {
-      const m = survey.columnMapping ?? {};
+      const m = (survey.columnMapping ?? {}) as Partial<Record<FieldKey, string>> & { questions?: SurveyQuestionConfig[] };
       setFields({
         utm_source: m.utm_source,
         utm_medium: m.utm_medium,
@@ -85,6 +88,7 @@ export function SurveyMappingDialog({
         email: m.email,
         phone: m.phone,
         timestamp: m.timestamp,
+        faixa: m.faixa,
       });
       setQuestions(m.questions ?? []);
     }

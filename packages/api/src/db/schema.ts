@@ -716,6 +716,10 @@ export const funnelSurveys = pgTable(
         email?: string;
         phone?: string;
         timestamp?: string;
+        /** Story 18.17: coluna com a FAIXA pré-calculada do lead (A/B/C/D).
+         * Quando setado, computeBands usa direto da célula em vez de recalcular
+         * via scoring_model. Workflow: n8n grava a faixa na planilha; app só lê. */
+        faixa?: string;
         questions?: Array<{ columnName: string; label: string; showInDashboard: boolean }>;
       }>()
       .default({}),

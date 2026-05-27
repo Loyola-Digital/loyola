@@ -232,15 +232,27 @@ function isAnswerConditional(a: Answer): a is AnswerConditional {
 function computeBands(
   schema: LeadScoringSchema,
   sheet: { headers: string[]; rows: string[][] },
+  /** Story 18.17: nome da coluna com faixa pré-calculada (A/B/C/D).
+   * Quando passado, computeBands lê direto da célula em vez de recalcular. */
+  faixaColumnName?: string | null,
 ) {
   const questions = schema.scoring_model?.questions ?? [];
   const bands = schema.bands ?? [];
   const { headers, rows } = sheet;
 
-  // Mapa: questionId -> índice da coluna na planilha
+  // Story 18.17: se faixa pré-calculada está mapeada, encontra o índice da coluna
+  const faixaIdx = faixaColumnName
+    ? headers.findIndex((h) => h.trim().toLowerCase() === faixaColumnName.trim().toLowerCase())
+    : -1;
+  const useDirectFaixa = faixaIdx !== -1;
+  const validBandIds = new Set(bands.map((b) => b.id.toUpperCase()));
+
+  // Mapa: questionId -> índice da coluna na planilha (só usado no fallback)
   const colMap = new Map<string, number>();
-  for (const q of questions) {
-    colMap.set(q.id, findQuestionColumnIndex(headers, q));
+  if (!useDirectFaixa) {
+    for (const q of questions) {
+      colMap.set(q.id, findQuestionColumnIndex(headers, q));
+    }
   }
   const q4Idx = colMap.get("Q4") ?? -1;
 
@@ -249,6 +261,18 @@ function computeBands(
   let unclassified = 0;
 
   for (const row of rows) {
+    // Path 1 (Story 18.17): faixa pré-calculada — lê direto da planilha
+    if (useDirectFaixa) {
+      const raw = (row[faixaIdx] ?? "").trim().toUpperCase();
+      if (raw && validBandIds.has(raw)) {
+        bandCounts.set(raw, (bandCounts.get(raw) ?? 0) + 1);
+      } else {
+        unclassified++;
+      }
+      continue;
+    }
+
+    // Path 2 (legacy): recalcula score do zero rodando o scoring_model no CSV
     let totalScore = 0;
     // Q4 "filled" = lead respondeu (tem funcionários). Vazio ou "(sem resposta)" = não-filled.
     const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
@@ -1454,7 +1478,9 @@ export default fp(async function leadScoringRoutes(fastify) {
       if (sheetData.rows.length === 0) return EMPTY;
 
       const schema = scoringRow.schemaJson as LeadScoringSchema;
-      return computeBands(schema, sheetData);
+      // Story 18.17: usa faixa pré-calculada se o user mapeou (n8n grava na planilha)
+      const faixaCol = (survey.columnMapping as { faixa?: string } | null)?.faixa ?? null;
+      return computeBands(schema, sheetData, faixaCol);
     },
   );
 

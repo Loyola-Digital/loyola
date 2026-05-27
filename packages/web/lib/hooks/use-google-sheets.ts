@@ -36,6 +36,8 @@ export interface SurveyColumnMapping {
   email?: string;
   phone?: string;
   timestamp?: string;
+  /** Story 18.17: coluna com faixa pré-calculada (A/B/C/D) */
+  faixa?: string;
   questions?: SurveyQuestionConfig[];
 }
 

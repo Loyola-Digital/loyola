@@ -165,6 +165,8 @@ export default fp(async function googleSheetsRoutes(fastify) {
     email: z.string().optional(),
     phone: z.string().optional(),
     timestamp: z.string().optional(),
+    // Story 18.17: coluna com faixa pré-calculada do lead (A/B/C/D)
+    faixa: z.string().optional(),
     questions: z.array(surveyQuestionSchema).optional(),
   });
 
