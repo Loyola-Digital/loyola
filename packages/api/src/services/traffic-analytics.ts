@@ -12,7 +12,6 @@ import {
   fetchAdInsights,
   fetchAllAdInsights,
   fetchAdCreativesWithCache,
-  fetchCampaignDailyInsights,
   fetchPlacementBreakdown,
   decryptAccountToken,
   todayInTimezone,
@@ -836,10 +835,14 @@ export async function getCampaignDailyInsights(
   const metaAccount = await getMetaAccountForProject(db, projectId);
   if (!metaAccount) return [];
 
-  const result = await fetchCampaignDailyInsights(
+  // DB-first: reutiliza o wrapper bulk com 1 campanha. Persiste em
+  // meta_campaign_insights_daily com TTL date-aware (dias > 7 = infinito).
+  const result = await fetchCampaignDailyInsightsForIdsWithCache(
+    db,
+    projectId,
     metaAccount.metaAccountId,
     metaAccount.accessToken,
-    campaignId,
+    [campaignId],
     days,
     startDate,
     endDate

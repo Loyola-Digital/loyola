@@ -9,11 +9,11 @@ import {
   metaAdsAccounts,
 } from "../db/schema.js";
 import {
-  fetchCampaignDailyInsights,
   fetchDailyInsights,
   decryptAccountToken,
   type MetaDailyInsight,
 } from "../services/meta-ads.js";
+import { fetchCampaignDailyInsightsForIdsWithCache } from "../services/meta-insights-cache.js";
 
 // ============================================================
 // SCHEMAS
@@ -200,16 +200,20 @@ export default fp(async function metaAdsComparisonRoutes(fastify) {
 
       const { days } = query.data;
 
-      // 5. Fetch Meta Ads data
+      // 5. Fetch Meta Ads data — DB-first cache (meta_campaign_insights_daily)
+      // Uma única chamada cobrindo todas as campanhas; dias antigos (>7d) servem
+      // do Postgres com TTL infinito, evitando re-fetch Meta.
       let allInsights: MetaDailyInsight[] = [];
       try {
         if (campaigns.length > 0) {
-          const results = await Promise.all(
-            campaigns.map((c) =>
-              fetchCampaignDailyInsights(metaAccount.metaAccountId, token, c.id, days)
-            )
+          allInsights = await fetchCampaignDailyInsightsForIdsWithCache(
+            fastify.db,
+            params.data.projectId,
+            metaAccount.metaAccountId,
+            token,
+            campaigns.map((c) => c.id),
+            days
           );
-          allInsights = results.flat();
         } else {
           allInsights = await fetchDailyInsights(metaAccount.metaAccountId, token, days);
         }
