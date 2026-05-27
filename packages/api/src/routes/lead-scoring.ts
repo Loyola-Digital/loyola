@@ -250,18 +250,77 @@ function findQuestionColumnIndex(headers: string[], q: ScoringQuestion): number 
 }
 
 /**
+ * Normalização "muito forte" pra fuzzy match de respostas. Remove TUDO que não
+ * é alfanumérico ou espaço (incluindo `+`, `$`, `/`, `.`, vírgulas, hifens).
+ * Usada no 2º pass de findAnswerMatch quando o exact normalizado falha.
+ *
+ * Ex.: "+R$ 20.000" → "r 20 000"
+ *      "Mais de R$ 20.000" → "mais de r 20 000"
+ *      "Graduação/Curso superior completo" → "graduacao curso superior completo"
+ */
+function normalizeStrong(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(new RegExp("[\\u0300-\\u036f]", "g"), "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
  * Procura o `Answer` cujo `value` ou algum dos `aliases[]` casa com a resposta
- * lida da planilha. Match usa `normalizeForMatch` (acentos/pontuação tolerantes).
+ * lida da planilha.
+ *
+ * 1º pass: exact match via `normalizeForMatch` (acentos/pontuação final).
+ * 2º pass: contains bidirecional via `normalizeStrong` (pontuação interna
+ * removida) — resolve variações tipo "Graduação/Curso superior completo" vs
+ * "Curso Superior completo" e "Mais de R$ 20.000" vs "+R$ 20.000". Tie-break
+ * pelo maior overlap (answer mais específico vence — ex.: "completo" vs
+ * "incompleto" não conflita porque o overlap difere).
  */
 function findAnswerMatch(answers: Answer[], rawValue: string): Answer | undefined {
   const target = normalizeForMatch(rawValue);
-  return answers.find((a) => {
+
+  // 1º pass: exact normalizado
+  const exact = answers.find((a) => {
     if (normalizeForMatch(a.value) === target) return true;
     if (a.aliases?.length) {
       return a.aliases.some((alias) => normalizeForMatch(alias) === target);
     }
     return false;
   });
+  if (exact) return exact;
+
+  // 2º pass: contains bidirecional + tie-break por overlap (maior = mais específico)
+  const targetStrong = normalizeStrong(rawValue);
+  if (!targetStrong) return undefined;
+
+  type Cand = { answer: Answer; overlap: number; len: number };
+  const candidates: Cand[] = [];
+
+  const consider = (answer: Answer, candidate: string) => {
+    const c = normalizeStrong(candidate);
+    if (!c) return;
+    if (targetStrong.includes(c) || c.includes(targetStrong)) {
+      candidates.push({
+        answer,
+        overlap: Math.min(c.length, targetStrong.length),
+        len: c.length,
+      });
+    }
+  };
+
+  for (const a of answers) {
+    consider(a, a.value);
+    if (a.aliases?.length) {
+      for (const alias of a.aliases) consider(a, alias);
+    }
+  }
+
+  if (candidates.length === 0) return undefined;
+  candidates.sort((x, y) => y.overlap - x.overlap || y.len - x.len);
+  return candidates[0].answer;
 }
 
 const NO_ANSWER_SENTINEL = "(sem resposta)";
