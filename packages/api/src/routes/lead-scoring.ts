@@ -235,13 +235,40 @@ function findQuestionColumn(
   if (q.column_aliases?.length) candidates.push(...q.column_aliases);
   if (q.label) candidates.push(q.label);
   if (candidates.length === 0) return { idx: -1, matchedAlias: null };
+
+  // 1º pass: exact normalizado (acentos/pontuação final tolerantes)
   const normalizedHeaders = headers.map(normalizeForMatch);
   for (const candidate of candidates) {
     const target = normalizeForMatch(candidate);
     const idx = normalizedHeaders.indexOf(target);
     if (idx !== -1) return { idx, matchedAlias: candidate };
   }
-  return { idx: -1, matchedAlias: null };
+
+  // 2º pass: contains bidirecional via normalizeStrong (resolve variações
+  // sutis tipo NBSP, zero-width, pontuação interna, aspas curly). Tie-break
+  // pelo maior overlap — alias mais específico vence ambiguidade.
+  type Cand = { idx: number; alias: string; overlap: number; len: number };
+  const strongHeaders = headers.map(normalizeStrong);
+  const matches: Cand[] = [];
+  for (const candidate of candidates) {
+    const cs = normalizeStrong(candidate);
+    if (!cs) continue;
+    for (let i = 0; i < strongHeaders.length; i++) {
+      const hs = strongHeaders[i];
+      if (!hs) continue;
+      if (hs.includes(cs) || cs.includes(hs)) {
+        matches.push({
+          idx: i,
+          alias: candidate,
+          overlap: Math.min(cs.length, hs.length),
+          len: cs.length,
+        });
+      }
+    }
+  }
+  if (matches.length === 0) return { idx: -1, matchedAlias: null };
+  matches.sort((x, y) => y.overlap - x.overlap || y.len - x.len);
+  return { idx: matches[0].idx, matchedAlias: matches[0].alias };
 }
 
 /** Retorna só o índice — atalho usado pelos paths que não precisam do alias. */
