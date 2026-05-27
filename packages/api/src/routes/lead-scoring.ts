@@ -81,7 +81,58 @@ type LeadScoringSchema = {
     per_band?: Record<string, { cpl: number; breakeven: number }>;
     conversion_rates?: Record<string, number>; // Conv.A, Conv.B, Conv.C, Conv.D (0-1)
   };
+  /**
+   * Story 18.17: nome da coluna na planilha que já contém a faixa pré-calculada
+   * (A/B/C/D). Use quando o lead scoring é calculado FORA do app (ex: workflow n8n
+   * grava a faixa na planilha). Quando setado, computeBands LÊ a célula direto e
+   * pula o recálculo via scoring_model — fonte de verdade vira a planilha.
+   *
+   * Pode ser passado em qualquer um dos formatos abaixo (todos suportados):
+   *   - precomputed_band_column: "faixa"
+   *   - band_column: "faixa"          (alias)
+   *   - faixa_column: "faixa"          (alias pt-BR)
+   */
+  precomputed_band_column?: string;
+  band_column?: string;
+  faixa_column?: string;
 };
+
+/**
+ * Story 18.17: encontra a coluna de faixa pré-calculada.
+ * Ordem de prioridade:
+ *   1. schema.precomputed_band_column (JSON do scoring tab)
+ *   2. schema.band_column (alias)
+ *   3. schema.faixa_column (alias pt-BR)
+ *   4. survey.columnMapping.faixa (Survey Mapping dialog)
+ * Retorna null se nenhuma fonte configurada.
+ */
+function resolvePrecomputedBandColumn(
+  schema: LeadScoringSchema,
+  surveyMapping: unknown,
+): string | null {
+  const fromSchema =
+    schema.precomputed_band_column ??
+    schema.band_column ??
+    schema.faixa_column;
+  if (fromSchema && fromSchema.trim().length > 0) return fromSchema.trim();
+  const m = surveyMapping as { faixa?: string } | null | undefined;
+  if (m?.faixa && m.faixa.trim().length > 0) return m.faixa.trim();
+  return null;
+}
+
+/**
+ * Story 18.17: classifica 1 lead lendo da coluna de faixa pré-calculada.
+ * Retorna o bandId (uppercase) ou null se inválido/vazio.
+ */
+function classifyLeadFromPrecomputed(
+  row: string[],
+  faixaIdx: number,
+  validBandIds: Set<string>,
+): string | null {
+  if (faixaIdx === -1) return null;
+  const raw = (row[faixaIdx] ?? "").trim().toUpperCase();
+  return raw && validBandIds.has(raw) ? raw : null;
+}
 
 function normalizeText(s: string): string {
   // NFC + lowercase + trim + colapsa whitespace múltiplo (inclui NBSP)
@@ -455,6 +506,8 @@ function aggregateDimension(
 function computeOriginsByBand(
   schema: LeadScoringSchema,
   sheet: { headers: string[]; rows: string[][] },
+  /** Story 18.17: nome da coluna com faixa pré-calculada */
+  faixaColumnName?: string | null,
 ): { byBand: Record<string, BandOriginBreakdown>; semDados: false } {
   const questions = schema.scoring_model?.questions ?? [];
   const bands = schema.bands ?? [];
@@ -462,10 +515,19 @@ function computeOriginsByBand(
 
   const utmTermIdx = findUtmTermColumn(headers);
 
-  // Reusa o mapeamento de colunas do scoring (mesma lógica do computeBands)
+  // Story 18.17: detecta coluna de faixa pré-calculada
+  const faixaIdx = faixaColumnName
+    ? headers.findIndex((h) => h.trim().toLowerCase() === faixaColumnName.trim().toLowerCase())
+    : -1;
+  const useDirectFaixa = faixaIdx !== -1;
+  const validBandIds = new Set(bands.map((b) => b.id.toUpperCase()));
+
+  // Reusa o mapeamento de colunas do scoring (só usado no fallback de recálculo)
   const colMap = new Map<string, number>();
-  for (const q of questions) {
-    colMap.set(q.id, findQuestionColumnIndex(headers, q));
+  if (!useDirectFaixa) {
+    for (const q of questions) {
+      colMap.set(q.id, findQuestionColumnIndex(headers, q));
+    }
   }
   const q4Idx = colMap.get("Q4") ?? -1;
 
@@ -478,40 +540,42 @@ function computeOriginsByBand(
   }
 
   for (const row of rows) {
-    let totalScore = 0;
-    const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
-    const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
-
-    for (const q of questions) {
-      const colIdx = colMap.get(q.id) ?? -1;
-      const fallback = q.unmapped_default ?? 0;
-      if (colIdx === -1) {
-        totalScore += fallback;
-        continue;
+    // Path 1 (Story 18.17): faixa pré-calculada — pula recálculo do score
+    let bandId: string | null = null;
+    if (useDirectFaixa) {
+      const raw = (row[faixaIdx] ?? "").trim().toUpperCase();
+      if (raw && validBandIds.has(raw)) bandId = raw;
+    } else {
+      // Path 2 (legacy): recalcula via scoring_model
+      let totalScore = 0;
+      const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
+      const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
+      for (const q of questions) {
+        const colIdx = colMap.get(q.id) ?? -1;
+        const fallback = q.unmapped_default ?? 0;
+        if (colIdx === -1) { totalScore += fallback; continue; }
+        const answer = resolveAnswerCellValue(row[colIdx]);
+        const match = findAnswerMatch(q.answers, answer);
+        if (!match) { totalScore += fallback; continue; }
+        if (isAnswerConditional(match)) {
+          const rule = match.points_conditional;
+          totalScore += q4Filled ? rule.if_q4_filled : rule.if_q4_empty;
+        } else {
+          totalScore += match.points;
+        }
       }
-      const answer = resolveAnswerCellValue(row[colIdx]);
-      const match = findAnswerMatch(q.answers, answer);
-      if (!match) {
-        totalScore += fallback;
-        continue;
-      }
-      if (isAnswerConditional(match)) {
-        const rule = match.points_conditional;
-        totalScore += q4Filled ? rule.if_q4_filled : rule.if_q4_empty;
-      } else {
-        totalScore += match.points;
-      }
+      let band = bands.find((b) => totalScore >= b.range.min && totalScore < b.range.max);
+      if (!band) band = bands.find((b) => totalScore === b.range.max);
+      bandId = band?.id ?? null;
     }
 
-    let band = bands.find((b) => totalScore >= b.range.min && totalScore < b.range.max);
-    if (!band) band = bands.find((b) => totalScore === b.range.max);
-    if (!band) continue; // unclassified — skip
+    if (!bandId) continue; // unclassified — skip
 
     const term = utmTermIdx === -1 ? "" : (row[utmTermIdx] ?? "").trim();
     if (term) {
-      termsByBand.get(band.id)!.push(term);
+      termsByBand.get(bandId)!.push(term);
     } else {
-      withoutTermByBand.set(band.id, (withoutTermByBand.get(band.id) ?? 0) + 1);
+      withoutTermByBand.set(bandId, (withoutTermByBand.get(bandId) ?? 0) + 1);
     }
   }
 
@@ -546,6 +610,7 @@ async function computeCampaignBandBreakdown(
   schema: LeadScoringSchema,
   sheet: { headers: string[]; rows: string[][] },
   campaignInsights: { campaign_id: string; campaign_name: string; spend: string }[] | null,
+  faixaColumnName?: string | null,
 ): Promise<CampaignBandBreakdownResponse> {
   const questions = schema.scoring_model?.questions ?? [];
   const bands = schema.bands ?? [];
@@ -558,16 +623,25 @@ async function computeCampaignBandBreakdown(
     return { rows: [], semDados: true };
   }
 
-  // Mapeamento de colunas (reutiliza lógica do computeBands)
+  // Story 18.17: faixa pré-calculada (skipa recálculo)
+  const faixaIdx = faixaColumnName
+    ? headers.findIndex((h) => h.trim().toLowerCase() === faixaColumnName.trim().toLowerCase())
+    : -1;
+  const useDirectFaixa = faixaIdx !== -1;
+  const validBandIds = new Set(bands.map((b) => b.id.toUpperCase()));
+
+  // Mapeamento de colunas (só pro fallback de recálculo)
   const colMap = new Map<string, number>();
-  for (const q of questions) {
-    if (!q.new_survey_column) {
-      colMap.set(q.id, -1);
-      continue;
+  if (!useDirectFaixa) {
+    for (const q of questions) {
+      if (!q.new_survey_column) {
+        colMap.set(q.id, -1);
+        continue;
+      }
+      const target = normalizeText(q.new_survey_column);
+      const idx = headers.findIndex((h) => normalizeText(h) === target);
+      colMap.set(q.id, idx);
     }
-    const target = normalizeText(q.new_survey_column);
-    const idx = headers.findIndex((h) => normalizeText(h) === target);
-    colMap.set(q.id, idx);
   }
   const q4Idx = colMap.get("Q4") ?? -1;
 
@@ -586,40 +660,41 @@ async function computeCampaignBandBreakdown(
 
     if (!utmCampaign) continue;
 
-    let totalScore = 0;
-    const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
-    const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
-
-    for (const q of questions) {
-      const colIdx = colMap.get(q.id) ?? -1;
-      const fallback = q.unmapped_default ?? 0;
-      if (colIdx === -1) {
-        totalScore += fallback;
-        continue;
+    // Path 1 (Story 18.17): faixa pré-calculada
+    let bandId: string | null = null;
+    if (useDirectFaixa) {
+      bandId = classifyLeadFromPrecomputed(row, faixaIdx, validBandIds);
+    } else {
+      // Path 2 (legacy): recalcula via scoring_model
+      let totalScore = 0;
+      const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
+      const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
+      for (const q of questions) {
+        const colIdx = colMap.get(q.id) ?? -1;
+        const fallback = q.unmapped_default ?? 0;
+        if (colIdx === -1) { totalScore += fallback; continue; }
+        const answer = resolveAnswerCellValue(row[colIdx]);
+        const match = q.answers.find((a) => normalizeText(a.value) === normalizeText(answer));
+        if (!match) { totalScore += fallback; continue; }
+        if (isAnswerConditional(match)) {
+          const rule = match.points_conditional;
+          totalScore += q4Filled ? rule.if_q4_filled : rule.if_q4_empty;
+        } else {
+          totalScore += match.points;
+        }
       }
-      const answer = resolveAnswerCellValue(row[colIdx]);
-      const match = q.answers.find((a) => normalizeText(a.value) === normalizeText(answer));
-      if (!match) {
-        totalScore += fallback;
-        continue;
-      }
-      if (isAnswerConditional(match)) {
-        const rule = match.points_conditional;
-        totalScore += q4Filled ? rule.if_q4_filled : rule.if_q4_empty;
-      } else {
-        totalScore += match.points;
-      }
+      let band = bands.find((b) => totalScore >= b.range.min && totalScore < b.range.max);
+      if (!band) band = bands.find((b) => totalScore === b.range.max);
+      bandId = band?.id ?? null;
     }
 
-    let band = bands.find((b) => totalScore >= b.range.min && totalScore < b.range.max);
-    if (!band) band = bands.find((b) => totalScore === b.range.max);
-    if (!band) continue;
+    if (!bandId) continue;
 
     if (!leadsByUtmCampaignBand.has(utmCampaign)) {
       leadsByUtmCampaignBand.set(utmCampaign, new Map());
     }
     const bandCounts = leadsByUtmCampaignBand.get(utmCampaign)!;
-    bandCounts.set(band.id, (bandCounts.get(band.id) ?? 0) + 1);
+    bandCounts.set(bandId, (bandCounts.get(bandId) ?? 0) + 1);
   }
 
   // Map campaign_id (from Meta Ads) → { campaign_name, spend }
@@ -757,6 +832,7 @@ async function computeAdsetBandBreakdown(
   schema: LeadScoringSchema,
   sheet: { headers: string[]; rows: string[][] },
   adsetInsights: { adset_id: string; adset_name: string; spend: string }[] | null,
+  faixaColumnName?: string | null,
 ): Promise<AdsetBandBreakdownResponse> {
   const questions = schema.scoring_model?.questions ?? [];
   const bands = schema.bands ?? [];
@@ -769,15 +845,23 @@ async function computeAdsetBandBreakdown(
     return { rows: [], semDados: true };
   }
 
+  const faixaIdx = faixaColumnName
+    ? headers.findIndex((h) => h.trim().toLowerCase() === faixaColumnName.trim().toLowerCase())
+    : -1;
+  const useDirectFaixa = faixaIdx !== -1;
+  const validBandIds = new Set(bands.map((b) => b.id.toUpperCase()));
+
   const colMap = new Map<string, number>();
-  for (const q of questions) {
-    if (!q.new_survey_column) {
-      colMap.set(q.id, -1);
-      continue;
+  if (!useDirectFaixa) {
+    for (const q of questions) {
+      if (!q.new_survey_column) {
+        colMap.set(q.id, -1);
+        continue;
+      }
+      const target = normalizeText(q.new_survey_column);
+      const idx = headers.findIndex((h) => normalizeText(h) === target);
+      colMap.set(q.id, idx);
     }
-    const target = normalizeText(q.new_survey_column);
-    const idx = headers.findIndex((h) => normalizeText(h) === target);
-    colMap.set(q.id, idx);
   }
   const q4Idx = colMap.get("Q4") ?? -1;
 
@@ -793,40 +877,39 @@ async function computeAdsetBandBreakdown(
 
     if (!utmMedium) continue;
 
-    let totalScore = 0;
-    const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
-    const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
-
-    for (const q of questions) {
-      const colIdx = colMap.get(q.id) ?? -1;
-      const fallback = q.unmapped_default ?? 0;
-      if (colIdx === -1) {
-        totalScore += fallback;
-        continue;
+    let bandId: string | null = null;
+    if (useDirectFaixa) {
+      bandId = classifyLeadFromPrecomputed(row, faixaIdx, validBandIds);
+    } else {
+      let totalScore = 0;
+      const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
+      const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
+      for (const q of questions) {
+        const colIdx = colMap.get(q.id) ?? -1;
+        const fallback = q.unmapped_default ?? 0;
+        if (colIdx === -1) { totalScore += fallback; continue; }
+        const answer = resolveAnswerCellValue(row[colIdx]);
+        const match = q.answers.find((a) => normalizeText(a.value) === normalizeText(answer));
+        if (!match) { totalScore += fallback; continue; }
+        if (isAnswerConditional(match)) {
+          const rule = match.points_conditional;
+          totalScore += q4Filled ? rule.if_q4_filled : rule.if_q4_empty;
+        } else {
+          totalScore += match.points;
+        }
       }
-      const answer = resolveAnswerCellValue(row[colIdx]);
-      const match = q.answers.find((a) => normalizeText(a.value) === normalizeText(answer));
-      if (!match) {
-        totalScore += fallback;
-        continue;
-      }
-      if (isAnswerConditional(match)) {
-        const rule = match.points_conditional;
-        totalScore += q4Filled ? rule.if_q4_filled : rule.if_q4_empty;
-      } else {
-        totalScore += match.points;
-      }
+      let band = bands.find((b) => totalScore >= b.range.min && totalScore < b.range.max);
+      if (!band) band = bands.find((b) => totalScore === b.range.max);
+      bandId = band?.id ?? null;
     }
 
-    let band = bands.find((b) => totalScore >= b.range.min && totalScore < b.range.max);
-    if (!band) band = bands.find((b) => totalScore === b.range.max);
-    if (!band) continue;
+    if (!bandId) continue;
 
     if (!leadsByUtmMediumBand.has(utmMedium)) {
       leadsByUtmMediumBand.set(utmMedium, new Map());
     }
     const bandCounts = leadsByUtmMediumBand.get(utmMedium)!;
-    bandCounts.set(band.id, (bandCounts.get(band.id) ?? 0) + 1);
+    bandCounts.set(bandId, (bandCounts.get(bandId) ?? 0) + 1);
   }
 
   const adsetDataByAdsetId = new Map<string, { adset_name: string; spend: number }>();
@@ -936,6 +1019,7 @@ async function computeAdBandBreakdown(
   schema: LeadScoringSchema,
   sheet: { headers: string[]; rows: string[][] },
   adInsights: { ad_id: string; ad_name: string; spend: string }[] | null,
+  faixaColumnName?: string | null,
 ): Promise<AdBandBreakdownResponse> {
   const questions = schema.scoring_model?.questions ?? [];
   const bands = schema.bands ?? [];
@@ -948,15 +1032,23 @@ async function computeAdBandBreakdown(
     return { rows: [], semDados: true };
   }
 
+  const faixaIdx = faixaColumnName
+    ? headers.findIndex((h) => h.trim().toLowerCase() === faixaColumnName.trim().toLowerCase())
+    : -1;
+  const useDirectFaixa = faixaIdx !== -1;
+  const validBandIds = new Set(bands.map((b) => b.id.toUpperCase()));
+
   const colMap = new Map<string, number>();
-  for (const q of questions) {
-    if (!q.new_survey_column) {
-      colMap.set(q.id, -1);
-      continue;
+  if (!useDirectFaixa) {
+    for (const q of questions) {
+      if (!q.new_survey_column) {
+        colMap.set(q.id, -1);
+        continue;
+      }
+      const target = normalizeText(q.new_survey_column);
+      const idx = headers.findIndex((h) => normalizeText(h) === target);
+      colMap.set(q.id, idx);
     }
-    const target = normalizeText(q.new_survey_column);
-    const idx = headers.findIndex((h) => normalizeText(h) === target);
-    colMap.set(q.id, idx);
   }
   const q4Idx = colMap.get("Q4") ?? -1;
 
@@ -972,40 +1064,39 @@ async function computeAdBandBreakdown(
 
     if (!utmContent) continue;
 
-    let totalScore = 0;
-    const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
-    const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
-
-    for (const q of questions) {
-      const colIdx = colMap.get(q.id) ?? -1;
-      const fallback = q.unmapped_default ?? 0;
-      if (colIdx === -1) {
-        totalScore += fallback;
-        continue;
+    let bandId: string | null = null;
+    if (useDirectFaixa) {
+      bandId = classifyLeadFromPrecomputed(row, faixaIdx, validBandIds);
+    } else {
+      let totalScore = 0;
+      const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
+      const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
+      for (const q of questions) {
+        const colIdx = colMap.get(q.id) ?? -1;
+        const fallback = q.unmapped_default ?? 0;
+        if (colIdx === -1) { totalScore += fallback; continue; }
+        const answer = resolveAnswerCellValue(row[colIdx]);
+        const match = q.answers.find((a) => normalizeText(a.value) === normalizeText(answer));
+        if (!match) { totalScore += fallback; continue; }
+        if (isAnswerConditional(match)) {
+          const rule = match.points_conditional;
+          totalScore += q4Filled ? rule.if_q4_filled : rule.if_q4_empty;
+        } else {
+          totalScore += match.points;
+        }
       }
-      const answer = resolveAnswerCellValue(row[colIdx]);
-      const match = q.answers.find((a) => normalizeText(a.value) === normalizeText(answer));
-      if (!match) {
-        totalScore += fallback;
-        continue;
-      }
-      if (isAnswerConditional(match)) {
-        const rule = match.points_conditional;
-        totalScore += q4Filled ? rule.if_q4_filled : rule.if_q4_empty;
-      } else {
-        totalScore += match.points;
-      }
+      let band = bands.find((b) => totalScore >= b.range.min && totalScore < b.range.max);
+      if (!band) band = bands.find((b) => totalScore === b.range.max);
+      bandId = band?.id ?? null;
     }
 
-    let band = bands.find((b) => totalScore >= b.range.min && totalScore < b.range.max);
-    if (!band) band = bands.find((b) => totalScore === b.range.max);
-    if (!band) continue;
+    if (!bandId) continue;
 
     if (!leadsByUtmContentBand.has(utmContent)) {
       leadsByUtmContentBand.set(utmContent, new Map());
     }
     const bandCounts = leadsByUtmContentBand.get(utmContent)!;
-    bandCounts.set(band.id, (bandCounts.get(band.id) ?? 0) + 1);
+    bandCounts.set(bandId, (bandCounts.get(bandId) ?? 0) + 1);
   }
 
   const adDataByAdId = new Map<string, { ad_name: string; spend: number }>();
@@ -1417,7 +1508,8 @@ export default fp(async function leadScoringRoutes(fastify) {
       if (sheetData.rows.length === 0) return EMPTY_ORIGINS;
 
       const schema = scoringRow.schemaJson as LeadScoringSchema;
-      return computeOriginsByBand(schema, sheetData);
+      const faixaCol = resolvePrecomputedBandColumn(schema, survey.columnMapping);
+      return computeOriginsByBand(schema, sheetData, faixaCol);
     },
   );
 
@@ -1478,8 +1570,10 @@ export default fp(async function leadScoringRoutes(fastify) {
       if (sheetData.rows.length === 0) return EMPTY;
 
       const schema = scoringRow.schemaJson as LeadScoringSchema;
-      // Story 18.17: usa faixa pré-calculada se o user mapeou (n8n grava na planilha)
-      const faixaCol = (survey.columnMapping as { faixa?: string } | null)?.faixa ?? null;
+      // Story 18.17: prioriza coluna de faixa pré-calculada (n8n grava na planilha).
+      // Fontes em ordem: 1) JSON do scoring (precomputed_band_column / band_column /
+      // faixa_column), 2) survey.columnMapping.faixa (dialog Mapping).
+      const faixaCol = resolvePrecomputedBandColumn(schema, survey.columnMapping);
       return computeBands(schema, sheetData, faixaCol);
     },
   );
@@ -1586,7 +1680,8 @@ export default fp(async function leadScoringRoutes(fastify) {
       }
 
       const schema = scoringRow.schemaJson as LeadScoringSchema;
-      return computeCampaignBandBreakdown(schema, sheetData, campaignInsights);
+      const faixaCol = resolvePrecomputedBandColumn(schema, survey.columnMapping);
+      return computeCampaignBandBreakdown(schema, sheetData, campaignInsights, faixaCol);
     },
   );
 
@@ -1689,7 +1784,8 @@ export default fp(async function leadScoringRoutes(fastify) {
       }
 
       const schema = scoringRow.schemaJson as LeadScoringSchema;
-      return computeAdsetBandBreakdown(schema, sheetData, adsetInsights);
+      const faixaCol = resolvePrecomputedBandColumn(schema, survey.columnMapping);
+      return computeAdsetBandBreakdown(schema, sheetData, adsetInsights, faixaCol);
     },
   );
 
@@ -1792,7 +1888,8 @@ export default fp(async function leadScoringRoutes(fastify) {
       }
 
       const schema = scoringRow.schemaJson as LeadScoringSchema;
-      return computeAdBandBreakdown(schema, sheetData, adInsights);
+      const faixaCol = resolvePrecomputedBandColumn(schema, survey.columnMapping);
+      return computeAdBandBreakdown(schema, sheetData, adInsights, faixaCol);
     },
   );
 });
