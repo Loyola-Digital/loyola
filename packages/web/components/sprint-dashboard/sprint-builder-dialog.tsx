@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { Plus, Trash2, ChevronDown, ChevronRight, Folder, FolderOpen, FileSpreadsheet, Search } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronRight, Folder, FolderOpen, FileSpreadsheet, Search, Calendar } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,11 +49,13 @@ export function SprintBuilderDialog({ open, onOpenChange, currentBlocks }: Build
       {
         id: crypto.randomUUID(),
         title: `Novo bloco ${prev.length + 1}`,
+        subtitle: "",
         color: nextColor,
         clickupListIds: [],
         filters: {},
         groupBy: null,
         sortOrder: prev.length,
+        campaignPhases: [],
       },
     ]);
   }
@@ -176,6 +178,7 @@ interface BlockEditorProps {
 function BlockEditor({ block, hierarchy, isFirst, isLast, onChange, onRemove, onMoveUp, onMoveDown }: BlockEditorProps) {
   const [showPicker, setShowPicker] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showPhases, setShowPhases] = useState(false);
 
   return (
     <div className="rounded-lg border border-border/40 bg-card/40 p-3 space-y-2">
@@ -205,6 +208,13 @@ function BlockEditor({ block, hierarchy, isFirst, isLast, onChange, onRemove, on
           </Button>
         </div>
       </div>
+
+      <Input
+        value={block.subtitle ?? ""}
+        onChange={(e) => onChange({ subtitle: e.target.value })}
+        className="h-7 text-xs"
+        placeholder="Subtítulo (opcional, ex: 'Workshop churrasco gravado')"
+      />
 
       {/* List picker summary */}
       <div className="flex items-center justify-between gap-2 text-xs">
@@ -251,8 +261,127 @@ function BlockEditor({ block, hierarchy, isFirst, isLast, onChange, onRemove, on
       {showFilters && (
         <FilterEditor block={block} onChange={onChange} />
       )}
+
+      {/* Fases da campanha (pra view Calendário Macro) */}
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-1.5 text-muted-foreground">
+          <Calendar className="h-3.5 w-3.5" />
+          <span>
+            {(block.campaignPhases?.length ?? 0) === 0
+              ? "Sem fases de campanha"
+              : `${block.campaignPhases!.length} fase(s) de campanha`}
+          </span>
+        </div>
+        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowPhases((v) => !v)}>
+          {showPhases ? "Ocultar fases" : "Configurar fases da campanha"}
+        </Button>
+      </div>
+
+      {showPhases && (
+        <PhasesEditor block={block} onChange={onChange} />
+      )}
     </div>
   );
+}
+
+// ============================================================
+// PhasesEditor: lista de fases (label + start + end + cor)
+// ============================================================
+
+function PhasesEditor({
+  block,
+  onChange,
+}: {
+  block: SprintDashboardBlock;
+  onChange: (partial: Partial<SprintDashboardBlock>) => void;
+}) {
+  const phases = block.campaignPhases ?? [];
+
+  function updatePhase(id: string, partial: Partial<typeof phases[number]>) {
+    onChange({
+      campaignPhases: phases.map((p) => (p.id === id ? { ...p, ...partial } : p)),
+    });
+  }
+
+  function addPhase() {
+    onChange({
+      campaignPhases: [
+        ...phases,
+        {
+          id: crypto.randomUUID(),
+          label: "",
+          startDate: "",
+          endDate: "",
+        },
+      ],
+    });
+  }
+
+  function removePhase(id: string) {
+    onChange({ campaignPhases: phases.filter((p) => p.id !== id) });
+  }
+
+  function movePhase(id: string, dir: -1 | 1) {
+    const idx = phases.findIndex((p) => p.id === id);
+    if (idx < 0) return;
+    const target = idx + dir;
+    if (target < 0 || target >= phases.length) return;
+    const next = [...phases];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    onChange({ campaignPhases: next });
+  }
+
+  return (
+    <div className="rounded-md border border-border/40 bg-background p-3 space-y-2 text-xs">
+      <p className="text-[10px] text-muted-foreground">
+        Fases mostradas no <strong>Calendário Macro</strong>. Use formato YYYY-MM-DD ou descritivo ("a definir", "após 01/jun"). Fim é opcional (eventos pontuais).
+      </p>
+      {phases.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground italic py-2 text-center">
+          Sem fases configuradas.
+        </p>
+      ) : (
+        <div className="space-y-1">
+          {phases.map((phase, idx) => (
+            <div key={phase.id} className="flex items-center gap-1">
+              <Input
+                value={phase.label}
+                onChange={(e) => updatePhase(phase.id, { label: e.target.value })}
+                placeholder="Ex: Lote 1"
+                className="h-7 text-[11px] flex-1"
+              />
+              <Input
+                type="date"
+                value={isIsoDate(phase.startDate) ? phase.startDate : ""}
+                onChange={(e) => updatePhase(phase.id, { startDate: e.target.value })}
+                placeholder="Início"
+                className="h-7 text-[11px] w-32"
+              />
+              <Input
+                type="date"
+                value={isIsoDate(phase.endDate ?? "") ? phase.endDate : ""}
+                onChange={(e) => updatePhase(phase.id, { endDate: e.target.value })}
+                placeholder="Fim (opcional)"
+                className="h-7 text-[11px] w-32"
+              />
+              <Button variant="ghost" size="sm" onClick={() => movePhase(phase.id, -1)} disabled={idx === 0} className="h-6 w-6 p-0">↑</Button>
+              <Button variant="ghost" size="sm" onClick={() => movePhase(phase.id, 1)} disabled={idx === phases.length - 1} className="h-6 w-6 p-0">↓</Button>
+              <Button variant="ghost" size="sm" onClick={() => removePhase(phase.id)} className="h-6 w-6 p-0 text-red-500">
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <Button variant="outline" size="sm" onClick={addPhase} className="w-full h-7 text-[11px] gap-1">
+        <Plus className="h-3 w-3" /> Adicionar fase
+      </Button>
+    </div>
+  );
+}
+
+function isIsoDate(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s);
 }
 
 // ============================================================

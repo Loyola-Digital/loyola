@@ -38,9 +38,18 @@ function tasksCacheKey(listIds: string[]): string {
 
 const groupBySchema = z.enum(["status", "tag", "assignee"]).nullable().optional();
 
+const campaignPhaseSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1).max(120),
+  startDate: z.string().min(1).max(40),
+  endDate: z.string().max(40).optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+});
+
 const blockSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1).max(200),
+  subtitle: z.string().max(200).optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "color deve ser hex tipo #D4537E"),
   clickupListIds: z.array(z.string().min(1)).min(1, "selecione ao menos 1 lista"),
   filters: z.object({
@@ -50,6 +59,7 @@ const blockSchema = z.object({
   }),
   groupBy: groupBySchema,
   sortOrder: z.number().int().nonnegative(),
+  campaignPhases: z.array(campaignPhaseSchema).optional(),
 });
 
 const putBodySchema = z.object({

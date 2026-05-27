@@ -1174,6 +1174,7 @@ export const sprintDashboardConfig = pgTable(
     blocks: jsonb("blocks").notNull().default([]).$type<Array<{
       id: string;
       title: string;
+      subtitle?: string;
       color: string;
       clickupListIds: string[];
       filters: {
@@ -1183,6 +1184,13 @@ export const sprintDashboardConfig = pgTable(
       };
       groupBy?: "status" | "tag" | "assignee" | null;
       sortOrder: number;
+      campaignPhases?: Array<{
+        id: string;
+        label: string;
+        startDate: string;
+        endDate?: string;
+        color?: string;
+      }>;
     }>>(),
     updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

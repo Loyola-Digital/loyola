@@ -14,10 +14,27 @@ export interface SprintDashboardBlockFilters {
   assigneeIds?: string[];
 }
 
+/**
+ * Fase de uma campanha — usada pela view "Calendário Macro".
+ * Cada fase tem nome + data inicial + data final + cor opcional.
+ */
+export interface SprintCampaignPhase {
+  id: string;
+  label: string;
+  /** YYYY-MM-DD ou string descritiva ("a definir") */
+  startDate: string;
+  /** YYYY-MM-DD ou string descritiva. Vazio = fase pontual (só startDate). */
+  endDate?: string;
+  /** Hex color opcional. Default usa a cor do bloco. */
+  color?: string;
+}
+
 export interface SprintDashboardBlock {
   /** UUID gerado no frontend (estável entre updates) */
   id: string;
   title: string;
+  /** Subtítulo opcional (ex: "Workshop churrasco gravado") */
+  subtitle?: string;
   /** Hex color (#RRGGBB) — usado pra bolinha + tags do card */
   color: string;
   /** 1+ listas do ClickUp que alimentam esse bloco */
@@ -27,6 +44,8 @@ export interface SprintDashboardBlock {
   groupBy?: "status" | "tag" | "assignee" | null;
   /** Ordem de exibição no dashboard (0 = primeiro) */
   sortOrder: number;
+  /** Fases da campanha pro Calendário Macro (opcional) */
+  campaignPhases?: SprintCampaignPhase[];
 }
 
 export interface SprintDashboardConfig {

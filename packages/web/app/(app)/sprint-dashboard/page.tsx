@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LayoutGrid, Settings2, RefreshCw, AlertCircle, AlertTriangle, Clock, Check } from "lucide-react";
+import { LayoutGrid, Settings2, RefreshCw, AlertCircle, AlertTriangle, Clock, Check, CalendarRange } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
 import { SprintBuilderDialog } from "@/components/sprint-dashboard/sprint-builder-dialog";
 import { SprintBlockCard } from "@/components/sprint-dashboard/sprint-block-card";
 import { TaskEditDialog } from "@/components/sprint-dashboard/task-edit-dialog";
+import { MacroCalendarView } from "@/components/sprint-dashboard/macro-calendar-view";
 import { useQueryClient } from "@tanstack/react-query";
 
 export default function SprintDashboardPage() {
@@ -24,6 +25,7 @@ export default function SprintDashboardPage() {
   const queryClient = useQueryClient();
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ClickUpTaskShape | null>(null);
+  const [activeTab, setActiveTab] = useState<"overview" | "macro">("overview");
 
   const { data: config, isLoading: configLoading } = useSprintDashboardConfig();
   const { data: metrics } = useSprintDashboardMetrics();
@@ -99,6 +101,22 @@ export default function SprintDashboardPage() {
       {/* Métricas — Story 31.6 */}
       <MetricsHeader metrics={metrics} blockCount={blocks.length} activeCount={metrics?.activeProjectsCount} />
 
+      {/* Tabs */}
+      <div className="flex items-center gap-1 border-b border-border/30">
+        <TabButton
+          active={activeTab === "overview"}
+          onClick={() => setActiveTab("overview")}
+          icon={<LayoutGrid className="h-3.5 w-3.5" />}
+          label="Visão Geral"
+        />
+        <TabButton
+          active={activeTab === "macro"}
+          onClick={() => setActiveTab("macro")}
+          icon={<CalendarRange className="h-3.5 w-3.5" />}
+          label="Calendário Macro"
+        />
+      </div>
+
       {/* Builder dialog */}
       <SprintBuilderDialog
         open={builderOpen}
@@ -127,7 +145,7 @@ export default function SprintDashboardPage() {
             Configurar agora
           </Button>
         </div>
-      ) : (
+      ) : activeTab === "overview" ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {blocks.map((block) => (
             <SprintBlockCard
@@ -141,6 +159,8 @@ export default function SprintDashboardPage() {
             />
           ))}
         </div>
+      ) : (
+        <MacroCalendarView blocks={blocks} />
       )}
 
       {/* Edit dialog (status + nome + due_date) */}
@@ -152,6 +172,22 @@ export default function SprintDashboardPage() {
         }}
       />
     </div>
+  );
+}
+
+function TabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors border-b-2 -mb-px ${
+        active
+          ? "border-primary text-foreground"
+          : "border-transparent text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 

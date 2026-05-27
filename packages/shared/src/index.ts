@@ -61,6 +61,7 @@ export type {
   SprintDashboardBlockFilters,
   SprintDashboardBlock,
   SprintDashboardConfig,
+  SprintCampaignPhase,
 } from "./types/sprint-dashboard.js";
 
 export type {
