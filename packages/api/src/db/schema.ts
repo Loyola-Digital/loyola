@@ -856,6 +856,8 @@ export const funnelSpreadsheets = pgTable(
         valorBruto?: string;
         valorLiquido?: string;
         formaPagamento?: string;
+        /** Story 18.17: faixa de lead scoring (A/B/C/D) */
+        faixa?: string;
         utm_source?: string;
         utm_medium?: string;
         utm_campaign?: string;

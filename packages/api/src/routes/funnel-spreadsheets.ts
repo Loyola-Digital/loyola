@@ -27,6 +27,8 @@ const columnMappingSchema = z
     date: z.string().optional(),
     status: z.string().optional(),
     value: z.string().optional(),
+    // Story 18.17: coluna da faixa de scoring (A/B/C/D)
+    faixa: z.string().optional(),
     utm_source: z.string().optional(),
     utm_medium: z.string().optional(),
     utm_campaign: z.string().optional(),

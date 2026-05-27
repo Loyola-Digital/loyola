@@ -12,6 +12,8 @@ export interface ColumnMapping {
   date?: string;
   status?: string;
   value?: string;
+  /** Story 18.17: coluna da planilha com a faixa de scoring (A/B/C/D) */
+  faixa?: string;
   utm_source?: string;
   utm_medium?: string;
   utm_campaign?: string;

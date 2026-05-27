@@ -34,6 +34,8 @@ export const FUNNEL_MAPPING_FIELDS: Array<{
   { key: "date", label: "Data", group: "transactional" },
   { key: "status", label: "Status", group: "transactional" },
   { key: "value", label: "Valor", group: "transactional" },
+  // Story 18.17: faixa de lead scoring (A/B/C/D)
+  { key: "faixa", label: "Faixa (A/B/C/D)", group: "transactional" },
   // UTMs
   { key: "utm_source", label: "UTM Source", group: "utm" },
   { key: "utm_medium", label: "UTM Medium", group: "utm" },
