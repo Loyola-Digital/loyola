@@ -41,6 +41,9 @@ const querySchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   subtype: z.enum(["capture", "main_product", "sales"]).default("sales"),
+  /** Quando `1`, response inclui `_debug` com diagnóstico de match (survey/scoring
+   * encontrados, tamanho do leadBandMap, samples de emails dos 2 lados). */
+  debug: z.coerce.boolean().optional(),
 });
 
 // ============================================================
@@ -231,21 +234,39 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
 
       // 3. Build lead profile map (email_lower → bandId | "no_profile")
       let leadBandMap = new Map<string, string>();
+      const debugInfo: Record<string, unknown> = {
+        surveyFound: !!surveyToUse,
+        surveyStageId: surveyToUse?.stageId ?? null,
+        surveyMatchesQueryStage: surveyToUse?.stageId === params.data.stageId,
+        emailColumn: surveyToUse?.columnMapping?.email ?? null,
+        faixaColumn: null as string | null,
+        scoringFound: !!scoringSchema,
+        scoringStageId: scoringRow?.stageId ?? null,
+        bandsCount: scoringSchema?.bands?.length ?? 0,
+        surveyHeaders: [] as string[],
+        leadBandMapSize: 0,
+        leadEmailsSample: [] as string[],
+      };
       if (surveyToUse && scoringSchema) {
         try {
           const surveySheet = await readSheetData(
             surveyToUse.spreadsheetId,
             surveyToUse.sheetName,
           );
+          debugInfo.surveyHeaders = surveySheet.headers;
           const emailCol = surveyToUse.columnMapping?.email;
           if (emailCol) {
             const faixaCol = resolvePrecomputedBandColumn(
               scoringSchema,
               surveyToUse.columnMapping,
             );
+            debugInfo.faixaColumn = faixaCol;
             leadBandMap = computeLeadBandMap(scoringSchema, surveySheet, emailCol, faixaCol);
+            debugInfo.leadBandMapSize = leadBandMap.size;
+            debugInfo.leadEmailsSample = Array.from(leadBandMap.keys()).slice(0, 5);
           }
         } catch (err) {
+          debugInfo.surveyReadError = err instanceof Error ? err.message : String(err);
           fastify.log.warn(
             { err, surveyId: surveyToUse.id },
             "Falha ao ler planilha de survey — segue sem leadBandMap",
@@ -261,6 +282,8 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
       const seenDedupKeys = new Set<string>();
       let totalSalesGlobal = 0;
       let matchedGlobal = 0;
+      const saleEmailsSample: string[] = [];
+      const saleEmailsUnmatched: string[] = [];
 
       for (const spreadsheet of salesSheets) {
         const mapping = spreadsheet.columnMapping as {
@@ -323,6 +346,10 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
 
           totalSalesGlobal += 1;
           if (bandKey !== "no_profile") matchedGlobal += 1;
+          if (saleEmailsSample.length < 5) saleEmailsSample.push(email);
+          if (bandKey === "no_profile" && saleEmailsUnmatched.length < 5) {
+            saleEmailsUnmatched.push(email);
+          }
 
           let agg = sellerMap.get(utmSource);
           if (!agg) {
@@ -371,12 +398,19 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
           : 0,
       };
 
-      const response: SellersBreakdownResponse = {
+      const response: SellersBreakdownResponse & { _debug?: Record<string, unknown> } = {
         sellers,
         coverage,
         hasScoringConfig,
         semDados: false,
       };
+      if (query.data.debug) {
+        debugInfo.saleEmailsSample = saleEmailsSample;
+        debugInfo.saleEmailsUnmatched = saleEmailsUnmatched;
+        debugInfo.totalSales = totalSalesGlobal;
+        debugInfo.matched = matchedGlobal;
+        response._debug = debugInfo;
+      }
       return response;
     },
   );
