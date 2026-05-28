@@ -313,21 +313,23 @@ export function StageSalesSection({
         <SalesTable rows={formaRows} emptyMessage="Sem dados por forma de pagamento." keyLabel="Forma" />
       </div>
 
-      {/* Story 19.8: Vendedores × Perfil — pra qualquer subtype com vendas
-          conectadas (capture/main_product/sales). O backend filtra a planilha
-          do mesmo subtype, então o breakdown sempre reflete o produto exibido
-          acima nesta seção. */}
-      <div className="space-y-2 border-t pt-4 mt-4">
-        <p className="text-xs font-medium text-muted-foreground">
-          Vendedores × Perfil do Lead
-        </p>
-        <SellersBreakdownGrid
-          projectId={projectId}
-          funnelId={funnelId}
-          stageId={stageId}
-          subtype={subtype}
-        />
-      </div>
+      {/* Story 19.8: Vendedores × Perfil — só pro Produto Principal.
+          Lead scoring vive na etapa Captação Paga; backend busca o scoring/
+          survey em qualquer stage do mesmo funnel pra atribuir perfil aos
+          compradores do principal via email. */}
+      {subtype === "main_product" && (
+        <div className="space-y-2 border-t pt-4 mt-4">
+          <p className="text-xs font-medium text-muted-foreground">
+            Vendedores × Perfil do Lead
+          </p>
+          <SellersBreakdownGrid
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stageId}
+            subtype={subtype}
+          />
+        </div>
+      )}
     </div>
   );
 }

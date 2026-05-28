@@ -9,7 +9,7 @@
  */
 
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   stageSalesSpreadsheets,
@@ -188,34 +188,43 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
 
       if (salesSheets.length === 0) return emptyResponse("no_data");
 
-      // 2. Survey + scoring schema (stage primeiro; senão funnel-level)
-      const [survey] = await fastify.db
+      // 2. Survey — busca em qualquer stage do funnel (lead scoring tipicamente
+      // vive na etapa Captação Paga, não na etapa Vendas).
+      // Prioridade: stage atual > qualquer stage do funnel com email mapeado.
+      const fSurveys = await fastify.db
         .select()
         .from(funnelSurveys)
-        .where(
-          and(
-            eq(funnelSurveys.funnelId, params.data.funnelId),
-            eq(funnelSurveys.stageId, params.data.stageId),
-          ),
-        )
-        .limit(1);
+        .where(eq(funnelSurveys.funnelId, params.data.funnelId));
 
-      // Fallback: survey associada ao funnel sem stage específico
-      let surveyToUse = survey;
-      if (!surveyToUse) {
-        const [funnelSurvey] = await fastify.db
-          .select()
-          .from(funnelSurveys)
-          .where(eq(funnelSurveys.funnelId, params.data.funnelId))
-          .limit(1);
-        surveyToUse = funnelSurvey;
-      }
+      const surveyToUse =
+        fSurveys.find((s) => s.stageId === params.data.stageId && s.columnMapping?.email) ??
+        fSurveys.find((s) => s.columnMapping?.email) ??
+        fSurveys[0];
 
-      const [scoringRow] = await fastify.db
-        .select()
-        .from(stageLeadScoringSchemas)
-        .where(eq(stageLeadScoringSchemas.stageId, params.data.stageId))
-        .limit(1);
+      // 3. Scoring schema — busca em qualquer stage do funnel.
+      // Prioridade: stage atual > scoring associado ao mesmo stage da survey escolhida >
+      // qualquer scoring do funnel.
+      const funnelStageIds = (
+        await fastify.db
+          .select({ id: funnelStages.id })
+          .from(funnelStages)
+          .where(eq(funnelStages.funnelId, params.data.funnelId))
+      ).map((r) => r.id);
+
+      const allScoring =
+        funnelStageIds.length > 0
+          ? await fastify.db
+              .select()
+              .from(stageLeadScoringSchemas)
+              .where(inArray(stageLeadScoringSchemas.stageId, funnelStageIds))
+          : [];
+
+      const scoringRow =
+        allScoring.find((r) => r.stageId === params.data.stageId) ??
+        (surveyToUse?.stageId
+          ? allScoring.find((r) => r.stageId === surveyToUse.stageId)
+          : undefined) ??
+        allScoring[0];
 
       const scoringSchema = (scoringRow?.schemaJson ?? null) as LeadScoringSchema | null;
       const hasScoringConfig = !!surveyToUse && !!scoringSchema;
