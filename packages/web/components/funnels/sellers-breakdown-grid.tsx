@@ -105,6 +105,8 @@ interface SellersBreakdownGridProps {
   projectId: string;
   funnelId: string;
   stageId: string;
+  /** Story 19.8: filtra planilha de venda (capture/main_product/sales). */
+  subtype?: string;
   startDate?: string;
   endDate?: string;
 }
@@ -113,12 +115,14 @@ export function SellersBreakdownGrid({
   projectId,
   funnelId,
   stageId,
+  subtype,
   startDate,
   endDate,
 }: SellersBreakdownGridProps) {
   const { data, isLoading, isError } = useSellersBreakdown(projectId, funnelId, stageId, {
     startDate,
     endDate,
+    subtype,
   });
 
   if (isLoading) {
