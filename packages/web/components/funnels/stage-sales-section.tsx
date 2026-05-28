@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
+import { SellersBreakdownGrid } from "./sellers-breakdown-grid";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { StageSalesSubtype } from "@loyola-x/shared";
 
@@ -311,6 +312,21 @@ export function StageSalesSection({
         <p className="text-xs font-medium text-muted-foreground">Por Forma de Pagamento</p>
         <SalesTable rows={formaRows} emptyMessage="Sem dados por forma de pagamento." keyLabel="Forma" />
       </div>
+
+      {/* Story 19.8: Vendedores × Perfil — só faz sentido pra subtype "sales"
+          (capture/main_product não tem vendedor por trás de cada venda). */}
+      {subtype === "sales" && (
+        <div className="space-y-2 border-t pt-4 mt-4">
+          <p className="text-xs font-medium text-muted-foreground">
+            Vendedores × Perfil do Lead
+          </p>
+          <SellersBreakdownGrid
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stageId}
+          />
+        </div>
+      )}
     </div>
   );
 }

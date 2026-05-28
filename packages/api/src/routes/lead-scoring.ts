@@ -33,8 +33,8 @@ const putBodySchema = z.object({
 // TYPES (espelham o schema JSON v2 enriquecido)
 // ============================================================
 
-type AnswerStatic = { value: string; points: number; aliases?: string[] };
-type AnswerConditional = {
+export type AnswerStatic = { value: string; points: number; aliases?: string[] };
+export type AnswerConditional = {
   value: string;
   aliases?: string[];
   points_conditional: {
@@ -43,9 +43,9 @@ type AnswerConditional = {
     rule?: string;
   };
 };
-type Answer = AnswerStatic | AnswerConditional;
+export type Answer = AnswerStatic | AnswerConditional;
 
-type ScoringQuestion = {
+export type ScoringQuestion = {
   id: string;
   label?: string;
   new_survey_column?: string;
@@ -61,7 +61,7 @@ type ScoringQuestion = {
   unmapped_default?: number;
 };
 
-type Band = {
+export type Band = {
   id: string;
   range: { min: number; max: number };
   cpl_ideal?: number;
@@ -70,7 +70,7 @@ type Band = {
   description?: string;
 };
 
-type LeadScoringSchema = {
+export type LeadScoringSchema = {
   schema_version?: string;
   project?: { name?: string; ticket?: number; roas?: number; cpa_ceiling?: number };
   scoring_model?: { max_possible_score?: number; questions?: ScoringQuestion[] };
@@ -106,7 +106,7 @@ type LeadScoringSchema = {
  *   4. survey.columnMapping.faixa (Survey Mapping dialog)
  * Retorna null se nenhuma fonte configurada.
  */
-function resolvePrecomputedBandColumn(
+export function resolvePrecomputedBandColumn(
   schema: LeadScoringSchema,
   surveyMapping: unknown,
 ): string | null {
@@ -226,7 +226,7 @@ function normalizeForMatch(s: string): string {
  * Retorna `{ idx, matchedAlias }` — `matchedAlias` é o candidato exato que
  * casou (útil pra debug diagnostic). Se idx === -1, matchedAlias é null.
  */
-function findQuestionColumn(
+export function findQuestionColumn(
   headers: string[],
   q: ScoringQuestion,
 ): { idx: number; matchedAlias: string | null } {
@@ -306,7 +306,7 @@ function normalizeStrong(s: string): string {
  * pelo maior overlap (answer mais específico vence — ex.: "completo" vs
  * "incompleto" não conflita porque o overlap difere).
  */
-function findAnswerMatch(answers: Answer[], rawValue: string): Answer | undefined {
+export function findAnswerMatch(answers: Answer[], rawValue: string): Answer | undefined {
   const target = normalizeForMatch(rawValue);
 
   // 1º pass: exact normalizado
@@ -364,6 +364,97 @@ function resolveAnswerCellValue(raw: string | undefined): string {
 
 function isAnswerConditional(a: Answer): a is AnswerConditional {
   return (a as AnswerConditional).points_conditional !== undefined;
+}
+
+/**
+ * Story 19.8: Resolve faixa por lead (chave = email lowercase normalizado).
+ *
+ * Estratégia idêntica a computeBands, mas em vez de agregar contagens,
+ * retorna um Map<email, bandId>. Permite que consumers (ex: sellers-breakdown)
+ * cruzem vendas com lead profile via email.
+ *
+ * Path 1 (preferred): faixa pré-calculada — lê direto da coluna A/B/C/D.
+ * Path 2 (legacy): recalcula score lead-a-lead via scoring_model.
+ *
+ * Retorna Map vazio se: sem coluna de email, sem bandas configuradas, ou
+ * sheet vazio. Caller deve tratar Map vazio como "sem perfil disponível".
+ */
+export function computeLeadBandMap(
+  schema: LeadScoringSchema,
+  sheet: { headers: string[]; rows: string[][] },
+  emailColumnName: string,
+  faixaColumnName?: string | null,
+): Map<string, string> {
+  const result = new Map<string, string>();
+  const { headers, rows } = sheet;
+  if (!emailColumnName || rows.length === 0) return result;
+
+  const emailIdx = headers.findIndex(
+    (h) => normalizeForMatch(h) === normalizeForMatch(emailColumnName),
+  );
+  if (emailIdx === -1) return result;
+
+  const bands = schema.bands ?? [];
+  const validBandIds = new Set(bands.map((b) => b.id.toUpperCase()));
+  if (validBandIds.size === 0) return result;
+
+  // Path 1: faixa pré-calculada
+  const faixaIdx = faixaColumnName
+    ? headers.findIndex(
+        (h) => normalizeForMatch(h) === normalizeForMatch(faixaColumnName),
+      )
+    : -1;
+  const useDirectFaixa = faixaIdx !== -1;
+
+  const questions = schema.scoring_model?.questions ?? [];
+  const colMap = new Map<string, number>();
+  if (!useDirectFaixa) {
+    for (const q of questions) colMap.set(q.id, findQuestionColumnIndex(headers, q));
+  }
+  const q4Idx = colMap.get("Q4") ?? -1;
+
+  for (const row of rows) {
+    const email = (row[emailIdx] ?? "").trim().toLowerCase();
+    if (!email) continue;
+
+    if (useDirectFaixa) {
+      const raw = (row[faixaIdx] ?? "").trim().toUpperCase();
+      if (raw && validBandIds.has(raw)) result.set(email, raw);
+      continue;
+    }
+
+    // Path 2: recalcula score
+    let totalScore = 0;
+    const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
+    const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
+
+    for (const q of questions) {
+      const colIdx = colMap.get(q.id) ?? -1;
+      const fallback = q.unmapped_default ?? 0;
+      if (colIdx === -1) {
+        totalScore += fallback;
+        continue;
+      }
+      const answer = resolveAnswerCellValue(row[colIdx]);
+      const match = findAnswerMatch(q.answers, answer);
+      if (!match) {
+        totalScore += fallback;
+        continue;
+      }
+      if (isAnswerConditional(match)) {
+        const rule = match.points_conditional;
+        totalScore += q4Filled ? rule.if_q4_filled : rule.if_q4_empty;
+      } else {
+        totalScore += match.points;
+      }
+    }
+
+    let band = bands.find((b) => totalScore >= b.range.min && totalScore < b.range.max);
+    if (!band) band = bands.find((b) => totalScore === b.range.max);
+    if (band) result.set(email, band.id.toUpperCase());
+  }
+
+  return result;
 }
 
 function computeBands(
