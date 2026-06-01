@@ -55,7 +55,6 @@ export function PendingTasksList({ block, tasksByListId }: PendingTasksListProps
         excludedReason: reason,
       };
     });
-    // eslint-disable-next-line no-console
     console.log(
       `[PendingTasks] bloco "${block.title}" — 0 pendentes (de ${tasksOfBlock.length} tasks). Snapshot:`,
       snapshot,

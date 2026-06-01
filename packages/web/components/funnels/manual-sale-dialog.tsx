@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +20,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useCreateManualSale, useEligibleSellers } from "@/lib/hooks/use-manual-sales";
+import {
+  useCreateManualSale,
+  useEligibleSellers,
+  useUpdateManualSale,
+} from "@/lib/hooks/use-manual-sales";
+import type { ManualSale } from "@loyola-x/shared";
 
 interface ManualSaleDialogProps {
   projectId: string;
@@ -28,6 +33,21 @@ interface ManualSaleDialogProps {
   stageId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Quando passado, dialog entra em modo edição (PATCH ao invés de POST). */
+  editingSale?: ManualSale | null;
+}
+
+function formatBrCurrencyFromNumber(value: number): string {
+  return value.toFixed(2).replace(".", ",");
+}
+
+function saleDateToInput(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function todayIso(): string {
@@ -56,9 +76,12 @@ export function ManualSaleDialog({
   stageId,
   open,
   onOpenChange,
+  editingSale,
 }: ManualSaleDialogProps) {
+  const isEditing = !!editingSale;
   const { data: sellers, isLoading: loadingSellers } = useEligibleSellers(projectId);
   const createMutation = useCreateManualSale(projectId, funnelId, stageId);
+  const updateMutation = useUpdateManualSale(projectId, funnelId, stageId);
 
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -66,6 +89,21 @@ export function ManualSaleDialog({
   const [valueInput, setValueInput] = useState("");
   const [sellerUserId, setSellerUserId] = useState<string>("");
   const [saleDate, setSaleDate] = useState<string>(todayIso());
+
+  // Hidrata form quando entra em modo edição (ou troca de venda em edição)
+  useEffect(() => {
+    if (!open) return;
+    if (editingSale) {
+      setCustomerName(editingSale.customerName);
+      setCustomerEmail(editingSale.customerEmail ?? "");
+      setCustomerPhone(editingSale.customerPhone ?? "");
+      setValueInput(formatBrCurrencyFromNumber(editingSale.value));
+      setSellerUserId(editingSale.sellerUserId ?? "");
+      setSaleDate(saleDateToInput(editingSale.saleDate));
+    } else {
+      resetForm();
+    }
+  }, [open, editingSale?.id]);
 
   function resetForm() {
     setCustomerName("");
@@ -96,23 +134,32 @@ export function ManualSaleDialog({
       return;
     }
 
+    const payload = {
+      customerName: name,
+      customerEmail: customerEmail.trim() || undefined,
+      customerPhone: customerPhone.trim() || undefined,
+      value,
+      sellerUserId,
+      saleDate,
+    };
+
     try {
-      await createMutation.mutateAsync({
-        customerName: name,
-        customerEmail: customerEmail.trim() || undefined,
-        customerPhone: customerPhone.trim() || undefined,
-        value,
-        sellerUserId,
-        saleDate,
-      });
-      toast.success("Venda lançada");
+      if (isEditing && editingSale) {
+        await updateMutation.mutateAsync({ saleId: editingSale.id, input: payload });
+        toast.success("Venda atualizada");
+      } else {
+        await createMutation.mutateAsync(payload);
+        toast.success("Venda lançada");
+      }
       resetForm();
       onOpenChange(false);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Erro ao lançar venda";
+      const message = err instanceof Error ? err.message : "Erro ao salvar venda";
       toast.error(message);
     }
   }
+
+  const isPending = createMutation.isPending || updateMutation.isPending;
 
   return (
     <Dialog
@@ -125,9 +172,13 @@ export function ManualSaleDialog({
       <DialogContent className="sm:max-w-md">
         <form onSubmit={handleSubmit} className="space-y-4">
           <DialogHeader>
-            <DialogTitle>Lançar venda manual (PIX direto)</DialogTitle>
+            <DialogTitle>
+              {isEditing ? "Editar venda manual" : "Lançar venda manual (PIX direto)"}
+            </DialogTitle>
             <DialogDescription>
-              Vendas registradas aqui ficam separadas das vendas vindas da planilha.
+              {isEditing
+                ? "Ajuste os campos abaixo e clique em Salvar."
+                : "Vendas registradas aqui ficam separadas das vendas vindas da planilha."}
             </DialogDescription>
           </DialogHeader>
 
@@ -217,12 +268,18 @@ export function ManualSaleDialog({
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              disabled={createMutation.isPending}
+              disabled={isPending}
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={createMutation.isPending}>
-              {createMutation.isPending ? "Lançando..." : "Lançar venda"}
+            <Button type="submit" disabled={isPending}>
+              {isPending
+                ? isEditing
+                  ? "Salvando..."
+                  : "Lançando..."
+                : isEditing
+                ? "Salvar"
+                : "Lançar venda"}
             </Button>
           </DialogFooter>
         </form>

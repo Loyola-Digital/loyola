@@ -20,7 +20,7 @@ import { ManualPixSalesSection } from "./manual-pix-sales-section";
 import { ManualSaleDialog } from "./manual-sale-dialog";
 import { useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { toast } from "sonner";
-import type { FunnelCampaign, FunnelStage } from "@loyola-x/shared";
+import type { FunnelCampaign, FunnelStage, ManualSale } from "@loyola-x/shared";
 
 interface SalesStageViewProps {
   projectId: string;
@@ -34,6 +34,7 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
   const [stageName, setStageName] = useState("");
   const [days, setDays] = useState(30);
   const [manualSaleOpen, setManualSaleOpen] = useState(false);
+  const [editingSale, setEditingSale] = useState<ManualSale | null>(null);
 
   const updateStage = useUpdateStage(projectId, funnelId, stage.id);
 
@@ -188,6 +189,10 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
             stageId={stage.id}
             days={days}
             onLaunchClick={() => setManualSaleOpen(true)}
+            onEditSale={(sale) => {
+              setEditingSale(sale);
+              setManualSaleOpen(true);
+            }}
           />
         </TabsContent>
 
@@ -228,7 +233,11 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
         funnelId={funnelId}
         stageId={stage.id}
         open={manualSaleOpen}
-        onOpenChange={setManualSaleOpen}
+        onOpenChange={(open) => {
+          setManualSaleOpen(open);
+          if (!open) setEditingSale(null);
+        }}
+        editingSale={editingSale}
       />
     </div>
   );

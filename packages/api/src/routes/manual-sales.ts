@@ -344,6 +344,109 @@ export default fp(async function manualSalesRoutes(fastify) {
   );
 
   // ---------------------------------------------------------------
+  // PATCH — edita venda manual (parcial)
+  // ---------------------------------------------------------------
+  const updateSaleSchema = createSaleSchema.partial();
+
+  fastify.patch(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/manual-sales/:saleId",
+    async (request, reply) => {
+      if (request.userRole === "guest") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const params = saleParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const body = updateSaleSchema.safeParse(request.body);
+      if (!body.success) {
+        return reply.code(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+      }
+
+      const stage = await getStageContext(
+        params.data.projectId,
+        params.data.funnelId,
+        params.data.stageId,
+        request.userId,
+        request.userRole,
+      );
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      // Confirma que venda existe e pertence ao stage
+      const [existing] = await fastify.db
+        .select()
+        .from(manualSales)
+        .where(
+          and(
+            eq(manualSales.id, params.data.saleId),
+            eq(manualSales.stageId, params.data.stageId),
+          ),
+        )
+        .limit(1);
+      if (!existing) return reply.code(404).send({ error: "Venda não encontrada" });
+
+      // Monta SET parcial — só campos presentes no body
+      const updates: Partial<typeof manualSales.$inferInsert> = {};
+
+      if (body.data.customerName !== undefined) updates.customerName = body.data.customerName;
+      if (body.data.customerEmail !== undefined) {
+        updates.customerEmail = body.data.customerEmail ?? null;
+      }
+      if (body.data.customerPhone !== undefined) {
+        updates.customerPhone = body.data.customerPhone ?? null;
+      }
+      if (body.data.value !== undefined) updates.value = body.data.value.toFixed(2);
+
+      if (body.data.sellerUserId !== undefined) {
+        const [sellerUser] = await fastify.db
+          .select({ id: users.id, name: users.name, email: users.email, status: users.status })
+          .from(users)
+          .where(eq(users.id, body.data.sellerUserId))
+          .limit(1);
+        if (!sellerUser || sellerUser.status === "blocked") {
+          return reply.code(403).send({ error: "Vendedor não é um usuário válido" });
+        }
+        updates.sellerUserId = sellerUser.id;
+        updates.sellerName = displayUserName(sellerUser.name, sellerUser.email);
+      }
+
+      if (body.data.saleDate !== undefined) {
+        const saleDate = /^\d{4}-\d{2}-\d{2}$/.test(body.data.saleDate)
+          ? new Date(body.data.saleDate + "T12:00:00")
+          : new Date(body.data.saleDate);
+        if (isNaN(saleDate.getTime())) {
+          return reply.code(400).send({ error: "Data de venda inválida" });
+        }
+        updates.saleDate = saleDate;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return reply.code(400).send({ error: "Nenhum campo pra atualizar" });
+      }
+
+      const [updated] = await fastify.db
+        .update(manualSales)
+        .set(updates)
+        .where(eq(manualSales.id, params.data.saleId))
+        .returning();
+
+      return {
+        id: updated.id,
+        stageId: updated.stageId,
+        customerName: updated.customerName,
+        customerEmail: updated.customerEmail,
+        customerPhone: updated.customerPhone,
+        value: Number(updated.value),
+        sellerUserId: updated.sellerUserId,
+        sellerName: updated.sellerName,
+        saleDate: updated.saleDate.toISOString(),
+        createdBy: updated.createdBy,
+        createdAt: updated.createdAt.toISOString(),
+      };
+    },
+  );
+
+  // ---------------------------------------------------------------
   // DELETE — remove venda manual
   // ---------------------------------------------------------------
   fastify.delete(

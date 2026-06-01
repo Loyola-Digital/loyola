@@ -96,4 +96,31 @@ export function useDeleteManualSale(
   });
 }
 
+export function useUpdateManualSale(
+  projectId: string,
+  funnelId: string,
+  stageId: string,
+) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      saleId,
+      input,
+    }: {
+      saleId: string;
+      input: Partial<CreateManualSaleInput>;
+    }) =>
+      apiClient<ManualSale>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/manual-sales/${saleId}`,
+        { method: "PATCH", body: JSON.stringify(input) },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["manual-sales", projectId, funnelId, stageId],
+      });
+    },
+  });
+}
+
 export { buildKey as buildManualSalesKey };

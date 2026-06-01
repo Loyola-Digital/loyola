@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, Wallet } from "lucide-react";
+import { Pencil, Plus, Trash2, Wallet } from "lucide-react";
+import type { ManualSale } from "@loyola-x/shared";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +24,7 @@ interface ManualPixSalesSectionProps {
   stageId: string;
   days: number;
   onLaunchClick: () => void;
+  onEditSale?: (sale: ManualSale) => void;
 }
 
 function formatCurrency(value: number): string {
@@ -64,6 +66,7 @@ export function ManualPixSalesSection({
   stageId,
   days,
   onLaunchClick,
+  onEditSale,
 }: ManualPixSalesSectionProps) {
   const { data, isLoading } = useManualSales(projectId, funnelId, stageId, days);
   const deleteMutation = useDeleteManualSale(projectId, funnelId, stageId);
@@ -187,7 +190,7 @@ export function ManualPixSalesSection({
                   <th className="text-left px-3 py-2 font-medium">Contato</th>
                   <th className="text-left px-3 py-2 font-medium">Vendedor</th>
                   <th className="text-right px-3 py-2 font-medium">Valor</th>
-                  <th className="px-3 py-2 w-10" />
+                  <th className="px-3 py-2 w-16" />
                 </tr>
               </thead>
               <tbody>
@@ -203,14 +206,28 @@ export function ManualPixSalesSection({
                       {formatCurrency(sale.value)}
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDeleteId(sale.id)}
-                        className="text-muted-foreground hover:text-destructive transition-colors"
-                        aria-label="Remover venda"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        {onEditSale && (
+                          <button
+                            type="button"
+                            onClick={() => onEditSale(sale)}
+                            className="text-muted-foreground hover:text-foreground transition-colors"
+                            aria-label="Editar venda"
+                            title="Editar venda"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(sale.id)}
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          aria-label="Remover venda"
+                          title="Remover venda"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
