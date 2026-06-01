@@ -10,6 +10,7 @@ import type { SprintDashboardBlock } from "@loyola-x/shared";
 import type { ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
 import { applyFilters, isDoneStatus, extractAutoPhases } from "./summary-utils";
 import { BlockSummaryCard } from "./block-summary-card";
+import { PendingTasksList } from "./pending-tasks-list";
 
 interface SprintBlockCardProps {
   block: SprintDashboardBlock;
@@ -221,6 +222,9 @@ export function SprintBlockCard({
           ))}
         </div>
       )}
+
+      {/* Story 31.7 iter — Pendentes (atraso + hoje) ao fim do bloco */}
+      {!loading && <PendingTasksList block={block} tasksByListId={tasksByListId} />}
     </div>
   );
 }
