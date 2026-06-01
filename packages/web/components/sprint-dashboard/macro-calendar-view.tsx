@@ -3,9 +3,12 @@
 import { format, parseISO, isValid } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { SprintDashboardBlock, SprintCampaignPhase } from "@loyola-x/shared";
+import type { ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
+import { PendingTasksList } from "./pending-tasks-list";
 
 interface MacroCalendarViewProps {
   blocks: SprintDashboardBlock[];
+  tasksByListId: Map<string, ClickUpTaskShape[]>;
 }
 
 /**
@@ -13,7 +16,7 @@ interface MacroCalendarViewProps {
  * Grid de cards: 1 por bloco com bolinha colorida + título + subtitle + fases.
  * Cada fase tem tag colorida + intervalo de datas + badge de status (derivado da data).
  */
-export function MacroCalendarView({ blocks }: MacroCalendarViewProps) {
+export function MacroCalendarView({ blocks, tasksByListId }: MacroCalendarViewProps) {
   const blocksWithPhases = blocks.filter((b) => (b.campaignPhases?.length ?? 0) > 0);
 
   if (blocksWithPhases.length === 0) {
@@ -32,13 +35,19 @@ export function MacroCalendarView({ blocks }: MacroCalendarViewProps) {
   return (
     <div className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
       {blocksWithPhases.map((block) => (
-        <CampaignCard key={block.id} block={block} />
+        <CampaignCard key={block.id} block={block} tasksByListId={tasksByListId} />
       ))}
     </div>
   );
 }
 
-function CampaignCard({ block }: { block: SprintDashboardBlock }) {
+function CampaignCard({
+  block,
+  tasksByListId,
+}: {
+  block: SprintDashboardBlock;
+  tasksByListId: Map<string, ClickUpTaskShape[]>;
+}) {
   const phases = block.campaignPhases ?? [];
   const phaseStates = phases.map((p) => derivePhaseState(p));
   const isLive = phaseStates.some((s) => s === "in-progress");
@@ -72,6 +81,9 @@ function CampaignCard({ block }: { block: SprintDashboardBlock }) {
           <PhaseRow key={p.id} phase={p} state={phaseStates[i]} blockColor={block.color} />
         ))}
       </div>
+
+      {/* Story 31.7 — Tasks pendentes (atraso + hoje) por campanha */}
+      <PendingTasksList block={block} tasksByListId={tasksByListId} />
     </div>
   );
 }

@@ -60,6 +60,8 @@ const blockSchema = z.object({
   groupBy: groupBySchema,
   sortOrder: z.number().int().nonnegative(),
   campaignPhases: z.array(campaignPhaseSchema).optional(),
+  /** Story 31.7 */
+  manualContext: z.string().max(2000).nullable().optional(),
 });
 
 const putBodySchema = z.object({

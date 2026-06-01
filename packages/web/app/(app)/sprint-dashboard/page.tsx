@@ -18,7 +18,9 @@ import { SprintBuilderDialog } from "@/components/sprint-dashboard/sprint-builde
 import { SprintBlockCard } from "@/components/sprint-dashboard/sprint-block-card";
 import { TaskEditDialog } from "@/components/sprint-dashboard/task-edit-dialog";
 import { MacroCalendarView } from "@/components/sprint-dashboard/macro-calendar-view";
+import { BlockContextDialog } from "@/components/sprint-dashboard/block-context-dialog";
 import { useQueryClient } from "@tanstack/react-query";
+import type { SprintDashboardBlock } from "@loyola-x/shared";
 
 export default function SprintDashboardPage() {
   const role = useUserRole();
@@ -26,6 +28,8 @@ export default function SprintDashboardPage() {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ClickUpTaskShape | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "macro">("overview");
+  // Story 31.7
+  const [contextBlock, setContextBlock] = useState<SprintDashboardBlock | null>(null);
 
   const { data: config, isLoading: configLoading } = useSprintDashboardConfig();
   const { data: metrics } = useSprintDashboardMetrics();
@@ -156,11 +160,12 @@ export default function SprintDashboardPage() {
               onToggleStatus={(taskId, newStatus) => updateStatus.mutate({ taskId, status: newStatus })}
               statusUpdating={updateStatus.isPending}
               onEditTask={(task) => setEditingTask(task)}
+              onEditContext={(b) => setContextBlock(b)}
             />
           ))}
         </div>
       ) : (
-        <MacroCalendarView blocks={blocks} />
+        <MacroCalendarView blocks={blocks} tasksByListId={tasksByListId} />
       )}
 
       {/* Edit dialog (status + nome + due_date) */}
@@ -171,6 +176,18 @@ export default function SprintDashboardPage() {
           if (!open) setEditingTask(null);
         }}
       />
+
+      {/* Story 31.7 — Edit context dialog */}
+      {contextBlock && (
+        <BlockContextDialog
+          block={contextBlock}
+          allBlocks={blocks}
+          open={!!contextBlock}
+          onOpenChange={(open) => {
+            if (!open) setContextBlock(null);
+          }}
+        />
+      )}
     </div>
   );
 }
