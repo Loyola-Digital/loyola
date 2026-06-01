@@ -43,8 +43,21 @@ export function applyFilters(
   });
 }
 
-// Story 31.7 — emojis-gatilho do card resumo. Match no nome da task.
+// Story 31.7 iter — Detecção de fase:
+// 1. PRIMÁRIO: Task Type custom no ClickUp (customItemId !== null).
+//    Lucas usa o tipo "Campanha" no ClickUp pra marcar fases — qualquer task
+//    com Task Type custom vira fase automaticamente.
+// 2. FALLBACK: emoji 📢/📣 no nome (retrocompat com fluxo antigo).
 const SUMMARY_EMOJIS = ["📢", "📣"] as const;
+
+function isPhaseTask(task: ClickUpTaskShape): boolean {
+  // Task Type custom (Campanha) — primário
+  if (typeof task.customItemId === "number" && task.customItemId !== 0) {
+    return true;
+  }
+  // Emoji no nome — fallback
+  return SUMMARY_EMOJIS.some((e) => task.name.includes(e));
+}
 
 /**
  * Cada task com 📢/📣 representa UMA FASE do lançamento. Datas e status vêm
@@ -77,12 +90,12 @@ function msToIsoDate(ms: string | null): string | null {
 }
 
 /**
- * Pega TODAS as tasks com 📢/📣 e converte em fases ordenadas pelo
- * startDate (fallback dueDate). Cada task = 1 fase.
+ * Pega TODAS as tasks que são fase (Task Type custom OU emoji 📢/📣) e
+ * converte em fases ordenadas pelo startDate (fallback dueDate).
  */
 export function extractAutoPhases(tasks: ClickUpTaskShape[]): AutoPhase[] {
   return tasks
-    .filter((t) => SUMMARY_EMOJIS.some((e) => t.name.includes(e)))
+    .filter(isPhaseTask)
     .map<AutoPhase>((t) => {
       const startMs = t.startDate ? Number(t.startDate) : null;
       const dueMs = t.dueDate ? Number(t.dueDate) : null;

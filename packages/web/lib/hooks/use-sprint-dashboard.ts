@@ -54,6 +54,8 @@ export interface ClickUpTaskShape {
   listName: string;
   folderId: string | null;
   folderName: string | null;
+  /** Story 31.7 iter — Task Type custom (Campanha, Bug, etc). null = "Task". */
+  customItemId: number | null;
 }
 
 export function useSprintDashboardTasks(listIds: string[] | null) {

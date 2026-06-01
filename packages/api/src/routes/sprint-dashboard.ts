@@ -28,6 +28,9 @@ type ClickUpTaskSimple = {
   listName: string;
   folderId: string | null;
   folderName: string | null;
+  /** Story 31.7 iter — Task Type custom no ClickUp (Campanha, Bug, etc).
+   * null = task padrão ("Task"). Usado pra detectar fases automaticamente. */
+  customItemId: number | null;
 };
 type TasksCacheEntry = { tasks: ClickUpTaskSimple[]; expiresAt: number };
 const tasksCache = new Map<string, TasksCacheEntry>();
@@ -185,6 +188,7 @@ export default fp(async function sprintDashboardRoutes(fastify) {
           listName: t.list?.name ?? "",
           folderId: t.folder?.id ?? null,
           folderName: t.folder?.name ?? null,
+          customItemId: t.custom_item_id ?? null,
         });
       }
     }

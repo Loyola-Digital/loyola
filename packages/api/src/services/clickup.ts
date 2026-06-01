@@ -76,6 +76,9 @@ interface ClickUpTask {
   list?: { id: string; name: string };
   folder?: { id: string; name: string };
   space?: { id: string };
+  /** ID do Task Type custom no ClickUp (ex: "Campanha", "Bug"). Tasks
+   * default ("Task") têm null/undefined. */
+  custom_item_id?: number | null;
 }
 
 interface CreateTaskParams {
@@ -150,8 +153,9 @@ export default fp(async function clickupService(fastify) {
   }
 
   async function getTasks(listId: string): Promise<ClickUpTask[]> {
+    // custom_items=true inclui `custom_item_id` no payload (Task Types custom).
     const data = await fetchApi<{ tasks: ClickUpTask[] }>(
-      `/list/${listId}/task?include_closed=true&subtasks=true`,
+      `/list/${listId}/task?include_closed=true&subtasks=true&custom_items=true`,
     );
     return data.tasks;
   }
