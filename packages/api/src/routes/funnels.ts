@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { eq, and, desc, asc, isNull, isNotNull } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { funnels, funnelStages, projects, projectMembers, metaAdsAccountProjects, metaAdsAccounts, googleAdsAccountProjects, googleAdsAccounts, users } from "../db/schema.js";
 import { fetchCampaigns, decryptAccountToken } from "../services/meta-ads.js";
@@ -187,10 +187,31 @@ export default fp(async function funnelRoutes(fastify) {
       return reply.code(400).send({ error: "ID inválido" });
     }
 
+    // Story 10.9: filtro de arquivamento. Default `false` = só ativos
+    // (retrocompat — clients antigos continuam recebendo só não-arquivados).
+    const querySchema = z.object({
+      archived: z.enum(["true", "false", "all"]).default("false"),
+    });
+    const queryResult = querySchema.safeParse(request.query);
+    if (!queryResult.success) {
+      return reply.code(400).send({ error: "Query inválida" });
+    }
+
     const project = await getProjectAccess(paramResult.data.projectId, request.userId, request.userRole);
     if (!project) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
+
+    const archiveFilter =
+      queryResult.data.archived === "true"
+        ? isNotNull(funnels.archivedAt)
+        : queryResult.data.archived === "false"
+        ? isNull(funnels.archivedAt)
+        : undefined;
+
+    const whereClause = archiveFilter
+      ? and(eq(funnels.projectId, paramResult.data.projectId), archiveFilter)
+      : eq(funnels.projectId, paramResult.data.projectId);
 
     const rows = await fastify.db
       .select({
@@ -203,7 +224,7 @@ export default fp(async function funnelRoutes(fastify) {
       })
       .from(funnels)
       .leftJoin(users, eq(funnels.lastAuditBy, users.id))
-      .where(eq(funnels.projectId, paramResult.data.projectId))
+      .where(whereClause)
       // Story 10.8: perpétuos primeiro (DESC ordena "perpetual" > "launch"
       // alfabeticamente), depois sort_order manual, com created_at de tiebreak.
       .orderBy(desc(funnels.type), asc(funnels.sortOrder), asc(funnels.createdAt));
@@ -240,11 +261,12 @@ export default fp(async function funnelRoutes(fastify) {
     );
     if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
 
-    // Carrega todos os funis do projeto pra validar a lista
+    // Carrega todos os funis ATIVOS do projeto pra validar a lista (Story 10.9:
+    // arquivados não participam de reorder).
     const allFunnels = await fastify.db
-      .select({ id: funnels.id, type: funnels.type })
+      .select({ id: funnels.id, type: funnels.type, archivedAt: funnels.archivedAt })
       .from(funnels)
-      .where(eq(funnels.projectId, paramResult.data.projectId));
+      .where(and(eq(funnels.projectId, paramResult.data.projectId), isNull(funnels.archivedAt)));
 
     if (allFunnels.length !== body.data.ids.length) {
       return reply
@@ -260,7 +282,8 @@ export default fp(async function funnelRoutes(fastify) {
     const typeById = new Map(allFunnels.map((f) => [f.id, f.type] as const));
     for (const id of body.data.ids) {
       if (!typeById.has(id)) {
-        return reply.code(400).send({ error: "ID desconhecido" });
+        // Pode ser id inválido OU funil arquivado (que ficou fora do allFunnels)
+        return reply.code(400).send({ error: "ID desconhecido ou funil arquivado" });
       }
     }
 
@@ -298,6 +321,69 @@ export default fp(async function funnelRoutes(fastify) {
       fastify.log.error({ err }, "[funnels-reorder] transaction failed");
       return reply.code(500).send({ error: "Erro ao salvar ordem" });
     }
+
+    return { success: true };
+  });
+
+  // ---- PUT /api/projects/:projectId/funnels/:funnelId/archive ---- (Story 10.9)
+  fastify.put("/api/projects/:projectId/funnels/:funnelId/archive", async (request, reply) => {
+    if (request.userRole === "guest") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+    const paramResult = funnelParamSchema.safeParse(request.params);
+    if (!paramResult.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const project = await getProjectAccess(
+      paramResult.data.projectId,
+      request.userId,
+      request.userRole,
+    );
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+    const archivedAt = new Date();
+    const [updated] = await fastify.db
+      .update(funnels)
+      .set({ archivedAt, archivedBy: request.userId })
+      .where(
+        and(
+          eq(funnels.id, paramResult.data.funnelId),
+          eq(funnels.projectId, paramResult.data.projectId),
+        ),
+      )
+      .returning({ id: funnels.id, archivedAt: funnels.archivedAt });
+
+    if (!updated) return reply.code(404).send({ error: "Funil não encontrado" });
+
+    return { success: true, archivedAt: updated.archivedAt?.toISOString() ?? archivedAt.toISOString() };
+  });
+
+  // ---- PUT /api/projects/:projectId/funnels/:funnelId/unarchive ---- (Story 10.9)
+  fastify.put("/api/projects/:projectId/funnels/:funnelId/unarchive", async (request, reply) => {
+    if (request.userRole === "guest") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+    const paramResult = funnelParamSchema.safeParse(request.params);
+    if (!paramResult.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const project = await getProjectAccess(
+      paramResult.data.projectId,
+      request.userId,
+      request.userRole,
+    );
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+    const [updated] = await fastify.db
+      .update(funnels)
+      .set({ archivedAt: null, archivedBy: null })
+      .where(
+        and(
+          eq(funnels.id, paramResult.data.funnelId),
+          eq(funnels.projectId, paramResult.data.projectId),
+        ),
+      )
+      .returning({ id: funnels.id });
+
+    if (!updated) return reply.code(404).send({ error: "Funil não encontrado" });
 
     return { success: true };
   });

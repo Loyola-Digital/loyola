@@ -586,6 +586,9 @@ export const funnels = pgTable(
     /** Story 10.8: ordem manual dentro do tipo (perpetuals/launches). Hard rule
      * "perpétuos antes de lançamentos" é enforced no endpoint, não no schema. */
     sortOrder: integer("sort_order").notNull().default(0),
+    /** Story 10.9: soft archive. NULL = ativo, NOT NULL = arquivado. */
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    archivedBy: uuid("archived_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

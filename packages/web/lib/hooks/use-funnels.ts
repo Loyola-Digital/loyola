@@ -157,6 +157,56 @@ export function useReorderFunnels(projectId: string) {
 }
 
 // ============================================================
+// Story 10.9 — Soft archive
+// ============================================================
+
+/** Lista funis arquivados do projeto (separado de useFunnels que retorna ativos). */
+export function useArchivedFunnels(projectId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["funnels-archived", projectId],
+    queryFn: () =>
+      apiClient<Funnel[]>(`/api/projects/${projectId}/funnels?archived=true`),
+    enabled: !!projectId,
+    staleTime: FUNNEL_STALE_TIME,
+  });
+}
+
+function invalidateFunnelLists(
+  queryClient: ReturnType<typeof useQueryClient>,
+  projectId: string,
+) {
+  queryClient.invalidateQueries({ queryKey: ["funnels", projectId] });
+  queryClient.invalidateQueries({ queryKey: ["funnels-archived", projectId] });
+}
+
+export function useArchiveFunnel(projectId: string) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (funnelId: string) =>
+      apiClient<{ success: true; archivedAt: string }>(
+        `/api/projects/${projectId}/funnels/${funnelId}/archive`,
+        { method: "PUT" },
+      ),
+    onSuccess: () => invalidateFunnelLists(queryClient, projectId),
+  });
+}
+
+export function useUnarchiveFunnel(projectId: string) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (funnelId: string) =>
+      apiClient<{ success: true }>(
+        `/api/projects/${projectId}/funnels/${funnelId}/unarchive`,
+        { method: "PUT" },
+      ),
+    onSuccess: () => invalidateFunnelLists(queryClient, projectId),
+  });
+}
+
+// ============================================================
 // CAMPAIGN PICKER (Story 10.2)
 // ============================================================
 

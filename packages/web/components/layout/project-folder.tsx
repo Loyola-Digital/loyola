@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings, Brain, EyeOff, Eye } from "lucide-react";
+import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings, Brain, EyeOff, Eye, Archive, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -51,7 +51,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useFunnels, useDeleteFunnel, useUpdateFunnel, useReorderFunnels } from "@/lib/hooks/use-funnels";
+import {
+  useFunnels,
+  useDeleteFunnel,
+  useUpdateFunnel,
+  useReorderFunnels,
+  useArchivedFunnels,
+  useArchiveFunnel,
+  useUnarchiveFunnel,
+} from "@/lib/hooks/use-funnels";
 import { useFunnelStages, useCreateStage, useReorderStages } from "@/lib/hooks/use-funnel-stages";
 import type { Funnel, FunnelStage } from "@loyola-x/shared";
 import {
@@ -96,6 +104,8 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
   const router = useRouter();
   const deleteFunnel = useDeleteFunnel(projectId);
   const updateFunnel = useUpdateFunnel(projectId, funnel.id);
+  const archiveFunnel = useArchiveFunnel(projectId);
+  const unarchiveFunnel = useUnarchiveFunnel(projectId);
   const createStage = useCreateStage(projectId, funnel.id);
   const { data: stages, isLoading: stagesLoading } = useFunnelStages(projectId, funnel.id);
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
@@ -229,6 +239,32 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
                     <Rocket className="mr-2 h-4 w-4" />
                   )}
                   Alterar para {oppositeLabel}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={async () => {
+                    try {
+                      await archiveFunnel.mutateAsync(funnel.id);
+                      toast.success("Funil arquivado", {
+                        action: {
+                          label: "Desfazer",
+                          onClick: () => {
+                            unarchiveFunnel.mutate(funnel.id, {
+                              onError: (err) =>
+                                toast.error(
+                                  err instanceof Error ? err.message : "Erro ao desarquivar",
+                                ),
+                            });
+                          },
+                        },
+                      });
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Erro ao arquivar");
+                    }
+                  }}
+                  disabled={archiveFunnel.isPending}
+                >
+                  <Archive className="mr-2 h-4 w-4" />
+                  Arquivar funil
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
@@ -670,6 +706,8 @@ export function ProjectFolder({ project, collapsed = false, isHidden = false, on
             />
           )}
 
+          <ArchivedFunnelsSection projectId={project.id} isAdmin={isAdmin} />
+
           {onNewFunnel && (
             <Button
               variant="ghost"
@@ -961,6 +999,98 @@ function SortableFunnelItem({ funnel, projectId, isAdmin }: SortableFunnelItemPr
         </button>
       )}
       <FunnelItem funnel={funnel} projectId={projectId} isAdmin={isAdmin} />
+    </div>
+  );
+}
+
+// ============================================================
+// Story 10.9 — Archived funnels (Collapsible section)
+// ============================================================
+
+function ArchivedFunnelsSection({ projectId, isAdmin }: { projectId: string; isAdmin: boolean }) {
+  const { data: archived } = useArchivedFunnels(projectId);
+  const [open, setOpen] = useState(false);
+
+  if (!archived || archived.length === 0) return null;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <Button
+          variant="ghost"
+          className="justify-start gap-2 h-8 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <Archive className="h-4 w-4 shrink-0" />
+          <span className="flex-1 text-left">Arquivados ({archived.length})</span>
+          <ChevronRight
+            className={cn(
+              "h-3 w-3 transition-transform shrink-0",
+              open && "rotate-90",
+            )}
+          />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="ml-4 flex flex-col gap-0.5 border-l pl-2 py-0.5">
+          {archived.map((funnel) => (
+            <ArchivedFunnelItem
+              key={funnel.id}
+              funnel={funnel}
+              projectId={projectId}
+              canUnarchive={isAdmin}
+            />
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function ArchivedFunnelItem({
+  funnel,
+  projectId,
+  canUnarchive,
+}: {
+  funnel: Funnel;
+  projectId: string;
+  canUnarchive: boolean;
+}) {
+  const pathname = usePathname();
+  const unarchiveFunnel = useUnarchiveFunnel(projectId);
+  const funnelHref = `/projects/${projectId}/funnels/${funnel.id}`;
+  const isActive = pathname.startsWith(funnelHref);
+  const Icon = funnel.type === "launch" ? Rocket : Repeat;
+
+  return (
+    <div className="group/archived flex items-center">
+      <Button
+        variant={isActive ? "secondary" : "ghost"}
+        className="flex-1 justify-start gap-1.5 h-7 text-xs min-w-0 text-muted-foreground hover:text-foreground"
+        asChild
+      >
+        <Link href={funnelHref}>
+          <Icon className="h-3.5 w-3.5 shrink-0 opacity-70" />
+          <span className="truncate flex-1 text-left">{funnel.name}</span>
+        </Link>
+      </Button>
+      {canUnarchive && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 p-0 opacity-0 group-hover/archived:opacity-100 transition-opacity shrink-0"
+          disabled={unarchiveFunnel.isPending}
+          aria-label="Desarquivar funil"
+          onClick={() => {
+            unarchiveFunnel.mutate(funnel.id, {
+              onSuccess: () => toast.success("Funil desarquivado"),
+              onError: (err) =>
+                toast.error(err instanceof Error ? err.message : "Erro ao desarquivar"),
+            });
+          }}
+        >
+          <RotateCcw className="h-3 w-3" />
+        </Button>
+      )}
     </div>
   );
 }
