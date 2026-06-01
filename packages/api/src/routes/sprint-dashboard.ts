@@ -148,6 +148,19 @@ export default fp(async function sprintDashboardRoutes(fastify) {
     bypassCache: z.coerce.boolean().optional(),
   });
 
+  // Story 31.7 iter: cacheia teamId pra não chamar getTeams a cada request
+  let cachedTeamId: string | null = null;
+  async function resolveTeamId(): Promise<string | null> {
+    if (cachedTeamId) return cachedTeamId;
+    try {
+      const teams = await fastify.clickupService.getTeams();
+      cachedTeamId = teams[0]?.id ?? null;
+      return cachedTeamId;
+    } catch {
+      return null;
+    }
+  }
+
   async function fetchTasksFromLists(listIds: string[], bypassCache = false): Promise<ClickUpTaskSimple[]> {
     const key = tasksCacheKey(listIds);
     if (!bypassCache) {
@@ -157,19 +170,34 @@ export default fp(async function sprintDashboardRoutes(fastify) {
       }
     }
 
-    // Paralelo: 1 chamada por lista. Erros de uma lista não derrubam o resto.
+    // Story 31.7 iter: precisa de 2 GETs por lista — um pras tasks default
+    // ("Task") e outro pras tasks com Task Type custom (Campanha, etc).
+    // ClickUp não retorna ambos numa só chamada — `custom_items[]=ID` exclui
+    // tasks default. Falhas em qualquer um não derrubam o outro.
+    const teamId = await resolveTeamId();
     const results = await Promise.allSettled(
-      listIds.map((listId) => fastify.clickupService.getTasks(listId)),
+      listIds.flatMap((listId) => [
+        fastify.clickupService.getTasks(listId).then((tasks) => ({ listId, tasks })),
+        teamId
+          ? fastify.clickupService
+              .getCustomTypeTasks(listId, teamId)
+              .then((tasks) => ({ listId, tasks }))
+              .catch(() => ({ listId, tasks: [] }))
+          : Promise.resolve({ listId, tasks: [] }),
+      ]),
     );
     const allTasks: ClickUpTaskSimple[] = [];
+    const seenIds = new Set<string>(); // dedupe entre default e custom (não deveria ter, mas segurança)
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
-      const listId = listIds[i];
+      const listId = listIds[Math.floor(i / 2)];
       if (r.status === "rejected") {
         fastify.log.error({ err: r.reason, listId }, "ClickUp getTasks failed");
         continue;
       }
-      for (const t of r.value) {
+      for (const t of r.value.tasks) {
+        if (seenIds.has(t.id)) continue;
+        seenIds.add(t.id);
         allTasks.push({
           id: t.id,
           name: t.name,
