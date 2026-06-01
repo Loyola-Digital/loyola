@@ -7,7 +7,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, gte, desc } from "drizzle-orm";
+import { eq, and, gte, desc, asc } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   manualSales,
@@ -17,6 +17,31 @@ import {
   projectMembers,
   users,
 } from "../db/schema.js";
+
+/**
+ * Normaliza nome do usuário pra exibição: detecta Clerk ID literal
+ * ("user_xxx") e converte usando o local-part do email; senão devolve
+ * o nome real. Mesma lógica do funnel-stages.ts.
+ */
+function displayUserName(
+  name: string | null | undefined,
+  email: string | null | undefined,
+): string {
+  const looksLikeClerkId = typeof name === "string" && /^user_[A-Za-z0-9]+$/.test(name);
+  const nameIsEmail = name && email && name === email;
+  if (name && !looksLikeClerkId && !nameIsEmail) return name;
+
+  if (email) {
+    const local = email.split("@")[0].split("+")[0];
+    return local
+      .replace(/[._-]+/g, " ")
+      .split(" ")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+  return "Usuário";
+}
 
 const stageParamsSchema = z.object({
   projectId: z.string().uuid(),
@@ -80,42 +105,30 @@ export default fp(async function manualSalesRoutes(fastify) {
   }
 
   /**
-   * Lista os usuários elegíveis pra vendedor em um projeto:
-   * owner (projects.createdBy) + todos os project_members.
-   * Dedup por userId — owner que também é member aparece uma vez.
+   * Story 19.9 — Lista TODOS os usuários da plataforma como possíveis
+   * vendedores. Filtra status `blocked`. Aplica `displayUserName` pra
+   * normalizar entradas onde `users.name` é literalmente o Clerk ID
+   * (ex: "user_2abc...") ou cópia do email.
    */
-  async function getEligibleSellers(projectId: string) {
-    const [project] = await fastify.db
-      .select({ id: projects.id, ownerId: projects.createdBy })
-      .from(projects)
-      .where(eq(projects.id, projectId))
-      .limit(1);
-    if (!project) return [];
-
-    const memberRows = await fastify.db
+  async function getEligibleSellers() {
+    const rows = await fastify.db
       .select({
-        userId: projectMembers.userId,
-        name: users.name,
+        userId: users.id,
+        rawName: users.name,
         email: users.email,
+        status: users.status,
       })
-      .from(projectMembers)
-      .innerJoin(users, eq(users.id, projectMembers.userId))
-      .where(eq(projectMembers.projectId, projectId));
+      .from(users)
+      .where(eq(users.status, "active"))
+      .orderBy(asc(users.name));
 
-    const memberMap = new Map(memberRows.map((r) => [r.userId, r]));
-
-    if (!memberMap.has(project.ownerId)) {
-      const [owner] = await fastify.db
-        .select({ userId: users.id, name: users.name, email: users.email })
-        .from(users)
-        .where(eq(users.id, project.ownerId))
-        .limit(1);
-      if (owner) memberMap.set(owner.userId, owner);
-    }
-
-    return Array.from(memberMap.values()).sort((a, b) =>
-      a.name.localeCompare(b.name, "pt-BR"),
-    );
+    return rows
+      .map((r) => ({
+        userId: r.userId,
+        name: displayUserName(r.rawName, r.email),
+        email: r.email,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }
 
   // ---------------------------------------------------------------
@@ -146,7 +159,7 @@ export default fp(async function manualSalesRoutes(fastify) {
         if (!member) return reply.code(403).send({ error: "Acesso negado" });
       }
 
-      const sellers = await getEligibleSellers(projectId);
+      const sellers = await getEligibleSellers();
       return sellers;
     },
   );
@@ -274,15 +287,21 @@ export default fp(async function manualSalesRoutes(fastify) {
           .send({ error: "Vendas manuais só podem ser lançadas em etapas do tipo Vendas" });
       }
 
-      // Vendedor deve ser elegível: owner do projeto OU member
-      const eligibleSellers = await getEligibleSellers(params.data.projectId);
-      const sellerMembership = eligibleSellers.find(
-        (s) => s.userId === body.data.sellerUserId,
-      );
+      // Vendedor: qualquer usuário ativo da plataforma
+      const [sellerUser] = await fastify.db
+        .select({ id: users.id, name: users.name, email: users.email, status: users.status })
+        .from(users)
+        .where(eq(users.id, body.data.sellerUserId))
+        .limit(1);
 
-      if (!sellerMembership) {
-        return reply.code(403).send({ error: "Vendedor não é elegível neste projeto" });
+      if (!sellerUser || sellerUser.status === "blocked") {
+        return reply.code(403).send({ error: "Vendedor não é um usuário válido" });
       }
+      const sellerMembership = {
+        userId: sellerUser.id,
+        name: displayUserName(sellerUser.name, sellerUser.email),
+        email: sellerUser.email,
+      };
 
       // Parse saleDate — aceita ISO completo ou YYYY-MM-DD
       const saleDate = /^\d{4}-\d{2}-\d{2}$/.test(body.data.saleDate)
