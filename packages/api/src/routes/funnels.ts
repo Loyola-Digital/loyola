@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, desc, asc, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, asc } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { funnels, funnelStages, projects, projectMembers, metaAdsAccountProjects, metaAdsAccounts, googleAdsAccountProjects, googleAdsAccounts, users } from "../db/schema.js";
 import { fetchCampaigns, decryptAccountToken } from "../services/meta-ads.js";
@@ -277,15 +277,27 @@ export default fp(async function funnelRoutes(fastify) {
       }
     }
 
-    // Persiste via CASE WHEN em update único pra evitar N queries.
-    const cases = body.data.ids
-      .map((id, idx) => sql`WHEN ${id}::uuid THEN ${idx}`)
-      .reduce((acc, cur) => sql`${acc} ${cur}`, sql``);
-
-    await fastify.db
-      .update(funnels)
-      .set({ sortOrder: sql`CASE id ${cases} END` })
-      .where(inArray(funnels.id, body.data.ids));
+    // Persistência em transação: N updates triviais pra N funis. Pra Loyola
+    // (N tipicamente <20 por projeto) é insignificante e mais robusto que
+    // um CASE WHEN dinâmico.
+    try {
+      await fastify.db.transaction(async (tx) => {
+        for (let idx = 0; idx < body.data.ids.length; idx++) {
+          await tx
+            .update(funnels)
+            .set({ sortOrder: idx })
+            .where(
+              and(
+                eq(funnels.id, body.data.ids[idx]),
+                eq(funnels.projectId, paramResult.data.projectId),
+              ),
+            );
+        }
+      });
+    } catch (err) {
+      fastify.log.error({ err }, "[funnels-reorder] transaction failed");
+      return reply.code(500).send({ error: "Erro ao salvar ordem" });
+    }
 
     return { success: true };
   });
