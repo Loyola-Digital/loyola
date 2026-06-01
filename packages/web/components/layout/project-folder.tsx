@@ -51,7 +51,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useFunnels, useDeleteFunnel, useUpdateFunnel } from "@/lib/hooks/use-funnels";
+import { useFunnels, useDeleteFunnel, useUpdateFunnel, useReorderFunnels } from "@/lib/hooks/use-funnels";
 import { useFunnelStages, useCreateStage, useReorderStages } from "@/lib/hooks/use-funnel-stages";
 import type { Funnel, FunnelStage } from "@loyola-x/shared";
 import {
@@ -655,14 +655,13 @@ export function ProjectFolder({ project, collapsed = false, isHidden = false, on
             </>
           )}
 
-          {funnelList?.map((funnel) => (
-            <FunnelItem
-              key={funnel.id}
-              funnel={funnel}
+          {funnelList && funnelList.length > 0 && (
+            <SortableFunnelList
+              funnels={funnelList}
               projectId={project.id}
               isAdmin={isAdmin}
             />
-          ))}
+          )}
 
           {onNewFunnel && (
             <Button
@@ -817,6 +816,144 @@ function SortableStageNavItem({
           <span className="truncate">{stage.name}</span>
         </Link>
       </Button>
+    </div>
+  );
+}
+
+// ============================================================
+// Story 10.8 — Sortable list of funnels (perpetuals + launches)
+// ============================================================
+
+interface SortableFunnelListProps {
+  funnels: Funnel[];
+  projectId: string;
+  isAdmin: boolean;
+}
+
+function SortableFunnelList({ funnels: allFunnels, projectId, isAdmin }: SortableFunnelListProps) {
+  const reorder = useReorderFunnels(projectId);
+
+  // Mantém ordem local pra otimismo; sincroniza quando server retorna
+  const [orderedPerpetuals, setOrderedPerpetuals] = useState<Funnel[]>([]);
+  const [orderedLaunches, setOrderedLaunches] = useState<Funnel[]>([]);
+
+  useEffect(() => {
+    setOrderedPerpetuals(allFunnels.filter((f) => f.type === "perpetual"));
+    setOrderedLaunches(allFunnels.filter((f) => f.type === "launch"));
+  }, [allFunnels]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  function dispatchReorder(perpetuals: Funnel[], launches: Funnel[]) {
+    const ids = [...perpetuals.map((f) => f.id), ...launches.map((f) => f.id)];
+    reorder.mutate(ids, {
+      onError: () => {
+        // Reverte os 2 grupos pra estado base
+        setOrderedPerpetuals(allFunnels.filter((f) => f.type === "perpetual"));
+        setOrderedLaunches(allFunnels.filter((f) => f.type === "launch"));
+        toast.error("Erro ao reordenar — voltei pra ordem anterior");
+      },
+    });
+  }
+
+  function handleDragEndPerpetual(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = orderedPerpetuals.findIndex((f) => f.id === active.id);
+    const newIndex = orderedPerpetuals.findIndex((f) => f.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const next = arrayMove(orderedPerpetuals, oldIndex, newIndex);
+    setOrderedPerpetuals(next);
+    dispatchReorder(next, orderedLaunches);
+  }
+
+  function handleDragEndLaunch(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = orderedLaunches.findIndex((f) => f.id === active.id);
+    const newIndex = orderedLaunches.findIndex((f) => f.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const next = arrayMove(orderedLaunches, oldIndex, newIndex);
+    setOrderedLaunches(next);
+    dispatchReorder(orderedPerpetuals, next);
+  }
+
+  return (
+    <>
+      {orderedPerpetuals.length > 0 && (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEndPerpetual}>
+          <SortableContext
+            items={orderedPerpetuals.map((f) => f.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            {orderedPerpetuals.map((funnel) => (
+              <SortableFunnelItem
+                key={funnel.id}
+                funnel={funnel}
+                projectId={projectId}
+                isAdmin={isAdmin}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
+      )}
+
+      {orderedLaunches.length > 0 && (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEndLaunch}>
+          <SortableContext
+            items={orderedLaunches.map((f) => f.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            {orderedLaunches.map((funnel) => (
+              <SortableFunnelItem
+                key={funnel.id}
+                funnel={funnel}
+                projectId={projectId}
+                isAdmin={isAdmin}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
+      )}
+    </>
+  );
+}
+
+interface SortableFunnelItemProps {
+  funnel: Funnel;
+  projectId: string;
+  isAdmin: boolean;
+}
+
+function SortableFunnelItem({ funnel, projectId, isAdmin }: SortableFunnelItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: funnel.id,
+    disabled: !isAdmin,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : "auto",
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="relative group/sortable-funnel">
+      {isAdmin && (
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="absolute -left-1 top-1/2 -translate-y-1/2 z-10 p-0.5 rounded cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground opacity-0 group-hover/sortable-funnel:opacity-100 transition-opacity"
+          aria-label="Arrastar pra reordenar"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="h-3 w-3" />
+        </button>
+      )}
+      <FunnelItem funnel={funnel} projectId={projectId} isAdmin={isAdmin} />
     </div>
   );
 }

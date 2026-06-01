@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { funnels, funnelStages, projects, projectMembers, metaAdsAccountProjects, metaAdsAccounts, googleAdsAccountProjects, googleAdsAccounts, users } from "../db/schema.js";
 import { fetchCampaigns, decryptAccountToken } from "../services/meta-ads.js";
@@ -203,7 +203,10 @@ export default fp(async function funnelRoutes(fastify) {
       })
       .from(funnels)
       .leftJoin(users, eq(funnels.lastAuditBy, users.id))
-      .where(eq(funnels.projectId, paramResult.data.projectId));
+      .where(eq(funnels.projectId, paramResult.data.projectId))
+      // Story 10.8: perpétuos primeiro (DESC ordena "perpetual" > "launch"
+      // alfabeticamente), depois sort_order manual, com created_at de tiebreak.
+      .orderBy(desc(funnels.type), asc(funnels.sortOrder), asc(funnels.createdAt));
 
     return rows.map((row) => {
       const result = funnelShape(row.funnel);
@@ -215,6 +218,76 @@ export default fp(async function funnelRoutes(fastify) {
       }
       return result;
     });
+  });
+
+  // ---- PUT /api/projects/:projectId/funnels/reorder ---- (Story 10.8)
+  fastify.put("/api/projects/:projectId/funnels/reorder", async (request, reply) => {
+    if (request.userRole === "guest") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+
+    const paramResult = projectIdParamSchema.safeParse(request.params);
+    if (!paramResult.success) return reply.code(400).send({ error: "ID inválido" });
+
+    const bodySchema = z.object({ ids: z.array(z.string().uuid()).min(1) });
+    const body = bodySchema.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    const project = await getProjectAccess(
+      paramResult.data.projectId,
+      request.userId,
+      request.userRole,
+    );
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+    // Carrega todos os funis do projeto pra validar a lista
+    const allFunnels = await fastify.db
+      .select({ id: funnels.id, type: funnels.type })
+      .from(funnels)
+      .where(eq(funnels.projectId, paramResult.data.projectId));
+
+    if (allFunnels.length !== body.data.ids.length) {
+      return reply
+        .code(400)
+        .send({ error: "Lista incompleta ou com duplicatas" });
+    }
+
+    const idSet = new Set(body.data.ids);
+    if (idSet.size !== body.data.ids.length) {
+      return reply.code(400).send({ error: "Lista incompleta ou com duplicatas" });
+    }
+
+    const typeById = new Map(allFunnels.map((f) => [f.id, f.type] as const));
+    for (const id of body.data.ids) {
+      if (!typeById.has(id)) {
+        return reply.code(400).send({ error: "ID desconhecido" });
+      }
+    }
+
+    // Hard rule: perpétuos contíguos no início. Assim que ver um launch,
+    // nenhum perpetual pode aparecer depois.
+    let sawLaunch = false;
+    for (const id of body.data.ids) {
+      const t = typeById.get(id);
+      if (t === "launch") sawLaunch = true;
+      else if (t === "perpetual" && sawLaunch) {
+        return reply
+          .code(400)
+          .send({ error: "Perpétuos devem vir antes de lançamentos" });
+      }
+    }
+
+    // Persiste via CASE WHEN em update único pra evitar N queries.
+    const cases = body.data.ids
+      .map((id, idx) => sql`WHEN ${id}::uuid THEN ${idx}`)
+      .reduce((acc, cur) => sql`${acc} ${cur}`, sql``);
+
+    await fastify.db
+      .update(funnels)
+      .set({ sortOrder: sql`CASE id ${cases} END` })
+      .where(inArray(funnels.id, body.data.ids));
+
+    return { success: true };
   });
 
   // ---- GET /api/projects/:projectId/funnels/:funnelId ----

@@ -137,6 +137,25 @@ export function useDeleteFunnel(projectId: string) {
   });
 }
 
+/**
+ * Story 10.8 — Reordena funis do projeto. Recebe array com TODOS os IDs
+ * na nova ordem. Backend valida hard rule "perpétuos antes de lançamentos".
+ */
+export function useReorderFunnels(projectId: string) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) =>
+      apiClient<{ success: true }>(
+        `/api/projects/${projectId}/funnels/reorder`,
+        { method: "PUT", body: JSON.stringify({ ids }) },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["funnels", projectId] });
+    },
+  });
+}
+
 // ============================================================
 // CAMPAIGN PICKER (Story 10.2)
 // ============================================================

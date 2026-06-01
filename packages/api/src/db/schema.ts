@@ -583,6 +583,9 @@ export const funnels = pgTable(
       onDelete: "set null",
     }),
     auditStatus: varchar("audit_status", { length: 20 }).default("pending").notNull(),
+    /** Story 10.8: ordem manual dentro do tipo (perpetuals/launches). Hard rule
+     * "perpétuos antes de lançamentos" é enforced no endpoint, não no schema. */
+    sortOrder: integer("sort_order").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -592,6 +595,7 @@ export const funnels = pgTable(
   },
   (table) => [
     index("idx_funnels_project").on(table.projectId),
+    index("idx_funnels_project_sort").on(table.projectId, table.type, table.sortOrder),
   ]
 );
 
