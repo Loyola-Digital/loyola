@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, ExternalLink } from "lucide-react";
-import { collectBlockTasks, formatRelativeDue, getPendingTasks } from "./summary-utils";
+import { collectBlockTasks, formatRelativeDue, getPendingTasks, isDoneStatus } from "./summary-utils";
 import type { SprintDashboardBlock } from "@loyola-x/shared";
 import type { ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
 
@@ -20,10 +20,48 @@ const DEFAULT_LIMIT = 5;
 export function PendingTasksList({ block, tasksByListId }: PendingTasksListProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const pending = useMemo(() => {
-    const tasks = collectBlockTasks(block, tasksByListId);
-    return getPendingTasks(tasks);
-  }, [block, tasksByListId]);
+  const tasksOfBlock = useMemo(
+    () => collectBlockTasks(block, tasksByListId),
+    [block, tasksByListId],
+  );
+
+  const pending = useMemo(() => getPendingTasks(tasksOfBlock), [tasksOfBlock]);
+
+  // Story 31.7 iter — Debug: snapshot no console pra Lucas validar que
+  // realmente não tem nenhuma task em atraso (e ver as que ficaram de fora
+  // e por quê). Só dispara quando pending === 0 pra reduzir ruído.
+  useEffect(() => {
+    if (pending.length > 0) return;
+    const now = Date.now();
+    const endOfTodayMs = (() => {
+      const d = new Date();
+      d.setHours(23, 59, 59, 999);
+      return d.getTime();
+    })();
+    const snapshot = tasksOfBlock.map((t) => {
+      const dueMs = t.dueDate ? Number(t.dueDate) : null;
+      const dueOk = dueMs !== null && Number.isFinite(dueMs);
+      const reason = isDoneStatus(t.status)
+        ? "done"
+        : !dueOk
+        ? "sem due"
+        : (dueMs as number) > endOfTodayMs
+        ? "due futuro"
+        : "deveria entrar (bug?)";
+      return {
+        name: t.name,
+        status: t.status,
+        dueDate: dueMs ? new Date(dueMs).toISOString().slice(0, 10) : null,
+        excludedReason: reason,
+      };
+    });
+    // eslint-disable-next-line no-console
+    console.log(
+      `[PendingTasks] bloco "${block.title}" — 0 pendentes (de ${tasksOfBlock.length} tasks). Snapshot:`,
+      snapshot,
+      `Hoje: ${new Date(now).toISOString().slice(0, 10)}`,
+    );
+  }, [pending.length, tasksOfBlock, block.title]);
 
   const visible = expanded ? pending : pending.slice(0, DEFAULT_LIMIT);
   const hidden = pending.length - visible.length;
