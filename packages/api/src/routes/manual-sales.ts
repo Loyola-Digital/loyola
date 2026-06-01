@@ -79,6 +79,78 @@ export default fp(async function manualSalesRoutes(fastify) {
     return stage ?? null;
   }
 
+  /**
+   * Lista os usuários elegíveis pra vendedor em um projeto:
+   * owner (projects.createdBy) + todos os project_members.
+   * Dedup por userId — owner que também é member aparece uma vez.
+   */
+  async function getEligibleSellers(projectId: string) {
+    const [project] = await fastify.db
+      .select({ id: projects.id, ownerId: projects.createdBy })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1);
+    if (!project) return [];
+
+    const memberRows = await fastify.db
+      .select({
+        userId: projectMembers.userId,
+        name: users.name,
+        email: users.email,
+      })
+      .from(projectMembers)
+      .innerJoin(users, eq(users.id, projectMembers.userId))
+      .where(eq(projectMembers.projectId, projectId));
+
+    const memberMap = new Map(memberRows.map((r) => [r.userId, r]));
+
+    if (!memberMap.has(project.ownerId)) {
+      const [owner] = await fastify.db
+        .select({ userId: users.id, name: users.name, email: users.email })
+        .from(users)
+        .where(eq(users.id, project.ownerId))
+        .limit(1);
+      if (owner) memberMap.set(owner.userId, owner);
+    }
+
+    return Array.from(memberMap.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, "pt-BR"),
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // GET /sellers — lista vendedores elegíveis (owner + members) do projeto
+  // ---------------------------------------------------------------
+  fastify.get(
+    "/api/projects/:projectId/manual-sales/sellers",
+    async (request, reply) => {
+      const paramsResult = z
+        .object({ projectId: z.string().uuid() })
+        .safeParse(request.params);
+      if (!paramsResult.success) {
+        return reply.code(400).send({ error: "Parâmetros inválidos" });
+      }
+      const { projectId } = paramsResult.data;
+
+      if (request.userRole === "guest") {
+        const [member] = await fastify.db
+          .select({ projectId: projectMembers.projectId })
+          .from(projectMembers)
+          .where(
+            and(
+              eq(projectMembers.projectId, projectId),
+              eq(projectMembers.userId, request.userId),
+            ),
+          )
+          .limit(1);
+        if (!member) return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const sellers = await getEligibleSellers(projectId);
+      return sellers;
+    },
+  );
+
   // ---------------------------------------------------------------
   // GET — lista vendas manuais do stage + agregação
   // ---------------------------------------------------------------
@@ -202,21 +274,14 @@ export default fp(async function manualSalesRoutes(fastify) {
           .send({ error: "Vendas manuais só podem ser lançadas em etapas do tipo Vendas" });
       }
 
-      // Vendedor deve ser membro do projeto
-      const [sellerMembership] = await fastify.db
-        .select({ userId: projectMembers.userId, name: users.name, email: users.email })
-        .from(projectMembers)
-        .innerJoin(users, eq(users.id, projectMembers.userId))
-        .where(
-          and(
-            eq(projectMembers.projectId, params.data.projectId),
-            eq(projectMembers.userId, body.data.sellerUserId),
-          ),
-        )
-        .limit(1);
+      // Vendedor deve ser elegível: owner do projeto OU member
+      const eligibleSellers = await getEligibleSellers(params.data.projectId);
+      const sellerMembership = eligibleSellers.find(
+        (s) => s.userId === body.data.sellerUserId,
+      );
 
       if (!sellerMembership) {
-        return reply.code(403).send({ error: "Vendedor não é membro deste projeto" });
+        return reply.code(403).send({ error: "Vendedor não é elegível neste projeto" });
       }
 
       // Parse saleDate — aceita ISO completo ou YYYY-MM-DD

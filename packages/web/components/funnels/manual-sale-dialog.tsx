@@ -20,8 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useProjectMembers } from "@/lib/hooks/use-projects";
-import { useCreateManualSale } from "@/lib/hooks/use-manual-sales";
+import { useCreateManualSale, useEligibleSellers } from "@/lib/hooks/use-manual-sales";
 
 interface ManualSaleDialogProps {
   projectId: string;
@@ -58,7 +57,7 @@ export function ManualSaleDialog({
   open,
   onOpenChange,
 }: ManualSaleDialogProps) {
-  const { data: members, isLoading: loadingMembers } = useProjectMembers(projectId);
+  const { data: sellers, isLoading: loadingSellers } = useEligibleSellers(projectId);
   const createMutation = useCreateManualSale(projectId, funnelId, stageId);
 
   const [customerName, setCustomerName] = useState("");
@@ -193,19 +192,19 @@ export function ManualSaleDialog({
               <Select value={sellerUserId} onValueChange={setSellerUserId}>
                 <SelectTrigger id="seller">
                   <SelectValue
-                    placeholder={loadingMembers ? "Carregando..." : "Selecione o vendedor"}
+                    placeholder={loadingSellers ? "Carregando..." : "Selecione o vendedor"}
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {members && members.length > 0 ? (
-                    members.map((m) => (
-                      <SelectItem key={m.userId} value={m.userId}>
-                        {m.userName || m.userEmail}
+                  {sellers && sellers.length > 0 ? (
+                    sellers.map((s) => (
+                      <SelectItem key={s.userId} value={s.userId}>
+                        {s.name || s.email}
                       </SelectItem>
                     ))
                   ) : (
                     <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                      Nenhum membro encontrado
+                      Nenhum vendedor encontrado
                     </div>
                   )}
                 </SelectContent>

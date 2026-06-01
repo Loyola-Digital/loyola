@@ -14,6 +14,28 @@ function buildKey(projectId: string, funnelId: string, stageId: string, days: nu
   return ["manual-sales", projectId, funnelId, stageId, days] as const;
 }
 
+export interface EligibleSeller {
+  userId: string;
+  name: string;
+  email: string;
+}
+
+/**
+ * Vendedores elegíveis (owner + project_members) — usado no Select do
+ * modal de venda manual. Necessário porque o owner do projeto não vira
+ * row automática em project_members.
+ */
+export function useEligibleSellers(projectId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["manual-sales-sellers", projectId],
+    queryFn: () =>
+      apiClient<EligibleSeller[]>(`/api/projects/${projectId}/manual-sales/sellers`),
+    enabled: !!projectId,
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useManualSales(
   projectId: string | null,
   funnelId: string | null,
