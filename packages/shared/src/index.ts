@@ -98,3 +98,11 @@ export type {
   FunnelGroupsKpis,
   FunnelGroupsDailyResponse,
 } from "./types/funnel-groups.js";
+
+export type {
+  ManualSale,
+  ManualSaleSellerRanking,
+  ManualSalesSummary,
+  ManualSalesResponse,
+  CreateManualSaleInput,
+} from "./types/manual-sales.js";
