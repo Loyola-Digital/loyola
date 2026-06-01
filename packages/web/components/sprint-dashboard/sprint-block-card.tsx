@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SprintDashboardBlock } from "@loyola-x/shared";
 import type { ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
-import { applyFilters, isDoneStatus, extractAutoSummary } from "./summary-utils";
+import { applyFilters, isDoneStatus, extractAutoPhases } from "./summary-utils";
 import { BlockSummaryCard } from "./block-summary-card";
 
 interface SprintBlockCardProps {
@@ -64,18 +64,11 @@ export function SprintBlockCard({
 
   const completedCount = tasks.filter((t) => isDoneStatus(t.status) || optimisticDone.has(t.id)).length;
 
-  // Story 31.7: resumo executivo (manual sobrescreve auto)
-  const resolvedSummary = useMemo(() => {
-    const manual = block.manualContext?.trim();
-    if (manual) {
-      return { origin: "manual" as const, text: manual, link: null };
-    }
-    const auto = extractAutoSummary(tasks);
-    if (auto) {
-      return { origin: "auto" as const, text: auto.name, link: auto.url };
-    }
-    return null;
-  }, [block.manualContext, tasks]);
+  // Story 31.7 iter: resumo executivo = manualContext (texto livre) +
+  // fases auto-detectadas (tasks com 📢). Ambos coexistem no mesmo card.
+  const autoPhases = useMemo(() => extractAutoPhases(tasks), [tasks]);
+  const manualText = block.manualContext?.trim() ?? "";
+  const hasSummary = manualText.length > 0 || autoPhases.length > 0;
 
   function handleToggle(task: ClickUpTaskShape) {
     if (statusUpdating) return;
@@ -120,12 +113,11 @@ export function SprintBlockCard({
         )}
       </div>
 
-      {/* Story 31.7 — Card resumo (manual prevalece sobre auto) */}
-      {resolvedSummary && (
+      {/* Story 31.7 iter — Card resumo: manual + fases auto coexistem */}
+      {hasSummary && (
         <BlockSummaryCard
-          origin={resolvedSummary.origin}
-          text={resolvedSummary.text}
-          link={resolvedSummary.link}
+          manualText={manualText}
+          phases={autoPhases}
           accentColor={block.color}
         />
       )}

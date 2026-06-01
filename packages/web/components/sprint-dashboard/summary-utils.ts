@@ -46,30 +46,64 @@ export function applyFilters(
 // Story 31.7 — emojis-gatilho do card resumo. Match no nome da task.
 const SUMMARY_EMOJIS = ["📢", "📣"] as const;
 
-export interface AutoSummary {
+/**
+ * Cada task com 📢/📣 representa UMA FASE do lançamento. Datas e status vêm
+ * direto do ClickUp; nome da task é o label completo (ex: "[DATA] FASE CAPTAÇÃO").
+ */
+export interface AutoPhase {
   taskId: string;
-  name: string;
+  label: string;
+  /** ISO YYYY-MM-DD derivado de task.startDate (ms) ou null */
+  startDate: string | null;
+  /** ISO YYYY-MM-DD derivado de task.dueDate (ms) ou null */
+  endDate: string | null;
+  status: string;
+  statusColor: string | null;
   url: string;
-  dueDate: string | null;
+  /** Timestamp ms pra ordenação interna. NÃO exposto na UI. */
+  sortKey: number;
 }
 
-/** Pega a primeira task cujo nome contém 📢/📣, ordenada por dueDate ASC. */
-export function extractAutoSummary(tasks: ClickUpTaskShape[]): AutoSummary | null {
-  const candidates = tasks
+function msToIsoDate(ms: string | null): string | null {
+  if (!ms) return null;
+  const n = Number(ms);
+  if (!Number.isFinite(n)) return null;
+  const d = new Date(n);
+  if (Number.isNaN(d.getTime())) return null;
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * Pega TODAS as tasks com 📢/📣 e converte em fases ordenadas pelo
+ * startDate (fallback dueDate). Cada task = 1 fase.
+ */
+export function extractAutoPhases(tasks: ClickUpTaskShape[]): AutoPhase[] {
+  return tasks
     .filter((t) => SUMMARY_EMOJIS.some((e) => t.name.includes(e)))
-    .sort((a, b) => {
-      const da = a.dueDate ? Number(a.dueDate) : Number.POSITIVE_INFINITY;
-      const db = b.dueDate ? Number(b.dueDate) : Number.POSITIVE_INFINITY;
-      return da - db;
-    });
-  const first = candidates[0];
-  if (!first) return null;
-  return {
-    taskId: first.id,
-    name: first.name,
-    url: first.url,
-    dueDate: first.dueDate,
-  };
+    .map<AutoPhase>((t) => {
+      const startMs = t.startDate ? Number(t.startDate) : null;
+      const dueMs = t.dueDate ? Number(t.dueDate) : null;
+      const sortKey =
+        startMs && Number.isFinite(startMs)
+          ? startMs
+          : dueMs && Number.isFinite(dueMs)
+          ? dueMs
+          : Number.POSITIVE_INFINITY;
+      return {
+        taskId: t.id,
+        label: t.name,
+        startDate: msToIsoDate(t.startDate),
+        endDate: msToIsoDate(t.dueDate),
+        status: t.status,
+        statusColor: t.statusColor,
+        url: t.url,
+        sortKey,
+      };
+    })
+    .sort((a, b) => a.sortKey - b.sortKey);
 }
 
 /** Junta tasks de todas as listas do bloco e aplica filtros. */

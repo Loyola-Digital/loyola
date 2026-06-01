@@ -5,6 +5,7 @@ import { ptBR } from "date-fns/locale";
 import type { SprintDashboardBlock, SprintCampaignPhase } from "@loyola-x/shared";
 import type { ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
 import { PendingTasksList } from "./pending-tasks-list";
+import { collectBlockTasks, extractAutoPhases, type AutoPhase } from "./summary-utils";
 
 interface MacroCalendarViewProps {
   blocks: SprintDashboardBlock[];
@@ -16,17 +17,45 @@ interface MacroCalendarViewProps {
  * Grid de cards: 1 por bloco com bolinha colorida + título + subtitle + fases.
  * Cada fase tem tag colorida + intervalo de datas + badge de status (derivado da data).
  */
+/**
+ * Story 31.7 iter — Mapeia AutoPhase (vinda das tasks 📢) pro shape
+ * SprintCampaignPhase usado pelo renderizador existente. Permite reusar
+ * `PhaseRow` + `derivePhaseState` sem duplicar lógica.
+ */
+function autoPhasesAsCampaignPhases(autoPhases: AutoPhase[]): SprintCampaignPhase[] {
+  return autoPhases.map((p) => ({
+    id: p.taskId,
+    label: p.label,
+    startDate: p.startDate ?? "",
+    endDate: p.endDate ?? undefined,
+  }));
+}
+
 export function MacroCalendarView({ blocks, tasksByListId }: MacroCalendarViewProps) {
-  const blocksWithPhases = blocks.filter((b) => (b.campaignPhases?.length ?? 0) > 0);
+  // Story 31.7 iter: cada bloco usa fases do ClickUp (tasks 📢) quando há;
+  // senão cai pro campaignPhases configurado manualmente. Cards só aparecem
+  // se um dos dois entrega ao menos 1 fase.
+  const blocksWithPhases = blocks
+    .map((block) => {
+      const autoPhases = extractAutoPhases(collectBlockTasks(block, tasksByListId));
+      const phases =
+        autoPhases.length > 0
+          ? autoPhasesAsCampaignPhases(autoPhases)
+          : block.campaignPhases ?? [];
+      const source = autoPhases.length > 0 ? "auto" : "manual";
+      return { block, phases, source };
+    })
+    .filter((b) => b.phases.length > 0);
 
   if (blocksWithPhases.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border/40 p-12 text-center space-y-2">
         <p className="text-sm text-muted-foreground">
-          Nenhum bloco com fases de campanha configuradas.
+          Nenhum bloco com fases de campanha.
         </p>
         <p className="text-xs text-muted-foreground">
-          Abra <strong>Configurar</strong> → editar bloco → <strong>Configurar fases da campanha</strong>.
+          Marque tasks no ClickUp com <strong>📢</strong> pra detectar fases automaticamente, ou
+          configure manual em <strong>Configurar → editar bloco → Fases da campanha</strong>.
         </p>
       </div>
     );
@@ -34,8 +63,14 @@ export function MacroCalendarView({ blocks, tasksByListId }: MacroCalendarViewPr
 
   return (
     <div className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-      {blocksWithPhases.map((block) => (
-        <CampaignCard key={block.id} block={block} tasksByListId={tasksByListId} />
+      {blocksWithPhases.map(({ block, phases, source }) => (
+        <CampaignCard
+          key={block.id}
+          block={block}
+          phases={phases}
+          source={source as "auto" | "manual"}
+          tasksByListId={tasksByListId}
+        />
       ))}
     </div>
   );
@@ -43,12 +78,15 @@ export function MacroCalendarView({ blocks, tasksByListId }: MacroCalendarViewPr
 
 function CampaignCard({
   block,
+  phases,
+  source,
   tasksByListId,
 }: {
   block: SprintDashboardBlock;
+  phases: SprintCampaignPhase[];
+  source: "auto" | "manual";
   tasksByListId: Map<string, ClickUpTaskShape[]>;
 }) {
-  const phases = block.campaignPhases ?? [];
   const phaseStates = phases.map((p) => derivePhaseState(p));
   const isLive = phaseStates.some((s) => s === "in-progress");
 
@@ -66,6 +104,11 @@ function CampaignCard({
             {isLive && (
               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">
                 ● no ar
+              </span>
+            )}
+            {source === "auto" && (
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground" title="Fases detectadas automaticamente das tasks do ClickUp marcadas com 📢">
+                📢 auto
               </span>
             )}
           </div>
