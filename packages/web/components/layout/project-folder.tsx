@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings, Brain, EyeOff, Eye } from "lucide-react";
@@ -111,9 +111,16 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
   const isActiveFunnel = pathname.startsWith(funnelHref);
   const [open, setOpen] = useState(isActiveFunnel);
 
+  // Abre o funil automaticamente apenas quando o usuário acabou de navegar
+  // pra dentro dele (transição inactive→active). Depois respeita a escolha
+  // manual — o efeito antigo reabria em cada render e bloqueava o collapse.
+  const prevActiveRef = useRef(isActiveFunnel);
   useEffect(() => {
-    if (isActiveFunnel && !open) setOpen(true);
-  }, [isActiveFunnel, open]);
+    if (isActiveFunnel && !prevActiveRef.current) {
+      setOpen(true);
+    }
+    prevActiveRef.current = isActiveFunnel;
+  }, [isActiveFunnel]);
 
   const FunnelIcon = funnel.type === "launch" ? Rocket : Repeat;
   const oppositeType = funnel.type === "launch" ? "perpetual" : "launch";
