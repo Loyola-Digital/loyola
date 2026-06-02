@@ -12,6 +12,10 @@ import {
   formatMetricValue,
   type CreativeMetrics,
 } from "@/lib/utils/creative-metrics-calculator";
+import {
+  compileCreativeMetricsByName,
+  isAllFiltersSelected,
+} from "@/lib/utils/compileCreativeMetrics";
 import { useStageCreativePerformance } from "@/lib/hooks/useStageCreativePerformance";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -85,10 +89,12 @@ export function StageCreativePerformanceTable({
   });
 
   // Processa: metrics + filtro de temperatura
+  // Story 18.28: Quando filtro é "all", compilar por ad_name (somar métricas)
   const processedData = useMemo(() => {
     if (!data?.creatives) return [];
     const totalSpend = data.summary.totalSpend;
-    return data.creatives
+
+    const metrics = data.creatives
       .map((creative) => {
         const metricsInput: CreativeMetrics = {
           adId: creative.adId,
@@ -102,8 +108,15 @@ export function StageCreativePerformanceTable({
           totalSpend,
         };
         return calculateCreativeMetrics(metricsInput);
-      })
-      .filter((m) => temperatureFilter === "all" || m.temperature === temperatureFilter);
+      });
+
+    // AC2: Compilar quando filtro é "all"
+    if (isAllFiltersSelected(temperatureFilter)) {
+      return compileCreativeMetricsByName(metrics);
+    }
+
+    // Modo normal: filtrar por temperatura (hot/cold)
+    return metrics.filter((m) => m.temperature === temperatureFilter);
   }, [data, temperatureFilter]);
 
   const sortedData = useMemo(() => {
@@ -254,15 +267,24 @@ export function StageCreativePerformanceTable({
                 <TableRow key={row.adId} className="text-xs">
                   <TableCell className="font-medium max-w-[260px] truncate" title={row.adName}>
                     <span className="inline-flex items-center gap-1.5">
-                      {row.temperature === "hot" && (
-                        <Badge variant="outline" className="text-[9px] px-1 py-0 border-orange-500/40 text-orange-500">
-                          🔥
+                      {/* AC3: Não mostrar badges em modo compilado */}
+                      {'compiled' in row && row.compiled === true ? (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 border-violet-500/40 text-violet-500">
+                          📊
                         </Badge>
-                      )}
-                      {row.temperature === "cold" && (
-                        <Badge variant="outline" className="text-[9px] px-1 py-0 border-sky-500/40 text-sky-500">
-                          ❄️
-                        </Badge>
+                      ) : (
+                        <>
+                          {'temperature' in row && row.temperature === "hot" && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 border-orange-500/40 text-orange-500">
+                              🔥
+                            </Badge>
+                          )}
+                          {'temperature' in row && row.temperature === "cold" && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 border-sky-500/40 text-sky-500">
+                              ❄️
+                            </Badge>
+                          )}
+                        </>
                       )}
                       {row.adName}
                     </span>
