@@ -61,11 +61,27 @@ export function useSellersBreakdown(
 
   useEffect(() => {
     if (query.data?._debug) {
-      console.log(
+      const d = query.data._debug as Record<string, unknown>;
+      const headline =
         `[sellers-breakdown] stage=${stageId} subtype=${subtype} ` +
-          `cobertura=${query.data.coverage.matched}/${query.data.coverage.total} (${query.data.coverage.pct}%)`,
-        query.data._debug,
-      );
+        `cobertura=${query.data.coverage.matched}/${query.data.coverage.total} (${query.data.coverage.pct}%) | ` +
+        `surveyFound=${d.surveyFound} faixaColumn=${d.faixaColumn ?? "null"} ` +
+        `emailColumn=${d.emailColumn ?? "null"} leadBandMap=${d.leadBandMapSize} ` +
+        `scoringFound=${d.scoringFound}`;
+      console.log(headline);
+      console.log("[sellers-breakdown] full debug:", d);
+      if (Array.isArray(d.leadEmailsSample)) {
+        console.log("[sellers-breakdown] leadEmailsSample:", d.leadEmailsSample);
+      }
+      if (Array.isArray(d.saleEmailsSample)) {
+        console.log("[sellers-breakdown] saleEmailsSample:", d.saleEmailsSample);
+      }
+      if (Array.isArray(d.saleEmailsUnmatched)) {
+        console.log("[sellers-breakdown] saleEmailsUnmatched:", d.saleEmailsUnmatched);
+      }
+      if (Array.isArray(d.surveyHeaders)) {
+        console.log("[sellers-breakdown] surveyHeaders:", d.surveyHeaders);
+      }
     }
   }, [query.data, stageId, subtype]);
 
