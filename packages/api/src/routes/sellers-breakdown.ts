@@ -201,15 +201,28 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
 
       // 2. Survey — busca em qualquer stage do funnel (lead scoring tipicamente
       // vive na etapa Captação Paga, não na etapa Vendas).
-      // Prioridade: stage atual > qualquer stage do funnel com email mapeado.
+      // Prioridade (Story 19.10):
+      //   1. Stage atual + email + faixa (ideal — survey desse stage com tudo)
+      //   2. Stage atual + email (qualquer survey do stage com email)
+      //   3. Qualquer + email + faixa (cross-stage com FAIXA pré-calculada — preferível)
+      //   4. Qualquer + email (qualquer survey com email)
+      //   5. Fallback: primeira survey do funnel
+      // A regra com FAIXA tem prioridade pra evitar pegar uma survey de outro stage
+      // (ex: Captação Gratuita) que não tem o scoring configurado quando outra do
+      // funil (ex: Captação Paga) tem.
       const fSurveys = await fastify.db
         .select()
         .from(funnelSurveys)
         .where(eq(funnelSurveys.funnelId, params.data.funnelId));
 
+      const hasEmail = (s: typeof fSurveys[number]) => !!s.columnMapping?.email;
+      const hasFaixa = (s: typeof fSurveys[number]) => !!s.columnMapping?.faixa;
+
       const surveyToUse =
-        fSurveys.find((s) => s.stageId === params.data.stageId && s.columnMapping?.email) ??
-        fSurveys.find((s) => s.columnMapping?.email) ??
+        fSurveys.find((s) => s.stageId === params.data.stageId && hasEmail(s) && hasFaixa(s)) ??
+        fSurveys.find((s) => s.stageId === params.data.stageId && hasEmail(s)) ??
+        fSurveys.find((s) => hasEmail(s) && hasFaixa(s)) ??
+        fSurveys.find(hasEmail) ??
         fSurveys[0];
 
       // 3. Scoring schema — busca em qualquer stage do funnel.
