@@ -39,7 +39,8 @@ const COLORS = {
   band: "#BFDBFE", // Azul muito claro para banda
   meta: "#EF4444", // Vermelho para meta
   bandFill: "#BFDBFE",
-  bars: "#A0A0A0", // Cinza para barras (segundo plano)
+  bars: "#A0A0A0", // Cinza para barras reais
+  barsProjected: "#F9A8D4", // Rosa claro para barras projetadas
   projectionText: "#F59E0B", // Laranja para números projetados
 };
 
@@ -304,7 +305,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
             {/* Barras diárias: Projeção */}
             <Bar
               dataKey="dailyProjected"
-              fill={COLORS.bars}
+              fill={COLORS.barsProjected}
               opacity={OPACITIES.dailyProjected}
               name="Leads Projetados (Dia)"
               radius={[2, 2, 0, 0]}
@@ -338,6 +339,11 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
                     <text x={cx} y={cy - 12} textAnchor="middle" fontSize={11} fill={COLORS.lineReal} fontWeight="600">
                       {Math.round(payload.cumulative)}
                     </text>
+                    {payload.realPercentage > 0 && (
+                      <text x={cx} y={cy - 24} textAnchor="middle" fontSize={9} fill={COLORS.lineReal} fontWeight="500">
+                        ({Math.round(payload.realPercentage)}%)
+                      </text>
+                    )}
                   </g>
                 );
               }}

@@ -145,6 +145,7 @@ export interface ChartDataPoint {
   bandUpper: number | null;
   bandLower: number | null;
   meta: number;
+  realPercentage: number; // % da meta alcançada (apenas para dados reais)
 }
 
 export function expandChartDataV2(
@@ -201,6 +202,7 @@ export function expandChartDataV2(
       // REAL: até ontem (inclusive)
       const dailyReal = historyRow.leadsPagos + historyRow.leadsOrg + historyRow.leadsSemTrack;
       cumulativeReal += dailyReal;
+      const realPercentage = metaTotal > 0 ? (cumulativeReal / metaTotal) * 100 : 0;
 
       result.push({
         date: dateStr,
@@ -213,11 +215,14 @@ export function expandChartDataV2(
         bandUpper: null,
         bandLower: null,
         meta: metaCumulative,
+        realPercentage,
       });
     } else if (!isFuture) {
       // REAL SEM DADO: gap até ontem — tratar como 0, NÃO projetar pra trás
       // (bug: antes caia no else e projetava com daysAhead negativo, gerando
       // valores tipo -145 no primeiro ponto)
+      const realPercentage = metaTotal > 0 ? (cumulativeReal / metaTotal) * 100 : 0;
+
       result.push({
         date: dateStr,
         dailyReal: 0,
@@ -229,10 +234,12 @@ export function expandChartDataV2(
         bandUpper: null,
         bandLower: null,
         meta: metaCumulative,
+        realPercentage,
       });
     } else {
       // PROJEÇÃO: a partir de hoje (inclusive)
-      const daysAhead = Math.floor((parseLocalYMD(dateStr).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      // daysAhead começa em 1 para hoje (não 0) — hoje é o 1º dia de projeção
+      const daysAhead = Math.floor((parseLocalYMD(dateStr).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) + 1;
       const cumulativeProjected = cumulativeReal + runRate * daysAhead;
       const bandHalfWidth = sigma * Math.sqrt(Math.max(1, daysAhead));
 
@@ -247,6 +254,7 @@ export function expandChartDataV2(
         bandUpper: cumulativeProjected + bandHalfWidth,
         bandLower: Math.max(0, cumulativeProjected - bandHalfWidth),
         meta: metaCumulative,
+        realPercentage: 0, // Sem % para dados projetados
       });
     }
   }
