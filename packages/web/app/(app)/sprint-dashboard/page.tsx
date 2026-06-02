@@ -278,7 +278,16 @@ function FolderMetricCard({
 }: {
   folder: { folderId: string; folderName: string; total: number; done: number; overdue: number; inProgress: number; upcoming: number; nextDueDate: number | null; nextDueTaskName: string | null };
 }) {
-  const completionPct = folder.total > 0 ? Math.round((folder.done / folder.total) * 100) : 0;
+  // Story 31.8 — usa a mesma fórmula de saúde do SprintBlockCard:
+  // DONE / (DONE + EM PROGRESSO). Mantém consistência entre as duas vistas.
+  const healthDenom = folder.done + folder.inProgress;
+  const completionPct = healthDenom > 0 ? Math.round((folder.done / healthDenom) * 100) : 0;
+  const healthColor =
+    completionPct >= 70
+      ? "text-emerald-500"
+      : completionPct >= 40
+      ? "text-amber-500"
+      : "text-red-500";
   const nextDue = folder.nextDueDate ? new Date(folder.nextDueDate) : null;
 
   return (
@@ -287,15 +296,24 @@ function FolderMetricCard({
         <h3 className="text-xs font-semibold leading-tight line-clamp-2 flex-1">
           {folder.folderName}
         </h3>
-        <span className="text-[10px] text-muted-foreground shrink-0">
+        <span
+          className={`text-sm font-bold tabular-nums shrink-0 ${healthColor}`}
+          title="Saúde — done / (done + em progresso)"
+        >
           {completionPct}%
         </span>
       </div>
 
-      {/* Progress bar */}
+      {/* Progress bar — cor segue a saúde */}
       <div className="h-1 rounded-full bg-muted/30 overflow-hidden">
         <div
-          className="h-full bg-emerald-500 transition-all"
+          className={`h-full transition-all ${
+            completionPct >= 70
+              ? "bg-emerald-500"
+              : completionPct >= 40
+              ? "bg-amber-500"
+              : "bg-red-500"
+          }`}
           style={{ width: `${completionPct}%` }}
         />
       </div>
