@@ -195,10 +195,10 @@ export function expandChartDataV2(
 
     const metaCumulative = dailyMeta * (dayIndex + 1);
 
-    const isFuture = dateStr > todayStr;
+    const isFuture = dateStr >= todayStr;
 
     if (historyRow && !isFuture) {
-      // PASSADO/REAL: até hoje (inclusive)
+      // REAL: até ontem (inclusive)
       const dailyReal = historyRow.leadsPagos + historyRow.leadsOrg + historyRow.leadsSemTrack;
       cumulativeReal += dailyReal;
 
@@ -215,7 +215,7 @@ export function expandChartDataV2(
         meta: metaCumulative,
       });
     } else if (!isFuture) {
-      // PASSADO SEM dado (gap nas rows) — tratar como 0, NÃO projetar pra trás
+      // REAL SEM DADO: gap até ontem — tratar como 0, NÃO projetar pra trás
       // (bug: antes caia no else e projetava com daysAhead negativo, gerando
       // valores tipo -145 no primeiro ponto)
       result.push({
@@ -231,7 +231,7 @@ export function expandChartDataV2(
         meta: metaCumulative,
       });
     } else {
-      // FUTURO/PROJEÇÃO: a partir de amanhã
+      // PROJEÇÃO: a partir de hoje (inclusive)
       const daysAhead = Math.floor((parseLocalYMD(dateStr).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
       const cumulativeProjected = cumulativeReal + runRate * daysAhead;
       const bandHalfWidth = sigma * Math.sqrt(Math.max(1, daysAhead));
