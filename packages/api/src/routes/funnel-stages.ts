@@ -68,6 +68,11 @@ const stageParamsSchema = paramsSchema.extend({
   stageId: z.string().uuid(),
 });
 
+const leadInputsSchema = z.object({
+  projectionEndDate: z.string().date().optional(),
+  leadGoal: z.number().int().nonnegative().optional(),
+});
+
 // ============================================================
 // HELPERS
 // ============================================================
@@ -553,6 +558,55 @@ export default fp(async function funnelStageRoutes(fastify) {
       });
     }
   );
+
+  // PATCH /api/funnels/:funnelId/stages/:stageId/lead-inputs
+  fastify.patch("/api/funnels/:funnelId/stages/:stageId/lead-inputs", async (request, reply) => {
+    const params = z.object({
+      funnelId: z.string().uuid(),
+      stageId: z.string().uuid(),
+    }).safeParse(request.params);
+
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const body = leadInputsSchema.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados inválidos", details: body.error.issues });
+
+    // Validação: projectionEndDate >= hoje (em horário local)
+    if (body.data.projectionEndDate) {
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      if (body.data.projectionEndDate < todayStr) {
+        return reply.code(400).send({ error: "Data final não pode ser menor que hoje" });
+      }
+    }
+
+    const stage = await fastify.db
+      .select()
+      .from(funnelStages)
+      .where(
+        and(
+          eq(funnelStages.id, params.data.stageId),
+          eq(funnelStages.funnelId, params.data.funnelId)
+        )
+      )
+      .then(rows => rows[0]);
+
+    if (!stage) {
+      return reply.code(404).send({ error: "Etapa não encontrada" });
+    }
+
+    const updated = await fastify.db
+      .update(funnelStages)
+      .set({
+        projectionEndDate: body.data.projectionEndDate,
+        leadGoal: body.data.leadGoal ?? undefined,
+        updatedAt: new Date(),
+      })
+      .where(eq(funnelStages.id, params.data.stageId))
+      .returning();
+
+    return reply.code(200).send({ success: true, stage: updated[0] });
+  });
 
   // DELETE /api/projects/:projectId/funnels/:funnelId/stages/:stageId
   fastify.delete("/api/projects/:projectId/funnels/:funnelId/stages/:stageId", async (request, reply) => {

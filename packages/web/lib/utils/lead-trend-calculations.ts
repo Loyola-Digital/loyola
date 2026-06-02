@@ -16,6 +16,17 @@ function toLocalYMD(d: Date): string {
 }
 
 /**
+ * Parse YYYY-MM-DD string em uma Data LOCAL (não UTC).
+ * Evita o bug onde new Date("2026-06-05") interpreta como UTC,
+ * causando um dia anterior no fuso local (BRT).
+ */
+function parseLocalYMD(dateStr: string): Date {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const d = new Date(year, month - 1, day, 0, 0, 0, 0);
+  return d;
+}
+
+/**
  * Deriva a série diária a partir do acumulado
  * d[i] = C[i] - C[i-1], onde d[0] = C[0]
  */
@@ -134,6 +145,7 @@ export interface ChartDataPoint {
   bandUpper: number | null;
   bandLower: number | null;
   meta: number;
+  realPercentage: number; // % da meta alcançada (apenas para dados reais)
 }
 
 export function expandChartDataV2(
@@ -147,8 +159,7 @@ export function expandChartDataV2(
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const finalDate = new Date(dataFinal);
-  finalDate.setHours(0, 0, 0, 0);
+  const finalDate = parseLocalYMD(dataFinal);
 
   // Calcular série diária real
   const cumulatives: number[] = [];
@@ -165,7 +176,7 @@ export function expandChartDataV2(
   const sigma = calculateSigma(dailySeries, windowSize);
 
   // Calcular meta cumulativa
-  const firstDate = new Date(rows[0].date);
+  const firstDate = parseLocalYMD(rows[0].date);
   const periodDays = Math.floor((finalDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
   const dailyMeta = metaTotal / periodDays;
 
@@ -174,7 +185,9 @@ export function expandChartDataV2(
   let cumulativeReal = 0;
   const todayStr = toLocalYMD(today);
 
-  for (let dayIndex = 0; dayIndex <= Math.floor((finalDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)); dayIndex++) {
+  const daysToInclude = Math.floor((finalDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+  for (let dayIndex = 0; dayIndex < daysToInclude; dayIndex++) {
     const currentDate = new Date(firstDate);
     currentDate.setDate(currentDate.getDate() + dayIndex);
 
@@ -183,12 +196,13 @@ export function expandChartDataV2(
 
     const metaCumulative = dailyMeta * (dayIndex + 1);
 
-    const isFuture = dateStr > todayStr;
+    const isFuture = dateStr >= todayStr;
 
     if (historyRow && !isFuture) {
-      // PASSADO/REAL: até hoje (inclusive)
+      // REAL: até ontem (inclusive)
       const dailyReal = historyRow.leadsPagos + historyRow.leadsOrg + historyRow.leadsSemTrack;
       cumulativeReal += dailyReal;
+      const realPercentage = metaTotal > 0 ? (cumulativeReal / metaTotal) * 100 : 0;
 
       result.push({
         date: dateStr,
@@ -201,11 +215,14 @@ export function expandChartDataV2(
         bandUpper: null,
         bandLower: null,
         meta: metaCumulative,
+        realPercentage,
       });
     } else if (!isFuture) {
-      // PASSADO SEM dado (gap nas rows) — tratar como 0, NÃO projetar pra trás
+      // REAL SEM DADO: gap até ontem — tratar como 0, NÃO projetar pra trás
       // (bug: antes caia no else e projetava com daysAhead negativo, gerando
       // valores tipo -145 no primeiro ponto)
+      const realPercentage = metaTotal > 0 ? (cumulativeReal / metaTotal) * 100 : 0;
+
       result.push({
         date: dateStr,
         dailyReal: 0,
@@ -217,12 +234,15 @@ export function expandChartDataV2(
         bandUpper: null,
         bandLower: null,
         meta: metaCumulative,
+        realPercentage,
       });
     } else {
-      // FUTURO/PROJEÇÃO: a partir de amanhã
-      const daysAhead = Math.floor((new Date(dateStr).getTime() - new Date(todayStr).getTime()) / (1000 * 60 * 60 * 24));
+      // PROJEÇÃO: a partir de hoje (inclusive)
+      // daysAhead começa em 1 para hoje (não 0) — hoje é o 1º dia de projeção
+      const daysAhead = Math.floor((parseLocalYMD(dateStr).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) + 1;
       const cumulativeProjected = cumulativeReal + runRate * daysAhead;
       const bandHalfWidth = sigma * Math.sqrt(Math.max(1, daysAhead));
+      const projectionPercentage = metaTotal > 0 ? (cumulativeProjected / metaTotal) * 100 : 0;
 
       result.push({
         date: dateStr,
@@ -235,6 +255,7 @@ export function expandChartDataV2(
         bandUpper: cumulativeProjected + bandHalfWidth,
         bandLower: Math.max(0, cumulativeProjected - bandHalfWidth),
         meta: metaCumulative,
+        realPercentage: projectionPercentage, // Reutiliza campo para projeção
       });
     }
   }
@@ -276,12 +297,12 @@ export function calculateTendency(rows: DailyRow[], dataFinal: string): number[]
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const finalDate = new Date(dataFinal);
+  const finalDate = parseLocalYMD(dataFinal);
   const lastAccumulated = cumulatives[cumulatives.length - 1] || 0;
 
   const tendency: number[] = [];
   let cumulativeTotal = 0;
-  const startDate = new Date(rows[0].date);
+  const startDate = parseLocalYMD(rows[0].date);
 
   for (let dayIndex = 0; dayIndex <= Math.floor((finalDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)); dayIndex++) {
     const currentDate = new Date(startDate);
@@ -306,8 +327,8 @@ export function calculateTendency(rows: DailyRow[], dataFinal: string): number[]
 export function calculateMeta(rows: DailyRow[], dataFinal: string, metaTotal: number): number[] {
   if (rows.length === 0 || metaTotal <= 0) return [];
 
-  const firstDate = new Date(rows[0].date);
-  const finalDate = new Date(dataFinal);
+  const firstDate = parseLocalYMD(rows[0].date);
+  const finalDate = parseLocalYMD(dataFinal);
   const periodoCapt = Math.floor((finalDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
   if (periodoCapt <= 0) {
@@ -343,12 +364,13 @@ export function expandChartData(
   const tendency = calculateTendency(rows, dataFinal);
   const meta = calculateMeta(rows, dataFinal, metaTotal);
 
-  const firstDate = new Date(rows[0].date);
-  const finalDate = new Date(dataFinal);
+  const firstDate = parseLocalYMD(rows[0].date);
+  const finalDate = parseLocalYMD(dataFinal);
   const result = [];
   let cumulativeLeads = 0;
 
-  for (let dayIndex = 0; dayIndex <= Math.floor((finalDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)); dayIndex++) {
+  const daysToInclude = Math.floor((finalDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  for (let dayIndex = 0; dayIndex < daysToInclude; dayIndex++) {
     const currentDate = new Date(firstDate);
     currentDate.setDate(currentDate.getDate() + dayIndex);
 
