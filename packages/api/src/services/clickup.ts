@@ -20,6 +20,8 @@ interface ClickUpService {
   getTasks(listId: string): Promise<ClickUpTask[]>;
   /** Story 31.7 iter: tasks com Task Type custom (Campanha, etc). */
   getCustomTypeTasks(listId: string, teamId: string): Promise<ClickUpTask[]>;
+  /** Story 31.8 — Lookup id→name dos Task Types custom do team. Cacheado. */
+  getCustomItemsMap(teamId: string): Promise<Map<number, string>>;
   getTask(taskId: string): Promise<ClickUpTask | null>;
   searchTasks(teamId: string, query: string): Promise<ClickUpTask[]>;
   createTask(params: CreateTaskParams): Promise<{ id: string; url: string }>;
@@ -168,19 +170,41 @@ export default fp(async function clickupService(fastify) {
    *   2. Faz GET das tasks da lista com `&custom_items[]=ID` pra cada tipo
    *   3. Retorna só essas custom (não merge com tasks default)
    */
-  async function getCustomTypeTasks(listId: string, teamId: string): Promise<ClickUpTask[]> {
-    type CustomItem = { id: number; name: string };
-    let items: CustomItem[] = [];
+  // Story 31.8 — cache do mapping id→name dos custom item types (Campanha,
+  // Marco, etc). Custom types raramente mudam → 10min TTL é generoso.
+  let customItemsCache: { teamId: string; map: Map<number, string>; expiresAt: number } | null =
+    null;
+  const CUSTOM_ITEMS_TTL_MS = 10 * 60 * 1000;
+
+  async function getCustomItemsMap(teamId: string): Promise<Map<number, string>> {
+    if (
+      customItemsCache &&
+      customItemsCache.teamId === teamId &&
+      customItemsCache.expiresAt > Date.now()
+    ) {
+      return customItemsCache.map;
+    }
     try {
-      const itemsResp = await fetchApi<{ custom_items: CustomItem[] }>(
+      const itemsResp = await fetchApi<{ custom_items: Array<{ id: number; name: string }> }>(
         `/team/${teamId}/custom_items`,
       );
-      items = itemsResp.custom_items ?? [];
+      const map = new Map<number, string>();
+      for (const it of itemsResp.custom_items ?? []) {
+        map.set(it.id, it.name);
+      }
+      customItemsCache = { teamId, map, expiresAt: Date.now() + CUSTOM_ITEMS_TTL_MS };
+      return map;
     } catch {
-      return [];
+      return new Map();
     }
-    if (items.length === 0) return [];
-    const qs = items.map((i) => `custom_items%5B%5D=${i.id}`).join("&");
+  }
+
+  async function getCustomTypeTasks(listId: string, teamId: string): Promise<ClickUpTask[]> {
+    const items = await getCustomItemsMap(teamId);
+    if (items.size === 0) return [];
+    const qs = Array.from(items.keys())
+      .map((id) => `custom_items%5B%5D=${id}`)
+      .join("&");
     const data = await fetchApi<{ tasks: ClickUpTask[] }>(
       `/list/${listId}/task?include_closed=true&subtasks=true&${qs}`,
     );
@@ -280,6 +304,7 @@ export default fp(async function clickupService(fastify) {
     getFolderlessLists,
     getTasks,
     getCustomTypeTasks,
+    getCustomItemsMap,
     getTask,
     searchTasks,
     createTask,

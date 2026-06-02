@@ -50,13 +50,107 @@ export function applyFilters(
 // 2. FALLBACK: emoji 📢/📣 no nome (retrocompat com fluxo antigo).
 const SUMMARY_EMOJIS = ["📢", "📣"] as const;
 
+function isCustomTypeNamed(task: ClickUpTaskShape, name: string): boolean {
+  return (task.customItemName ?? "").trim().toLowerCase() === name.toLowerCase();
+}
+
 function isPhaseTask(task: ClickUpTaskShape): boolean {
-  // Task Type custom (Campanha) — primário
-  if (typeof task.customItemId === "number" && task.customItemId !== 0) {
-    return true;
-  }
-  // Emoji no nome — fallback
+  // Task Type "Campanha" — primário (Story 31.7 iter)
+  if (isCustomTypeNamed(task, "campanha")) return true;
+  // Emoji no nome — fallback retrocompat
   return SUMMARY_EMOJIS.some((e) => task.name.includes(e));
+}
+
+/** Story 31.8 — Marco (milestone) é meta visual, não tarefa real. Não conta. */
+function isMarcoTask(task: ClickUpTaskShape): boolean {
+  return isCustomTypeNamed(task, "marco");
+}
+
+/**
+ * Story 31.8 — Tasks que entram no cálculo de Saúde da Campanha.
+ * Exclui: sem responsável, fases (Campanha), marcos (Marco).
+ */
+export function shouldCountForHealth(task: ClickUpTaskShape): boolean {
+  if (task.assignees.length === 0) return false;
+  if (isPhaseTask(task)) return false;
+  if (isMarcoTask(task)) return false;
+  return true;
+}
+
+/**
+ * Story 31.8 — Calcula stats de Saúde da Campanha:
+ *   atraso   = não-done com due passado
+ *   progress = não-done sem due passado (em andamento ou futuro)
+ *   done     = concluídas
+ *   healthPct = done / (done + progress)  ← fórmula do print do Lucas
+ */
+export interface CampaignHealthStats {
+  done: number;
+  progress: number;
+  atraso: number;
+  healthPct: number;
+  /** Próxima task: futuro mais próximo OU atrasada mais antiga (atraso prevalece). */
+  next: {
+    name: string;
+    dueDateMs: number | null;
+    isOverdue: boolean;
+    url: string;
+  } | null;
+}
+
+export function getCampaignHealth(
+  tasks: ClickUpTaskShape[],
+  now: Date = new Date(),
+): CampaignHealthStats {
+  const startOfTodayMs = (() => {
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  })();
+
+  let done = 0;
+  let progress = 0;
+  let atraso = 0;
+  let earliestOverdue: { task: ClickUpTaskShape; dueMs: number } | null = null;
+  let earliestUpcoming: { task: ClickUpTaskShape; dueMs: number } | null = null;
+
+  for (const t of tasks) {
+    if (!shouldCountForHealth(t)) continue;
+    if (isDoneStatus(t.status)) {
+      done += 1;
+      continue;
+    }
+    const dueMs = t.dueDate ? Number(t.dueDate) : null;
+    const dueValid = dueMs !== null && Number.isFinite(dueMs);
+    if (dueValid && (dueMs as number) < startOfTodayMs) {
+      atraso += 1;
+      if (!earliestOverdue || (dueMs as number) < earliestOverdue.dueMs) {
+        earliestOverdue = { task: t, dueMs: dueMs as number };
+      }
+    } else {
+      progress += 1;
+      if (dueValid) {
+        if (!earliestUpcoming || (dueMs as number) < earliestUpcoming.dueMs) {
+          earliestUpcoming = { task: t, dueMs: dueMs as number };
+        }
+      }
+    }
+  }
+
+  const denominador = done + progress;
+  const healthPct = denominador > 0 ? Math.round((done / denominador) * 100) : 0;
+
+  const nextSource = earliestOverdue ?? earliestUpcoming;
+  const next = nextSource
+    ? {
+        name: nextSource.task.name,
+        dueDateMs: nextSource.dueMs,
+        isOverdue: nextSource === earliestOverdue,
+        url: nextSource.task.url,
+      }
+    : null;
+
+  return { done, progress, atraso, healthPct, next };
 }
 
 /**

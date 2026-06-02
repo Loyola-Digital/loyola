@@ -31,6 +31,8 @@ type ClickUpTaskSimple = {
   /** Story 31.7 iter — Task Type custom no ClickUp (Campanha, Bug, etc).
    * null = task padrão ("Task"). Usado pra detectar fases automaticamente. */
   customItemId: number | null;
+  /** Story 31.8 — Nome do Task Type custom resolvido via cache. null = default. */
+  customItemName: string | null;
 };
 type TasksCacheEntry = { tasks: ClickUpTaskSimple[]; expiresAt: number };
 const tasksCache = new Map<string, TasksCacheEntry>();
@@ -175,6 +177,10 @@ export default fp(async function sprintDashboardRoutes(fastify) {
     // ClickUp não retorna ambos numa só chamada — `custom_items[]=ID` exclui
     // tasks default. Falhas em qualquer um não derrubam o outro.
     const teamId = await resolveTeamId();
+    const customItemsMap = teamId
+      ? await fastify.clickupService.getCustomItemsMap(teamId)
+      : new Map<number, string>();
+
     const results = await Promise.allSettled(
       listIds.flatMap((listId) => [
         fastify.clickupService.getTasks(listId).then((tasks) => ({ listId, tasks })),
@@ -217,6 +223,8 @@ export default fp(async function sprintDashboardRoutes(fastify) {
           folderId: t.folder?.id ?? null,
           folderName: t.folder?.name ?? null,
           customItemId: t.custom_item_id ?? null,
+          customItemName:
+            t.custom_item_id != null ? customItemsMap.get(t.custom_item_id) ?? null : null,
         });
       }
     }
