@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SprintDashboardBlock } from "@loyola-x/shared";
 import type { ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
-import { applyFilters, isDoneStatus, extractAutoPhases } from "./summary-utils";
+import { applyFilters, isDoneStatus, extractAutoPhases, getCampaignHealth } from "./summary-utils";
 import { BlockSummaryCard } from "./block-summary-card";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
 interface SprintBlockCardProps {
   block: SprintDashboardBlock;
@@ -70,6 +71,15 @@ export function SprintBlockCard({
   const manualText = block.manualContext?.trim() ?? "";
   const hasSummary = manualText.length > 0 || autoPhases.length > 0;
 
+  // Story 31.8 — Saúde da Campanha inline (exclui sem-resp, Marco, Campanha).
+  const health = useMemo(() => getCampaignHealth(tasks), [tasks]);
+  const healthColor =
+    health.healthPct >= 70
+      ? "text-emerald-500"
+      : health.healthPct >= 40
+      ? "text-amber-500"
+      : "text-red-500";
+
   function handleToggle(task: ClickUpTaskShape) {
     if (statusUpdating) return;
     const currentDone = isDoneStatus(task.status) || optimisticDone.has(task.id);
@@ -94,7 +104,15 @@ export function SprintBlockCard({
           style={{ background: block.color }}
         />
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold truncate">{block.title}</h3>
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 className="text-sm font-semibold truncate">{block.title}</h3>
+            <span
+              className={`text-base font-bold tabular-nums shrink-0 ${healthColor}`}
+              title="Saúde da Campanha — done / (done + em progresso)"
+            >
+              {health.healthPct}%
+            </span>
+          </div>
           <p className="text-[10px] text-muted-foreground">
             {tasks.length} tarefa(s) · {completedCount} concluída(s)
           </p>
@@ -112,6 +130,51 @@ export function SprintBlockCard({
           </Button>
         )}
       </div>
+
+      {/* Story 31.8 — Stats de saúde + próxima task */}
+      <div className="grid grid-cols-3 gap-1.5">
+        <HealthStat
+          icon={<AlertTriangle className="h-3 w-3" />}
+          value={health.atraso}
+          label="Atraso"
+          tone="danger"
+        />
+        <HealthStat
+          icon={<Clock className="h-3 w-3" />}
+          value={health.progress}
+          label="Progr."
+          tone="warn"
+        />
+        <HealthStat
+          icon={<CheckCircle2 className="h-3 w-3" />}
+          value={health.done}
+          label="Done"
+          tone="success"
+        />
+      </div>
+      {health.next && (
+        <a
+          href={health.next.url}
+          target="_blank"
+          rel="noreferrer"
+          className="block text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <span className={health.next.isOverdue ? "text-red-500 font-medium" : "font-medium"}>
+            {health.next.isOverdue ? "Atrasada:" : "Próximo:"}
+          </span>{" "}
+          {health.next.dueDateMs && (
+            <span className="tabular-nums">
+              {format(new Date(health.next.dueDateMs), "dd/MM", { locale: ptBR })}
+            </span>
+          )}
+          {" · "}
+          <span className="text-foreground/80">
+            {health.next.name.length > 70
+              ? health.next.name.slice(0, 69) + "…"
+              : health.next.name}
+          </span>
+        </a>
+      )}
 
       {/* Story 31.7 iter — Card resumo: manual + fases auto coexistem */}
       {hasSummary && (
@@ -222,6 +285,28 @@ export function SprintBlockCard({
         </div>
       )}
 
+    </div>
+  );
+}
+
+interface HealthStatProps {
+  icon: React.ReactNode;
+  value: number;
+  label: string;
+  tone: "danger" | "warn" | "success";
+}
+
+function HealthStat({ icon, value, label, tone }: HealthStatProps) {
+  const colorMap = {
+    danger: "text-red-500 bg-red-500/10",
+    warn: "text-amber-500 bg-amber-500/10",
+    success: "text-emerald-500 bg-emerald-500/10",
+  };
+  return (
+    <div className={`rounded-md py-1.5 px-2 flex items-center gap-1.5 ${colorMap[tone]}`}>
+      {icon}
+      <span className="text-base font-bold tabular-nums">{value}</span>
+      <span className="text-[9px] uppercase tracking-wide opacity-80">{label}</span>
     </div>
   );
 }

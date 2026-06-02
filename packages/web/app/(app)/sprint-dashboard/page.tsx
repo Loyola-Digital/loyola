@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LayoutGrid, Settings2, RefreshCw, AlertCircle, AlertTriangle, Clock, Check, CalendarRange, Activity } from "lucide-react";
+import { LayoutGrid, Settings2, RefreshCw, AlertCircle, AlertTriangle, Clock, Check, CalendarRange } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,6 @@ import { SprintBlockCard } from "@/components/sprint-dashboard/sprint-block-card
 import { TaskEditDialog } from "@/components/sprint-dashboard/task-edit-dialog";
 import { MacroCalendarView } from "@/components/sprint-dashboard/macro-calendar-view";
 import { BlockContextDialog } from "@/components/sprint-dashboard/block-context-dialog";
-import { CampaignHealthCard } from "@/components/sprint-dashboard/campaign-health-card";
 import { useQueryClient } from "@tanstack/react-query";
 import type { SprintDashboardBlock } from "@loyola-x/shared";
 
@@ -28,7 +27,7 @@ export default function SprintDashboardPage() {
   const queryClient = useQueryClient();
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ClickUpTaskShape | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "macro" | "health">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "macro">("overview");
   // Story 31.7
   const [contextBlock, setContextBlock] = useState<SprintDashboardBlock | null>(null);
 
@@ -120,12 +119,6 @@ export default function SprintDashboardPage() {
           icon={<CalendarRange className="h-3.5 w-3.5" />}
           label="Calendário Macro"
         />
-        <TabButton
-          active={activeTab === "health"}
-          onClick={() => setActiveTab("health")}
-          icon={<Activity className="h-3.5 w-3.5" />}
-          label="Saúde"
-        />
       </div>
 
       {/* Builder dialog */}
@@ -171,18 +164,8 @@ export default function SprintDashboardPage() {
             />
           ))}
         </div>
-      ) : activeTab === "macro" ? (
-        <MacroCalendarView blocks={blocks} tasksByListId={tasksByListId} />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {blocks.map((block) => (
-            <CampaignHealthCard
-              key={block.id}
-              block={block}
-              tasksByListId={tasksByListId}
-            />
-          ))}
-        </div>
+        <MacroCalendarView blocks={blocks} tasksByListId={tasksByListId} />
       )}
 
       {/* Edit dialog (status + nome + due_date) */}
