@@ -3,7 +3,7 @@
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { useState, useCallback, useEffect } from "react";
-import type { FunnelStage } from "@loyola-x/shared";
+import type { FunnelStage, Funnel } from "@loyola-x/shared";
 
 // ============================================================
 // TYPES
@@ -60,47 +60,31 @@ export function useStageLeadInputs(funnelId: string | null) {
   const [stateByStage, setStateByStage] = useState<StageLeadInputsState>({});
   const [errors, setErrors] = useState<{ [stageId: string]: string }>({});
 
-  // Carregar dados do BD quando funnelId muda
-  const { data: funnelData } = useQuery({
-    queryKey: ["funnels", funnelId],
-    enabled: !!funnelId,
-  });
-
-  // Carregar dados de etapas quando BD é atualizado
+  // Carregar dados do localStorage quando funnelId muda
   useEffect(() => {
-    const loaded: StageLeadInputsState = {};
+    if (!funnelId || typeof window === "undefined") return;
 
-    if (funnelData?.data && Array.isArray(funnelData.data.stages)) {
-      // Carregar do BD se disponível
-      funnelData.data.stages.forEach((stage: FunnelStage) => {
-        loaded[stage.id] = {
-          projectionEndDate: stage.projectionEndDate ?? undefined,
-          leadGoal: stage.leadGoal ?? undefined,
-        };
-      });
-      setStateByStage(loaded);
-    } else if (funnelId && typeof window !== "undefined") {
-      // Se BD não disponível, carregar do localStorage
-      // (será sobrescrito quando BD carregar)
-      const allKeys = Object.keys(localStorage);
-      allKeys.forEach((key) => {
-        if (key.startsWith(`stageInputs_${funnelId}_`)) {
-          const stageId = key.replace(`stageInputs_${funnelId}_`, "");
-          const saved = localStorage.getItem(key);
-          if (saved) {
-            try {
-              loaded[stageId] = JSON.parse(saved);
-            } catch (e) {
-              console.error("Failed to parse saved inputs", e);
-            }
+    const loaded: StageLeadInputsState = {};
+    const allKeys = Object.keys(localStorage);
+
+    allKeys.forEach((key) => {
+      if (key.startsWith(`stageInputs_${funnelId}_`)) {
+        const stageId = key.replace(`stageInputs_${funnelId}_`, "");
+        const saved = localStorage.getItem(key);
+        if (saved) {
+          try {
+            loaded[stageId] = JSON.parse(saved);
+          } catch (e) {
+            console.error("Failed to parse saved inputs", e);
           }
         }
-      });
-      if (Object.keys(loaded).length > 0) {
-        setStateByStage(loaded);
       }
+    });
+
+    if (Object.keys(loaded).length > 0) {
+      setStateByStage(loaded);
     }
-  }, [funnelData, funnelId]);
+  }, [funnelId]);
 
   const mutation = useMutation({
     mutationFn: async ({ funnelId, stageId, data }: SaveLeadInputsInput) => {
@@ -125,8 +109,6 @@ export function useStageLeadInputs(funnelId: string | null) {
         ...prev,
         [variables.stageId]: "",
       }));
-      // Invalidar query para recarregar dados do BD
-      queryClient.invalidateQueries({ queryKey: ["funnels", funnelId] });
     },
     onError: (_error, variables) => {
       const errorMsg = _error instanceof Error ? _error.message : "Erro ao salvar";
