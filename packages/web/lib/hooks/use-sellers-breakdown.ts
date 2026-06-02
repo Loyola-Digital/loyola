@@ -2,6 +2,7 @@
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 
 const STALE_TIME = 30 * 1000;
 
@@ -22,6 +23,7 @@ export interface SellersBreakdownData {
   coverage: { matched: number; total: number; pct: number };
   hasScoringConfig: boolean;
   semDados: boolean;
+  _debug?: Record<string, unknown>;
 }
 
 export function useSellersBreakdown(
@@ -32,7 +34,7 @@ export function useSellersBreakdown(
 ) {
   const apiClient = useApiClient();
   const { startDate, endDate, subtype = "sales" } = options ?? {};
-  return useQuery({
+  const query = useQuery({
     queryKey: [
       "sellers-breakdown",
       projectId,
@@ -43,7 +45,10 @@ export function useSellersBreakdown(
       endDate ?? null,
     ],
     queryFn: () => {
-      const qs = new URLSearchParams({ subtype });
+      // Story 19.10 — debug=1 hardcoded pra diagnosticar cobertura de perfil.
+      // Backend devolve `_debug` com sample de emails matched/não, coluna FAIXA
+      // detectada, headers da pesquisa, etc.
+      const qs = new URLSearchParams({ subtype, debug: "1" });
       if (startDate) qs.set("startDate", startDate);
       if (endDate) qs.set("endDate", endDate);
       return apiClient<SellersBreakdownData>(
@@ -53,4 +58,16 @@ export function useSellersBreakdown(
     enabled: !!projectId && !!funnelId && !!stageId,
     staleTime: STALE_TIME,
   });
+
+  useEffect(() => {
+    if (query.data?._debug) {
+      console.log(
+        `[sellers-breakdown] stage=${stageId} subtype=${subtype} ` +
+          `cobertura=${query.data.coverage.matched}/${query.data.coverage.total} (${query.data.coverage.pct}%)`,
+        query.data._debug,
+      );
+    }
+  }, [query.data, stageId, subtype]);
+
+  return query;
 }
