@@ -140,6 +140,8 @@ export interface FunnelStage {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  projectionEndDate?: string | null; // Story 18.27: data final da projeção
+  leadGoal?: number | null; // Story 18.27: meta de leads
 }
 
 export interface StageSalesData {
