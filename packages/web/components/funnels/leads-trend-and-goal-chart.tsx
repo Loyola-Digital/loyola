@@ -336,11 +336,11 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Proje√ß√
                 return (
                   <g key={`dot-${payload.date}`}>
                     <circle cx={cx} cy={cy} r={3} fill={COLORS.lineReal} stroke="white" strokeWidth={1} />
-                    <text x={cx} y={cy - 12} textAnchor="middle" fontSize={11} fill={COLORS.lineReal} fontWeight="600">
+                    <text x={cx} y={cy + 14} textAnchor="middle" fontSize={11} fill={COLORS.lineReal} fontWeight="600">
                       {Math.round(payload.cumulative)}
                     </text>
                     {payload.realPercentage > 0 && (
-                      <text x={cx} y={cy + 14} textAnchor="middle" fontSize={9} fill={COLORS.lineReal} fontWeight="500">
+                      <text x={cx} y={cy + 26} textAnchor="middle" fontSize={9} fill={COLORS.lineReal} fontWeight="500">
                         ({Math.round(payload.realPercentage)}%)
                       </text>
                     )}
