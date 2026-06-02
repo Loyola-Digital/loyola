@@ -17,6 +17,7 @@ import {
 import type { DailyRow } from "@/lib/utils/funnel-metrics";
 import { expandChartDataV2, type ChartDataPoint, calculateProjectionPercentage } from "@/lib/utils/lead-trend-calculations";
 import { useUpdateFunnel } from "@/lib/hooks/use-funnels";
+import { useStageLeadInputs } from "@/lib/hooks/use-stage-lead-inputs";
 import type { Funnel } from "@loyola-x/shared";
 
 interface LeadsTrendAndGoalChartProps {
@@ -28,6 +29,8 @@ interface LeadsTrendAndGoalChartProps {
   funnel?: Funnel;
   /** projectId necessário pro useUpdateFunnel (quando funnel é passado) */
   projectId?: string;
+  /** Story 18.27: stageId para usar inputs da etapa (projectionEndDate + leadGoal) */
+  stageId?: string;
 }
 
 const COLORS = {
@@ -108,7 +111,7 @@ function CustomTooltip({ active, payload }: TooltipProps) {
   );
 }
 
-export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeção vs Meta", funnelId, funnel, projectId }: LeadsTrendAndGoalChartProps) {
+export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeção vs Meta", funnelId, funnel, projectId, stageId }: LeadsTrendAndGoalChartProps) {
   const [dataFinal, setDataFinal] = useState<string>("");
   const [metaTotal, setMetaTotal] = useState<number>(0);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -116,9 +119,14 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
   const [mounted, setMounted] = useState(false);
   const windowSize = 5; // Fixado em 5 dias
 
+  // Story 18.27: Se stageId fornecido, usar inputs de etapa
+  const usingStageInputs = !!stageId;
+  const { getInputs: getStageInputs, saveInputs: saveStageInputs, updateLocal: updateStageLocal, isPending: stagePending } =
+    useStageLeadInputs(funnelId);
+
   // Story 18.19 fix: persistir no DB quando funnel+projectId disponíveis,
   // fallback localStorage senão (retrocompatibilidade).
-  const usingDb = !!funnel && !!projectId;
+  const usingDb = !!funnel && !!projectId && !usingStageInputs;
   const updateFunnel = useUpdateFunnel(projectId ?? "", funnelId);
   const storageKeyDataFinal = `leadsTrendDataFinal_${funnelId}`;
   const storageKeyMetaTotal = `leadsTrendMetaTotal_${funnelId}`;
@@ -126,6 +134,22 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
   // Hidratar valores ao montar / quando funnel atualiza
   useEffect(() => {
     setMounted(true);
+    if (usingStageInputs && stageId) {
+      // Story 18.27: usar inputs de etapa
+      const stageInputs = getStageInputs(stageId);
+      if (stageInputs.projectionEndDate) {
+        setDataFinal(stageInputs.projectionEndDate);
+      } else {
+        const d = new Date();
+        d.setDate(d.getDate() + 20);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        setDataFinal(`${y}-${m}-${day}`);
+      }
+      setMetaTotal(stageInputs.leadGoal ?? 0);
+      return;
+    }
     if (usingDb && funnel) {
       // Source-of-truth = DB
       if (funnel.leadsGoalDataFinal) {
@@ -156,7 +180,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
       }
       if (savedMetaTotal) setMetaTotal(parseFloat(savedMetaTotal));
     }
-  }, [usingDb, funnel, storageKeyDataFinal, storageKeyMetaTotal]);
+  }, [usingStageInputs, stageId, usingDb, funnel, storageKeyDataFinal, storageKeyMetaTotal, getStageInputs]);
 
   // Calcular dados do gráfico quando inputs mudam
   useEffect(() => {
@@ -181,11 +205,14 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
     }
   }, [rows, dataFinal, metaTotal, mounted]);
 
-  // Persistir inputs — DB quando disponível, senão localStorage
+  // Persistir inputs — Etapa > DB > localStorage
   const handleDataFinalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setDataFinal(value);
-    if (usingDb) {
+    if (usingStageInputs && stageId) {
+      updateStageLocal(stageId, { projectionEndDate: value });
+      saveStageInputs(stageId, { projectionEndDate: value, leadGoal: metaTotal });
+    } else if (usingDb) {
       updateFunnel.mutate({ leadsGoalDataFinal: value || null });
     } else {
       localStorage.setItem(storageKeyDataFinal, value);
@@ -195,7 +222,10 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
   const handleMetaTotalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value, 10) || 0;
     setMetaTotal(value);
-    if (usingDb) {
+    if (usingStageInputs && stageId) {
+      updateStageLocal(stageId, { leadGoal: value });
+      saveStageInputs(stageId, { projectionEndDate: dataFinal, leadGoal: value });
+    } else if (usingDb) {
       updateFunnel.mutate({ leadsGoalMeta: value });
     } else {
       localStorage.setItem(storageKeyMetaTotal, value.toString());

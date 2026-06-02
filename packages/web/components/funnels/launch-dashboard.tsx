@@ -488,9 +488,9 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         />
       ) : null}
 
-      {/* Leads: Tendência + Meta (Story 18.19) */}
+      {/* Leads: Tendência + Meta (Story 18.19) + Inputs por Etapa (Story 18.27) */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
-        <LeadsTrendAndGoalChart rows={metrics.rows} funnelId={funnel.id} funnel={funnel} projectId={projectId} />
+        <LeadsTrendAndGoalChart rows={metrics.rows} funnelId={funnel.id} funnel={funnel} projectId={projectId} stageId={stageId} />
       ) : null}
 
       {/* CTR × CPM — Saturation Chart */}

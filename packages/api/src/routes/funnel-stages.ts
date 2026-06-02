@@ -571,10 +571,11 @@ export default fp(async function funnelStageRoutes(fastify) {
     const body = leadInputsSchema.safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: "Dados inválidos", details: body.error.issues });
 
-    // Validação: projectionEndDate >= hoje
+    // Validação: projectionEndDate >= hoje (em horário local)
     if (body.data.projectionEndDate) {
-      const today = new Date().toISOString().split('T')[0];
-      if (body.data.projectionEndDate < today) {
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      if (body.data.projectionEndDate < todayStr) {
         return reply.code(400).send({ error: "Data final não pode ser menor que hoje" });
       }
     }

@@ -1,8 +1,8 @@
 "use client";
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useCallback } from "react";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { useState, useCallback, useEffect } from "react";
 import type { FunnelStage } from "@loyola-x/shared";
 
 // ============================================================
@@ -28,9 +28,16 @@ export interface StageLeadInputsState {
 // VALIDATION
 // ============================================================
 
+function toLocalYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export function validateLeadInputs(inputs: LeadInputs): { valid: boolean; error?: string } {
   if (inputs.projectionEndDate) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = toLocalYMD(new Date());
     if (inputs.projectionEndDate < today) {
       return { valid: false, error: "Data final não pode ser menor que hoje" };
     }
@@ -53,6 +60,48 @@ export function useStageLeadInputs(funnelId: string | null) {
   const [stateByStage, setStateByStage] = useState<StageLeadInputsState>({});
   const [errors, setErrors] = useState<{ [stageId: string]: string }>({});
 
+  // Carregar dados do BD quando funnelId muda
+  const { data: funnelData } = useQuery({
+    queryKey: ["funnels", funnelId],
+    enabled: !!funnelId,
+  });
+
+  // Carregar dados de etapas quando BD é atualizado
+  useEffect(() => {
+    const loaded: StageLeadInputsState = {};
+
+    if (funnelData?.data && Array.isArray(funnelData.data.stages)) {
+      // Carregar do BD se disponível
+      funnelData.data.stages.forEach((stage: FunnelStage) => {
+        loaded[stage.id] = {
+          projectionEndDate: stage.projectionEndDate ?? undefined,
+          leadGoal: stage.leadGoal ?? undefined,
+        };
+      });
+      setStateByStage(loaded);
+    } else if (funnelId && typeof window !== "undefined") {
+      // Se BD não disponível, carregar do localStorage
+      // (será sobrescrito quando BD carregar)
+      const allKeys = Object.keys(localStorage);
+      allKeys.forEach((key) => {
+        if (key.startsWith(`stageInputs_${funnelId}_`)) {
+          const stageId = key.replace(`stageInputs_${funnelId}_`, "");
+          const saved = localStorage.getItem(key);
+          if (saved) {
+            try {
+              loaded[stageId] = JSON.parse(saved);
+            } catch (e) {
+              console.error("Failed to parse saved inputs", e);
+            }
+          }
+        }
+      });
+      if (Object.keys(loaded).length > 0) {
+        setStateByStage(loaded);
+      }
+    }
+  }, [funnelData, funnelId]);
+
   const mutation = useMutation({
     mutationFn: async ({ funnelId, stageId, data }: SaveLeadInputsInput) => {
       const validation = validateLeadInputs(data);
@@ -67,6 +116,7 @@ export function useStageLeadInputs(funnelId: string | null) {
       );
     },
     onSuccess: (_data, variables) => {
+      // Atualizar estado local com sucesso
       setStateByStage((prev) => ({
         ...prev,
         [variables.stageId]: variables.data,
@@ -75,6 +125,7 @@ export function useStageLeadInputs(funnelId: string | null) {
         ...prev,
         [variables.stageId]: "",
       }));
+      // Invalidar query para recarregar dados do BD
       queryClient.invalidateQueries({ queryKey: ["funnels", funnelId] });
     },
     onError: (_error, variables) => {
@@ -89,7 +140,20 @@ export function useStageLeadInputs(funnelId: string | null) {
   const saveInputs = useCallback(
     async (stageId: string, inputs: LeadInputs) => {
       if (!funnelId) throw new Error("funnelId is required");
-      await mutation.mutateAsync({ funnelId, stageId, data: inputs });
+
+      // Salvar no localStorage também como fallback
+      if (typeof window !== "undefined") {
+        const storageKey = `stageInputs_${funnelId}_${stageId}`;
+        localStorage.setItem(storageKey, JSON.stringify(inputs));
+      }
+
+      // Tentar salvar na API
+      try {
+        await mutation.mutateAsync({ funnelId, stageId, data: inputs });
+      } catch (error) {
+        // Se falhar, pelo menos os dados estão em localStorage
+        throw error;
+      }
     },
     [funnelId, mutation]
   );
@@ -102,8 +166,25 @@ export function useStageLeadInputs(funnelId: string | null) {
   }, []);
 
   const getInputs = useCallback((stageId: string): LeadInputs => {
-    return stateByStage[stageId] || {};
-  }, [stateByStage]);
+    // Tentar estado primeiro, depois localStorage
+    if (stateByStage[stageId]) {
+      return stateByStage[stageId];
+    }
+
+    if (typeof window !== "undefined" && funnelId) {
+      const storageKey = `stageInputs_${funnelId}_${stageId}`;
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error("Failed to parse saved inputs", e);
+        }
+      }
+    }
+
+    return {};
+  }, [stateByStage, funnelId]);
 
   const getError = useCallback((stageId: string): string => {
     return errors[stageId] || "";
