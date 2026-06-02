@@ -340,7 +340,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Proje√ß√
                       {Math.round(payload.cumulative)}
                     </text>
                     {payload.realPercentage > 0 && (
-                      <text x={cx} y={cy - 24} textAnchor="middle" fontSize={9} fill={COLORS.lineReal} fontWeight="500">
+                      <text x={cx} y={cy + 14} textAnchor="middle" fontSize={9} fill={COLORS.lineReal} fontWeight="500">
                         ({Math.round(payload.realPercentage)}%)
                       </text>
                     )}
@@ -368,6 +368,11 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Proje√ß√
                     <text x={cx} y={cy - 12} textAnchor="middle" fontSize={11} fill={COLORS.projectionText} fontWeight="600">
                       {Math.round(payload.cumulative)}
                     </text>
+                    {payload.realPercentage > 0 && (
+                      <text x={cx} y={cy + 14} textAnchor="middle" fontSize={9} fill={COLORS.projectionText} fontWeight="500">
+                        ({Math.round(payload.realPercentage)}%)
+                      </text>
+                    )}
                   </g>
                 );
               }}

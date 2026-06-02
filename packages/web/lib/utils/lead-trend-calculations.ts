@@ -242,6 +242,7 @@ export function expandChartDataV2(
       const daysAhead = Math.floor((parseLocalYMD(dateStr).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) + 1;
       const cumulativeProjected = cumulativeReal + runRate * daysAhead;
       const bandHalfWidth = sigma * Math.sqrt(Math.max(1, daysAhead));
+      const projectionPercentage = metaTotal > 0 ? (cumulativeProjected / metaTotal) * 100 : 0;
 
       result.push({
         date: dateStr,
@@ -254,7 +255,7 @@ export function expandChartDataV2(
         bandUpper: cumulativeProjected + bandHalfWidth,
         bandLower: Math.max(0, cumulativeProjected - bandHalfWidth),
         meta: metaCumulative,
-        realPercentage: 0, // Sem % para dados projetados
+        realPercentage: projectionPercentage, // Reutiliza campo para projeção
       });
     }
   }
