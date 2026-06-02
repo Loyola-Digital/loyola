@@ -46,6 +46,9 @@ export interface SprintDashboardBlock {
   sortOrder: number;
   /** Fases da campanha pro Calendário Macro (opcional) */
   campaignPhases?: SprintCampaignPhase[];
+  /** Story 31.7: contexto manual no card resumo da Visão Geral. Sobrescreve
+   * qualquer task marcada com 📢/📣 no ClickUp. Empty/null = usa auto. */
+  manualContext?: string | null;
 }
 
 export interface SprintDashboardConfig {

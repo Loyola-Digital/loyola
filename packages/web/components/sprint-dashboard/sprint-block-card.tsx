@@ -1,12 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ExternalLink, Check, Circle, Clock } from "lucide-react";
+import { ExternalLink, Check, Circle, Clock, Megaphone } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SprintDashboardBlock } from "@loyola-x/shared";
 import type { ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
+import { applyFilters, isDoneStatus, extractAutoPhases } from "./summary-utils";
+import { BlockSummaryCard } from "./block-summary-card";
+import { PendingTasksList } from "./pending-tasks-list";
 
 interface SprintBlockCardProps {
   block: SprintDashboardBlock;
@@ -16,41 +20,8 @@ interface SprintBlockCardProps {
   statusUpdating: boolean;
   /** Abre o dialog de edit (status / nome / due_date) pra essa task */
   onEditTask?: (task: ClickUpTaskShape) => void;
-}
-
-const DONE_STATUSES = new Set([
-  "done",
-  "closed",
-  "concluído",
-  "concluido",
-  "complete",
-  "completed",
-]);
-
-function isDoneStatus(s: string): boolean {
-  return DONE_STATUSES.has(s.toLowerCase());
-}
-
-function applyFilters(
-  tasks: ClickUpTaskShape[],
-  filters: SprintDashboardBlock["filters"],
-): ClickUpTaskShape[] {
-  return tasks.filter((t) => {
-    if (filters.statuses && filters.statuses.length > 0) {
-      if (!filters.statuses.includes(t.status)) return false;
-    }
-    if (filters.tags && filters.tags.length > 0) {
-      const has = t.tags.some((tag) => filters.tags!.includes(tag));
-      if (!has) return false;
-    }
-    if (filters.assigneeIds && filters.assigneeIds.length > 0) {
-      const has = t.assignees.some(
-        (a) => a.id !== null && filters.assigneeIds!.includes(String(a.id)),
-      );
-      if (!has) return false;
-    }
-    return true;
-  });
+  /** Story 31.7: abre dialog pra editar manualContext do bloco */
+  onEditContext?: (block: SprintDashboardBlock) => void;
 }
 
 export function SprintBlockCard({
@@ -60,6 +31,7 @@ export function SprintBlockCard({
   onToggleStatus,
   statusUpdating,
   onEditTask,
+  onEditContext,
 }: SprintBlockCardProps) {
   const [optimisticDone, setOptimisticDone] = useState<Set<string>>(new Set());
 
@@ -93,6 +65,12 @@ export function SprintBlockCard({
 
   const completedCount = tasks.filter((t) => isDoneStatus(t.status) || optimisticDone.has(t.id)).length;
 
+  // Story 31.7 iter: resumo executivo = manualContext (texto livre) +
+  // fases auto-detectadas (tasks com 📢). Ambos coexistem no mesmo card.
+  const autoPhases = useMemo(() => extractAutoPhases(tasks), [tasks]);
+  const manualText = block.manualContext?.trim() ?? "";
+  const hasSummary = manualText.length > 0 || autoPhases.length > 0;
+
   function handleToggle(task: ClickUpTaskShape) {
     if (statusUpdating) return;
     const currentDone = isDoneStatus(task.status) || optimisticDone.has(task.id);
@@ -122,7 +100,28 @@ export function SprintBlockCard({
             {tasks.length} tarefa(s) · {completedCount} concluída(s)
           </p>
         </div>
+        {onEditContext && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 gap-1 text-[10px] text-muted-foreground hover:text-foreground shrink-0"
+            onClick={() => onEditContext(block)}
+            title="Editar contexto do bloco"
+          >
+            <Megaphone className="h-3 w-3" />
+            Contexto
+          </Button>
+        )}
       </div>
+
+      {/* Story 31.7 iter — Card resumo: manual + fases auto coexistem */}
+      {hasSummary && (
+        <BlockSummaryCard
+          manualText={manualText}
+          phases={autoPhases}
+          accentColor={block.color}
+        />
+      )}
 
       {/* Tasks */}
       {loading ? (
@@ -223,6 +222,9 @@ export function SprintBlockCard({
           ))}
         </div>
       )}
+
+      {/* Story 31.7 iter — Pendentes (atraso + hoje) ao fim do bloco */}
+      {!loading && <PendingTasksList block={block} tasksByListId={tasksByListId} />}
     </div>
   );
 }

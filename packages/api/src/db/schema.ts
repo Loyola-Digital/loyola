@@ -583,6 +583,12 @@ export const funnels = pgTable(
       onDelete: "set null",
     }),
     auditStatus: varchar("audit_status", { length: 20 }).default("pending").notNull(),
+    /** Story 10.8: ordem manual dentro do tipo (perpetuals/launches). Hard rule
+     * "perpétuos antes de lançamentos" é enforced no endpoint, não no schema. */
+    sortOrder: integer("sort_order").notNull().default(0),
+    /** Story 10.9: soft archive. NULL = ativo, NOT NULL = arquivado. */
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    archivedBy: uuid("archived_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -592,6 +598,7 @@ export const funnels = pgTable(
   },
   (table) => [
     index("idx_funnels_project").on(table.projectId),
+    index("idx_funnels_project_sort").on(table.projectId, table.type, table.sortOrder),
   ]
 );
 
@@ -818,6 +825,37 @@ export const salesSpreadsheetMappings = pgTable(
   },
   (table) => [
     index("idx_sales_mappings_product").on(table.productId),
+  ]
+);
+
+// ============================================================
+// MANUAL SALES (Story 19.9 — Vendas PIX Direto lançadas no app)
+// ============================================================
+
+export const manualSales = pgTable(
+  "manual_sales",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    customerName: varchar("customer_name", { length: 255 }).notNull(),
+    customerEmail: varchar("customer_email", { length: 255 }),
+    customerPhone: varchar("customer_phone", { length: 50 }),
+    value: numeric("value", { precision: 12, scale: 2 }).notNull(),
+    sellerUserId: uuid("seller_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    sellerName: varchar("seller_name", { length: 255 }).notNull(),
+    saleDate: timestamp("sale_date", { withTimezone: true }).notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_manual_sales_stage_date").on(table.stageId, table.saleDate),
+    check("manual_sales_value_positive", sql`${table.value} > 0`),
   ]
 );
 

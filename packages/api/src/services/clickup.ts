@@ -18,6 +18,8 @@ interface ClickUpService {
   getLists(folderId: string): Promise<ClickUpList[]>;
   getFolderlessLists(spaceId: string): Promise<ClickUpList[]>;
   getTasks(listId: string): Promise<ClickUpTask[]>;
+  /** Story 31.7 iter: tasks com Task Type custom (Campanha, etc). */
+  getCustomTypeTasks(listId: string, teamId: string): Promise<ClickUpTask[]>;
   getTask(taskId: string): Promise<ClickUpTask | null>;
   searchTasks(teamId: string, query: string): Promise<ClickUpTask[]>;
   createTask(params: CreateTaskParams): Promise<{ id: string; url: string }>;
@@ -76,6 +78,9 @@ interface ClickUpTask {
   list?: { id: string; name: string };
   folder?: { id: string; name: string };
   space?: { id: string };
+  /** ID do Task Type custom no ClickUp (ex: "Campanha", "Bug"). Tasks
+   * default ("Task") têm null/undefined. */
+  custom_item_id?: number | null;
 }
 
 interface CreateTaskParams {
@@ -152,6 +157,32 @@ export default fp(async function clickupService(fastify) {
   async function getTasks(listId: string): Promise<ClickUpTask[]> {
     const data = await fetchApi<{ tasks: ClickUpTask[] }>(
       `/list/${listId}/task?include_closed=true&subtasks=true`,
+    );
+    return data.tasks;
+  }
+
+  /**
+   * Story 31.7 iter — Tasks com Task Types custom (Campanha, etc) só vêm
+   * quando o param `custom_items[]=ID` é passado. Esse helper:
+   *   1. Lista os custom item types do team (`/team/{id}/custom_items`)
+   *   2. Faz GET das tasks da lista com `&custom_items[]=ID` pra cada tipo
+   *   3. Retorna só essas custom (não merge com tasks default)
+   */
+  async function getCustomTypeTasks(listId: string, teamId: string): Promise<ClickUpTask[]> {
+    type CustomItem = { id: number; name: string };
+    let items: CustomItem[] = [];
+    try {
+      const itemsResp = await fetchApi<{ custom_items: CustomItem[] }>(
+        `/team/${teamId}/custom_items`,
+      );
+      items = itemsResp.custom_items ?? [];
+    } catch {
+      return [];
+    }
+    if (items.length === 0) return [];
+    const qs = items.map((i) => `custom_items%5B%5D=${i.id}`).join("&");
+    const data = await fetchApi<{ tasks: ClickUpTask[] }>(
+      `/list/${listId}/task?include_closed=true&subtasks=true&${qs}`,
     );
     return data.tasks;
   }
@@ -248,6 +279,7 @@ export default fp(async function clickupService(fastify) {
     getLists,
     getFolderlessLists,
     getTasks,
+    getCustomTypeTasks,
     getTask,
     searchTasks,
     createTask,

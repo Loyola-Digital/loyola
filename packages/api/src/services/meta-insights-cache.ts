@@ -14,7 +14,7 @@
  * 6. Retornar union (cache + fresh)
  */
 
-import { eq, and, inArray, gte, sql } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { metaCampaignInsightsDaily } from "../db/schema.js";
 import {

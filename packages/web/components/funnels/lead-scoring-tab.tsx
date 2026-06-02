@@ -80,6 +80,13 @@ function fmtNumber(v: number | undefined) {
 const SCHEMA_PLACEHOLDER = `{
   "schema_version": "1.0",
   "project": { "name": "...", "ticket": 0, "roas": 0, "cpa_ceiling": 0 },
+  // Story 18.17: quando o lead scoring é calculado FORA do app (ex: workflow n8n),
+  // adicione UMA das linhas abaixo apontando pro nome da coluna que tem a faixa
+  // pré-calculada (A/B/C/D). O app vai LER direto da célula em vez de reprocessar
+  // o scoring_model. Funciona com qualquer um dos 3 nomes (aliases):
+  // "precomputed_band_column": "Faixa",
+  // "band_column": "Faixa",
+  // "faixa_column": "Faixa",
   "scoring_model": {
     "max_possible_score": 100,
     "questions": [

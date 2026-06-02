@@ -141,6 +141,7 @@ const mockClickupPlugin = fp(async (fastify) => {
     getLists: vi.fn(),
     getFolderlessLists: vi.fn(),
     getTasks: vi.fn(),
+    getCustomTypeTasks: vi.fn(),
     getTask: vi.fn(),
     searchTasks: vi.fn(),
     createTask: vi.fn(),

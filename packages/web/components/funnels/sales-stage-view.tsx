@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Settings2, BarChart3, FileSpreadsheet } from "lucide-react";
+import { Settings2, BarChart3, FileSpreadsheet, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,9 +16,11 @@ import { StageSalesSpreadsheetSection } from "./stage-sales-spreadsheet-section"
 import { CampaignSelector } from "./campaign-selector";
 import { SalesMetaKpis } from "./sales-meta-kpis";
 import { SalesConversionCard } from "./sales-conversion-card";
+import { ManualPixSalesSection } from "./manual-pix-sales-section";
+import { ManualSaleDialog } from "./manual-sale-dialog";
 import { useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { toast } from "sonner";
-import type { FunnelCampaign, FunnelStage } from "@loyola-x/shared";
+import type { FunnelCampaign, FunnelStage, ManualSale } from "@loyola-x/shared";
 
 interface SalesStageViewProps {
   projectId: string;
@@ -31,6 +33,8 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [stageName, setStageName] = useState("");
   const [days, setDays] = useState(30);
+  const [manualSaleOpen, setManualSaleOpen] = useState(false);
+  const [editingSale, setEditingSale] = useState<ManualSale | null>(null);
 
   const updateStage = useUpdateStage(projectId, funnelId, stage.id);
 
@@ -63,6 +67,16 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
 
         <div className="flex items-center gap-2">
           <DayRangePicker days={days} onDaysChange={setDays} />
+
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => setManualSaleOpen(true)}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Lançar venda manual
+          </Button>
 
           <Sheet open={settingsOpen} onOpenChange={(open) => {
             setSettingsOpen(open);
@@ -169,6 +183,17 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
             days={days}
             adsetsMap={adsetsMap}
           />
+          <ManualPixSalesSection
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+            days={days}
+            onLaunchClick={() => setManualSaleOpen(true)}
+            onEditSale={(sale) => {
+              setEditingSale(sale);
+              setManualSaleOpen(true);
+            }}
+          />
         </TabsContent>
 
         <TabsContent value="spreadsheet" className="mt-6 space-y-4">
@@ -202,6 +227,18 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
           </details>
         </TabsContent>
       </Tabs>
+
+      <ManualSaleDialog
+        projectId={projectId}
+        funnelId={funnelId}
+        stageId={stage.id}
+        open={manualSaleOpen}
+        onOpenChange={(open) => {
+          setManualSaleOpen(open);
+          if (!open) setEditingSale(null);
+        }}
+        editingSale={editingSale}
+      />
     </div>
   );
 }
