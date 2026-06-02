@@ -19,6 +19,7 @@ import {
   funnels,
   projects,
   projectMembers,
+  manualSales,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import {
@@ -79,7 +80,14 @@ type BandKey = (typeof BAND_KEYS)[number];
 
 const NO_SELLER = "Sem origem";
 
+/** Story 19.10 conciliação: normaliza chave de agrupamento de vendedor —
+ * lowercase + trim. Garante que "Isabela" e "isabela" virem 1 vendedor só. */
+function normalizeSellerKey(label: string): string {
+  return label.trim().toLowerCase();
+}
+
 interface SellerAgg {
+  /** Display label — primeiro nome encontrado (mantém capitalização original). */
   utmSource: string;
   totalSales: number;
   totalRevenue: number;
@@ -337,6 +345,7 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
           const bruto = parseNumber(row[brutoIdx] ?? "");
           const utmSourceRaw = utmSourceIdx >= 0 ? (row[utmSourceIdx] ?? "").trim() : "";
           const utmSource = utmSourceRaw || NO_SELLER;
+          const sellerKey = normalizeSellerKey(utmSource);
 
           const bandId = leadBandMap.get(email);
           const bandKey: BandKey =
@@ -351,7 +360,7 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
             saleEmailsUnmatched.push(email);
           }
 
-          let agg = sellerMap.get(utmSource);
+          let agg = sellerMap.get(sellerKey);
           if (!agg) {
             agg = {
               utmSource,
@@ -359,12 +368,63 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
               totalRevenue: 0,
               bands: { A: 0, B: 0, C: 0, D: 0, no_profile: 0 },
             };
-            sellerMap.set(utmSource, agg);
+            sellerMap.set(sellerKey, agg);
           }
           agg.totalSales += 1;
           agg.totalRevenue += bruto;
           agg.bands[bandKey] += 1;
         }
+      }
+
+      // Story 19.10 — Conciliação com vendas manuais (PIX direto). Lança o
+      // sellerName da manual_sales como se fosse `utm_source` da planilha,
+      // já normalizado pra case-insensitive merge com vendas vindas do Sheets.
+      const manualRows = await fastify.db
+        .select({
+          value: manualSales.value,
+          sellerUserId: manualSales.sellerUserId,
+          sellerName: manualSales.sellerName,
+          customerEmail: manualSales.customerEmail,
+          saleDate: manualSales.saleDate,
+        })
+        .from(manualSales)
+        .where(eq(manualSales.stageId, params.data.stageId));
+
+      for (const m of manualRows) {
+        const saleDt = m.saleDate instanceof Date ? m.saleDate : new Date(m.saleDate);
+        if (startDate && saleDt < startDate) continue;
+        if (endDate && saleDt > endDate) continue;
+
+        const label = (m.sellerName ?? "").trim() || NO_SELLER;
+        const sellerKey = normalizeSellerKey(label);
+
+        const email = (m.customerEmail ?? "").trim().toLowerCase();
+        const bandId = email ? leadBandMap.get(email) : undefined;
+        const bandKey: BandKey =
+          bandId === "A" || bandId === "B" || bandId === "C" || bandId === "D"
+            ? bandId
+            : "no_profile";
+
+        totalSalesGlobal += 1;
+        if (bandKey !== "no_profile") matchedGlobal += 1;
+        if (email && saleEmailsSample.length < 5) saleEmailsSample.push(email);
+        if (email && bandKey === "no_profile" && saleEmailsUnmatched.length < 5) {
+          saleEmailsUnmatched.push(email);
+        }
+
+        let agg = sellerMap.get(sellerKey);
+        if (!agg) {
+          agg = {
+            utmSource: label,
+            totalSales: 0,
+            totalRevenue: 0,
+            bands: { A: 0, B: 0, C: 0, D: 0, no_profile: 0 },
+          };
+          sellerMap.set(sellerKey, agg);
+        }
+        agg.totalSales += 1;
+        agg.totalRevenue += Number(m.value) || 0;
+        agg.bands[bandKey] += 1;
       }
 
       if (sellerMap.size === 0) return emptyResponse("no_data");
