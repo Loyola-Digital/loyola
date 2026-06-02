@@ -1,9 +1,9 @@
 "use client";
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
-import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useState, useCallback, useEffect } from "react";
-import type { FunnelStage, Funnel } from "@loyola-x/shared";
+import type { FunnelStage } from "@loyola-x/shared";
 
 // ============================================================
 // TYPES
@@ -56,7 +56,6 @@ export function validateLeadInputs(inputs: LeadInputs): { valid: boolean; error?
 
 export function useStageLeadInputs(funnelId: string | null) {
   const apiClient = useApiClient();
-  const queryClient = useQueryClient();
   const [stateByStage, setStateByStage] = useState<StageLeadInputsState>({});
   const [errors, setErrors] = useState<{ [stageId: string]: string }>({});
 
@@ -130,12 +129,7 @@ export function useStageLeadInputs(funnelId: string | null) {
       }
 
       // Tentar salvar na API
-      try {
-        await mutation.mutateAsync({ funnelId, stageId, data: inputs });
-      } catch (error) {
-        // Se falhar, pelo menos os dados estão em localStorage
-        throw error;
-      }
+      await mutation.mutateAsync({ funnelId, stageId, data: inputs });
     },
     [funnelId, mutation]
   );

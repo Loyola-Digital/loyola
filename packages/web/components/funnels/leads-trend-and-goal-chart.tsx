@@ -122,7 +122,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
 
   // Story 18.27: Se stageId fornecido, usar inputs de etapa
   const usingStageInputs = !!stageId;
-  const { getInputs: getStageInputs, saveInputs: saveStageInputs, updateLocal: updateStageLocal, isPending: stagePending } =
+  const { getInputs: getStageInputs, saveInputs: saveStageInputs, updateLocal: updateStageLocal } =
     useStageLeadInputs(funnelId);
 
   // Story 18.19 fix: persistir no DB quando funnel+projectId disponíveis,
