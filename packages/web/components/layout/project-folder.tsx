@@ -60,7 +60,7 @@ import {
   useArchiveFunnel,
   useUnarchiveFunnel,
 } from "@/lib/hooks/use-funnels";
-import { useFunnelStages, useCreateStage, useReorderStages } from "@/lib/hooks/use-funnel-stages";
+import { useFunnelStages, useCreateStage, useReorderStages, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import type { Funnel, FunnelStage } from "@loyola-x/shared";
 import {
   DndContext,
@@ -773,7 +773,14 @@ function SortableStageList({
     return (
       <>
         {ordered.map((stage) => (
-          <StageNavItem key={stage.id} stage={stage} funnelHref={funnelHref} pathname={pathname} />
+          <StageNavItem
+            key={stage.id}
+            stage={stage}
+            projectId={projectId}
+            funnelId={funnelId}
+            funnelHref={funnelHref}
+            pathname={pathname}
+          />
         ))}
       </>
     );
@@ -786,6 +793,8 @@ function SortableStageList({
           <SortableStageNavItem
             key={stage.id}
             stage={stage}
+            projectId={projectId}
+            funnelId={funnelId}
             funnelHref={funnelHref}
             pathname={pathname}
           />
@@ -795,36 +804,125 @@ function SortableStageList({
   );
 }
 
+/** Story XX — Renomear etapa direto do sidebar. Hover no item revela botão
+ * lápis ao lado do drag handle. Dialog inline com input + Enter pra salvar. */
+function RenameStageButton({
+  stage,
+  projectId,
+  funnelId,
+}: {
+  stage: FunnelStage;
+  projectId: string;
+  funnelId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(stage.name);
+  const updateStage = useUpdateStage(projectId, funnelId, stage.id);
+
+  async function handleSave() {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === stage.name) {
+      setOpen(false);
+      return;
+    }
+    try {
+      await updateStage.mutateAsync({ name: trimmed });
+      toast.success("Etapa renomeada");
+      setOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao renomear");
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="absolute right-1 z-10 p-0.5 rounded text-muted-foreground/40 hover:text-foreground opacity-0 group-hover/stage:opacity-100 transition-opacity"
+        aria-label="Renomear etapa"
+        title="Renomear etapa"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setName(stage.name);
+          setOpen(true);
+        }}
+      >
+        <Pencil className="h-3 w-3" />
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Renomear etapa</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor={`rename-stage-${stage.id}`}>Nome</Label>
+            <Input
+              id={`rename-stage-${stage.id}`}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSave()}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={updateStage.isPending || !name.trim()}
+            >
+              {updateStage.isPending ? "Salvando..." : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function StageNavItem({
   stage,
+  projectId,
+  funnelId,
   funnelHref,
   pathname,
 }: {
   stage: FunnelStage;
+  projectId: string;
+  funnelId: string;
   funnelHref: string;
   pathname: string;
 }) {
   const stageHref = `${funnelHref}/stages/${stage.id}`;
   const isActive = pathname.startsWith(stageHref);
   return (
-    <Button
-      variant={isActive ? "secondary" : "ghost"}
-      className="justify-start gap-2 h-7 text-xs min-w-0"
-      asChild
-    >
-      <Link href={stageHref}>
-        <span className="truncate">{stage.name}</span>
-      </Link>
-    </Button>
+    <div className="group/stage relative flex items-center">
+      <Button
+        variant={isActive ? "secondary" : "ghost"}
+        className="justify-start gap-2 h-7 text-xs min-w-0 flex-1 group-hover/stage:pr-7 transition-[padding]"
+        asChild
+      >
+        <Link href={stageHref}>
+          <span className="truncate">{stage.name}</span>
+        </Link>
+      </Button>
+      <RenameStageButton stage={stage} projectId={projectId} funnelId={funnelId} />
+    </div>
   );
 }
 
 function SortableStageNavItem({
   stage,
+  projectId,
+  funnelId,
   funnelHref,
   pathname,
 }: {
   stage: FunnelStage;
+  projectId: string;
+  funnelId: string;
   funnelHref: string;
   pathname: string;
 }) {
@@ -854,13 +952,14 @@ function SortableStageNavItem({
       </button>
       <Button
         variant={isActive ? "secondary" : "ghost"}
-        className="justify-start gap-2 h-7 text-xs min-w-0 flex-1 group-hover/stage:pl-5 transition-[padding]"
+        className="justify-start gap-2 h-7 text-xs min-w-0 flex-1 group-hover/stage:pl-5 group-hover/stage:pr-7 transition-[padding]"
         asChild
       >
         <Link href={stageHref}>
           <span className="truncate">{stage.name}</span>
         </Link>
       </Button>
+      <RenameStageButton stage={stage} projectId={projectId} funnelId={funnelId} />
     </div>
   );
 }
