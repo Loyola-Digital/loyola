@@ -73,7 +73,7 @@ function isPhaseTask(task: ClickUpTaskShape): boolean {
 }
 
 /** Story 31.8 — Marco (milestone) é meta visual, não tarefa real. Não conta. */
-function isMarcoTask(task: ClickUpTaskShape): boolean {
+export function isMarcoTask(task: ClickUpTaskShape): boolean {
   return isCustomTypeNamed(task, "marco");
 }
 
@@ -260,6 +260,8 @@ export function getPendingTasks(
 
   const out: PendingTask[] = [];
   for (const task of tasks) {
+    // Story 31.8 — Marco é marco de etapa, não tarefa pendente.
+    if (isMarcoTask(task)) continue;
     if (isDoneStatus(task.status)) continue;
     if (!task.dueDate) continue;
     const dueMs = Number(task.dueDate);

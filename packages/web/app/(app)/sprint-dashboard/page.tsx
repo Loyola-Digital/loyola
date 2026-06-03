@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LayoutGrid, Settings2, RefreshCw, AlertCircle, AlertTriangle, Clock, Check, CalendarRange } from "lucide-react";
+import { LayoutGrid, Settings2, RefreshCw, AlertCircle, AlertTriangle, Clock, Check, CalendarRange, Activity } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,7 @@ export default function SprintDashboardPage() {
   const queryClient = useQueryClient();
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ClickUpTaskShape | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "macro">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "macro" | "health">("overview");
   // Story 31.7
   const [contextBlock, setContextBlock] = useState<SprintDashboardBlock | null>(null);
 
@@ -102,8 +102,8 @@ export default function SprintDashboardPage() {
         </div>
       </div>
 
-      {/* Métricas — Story 31.6 */}
-      <MetricsHeader metrics={metrics} blockCount={blocks.length} activeCount={metrics?.activeProjectsCount} />
+      {/* Métricas globais — só 3 cards no topo. Cards por folder migraram pra aba Saúde. */}
+      <GlobalMetricsRow metrics={metrics} blockCount={blocks.length} activeCount={metrics?.activeProjectsCount} />
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-border/30">
@@ -118,6 +118,12 @@ export default function SprintDashboardPage() {
           onClick={() => setActiveTab("macro")}
           icon={<CalendarRange className="h-3.5 w-3.5" />}
           label="Calendário Macro"
+        />
+        <TabButton
+          active={activeTab === "health"}
+          onClick={() => setActiveTab("health")}
+          icon={<Activity className="h-3.5 w-3.5" />}
+          label="Saúde"
         />
       </div>
 
@@ -164,8 +170,10 @@ export default function SprintDashboardPage() {
             />
           ))}
         </div>
-      ) : (
+      ) : activeTab === "macro" ? (
         <MacroCalendarView blocks={blocks} tasksByListId={tasksByListId} />
+      ) : (
+        <FolderHealthGrid metrics={metrics} />
       )}
 
       {/* Edit dialog (status + nome + due_date) */}
@@ -208,46 +216,75 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
   );
 }
 
-function MetricsHeader({
+interface FolderMetric {
+  folderId: string;
+  folderName: string;
+  total: number;
+  done: number;
+  overdue: number;
+  inProgress: number;
+  upcoming: number;
+  nextDueDate: number | null;
+  nextDueTaskName: string | null;
+}
+
+interface SprintMetricsResponse {
+  byFolder: FolderMetric[];
+  activeProjectsCount: number;
+}
+
+function GlobalMetricsRow({
   metrics,
   blockCount,
   activeCount,
 }: {
-  metrics: { byFolder: Array<{ folderId: string; folderName: string; total: number; done: number; overdue: number; inProgress: number; upcoming: number; nextDueDate: number | null; nextDueTaskName: string | null }>; activeProjectsCount: number } | undefined;
+  metrics: SprintMetricsResponse | undefined;
   blockCount: number;
   activeCount: number | undefined;
 }) {
   const folders = metrics?.byFolder ?? [];
   return (
-    <div className="space-y-3">
-      {/* Resumo geral — 1 linha de 3 cards */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
-        <MetricCard
-          label="Projetos ativos"
-          value={String(activeCount ?? "—")}
-          sub={`${blockCount} bloco(s) configurado(s)`}
-        />
-        <MetricCard
-          label="Tasks em atraso"
-          value={String(folders.reduce((s, f) => s + f.overdue, 0))}
-          sub={`${folders.filter((f) => f.overdue > 0).length} lançamento(s) afetado(s)`}
-          tone={folders.reduce((s, f) => s + f.overdue, 0) > 0 ? "danger" : "neutral"}
-        />
-        <MetricCard
-          label="Tasks em progresso"
-          value={String(folders.reduce((s, f) => s + f.inProgress, 0))}
-          sub={`${folders.reduce((s, f) => s + f.done, 0)} concluída(s)`}
-        />
-      </div>
+    <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
+      <MetricCard
+        label="Projetos ativos"
+        value={String(activeCount ?? "—")}
+        sub={`${blockCount} bloco(s) configurado(s)`}
+      />
+      <MetricCard
+        label="Tasks em atraso"
+        value={String(folders.reduce((s, f) => s + f.overdue, 0))}
+        sub={`${folders.filter((f) => f.overdue > 0).length} lançamento(s) afetado(s)`}
+        tone={folders.reduce((s, f) => s + f.overdue, 0) > 0 ? "danger" : "neutral"}
+      />
+      <MetricCard
+        label="Tasks em progresso"
+        value={String(folders.reduce((s, f) => s + f.inProgress, 0))}
+        sub={`${folders.reduce((s, f) => s + f.done, 0)} concluída(s)`}
+      />
+    </div>
+  );
+}
 
-      {/* Cards por folder/lançamento */}
-      {folders.length > 0 && (
-        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {folders.map((f) => (
-            <FolderMetricCard key={f.folderId} folder={f} />
-          ))}
-        </div>
-      )}
+function FolderHealthGrid({ metrics }: { metrics: SprintMetricsResponse | undefined }) {
+  const folders = metrics?.byFolder ?? [];
+  if (folders.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-border/40 p-12 text-center space-y-2">
+        <Activity className="h-8 w-8 mx-auto text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">
+          Nenhum lançamento com tasks ativas.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Configure blocos com listas do ClickUp pra ver a saúde por lançamento aqui.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {folders.map((f) => (
+        <FolderMetricCard key={f.folderId} folder={f} />
+      ))}
     </div>
   );
 }
@@ -273,11 +310,7 @@ function MetricCard({
   );
 }
 
-function FolderMetricCard({
-  folder,
-}: {
-  folder: { folderId: string; folderName: string; total: number; done: number; overdue: number; inProgress: number; upcoming: number; nextDueDate: number | null; nextDueTaskName: string | null };
-}) {
+function FolderMetricCard({ folder }: { folder: FolderMetric }) {
   // Story 31.8 — usa a mesma fórmula de saúde do SprintBlockCard:
   // DONE / (DONE + EM PROGRESSO). Mantém consistência entre as duas vistas.
   const healthDenom = folder.done + folder.inProgress;

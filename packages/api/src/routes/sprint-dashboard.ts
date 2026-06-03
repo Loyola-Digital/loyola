@@ -395,6 +395,10 @@ export default fp(async function sprintDashboardRoutes(fastify) {
       const map = new Map<string, FolderAgg>();
 
       for (const t of tasks) {
+        // Story 31.8 — Marco é marco de etapa, não tarefa. Ignora em todas as
+        // contagens (overdue, inProgress, done, total).
+        if ((t.customItemName ?? "").trim().toLowerCase() === "marco") continue;
+
         // Quando task não tem folder (folderless list), usa listId+listName como pseudo-folder
         const fid = t.folderId ?? `list:${t.listId}`;
         const fname = t.folderName ?? t.listName;
