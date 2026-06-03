@@ -68,7 +68,7 @@ export function isMarcoTask(task: ClickUpTaskShape): boolean {
   if (isCustomTypeNamed(task, "marco")) return true;
   // Heurística por nome da task pra cobrir cache miss do customItemName
   if (/^\s*\[\s*marco\s*\]/i.test(task.name)) return true;
-  if (/^\s*marco\s*[:\-]/i.test(task.name)) return true;
+  if (/^\s*marco\s*[:-]/i.test(task.name)) return true;
   return false;
 }
 
