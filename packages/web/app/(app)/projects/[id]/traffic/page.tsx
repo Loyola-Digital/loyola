@@ -53,7 +53,7 @@ function fmtPercent(val: number | null): string {
 
 export default function ProjectTrafficPage({ params }: Props) {
   const { id: projectId } = use(params);
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(90);
 
   const { data: accounts } = useMetaAdsAccounts();
   const linkedAccount = accounts?.find((a) =>

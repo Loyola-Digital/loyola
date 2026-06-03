@@ -91,7 +91,7 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
 
 export default function ProjectYouTubePage() {
   const { id: projectId } = useParams<{ id: string }>();
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(90);
 
   // Find Google Ads account linked to this project
   const { data: pickerData, isLoading: pickerLoading } = useGoogleAdsCampaignPicker(projectId);

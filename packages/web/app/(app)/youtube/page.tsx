@@ -429,7 +429,7 @@ function YouTubeLightbox({ ads, initialIndex, onClose }: { ads: GoogleAdsAd[]; i
 export default function YouTubeDashboardPage() {
   const { data: accounts, isLoading: accountsLoading } = useGoogleAdsAccounts();
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(90);
 
   // Auto-select first account
   const activeAccountId = selectedAccountId ?? accounts?.[0]?.id ?? null;

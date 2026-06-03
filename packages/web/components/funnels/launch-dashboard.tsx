@@ -108,7 +108,7 @@ function safeNum(val: string | undefined): number {
 }
 
 export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampaignsChange }: LaunchDashboardProps) {
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(90);
   const [showCampaignManager, setShowCampaignManager] = useState(false);
   const { data: pickerData } = useCampaignPicker(showCampaignManager ? projectId : null);
   const updateFunnel = useUpdateFunnel(projectId, funnel.id);

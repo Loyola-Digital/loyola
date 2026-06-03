@@ -32,7 +32,7 @@ interface SalesStageViewProps {
 export function SalesStageView({ projectId, funnelId, funnelName, stage }: SalesStageViewProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [stageName, setStageName] = useState("");
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(90);
   const [manualSaleOpen, setManualSaleOpen] = useState(false);
   const [editingSale, setEditingSale] = useState<ManualSale | null>(null);
 

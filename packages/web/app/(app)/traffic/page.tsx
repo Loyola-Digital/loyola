@@ -1530,7 +1530,7 @@ function TrafficPageContent() {
   const { data: accounts, isLoading: loadingAccounts } = useMetaAdsAccounts();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(90);
 
   // Support ?project=xxx for project-scoped access
   const forceProjectId = searchParams.get("project") ?? undefined;

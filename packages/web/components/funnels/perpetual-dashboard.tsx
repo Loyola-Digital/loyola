@@ -146,7 +146,7 @@ function safeNum(val: string | undefined): number {
 // ============================================================
 
 export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCampaignsChange }: PerpetualDashboardProps) {
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(90);
   // Fix 1 (29.8): quando usuario seleciona range custom no calendario, guarda
   // startDate/endDate explicitos e propaga pros hooks. Sem isso, days sozinho
   // sempre busca "X dias retroativos de hoje" — ignorando datas no passado.

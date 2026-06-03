@@ -132,7 +132,7 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
   const [selectedSurveyId, setSelectedSurveyId] = useState<string>("");
   const [jsonText, setJsonText] = useState("");
   const [debugOpen, setDebugOpen] = useState(false);
-  const [breakdownDays, setBreakdownDays] = useState(30);
+  const [breakdownDays, setBreakdownDays] = useState(90);
   const { data: debug, isLoading: debugLoading, refetch: refetchDebug } =
     useLeadScoringDebug(projectId, funnelId, stageId, debugOpen);
 

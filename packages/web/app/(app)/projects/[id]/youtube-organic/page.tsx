@@ -54,7 +54,7 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
 
 export default function ProjectYouTubeOrganicPage({ params }: Props) {
   const { id: projectId } = use(params);
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(90);
   const [linkModal, setLinkModal] = useState<{ videoId: string; title: string } | null>(null);
 
   const { data: channels } = useYouTubeChannels();
