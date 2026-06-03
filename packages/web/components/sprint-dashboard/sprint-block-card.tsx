@@ -10,7 +10,6 @@ import type { SprintDashboardBlock } from "@loyola-x/shared";
 import type { ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
 import { applyFilters, isDoneStatus, extractAutoPhases, getCampaignHealth } from "./summary-utils";
 import { BlockSummaryCard } from "./block-summary-card";
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
 interface SprintBlockCardProps {
   block: SprintDashboardBlock;
@@ -131,50 +130,7 @@ export function SprintBlockCard({
         )}
       </div>
 
-      {/* Story 31.8 — Stats de saúde + próxima task */}
-      <div className="grid grid-cols-3 gap-1.5">
-        <HealthStat
-          icon={<AlertTriangle className="h-3 w-3" />}
-          value={health.atraso}
-          label="Atraso"
-          tone="danger"
-        />
-        <HealthStat
-          icon={<Clock className="h-3 w-3" />}
-          value={health.progress}
-          label="Progr."
-          tone="warn"
-        />
-        <HealthStat
-          icon={<CheckCircle2 className="h-3 w-3" />}
-          value={health.done}
-          label="Done"
-          tone="success"
-        />
-      </div>
-      {health.next && (
-        <a
-          href={health.next.url}
-          target="_blank"
-          rel="noreferrer"
-          className="block text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <span className={health.next.isOverdue ? "text-red-500 font-medium" : "font-medium"}>
-            {health.next.isOverdue ? "Atrasada:" : "Próximo:"}
-          </span>{" "}
-          {health.next.dueDateMs && (
-            <span className="tabular-nums">
-              {format(new Date(health.next.dueDateMs), "dd/MM", { locale: ptBR })}
-            </span>
-          )}
-          {" · "}
-          <span className="text-foreground/80">
-            {health.next.name.length > 70
-              ? health.next.name.slice(0, 69) + "…"
-              : health.next.name}
-          </span>
-        </a>
-      )}
+      {/* Story 31.8 — Stats detalhados vivem só nos FolderMetricCards de cima */}
 
       {/* Story 31.7 iter — Card resumo: manual + fases auto coexistem */}
       {hasSummary && (
@@ -289,24 +245,3 @@ export function SprintBlockCard({
   );
 }
 
-interface HealthStatProps {
-  icon: React.ReactNode;
-  value: number;
-  label: string;
-  tone: "danger" | "warn" | "success";
-}
-
-function HealthStat({ icon, value, label, tone }: HealthStatProps) {
-  const colorMap = {
-    danger: "text-red-500 bg-red-500/10",
-    warn: "text-amber-500 bg-amber-500/10",
-    success: "text-emerald-500 bg-emerald-500/10",
-  };
-  return (
-    <div className={`rounded-md py-1.5 px-2 flex items-center gap-1.5 ${colorMap[tone]}`}>
-      {icon}
-      <span className="text-base font-bold tabular-nums">{value}</span>
-      <span className="text-[9px] uppercase tracking-wide opacity-80">{label}</span>
-    </div>
-  );
-}
