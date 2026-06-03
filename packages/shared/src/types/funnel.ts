@@ -28,6 +28,10 @@ export interface SaleColumnMapping {
    * email gera múltiplas transações reais que não devem ser somadas.
    */
   transactionId?: string;
+  /** Story 19.9 ext: nome do cliente (opcional, quando planilha trouxer). */
+  customerName?: string;
+  /** Story 19.9 ext: nome do produto vendido (ex: "Mentoria 1:1"). */
+  productName?: string;
   valorBruto?: string;
   valorLiquido?: string;
   formaPagamento?: string;

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Pencil, Plus, Trash2, Wallet, FileSpreadsheet, ReceiptText } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Wallet, FileSpreadsheet, ReceiptText } from "lucide-react";
 import type { ManualSale } from "@loyola-x/shared";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -72,6 +72,8 @@ export function ManualPixSalesSection({
   const { data: manualPayload } = useManualSales(projectId, funnelId, stageId, days);
   const deleteMutation = useDeleteManualSale(projectId, funnelId, stageId);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 10;
 
   async function handleDelete() {
     if (!confirmDeleteId) return;
@@ -89,6 +91,14 @@ export function ManualPixSalesSection({
   const summary = data?.summary;
   const manualMap = new Map<string, ManualSale>(
     (manualPayload?.sales ?? []).map((s) => [s.id, s]),
+  );
+
+  // Story 19.9 ext: paginação 10/página
+  const totalPages = Math.max(1, Math.ceil(sales.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const visibleSales = useMemo(
+    () => sales.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE),
+    [sales, safePage],
   );
 
   return (
@@ -172,7 +182,7 @@ export function ManualPixSalesSection({
                 </tr>
               </thead>
               <tbody>
-                {sales.map((sale) => (
+                {visibleSales.map((sale) => (
                   <tr key={sale.id} className="border-t border-border/30">
                     <td className="px-3 py-2 tabular-nums">{formatDate(sale.saleDate)}</td>
                     <td className="px-3 py-2 max-w-[160px] truncate" title={sale.customerName ?? ""}>
@@ -238,6 +248,38 @@ export function ManualPixSalesSection({
                 ))}
               </tbody>
             </table>
+            {/* Story 19.9 ext: paginação 10/página */}
+            {sales.length > PAGE_SIZE && (
+              <div className="flex items-center justify-between gap-2 px-3 py-2 bg-muted/10 border-t border-border/30 text-[11px] text-muted-foreground">
+                <span className="tabular-nums">
+                  {safePage * PAGE_SIZE + 1}–
+                  {Math.min((safePage + 1) * PAGE_SIZE, sales.length)} de {sales.length}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                    disabled={safePage === 0}
+                    className="p-1 rounded hover:bg-muted/40 disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Página anterior"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </button>
+                  <span className="tabular-nums px-2">
+                    {safePage + 1} / {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                    disabled={safePage >= totalPages - 1}
+                    className="p-1 rounded hover:bg-muted/40 disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Próxima página"
+                  >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}

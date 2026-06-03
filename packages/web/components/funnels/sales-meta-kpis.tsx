@@ -45,14 +45,21 @@ interface KpiCardProps {
   value: string;
   hint?: string;
   highlight?: boolean;
+  tooltip?: string;
 }
 
-function KpiCard({ icon: Icon, label, value, hint, highlight }: KpiCardProps) {
+function KpiCard({ icon: Icon, label, value, hint, highlight, tooltip }: KpiCardProps) {
   return (
-    <div className={`rounded-lg border p-3 space-y-1 ${highlight ? "border-primary/30 bg-primary/5" : "border-border/50"}`}>
+    <div
+      className={`rounded-lg border p-3 space-y-1 ${highlight ? "border-primary/30 bg-primary/5" : "border-border/50"}`}
+      title={tooltip}
+    >
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Icon className="h-3.5 w-3.5" />
         {label}
+        {tooltip && (
+          <span className="text-[9px] text-muted-foreground/60 cursor-help" title={tooltip}>(i)</span>
+        )}
       </div>
       <p className={`text-base font-bold ${highlight ? "text-primary" : ""}`}>{value}</p>
       {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
@@ -126,6 +133,14 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
 
   const totalVendas = salesData?.totalVendas ?? 0;
   const faturamento = salesData?.faturamentoBruto ?? 0;
+  // Story 19.9 ext: tooltip com breakdown planilha vs manual
+  const breakdown = salesData?.breakdown;
+  const fatTooltip = breakdown
+    ? `Planilha: ${fmtCurrency(breakdown.spreadsheet.bruto)} (${breakdown.spreadsheet.vendas})\nManuais: ${fmtCurrency(breakdown.manual.bruto)} (${breakdown.manual.vendas})`
+    : undefined;
+  const vendasTooltip = breakdown
+    ? `Planilha: ${breakdown.spreadsheet.vendas}\nManuais: ${breakdown.manual.vendas}`
+    : undefined;
   const roas = spend > 0 ? faturamento / spend : null;
   const cpv = totalVendas > 0 && spend > 0 ? spend / totalVendas : null;
   const margem = spend > 0 ? faturamento - spend : null;
@@ -142,8 +157,8 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
     <div className="space-y-4">
       {/* Cards principais */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-        <KpiCard icon={DollarSign} label="Faturamento" value={fmtCurrency(faturamento)} highlight />
-        <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(totalVendas)} />
+        <KpiCard icon={DollarSign} label="Faturamento" value={fmtCurrency(faturamento)} highlight tooltip={fatTooltip} />
+        <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(totalVendas)} tooltip={vendasTooltip} />
         <KpiCard icon={Zap} label="Spend Meta" value={fmtCurrency(spend)} />
         <KpiCard
           icon={TrendingUp}

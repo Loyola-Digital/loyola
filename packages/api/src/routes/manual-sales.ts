@@ -572,6 +572,8 @@ export default fp(async function manualSalesRoutes(fastify) {
         const mapping = sheet.columnMapping as {
           email?: string;
           transactionId?: string;
+          customerName?: string;
+          productName?: string;
           valorBruto?: string;
           canalOrigem?: string;
           dataVenda?: string;
@@ -587,6 +589,8 @@ export default fp(async function manualSalesRoutes(fastify) {
         const idxOf = (n: string | undefined) => (n ? headers.indexOf(n) : -1);
         const emailIdx = idxOf(mapping.email);
         const txIdx = idxOf(mapping.transactionId);
+        const nameIdx = idxOf(mapping.customerName);
+        const productIdx = idxOf(mapping.productName);
         const brutoIdx = idxOf(mapping.valorBruto);
         const canalIdx = idxOf(mapping.canalOrigem);
         const dataIdx = idxOf(mapping.dataVenda);
@@ -611,14 +615,18 @@ export default fp(async function manualSalesRoutes(fastify) {
           const value = parseBrNumber(row[brutoIdx]);
           const canal = canalIdx !== -1 ? (row[canalIdx] ?? "").trim() : "";
           const utm = utmSourceIdx !== -1 ? (row[utmSourceIdx] ?? "").trim() : "";
+          const explicitName = nameIdx !== -1 ? (row[nameIdx] ?? "").trim() : "";
+          const explicitProduct = productIdx !== -1 ? (row[productIdx] ?? "").trim() : "";
 
           out.push({
             id: `sheet:${sheet.id}:${dedupKey}`,
             source: "spreadsheet",
-            customerName: email, // Kiwify normalmente não envia nome — usa email
+            // Story 19.9 ext: usa coluna customerName quando mapeada, senão email
+            customerName: explicitName || email,
             customerEmail: email,
             customerPhone: null,
-            product: canal || null, // pra Kiwify "canalOrigem" geralmente é o produto
+            // Story 19.9 ext: productName mapeada > canal de origem como fallback
+            product: explicitProduct || canal || null,
             value,
             sellerName: utm || null,
             saleDate: dt ? dt.toISOString() : null,
