@@ -1,21 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ExternalLink, Check, Circle, Clock, Megaphone } from "lucide-react";
+import { ExternalLink, Check, Circle, Clock } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SprintDashboardBlock } from "@loyola-x/shared";
 import type { ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
 import {
   applyFilters,
   isDoneStatus,
-  extractAutoPhases,
   getCampaignHealth,
   shouldCountForHealth,
 } from "./summary-utils";
-import { BlockSummaryCard } from "./block-summary-card";
 
 interface SprintBlockCardProps {
   block: SprintDashboardBlock;
@@ -25,8 +22,6 @@ interface SprintBlockCardProps {
   statusUpdating: boolean;
   /** Abre o dialog de edit (status / nome / due_date) pra essa task */
   onEditTask?: (task: ClickUpTaskShape) => void;
-  /** Story 31.7: abre dialog pra editar manualContext do bloco */
-  onEditContext?: (block: SprintDashboardBlock) => void;
 }
 
 export function SprintBlockCard({
@@ -36,7 +31,6 @@ export function SprintBlockCard({
   onToggleStatus,
   statusUpdating,
   onEditTask,
-  onEditContext,
 }: SprintBlockCardProps) {
   const [optimisticDone, setOptimisticDone] = useState<Set<string>>(new Set());
 
@@ -75,13 +69,6 @@ export function SprintBlockCard({
   }, [tasks, block.groupBy]);
 
   const completedCount = tasks.filter((t) => isDoneStatus(t.status) || optimisticDone.has(t.id)).length;
-
-  // Story 31.7 iter: resumo executivo = manualContext (texto livre) +
-  // fases auto-detectadas (tasks com 📢). Fases vivem em `allTasks` pq são
-  // Campanha (excluídas de `tasks`). extractAutoPhases já filtra sem-responsável.
-  const autoPhases = useMemo(() => extractAutoPhases(allTasks), [allTasks]);
-  const manualText = block.manualContext?.trim() ?? "";
-  const hasSummary = manualText.length > 0 || autoPhases.length > 0;
 
   // Story 31.8 — Saúde da Campanha. getCampaignHealth aplica shouldCountForHealth
   // internamente, então passar allTasks ou tasks dá o mesmo resultado.
@@ -130,30 +117,10 @@ export function SprintBlockCard({
             {tasks.length} tarefa(s) · {completedCount} concluída(s)
           </p>
         </div>
-        {onEditContext && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 gap-1 text-[10px] text-muted-foreground hover:text-foreground shrink-0"
-            onClick={() => onEditContext(block)}
-            title="Editar contexto do bloco"
-          >
-            <Megaphone className="h-3 w-3" />
-            Contexto
-          </Button>
-        )}
       </div>
 
-      {/* Story 31.8 — Stats detalhados vivem só nos FolderMetricCards de cima */}
-
-      {/* Story 31.7 iter — Card resumo: manual + fases auto coexistem */}
-      {hasSummary && (
-        <BlockSummaryCard
-          manualText={manualText}
-          phases={autoPhases}
-          accentColor={block.color}
-        />
-      )}
+      {/* Story 31.8 — Resumo do lançamento + botão Contexto migraram pro
+          CampaignCard no Calendário Macro. */}
 
       {/* Tasks */}
       {loading ? (

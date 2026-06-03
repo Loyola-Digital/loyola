@@ -166,12 +166,15 @@ export default function SprintDashboardPage() {
               onToggleStatus={(taskId, newStatus) => updateStatus.mutate({ taskId, status: newStatus })}
               statusUpdating={updateStatus.isPending}
               onEditTask={(task) => setEditingTask(task)}
-              onEditContext={(b) => setContextBlock(b)}
             />
           ))}
         </div>
       ) : activeTab === "macro" ? (
-        <MacroCalendarView blocks={blocks} tasksByListId={tasksByListId} />
+        <MacroCalendarView
+          blocks={blocks}
+          tasksByListId={tasksByListId}
+          onEditContext={(b) => setContextBlock(b)}
+        />
       ) : (
         <FolderHealthGrid metrics={metrics} />
       )}

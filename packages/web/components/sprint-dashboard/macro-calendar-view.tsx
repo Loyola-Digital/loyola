@@ -2,14 +2,18 @@
 
 import { format, parseISO, isValid } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { Megaphone } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import type { SprintDashboardBlock, SprintCampaignPhase } from "@loyola-x/shared";
 import type { ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
 import { PendingTasksList } from "./pending-tasks-list";
 import { collectBlockTasks, extractAutoPhases, type AutoPhase } from "./summary-utils";
+import { BlockSummaryCard } from "./block-summary-card";
 
 interface MacroCalendarViewProps {
   blocks: SprintDashboardBlock[];
   tasksByListId: Map<string, ClickUpTaskShape[]>;
+  onEditContext?: (block: SprintDashboardBlock) => void;
 }
 
 /**
@@ -31,19 +35,20 @@ function autoPhasesAsCampaignPhases(autoPhases: AutoPhase[]): SprintCampaignPhas
   }));
 }
 
-export function MacroCalendarView({ blocks, tasksByListId }: MacroCalendarViewProps) {
+export function MacroCalendarView({ blocks, tasksByListId, onEditContext }: MacroCalendarViewProps) {
   // Story 31.7 iter: cada bloco usa fases do ClickUp (tasks 📢) quando há;
   // senão cai pro campaignPhases configurado manualmente. Cards só aparecem
   // se um dos dois entrega ao menos 1 fase.
   const blocksWithPhases = blocks
     .map((block) => {
-      const autoPhases = extractAutoPhases(collectBlockTasks(block, tasksByListId));
+      const allTasks = collectBlockTasks(block, tasksByListId);
+      const autoPhases = extractAutoPhases(allTasks);
       const phases =
         autoPhases.length > 0
           ? autoPhasesAsCampaignPhases(autoPhases)
           : block.campaignPhases ?? [];
       const source = autoPhases.length > 0 ? "auto" : "manual";
-      return { block, phases, source };
+      return { block, phases, source, autoPhases };
     })
     .filter((b) => b.phases.length > 0);
 
@@ -63,13 +68,15 @@ export function MacroCalendarView({ blocks, tasksByListId }: MacroCalendarViewPr
 
   return (
     <div className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-      {blocksWithPhases.map(({ block, phases, source }) => (
+      {blocksWithPhases.map(({ block, phases, source, autoPhases }) => (
         <CampaignCard
           key={block.id}
           block={block}
           phases={phases}
           source={source as "auto" | "manual"}
+          autoPhases={autoPhases}
           tasksByListId={tasksByListId}
+          onEditContext={onEditContext}
         />
       ))}
     </div>
@@ -80,15 +87,21 @@ function CampaignCard({
   block,
   phases,
   source,
+  autoPhases,
   tasksByListId,
+  onEditContext,
 }: {
   block: SprintDashboardBlock;
   phases: SprintCampaignPhase[];
   source: "auto" | "manual";
+  autoPhases: AutoPhase[];
   tasksByListId: Map<string, ClickUpTaskShape[]>;
+  onEditContext?: (block: SprintDashboardBlock) => void;
 }) {
   const phaseStates = phases.map((p) => derivePhaseState(p));
   const isLive = phaseStates.some((s) => s === "in-progress");
+  const manualText = block.manualContext?.trim() ?? "";
+  const hasSummary = manualText.length > 0 || autoPhases.length > 0;
 
   return (
     <div className="rounded-xl border border-border/40 bg-card/60 p-4 space-y-3">
@@ -116,7 +129,29 @@ function CampaignCard({
             <p className="text-[11px] text-muted-foreground mt-0.5">{block.subtitle}</p>
           )}
         </div>
+        {onEditContext && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 gap-1 text-[10px] text-muted-foreground hover:text-foreground shrink-0"
+            onClick={() => onEditContext(block)}
+            title="Editar contexto do bloco"
+          >
+            <Megaphone className="h-3 w-3" />
+            Contexto
+          </Button>
+        )}
       </div>
+
+      {/* Story 31.8 iter — Resumo executivo (manual + fases auto) migrou
+          do BlockCard pra cá. Aparece quando há manualContext ou tasks 📢. */}
+      {hasSummary && (
+        <BlockSummaryCard
+          manualText={manualText}
+          phases={autoPhases}
+          accentColor={block.color}
+        />
+      )}
 
       {/* Fases */}
       <div className="space-y-1.5">
