@@ -3,6 +3,8 @@
  * Coexistem com vendas vindas da planilha Google Sheets, em seção separada.
  */
 
+export type InvoiceStatus = "emitida" | "pendente";
+
 export interface ManualSale {
   id: string;
   stageId: string;
@@ -15,6 +17,10 @@ export interface ManualSale {
   saleDate: string;
   createdBy: string;
   createdAt: string;
+  /** Story 19.9 ext: nome do produto vendido (texto livre, manual). */
+  product: string | null;
+  /** Story 19.9 ext: status da NF — null = não preenchido. */
+  invoiceStatus: InvoiceStatus | null;
 }
 
 export interface ManualSaleSellerRanking {
@@ -43,4 +49,6 @@ export interface CreateManualSaleInput {
   value: number;
   sellerUserId: string;
   saleDate: string;
+  product?: string;
+  invoiceStatus?: InvoiceStatus | null;
 }

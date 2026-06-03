@@ -25,7 +25,7 @@ import {
   useEligibleSellers,
   useUpdateManualSale,
 } from "@/lib/hooks/use-manual-sales";
-import type { ManualSale } from "@loyola-x/shared";
+import type { InvoiceStatus, ManualSale } from "@loyola-x/shared";
 
 interface ManualSaleDialogProps {
   projectId: string;
@@ -89,6 +89,8 @@ export function ManualSaleDialog({
   const [valueInput, setValueInput] = useState("");
   const [sellerUserId, setSellerUserId] = useState<string>("");
   const [saleDate, setSaleDate] = useState<string>(todayIso());
+  const [product, setProduct] = useState("");
+  const [invoiceStatus, setInvoiceStatus] = useState<InvoiceStatus | "">("");
 
   // Hidrata form quando entra em modo edição (ou troca de venda em edição)
   useEffect(() => {
@@ -100,6 +102,8 @@ export function ManualSaleDialog({
       setValueInput(formatBrCurrencyFromNumber(editingSale.value));
       setSellerUserId(editingSale.sellerUserId ?? "");
       setSaleDate(saleDateToInput(editingSale.saleDate));
+      setProduct(editingSale.product ?? "");
+      setInvoiceStatus(editingSale.invoiceStatus ?? "");
     } else {
       resetForm();
     }
@@ -112,6 +116,8 @@ export function ManualSaleDialog({
     setValueInput("");
     setSellerUserId("");
     setSaleDate(todayIso());
+    setProduct("");
+    setInvoiceStatus("");
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -141,6 +147,8 @@ export function ManualSaleDialog({
       value,
       sellerUserId,
       saleDate,
+      product: product.trim() || undefined,
+      invoiceStatus: invoiceStatus || null,
     };
 
     try {
@@ -236,6 +244,33 @@ export function ManualSaleDialog({
                   onChange={(e) => setSaleDate(e.target.value)}
                 />
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="product">Produto</Label>
+              <Input
+                id="product"
+                value={product}
+                onChange={(e) => setProduct(e.target.value)}
+                placeholder="Ex: Mentoria 1:1 (opcional)"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="invoice-status">Nota fiscal</Label>
+              <Select
+                value={invoiceStatus || "none"}
+                onValueChange={(v) => setInvoiceStatus(v === "none" ? "" : (v as InvoiceStatus))}
+              >
+                <SelectTrigger id="invoice-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Não preenchido</SelectItem>
+                  <SelectItem value="emitida">Emitida</SelectItem>
+                  <SelectItem value="pendente">Pendente</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-1.5">

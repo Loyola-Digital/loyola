@@ -16,7 +16,32 @@ import {
   projects,
   projectMembers,
   users,
+  stageSalesSpreadsheets,
 } from "../db/schema.js";
+import { readSheetData } from "../services/google-sheets.js";
+
+function parseBrNumber(val: string | undefined): number {
+  if (!val) return 0;
+  const cleaned = String(val).replace(/[^\d.,-]/g, "");
+  if (!cleaned) return 0;
+  const hasComma = cleaned.includes(",");
+  const normalized = hasComma
+    ? cleaned.replace(/\./g, "").replace(",", ".")
+    : cleaned;
+  return parseFloat(normalized) || 0;
+}
+
+function parseSheetDate(val: string | undefined): Date | null {
+  if (!val) return null;
+  const trimmed = String(val).trim();
+  const br = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (br) {
+    const d = new Date(parseInt(br[3]), parseInt(br[2]) - 1, parseInt(br[1]));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(trimmed);
+  return isNaN(d.getTime()) ? null : d;
+}
 
 /**
  * Normaliza nome do usuário pra exibição: detecta Clerk ID literal
@@ -64,6 +89,8 @@ const createSaleSchema = z.object({
   value: z.number().positive().finite(),
   sellerUserId: z.string().uuid(),
   saleDate: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  product: z.string().trim().max(255).optional().or(z.literal("").transform(() => undefined)),
+  invoiceStatus: z.enum(["emitida", "pendente"]).nullable().optional(),
 });
 
 export default fp(async function manualSalesRoutes(fastify) {
@@ -210,6 +237,8 @@ export default fp(async function manualSalesRoutes(fastify) {
         saleDate: r.saleDate.toISOString(),
         createdBy: r.createdBy,
         createdAt: r.createdAt.toISOString(),
+        product: r.product,
+        invoiceStatus: r.invoiceStatus as "emitida" | "pendente" | null,
       }));
 
       const totalSales = sales.length;
@@ -324,6 +353,8 @@ export default fp(async function manualSalesRoutes(fastify) {
           sellerName: sellerMembership.name,
           saleDate,
           createdBy: request.userId,
+          product: body.data.product ?? null,
+          invoiceStatus: body.data.invoiceStatus ?? null,
         })
         .returning();
 
@@ -339,6 +370,8 @@ export default fp(async function manualSalesRoutes(fastify) {
         saleDate: created.saleDate.toISOString(),
         createdBy: created.createdBy,
         createdAt: created.createdAt.toISOString(),
+        product: created.product,
+        invoiceStatus: created.invoiceStatus,
       });
     },
   );
@@ -420,6 +453,9 @@ export default fp(async function manualSalesRoutes(fastify) {
         updates.saleDate = saleDate;
       }
 
+      if (body.data.product !== undefined) updates.product = body.data.product ?? null;
+      if (body.data.invoiceStatus !== undefined) updates.invoiceStatus = body.data.invoiceStatus ?? null;
+
       if (Object.keys(updates).length === 0) {
         return reply.code(400).send({ error: "Nenhum campo pra atualizar" });
       }
@@ -442,6 +478,173 @@ export default fp(async function manualSalesRoutes(fastify) {
         saleDate: updated.saleDate.toISOString(),
         createdBy: updated.createdBy,
         createdAt: updated.createdAt.toISOString(),
+        product: updated.product,
+        invoiceStatus: updated.invoiceStatus,
+      };
+    },
+  );
+
+  // ---------------------------------------------------------------
+  // GET /all-sales — Story 19.9 ext: vendas manuais + planilha unificadas
+  // ---------------------------------------------------------------
+  const allSalesQuerySchema = z.object({
+    subtype: z.enum(["capture", "main_product", "sales"]).default("sales"),
+    days: z.coerce.number().int().positive().max(3650).default(90),
+  });
+
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/all-sales",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const query = allSalesQuerySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Query inválida" });
+
+      const stage = await getStageContext(
+        params.data.projectId,
+        params.data.funnelId,
+        params.data.stageId,
+        request.userId,
+        request.userRole,
+      );
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const cutoff = new Date(Date.now() - query.data.days * 24 * 60 * 60 * 1000);
+
+      type UnifiedSale = {
+        id: string;
+        source: "manual" | "spreadsheet";
+        customerName: string | null;
+        customerEmail: string | null;
+        customerPhone: string | null;
+        product: string | null;
+        value: number;
+        sellerName: string | null;
+        saleDate: string | null;
+        invoiceStatus: "emitida" | "pendente" | null;
+        manualSaleId: string | null;
+      };
+
+      // 1. Vendas manuais
+      const manualRows = await fastify.db
+        .select()
+        .from(manualSales)
+        .where(
+          and(
+            eq(manualSales.stageId, params.data.stageId),
+            gte(manualSales.saleDate, cutoff),
+          ),
+        )
+        .orderBy(desc(manualSales.saleDate));
+
+      const out: UnifiedSale[] = manualRows.map((r) => ({
+        id: `manual:${r.id}`,
+        source: "manual",
+        customerName: r.customerName,
+        customerEmail: r.customerEmail,
+        customerPhone: r.customerPhone,
+        product: r.product,
+        value: Number(r.value) || 0,
+        sellerName: r.sellerName,
+        saleDate: r.saleDate.toISOString(),
+        invoiceStatus: r.invoiceStatus as "emitida" | "pendente" | null,
+        manualSaleId: r.id,
+      }));
+
+      // 2. Vendas da planilha (mesma subtype)
+      const sheets = await fastify.db
+        .select()
+        .from(stageSalesSpreadsheets)
+        .where(
+          and(
+            eq(stageSalesSpreadsheets.stageId, params.data.stageId),
+            eq(stageSalesSpreadsheets.subtype, query.data.subtype),
+          ),
+        );
+
+      const seenDedup = new Set<string>();
+      for (const sheet of sheets) {
+        const mapping = sheet.columnMapping as {
+          email?: string;
+          transactionId?: string;
+          valorBruto?: string;
+          canalOrigem?: string;
+          dataVenda?: string;
+          utm_source?: string;
+        };
+        let data;
+        try {
+          data = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
+        } catch {
+          continue;
+        }
+        const { headers, rows } = data;
+        const idxOf = (n: string | undefined) => (n ? headers.indexOf(n) : -1);
+        const emailIdx = idxOf(mapping.email);
+        const txIdx = idxOf(mapping.transactionId);
+        const brutoIdx = idxOf(mapping.valorBruto);
+        const canalIdx = idxOf(mapping.canalOrigem);
+        const dataIdx = idxOf(mapping.dataVenda);
+        const utmSourceIdx = idxOf(mapping.utm_source);
+
+        if (emailIdx === -1) continue;
+
+        for (const row of rows) {
+          const email = (row[emailIdx] ?? "").trim().toLowerCase();
+          if (!email) continue;
+
+          const dt = dataIdx !== -1 ? parseSheetDate(row[dataIdx]) : null;
+          if (dt && dt < cutoff) continue;
+
+          const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
+          const dedupKey = txId
+            ? `${sheet.id}|tx|${txId}`
+            : `${sheet.id}|email|${email}|${row[brutoIdx] ?? ""}`;
+          if (seenDedup.has(dedupKey)) continue;
+          seenDedup.add(dedupKey);
+
+          const value = parseBrNumber(row[brutoIdx]);
+          const canal = canalIdx !== -1 ? (row[canalIdx] ?? "").trim() : "";
+          const utm = utmSourceIdx !== -1 ? (row[utmSourceIdx] ?? "").trim() : "";
+
+          out.push({
+            id: `sheet:${sheet.id}:${dedupKey}`,
+            source: "spreadsheet",
+            customerName: email, // Kiwify normalmente não envia nome — usa email
+            customerEmail: email,
+            customerPhone: null,
+            product: canal || null, // pra Kiwify "canalOrigem" geralmente é o produto
+            value,
+            sellerName: utm || null,
+            saleDate: dt ? dt.toISOString() : null,
+            invoiceStatus: null,
+            manualSaleId: null,
+          });
+        }
+      }
+
+      out.sort((a, b) => {
+        if (!a.saleDate) return 1;
+        if (!b.saleDate) return -1;
+        return b.saleDate.localeCompare(a.saleDate);
+      });
+
+      const totalRevenue = out.reduce((s, x) => s + x.value, 0);
+      const manualRevenue = out
+        .filter((x) => x.source === "manual")
+        .reduce((s, x) => s + x.value, 0);
+      const spreadsheetRevenue = totalRevenue - manualRevenue;
+
+      return {
+        sales: out,
+        summary: {
+          totalSales: out.length,
+          totalRevenue,
+          manualSales: manualRows.length,
+          manualRevenue,
+          spreadsheetSales: out.length - manualRows.length,
+          spreadsheetRevenue,
+        },
       };
     },
   );

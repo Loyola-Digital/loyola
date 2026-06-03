@@ -843,6 +843,10 @@ export const manualSales = pgTable(
     customerEmail: varchar("customer_email", { length: 255 }),
     customerPhone: varchar("customer_phone", { length: 50 }),
     value: numeric("value", { precision: 12, scale: 2 }).notNull(),
+    /** Story 19.9 ext: nome do produto vendido (texto livre). */
+    product: varchar("product", { length: 255 }),
+    /** Story 19.9 ext: status da nota fiscal — 'emitida' | 'pendente' | null. */
+    invoiceStatus: varchar("invoice_status", { length: 20 }),
     sellerUserId: uuid("seller_user_id").references(() => users.id, {
       onDelete: "set null",
     }),

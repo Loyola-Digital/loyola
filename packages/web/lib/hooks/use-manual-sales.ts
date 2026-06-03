@@ -124,3 +124,52 @@ export function useUpdateManualSale(
 }
 
 export { buildKey as buildManualSalesKey };
+
+// ============================================================
+// Story 19.9 ext — all-sales unificado (manual + planilha)
+// ============================================================
+
+export interface UnifiedSale {
+  id: string;
+  source: "manual" | "spreadsheet";
+  customerName: string | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  product: string | null;
+  value: number;
+  sellerName: string | null;
+  saleDate: string | null;
+  invoiceStatus: "emitida" | "pendente" | null;
+  manualSaleId: string | null;
+}
+
+export interface AllSalesResponse {
+  sales: UnifiedSale[];
+  summary: {
+    totalSales: number;
+    totalRevenue: number;
+    manualSales: number;
+    manualRevenue: number;
+    spreadsheetSales: number;
+    spreadsheetRevenue: number;
+  };
+}
+
+export function useAllSales(
+  projectId: string | null,
+  funnelId: string | null,
+  stageId: string | null,
+  subtype: "capture" | "main_product" | "sales",
+  days: number,
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["all-sales", projectId, funnelId, stageId, subtype, days],
+    queryFn: () =>
+      apiClient<AllSalesResponse>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/all-sales?subtype=${subtype}&days=${days}`,
+      ),
+    enabled: !!projectId && !!funnelId && !!stageId,
+    staleTime: STALE_TIME,
+  });
+}
