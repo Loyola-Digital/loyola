@@ -192,21 +192,42 @@ export default fp(async function clickupService(fastify) {
       for (const it of itemsResp.custom_items ?? []) {
         map.set(it.id, it.name);
       }
+      fastify.log.info(
+        { teamId, count: map.size, items: Array.from(map.entries()) },
+        "[clickup] getCustomItemsMap resolved",
+      );
       customItemsCache = { teamId, map, expiresAt: Date.now() + CUSTOM_ITEMS_TTL_MS };
       return map;
-    } catch {
+    } catch (err) {
+      fastify.log.warn(
+        { err, teamId },
+        "[clickup] getCustomItemsMap failed — fallback brute-force vai ser usado",
+      );
       return new Map();
     }
   }
 
+  // Story 31.8 fix — fallback brute-force: testa IDs 1..MAX quando o lookup
+  // do mapping falha. ClickUp aceita custom_items[] desconhecidos sem erro
+  // (apenas ignora), então sobrar IDs no array é seguro.
+  const FALLBACK_MAX_CUSTOM_ID = 30;
+
   async function getCustomTypeTasks(listId: string, teamId: string): Promise<ClickUpTask[]> {
-    const items = await getCustomItemsMap(teamId);
-    if (items.size === 0) return [];
-    const qs = Array.from(items.keys())
-      .map((id) => `custom_items%5B%5D=${id}`)
-      .join("&");
+    let ids = Array.from((await getCustomItemsMap(teamId)).keys());
+    if (ids.length === 0) {
+      ids = Array.from({ length: FALLBACK_MAX_CUSTOM_ID }, (_, i) => i + 1);
+      fastify.log.info(
+        { listId, fallbackIds: ids.length },
+        "[clickup] getCustomTypeTasks: usando IDs fallback 1..30",
+      );
+    }
+    const qs = ids.map((id) => `custom_items%5B%5D=${id}`).join("&");
     const data = await fetchApi<{ tasks: ClickUpTask[] }>(
       `/list/${listId}/task?include_closed=true&subtasks=true&${qs}`,
+    );
+    fastify.log.info(
+      { listId, tasksReturned: data.tasks?.length ?? 0 },
+      "[clickup] getCustomTypeTasks result",
     );
     return data.tasks;
   }
