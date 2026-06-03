@@ -197,11 +197,11 @@ function msToIsoDate(ms: string | null): string | null {
 /**
  * Pega TODAS as tasks que são fase (Task Type custom OU emoji 📢/📣) e
  * converte em fases ordenadas pelo startDate (fallback dueDate).
- * Story 31.8 — exclui fases sem responsável (Lucas: fase órfã polui o card).
+ * Story 31.8 — fases Campanha podem vir sem responsável (decisão do Lucas).
  */
 export function extractAutoPhases(tasks: ClickUpTaskShape[]): AutoPhase[] {
   return tasks
-    .filter((t) => isPhaseTask(t) && t.assignees.length > 0)
+    .filter(isPhaseTask)
     .map<AutoPhase>((t) => {
       const startMs = t.startDate ? Number(t.startDate) : null;
       const dueMs = t.dueDate ? Number(t.dueDate) : null;
