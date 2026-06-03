@@ -8,7 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SprintDashboardBlock } from "@loyola-x/shared";
 import type { ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
-import { applyFilters, isDoneStatus, extractAutoPhases, getCampaignHealth } from "./summary-utils";
+import {
+  applyFilters,
+  isDoneStatus,
+  extractAutoPhases,
+  getCampaignHealth,
+  shouldCountForHealth,
+} from "./summary-utils";
 import { BlockSummaryCard } from "./block-summary-card";
 
 interface SprintBlockCardProps {
@@ -34,7 +40,11 @@ export function SprintBlockCard({
 }: SprintBlockCardProps) {
   const [optimisticDone, setOptimisticDone] = useState<Set<string>>(new Set());
 
-  const tasks = useMemo(() => {
+  // `allTasks` é o universo bruto filtrado pelos block.filters (status/tag/assignee
+  // configurados no builder). `tasks` (exibido) aplica ainda `shouldCountForHealth`
+  // — exclui sem-responsável, Marco, Campanha. Story 31.8: lista e contador batem
+  // com a fórmula de saúde, evitando "tarefa sem responsável" aparecer na visão.
+  const allTasks = useMemo(() => {
     const all: ClickUpTaskShape[] = [];
     for (const listId of block.clickupListIds) {
       const arr = tasksByListId.get(listId) ?? [];
@@ -42,6 +52,8 @@ export function SprintBlockCard({
     }
     return applyFilters(all, block.filters);
   }, [block.clickupListIds, block.filters, tasksByListId]);
+
+  const tasks = useMemo(() => allTasks.filter(shouldCountForHealth), [allTasks]);
 
   const grouped = useMemo(() => {
     if (!block.groupBy) {
@@ -65,13 +77,15 @@ export function SprintBlockCard({
   const completedCount = tasks.filter((t) => isDoneStatus(t.status) || optimisticDone.has(t.id)).length;
 
   // Story 31.7 iter: resumo executivo = manualContext (texto livre) +
-  // fases auto-detectadas (tasks com 📢). Ambos coexistem no mesmo card.
-  const autoPhases = useMemo(() => extractAutoPhases(tasks), [tasks]);
+  // fases auto-detectadas (tasks com 📢). Fases vivem em `allTasks` pq são
+  // Campanha (excluídas de `tasks`). extractAutoPhases já filtra sem-responsável.
+  const autoPhases = useMemo(() => extractAutoPhases(allTasks), [allTasks]);
   const manualText = block.manualContext?.trim() ?? "";
   const hasSummary = manualText.length > 0 || autoPhases.length > 0;
 
-  // Story 31.8 — Saúde da Campanha inline (exclui sem-resp, Marco, Campanha).
-  const health = useMemo(() => getCampaignHealth(tasks), [tasks]);
+  // Story 31.8 — Saúde da Campanha. getCampaignHealth aplica shouldCountForHealth
+  // internamente, então passar allTasks ou tasks dá o mesmo resultado.
+  const health = useMemo(() => getCampaignHealth(allTasks), [allTasks]);
   const healthColor =
     health.healthPct >= 70
       ? "text-emerald-500"
