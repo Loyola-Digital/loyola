@@ -50,21 +50,44 @@ export function applyFilters(
 // 2. FALLBACK: emoji 📢/📣 no nome (retrocompat com fluxo antigo).
 const SUMMARY_EMOJIS = ["📢", "📣"] as const;
 
-function isCustomTypeNamed(task: ClickUpTaskShape, name: string): boolean {
-  return (task.customItemName ?? "").trim().toLowerCase() === name.toLowerCase();
+function customTypeNameLower(task: ClickUpTaskShape): string {
+  return (task.customItemName ?? "").trim().toLowerCase();
 }
 
-function isPhaseTask(task: ClickUpTaskShape): boolean {
-  // Task Type "Campanha" — primário (Story 31.7 iter)
-  if (isCustomTypeNamed(task, "campanha")) return true;
-  // Emoji no nome — fallback retrocompat
-  if (SUMMARY_EMOJIS.some((e) => task.name.includes(e))) return true;
+function isCustomTypeNamed(task: ClickUpTaskShape, name: string): boolean {
+  const n = customTypeNameLower(task);
+  return n === name.toLowerCase() || n.includes(name.toLowerCase());
+}
+
+/** Story 31.8 — Marco (milestone) é meta visual, não tarefa real. Não conta.
+ *  Detecta por:
+ *   (a) customItemName === "marco" / contém "marco"
+ *   (b) nome da task contém [MARCO] ou começa com MARCO: (fallback quando
+ *       customItemName não vem resolvido do backend) */
+export function isMarcoTask(task: ClickUpTaskShape): boolean {
+  if (isCustomTypeNamed(task, "marco")) return true;
+  // Heurística por nome da task pra cobrir cache miss do customItemName
+  if (/^\s*\[\s*marco\s*\]/i.test(task.name)) return true;
+  if (/^\s*marco\s*[:\-]/i.test(task.name)) return true;
   return false;
 }
 
-/** Story 31.8 — Marco (milestone) é meta visual, não tarefa real. Não conta. */
-export function isMarcoTask(task: ClickUpTaskShape): boolean {
-  return isCustomTypeNamed(task, "marco");
+function isPhaseTask(task: ClickUpTaskShape): boolean {
+  // Story 31.8 fix: Marco NUNCA é fase. Checado primeiro pra travar tudo.
+  if (isMarcoTask(task)) return false;
+  // Task Type "Campanha" — primário (case-insensitive, contains)
+  if (isCustomTypeNamed(task, "campanha")) return true;
+  if (isCustomTypeNamed(task, "campaign")) return true;
+  // Emoji no nome — fallback retrocompat
+  if (SUMMARY_EMOJIS.some((e) => task.name.includes(e))) return true;
+  // Story 31.8 fix: fallback final — quando customItemName vem null (cache miss
+  // do backend), QUALQUER task com customItemId é considerada fase. Marco já
+  // foi excluído acima por isMarcoTask, então aqui sobra Campanha + outros
+  // tipos customizados. É o "menos pior" enquanto o backend não resolve nomes.
+  if (typeof task.customItemId === "number" && task.customItemId !== 0 && !task.customItemName) {
+    return true;
+  }
+  return false;
 }
 
 /**

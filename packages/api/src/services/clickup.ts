@@ -184,27 +184,46 @@ export default fp(async function clickupService(fastify) {
     ) {
       return customItemsCache.map;
     }
-    try {
-      const itemsResp = await fetchApi<{ custom_items: Array<{ id: number; name: string }> }>(
-        `/team/${teamId}/custom_items`,
-      );
-      const map = new Map<number, string>();
-      for (const it of itemsResp.custom_items ?? []) {
-        map.set(it.id, it.name);
+    // Story 31.8: tenta o endpoint plural (atual), singular (variante mais antiga
+    // da API) e v3 — o ClickUp moveu/renomeou esse path entre versões. Aceita o
+    // primeiro que retornar com pelo menos 1 item.
+    const endpoints = [
+      `/team/${teamId}/custom_items`,
+      `/team/${teamId}/custom_item`,
+    ];
+    type CustomItemResp = { custom_items?: Array<{ id: number; name: string }>; customItems?: Array<{ id: number; name: string }> };
+
+    for (const endpoint of endpoints) {
+      try {
+        const itemsResp = await fetchApi<CustomItemResp>(endpoint);
+        const arr = itemsResp.custom_items ?? itemsResp.customItems ?? [];
+        if (arr.length === 0) {
+          fastify.log.warn({ teamId, endpoint }, "[clickup] custom_items endpoint vazio");
+          continue;
+        }
+        const map = new Map<number, string>();
+        for (const it of arr) {
+          map.set(it.id, it.name);
+        }
+        fastify.log.info(
+          { teamId, endpoint, count: map.size, items: Array.from(map.entries()) },
+          "[clickup] getCustomItemsMap resolved",
+        );
+        customItemsCache = { teamId, map, expiresAt: Date.now() + CUSTOM_ITEMS_TTL_MS };
+        return map;
+      } catch (err) {
+        fastify.log.warn(
+          { err: err instanceof Error ? err.message : err, teamId, endpoint },
+          "[clickup] custom_items endpoint failed",
+        );
       }
-      fastify.log.info(
-        { teamId, count: map.size, items: Array.from(map.entries()) },
-        "[clickup] getCustomItemsMap resolved",
-      );
-      customItemsCache = { teamId, map, expiresAt: Date.now() + CUSTOM_ITEMS_TTL_MS };
-      return map;
-    } catch (err) {
-      fastify.log.warn(
-        { err, teamId },
-        "[clickup] getCustomItemsMap failed — fallback brute-force vai ser usado",
-      );
-      return new Map();
     }
+
+    fastify.log.error(
+      { teamId, endpoints },
+      "[clickup] getCustomItemsMap: NENHUM endpoint funcionou. customItemName vai ficar null.",
+    );
+    return new Map();
   }
 
   // Story 31.8 fix — fallback brute-force: testa IDs 1..MAX quando o lookup
