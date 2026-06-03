@@ -174,6 +174,11 @@ export interface StageSalesData {
    * Quando não resolveu, `name === content` (fallback).
    */
   porUtmContent: { content: string; name: string; vendas: number; bruto: number; liquido: number }[];
+  /** Story 19.9 ext: detalhamento planilha vs manual pro tooltip de faturamento. */
+  breakdown?: {
+    spreadsheet: { vendas: number; bruto: number; liquido: number };
+    manual: { vendas: number; bruto: number; liquido: number };
+  };
   semDados: boolean;
   /**
    * Story 28.4: counters de instrumentação. Só é preenchido quando o request

@@ -10,6 +10,7 @@ import {
   metaAdsAccountProjects,
   metaAdsAccounts,
   metaEntityNamesCache,
+  manualSales,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import {
@@ -453,7 +454,38 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         utmContentMap.set(contentKey, contentEntry);
       }
 
-      const totalVendas = emailMap.size;
+      const totalVendasPlanilha = emailMap.size;
+      const totalBrutoPlanilha = totalBruto;
+      const totalLiquidoPlanilha = totalLiquido;
+
+      // Story 19.9 ext: soma vendas manuais (PIX direto) no agregado total.
+      // Período = mesmo cutoff usado pra planilha (days param). Sem days =
+      // sem filtro temporal (pega todas).
+      const manualCutoff = query.data.days
+        ? new Date(Date.now() - query.data.days * 24 * 60 * 60 * 1000)
+        : null;
+      const manualRows = await fastify.db
+        .select({
+          value: manualSales.value,
+          saleDate: manualSales.saleDate,
+        })
+        .from(manualSales)
+        .where(
+          manualCutoff
+            ? and(
+                eq(manualSales.stageId, params.data.stageId),
+                gte(manualSales.saleDate, manualCutoff),
+              )
+            : eq(manualSales.stageId, params.data.stageId),
+        );
+      const manualVendas = manualRows.length;
+      const manualBruto = manualRows.reduce((s, r) => s + (Number(r.value) || 0), 0);
+
+      const totalVendas = totalVendasPlanilha + manualVendas;
+      const totalBrutoCombined = totalBrutoPlanilha + manualBruto;
+      const totalLiquidoCombined = totalLiquidoPlanilha + manualBruto; // PIX direto sem fee
+      totalBruto = totalBrutoCombined;
+      totalLiquido = totalLiquidoCombined;
 
       // Calcular ticket médio por origem (Pago/Orgânico/Sem Track)
       const utmSourceArray = Array.from(utmSourceMap.entries());
@@ -505,6 +537,19 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         faturamentoLiquido: totalLiquido,
         ticketMedioBruto: totalVendas > 0 ? totalBruto / totalVendas : 0,
         ticketMedioLiquido: totalVendas > 0 ? totalLiquido / totalVendas : 0,
+        // Story 19.9 ext: breakdown pro tooltip — quanto veio da planilha vs manual
+        breakdown: {
+          spreadsheet: {
+            vendas: totalVendasPlanilha,
+            bruto: totalBrutoPlanilha,
+            liquido: totalLiquidoPlanilha,
+          },
+          manual: {
+            vendas: manualVendas,
+            bruto: manualBruto,
+            liquido: manualBruto,
+          },
+        },
         ticketMedioPago,
         ticketMedioOrganico,
         ticketMedioSemTrack,

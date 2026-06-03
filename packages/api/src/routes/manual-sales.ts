@@ -488,7 +488,10 @@ export default fp(async function manualSalesRoutes(fastify) {
   // GET /all-sales — Story 19.9 ext: vendas manuais + planilha unificadas
   // ---------------------------------------------------------------
   const allSalesQuerySchema = z.object({
-    subtype: z.enum(["capture", "main_product", "sales"]).default("sales"),
+    // Story 19.9 ext fix: default ALL — pega de qualquer subtype conectado
+    // (capture, main_product, sales). Cliente pode forçar um subtype específico
+    // mandando ?subtype=main_product.
+    subtype: z.enum(["capture", "main_product", "sales", "all"]).default("all"),
     days: z.coerce.number().int().positive().max(3650).default(90),
   });
 
@@ -551,15 +554,17 @@ export default fp(async function manualSalesRoutes(fastify) {
         manualSaleId: r.id,
       }));
 
-      // 2. Vendas da planilha (mesma subtype)
+      // 2. Vendas da planilha — default 'all' pega todos subtypes do stage
       const sheets = await fastify.db
         .select()
         .from(stageSalesSpreadsheets)
         .where(
-          and(
-            eq(stageSalesSpreadsheets.stageId, params.data.stageId),
-            eq(stageSalesSpreadsheets.subtype, query.data.subtype),
-          ),
+          query.data.subtype === "all"
+            ? eq(stageSalesSpreadsheets.stageId, params.data.stageId)
+            : and(
+                eq(stageSalesSpreadsheets.stageId, params.data.stageId),
+                eq(stageSalesSpreadsheets.subtype, query.data.subtype),
+              ),
         );
 
       const seenDedup = new Set<string>();

@@ -47,13 +47,22 @@ interface SalesCardProps {
   label: string;
   value: string | number;
   highlight?: boolean;
+  tooltip?: string;
 }
 
-function SalesCard({ label, value, highlight }: SalesCardProps) {
+function SalesCard({ label, value, highlight, tooltip }: SalesCardProps) {
   return (
-    <div className={`rounded-lg border p-4 space-y-1 ${highlight ? "border-primary/30 bg-primary/5" : "border-border/50"}`}>
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={`text-lg font-bold ${highlight ? "text-primary" : ""}`}>{value}</p>
+    <div
+      className={`rounded-lg border p-4 space-y-1 ${highlight ? "border-primary/30 bg-primary/5" : "border-border/50"}`}
+      title={tooltip}
+    >
+      <p className="text-xs text-muted-foreground flex items-center gap-1">
+        {label}
+        {tooltip && (
+          <span className="text-[9px] text-muted-foreground/60 cursor-help" title={tooltip}>(i)</span>
+        )}
+      </p>
+      <p className={`text-lg font-bold ${highlight ? "text-primary" : ""} whitespace-pre-wrap`}>{value}</p>
     </div>
   );
 }
@@ -257,11 +266,31 @@ export function StageSalesSection({
     <div className="space-y-4">
       <p className="text-sm font-semibold">{title}</p>
 
-      {/* Cards */}
-      <div className="grid grid-cols-2 gap-3">
-        <SalesCard label="Total de Vendas" value={data.totalVendas} highlight />
-        <SalesCard label="Faturamento Bruto" value={formatCurrency(data.faturamentoBruto)} />
-      </div>
+      {/* Cards — Story 19.9 ext: tooltip mostra breakdown planilha vs manual */}
+      {(() => {
+        const br = data.breakdown;
+        const tooltipVendas = br
+          ? `Planilha: ${br.spreadsheet.vendas}\nManuais: ${br.manual.vendas}`
+          : undefined;
+        const tooltipBruto = br
+          ? `Planilha: ${formatCurrency(br.spreadsheet.bruto)} (${br.spreadsheet.vendas})\nManuais: ${formatCurrency(br.manual.bruto)} (${br.manual.vendas})`
+          : undefined;
+        return (
+          <div className="grid grid-cols-2 gap-3">
+            <SalesCard
+              label="Total de Vendas"
+              value={data.totalVendas}
+              highlight
+              tooltip={tooltipVendas}
+            />
+            <SalesCard
+              label="Faturamento Bruto"
+              value={formatCurrency(data.faturamentoBruto)}
+              tooltip={tooltipBruto}
+            />
+          </div>
+        );
+      })()}
 
       {/* Canal de Origem */}
       <div className="space-y-2">

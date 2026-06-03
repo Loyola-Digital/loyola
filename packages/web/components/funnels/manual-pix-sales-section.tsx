@@ -68,7 +68,7 @@ export function ManualPixSalesSection({
   onLaunchClick,
   onEditSale,
 }: ManualPixSalesSectionProps) {
-  const { data, isLoading } = useAllSales(projectId, funnelId, stageId, "sales", days);
+  const { data, isLoading } = useAllSales(projectId, funnelId, stageId, "all", days);
   const { data: manualPayload } = useManualSales(projectId, funnelId, stageId, days);
   const deleteMutation = useDeleteManualSale(projectId, funnelId, stageId);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);

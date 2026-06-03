@@ -159,7 +159,7 @@ export function useAllSales(
   projectId: string | null,
   funnelId: string | null,
   stageId: string | null,
-  subtype: "capture" | "main_product" | "sales",
+  subtype: "capture" | "main_product" | "sales" | "all",
   days: number,
 ) {
   const apiClient = useApiClient();
