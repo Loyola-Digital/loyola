@@ -22,6 +22,11 @@ const paramsSchema = z.object({
 
 const saleColumnMappingSchema = z.object({
   email: z.string().min(1),
+  /** Story 28.4 */
+  transactionId: z.string().optional(),
+  /** Story 19.9 ext: nome do cliente e do produto pra exibir na tabela unificada */
+  customerName: z.string().optional(),
+  productName: z.string().optional(),
   valorBruto: z.string().optional(),
   valorLiquido: z.string().optional(),
   formaPagamento: z.string().optional(),
