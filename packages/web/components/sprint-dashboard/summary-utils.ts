@@ -54,11 +54,22 @@ function isCustomTypeNamed(task: ClickUpTaskShape, name: string): boolean {
   return (task.customItemName ?? "").trim().toLowerCase() === name.toLowerCase();
 }
 
+function hasCustomType(task: ClickUpTaskShape): boolean {
+  return typeof task.customItemId === "number" && task.customItemId !== 0;
+}
+
 function isPhaseTask(task: ClickUpTaskShape): boolean {
   // Task Type "Campanha" — primário (Story 31.7 iter)
   if (isCustomTypeNamed(task, "campanha")) return true;
   // Emoji no nome — fallback retrocompat
-  return SUMMARY_EMOJIS.some((e) => task.name.includes(e));
+  if (SUMMARY_EMOJIS.some((e) => task.name.includes(e))) return true;
+  // Story 31.8 fix: se a task tem custom type mas o nome não veio resolvido
+  // (customItemName null — cache miss no backend) E NÃO é marco, trata como fase.
+  // Evita o "Nenhum bloco com fases" quando o mapping id→name falha.
+  if (hasCustomType(task) && !task.customItemName && !isCustomTypeNamed(task, "marco")) {
+    return true;
+  }
+  return false;
 }
 
 /** Story 31.8 — Marco (milestone) é meta visual, não tarefa real. Não conta. */

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { SprintDashboardBlock, SprintDashboardConfig } from "@loyola-x/shared";
@@ -64,7 +65,7 @@ export function useSprintDashboardTasks(listIds: string[] | null) {
   const apiClient = useApiClient();
   const sorted = listIds ? [...listIds].sort() : [];
   const key = sorted.join(",");
-  return useQuery({
+  const query = useQuery({
     queryKey: ["sprint-dashboard-tasks", key],
     queryFn: () =>
       apiClient<{ tasks: ClickUpTaskShape[] }>(
@@ -73,6 +74,26 @@ export function useSprintDashboardTasks(listIds: string[] | null) {
     enabled: sorted.length > 0,
     staleTime: 2 * 60 * 1000,
   });
+  // Story 31.8 — debug: identifica custom types únicos no batch atual.
+  // Ajuda a diagnosticar quando o customItemName não vem resolvido.
+  useEffect(() => {
+    if (!query.data?.tasks) return;
+    const customTypes = new Map<string, { id: number | null; name: string | null; count: number }>();
+    for (const t of query.data.tasks) {
+      if (t.customItemId == null) continue;
+      const k = String(t.customItemId);
+      const cur = customTypes.get(k) ?? { id: t.customItemId, name: t.customItemName, count: 0 };
+      cur.count += 1;
+      customTypes.set(k, cur);
+    }
+    if (customTypes.size > 0) {
+      console.log(
+        "[sprint-dashboard] custom types vistos no batch:",
+        Array.from(customTypes.values()),
+      );
+    }
+  }, [query.data]);
+  return query;
 }
 
 export function useUpdateTaskStatus() {
