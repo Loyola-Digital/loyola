@@ -138,7 +138,14 @@ export function StageSalesWizardDialog({
     );
   }
 
-  const subtypeLabel = subtype === "capture" ? "Captação" : "Produto Principal";
+  const subtypeLabel =
+    subtype === "capture"
+      ? "Captação"
+      : subtype === "tmb"
+        ? "TMB"
+        : subtype === "sales"
+          ? "Vendas"
+          : "Produto Principal";
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); else onOpenChange(v); }}>

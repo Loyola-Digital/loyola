@@ -491,7 +491,7 @@ export default fp(async function manualSalesRoutes(fastify) {
     // Story 19.9 ext fix: default ALL — pega de qualquer subtype conectado
     // (capture, main_product, sales). Cliente pode forçar um subtype específico
     // mandando ?subtype=main_product.
-    subtype: z.enum(["capture", "main_product", "sales", "all"]).default("all"),
+    subtype: z.enum(["capture", "main_product", "sales", "tmb", "all"]).default("all"),
     days: z.coerce.number().int().positive().max(3650).default(90),
   });
 
@@ -526,6 +526,8 @@ export default fp(async function manualSalesRoutes(fastify) {
         saleDate: string | null;
         invoiceStatus: "emitida" | "pendente" | null;
         manualSaleId: string | null;
+        /** Rótulo da fonte da venda (ex: "TMB"). null = sem rótulo especial. */
+        sourceLabel: string | null;
       };
 
       // 1. Vendas manuais
@@ -552,6 +554,7 @@ export default fp(async function manualSalesRoutes(fastify) {
         saleDate: r.saleDate.toISOString(),
         invoiceStatus: r.invoiceStatus as "emitida" | "pendente" | null,
         manualSaleId: r.id,
+        sourceLabel: null,
       }));
 
       // 2. Vendas da planilha — default 'all' pega todos subtypes do stage
@@ -587,6 +590,10 @@ export default fp(async function manualSalesRoutes(fastify) {
         }
         const { headers, rows } = data;
         const idxOf = (n: string | undefined) => (n ? headers.indexOf(n) : -1);
+        // Rótulo da fonte: planilha do slot 'tmb' marca cada venda com badge
+        // "TMB" na tabela unificada. Demais subtypes ficam sem rótulo especial.
+        const sheetSourceLabel = sheet.subtype === "tmb" ? "TMB" : null;
+
         const emailIdx = idxOf(mapping.email);
         const txIdx = idxOf(mapping.transactionId);
         const nameIdx = idxOf(mapping.customerName);
@@ -632,6 +639,7 @@ export default fp(async function manualSalesRoutes(fastify) {
             saleDate: dt ? dt.toISOString() : null,
             invoiceStatus: null,
             manualSaleId: null,
+            sourceLabel: sheetSourceLabel,
           });
         }
       }

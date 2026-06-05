@@ -141,6 +141,8 @@ export interface UnifiedSale {
   saleDate: string | null;
   invoiceStatus: "emitida" | "pendente" | null;
   manualSaleId: string | null;
+  /** Rótulo da fonte da venda (ex: "TMB"). null = sem rótulo especial. */
+  sourceLabel: string | null;
 }
 
 export interface AllSalesResponse {
@@ -159,7 +161,7 @@ export function useAllSales(
   projectId: string | null,
   funnelId: string | null,
   stageId: string | null,
-  subtype: "capture" | "main_product" | "sales" | "all",
+  subtype: "capture" | "main_product" | "sales" | "tmb" | "all",
   days: number,
 ) {
   const apiClient = useApiClient();

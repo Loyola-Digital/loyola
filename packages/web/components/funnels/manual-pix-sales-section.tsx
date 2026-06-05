@@ -199,6 +199,14 @@ export function ManualPixSalesSection({
                           />
                         )}
                         <span className="truncate">{sale.customerName ?? "—"}</span>
+                        {sale.sourceLabel && (
+                          <span
+                            className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
+                            title={`Venda da fonte ${sale.sourceLabel}`}
+                          >
+                            {sale.sourceLabel}
+                          </span>
+                        )}
                       </span>
                     </td>
                     <td className="px-3 py-2 text-muted-foreground max-w-[140px] truncate">
