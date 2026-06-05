@@ -435,7 +435,12 @@ export function ProjectFolder({ project, collapsed = false, isHidden = false, on
   const router = useRouter();
   const { data: funnelList, isLoading: funnelsLoading } = useFunnels(project.id);
   const role = useUserRole();
-  const isAdmin = role === "admin" || role === "manager";
+  // Edição de funil/etapa (arquivar, arrastar, criar, configurar) é liberada
+  // pra todos menos guest — alinha com o backend (só guest é bloqueado nas
+  // rotas de archive/reorder) e com o resto do app (projects/[id], settings).
+  // Antes restringia a admin/manager, escondendo as ações de strategist e
+  // copywriter mesmo a API permitindo.
+  const isAdmin = role !== null && role !== "guest";
   const deleteProject = useDeleteProject();
   const updateProject = useUpdateProject();
   const hideProject = useHiddenProjectsStore((s) => s.hide);
