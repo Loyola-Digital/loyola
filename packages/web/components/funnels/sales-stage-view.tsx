@@ -183,6 +183,15 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
             days={days}
             adsetsMap={adsetsMap}
           />
+          <StageSalesSection
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+            subtype="tmb"
+            title="TMB"
+            days={days}
+            adsetsMap={adsetsMap}
+          />
           <ManualPixSalesSection
             projectId={projectId}
             funnelId={funnelId}
@@ -211,6 +220,14 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
             stageId={stage.id}
             subtype="main_product"
             title="Produto Principal"
+          />
+          <div className="border-t border-border/30" />
+          <StageSalesSpreadsheetSection
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+            subtype="tmb"
+            title="TMB"
           />
           <div className="border-t border-border/30 pt-4" />
           <details className="group">

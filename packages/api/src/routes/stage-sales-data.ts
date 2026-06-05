@@ -35,7 +35,7 @@ const paramsSchema = z.object({
 });
 
 const querySchema = z.object({
-  subtype: z.enum(["capture", "main_product", "sales"]).default("capture"),
+  subtype: z.enum(["capture", "main_product", "sales", "tmb"]).default("capture"),
   days: z.coerce.number().int().positive().optional(),
   // Story 28.4: quando `1`, response inclui campo `debug` com counters de instrumentação
   debug: z.coerce.boolean().optional(),

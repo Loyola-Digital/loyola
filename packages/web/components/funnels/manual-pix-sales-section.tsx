@@ -68,7 +68,9 @@ export function ManualPixSalesSection({
   onLaunchClick,
   onEditSale,
 }: ManualPixSalesSectionProps) {
-  const { data, isLoading } = useAllSales(projectId, funnelId, stageId, "all", days);
+  // Tabela unificada puxa só Produto Principal + TMB (planilhas) + vendas
+  // manuais (PIX). Captação e "Outras planilhas" (subtype sales) ficam de fora.
+  const { data, isLoading } = useAllSales(projectId, funnelId, stageId, "main_product,tmb", days);
   const { data: manualPayload } = useManualSales(projectId, funnelId, stageId, days);
   const deleteMutation = useDeleteManualSale(projectId, funnelId, stageId);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -106,7 +108,7 @@ export function ManualPixSalesSection({
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           <Wallet className="h-4 w-4 text-emerald-600" />
-          <h2 className="text-base font-semibold">Vendas (Kiwify + PIX direto)</h2>
+          <h2 className="text-base font-semibold">Vendas (Produto Principal + TMB + PIX direto)</h2>
           <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
             {summary?.totalSales ?? 0} venda(s)
           </span>
@@ -118,8 +120,8 @@ export function ManualPixSalesSection({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Vendas da planilha Kiwify e vendas PIX direto lançadas manualmente. Filtro: últimos {days} dias.
-        Só vendas manuais podem ser editadas/removidas.
+        Vendas das planilhas de Produto Principal e TMB, mais vendas PIX direto lançadas manualmente.
+        Não inclui Captação. Filtro: últimos {days} dias. Só vendas manuais podem ser editadas/removidas.
       </p>
 
       {isLoading ? (
@@ -199,6 +201,14 @@ export function ManualPixSalesSection({
                           />
                         )}
                         <span className="truncate">{sale.customerName ?? "—"}</span>
+                        {sale.sourceLabel && (
+                          <span
+                            className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
+                            title={`Venda da fonte ${sale.sourceLabel}`}
+                          >
+                            {sale.sourceLabel}
+                          </span>
+                        )}
                       </span>
                     </td>
                     <td className="px-3 py-2 text-muted-foreground max-w-[140px] truncate">

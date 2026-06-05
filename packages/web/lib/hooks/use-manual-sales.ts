@@ -141,6 +141,8 @@ export interface UnifiedSale {
   saleDate: string | null;
   invoiceStatus: "emitida" | "pendente" | null;
   manualSaleId: string | null;
+  /** Rótulo da fonte da venda (ex: "TMB"). null = sem rótulo especial. */
+  sourceLabel: string | null;
 }
 
 export interface AllSalesResponse {
@@ -159,7 +161,9 @@ export function useAllSales(
   projectId: string | null,
   funnelId: string | null,
   stageId: string | null,
-  subtype: "capture" | "main_product" | "sales" | "all",
+  // "all", um subtype único, ou lista CSV (ex: "main_product,tmb").
+  // Vendas manuais sempre entram, independente do subtype.
+  subtype: "capture" | "main_product" | "sales" | "tmb" | "all" | (string & {}),
   days: number,
 ) {
   const apiClient = useApiClient();
@@ -167,7 +171,7 @@ export function useAllSales(
     queryKey: ["all-sales", projectId, funnelId, stageId, subtype, days],
     queryFn: () =>
       apiClient<AllSalesResponse>(
-        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/all-sales?subtype=${subtype}&days=${days}`,
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/all-sales?subtype=${encodeURIComponent(subtype)}&days=${days}`,
       ),
     enabled: !!projectId && !!funnelId && !!stageId,
     staleTime: STALE_TIME,
