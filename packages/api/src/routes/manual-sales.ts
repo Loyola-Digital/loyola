@@ -7,7 +7,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, gte, desc, asc } from "drizzle-orm";
+import { eq, and, gte, desc, asc, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   manualSales,
@@ -487,11 +487,14 @@ export default fp(async function manualSalesRoutes(fastify) {
   // ---------------------------------------------------------------
   // GET /all-sales — Story 19.9 ext: vendas manuais + planilha unificadas
   // ---------------------------------------------------------------
+  // Subtypes válidos de planilha de venda. 'all' = todos. Também aceita lista
+  // CSV (ex: "main_product,tmb") pra a tabela unificada puxar só fontes
+  // específicas. Vendas manuais SEMPRE entram, independente do subtype.
+  const VALID_SALE_SUBTYPES = ["capture", "main_product", "sales", "tmb"] as const;
   const allSalesQuerySchema = z.object({
-    // Story 19.9 ext fix: default ALL — pega de qualquer subtype conectado
-    // (capture, main_product, sales). Cliente pode forçar um subtype específico
-    // mandando ?subtype=main_product.
-    subtype: z.enum(["capture", "main_product", "sales", "tmb", "all"]).default("all"),
+    // Default ALL. Cliente pode forçar subtypes específicos mandando
+    // ?subtype=main_product ou ?subtype=main_product,tmb (CSV).
+    subtype: z.string().default("all"),
     days: z.coerce.number().int().positive().max(3650).default(90),
   });
 
@@ -557,18 +560,32 @@ export default fp(async function manualSalesRoutes(fastify) {
         sourceLabel: null,
       }));
 
-      // 2. Vendas da planilha — default 'all' pega todos subtypes do stage
-      const sheets = await fastify.db
-        .select()
-        .from(stageSalesSpreadsheets)
-        .where(
-          query.data.subtype === "all"
-            ? eq(stageSalesSpreadsheets.stageId, params.data.stageId)
-            : and(
-                eq(stageSalesSpreadsheets.stageId, params.data.stageId),
-                eq(stageSalesSpreadsheets.subtype, query.data.subtype),
-              ),
-        );
+      // 2. Vendas da planilha — 'all' pega todos os subtypes; CSV
+      // (ex: "main_product,tmb") restringe às fontes pedidas. A tabela
+      // unificada do dash usa "main_product,tmb" pra NÃO incluir Captação
+      // nem "Outras planilhas".
+      const requestedSubtypes =
+        query.data.subtype === "all"
+          ? [...VALID_SALE_SUBTYPES]
+          : query.data.subtype
+              .split(",")
+              .map((s) => s.trim())
+              .filter((s): s is (typeof VALID_SALE_SUBTYPES)[number] =>
+                (VALID_SALE_SUBTYPES as readonly string[]).includes(s),
+              );
+
+      const sheets =
+        requestedSubtypes.length === 0
+          ? []
+          : await fastify.db
+              .select()
+              .from(stageSalesSpreadsheets)
+              .where(
+                and(
+                  eq(stageSalesSpreadsheets.stageId, params.data.stageId),
+                  inArray(stageSalesSpreadsheets.subtype, requestedSubtypes),
+                ),
+              );
 
       const seenDedup = new Set<string>();
       for (const sheet of sheets) {
