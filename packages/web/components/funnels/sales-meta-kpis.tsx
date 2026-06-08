@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { ArrowRight, DollarSign, Eye, FileText, MousePointerClick, Percent, ShoppingCart, Target, TrendingUp, Zap } from "lucide-react";
+import { ArrowRight, DollarSign, Eye, FileText, MousePointerClick, ShoppingCart, Target, TrendingUp, Zap } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCampaignDailyInsightsBulk } from "@/lib/hooks/use-traffic-analytics";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
@@ -164,9 +164,10 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
   const ticketMedioOrganico = salesData?.ticketMedioOrganico ?? 0;
   const ticketMedioSemTrack = salesData?.ticketMedioSemTrack ?? 0;
 
-  // Taxas de conversão do funil de venda
-  const taxaLpCheckout = lpViews && lpViews > 0 && checkouts != null ? (checkouts / lpViews) * 100 : null;
-  const taxaCheckoutVenda = checkouts && checkouts > 0 && totalVendas > 0 ? (totalVendas / checkouts) * 100 : null;
+  // Story 18.30: taxa de conversão entre dois passos do funil. Null quando o
+  // denominador é 0/null (mostra "—" na seta em vez de Infinity/NaN).
+  const stepPct = (num: number | null, den: number | null): number | null =>
+    num != null && den != null && den > 0 ? (num / den) * 100 : null;
 
   return (
     <div className="space-y-4">
@@ -197,32 +198,20 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Funil de Conversão</p>
         <div className="flex items-stretch gap-1">
           <FunnelStage icon={Eye} label="Impressões" value={fmtNumber(impressions)} />
-          <FunnelArrow />
+          <FunnelArrow pct={ctr} />
           <FunnelStage icon={MousePointerClick} label="Cliques" value={fmtNumber(clicks)} />
-          <FunnelArrow />
+          <FunnelArrow pct={stepPct(lpViews, clicks)} />
           <FunnelStage icon={FileText} label="LP Views" value={fmtNumber(lpViews)} />
-          <FunnelArrow />
+          <FunnelArrow pct={stepPct(checkouts, lpViews)} />
           <FunnelStage icon={ShoppingCart} label="Checkouts" value={fmtNumber(checkouts)} />
-          <FunnelArrow />
-          <FunnelStage icon={DollarSign} label="Vendas" value={fmtNumber(totalVendas)} highlight />
+          <FunnelArrow pct={stepPct(vendasPago, checkouts)} />
+          <FunnelStage icon={DollarSign} label="Vendas" value={fmtNumber(vendasPago)} highlight />
         </div>
+        <p className="text-[10px] text-muted-foreground/70">Funil de tráfego pago (Meta) — &quot;Vendas&quot; conta só vendas pagas.</p>
       </div>
 
-      {/* Taxas de conversão e métricas Meta */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <KpiCard
-          icon={Percent}
-          label="LP → Checkout"
-          value={fmtPercent(taxaLpCheckout)}
-          hint="Checkouts / LP Views"
-        />
-        <KpiCard
-          icon={Percent}
-          label="Checkout → Venda"
-          value={fmtPercent(taxaCheckoutVenda)}
-          hint="Vendas / Checkouts"
-          highlight
-        />
+      {/* Métricas Meta (as taxas de conversão agora vivem nas setas do funil) */}
+      <div className="grid grid-cols-2 gap-2">
         <KpiCard icon={TrendingUp} label="CTR" value={fmtPercent(ctr)} />
         <KpiCard icon={DollarSign} label="CPM" value={fmtCurrency(cpm)} />
       </div>
@@ -254,10 +243,15 @@ function FunnelStage({ icon: Icon, label, value, highlight }: FunnelStageProps) 
   );
 }
 
-function FunnelArrow() {
+function FunnelArrow({ pct }: { pct?: number | null }) {
   return (
-    <div className="flex items-center text-muted-foreground/50 shrink-0">
+    <div className="flex flex-col items-center justify-center text-muted-foreground/50 shrink-0 px-0.5">
       <ArrowRight className="h-4 w-4" />
+      {pct !== undefined && (
+        <span className="text-[9px] font-medium text-muted-foreground tabular-nums leading-tight">
+          {pct != null ? `${pct.toFixed(2)}%` : "—"}
+        </span>
+      )}
     </div>
   );
 }
