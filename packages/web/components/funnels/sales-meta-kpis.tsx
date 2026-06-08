@@ -139,9 +139,20 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
   const vendasPago = salesData?.vendasPago ?? 0;
   // Story 19.9 ext: tooltip com breakdown planilha vs manual
   const breakdown = salesData?.breakdown;
+  // Breakdown por fonte (Pago/Orgânico/Sem Track) com % sobre o faturamento —
+  // mesmo padrão do dash de Captação (launch-dashboard). porUtmSource cobre só
+  // as vendas de planilha; manuais (PIX, sem utm) entram na linha de baixo.
+  const fonteBreakdown = (() => {
+    const byFonte = new Map((salesData?.porUtmSource ?? []).map((u) => [u.fonte, u]));
+    return ["Pago", "Orgânico", "Sem Track"].map((fonte) => {
+      const bruto = byFonte.get(fonte)?.bruto ?? 0;
+      const pct = faturamento > 0 ? ((bruto / faturamento) * 100).toFixed(0) : "0";
+      return `${fonte}: ${fmtCurrency(bruto)} (${pct}%)`;
+    });
+  })();
   const fatTooltip = breakdown
-    ? `Planilha: ${fmtCurrency(breakdown.spreadsheet.bruto)} (${breakdown.spreadsheet.vendas})\nManuais: ${fmtCurrency(breakdown.manual.bruto)} (${breakdown.manual.vendas})`
-    : undefined;
+    ? `${fonteBreakdown.join("\n")}\n\nPlanilha: ${fmtCurrency(breakdown.spreadsheet.bruto)} (${breakdown.spreadsheet.vendas})\nManuais: ${fmtCurrency(breakdown.manual.bruto)} (${breakdown.manual.vendas})`
+    : fonteBreakdown.join("\n");
   const vendasTooltip = breakdown
     ? `Planilha: ${breakdown.spreadsheet.vendas}\nManuais: ${breakdown.manual.vendas}`
     : undefined;
