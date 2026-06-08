@@ -574,6 +574,13 @@ export const funnels = pgTable(
       { onDelete: "set null" }
     ),
     matchCode: varchar("match_code", { length: 50 }),
+    /** IDs de campanhas órfãs (Epic 25) que o usuário escolheu OCULTAR do banner
+     * de "campanhas não selecionadas". Persistido no funil → vale pra todos os
+     * usuários do projeto. Campanhas novas que casem o matchCode ainda aparecem. */
+    dismissedOrphanCampaigns: jsonb("dismissed_orphan_campaigns")
+      .notNull()
+      .default([])
+      .$type<string[]>(),
     /** Story 18.19 fix: persistir Meta Total e Data Final do gráfico
      * "Leads: Reais vs Projeção vs Meta" no DB (antes em localStorage). */
     leadsGoalMeta: integer("leads_goal_meta"),

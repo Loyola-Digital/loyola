@@ -782,8 +782,13 @@ export default fp(async function funnelRoutes(fastify) {
     }
     const selectedAnywhere = new Set<string>([...selectedAtFunnel, ...selectedAtAnyStage]);
 
-    // Órfãs (nível funil) = matchcam o code mas NÃO estão selecionadas em lugar nenhum
-    const orphans = matching.filter((c) => !selectedAnywhere.has(c.id));
+    // Campanhas que o usuário escolheu OCULTAR (botão "Ocultar" no banner).
+    // Persistido no funil → vale pra todos os usuários do projeto.
+    const dismissed = new Set<string>(funnel.dismissedOrphanCampaigns ?? []);
+
+    // Órfãs (nível funil) = matchcam o code mas NÃO estão selecionadas em lugar
+    // nenhum E não foram dispensadas.
+    const orphans = matching.filter((c) => !selectedAnywhere.has(c.id) && !dismissed.has(c.id));
 
     // Ordenação: ACTIVE primeiro, PAUSED, ARCHIVED
     const statusRank: Record<string, number> = { ACTIVE: 0, PAUSED: 1, ARCHIVED: 2 };
@@ -808,7 +813,7 @@ export default fp(async function funnelRoutes(fastify) {
       );
       const selectedHere = new Set((stage.campaigns ?? []).map((c) => c.id));
       const orphansHere = matching
-        .filter((c) => !selectedHere.has(c.id))
+        .filter((c) => !selectedHere.has(c.id) && !dismissed.has(c.id))
         .filter((c) => !phaseSuffix || c.name.toLowerCase().includes(phaseSuffix))
         .sort((a, b) => {
           const ra = statusRank[a.status] ?? 99;
@@ -827,6 +832,50 @@ export default fp(async function funnelRoutes(fastify) {
       byStage,
     };
   });
+
+  // ---- POST /api/projects/:projectId/funnels/:funnelId/orphan-campaigns/dismiss ----
+  // Botão "Ocultar" do banner de campanhas órfãs. Adiciona os campaignIds ao
+  // array dismissed_orphan_campaigns do funil (dedupe). Como persiste no funil,
+  // o aviso some pra TODOS os usuários do projeto.
+  fastify.post(
+    "/api/projects/:projectId/funnels/:funnelId/orphan-campaigns/dismiss",
+    async (request, reply) => {
+      const paramResult = funnelParamSchema.safeParse(request.params);
+      if (!paramResult.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const bodyResult = z
+        .object({ campaignIds: z.array(z.string().min(1)).min(1).max(500) })
+        .safeParse(request.body);
+      if (!bodyResult.success) return reply.code(400).send({ error: "Body inválido" });
+
+      const project = await getProjectAccess(paramResult.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const [funnel] = await fastify.db
+        .select({ id: funnels.id, dismissedOrphanCampaigns: funnels.dismissedOrphanCampaigns })
+        .from(funnels)
+        .where(
+          and(
+            eq(funnels.id, paramResult.data.funnelId),
+            eq(funnels.projectId, paramResult.data.projectId),
+          ),
+        )
+        .limit(1);
+
+      if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
+
+      const merged = Array.from(
+        new Set<string>([...(funnel.dismissedOrphanCampaigns ?? []), ...bodyResult.data.campaignIds]),
+      );
+
+      await fastify.db
+        .update(funnels)
+        .set({ dismissedOrphanCampaigns: merged, updatedAt: new Date() })
+        .where(eq(funnels.id, paramResult.data.funnelId));
+
+      return { ok: true, dismissedCount: merged.length };
+    },
+  );
 
   // ---- GET /api/projects/:projectId/google-ads-campaigns ----
   fastify.get("/api/projects/:projectId/google-ads-campaigns", async (request, reply) => {
