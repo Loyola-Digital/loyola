@@ -1,3 +1,9 @@
+// Story 18.32: Refactor Medium (Adset) + Content (Ad) matching
+// TODO AC2: Implement Medium (Adset) matching - fetch adsets from Meta API, match utm_medium IDs with adset_id, group by adset_name
+// TODO AC3: Implement Content (Ad) matching - fetch ads from Meta API, match utm_content IDs with ad_id, group by ad_name
+// Pattern reference: /packages/api/src/routes/stage-creative-performance.ts lines 321-385 (grouping by name, not ID)
+// Current implementation: porUtmMedium and porUtmTerm are basic aggregates - need refactor to fetch Meta entities and group by name
+
 import { z } from "zod";
 import { eq, and, inArray, gte, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
