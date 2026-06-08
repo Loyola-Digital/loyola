@@ -1,8 +1,10 @@
 "use client";
 
-import { AlertTriangle, Settings2 } from "lucide-react";
+import { AlertTriangle, Settings2, EyeOff } from "lucide-react";
 import Link from "next/link";
-import { useOrphanCampaigns } from "@/lib/hooks/use-funnels";
+import { toast } from "sonner";
+import { useOrphanCampaigns, useDismissOrphanCampaigns } from "@/lib/hooks/use-funnels";
+import { useUserRole } from "@/lib/hooks/use-user-role";
 import type { OrphanCampaign } from "@loyola-x/shared";
 
 interface OrphanCampaignsBannerProps {
@@ -34,6 +36,9 @@ export function OrphanCampaignsBanner({
   stageId,
 }: OrphanCampaignsBannerProps) {
   const { data, isLoading } = useOrphanCampaigns(projectId, funnelId);
+  const dismiss = useDismissOrphanCampaigns(projectId, funnelId);
+  const role = useUserRole();
+  const canEdit = role !== null && role !== "guest";
 
   if (isLoading || !data || !data.hasMatchCode) return null;
 
@@ -58,11 +63,34 @@ export function OrphanCampaignsBanner({
     ? ` ${orphans.length === 1 ? "não está" : "não estão"} selecionada${orphans.length === 1 ? "" : "s"} nesta etapa`
     : ` ${orphans.length === 1 ? "não está" : "não estão"} em nenhuma etapa do funil`;
 
+  function handleDismiss() {
+    const ids = orphans.map((c) => c.id);
+    dismiss.mutate(ids, {
+      onSuccess: () =>
+        toast.success(
+          ids.length === 1 ? "Campanha ocultada do aviso" : `${ids.length} campanhas ocultadas do aviso`,
+        ),
+      onError: () => toast.error("Não foi possível ocultar. Tente novamente."),
+    });
+  }
+
   return (
     <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
       <div className="flex items-start gap-2">
         <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
+          {canEdit && (
+            <button
+              type="button"
+              onClick={handleDismiss}
+              disabled={dismiss.isPending}
+              className="float-right ml-2 inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-300"
+              title="Ocultar este aviso pra todos os usuários do projeto"
+            >
+              <EyeOff className="h-3 w-3" />
+              {dismiss.isPending ? "Ocultando..." : "Ocultar"}
+            </button>
+          )}
           <p className="text-sm text-amber-900 dark:text-amber-200">
             <span className="font-semibold">⚠️ {message}</span>
             <code className="font-mono bg-amber-500/20 rounded px-1 py-0.5 mx-0.5 text-[12px]">{matchCode}</code>

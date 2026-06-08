@@ -44,6 +44,28 @@ export function useOrphanCampaigns(projectId: string | null, funnelId: string | 
   });
 }
 
+/**
+ * Oculta campanhas órfãs do banner (Epic 25). Persiste no funil → some pra todos
+ * os usuários do projeto. Invalida a query do banner pra refletir na hora.
+ */
+export function useDismissOrphanCampaigns(projectId: string, funnelId: string) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (campaignIds: string[]) =>
+      apiClient<{ ok: boolean; dismissedCount: number }>(
+        `/api/projects/${projectId}/funnels/${funnelId}/orphan-campaigns/dismiss`,
+        {
+          method: "POST",
+          body: JSON.stringify({ campaignIds }),
+        },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orphan-campaigns", projectId, funnelId] });
+    },
+  });
+}
+
 export interface MetaCampaignOption {
   id: string;
   name: string;
