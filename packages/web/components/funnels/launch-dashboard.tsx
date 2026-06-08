@@ -472,6 +472,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           adsetsMap={adsetsMap}
           projectId={projectId}
           funnelId={funnel.id}
+          stageType={stageType}
         />
       ) : null}
 
