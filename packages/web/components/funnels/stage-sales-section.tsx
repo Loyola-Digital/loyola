@@ -221,7 +221,12 @@ export function StageSalesSection({
     .map((m) => {
       const backendResolved = !!m.name && m.name !== m.medium;
       const fallback = !backendResolved ? adsetsMap?.get(m.medium) : undefined;
-      const finalLabel = (backendResolved ? m.name : fallback || m.medium) || "(sem identificação)";
+      let finalLabel = backendResolved ? m.name : fallback || m.medium;
+      // Story 18.33 AC3: Fallback inteligente - "Adset #ID" quando ID numérico não resolve
+      if (!backendResolved && !fallback && isMetaNumericId(m.medium)) {
+        finalLabel = `Adset #${m.medium}`;
+      }
+      finalLabel = finalLabel || "(sem identificação)";
       const unresolved = !backendResolved && !fallback && isMetaNumericId(m.medium);
       return {
         key: m.medium,
@@ -240,17 +245,24 @@ export function StageSalesSection({
   }));
 
   // Story 18.32: porUtmTerm removido (replaced by refactored Medium/Content matching)
-  // TODO AC2: Implement Medium (Adset) matching with grouping by adset_name
-  // TODO AC3: Implement Content (Ad) matching with grouping by ad_name
   const contentRows = (data.porUtmContent ?? [])
     .filter((c) => isValidUtmKey(c.content))
-    .map((c) => ({
-      key: c.content,
-      label: c.name || c.content || "(sem identificação)",
-      unresolved: c.name === c.content && isMetaNumericId(c.content),
-      vendas: c.vendas,
-      bruto: c.bruto,
-    }));
+    .map((c) => {
+      let finalLabel = c.name || c.content;
+      // Story 18.33 AC3: Fallback inteligente - "Ad #ID" quando ID numérico não resolve
+      if (!c.name && isMetaNumericId(c.content)) {
+        finalLabel = `Ad #${c.content}`;
+      }
+      finalLabel = finalLabel || "(sem identificação)";
+      const unresolved = !c.name && isMetaNumericId(c.content);
+      return {
+        key: c.content,
+        label: finalLabel,
+        unresolved,
+        vendas: c.vendas,
+        bruto: c.bruto,
+      };
+    });
 
   return (
     <div className="space-y-4">
