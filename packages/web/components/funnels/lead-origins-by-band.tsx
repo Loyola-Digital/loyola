@@ -54,11 +54,11 @@ export function LeadOriginsByBand({ projectId, funnelId, stageId }: LeadOriginsB
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
       <div className="flex items-center gap-2">
         <Compass className="h-4 w-4 text-primary" />
-        <h3 className="text-sm font-semibold">De onde vêm os leads (por banda)</h3>
+        <h3 className="text-sm font-semibold">De onde vêm os leads (por faixa)</h3>
       </div>
       <p className="text-xs text-muted-foreground">
         Origem extraída do <code className="font-mono text-[10px] bg-muted/50 px-1 rounded">utm_term</code> da planilha de pesquisa.
-        Banda A expandida por padrão — clique nas outras pra ver detalhes.
+        Faixa A expandida por padrão — clique nas outras pra ver detalhes.
       </p>
 
       <div className="space-y-2">
@@ -93,7 +93,7 @@ function BandSection({
           {band.bandId}
         </span>
         <div className="flex-1 min-w-0">
-          <p className={`text-sm font-medium ${textColor}`}>Banda {band.bandId}</p>
+          <p className={`text-sm font-medium ${textColor}`}>Faixa {band.bandId}</p>
           <p className="text-xs text-muted-foreground line-clamp-1">{band.bandDescription}</p>
         </div>
         <span className="text-xs text-muted-foreground tabular-nums shrink-0">
