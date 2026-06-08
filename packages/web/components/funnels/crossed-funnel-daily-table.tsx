@@ -162,9 +162,10 @@ export function CrossedFunnelDailyTable({
     leadsPg: isPaidCapture ? "Ingressos Pg" : "Leads Pg",
     leadsOrg: isPaidCapture ? "Ingressos Org" : "Leads Org",
     leadsSemTrack: isPaidCapture ? "Ingressos s/ track" : "Leads s/ track",
+    // Story 18.34 AC1: Tooltip formatado com quebras de linha legíveis
     totalLeadsTooltip: isPaidCapture
-      ? "Total Ingressos = Ingressos Pg + Ingressos Org + Ingressos s/ track&#10;Ingressos Pg = Ingressos que vieram de mídia paga&#10;Ingressos Org = Ingressos com origem orgânica"
-      : "Total Leads = Leads Pg + Leads Org + Leads s/ track&#10;Leads Pg = Leads que vieram de mídia paga&#10;Leads Org = Leads com origem orgânica",
+      ? "Total Ingressos = Ingressos Pg + Ingressos Org + Ingressos s/ track\nIngressos Pg = Ingressos que vieram de mídia paga\nIngressos Org = Ingressos com origem orgânica"
+      : "Total Leads = Leads Pg + Leads Org + Leads s/ track\nLeads Pg = Leads que vieram de mídia paga\nLeads Org = Leads com origem orgânica",
   }), [isPaidCapture]);
   const salesTotal = salesByDay
     ? Object.values(salesByDay).reduce((a, b) => a + b, 0)
