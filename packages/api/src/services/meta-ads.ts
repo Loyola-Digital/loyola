@@ -1125,25 +1125,47 @@ export async function resolveEntityNames(
   const missing = unique.filter((id) => !result.has(id));
   if (missing.length === 0) return result;
 
-  // 3. Batch Meta API
+  // 3. Batch Meta API com retry logic (Story 18.33 AC2)
   const fresh: CachedEntityName[] = [];
+  const maxRetries = 2;
+  const retryBackoffMs = 500;
+
   for (let i = 0; i < missing.length; i += META_NAMES_BATCH_LIMIT) {
     const batch = missing.slice(i, i + META_NAMES_BATCH_LIMIT);
-    try {
-      const data = await fetchMeta<Record<string, { id: string; name: string }>>(
-        `/?ids=${batch.join(",")}&fields=id,name`,
-        accessToken,
-      );
-      for (const id of batch) {
-        const entry = data[id];
-        if (entry?.name) {
-          result.set(id, entry.name);
-          fresh.push({ entityId: id, entityName: entry.name });
+    let retries = 0;
+    let batchResolved = false;
+
+    while (retries < maxRetries && !batchResolved) {
+      try {
+        const data = await fetchMeta<Record<string, { id: string; name: string }>>(
+          `/?ids=${batch.join(",")}&fields=id,name`,
+          accessToken,
+        );
+        for (const id of batch) {
+          const entry = data[id];
+          if (entry?.name) {
+            result.set(id, entry.name);
+            fresh.push({ entityId: id, entityName: entry.name });
+          }
+        }
+        batchResolved = true;
+      } catch (err) {
+        retries++;
+        if (retries < maxRetries) {
+          console.warn(
+            `[resolveEntityNames] batch ${Math.floor(i / META_NAMES_BATCH_LIMIT) + 1} failed (retry ${retries}/${maxRetries})`,
+            err,
+          );
+          await sleep(retryBackoffMs * Math.pow(2, retries - 1));
+        } else {
+          console.error(
+            `[resolveEntityNames] batch ${Math.floor(i / META_NAMES_BATCH_LIMIT) + 1} failed after ${maxRetries} retries (continuing with unresolved)`,
+            err,
+          );
         }
       }
-    } catch (err) {
-      console.error(`[resolveEntityNames] batch ${i / META_NAMES_BATCH_LIMIT + 1} failed (continuing)`, err);
     }
+
     if (i + META_NAMES_BATCH_LIMIT < missing.length) {
       await sleep(META_NAMES_BATCH_THROTTLE_MS);
     }

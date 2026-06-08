@@ -1,3 +1,9 @@
+// Story 18.32: Refactor Medium (Adset) + Content (Ad) matching
+// TODO AC2: Implement Medium (Adset) matching - fetch adsets from Meta API, match utm_medium IDs with adset_id, group by adset_name
+// TODO AC3: Implement Content (Ad) matching - fetch ads from Meta API, match utm_content IDs with ad_id, group by ad_name
+// Pattern reference: /packages/api/src/routes/stage-creative-performance.ts lines 321-385 (grouping by name, not ID)
+// Current implementation: porUtmMedium and porUtmTerm are basic aggregates - need refactor to fetch Meta entities and group by name
+
 import { z } from "zod";
 import { eq, and, inArray, gte, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
@@ -568,6 +574,70 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         contentNames = resolvedContent;
       }
 
+      // Story 18.32 AC2 + Story 18.35: Group by adset_name with smart fallback for unresolved IDs
+      // Same pattern as stage-creative-performance.ts: aggregate by name, not ID
+      type MediumGroup = { name: string; ids: string[]; vendas: number; bruto: number; liquido: number };
+      const mediumByName = new Map<string, MediumGroup>();
+
+      // Helper: detect Meta numeric IDs (15+ digits) vs. textual UTMs
+      const isMetaNumericId = (value: string): boolean => /^\d{15,}$/.test(value.trim());
+
+      for (const [mediumId, metrics] of utmMediumMap.entries()) {
+        // Story 18.35 AC2: Smart fallback - "[Unresolved] ID" for numeric Meta IDs that failed to resolve
+        let adsetName = mediumNames.get(mediumId);
+        if (!adsetName) {
+          if (isMetaNumericId(mediumId)) {
+            adsetName = `[Unresolved] ${mediumId}`;
+          } else {
+            adsetName = mediumId;
+          }
+        }
+        adsetName = adsetName.trim() || "(sem nome)";
+
+        let group = mediumByName.get(adsetName);
+        if (!group) {
+          group = { name: adsetName, ids: [], vendas: 0, bruto: 0, liquido: 0 };
+          mediumByName.set(adsetName, group);
+        }
+        group.ids.push(mediumId);
+        group.vendas += metrics.vendas;
+        group.bruto += metrics.bruto;
+        group.liquido += metrics.liquido;
+      }
+      const porUtmMediumGrouped = Array.from(mediumByName.values())
+        .map(({ name, vendas, bruto, liquido }) => ({ medium: name, name, vendas, bruto, liquido }))
+        .sort((a, b) => b.vendas - a.vendas);
+
+      // Story 18.32 AC3 + Story 18.35: Group by ad_name with smart fallback for unresolved IDs
+      type ContentGroup = { name: string; ids: string[]; vendas: number; bruto: number; liquido: number };
+      const contentByName = new Map<string, ContentGroup>();
+
+      for (const [contentId, metrics] of utmContentMap.entries()) {
+        // Story 18.35 AC2: Smart fallback - "[Unresolved] ID" for numeric Meta IDs that failed to resolve
+        let adName = contentNames.get(contentId);
+        if (!adName) {
+          if (isMetaNumericId(contentId)) {
+            adName = `[Unresolved] ${contentId}`;
+          } else {
+            adName = contentId;
+          }
+        }
+        adName = adName.trim() || "(sem nome)";
+
+        let group = contentByName.get(adName);
+        if (!group) {
+          group = { name: adName, ids: [], vendas: 0, bruto: 0, liquido: 0 };
+          contentByName.set(adName, group);
+        }
+        group.ids.push(contentId);
+        group.vendas += metrics.vendas;
+        group.bruto += metrics.bruto;
+        group.liquido += metrics.liquido;
+      }
+      const porUtmContentGrouped = Array.from(contentByName.values())
+        .map(({ name, vendas, bruto, liquido }) => ({ content: name, name, vendas, bruto, liquido }))
+        .sort((a, b) => b.vendas - a.vendas);
+
       return {
         totalVendas,
         faturamentoBruto: totalBruto,
@@ -601,15 +671,11 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         porUtmSource: Array.from(utmSourceMap.entries())
           .map(([fonte, v]) => ({ fonte, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
-        porUtmMedium: Array.from(utmMediumMap.entries())
-          .map(([medium, v]) => ({ medium, name: mediumNames.get(medium) ?? medium, ...v }))
-          .sort((a, b) => b.vendas - a.vendas),
+        porUtmMedium: porUtmMediumGrouped,
         porUtmTerm: Array.from(utmTermMap.entries())
           .map(([term, v]) => ({ term, name: termNames.get(term) ?? term, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
-        porUtmContent: Array.from(utmContentMap.entries())
-          .map(([content, v]) => ({ content, name: contentNames.get(content) ?? content, ...v }))
-          .sort((a, b) => b.vendas - a.vendas),
+        porUtmContent: porUtmContentGrouped,
         semDados: false,
         // Story 28.4: debug counters só quando ?debug=1
         ...(query.data.debug
