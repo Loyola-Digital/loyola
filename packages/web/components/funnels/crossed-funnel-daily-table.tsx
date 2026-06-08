@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { DailyRow } from "@/lib/utils/funnel-metrics";
+import type { StageType } from "@loyola-x/shared";
 import { resolveMediumByAdsets, useResolveAdsetNames } from "@/lib/hooks/use-funnel-adsets-map";
 import {
   useFunnelBatchTurns,
@@ -42,6 +43,12 @@ interface CrossedFunnelDailyTableProps {
    */
   projectId?: string;
   funnelId?: string;
+  /**
+   * Stage type para renderizar labels condicionalmente:
+   * - Captação Gratuita: Total Leads, Leads Pg, Leads Org, Leads s/ track
+   * - Captação Paga: Total Ingressos, Ingressos Pg, Ingressos Org, Ingressos s/ track
+   */
+  stageType?: StageType;
 }
 
 function fmtCurrency(v: number | null | undefined): string {
@@ -146,7 +153,19 @@ export function CrossedFunnelDailyTable({
   adsetsMap,
   projectId,
   funnelId,
+  stageType,
 }: CrossedFunnelDailyTableProps) {
+  // Story 18.31: Condicionais por etapa (paid = Captação Paga, free = Captação Gratuita)
+  const isPaidCapture = stageType === "paid";
+  const labels = useMemo(() => ({
+    totalLeads: isPaidCapture ? "Total Ingressos" : "Total Leads",
+    leadsPg: isPaidCapture ? "Ingressos Pg" : "Leads Pg",
+    leadsOrg: isPaidCapture ? "Ingressos Org" : "Leads Org",
+    leadsSemTrack: isPaidCapture ? "Ingressos s/ track" : "Leads s/ track",
+    totalLeadsTooltip: isPaidCapture
+      ? "Total Ingressos = Ingressos Pg + Ingressos Org + Ingressos s/ track&#10;Ingressos Pg = Ingressos que vieram de mídia paga&#10;Ingressos Org = Ingressos com origem orgânica"
+      : "Total Leads = Leads Pg + Leads Org + Leads s/ track&#10;Leads Pg = Leads que vieram de mídia paga&#10;Leads Org = Leads com origem orgânica",
+  }), [isPaidCapture]);
   const salesTotal = salesByDay
     ? Object.values(salesByDay).reduce((a, b) => a + b, 0)
     : null;
@@ -269,9 +288,9 @@ export function CrossedFunnelDailyTable({
               <TableHead className="text-right min-w-[100px]">Impressões</TableHead>
               <TableHead
                 className="text-right min-w-[100px] font-semibold cursor-help"
-                title="Total Leads = Leads Pg + Leads Org + Leads s/ track&#10;Leads Pg = Leads que vieram de mídia paga&#10;Leads Org = Leads com origem orgânica"
+                title={labels.totalLeadsTooltip}
               >
-                Total Leads
+                {labels.totalLeads}
               </TableHead>
               <TableHead className="text-right min-w-[90px]">CPL Pg</TableHead>
               <TableHead className="text-right min-w-[80px]">CPL Geral</TableHead>
@@ -281,9 +300,9 @@ export function CrossedFunnelDailyTable({
               <TableHead className="text-right min-w-[80px]">LP View</TableHead>
               <TableHead className="text-right min-w-[110px]">Connect Rate</TableHead>
               <TableHead className="text-right min-w-[90px]" title="Leads Pagos ÷ Link Clicks × 100">Tx Conv.</TableHead>
-              <TableHead className="text-right min-w-[100px]">Leads Pg</TableHead>
-              <TableHead className="text-right min-w-[90px]">Leads Org</TableHead>
-              <TableHead className="text-right min-w-[110px]">Leads s/ track</TableHead>
+              <TableHead className="text-right min-w-[100px]">{labels.leadsPg}</TableHead>
+              <TableHead className="text-right min-w-[90px]">{labels.leadsOrg}</TableHead>
+              <TableHead className="text-right min-w-[110px]">{labels.leadsSemTrack}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
