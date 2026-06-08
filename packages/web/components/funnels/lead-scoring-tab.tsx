@@ -256,7 +256,7 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
       <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            Distribuição por Banda
+            Distribuição por Faixa
           </h3>
           <div className="flex gap-2">
             <Button
@@ -530,7 +530,7 @@ function ResultsTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Banda</TableHead>
+            <TableHead>Faixa</TableHead>
             <TableHead>Descrição</TableHead>
             <TableHead className="text-right">Leads</TableHead>
             <TableHead className="text-right">%</TableHead>
