@@ -38,14 +38,22 @@ export interface CrossedFunnelMetrics {
   totalVendas: number | null;
 
   /**
+   * Vendas atribuídas ao tráfego PAGO (utm_source = meta/google/etc). Usado como
+   * numerador da Taxa Checkout pra ficar consistente com o denominador (checkouts
+   * do Meta, que já são só pago). Null se planilha de vendas não vinculada.
+   */
+  vendasPago: number | null;
+
+  /**
    * Número de visitas ao checkout (initiate_checkout events da Meta Ads API).
    * Null se Meta API indisponível.
    */
   checkoutVisits: number | null;
 
   /**
-   * Taxa de conversão do checkout = (vendas ÷ checkoutVisits) × 100
-   * Null se checkoutVisits = 0 ou se vendas/checkout indisponíveis.
+   * Taxa de conversão do checkout = (vendasPago ÷ checkoutVisits) × 100.
+   * Pago no numerador e denominador. Null se checkoutVisits = 0 ou se
+   * vendasPago/checkout indisponíveis.
    */
   checkoutConversionRate: number | null;
 
@@ -115,6 +123,8 @@ export interface CrossedFunnelMetrics {
  */
 interface StageSalesData {
   totalVendas: number;
+  /** Story 18.29: vendas do tráfego pago (numerador da Taxa Checkout). */
+  vendasPago?: number | null;
 }
 
 export function useCrossedFunnelMetrics(
@@ -227,10 +237,12 @@ export function useCrossedFunnelMetrics(
     // Visitas ao checkout: initiate_checkout events da Meta Ads (múltiplas variações de event type)
     const checkoutVisits = totals.checkoutInitiations > 0 ? totals.checkoutInitiations : null;
 
-    // Taxa de conversão do checkout
+    // Story 18.29: Taxa Checkout usa vendas PAGAS no numerador (checkoutVisits já
+    // é só Meta/pago). Antes usava totalVendas (incl. orgânico) e inflava a taxa.
+    const vendasPago = stageSalesData?.vendasPago ?? null;
     let checkoutConversionRate: number | null = null;
-    if (totalVendas !== null && checkoutVisits !== null && checkoutVisits > 0) {
-      checkoutConversionRate = (totalVendas / checkoutVisits) * 100;
+    if (vendasPago !== null && checkoutVisits !== null && checkoutVisits > 0) {
+      checkoutConversionRate = (vendasPago / checkoutVisits) * 100;
     }
 
     return {
@@ -243,6 +255,7 @@ export function useCrossedFunnelMetrics(
       leadsSemTrack: totals.leadsSemTrack,
       totalLeads,
       totalVendas,
+      vendasPago,
       checkoutVisits,
       checkoutConversionRate,
       cpm: totals.cpm,

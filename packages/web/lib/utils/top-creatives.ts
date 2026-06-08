@@ -238,9 +238,11 @@ export interface RelevanceThreshold {
 
 /**
  * Story 8.9: calcula o limiar de gasto a partir do qual um criativo tem
- * relevância estatística no período. Regra (validada com Lucas, 2026-05-19):
+ * relevância estatística no período. Regra original 2× (Lucas, 2026-05-19),
+ * revisada pra 1,5× na Story 18.29 (Lucas, 2026-06-08) pra exibir mais
+ * criativos por padrão (o 2× ocultava demais em CBO):
  *
- *   threshold = 2 × CPA agregado do período
+ *   threshold = 1,5 × CPA agregado do período
  *   onde CPA agregado = sum(spend) / sum(vendas) sobre todos os criativos
  *
  * Fallback (sum(vendas) === 0): usa gasto médio em vez de CPA.
@@ -261,7 +263,7 @@ export function computeRelevanceThreshold(
   const totalSales = creatives.reduce((s, c) => s + c.salesLegacy, 0);
   if (totalSales > 0) {
     const cpaMedio = totalSpend / totalSales;
-    return { threshold: 2 * cpaMedio, mode: "cpa", cpaMedio };
+    return { threshold: 1.5 * cpaMedio, mode: "cpa", cpaMedio };
   }
   // Fallback: sem vendas no período → usa gasto médio entre criativos com spend > 0
   const withSpend = creatives.filter((c) => c.spend > 0).length;
@@ -269,7 +271,7 @@ export function computeRelevanceThreshold(
     return { threshold: 0, mode: "disabled", cpaMedio: null };
   }
   const gastoMedio = totalSpend / withSpend;
-  return { threshold: 2 * gastoMedio, mode: "spend", cpaMedio: null };
+  return { threshold: 1.5 * gastoMedio, mode: "spend", cpaMedio: null };
 }
 
 /**
