@@ -157,6 +157,13 @@ export interface StageSalesData {
   ticketMedioPago: number;
   ticketMedioOrganico: number;
   ticketMedioSemTrack: number;
+  /**
+   * Faturamento bruto e nº de vendas atribuídos só ao tráfego PAGO
+   * (utm_source = meta-ads ou google-ads). Base do ROAS/CPV — orgânico e
+   * sem-track ficam de fora pra não inflar o retorno do spend.
+   */
+  faturamentoPago: number;
+  vendasPago: number;
   porCanal: { canal: string; vendas: number; bruto: number; liquido: number }[];
   porFormaPagamento: { forma: string; vendas: number; bruto: number; liquido: number }[];
   porUtmSource: { fonte: string; vendas: number; bruto: number; liquido: number }[];

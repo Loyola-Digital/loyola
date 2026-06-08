@@ -133,6 +133,10 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
 
   const totalVendas = salesData?.totalVendas ?? 0;
   const faturamento = salesData?.faturamentoBruto ?? 0;
+  // ROAS/CPV/Margem refletem SÓ o tráfego pago (utm_source = meta-ads/google-ads).
+  // Vendas orgânicas e sem-track não vieram do spend e inflavam o ROAS.
+  const faturamentoPago = salesData?.faturamentoPago ?? 0;
+  const vendasPago = salesData?.vendasPago ?? 0;
   // Story 19.9 ext: tooltip com breakdown planilha vs manual
   const breakdown = salesData?.breakdown;
   const fatTooltip = breakdown
@@ -141,9 +145,9 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
   const vendasTooltip = breakdown
     ? `Planilha: ${breakdown.spreadsheet.vendas}\nManuais: ${breakdown.manual.vendas}`
     : undefined;
-  const roas = spend > 0 ? faturamento / spend : null;
-  const cpv = totalVendas > 0 && spend > 0 ? spend / totalVendas : null;
-  const margem = spend > 0 ? faturamento - spend : null;
+  const roas = spend > 0 ? faturamentoPago / spend : null;
+  const cpv = vendasPago > 0 && spend > 0 ? spend / vendasPago : null;
+  const margem = spend > 0 ? faturamentoPago - spend : null;
 
   const ticketMedioPago = salesData?.ticketMedioPago ?? 0;
   const ticketMedioOrganico = salesData?.ticketMedioOrganico ?? 0;
@@ -165,9 +169,16 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
           label="ROAS"
           value={fmtRoas(roas)}
           hint={margem != null ? `Margem: ${fmtCurrency(margem)}` : undefined}
+          tooltip={`Só tráfego pago (meta-ads/google-ads). Faturamento pago: ${fmtCurrency(faturamentoPago)} em ${fmtNumber(vendasPago)} venda(s)`}
           highlight
         />
-        <KpiCard icon={Target} label="CPV" value={fmtCurrency(cpv)} hint="Custo por venda" />
+        <KpiCard
+          icon={Target}
+          label="CPV"
+          value={fmtCurrency(cpv)}
+          hint="Custo por venda paga"
+          tooltip="Spend ÷ vendas pagas (meta-ads/google-ads)"
+        />
       </div>
 
       {/* Funil de conversão: Impressões → Cliques → LP Views → Checkouts → Vendas */}

@@ -74,6 +74,21 @@ function sanitizeUtmValue(val: string | undefined | null): string | null {
   return trimmed;
 }
 
+/**
+ * Classifica a origem da venda pela utm_source pra separar tráfego PAGO do
+ * orgânico no cálculo de ROAS/CPV (que devem refletir só o que o spend gerou):
+ *   - utm_source = "meta-ads" ou "google-ads" → Pago
+ *   - utm_source preenchida com qualquer outro valor → Orgânico
+ *   - utm_source vazia (null após sanitize) → Sem Track
+ * `utmSource` já vem sanitizado (sanitizeUtmValue), então null = ausente.
+ */
+function classifyFonte(utmSource: string | null): "Pago" | "Orgânico" | "Sem Track" {
+  if (!utmSource) return "Sem Track";
+  const normalized = utmSource.trim().toLowerCase();
+  if (normalized === "meta-ads" || normalized === "google-ads") return "Pago";
+  return "Orgânico";
+}
+
 function parseDate(val: string | undefined): Date | null {
   if (!val) return null;
   const trimmed = val.trim();
@@ -425,7 +440,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         formaEntry.liquido += liquido;
         formaMap.set(forma, formaEntry);
 
-        const fonte = utmSource === "meta" ? "Pago" : utmSource ? "Orgânico" : "Sem Track";
+        const fonte = classifyFonte(utmSource);
         const utmEntry = utmSourceMap.get(fonte) ?? { vendas: 0, bruto: 0, liquido: 0 };
         utmEntry.vendas += 1;
         utmEntry.bruto += bruto;
@@ -497,6 +512,12 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       const ticketMedioOrganico = organicoData && organicoData.vendas > 0 ? organicoData.bruto / organicoData.vendas : 0;
       const ticketMedioSemTrack = semTrackData && semTrackData.vendas > 0 ? semTrackData.bruto / semTrackData.vendas : 0;
 
+      // ROAS/CPV devem refletir SÓ o tráfego pago (meta-ads/google-ads) — vendas
+      // orgânicas e sem-track não foram geradas pelo spend e inflavam o ROAS.
+      // Vendas manuais (PIX) não têm utm_source → ficam fora do bucket Pago.
+      const faturamentoPago = pagoData?.bruto ?? 0;
+      const vendasPago = pagoData?.vendas ?? 0;
+
       // Story 28.7: resolve utm_medium + utm_term (ambos carregam adset_id no
       // padrão Loyola) e utm_content (ad_id) em nomes via cache persistente +
       // batch Meta API. Graceful: sem conta Meta vinculada OU resolve falha,
@@ -553,6 +574,8 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         ticketMedioPago,
         ticketMedioOrganico,
         ticketMedioSemTrack,
+        faturamentoPago,
+        vendasPago,
         porCanal: Array.from(canalMap.entries())
           .map(([canal, v]) => ({ canal, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
