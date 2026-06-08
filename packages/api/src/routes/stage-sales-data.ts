@@ -574,12 +574,26 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         contentNames = resolvedContent;
       }
 
-      // Story 18.32 AC2: Group by adset_name (Medium/Adset matching)
+      // Story 18.32 AC2 + Story 18.35: Group by adset_name with smart fallback for unresolved IDs
       // Same pattern as stage-creative-performance.ts: aggregate by name, not ID
       type MediumGroup = { name: string; ids: string[]; vendas: number; bruto: number; liquido: number };
       const mediumByName = new Map<string, MediumGroup>();
+
+      // Helper: detect Meta numeric IDs (15+ digits) vs. textual UTMs
+      const isMetaNumericId = (value: string): boolean => /^\d{15,}$/.test(value.trim());
+
       for (const [mediumId, metrics] of utmMediumMap.entries()) {
-        const adsetName = (mediumNames.get(mediumId) ?? mediumId).trim() || "(sem nome)";
+        // Story 18.35 AC2: Smart fallback - "[Unresolved] ID" for numeric Meta IDs that failed to resolve
+        let adsetName = mediumNames.get(mediumId);
+        if (!adsetName) {
+          if (isMetaNumericId(mediumId)) {
+            adsetName = `[Unresolved] ${mediumId}`;
+          } else {
+            adsetName = mediumId;
+          }
+        }
+        adsetName = adsetName.trim() || "(sem nome)";
+
         let group = mediumByName.get(adsetName);
         if (!group) {
           group = { name: adsetName, ids: [], vendas: 0, bruto: 0, liquido: 0 };
@@ -594,11 +608,22 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         .map(({ name, vendas, bruto, liquido }) => ({ medium: name, name, vendas, bruto, liquido }))
         .sort((a, b) => b.vendas - a.vendas);
 
-      // Story 18.32 AC3: Group by ad_name (Content/Ad matching)
+      // Story 18.32 AC3 + Story 18.35: Group by ad_name with smart fallback for unresolved IDs
       type ContentGroup = { name: string; ids: string[]; vendas: number; bruto: number; liquido: number };
       const contentByName = new Map<string, ContentGroup>();
+
       for (const [contentId, metrics] of utmContentMap.entries()) {
-        const adName = (contentNames.get(contentId) ?? contentId).trim() || "(sem nome)";
+        // Story 18.35 AC2: Smart fallback - "[Unresolved] ID" for numeric Meta IDs that failed to resolve
+        let adName = contentNames.get(contentId);
+        if (!adName) {
+          if (isMetaNumericId(contentId)) {
+            adName = `[Unresolved] ${contentId}`;
+          } else {
+            adName = contentId;
+          }
+        }
+        adName = adName.trim() || "(sem nome)";
+
         let group = contentByName.get(adName);
         if (!group) {
           group = { name: adName, ids: [], vendas: 0, bruto: 0, liquido: 0 };
