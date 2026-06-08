@@ -239,19 +239,9 @@ export function StageSalesSection({
     bruto: f.bruto,
   }));
 
-  // Story 28.7: badge "id sem nome" só pra Meta IDs numéricos que não
-  // resolveram (ad/adset deletado ou em outra conta). UTM textual literal é
-  // sempre válida. Fallback `(sem identificação)` cobre casos onde name/id
-  // chegam vazios (planilhas antigas, pre-sanitize backend).
-  const termRows = (data.porUtmTerm ?? [])
-    .filter((t) => isValidUtmKey(t.term))
-    .map((t) => ({
-      key: t.term,
-      label: t.name || t.term || "(sem identificação)",
-      unresolved: t.name === t.term && isMetaNumericId(t.term),
-      vendas: t.vendas,
-      bruto: t.bruto,
-    }));
+  // Story 18.32: porUtmTerm removido (replaced by refactored Medium/Content matching)
+  // TODO AC2: Implement Medium (Adset) matching with grouping by adset_name
+  // TODO AC3: Implement Content (Ad) matching with grouping by ad_name
   const contentRows = (data.porUtmContent ?? [])
     .filter((c) => isValidUtmKey(c.content))
     .map((c) => ({
@@ -304,17 +294,7 @@ export function StageSalesSection({
         <SalesTable rows={mediumRows} emptyMessage="Sem dados de medium (mapeie a coluna utm_medium na planilha)." keyLabel="Adset" />
       </div>
 
-      {/* Story 28.7: Por Term (utm_term → adset_name via cache Meta) */}
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-muted-foreground">Por Adset (utm_term)</p>
-        <SalesTable
-          rows={termRows}
-          emptyMessage="Sem dados de term (mapeie a coluna utm_term na planilha)."
-          keyLabel="Adset"
-        />
-      </div>
-
-      {/* Story 28.7: Por Content (utm_content → ad_name via cache Meta) */}
+      {/* Story 18.32: Por Content (utm_content → ad_name via Meta API grouping) */}
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">Por Content (Ad)</p>
         <SalesTable
