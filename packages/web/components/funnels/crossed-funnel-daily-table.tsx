@@ -267,17 +267,22 @@ export function CrossedFunnelDailyTable({
               <TableHead className="text-right min-w-[110px]">Faturamento</TableHead>
               <TableHead className="text-right min-w-[80px]">Cliques</TableHead>
               <TableHead className="text-right min-w-[100px]">Impressões</TableHead>
-              <TableHead className="text-right min-w-[100px] font-semibold">Total Leads</TableHead>
+              <TableHead
+                className="text-right min-w-[100px] font-semibold cursor-help"
+                title="Total Leads = Leads Pg + Leads Org + Leads s/ track&#10;Leads Pg = Leads que vieram de mídia paga&#10;Leads Org = Leads com origem orgânica"
+              >
+                Total Leads
+              </TableHead>
               <TableHead className="text-right min-w-[90px]">CPL Pg</TableHead>
-              <TableHead className="text-right min-w-[80px]">CPL G</TableHead>
+              <TableHead className="text-right min-w-[80px]">CPL Geral</TableHead>
               <TableHead className="text-right min-w-[80px]">CPM</TableHead>
               <TableHead className="text-right min-w-[80px]">CPC</TableHead>
               <TableHead className="text-right min-w-[70px]">CTR</TableHead>
               <TableHead className="text-right min-w-[80px]">LP View</TableHead>
               <TableHead className="text-right min-w-[110px]">Connect Rate</TableHead>
               <TableHead className="text-right min-w-[90px]" title="Leads Pagos ÷ Link Clicks × 100">Tx Conv.</TableHead>
-              <TableHead className="text-right min-w-[100px]">Leads pagos</TableHead>
-              <TableHead className="text-right min-w-[90px]">Leads org</TableHead>
+              <TableHead className="text-right min-w-[100px]">Leads Pg</TableHead>
+              <TableHead className="text-right min-w-[90px]">Leads Org</TableHead>
               <TableHead className="text-right min-w-[110px]">Leads s/ track</TableHead>
             </TableRow>
           </TableHeader>
