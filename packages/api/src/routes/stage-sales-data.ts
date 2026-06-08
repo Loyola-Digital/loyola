@@ -75,9 +75,25 @@ function sanitizeUtmValue(val: string | undefined | null): string | null {
 }
 
 /**
+ * utm_source que identificam tráfego PAGO (Meta Ads / Google Ads). O tracking
+ * da Loyola grava valores variados conforme a integração: o n8n→Kiwify usa
+ * "meta", enquanto UTMs gerados direto pela plataforma usam "meta-ads". Cobrimos
+ * os dois + variações (facebook/fb/google) pra não zerar o ROAS. Comparação é
+ * case-insensitive e sobre o valor sanitizado (trim/lower aplicados no caller).
+ */
+const PAID_UTM_SOURCES = new Set([
+  "meta",
+  "meta-ads",
+  "facebook",
+  "fb",
+  "google",
+  "google-ads",
+]);
+
+/**
  * Classifica a origem da venda pela utm_source pra separar tráfego PAGO do
  * orgânico no cálculo de ROAS/CPV (que devem refletir só o que o spend gerou):
- *   - utm_source = "meta-ads" ou "google-ads" → Pago
+ *   - utm_source em PAID_UTM_SOURCES (meta/google/etc) → Pago
  *   - utm_source preenchida com qualquer outro valor → Orgânico
  *   - utm_source vazia (null após sanitize) → Sem Track
  * `utmSource` já vem sanitizado (sanitizeUtmValue), então null = ausente.
@@ -85,7 +101,7 @@ function sanitizeUtmValue(val: string | undefined | null): string | null {
 function classifyFonte(utmSource: string | null): "Pago" | "Orgânico" | "Sem Track" {
   if (!utmSource) return "Sem Track";
   const normalized = utmSource.trim().toLowerCase();
-  if (normalized === "meta-ads" || normalized === "google-ads") return "Pago";
+  if (PAID_UTM_SOURCES.has(normalized)) return "Pago";
   return "Orgânico";
 }
 
