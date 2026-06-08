@@ -38,7 +38,7 @@ function mockCreative(
 }
 
 describe("computeRelevanceThreshold", () => {
-  it("mode cpa: com vendas, threshold = 2 × (sum(spend) / sum(salesLegacy))", () => {
+  it("mode cpa: com vendas, threshold = 1,5 × (sum(spend) / sum(salesLegacy))", () => {
     const creatives = [
       mockCreative({ name: "A", spend: 300, salesLegacy: 3 }),
       mockCreative({ name: "B", spend: 200, salesLegacy: 2 }),
@@ -46,10 +46,10 @@ describe("computeRelevanceThreshold", () => {
     const result = computeRelevanceThreshold(creatives);
     expect(result.mode).toBe("cpa");
     expect(result.cpaMedio).toBe(100); // 500 / 5
-    expect(result.threshold).toBe(200); // 2 × 100
+    expect(result.threshold).toBe(150); // 1,5 × 100
   });
 
-  it("mode spend: sem vendas, threshold = 2 × gasto médio dos com spend > 0", () => {
+  it("mode spend: sem vendas, threshold = 1,5 × gasto médio dos com spend > 0", () => {
     const creatives = [
       mockCreative({ name: "A", spend: 200, salesLegacy: 0 }),
       mockCreative({ name: "B", spend: 100, salesLegacy: 0 }),
@@ -58,7 +58,7 @@ describe("computeRelevanceThreshold", () => {
     const result = computeRelevanceThreshold(creatives);
     expect(result.mode).toBe("spend");
     expect(result.cpaMedio).toBeNull();
-    expect(result.threshold).toBe(300); // 2 × (300 / 2)
+    expect(result.threshold).toBe(225); // 1,5 × (300 / 2)
   });
 
   it("mode disabled: lista vazia", () => {
@@ -85,7 +85,7 @@ describe("computeRelevanceThreshold", () => {
     ];
     const result = computeRelevanceThreshold(creatives);
     expect(result.mode).toBe("cpa");
-    expect(result.threshold).toBe(100); // 2 × (100 / 2)
+    expect(result.threshold).toBe(75); // 1,5 × (100 / 2)
   });
 });
 

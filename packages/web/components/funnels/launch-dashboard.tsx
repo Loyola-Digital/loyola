@@ -373,6 +373,14 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   hintTooltip={metrics.hasLinkedSheet}
                 />
               </MetricTooltip>
+              {stageType === "paid" && metrics.totalVendas !== null && (
+                <KpiCard
+                  icon={Banknote}
+                  label="Venda ingressos"
+                  value={fmtNumber(metrics.totalVendas)}
+                  subValue={`${metrics.checkoutVisits ? fmtNumber(metrics.checkoutVisits) : "—"} visitas checkout`}
+                />
+              )}
               <MetricTooltip label="CPL" value={metrics.hasLinkedSheet ? fmtCurrency(metrics.cplPago) : "—"} formula={metrics.hasLinkedSheet ? buildFunnelCplFormula(metrics.spend, metrics.leadsPagos, f, "pago") : undefined}>
                 <KpiCard
                   icon={Target}
@@ -414,20 +422,12 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   } : undefined}
                 />
               </MetricTooltip>
-              {stageType === "paid" && metrics.totalVendas !== null && (
-                <KpiCard
-                  icon={Banknote}
-                  label="Venda ingressos"
-                  value={fmtNumber(metrics.totalVendas)}
-                  subValue={`${metrics.checkoutVisits ? fmtNumber(metrics.checkoutVisits) : "—"} visitas checkout`}
-                />
-              )}
               {stageType === "paid" && metrics.checkoutConversionRate !== null && (
                 <KpiCard
                   icon={Percent}
                   label="Taxa Checkout"
                   value={fmtPercent(metrics.checkoutConversionRate)}
-                  subValue={metrics.totalVendas !== null && metrics.checkoutVisits ? `${fmtNumber(metrics.totalVendas)} ÷ ${fmtNumber(metrics.checkoutVisits)}` : "—"}
+                  subValue={metrics.vendasPago !== null && metrics.checkoutVisits ? `${fmtNumber(metrics.vendasPago)} ÷ ${fmtNumber(metrics.checkoutVisits)}` : "—"}
                 />
               )}
               {surveyResponseRate !== null && survey && (
