@@ -574,6 +574,45 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         contentNames = resolvedContent;
       }
 
+      // Story 18.32 AC2: Group by adset_name (Medium/Adset matching)
+      // Same pattern as stage-creative-performance.ts: aggregate by name, not ID
+      type MediumGroup = { name: string; ids: string[]; vendas: number; bruto: number; liquido: number };
+      const mediumByName = new Map<string, MediumGroup>();
+      for (const [mediumId, metrics] of utmMediumMap.entries()) {
+        const adsetName = (mediumNames.get(mediumId) ?? mediumId).trim() || "(sem nome)";
+        let group = mediumByName.get(adsetName);
+        if (!group) {
+          group = { name: adsetName, ids: [], vendas: 0, bruto: 0, liquido: 0 };
+          mediumByName.set(adsetName, group);
+        }
+        group.ids.push(mediumId);
+        group.vendas += metrics.vendas;
+        group.bruto += metrics.bruto;
+        group.liquido += metrics.liquido;
+      }
+      const porUtmMediumGrouped = Array.from(mediumByName.values())
+        .map(({ name, vendas, bruto, liquido }) => ({ medium: name, name, vendas, bruto, liquido }))
+        .sort((a, b) => b.vendas - a.vendas);
+
+      // Story 18.32 AC3: Group by ad_name (Content/Ad matching)
+      type ContentGroup = { name: string; ids: string[]; vendas: number; bruto: number; liquido: number };
+      const contentByName = new Map<string, ContentGroup>();
+      for (const [contentId, metrics] of utmContentMap.entries()) {
+        const adName = (contentNames.get(contentId) ?? contentId).trim() || "(sem nome)";
+        let group = contentByName.get(adName);
+        if (!group) {
+          group = { name: adName, ids: [], vendas: 0, bruto: 0, liquido: 0 };
+          contentByName.set(adName, group);
+        }
+        group.ids.push(contentId);
+        group.vendas += metrics.vendas;
+        group.bruto += metrics.bruto;
+        group.liquido += metrics.liquido;
+      }
+      const porUtmContentGrouped = Array.from(contentByName.values())
+        .map(({ name, vendas, bruto, liquido }) => ({ content: name, name, vendas, bruto, liquido }))
+        .sort((a, b) => b.vendas - a.vendas);
+
       return {
         totalVendas,
         faturamentoBruto: totalBruto,
@@ -607,15 +646,11 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         porUtmSource: Array.from(utmSourceMap.entries())
           .map(([fonte, v]) => ({ fonte, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
-        porUtmMedium: Array.from(utmMediumMap.entries())
-          .map(([medium, v]) => ({ medium, name: mediumNames.get(medium) ?? medium, ...v }))
-          .sort((a, b) => b.vendas - a.vendas),
+        porUtmMedium: porUtmMediumGrouped,
         porUtmTerm: Array.from(utmTermMap.entries())
           .map(([term, v]) => ({ term, name: termNames.get(term) ?? term, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
-        porUtmContent: Array.from(utmContentMap.entries())
-          .map(([content, v]) => ({ content, name: contentNames.get(content) ?? content, ...v }))
-          .sort((a, b) => b.vendas - a.vendas),
+        porUtmContent: porUtmContentGrouped,
         semDados: false,
         // Story 28.4: debug counters só quando ?debug=1
         ...(query.data.debug
