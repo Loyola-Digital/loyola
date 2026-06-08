@@ -51,7 +51,7 @@ function SellerCard({ seller }: { seller: SellerRow }) {
         </p>
         <span
           className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded ${BAND_TEXT[seller.dominantBand]} bg-muted/50`}
-          title="Banda dominante"
+          title="Faixa dominante"
         >
           {BAND_LABEL[seller.dominantBand]}
         </span>
@@ -73,7 +73,7 @@ function SellerCard({ seller }: { seller: SellerRow }) {
       </div>
 
       <div className="space-y-1.5">
-        <p className="text-xs text-muted-foreground">Distribuição por banda</p>
+        <p className="text-xs text-muted-foreground">Distribuição por faixa</p>
         <div className="flex h-2 overflow-hidden rounded-full bg-muted/30">
           {BAND_ORDER.map((k) => {
             const pct = seller.bandsPct[k];
