@@ -18,6 +18,7 @@ import claudePlugin from "./services/claude.js";
 import conversationServicePlugin from "./services/conversation.js";
 import clickupServicePlugin from "./services/clickup.js";
 import instagramServicePlugin from "./services/instagram.js";
+import metaNamesSchedulerPlugin from "./plugins/meta-names-scheduler.js";
 
 // Routes
 import healthRoutes from "./routes/health.js";
@@ -91,6 +92,9 @@ export async function buildServer() {
   await app.register(conversationServicePlugin);
   await app.register(clickupServicePlugin);
   await app.register(instagramServicePlugin);
+
+  // 5b. Schedulers (precisam de db) — backfill diário de nomes Meta (Story 18.37)
+  await app.register(metaNamesSchedulerPlugin);
 
   // 6. Routes (last — consume services)
   await app.register(healthRoutes);

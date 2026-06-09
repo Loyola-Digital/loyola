@@ -20,6 +20,12 @@ const envSchema = z.object({
   GOOGLE_ADS_CLIENT_SECRET: z.string().min(1).optional(),
   GOOGLE_ADS_DEVELOPER_TOKEN: z.string().min(1).optional(),
   SWITCHY_API_TOKEN: z.string().min(1).optional(),
+  // Story 18.37: backfill diário do cache de nomes Meta. Hora local do servidor
+  // (0-23; default 3 = madrugada, aplicado no scheduler). `META_BACKFILL_ENABLED=false`
+  // desliga o agendador (sempre desligado em NODE_ENV=test). Opcionais p/ não
+  // forçar os mocks de config dos testes.
+  META_BACKFILL_HOUR: z.coerce.number().int().min(0).max(23).optional(),
+  META_BACKFILL_ENABLED: z.enum(["true", "false"]).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
