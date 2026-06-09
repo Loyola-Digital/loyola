@@ -23,6 +23,16 @@ export interface MauticEmailStats {
   opens: number;
   /** opens / sent (0..1). null se sent === 0. */
   openRate: number | null;
+  /** Cliques únicos (channel_url_trackables.unique_hits). null se /api/stats indisponível. */
+  clicks: number | null;
+  /** clicks / sent (0..1). null se clicks/sent indisponível. */
+  clickRate: number | null;
+  /** Bounces (lead_donotcontact reason=1). null se indisponível. */
+  bounces: number | null;
+  /** Descadastros (lead_donotcontact reason=2). null se indisponível. */
+  unsubscribes: number | null;
+  /** false quando o endpoint /api/stats não respondeu (ex.: usuário não-admin). */
+  statsAvailable: boolean;
 }
 
 export function encryptMauticPassword(plaintext: string): { encrypted: string; iv: string } {
@@ -117,6 +127,58 @@ type MauticEmailResponse = {
   email?: { id: number | string; sentCount?: number | string; readCount?: number | string };
 };
 
+// ---- /api/stats/{table} — acesso granular às tabelas internas do Mautic ----
+type StatsWhere = { col: string; expr: string; val: string | number };
+type MauticStatsResponse = { total?: number | string; stats?: Array<Record<string, unknown>> };
+
+/** Monta o path /stats/{table}?where[i][col/expr/val]=...&limit=... (chaves codificadas). */
+function buildStatsPath(table: string, wheres: StatsWhere[], limit: number, start = 0): string {
+  const parts: string[] = [];
+  wheres.forEach((w, i) => {
+    parts.push(`${encodeURIComponent(`where[${i}][col]`)}=${encodeURIComponent(w.col)}`);
+    parts.push(`${encodeURIComponent(`where[${i}][expr]`)}=${encodeURIComponent(w.expr)}`);
+    parts.push(`${encodeURIComponent(`where[${i}][val]`)}=${encodeURIComponent(String(w.val))}`);
+  });
+  parts.push(`limit=${limit}`);
+  parts.push(`start=${start}`);
+  return `/stats/${table}?${parts.join("&")}`;
+}
+
+/** Retorna `total` (contagem filtrada) sem baixar as linhas (limit=1). */
+async function statsTotal(
+  baseUrl: string,
+  username: string,
+  password: string,
+  table: string,
+  wheres: StatsWhere[],
+): Promise<number> {
+  const data = await mauticFetch<MauticStatsResponse>(
+    baseUrl,
+    username,
+    password,
+    buildStatsPath(table, wheres, 1),
+  );
+  return Number(data.total ?? 0) || 0;
+}
+
+/** Retorna as linhas (até `limit`) de uma tabela de stats. */
+async function statsRows(
+  baseUrl: string,
+  username: string,
+  password: string,
+  table: string,
+  wheres: StatsWhere[],
+  limit = 1000,
+): Promise<Array<Record<string, unknown>>> {
+  const data = await mauticFetch<MauticStatsResponse>(
+    baseUrl,
+    username,
+    password,
+    buildStatsPath(table, wheres, limit),
+  );
+  return data.stats ?? [];
+}
+
 /**
  * Agrega métricas de email de uma campanha: percorre os events `email.send`,
  * pega os email ids e soma sentCount/readCount de cada email.
@@ -147,7 +209,16 @@ export async function getMauticCampaignEmailStats(
 
   let sent = 0;
   let opens = 0;
+  // Stats granulares (cliques/bounces/descadastros) via /api/stats — método do
+  // Danilo. /api/stats exige usuário admin; se qualquer chamada falhar, degrada
+  // pra só enviados+aberturas (statsAvailable=false).
+  let statsAvailable = true;
+  let clicks = 0;
+  let bounces = 0;
+  let unsubscribes = 0;
+
   for (const emailId of emailIds) {
+    // Enviados + aberturas: do objeto email (1 chamada, sempre disponível).
     try {
       const emailResp = await mauticFetch<MauticEmailResponse>(
         baseUrl,
@@ -160,6 +231,31 @@ export async function getMauticCampaignEmailStats(
     } catch {
       // Email individual falhou — segue agregando os demais.
     }
+
+    if (!statsAvailable) continue;
+    try {
+      // Cliques únicos: soma unique_hits de todos os links rastreados do email.
+      const trackables = await statsRows(baseUrl, username, password, "channel_url_trackables", [
+        { col: "channel", expr: "eq", val: "email" },
+        { col: "channel_id", expr: "eq", val: emailId },
+      ]);
+      for (const row of trackables) clicks += Number(row.unique_hits ?? 0) || 0;
+
+      // Bounces (reason=1) e descadastros (reason=2) por email.
+      bounces += await statsTotal(baseUrl, username, password, "lead_donotcontact", [
+        { col: "channel", expr: "eq", val: "email" },
+        { col: "channel_id", expr: "eq", val: emailId },
+        { col: "reason", expr: "eq", val: 1 },
+      ]);
+      unsubscribes += await statsTotal(baseUrl, username, password, "lead_donotcontact", [
+        { col: "channel", expr: "eq", val: "email" },
+        { col: "channel_id", expr: "eq", val: emailId },
+        { col: "reason", expr: "eq", val: 2 },
+      ]);
+    } catch {
+      // /api/stats indisponível (provável: usuário não-admin) — degrada gracioso.
+      statsAvailable = false;
+    }
   }
 
   return {
@@ -167,6 +263,11 @@ export async function getMauticCampaignEmailStats(
     sent,
     opens,
     openRate: sent > 0 ? opens / sent : null,
+    clicks: statsAvailable ? clicks : null,
+    clickRate: statsAvailable && sent > 0 ? clicks / sent : null,
+    bounces: statsAvailable ? bounces : null,
+    unsubscribes: statsAvailable ? unsubscribes : null,
+    statsAvailable,
   };
 }
 

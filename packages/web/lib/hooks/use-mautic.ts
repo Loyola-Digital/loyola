@@ -37,6 +37,11 @@ export interface MauticMetricsResponse {
   sent: number;
   opens: number;
   openRate: number | null;
+  clicks: number | null;
+  clickRate: number | null;
+  bounces: number | null;
+  unsubscribes: number | null;
+  statsAvailable: boolean;
 }
 
 function projBase(projectId: string) {

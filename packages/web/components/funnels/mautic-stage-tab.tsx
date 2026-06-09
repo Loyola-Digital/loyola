@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Mail, Send, Eye, Link2, Unlink, Plug, Sparkles, RefreshCw } from "lucide-react";
+import { Loader2, Mail, Send, Eye, Link2, Unlink, Plug, Sparkles, RefreshCw, MousePointerClick, AlertTriangle, UserMinus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -315,30 +315,65 @@ function MetricsPanel({ projectId, funnelId, stageId }: Props) {
   }
   const m = metrics.data;
   if (!m) return null;
-  const openRatePct = m.openRate != null ? `${(m.openRate * 100).toFixed(1)}%` : "—";
+  const pct = (v: number | null) => (v != null ? `${(v * 100).toFixed(1)}%` : "—");
+  const num = (v: number | null) => (v != null ? v.toLocaleString("pt-BR") : "—");
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-3">
+      {/* Funil de email: Enviados → Aberturas → Cliques */}
       <div className="grid grid-cols-3 gap-2">
-        <MetricBox icon={<Send className="h-3 w-3" />} label="Enviados" value={m.sent.toLocaleString("pt-BR")} />
-        <MetricBox icon={<Eye className="h-3 w-3" />} label="Aberturas" value={m.opens.toLocaleString("pt-BR")} />
-        <MetricBox icon={<Mail className="h-3 w-3" />} label="Taxa abertura" value={openRatePct} />
+        <FunnelStat icon={<Send className="h-3.5 w-3.5" />} label="Enviados" value={num(m.sent)} tone="neutral" />
+        <FunnelStat icon={<Eye className="h-3.5 w-3.5" />} label="Aberturas" value={num(m.opens)} sub={pct(m.openRate)} tone="blue" />
+        <FunnelStat icon={<MousePointerClick className="h-3.5 w-3.5" />} label="Cliques" value={num(m.clicks)} sub={m.clicks != null ? pct(m.clickRate) : "admin"} tone="emerald" />
       </div>
+
+      {/* Saúde da entrega: bounces + descadastros */}
+      <div className="grid grid-cols-2 gap-2">
+        <FunnelStat icon={<AlertTriangle className="h-3.5 w-3.5" />} label="Bounces" value={num(m.bounces)} tone="amber" />
+        <FunnelStat icon={<UserMinus className="h-3.5 w-3.5" />} label="Descadastros" value={num(m.unsubscribes)} tone="red" />
+      </div>
+
       <p className="text-[10px] text-muted-foreground">
-        {m.emailCount} email(s) na campanha. Cliques não são expostos pela API padrão do Mautic.
+        {m.emailCount} email(s) na campanha.
+        {!m.statsAvailable && " Cliques/bounces/descadastros exigem usuário admin no Mautic (/api/stats)."}
       </p>
     </div>
   );
 }
 
-function MetricBox({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function FunnelStat({
+  icon,
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub?: string;
+  tone: "neutral" | "blue" | "emerald" | "amber" | "red";
+}) {
+  const toneCls =
+    tone === "blue"
+      ? "text-blue-500"
+      : tone === "emerald"
+        ? "text-emerald-500"
+        : tone === "amber"
+          ? "text-amber-500"
+          : tone === "red"
+            ? "text-red-500"
+            : "text-foreground";
   return (
     <div className="rounded-lg border border-border/40 bg-card/60 p-2.5">
-      <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+      <div className={`flex items-center gap-1 text-[10px] ${toneCls}`}>
         {icon}
-        {label}
+        <span className="text-muted-foreground">{label}</span>
       </div>
-      <p className="text-base font-bold tabular-nums mt-0.5">{value}</p>
+      <div className="flex items-baseline gap-1.5 mt-0.5">
+        <p className="text-base font-bold tabular-nums">{value}</p>
+        {sub && <span className="text-[10px] text-muted-foreground tabular-nums">{sub}</span>}
+      </div>
     </div>
   );
 }
