@@ -44,11 +44,24 @@ const paramsSchema = z.object({
 });
 
 const querySchema = z.object({
-  subtype: z.enum(["capture", "main_product", "sales", "tmb"]).default("capture"),
+  // Story 18.38: aceita um subtype único OU CSV (ex.: "main_product,tmb") pro
+  // endpoint principal agregar Produto Principal + TMB numa resposta só. Os
+  // endpoints single-subtype (sales-conversion) seguem mandando valor único.
+  subtype: z.string().default("capture"),
   days: z.coerce.number().int().positive().optional(),
   // Story 28.4: quando `1`, response inclui campo `debug` com counters de instrumentação
   debug: z.coerce.boolean().optional(),
 });
+
+const VALID_SUBTYPES = new Set(["capture", "main_product", "sales", "tmb"]);
+/** Parseia `subtype` (único ou CSV) em lista validada. Fallback ["capture"]. */
+function parseSubtypes(raw: string): string[] {
+  const list = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => VALID_SUBTYPES.has(s));
+  return list.length > 0 ? list : ["capture"];
+}
 
 // ============================================================
 // HELPERS
@@ -285,14 +298,16 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       }
 
       // Para subtype 'sales' uma stage pode ter N planilhas; busca todas e
-      // agrega. Pra capture/main_product há no máximo 1 planilha.
+      // agrega. Pra capture/main_product há no máximo 1 planilha. Story 18.38:
+      // subtype pode ser CSV ("main_product,tmb") → agrega múltiplos subtypes.
+      const requestedSubtypes = parseSubtypes(query.data.subtype);
       const spreadsheets = await fastify.db
         .select()
         .from(stageSalesSpreadsheets)
         .where(
           and(
             eq(stageSalesSpreadsheets.stageId, params.data.stageId),
-            eq(stageSalesSpreadsheets.subtype, query.data.subtype)
+            inArray(stageSalesSpreadsheets.subtype, requestedSubtypes)
           )
         );
 

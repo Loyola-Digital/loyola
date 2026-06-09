@@ -22,26 +22,22 @@ import {
   type MetaDailyInsight,
 } from "./meta-ads.js";
 
-const TTL_INSIGHTS_TODAY_MS = 30 * 60 * 1000; // 30min
-const TTL_INSIGHTS_RECENT_MS = 24 * 60 * 60 * 1000; // 24h (1-7 dias atrás)
-// > 7 dias atrás: sem TTL (Meta nao muda atribuicao mais)
+// Story 18.38: só o DIA ATUAL tem TTL (1h). Qualquer dia passado já gravado no
+// banco serve indefinidamente — spend/impressões de dia fechado não mudam, e
+// isso minimiza chamadas à Meta (importante no tier development_access).
+const TTL_INSIGHTS_TODAY_MS = 60 * 60 * 1000; // 1h
 
 /**
  * Retorna timestamp de corte aplicável pra uma data específica.
  * Caller usa: `lastSyncedAt >= cutoff` pra considerar fresh.
  *
- * - dateStart = hoje: cutoff = now - 30min
- * - dateStart entre 1-7 dias atrás: cutoff = now - 24h
- * - dateStart > 7 dias atrás: cutoff = 1970 (qualquer linha cacheada vale)
+ * - dateStart = hoje: cutoff = now - 1h (reconsulta a Meta só se passou de 1h)
+ * - dateStart < hoje: cutoff = 1970 (qualquer linha cacheada vale — não reconsulta)
  */
 export function ttlCutoffForDate(dateStart: string, now: Date = new Date()): Date {
   const today = now.toISOString().slice(0, 10);
   if (dateStart === today) return new Date(now.getTime() - TTL_INSIGHTS_TODAY_MS);
-  const dateMs = new Date(dateStart + "T00:00:00Z").getTime();
-  const todayMs = new Date(today + "T00:00:00Z").getTime();
-  const daysDiff = Math.floor((todayMs - dateMs) / (24 * 60 * 60 * 1000));
-  if (daysDiff <= 7) return new Date(now.getTime() - TTL_INSIGHTS_RECENT_MS);
-  return new Date(0); // historic — qualquer linha vale
+  return new Date(0); // dia passado já no banco — sempre válido
 }
 
 /**
