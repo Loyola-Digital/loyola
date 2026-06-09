@@ -15,6 +15,7 @@ import {
   testMauticConnection,
   listMauticCampaigns,
   getMauticCampaignEmailStats,
+  getMauticEmailsDashboard,
   matchCampaignByName,
   type MauticCampaign,
 } from "../services/mautic.js";
@@ -318,6 +319,34 @@ export default fp(async function mauticRoutes(fastify) {
         .delete(funnelStageMauticCampaigns)
         .where(eq(funnelStageMauticCampaigns.stageId, params.data.stageId));
       return { linked: null };
+    },
+  );
+
+  // ---- GET dashboard geral de emails (Story 32.2) ----
+  // Lista todos os emails + stats. matchToken = código do funil (pra UI filtrar
+  // por padrão os emails da "tag" do funil, ex.: "dg-pg02"/"fz-l2").
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/mautic-emails",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      const stage = await getStageWithFunnel(params.data.projectId, params.data.funnelId, params.data.stageId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const creds = await getCreds(params.data.projectId);
+      if (!creds) return reply.code(409).send({ error: "Mautic não conectado neste projeto" });
+
+      try {
+        const dashboard = await getMauticEmailsDashboard(creds.baseUrl, creds.username, creds.password);
+        return { matchToken: funnelMatchToken(stage.funnelName), ...dashboard };
+      } catch (err) {
+        return reply.code(502).send({
+          error: "Erro ao buscar emails do Mautic",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
     },
   );
 
