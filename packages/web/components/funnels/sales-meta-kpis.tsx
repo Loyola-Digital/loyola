@@ -82,9 +82,11 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
     days,
   );
   // Cards principais (Faturamento/Vendas/ROAS/CPV/Tickets) refletem o produto
-  // PRINCIPAL — captação é produto isca e não conta pro ROAS. Se a etapa só
-  // tem subtype="sales" (sem main_product), usa esse como fallback.
-  const mainSales = useStageSalesData(projectId, funnelId, stageId, "main_product", days);
+  // PRINCIPAL + TMB (order bump da mesma compra) — captação é produto isca e
+  // não entra. Story 18.38: TMB conta no Faturamento/Vendas E no ROAS (receita
+  // real do mesmo comprador vindo do pago). Se a etapa só tem subtype="sales"
+  // (sem main_product), usa esse como fallback.
+  const mainSales = useStageSalesData(projectId, funnelId, stageId, "main_product,tmb", days);
   const salesSales = useStageSalesData(projectId, funnelId, stageId, "sales", days);
 
   const salesData = useMemo(() => {

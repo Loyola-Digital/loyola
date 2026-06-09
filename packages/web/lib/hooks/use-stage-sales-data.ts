@@ -11,7 +11,9 @@ export function useStageSalesData(
   projectId: string | null,
   funnelId: string | null,
   stageId: string | null,
-  subtype: StageSalesSubtype,
+  // Story 18.38: aceita um subtype único OU CSV ("main_product,tmb") pra agregar
+  // Produto Principal + TMB numa resposta só (mesmo padrão do useAllSales).
+  subtype: StageSalesSubtype | (string & {}),
   days?: number
 ) {
   const apiClient = useApiClient();
