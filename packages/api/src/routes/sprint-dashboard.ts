@@ -19,6 +19,9 @@ type ClickUpTaskSimple = {
   name: string;
   status: string;
   statusColor: string | null;
+  /** Story 31.9 — type do status ClickUp: "open" (não iniciado), "custom"
+   * (em progresso), "done"/"closed" (concluído). null = não veio da API. */
+  statusType: string | null;
   tags: string[];
   url: string;
   dueDate: string | null;
@@ -39,6 +42,17 @@ const tasksCache = new Map<string, TasksCacheEntry>();
 
 function tasksCacheKey(listIds: string[]): string {
   return [...listIds].sort().join(",");
+}
+
+// Story 31.9: separa "não iniciado" de "em progresso". Prioriza o `type` do
+// ClickUp (open = não iniciado); fallback por nome quando type não veio.
+const NOT_STARTED_STATUS_NAMES = new Set([
+  "to do", "todo", "a fazer", "não iniciado", "nao iniciado", "backlog",
+  "aberto", "open", "pendente", "novo", "a iniciar",
+]);
+function isNotStartedStatus(statusType: string | null, statusName: string): boolean {
+  if (statusType) return statusType.toLowerCase() === "open";
+  return NOT_STARTED_STATUS_NAMES.has(statusName.trim().toLowerCase());
 }
 
 const groupBySchema = z.enum(["status", "tag", "assignee"]).nullable().optional();
@@ -209,6 +223,7 @@ export default fp(async function sprintDashboardRoutes(fastify) {
           name: t.name,
           status: t.status?.status ?? "—",
           statusColor: t.status?.color ?? null,
+          statusType: t.status?.type ?? null,
           tags: (t.tags ?? []).map((tag) => tag.name),
           url: t.url,
           dueDate: t.due_date ?? null,
@@ -387,7 +402,8 @@ export default fp(async function sprintDashboardRoutes(fastify) {
         total: number;
         done: number;
         overdue: number;
-        inProgress: number;
+        notStarted: number; // Story 31.9: não-done com status type "open"
+        inProgress: number; // Story 31.9: não-done em andamento (não "open")
         upcoming: number; // due dentro de 7 dias mas ainda não overdue
         nextDueDate: number | null; // unix ms da próxima task com due_date
         nextDueTaskName: string | null;
@@ -408,6 +424,7 @@ export default fp(async function sprintDashboardRoutes(fastify) {
           total: 0,
           done: 0,
           overdue: 0,
+          notStarted: 0,
           inProgress: 0,
           upcoming: 0,
           nextDueDate: null,
@@ -418,7 +435,12 @@ export default fp(async function sprintDashboardRoutes(fastify) {
         if (isDone) {
           agg.done += 1;
         } else {
-          agg.inProgress += 1;
+          // Story 31.9: separa não-iniciado de em-progresso pelo type do status.
+          if (isNotStartedStatus(t.statusType, t.status)) {
+            agg.notStarted += 1;
+          } else {
+            agg.inProgress += 1;
+          }
           if (t.dueDate) {
             const ms = Number(t.dueDate);
             if (Number.isFinite(ms)) {
@@ -446,8 +468,8 @@ export default fp(async function sprintDashboardRoutes(fastify) {
         return a.folderName.localeCompare(b.folderName);
       });
 
-      // Projetos ativos = folders com >=1 task ainda aberta
-      const activeProjectsCount = byFolder.filter((f) => f.inProgress > 0).length;
+      // Projetos ativos = folders com >=1 task ainda aberta (não iniciada OU em progresso)
+      const activeProjectsCount = byFolder.filter((f) => f.notStarted + f.inProgress > 0).length;
 
       return {
         byFolder,

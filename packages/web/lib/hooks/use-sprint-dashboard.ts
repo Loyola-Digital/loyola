@@ -46,6 +46,8 @@ export interface ClickUpTaskShape {
   name: string;
   status: string;
   statusColor: string | null;
+  /** Story 31.9 — type do status ClickUp ("open"=não iniciado, "custom"=em progresso, "done"/"closed"=concluído). */
+  statusType: string | null;
   tags: string[];
   url: string;
   dueDate: string | null;
@@ -152,6 +154,7 @@ export interface SprintFolderMetric {
   total: number;
   done: number;
   overdue: number;
+  notStarted: number; // Story 31.9 — não-done com status type "open"
   inProgress: number;
   upcoming: number;
   nextDueDate: number | null;

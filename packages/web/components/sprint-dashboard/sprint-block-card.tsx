@@ -13,6 +13,7 @@ import {
   getCampaignHealth,
   shouldCountForHealth,
 } from "./summary-utils";
+import { PendingTasksList } from "./pending-tasks-list";
 
 interface SprintBlockCardProps {
   block: SprintDashboardBlock;
@@ -222,6 +223,8 @@ export function SprintBlockCard({
         </div>
       )}
 
+      {/* Story 31.9 — Tasks pendentes (atraso + hoje) migraram do Calendário Macro pra cá. */}
+      {!loading && <PendingTasksList block={block} tasksByListId={tasksByListId} />}
     </div>
   );
 }

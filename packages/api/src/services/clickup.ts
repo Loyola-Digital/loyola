@@ -66,7 +66,10 @@ interface ClickUpTask {
   id: string;
   name: string;
   description: string;
-  status: { status: string; color?: string };
+  // Story 31.9: `type` do status ClickUp — "open" (não iniciado), "custom"
+  // (em progresso), "done"/"closed" (concluído). Usado pra separar não-iniciado
+  // de em-progresso na aba Saúde.
+  status: { status: string; color?: string; type?: string };
   priority: { id: string; priority: string } | null;
   tags: Array<{ name: string }>;
   url: string;
@@ -157,10 +160,19 @@ export default fp(async function clickupService(fastify) {
   }
 
   async function getTasks(listId: string): Promise<ClickUpTask[]> {
-    const data = await fetchApi<{ tasks: ClickUpTask[] }>(
-      `/list/${listId}/task?include_closed=true&subtasks=true`,
-    );
-    return data.tasks;
+    // Story 31.9: ClickUp retorna no máx. 100 tasks/página e exige `&page=N`.
+    // Sem paginação, listas com +100 tasks perdiam o resto ("faltam tasks").
+    // Loop até `last_page` (ou página vazia, por segurança).
+    const all: ClickUpTask[] = [];
+    for (let page = 0; page < 100; page++) {
+      const data = await fetchApi<{ tasks: ClickUpTask[]; last_page?: boolean }>(
+        `/list/${listId}/task?include_closed=true&subtasks=true&page=${page}`,
+      );
+      const tasks = data.tasks ?? [];
+      all.push(...tasks);
+      if (data.last_page || tasks.length === 0) break;
+    }
+    return all;
   }
 
   /**
@@ -241,14 +253,21 @@ export default fp(async function clickupService(fastify) {
       );
     }
     const qs = ids.map((id) => `custom_items%5B%5D=${id}`).join("&");
-    const data = await fetchApi<{ tasks: ClickUpTask[] }>(
-      `/list/${listId}/task?include_closed=true&subtasks=true&${qs}`,
-    );
+    // Story 31.9: pagina igual a getTasks.
+    const all: ClickUpTask[] = [];
+    for (let page = 0; page < 100; page++) {
+      const data = await fetchApi<{ tasks: ClickUpTask[]; last_page?: boolean }>(
+        `/list/${listId}/task?include_closed=true&subtasks=true&page=${page}&${qs}`,
+      );
+      const tasks = data.tasks ?? [];
+      all.push(...tasks);
+      if (data.last_page || tasks.length === 0) break;
+    }
     fastify.log.info(
-      { listId, tasksReturned: data.tasks?.length ?? 0 },
+      { listId, tasksReturned: all.length },
       "[clickup] getCustomTypeTasks result",
     );
-    return data.tasks;
+    return all;
   }
 
   async function getTask(taskId: string): Promise<ClickUpTask | null> {

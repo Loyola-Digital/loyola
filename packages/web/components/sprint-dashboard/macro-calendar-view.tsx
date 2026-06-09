@@ -6,7 +6,6 @@ import { Megaphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { SprintDashboardBlock, SprintCampaignPhase } from "@loyola-x/shared";
 import type { ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
-import { PendingTasksList } from "./pending-tasks-list";
 import { collectBlockTasks, extractAutoPhases, type AutoPhase } from "./summary-utils";
 import { BlockSummaryCard } from "./block-summary-card";
 
@@ -75,7 +74,6 @@ export function MacroCalendarView({ blocks, tasksByListId, onEditContext }: Macr
           phases={phases}
           source={source as "auto" | "manual"}
           autoPhases={autoPhases}
-          tasksByListId={tasksByListId}
           onEditContext={onEditContext}
         />
       ))}
@@ -88,14 +86,12 @@ function CampaignCard({
   phases,
   source,
   autoPhases,
-  tasksByListId,
   onEditContext,
 }: {
   block: SprintDashboardBlock;
   phases: SprintCampaignPhase[];
   source: "auto" | "manual";
   autoPhases: AutoPhase[];
-  tasksByListId: Map<string, ClickUpTaskShape[]>;
   onEditContext?: (block: SprintDashboardBlock) => void;
 }) {
   const phaseStates = phases.map((p) => derivePhaseState(p));
@@ -159,9 +155,7 @@ function CampaignCard({
           <PhaseRow key={p.id} phase={p} state={phaseStates[i]} blockColor={block.color} />
         ))}
       </div>
-
-      {/* Story 31.7 — Tasks pendentes (atraso + hoje) por campanha */}
-      <PendingTasksList block={block} tasksByListId={tasksByListId} />
+      {/* Story 31.9 — lista de pendentes migrou pra Visão Geral (SprintBlockCard). */}
     </div>
   );
 }
