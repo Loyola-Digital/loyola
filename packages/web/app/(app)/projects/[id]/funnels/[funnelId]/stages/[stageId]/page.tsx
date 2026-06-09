@@ -22,6 +22,7 @@ import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
 import { LeadScoringTab } from "@/components/funnels/lead-scoring-tab";
 import { OrganicMediaTab } from "@/components/funnels/organic-media-tab";
 import { CplStageView } from "@/components/funnels/cpl-stage-view";
+import { MauticStageTab } from "@/components/funnels/mautic-stage-tab";
 import { AuditStatusBadge } from "@/components/funnels/audit-status-badge";
 import { OrphanCampaignsBanner } from "@/components/funnels/orphan-campaigns-banner";
 import { CampaignSelector } from "@/components/funnels/campaign-selector";
@@ -472,6 +473,9 @@ export default function StagePage() {
           <OrganicMediaTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
         </TabsContent>
       </Tabs>
+
+      {/* Story 32.1 — Mautic aparece em toda etapa (genérica: paid/capture/free/perpetual) */}
+      <MauticStageTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
     </div>
   );
 }
