@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Settings2, BarChart3, FileSpreadsheet, Plus } from "lucide-react";
+import { Settings2, BarChart3, FileSpreadsheet, Plus, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -151,6 +151,10 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
             <FileSpreadsheet className="h-3.5 w-3.5 text-green-600" />
             Planilha
           </TabsTrigger>
+          <TabsTrigger value="mautic" className="gap-1.5">
+            <Mail className="h-3.5 w-3.5 text-primary" />
+            Mautic
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="dashboard" className="mt-6 space-y-6">
@@ -204,7 +208,6 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
               setManualSaleOpen(true);
             }}
           />
-          <MauticStageTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
         </TabsContent>
 
         <TabsContent value="spreadsheet" className="mt-6 space-y-4">
@@ -244,6 +247,10 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
               />
             </div>
           </details>
+        </TabsContent>
+
+        <TabsContent value="mautic" className="mt-6">
+          <MauticStageTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
         </TabsContent>
       </Tabs>
 
