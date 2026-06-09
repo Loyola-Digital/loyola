@@ -138,6 +138,37 @@ export function useDeleteMauticStageCampaign(projectId: string, funnelId: string
   });
 }
 
+// ---- Dashboard geral de emails (Story 32.2) ----
+export interface MauticEmailRow {
+  id: string;
+  name: string;
+  emailType: string | null;
+  sent: number;
+  opens: number;
+  openRate: number | null;
+  clicks: number | null;
+  clickRate: number | null;
+  bounces: number | null;
+  unsubscribes: number | null;
+}
+
+export interface MauticEmailsResponse {
+  matchToken: string;
+  emails: MauticEmailRow[];
+  statsAvailable: boolean;
+}
+
+export function useMauticEmails(projectId: string, funnelId: string, stageId: string, enabled: boolean) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["mautic-emails", projectId, funnelId, stageId],
+    queryFn: () =>
+      apiClient<MauticEmailsResponse>(`${stageBase(projectId, funnelId, stageId)}/mautic-emails`),
+    enabled,
+    staleTime: STALE,
+  });
+}
+
 export function useMauticMetrics(projectId: string, funnelId: string, stageId: string, enabled: boolean) {
   const apiClient = useApiClient();
   return useQuery({

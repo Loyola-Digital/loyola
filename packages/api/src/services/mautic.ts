@@ -271,6 +271,133 @@ export async function getMauticCampaignEmailStats(
   };
 }
 
+// ============================================================
+// Story 32.2 — Dashboard geral de emails (não por campanha).
+// Lista TODOS os emails (paginado) + enriquece com cliques/bounces/descadastros.
+// "Tag" do funil = código no nome do email (ex.: [dg-pg02-abr-26]).
+// ============================================================
+
+export interface MauticEmailRow {
+  id: string;
+  name: string;
+  /** "template" (campanha) | "list" (disparo direto) | null. */
+  emailType: string | null;
+  sent: number;
+  opens: number;
+  openRate: number | null;
+  clicks: number | null;
+  clickRate: number | null;
+  bounces: number | null;
+  unsubscribes: number | null;
+}
+
+export interface MauticEmailsDashboard {
+  emails: MauticEmailRow[];
+  /** false quando /api/stats não respondeu (cliques/bounces ficam null). */
+  statsAvailable: boolean;
+}
+
+/** Executa `fn` sobre `items` com no máx. `limit` em paralelo. */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    while (cursor < items.length) {
+      const idx = cursor++;
+      results[idx] = await fn(items[idx]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length || 1) }, () => worker()));
+  return results;
+}
+
+type MauticEmailsListResponse = {
+  total?: number | string;
+  emails?: Record<string, { id: number | string; name: string; emailType?: string; sentCount?: number | string; readCount?: number | string }>;
+};
+
+/** Lista TODOS os emails (paginado) com sent/opens do próprio objeto. */
+export async function listAllMauticEmails(
+  baseUrl: string,
+  username: string,
+  password: string,
+): Promise<MauticEmailRow[]> {
+  const out: MauticEmailRow[] = [];
+  const pageSize = 100;
+  for (let start = 0; start < 5000; start += pageSize) {
+    const data = await mauticFetch<MauticEmailsListResponse>(
+      baseUrl,
+      username,
+      password,
+      `/emails?limit=${pageSize}&start=${start}&orderBy=name&orderByDir=ASC`,
+    );
+    const emailsObj = data.emails ?? {};
+    const rows = Object.values(emailsObj);
+    for (const e of rows) {
+      const sent = Number(e.sentCount ?? 0) || 0;
+      const opens = Number(e.readCount ?? 0) || 0;
+      out.push({
+        id: String(e.id),
+        name: e.name,
+        emailType: e.emailType ?? null,
+        sent,
+        opens,
+        openRate: sent > 0 ? opens / sent : null,
+        clicks: null,
+        clickRate: null,
+        bounces: null,
+        unsubscribes: null,
+      });
+    }
+    if (rows.length < pageSize) break;
+  }
+  return out;
+}
+
+/**
+ * Dashboard geral: lista todos os emails e enriquece cada um com cliques
+ * (channel_url_trackables) + bounces/descadastros (lead_donotcontact) via
+ * /api/stats. Degrada gracioso se /api/stats exigir admin.
+ */
+export async function getMauticEmailsDashboard(
+  baseUrl: string,
+  username: string,
+  password: string,
+): Promise<MauticEmailsDashboard> {
+  const emails = await listAllMauticEmails(baseUrl, username, password);
+  let statsAvailable = true;
+
+  await mapWithConcurrency(emails, 6, async (row) => {
+    if (!statsAvailable) return;
+    try {
+      const trackables = await statsRows(baseUrl, username, password, "channel_url_trackables", [
+        { col: "channel", expr: "eq", val: "email" },
+        { col: "channel_id", expr: "eq", val: row.id },
+      ]);
+      let clicks = 0;
+      for (const t of trackables) clicks += Number(t.unique_hits ?? 0) || 0;
+      const bounces = await statsTotal(baseUrl, username, password, "lead_donotcontact", [
+        { col: "channel", expr: "eq", val: "email" },
+        { col: "channel_id", expr: "eq", val: row.id },
+        { col: "reason", expr: "eq", val: 1 },
+      ]);
+      const unsubscribes = await statsTotal(baseUrl, username, password, "lead_donotcontact", [
+        { col: "channel", expr: "eq", val: "email" },
+        { col: "channel_id", expr: "eq", val: row.id },
+        { col: "reason", expr: "eq", val: 2 },
+      ]);
+      row.clicks = clicks;
+      row.clickRate = row.sent > 0 ? clicks / row.sent : null;
+      row.bounces = bounces;
+      row.unsubscribes = unsubscribes;
+    } catch {
+      statsAvailable = false;
+    }
+  });
+
+  return { emails, statsAvailable };
+}
+
 /**
  * Auto-match: acha a campanha cujo nome contém o token do funil (ex.: "fz-l2").
  * Case-insensitive, ignora espaços nas pontas. Retorna a 1ª que casar (nome

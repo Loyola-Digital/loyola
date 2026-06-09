@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Loader2, Mail, Send, Eye, Link2, Unlink, Plug, Sparkles, RefreshCw, MousePointerClick, AlertTriangle, UserMinus } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Loader2, Mail, Plug, Unlink, RefreshCw, Search, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,11 +14,8 @@ import {
   useMauticConnection,
   useSetMauticConnection,
   useDeleteMauticConnection,
-  useMauticStageCampaign,
-  useSetMauticStageCampaign,
-  useDeleteMauticStageCampaign,
-  useMauticCampaigns,
-  useMauticMetrics,
+  useMauticEmails,
+  type MauticEmailRow,
 } from "@/lib/hooks/use-mautic";
 
 interface Props {
@@ -38,7 +35,7 @@ export function MauticStageTab({ projectId, funnelId, stageId }: Props) {
     <section className="rounded-xl border border-border/40 bg-card/60 p-4 space-y-3">
       <div className="flex items-center gap-2">
         <Mail className="h-4 w-4 text-primary" />
-        <h2 className="text-base font-semibold">Mautic — Email Automation</h2>
+        <h2 className="text-base font-semibold">Mautic — Performance de Email</h2>
       </div>
 
       {conn.isLoading ? (
@@ -48,7 +45,7 @@ export function MauticStageTab({ projectId, funnelId, stageId }: Props) {
       ) : (
         <div className="space-y-4">
           <ConnectedHeader projectId={projectId} baseUrl={conn.data.baseUrl ?? ""} username={conn.data.username ?? ""} />
-          <StageCampaignSection projectId={projectId} funnelId={funnelId} stageId={stageId} />
+          <EmailDashboard projectId={projectId} funnelId={funnelId} stageId={stageId} />
         </div>
       )}
     </section>
@@ -78,8 +75,8 @@ function ConnectionForm({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        Conecte o Mautic do projeto. A conexão é reutilizada em todas as etapas. Requer
-        Basic Auth habilitado no Mautic (Configurações → API).
+        Conecte o Mautic do projeto (reutilizado em todas as etapas). Requer Basic Auth
+        habilitado e, pra cliques/bounces, usuário <strong>admin</strong>.
       </p>
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="space-y-1">
@@ -130,250 +127,158 @@ function ConnectedHeader({ projectId, baseUrl, username }: { projectId: string; 
   );
 }
 
-function StageCampaignSection({ projectId, funnelId, stageId }: Props) {
-  const link = useMauticStageCampaign(projectId, funnelId, stageId);
-  const setLink = useSetMauticStageCampaign(projectId, funnelId, stageId);
-  const delLink = useDeleteMauticStageCampaign(projectId, funnelId, stageId);
-  const [manualOpen, setManualOpen] = useState(false);
+type SortKey = "clickRate" | "openRate" | "sent" | "opens" | "clicks";
+const SORT_LABEL: Record<SortKey, string> = {
+  clickRate: "Taxa de clique",
+  openRate: "Taxa de abertura",
+  sent: "Enviados",
+  opens: "Aberturas",
+  clicks: "Cliques",
+};
 
-  if (link.isLoading) return <Skeleton className="h-20" />;
+function metricVal(e: MauticEmailRow, k: SortKey): number {
+  const v = e[k];
+  return typeof v === "number" ? v : -1;
+}
 
-  const linked = link.data?.linked ?? null;
-  const suggested = link.data?.suggested ?? null;
-  const matchToken = link.data?.matchToken ?? "";
+function EmailDashboard({ projectId, funnelId, stageId }: Props) {
+  const q = useMauticEmails(projectId, funnelId, stageId, true);
+  const [showAll, setShowAll] = useState(false);
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("clickRate");
 
-  if (linked) {
+  const matchToken = q.data?.matchToken ?? "";
+  const statsAvailable = q.data?.statsAvailable ?? true;
+
+  const filtered = useMemo(() => {
+    let list = q.data?.emails ?? [];
+    if (!showAll && matchToken) {
+      list = list.filter((e) => e.name.toLowerCase().includes(matchToken.toLowerCase()));
+    }
+    const s = search.trim().toLowerCase();
+    if (s) list = list.filter((e) => e.name.toLowerCase().includes(s));
+    return [...list].sort((a, b) => metricVal(b, sortKey) - metricVal(a, sortKey));
+  }, [q.data, showAll, matchToken, search, sortKey]);
+
+  if (q.isLoading) {
     return (
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <Link2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-            <span className="text-sm font-medium truncate">{linked.campaignName}</span>
-            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground shrink-0">
-              {linked.matchMode === "auto" ? "auto" : "manual"}
-            </span>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-[10px]" onClick={() => setManualOpen((v) => !v)}>
-              Trocar
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-[10px] text-muted-foreground hover:text-red-500"
-              onClick={() =>
-                delLink.mutate(undefined, {
-                  onSuccess: () => toast.success("Campanha desvinculada"),
-                  onError: (e) => toast.error(errMsg(e)),
-                })
-              }
-              disabled={delLink.isPending}
-            >
-              {delLink.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
-            </Button>
-          </div>
-        </div>
-
-        {manualOpen && (
-          <ManualCampaignPicker
-            projectId={projectId}
-            onPick={(c) =>
-              setLink.mutate(
-                { campaignId: c.id, campaignName: c.name },
-                {
-                  onSuccess: () => {
-                    toast.success("Campanha trocada");
-                    setManualOpen(false);
-                  },
-                  onError: (e) => toast.error(errMsg(e)),
-                },
-              )
-            }
-            pending={setLink.isPending}
-          />
-        )}
-
-        <MetricsPanel projectId={projectId} funnelId={funnelId} stageId={stageId} />
+      <div className="space-y-2">
+        <Skeleton className="h-9" />
+        {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-10" />)}
+        <p className="text-[10px] text-muted-foreground">Buscando emails e métricas do Mautic… (cliques/bounces podem levar alguns segundos)</p>
       </div>
     );
   }
-
-  // Sem vínculo: sugestão de auto-match + seleção manual
-  return (
-    <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">
-        Nenhuma campanha Mautic vinculada a esta etapa.
-        {matchToken && <> Match automático por <span className="font-mono">{matchToken}</span>.</>}
-      </p>
-
-      {suggested && (
-        <div className="flex items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
-            <span className="text-sm truncate">{suggested.name}</span>
-            <span className="text-[9px] text-muted-foreground shrink-0">sugerida</span>
-          </div>
-          <Button
-            size="sm"
-            className="h-7 px-2 text-[10px] gap-1 shrink-0"
-            onClick={() =>
-              setLink.mutate(
-                { auto: true },
-                {
-                  onSuccess: () => toast.success("Campanha vinculada (auto)"),
-                  onError: (e) => toast.error(errMsg(e)),
-                },
-              )
-            }
-            disabled={setLink.isPending}
-          >
-            {setLink.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
-            Vincular
-          </Button>
-        </div>
-      )}
-
-      <ManualCampaignPicker
-        projectId={projectId}
-        onPick={(c) =>
-          setLink.mutate(
-            { campaignId: c.id, campaignName: c.name },
-            {
-              onSuccess: () => toast.success("Campanha vinculada"),
-              onError: (e) => toast.error(errMsg(e)),
-            },
-          )
-        }
-        pending={setLink.isPending}
-      />
-    </div>
-  );
-}
-
-function ManualCampaignPicker({
-  projectId,
-  onPick,
-  pending,
-}: {
-  projectId: string;
-  onPick: (c: { id: string; name: string }) => void;
-  pending: boolean;
-}) {
-  const campaigns = useMauticCampaigns(projectId, true);
-
-  if (campaigns.isLoading) return <Skeleton className="h-9" />;
-  if (campaigns.isError) {
-    return <p className="text-xs text-red-500">Erro ao listar campanhas do Mautic.</p>;
-  }
-  const list = campaigns.data?.campaigns ?? [];
-  if (list.length === 0) return <p className="text-xs text-muted-foreground">Nenhuma campanha encontrada no Mautic.</p>;
-
-  return (
-    <div className="flex items-center gap-2">
-      <Select
-        onValueChange={(id) => {
-          const c = list.find((x) => x.id === id);
-          if (c) onPick(c);
-        }}
-        disabled={pending}
-      >
-        <SelectTrigger className="h-9 text-xs">
-          <SelectValue placeholder="Selecionar campanha manualmente…" />
-        </SelectTrigger>
-        <SelectContent>
-          {list.map((c) => (
-            <SelectItem key={c.id} value={c.id} className="text-xs">
-              {c.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {pending && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-    </div>
-  );
-}
-
-function MetricsPanel({ projectId, funnelId, stageId }: Props) {
-  const metrics = useMauticMetrics(projectId, funnelId, stageId, true);
-
-  if (metrics.isLoading) {
-    return (
-      <div className="grid grid-cols-3 gap-2">
-        {[0, 1, 2].map((i) => <Skeleton key={i} className="h-16" />)}
-      </div>
-    );
-  }
-  if (metrics.isError) {
+  if (q.isError) {
     return (
       <div className="flex items-center gap-2 text-xs text-red-500">
-        <span>Erro ao buscar métricas.</span>
-        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => metrics.refetch()}>
+        <span>Erro ao buscar emails: {errMsg(q.error)}</span>
+        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => q.refetch()}>
           <RefreshCw className="h-3 w-3" /> Tentar de novo
         </Button>
       </div>
     );
   }
-  const m = metrics.data;
-  if (!m) return null;
-  const pct = (v: number | null) => (v != null ? `${(v * 100).toFixed(1)}%` : "—");
-  const num = (v: number | null) => (v != null ? v.toLocaleString("pt-BR") : "—");
+
+  const totalSent = filtered.reduce((s, e) => s + e.sent, 0);
+  const totalOpens = filtered.reduce((s, e) => s + e.opens, 0);
+  const totalClicks = filtered.reduce((s, e) => s + (e.clicks ?? 0), 0);
+  const aggOpen = totalSent > 0 ? (totalOpens / totalSent) * 100 : null;
+  const aggClick = totalSent > 0 ? (totalClicks / totalSent) * 100 : null;
 
   return (
     <div className="space-y-3">
-      {/* Funil de email: Enviados → Aberturas → Cliques */}
-      <div className="grid grid-cols-3 gap-2">
-        <FunnelStat icon={<Send className="h-3.5 w-3.5" />} label="Enviados" value={num(m.sent)} tone="neutral" />
-        <FunnelStat icon={<Eye className="h-3.5 w-3.5" />} label="Aberturas" value={num(m.opens)} sub={pct(m.openRate)} tone="blue" />
-        <FunnelStat icon={<MousePointerClick className="h-3.5 w-3.5" />} label="Cliques" value={num(m.clicks)} sub={m.clicks != null ? pct(m.clickRate) : "admin"} tone="emerald" />
+      {/* Resumo agregado */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <SummaryBox label="Emails" value={String(filtered.length)} />
+        <SummaryBox label="Enviados" value={totalSent.toLocaleString("pt-BR")} />
+        <SummaryBox label="Abertura média" value={aggOpen != null ? `${aggOpen.toFixed(1)}%` : "—"} tone="blue" />
+        <SummaryBox label="Clique médio" value={aggClick != null ? `${aggClick.toFixed(1)}%` : "—"} tone="emerald" />
       </div>
 
-      {/* Saúde da entrega: bounces + descadastros */}
-      <div className="grid grid-cols-2 gap-2">
-        <FunnelStat icon={<AlertTriangle className="h-3.5 w-3.5" />} label="Bounces" value={num(m.bounces)} tone="amber" />
-        <FunnelStat icon={<UserMinus className="h-3.5 w-3.5" />} label="Descadastros" value={num(m.unsubscribes)} tone="red" />
+      {/* Controles */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[160px]">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input className="h-8 pl-7 text-xs" placeholder="Filtrar por email…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+        <Select value={sortKey} onValueChange={(v) => setSortKey(v as SortKey)}>
+          <SelectTrigger className="h-8 w-[150px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
+              <SelectItem key={k} value={k} className="text-xs">{SORT_LABEL[k]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          variant={showAll ? "default" : "outline"}
+          size="sm"
+          className="h-8 text-[11px]"
+          onClick={() => setShowAll((v) => !v)}
+        >
+          {showAll ? "Todos os emails" : matchToken ? `Só do funil (${matchToken})` : "Só do funil"}
+        </Button>
       </div>
 
-      <p className="text-[10px] text-muted-foreground">
-        {m.emailCount} email(s) na campanha.
-        {!m.statsAvailable && " Cliques/bounces/descadastros exigem usuário admin no Mautic (/api/stats)."}
-      </p>
+      {!statsAvailable && (
+        <p className="text-[10px] text-amber-500">
+          Cliques/bounces/descadastros precisam de usuário admin no Mautic (/api/stats). Mostrando só enviados+aberturas.
+        </p>
+      )}
+
+      {/* Tabela */}
+      {filtered.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-4 text-center">
+          {showAll ? "Nenhum email encontrado." : `Nenhum email com "${matchToken}" no nome. Clique em "Todos os emails".`}
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          {/* Header */}
+          <div className="grid grid-cols-[1.6fr_repeat(5,_minmax(56px,_0.6fr))] gap-2 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground border-b border-border/30">
+            <span>Email</span>
+            <span className="text-right">Enviados</span>
+            <span className="text-right">Abertura</span>
+            <span className="text-right">Clique</span>
+            <span className="text-right">Bounces</span>
+            <span className="text-right">Descad.</span>
+          </div>
+          {filtered.map((e, i) => {
+            const isRate = sortKey === "clickRate" || sortKey === "openRate";
+            const isTop = i === 0 && isRate && metricVal(e, sortKey) > 0;
+            return (
+              <div
+                key={e.id}
+                className="grid grid-cols-[1.6fr_repeat(5,_minmax(56px,_0.6fr))] gap-2 px-2 py-1.5 text-xs items-center border-b border-border/10 last:border-0"
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {isTop && <Trophy className="h-3 w-3 text-amber-500 shrink-0" />}
+                  <span className="truncate" title={e.name}>{e.name}</span>
+                  <span className="text-[8px] px-1 py-px rounded bg-muted text-muted-foreground shrink-0">
+                    {e.emailType === "template" ? "camp" : e.emailType === "list" ? "lista" : "—"}
+                  </span>
+                </div>
+                <span className="text-right tabular-nums">{e.sent.toLocaleString("pt-BR")}</span>
+                <span className="text-right tabular-nums text-blue-500">{e.openRate != null ? `${(e.openRate * 100).toFixed(0)}%` : "—"}</span>
+                <span className="text-right tabular-nums text-emerald-500">{e.clickRate != null ? `${(e.clickRate * 100).toFixed(0)}%` : "—"}</span>
+                <span className="text-right tabular-nums text-amber-600">{e.bounces ?? "—"}</span>
+                <span className="text-right tabular-nums text-red-500">{e.unsubscribes ?? "—"}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-function FunnelStat({
-  icon,
-  label,
-  value,
-  sub,
-  tone,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  sub?: string;
-  tone: "neutral" | "blue" | "emerald" | "amber" | "red";
-}) {
-  const toneCls =
-    tone === "blue"
-      ? "text-blue-500"
-      : tone === "emerald"
-        ? "text-emerald-500"
-        : tone === "amber"
-          ? "text-amber-500"
-          : tone === "red"
-            ? "text-red-500"
-            : "text-foreground";
+function SummaryBox({ label, value, tone }: { label: string; value: string; tone?: "blue" | "emerald" }) {
+  const toneCls = tone === "blue" ? "text-blue-500" : tone === "emerald" ? "text-emerald-500" : "";
   return (
     <div className="rounded-lg border border-border/40 bg-card/60 p-2.5">
-      <div className={`flex items-center gap-1 text-[10px] ${toneCls}`}>
-        {icon}
-        <span className="text-muted-foreground">{label}</span>
-      </div>
-      <div className="flex items-baseline gap-1.5 mt-0.5">
-        <p className="text-base font-bold tabular-nums">{value}</p>
-        {sub && <span className="text-[10px] text-muted-foreground tabular-nums">{sub}</span>}
-      </div>
+      <div className="text-[10px] text-muted-foreground">{label}</div>
+      <p className={`text-base font-bold tabular-nums mt-0.5 ${toneCls}`}>{value}</p>
     </div>
   );
 }
