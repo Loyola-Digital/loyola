@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles } from "lucide-react";
+import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -359,6 +359,10 @@ export default function StagePage() {
             <Sparkles className="h-3.5 w-3.5 text-amber-500" />
             Mídias Orgânicas
           </TabsTrigger>
+          <TabsTrigger value="mautic" className="gap-1.5">
+            <Mail className="h-3.5 w-3.5 text-primary" />
+            Mautic
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="meta-ads" className="mt-6">
@@ -472,10 +476,11 @@ export default function StagePage() {
         <TabsContent value="organic-media" className="mt-6">
           <OrganicMediaTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
         </TabsContent>
-      </Tabs>
 
-      {/* Story 32.1 — Mautic aparece em toda etapa (genérica: paid/capture/free/perpetual) */}
-      <MauticStageTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
+        <TabsContent value="mautic" className="mt-6">
+          <MauticStageTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
