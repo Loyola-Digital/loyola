@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LayoutGrid, Settings2, RefreshCw, AlertCircle, AlertTriangle, Clock, Check, CalendarRange, Activity } from "lucide-react";
+import { LayoutGrid, Settings2, RefreshCw, AlertCircle, AlertTriangle, Clock, Check, Circle, CalendarRange, Activity } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
@@ -225,6 +225,7 @@ interface FolderMetric {
   total: number;
   done: number;
   overdue: number;
+  notStarted: number; // Story 31.9
   inProgress: number;
   upcoming: number;
   nextDueDate: number | null;
@@ -262,7 +263,7 @@ function GlobalMetricsRow({
       <MetricCard
         label="Tasks em progresso"
         value={String(folders.reduce((s, f) => s + f.inProgress, 0))}
-        sub={`${folders.reduce((s, f) => s + f.done, 0)} concluída(s)`}
+        sub={`${folders.reduce((s, f) => s + f.notStarted, 0)} não iniciada(s) · ${folders.reduce((s, f) => s + f.done, 0)} concluída(s)`}
       />
     </div>
   );
@@ -314,9 +315,10 @@ function MetricCard({
 }
 
 function FolderMetricCard({ folder }: { folder: FolderMetric }) {
-  // Story 31.8 — usa a mesma fórmula de saúde do SprintBlockCard:
-  // DONE / (DONE + EM PROGRESSO). Mantém consistência entre as duas vistas.
-  const healthDenom = folder.done + folder.inProgress;
+  // Story 31.8/31.9 — saúde = DONE / (DONE + NÃO INICIADO + EM PROGRESSO).
+  // inProgress agora exclui as não-iniciadas (split por type do status), então
+  // o denominador soma as duas pra manter a % igual (todas as não-done).
+  const healthDenom = folder.done + folder.notStarted + folder.inProgress;
   const completionPct = healthDenom > 0 ? Math.round((folder.done / healthDenom) * 100) : 0;
   const healthColor =
     completionPct >= 70
@@ -354,8 +356,8 @@ function FolderMetricCard({ folder }: { folder: FolderMetric }) {
         />
       </div>
 
-      {/* Counters */}
-      <div className="grid grid-cols-3 gap-1 text-center">
+      {/* Counters — Story 31.9: "Não iniciado" e "Em progr." separados (type do status ClickUp) */}
+      <div className="grid grid-cols-4 gap-1 text-center">
         <CounterPill
           icon={<AlertTriangle className="h-2.5 w-2.5" />}
           label="Atraso"
@@ -363,8 +365,14 @@ function FolderMetricCard({ folder }: { folder: FolderMetric }) {
           tone="danger"
         />
         <CounterPill
+          icon={<Circle className="h-2.5 w-2.5" />}
+          label="Não inic."
+          value={folder.notStarted}
+          tone="neutral"
+        />
+        <CounterPill
           icon={<Clock className="h-2.5 w-2.5" />}
-          label="Progr."
+          label="Em progr."
           value={folder.inProgress}
           tone="warning"
         />
@@ -395,7 +403,7 @@ function CounterPill({
   icon: React.ReactNode;
   label: string;
   value: number;
-  tone: "danger" | "warning" | "success";
+  tone: "danger" | "warning" | "success" | "neutral";
 }) {
   const colorClass =
     value === 0
@@ -404,7 +412,9 @@ function CounterPill({
         ? "text-red-400"
         : tone === "warning"
           ? "text-amber-400"
-          : "text-emerald-500";
+          : tone === "neutral"
+            ? "text-foreground/70"
+            : "text-emerald-500";
   return (
     <div className="flex flex-col items-center justify-center py-1 rounded bg-muted/20">
       <span className={`flex items-center gap-0.5 text-[14px] font-bold tabular-nums ${colorClass}`}>

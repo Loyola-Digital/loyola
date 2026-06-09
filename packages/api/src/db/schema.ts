@@ -1089,6 +1089,48 @@ export const funnelStageZoomConnections = pgTable(
   (table) => [index("idx_zoom_connections_stage").on(table.stageId)]
 );
 
+// ============================================================
+// Story 32.1 — Integração Mautic (email automation)
+// Conexão é POR PROJETO (uma instância Mautic por cliente; reusa entre etapas).
+// O vínculo da campanha Mautic é POR ETAPA (auto-match pelo nome do funil ou
+// seleção manual). Credenciais (senha) criptografadas via AES-256-GCM.
+// ============================================================
+export const mauticConnections = pgTable(
+  "mautic_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .unique()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    baseUrl: varchar("base_url", { length: 500 }).notNull(),
+    username: varchar("username", { length: 255 }).notNull(),
+    passwordEncrypted: text("password_encrypted").notNull(),
+    passwordIv: text("password_iv").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_mautic_connections_project").on(table.projectId)]
+);
+
+export const funnelStageMauticCampaigns = pgTable(
+  "funnel_stage_mautic_campaigns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .unique()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    mauticCampaignId: varchar("mautic_campaign_id", { length: 64 }).notNull(),
+    mauticCampaignName: varchar("mautic_campaign_name", { length: 500 }).notNull(),
+    /** "auto" (casado pelo nome do funil) | "manual" (selecionado na lista). */
+    matchMode: varchar("match_mode", { length: 16 }).notNull().default("manual"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_mautic_stage_campaign_stage").on(table.stageId)]
+);
+
 // Story 28.7: cache persistente de nomes Meta (ad/adset/campaign) — substitui
 // resolução in-memory que estourava rate limit Meta. TTL aplicado no código (24h).
 export const metaEntityNamesCache = pgTable(
