@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
+    "backfill:meta-names": "tsx src/scripts/backfill-meta-names.ts",
     "start": "node dist/server.js"
   },
   "dependencies": {
