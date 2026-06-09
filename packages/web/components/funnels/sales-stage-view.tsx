@@ -15,6 +15,7 @@ import { StageSalesSection } from "./stage-sales-section";
 import { StageSalesSpreadsheetSection } from "./stage-sales-spreadsheet-section";
 import { CampaignSelector } from "./campaign-selector";
 import { SalesMetaKpis } from "./sales-meta-kpis";
+import { MauticStageTab } from "./mautic-stage-tab";
 import { SalesConversionCard } from "./sales-conversion-card";
 import { ManualPixSalesSection } from "./manual-pix-sales-section";
 import { ManualSaleDialog } from "./manual-sale-dialog";
@@ -203,6 +204,7 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
               setManualSaleOpen(true);
             }}
           />
+          <MauticStageTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
         </TabsContent>
 
         <TabsContent value="spreadsheet" className="mt-6 space-y-4">
