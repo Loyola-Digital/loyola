@@ -26,8 +26,9 @@ import {
 } from "../services/meta-ads.js";
 import { metaAdsAccounts, metaAdsAccountProjects, metaEntityNamesCache } from "../db/schema.js";
 
-// Story 18.26 Fase 1: TTL alinhado com stage-sales-data.ts (Story 28.7).
-const META_NAMES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+// Story 18.26 Fase 1 / 18.37: TTL alinhado com stage-sales-data.ts (30d). Evita
+// re-consultar a Meta a cada 24h e estourar rate limit; refresh vem do backfill.
+const META_NAMES_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 // ============================================================
 // SCHEMAS

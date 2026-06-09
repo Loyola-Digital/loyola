@@ -26,9 +26,12 @@ import {
   type ResolveEntityNamesCacheAdapter,
 } from "../services/meta-ads.js";
 
-// Story 28.7: TTL do cache de nomes Meta (ad/adset/campaign). Names são MUITO
-// estáveis (criativo raramente muda de nome após criado), então 24h é seguro.
-const META_NAMES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+// Story 28.7 / 18.37: TTL do cache de nomes Meta (ad/adset/campaign). Names são
+// MUITO estáveis (criativo raramente muda de nome após criado). TTL longo (30d)
+// evita re-consultar a Meta a cada 24h e estourar o rate limit no tier
+// development — o refresh de nomes vem do backfill (scripts/backfill-meta-names.mjs),
+// que puxa a conta inteira em ~17 chamadas em vez de ID-por-ID.
+const META_NAMES_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 // ============================================================
 // SCHEMAS
