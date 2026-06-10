@@ -46,6 +46,7 @@ import { CampaignSelector } from "./campaign-selector";
 import type { Funnel, FunnelCampaign, StageType, ComparisonDayMetrics } from "@loyola-x/shared";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { StageSalesSection } from "./stage-sales-section";
+import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
@@ -640,6 +641,19 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
       {/* Grupos — tracking de participantes via planilha (Story 26.1) */}
       <GroupsDashboardSection projectId={projectId} funnelId={funnel.id} />
+
+      {/* Story 18.41: Creative Performance Table for Free stages */}
+      {stageType === "free" && stageId && (
+        <div className="space-y-4 pt-2 border-t border-border/30">
+          <h3 className="text-base font-semibold">Desempenho de Criativos (Meta Ads)</h3>
+          <StageCreativePerformanceTable
+            funnelId={funnel.id}
+            stageId={stageId}
+            days={days}
+            stageType={stageType}
+          />
+        </div>
+      )}
 
       {/* Top Creatives Gallery (Story 18.4) */}
       <TopCreativesGallery

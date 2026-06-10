@@ -56,6 +56,7 @@ import {
 } from "@/lib/hooks/use-perpetual-sales-data";
 import type { Funnel, FunnelCampaign, StageType } from "@loyola-x/shared";
 import { StageSalesSection } from "./stage-sales-section";
+import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -783,6 +784,19 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             stageId={stageId}
             subtype="main_product"
             title="Produto Principal"
+            days={days}
+            stageType={stageType}
+          />
+        </div>
+      )}
+
+      {/* Story 18.41: Creative Performance Table for Free stages */}
+      {stageType === "free" && stageId && (
+        <div className="space-y-4 pt-2 border-t border-border/30">
+          <h3 className="text-base font-semibold">Desempenho de Criativos (Meta Ads)</h3>
+          <StageCreativePerformanceTable
+            funnelId={funnel.id}
+            stageId={stageId}
             days={days}
             stageType={stageType}
           />
