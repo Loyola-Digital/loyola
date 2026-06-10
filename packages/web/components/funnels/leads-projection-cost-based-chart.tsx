@@ -13,7 +13,6 @@ import {
   ResponsiveContainer,
   Legend,
   ReferenceLine,
-  LabelList,
 } from "recharts";
 import type { DailyRow } from "@/lib/utils/funnel-metrics";
 import { useLeadsProjection, type ProjectedDayData } from "@/lib/hooks/use-leads-projection";
@@ -352,23 +351,25 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Reais (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
-            >
-              <LabelList
-                dataKey="dailyRealOrg"
-                position="top"
-                fontSize={9}
+              label={{
+                position: "top",
+                fontSize: 9,
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                formatter={((value: unknown, _index: any, props: any) => {
-                  const entry = props.entry;
-                  if (!entry || !entry.payload) return "";
-                  // Show total (paid + organic) on top of the stack
+                content: (props: any) => {
+                  const { x, y, entry } = props;
+                  if (!entry || !entry.payload) return null;
                   const paid = entry.payload.dailyRealPaid ?? 0;
                   const org = entry.payload.dailyRealOrg ?? 0;
                   const total = paid + org;
-                  return total > 0 ? String(Math.round(total)) : "";
-                }) as any}
-              />
-            </Bar>
+                  if (total <= 0) return null;
+                  return (
+                    <text x={x} y={y - 5} textAnchor="middle" fontSize={9} fill="#000">
+                      {Math.round(total)}
+                    </text>
+                  );
+                }
+              }}
+            />
 
             {/* Stacked bars: Projected Paid + Projected Organic */}
             <Bar
@@ -386,24 +387,25 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
-            >
-              <LabelList
-                dataKey="dailyProjectedOrg"
-                position="top"
-                fontSize={9}
-                fill={COLORS.projectionText}
+              label={{
+                position: "top",
+                fontSize: 9,
+                fill: COLORS.projectionText,
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                formatter={((value: unknown, _index: any, props: any) => {
-                  const entry = props.entry;
-                  if (!entry || !entry.payload) return "";
+                content: (props: any) => {
+                  const { x, y, entry } = props;
+                  if (!entry || !entry.payload) return null;
                   const paid = entry.payload.dailyProjectedPaid ?? 0;
                   const org = entry.payload.dailyProjectedOrg ?? 0;
-                  if (paid <= 0 && org <= 0) return "";
-                  // Show pipe-separated format: "pago | organico"
-                  return `${Math.round(paid)} | ${Math.round(org)}`;
-                }) as any}
-              />
-            </Bar>
+                  if (paid <= 0 && org <= 0) return null;
+                  return (
+                    <text x={x} y={y - 5} textAnchor="middle" fontSize={9} fill={COLORS.projectionText}>
+                      {Math.round(paid)} | {Math.round(org)}
+                    </text>
+                  );
+                }
+              }}
+            />
 
             {/* Banda de Confiança do CPL (área) */}
             <Area
