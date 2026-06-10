@@ -26,5 +26,15 @@ export async function apiServer<T>(
     throw new Error(`API error: ${response.status}`);
   }
 
-  return response.json() as Promise<T>;
+  // 204 No Content é válido para DELETE/PATCH sem payload
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const text = await response.text();
+  if (!text) {
+    throw new Error(`API response body is empty from ${path}`);
+  }
+
+  return JSON.parse(text) as T;
 }

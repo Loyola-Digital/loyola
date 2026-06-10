@@ -38,7 +38,11 @@ export function createApiFetcher(getToken: () => Promise<string | null>) {
 
     const text = await response.text();
     if (!text) {
-      return undefined as T;
+      // 204 No Content é valido para DELETE/PATCH sem payload. Para outras operações, é erro.
+      if (response.status === 204) {
+        return undefined as T;
+      }
+      throw new Error(`API response body is empty from ${path}`);
     }
     return JSON.parse(text) as T;
   };
