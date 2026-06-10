@@ -262,16 +262,32 @@ export function LeadsProjectionCostBasedChart({
           <label htmlFor="gasto-total" className="block text-xs font-medium text-muted-foreground">
             Gasto Total Projetado (R$)
           </label>
-          <div className="relative">
-            <span className="absolute left-3 top-2.5 text-xs text-muted-foreground">R$</span>
-            <input
-              id="gasto-total"
-              type="number"
-              value={gastoTotalProjetado}
-              onChange={(e) => setGastoTotalProjetado(parseFloat(e.target.value) || 0)}
-              placeholder="0"
-              className="w-full pl-7 pr-3 py-2 rounded-md border border-input bg-background text-sm"
-            />
+          <div className="space-y-1">
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-xs text-muted-foreground">R$</span>
+              <input
+                id="gasto-total"
+                type="number"
+                value={gastoTotalProjetado}
+                onChange={(e) => setGastoTotalProjetado(parseFloat(e.target.value) || 0)}
+                placeholder="0"
+                className="w-full pl-7 pr-3 py-2 rounded-md border border-input bg-background text-sm"
+              />
+            </div>
+            {/* Valor Restante = Gasto Total Projetado - gasto acumulado */}
+            {(() => {
+              // Get accumulated spend from rows
+              let gastoAccum = 0;
+              rows.forEach((row) => {
+                gastoAccum += row.spend ?? 0;
+              });
+              const valorRestante = gastoTotalProjetado - gastoAccum;
+              return (
+                <div className="text-xs text-muted-foreground">
+                  Restante: R$ {valorRestante.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>

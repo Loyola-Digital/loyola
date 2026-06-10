@@ -213,29 +213,33 @@ export function useLeadsProjection(
       // Daily meta
       const dailyMeta = metaTotal > 0 ? metaTotal / totalDays : 0;
 
-      // Projection
-      const dailyGastoPacing = calculateDailyGastoPacing(
-        gastoTotalProjetado,
-        gastoAccum,
-        daysRemaining,
-      );
+      // Projection: Only if gastoTotalProjetado > 0
+      const shouldProject = gastoTotalProjetado > 0;
 
-      const projectedCPL = projectCPL(
-        historicalCPLAccum,
-        lastCPLToday,
-        daysRemaining,
-        5,
-      );
+      const dailyGastoPacing = shouldProject
+        ? calculateDailyGastoPacing(gastoTotalProjetado, gastoAccum, daysRemaining)
+        : 0;
 
-      const dailySpendForOrg = rows.map((row) => row.leadsOrg ?? 0);
-      const projectedOrganic = projectOrganicLeads(dailySpendForOrg, daysRemaining, 5);
+      const projectedCPL = shouldProject
+        ? projectCPL(historicalCPLAccum, lastCPLToday, daysRemaining, 5)
+        : Array(daysRemaining).fill({ value: 0, lower: 0, upper: 0 });
+
+      const dailySpendForOrg = shouldProject ? rows.map((row) => row.leadsOrg ?? 0) : [];
+      const projectedOrganic = shouldProject
+        ? projectOrganicLeads(dailySpendForOrg, daysRemaining, 5)
+        : Array(daysRemaining).fill(0);
 
       // Build daily projections
       const dailyProjections: Array<{ paidLeads: number; organicLeads: number }> = [];
       for (let i = 0; i < daysRemaining; i++) {
-        const paid = calculateLeadsPaidProjected(dailyGastoPacing, projectedCPL[i]?.value ?? lastCPLToday);
-        const organic = projectedOrganic[i] ?? 0;
-        dailyProjections.push({ paidLeads: paid, organicLeads: organic });
+        if (!shouldProject) {
+          // No projection when gasto is zero
+          dailyProjections.push({ paidLeads: 0, organicLeads: 0 });
+        } else {
+          const paid = calculateLeadsPaidProjected(dailyGastoPacing, projectedCPL[i]?.value ?? lastCPLToday);
+          const organic = projectedOrganic[i] ?? 0;
+          dailyProjections.push({ paidLeads: paid, organicLeads: organic });
+        }
       }
 
       // Accumulated projection
