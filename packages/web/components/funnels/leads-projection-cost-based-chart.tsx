@@ -439,7 +439,28 @@ export function LeadsProjectionCostBasedChart({
               dataKey="cplProjected"
               stroke={COLORS.cplLine}
               strokeWidth={2}
-              dot={false}
+              dot={(props: DotProps) => {
+                const { cx, cy, payload } = props;
+                if (!payload || cx === undefined || cy === undefined) return null;
+
+                // Only show labels on first and last projection points
+                const projectionPoints = chartData.filter((d) => d.isProjection);
+                const isFirstProjection = projectionPoints.length > 0 && payload.date === projectionPoints[0].date;
+                const isLastProjection = projectionPoints.length > 0 && payload.date === projectionPoints[projectionPoints.length - 1].date;
+
+                if (!isFirstProjection && !isLastProjection) return null;
+
+                return (
+                  <g key={`cpl-dot-${payload.date}`}>
+                    <circle cx={cx} cy={cy} r={2} fill={COLORS.cplLine} stroke="white" strokeWidth={1} />
+                    {(isFirstProjection || isLastProjection) && payload.cplProjected && (
+                      <text x={cx} y={cy - 10} textAnchor="middle" fontSize={9} fill={COLORS.cplLine} fontWeight="600">
+                        R$ {payload.cplProjected.toFixed(2)}
+                      </text>
+                    )}
+                  </g>
+                );
+              }}
               isAnimationActive={false}
               name="CPL Projetado"
             />
