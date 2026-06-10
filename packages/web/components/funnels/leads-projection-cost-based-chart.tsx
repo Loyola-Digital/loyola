@@ -176,6 +176,8 @@ export function LeadsProjectionCostBasedChart({
     setDataFinal,
     metaTotal,
     setMetaTotal,
+    gastoTotalProjetado,
+    setGastoTotalProjetado,
     chartData: projectionData,
     projectionPercentage,
     error,
@@ -230,7 +232,7 @@ export function LeadsProjectionCostBasedChart({
       </div>
 
       {/* Inputs */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div className="space-y-1">
           <label htmlFor="data-final" className="block text-xs font-medium text-muted-foreground">
             Data Final
@@ -255,6 +257,22 @@ export function LeadsProjectionCostBasedChart({
             placeholder="0"
             className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
           />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="gasto-total" className="block text-xs font-medium text-muted-foreground">
+            Gasto Total Projetado (R$)
+          </label>
+          <div className="relative">
+            <span className="absolute left-3 top-2.5 text-xs text-muted-foreground">R$</span>
+            <input
+              id="gasto-total"
+              type="number"
+              value={gastoTotalProjetado}
+              onChange={(e) => setGastoTotalProjetado(parseFloat(e.target.value) || 0)}
+              placeholder="0"
+              className="w-full pl-7 pr-3 py-2 rounded-md border border-input bg-background text-sm"
+            />
+          </div>
         </div>
       </div>
 
