@@ -283,9 +283,21 @@ export function LeadsProjectionCostBasedChart({
                 gastoAccum += row.spend ?? 0;
               });
               const valorRestante = gastoTotalProjetado - gastoAccum;
+
+              // Calculate pacing projetado = remaining budget / remaining days
+              const dataFinalDate = new Date(dataFinal);
+              const hoje = new Date();
+              const diasRestantes = Math.max(1, Math.ceil((dataFinalDate.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)));
+              const pacingProjetado = diasRestantes > 0 ? valorRestante / diasRestantes : 0;
+
               return (
-                <div className="text-xs text-muted-foreground">
-                  Restante: R$ {valorRestante.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  <div>
+                    Restante: R$ {valorRestante.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </div>
+                  <div>
+                    Pacing projetado: R$ {pacingProjetado.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}/dia
+                  </div>
                 </div>
               );
             })()}
@@ -364,7 +376,19 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Pagos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
-              label={{ position: "top", fontSize: 9, fill: COLORS.projectionText, formatter: ((value: unknown) => (typeof value === 'number' && value > 0 ? Math.round(value) : "")) as any }}
+              label={{
+                position: "top",
+                fontSize: 9,
+                fill: COLORS.projectionText,
+                formatter: ((value: unknown, entry: any) => {
+                  if (!entry || !entry.payload) return "";
+                  const paid = entry.payload.dailyProjectedPaid ?? 0;
+                  const org = entry.payload.dailyProjectedOrg ?? 0;
+                  if (paid <= 0 && org <= 0) return "";
+                  // Show pipe-separated format: "pago | organico"
+                  return `${Math.round(paid)} | ${Math.round(org)}`;
+                }) as any
+              }}
             />
             <Bar
               dataKey="dailyProjectedOrg"
@@ -373,7 +397,7 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
-              label={{ position: "top", fontSize: 9, fill: COLORS.projectionText, formatter: ((value: unknown) => (typeof value === 'number' && value > 0 ? Math.round(value) : "")) as any }}
+              label={{ position: "top", fontSize: 9, formatter: () => "" }}
             />
 
             {/* Banda de Confiança do CPL (área) */}
@@ -462,35 +486,14 @@ export function LeadsProjectionCostBasedChart({
               name="Projeção (Acumulado)"
             />
 
-            {/* Linha CPL Projetado (eixo secundário) */}
+            {/* Linha CPL Projetado (eixo secundário) — Tooltip only, no visible labels */}
             <Line
               yAxisId="right"
               type="monotone"
               dataKey="cplProjected"
               stroke={COLORS.cplLine}
               strokeWidth={2}
-              dot={(props: DotProps) => {
-                const { cx, cy, payload } = props;
-                if (!payload || cx === undefined || cy === undefined) return null;
-
-                // Only show labels on first and last projection points
-                const projectionPoints = chartData.filter((d) => d.isProjection);
-                const isFirstProjection = projectionPoints.length > 0 && payload.date === projectionPoints[0].date;
-                const isLastProjection = projectionPoints.length > 0 && payload.date === projectionPoints[projectionPoints.length - 1].date;
-
-                if (!isFirstProjection && !isLastProjection) return null;
-
-                return (
-                  <g key={`cpl-dot-${payload.date}`}>
-                    <circle cx={cx} cy={cy} r={2} fill={COLORS.cplLine} stroke="white" strokeWidth={1} />
-                    {(isFirstProjection || isLastProjection) && payload.cplProjected && (
-                      <text x={cx} y={cy - 10} textAnchor="middle" fontSize={9} fill={COLORS.cplLine} fontWeight="600">
-                        R$ {payload.cplProjected.toFixed(2)}
-                      </text>
-                    )}
-                  </g>
-                );
-              }}
+              dot={false}
               isAnimationActive={false}
               name="CPL Projetado"
             />
