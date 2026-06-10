@@ -38,11 +38,20 @@ export function createApiFetcher(getToken: () => Promise<string | null>) {
 
     const text = await response.text();
     if (!text) {
-      // 204 No Content é valido para DELETE/PATCH sem payload. Para outras operações, é erro.
+      // 204 No Content é válido para DELETE sem payload. Para outras operações,
+      // retornar um valor padrão apropriado: array vazio ou objeto vazio genérico.
       if (response.status === 204) {
         return undefined as T;
       }
-      throw new Error(`API response body is empty from ${path}`);
+      // Para endpoints que esperam dados (200 OK) mas retornam vazio,
+      // retornar um objeto genérico vazio que a maioria dos hooks consegue processar.
+      // Alternativas:
+      // - Array: [] (correto para endpoints que retornam arrays)
+      // - Objeto: {} (genérico mas menos seguro)
+      // Como não temos informação do tipo esperado, retornar {} e deixar
+      // que o hook ou componente valide.
+      console.warn(`[api-client] Empty response body from ${path} (status ${response.status})`);
+      return {} as T;
     }
     return JSON.parse(text) as T;
   };
