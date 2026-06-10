@@ -389,6 +389,14 @@ export function LeadsProjectionCostBasedChart({
                       stroke="white"
                       strokeWidth={1}
                     />
+                    <text x={cx} y={cy - 12} textAnchor="middle" fontSize={11} fill={COLORS.lineReal} fontWeight="600">
+                      {Math.round(payload.cumulative)}
+                    </text>
+                    {payload.realPercentage > 0 && (
+                      <text x={cx} y={cy - 2} textAnchor="middle" fontSize={9} fill={COLORS.lineReal} fontWeight="500">
+                        ({Math.round(payload.realPercentage)}%)
+                      </text>
+                    )}
                   </g>
                 );
               }}
@@ -418,6 +426,14 @@ export function LeadsProjectionCostBasedChart({
                       stroke="white"
                       strokeWidth={1}
                     />
+                    <text x={cx} y={cy - 12} textAnchor="middle" fontSize={11} fill={COLORS.lineProjection} fontWeight="600">
+                      {Math.round(payload.cumulative)}
+                    </text>
+                    {payload.realPercentage > 0 && (
+                      <text x={cx} y={cy - 2} textAnchor="middle" fontSize={9} fill={COLORS.lineProjection} fontWeight="500">
+                        ({Math.round(payload.realPercentage)}%)
+                      </text>
+                    )}
                   </g>
                 );
               }}

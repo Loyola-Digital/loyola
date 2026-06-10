@@ -15,11 +15,10 @@
  * - Pre-fill suggestion for total projected spend
  */
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useMemo } from "react";
 import type { DailyRow } from "@/lib/utils/funnel-metrics";
 import {
   calculateDailyGastoPacing,
-  calculateAccumulatedCPL,
   projectCPL,
   calculateLeadsPaidProjected,
   projectOrganicLeads,
@@ -145,12 +144,8 @@ export function useLeadsProjection(
     }
   }, [rows, dataFinal]);
 
-  // Initialize gastoTotalProjetado with suggestion on first load
-  useEffect(() => {
-    if (gastoTotalProjetado === 0 && gastoTotalSuggestion > 0) {
-      setGastoTotalProjetado(gastoTotalSuggestion);
-    }
-  }, [gastoTotalSuggestion]);
+  // Don't auto-initialize — user must explicitly enter gasto total
+  // (was causing confusing pre-filled values)
 
   // Main computation
   const chartData = useMemo(() => {
@@ -189,7 +184,7 @@ export function useLeadsProjection(
       let leadsAccumOrg = 0;
       const historicalCPLAccum: (number | null)[] = [];
       let lastCPLToday = 0;
-      const dailyDatasForSpendRegression = rows.map((row) => {
+      rows.forEach((row) => {
         gastoAccum += row.spend ?? 0;
         leadsAccumPaid += row.leadsPagos ?? 0;
         leadsAccumOrg += row.leadsOrg ?? 0;
@@ -200,21 +195,20 @@ export function useLeadsProjection(
         if (cplAccum !== null && cplAccum > 0) {
           lastCPLToday = cplAccum;
         }
-
-        return row.spend ?? 0;
       });
 
-      // Safety: if we never had a valid CPL, use a sensible default
+      // Safety: if we never had a valid CPL, use accumulated CPL
       if (lastCPLToday === 0 && leadsAccumPaid > 0) {
         lastCPLToday = gastoAccum / leadsAccumPaid;
       }
+      // If still 0 or negative, don't project (empty data)
       if (lastCPLToday <= 0) {
-        lastCPLToday = 1; // Fallback minimum
+        lastCPLToday = 0;
       }
 
       // Calculate days remaining
       const totalDays = Math.floor((finalDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      let daysRemaining = Math.max(1, Math.floor((finalDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+      const daysRemaining = Math.max(1, Math.floor((finalDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 
       // Daily meta
       const dailyMeta = metaTotal > 0 ? metaTotal / totalDays : 0;

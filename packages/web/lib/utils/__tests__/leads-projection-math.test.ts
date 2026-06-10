@@ -217,6 +217,7 @@ describe("validateProjectionInput", () => {
   });
 
   it("should reject missing fields", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = [{ date: "2026-06-01", gasto: 100 }] as any;
     const result = validateProjectionInput(data);
 

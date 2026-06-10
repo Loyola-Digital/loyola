@@ -52,7 +52,7 @@ describe("LeadsProjectionCostBasedChart - Integration Tests", () => {
 
       if (cplValues.length > 1) {
         const variance =
-          cplValues.reduce((sum, val, i) => sum + Math.abs(val - cplValues[0]), 0) /
+          cplValues.reduce((sum, val) => sum + Math.abs(val - cplValues[0]), 0) /
           cplValues.length;
         expect(variance).toBeLessThan(50); // Small variance for mean behavior
       }
