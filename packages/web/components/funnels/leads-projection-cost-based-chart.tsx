@@ -145,13 +145,23 @@ export function LeadsProjectionCostBasedChart({
   const updateFunnel = useUpdateFunnel(projectId ?? "", funnelId);
   const storageKeyDataFinal = `leadsCostProjectionDataFinal_${funnelId}`;
   const storageKeyMetaTotal = `leadsCostProjectionMetaTotal_${funnelId}`;
+  const storageKeyGastoTotal = `leadsCostProjectionGastoTotal_${funnelId}`;
 
   // Get initial values from storage/DB/stage inputs
   const [initialDataFinal, setInitialDataFinal] = useState<string>("");
   const [initialMetaTotal, setInitialMetaTotal] = useState<number>(0);
+  const [initialGastoTotal, setInitialGastoTotal] = useState<number>(0);
 
   useEffect(() => {
     setMounted(true);
+    // Always load gastoTotalProjetado from localStorage as fallback
+    if (typeof window !== "undefined") {
+      const savedGastoTotal = localStorage.getItem(storageKeyGastoTotal);
+      if (savedGastoTotal) {
+        setInitialGastoTotal(parseFloat(savedGastoTotal));
+      }
+    }
+
     if (usingStageInputs && stageId) {
       const stageInputs = getStageInputs(stageId);
       setInitialDataFinal(stageInputs.projectionEndDate || getDefaultDataFinal());
@@ -182,7 +192,7 @@ export function LeadsProjectionCostBasedChart({
     chartData: projectionData,
     projectionPercentage,
     error,
-  } = useLeadsProjection(rows, initialDataFinal, initialMetaTotal);
+  } = useLeadsProjection(rows, initialDataFinal, initialMetaTotal, initialGastoTotal);
 
   // Format chart data for recharts
   const chartData = projectionData.map((item) => ({
@@ -214,6 +224,13 @@ export function LeadsProjectionCostBasedChart({
     } else {
       localStorage.setItem(storageKeyMetaTotal, value.toString());
     }
+  };
+
+  const handleGastoTotalProjetadoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(e.target.value) || 0;
+    setGastoTotalProjetado(value);
+    // Persist to localStorage (DB/stage persistence not yet implemented)
+    localStorage.setItem(storageKeyGastoTotal, value.toString());
   };
 
   if (!mounted) return null;
@@ -270,7 +287,7 @@ export function LeadsProjectionCostBasedChart({
                 id="gasto-total"
                 type="number"
                 value={gastoTotalProjetado}
-                onChange={(e) => setGastoTotalProjetado(parseFloat(e.target.value) || 0)}
+                onChange={handleGastoTotalProjetadoChange}
                 placeholder="0"
                 className="w-full pl-7 pr-3 py-2 rounded-md border border-input bg-background text-sm"
               />
@@ -283,9 +300,21 @@ export function LeadsProjectionCostBasedChart({
                 gastoAccum += row.spend ?? 0;
               });
               const valorRestante = gastoTotalProjetado - gastoAccum;
+
+              // Calculate pacing projetado = remaining budget / remaining days
+              const dataFinalDate = new Date(dataFinal);
+              const hoje = new Date();
+              const diasRestantes = Math.max(1, Math.ceil((dataFinalDate.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)));
+              const pacingProjetado = diasRestantes > 0 ? valorRestante / diasRestantes : 0;
+
               return (
-                <div className="text-xs text-muted-foreground">
-                  Restante: R$ {valorRestante.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  <div>
+                    Restante: R$ {valorRestante.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </div>
+                  <div>
+                    Pacing projetado: R$ {pacingProjetado.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}/dia
+                  </div>
                 </div>
               );
             })()}
@@ -331,20 +360,6 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Pagos Reais (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
-              label={{
-                position: "top",
-                fontSize: 9,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                formatter: ((value: unknown, entry: any) => {
-                  if (typeof value !== 'number' || value <= 0) return "";
-                  if (!entry || !entry.payload) return "";
-                  // Show total (paid + organic) on top of the stack
-                  const paid = entry.payload.dailyRealPaid ?? 0;
-                  const org = entry.payload.dailyRealOrg ?? 0;
-                  const total = paid + org;
-                  return total > 0 ? Math.round(total) : "";
-                }) as any
-              }}
             />
             <Bar
               dataKey="dailyRealOrg"
@@ -353,7 +368,24 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Reais (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
-              label={{ position: "top", fontSize: 9, formatter: () => "" }}
+              label={{
+                position: "top",
+                fontSize: 9,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                content: (props: any) => {
+                  const { x, y, entry } = props;
+                  if (!entry || !entry.payload) return null;
+                  const paid = entry.payload.dailyRealPaid ?? 0;
+                  const org = entry.payload.dailyRealOrg ?? 0;
+                  const total = paid + org;
+                  if (total <= 0) return null;
+                  return (
+                    <text x={x} y={y - 5} textAnchor="middle" fontSize={9} fill="#000">
+                      {Math.round(total)}
+                    </text>
+                  );
+                }
+              }}
             />
 
             {/* Stacked bars: Projected Paid + Projected Organic */}
@@ -364,7 +396,6 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Pagos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
-              label={{ position: "top", fontSize: 9, fill: COLORS.projectionText, formatter: ((value: unknown) => (typeof value === 'number' && value > 0 ? Math.round(value) : "")) as any }}
             />
             <Bar
               dataKey="dailyProjectedOrg"
@@ -373,7 +404,24 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
-              label={{ position: "top", fontSize: 9, fill: COLORS.projectionText, formatter: ((value: unknown) => (typeof value === 'number' && value > 0 ? Math.round(value) : "")) as any }}
+              label={{
+                position: "top",
+                fontSize: 9,
+                fill: COLORS.projectionText,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                content: (props: any) => {
+                  const { x, y, entry } = props;
+                  if (!entry || !entry.payload) return null;
+                  const paid = entry.payload.dailyProjectedPaid ?? 0;
+                  const org = entry.payload.dailyProjectedOrg ?? 0;
+                  if (paid <= 0 && org <= 0) return null;
+                  return (
+                    <text x={x} y={y - 5} textAnchor="middle" fontSize={9} fill={COLORS.projectionText}>
+                      {Math.round(paid)} | {Math.round(org)}
+                    </text>
+                  );
+                }
+              }}
             />
 
             {/* Banda de Confiança do CPL (área) */}
@@ -462,35 +510,14 @@ export function LeadsProjectionCostBasedChart({
               name="Projeção (Acumulado)"
             />
 
-            {/* Linha CPL Projetado (eixo secundário) */}
+            {/* Linha CPL Projetado (eixo secundário) — Tooltip only, no visible labels */}
             <Line
               yAxisId="right"
               type="monotone"
               dataKey="cplProjected"
               stroke={COLORS.cplLine}
               strokeWidth={2}
-              dot={(props: DotProps) => {
-                const { cx, cy, payload } = props;
-                if (!payload || cx === undefined || cy === undefined) return null;
-
-                // Only show labels on first and last projection points
-                const projectionPoints = chartData.filter((d) => d.isProjection);
-                const isFirstProjection = projectionPoints.length > 0 && payload.date === projectionPoints[0].date;
-                const isLastProjection = projectionPoints.length > 0 && payload.date === projectionPoints[projectionPoints.length - 1].date;
-
-                if (!isFirstProjection && !isLastProjection) return null;
-
-                return (
-                  <g key={`cpl-dot-${payload.date}`}>
-                    <circle cx={cx} cy={cy} r={2} fill={COLORS.cplLine} stroke="white" strokeWidth={1} />
-                    {(isFirstProjection || isLastProjection) && payload.cplProjected && (
-                      <text x={cx} y={cy - 10} textAnchor="middle" fontSize={9} fill={COLORS.cplLine} fontWeight="600">
-                        R$ {payload.cplProjected.toFixed(2)}
-                      </text>
-                    )}
-                  </g>
-                );
-              }}
+              dot={false}
               isAnimationActive={false}
               name="CPL Projetado"
             />
