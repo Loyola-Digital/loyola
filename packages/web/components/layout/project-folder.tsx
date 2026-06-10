@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings, Brain, EyeOff, Eye, Archive, RotateCcw } from "lucide-react";
+import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings, Brain, EyeOff, Eye, Archive, RotateCcw, Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -97,6 +97,7 @@ const PROJECT_SUBITEMS = [
   { label: "YouTube Ads", href: "youtube", icon: Youtube },
   { label: "Vendas", href: "sales", icon: ArrowUpDown },
   { label: "Conversas", href: "conversations", icon: MessageSquare },
+  { label: "Switch", href: "switch", icon: Link2 },
 ] as const;
 
 function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId: string; isAdmin: boolean }) {
