@@ -124,7 +124,7 @@ export function useLeadsProjection(
       // Calculate accumulated spend from historical data
       let gastoAccum = 0;
       const dailySpend = rows.map((row) => {
-        const daily = row.gasto ?? 0;
+        const daily = row.spend ?? 0;
         gastoAccum += daily;
         return daily;
       });
@@ -172,7 +172,7 @@ export function useLeadsProjection(
       // Validate input
       const historicalData = rows.map((row) => ({
         date: row.date,
-        gasto: row.gasto ?? 0,
+        gasto: row.spend ?? 0,
         leadsPagos: row.leadsPagos ?? 0,
         leadsOrg: row.leadsOrg ?? 0,
       }));
@@ -190,7 +190,7 @@ export function useLeadsProjection(
       const historicalCPLAccum: (number | null)[] = [];
       let lastCPLToday = 0;
       const dailyDatasForSpendRegression = rows.map((row) => {
-        gastoAccum += row.gasto ?? 0;
+        gastoAccum += row.spend ?? 0;
         leadsAccumPaid += row.leadsPagos ?? 0;
         leadsAccumOrg += row.leadsOrg ?? 0;
 
@@ -201,7 +201,7 @@ export function useLeadsProjection(
           lastCPLToday = cplAccum;
         }
 
-        return row.gasto ?? 0;
+        return row.spend ?? 0;
       });
 
       // Safety: if we never had a valid CPL, use a sensible default
