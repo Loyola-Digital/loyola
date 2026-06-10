@@ -216,6 +216,25 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             salesData = null;
           }
 
+          // Debug: Log sheet data info
+          if (leadsData) {
+            fastify.log.info({
+              debug: "creative-performance",
+              stageId,
+              stageType: stage.stageType,
+              leadsSheetRows: leadsData.rows.length,
+              leadsSheetHeaders: leadsData.headers,
+              leadsColumnMapping: leadsSheet.columnMapping,
+            });
+          } else {
+            fastify.log.info({
+              debug: "creative-performance",
+              stageId,
+              stageType: stage.stageType,
+              message: "leadsData is null after readSheetData",
+            });
+          }
+
           if (leadsData && salesData) {
             const leadsMapping = (leadsSheet.columnMapping ?? {}) as {
               email?: string;
@@ -269,6 +288,13 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
 
             // 5b. Walk leads — conta leads por adId, dedup email pra revenue,
             // captura moda do utm_term por adId e filtra por utm_campaign.
+            fastify.log.info({
+              debug: "creative-performance-leads-walk",
+              stageId,
+              leadUtmContentIdx,
+              totalLeadsRows: leadsData.rows.length,
+            });
+
             if (leadUtmContentIdx !== -1) {
               for (const row of leadsData.rows) {
                 const adIdRaw = row[leadUtmContentIdx] ?? "";
