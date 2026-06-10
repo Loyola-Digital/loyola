@@ -27,13 +27,17 @@ import { SwitchyResultsTable } from "./switchy-results-table";
 interface Props {
   projectId: string;
   canEdit: boolean;
+  /** Story 33.7: quando renderizado dentro de um funil, atrela os links a ele. */
+  funnelId?: string;
+  /** utm_campaign pré-preenchido (ex: nome do funil). Editável. */
+  defaultCampaign?: string;
 }
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-export function SwitchyGenerator({ projectId, canEdit }: Props) {
+export function SwitchyGenerator({ projectId, canEdit, funnelId, defaultCampaign }: Props) {
   const folders = useSwitchyFolders(projectId);
   const settings = useSwitchySettings(projectId);
   const presets = useSwitchyPresets(projectId);
@@ -41,7 +45,7 @@ export function SwitchyGenerator({ projectId, canEdit }: Props) {
 
   const [checkoutUrl, setCheckoutUrl] = useState("");
   const [folderId, setFolderId] = useState<string>("");
-  const [campaign, setCampaign] = useState("");
+  const [campaign, setCampaign] = useState(defaultCampaign ?? "");
   const [term, setTerm] = useState("");
   const [content, setContent] = useState("");
   const [seededDefaults, setSeededDefaults] = useState(false);
@@ -127,6 +131,7 @@ export function SwitchyGenerator({ projectId, canEdit }: Props) {
         campaign: campaign.trim(),
         ...(termTrim ? { term: termTrim } : {}),
         ...(contentTrim ? { content: contentTrim } : {}),
+        ...(funnelId ? { funnelId } : {}),
         channels: selectedChannels.map((p) => ({
           label: p.label,
           medium: p.utmMedium,
