@@ -73,7 +73,8 @@ interface DotProps {
 function CustomTooltip({ active, payload }: TooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
 
-  const data = payload[0].payload;
+  const data = payload[0]?.payload;
+  if (!data) return null;
   const isProjection = data.isProjection;
 
   return (
