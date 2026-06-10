@@ -343,6 +343,14 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Pagos Reais (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
+            />
+            <Bar
+              dataKey="dailyRealOrg"
+              fill={COLORS.barsOrgReal}
+              opacity={OPACITIES.dailyReal}
+              name="Leads Orgânicos Reais (Dia)"
+              radius={[2, 2, 0, 0]}
+              stackId="realDaily"
               label={{
                 position: "top",
                 fontSize: 9,
@@ -357,15 +365,6 @@ export function LeadsProjectionCostBasedChart({
                 }) as any
               }}
             />
-            <Bar
-              dataKey="dailyRealOrg"
-              fill={COLORS.barsOrgReal}
-              opacity={OPACITIES.dailyReal}
-              name="Leads Orgânicos Reais (Dia)"
-              radius={[2, 2, 0, 0]}
-              stackId="realDaily"
-              label={{ position: "top", fontSize: 9, formatter: () => "" }}
-            />
 
             {/* Stacked bars: Projected Paid + Projected Organic */}
             <Bar
@@ -373,6 +372,14 @@ export function LeadsProjectionCostBasedChart({
               fill={COLORS.barsPaidProjected}
               opacity={OPACITIES.dailyProjected}
               name="Leads Pagos Projetados (Dia)"
+              radius={[2, 2, 0, 0]}
+              stackId="projectedDaily"
+            />
+            <Bar
+              dataKey="dailyProjectedOrg"
+              fill={COLORS.barsOrgProjected}
+              opacity={OPACITIES.dailyProjected}
+              name="Leads Orgânicos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
               label={{
@@ -388,15 +395,6 @@ export function LeadsProjectionCostBasedChart({
                   return `${Math.round(paid)} | ${Math.round(org)}`;
                 }) as any
               }}
-            />
-            <Bar
-              dataKey="dailyProjectedOrg"
-              fill={COLORS.barsOrgProjected}
-              opacity={OPACITIES.dailyProjected}
-              name="Leads Orgânicos Projetados (Dia)"
-              radius={[2, 2, 0, 0]}
-              stackId="projectedDaily"
-              label={{ position: "top", fontSize: 9, formatter: () => "" }}
             />
 
             {/* Banda de Confiança do CPL (área) */}
