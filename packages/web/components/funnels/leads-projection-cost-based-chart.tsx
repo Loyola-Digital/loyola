@@ -335,14 +335,14 @@ export function LeadsProjectionCostBasedChart({
                 position: "top",
                 fontSize: 9,
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                formatter: (value: unknown, entry: any) => {
+                formatter: ((value: unknown, entry: any) => {
                   if (typeof value !== 'number' || value <= 0) return "";
                   // Show total (paid + organic) on top of the stack
                   const paid = entry.payload?.dailyRealPaid ?? 0;
                   const org = entry.payload?.dailyRealOrg ?? 0;
                   const total = paid + org;
                   return total > 0 ? Math.round(total) : "";
-                }
+                }) as any
               }}
             />
             <Bar
@@ -363,7 +363,7 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Pagos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
-              label={{ position: "top", fontSize: 9, fill: COLORS.projectionText, formatter: (value: unknown) => (typeof value === 'number' && value > 0 ? Math.round(value) : "") }}
+              label={{ position: "top", fontSize: 9, fill: COLORS.projectionText, formatter: ((value: unknown) => (typeof value === 'number' && value > 0 ? Math.round(value) : "")) as any }}
             />
             <Bar
               dataKey="dailyProjectedOrg"
@@ -372,7 +372,7 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
-              label={{ position: "top", fontSize: 9, fill: COLORS.projectionText, formatter: (value: unknown) => (typeof value === 'number' && value > 0 ? Math.round(value) : "") }}
+              label={{ position: "top", fontSize: 9, fill: COLORS.projectionText, formatter: ((value: unknown) => (typeof value === 'number' && value > 0 ? Math.round(value) : "")) as any }}
             />
 
             {/* Banda de Confiança do CPL (área) */}
