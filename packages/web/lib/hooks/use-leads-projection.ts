@@ -15,7 +15,7 @@
  * - Pre-fill suggestion for total projected spend
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import type { DailyRow } from "@/lib/utils/funnel-metrics";
 import {
   calculateDailyGastoPacing,
@@ -111,6 +111,19 @@ export function useLeadsProjection(
 
   const [metaTotal, setMetaTotal] = useState<number>(initialMetaTotal ?? 0);
   const [gastoTotalProjetado, setGastoTotalProjetado] = useState<number>(initialGastoTotal ?? 0);
+
+  // Sync initial values when they change (e.g., after loading from localStorage)
+  useEffect(() => {
+    if (initialDataFinal) setDataFinal(initialDataFinal);
+  }, [initialDataFinal]);
+
+  useEffect(() => {
+    if (initialMetaTotal !== undefined) setMetaTotal(initialMetaTotal);
+  }, [initialMetaTotal]);
+
+  useEffect(() => {
+    if (initialGastoTotal !== undefined) setGastoTotalProjetado(initialGastoTotal);
+  }, [initialGastoTotal]);
 
   // State
   const [isLoading, setIsLoading] = useState(false);
