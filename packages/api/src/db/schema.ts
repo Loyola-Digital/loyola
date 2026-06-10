@@ -15,6 +15,7 @@ import {
   check,
   primaryKey,
   numeric,
+  bigint,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -1298,5 +1299,80 @@ export const sprintDashboardConfig = pgTable(
   },
   (table) => [
     uniqueIndex("sprint_dashboard_config_singleton_uniq").on(table.singleton),
+  ]
+);
+
+// ============================================================
+// Epic 33 — Switchy Link Generator
+// Settings por projeto (pixels + defaults de UTM), presets de canal editáveis
+// e histórico de shortlinks gerados. Token Switchy é GLOBAL (SWITCHY_API_TOKEN),
+// não há credencial por projeto. Tudo com FK cascade para projects.
+// ============================================================
+export const projectSwitchySettings = pgTable(
+  "project_switchy_settings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .unique()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    pixels: jsonb("pixels")
+      .$type<{ platform: string; value: string; title?: string }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    showGdpr: boolean("show_gdpr").notNull().default(false),
+    defaultUtmTerm: varchar("default_utm_term", { length: 120 }),
+    defaultUtmContent: varchar("default_utm_content", { length: 120 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_project_switchy_settings_project").on(table.projectId)]
+);
+
+export const switchyChannelPresets = pgTable(
+  "switchy_channel_presets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    label: varchar("label", { length: 120 }).notNull(),
+    utmMedium: varchar("utm_medium", { length: 120 }).notNull(),
+    utmSource: varchar("utm_source", { length: 120 }).notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_switchy_presets_project").on(table.projectId)]
+);
+
+export const switchyShortenedLinks = pgTable(
+  "switchy_shortened_links",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    folderId: varchar("folder_id", { length: 64 }).notNull(),
+    folderName: varchar("folder_name", { length: 500 }),
+    checkoutBaseUrl: text("checkout_base_url").notNull(),
+    channelLabel: varchar("channel_label", { length: 120 }),
+    utmCampaign: varchar("utm_campaign", { length: 120 }),
+    utmMedium: varchar("utm_medium", { length: 120 }),
+    utmSource: varchar("utm_source", { length: 120 }),
+    utmTerm: varchar("utm_term", { length: 120 }),
+    utmContent: varchar("utm_content", { length: 120 }),
+    sck: text("sck"),
+    vkSource: text("vk_source"),
+    fullUrl: text("full_url").notNull(),
+    shortUrl: text("short_url"),
+    switchyLinkId: varchar("switchy_link_id", { length: 255 }),
+    switchyUniq: bigint("switchy_uniq", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_switchy_links_project").on(table.projectId),
+    index("idx_switchy_links_created_at").on(table.createdAt),
   ]
 );
