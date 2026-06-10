@@ -330,7 +330,19 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Pagos Reais (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
-              label={{ position: "top", fontSize: 9, formatter: (value: unknown) => (typeof value === 'number' && value > 0 ? Math.round(value) : "") }}
+              label={{
+                position: "top",
+                fontSize: 9,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                formatter: (value: unknown, entry: any) => {
+                  if (typeof value !== 'number' || value <= 0) return "";
+                  // Show total (paid + organic) on top of the stack
+                  const paid = entry.payload?.dailyRealPaid ?? 0;
+                  const org = entry.payload?.dailyRealOrg ?? 0;
+                  const total = paid + org;
+                  return total > 0 ? Math.round(total) : "";
+                }
+              }}
             />
             <Bar
               dataKey="dailyRealOrg"
@@ -339,7 +351,7 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Reais (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
-              label={{ position: "top", fontSize: 9, formatter: (value: unknown) => (typeof value === 'number' && value > 0 ? Math.round(value) : "") }}
+              label={{ position: "top", fontSize: 9, formatter: () => "" }}
             />
 
             {/* Stacked bars: Projected Paid + Projected Organic */}
