@@ -30,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SortableStageGrid } from "@/components/funnels/sortable-stage-grid";
 import { OrphanCampaignsBanner } from "@/components/funnels/orphan-campaigns-banner";
+import { SwitchyFunnelSection } from "@/components/funnels/switchy-funnel-section";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -242,6 +243,13 @@ export default function FunnelPage() {
           funnelId={params.funnelId}
         />
       )}
+
+      {/* Switch — Gerador de Links atrelado ao funil (Story 33.7) */}
+      <SwitchyFunnelSection
+        projectId={params.id}
+        funnelId={params.funnelId}
+        funnelName={funnel.name}
+      />
 
       {/* Dialog Nova Etapa — só pra launch (perpetual não tem stages) */}
       {funnelData.funnelType !== "perpetual" && (
