@@ -26,5 +26,18 @@ export async function apiServer<T>(
     throw new Error(`API error: ${response.status}`);
   }
 
-  return response.json() as Promise<T>;
+  // 204 No Content é válido para DELETE sem payload
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const text = await response.text();
+  if (!text) {
+    // Body vazio (além de 204): retornar objeto genérico vazio
+    // Logs pra diagnóstico se isso aparecer frequentemente.
+    console.warn(`[api-client-server] Empty response body from ${path} (status ${response.status})`);
+    return {} as T;
+  }
+
+  return JSON.parse(text) as T;
 }

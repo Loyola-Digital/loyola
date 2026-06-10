@@ -337,9 +337,10 @@ export function LeadsProjectionCostBasedChart({
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 formatter: ((value: unknown, entry: any) => {
                   if (typeof value !== 'number' || value <= 0) return "";
+                  if (!entry || !entry.payload) return "";
                   // Show total (paid + organic) on top of the stack
-                  const paid = entry.payload?.dailyRealPaid ?? 0;
-                  const org = entry.payload?.dailyRealOrg ?? 0;
+                  const paid = entry.payload.dailyRealPaid ?? 0;
+                  const org = entry.payload.dailyRealOrg ?? 0;
                   const total = paid + org;
                   return total > 0 ? Math.round(total) : "";
                 }) as any
