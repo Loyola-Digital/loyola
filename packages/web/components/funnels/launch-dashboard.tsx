@@ -37,6 +37,7 @@ import { CrossedFunnelDailyTable } from "./crossed-funnel-daily-table";
 import { CplComparisonChart } from "./cpl-comparison-chart";
 import { LeadsCumulativeChart } from "./leads-cumulative-chart";
 import { LeadsTrendAndGoalChart } from "./leads-trend-and-goal-chart";
+import { LeadsProjectionCostBasedChart } from "./leads-projection-cost-based-chart";
 import { HotColdSpendDonut } from "./hot-cold-spend-donut";
 import { HotColdCountDonut } from "./hot-cold-count-donut";
 import { TopCreativesGallery } from "./top-creatives-gallery";
@@ -492,6 +493,11 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
       {/* Leads: Tendência + Meta (Story 18.19) + Inputs por Etapa (Story 18.27) */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
         <LeadsTrendAndGoalChart rows={metrics.rows} funnelId={funnel.id} funnel={funnel} projectId={projectId} stageId={stageId} />
+      ) : null}
+
+      {/* NOVO: Leads Projeção Baseada em Custo (Story 18.39) */}
+      {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
+        <LeadsProjectionCostBasedChart rows={metrics.rows} funnelId={funnel.id} funnel={funnel} projectId={projectId} stageId={stageId} />
       ) : null}
 
       {/* CTR × CPM — Saturation Chart */}
