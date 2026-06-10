@@ -30,21 +30,22 @@ interface LeadsProjectionCostBasedChartProps {
 }
 
 const COLORS = {
-  lineReal: "#2563EB",
-  lineProjection: "#60A5FA",
+  lineReal: "#2563EB",         // Azul escuro
+  lineProjection: "#60A5FA",   // Azul claro
   bandCPL: "#FEE2E2",
-  meta: "#EF4444",
-  barsPaidReal: "#6B7280",
-  barsOrgReal: "#10B981",
-  barsPaidProjected: "#F9A8D4",
-  barsOrgProjected: "#A7F3D0",
+  meta: "#EF4444",             // Vermelho
+  barsPaidReal: "#6B7280",     // Cinza mais escuro (pago real)
+  barsOrgReal: "#9CA3AF",      // Cinza mais claro (orgânico real)
+  barsPaidProjected: "#F9A8D4", // Rosa mais escuro (pago projetado)
+  barsOrgProjected: "#FBCFE8",  // Rosa mais claro (orgânico projetado)
   cplLine: "#F97316",
+  projectionText: "#F59E0B",   // Laranja para números projetados
 };
 
 const OPACITIES = {
   dailyReal: 0.85,
   dailyProjected: 0.35,
-  bandCPL: 0.15,
+  bandCPL: 0.11,
   metaLine: 0.6,
   markerLine: 0.8,
 };
@@ -143,7 +144,6 @@ export function LeadsProjectionCostBasedChart({
   const updateFunnel = useUpdateFunnel(projectId ?? "", funnelId);
   const storageKeyDataFinal = `leadsCostProjectionDataFinal_${funnelId}`;
   const storageKeyMetaTotal = `leadsCostProjectionMetaTotal_${funnelId}`;
-  const storageKeyGastoTotal = `leadsCostProjectionGastoTotal_${funnelId}`;
 
   // Get initial values from storage/DB/stage inputs
   const [initialDataFinal, setInitialDataFinal] = useState<string>("");
@@ -176,9 +176,6 @@ export function LeadsProjectionCostBasedChart({
     setDataFinal,
     metaTotal,
     setMetaTotal,
-    gastoTotalProjetado,
-    setGastoTotalProjetado,
-    gastoTotalSuggestion,
     chartData: projectionData,
     projectionPercentage,
     error,
@@ -216,14 +213,6 @@ export function LeadsProjectionCostBasedChart({
     }
   };
 
-  const handleGastoTotalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseFloat(e.target.value) || 0;
-    setGastoTotalProjetado(value);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(storageKeyGastoTotal, value.toString());
-    }
-  };
-
   if (!mounted) return null;
 
   return (
@@ -241,7 +230,7 @@ export function LeadsProjectionCostBasedChart({
       </div>
 
       {/* Inputs */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1">
           <label htmlFor="data-final" className="block text-xs font-medium text-muted-foreground">
             Data Final
@@ -266,27 +255,6 @@ export function LeadsProjectionCostBasedChart({
             placeholder="0"
             className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
           />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="gasto-total" className="block text-xs font-medium text-muted-foreground">
-            Gasto Total Projetado (R$)
-          </label>
-          <div className="relative">
-            <span className="absolute left-3 top-2.5 text-xs text-muted-foreground">R$</span>
-            <input
-              id="gasto-total"
-              type="number"
-              value={gastoTotalProjetado}
-              onChange={handleGastoTotalChange}
-              placeholder="0"
-              className="w-full pl-7 pr-3 py-2 rounded-md border border-input bg-background text-sm"
-            />
-            {gastoTotalSuggestion > 0 && (
-              <span className="text-xs text-muted-foreground mt-1 block">
-                Sugestão: R$ {Math.round(gastoTotalSuggestion).toLocaleString("pt-BR")}
-              </span>
-            )}
-          </div>
         </div>
       </div>
 
@@ -328,6 +296,7 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Pagos Reais (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
+              label={{ position: "top", fontSize: 9, formatter: (value: unknown) => (typeof value === 'number' && value > 0 ? Math.round(value) : "") }}
             />
             <Bar
               dataKey="dailyRealOrg"
@@ -336,6 +305,7 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Reais (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
+              label={{ position: "top", fontSize: 9, formatter: (value: unknown) => (typeof value === 'number' && value > 0 ? Math.round(value) : "") }}
             />
 
             {/* Stacked bars: Projected Paid + Projected Organic */}
@@ -346,6 +316,7 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Pagos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
+              label={{ position: "top", fontSize: 9, fill: COLORS.projectionText, formatter: (value: unknown) => (typeof value === 'number' && value > 0 ? Math.round(value) : "") }}
             />
             <Bar
               dataKey="dailyProjectedOrg"
@@ -354,6 +325,7 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
+              label={{ position: "top", fontSize: 9, fill: COLORS.projectionText, formatter: (value: unknown) => (typeof value === 'number' && value > 0 ? Math.round(value) : "") }}
             />
 
             {/* Banda de Confiança do CPL (área) */}
@@ -389,11 +361,11 @@ export function LeadsProjectionCostBasedChart({
                       stroke="white"
                       strokeWidth={1}
                     />
-                    <text x={cx} y={cy - 12} textAnchor="middle" fontSize={11} fill={COLORS.lineReal} fontWeight="600">
+                    <text x={cx} y={cy + 14} textAnchor="middle" fontSize={11} fill={COLORS.lineReal} fontWeight="600">
                       {Math.round(payload.cumulative)}
                     </text>
                     {payload.realPercentage > 0 && (
-                      <text x={cx} y={cy - 2} textAnchor="middle" fontSize={9} fill={COLORS.lineReal} fontWeight="500">
+                      <text x={cx} y={cy + 26} textAnchor="middle" fontSize={9} fill={COLORS.lineReal} fontWeight="500">
                         ({Math.round(payload.realPercentage)}%)
                       </text>
                     )}
@@ -426,11 +398,11 @@ export function LeadsProjectionCostBasedChart({
                       stroke="white"
                       strokeWidth={1}
                     />
-                    <text x={cx} y={cy - 12} textAnchor="middle" fontSize={11} fill={COLORS.lineProjection} fontWeight="600">
+                    <text x={cx} y={cy + 14} textAnchor="middle" fontSize={11} fill={COLORS.projectionText} fontWeight="600">
                       {Math.round(payload.cumulative)}
                     </text>
                     {payload.realPercentage > 0 && (
-                      <text x={cx} y={cy - 2} textAnchor="middle" fontSize={9} fill={COLORS.lineProjection} fontWeight="500">
+                      <text x={cx} y={cy + 26} textAnchor="middle" fontSize={9} fill={COLORS.projectionText} fontWeight="500">
                         ({Math.round(payload.realPercentage)}%)
                       </text>
                     )}
@@ -461,7 +433,18 @@ export function LeadsProjectionCostBasedChart({
               stroke={COLORS.meta}
               strokeWidth={2.5}
               strokeDasharray="5 5"
-              dot={false}
+              dot={(props: DotProps) => {
+                const { cx, cy, payload } = props;
+                if (!payload || cx === undefined || cy === undefined) return null;
+                return (
+                  <g key={`meta-dot-${payload.date}`}>
+                    <circle cx={cx} cy={cy} r={2.5} fill={COLORS.meta} stroke="white" strokeWidth={1} />
+                    <text x={cx} y={cy - 12} textAnchor="middle" fontSize={8} fill={COLORS.meta} fontWeight="600">
+                      {Math.round(payload.metaCumulative)}
+                    </text>
+                  </g>
+                );
+              }}
               isAnimationActive={false}
               name="Meta Acumulada"
             />
