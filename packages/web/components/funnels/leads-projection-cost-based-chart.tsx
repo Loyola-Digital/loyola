@@ -13,6 +13,7 @@ import {
   ResponsiveContainer,
   Legend,
   ReferenceLine,
+  LabelList,
 } from "recharts";
 import type { DailyRow } from "@/lib/utils/funnel-metrics";
 import { useLeadsProjection, type ProjectedDayData } from "@/lib/hooks/use-leads-projection";
@@ -351,20 +352,23 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Reais (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
-              label={{
-                position: "top",
-                fontSize: 9,
+            >
+              <LabelList
+                dataKey="dailyRealOrg"
+                position="top"
+                fontSize={9}
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                formatter: ((value: unknown, entry: any) => {
+                formatter={((value: unknown, _index: any, props: any) => {
+                  const entry = props.entry;
                   if (!entry || !entry.payload) return "";
                   // Show total (paid + organic) on top of the stack
                   const paid = entry.payload.dailyRealPaid ?? 0;
                   const org = entry.payload.dailyRealOrg ?? 0;
                   const total = paid + org;
                   return total > 0 ? String(Math.round(total)) : "";
-                }) as any
-              }}
-            />
+                }) as any}
+              />
+            </Bar>
 
             {/* Stacked bars: Projected Paid + Projected Organic */}
             <Bar
@@ -382,20 +386,24 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
-              label={{
-                position: "top",
-                fontSize: 9,
-                fill: COLORS.projectionText,
-                formatter: ((value: unknown, entry: any) => {
+            >
+              <LabelList
+                dataKey="dailyProjectedOrg"
+                position="top"
+                fontSize={9}
+                fill={COLORS.projectionText}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                formatter={((value: unknown, _index: any, props: any) => {
+                  const entry = props.entry;
                   if (!entry || !entry.payload) return "";
                   const paid = entry.payload.dailyProjectedPaid ?? 0;
                   const org = entry.payload.dailyProjectedOrg ?? 0;
                   if (paid <= 0 && org <= 0) return "";
                   // Show pipe-separated format: "pago | organico"
                   return `${Math.round(paid)} | ${Math.round(org)}`;
-                }) as any
-              }}
-            />
+                }) as any}
+              />
+            </Bar>
 
             {/* Banda de Confiança do CPL (área) */}
             <Area
