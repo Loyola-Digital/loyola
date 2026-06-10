@@ -164,6 +164,35 @@ export function StageCreativePerformanceTable({
     return sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />;
   }
 
+  function renderCellValue(row: any, colKey: SortableCol): React.ReactNode {
+    switch (colKey) {
+      case "spend":
+        return formatMetricValue(row.spend, "currency", { compact: true });
+      case "spendPercent":
+        return formatMetricValue(row.spendPercent, "percentage");
+      case "impressions":
+        return formatMetricValue(row.impressions, "number", { compact: true });
+      case "clicks":
+        return formatMetricValue(row.clicks, "number", { compact: true });
+      case "ctr":
+        return formatMetricValue(row.ctr, "percentage");
+      case "cpc":
+        return formatMetricValue(row.cpc, "currency");
+      case "cpm":
+        return formatMetricValue(row.cpm, "currency");
+      case "leads":
+        return formatMetricValue(row.leads, "number");
+      case "cpl":
+        return formatMetricValue(row.cpl, "currency");
+      case "revenue":
+        return formatMetricValue(row.revenue, "currency", { compact: true });
+      case "roas":
+        return row.roas != null ? `${row.roas.toFixed(2)}x` : "—";
+      default:
+        return "—";
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
@@ -300,21 +329,16 @@ export function StageCreativePerformanceTable({
                       {row.adName}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.spend, "currency", { compact: true })}</TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">
-                    {formatMetricValue(row.spendPercent, "percentage")}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.impressions, "number", { compact: true })}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.clicks, "number", { compact: true })}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.ctr, "percentage")}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.cpc, "currency")}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.cpm, "currency")}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.leads, "number")}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.cpl, "currency")}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMetricValue(row.revenue, "currency", { compact: true })}</TableCell>
-                  <TableCell className="text-right tabular-nums font-semibold">
-                    {row.roas != null ? `${row.roas.toFixed(2)}x` : "—"}
-                  </TableCell>
+                  {visibleColumns.map((col) => (
+                    <TableCell
+                      key={col.key}
+                      className={`text-right tabular-nums ${
+                        col.key === "roas" ? "font-semibold" : col.key === "spendPercent" ? "text-muted-foreground" : ""
+                      }`}
+                    >
+                      {renderCellValue(row, col.key)}
+                    </TableCell>
+                  ))}
                   <TableCell className="text-center">
                     <a
                       href={`https://www.facebook.com/ads/library/?id=${row.adId}`}
