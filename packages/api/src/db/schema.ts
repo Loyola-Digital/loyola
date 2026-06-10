@@ -1317,7 +1317,7 @@ export const projectSwitchySettings = pgTable(
       .unique()
       .references(() => projects.id, { onDelete: "cascade" }),
     pixels: jsonb("pixels")
-      .$type<{ platform: string; value: string; title?: string }[]>()
+      .$type<{ platform: string; value: string; title?: string; id?: string; workspaceId?: number | string | null }[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
     showGdpr: boolean("show_gdpr").notNull().default(false),
@@ -1354,6 +1354,9 @@ export const switchyShortenedLinks = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    funnelId: uuid("funnel_id").references(() => funnels.id, {
+      onDelete: "set null",
+    }),
     folderId: varchar("folder_id", { length: 64 }).notNull(),
     folderName: varchar("folder_name", { length: 500 }),
     checkoutBaseUrl: text("checkout_base_url").notNull(),
@@ -1374,5 +1377,6 @@ export const switchyShortenedLinks = pgTable(
   (table) => [
     index("idx_switchy_links_project").on(table.projectId),
     index("idx_switchy_links_created_at").on(table.createdAt),
+    index("idx_switchy_links_funnel").on(table.funnelId),
   ]
 );

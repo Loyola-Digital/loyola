@@ -36,6 +36,19 @@ export interface SwitchyPixel {
   platform: string;
 }
 
+/**
+ * Pixel cadastrado na conta Switchy (conta GLOBAL, 1 token).
+ * Vem da query GraphQL `{ pixels { ... } }`. Diferente de SwitchyPixel
+ * (que é o shape embutido em um link): inclui workspaceId pra contexto.
+ */
+export interface SwitchyAccountPixel {
+  id: string;
+  platform: string;
+  value: string;
+  title: string;
+  workspaceId: string | null;
+}
+
 interface GraphQLResponse<T> {
   data?: T;
   errors?: { message: string }[];
@@ -106,6 +119,22 @@ export async function fetchSwitchyLinks(
   return data.links;
 }
 
+/**
+ * Lista os pixels cadastrados na conta Switchy (conta GLOBAL — 1 token).
+ * Switchy NÃO herda pixel de folder/workspace: o campo pixels[] é por-link,
+ * então o gerador busca esta lista e o usuário seleciona quais anexar no
+ * create. Mesma auth (Api-Authorization) do restante do GraphQL.
+ */
+export async function fetchSwitchyPixels(
+  token: string,
+): Promise<SwitchyAccountPixel[]> {
+  const data = await graphql<{ pixels: SwitchyAccountPixel[] }>(
+    token,
+    `{ pixels { id platform value title workspaceId } }`,
+  );
+  return data.pixels;
+}
+
 // ============================================================
 // REST WRITE CLIENT (Story 33.2)
 // ============================================================
@@ -130,6 +159,8 @@ export interface SwitchyCreateLinkPixel {
   platform: string; // "facebook" | "gtm" (Meta / GTM)
   value: string; // pixel id / container id
   title: string;
+  id?: string; // UUID do pixel já cadastrado no Switchy (anexa o existente, evita duplicar)
+  workspaceId?: number | string | null;
 }
 
 export interface SwitchyCreateLinkPayload {

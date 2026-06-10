@@ -11,6 +11,7 @@ import {
 import {
   fetchSwitchyFolders,
   fetchSwitchyLinks,
+  fetchSwitchyPixels,
   createSwitchyLink,
   buildTrackedCheckoutUrl,
 } from "../services/switchy.js";
@@ -37,6 +38,10 @@ const pixelSchema = z.object({
   platform: z.enum(["facebook", "gtm"]),
   value: z.string().min(1),
   title: z.string().optional(),
+  // id/workspaceId do pixel já cadastrado no Switchy — para anexar o existente
+  // no create (evita o Switchy criar um pixel duplicado).
+  id: z.string().optional(),
+  workspaceId: z.union([z.number(), z.string()]).nullable().optional(),
 });
 
 const settingsBodySchema = z.object({
@@ -66,6 +71,7 @@ const generateBodySchema = z.object({
   checkoutUrl: z.string().url(),
   folderId: z.union([z.string(), z.number()]),
   folderName: z.string().optional(),
+  funnelId: z.string().uuid().optional(),
   campaign: z.string().min(1).max(120),
   term: z.string().max(120).optional(),
   content: z.string().max(120).optional(),
@@ -74,6 +80,7 @@ const generateBodySchema = z.object({
 
 const historyQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
+  funnelId: z.string().uuid().optional(),
 });
 
 // ============================================================
@@ -157,6 +164,29 @@ export default fp(async function switchyRoutes(fastify) {
     } catch (error) {
       fastify.log.error(error, "Failed to fetch Switchy links");
       return reply.code(502).send({ error: "Falha ao buscar links do Switchy" });
+    }
+  });
+
+  // ---- GET /api/projects/:projectId/switchy/pixels ----
+  // Pixels cadastrados na conta Switchy (conta GLOBAL). Usado pelo gerador
+  // para o usuário selecionar quais pixels anexar no create (Story 33.6).
+  fastify.get("/api/projects/:projectId/switchy/pixels", async (request, reply) => {
+    const paramResult = projectIdParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.code(400).send({ error: "ID inválido" });
+    }
+
+    const project = await getProjectAccess(paramResult.data.projectId, request.userId, request.userRole);
+    if (!project) {
+      return reply.code(404).send({ error: "Projeto não encontrado" });
+    }
+
+    try {
+      const pixels = await fetchSwitchyPixels(getSwitchyToken());
+      return { pixels };
+    } catch (error) {
+      fastify.log.error(error, "Failed to fetch Switchy pixels");
+      return reply.code(502).send({ error: "Falha ao buscar pixels do Switchy" });
     }
   });
 
@@ -465,7 +495,13 @@ export default fp(async function switchyRoutes(fastify) {
         const created = await createSwitchyLink(token, {
           url: fullUrl,
           folderId: Number(body.folderId),
-          pixels: pixels.map((p) => ({ platform: p.platform, value: p.value, title: p.title ?? "" })),
+          pixels: pixels.map((p) => ({
+            platform: p.platform,
+            value: p.value,
+            title: p.title ?? "",
+            ...(p.id ? { id: p.id } : {}),
+            ...(p.workspaceId != null ? { workspaceId: p.workspaceId } : {}),
+          })),
           showGDPR: showGdpr,
         });
         shortUrl = created.shortUrl;
@@ -481,6 +517,7 @@ export default fp(async function switchyRoutes(fastify) {
       try {
         await fastify.db.insert(switchyShortenedLinks).values({
           projectId,
+          funnelId: body.funnelId ?? null,
           folderId: String(body.folderId),
           folderName: body.folderName ?? null,
           checkoutBaseUrl: body.checkoutUrl,
@@ -533,11 +570,20 @@ export default fp(async function switchyRoutes(fastify) {
     }
 
     const limit = queryResult.data.limit ?? 50;
+    const { funnelId } = queryResult.data;
+
+    // Filtra por funil quando presente (links vivem dentro da página do funil).
+    const where = funnelId
+      ? and(
+          eq(switchyShortenedLinks.projectId, paramResult.data.projectId),
+          eq(switchyShortenedLinks.funnelId, funnelId),
+        )
+      : eq(switchyShortenedLinks.projectId, paramResult.data.projectId);
 
     const links = await fastify.db
       .select()
       .from(switchyShortenedLinks)
-      .where(eq(switchyShortenedLinks.projectId, paramResult.data.projectId))
+      .where(where)
       .orderBy(desc(switchyShortenedLinks.createdAt))
       .limit(limit);
 
