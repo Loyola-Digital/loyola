@@ -12,6 +12,7 @@ import type { FunnelStage } from "@loyola-x/shared";
 export interface LeadInputs {
   projectionEndDate?: string; // YYYY-MM-DD
   leadGoal?: number;
+  gastoTotal?: number; // Total projected spend (for cost-based projections)
 }
 
 export interface SaveLeadInputsInput {
@@ -45,6 +46,10 @@ export function validateLeadInputs(inputs: LeadInputs): { valid: boolean; error?
 
   if (inputs.leadGoal !== undefined && inputs.leadGoal < 0) {
     return { valid: false, error: "Meta de leads não pode ser negativa" };
+  }
+
+  if (inputs.gastoTotal !== undefined && inputs.gastoTotal < 0) {
+    return { valid: false, error: "Gasto total não pode ser negativo" };
   }
 
   return { valid: true };

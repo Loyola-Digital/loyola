@@ -154,30 +154,36 @@ export function LeadsProjectionCostBasedChart({
 
   useEffect(() => {
     setMounted(true);
-    // Always load gastoTotalProjetado from localStorage as fallback
-    if (typeof window !== "undefined") {
-      const savedGastoTotal = localStorage.getItem(storageKeyGastoTotal);
-      if (savedGastoTotal) {
-        setInitialGastoTotal(parseFloat(savedGastoTotal));
-      }
-    }
 
     if (usingStageInputs && stageId) {
+      // Priority 1: Stage inputs (isolated per etapa)
       const stageInputs = getStageInputs(stageId);
       setInitialDataFinal(stageInputs.projectionEndDate || getDefaultDataFinal());
       setInitialMetaTotal(stageInputs.leadGoal ?? 0);
+      setInitialGastoTotal(stageInputs.gastoTotal ?? 0);
       return;
     }
     if (usingDb && funnel) {
+      // Priority 2: DB storage (funnel-level)
       setInitialDataFinal(funnel.leadsGoalDataFinal || getDefaultDataFinal());
       setInitialMetaTotal(funnel.leadsGoalMeta ?? 0);
+      // Note: leadsGoalGastoTotal support depends on schema; fallback to localStorage if not available
+      if ('leadsGoalGastoTotal' in funnel) {
+        setInitialGastoTotal((funnel as any).leadsGoalGastoTotal ?? 0);
+      } else if (typeof window !== "undefined") {
+        const savedGastoTotal = localStorage.getItem(storageKeyGastoTotal);
+        setInitialGastoTotal(savedGastoTotal ? parseFloat(savedGastoTotal) : 0);
+      }
       return;
     }
+    // Priority 3: localStorage fallback
     if (typeof window !== "undefined") {
       const savedDataFinal = localStorage.getItem(storageKeyDataFinal);
       const savedMetaTotal = localStorage.getItem(storageKeyMetaTotal);
+      const savedGastoTotal = localStorage.getItem(storageKeyGastoTotal);
       setInitialDataFinal(savedDataFinal || getDefaultDataFinal());
       setInitialMetaTotal(savedMetaTotal ? parseFloat(savedMetaTotal) : 0);
+      setInitialGastoTotal(savedGastoTotal ? parseFloat(savedGastoTotal) : 0);
     }
   }, [usingStageInputs, stageId, usingDb, funnel, getStageInputs]);
 
@@ -229,8 +235,18 @@ export function LeadsProjectionCostBasedChart({
   const handleGastoTotalProjetadoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(e.target.value) || 0;
     setGastoTotalProjetado(value);
-    // Persist to localStorage (DB/stage persistence not yet implemented)
-    localStorage.setItem(storageKeyGastoTotal, value.toString());
+    // Persist to stage inputs > DB > localStorage (same hierarchy as other fields)
+    if (usingStageInputs && stageId) {
+      // Stage inputs storage — isolated per etapa
+      updateStageLocal(stageId, { gastoTotal: value });
+      saveStageInputs(stageId, { projectionEndDate: dataFinal, leadGoal: metaTotal, gastoTotal: value });
+    } else if (usingDb) {
+      // DB storage — funnel-level
+      updateFunnel.mutate({ leadsGoalGastoTotal: value });
+    } else {
+      // localStorage fallback
+      localStorage.setItem(storageKeyGastoTotal, value.toString());
+    }
   };
 
   if (!mounted) return null;

@@ -29,6 +29,8 @@ export interface UpdateFunnelInput {
   /** Story 18.19 fix: Meta Total + Data Final do gráfico de tendência */
   leadsGoalMeta?: number | null;
   leadsGoalDataFinal?: string | null;
+  /** Story 18.40 fix: Gasto Total Projetado para gráfico cost-based */
+  leadsGoalGastoTotal?: number | null;
 }
 
 export function useOrphanCampaigns(projectId: string | null, funnelId: string | null) {

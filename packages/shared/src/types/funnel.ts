@@ -227,6 +227,9 @@ export interface Funnel {
    * "Leads: Reais vs Projeção vs Meta" — persistido no DB (era localStorage). */
   leadsGoalMeta: number | null;
   leadsGoalDataFinal: string | null;
+  /** Story 18.40 fix: Gasto Total Projetado para gráfico
+   * "Leads: Reais vs Projeção (Baseado em Custo)" — persistido no DB (era localStorage). */
+  leadsGoalGastoTotal: number | null;
   createdAt: string;
   updatedAt: string;
 }
