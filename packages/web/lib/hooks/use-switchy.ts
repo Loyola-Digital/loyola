@@ -37,6 +37,21 @@ export interface SwitchyPixel {
   platform: "facebook" | "gtm";
   value: string;
   title: string;
+  // id/workspaceId do pixel no Switchy — propagados pro create anexar o existente.
+  id?: string;
+  workspaceId?: number | string | null;
+}
+
+// ---- Account pixels (Story 33.7) ----
+// Pixels já cadastrados na conta única do Switchy, buscados via GraphQL no
+// backend. A conta é global (1 token) e mistura pixels de vários experts, por
+// isso a UI mostra title + platform pra escolher os certos por projeto.
+export interface SwitchyAccountPixel {
+  id: string;
+  platform: string;
+  value: string;
+  title: string;
+  workspaceId?: number | string | null;
 }
 
 export interface SwitchySettings {
@@ -71,6 +86,8 @@ export interface SwitchyGeneratePayload {
   term?: string;
   content?: string;
   channels: SwitchyGenerateChannel[];
+  // Story 33.7: links são atrelados ao funil. Implícito pela rota do funil.
+  funnelId?: string;
 }
 
 export interface SwitchyGenerateResult {
@@ -92,6 +109,8 @@ export interface SwitchyHistoryItem {
   shortUrl: string | null;
   fullUrl: string;
   createdAt: string;
+  // Story 33.7: presente quando o link foi gerado dentro de um funil.
+  funnelId?: string | null;
 }
 
 // ============================================================
@@ -162,6 +181,23 @@ export function useSetSwitchySettings(projectId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["switchy-settings", projectId] });
     },
+  });
+}
+
+// ---- Account pixels (Story 33.7) ----
+// Lista os pixels já cadastrados na conta única do Switchy (via GraphQL no
+// backend). Usado pelo config panel pra selecionar pixels em vez de digitá-los.
+export function useSwitchyAccountPixels(projectId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["switchy-account-pixels", projectId],
+    queryFn: () =>
+      apiClient<{ pixels: SwitchyAccountPixel[] }>(
+        `/api/projects/${projectId}/switchy/pixels`,
+      ),
+    enabled: !!projectId,
+    staleTime: SWITCHY_STALE_TIME,
+    select: (data) => data.pixels,
   });
 }
 
@@ -256,19 +292,37 @@ export function useGenerateSwitchyLinks(projectId: string) {
           body: JSON.stringify(payload),
         },
       ),
-    onSuccess: () => {
+    onSuccess: (_data, payload) => {
+      // Invalida tanto a história geral do projeto quanto a do funil (quando o
+      // gerador rodou dentro de um funil — Story 33.7).
       qc.invalidateQueries({ queryKey: ["switchy-history", projectId] });
+      if (payload.funnelId) {
+        qc.invalidateQueries({
+          queryKey: ["switchy-history", projectId, payload.funnelId],
+        });
+      }
     },
   });
 }
 
-export function useSwitchyHistory(projectId: string | null) {
+/**
+ * Histórico de links gerados. Quando `funnelId` é informado (Story 33.7), filtra
+ * pelo funil via query param e usa uma queryKey por funil — assim a lista dentro
+ * da página do funil mostra só os links daquele funil.
+ */
+export function useSwitchyHistory(
+  projectId: string | null,
+  funnelId?: string | null,
+) {
   const apiClient = useApiClient();
+  const query = funnelId ? `?funnelId=${encodeURIComponent(funnelId)}` : "";
   return useQuery({
-    queryKey: ["switchy-history", projectId],
+    queryKey: funnelId
+      ? ["switchy-history", projectId, funnelId]
+      : ["switchy-history", projectId],
     queryFn: () =>
       apiClient<{ links: SwitchyHistoryItem[] }>(
-        `/api/projects/${projectId}/switchy/links/history`,
+        `/api/projects/${projectId}/switchy/links/history${query}`,
       ),
     enabled: !!projectId,
     staleTime: SWITCHY_STALE_TIME,

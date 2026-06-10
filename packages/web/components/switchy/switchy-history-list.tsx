@@ -17,6 +17,8 @@ import { useSwitchyHistory } from "@/lib/hooks/use-switchy";
 
 interface Props {
   projectId: string;
+  /** Story 33.7: filtra o histórico pelos links de um funil específico. */
+  funnelId?: string;
 }
 
 function errMsg(e: unknown): string {
@@ -47,8 +49,8 @@ async function copyToClipboard(value: string) {
   }
 }
 
-export function SwitchyHistoryList({ projectId }: Props) {
-  const history = useSwitchyHistory(projectId);
+export function SwitchyHistoryList({ projectId, funnelId }: Props) {
+  const history = useSwitchyHistory(projectId, funnelId);
   const links = history.data ?? [];
 
   return (
