@@ -154,6 +154,14 @@ export function LeadsProjectionCostBasedChart({
 
   useEffect(() => {
     setMounted(true);
+    // Always load gastoTotalProjetado from localStorage as fallback
+    if (typeof window !== "undefined") {
+      const savedGastoTotal = localStorage.getItem(storageKeyGastoTotal);
+      if (savedGastoTotal) {
+        setInitialGastoTotal(parseFloat(savedGastoTotal));
+      }
+    }
+
     if (usingStageInputs && stageId) {
       const stageInputs = getStageInputs(stageId);
       setInitialDataFinal(stageInputs.projectionEndDate || getDefaultDataFinal());
@@ -168,10 +176,8 @@ export function LeadsProjectionCostBasedChart({
     if (typeof window !== "undefined") {
       const savedDataFinal = localStorage.getItem(storageKeyDataFinal);
       const savedMetaTotal = localStorage.getItem(storageKeyMetaTotal);
-      const savedGastoTotal = localStorage.getItem(storageKeyGastoTotal);
       setInitialDataFinal(savedDataFinal || getDefaultDataFinal());
       setInitialMetaTotal(savedMetaTotal ? parseFloat(savedMetaTotal) : 0);
-      setInitialGastoTotal(savedGastoTotal ? parseFloat(savedGastoTotal) : 0);
     }
   }, [usingStageInputs, stageId, usingDb, funnel, getStageInputs]);
 
