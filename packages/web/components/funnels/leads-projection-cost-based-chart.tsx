@@ -145,10 +145,12 @@ export function LeadsProjectionCostBasedChart({
   const updateFunnel = useUpdateFunnel(projectId ?? "", funnelId);
   const storageKeyDataFinal = `leadsCostProjectionDataFinal_${funnelId}`;
   const storageKeyMetaTotal = `leadsCostProjectionMetaTotal_${funnelId}`;
+  const storageKeyGastoTotal = `leadsCostProjectionGastoTotal_${funnelId}`;
 
   // Get initial values from storage/DB/stage inputs
   const [initialDataFinal, setInitialDataFinal] = useState<string>("");
   const [initialMetaTotal, setInitialMetaTotal] = useState<number>(0);
+  const [initialGastoTotal, setInitialGastoTotal] = useState<number>(0);
 
   useEffect(() => {
     setMounted(true);
@@ -166,8 +168,10 @@ export function LeadsProjectionCostBasedChart({
     if (typeof window !== "undefined") {
       const savedDataFinal = localStorage.getItem(storageKeyDataFinal);
       const savedMetaTotal = localStorage.getItem(storageKeyMetaTotal);
+      const savedGastoTotal = localStorage.getItem(storageKeyGastoTotal);
       setInitialDataFinal(savedDataFinal || getDefaultDataFinal());
       setInitialMetaTotal(savedMetaTotal ? parseFloat(savedMetaTotal) : 0);
+      setInitialGastoTotal(savedGastoTotal ? parseFloat(savedGastoTotal) : 0);
     }
   }, [usingStageInputs, stageId, usingDb, funnel, getStageInputs]);
 
@@ -182,7 +186,7 @@ export function LeadsProjectionCostBasedChart({
     chartData: projectionData,
     projectionPercentage,
     error,
-  } = useLeadsProjection(rows, initialDataFinal, initialMetaTotal);
+  } = useLeadsProjection(rows, initialDataFinal, initialMetaTotal, initialGastoTotal);
 
   // Format chart data for recharts
   const chartData = projectionData.map((item) => ({
@@ -214,6 +218,13 @@ export function LeadsProjectionCostBasedChart({
     } else {
       localStorage.setItem(storageKeyMetaTotal, value.toString());
     }
+  };
+
+  const handleGastoTotalProjetadoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(e.target.value) || 0;
+    setGastoTotalProjetado(value);
+    // Persist to localStorage (DB/stage persistence not yet implemented)
+    localStorage.setItem(storageKeyGastoTotal, value.toString());
   };
 
   if (!mounted) return null;
@@ -270,7 +281,7 @@ export function LeadsProjectionCostBasedChart({
                 id="gasto-total"
                 type="number"
                 value={gastoTotalProjetado}
-                onChange={(e) => setGastoTotalProjetado(parseFloat(e.target.value) || 0)}
+                onChange={handleGastoTotalProjetadoChange}
                 placeholder="0"
                 className="w-full pl-7 pr-3 py-2 rounded-md border border-input bg-background text-sm"
               />

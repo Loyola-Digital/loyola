@@ -99,6 +99,7 @@ export function useLeadsProjection(
   rows: DailyRow[],
   initialDataFinal?: string,
   initialMetaTotal?: number,
+  initialGastoTotal?: number,
 ): UseLeadsProjectionResult {
   // Inputs
   const [dataFinal, setDataFinal] = useState<string>(() => {
@@ -109,7 +110,7 @@ export function useLeadsProjection(
   });
 
   const [metaTotal, setMetaTotal] = useState<number>(initialMetaTotal ?? 0);
-  const [gastoTotalProjetado, setGastoTotalProjetado] = useState<number>(0);
+  const [gastoTotalProjetado, setGastoTotalProjetado] = useState<number>(initialGastoTotal ?? 0);
 
   // State
   const [isLoading, setIsLoading] = useState(false);
