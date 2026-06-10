@@ -39,6 +39,7 @@ interface StageCreativePerformanceTableProps {
   funnelId: string;
   stageId: string;
   days?: number;
+  stageType?: 'paid' | 'free' | 'sales' | 'cpl';
 }
 
 type TemperatureFilter = "all" | "hot" | "cold";
@@ -75,6 +76,7 @@ export function StageCreativePerformanceTable({
   funnelId,
   stageId,
   days = 30,
+  stageType,
 }: StageCreativePerformanceTableProps) {
   const [temperatureFilter, setTemperatureFilter] = useState<TemperatureFilter>("all");
   const [sortCol, setSortCol] = useState<SortableCol>("spend");
@@ -87,6 +89,15 @@ export function StageCreativePerformanceTable({
     stageId,
     days,
   });
+
+  // Story 18.41: Filter columns based on stage type
+  // For free stages, suppress revenue and ROAS columns
+  const visibleColumns = useMemo(() => {
+    if (stageType === 'free') {
+      return COLUMNS.filter(col => !['revenue', 'roas'].includes(col.key));
+    }
+    return COLUMNS;
+  }, [stageType]);
 
   // Processa: metrics + filtro de temperatura
   // Story 18.28: Quando filtro é "all", compilar por ad_name (somar métricas)
@@ -179,7 +190,7 @@ export function StageCreativePerformanceTable({
           <h3 className="text-sm font-semibold">Desempenho de Criativos</h3>
           <p className="text-[11px] text-muted-foreground">
             {totalRows} {totalRows === 1 ? "criativo" : "criativos"} · ordenado por{" "}
-            {COLUMNS.find((c) => c.key === sortCol)?.label.toLowerCase() ?? sortCol} (
+            {visibleColumns.find((c) => c.key === sortCol)?.label.toLowerCase() ?? sortCol} (
             {sortDir === "desc" ? "maior → menor" : "menor → maior"})
           </p>
           {/* Transparencia: mostra qual filtro de campanha esta ativo */}
@@ -240,7 +251,7 @@ export function StageCreativePerformanceTable({
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
               <TableHead className="text-xs font-semibold">Ad Name</TableHead>
-              {COLUMNS.map((c) => (
+              {visibleColumns.map((c) => (
                 <TableHead
                   key={c.key}
                   onClick={() => handleSort(c.key)}
@@ -258,7 +269,7 @@ export function StageCreativePerformanceTable({
           <TableBody>
             {pageRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={COLUMNS.length + 2} className="py-10 text-center text-xs text-muted-foreground">
+                <TableCell colSpan={visibleColumns.length + 2} className="py-10 text-center text-xs text-muted-foreground">
                   Nenhum criativo encontrado neste período.
                 </TableCell>
               </TableRow>

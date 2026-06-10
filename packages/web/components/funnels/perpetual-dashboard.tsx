@@ -774,6 +774,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             subtype="capture"
             title="Vendas de Captação"
             days={days}
+            stageType={stageType}
           />
           <div className="border-t border-border/20" />
           <StageSalesSection
@@ -783,6 +784,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             subtype="main_product"
             title="Produto Principal"
             days={days}
+            stageType={stageType}
           />
         </div>
       )}

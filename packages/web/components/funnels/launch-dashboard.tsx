@@ -622,6 +622,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             subtype="capture"
             title="Vendas de Captação"
             days={days}
+            stageType={stageType}
             adsetsMap={adsetsMap}
           />
           <div className="border-t border-border/20" />
