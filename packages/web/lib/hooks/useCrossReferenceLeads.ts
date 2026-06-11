@@ -53,8 +53,11 @@ export function useCrossReferenceLeads({
     let totalLeads = 0;
 
     if (!sheetQuery.data?.rows || sheetQuery.data.rows.length === 0) {
+      console.log("[useCrossReferenceLeads] No rows:", { sheet: sheetName, rowCount: sheetQuery.data?.rows?.length ?? 0 });
       return { leads, totalLeads, isLoading: false };
     }
+
+    console.log("[useCrossReferenceLeads] Processing rows:", { sheet: sheetName, rowCount: sheetQuery.data.rows.length });
 
     const headers = sheetQuery.data.headers ?? [];
     // Look for "ad_id", "Ad Name", "ad name", or similar variations
