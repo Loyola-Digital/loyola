@@ -48,6 +48,7 @@ const OPACITIES = {
   bandCPL: 0.11,
   metaLine: 0.6,
   markerLine: 0.8,
+};
 
 // Custom label component for bar chart
 const BarLabel = (props: any) => {
@@ -64,7 +65,6 @@ const BarLabel = (props: any) => {
       [{Math.round(orgReal)}|{Math.round(orgProj)}] [{Math.round(paidReal)}|{Math.round(paidProj)}]
     </text>
   );
-};
 };
 
 function formatDateShort(d: string) {
