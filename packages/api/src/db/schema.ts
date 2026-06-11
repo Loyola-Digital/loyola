@@ -1132,6 +1132,30 @@ export const funnelStageMauticCampaigns = pgTable(
   (table) => [index("idx_mautic_stage_campaign_stage").on(table.stageId)]
 );
 
+// ============================================================
+// Story 34.1 — Integração Hotmart (Assinaturas / recorrência)
+// Conexão é POR PROJETO (1 credencial OAuth2 client_credentials por cliente).
+// client_id e client_secret criptografados via AES-256-GCM (services/encryption.ts).
+// O Basic base64(client_id:client_secret) é derivado em runtime, NÃO armazenado.
+// ============================================================
+export const hotmartConnections = pgTable(
+  "hotmart_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .unique()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    clientIdEncrypted: text("client_id_encrypted").notNull(),
+    clientIdIv: text("client_id_iv").notNull(),
+    clientSecretEncrypted: text("client_secret_encrypted").notNull(),
+    clientSecretIv: text("client_secret_iv").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_hotmart_connections_project").on(table.projectId)]
+);
+
 // Story 28.7: cache persistente de nomes Meta (ad/adset/campaign) — substitui
 // resolução in-memory que estourava rate limit Meta. TTL aplicado no código (24h).
 export const metaEntityNamesCache = pgTable(
