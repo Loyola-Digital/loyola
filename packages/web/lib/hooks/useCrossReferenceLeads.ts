@@ -39,33 +39,29 @@ export function useCrossReferenceLeads({
   const surveysQuery = useFunnelSurveys(projectId, funnelId, stageId);
   const surveys = surveysQuery.data?.surveys ?? [];
 
-  // Se temos surveys, ler dados da primeira (MVP: usa apenas a primeira)
-  const firstSurvey = surveys[0];
-  const sheetQuery = useSheetData(firstSurvey?.spreadsheetId ?? null, firstSurvey?.sheetName ?? null);
+  // Filtrar para usar apenas a planilha de leads (n8n-leads-lp-cap-grat)
+  // Ignora pesquisas e usa a planilha de dados de leads
+  const leadsSurvey = surveys.find(
+    (s) => s.spreadsheetName?.includes("n8n-leads") || s.spreadsheetName?.includes("leads")
+  ) || surveys[0];
+
+  const sheetQuery = useSheetData(leadsSurvey?.spreadsheetId ?? null, leadsSurvey?.sheetName ?? null);
 
   // Computar cruzamento
   const result = useMemo(() => {
     const leads: Record<string, number> = {};
     let totalLeads = 0;
 
-    console.log("[useCrossReferenceLeads] sheetQuery.data:", sheetQuery.data);
-    console.log("[useCrossReferenceLeads] surveys:", surveys);
-
     if (!sheetQuery.data?.rows || sheetQuery.data.rows.length === 0) {
-      console.log("[useCrossReferenceLeads] No rows in sheet data");
       return { leads, totalLeads, isLoading: false };
     }
 
     const headers = sheetQuery.data.headers ?? [];
-    console.log("[useCrossReferenceLeads] headers:", headers);
-
     // Look for "ad_id", "Ad Name", "ad name", or similar variations
     const adIdIndex = headers.findIndex((h) =>
       h.toLowerCase().includes("ad_id") ||
       h.toLowerCase().includes("ad name")
     );
-
-    console.log("[useCrossReferenceLeads] adIdIndex:", adIdIndex);
 
     if (adIdIndex < 0) {
       console.warn("[useCrossReferenceLeads] Column 'ad_id' or 'Ad Name' not found in sheet headers", headers);
@@ -82,7 +78,6 @@ export function useCrossReferenceLeads({
       totalLeads += 1;
     }
 
-    console.log("[useCrossReferenceLeads] Final leads result:", { leads, totalLeads });
     return { leads, totalLeads, isLoading: false };
   }, [sheetQuery.data]);
 
