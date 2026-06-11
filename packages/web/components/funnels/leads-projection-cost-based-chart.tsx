@@ -369,7 +369,6 @@ export function LeadsProjectionCostBasedChart({
             <Legend wrapperStyle={{ fontSize: 12 }} />
 
             {/* Stacked bars: Real Paid + Real Organic */}
-            {console.log("[chart] About to render Bars")}
             <Bar
               dataKey="dailyRealPaid"
               fill={COLORS.barsPaidReal}
