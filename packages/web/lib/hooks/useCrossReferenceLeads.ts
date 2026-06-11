@@ -53,11 +53,15 @@ export function useCrossReferenceLeads({
     }
 
     const headers = sheetQuery.data.headers ?? [];
-    const adIdIndex = headers.findIndex((h) => h.toLowerCase().includes("ad_id"));
+    // Look for "ad_id", "Ad Name", "ad name", or similar variations
+    const adIdIndex = headers.findIndex((h) =>
+      h.toLowerCase().includes("ad_id") ||
+      h.toLowerCase().includes("ad name")
+    );
 
     if (adIdIndex < 0) {
-      console.warn("[useCrossReferenceLeads] Column 'ad_id' not found in sheet headers", headers);
-      return { leads, totalLeads, isLoading: false, error: "ad_id column not found" };
+      console.warn("[useCrossReferenceLeads] Column 'ad_id' or 'Ad Name' not found in sheet headers", headers);
+      return { leads, totalLeads, isLoading: false, error: "ad_id/ad_name column not found" };
     }
 
     // Contar linhas por ad_id (agregação simples)
