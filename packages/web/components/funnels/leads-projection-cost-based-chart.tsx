@@ -52,17 +52,22 @@ const OPACITIES = {
 
 // Custom label component for bar chart
 const BarLabel = (props: any) => {
-  const { x, y, entry } = props;
-  if (!entry?.payload) return null;
+  console.log("[BarLabel] props:", props);
+  const { x, y, width, height } = props;
 
-  const orgReal = entry.payload.dailyRealOrg ?? 0;
-  const paidReal = entry.payload.dailyRealPaid ?? 0;
-  const orgProj = entry.payload.dailyProjectedOrg ?? 0;
-  const paidProj = entry.payload.dailyProjectedPaid ?? 0;
+  // Recharts passes value, not entry
+  if (!props.value) return null;
 
   return (
-    <text x={x} y={y - 8} textAnchor="middle" fontSize={8} fill="#4B5563">
-      [{Math.round(orgReal)}|{Math.round(orgProj)}] [{Math.round(paidReal)}|{Math.round(paidProj)}]
+    <text
+      x={x! + (width || 0) / 2}
+      y={y! - 8}
+      textAnchor="middle"
+      fontSize={10}
+      fill="#000"
+      fontWeight="bold"
+    >
+      {Math.round(props.value)}
     </text>
   );
 };
