@@ -406,7 +406,7 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Reais (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
-              label={<BarLabel />}
+              label={{ position: "top", fontSize: 12, fill: "#000" }}
             />
 
             {/* Stacked bars: Projected Paid + Projected Organic */}
