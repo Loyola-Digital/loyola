@@ -49,8 +49,8 @@ export function useCrossReferenceLeads({
     (s) => s.spreadsheetName?.includes("n8n-leads") || s.spreadsheetName?.includes("leads")
   ) || surveys[0];
 
-  console.log("[useCrossReferenceLeads] surveys:", surveys.map(s => s.spreadsheetName));
-  console.log("[useCrossReferenceLeads] leadsSurvey selected:", leadsSurvey?.spreadsheetName);
+  console.log("[useCrossReferenceLeads] surveys:", surveys.map(s => ({ name: s.spreadsheetName, sheet: s.sheetName })));
+  console.log("[useCrossReferenceLeads] leadsSurvey selected:", { name: leadsSurvey?.spreadsheetName, sheet: leadsSurvey?.sheetName });
 
   const sheetQuery = useSheetData(leadsSurvey?.spreadsheetId ?? null, leadsSurvey?.sheetName ?? null);
 
