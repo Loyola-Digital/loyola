@@ -52,15 +52,22 @@ const OPACITIES = {
 
 // Custom label component for bar chart
 const BarLabel = (props: any) => {
+  console.log("[BarLabel] entry structure:", props.entry);
   const { x, y, width, entry } = props;
 
-  // Recharts passes the entire data point in entry
-  if (!entry) return null;
+  if (!entry) {
+    console.log("[BarLabel] No entry!");
+    return null;
+  }
 
-  const orgReal = entry.dailyRealOrg ?? 0;
-  const paidReal = entry.dailyRealPaid ?? 0;
-  const orgProj = entry.dailyProjectedOrg ?? 0;
-  const paidProj = entry.dailyProjectedPaid ?? 0;
+  // Try both direct access and payload
+  const data = entry.payload || entry;
+  const orgReal = data?.dailyRealOrg ?? 0;
+  const paidReal = data?.dailyRealPaid ?? 0;
+  const orgProj = data?.dailyProjectedOrg ?? 0;
+  const paidProj = data?.dailyProjectedPaid ?? 0;
+
+  console.log("[BarLabel] Values:", { orgReal, paidReal, orgProj, paidProj });
 
   return (
     <text
