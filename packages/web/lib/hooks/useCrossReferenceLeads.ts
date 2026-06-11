@@ -54,8 +54,6 @@ export function useCrossReferenceLeads({
     ? "n8n-leads-lp-cap-grat"
     : leadsSurvey?.sheetName ?? null;
 
-  console.log("[useCrossReferenceLeads] Using sheet:", { name: leadsSurvey?.spreadsheetName, sheet: sheetName });
-
   const sheetQuery = useSheetData(leadsSurvey?.spreadsheetId ?? null, sheetName);
 
   // Computar cruzamento
