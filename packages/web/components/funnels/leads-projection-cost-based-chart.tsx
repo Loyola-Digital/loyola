@@ -387,34 +387,20 @@ export function LeadsProjectionCostBasedChart({
               label={{
                 position: "top",
                 fontSize: 8,
+                fill: "#4B5563",
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 content: (props: any) => {
-                  try {
-                    const { x, y, entry } = props;
-                    if (!entry || !entry.payload) {
-                      console.log("[label] No entry/payload");
-                      return null;
-                    }
-                    const orgReal = entry.payload.dailyRealOrg ?? 0;
-                    const paidReal = entry.payload.dailyRealPaid ?? 0;
-                    const orgProj = entry.payload.dailyProjectedOrg ?? 0;
-                    const paidProj = entry.payload.dailyProjectedPaid ?? 0;
-                    const total = orgReal + paidReal;
-                    console.log("[label] Values:", { orgReal, paidReal, orgProj, paidProj, total, x, y });
-                    if (total <= 0) {
-                      console.log("[label] Total is 0, returning null");
-                      return null;
-                    }
-                    console.log("[label] Rendering text");
-                    return (
-                      <text x={x} y={y - 8} textAnchor="middle" fontSize={8} fill="#4B5563">
-                        [{Math.round(orgReal)} | {Math.round(orgProj)}] [{Math.round(paidReal)} | {Math.round(paidProj)}]
-                      </text>
-                    );
-                  } catch (err) {
-                    console.error("[leads-projection-chart] Label render error:", err);
-                    return null;
-                  }
+                  if (!props?.entry?.payload) return null;
+                  const { x, y, entry } = props;
+                  const orgReal = entry.payload.dailyRealOrg ?? 0;
+                  const paidReal = entry.payload.dailyRealPaid ?? 0;
+                  const orgProj = entry.payload.dailyProjectedOrg ?? 0;
+                  const paidProj = entry.payload.dailyProjectedPaid ?? 0;
+                  return (
+                    <text x={x} y={y - 8} textAnchor="middle" fontSize={8} fill="#4B5563">
+                      [{Math.round(orgReal)}|{Math.round(orgProj)}] [{Math.round(paidReal)}|{Math.round(paidProj)}]
+                    </text>
+                  );
                 }
               }}
             />
