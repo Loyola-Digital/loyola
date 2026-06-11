@@ -40,28 +40,27 @@ export interface HotmartStatusCount {
 }
 
 export interface HotmartDashboard {
-  productId: string;
-  months: number;
   totalSubscriptions: number;
   /** vigentes (ACTIVE) */
-  active: number;
+  activeSubscriptions: number;
   /** soma dos 3 CANCELLED_BY_* */
-  cancelled: number;
+  cancelledSubscriptions: number;
   /** OVERDUE + DELAYED (inadimplentes) */
-  overdue: number;
-  refunded: { count: number; value: HotmartMoneyMetric[] };
+  overdueSubscriptions: number;
+  refunded: { totalItems: number; totalValue: HotmartMoneyMetric[] };
   /** por moeda (BRL primeiro) */
   mrr: HotmartMoneyMetric[];
   /** por moeda */
   ltv: HotmartMoneyMetric[];
   /** lifetime médio em meses */
   ltMonths: number;
-  /** 0..100 (ativas/total) */
+  /** 0..1 (ativas/total) */
   retentionRate: number;
-  /** 0..100 (canceladas/total) */
+  /** 0..1 (canceladas/total) */
   churnRate: number;
-  renewalsNextMonth: { count: number; value: HotmartMoneyMetric[] };
+  nextMonthRenewals: { count: number; expectedRevenue: HotmartMoneyMetric[] };
   statusDistribution: HotmartStatusCount[];
+  currencyPrimary: string;
 }
 
 // ---- Conexão (projeto) — Story 34.4 ----
