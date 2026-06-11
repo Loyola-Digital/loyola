@@ -343,9 +343,7 @@ export function LeadsProjectionCostBasedChart({
 
       {/* Chart */}
       {chartData.length > 0 ? (
-        <>
-          {console.log("[leads-projection-chart] Rendering ResponsiveContainer with", chartData.length, "data points")}
-          <ResponsiveContainer width="100%" height={400}>
+        <ResponsiveContainer width="100%" height={400}>
           <ComposedChart data={chartData} margin={{ top: 20, right: 120, bottom: 5, left: 10 }}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
@@ -371,6 +369,7 @@ export function LeadsProjectionCostBasedChart({
             <Legend wrapperStyle={{ fontSize: 12 }} />
 
             {/* Stacked bars: Real Paid + Real Organic */}
+            {console.log("[chart] About to render Bars")}
             <Bar
               dataKey="dailyRealPaid"
               fill={COLORS.barsPaidReal}
@@ -572,7 +571,6 @@ export function LeadsProjectionCostBasedChart({
             )}
           </ComposedChart>
         </ResponsiveContainer>
-        </>
       ) : (
         <div className="flex items-center justify-center h-[400px] text-muted-foreground">
           Nenhum dado disponível
