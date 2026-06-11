@@ -35,8 +35,12 @@ export function useCrossReferenceLeads({
   stageId,
   days: _days = 30,
 }: UseCrossReferenceLeadsOptions): CrossReferencedLeads {
-  // Buscar surveys vinculadas (planilha de Captação Gratuita)
-  const surveysQuery = useFunnelSurveys(projectId, funnelId, stageId);
+  // Buscar surveys vinculadas — primeiro tenta stage, depois funnel inteiro
+  const stageQuery = useFunnelSurveys(projectId, funnelId, stageId);
+  const stageSurveys = stageQuery.data?.surveys ?? [];
+
+  // Se stage não tem surveys, tenta funnel inteiro
+  const surveysQuery = stageSurveys.length > 0 ? stageQuery : useFunnelSurveys(projectId, funnelId, "");
   const surveys = surveysQuery.data?.surveys ?? [];
 
   // Filtrar para usar apenas a planilha de leads (n8n-leads-lp-cap-grat)
