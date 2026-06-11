@@ -174,7 +174,8 @@ export interface SwitchyCreateLinkPayload {
 }
 
 export interface CreatedSwitchyLink {
-  shortUrl: string | null; // url curta retornada (pode vir como url/shortUrl/short)
+  shortUrl: string | null; // url curta = `https://{domain}/{id}`
+  domain: string | null; // domínio do shortlink (ex: hi.switchy.io)
   switchyLinkId: string | null;
   switchyUniq: number | null;
   raw: unknown; // resposta crua para depuração/persistência
@@ -263,12 +264,19 @@ export async function createSwitchyLink(
   const link = ((json?.link as Record<string, unknown> | undefined) ??
     json) as Record<string, unknown>;
 
+  // A short URL do Switchy é `https://{domain}/{id}` — NÃO existe campo
+  // "shortUrl"/"short" na resposta, e `link.url` é o DESTINO (a URL longa que
+  // enviamos). Construímos a partir de domain + id; só caímos em shortUrl/short
+  // explícitos se a API algum dia passar a devolvê-los.
+  const switchyLinkId = (link?.id as string | undefined) ?? null;
+  const domain = (link?.domain as string | undefined) ?? null;
+  const composedShort =
+    domain && switchyLinkId ? `https://${domain}/${switchyLinkId}` : null;
   const shortUrl =
     (link?.shortUrl as string | undefined) ??
     (link?.short as string | undefined) ??
-    (link?.url as string | undefined) ??
+    composedShort ??
     null;
-  const switchyLinkId = (link?.id as string | undefined) ?? null;
   const switchyUniq = typeof link?.uniq === "number" ? link.uniq : null;
 
   if (shortUrl == null && switchyLinkId == null) {
@@ -277,5 +285,42 @@ export async function createSwitchyLink(
     console.warn("[switchy] resposta inesperada de /links/create", json);
   }
 
-  return { shortUrl, switchyLinkId, switchyUniq, raw: json };
+  return { shortUrl, domain, switchyLinkId, switchyUniq, raw: json };
+}
+
+/**
+ * Atualiza um shortlink existente no Switchy (PUT /links/:uniq). Mantém o mesmo
+ * link curto (uniq/id/domain), só troca o destino/metadados. Usado pra editar
+ * o destino/UTMs de um link já gerado.
+ */
+export async function updateSwitchyLink(
+  token: string,
+  uniq: number,
+  patch: { url?: string; note?: string; tags?: string[] },
+): Promise<void> {
+  const res = await fetch(`${REST_ENDPOINT}/links/${uniq}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "Api-Authorization": token,
+    },
+    body: JSON.stringify({ link: patch }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Switchy REST update error: ${res.status} ${res.statusText}`);
+  }
+}
+
+/**
+ * Lista os domínios disponíveis na conta Switchy (conta GLOBAL). Filtra os
+ * removidos (`removedDate` preenchido). Usado pelo gerador pra o usuário
+ * escolher o domínio do shortlink.
+ */
+export async function fetchSwitchyDomains(token: string): Promise<string[]> {
+  const data = await graphql<{ domains: { name: string; removedDate: string | null }[] }>(
+    token,
+    `{ domains(order_by: { name: asc }) { name removedDate } }`,
+  );
+  return data.domains.filter((d) => !d.removedDate).map((d) => d.name);
 }

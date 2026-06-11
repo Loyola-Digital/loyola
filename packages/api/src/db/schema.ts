@@ -1383,6 +1383,9 @@ export const switchyShortenedLinks = pgTable(
     }),
     folderId: varchar("folder_id", { length: 64 }).notNull(),
     folderName: varchar("folder_name", { length: 500 }),
+    /** Domínio do shortlink no Switchy (ex: links.loyoladigital.com). Usado pra
+     * reconstruir/exibir a short URL. */
+    domain: varchar("domain", { length: 255 }),
     checkoutBaseUrl: text("checkout_base_url").notNull(),
     channelLabel: varchar("channel_label", { length: 120 }),
     utmCampaign: varchar("utm_campaign", { length: 120 }),
