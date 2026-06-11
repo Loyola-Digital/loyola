@@ -61,6 +61,7 @@ import funnelBatchTurnsRoutes from "./routes/funnel-batch-turns.js";
 import zoomStageRoutes from "./routes/zoom-stage.js";
 import stageCreativePerformanceRoutes from "./routes/stage-creative-performance.js";
 import mauticRoutes from "./routes/mautic.js";
+import hotmartRoutes from "./routes/hotmart.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -139,6 +140,7 @@ export async function buildServer() {
   await app.register(zoomStageRoutes);
   await app.register(stageCreativePerformanceRoutes);
   await app.register(mauticRoutes);
+  await app.register(hotmartRoutes);
 
   return app;
 }
