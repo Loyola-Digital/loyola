@@ -76,6 +76,8 @@ export function useCrossReferenceLeads({
       totalLeads += 1;
     }
 
+    console.log("[useCrossReferenceLeads] Terms mapping:", terms);
+    console.log("[useCrossReferenceLeads] Sample row term (row[7]):", sheetQuery.data.rows[0]?.[TERM_INDEX]);
     return { leads, terms, totalLeads, isLoading: false };
   }, [sheetQuery.data]);
 
