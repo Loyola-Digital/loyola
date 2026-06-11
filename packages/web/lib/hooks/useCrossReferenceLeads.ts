@@ -35,26 +35,17 @@ export function useCrossReferenceLeads({
   stageId,
   days: _days = 30,
 }: UseCrossReferenceLeadsOptions): CrossReferencedLeads {
-  // Buscar surveys vinculadas — primeiro tenta stage, depois funnel inteiro
-  const stageQuery = useFunnelSurveys(projectId, funnelId, stageId);
-  const stageSurveys = stageQuery.data?.surveys ?? [];
-
-  // Se stage não tem surveys, tenta funnel inteiro
-  const surveysQuery = stageSurveys.length > 0 ? stageQuery : useFunnelSurveys(projectId, funnelId, "");
+  // Buscar surveys vinculadas ao stage
+  const surveysQuery = useFunnelSurveys(projectId, funnelId, stageId);
   const surveys = surveysQuery.data?.surveys ?? [];
 
-  // Filtrar para usar apenas a planilha de leads (n8n-leads-lp-cap-grat)
-  // Ignora pesquisas e usa a planilha de dados de leads
-  const leadsSurvey = surveys.find(
-    (s) => s.spreadsheetName?.includes("n8n-leads") || s.spreadsheetName?.includes("leads")
-  ) || surveys[0];
-
-  // For "Painel de Controle" spreadsheet, use the leads-specific sheet
-  const sheetName = leadsSurvey?.spreadsheetName?.includes("Painel de Controle")
+  // Usar a primeira survey encontrada e forçar a aba "n8n-leads-lp-cap-grat" se for "Painel de Controle"
+  const survey = surveys[0];
+  const sheetName = survey?.spreadsheetName?.includes("Painel de Controle")
     ? "n8n-leads-lp-cap-grat"
-    : leadsSurvey?.sheetName ?? null;
+    : survey?.sheetName ?? null;
 
-  const sheetQuery = useSheetData(leadsSurvey?.spreadsheetId ?? null, sheetName);
+  const sheetQuery = useSheetData(survey?.spreadsheetId ?? null, sheetName);
 
   // Computar cruzamento
   const result = useMemo(() => {
@@ -90,7 +81,7 @@ export function useCrossReferenceLeads({
     return { leads, totalLeads, isLoading: false };
   }, [sheetQuery.data]);
 
-  const isLoading = surveysQuery.isLoading || (leadsSurvey ? sheetQuery.isLoading : false);
+  const isLoading = surveysQuery.isLoading || (survey ? sheetQuery.isLoading : false);
   const error = surveysQuery.error?.message || sheetQuery.error?.message;
 
   return {
