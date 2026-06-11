@@ -45,6 +45,9 @@ export function useCrossReferenceLeads({
     (s) => s.spreadsheetName?.includes("n8n-leads") || s.spreadsheetName?.includes("leads")
   ) || surveys[0];
 
+  console.log("[useCrossReferenceLeads] surveys:", surveys.map(s => s.spreadsheetName));
+  console.log("[useCrossReferenceLeads] leadsSurvey selected:", leadsSurvey?.spreadsheetName);
+
   const sheetQuery = useSheetData(leadsSurvey?.spreadsheetId ?? null, leadsSurvey?.sheetName ?? null);
 
   // Computar cruzamento
