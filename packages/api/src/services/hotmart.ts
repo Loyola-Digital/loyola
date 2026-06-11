@@ -50,20 +50,37 @@ export interface HotmartProductRef {
   ucode?: string;
 }
 
-/** Item de /subscriptions/summary — base de LT/LTV. */
+/**
+ * Item de /subscriptions/summary. PEGADINHA confirmada ao vivo: este endpoint
+ * NÃO retorna `price` nem `date_next_charge` — só `lifetime` (em DIAS, não em
+ * ciclos), `plan`, `status`, `product`. Por isso é usado SÓ como base do LT.
+ * MRR/LTV/renovações vêm de /subscriptions (HotmartActiveSub), que tem price.
+ */
 export interface HotmartSummaryItem {
   subscriber_code?: string;
   subscription_id?: number | string;
   status?: string;
-  /** nº de ciclos pagos. */
+  /** Tempo de vida da assinatura em DIAS (ex.: 238 ≈ 8 meses). NÃO é nº de ciclos. */
   lifetime?: number;
   accession_date?: number;
-  /** epoch ms UTC. */
-  date_next_charge?: number;
   last_recurrency?: unknown;
   plan?: HotmartPlan;
   product?: HotmartProductRef;
+}
+
+/**
+ * Item de /subscriptions (NÃO o /summary). Confirmado ao vivo: traz `price`,
+ * `date_next_charge` e `plan.recurrency_period` — base de MRR, renovações do
+ * próximo mês e LTV. Não traz `lifetime` (esse só no /summary).
+ */
+export interface HotmartActiveSub {
+  subscriber_code?: string;
+  status?: string;
   price?: HotmartPrice;
+  /** epoch ms UTC da próxima cobrança. */
+  date_next_charge?: number;
+  plan?: HotmartPlan;
+  product?: HotmartProductRef;
 }
 
 export interface HotmartSalesSummaryItem {
@@ -349,6 +366,45 @@ export async function fetchSubscriptionsSummary(
   return out;
 }
 
+interface SubscriptionsDetailedResponse {
+  items?: HotmartActiveSub[];
+  page_info?: { total_results?: number; next_page_token?: string | null };
+}
+
+/**
+ * Varre /subscriptions (NÃO o /summary) com auto-paginação por cursor. Este
+ * endpoint traz `price`, `date_next_charge` e `plan` — usado pra coletar as
+ * assinaturas ACTIVE (base de MRR, renovações e LTV). Mesmo guard de loop do
+ * summary (MAX_PAGES + break em token ausente/repetido).
+ */
+export async function fetchSubscriptionsDetailed(
+  token: string,
+  args: { productId: string; status: string; accessionFrom: number; accessionTo?: number },
+): Promise<HotmartActiveSub[]> {
+  const out: HotmartActiveSub[] = [];
+  let pageToken: string | undefined;
+  let lastToken: string | undefined;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const data = await hotmartGet<SubscriptionsDetailedResponse>(token, "/subscriptions", {
+      product_id: args.productId,
+      status: args.status,
+      accession_date: args.accessionFrom,
+      end_accession_date: args.accessionTo,
+      max_results: 100,
+      page_token: pageToken,
+    });
+    if (data.items?.length) out.push(...data.items);
+
+    const next = data.page_info?.next_page_token;
+    if (!next || next === lastToken) break;
+    lastToken = next;
+    pageToken = next;
+  }
+
+  return out;
+}
+
 interface SalesSummaryResponse {
   items?: HotmartSalesSummaryItem[];
 }
@@ -419,25 +475,25 @@ function sortCurrencyPrimaryFirst(arr: MoneyByCurrency[]): MoneyByCurrency[] {
   });
 }
 
-/** Média simples de valores por moeda (soma / contagem por moeda). */
-function averageByCurrency(sums: Map<string, number>, counts: Map<string, number>): MoneyByCurrency[] {
-  const out: MoneyByCurrency[] = [];
-  for (const [currency, total] of sums.entries()) {
-    const n = counts.get(currency) ?? 0;
-    out.push({ currency, value: n > 0 ? total / n : 0 });
-  }
-  return sortCurrencyPrimaryFirst(out);
-}
-
 export interface AggregateInput {
-  /** items de /subscriptions/summary (base de MRR/LT/LTV/renovações/distribuição). */
+  /**
+   * Assinaturas ACTIVE detalhadas (de /subscriptions, COM price e
+   * date_next_charge). Base de MRR, renovações do próximo mês e LTV.
+   */
+  activeSubs: HotmartActiveSub[];
+  /**
+   * items de /subscriptions/summary (têm `lifetime` em DIAS, sem price). Base
+   * exclusiva do LT (tempo de vida médio).
+   */
   summaryItems: HotmartSummaryItem[];
   /** contagens por status vindas de page_info.total_results (mais confiável que summary). */
   counts: {
+    /** Total = soma dos 6 status mostrados pela Hotmart (exclui INACTIVE/STARTED). */
     total: number;
-    active: number;
+    active: number; // ACTIVE
+    delayed: number; // DELAYED (ainda vigente)
     cancelled: number; // soma dos 3 CANCELLED_*
-    overdue: number; // OVERDUE + DELAYED
+    overdue: number; // OVERDUE (venceu o máximo de recorrências)
     byStatus: Array<{ status: string; count: number }>;
   };
   /** items de /sales/summary?transaction_status=REFUNDED. */
@@ -447,64 +503,65 @@ export interface AggregateInput {
 }
 
 /**
- * Calcula TODAS as métricas a partir de fixtures (sem rede).
+ * Calcula TODAS as métricas a partir de fixtures (sem rede). Fontes alinhadas
+ * com o painel oficial da Hotmart (validado ao vivo):
  *
- * Fórmulas (multi-moeda; primária BRL; guardas de divisão por zero):
- *  - MRR  = Σ(ACTIVE) price.value * 30 / plan.recurrency_period, por moeda.
- *  - LT (meses) = média de (lifetime * recurrency_period / 30) do summary.
- *  - LTV = média de (price.value * lifetime) por moeda.
- *  - Canceladas = soma dos 3 CANCELLED_* (das counts).
- *  - Inadimplentes = OVERDUE + DELAYED (das counts).
+ *  - MRR  = Σ(activeSubs) price.value * 30 / plan.recurrency_period, por moeda.
+ *  - LT (meses) = média de (lifetime / 30) das ACTIVE do summary [lifetime em DIAS].
+ *  - LTV (por assinante, por moeda) = MRR_médio_por_assinatura * LT
+ *         = (MRR_moeda / nº_ativos_da_moeda) * ltMonths.
+ *  - Total = active + delayed + cancelled + overdue (exclui INACTIVE/STARTED).
+ *  - Vigentes (retenção) = (active + delayed) / total.
+ *  - Churn = (cancelled + overdue) / total  [= 1 − retenção].
  *  - Reembolsadas = sales/summary?transaction_status=REFUNDED.
- *  - Retenção% = ativas/total ; Churn% = canceladas/total.
- *  - Renovações próximo mês = ACTIVE com date_next_charge na janela do próximo mês.
+ *  - Renovações próximo mês = activeSubs com date_next_charge na janela.
  */
 export function aggregateDashboard(input: AggregateInput): HotmartDashboard {
-  const { summaryItems, counts, refundedSales } = input;
+  const { activeSubs, summaryItems, counts, refundedSales } = input;
   const refMs = input.refMs ?? Date.now();
 
-  // --- MRR: só ACTIVE, mensalizado por recurrency_period (dias) ---
+  // --- MRR: Σ ACTIVE mensalizado por recurrency_period (dias), por moeda ---
+  // Também conta ativos por moeda pra derivar o LTV (preço mensal médio × LT).
   const mrrByCurrency = new Map<string, number>();
-  for (const it of summaryItems) {
-    if (it.status !== "ACTIVE") continue;
+  const activeCountByCurrency = new Map<string, number>();
+  for (const it of activeSubs) {
     const value = it.price?.value;
     const period = it.plan?.recurrency_period;
     const currency = it.price?.currency_code ?? PRIMARY_CURRENCY;
     if (typeof value !== "number" || typeof period !== "number" || period <= 0) continue;
     const monthly = (value * 30) / period;
     mrrByCurrency.set(currency, (mrrByCurrency.get(currency) ?? 0) + monthly);
+    activeCountByCurrency.set(currency, (activeCountByCurrency.get(currency) ?? 0) + 1);
   }
 
-  // --- LT (meses): média de (lifetime * recurrency_period / 30) ---
+  // --- LT (meses): média de lifetime/30 SÓ das ACTIVE (lifetime em DIAS) ---
+  // Validado ao vivo: a Hotmart calcula o "Tempo de Vida" sobre as assinaturas
+  // ativas (8,97 ≈ 8,98 oficial). Incluir INACTIVE (lifetime 0, nunca ativaram)
+  // ou canceladas derruba a média pela metade.
   let ltSum = 0;
   let ltCount = 0;
   for (const it of summaryItems) {
+    if (it.status !== "ACTIVE") continue;
     const lifetime = it.lifetime;
-    const period = it.plan?.recurrency_period;
-    if (typeof lifetime !== "number" || typeof period !== "number" || period <= 0) continue;
-    ltSum += (lifetime * period) / 30;
+    if (typeof lifetime !== "number" || lifetime < 0) continue;
+    ltSum += lifetime / 30;
     ltCount += 1;
   }
   const ltMonths = ltCount > 0 ? ltSum / ltCount : 0;
 
-  // --- LTV por moeda: média de (price.value * lifetime) ---
-  const ltvSums = new Map<string, number>();
-  const ltvCounts = new Map<string, number>();
-  for (const it of summaryItems) {
-    const value = it.price?.value;
-    const lifetime = it.lifetime;
-    const currency = it.price?.currency_code ?? PRIMARY_CURRENCY;
-    if (typeof value !== "number" || typeof lifetime !== "number") continue;
-    ltvSums.set(currency, (ltvSums.get(currency) ?? 0) + value * lifetime);
-    ltvCounts.set(currency, (ltvCounts.get(currency) ?? 0) + 1);
+  // --- LTV por moeda: (MRR_moeda / nº_ativos_moeda) * LT ---
+  const ltv: MoneyByCurrency[] = [];
+  for (const [currency, mrr] of mrrByCurrency.entries()) {
+    const n = activeCountByCurrency.get(currency) ?? 0;
+    const avgMonthly = n > 0 ? mrr / n : 0;
+    ltv.push({ currency, value: avgMonthly * ltMonths });
   }
 
   // --- Renovações do próximo mês: ACTIVE com date_next_charge na janela ---
   const { startMs, endMs } = nextMonthWindow(refMs);
   let renewalCount = 0;
   const renewalRevenue = new Map<string, number>();
-  for (const it of summaryItems) {
-    if (it.status !== "ACTIVE") continue;
+  for (const it of activeSubs) {
     const nextCharge = it.date_next_charge;
     if (typeof nextCharge !== "number") continue;
     if (nextCharge < startMs || nextCharge > endMs) continue;
@@ -528,9 +585,12 @@ export function aggregateDashboard(input: AggregateInput): HotmartDashboard {
     }
   }
 
+  // Total/retenção/churn alinhados com a Hotmart: vigentes = ACTIVE + DELAYED;
+  // churn = CANCELLED + OVERDUE. retenção + churn = 1.
   const total = counts.total;
-  const retentionRate = total > 0 ? counts.active / total : 0;
-  const churnRate = total > 0 ? counts.cancelled / total : 0;
+  const vigentes = counts.active + counts.delayed;
+  const retentionRate = total > 0 ? vigentes / total : 0;
+  const churnRate = total > 0 ? (counts.cancelled + counts.overdue) / total : 0;
 
   return {
     totalSubscriptions: counts.total,
@@ -539,7 +599,7 @@ export function aggregateDashboard(input: AggregateInput): HotmartDashboard {
     overdueSubscriptions: counts.overdue,
     refunded: { totalItems: refundedItems, totalValue: moneyByCurrencyFromMap(refundedByCurrency) },
     mrr: moneyByCurrencyFromMap(mrrByCurrency),
-    ltv: averageByCurrency(ltvSums, ltvCounts),
+    ltv: sortCurrencyPrimaryFirst(ltv),
     ltMonths,
     retentionRate,
     churnRate,
@@ -571,9 +631,16 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
 }
 
 /**
- * Orquestra os fetchers (contagens por status + summary + sales REFUNDED) e
- * chama aggregateDashboard. SEMPRE passa a janela de accession_date (default
- * months=12). Multi-moeda; guardas de divisão por zero vivem em aggregateDashboard.
+ * Orquestra os fetchers e chama aggregateDashboard. SEMPRE passa a janela de
+ * accession_date (default months=12). Fontes (validadas ao vivo):
+ *  - activeSubs: /subscriptions?status=ACTIVE (price + date_next_charge) → MRR/LTV/renovações.
+ *  - summaryItems: /subscriptions/summary (lifetime em dias) → LT.
+ *  - statusCounts: /subscriptions total_results por status → total/retenção/churn.
+ *  - refundedSales: /sales/summary?REFUNDED.
+ *
+ * PERF: as 4 famílias de chamadas são independentes → Promise.all. As 8
+ * contagens de status disparam todas de uma vez. Multi-moeda; guardas de
+ * divisão por zero vivem em aggregateDashboard.
  */
 export async function computeHotmartDashboard(
   token: string,
@@ -582,24 +649,20 @@ export async function computeHotmartDashboard(
   const refMs = nowMs();
   const accessionFrom = monthsAgoMs(args.months, refMs);
 
-  // PERF: as 4 chamadas são independentes — rodam em paralelo em vez de em
-  // série. A paginação do summary é sequencial por cursor (não dá pra
-  // paralelizar), mas não precisa bloquear as contagens nem os reembolsos. As
-  // 8 contagens de status disparam todas de uma vez (concurrency = nº de
-  // statuses). Latência do cold miss cai do somatório pro custo do summary.
-  const [summaryItems, total, statusCounts, refundedSales] = await Promise.all([
-    // Summary (base de MRR/LT/LTV/renovações).
+  const [activeSubs, summaryItems, statusCounts, refundedSales] = await Promise.all([
+    // Assinaturas ACTIVE detalhadas (price/date_next_charge) → MRR/LTV/renovações.
+    fetchSubscriptionsDetailed(token, {
+      productId: args.productId,
+      status: "ACTIVE",
+      accessionFrom,
+      accessionTo: refMs,
+    }),
+    // Summary (lifetime em dias) → LT.
     fetchSubscriptionsSummary(token, {
       productId: args.productId,
       accessionFrom,
     }),
-    // Total via page_info.total_results (sem baixar tudo).
-    fetchSubscriptionCount(token, {
-      productId: args.productId,
-      accessionFrom,
-      accessionTo: refMs,
-    }),
-    // Contagens por status (uma chamada barata por status).
+    // Contagens por status (uma chamada barata por status via total_results).
     mapWithConcurrency(
       [...SUBSCRIPTION_STATUSES],
       SUBSCRIPTION_STATUSES.length,
@@ -626,17 +689,27 @@ export async function computeHotmartDashboard(
     statusCounts.find((s) => s.status === status)?.count ?? 0;
 
   const active = countOf("ACTIVE");
+  const delayed = countOf("DELAYED");
+  const overdue = countOf("OVERDUE");
   const cancelled = CANCELLED_STATUSES.reduce((acc, s) => acc + countOf(s), 0);
-  const overdue = OVERDUE_STATUSES.reduce((acc, s) => acc + countOf(s), 0);
+  // Total alinhado com a Hotmart: só os status vigentes/cancelados/vencidos
+  // (exclui INACTIVE e STARTED, que o painel oficial não conta).
+  const total = active + delayed + overdue + cancelled;
+
+  // statusDistribution: só os 6 status que a Hotmart exibe (sem INACTIVE/STARTED zerados).
+  const HIDDEN_STATUSES = new Set(["INACTIVE", "STARTED"]);
+  const byStatus = statusCounts.filter((s) => !HIDDEN_STATUSES.has(s.status));
 
   return aggregateDashboard({
+    activeSubs,
     summaryItems,
     counts: {
       total,
       active,
+      delayed,
       cancelled,
       overdue,
-      byStatus: statusCounts,
+      byStatus,
     },
     refundedSales,
     refMs,
