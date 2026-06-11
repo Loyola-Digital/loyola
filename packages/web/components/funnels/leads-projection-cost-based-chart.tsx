@@ -386,18 +386,20 @@ export function LeadsProjectionCostBasedChart({
               stackId="realDaily"
               label={{
                 position: "top",
-                fontSize: 9,
+                fontSize: 8,
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 content: (props: any) => {
                   const { x, y, entry } = props;
                   if (!entry || !entry.payload) return null;
-                  const paid = entry.payload.dailyRealPaid ?? 0;
-                  const org = entry.payload.dailyRealOrg ?? 0;
-                  const total = paid + org;
+                  const orgReal = entry.payload.dailyRealOrg ?? 0;
+                  const paidReal = entry.payload.dailyRealPaid ?? 0;
+                  const orgProj = entry.payload.dailyProjectedOrg ?? 0;
+                  const paidProj = entry.payload.dailyProjectedPaid ?? 0;
+                  const total = orgReal + paidReal;
                   if (total <= 0) return null;
                   return (
-                    <text x={x} y={y - 5} textAnchor="middle" fontSize={9} fill="#000">
-                      {Math.round(total)}
+                    <text x={x} y={y - 8} textAnchor="middle" fontSize={8} fill="#4B5563">
+                      [{Math.round(orgReal)} | {Math.round(orgProj)}] [{Math.round(paidReal)} | {Math.round(paidProj)}]
                     </text>
                   );
                 }
@@ -420,24 +422,6 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
-              label={{
-                position: "top",
-                fontSize: 9,
-                fill: COLORS.projectionText,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                content: (props: any) => {
-                  const { x, y, entry } = props;
-                  if (!entry || !entry.payload) return null;
-                  const paid = entry.payload.dailyProjectedPaid ?? 0;
-                  const org = entry.payload.dailyProjectedOrg ?? 0;
-                  if (paid <= 0 && org <= 0) return null;
-                  return (
-                    <text x={x} y={y - 5} textAnchor="middle" fontSize={9} fill={COLORS.projectionText}>
-                      {Math.round(paid)} | {Math.round(org)}
-                    </text>
-                  );
-                }
-              }}
             />
 
             {/* Banda de Confiança do CPL (área) */}
