@@ -16,7 +16,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAllSales, useDeleteManualSale, useManualSales } from "@/lib/hooks/use-manual-sales";
+import {
+  useAllSales,
+  useDeleteManualSale,
+  useManualSales,
+  type UnifiedSale,
+} from "@/lib/hooks/use-manual-sales";
 
 interface ManualPixSalesSectionProps {
   projectId: string;
@@ -60,6 +65,24 @@ function InvoiceBadge({ status }: { status: "emitida" | "pendente" | null }) {
   );
 }
 
+// Filtro por plataforma/origem. Os dados unificados só distinguem 3 fontes de
+// forma limpa: venda manual (PIX), planilha TMB e planilha de Produto Principal
+// (export do checkout — ex: Kiwify). Captação e "Outras planilhas" não entram
+// nessa tabela, então não aparecem como opção.
+type Platform = "all" | "main" | "tmb" | "manual";
+
+const PLATFORM_LABELS: Record<Exclude<Platform, "all">, string> = {
+  main: "Produto Principal",
+  tmb: "TMB",
+  manual: "Manual (PIX)",
+};
+
+function salePlatform(sale: UnifiedSale): Exclude<Platform, "all"> {
+  if (sale.source === "manual") return "manual";
+  if (sale.sourceLabel === "TMB") return "tmb";
+  return "main";
+}
+
 export function ManualPixSalesSection({
   projectId,
   funnelId,
@@ -95,12 +118,45 @@ export function ManualPixSalesSection({
     (manualPayload?.sales ?? []).map((s) => [s.id, s]),
   );
 
-  // Story 19.9 ext: paginação 10/página
-  const totalPages = Math.max(1, Math.ceil(sales.length / PAGE_SIZE));
+  const [platform, setPlatform] = useState<Platform>("all");
+
+  // Contagem por plataforma pros chips de filtro (sobre o conjunto completo).
+  const counts = useMemo(() => {
+    const c = { all: sales.length, main: 0, tmb: 0, manual: 0 };
+    for (const s of sales) c[salePlatform(s)] += 1;
+    return c;
+  }, [sales]);
+
+  const filteredSales = useMemo(
+    () =>
+      platform === "all"
+        ? sales
+        : sales.filter((s) => salePlatform(s) === platform),
+    [sales, platform],
+  );
+
+  // Cards refletem o filtro ativo: total, faturamento e ticket médio são
+  // recalculados sobre o conjunto filtrado.
+  const filteredSummary = useMemo(() => {
+    const totalRevenue = filteredSales.reduce((acc, s) => acc + s.value, 0);
+    return {
+      totalSales: filteredSales.length,
+      totalRevenue,
+      ticket: filteredSales.length > 0 ? totalRevenue / filteredSales.length : 0,
+    };
+  }, [filteredSales]);
+
+  function selectPlatform(p: Platform) {
+    setPlatform(p);
+    setPage(0);
+  }
+
+  // Story 19.9 ext: paginação 10/página (sobre o conjunto filtrado)
+  const totalPages = Math.max(1, Math.ceil(filteredSales.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
   const visibleSales = useMemo(
-    () => sales.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE),
-    [sales, safePage],
+    () => filteredSales.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE),
+    [filteredSales, safePage],
   );
 
   return (
@@ -110,7 +166,10 @@ export function ManualPixSalesSection({
           <Wallet className="h-4 w-4 text-emerald-600" />
           <h2 className="text-base font-semibold">Vendas (Produto Principal + TMB + PIX direto)</h2>
           <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-            {summary?.totalSales ?? 0} venda(s)
+            {filteredSummary.totalSales} venda(s)
+            {platform !== "all" && (
+              <span className="opacity-70"> · {PLATFORM_LABELS[platform]}</span>
+            )}
           </span>
         </div>
         <Button size="sm" variant="outline" className="gap-1.5" onClick={onLaunchClick}>
@@ -142,26 +201,38 @@ export function ManualPixSalesSection({
         </div>
       ) : (
         <>
+          {/* Filtro por plataforma/origem */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {(["all", "main", "tmb", "manual"] as const).map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => selectPlatform(p)}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                  platform === p
+                    ? "bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800"
+                    : "text-muted-foreground border-border/50 hover:bg-muted/40"
+                }`}
+              >
+                {p === "all" ? "Todas" : PLATFORM_LABELS[p]}
+                <span className="ml-1 tabular-nums opacity-70">{counts[p]}</span>
+              </button>
+            ))}
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <StatCard label="Total de vendas" value={String(summary?.totalSales ?? 0)} />
+            <StatCard label="Total de vendas" value={String(filteredSummary.totalSales)} />
             <StatCard
               label="Faturamento total"
-              value={formatCurrency(summary?.totalRevenue ?? 0)}
+              value={formatCurrency(filteredSummary.totalRevenue)}
               highlight
               tooltip={
-                summary
+                platform === "all" && summary
                   ? `Planilha: ${formatCurrency(summary.spreadsheetRevenue)} (${summary.spreadsheetSales})\nManuais: ${formatCurrency(summary.manualRevenue)} (${summary.manualSales})`
                   : undefined
               }
             />
-            <StatCard
-              label="Ticket médio"
-              value={formatCurrency(
-                summary && summary.totalSales > 0
-                  ? summary.totalRevenue / summary.totalSales
-                  : 0,
-              )}
-            />
+            <StatCard label="Ticket médio" value={formatCurrency(filteredSummary.ticket)} />
           </div>
 
           <div className="rounded-lg border border-border/50 overflow-hidden">
@@ -184,6 +255,13 @@ export function ManualPixSalesSection({
                 </tr>
               </thead>
               <tbody>
+                {visibleSales.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
+                      Nenhuma venda de {PLATFORM_LABELS[platform as Exclude<Platform, "all">] ?? "—"} nos últimos {days} dias.
+                    </td>
+                  </tr>
+                )}
                 {visibleSales.map((sale) => (
                   <tr key={sale.id} className="border-t border-border/30">
                     <td className="px-3 py-2 tabular-nums">{formatDate(sale.saleDate)}</td>
@@ -259,11 +337,11 @@ export function ManualPixSalesSection({
               </tbody>
             </table>
             {/* Story 19.9 ext: paginação 10/página */}
-            {sales.length > PAGE_SIZE && (
+            {filteredSales.length > PAGE_SIZE && (
               <div className="flex items-center justify-between gap-2 px-3 py-2 bg-muted/10 border-t border-border/30 text-[11px] text-muted-foreground">
                 <span className="tabular-nums">
                   {safePage * PAGE_SIZE + 1}–
-                  {Math.min((safePage + 1) * PAGE_SIZE, sales.length)} de {sales.length}
+                  {Math.min((safePage + 1) * PAGE_SIZE, filteredSales.length)} de {filteredSales.length}
                 </span>
                 <div className="flex items-center gap-1">
                   <button
