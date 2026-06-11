@@ -91,10 +91,11 @@ export function useLpPerformanceData({
     const grouped: Record<string, LpDaily> = {};
 
     for (const creative of baseQuery.data.creatives) {
-      const utmTerm = creative.utmTerm?.toLowerCase() ?? "";
+      const utmTerm = creative.utmTerm?.toLowerCase();
+      if (!utmTerm) continue;
 
-      // Extrair LP (lpa, lpb, lpc, lpd...)
-      const lpMatch = utmTerm.match(/lp([a-z])/i);
+      // Extrair LP: procura por "lpa", "lpb", "lpc", "lpd", etc. dentro da string
+      const lpMatch = utmTerm.match(/lp([a-z])/);
       if (!lpMatch) continue;
 
       const lpName = `LP${lpMatch[1].toUpperCase()}`;
