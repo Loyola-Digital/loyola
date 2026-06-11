@@ -206,13 +206,6 @@ export function LeadsProjectionCostBasedChart({
     date: formatDateShort(item.date),
   }));
 
-  // Debug logging
-  console.log("[leads-projection-chart] chartData length:", chartData.length);
-  if (chartData.length > 0) {
-    console.log("[leads-projection-chart] First item:", chartData[0]);
-    console.log("[leads-projection-chart] Has dailyRealOrg?", "dailyRealOrg" in chartData[0]);
-  }
-
   const handleDataFinalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setDataFinal(value);

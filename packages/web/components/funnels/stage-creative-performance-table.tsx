@@ -93,12 +93,6 @@ export function StageCreativePerformanceTable({
     days,
   });
 
-  // Debug logging
-  console.log("[StageCreativePerformanceTable] projectId:", projectId);
-  console.log("[StageCreativePerformanceTable] data:", data);
-  console.log("[StageCreativePerformanceTable] isLoading:", isLoading);
-  console.log("[StageCreativePerformanceTable] error:", error);
-
   // Story 18.41: Filter columns based on stage type
   // For free stages, suppress revenue and ROAS columns
   const visibleColumns = useMemo(() => {
