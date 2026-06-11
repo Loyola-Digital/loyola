@@ -1156,6 +1156,25 @@ export const hotmartConnections = pgTable(
   (table) => [index("idx_hotmart_connections_project").on(table.projectId)]
 );
 
+// Story 34.x (perf): cache persistente do dashboard/products Hotmart. A API
+// Hotmart pagina /subscriptions/summary sequencialmente por cursor (lento).
+// Persistir o payload agregado permite servir instantaneamente via
+// stale-while-revalidate e sobreviver a restart/deploy (o LRU em memória se
+// perde). cache_key = "dashboard:<productId>:<months>" ou "products:<months>".
+// TTL de frescor aplicado no código (30min); fora disso serve stale + revalida.
+export const hotmartCache = pgTable(
+  "hotmart_cache",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    cacheKey: varchar("cache_key", { length: 200 }).notNull(),
+    data: jsonb("data").notNull(),
+    computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.cacheKey] })]
+);
+
 // Story 28.7: cache persistente de nomes Meta (ad/adset/campaign) — substitui
 // resolução in-memory que estourava rate limit Meta. TTL aplicado no código (24h).
 export const metaEntityNamesCache = pgTable(

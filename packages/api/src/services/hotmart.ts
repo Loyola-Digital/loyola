@@ -582,32 +582,45 @@ export async function computeHotmartDashboard(
   const refMs = nowMs();
   const accessionFrom = monthsAgoMs(args.months, refMs);
 
-  // Summary (base de MRR/LT/LTV/renovações).
-  const summaryItems = await fetchSubscriptionsSummary(token, {
-    productId: args.productId,
-    accessionFrom,
-  });
-
-  // Contagens por status via page_info.total_results (sem baixar tudo).
-  const total = await fetchSubscriptionCount(token, {
-    productId: args.productId,
-    accessionFrom,
-    accessionTo: refMs,
-  });
-
-  const statusCounts = await mapWithConcurrency(
-    [...SUBSCRIPTION_STATUSES],
-    4,
-    async (status): Promise<{ status: string; count: number }> => {
-      const count = await fetchSubscriptionCount(token, {
-        productId: args.productId,
-        status,
-        accessionFrom,
-        accessionTo: refMs,
-      });
-      return { status, count };
-    },
-  );
+  // PERF: as 4 chamadas são independentes — rodam em paralelo em vez de em
+  // série. A paginação do summary é sequencial por cursor (não dá pra
+  // paralelizar), mas não precisa bloquear as contagens nem os reembolsos. As
+  // 8 contagens de status disparam todas de uma vez (concurrency = nº de
+  // statuses). Latência do cold miss cai do somatório pro custo do summary.
+  const [summaryItems, total, statusCounts, refundedSales] = await Promise.all([
+    // Summary (base de MRR/LT/LTV/renovações).
+    fetchSubscriptionsSummary(token, {
+      productId: args.productId,
+      accessionFrom,
+    }),
+    // Total via page_info.total_results (sem baixar tudo).
+    fetchSubscriptionCount(token, {
+      productId: args.productId,
+      accessionFrom,
+      accessionTo: refMs,
+    }),
+    // Contagens por status (uma chamada barata por status).
+    mapWithConcurrency(
+      [...SUBSCRIPTION_STATUSES],
+      SUBSCRIPTION_STATUSES.length,
+      async (status): Promise<{ status: string; count: number }> => {
+        const count = await fetchSubscriptionCount(token, {
+          productId: args.productId,
+          status,
+          accessionFrom,
+          accessionTo: refMs,
+        });
+        return { status, count };
+      },
+    ),
+    // Reembolsos (sempre passar transaction_status=REFUNDED).
+    fetchSalesSummaryByStatus(token, {
+      productId: args.productId,
+      status: "REFUNDED",
+      from: accessionFrom,
+      to: refMs,
+    }),
+  ]);
 
   const countOf = (status: string): number =>
     statusCounts.find((s) => s.status === status)?.count ?? 0;
@@ -615,14 +628,6 @@ export async function computeHotmartDashboard(
   const active = countOf("ACTIVE");
   const cancelled = CANCELLED_STATUSES.reduce((acc, s) => acc + countOf(s), 0);
   const overdue = OVERDUE_STATUSES.reduce((acc, s) => acc + countOf(s), 0);
-
-  // Reembolsos (sempre passar transaction_status=REFUNDED).
-  const refundedSales = await fetchSalesSummaryByStatus(token, {
-    productId: args.productId,
-    status: "REFUNDED",
-    from: accessionFrom,
-    to: refMs,
-  });
 
   return aggregateDashboard({
     summaryItems,
