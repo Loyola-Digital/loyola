@@ -1132,6 +1132,49 @@ export const funnelStageMauticCampaigns = pgTable(
   (table) => [index("idx_mautic_stage_campaign_stage").on(table.stageId)]
 );
 
+// ============================================================
+// Story 34.1 — Integração Hotmart (Assinaturas / recorrência)
+// Conexão é POR PROJETO (1 credencial OAuth2 client_credentials por cliente).
+// client_id e client_secret criptografados via AES-256-GCM (services/encryption.ts).
+// O Basic base64(client_id:client_secret) é derivado em runtime, NÃO armazenado.
+// ============================================================
+export const hotmartConnections = pgTable(
+  "hotmart_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .unique()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    clientIdEncrypted: text("client_id_encrypted").notNull(),
+    clientIdIv: text("client_id_iv").notNull(),
+    clientSecretEncrypted: text("client_secret_encrypted").notNull(),
+    clientSecretIv: text("client_secret_iv").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_hotmart_connections_project").on(table.projectId)]
+);
+
+// Story 34.x (perf): cache persistente do dashboard/products Hotmart. A API
+// Hotmart pagina /subscriptions/summary sequencialmente por cursor (lento).
+// Persistir o payload agregado permite servir instantaneamente via
+// stale-while-revalidate e sobreviver a restart/deploy (o LRU em memória se
+// perde). cache_key = "dashboard:<productId>:<months>" ou "products:<months>".
+// TTL de frescor aplicado no código (30min); fora disso serve stale + revalida.
+export const hotmartCache = pgTable(
+  "hotmart_cache",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    cacheKey: varchar("cache_key", { length: 200 }).notNull(),
+    data: jsonb("data").notNull(),
+    computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.cacheKey] })]
+);
+
 // Story 28.7: cache persistente de nomes Meta (ad/adset/campaign) — substitui
 // resolução in-memory que estourava rate limit Meta. TTL aplicado no código (24h).
 export const metaEntityNamesCache = pgTable(
@@ -1359,6 +1402,9 @@ export const switchyShortenedLinks = pgTable(
     }),
     folderId: varchar("folder_id", { length: 64 }).notNull(),
     folderName: varchar("folder_name", { length: 500 }),
+    /** Domínio do shortlink no Switchy (ex: links.loyoladigital.com). Usado pra
+     * reconstruir/exibir a short URL. */
+    domain: varchar("domain", { length: 255 }),
     checkoutBaseUrl: text("checkout_base_url").notNull(),
     channelLabel: varchar("channel_label", { length: 120 }),
     utmCampaign: varchar("utm_campaign", { length: 120 }),
@@ -1379,4 +1425,28 @@ export const switchyShortenedLinks = pgTable(
     index("idx_switchy_links_created_at").on(table.createdAt),
     index("idx_switchy_links_funnel").on(table.funnelId),
   ]
+);
+
+// ============================================================
+// SELLER ALIASES (Merge de Vendedor — escopo por projeto)
+// Unifica variações do nome do vendedor que aparecem em fontes distintas
+// (ex: utm_source "isabela" na planilha × "ISABELA COMERCIAL" na venda manual)
+// num único nome canônico exibido no sellers-breakdown. Aliases guardados já
+// normalizados (lowercase + trim) pra match O(1) na agregação.
+// ============================================================
+export const sellerAliases = pgTable(
+  "seller_aliases",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** Nome exibido no breakdown. Capitalização preservada. */
+    canonicalName: varchar("canonical_name", { length: 255 }).notNull(),
+    /** Variações que colapsam no canônico, já normalizadas (lowercase+trim). */
+    aliases: jsonb("aliases").notNull().default(sql`'[]'::jsonb`).$type<string[]>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_seller_aliases_project").on(table.projectId)]
 );

@@ -85,6 +85,8 @@ export interface SwitchyGeneratePayload {
   campaign: string;
   term?: string;
   content?: string;
+  // Domínio do shortlink escolhido no gerador (ex: links.loyoladigital.com).
+  domain?: string;
   channels: SwitchyGenerateChannel[];
   // Story 33.7: links são atrelados ao funil. Implícito pela rota do funil.
   funnelId?: string;
@@ -106,11 +108,27 @@ export interface SwitchyHistoryItem {
   utmCampaign: string | null;
   utmMedium: string | null;
   utmSource: string | null;
+  utmTerm: string | null;
+  utmContent: string | null;
+  checkoutBaseUrl: string;
+  domain: string | null;
   shortUrl: string | null;
   fullUrl: string;
+  switchyUniq: number | null;
   createdAt: string;
   // Story 33.7: presente quando o link foi gerado dentro de um funil.
   funnelId?: string | null;
+}
+
+/** Edição de um link já gerado (destino/UTMs). */
+export interface SwitchyUpdateLinkPayload {
+  checkoutUrl: string;
+  campaign: string;
+  medium: string;
+  source: string;
+  term?: string;
+  content?: string;
+  channelLabel?: string;
 }
 
 // ============================================================
@@ -130,6 +148,20 @@ export function useSwitchyFolders(projectId: string | null) {
     enabled: !!projectId,
     staleTime: SWITCHY_STALE_TIME,
     select: (data) => data.folders,
+  });
+}
+
+export function useSwitchyDomains(projectId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["switchy-domains", projectId],
+    queryFn: () =>
+      apiClient<{ domains: string[] }>(
+        `/api/projects/${projectId}/switchy/domains`,
+      ),
+    enabled: !!projectId,
+    staleTime: SWITCHY_STALE_TIME,
+    select: (data) => data.domains,
   });
 }
 
@@ -327,5 +359,43 @@ export function useSwitchyHistory(
     enabled: !!projectId,
     staleTime: SWITCHY_STALE_TIME,
     select: (data) => data.links,
+  });
+}
+
+/** Invalida o histórico (geral + do funil quando houver). */
+function invalidateSwitchyHistory(
+  qc: ReturnType<typeof useQueryClient>,
+  projectId: string,
+  funnelId?: string | null,
+) {
+  qc.invalidateQueries({ queryKey: ["switchy-history", projectId] });
+  if (funnelId) {
+    qc.invalidateQueries({ queryKey: ["switchy-history", projectId, funnelId] });
+  }
+}
+
+export function useUpdateSwitchyHistoryLink(projectId: string, funnelId?: string | null) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ linkId, ...payload }: { linkId: string } & SwitchyUpdateLinkPayload) =>
+      apiClient<{ link: SwitchyHistoryItem }>(
+        `/api/projects/${projectId}/switchy/links/history/${linkId}`,
+        { method: "PUT", body: JSON.stringify(payload) },
+      ),
+    onSuccess: () => invalidateSwitchyHistory(qc, projectId, funnelId),
+  });
+}
+
+export function useDeleteSwitchyHistoryLink(projectId: string, funnelId?: string | null) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (linkId: string) =>
+      apiClient<{ success: true }>(
+        `/api/projects/${projectId}/switchy/links/history/${linkId}`,
+        { method: "DELETE" },
+      ),
+    onSuccess: () => invalidateSwitchyHistory(qc, projectId, funnelId),
   });
 }

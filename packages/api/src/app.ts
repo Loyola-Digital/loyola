@@ -46,6 +46,7 @@ import funnelStageRoutes from "./routes/funnel-stages.js";
 import stageSalesSpreadsheetsRoutes from "./routes/stage-sales-spreadsheets.js";
 import stageSalesDataRoutes from "./routes/stage-sales-data.js";
 import sellersBreakdownRoutes from "./routes/sellers-breakdown.js";
+import sellerAliasesRoutes from "./routes/seller-aliases.js";
 import manualSalesRoutes from "./routes/manual-sales.js";
 import perpetualSpreadsheetsRoutes from "./routes/perpetual-spreadsheets.js";
 import perpetualSalesDataRoutes from "./routes/perpetual-sales-data.js";
@@ -60,6 +61,7 @@ import funnelBatchTurnsRoutes from "./routes/funnel-batch-turns.js";
 import zoomStageRoutes from "./routes/zoom-stage.js";
 import stageCreativePerformanceRoutes from "./routes/stage-creative-performance.js";
 import mauticRoutes from "./routes/mautic.js";
+import hotmartRoutes from "./routes/hotmart.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -123,6 +125,7 @@ export async function buildServer() {
   await app.register(stageSalesSpreadsheetsRoutes);
   await app.register(stageSalesDataRoutes);
   await app.register(sellersBreakdownRoutes);
+  await app.register(sellerAliasesRoutes);
   await app.register(manualSalesRoutes);
   await app.register(perpetualSpreadsheetsRoutes);
   await app.register(perpetualSalesDataRoutes);
@@ -137,6 +140,7 @@ export async function buildServer() {
   await app.register(zoomStageRoutes);
   await app.register(stageCreativePerformanceRoutes);
   await app.register(mauticRoutes);
+  await app.register(hotmartRoutes);
 
   return app;
 }

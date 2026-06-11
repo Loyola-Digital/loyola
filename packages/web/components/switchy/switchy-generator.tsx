@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Sparkles, FolderOpen, Check } from "lucide-react";
+import { Loader2, Sparkles, FolderOpen, Check, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import {
   useSwitchyFolders,
+  useSwitchyDomains,
   useSwitchySettings,
   useSwitchyPresets,
   useGenerateSwitchyLinks,
@@ -39,12 +40,14 @@ function errMsg(e: unknown): string {
 
 export function SwitchyGenerator({ projectId, canEdit, funnelId, defaultCampaign }: Props) {
   const folders = useSwitchyFolders(projectId);
+  const domains = useSwitchyDomains(projectId);
   const settings = useSwitchySettings(projectId);
   const presets = useSwitchyPresets(projectId);
   const generate = useGenerateSwitchyLinks(projectId);
 
   const [checkoutUrl, setCheckoutUrl] = useState("");
   const [folderId, setFolderId] = useState<string>("");
+  const [domain, setDomain] = useState<string>("");
   const [campaign, setCampaign] = useState(defaultCampaign ?? "");
   const [term, setTerm] = useState("");
   const [content, setContent] = useState("");
@@ -98,6 +101,7 @@ export function SwitchyGenerator({ projectId, canEdit, funnelId, defaultCampaign
     canEdit &&
     checkoutUrl.trim().length > 0 &&
     !!selectedFolder &&
+    !!domain &&
     campaign.trim().length > 0 &&
     selectedChannels.length > 0;
 
@@ -109,6 +113,10 @@ export function SwitchyGenerator({ projectId, canEdit, funnelId, defaultCampaign
     }
     if (!selectedFolder) {
       toast.error("Selecione uma folder.");
+      return;
+    }
+    if (!domain) {
+      toast.error("Selecione o domínio do link.");
       return;
     }
     if (!campaign.trim()) {
@@ -128,6 +136,7 @@ export function SwitchyGenerator({ projectId, canEdit, funnelId, defaultCampaign
         checkoutUrl: checkoutUrl.trim(),
         folderId: String(selectedFolder.id),
         folderName: selectedFolder.name,
+        domain,
         campaign: campaign.trim(),
         ...(termTrim ? { term: termTrim } : {}),
         ...(contentTrim ? { content: contentTrim } : {}),
@@ -210,19 +219,47 @@ export function SwitchyGenerator({ projectId, canEdit, funnelId, defaultCampaign
             )}
           </div>
 
-          {/* Campaign (obrigatório) */}
+          {/* Domínio do shortlink */}
           <div className="space-y-1">
-            <Label htmlFor="switchy-campaign" className="text-xs">
-              utm_campaign <span className="text-red-500">*</span>
+            <Label htmlFor="switchy-domain" className="text-xs">
+              Domínio do link <span className="text-red-500">*</span>
             </Label>
-            <Input
-              id="switchy-campaign"
-              placeholder="ex: lancamento-junho"
-              value={campaign}
-              onChange={(e) => setCampaign(e.target.value)}
-              disabled={!canEdit}
-            />
+            {domains.isLoading ? (
+              <Skeleton className="h-9" />
+            ) : domains.isError ? (
+              <p className="text-[10px] text-red-500">
+                Erro ao carregar domínios: {errMsg(domains.error)}
+              </p>
+            ) : (
+              <Select value={domain} onValueChange={setDomain} disabled={!canEdit}>
+                <SelectTrigger id="switchy-domain" className="h-9 text-sm">
+                  <Globe className="h-4 w-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Selecionar domínio" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(domains.data ?? []).map((d) => (
+                    <SelectItem key={d} value={d}>
+                      {d}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
+        </div>
+
+        {/* Campaign (obrigatório) */}
+        <div className="space-y-1">
+          <Label htmlFor="switchy-campaign" className="text-xs">
+            utm_campaign <span className="text-red-500">*</span>
+          </Label>
+          <Input
+            id="switchy-campaign"
+            placeholder="ex: lancamento-junho"
+            value={campaign}
+            onChange={(e) => setCampaign(e.target.value)}
+            disabled={!canEdit}
+          />
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">

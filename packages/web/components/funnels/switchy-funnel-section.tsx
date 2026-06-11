@@ -26,7 +26,7 @@ interface Props {
 export function SwitchyFunnelSection({ projectId, funnelId, funnelName }: Props) {
   const role = useUserRole();
   const canEdit = role !== null && role !== "guest";
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
 
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 overflow-hidden">

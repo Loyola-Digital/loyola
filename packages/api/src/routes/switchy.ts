@@ -12,7 +12,9 @@ import {
   fetchSwitchyFolders,
   fetchSwitchyLinks,
   fetchSwitchyPixels,
+  fetchSwitchyDomains,
   createSwitchyLink,
+  updateSwitchyLink,
   buildTrackedCheckoutUrl,
 } from "../services/switchy.js";
 import { seedSwitchyPresetsIfEmpty } from "../db/seeds/switchy-presets.js";
@@ -75,7 +77,26 @@ const generateBodySchema = z.object({
   campaign: z.string().min(1).max(120),
   term: z.string().max(120).optional(),
   content: z.string().max(120).optional(),
+  // Domínio do shortlink escolhido no gerador (ex: links.loyoladigital.com).
+  domain: z.string().min(1).max(255).optional(),
   channels: z.array(channelSchema).min(1),
+});
+
+const linkIdParamSchema = z.object({
+  projectId: z.string().uuid(),
+  linkId: z.string().uuid(),
+});
+
+// Editar um link já gerado: troca destino/UTMs. medium/source vêm do canal
+// (editáveis); o shortlink (uniq/id/domain) é preservado.
+const updateLinkBodySchema = z.object({
+  checkoutUrl: z.string().url(),
+  campaign: z.string().min(1).max(120),
+  medium: z.string().min(1).max(120),
+  source: z.string().min(1).max(120),
+  term: z.string().max(120).optional(),
+  content: z.string().max(120).optional(),
+  channelLabel: z.string().max(120).optional(),
 });
 
 const historyQuerySchema = z.object({
@@ -187,6 +208,29 @@ export default fp(async function switchyRoutes(fastify) {
     } catch (error) {
       fastify.log.error(error, "Failed to fetch Switchy pixels");
       return reply.code(502).send({ error: "Falha ao buscar pixels do Switchy" });
+    }
+  });
+
+  // ---- GET /api/projects/:projectId/switchy/domains ----
+  // Domínios disponíveis na conta Switchy (conta GLOBAL). O gerador usa pra o
+  // usuário escolher o domínio do shortlink.
+  fastify.get("/api/projects/:projectId/switchy/domains", async (request, reply) => {
+    const paramResult = projectIdParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.code(400).send({ error: "ID inválido" });
+    }
+
+    const project = await getProjectAccess(paramResult.data.projectId, request.userId, request.userRole);
+    if (!project) {
+      return reply.code(404).send({ error: "Projeto não encontrado" });
+    }
+
+    try {
+      const domains = await fetchSwitchyDomains(getSwitchyToken());
+      return { domains };
+    } catch (error) {
+      fastify.log.error(error, "Failed to fetch Switchy domains");
+      return reply.code(502).send({ error: "Falha ao buscar domínios do Switchy" });
     }
   });
 
@@ -487,6 +531,7 @@ export default fp(async function switchyRoutes(fastify) {
         .join("_");
 
       let shortUrl: string | null = null;
+      let linkDomain: string | null = body.domain ?? null;
       let switchyLinkId: string | null = null;
       let switchyUniq: number | null = null;
       let error: string | undefined;
@@ -495,6 +540,7 @@ export default fp(async function switchyRoutes(fastify) {
         const created = await createSwitchyLink(token, {
           url: fullUrl,
           folderId: Number(body.folderId),
+          ...(body.domain ? { domain: body.domain } : {}),
           pixels: pixels.map((p) => ({
             platform: p.platform,
             value: p.value,
@@ -505,6 +551,7 @@ export default fp(async function switchyRoutes(fastify) {
           showGDPR: showGdpr,
         });
         shortUrl = created.shortUrl;
+        linkDomain = created.domain ?? body.domain ?? null;
         switchyLinkId = created.switchyLinkId;
         switchyUniq = created.switchyUniq;
       } catch (e) {
@@ -520,6 +567,7 @@ export default fp(async function switchyRoutes(fastify) {
           funnelId: body.funnelId ?? null,
           folderId: String(body.folderId),
           folderName: body.folderName ?? null,
+          domain: linkDomain,
           checkoutBaseUrl: body.checkoutUrl,
           channelLabel: ch.label,
           utmCampaign: body.campaign,
@@ -588,5 +636,123 @@ export default fp(async function switchyRoutes(fastify) {
       .limit(limit);
 
     return { links };
+  });
+
+  // ---- PUT /api/projects/:projectId/switchy/links/history/:linkId ----
+  // Edita destino/UTMs de um link já gerado. Atualiza o shortlink no Switchy
+  // (mesmo uniq/id/domain) e o registro local. Requer switchy_uniq salvo.
+  fastify.put("/api/projects/:projectId/switchy/links/history/:linkId", async (request, reply) => {
+    if (request.userRole === "guest") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+
+    const paramResult = linkIdParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.code(400).send({ error: "ID inválido" });
+    }
+
+    const project = await getProjectAccess(paramResult.data.projectId, request.userId, request.userRole);
+    if (!project) {
+      return reply.code(404).send({ error: "Projeto não encontrado" });
+    }
+
+    const bodyResult = updateLinkBodySchema.safeParse(request.body);
+    if (!bodyResult.success) {
+      return reply.code(400).send({ error: "Dados inválidos", details: bodyResult.error.issues });
+    }
+
+    const [existing] = await fastify.db
+      .select()
+      .from(switchyShortenedLinks)
+      .where(
+        and(
+          eq(switchyShortenedLinks.id, paramResult.data.linkId),
+          eq(switchyShortenedLinks.projectId, paramResult.data.projectId),
+        ),
+      )
+      .limit(1);
+
+    if (!existing) {
+      return reply.code(404).send({ error: "Link não encontrado" });
+    }
+
+    const b = bodyResult.data;
+    const term = (b.term ?? "").trim();
+    const content = (b.content ?? "").trim();
+
+    const fullUrl = buildTrackedCheckoutUrl({
+      baseUrl: b.checkoutUrl,
+      campaign: b.campaign,
+      medium: b.medium,
+      source: b.source,
+      term: b.term,
+      content: b.content,
+    });
+    const sck = [b.campaign, b.medium, b.source, term, content]
+      .filter((v) => v && v.length > 0)
+      .join("_");
+
+    // Atualiza o destino no Switchy quando temos o uniq do link.
+    if (existing.switchyUniq != null) {
+      try {
+        await updateSwitchyLink(getSwitchyToken(), existing.switchyUniq, { url: fullUrl });
+      } catch (e) {
+        fastify.log.error(e, "Failed to update Switchy link destination");
+        return reply.code(502).send({ error: "Falha ao atualizar o link no Switchy" });
+      }
+    }
+
+    const [updated] = await fastify.db
+      .update(switchyShortenedLinks)
+      .set({
+        checkoutBaseUrl: b.checkoutUrl,
+        channelLabel: b.channelLabel ?? existing.channelLabel,
+        utmCampaign: b.campaign,
+        utmMedium: b.medium,
+        utmSource: b.source,
+        utmTerm: term || null,
+        utmContent: content || null,
+        sck,
+        fullUrl,
+      })
+      .where(eq(switchyShortenedLinks.id, paramResult.data.linkId))
+      .returning();
+
+    return { link: updated };
+  });
+
+  // ---- DELETE /api/projects/:projectId/switchy/links/history/:linkId ----
+  // Remove o link APENAS do histórico local. O Switchy não expõe delete via
+  // API — o shortlink continua ativo lá (usuário apaga manualmente se quiser).
+  fastify.delete("/api/projects/:projectId/switchy/links/history/:linkId", async (request, reply) => {
+    if (request.userRole === "guest") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+
+    const paramResult = linkIdParamSchema.safeParse(request.params);
+    if (!paramResult.success) {
+      return reply.code(400).send({ error: "ID inválido" });
+    }
+
+    const project = await getProjectAccess(paramResult.data.projectId, request.userId, request.userRole);
+    if (!project) {
+      return reply.code(404).send({ error: "Projeto não encontrado" });
+    }
+
+    const [deleted] = await fastify.db
+      .delete(switchyShortenedLinks)
+      .where(
+        and(
+          eq(switchyShortenedLinks.id, paramResult.data.linkId),
+          eq(switchyShortenedLinks.projectId, paramResult.data.projectId),
+        ),
+      )
+      .returning({ id: switchyShortenedLinks.id });
+
+    if (!deleted) {
+      return reply.code(404).send({ error: "Link não encontrado" });
+    }
+
+    return { success: true };
   });
 });
