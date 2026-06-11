@@ -79,8 +79,8 @@ function KpiTooltip({ explain, children }: { explain: string; children: React.Re
 export function SubscriptionKpis({ data }: { data: HotmartDashboard }) {
   const mrr = primary(data.mrr);
   const ltv = primary(data.ltv);
-  const refundedVal = primary(data.refunded.value);
-  const renewalVal = primary(data.renewalsNextMonth.value);
+  const refundedVal = primary(data.refunded.totalValue);
+  const renewalVal = primary(data.nextMonthRenewals.expectedRevenue);
 
   const mrrSub = multiCurrencySub(data.mrr);
   const ltvSub = multiCurrencySub(data.ltv);
@@ -101,7 +101,7 @@ export function SubscriptionKpis({ data }: { data: HotmartDashboard }) {
           <KpiCard
             icon={CreditCard}
             label="Vigentes"
-            value={fmtInt(data.active)}
+            value={fmtInt(data.activeSubscriptions)}
             sub="status ACTIVE"
             gradient="from-emerald-500/10 to-emerald-600/5"
             border="border-emerald-500/20"
@@ -111,7 +111,7 @@ export function SubscriptionKpis({ data }: { data: HotmartDashboard }) {
           <KpiCard
             icon={XCircle}
             label="Canceladas"
-            value={fmtInt(data.cancelled)}
+            value={fmtInt(data.cancelledSubscriptions)}
             sub="3 tipos de cancelamento"
             gradient="from-red-500/10 to-red-600/5"
             border="border-red-500/20"
@@ -121,7 +121,7 @@ export function SubscriptionKpis({ data }: { data: HotmartDashboard }) {
           <KpiCard
             icon={RotateCcw}
             label="Reembolsadas"
-            value={fmtInt(data.refunded.count)}
+            value={fmtInt(data.refunded.totalItems)}
             sub={refundedVal ? fmtMoney(refundedVal) : "—"}
             gradient="from-amber-500/10 to-amber-600/5"
             border="border-amber-500/20"
@@ -168,11 +168,11 @@ export function SubscriptionKpis({ data }: { data: HotmartDashboard }) {
             value={fmtPct(data.retentionRate)}
             sub={`churn ${fmtPct(data.churnRate)}`}
             gradient={
-              data.retentionRate >= 70
+              data.retentionRate >= 0.7
                 ? "from-emerald-500/10 to-emerald-600/5"
                 : "from-amber-500/10 to-amber-600/5"
             }
-            border={data.retentionRate >= 70 ? "border-emerald-500/20" : "border-amber-500/20"}
+            border={data.retentionRate >= 0.7 ? "border-emerald-500/20" : "border-amber-500/20"}
           />
         </KpiTooltip>
       </div>
@@ -189,7 +189,7 @@ export function SubscriptionKpis({ data }: { data: HotmartDashboard }) {
                 Renovações do próximo mês
               </p>
               <p className="text-xl font-bold tracking-tight">
-                {fmtInt(data.renewalsNextMonth.count)} assinaturas
+                {fmtInt(data.nextMonthRenewals.count)} assinaturas
               </p>
             </div>
           </div>
@@ -198,9 +198,9 @@ export function SubscriptionKpis({ data }: { data: HotmartDashboard }) {
             <p className="text-xl font-bold tracking-tight">
               {renewalVal ? fmtMoney(renewalVal) : "—"}
             </p>
-            {multiCurrencySub(data.renewalsNextMonth.value) && (
+            {multiCurrencySub(data.nextMonthRenewals.expectedRevenue) && (
               <p className="text-[10px] text-muted-foreground">
-                + {multiCurrencySub(data.renewalsNextMonth.value)}
+                + {multiCurrencySub(data.nextMonthRenewals.expectedRevenue)}
               </p>
             )}
           </div>
