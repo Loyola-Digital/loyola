@@ -5,7 +5,9 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { SellersBreakdownGrid } from "./sellers-breakdown-grid";
+import { SellerAliasesDialog } from "./seller-aliases-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useUserRole } from "@/lib/hooks/use-user-role";
 import type { StageSalesSubtype } from "@loyola-x/shared";
 
 function formatCurrency(value: number): string {
@@ -179,6 +181,8 @@ export function StageSalesSection({
     subtype,
     days
   );
+  const role = useUserRole();
+  const canEditSellers = role !== null && role !== "guest";
 
   if (isLoading) {
     return (
@@ -340,9 +344,12 @@ export function StageSalesSection({
           compradores do principal via email. */}
       {subtype === "main_product" && (
         <div className="space-y-2 border-t pt-4 mt-4">
-          <p className="text-xs font-medium text-muted-foreground">
-            Vendedores × Perfil do Lead
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-muted-foreground">
+              Vendedores × Perfil do Lead
+            </p>
+            {canEditSellers && <SellerAliasesDialog projectId={projectId} />}
+          </div>
           <SellersBreakdownGrid
             projectId={projectId}
             funnelId={funnelId}
