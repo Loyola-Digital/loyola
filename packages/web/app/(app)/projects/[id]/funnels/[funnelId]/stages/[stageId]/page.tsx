@@ -19,6 +19,7 @@ import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-s
 import { SalesStageView } from "@/components/funnels/sales-stage-view";
 import { GroupsSpreadsheetCard } from "@/components/funnels/groups-spreadsheet-card";
 import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
+import { SwitchyFunnelSection } from "@/components/funnels/switchy-funnel-section";
 import { LeadScoringTab } from "@/components/funnels/lead-scoring-tab";
 import { OrganicMediaTab } from "@/components/funnels/organic-media-tab";
 import { CplStageView } from "@/components/funnels/cpl-stage-view";
@@ -466,7 +467,16 @@ export default function StagePage() {
         </TabsContent>
 
         <TabsContent value="switchy-links" className="mt-6">
-          <SwitchyLinksTab projectId={params.id} funnel={stageAsFunnel} />
+          <div className="space-y-6">
+            {/* Gerador de links UTM atrelado ao funil — disponível também aqui
+                na etapa pra preencher/gerar no mesmo lugar da tabela. */}
+            <SwitchyFunnelSection
+              projectId={params.id}
+              funnelId={params.funnelId}
+              funnelName={funnel.name}
+            />
+            <SwitchyLinksTab projectId={params.id} funnel={stageAsFunnel} />
+          </div>
         </TabsContent>
 
         <TabsContent value="lead-scoring" className="mt-6">
