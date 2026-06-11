@@ -48,7 +48,11 @@ export function useCrossReferenceLeads({
     const leads: Record<string, number> = {};
     let totalLeads = 0;
 
+    console.log("[useCrossReferenceLeads] sheetQuery.data:", sheetQuery.data);
+    console.log("[useCrossReferenceLeads] surveys:", surveys);
+
     if (!sheetQuery.data?.rows || sheetQuery.data.rows.length === 0) {
+      console.log("[useCrossReferenceLeads] No rows in sheet data");
       return { leads, totalLeads, isLoading: false };
     }
 
