@@ -2,7 +2,7 @@ import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { LRUCache } from "lru-cache";
-import { hotmartConnections, projects, projectMembers } from "../db/schema.js";
+import { hotmartConnections, hotmartCache, projects, projectMembers } from "../db/schema.js";
 import {
   encryptHotmartSecret,
   decryptHotmartSecret,
@@ -38,19 +38,19 @@ const dashboardQuerySchema = z.object({
   months: z.coerce.number().int().min(1).max(36).default(12),
 });
 
-// Cache LRU module-level, compartilhado por products e dashboard (ttl ~30min).
-// V deve ser non-nullish (lru-cache v11) — armazenamos array de produtos ou o
-// objeto de dashboard, ambos objetos.
-const hotmartCache = new LRUCache<string, object>({
+// L1: cache LRU em memória (mesma instância), TTL 30min. Armazena array de
+// produtos ou objeto de dashboard (ambos objetos — non-nullish exigido pelo
+// lru-cache v11). L2 é a tabela hotmart_cache no banco (sobrevive a restart).
+const FRESH_TTL_MS = 30 * 60 * 1000;
+
+const memCache = new LRUCache<string, object>({
   max: 500,
-  ttl: 30 * 60 * 1000,
+  ttl: FRESH_TTL_MS,
 });
 
-/** Remove todas as entradas do cache cujo prefixo da chave é `${projectId}:`. */
-function invalidateHotmartCache(projectId: string): void {
-  for (const key of hotmartCache.keys()) {
-    if (key.startsWith(`${projectId}:`)) hotmartCache.delete(key);
-  }
+/** Chave do L1 (memória) — combina projeto + cacheKey lógica. */
+function memKey(projectId: string, cacheKey: string): string {
+  return `${projectId}:${cacheKey}`;
 }
 
 export default fp(async function hotmartRoutes(fastify) {
@@ -93,6 +93,98 @@ export default fp(async function hotmartRoutes(fastify) {
     } catch {
       return null;
     }
+  }
+
+  // ============================================================
+  // Cache stale-while-revalidate (L1 memória + L2 banco)
+  // ============================================================
+
+  /** Lê a linha de cache do banco (L2), ou null. */
+  async function readDbCache(projectId: string, cacheKey: string) {
+    const [row] = await fastify.db
+      .select()
+      .from(hotmartCache)
+      .where(and(eq(hotmartCache.projectId, projectId), eq(hotmartCache.cacheKey, cacheKey)))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** Upsert do payload agregado no banco (L2). */
+  async function writeDbCache(projectId: string, cacheKey: string, data: object): Promise<void> {
+    const now = new Date();
+    await fastify.db
+      .insert(hotmartCache)
+      .values({ projectId, cacheKey, data, computedAt: now })
+      .onConflictDoUpdate({
+        target: [hotmartCache.projectId, hotmartCache.cacheKey],
+        set: { data, computedAt: now },
+      });
+  }
+
+  // Guarda contra stampede: chaves com refresh em background em andamento.
+  const refreshing = new Set<string>();
+
+  /** Recomputa em background e atualiza L1+L2. Erros são logados, não propagados. */
+  function backgroundRefresh<T extends object>(
+    projectId: string,
+    cacheKey: string,
+    compute: () => Promise<T>,
+  ): void {
+    const flightKey = memKey(projectId, cacheKey);
+    if (refreshing.has(flightKey)) return;
+    refreshing.add(flightKey);
+    void (async () => {
+      try {
+        const fresh = await compute();
+        memCache.set(flightKey, fresh);
+        await writeDbCache(projectId, cacheKey, fresh);
+      } catch (err) {
+        fastify.log.error(err, "Hotmart background refresh falhou");
+      } finally {
+        refreshing.delete(flightKey);
+      }
+    })();
+  }
+
+  /**
+   * Serve com stale-while-revalidate:
+   *  - L1 (memória) fresco -> retorna na hora.
+   *  - L2 (banco) fresco (< 30min) -> repopula L1 e retorna.
+   *  - L2 stale -> retorna stale JÁ e revalida em background.
+   *  - Sem cache (cold real) -> computa síncrono, persiste, retorna.
+   */
+  async function serveWithSwr<T extends object>(
+    projectId: string,
+    cacheKey: string,
+    compute: () => Promise<T>,
+  ): Promise<T> {
+    const flightKey = memKey(projectId, cacheKey);
+
+    const l1 = memCache.get(flightKey) as T | undefined;
+    if (l1 !== undefined) return l1;
+
+    const row = await readDbCache(projectId, cacheKey);
+    if (row) {
+      const data = row.data as T;
+      memCache.set(flightKey, data);
+      const ageMs = Date.now() - row.computedAt.getTime();
+      if (ageMs >= FRESH_TTL_MS) backgroundRefresh(projectId, cacheKey, compute);
+      return data;
+    }
+
+    // Cold real: primeira vez de todos os tempos pra essa chave.
+    const fresh = await compute();
+    memCache.set(flightKey, fresh);
+    await writeDbCache(projectId, cacheKey, fresh);
+    return fresh;
+  }
+
+  /** Limpa L1 (prefixo do projeto) + L2 (linhas do projeto). Usado ao trocar/remover conexão. */
+  async function invalidateHotmartCache(projectId: string): Promise<void> {
+    for (const key of memCache.keys()) {
+      if (key.startsWith(`${projectId}:`)) memCache.delete(key);
+    }
+    await fastify.db.delete(hotmartCache).where(eq(hotmartCache.projectId, projectId));
   }
 
   // ---- GET connection (status, sem credenciais) ----
@@ -153,7 +245,7 @@ export default fp(async function hotmartRoutes(fastify) {
         },
       });
 
-    invalidateHotmartCache(params.data.projectId);
+    await invalidateHotmartCache(params.data.projectId);
     return { connected: true };
   });
 
@@ -168,7 +260,7 @@ export default fp(async function hotmartRoutes(fastify) {
     await fastify.db
       .delete(hotmartConnections)
       .where(eq(hotmartConnections.projectId, params.data.projectId));
-    invalidateHotmartCache(params.data.projectId);
+    await invalidateHotmartCache(params.data.projectId);
     return { connected: false };
   });
 
@@ -186,15 +278,13 @@ export default fp(async function hotmartRoutes(fastify) {
     const creds = await getCreds(params.data.projectId);
     if (!creds) return reply.code(409).send({ error: "Hotmart não conectado neste projeto" });
 
-    const cacheKey = `${params.data.projectId}:products:${query.data.months}`;
-    const cached = hotmartCache.get(cacheKey);
-    if (cached !== undefined) return { products: cached };
-
+    const cacheKey = `products:${query.data.months}`;
     try {
-      const token = await getHotmartToken(creds.clientId, creds.clientSecret);
-      const accessionFrom = monthsAgoMs(query.data.months, nowMs());
-      const products = await listHotmartProducts(token, accessionFrom);
-      hotmartCache.set(cacheKey, products);
+      const products = await serveWithSwr(params.data.projectId, cacheKey, async () => {
+        const token = await getHotmartToken(creds.clientId, creds.clientSecret);
+        const accessionFrom = monthsAgoMs(query.data.months, nowMs());
+        return listHotmartProducts(token, accessionFrom);
+      });
       return { products };
     } catch (err) {
       request.log.error(err, "Erro ao listar produtos da Hotmart");
@@ -219,17 +309,15 @@ export default fp(async function hotmartRoutes(fastify) {
     const creds = await getCreds(params.data.projectId);
     if (!creds) return reply.code(409).send({ error: "Hotmart não conectado neste projeto" });
 
-    const cacheKey = `${params.data.projectId}:dashboard:${query.data.productId}:${query.data.months}`;
-    const cached = hotmartCache.get(cacheKey);
-    if (cached !== undefined) return cached;
-
+    const cacheKey = `dashboard:${query.data.productId}:${query.data.months}`;
     try {
-      const token = await getHotmartToken(creds.clientId, creds.clientSecret);
-      const dashboard = await computeHotmartDashboard(token, {
-        productId: query.data.productId,
-        months: query.data.months,
+      const dashboard = await serveWithSwr(params.data.projectId, cacheKey, async () => {
+        const token = await getHotmartToken(creds.clientId, creds.clientSecret);
+        return computeHotmartDashboard(token, {
+          productId: query.data.productId,
+          months: query.data.months,
+        });
       });
-      hotmartCache.set(cacheKey, dashboard);
       return dashboard;
     } catch (err) {
       request.log.error(err, "Erro ao montar dashboard da Hotmart");
