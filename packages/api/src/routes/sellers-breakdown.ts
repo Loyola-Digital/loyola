@@ -20,6 +20,7 @@ import {
   projects,
   projectMembers,
   manualSales,
+  sellerAliases,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import {
@@ -185,6 +186,40 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
         .limit(1);
 
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      // 0. Merge de vendedor — mapa de aliases do projeto. Cada variação
+      // normalizada aponta pro nome canônico. resolveSeller() colapsa fontes
+      // distintas (ex: utm_source "isabela" × manual "ISABELA COMERCIAL") num
+      // único vendedor antes da agregação.
+      const aliasRows = await fastify.db
+        .select({
+          canonicalName: sellerAliases.canonicalName,
+          aliases: sellerAliases.aliases,
+        })
+        .from(sellerAliases)
+        .where(eq(sellerAliases.projectId, params.data.projectId));
+
+      const aliasMap = new Map<string, string>();
+      for (const row of aliasRows) {
+        const canonical = row.canonicalName.trim();
+        if (!canonical) continue;
+        // O próprio nome canônico também resolve pra si (case-insensitive).
+        aliasMap.set(normalizeSellerKey(canonical), canonical);
+        for (const alias of row.aliases ?? []) {
+          const norm = normalizeSellerKey(alias);
+          if (norm) aliasMap.set(norm, canonical);
+        }
+      }
+
+      /** Resolve o label da venda pro vendedor canônico (merge). Retorna o
+       * display label (capitalização canônica quando houver alias) e a chave de
+       * agrupamento já normalizada. */
+      function resolveSeller(label: string): { display: string; key: string } {
+        const norm = normalizeSellerKey(label);
+        const canonical = aliasMap.get(norm);
+        if (canonical) return { display: canonical, key: normalizeSellerKey(canonical) };
+        return { display: label, key: norm };
+      }
 
       // 1. Planilhas de venda do stage
       const salesSheets = await fastify.db
@@ -357,8 +392,7 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
 
           const bruto = parseNumber(row[brutoIdx] ?? "");
           const utmSourceRaw = utmSourceIdx >= 0 ? (row[utmSourceIdx] ?? "").trim() : "";
-          const utmSource = utmSourceRaw || NO_SELLER;
-          const sellerKey = normalizeSellerKey(utmSource);
+          const { display: utmSource, key: sellerKey } = resolveSeller(utmSourceRaw || NO_SELLER);
 
           const bandId = leadBandMap.get(email);
           const bandKey: BandKey =
@@ -408,8 +442,7 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
         if (startDate && saleDt < startDate) continue;
         if (endDate && saleDt > endDate) continue;
 
-        const label = (m.sellerName ?? "").trim() || NO_SELLER;
-        const sellerKey = normalizeSellerKey(label);
+        const { display: label, key: sellerKey } = resolveSeller((m.sellerName ?? "").trim() || NO_SELLER);
 
         const email = (m.customerEmail ?? "").trim().toLowerCase();
         const bandId = email ? leadBandMap.get(email) : undefined;

@@ -1380,3 +1380,27 @@ export const switchyShortenedLinks = pgTable(
     index("idx_switchy_links_funnel").on(table.funnelId),
   ]
 );
+
+// ============================================================
+// SELLER ALIASES (Merge de Vendedor — escopo por projeto)
+// Unifica variações do nome do vendedor que aparecem em fontes distintas
+// (ex: utm_source "isabela" na planilha × "ISABELA COMERCIAL" na venda manual)
+// num único nome canônico exibido no sellers-breakdown. Aliases guardados já
+// normalizados (lowercase + trim) pra match O(1) na agregação.
+// ============================================================
+export const sellerAliases = pgTable(
+  "seller_aliases",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** Nome exibido no breakdown. Capitalização preservada. */
+    canonicalName: varchar("canonical_name", { length: 255 }).notNull(),
+    /** Variações que colapsam no canônico, já normalizadas (lowercase+trim). */
+    aliases: jsonb("aliases").notNull().default(sql`'[]'::jsonb`).$type<string[]>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_seller_aliases_project").on(table.projectId)]
+);
