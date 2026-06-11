@@ -396,12 +396,9 @@ export function LeadsProjectionCostBasedChart({
             />
             <Bar
               dataKey="dailyRealOrg"
-              fill={COLORS.barsOrgReal}
-              opacity={OPACITIES.dailyReal}
-              name="Leads Orgânicos Reais (Dia)"
-              radius={[2, 2, 0, 0]}
-              stackId="realDaily"
-              label={<BarLabel />}
+              fill="#FF0000"
+              opacity={1}
+              name="TEST - Red Bar"
             />
 
             {/* Stacked bars: Projected Paid + Projected Organic */}
