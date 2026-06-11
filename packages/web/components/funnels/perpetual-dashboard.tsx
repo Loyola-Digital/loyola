@@ -795,6 +795,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         <div className="space-y-4 pt-2 border-t border-border/30">
           <h3 className="text-base font-semibold">Desempenho de Criativos (Meta Ads)</h3>
           <StageCreativePerformanceTable
+            projectId={projectId}
             funnelId={funnel.id}
             stageId={stageId}
             days={days}
