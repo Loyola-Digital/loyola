@@ -47,45 +47,28 @@ export function useCrossReferenceLeads({
 
   const sheetQuery = useSheetData(survey?.spreadsheetId ?? null, sheetName);
 
-  // Computar cruzamento
+  // Computar cruzamento: coluna "content" (índice 5) = utm_content = adId do Meta
   const result = useMemo(() => {
     const leads: Record<string, number> = {};
     let totalLeads = 0;
 
     if (!sheetQuery.data?.rows || sheetQuery.data.rows.length === 0) {
-      console.log("[useCrossReferenceLeads] No rows:", { sheet: sheetName, rowCount: sheetQuery.data?.rows?.length ?? 0 });
       return { leads, totalLeads, isLoading: false };
     }
 
-    console.log("[useCrossReferenceLeads] Processing rows:", { sheet: sheetName, rowCount: sheetQuery.data.rows.length });
+    // Coluna 5 é "content" (utm_content) = adId do Meta
+    const CONTENT_INDEX = 5;
 
-    const headers = sheetQuery.data.headers ?? [];
-    console.log("[useCrossReferenceLeads] Headers:", headers);
-
-    // Look for "ad_id", "Ad Name", "ad name", or similar variations
-    const adIdIndex = headers.findIndex((h) =>
-      h.toLowerCase().includes("ad_id") ||
-      h.toLowerCase().includes("ad name")
-    );
-
-    console.log("[useCrossReferenceLeads] adIdIndex:", adIdIndex, "column:", headers[adIdIndex]);
-
-    if (adIdIndex < 0) {
-      console.warn("[useCrossReferenceLeads] Column 'ad_id' or 'Ad Name' not found in sheet headers", headers);
-      return { leads, totalLeads, isLoading: false, error: "ad_id/ad_name column not found" };
-    }
-
-    // Contar linhas por ad_id (agregação simples)
+    // Contar leads por utm_content (= adId)
     for (const row of sheetQuery.data.rows) {
-      const rawAdId = row[adIdIndex]?.trim() ?? "";
-      if (!rawAdId) continue;
+      const utmContent = row[CONTENT_INDEX]?.trim() ?? "";
+      if (!utmContent) continue;
 
-      const adId = normalizeNumericId(rawAdId);
+      const adId = normalizeNumericId(utmContent);
       leads[adId] = (leads[adId] ?? 0) + 1;
       totalLeads += 1;
     }
 
-    console.log("[useCrossReferenceLeads] Final result:", { totalLeads, uniqueAds: Object.keys(leads).length });
     return { leads, totalLeads, isLoading: false };
   }, [sheetQuery.data]);
 
