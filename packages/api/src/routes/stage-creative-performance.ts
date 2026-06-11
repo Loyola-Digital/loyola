@@ -235,17 +235,17 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             });
           }
 
-          if (leadsData && salesData) {
+          if (leadsData) {
             const leadsMapping = (leadsSheet.columnMapping ?? {}) as {
               email?: string;
               utm_content?: string;
               utm_term?: string;
             };
-            const salesMapping = salesSheet.columnMapping as {
+            const salesMapping = salesData && salesSheet ? (salesSheet.columnMapping as {
               email: string;
               valorBruto?: string;
               valorLiquido?: string;
-            };
+            }) : null;
 
             function findCol(headers: string[], name: string | undefined): number {
               if (!name) return -1;
@@ -261,16 +261,14 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               leadsMapping.utm_content,
             );
             const leadUtmTermIdx = findCol(leadsData.headers, leadsMapping.utm_term);
-            const saleEmailIdx = findCol(salesData.headers, salesMapping.email);
-            const saleBrutoIdx = findCol(salesData.headers, salesMapping.valorBruto);
-            const saleLiquidoIdx = findCol(
-              salesData.headers,
-              salesMapping.valorLiquido,
-            );
+            const saleEmailIdx = salesMapping ? findCol(salesData!.headers, salesMapping.email) : -1;
+            const saleBrutoIdx = salesMapping ? findCol(salesData!.headers, salesMapping.valorBruto) : -1;
+            const saleLiquidoIdx = salesMapping ? findCol(salesData!.headers, salesMapping.valorLiquido) : -1;
 
             // 5a. Agrega vendas por email (bruto preferido; liquido como fallback)
+            // Free stages may not have sales data — handle gracefully
             const salesByEmail = new Map<string, number>();
-            if (saleEmailIdx !== -1) {
+            if (salesData && salesMapping && saleEmailIdx !== -1) {
               for (const row of salesData.rows) {
                 const email = normalizeEmail(row[saleEmailIdx] ?? "");
                 if (!email) continue;
@@ -454,6 +452,16 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           appliedFilter: {
             source: usingStage ? ("stage" as const) : ("funnel" as const),
             campaigns: appliedCampaigns,
+          },
+          // DEBUG: Include debug info in response for troubleshooting zero leads
+          _debug: {
+            leadsSheetExists: !!leadsSheet,
+            salesSheetExists: !!salesSheet,
+            leadsByAdIdCount: leadsByAdId.size,
+            leadsByAdId: Array.from(leadsByAdId.entries()).map(([adId, agg]) => ({
+              adId,
+              count: agg.count,
+            })),
           },
         });
       } catch (error) {
