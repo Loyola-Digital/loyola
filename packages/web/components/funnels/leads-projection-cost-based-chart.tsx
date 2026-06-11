@@ -404,19 +404,15 @@ export function LeadsProjectionCostBasedChart({
             {/* Stacked bars: Projected Paid + Projected Organic */}
             <Bar
               dataKey="dailyProjectedPaid"
-              fill={COLORS.barsPaidProjected}
-              opacity={OPACITIES.dailyProjected}
-              name="Leads Pagos Projetados (Dia)"
-              radius={[2, 2, 0, 0]}
-              stackId="projectedDaily"
+              fill="#00FF00"
+              opacity={1}
+              name="TEST - Green Paid Proj"
             />
             <Bar
               dataKey="dailyProjectedOrg"
-              fill={COLORS.barsOrgProjected}
-              opacity={OPACITIES.dailyProjected}
-              name="Leads Orgânicos Projetados (Dia)"
-              radius={[2, 2, 0, 0]}
-              stackId="projectedDaily"
+              fill="#0000FF"
+              opacity={1}
+              name="TEST - Blue Org Proj"
             />
 
             {/* Banda de Confiança do CPL (área) */}
