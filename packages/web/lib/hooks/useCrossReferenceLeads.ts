@@ -33,7 +33,7 @@ export function useCrossReferenceLeads({
   projectId,
   funnelId,
   stageId,
-  days = 30,
+  days: _days = 30,
 }: UseCrossReferenceLeadsOptions): CrossReferencedLeads {
   // Buscar surveys vinculadas (planilha de Captação Gratuita)
   const surveysQuery = useFunnelSurveys(projectId, funnelId, stageId);

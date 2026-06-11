@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/select";
 
 interface StageCreativePerformanceTableProps {
+  projectId?: string;
   funnelId: string;
   stageId: string;
   days?: number;
@@ -73,6 +74,7 @@ const COLUMNS: Array<{ key: SortableCol; label: string }> = [
 ];
 
 export function StageCreativePerformanceTable({
+  projectId,
   funnelId,
   stageId,
   days = 30,
@@ -85,6 +87,7 @@ export function StageCreativePerformanceTable({
   const [pageIndex, setPageIndex] = useState<number>(0);
 
   const { data, isLoading, error } = useStageCreativePerformance({
+    projectId,
     funnelId,
     stageId,
     days,
