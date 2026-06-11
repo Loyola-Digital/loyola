@@ -48,6 +48,23 @@ const OPACITIES = {
   bandCPL: 0.11,
   metaLine: 0.6,
   markerLine: 0.8,
+
+// Custom label component for bar chart
+const BarLabel = (props: any) => {
+  const { x, y, entry } = props;
+  if (!entry?.payload) return null;
+
+  const orgReal = entry.payload.dailyRealOrg ?? 0;
+  const paidReal = entry.payload.dailyRealPaid ?? 0;
+  const orgProj = entry.payload.dailyProjectedOrg ?? 0;
+  const paidProj = entry.payload.dailyProjectedPaid ?? 0;
+
+  return (
+    <text x={x} y={y - 8} textAnchor="middle" fontSize={8} fill="#4B5563">
+      [{Math.round(orgReal)}|{Math.round(orgProj)}] [{Math.round(paidReal)}|{Math.round(paidProj)}]
+    </text>
+  );
+};
 };
 
 function formatDateShort(d: string) {
@@ -384,25 +401,7 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Reais (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
-              label={{
-                position: "top",
-                fontSize: 8,
-                fill: "#4B5563",
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                content: (props: any) => {
-                  if (!props?.entry?.payload) return null;
-                  const { x, y, entry } = props;
-                  const orgReal = entry.payload.dailyRealOrg ?? 0;
-                  const paidReal = entry.payload.dailyRealPaid ?? 0;
-                  const orgProj = entry.payload.dailyProjectedOrg ?? 0;
-                  const paidProj = entry.payload.dailyProjectedPaid ?? 0;
-                  return (
-                    <text x={x} y={y - 8} textAnchor="middle" fontSize={8} fill="#4B5563">
-                      [{Math.round(orgReal)}|{Math.round(orgProj)}] [{Math.round(paidReal)}|{Math.round(paidProj)}]
-                    </text>
-                  );
-                }
-              }}
+              label={<BarLabel />}
             />
 
             {/* Stacked bars: Projected Paid + Projected Organic */}
