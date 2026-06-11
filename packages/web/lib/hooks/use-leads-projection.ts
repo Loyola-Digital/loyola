@@ -273,6 +273,9 @@ export function useLeadsProjection(
         const dateStr = toLocalYMD(currentDate);
 
         const historyRow = rows.find((r) => r.date === dateStr);
+        if (dateStr === "2026-06-07") {
+          console.log("[useLeadsProjection] 2026-06-07 historyRow:", historyRow, "rows.length:", rows.length);
+        }
         const metaCumulative = dailyMeta * (dayIndex + 1);
 
         const isFuture = dateStr >= todayStr;
