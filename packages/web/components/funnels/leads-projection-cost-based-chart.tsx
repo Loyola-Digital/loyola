@@ -52,22 +52,28 @@ const OPACITIES = {
 
 // Custom label component for bar chart
 const BarLabel = (props: any) => {
-  console.log("[BarLabel] props:", props);
-  const { x, y, width, height } = props;
+  const { x, y, width, entry } = props;
 
-  // Recharts passes value, not entry
-  if (!props.value) return null;
+  // Recharts passes the entire data point in entry
+  if (!entry) return null;
+
+  const orgReal = entry.dailyRealOrg ?? 0;
+  const paidReal = entry.dailyRealPaid ?? 0;
+  const orgProj = entry.dailyProjectedOrg ?? 0;
+  const paidProj = entry.dailyProjectedPaid ?? 0;
 
   return (
     <text
       x={x! + (width || 0) / 2}
-      y={y! - 8}
+      y={y! - 10}
       textAnchor="middle"
-      fontSize={10}
-      fill="#000"
+      fontSize={9}
+      fill="#FFF"
       fontWeight="bold"
+      stroke="#000"
+      strokeWidth={0.3}
     >
-      {Math.round(props.value)}
+      [{Math.round(orgReal)}|{Math.round(orgProj)}] [{Math.round(paidReal)}|{Math.round(paidProj)}]
     </text>
   );
 };
@@ -406,7 +412,7 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Reais (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
-              label={{ position: "top", fontSize: 12, fill: "#000" }}
+              label={<BarLabel />}
             />
 
             {/* Stacked bars: Projected Paid + Projected Organic */}
