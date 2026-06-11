@@ -51,39 +51,6 @@ const OPACITIES = {
 };
 
 // Custom label component for bar chart
-const BarLabel = (props: any) => {
-  console.log("[BarLabel] entry structure:", props.entry);
-  const { x, y, width, entry } = props;
-
-  if (!entry) {
-    console.log("[BarLabel] No entry!");
-    return null;
-  }
-
-  // Try both direct access and payload
-  const data = entry.payload || entry;
-  const orgReal = data?.dailyRealOrg ?? 0;
-  const paidReal = data?.dailyRealPaid ?? 0;
-  const orgProj = data?.dailyProjectedOrg ?? 0;
-  const paidProj = data?.dailyProjectedPaid ?? 0;
-
-  console.log("[BarLabel] Values:", { orgReal, paidReal, orgProj, paidProj });
-
-  return (
-    <text
-      x={x! + (width || 0) / 2}
-      y={y! - 10}
-      textAnchor="middle"
-      fontSize={9}
-      fill="#FFF"
-      fontWeight="bold"
-      stroke="#000"
-      strokeWidth={0.3}
-    >
-      [{Math.round(orgReal)}|{Math.round(orgProj)}] [{Math.round(paidReal)}|{Math.round(paidProj)}]
-    </text>
-  );
-};
 
 function formatDateShort(d: string) {
   const [, m, day] = d.split("-");
@@ -419,7 +386,7 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Reais (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
-              label={<BarLabel />}
+              label={{ position: "top", fill: "#FFF", stroke: "#000", strokeWidth: 0.5, fontSize: 11 }}
             />
 
             {/* Stacked bars: Projected Paid + Projected Organic */}
@@ -438,6 +405,7 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
+              label={{ position: "top", fill: "#FFF", stroke: "#000", strokeWidth: 0.5, fontSize: 11 }}
             />
 
             {/* Banda de Confiança do CPL (área) */}
