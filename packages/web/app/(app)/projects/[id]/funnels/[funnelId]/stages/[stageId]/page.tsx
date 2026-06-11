@@ -475,7 +475,7 @@ export default function StagePage() {
               funnelId={params.funnelId}
               funnelName={funnel.name}
             />
-            <SwitchyLinksTab projectId={params.id} funnel={stageAsFunnel} />
+            <SwitchyLinksTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} funnel={stageAsFunnel} />
           </div>
         </TabsContent>
 

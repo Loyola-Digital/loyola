@@ -52,7 +52,7 @@ import {
   type SwitchyLink,
   type SwitchyFolder,
 } from "@/lib/hooks/use-switchy";
-import { useUpdateFunnel } from "@/lib/hooks/use-funnels";
+import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import type { Funnel } from "@loyola-x/shared";
 
 // ============================================================
@@ -519,10 +519,12 @@ function GroupedRow({
 
 interface SwitchyLinksTabProps {
   projectId: string;
+  funnelId: string;
+  stageId: string;
   funnel: Funnel;
 }
 
-export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
+export function SwitchyLinksTab({ projectId, funnelId, stageId, funnel }: SwitchyLinksTabProps) {
   const savedLinks = funnel.switchyLinkedLinks ?? [];
   const savedFolders = funnel.switchyFolderIds ?? [];
   const hasSavedFolders = savedFolders.length > 0;
@@ -544,7 +546,7 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
     projectId,
     selectedFolderId,
   );
-  const updateFunnel = useUpdateFunnel(projectId, funnel.id);
+  const updateStage = useUpdateStage(projectId, funnelId, stageId);
 
   const linkedSet = useMemo(() => new Set(savedLinks.map((l) => l.uniq)), [savedLinks]);
 
@@ -610,7 +612,7 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
       .filter((l) => pickedUniqs.has(l.uniq))
       .map((l) => ({ uniq: l.uniq, id: l.id, domain: l.domain }));
     const existing = savedLinks.filter((l) => !links.some((ll) => ll.uniq === l.uniq));
-    updateFunnel.mutate({ switchyLinkedLinks: [...existing, ...selected] });
+    updateStage.mutate({ switchyLinkedLinks: [...existing, ...selected] });
     setSelecting(false);
   }
 
@@ -620,7 +622,7 @@ export function SwitchyLinksTab({ projectId, funnel }: SwitchyLinksTabProps) {
   }
 
   function handleSaveFolders(folders: { id: number; name: string }[]) {
-    updateFunnel.mutate({ switchyFolderIds: folders });
+    updateStage.mutate({ switchyFolderIds: folders });
     if (folders.length > 0 && !folders.some((f) => f.id === selectedFolderId)) {
       setSelectedFolderId(folders[0].id);
     }
