@@ -60,11 +60,15 @@ export function useCrossReferenceLeads({
     console.log("[useCrossReferenceLeads] Processing rows:", { sheet: sheetName, rowCount: sheetQuery.data.rows.length });
 
     const headers = sheetQuery.data.headers ?? [];
+    console.log("[useCrossReferenceLeads] Headers:", headers);
+
     // Look for "ad_id", "Ad Name", "ad name", or similar variations
     const adIdIndex = headers.findIndex((h) =>
       h.toLowerCase().includes("ad_id") ||
       h.toLowerCase().includes("ad name")
     );
+
+    console.log("[useCrossReferenceLeads] adIdIndex:", adIdIndex, "column:", headers[adIdIndex]);
 
     if (adIdIndex < 0) {
       console.warn("[useCrossReferenceLeads] Column 'ad_id' or 'Ad Name' not found in sheet headers", headers);
@@ -81,6 +85,7 @@ export function useCrossReferenceLeads({
       totalLeads += 1;
     }
 
+    console.log("[useCrossReferenceLeads] Final result:", { totalLeads, uniqueAds: Object.keys(leads).length });
     return { leads, totalLeads, isLoading: false };
   }, [sheetQuery.data]);
 
