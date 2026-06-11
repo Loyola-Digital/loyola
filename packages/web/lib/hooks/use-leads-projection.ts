@@ -197,7 +197,7 @@ export function useLeadsProjection(
       let gastoAccum = 0;
       let leadsAccumPaid = 0;
       let leadsAccumOrg = 0;
-      let leadsAccumSemTrack = 0;
+      let leadsAccumSemTrack = 0; // Leads sem track para totalizacao
       const historicalCPLAccum: (number | null)[] = [];
       let lastCPLToday = 0;
       rows.forEach((row) => {
@@ -261,7 +261,7 @@ export function useLeadsProjection(
 
       // Accumulated projection
       const accumulatedProjection = calculateAccumulatedProjection(
-        leadsAccumPaid + leadsAccumOrg,
+        leadsAccumPaid + leadsAccumOrg + leadsAccumSemTrack,
         dailyProjections,
       );
 

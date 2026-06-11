@@ -59,7 +59,7 @@ export function useCrossReferenceLeads({
     }
 
     const CONTENT_INDEX = 5; // utm_content = adId
-    const TERM_INDEX = 7;    // hot/cold
+    const TERM_INDEX = 7;    // hot/cold (may be part of a complex string)
 
     // Contar leads por utm_content e armazenar termo
     for (const row of sheetQuery.data.rows) {
@@ -67,12 +67,19 @@ export function useCrossReferenceLeads({
       if (!utmContent) continue;
 
       const adId = normalizeNumericId(utmContent);
-      const term = (row[TERM_INDEX]?.trim() ?? "").toLowerCase();
+      const termString = (row[TERM_INDEX]?.trim() ?? "").toLowerCase();
 
       leads[adId] = (leads[adId] ?? 0) + 1;
-      if (!terms[adId] && (term === "hot" || term === "cold")) {
-        terms[adId] = term;
+
+      // Extract hot/cold from the term string (may be part of a complex string like "ad-name--hot--...")
+      if (!terms[adId]) {
+        if (termString.includes("hot")) {
+          terms[adId] = "hot";
+        } else if (termString.includes("cold")) {
+          terms[adId] = "cold";
+        }
       }
+
       totalLeads += 1;
     }
 
