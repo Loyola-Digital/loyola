@@ -397,22 +397,6 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Pagos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
-              label={(props: any) => {
-                const { x, y, width, value } = props;
-                return (
-                  <text
-                    x={x! + (width || 0) / 2}
-                    y={y! - 5}
-                    textAnchor="middle"
-                    fill="#FFF"
-                    stroke="#000"
-                    strokeWidth={0.5}
-                    fontSize={11}
-                  >
-                    {Math.round(value)}
-                  </text>
-                );
-              }}
             />
             <Bar
               dataKey="dailyProjectedOrg"
