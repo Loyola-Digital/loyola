@@ -81,7 +81,7 @@ export function useCrossReferenceLeads({
     return { leads, totalLeads, isLoading: false };
   }, [sheetQuery.data]);
 
-  const isLoading = surveysQuery.isLoading || (firstSurvey ? sheetQuery.isLoading : false);
+  const isLoading = surveysQuery.isLoading || (leadsSurvey ? sheetQuery.isLoading : false);
   const error = surveysQuery.error?.message || sheetQuery.error?.message;
 
   return {
