@@ -76,20 +76,20 @@ export function useStageCreativePerformance({
     gcTime: 30 * 60 * 1000,
   });
 
-  // Story 18.43: For free stages, enrich leads via crossref
-  const crossrefQuery = useCrossReferenceLeads({
-    projectId: projectId || "",
+  // Story 18.43: For free stages, enrich leads via crossref (only if projectId provided)
+  const crossrefQuery = projectId ? useCrossReferenceLeads({
+    projectId,
     funnelId,
     stageId,
     days,
-  });
+  }) : { leads: {}, totalLeads: 0, isLoading: false };
 
   // Combine base data with crossref leads
   const enrichedData = useMemo(() => {
     if (!baseQuery.data) return baseQuery.data;
 
-    // If no crossref data or error, return base data as-is
-    if (!crossrefQuery.leads || Object.keys(crossrefQuery.leads).length === 0) {
+    // If no projectId or no crossref data, return base data as-is
+    if (!projectId || !crossrefQuery.leads || Object.keys(crossrefQuery.leads).length === 0) {
       return baseQuery.data;
     }
 
@@ -113,12 +113,12 @@ export function useStageCreativePerformance({
         totalLeads,
       },
     };
-  }, [baseQuery.data, crossrefQuery.leads]);
+  }, [baseQuery.data, projectId, crossrefQuery.leads]);
 
   return {
     ...baseQuery,
     data: enrichedData,
-    isLoading: baseQuery.isLoading || crossrefQuery.isLoading,
-    error: baseQuery.error || (crossrefQuery.error ? new Error(crossrefQuery.error) : undefined),
+    isLoading: projectId ? (baseQuery.isLoading || crossrefQuery.isLoading) : baseQuery.isLoading,
+    error: baseQuery.error || (projectId && crossrefQuery.error ? new Error(crossrefQuery.error) : undefined),
   };
 }
