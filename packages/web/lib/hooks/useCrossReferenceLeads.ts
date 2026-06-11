@@ -17,6 +17,7 @@ import { normalizeNumericId } from "@/lib/utils/normalize-answer";
 
 interface CrossReferencedLeads {
   leads: Record<string, number>; // { ad_id: count }
+  terms: Record<string, string>; // { ad_id: "hot" | "cold" }
   totalLeads: number;
   isLoading: boolean;
   error?: string;
@@ -47,36 +48,44 @@ export function useCrossReferenceLeads({
 
   const sheetQuery = useSheetData(survey?.spreadsheetId ?? null, sheetName);
 
-  // Computar cruzamento: coluna "content" (índice 5) = utm_content = adId do Meta
+  // Computar cruzamento: coluna 5 = utm_content (adId), coluna 7 = term (hot/cold)
   const result = useMemo(() => {
     const leads: Record<string, number> = {};
+    const terms: Record<string, string> = {};
     let totalLeads = 0;
 
     if (!sheetQuery.data?.rows || sheetQuery.data.rows.length === 0) {
-      return { leads, totalLeads, isLoading: false };
+      return { leads, terms, totalLeads, isLoading: false };
     }
 
-    // Coluna 5 é "content" (utm_content) = adId do Meta
-    const CONTENT_INDEX = 5;
+    const CONTENT_INDEX = 5; // utm_content = adId
+    const TERM_INDEX = 7;    // hot/cold
 
-    // Contar leads por utm_content (= adId)
+    // Contar leads por utm_content e armazenar termo
     for (const row of sheetQuery.data.rows) {
       const utmContent = row[CONTENT_INDEX]?.trim() ?? "";
       if (!utmContent) continue;
 
       const adId = normalizeNumericId(utmContent);
+      const term = (row[TERM_INDEX]?.trim() ?? "").toLowerCase();
+
       leads[adId] = (leads[adId] ?? 0) + 1;
+      if (!terms[adId] && (term === "hot" || term === "cold")) {
+        terms[adId] = term;
+      }
       totalLeads += 1;
     }
 
-    return { leads, totalLeads, isLoading: false };
+    return { leads, terms, totalLeads, isLoading: false };
   }, [sheetQuery.data]);
 
   const isLoading = surveysQuery.isLoading || (survey ? sheetQuery.isLoading : false);
   const error = surveysQuery.error?.message || sheetQuery.error?.message;
 
   return {
-    ...result,
+    leads: result.leads,
+    terms: result.terms,
+    totalLeads: result.totalLeads,
     isLoading,
     error: error ? error : undefined,
   };

@@ -82,7 +82,7 @@ export function useStageCreativePerformance({
     funnelId,
     stageId,
     days,
-  }) : { leads: {}, totalLeads: 0, isLoading: false };
+  }) : { leads: {}, terms: {}, totalLeads: 0, isLoading: false };
 
   // Combine base data with crossref leads
   const enrichedData = useMemo(() => {
@@ -93,12 +93,14 @@ export function useStageCreativePerformance({
       return baseQuery.data;
     }
 
-    // Enrich creatives with crossref leads
+    // Enrich creatives with crossref leads and term
     const enrichedCreatives = baseQuery.data.creatives.map((creative) => {
       const crossrefLeads = crossrefQuery.leads[creative.adId] ?? creative.leads;
+      const crossrefTerm = crossrefQuery.terms[creative.adId] ?? creative.utmTerm;
       return {
         ...creative,
         leads: crossrefLeads, // Update leads from crossref
+        utmTerm: crossrefTerm, // Update term from crossref (hot/cold)
       };
     });
 
