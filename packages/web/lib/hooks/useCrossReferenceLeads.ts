@@ -49,10 +49,14 @@ export function useCrossReferenceLeads({
     (s) => s.spreadsheetName?.includes("n8n-leads") || s.spreadsheetName?.includes("leads")
   ) || surveys[0];
 
-  console.log("[useCrossReferenceLeads] surveys:", surveys.map(s => ({ name: s.spreadsheetName, sheet: s.sheetName })));
-  console.log("[useCrossReferenceLeads] leadsSurvey selected:", { name: leadsSurvey?.spreadsheetName, sheet: leadsSurvey?.sheetName });
+  // For "Painel de Controle" spreadsheet, use the leads-specific sheet
+  const sheetName = leadsSurvey?.spreadsheetName?.includes("Painel de Controle")
+    ? "n8n-leads-lp-cap-grat"
+    : leadsSurvey?.sheetName ?? null;
 
-  const sheetQuery = useSheetData(leadsSurvey?.spreadsheetId ?? null, leadsSurvey?.sheetName ?? null);
+  console.log("[useCrossReferenceLeads] Using sheet:", { name: leadsSurvey?.spreadsheetName, sheet: sheetName });
+
+  const sheetQuery = useSheetData(leadsSurvey?.spreadsheetId ?? null, sheetName);
 
   // Computar cruzamento
   const result = useMemo(() => {
