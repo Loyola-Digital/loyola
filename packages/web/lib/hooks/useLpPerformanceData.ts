@@ -85,7 +85,12 @@ export function useLpPerformanceData({
       }
     > = {};
 
+    console.log("[useLpPerformanceData] campaignsQuery.data:", campaignsQuery.data);
+    console.log("[useLpPerformanceData] campaignsQuery.error:", campaignsQuery.error);
+    console.log("[useLpPerformanceData] leadsQuery.termsMapping:", leadsQuery.termsMapping);
+
     if (!campaignsQuery.data?.campaigns || campaignsQuery.data.campaigns.length === 0) {
+      console.log("[useLpPerformanceData] No campaigns found or data is empty");
       return { lpsByName, isLoading: false };
     }
 
