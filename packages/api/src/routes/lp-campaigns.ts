@@ -80,7 +80,11 @@ export default fp(async function lpCampaignsRoutes(fastify) {
       const { days } = queryResult.data;
 
       try {
+        fastify.log.info(`[lp-campaigns] Fetching campaigns for funnelId=${funnelId}, stageId=${stageId}, days=${days}`);
+
         const metaAccount = await getMetaAccountForProject(funnelId);
+        fastify.log.info(`[lp-campaigns] Meta account:`, metaAccount);
+
         if (!metaAccount) {
           return reply.code(400).send({
             error: "Meta Ads nao configurado para este projeto",
@@ -88,12 +92,14 @@ export default fp(async function lpCampaignsRoutes(fastify) {
         }
 
         // Fetch all ad insights (includes campaign_name)
+        fastify.log.info(`[lp-campaigns] Fetching all ad insights...`);
         const allInsights = await fetchAllAdInsights(
           metaAccount.metaAccountId,
           metaAccount.accessToken,
           new Date(Date.now() - days * 24 * 60 * 60 * 1000),
           new Date(),
         );
+        fastify.log.info(`[lp-campaigns] Got ${allInsights.length} insights`);
 
         // Filter campaigns that contain "lp[a-z]" in campaign_name
         const lpCampaigns: Map<string, LPCampaignData> = new Map();
