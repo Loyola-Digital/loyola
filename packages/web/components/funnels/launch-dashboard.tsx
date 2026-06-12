@@ -659,7 +659,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
       )}
 
       {/* Story 18.44: LP Performance Table (Testes de Landing Pages) */}
-      {stageId && (
+      {stageId && stageType && (
         <LpPerformanceSection
           projectId={projectId}
           funnelId={funnel.id}
