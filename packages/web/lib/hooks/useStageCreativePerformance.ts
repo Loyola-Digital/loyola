@@ -10,7 +10,9 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { useApiClient } from "@/lib/hooks/use-api-client";
+import { useCrossReferenceLeads } from "@/lib/hooks/useCrossReferenceLeads";
 
 export interface CreativePerformanceData {
   adId: string;
@@ -46,6 +48,7 @@ export interface StageCreativePerformanceResponse {
 }
 
 interface UseStageCreativePerformanceOptions {
+  projectId?: string;
   funnelId: string;
   stageId: string;
   days?: number;
@@ -53,6 +56,7 @@ interface UseStageCreativePerformanceOptions {
 }
 
 export function useStageCreativePerformance({
+  projectId,
   funnelId,
   stageId,
   days = 30,
@@ -60,7 +64,8 @@ export function useStageCreativePerformance({
 }: UseStageCreativePerformanceOptions) {
   const apiClient = useApiClient();
 
-  return useQuery<StageCreativePerformanceResponse, Error>({
+  // Fetch base creative performance data
+  const baseQuery = useQuery<StageCreativePerformanceResponse, Error>({
     queryKey: ["stage-creative-performance", funnelId, stageId, days],
     queryFn: () =>
       apiClient<StageCreativePerformanceResponse>(
@@ -70,4 +75,52 @@ export function useStageCreativePerformance({
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
   });
+
+  // Story 18.43: For free stages, enrich leads via crossref (only if projectId provided)
+  const crossrefQuery = projectId ? useCrossReferenceLeads({
+    projectId,
+    funnelId,
+    stageId,
+    days,
+  }) : { leads: {}, terms: {}, totalLeads: 0, isLoading: false };
+
+  // Combine base data with crossref leads
+  const enrichedData = useMemo(() => {
+    if (!baseQuery.data) return baseQuery.data;
+
+    // If no projectId or no crossref data, return base data as-is
+    if (!projectId || !crossrefQuery.leads || Object.keys(crossrefQuery.leads).length === 0) {
+      return baseQuery.data;
+    }
+
+    // Enrich creatives with crossref leads and term
+    const enrichedCreatives = baseQuery.data.creatives.map((creative) => {
+      const crossrefLeads = crossrefQuery.leads[creative.adId] ?? creative.leads;
+      const crossrefTerm = crossrefQuery.terms[creative.adId] ?? creative.utmTerm;
+      return {
+        ...creative,
+        leads: crossrefLeads, // Update leads from crossref
+        utmTerm: crossrefTerm, // Update term from crossref (hot/cold)
+      };
+    });
+
+    // Recalculate summary totals
+    const totalLeads = enrichedCreatives.reduce((sum, c) => sum + c.leads, 0);
+
+    return {
+      ...baseQuery.data,
+      creatives: enrichedCreatives,
+      summary: {
+        ...baseQuery.data.summary,
+        totalLeads,
+      },
+    };
+  }, [baseQuery.data, projectId, crossrefQuery.leads]);
+
+  return {
+    ...baseQuery,
+    data: enrichedData,
+    isLoading: projectId ? (baseQuery.isLoading || crossrefQuery.isLoading) : baseQuery.isLoading,
+    error: baseQuery.error || (projectId && crossrefQuery.error ? new Error(crossrefQuery.error) : undefined),
+  };
 }

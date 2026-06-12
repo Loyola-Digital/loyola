@@ -50,6 +50,8 @@ const OPACITIES = {
   markerLine: 0.8,
 };
 
+// Custom label component for bar chart
+
 function formatDateShort(d: string) {
   const [, m, day] = d.split("-");
   return `${day}/${m}`;
@@ -384,31 +386,14 @@ export function LeadsProjectionCostBasedChart({
               name="Leads Orgânicos Reais (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
-              label={{
-                position: "top",
-                fontSize: 9,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                content: (props: any) => {
-                  const { x, y, entry } = props;
-                  if (!entry || !entry.payload) return null;
-                  const paid = entry.payload.dailyRealPaid ?? 0;
-                  const org = entry.payload.dailyRealOrg ?? 0;
-                  const total = paid + org;
-                  if (total <= 0) return null;
-                  return (
-                    <text x={x} y={y - 5} textAnchor="middle" fontSize={9} fill="#000">
-                      {Math.round(total)}
-                    </text>
-                  );
-                }
-              }}
+              label={{ position: "top", fill: "#FFF", stroke: "#000", strokeWidth: 0.5, fontSize: 11 }}
             />
 
             {/* Stacked bars: Projected Paid + Projected Organic */}
             <Bar
               dataKey="dailyProjectedPaid"
               fill={COLORS.barsPaidProjected}
-              opacity={OPACITIES.dailyProjected}
+              opacity={0.7}
               name="Leads Pagos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
@@ -416,27 +401,25 @@ export function LeadsProjectionCostBasedChart({
             <Bar
               dataKey="dailyProjectedOrg"
               fill={COLORS.barsOrgProjected}
-              opacity={OPACITIES.dailyProjected}
+              opacity={0.7}
               name="Leads Orgânicos Projetados (Dia)"
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
-              label={{
-                position: "top",
-                fontSize: 9,
-                fill: COLORS.projectionText,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                content: (props: any) => {
-                  const { x, y, entry } = props;
-                  if (!entry || !entry.payload) return null;
-                  const paid = entry.payload.dailyProjectedPaid ?? 0;
-                  const org = entry.payload.dailyProjectedOrg ?? 0;
-                  if (paid <= 0 && org <= 0) return null;
-                  return (
-                    <text x={x} y={y - 5} textAnchor="middle" fontSize={9} fill={COLORS.projectionText}>
-                      {Math.round(paid)} | {Math.round(org)}
-                    </text>
-                  );
-                }
+              label={(props: any) => {
+                const { x, y, width, value } = props;
+                return (
+                  <text
+                    x={x! + (width || 0) / 2}
+                    y={y! - 5}
+                    textAnchor="middle"
+                    fill="#FFF"
+                    stroke="#000"
+                    strokeWidth={0.5}
+                    fontSize={11}
+                  >
+                    {Math.round(value)}
+                  </text>
+                );
               }}
             />
 

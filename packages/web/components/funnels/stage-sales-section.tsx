@@ -157,6 +157,7 @@ interface StageSalesSectionProps {
   subtype: StageSalesSubtype;
   title: string;
   days?: number;
+  stageType?: 'paid' | 'free' | 'sales' | 'cpl';
   /**
    * Map de adset_id → adset_name vindo da Meta API. Quando informado, a tabela
    * "Por Medium (Adset)" resolve `utm_medium` (que armazena o adset_id) pro
@@ -172,6 +173,7 @@ export function StageSalesSection({
   subtype,
   title,
   days,
+  stageType,
   adsetsMap,
 }: StageSalesSectionProps) {
   const { data, isLoading, isError } = useStageSalesData(
@@ -320,7 +322,7 @@ export function StageSalesSection({
         />
       </div>
 
-      {/* Story 18.24: Tabela de Desempenho de Criativos */}
+      {/* Story 18.24: Tabela de Desempenho de Criativos | Story 18.41: Now also for Free stages */}
       {subtype === "capture" && (
         <div className="space-y-2 border-t pt-4 mt-4">
           <p className="text-xs font-medium text-muted-foreground">Desempenho de Criativos (Meta Ads)</p>
@@ -328,6 +330,7 @@ export function StageSalesSection({
             funnelId={funnelId}
             stageId={stageId}
             days={days}
+            stageType={stageType}
           />
         </div>
       )}

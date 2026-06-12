@@ -46,6 +46,9 @@ import { CampaignSelector } from "./campaign-selector";
 import type { Funnel, FunnelCampaign, StageType, ComparisonDayMetrics } from "@loyola-x/shared";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { StageSalesSection } from "./stage-sales-section";
+import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
+import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
+import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
@@ -622,6 +625,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             subtype="capture"
             title="Vendas de Captação"
             days={days}
+            stageType={stageType}
             adsetsMap={adsetsMap}
           />
           <div className="border-t border-border/20" />
@@ -639,6 +643,31 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
       {/* Grupos — tracking de participantes via planilha (Story 26.1) */}
       <GroupsDashboardSection projectId={projectId} funnelId={funnel.id} />
+
+      {/* Story 18.41: Creative Performance Table for Free stages */}
+      {stageType === "free" && stageId && (
+        <div className="space-y-4 pt-2 border-t border-border/30">
+          <h3 className="text-base font-semibold">Desempenho de Criativos (Meta Ads)</h3>
+          <StageCreativePerformanceTable
+            projectId={projectId}
+            funnelId={funnel.id}
+            stageId={stageId}
+            days={days}
+            stageType={stageType}
+          />
+        </div>
+      )}
+
+      {/* Story 18.44: LP Performance Table (Testes de Landing Pages) */}
+      {stageId && (
+        <LpPerformanceSection
+          projectId={projectId}
+          funnelId={funnel.id}
+          stageId={stageId}
+          days={days}
+          stageType={stageType}
+        />
+      )}
 
       {/* Top Creatives Gallery (Story 18.4) */}
       <TopCreativesGallery
@@ -991,6 +1020,59 @@ function SaturationBadge({ dailyData }: { dailyData: CampaignDailyInsight[] | nu
         <p className="text-[11px] text-muted-foreground border-t border-border/30 pt-2">
           💡 {c.tip}
         </p>
+      </div>
+    </div>
+  );
+}
+
+// Story 18.44: LP Performance Section
+interface LpPerformanceSectionProps {
+  projectId?: string;
+  funnelId: string;
+  stageId: string;
+  days: number;
+  stageType: StageType;
+}
+
+function LpPerformanceSection({
+  projectId,
+  funnelId,
+  stageId,
+  days,
+  stageType,
+}: LpPerformanceSectionProps) {
+  const { lpsByName, isLoading } = useLpPerformanceData({
+    projectId,
+    funnelId,
+    stageId,
+    days,
+    publicoFilter: "todos",
+  });
+
+  if (isLoading) {
+    return <div className="p-4 text-center text-muted-foreground">Carregando dados de LPs...</div>;
+  }
+
+  if (!lpsByName || Object.keys(lpsByName).length === 0) {
+    return null;
+  }
+
+  const isPaid = stageType === "paid";
+
+  return (
+    <div className="space-y-6 pt-2 border-t border-border/30">
+      <h3 className="text-base font-semibold">Desempenho de Testes de LPs</h3>
+      <div className="space-y-8">
+        {Object.entries(lpsByName).map(([lpKey, lpData]) => (
+          <div key={lpKey} className="space-y-3">
+            <LpPerformanceTable
+              lpName={lpData.name}
+              data={lpData.data}
+              stageType={isPaid ? "paid" : "free"}
+              isLoading={false}
+            />
+          </div>
+        ))}
       </div>
     </div>
   );

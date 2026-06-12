@@ -184,6 +184,7 @@ export function useLeadsProjection(
         gasto: row.spend ?? 0,
         leadsPagos: row.leadsPagos ?? 0,
         leadsOrg: row.leadsOrg ?? 0,
+        leadsSemTrack: row.leadsSemTrack ?? 0,
       }));
 
       const validation = validateProjectionInput(historicalData);
@@ -196,12 +197,14 @@ export function useLeadsProjection(
       let gastoAccum = 0;
       let leadsAccumPaid = 0;
       let leadsAccumOrg = 0;
+      let leadsAccumSemTrack = 0; // Leads sem track para totalizacao
       const historicalCPLAccum: (number | null)[] = [];
       let lastCPLToday = 0;
       rows.forEach((row) => {
         gastoAccum += row.spend ?? 0;
         leadsAccumPaid += row.leadsPagos ?? 0;
         leadsAccumOrg += row.leadsOrg ?? 0;
+        leadsAccumSemTrack += row.leadsSemTrack ?? 0;
 
         // CPL accumulated
         const cplAccum = leadsAccumPaid > 0 ? gastoAccum / leadsAccumPaid : null;
@@ -258,7 +261,7 @@ export function useLeadsProjection(
 
       // Accumulated projection
       const accumulatedProjection = calculateAccumulatedProjection(
-        leadsAccumPaid + leadsAccumOrg,
+        leadsAccumPaid + leadsAccumOrg + leadsAccumSemTrack,
         dailyProjections,
       );
 
@@ -281,14 +284,15 @@ export function useLeadsProjection(
           // REAL: até ontem (inclusive)
           const dailyPaid = historyRow.leadsPagos ?? 0;
           const dailyOrg = historyRow.leadsOrg ?? 0;
-          cumulativeReal += dailyPaid + dailyOrg;
+          const dailySemTrack = historyRow.leadsSemTrack ?? 0;
+          cumulativeReal += dailyPaid + dailyOrg + dailySemTrack;
 
           const realPercentage = metaTotal > 0 ? (cumulativeReal / metaTotal) * 100 : 0;
 
           result.push({
             date: dateStr,
             dailyRealPaid: dailyPaid,
-            dailyRealOrg: dailyOrg,
+            dailyRealOrg: dailyOrg + dailySemTrack,
             cumulativeReal,
             dailyProjectedPaid: null,
             dailyProjectedOrg: null,
