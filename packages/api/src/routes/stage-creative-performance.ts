@@ -38,6 +38,21 @@ interface CreativePerformanceResponse {
   leads: number;
   revenue: number;
   utmTerm: string | null;
+  // Story 18.46: identificação de LP (AC3) e LP View real (AC4)
+  campaignName: string | null;
+  landingPageViews: number;
+}
+
+/**
+ * Story 18.46 (AC4): extrai Landing Page Views do array `actions` do Meta Ads.
+ * Meta retorna `{ action_type: "landing_page_view", value: "123" }`.
+ */
+function parseLandingPageViews(
+  actions: { action_type: string; value: string }[] | undefined,
+): number {
+  if (!actions) return 0;
+  const lpv = actions.find((a) => a.action_type === "landing_page_view");
+  return lpv ? parseNumber(lpv.value) : 0;
 }
 
 function parseNumber(val: string | undefined): number {
@@ -353,6 +368,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           spend: number;
           impressions: number;
           clicks: number;
+          // Story 18.46: campaign_name (AC3) e landing_page_view agregado (AC4)
+          campaignName: string | null;
+          landingPageViews: number;
         };
         const groupedByName = new Map<string, AdNameGroup>();
 
@@ -369,6 +387,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               spend: 0,
               impressions: 0,
               clicks: 0,
+              campaignName: null,
+              landingPageViews: 0,
             };
             groupedByName.set(adName, group);
           }
@@ -381,6 +401,12 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           if (!isNaN(spend)) group.spend += spend;
           if (!isNaN(impressions)) group.impressions += impressions;
           if (!isNaN(clicks)) group.clicks += clicks;
+
+          // Story 18.46: captura campaign_name (primeiro não-vazio) e soma LP Views
+          if (!group.campaignName && ad.campaign_name) {
+            group.campaignName = ad.campaign_name;
+          }
+          group.landingPageViews += parseLandingPageViews(ad.actions);
         }
 
         // 7. Monta resposta — uma linha por ad_name.
@@ -430,6 +456,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             leads: totalLeads,
             revenue: totalRevenue,
             utmTerm: topUtmTerm,
+            campaignName: group.campaignName,
+            landingPageViews: group.landingPageViews,
           });
         }
 

@@ -1041,39 +1041,51 @@ function LpPerformanceSection({
   days,
   stageType,
 }: LpPerformanceSectionProps) {
-  const { lpsByName, isLoading } = useLpPerformanceData({
+  // Story 18.46 (AC7): filtro de público efetivo, controlado nesta seção
+  const [publicoFilter, setPublicoFilter] = useState<"todos" | "hot" | "cold">("todos");
+
+  const { lps, isLoading } = useLpPerformanceData({
     projectId,
     funnelId,
     stageId,
     days,
-    publicoFilter: "todos",
+    publicoFilter,
   });
-
-  if (isLoading) {
-    return <div className="p-4 text-center text-muted-foreground">Carregando dados de LPs...</div>;
-  }
-
-  if (!lpsByName || Object.keys(lpsByName).length === 0) {
-    return null;
-  }
 
   const isPaid = stageType === "paid";
 
   return (
-    <div className="space-y-6 pt-2 border-t border-border/30">
-      <h3 className="text-base font-semibold">Desempenho de Testes de LPs</h3>
-      <div className="space-y-8">
-        {Object.entries(lpsByName).map(([lpKey, lpData]) => (
-          <div key={lpKey} className="space-y-3">
-            <LpPerformanceTable
-              lpName={lpData.name}
-              data={lpData.data}
-              stageType={isPaid ? "paid" : "free"}
-              isLoading={false}
-            />
-          </div>
-        ))}
+    <div className="space-y-4 pt-2 border-t border-border/30">
+      <div className="flex items-center justify-between gap-4">
+        <h3 className="text-base font-semibold">Desempenho de Testes de LPs</h3>
+        {/* Story 18.46 (AC7): botões temáticos iguais aos de Criativos */}
+        <div className="flex items-center gap-1 rounded-md border border-border/40 p-0.5">
+          {(["todos", "hot", "cold"] as const).map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => setPublicoFilter(opt)}
+              className={`px-2.5 h-6 rounded text-[11px] font-medium transition-colors ${
+                publicoFilter === opt
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted/50"
+              }`}
+            >
+              {opt === "todos" ? "Todos" : opt === "hot" ? "🔥 Hot" : "❄️ Cold"}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {isLoading ? (
+        <div className="p-4 text-center text-muted-foreground">Carregando dados de LPs...</div>
+      ) : (
+        <LpPerformanceTable
+          rows={lps}
+          stageType={isPaid ? "paid" : "free"}
+          isLoading={false}
+        />
+      )}
     </div>
   );
 }

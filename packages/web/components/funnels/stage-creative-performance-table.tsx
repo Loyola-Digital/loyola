@@ -64,8 +64,8 @@ const COLUMNS: Array<{ key: SortableCol; label: string }> = [
   { key: "spendPercent", label: "%" },
   { key: "leads", label: "Leads" },
   { key: "cpl", label: "CPL" },
-  { key: "impressions", label: "Impressões" },
-  { key: "clicks", label: "Cliques" },
+  // Story 18.46 (AC1): Impressões/Cliques ocultadas da tabela (CTR/CPC/CPM
+  // continuam sendo calculados internamente a partir desses valores).
   { key: "ctr", label: "CTR" },
   { key: "cpc", label: "CPC" },
   { key: "cpm", label: "CPM" },

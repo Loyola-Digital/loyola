@@ -10,7 +10,9 @@
  */
 
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import fp from "fastify-plugin";
+import { funnels } from "../db/schema.js";
 import { fetchAllAdInsights } from "../services/meta-ads.js";
 import { getMetaAccountForProject } from "../services/traffic-analytics.js";
 
@@ -82,8 +84,22 @@ export default fp(async function lpCampaignsRoutes(fastify) {
       try {
         fastify.log.info(`[lp-campaigns] Fetching campaigns for funnelId=${funnelId}, stageId=${stageId}, days=${days}`);
 
-        const metaAccount = await getMetaAccountForProject(funnelId);
-        fastify.log.info(`[lp-campaigns] Meta account:`, metaAccount);
+        // Resolve projectId do funil (getMetaAccountForProject exige db + projectId)
+        const [funnel] = await fastify.db
+          .select({ projectId: funnels.projectId })
+          .from(funnels)
+          .where(eq(funnels.id, funnelId))
+          .limit(1);
+
+        if (!funnel) {
+          return reply.code(404).send({ error: "Funil nao encontrado" });
+        }
+
+        const metaAccount = await getMetaAccountForProject(
+          fastify.db,
+          funnel.projectId,
+        );
+        fastify.log.info({ metaAccount }, "[lp-campaigns] Meta account");
 
         if (!metaAccount) {
           return reply.code(400).send({
@@ -96,8 +112,7 @@ export default fp(async function lpCampaignsRoutes(fastify) {
         const allInsights = await fetchAllAdInsights(
           metaAccount.metaAccountId,
           metaAccount.accessToken,
-          new Date(Date.now() - days * 24 * 60 * 60 * 1000),
-          new Date(),
+          days,
         );
         fastify.log.info(`[lp-campaigns] Got ${allInsights.length} insights`);
 

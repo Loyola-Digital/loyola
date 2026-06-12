@@ -19,6 +19,10 @@ interface CrossReferencedLeads {
   leads: Record<string, number>; // { ad_id: count }
   terms: Record<string, string>; // { ad_id: "hot" | "cold" }
   termsMapping: Record<string, string>; // { ad_id: full utm_term string }
+  // Story 18.46 (AC6/AC7): contagem de leads por LP via utm_content, quebrada
+  // por temperatura (hot/cold) para o filtro de público.
+  // { "lpa": { hot: N, cold: M, total: N+M } }
+  leadsByLp: Record<string, { hot: number; cold: number; total: number }>;
   totalLeads: number;
   isLoading: boolean;
   error?: string;
@@ -54,13 +58,14 @@ export function useCrossReferenceLeads({
     const leads: Record<string, number> = {};
     const terms: Record<string, string> = {};
     const termsMapping: Record<string, string> = {};
+    const leadsByLp: Record<string, { hot: number; cold: number; total: number }> = {};
     let totalLeads = 0;
 
     if (!sheetQuery.data?.rows || sheetQuery.data.rows.length === 0) {
-      return { leads, terms, termsMapping, totalLeads, isLoading: false };
+      return { leads, terms, termsMapping, leadsByLp, totalLeads, isLoading: false };
     }
 
-    const CONTENT_INDEX = 5; // utm_content = adId
+    const CONTENT_INDEX = 5; // utm_content = adId / identificador da LP (contém lpa/lpb/...)
     const TERM_INDEX = 7;    // utm_term (full string: "lpa-hot-...", "lpb-cold-...", etc)
 
     // Contar leads por utm_content e armazenar termo
@@ -87,13 +92,21 @@ export function useCrossReferenceLeads({
         }
       }
 
+      // Story 18.46 (AC6): identificar a LP do lead pelo utm_content (contém lpX),
+      // e quebrar por temperatura (utm_term contém hot/cold) para o filtro (AC7).
+      const lpMatch = utmContent.toLowerCase().match(/lp([a-z])/);
+      if (lpMatch) {
+        const lpKey = `lp${lpMatch[1].toLowerCase()}`;
+        if (!leadsByLp[lpKey]) leadsByLp[lpKey] = { hot: 0, cold: 0, total: 0 };
+        leadsByLp[lpKey].total += 1;
+        if (termString.includes("hot")) leadsByLp[lpKey].hot += 1;
+        else if (termString.includes("cold")) leadsByLp[lpKey].cold += 1;
+      }
+
       totalLeads += 1;
     }
 
-    console.log("[useCrossReferenceLeads] Terms mapping (full):", termsMapping);
-    console.log("[useCrossReferenceLeads] Temperature mapping:", terms);
-    console.log("[useCrossReferenceLeads] Sample row term (row[7]):", sheetQuery.data.rows[0]?.[TERM_INDEX]);
-    return { leads, terms, termsMapping, totalLeads, isLoading: false };
+    return { leads, terms, termsMapping, leadsByLp, totalLeads, isLoading: false };
   }, [sheetQuery.data]);
 
   const isLoading = surveysQuery.isLoading || (survey ? sheetQuery.isLoading : false);
@@ -103,6 +116,7 @@ export function useCrossReferenceLeads({
     leads: result.leads,
     terms: result.terms,
     termsMapping: result.termsMapping,
+    leadsByLp: result.leadsByLp,
     totalLeads: result.totalLeads,
     isLoading,
     error: error ? error : undefined,

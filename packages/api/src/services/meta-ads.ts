@@ -668,6 +668,9 @@ export interface AllAdInsight extends MetaAdInsight {
   campaign_name: string;
   adset_id: string;
   adset_name: string;
+  // Story 18.46 (AC4): array de actions já vem da API (fields inclui `actions`);
+  // expomos no tipo para extrair `landing_page_view`.
+  actions?: { action_type: string; value: string }[];
 }
 
 export async function fetchAllAdInsights(

@@ -48,15 +48,16 @@ export function calculateCTR(cliques: number, impressoes: number): number | null
 }
 
 /**
- * Connect Rate = (Conversões ÷ Cliques) × 100
- * Conversão = chegou em LP
+ * Story 18.46 (AC5): Connect Rate = (LP View ÷ Link Clicks) × 100
+ * Mede a % de cliques que efetivamente carregaram a LP (Landing Page View).
+ * Pode passar de 100% por particularidades de rastreamento — exibir valor real.
  */
 export function calculateConnectRate(
-  conversoes: number,
+  lpViews: number,
   cliques: number,
 ): number | null {
   if (cliques === 0) return null;
-  return (conversoes / cliques) * 100;
+  return (lpViews / cliques) * 100;
 }
 
 /**
@@ -117,7 +118,8 @@ export function calculatePaidMetrics(params: {
     cpm: calculateCPM(params.investimento, params.impressoes),
     cpc: calculateCPC(params.investimento, params.cliques),
     ctr: calculateCTR(params.cliques, params.impressoes),
-    connectRate: calculateConnectRate(params.conversoes, params.cliques),
+    // Story 18.46 (AC5): Connect Rate = LP View ÷ Cliques
+    connectRate: calculateConnectRate(params.lpViews, params.cliques),
     txConv: calculateTxConv(params.conversoes, params.lpViews),
     cpv: calculateCPV(params.investimento, params.vendas),
     roas: calculateROAS(params.faturamento, params.investimento),
@@ -139,7 +141,8 @@ export function calculateFreeMetrics(params: {
     cpm: calculateCPM(params.investimento, params.impressoes),
     cpc: calculateCPC(params.investimento, params.cliques),
     ctr: calculateCTR(params.cliques, params.impressoes),
-    connectRate: calculateConnectRate(params.conversoes, params.cliques),
+    // Story 18.46 (AC5): Connect Rate = LP View ÷ Cliques
+    connectRate: calculateConnectRate(params.lpViews, params.cliques),
     txConv: calculateTxConv(params.conversoes, params.lpViews),
     cpl: calculateCPL(params.investimento, params.leads),
   };

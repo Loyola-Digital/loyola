@@ -23,6 +23,9 @@ export interface CreativePerformanceData {
   leads: number;
   revenue: number;
   utmTerm: string | null;
+  // Story 18.46: identificação de LP por Campaign Name (AC3) + LP View real (AC4)
+  campaignName?: string | null;
+  landingPageViews?: number;
 }
 
 export interface StageCreativePerformanceResponse {
