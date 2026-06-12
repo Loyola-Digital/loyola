@@ -1027,7 +1027,7 @@ function SaturationBadge({ dailyData }: { dailyData: CampaignDailyInsight[] | nu
 
 // Story 18.44: LP Performance Section
 interface LpPerformanceSectionProps {
-  projectId?: string;
+  projectId: string;
   funnelId: string;
   stageId: string;
   days: number;

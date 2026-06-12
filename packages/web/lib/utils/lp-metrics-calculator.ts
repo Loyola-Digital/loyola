@@ -148,7 +148,7 @@ export function calculateFreeMetrics(params: {
 /**
  * Formatar número como moeda (R$)
  */
-export function formatCurrency(value: number | null, decimals = 2): string {
+export function formatCurrency(value: number | null | undefined, decimals = 2): string {
   if (value === null || value === undefined) return "—";
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -161,7 +161,7 @@ export function formatCurrency(value: number | null, decimals = 2): string {
 /**
  * Formatar número como percentual (máximo 2 casas decimais)
  */
-export function formatPercent(value: number | null, decimals = 2): string {
+export function formatPercent(value: number | null | undefined, decimals = 2): string {
   if (value === null || value === undefined) return "—";
   const result = parseFloat(value.toFixed(decimals));
   return `${result.toFixed(2)}%`;
@@ -170,7 +170,7 @@ export function formatPercent(value: number | null, decimals = 2): string {
 /**
  * Formatar número como ratio/ROAS (máximo 2 casas decimais)
  */
-export function formatRatio(value: number | null, decimals = 2): string {
+export function formatRatio(value: number | null | undefined, decimals = 2): string {
   if (value === null || value === undefined) return "—";
   const result = parseFloat(value.toFixed(decimals));
   return result.toFixed(2);

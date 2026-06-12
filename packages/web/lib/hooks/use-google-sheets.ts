@@ -111,6 +111,7 @@ export function useFunnelSurveys(
         `/api/projects/${projectId}/funnels/${funnelId}/surveys${buildSurveyQuery(stageId, surveyType)}`,
       );
     },
+    enabled: !!projectId && !!funnelId,
   });
 }
 
