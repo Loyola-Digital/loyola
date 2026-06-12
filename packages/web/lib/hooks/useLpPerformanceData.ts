@@ -14,6 +14,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useCrossReferenceLeads } from "@/lib/hooks/useCrossReferenceLeads";
+import type { StageCreativePerformanceResponse } from "@/lib/hooks/useStageCreativePerformance";
 
 interface LpDaily {
   date: string;
@@ -43,6 +44,10 @@ interface UseLpPerformanceDataOptions {
   funnelId: string;
   stageId: string;
   days?: number;
+  // Story 18.44 AC1: filtro de temperatura (hot/cold/todos).
+  // Aceito na interface para compatibilidade com o call site; a filtragem
+  // efetiva ainda não está implementada no hook (MVP exibe "todos").
+  publicoFilter?: "hot" | "cold" | "todos";
 }
 
 export function useLpPerformanceData({
@@ -54,10 +59,10 @@ export function useLpPerformanceData({
   const apiClient = useApiClient();
 
   // Fetch creative performance data which includes utm_term from spreadsheet
-  const creativesQuery = useQuery({
+  const creativesQuery = useQuery<StageCreativePerformanceResponse, Error>({
     queryKey: ["lp-performance-data", funnelId, stageId, days],
     queryFn: () =>
-      apiClient(
+      apiClient<StageCreativePerformanceResponse>(
         `/api/funnels/${funnelId}/stages/${stageId}/creative-performance?days=${days}`,
       ),
     enabled: !!funnelId && !!stageId,

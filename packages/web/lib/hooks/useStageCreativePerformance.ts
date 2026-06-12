@@ -76,13 +76,16 @@ export function useStageCreativePerformance({
     gcTime: 30 * 60 * 1000,
   });
 
-  // Story 18.43: For free stages, enrich leads via crossref (only if projectId provided)
-  const crossrefQuery = projectId ? useCrossReferenceLeads({
-    projectId,
+  // Story 18.43: For free stages, enrich leads via crossref.
+  // Hooks NÃO podem ser chamados condicionalmente (regras do React), então
+  // chamamos sempre. Quando não há projectId passamos "" e os queries internos
+  // ficam desabilitados (ver guard `enabled` em useFunnelSurveys).
+  const crossrefQuery = useCrossReferenceLeads({
+    projectId: projectId ?? "",
     funnelId,
     stageId,
     days,
-  }) : { leads: {}, terms: {}, totalLeads: 0, isLoading: false };
+  });
 
   // Combine base data with crossref leads
   const enrichedData = useMemo(() => {
