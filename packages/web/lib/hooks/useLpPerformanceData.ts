@@ -3,9 +3,9 @@
 /**
  * Story 18.44: Hook para agregação de performance de Landing Pages (LPs)
  *
- * Busca Campaigns da Meta Ads API que contêm "lpa", "lpb", "lpc" no Campaign Name
- * Dados: spend, link_clicks, impressions, landing_page_views
- * Métricas calculadas: CPM, CPC, CTR, Connect Rate
+ * Busca dados de creative-performance endpoint que já traz utm_term via planilha
+ * Identifica LPs via regex /lp([a-z])/i no utm_term
+ * Agrupa por LP: uma linha com dados totais por LP
  *
  * Leads contados da planilha n8n-leads-lp-cap-grat (Story 18.43 pattern)
  */
@@ -23,7 +23,7 @@ interface LpDaily {
   impressoes: number;
   conversoes: number;
   lpViews: number;
-  leads?: number; // Contados da planilha por LP
+  leads?: number;
 }
 
 interface LpPerformanceResponse {
@@ -53,13 +53,12 @@ export function useLpPerformanceData({
 }: UseLpPerformanceDataOptions): LpPerformanceResponse {
   const apiClient = useApiClient();
 
-  // Fetch LP campaigns from Meta Ads API
-  // Returns campaigns with campaign_name containing "lpa", "lpb", "lpc"
-  const campaignsQuery = useQuery({
-    queryKey: ["lp-campaigns", funnelId, stageId, days],
+  // Fetch creative performance data which includes utm_term from spreadsheet
+  const creativesQuery = useQuery({
+    queryKey: ["lp-performance-data", funnelId, stageId, days],
     queryFn: () =>
       apiClient(
-        `/api/funnels/${funnelId}/stages/${stageId}/lp-campaigns?days=${days}`,
+        `/api/funnels/${funnelId}/stages/${stageId}/creative-performance?days=${days}`,
       ),
     enabled: !!funnelId && !!stageId,
     staleTime: 5 * 60 * 1000,
@@ -74,8 +73,7 @@ export function useLpPerformanceData({
     days,
   });
 
-  // Process and aggregate LPs
-  // Combine: Campaign metrics from Meta Ads + Leads count from spreadsheet
+  // Process and aggregate LPs from creative data
   const result = useMemo(() => {
     const lpsByName: Record<
       string,
@@ -85,16 +83,11 @@ export function useLpPerformanceData({
       }
     > = {};
 
-    console.log("[useLpPerformanceData] campaignsQuery.data:", campaignsQuery.data);
-    console.log("[useLpPerformanceData] campaignsQuery.error:", campaignsQuery.error);
-    console.log("[useLpPerformanceData] leadsQuery.termsMapping:", leadsQuery.termsMapping);
-
-    if (!campaignsQuery.data?.campaigns || campaignsQuery.data.campaigns.length === 0) {
-      console.log("[useLpPerformanceData] No campaigns found or data is empty");
+    if (!creativesQuery.data?.creatives || creativesQuery.data.creatives.length === 0) {
       return { lpsByName, isLoading: false };
     }
 
-    // Build leads count map by LP (from spreadsheet)
+    // Build leads count map by LP from termsMapping (ad_id → lp identifier)
     const leadsByLp: Record<string, number> = {};
     if (leadsQuery.termsMapping) {
       for (const [adId, utmTerm] of Object.entries(leadsQuery.termsMapping)) {
@@ -106,11 +99,19 @@ export function useLpPerformanceData({
       }
     }
 
-    // Aggregate campaigns by LP (one row per LP with totals)
+    // Aggregate creatives by LP
     const lpTotals: Record<string, LpDaily> = {};
 
-    for (const campaign of campaignsQuery.data.campaigns) {
-      const lpName = campaign.lpName;
+    for (const creative of creativesQuery.data.creatives) {
+      const utmTermFromSpreadsheet = leadsQuery.termsMapping?.[creative.adId];
+      const utmTerm = (utmTermFromSpreadsheet || creative.utmTerm)?.toLowerCase();
+
+      if (!utmTerm) continue;
+
+      const lpMatch = utmTerm.match(/lp([a-z])/);
+      if (!lpMatch) continue;
+
+      const lpName = `LP${lpMatch[1].toUpperCase()}`;
       const key = lpName.toLowerCase();
 
       if (!lpTotals[key]) {
@@ -120,18 +121,18 @@ export function useLpPerformanceData({
           investimento: 0,
           cliques: 0,
           impressoes: 0,
-          conversoes: campaign.linkClicks, // Connect Rate = (linkClicks / linkClicks) * 100 = conversions
+          conversoes: 0,
           lpViews: 0,
           leads: 0,
         };
       }
 
-      // Aggregate metrics from campaign
-      lpTotals[key].investimento += campaign.spend;
-      lpTotals[key].cliques += campaign.linkClicks;
-      lpTotals[key].impressoes += campaign.impressions;
-      lpTotals[key].conversoes = campaign.linkClicks; // Conversions = Link Clicks (users who clicked to LP)
-      lpTotals[key].lpViews += campaign.lpViews;
+      // Aggregate metrics
+      lpTotals[key].investimento += creative.spend ?? 0;
+      lpTotals[key].cliques += creative.clicks ?? 0;
+      lpTotals[key].impressoes += creative.impressions ?? 0;
+      lpTotals[key].conversoes += creative.clicks ?? 0; // Conversions = Clicks
+      lpTotals[key].lpViews += 0; // TODO: puxar da API
       lpTotals[key].leads = (leadsByLp[key] ?? 0);
     }
 
@@ -144,11 +145,11 @@ export function useLpPerformanceData({
     }
 
     return { lpsByName, isLoading: false };
-  }, [campaignsQuery.data, leadsQuery.termsMapping]);
+  }, [creativesQuery.data, leadsQuery.termsMapping]);
 
   return {
     lpsByName: result.lpsByName,
-    isLoading: campaignsQuery.isLoading || leadsQuery.isLoading,
-    error: campaignsQuery.error?.message || leadsQuery.error,
+    isLoading: creativesQuery.isLoading || leadsQuery.isLoading,
+    error: creativesQuery.error?.message || leadsQuery.error,
   };
 }
