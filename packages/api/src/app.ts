@@ -63,6 +63,7 @@ import stageCreativePerformanceRoutes from "./routes/stage-creative-performance.
 import lpCampaignsRoutes from "./routes/lp-campaigns.js";
 import mauticRoutes from "./routes/mautic.js";
 import hotmartRoutes from "./routes/hotmart.js";
+import kiwifyRoutes from "./routes/kiwify.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -143,6 +144,7 @@ export async function buildServer() {
   await app.register(lpCampaignsRoutes);
   await app.register(mauticRoutes);
   await app.register(hotmartRoutes);
+  await app.register(kiwifyRoutes);
 
   return app;
 }
