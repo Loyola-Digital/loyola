@@ -94,14 +94,7 @@ export function useLpPerformanceData({
       }
     > = {};
 
-    console.log(
-      "[useLpPerformanceData] Raw creatives:",
-      baseQuery.data?.creatives?.length,
-    );
-    console.log("[useLpPerformanceData] Terms mapping:", crossRefQuery.termsMapping);
-
     if (!baseQuery.data?.creatives || baseQuery.data.creatives.length === 0) {
-      console.log("[useLpPerformanceData] No creatives found");
       return { lpsByName, isLoading: false };
     }
 
@@ -115,30 +108,13 @@ export function useLpPerformanceData({
         utmTermFromSpreadsheet || creative.utmTerm
       )?.toLowerCase();
 
-      console.log(
-        `[useLpPerformanceData] Creative: ${creative.adName} (${creative.adId}), utmTerm: ${utmTerm}`,
-      );
-
-      if (!utmTerm) {
-        console.log(
-          `[useLpPerformanceData] Skipping ${creative.adName} - no utmTerm found`,
-        );
-        continue;
-      }
+      if (!utmTerm) continue;
 
       // Extrair LP: procura por "lpa", "lpb", "lpc", "lpd", etc. dentro da string
       const lpMatch = utmTerm.match(/lp([a-z])/);
-      if (!lpMatch) {
-        console.log(
-          `[useLpPerformanceData] Skipping ${creative.adName} - no LP match in: ${utmTerm}`,
-        );
-        continue;
-      }
+      if (!lpMatch) continue;
 
       const lpName = `LP${lpMatch[1].toUpperCase()}`;
-      console.log(
-        `[useLpPerformanceData] Found LP: ${lpName} in ${creative.adName}`,
-      );
 
       // Filtro de temperatura
       if (publicoFilter !== "todos") {
@@ -230,9 +206,6 @@ export function useLpPerformanceData({
       };
     }
 
-    console.log("[useLpPerformanceData] LPs found:", Object.keys(lpsByName));
-    console.log("[useLpPerformanceData] LP Totals:", lpTotals);
-    console.log("[useLpPerformanceData] All LP data by name:", lpsByName);
     return { lpsByName, isLoading: false };
   }, [baseQuery.data, crossRefQuery.termsMapping, publicoFilter]);
 
