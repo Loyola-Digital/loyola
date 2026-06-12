@@ -109,8 +109,13 @@ export function LpPerformanceTable({
             <TableRow className="hover:bg-slate-700">
               <TableHead className="text-white">Dia</TableHead>
               <TableHead className="text-right text-white">Investimento (R$)</TableHead>
-              <TableHead className="text-right text-white">Cliques</TableHead>
-              <TableHead className="text-right text-white">Impressões</TableHead>
+              {/* Story 18.45 (AC4): Leads/CPL logo após Investimento (apenas free) */}
+              {!isPaid && (
+                <>
+                  <TableHead className="text-right text-white">Leads</TableHead>
+                  <TableHead className="text-right text-white">CPL</TableHead>
+                </>
+              )}
               <TableHead className="text-right text-white">CPM</TableHead>
               <TableHead className="text-right text-white">CPC</TableHead>
               <TableHead className="text-right text-white">CTR (%)</TableHead>
@@ -118,18 +123,13 @@ export function LpPerformanceTable({
               <TableHead className="text-right text-white">Connect Rate (%)</TableHead>
               <TableHead className="text-right text-white">Tx Conv. (%)</TableHead>
 
-              {/* Colunas específicas por stage */}
-              {isPaid ? (
+              {/* Colunas específicas por stage (paid) */}
+              {isPaid && (
                 <>
                   <TableHead className="text-right text-white">Vendas</TableHead>
                   <TableHead className="text-right text-white">CPV</TableHead>
                   <TableHead className="text-right text-white">Faturamento (R$)</TableHead>
                   <TableHead className="text-right text-white">ROAS</TableHead>
-                </>
-              ) : (
-                <>
-                  <TableHead className="text-right text-white">Leads</TableHead>
-                  <TableHead className="text-right text-white">CPL</TableHead>
                 </>
               )}
             </TableRow>
@@ -161,10 +161,17 @@ export function LpPerformanceTable({
                   <TableCell className="text-right">
                     {formatCurrency(row.investimento)}
                   </TableCell>
-                  <TableCell className="text-right">{row.cliques}</TableCell>
-                  <TableCell className="text-right">
-                    {row.impressoes}
-                  </TableCell>
+                  {/* Story 18.45 (AC4): Leads/CPL logo após Investimento (apenas free) */}
+                  {!isPaid && (
+                    <>
+                      <TableCell className="text-right">
+                        {row.leads ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(metrics.cpl)}
+                      </TableCell>
+                    </>
+                  )}
                   <TableCell className="text-right">
                     {formatCurrency(metrics.cpm)}
                   </TableCell>
@@ -182,8 +189,8 @@ export function LpPerformanceTable({
                     {formatPercent(metrics.txConv)}
                   </TableCell>
 
-                  {/* Colunas específicas por stage */}
-                  {isPaid ? (
+                  {/* Colunas específicas por stage (paid) */}
+                  {isPaid && (
                     <>
                       <TableCell className="text-right">
                         {row.vendas ?? "—"}
@@ -196,15 +203,6 @@ export function LpPerformanceTable({
                       </TableCell>
                       <TableCell className="text-right">
                         {formatRatio(metrics.roas)}
-                      </TableCell>
-                    </>
-                  ) : (
-                    <>
-                      <TableCell className="text-right">
-                        {row.leads ?? "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(metrics.cpl)}
                       </TableCell>
                     </>
                   )}
