@@ -55,8 +55,8 @@ export function useLpPerformanceData({
 }: UseLpPerformanceDataOptions): LpPerformanceResponse {
   const apiClient = useApiClient();
 
-  // Fetch LP performance data from spreadsheet (Meta Ads + utm_term crossref)
-  // Similar to Story 18.43: useCrossReferenceLeads pattern
+  // Fetch creative performance data which includes utm_term for LP identification
+  // Backend endpoint returns: { creatives: [{adId, adName, spend, impressions, clicks, leads, revenue, utmTerm}, ...] }
   const baseQuery = useQuery({
     queryKey: [
       "lp-performance-data",
@@ -67,7 +67,7 @@ export function useLpPerformanceData({
     ],
     queryFn: () =>
       apiClient(
-        `/api/funnels/${funnelId}/stages/${stageId}/lp-performance?days=${days}`,
+        `/api/funnels/${funnelId}/stages/${stageId}/creative-performance?days=${days}`,
       ),
     enabled: !!funnelId && !!stageId,
     staleTime: 5 * 60 * 1000,
