@@ -3,15 +3,17 @@
 /**
  * Story 18.44: Hook para agregação de performance de Landing Pages (LPs)
  *
- * Busca dados de Meta Ads API, identifica LPs via utm_term (lpa, lpb, lpc...),
- * agrupa por (data + LP), e calcula métricas (CPM, CPC, CTR, CPL, etc.)
+ * Busca dados de Meta Ads API + planilha de cruzamento (utm_term),
+ * identifica LPs via regex /lp([a-z])/i, agrupa por (data + LP),
+ * e calcula métricas (CPM, CPC, CTR, CPL, etc.)
  *
- * Filtrável por temperatura (hot/cold/todos) e período (days).
+ * Padrão: usa useCrossReferenceLeads (Story 18.43) para extrair utm_term da planilha
  */
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
+import { useCrossReferenceLeads } from "@/lib/hooks/use-leads-projection";
 
 interface LpDaily {
   date: string;
@@ -55,8 +57,7 @@ export function useLpPerformanceData({
 }: UseLpPerformanceDataOptions): LpPerformanceResponse {
   const apiClient = useApiClient();
 
-  // Fetch creative performance data which includes utm_term for LP identification
-  // Backend endpoint returns: { creatives: [{adId, adName, spend, impressions, clicks, leads, revenue, utmTerm}, ...] }
+  // Fetch creative performance metrics (spend, impressions, clicks, etc)
   const baseQuery = useQuery({
     queryKey: [
       "lp-performance-data",
@@ -74,7 +75,15 @@ export function useLpPerformanceData({
     gcTime: 30 * 60 * 1000,
   });
 
-  // Process and aggregate LPs
+  // Fetch utm_term mapping from spreadsheet (Story 18.43 pattern)
+  // Returns: { termsMapping: { adId: "lpa-hot-...", ... }, ... }
+  const crossRefQuery = useCrossReferenceLeads({
+    funnelId,
+    stageId,
+    days,
+  });
+
+  // Process and aggregate LPs (combine creative metrics + utm_term from spreadsheet)
   const result = useMemo(() => {
     const lpsByName: Record<
       string,
@@ -84,30 +93,34 @@ export function useLpPerformanceData({
       }
     > = {};
 
-    console.log("[useLpPerformanceData] Raw data:", baseQuery.data);
+    console.log(
+      "[useLpPerformanceData] Raw creatives:",
+      baseQuery.data?.creatives?.length,
+    );
+    console.log("[useLpPerformanceData] Terms mapping:", crossRefQuery.termsMapping);
 
     if (!baseQuery.data?.creatives || baseQuery.data.creatives.length === 0) {
       console.log("[useLpPerformanceData] No creatives found");
       return { lpsByName, isLoading: false };
     }
 
-    console.log(
-      "[useLpPerformanceData] Processing creatives:",
-      baseQuery.data.creatives.length,
-    );
-
     // Agrupar por (date + LP)
     const grouped: Record<string, LpDaily> = {};
 
     for (const creative of baseQuery.data.creatives) {
-      const utmTerm = creative.utmTerm?.toLowerCase();
+      // Pega utm_term da planilha de cruzamento (não do endpoint que vem undefined)
+      const utmTermFromSpreadsheet = crossRefQuery.termsMapping?.[creative.adId];
+      const utmTerm = (
+        utmTermFromSpreadsheet || creative.utmTerm
+      )?.toLowerCase();
+
       console.log(
-        `[useLpPerformanceData] Creative: ${creative.adName}, utmTerm: ${utmTerm}`,
+        `[useLpPerformanceData] Creative: ${creative.adName} (${creative.adId}), utmTerm: ${utmTerm}`,
       );
 
       if (!utmTerm) {
         console.log(
-          `[useLpPerformanceData] Skipping ${creative.adName} - no utmTerm`,
+          `[useLpPerformanceData] Skipping ${creative.adName} - no utmTerm found`,
         );
         continue;
       }
@@ -193,11 +206,11 @@ export function useLpPerformanceData({
 
     console.log("[useLpPerformanceData] LPs found:", Object.keys(lpsByName));
     return { lpsByName, isLoading: false };
-  }, [baseQuery.data, publicoFilter]);
+  }, [baseQuery.data, crossRefQuery.termsMapping, publicoFilter]);
 
   return {
     lpsByName: result.lpsByName,
-    isLoading: baseQuery.isLoading,
-    error: baseQuery.error?.message,
+    isLoading: baseQuery.isLoading || crossRefQuery.isLoading,
+    error: baseQuery.error?.message || crossRefQuery.error,
   };
 }
