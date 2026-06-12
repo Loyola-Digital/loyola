@@ -90,7 +90,7 @@ export function useLpPerformanceData({
     // Build leads count map by LP from termsMapping (ad_id → lp identifier)
     const leadsByLp: Record<string, number> = {};
     if (leadsQuery.termsMapping) {
-      for (const [adId, utmTerm] of Object.entries(leadsQuery.termsMapping)) {
+      for (const [, utmTerm] of Object.entries(leadsQuery.termsMapping)) {
         const lpMatch = (utmTerm as string).match(/lp([a-z])/i);
         if (lpMatch) {
           const lpName = `lp${lpMatch[1].toLowerCase()}`;
