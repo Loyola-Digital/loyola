@@ -184,25 +184,51 @@ export function useLpPerformanceData({
       }
     }
 
-    // Agrupar por LP (cada LP tem seu array de dias)
+    // Agrupar por LP: agregar TODOS os dias de cada LP em UMA ÚNICA linha
+    const lpTotals: Record<string, LpDaily> = {};
+
     for (const lpDaily of Object.values(grouped)) {
       const lpName = lpDaily.lpName;
+      const key = lpName.toLowerCase();
 
-      if (!lpsByName[lpName.toLowerCase()]) {
-        lpsByName[lpName.toLowerCase()] = {
-          name: lpName,
-          data: [],
+      if (!lpTotals[key]) {
+        lpTotals[key] = {
+          date: "TOTAL",
+          lpName,
+          investimento: 0,
+          cliques: 0,
+          impressoes: 0,
+          conversoes: 0,
+          lpViews: 0,
+          ...(lpDaily.vendas !== undefined && { vendas: 0, faturamento: 0 }),
+          ...(lpDaily.leads !== undefined && { leads: 0 }),
         };
       }
 
-      lpsByName[lpName.toLowerCase()].data.push(lpDaily);
+      // Somar todas as métricas
+      lpTotals[key].investimento += lpDaily.investimento;
+      lpTotals[key].cliques += lpDaily.cliques;
+      lpTotals[key].impressoes += lpDaily.impressoes;
+      lpTotals[key].conversoes += lpDaily.conversoes;
+      lpTotals[key].lpViews += lpDaily.lpViews;
+
+      if (lpDaily.vendas !== undefined) {
+        lpTotals[key].vendas = (lpTotals[key].vendas ?? 0) + lpDaily.vendas;
+        lpTotals[key].faturamento =
+          (lpTotals[key].faturamento ?? 0) + lpDaily.faturamento;
+      }
+
+      if (lpDaily.leads !== undefined) {
+        lpTotals[key].leads = (lpTotals[key].leads ?? 0) + lpDaily.leads;
+      }
     }
 
-    // Ordenar por data descendente (mais recente primeiro)
-    for (const lp of Object.values(lpsByName)) {
-      lp.data.sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-      );
+    // Preencher lpsByName com uma única linha (total) por LP
+    for (const [key, lpDaily] of Object.entries(lpTotals)) {
+      lpsByName[key] = {
+        name: lpDaily.lpName,
+        data: [lpDaily],
+      };
     }
 
     console.log("[useLpPerformanceData] LPs found:", Object.keys(lpsByName));

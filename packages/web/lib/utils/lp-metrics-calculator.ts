@@ -159,17 +159,19 @@ export function formatCurrency(value: number | null, decimals = 2): string {
 }
 
 /**
- * Formatar número como percentual
+ * Formatar número como percentual (máximo 2 casas decimais)
  */
 export function formatPercent(value: number | null, decimals = 2): string {
   if (value === null || value === undefined) return "—";
-  return `${value.toFixed(decimals)}%`;
+  const result = parseFloat(value.toFixed(decimals));
+  return `${result.toFixed(2)}%`;
 }
 
 /**
- * Formatar número como ratio (ROAS)
+ * Formatar número como ratio/ROAS (máximo 2 casas decimais)
  */
 export function formatRatio(value: number | null, decimals = 2): string {
   if (value === null || value === undefined) return "—";
-  return value.toFixed(decimals);
+  const result = parseFloat(value.toFixed(decimals));
+  return result.toFixed(2);
 }
