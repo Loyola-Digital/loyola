@@ -168,9 +168,8 @@ export function useLpPerformanceData({
       grouped[groupKey].investimento += creative.spend ?? 0;
       grouped[groupKey].cliques += creative.clicks ?? 0;
       grouped[groupKey].impressoes += creative.impressions ?? 0;
-      grouped[groupKey].conversoes +=
-        (creative.clicks ?? 0) * 0.1; // TODO: usar conversões reais
-      grouped[groupKey].lpViews += (creative.clicks ?? 0) * 0.8; // TODO: usar LP Views reais
+      grouped[groupKey].conversoes += (creative.clicks ?? 0) * 0.1; // TODO: conversões reais da API
+      grouped[groupKey].lpViews = 0; // TODO: puxar lpView real da API Meta Ads
 
       if (creative.revenue !== undefined) {
         grouped[groupKey].vendas = (grouped[groupKey].vendas ?? 0) + 1;
@@ -193,7 +192,7 @@ export function useLpPerformanceData({
 
       if (!lpTotals[key]) {
         lpTotals[key] = {
-          date: "TOTAL",
+          date: lpName,
           lpName,
           investimento: 0,
           cliques: 0,
@@ -232,6 +231,8 @@ export function useLpPerformanceData({
     }
 
     console.log("[useLpPerformanceData] LPs found:", Object.keys(lpsByName));
+    console.log("[useLpPerformanceData] LP Totals:", lpTotals);
+    console.log("[useLpPerformanceData] All LP data by name:", lpsByName);
     return { lpsByName, isLoading: false };
   }, [baseQuery.data, crossRefQuery.termsMapping, publicoFilter]);
 
