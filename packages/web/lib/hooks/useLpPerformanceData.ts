@@ -13,7 +13,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
-import { useCrossReferenceLeads } from "@/lib/hooks/use-leads-projection";
+import { useCrossReferenceLeads } from "@/lib/hooks/useCrossReferenceLeads";
 
 interface LpDaily {
   date: string;
