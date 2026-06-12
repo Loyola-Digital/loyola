@@ -41,7 +41,7 @@ interface LpPerformanceResponse {
 }
 
 interface UseLpPerformanceDataOptions {
-  projectId?: string;
+  projectId: string;
   funnelId: string;
   stageId: string;
   days?: number;
@@ -49,7 +49,7 @@ interface UseLpPerformanceDataOptions {
 }
 
 export function useLpPerformanceData({
-  _projectId,
+  projectId,
   funnelId,
   stageId,
   days = 30,
@@ -78,6 +78,7 @@ export function useLpPerformanceData({
   // Fetch utm_term mapping from spreadsheet (Story 18.43 pattern)
   // Returns: { termsMapping: { adId: "lpa-hot-...", ... }, ... }
   const crossRefQuery = useCrossReferenceLeads({
+    projectId,
     funnelId,
     stageId,
     days,

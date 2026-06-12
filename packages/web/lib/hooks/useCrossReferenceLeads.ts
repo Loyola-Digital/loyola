@@ -18,6 +18,7 @@ import { normalizeNumericId } from "@/lib/utils/normalize-answer";
 interface CrossReferencedLeads {
   leads: Record<string, number>; // { ad_id: count }
   terms: Record<string, string>; // { ad_id: "hot" | "cold" }
+  termsMapping: Record<string, string>; // { ad_id: full utm_term string }
   totalLeads: number;
   isLoading: boolean;
   error?: string;
@@ -48,18 +49,19 @@ export function useCrossReferenceLeads({
 
   const sheetQuery = useSheetData(survey?.spreadsheetId ?? null, sheetName);
 
-  // Computar cruzamento: coluna 5 = utm_content (adId), coluna 7 = term (hot/cold)
+  // Computar cruzamento: coluna 5 = utm_content (adId), coluna 7 = utm_term (lpa/hot/cold/etc)
   const result = useMemo(() => {
     const leads: Record<string, number> = {};
     const terms: Record<string, string> = {};
+    const termsMapping: Record<string, string> = {};
     let totalLeads = 0;
 
     if (!sheetQuery.data?.rows || sheetQuery.data.rows.length === 0) {
-      return { leads, terms, totalLeads, isLoading: false };
+      return { leads, terms, termsMapping, totalLeads, isLoading: false };
     }
 
     const CONTENT_INDEX = 5; // utm_content = adId
-    const TERM_INDEX = 7;    // hot/cold (may be part of a complex string)
+    const TERM_INDEX = 7;    // utm_term (full string: "lpa-hot-...", "lpb-cold-...", etc)
 
     // Contar leads por utm_content e armazenar termo
     for (const row of sheetQuery.data.rows) {
@@ -71,7 +73,12 @@ export function useCrossReferenceLeads({
 
       leads[adId] = (leads[adId] ?? 0) + 1;
 
-      // Extract hot/cold from the term string (may be part of a complex string like "ad-name--hot--...")
+      // Store full utm_term for LP identification (Story 18.44)
+      if (!termsMapping[adId]) {
+        termsMapping[adId] = termString;
+      }
+
+      // Extract hot/cold from the term string (Story 18.43)
       if (!terms[adId]) {
         if (termString.includes("hot")) {
           terms[adId] = "hot";
@@ -83,9 +90,10 @@ export function useCrossReferenceLeads({
       totalLeads += 1;
     }
 
-    console.log("[useCrossReferenceLeads] Terms mapping:", terms);
+    console.log("[useCrossReferenceLeads] Terms mapping (full):", termsMapping);
+    console.log("[useCrossReferenceLeads] Temperature mapping:", terms);
     console.log("[useCrossReferenceLeads] Sample row term (row[7]):", sheetQuery.data.rows[0]?.[TERM_INDEX]);
-    return { leads, terms, totalLeads, isLoading: false };
+    return { leads, terms, termsMapping, totalLeads, isLoading: false };
   }, [sheetQuery.data]);
 
   const isLoading = surveysQuery.isLoading || (survey ? sheetQuery.isLoading : false);
@@ -94,6 +102,7 @@ export function useCrossReferenceLeads({
   return {
     leads: result.leads,
     terms: result.terms,
+    termsMapping: result.termsMapping,
     totalLeads: result.totalLeads,
     isLoading,
     error: error ? error : undefined,
