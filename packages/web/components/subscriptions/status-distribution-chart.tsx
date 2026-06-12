@@ -10,15 +10,25 @@ import {
   CartesianGrid,
   Cell,
 } from "recharts";
-import type { HotmartStatusCount } from "@/lib/hooks/use-hotmart";
 import { fmtInt } from "@/components/subscriptions/format";
 
-interface Props {
-  distribution: HotmartStatusCount[];
+/** Tipo neutro de domínio — Hotmart e Kiwify passam ambos { status, count }. */
+interface StatusCount {
+  status: string;
+  count: number;
 }
 
-// Rótulos amigáveis pros status de assinatura da Hotmart.
+interface Props {
+  distribution: StatusCount[];
+  /** Rótulo da série (Hotmart = "Assinaturas"; Kiwify = "Cobranças"). */
+  seriesLabel?: string;
+  /** Mensagem do estado vazio. */
+  emptyMessage?: string;
+}
+
+// Rótulos amigáveis — status de assinatura (Hotmart, MAIÚSCULOS) e de venda (Kiwify, minúsculos).
 const STATUS_LABEL: Record<string, string> = {
+  // Hotmart (assinatura)
   ACTIVE: "Ativas",
   INACTIVE: "Inativas",
   DELAYED: "Atrasadas",
@@ -27,14 +37,38 @@ const STATUS_LABEL: Record<string, string> = {
   CANCELLED_BY_CUSTOMER: "Canc. cliente",
   CANCELLED_BY_SELLER: "Canc. vendedor",
   CANCELLED_BY_ADMIN: "Canc. admin",
+  // Kiwify (venda)
+  paid: "Pagas",
+  approved: "Aprovadas",
+  refunded: "Reembolsadas",
+  refund_requested: "Reemb. pedido",
+  pending_refund: "Reemb. pendente",
+  chargedback: "Chargeback",
+  waiting_payment: "Aguard. pgto",
+  pending: "Pendentes",
+  processing: "Processando",
+  authorized: "Autorizadas",
+  refused: "Recusadas",
 };
 
-// Cor por status (verde=ativa, vermelho=cancelada, âmbar=inadimplente, etc.).
+// Cor por status. Verde=receita ok, vermelho=perda, âmbar=reembolso, azul=pendente, cinza=outros.
 function colorFor(status: string): string {
+  // Hotmart (assinatura)
   if (status === "ACTIVE") return "#10b981";
   if (status.startsWith("CANCELLED")) return "#ef4444";
   if (status === "OVERDUE" || status === "DELAYED") return "#f59e0b";
   if (status === "STARTED") return "#3b82f6";
+  // Kiwify (venda)
+  if (status === "paid" || status === "approved") return "#10b981";
+  if (status === "chargedback" || status === "refused") return "#ef4444";
+  if (status === "refunded" || status === "refund_requested" || status === "pending_refund") return "#f59e0b";
+  if (
+    status === "waiting_payment" ||
+    status === "pending" ||
+    status === "processing" ||
+    status === "authorized"
+  )
+    return "#3b82f6";
   return "#94a3b8";
 }
 
@@ -42,7 +76,11 @@ function labelFor(status: string): string {
   return STATUS_LABEL[status] ?? status;
 }
 
-export function StatusDistributionChart({ distribution }: Props) {
+export function StatusDistributionChart({
+  distribution,
+  seriesLabel = "Assinaturas",
+  emptyMessage = "Sem assinaturas para exibir no período.",
+}: Props) {
   const data = distribution
     .filter((d) => d.count > 0)
     .map((d) => ({ ...d, label: labelFor(d.status) }));
@@ -52,7 +90,7 @@ export function StatusDistributionChart({ distribution }: Props) {
       <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-5">
         <h3 className="text-sm font-semibold mb-2">Distribuição de status</h3>
         <p className="text-xs text-muted-foreground py-6 text-center">
-          Sem assinaturas para exibir no período.
+          {emptyMessage}
         </p>
       </div>
     );
@@ -89,9 +127,9 @@ export function StatusDistributionChart({ distribution }: Props) {
               fontSize: "12px",
               color: "#fff",
             }}
-            formatter={(value) => [fmtInt(Number(value)), "Assinaturas"]}
+            formatter={(value) => [fmtInt(Number(value)), seriesLabel]}
           />
-          <Bar dataKey="count" radius={[6, 6, 0, 0]} name="Assinaturas">
+          <Bar dataKey="count" radius={[6, 6, 0, 0]} name={seriesLabel}>
             {data.map((d) => (
               <Cell key={d.status} fill={colorFor(d.status)} />
             ))}

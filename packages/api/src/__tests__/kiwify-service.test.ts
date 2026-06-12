@@ -68,6 +68,13 @@ describe("Helpers de data (YYYY-MM-DD, NÃO epoch ms)", () => {
     expect(monthsAgo(3, ref)).toBe("2026-03-11");
   });
 
+  it("monthsAgo clampa o dia em mês mais curto (sem overflow JS)", () => {
+    const ref = new Date(Date.UTC(2026, 2, 31, 12, 0, 0)); // 2026-03-31
+    // 1 mês antes de 31/03 = fevereiro (28 dias em 2026): clampa para 28,
+    // sem o overflow que levaria a 03/03.
+    expect(monthsAgo(1, ref)).toBe("2026-02-28");
+  });
+
   it("daysAgo subtrai dias em UTC (vira o mês)", () => {
     const ref = new Date(Date.UTC(2026, 5, 11, 0, 0, 0)); // 2026-06-11
     expect(daysAgo(30, ref)).toBe("2026-05-12");
@@ -296,9 +303,10 @@ describe("aggregateKiwifyDashboard — MRR aproximado (30d)", () => {
 
 describe("aggregateKiwifyDashboard — stats e gaps honestos", () => {
   it("refundRate/chargebackRate vêm de /stats; gaps são null", () => {
+    // /stats vem em % e é normalizado para razão 0..1 (3,5% -> 0.035).
     const r = aggregateKiwifyDashboard(aggInput({ stats: { refund_rate: 3.5, chargeback_rate: 0.8 } }));
-    expect(r.refundRate).toBe(3.5);
-    expect(r.chargebackRate).toBe(0.8);
+    expect(r.refundRate).toBeCloseTo(0.035);
+    expect(r.chargebackRate).toBeCloseTo(0.008);
     expect(r.activeSubscriptions).toBeNull();
     expect(r.churnRate).toBeNull();
     expect(r.currencyPrimary).toBe("BRL");

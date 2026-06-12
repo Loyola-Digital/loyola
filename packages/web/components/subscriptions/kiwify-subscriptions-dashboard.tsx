@@ -144,7 +144,11 @@ export function KiwifySubscriptionsDashboard({ projectId }: Props) {
         ) : dashboard.data ? (
           <div className="space-y-5">
             <KiwifyKpis data={dashboard.data} />
-            <StatusDistributionChart distribution={dashboard.data.statusDistribution} />
+            <StatusDistributionChart
+              distribution={dashboard.data.statusDistribution}
+              seriesLabel="Cobranças"
+              emptyMessage="Sem cobranças para exibir no período."
+            />
           </div>
         ) : (
           <EmptyState

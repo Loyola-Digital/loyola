@@ -72,9 +72,9 @@ export interface KiwifyDashboard {
     /** refused (sem valor — não houve receita) */
     refused: { count: number };
   };
-  /** taxa de reembolso (%) de /stats */
+  /** taxa de reembolso — razão 0..1 (normalizada de /stats, que vem em %) */
   refundRate: number;
-  /** taxa de chargeback (%) de /stats */
+  /** taxa de chargeback — razão 0..1 (normalizada de /stats, que vem em %) */
   chargebackRate: number;
   /** parent_order_id vazio (novo) vs preenchido (renovação) */
   newVsRenewal: { new: number; renewal: number };

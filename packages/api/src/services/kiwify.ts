@@ -130,8 +130,8 @@ export interface KiwifyDashboard {
     pending: KiwifyChargeBucket; // waiting_payment + pending + processing + authorized
     refused: { count: number }; // refused (sem valor — não houve receita)
   };
-  refundRate: number; // de /stats (%)
-  chargebackRate: number; // de /stats (%)
+  refundRate: number; // razão 0..1 (normalizada de /stats, que vem em %)
+  chargebackRate: number; // razão 0..1 (normalizada de /stats, que vem em %)
   newVsRenewal: { new: number; renewal: number }; // parent_order_id vazio vs preenchido
   statusDistribution: Array<{ status: string; count: number }>;
   currencyPrimary: string; // "BRL"
@@ -197,7 +197,13 @@ export function fromYmd(ymd: string): number {
 
 /** YYYY-MM-DD de `hoje − months` (UTC). Default do dashboard: months=12. */
 export function monthsAgo(months: number, ref: Date = new Date()): string {
-  const ms = Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth() - months, ref.getUTCDate(), 0, 0, 0, 0);
+  const year = ref.getUTCFullYear();
+  const month = ref.getUTCMonth() - months;
+  // Clampa o dia ao último dia válido do mês alvo — evita o overflow de mês do JS
+  // (ex.: 31/03 − 1 mês cairia em 03/03; com o clamp vira 28/02).
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const day = Math.min(ref.getUTCDate(), lastDay);
+  const ms = Date.UTC(year, month, day, 0, 0, 0, 0);
   return toYmd(new Date(ms));
 }
 
@@ -333,13 +339,19 @@ export async function kiwifyGet<T>(
   const query = qs.toString();
   const url = `${API_BASE}${path}${query ? `?${query}` : ""}`;
 
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "x-kiwify-account-id": accountId,
-      Accept: "application/json",
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-kiwify-account-id": accountId,
+        Accept: "application/json",
+      },
+    });
+  } catch {
+    // Erro de rede — nunca expor URL/headers (espelha o tratamento de getKiwifyToken).
+    throw new Error("Falha de rede ao chamar a API da Kiwify");
+  }
 
   if (!res.ok) {
     let detail = "";
@@ -410,7 +422,9 @@ export async function fetchSalesWindowed(
   const windows = windowDateRange(args.from, args.to);
 
   for (const win of windows) {
-    let total = Infinity;
+    // Itens lidos NESTA janela (não cumulativo entre janelas — senão, sem
+    // pagination.count, a parada usaria um total errado e descartaria vendas).
+    let readInWindow = 0;
     for (let page = 1; page <= MAX_PAGES; page++) {
       const data = await kiwifyGet<KiwifyOffsetResponse<KiwifySale>>(token, accountId, "/sales", {
         product_id: args.productId,
@@ -423,11 +437,14 @@ export async function fetchSalesWindowed(
       });
       const items = data.data ?? [];
       if (items.length) out.push(...items);
+      readInWindow += items.length;
 
-      total = data.pagination?.count ?? out.length;
-      // Quantos itens já lemos NESTA janela (offset percorrido).
-      const readInWindow = page * PAGE_SIZE;
-      if (items.length === 0 || readInWindow >= total) break;
+      const total = data.pagination?.count;
+      // Para em página curta/vazia (esgotou a janela) OU ao atingir o count
+      // reportado. Sem count, confia no tamanho da página — nunca perde vendas.
+      // (O guard MAX_PAGES limita a janela a ~MAX_PAGES*PAGE_SIZE vendas; volume
+      //  extremo improvável para 1 produto em 90d — débito conhecido.)
+      if (items.length < PAGE_SIZE || (typeof total === "number" && readInWindow >= total)) break;
     }
   }
 
@@ -626,8 +643,10 @@ export function aggregateKiwifyDashboard(input: AggregateKiwifyInput): KiwifyDas
       pending: { count: pendingCount, value: moneyByCurrencyFromMap(pendingValue) },
       refused: { count: refusedCount },
     },
-    refundRate: typeof stats.refund_rate === "number" ? stats.refund_rate : 0,
-    chargebackRate: typeof stats.chargeback_rate === "number" ? stats.chargeback_rate : 0,
+    // /stats devolve em PORCENTAGEM (ex.: 2.22 = 2,22%). Normalizamos para razão
+    // 0..1 (padrão Hotmart) — o fmtPct compartilhado multiplica por 100 ao exibir.
+    refundRate: typeof stats.refund_rate === "number" ? stats.refund_rate / 100 : 0,
+    chargebackRate: typeof stats.chargeback_rate === "number" ? stats.chargeback_rate / 100 : 0,
     newVsRenewal: { new: newCount, renewal: renewalCount },
     statusDistribution,
     currencyPrimary: PRIMARY_CURRENCY,
