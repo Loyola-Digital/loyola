@@ -3,11 +3,11 @@
 /**
  * Story 18.44: Hook para agregação de performance de Landing Pages (LPs)
  *
- * Busca dados de Meta Ads API + planilha de cruzamento (utm_term),
- * identifica LPs via regex /lp([a-z])/i, agrupa por (data + LP),
- * e calcula métricas (CPM, CPC, CTR, CPL, etc.)
+ * Busca Campaigns da Meta Ads API que contêm "lpa", "lpb", "lpc" no Campaign Name
+ * Dados: spend, link_clicks, impressions, landing_page_views
+ * Métricas calculadas: CPM, CPC, CTR, Connect Rate
  *
- * Padrão: usa useCrossReferenceLeads (Story 18.43) para extrair utm_term da planilha
+ * Leads contados da planilha n8n-leads-lp-cap-grat (Story 18.43 pattern)
  */
 
 import { useMemo } from "react";
@@ -23,9 +23,7 @@ interface LpDaily {
   impressoes: number;
   conversoes: number;
   lpViews: number;
-  vendas?: number; // Captação Paga
-  faturamento?: number; // Captação Paga
-  leads?: number; // Captação Gratuita
+  leads?: number; // Contados da planilha por LP
 }
 
 interface LpPerformanceResponse {
@@ -45,7 +43,6 @@ interface UseLpPerformanceDataOptions {
   funnelId: string;
   stageId: string;
   days?: number;
-  publicoFilter?: "hot" | "cold" | "todos"; // Filtro de temperatura
 }
 
 export function useLpPerformanceData({
@@ -53,38 +50,32 @@ export function useLpPerformanceData({
   funnelId,
   stageId,
   days = 30,
-  publicoFilter = "todos",
 }: UseLpPerformanceDataOptions): LpPerformanceResponse {
   const apiClient = useApiClient();
 
-  // Fetch creative performance metrics (spend, impressions, clicks, etc)
-  const baseQuery = useQuery({
-    queryKey: [
-      "lp-performance-data",
-      funnelId,
-      stageId,
-      days,
-      publicoFilter,
-    ],
+  // Fetch LP campaigns from Meta Ads API
+  // Returns campaigns with campaign_name containing "lpa", "lpb", "lpc"
+  const campaignsQuery = useQuery({
+    queryKey: ["lp-campaigns", funnelId, stageId, days],
     queryFn: () =>
       apiClient(
-        `/api/funnels/${funnelId}/stages/${stageId}/creative-performance?days=${days}`,
+        `/api/funnels/${funnelId}/stages/${stageId}/lp-campaigns?days=${days}`,
       ),
     enabled: !!funnelId && !!stageId,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
   });
 
-  // Fetch utm_term mapping from spreadsheet (Story 18.43 pattern)
-  // Returns: { termsMapping: { adId: "lpa-hot-...", ... }, ... }
-  const crossRefQuery = useCrossReferenceLeads({
+  // Fetch leads count by LP from spreadsheet (Story 18.43 pattern)
+  const leadsQuery = useCrossReferenceLeads({
     projectId,
     funnelId,
     stageId,
     days,
   });
 
-  // Process and aggregate LPs (combine creative metrics + utm_term from spreadsheet)
+  // Process and aggregate LPs
+  // Combine: Campaign metrics from Meta Ads + Leads count from spreadsheet
   const result = useMemo(() => {
     const lpsByName: Record<
       string,
@@ -94,76 +85,27 @@ export function useLpPerformanceData({
       }
     > = {};
 
-    if (!baseQuery.data?.creatives || baseQuery.data.creatives.length === 0) {
+    if (!campaignsQuery.data?.campaigns || campaignsQuery.data.campaigns.length === 0) {
       return { lpsByName, isLoading: false };
     }
 
-    // Agrupar por (date + LP)
-    const grouped: Record<string, LpDaily> = {};
-
-    for (const creative of baseQuery.data.creatives) {
-      // Pega utm_term da planilha de cruzamento (não do endpoint que vem undefined)
-      const utmTermFromSpreadsheet = crossRefQuery.termsMapping?.[creative.adId];
-      const utmTerm = (
-        utmTermFromSpreadsheet || creative.utmTerm
-      )?.toLowerCase();
-
-      if (!utmTerm) continue;
-
-      // Extrair LP: procura por "lpa", "lpb", "lpc", "lpd", etc. dentro da string
-      const lpMatch = utmTerm.match(/lp([a-z])/);
-      if (!lpMatch) continue;
-
-      const lpName = `LP${lpMatch[1].toUpperCase()}`;
-
-      // Filtro de temperatura
-      if (publicoFilter !== "todos") {
-        if (publicoFilter === "hot" && !utmTerm.includes("hot")) continue;
-        if (publicoFilter === "cold" && !utmTerm.includes("cold")) continue;
-      }
-
-      // Chave para agrupamento: data + LP
-      const dateKey = "2026-06-11"; // TODO: Usar creative.date real do backend
-      const groupKey = `${dateKey}__${lpName}`;
-
-      if (!grouped[groupKey]) {
-        grouped[groupKey] = {
-          date: dateKey,
-          lpName,
-          investimento: 0,
-          cliques: 0,
-          impressoes: 0,
-          conversoes: 0,
-          lpViews: 0,
-          ...(creative.revenue !== undefined && { vendas: 0, faturamento: 0 }),
-          ...(creative.leads !== undefined && { leads: 0 }),
-        };
-      }
-
-      // Agregar
-      grouped[groupKey].investimento += creative.spend ?? 0;
-      grouped[groupKey].cliques += creative.clicks ?? 0;
-      grouped[groupKey].impressoes += creative.impressions ?? 0;
-      grouped[groupKey].conversoes += (creative.clicks ?? 0) * 0.1; // TODO: conversões reais da API
-      grouped[groupKey].lpViews = 0; // TODO: puxar lpView real da API Meta Ads
-
-      if (creative.revenue !== undefined) {
-        grouped[groupKey].vendas = (grouped[groupKey].vendas ?? 0) + 1;
-        grouped[groupKey].faturamento =
-          (grouped[groupKey].faturamento ?? 0) + (creative.revenue ?? 0);
-      }
-
-      if (creative.leads !== undefined) {
-        grouped[groupKey].leads =
-          (grouped[groupKey].leads ?? 0) + creative.leads;
+    // Build leads count map by LP (from spreadsheet)
+    const leadsByLp: Record<string, number> = {};
+    if (leadsQuery.termsMapping) {
+      for (const [adId, utmTerm] of Object.entries(leadsQuery.termsMapping)) {
+        const lpMatch = (utmTerm as string).match(/lp([a-z])/i);
+        if (lpMatch) {
+          const lpName = `lp${lpMatch[1].toLowerCase()}`;
+          leadsByLp[lpName] = (leadsByLp[lpName] ?? 0) + 1;
+        }
       }
     }
 
-    // Agrupar por LP: agregar TODOS os dias de cada LP em UMA ÚNICA linha
+    // Aggregate campaigns by LP (one row per LP with totals)
     const lpTotals: Record<string, LpDaily> = {};
 
-    for (const lpDaily of Object.values(grouped)) {
-      const lpName = lpDaily.lpName;
+    for (const campaign of campaignsQuery.data.campaigns) {
+      const lpName = campaign.lpName;
       const key = lpName.toLowerCase();
 
       if (!lpTotals[key]) {
@@ -173,32 +115,22 @@ export function useLpPerformanceData({
           investimento: 0,
           cliques: 0,
           impressoes: 0,
-          conversoes: 0,
+          conversoes: campaign.linkClicks, // Connect Rate = (linkClicks / linkClicks) * 100 = conversions
           lpViews: 0,
-          ...(lpDaily.vendas !== undefined && { vendas: 0, faturamento: 0 }),
-          ...(lpDaily.leads !== undefined && { leads: 0 }),
+          leads: 0,
         };
       }
 
-      // Somar todas as métricas
-      lpTotals[key].investimento += lpDaily.investimento;
-      lpTotals[key].cliques += lpDaily.cliques;
-      lpTotals[key].impressoes += lpDaily.impressoes;
-      lpTotals[key].conversoes += lpDaily.conversoes;
-      lpTotals[key].lpViews += lpDaily.lpViews;
-
-      if (lpDaily.vendas !== undefined) {
-        lpTotals[key].vendas = (lpTotals[key].vendas ?? 0) + lpDaily.vendas;
-        lpTotals[key].faturamento =
-          (lpTotals[key].faturamento ?? 0) + lpDaily.faturamento;
-      }
-
-      if (lpDaily.leads !== undefined) {
-        lpTotals[key].leads = (lpTotals[key].leads ?? 0) + lpDaily.leads;
-      }
+      // Aggregate metrics from campaign
+      lpTotals[key].investimento += campaign.spend;
+      lpTotals[key].cliques += campaign.linkClicks;
+      lpTotals[key].impressoes += campaign.impressions;
+      lpTotals[key].conversoes = campaign.linkClicks; // Conversions = Link Clicks (users who clicked to LP)
+      lpTotals[key].lpViews += campaign.lpViews;
+      lpTotals[key].leads = (leadsByLp[key] ?? 0);
     }
 
-    // Preencher lpsByName com uma única linha (total) por LP
+    // Fill lpsByName
     for (const [key, lpDaily] of Object.entries(lpTotals)) {
       lpsByName[key] = {
         name: lpDaily.lpName,
@@ -207,11 +139,11 @@ export function useLpPerformanceData({
     }
 
     return { lpsByName, isLoading: false };
-  }, [baseQuery.data, crossRefQuery.termsMapping, publicoFilter]);
+  }, [campaignsQuery.data, leadsQuery.termsMapping]);
 
   return {
     lpsByName: result.lpsByName,
-    isLoading: baseQuery.isLoading || crossRefQuery.isLoading,
-    error: baseQuery.error?.message || crossRefQuery.error,
+    isLoading: campaignsQuery.isLoading || leadsQuery.isLoading,
+    error: campaignsQuery.error?.message || leadsQuery.error,
   };
 }
