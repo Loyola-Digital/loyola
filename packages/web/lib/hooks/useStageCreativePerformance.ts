@@ -150,6 +150,9 @@ export function useStageCreativePerformance({
   return {
     ...baseQuery,
     data: enrichedData,
+    // Story 18.47: faixas por Ad Name (da aba de pesquisa) + labels dinâmicos.
+    bandsByAdName: crossrefQuery.bandsByAdName,
+    bandLabels: crossrefQuery.bandLabels,
     isLoading: projectId ? (baseQuery.isLoading || crossrefQuery.isLoading) : baseQuery.isLoading,
     error: baseQuery.error || (projectId && crossrefQuery.error ? new Error(crossrefQuery.error) : undefined),
   };

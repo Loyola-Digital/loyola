@@ -17,7 +17,6 @@ import {
   isAllFiltersSelected,
 } from "@/lib/utils/compileCreativeMetrics";
 import { useStageCreativePerformance } from "@/lib/hooks/useStageCreativePerformance";
-import { useLeadScoringAdBreakdown } from "@/lib/hooks/use-lead-scoring-ad-breakdown";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -87,12 +86,13 @@ export function StageCreativePerformanceTable({
   const [pageSize, setPageSize] = useState<number>(10);
   const [pageIndex, setPageIndex] = useState<number>(0);
 
-  const { data, isLoading, error } = useStageCreativePerformance({
-    projectId,
-    funnelId,
-    stageId,
-    days,
-  });
+  const { data, isLoading, error, bandsByAdName: rawBandsByAdName, bandLabels: rawBandLabels } =
+    useStageCreativePerformance({
+      projectId,
+      funnelId,
+      stageId,
+      days,
+    });
 
   // Story 18.41: Filter columns based on stage type
   // For free stages, suppress revenue and ROAS columns
@@ -103,43 +103,23 @@ export function StageCreativePerformanceTable({
     return COLUMNS;
   }, [stageType]);
 
-  // Story 18.47: faixas (A/B/C/D…) por criativo. Reusa o breakdown de Lead
-  // Scoring (MESMA fonte da Lead Scoring Ad Table, já validada) e AGREGA por
-  // Ad Name — o breakdown vem por ad_id, então somamos os ad_ids do mesmo nome.
-  const { data: bandData } = useLeadScoringAdBreakdown(
-    projectId ?? null,
-    funnelId,
-    stageId,
-    days,
-  );
+  // Story 18.47: faixas (A/B/C/D…) por criativo, vindas da aba de pesquisa
+  // (cruzadas por utm_content → Ad Name no crossref). Converte a contagem crua
+  // em contagem + % do total de leads classificados do criativo.
   const { bandLabels, bandsByAdName } = useMemo(() => {
-    const labels = new Set<string>();
-    const byName = new Map<string, Map<string, number>>(); // adName(norm) → faixa → count
-    for (const row of bandData?.rows ?? []) {
-      const key = row.adName.trim().toLowerCase();
-      let m = byName.get(key);
-      if (!m) {
-        m = new Map();
-        byName.set(key, m);
-      }
-      for (const [faixa, b] of Object.entries(row.bands)) {
-        labels.add(faixa);
-        if (b && b.count > 0) m.set(faixa, (m.get(faixa) ?? 0) + b.count);
-      }
-    }
-    const sortedLabels = Array.from(labels).sort();
+    const labels = rawBandLabels ?? [];
     const result = new Map<string, Record<string, { count: number; pct: number }>>();
-    for (const [key, m] of byName) {
-      const total = Array.from(m.values()).reduce((a, b) => a + b, 0);
+    for (const [adName, counts] of Object.entries(rawBandsByAdName ?? {})) {
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
       const rec: Record<string, { count: number; pct: number }> = {};
-      for (const faixa of sortedLabels) {
-        const count = m.get(faixa) ?? 0;
+      for (const faixa of labels) {
+        const count = counts[faixa] ?? 0;
         rec[faixa] = { count, pct: total > 0 ? (count / total) * 100 : 0 };
       }
-      result.set(key, rec);
+      result.set(adName.trim().toLowerCase(), rec);
     }
-    return { bandLabels: sortedLabels, bandsByAdName: result };
-  }, [bandData]);
+    return { bandLabels: labels, bandsByAdName: result };
+  }, [rawBandsByAdName, rawBandLabels]);
 
   // Processa: metrics + filtro de temperatura
   // Story 18.28: Quando filtro é "all", compilar por ad_name (somar métricas)
