@@ -124,7 +124,7 @@ export function resolvePrecomputedBandColumn(
  * Story 18.17: classifica 1 lead lendo da coluna de faixa pré-calculada.
  * Retorna o bandId (uppercase) ou null se inválido/vazio.
  */
-function classifyLeadFromPrecomputed(
+export function classifyLeadFromPrecomputed(
   row: string[],
   faixaIdx: number,
   validBandIds: Set<string>,
@@ -652,7 +652,7 @@ function findUtmCampaignColumn(headers: string[]): number {
   return -1;
 }
 
-function findUtmSourceColumn(headers: string[]): number {
+export function findUtmSourceColumn(headers: string[]): number {
   // Detecta coluna utm_source automaticamente — case-insensitive, várias variações
   for (let i = 0; i < headers.length; i++) {
     const h = (headers[i] ?? "").toLowerCase().trim();
@@ -995,7 +995,7 @@ function findUtmMediumColumn(headers: string[]): number {
   return -1;
 }
 
-function findUtmContentColumn(headers: string[]): number {
+export function findUtmContentColumn(headers: string[]): number {
   for (let i = 0; i < headers.length; i++) {
     const h = (headers[i] ?? "").toLowerCase().trim();
     if (h === "utm_content" || h === "utm content" || h === "content" || h.endsWith("_content") || h.includes("utm_content")) {

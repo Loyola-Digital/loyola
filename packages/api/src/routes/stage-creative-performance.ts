@@ -16,10 +16,19 @@ import {
   funnelSpreadsheets,
   stageSalesSpreadsheets,
   funnelSurveys,
+  stageLeadScoringSchemas,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { fetchAllAdInsights, fetchCampaignInsights } from "../services/meta-ads.js";
 import { getMetaAccountForProject } from "../services/traffic-analytics.js";
+// Story 18.47: reusa a MESMA fonte de faixas da Lead Scoring Ad Table (18.17)
+import {
+  resolvePrecomputedBandColumn,
+  classifyLeadFromPrecomputed,
+  findUtmContentColumn,
+  findUtmSourceColumn,
+  type LeadScoringSchema,
+} from "./lead-scoring.js";
 
 const paramsSchema = z.object({
   funnelId: z.string().uuid(),
@@ -46,16 +55,6 @@ interface CreativePerformanceResponse {
   // do total de leads classificados daquele ad. Vazio quando não há pesquisa
   // com coluna de faixa (etapas sem survey/faixa → tabela inalterada).
   bands?: Record<string, { count: number; pct: number }>;
-}
-
-/**
- * Story 18.47: localiza o índice de uma coluna pelo nome do cabeçalho
- * (case-insensitive, trim). Espelha o `findCol` interno do bloco de leads.
- */
-function findHeaderIndex(headers: string[], name: string | undefined): number {
-  if (!name) return -1;
-  const normalized = name.trim().toLowerCase();
-  return headers.findIndex((h) => h.trim().toLowerCase() === normalized);
 }
 
 /**
@@ -372,71 +371,100 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           }
         }
 
-        // Story 18.47: faixas (A/B/C/D…) por ad_id, lidas da planilha de PESQUISA
-        // do stage (funnelSurveys). A faixa vem PRÉ-CALCULADA na coluna mapeada
-        // em columnMapping.faixa (Story 18.17). Cruza utm_content da pesquisa →
-        // ad_id (mesmo ad dos criativos); o agrupamento por ad_name é feito no passo 7.
-        // Funciona em qualquer stage (free ou paid) que tenha survey com faixa.
+        // Story 18.47: faixas (A/B/C/D…) por ad_id. Fonte de verdade IDÊNTICA à
+        // Lead Scoring Ad Table (Story 18.17): scoring schema do stage → survey →
+        // coluna de faixa pré-calculada. Cruza utm_content da planilha → ad_id
+        // (mesmo ad dos criativos); o agrupamento por ad_name é feito no passo 7.
+        // Funciona em qualquer stage (free ou paid) que tenha lead scoring + faixa.
         const bandsByAdId = new Map<string, Map<string, number>>(); // adId → (faixa → count)
-        const bandSet = new Set<string>();
-        const [survey] = await fastify.db
-          .select()
-          .from(funnelSurveys)
-          .where(eq(funnelSurveys.stageId, stageId))
-          .limit(1);
+        let bandLabels: string[] = [];
+        const bandsDebug: Record<string, unknown> = {};
+        {
+          const [scoringRow] = await fastify.db
+            .select()
+            .from(stageLeadScoringSchemas)
+            .where(eq(stageLeadScoringSchemas.stageId, stageId))
+            .limit(1);
+          bandsDebug.scoringRowExists = !!scoringRow;
+          bandsDebug.surveyId = scoringRow?.surveyId ?? null;
 
-        const surveyMapping = (survey?.columnMapping ?? {}) as {
-          utm_content?: string;
-          faixa?: string;
-        };
-        if (survey && surveyMapping.faixa) {
-          let surveyData = null;
-          try {
-            surveyData = await readSheetData(survey.spreadsheetId, survey.sheetName);
-          } catch (err) {
-            fastify.log.warn(
-              { err },
-              "creative-performance: falha lendo planilha de pesquisa — bands vazio",
-            );
-          }
-          if (surveyData) {
-            const surveyUtmIdx = findHeaderIndex(
-              surveyData.headers,
-              surveyMapping.utm_content,
-            );
-            const surveyFaixaIdx = findHeaderIndex(
-              surveyData.headers,
-              surveyMapping.faixa,
-            );
-            if (surveyUtmIdx !== -1 && surveyFaixaIdx !== -1) {
-              for (const row of surveyData.rows) {
-                const adId = normalizeNumericId(row[surveyUtmIdx] ?? "");
-                if (!adId) continue;
-                const faixa = (row[surveyFaixaIdx] ?? "").trim().toUpperCase();
-                if (!faixa) continue;
-                bandSet.add(faixa);
-                let m = bandsByAdId.get(adId);
-                if (!m) {
-                  m = new Map();
-                  bandsByAdId.set(adId, m);
-                }
-                m.set(faixa, (m.get(faixa) ?? 0) + 1);
+          if (scoringRow?.surveyId) {
+            const [survey] = await fastify.db
+              .select()
+              .from(funnelSurveys)
+              .where(eq(funnelSurveys.id, scoringRow.surveyId))
+              .limit(1);
+            bandsDebug.surveyExists = !!survey;
+
+            if (survey) {
+              const schema = scoringRow.schemaJson as LeadScoringSchema;
+              const bands = schema.bands ?? [];
+              bandLabels = bands.map((b) => b.id.toUpperCase());
+              const validBandIds = new Set(bandLabels);
+              const faixaCol = resolvePrecomputedBandColumn(
+                schema,
+                survey.columnMapping,
+              );
+              bandsDebug.faixaCol = faixaCol ?? null;
+              bandsDebug.sheetName = survey.sheetName;
+              bandsDebug.bandLabels = bandLabels;
+
+              let surveyData = null;
+              try {
+                surveyData = await readSheetData(
+                  survey.spreadsheetId,
+                  survey.sheetName,
+                );
+              } catch (err) {
+                fastify.log.warn(
+                  { err },
+                  "creative-performance: falha lendo planilha de pesquisa (bands)",
+                );
               }
-            } else {
-              fastify.log.info({
-                debug: "creative-performance-bands",
-                stageId,
-                message: "utm_content ou faixa não encontrados na planilha de pesquisa",
-                surveyUtmIdx,
-                surveyFaixaIdx,
-                surveyHeaders: surveyData.headers,
-              });
+              if (surveyData) {
+                const utmContentIdx = findUtmContentColumn(surveyData.headers);
+                const utmSourceIdx = findUtmSourceColumn(surveyData.headers);
+                const faixaIdx = faixaCol
+                  ? surveyData.headers.findIndex(
+                      (h) =>
+                        h.trim().toLowerCase() === faixaCol.trim().toLowerCase(),
+                    )
+                  : -1;
+                bandsDebug.surveyRows = surveyData.rows.length;
+                bandsDebug.surveyHeaders = surveyData.headers;
+                bandsDebug.utmContentIdx = utmContentIdx;
+                bandsDebug.utmSourceIdx = utmSourceIdx;
+                bandsDebug.faixaIdx = faixaIdx;
+
+                if (utmContentIdx !== -1 && faixaIdx !== -1) {
+                  for (const row of surveyData.rows) {
+                    // Lead pago: utm_source = meta (mesmo filtro do ad-breakdown).
+                    // Sem coluna source → não filtra (fallback defensivo).
+                    if (utmSourceIdx !== -1) {
+                      const src = (row[utmSourceIdx] ?? "").trim().toLowerCase();
+                      if (src !== "meta") continue;
+                    }
+                    const adId = normalizeNumericId(row[utmContentIdx] ?? "");
+                    if (!adId) continue;
+                    const faixa = classifyLeadFromPrecomputed(
+                      row,
+                      faixaIdx,
+                      validBandIds,
+                    );
+                    if (!faixa) continue;
+                    let m = bandsByAdId.get(adId);
+                    if (!m) {
+                      m = new Map();
+                      bandsByAdId.set(adId, m);
+                    }
+                    m.set(faixa, (m.get(faixa) ?? 0) + 1);
+                  }
+                }
+              }
             }
           }
+          bandsDebug.bandsByAdIdCount = bandsByAdId.size;
         }
-        // Faixas dinâmicas, ordenadas (A, B, C, D…). Derivadas das respostas
-        // presentes — cobre "as faixas variam por lançamento" sem hardcode.
-        const bandLabels = Array.from(bandSet).sort();
 
         // 6. Agrupa por ad_name (mesmo padrao da Top Creatives Gallery).
         // Quando o mesmo criativo e usado em N adsets, Meta cria N ad_ids
@@ -656,6 +684,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               adId,
               count: agg.count,
             })),
+            // Story 18.47: diagnóstico do breakdown de faixas
+            bands: bandsDebug,
           },
         });
       } catch (error) {
