@@ -17,6 +17,10 @@ import { normalizeNumericId } from "@/lib/utils/normalize-answer";
 
 interface CrossReferencedLeads {
   leads: Record<string, number>; // { ad_id: count }
+  // Story 18.47: contagem de leads por Ad Name (soma TODOS os ad_ids/utm_content
+  // daquele criativo). Corrige o bug de contar só 1 ad_id por ad_name. A planilha
+  // n8n-leads-lp-cap-grat já traz a coluna "Ad Name".
+  leadsByAdName: Record<string, number>; // { adName: count }
   terms: Record<string, string>; // { ad_id: "hot" | "cold" }
   termsMapping: Record<string, string>; // { ad_id: full utm_term string }
   // Story 18.46 (AC6/AC7): contagem de leads por LP via utm_content, quebrada
@@ -56,13 +60,14 @@ export function useCrossReferenceLeads({
   // Computar cruzamento: coluna 5 = utm_content (adId), coluna 7 = utm_term (lpa/hot/cold/etc)
   const result = useMemo(() => {
     const leads: Record<string, number> = {};
+    const leadsByAdName: Record<string, number> = {};
     const terms: Record<string, string> = {};
     const termsMapping: Record<string, string> = {};
     const leadsByLp: Record<string, { hot: number; cold: number; total: number }> = {};
     let totalLeads = 0;
 
     if (!sheetQuery.data?.rows || sheetQuery.data.rows.length === 0) {
-      return { leads, terms, termsMapping, leadsByLp, totalLeads, isLoading: false };
+      return { leads, leadsByAdName, terms, termsMapping, leadsByLp, totalLeads, isLoading: false };
     }
 
     const CONTENT_INDEX = 5; // utm_content = adId / identificador da LP (contém lpa/lpb/...)
@@ -75,6 +80,12 @@ export function useCrossReferenceLeads({
       const n = (h ?? "").trim().toLowerCase();
       return n === "source" || n === "utm_source";
     });
+    // Story 18.47: coluna "Ad Name" da planilha — agrupar leads por nome do
+    // criativo (soma todos os ad_ids). Localiza por cabeçalho (robusto).
+    const AD_NAME_INDEX = headers.findIndex((h) => {
+      const n = (h ?? "").trim().toLowerCase();
+      return n === "ad name" || n === "ad_name" || n === "adname" || n === "nome do anúncio" || n === "nome do anuncio";
+    });
     const PAID_SOURCES = new Set(["meta", "google"]);
     const isPaidRow = (row: string[]): boolean => {
       if (SOURCE_INDEX < 0) return true; // sem coluna source → não filtra (fallback)
@@ -86,6 +97,13 @@ export function useCrossReferenceLeads({
     for (const row of sheetQuery.data.rows) {
       const termString = (row[TERM_INDEX]?.trim() ?? "").toLowerCase();
       const utmContentRaw = (row[CONTENT_INDEX]?.trim() ?? "").toLowerCase();
+
+      // Story 18.47: conta leads por Ad Name (TODAS as linhas daquele criativo,
+      // somando os vários ad_ids). Corrige a contagem que antes usava 1 só ad_id.
+      if (AD_NAME_INDEX >= 0) {
+        const adName = (row[AD_NAME_INDEX] ?? "").trim();
+        if (adName) leadsByAdName[adName] = (leadsByAdName[adName] ?? 0) + 1;
+      }
 
       // Story 18.46 (AC6): identificar a LP e a temperatura do lead.
       // Os dados reais mostram que lpX/hot/cold vivem no utm_term (col 7), mas
@@ -125,7 +143,7 @@ export function useCrossReferenceLeads({
       totalLeads += 1;
     }
 
-    return { leads, terms, termsMapping, leadsByLp, totalLeads, isLoading: false };
+    return { leads, leadsByAdName, terms, termsMapping, leadsByLp, totalLeads, isLoading: false };
   }, [sheetQuery.data]);
 
   const isLoading = surveysQuery.isLoading || (survey ? sheetQuery.isLoading : false);
@@ -133,6 +151,7 @@ export function useCrossReferenceLeads({
 
   return {
     leads: result.leads,
+    leadsByAdName: result.leadsByAdName,
     terms: result.terms,
     termsMapping: result.termsMapping,
     leadsByLp: result.leadsByLp,

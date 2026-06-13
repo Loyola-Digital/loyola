@@ -17,6 +17,7 @@ import {
   isAllFiltersSelected,
 } from "@/lib/utils/compileCreativeMetrics";
 import { useStageCreativePerformance } from "@/lib/hooks/useStageCreativePerformance";
+import { useLeadScoringAdBreakdown } from "@/lib/hooks/use-lead-scoring-ad-breakdown";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -102,18 +103,43 @@ export function StageCreativePerformanceTable({
     return COLUMNS;
   }, [stageType]);
 
-  // Story 18.47: faixas dinâmicas (A/B/C/D…) vindas da pesquisa do stage.
-  // Gating genérico: só renderiza colunas de faixa quando o backend devolve
-  // bandLabels não-vazio (qualquer stageType — free ou paid). Lookup por adName
-  // porque o backend já agrega `bands` por ad_name (mesma chave das linhas).
-  const bandLabels = useMemo<string[]>(() => data?.bandLabels ?? [], [data]);
-  const bandsByAdName = useMemo(() => {
-    const map = new Map<string, Record<string, { count: number; pct: number }>>();
-    for (const c of data?.creatives ?? []) {
-      if (c.bands) map.set(c.adName, c.bands);
+  // Story 18.47: faixas (A/B/C/D…) por criativo. Reusa o breakdown de Lead
+  // Scoring (MESMA fonte da Lead Scoring Ad Table, já validada) e AGREGA por
+  // Ad Name — o breakdown vem por ad_id, então somamos os ad_ids do mesmo nome.
+  const { data: bandData } = useLeadScoringAdBreakdown(
+    projectId ?? null,
+    funnelId,
+    stageId,
+    days,
+  );
+  const { bandLabels, bandsByAdName } = useMemo(() => {
+    const labels = new Set<string>();
+    const byName = new Map<string, Map<string, number>>(); // adName(norm) → faixa → count
+    for (const row of bandData?.rows ?? []) {
+      const key = row.adName.trim().toLowerCase();
+      let m = byName.get(key);
+      if (!m) {
+        m = new Map();
+        byName.set(key, m);
+      }
+      for (const [faixa, b] of Object.entries(row.bands)) {
+        labels.add(faixa);
+        if (b && b.count > 0) m.set(faixa, (m.get(faixa) ?? 0) + b.count);
+      }
     }
-    return map;
-  }, [data]);
+    const sortedLabels = Array.from(labels).sort();
+    const result = new Map<string, Record<string, { count: number; pct: number }>>();
+    for (const [key, m] of byName) {
+      const total = Array.from(m.values()).reduce((a, b) => a + b, 0);
+      const rec: Record<string, { count: number; pct: number }> = {};
+      for (const faixa of sortedLabels) {
+        const count = m.get(faixa) ?? 0;
+        rec[faixa] = { count, pct: total > 0 ? (count / total) * 100 : 0 };
+      }
+      result.set(key, rec);
+    }
+    return { bandLabels: sortedLabels, bandsByAdName: result };
+  }, [bandData]);
 
   // Processa: metrics + filtro de temperatura
   // Story 18.28: Quando filtro é "all", compilar por ad_name (somar métricas)
@@ -374,7 +400,7 @@ export function StageCreativePerformanceTable({
                   ))}
                   {/* Story 18.47: células de faixa — contagem + % do total de leads do criativo */}
                   {bandLabels.map((band) => {
-                    const cell = bandsByAdName.get(row.adName)?.[band];
+                    const cell = bandsByAdName.get(row.adName.trim().toLowerCase())?.[band];
                     return (
                       <TableCell key={`band-${band}`} className="text-right tabular-nums">
                         {cell && cell.count > 0 ? (

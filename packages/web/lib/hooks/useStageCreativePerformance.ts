@@ -26,8 +26,6 @@ export interface CreativePerformanceData {
   // Story 18.46: identificação de LP por Campaign Name (AC3) + LP View real (AC4)
   campaignName?: string | null;
   landingPageViews?: number;
-  // Story 18.47: breakdown de faixas (A/B/C/D…) por criativo — contagem + %
-  bands?: Record<string, { count: number; pct: number }>;
 }
 
 // Story 18.46: corte por LP × temperatura (para a tabela de Testes de LPs)
@@ -46,8 +44,6 @@ export interface StageCreativePerformanceResponse {
   days: number;
   creatives: CreativePerformanceData[];
   lpBreakdown?: LpBreakdownRow[];
-  // Story 18.47: faixas dinâmicas presentes na pesquisa do stage (ordenadas).
-  bandLabels?: string[];
   summary: {
     totalSpend: number;
     totalLeads: number;
@@ -114,9 +110,22 @@ export function useStageCreativePerformance({
       return baseQuery.data;
     }
 
+    // Story 18.47: prioriza leads por Ad Name (soma TODOS os ad_ids daquele
+    // criativo) — corrige o bug que contava só 1 ad_id. Normaliza nos 2 lados
+    // (trim+lowercase) pra casar o ad_name do Meta com "Ad Name" da planilha.
+    // Fallback: leads por ad_id (legado) e por fim o valor do backend.
+    const norm = (s: string) => s.trim().toLowerCase();
+    const leadsByAdNameNorm: Record<string, number> = {};
+    for (const [k, v] of Object.entries(crossrefQuery.leadsByAdName ?? {})) {
+      leadsByAdNameNorm[norm(k)] = v;
+    }
+
     // Enrich creatives with crossref leads and term
     const enrichedCreatives = baseQuery.data.creatives.map((creative) => {
-      const crossrefLeads = crossrefQuery.leads[creative.adId] ?? creative.leads;
+      const crossrefLeads =
+        leadsByAdNameNorm[norm(creative.adName)] ??
+        crossrefQuery.leads[creative.adId] ??
+        creative.leads;
       const crossrefTerm = crossrefQuery.terms[creative.adId] ?? creative.utmTerm;
       return {
         ...creative,
@@ -136,7 +145,7 @@ export function useStageCreativePerformance({
         totalLeads,
       },
     };
-  }, [baseQuery.data, projectId, crossrefQuery.leads]);
+  }, [baseQuery.data, projectId, crossrefQuery.leads, crossrefQuery.leadsByAdName]);
 
   return {
     ...baseQuery,
