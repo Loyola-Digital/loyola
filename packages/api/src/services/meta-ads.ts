@@ -200,6 +200,9 @@ export interface MetaDailyInsight {
   ctr: string;
   cpc: string;
   cpm: string;
+  // Story 18.46: "Inline Link Clicks" do Ads Manager (cliques no link), usado na
+  // tabela de LPs para bater com o que o gestor exporta do Meta.
+  inline_link_clicks?: string;
   actions?: { action_type: string; value: string }[];
   action_values?: { action_type: string; value: string }[];
 }
@@ -531,14 +534,23 @@ export async function fetchCampaignInsights(
   days: number = 30,
   startDate?: string,
   endDate?: string,
+  campaignIds?: string[],
 ): Promise<MetaCampaignInsight[]> {
   // Fix 1 (29.8): aceita startDate/endDate explicito (custom range no passado).
   // Quando passado, ignora `days` retroativos.
   const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
   const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
   const timeRange = buildTimeRangeParam(since, until);
+  // Story 18.46: filtra por campaign.id na query (igual fetchAllAdInsights). Sem
+  // isso, o Meta retorna só a 1a página (~25 campanhas) e campanhas de baixo
+  // volume (ex: lpc/lpd) somem. limit alto como margem extra.
+  const ids = (campaignIds ?? []).filter((x): x is string => !!x);
+  const filterPart =
+    ids.length === 0
+      ? ""
+      : `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "IN", value: ids }]))}`;
   const res = await fetchMeta<{ data: MetaCampaignInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,campaign_id,campaign_name,actions,action_values&time_range=${timeRange}&level=campaign`,
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,inline_link_clicks,campaign_id,campaign_name,actions,action_values&time_range=${timeRange}&level=campaign&limit=500${filterPart}`,
     accessToken
   );
   return res.data ?? [];
@@ -668,6 +680,9 @@ export interface AllAdInsight extends MetaAdInsight {
   campaign_name: string;
   adset_id: string;
   adset_name: string;
+  // Story 18.46 (AC4): array de actions já vem da API (fields inclui `actions`);
+  // expomos no tipo para extrair `landing_page_view`.
+  actions?: { action_type: string; value: string }[];
 }
 
 export async function fetchAllAdInsights(

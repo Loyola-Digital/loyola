@@ -48,27 +48,30 @@ export function calculateCTR(cliques: number, impressoes: number): number | null
 }
 
 /**
- * Connect Rate = (Conversões ÷ Cliques) × 100
- * Conversão = chegou em LP
+ * Story 18.46 (AC5): Connect Rate = (LP View ÷ Link Clicks) × 100
+ * Mede a % de cliques que efetivamente carregaram a LP (Landing Page View).
+ * Pode passar de 100% por particularidades de rastreamento — exibir valor real.
  */
 export function calculateConnectRate(
-  conversoes: number,
+  lpViews: number,
   cliques: number,
 ): number | null {
   if (cliques === 0) return null;
-  return (conversoes / cliques) * 100;
+  return (lpViews / cliques) * 100;
 }
 
 /**
- * Tx Conv. = (Conversões ÷ LP Views) × 100
- * Taxa de conversão do visitante → compra
+ * Story 18.46: Tx Conv. = (Resultado ÷ Link Clicks) × 100
+ * Resultado = Leads (Captação Gratuita) ou Vendas (Captação Paga).
+ * Mede a % dos cliques no link que viraram lead/venda — consistente com a
+ * tabela Dados Diários (Leads ÷ Link Clicks).
  */
 export function calculateTxConv(
-  conversoes: number,
-  lpViews: number,
+  resultado: number,
+  cliques: number,
 ): number | null {
-  if (lpViews === 0) return null;
-  return (conversoes / lpViews) * 100;
+  if (cliques === 0) return null;
+  return (resultado / cliques) * 100;
 }
 
 /**
@@ -117,8 +120,10 @@ export function calculatePaidMetrics(params: {
     cpm: calculateCPM(params.investimento, params.impressoes),
     cpc: calculateCPC(params.investimento, params.cliques),
     ctr: calculateCTR(params.cliques, params.impressoes),
-    connectRate: calculateConnectRate(params.conversoes, params.cliques),
-    txConv: calculateTxConv(params.conversoes, params.lpViews),
+    // Story 18.46 (AC5): Connect Rate = LP View ÷ Link Clicks
+    connectRate: calculateConnectRate(params.lpViews, params.cliques),
+    // Story 18.46: Tx Conv. = Vendas ÷ Link Clicks (paid)
+    txConv: calculateTxConv(params.vendas, params.cliques),
     cpv: calculateCPV(params.investimento, params.vendas),
     roas: calculateROAS(params.faturamento, params.investimento),
   };
@@ -139,8 +144,10 @@ export function calculateFreeMetrics(params: {
     cpm: calculateCPM(params.investimento, params.impressoes),
     cpc: calculateCPC(params.investimento, params.cliques),
     ctr: calculateCTR(params.cliques, params.impressoes),
-    connectRate: calculateConnectRate(params.conversoes, params.cliques),
-    txConv: calculateTxConv(params.conversoes, params.lpViews),
+    // Story 18.46 (AC5): Connect Rate = LP View ÷ Link Clicks
+    connectRate: calculateConnectRate(params.lpViews, params.cliques),
+    // Story 18.46: Tx Conv. = Leads ÷ Link Clicks (free)
+    txConv: calculateTxConv(params.leads, params.cliques),
     cpl: calculateCPL(params.investimento, params.leads),
   };
 }

@@ -62,13 +62,13 @@ const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 const COLUMNS: Array<{ key: SortableCol; label: string }> = [
   { key: "spend", label: "Invest." },
   { key: "spendPercent", label: "%" },
-  { key: "impressions", label: "Impressões" },
-  { key: "clicks", label: "Cliques" },
+  { key: "leads", label: "Leads" },
+  { key: "cpl", label: "CPL" },
+  // Story 18.46 (AC1): Impressões/Cliques ocultadas da tabela (CTR/CPC/CPM
+  // continuam sendo calculados internamente a partir desses valores).
   { key: "ctr", label: "CTR" },
   { key: "cpc", label: "CPC" },
   { key: "cpm", label: "CPM" },
-  { key: "leads", label: "Leads" },
-  { key: "cpl", label: "CPL" },
   { key: "revenue", label: "Faturamento" },
   { key: "roas", label: "ROAS" },
 ];
@@ -126,7 +126,14 @@ export function StageCreativePerformanceTable({
 
     // AC2: Compilar quando filtro é "all"
     if (isAllFiltersSelected(temperatureFilter)) {
-      return compileCreativeMetricsByName(metrics);
+      const compiled = compileCreativeMetricsByName(metrics);
+      // Story 18.45 (AC3): recalcular spendPercent no modo compilado.
+      // compileCreativeMetricsByName zera spendPercent como placeholder; aqui
+      // reaplicamos o rateio sobre o gasto total para a coluna "%" não ficar zerada.
+      return compiled.map((row) => ({
+        ...row,
+        spendPercent: totalSpend > 0 ? (row.spend / totalSpend) * 100 : 0,
+      }));
     }
 
     // Modo normal: filtrar por temperatura (hot/cold)

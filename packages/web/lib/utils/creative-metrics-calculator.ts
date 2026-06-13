@@ -34,15 +34,18 @@ export interface CalculatedMetrics {
 }
 
 /**
- * Calcula temperatura do público baseado em utm_term
+ * Calcula temperatura do público baseado em utm_term.
+ * Story 18.46 (AC7): também considera o Campaign Name (param opcional),
+ * pois algumas campanhas codificam hot/cold no nome em vez do utm_term.
  */
 export function calculateTemperature(
-  utmTerm: string | null | undefined
+  utmTerm: string | null | undefined,
+  campaignName?: string | null,
 ): "hot" | "cold" | "unknown" {
-  if (!utmTerm) return "unknown";
-  const term = utmTerm.toLowerCase();
-  if (term.includes("hot")) return "hot";
-  if (term.includes("cold")) return "cold";
+  const haystack = `${utmTerm ?? ""} ${campaignName ?? ""}`.toLowerCase();
+  if (!haystack.trim()) return "unknown";
+  if (haystack.includes("hot")) return "hot";
+  if (haystack.includes("cold")) return "cold";
   return "unknown";
 }
 
