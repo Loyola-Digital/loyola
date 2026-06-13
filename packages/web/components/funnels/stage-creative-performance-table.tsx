@@ -86,12 +86,13 @@ export function StageCreativePerformanceTable({
   const [pageSize, setPageSize] = useState<number>(10);
   const [pageIndex, setPageIndex] = useState<number>(0);
 
-  const { data, isLoading, error } = useStageCreativePerformance({
-    projectId,
-    funnelId,
-    stageId,
-    days,
-  });
+  const { data, isLoading, error, bandsByAdName: rawBandsByAdName, bandLabels: rawBandLabels } =
+    useStageCreativePerformance({
+      projectId,
+      funnelId,
+      stageId,
+      days,
+    });
 
   // Story 18.41: Filter columns based on stage type
   // For free stages, suppress revenue and ROAS columns
@@ -101,6 +102,24 @@ export function StageCreativePerformanceTable({
     }
     return COLUMNS;
   }, [stageType]);
+
+  // Story 18.47: faixas (A/B/C/D…) por criativo, vindas da aba de pesquisa
+  // (cruzadas por utm_content → Ad Name no crossref). Converte a contagem crua
+  // em contagem + % do total de leads classificados do criativo.
+  const { bandLabels, bandsByAdName } = useMemo(() => {
+    const labels = rawBandLabels ?? [];
+    const result = new Map<string, Record<string, { count: number; pct: number }>>();
+    for (const [adName, counts] of Object.entries(rawBandsByAdName ?? {})) {
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      const rec: Record<string, { count: number; pct: number }> = {};
+      for (const faixa of labels) {
+        const count = counts[faixa] ?? 0;
+        rec[faixa] = { count, pct: total > 0 ? (count / total) * 100 : 0 };
+      }
+      result.set(adName.trim().toLowerCase(), rec);
+    }
+    return { bandLabels: labels, bandsByAdName: result };
+  }, [rawBandsByAdName, rawBandLabels]);
 
   // Processa: metrics + filtro de temperatura
   // Story 18.28: Quando filtro é "all", compilar por ad_name (somar métricas)
@@ -302,13 +321,23 @@ export function StageCreativePerformanceTable({
                   </span>
                 </TableHead>
               ))}
+              {/* Story 18.47: colunas dinâmicas de faixa (contagem + %) */}
+              {bandLabels.map((band) => (
+                <TableHead
+                  key={`band-${band}`}
+                  className="text-right text-xs font-semibold"
+                  title={`Leads da Faixa ${band} (contagem e % do total de leads do criativo)`}
+                >
+                  Faixa {band}
+                </TableHead>
+              ))}
               <TableHead className="text-center text-xs font-semibold">Preview</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {pageRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={visibleColumns.length + 2} className="py-10 text-center text-xs text-muted-foreground">
+                <TableCell colSpan={visibleColumns.length + bandLabels.length + 2} className="py-10 text-center text-xs text-muted-foreground">
                   Nenhum criativo encontrado neste período.
                 </TableCell>
               </TableRow>
@@ -349,6 +378,24 @@ export function StageCreativePerformanceTable({
                       {renderCellValue(row, col.key)}
                     </TableCell>
                   ))}
+                  {/* Story 18.47: células de faixa — contagem + % do total de leads do criativo */}
+                  {bandLabels.map((band) => {
+                    const cell = bandsByAdName.get(row.adName.trim().toLowerCase())?.[band];
+                    return (
+                      <TableCell key={`band-${band}`} className="text-right tabular-nums">
+                        {cell && cell.count > 0 ? (
+                          <span className="inline-flex flex-col items-end leading-tight">
+                            <span>{cell.count}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {cell.pct.toFixed(0)}%
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    );
+                  })}
                   <TableCell className="text-center">
                     <a
                       href={`https://www.facebook.com/ads/library/?id=${row.adId}`}

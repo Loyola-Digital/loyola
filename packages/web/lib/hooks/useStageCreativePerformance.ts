@@ -110,9 +110,22 @@ export function useStageCreativePerformance({
       return baseQuery.data;
     }
 
+    // Story 18.47: prioriza leads por Ad Name (soma TODOS os ad_ids daquele
+    // criativo) — corrige o bug que contava só 1 ad_id. Normaliza nos 2 lados
+    // (trim+lowercase) pra casar o ad_name do Meta com "Ad Name" da planilha.
+    // Fallback: leads por ad_id (legado) e por fim o valor do backend.
+    const norm = (s: string) => s.trim().toLowerCase();
+    const leadsByAdNameNorm: Record<string, number> = {};
+    for (const [k, v] of Object.entries(crossrefQuery.leadsByAdName ?? {})) {
+      leadsByAdNameNorm[norm(k)] = v;
+    }
+
     // Enrich creatives with crossref leads and term
     const enrichedCreatives = baseQuery.data.creatives.map((creative) => {
-      const crossrefLeads = crossrefQuery.leads[creative.adId] ?? creative.leads;
+      const crossrefLeads =
+        leadsByAdNameNorm[norm(creative.adName)] ??
+        crossrefQuery.leads[creative.adId] ??
+        creative.leads;
       const crossrefTerm = crossrefQuery.terms[creative.adId] ?? creative.utmTerm;
       return {
         ...creative,
@@ -132,11 +145,14 @@ export function useStageCreativePerformance({
         totalLeads,
       },
     };
-  }, [baseQuery.data, projectId, crossrefQuery.leads]);
+  }, [baseQuery.data, projectId, crossrefQuery.leads, crossrefQuery.leadsByAdName]);
 
   return {
     ...baseQuery,
     data: enrichedData,
+    // Story 18.47: faixas por Ad Name (da aba de pesquisa) + labels dinâmicos.
+    bandsByAdName: crossrefQuery.bandsByAdName,
+    bandLabels: crossrefQuery.bandLabels,
     isLoading: projectId ? (baseQuery.isLoading || crossrefQuery.isLoading) : baseQuery.isLoading,
     error: baseQuery.error || (projectId && crossrefQuery.error ? new Error(crossrefQuery.error) : undefined),
   };
