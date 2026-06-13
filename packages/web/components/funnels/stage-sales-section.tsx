@@ -327,6 +327,7 @@ export function StageSalesSection({
         <div className="space-y-2 border-t pt-4 mt-4">
           <p className="text-xs font-medium text-muted-foreground">Desempenho de Criativos (Meta Ads)</p>
           <StageCreativePerformanceTable
+            projectId={projectId}
             funnelId={funnelId}
             stageId={stageId}
             days={days}
