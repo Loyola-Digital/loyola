@@ -233,6 +233,25 @@ export function useCrossReferenceLeads({
     return { bandsByAdName, bandLabels: Array.from(labels).sort() };
   }, [surveyQuery.data, result.adNameByContent]);
 
+  // Story 18.47: DEBUG temporário (remover depois) — diagnóstico das faixas na Paga.
+  if (typeof window !== "undefined") {
+    const sHeaders = (surveyQuery.data as unknown as { headers?: string[] })?.headers ?? [];
+    // eslint-disable-next-line no-console
+    console.log("[18.47 crossref]", {
+      stageId,
+      hasSurvey: !!survey,
+      surveySpreadsheetName: survey?.spreadsheetName,
+      surveySheetName: survey?.sheetName,
+      surveyRows: surveyQuery.data?.rows?.length ?? null,
+      surveyHeaders: sHeaders,
+      leadsSheetType: leadsSheet?.type ?? null,
+      leadsSheetName: leadsSheet?.sheetName ?? null,
+      leadsRows: sheetQuery.data?.rows?.length ?? null,
+      adNameByContentSize: Object.keys(result.adNameByContent).length,
+      bandLabels: bandsResult.bandLabels,
+    });
+  }
+
   const isLoading =
     surveysQuery.isLoading ||
     spreadsheetsQuery.isLoading ||
