@@ -1175,6 +1175,53 @@ export const hotmartCache = pgTable(
   (table) => [primaryKey({ columns: [table.projectId, table.cacheKey] })]
 );
 
+// ============================================================
+// Story 35.1 — Integração Kiwify (Assinaturas / recorrência, Pull-MVP)
+// Conexão é POR PROJETO (1 credencial OAuth2 client_credentials por cliente).
+// client_id, client_secret e account_id (store-id, header x-kiwify-account-id)
+// criptografados via AES-256-GCM (services/encryption.ts). O account_id não é
+// segredo, mas é cifrado por uniformidade do padrão; o token JWT (24h) é obtido
+// em runtime e NÃO armazenado. A Public API da Kiwify NÃO expõe estado de
+// assinatura (sem /subscriptions) — métricas derivam do stream de /sales.
+// ============================================================
+export const kiwifyConnections = pgTable(
+  "kiwify_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .unique()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    clientIdEncrypted: text("client_id_encrypted").notNull(),
+    clientIdIv: text("client_id_iv").notNull(),
+    clientSecretEncrypted: text("client_secret_encrypted").notNull(),
+    clientSecretIv: text("client_secret_iv").notNull(),
+    accountIdEncrypted: text("account_id_encrypted").notNull(),
+    accountIdIv: text("account_id_iv").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_kiwify_connections_project").on(table.projectId)]
+);
+
+// Story 35.1 (perf): cache persistente do dashboard/products Kiwify. A API
+// Kiwify pagina /sales por offset em janelas de até 90 dias (várias chamadas no
+// cold miss). Persistir o payload agregado serve via stale-while-revalidate e
+// sobrevive a restart/deploy. cache_key = "dashboard:<productId>:<months>" ou
+// "products:<months>". TTL de frescor aplicado no código (30min).
+export const kiwifyCache = pgTable(
+  "kiwify_cache",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    cacheKey: varchar("cache_key", { length: 200 }).notNull(),
+    data: jsonb("data").notNull(),
+    computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.cacheKey] })]
+);
+
 // Story 28.7: cache persistente de nomes Meta (ad/adset/campaign) — substitui
 // resolução in-memory que estourava rate limit Meta. TTL aplicado no código (24h).
 export const metaEntityNamesCache = pgTable(

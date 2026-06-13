@@ -10,11 +10,11 @@
  */
 
 import { z } from "zod";
-import { eq } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { funnels } from "../db/schema.js";
+import { eq } from "drizzle-orm";
 import { fetchAllAdInsights } from "../services/meta-ads.js";
 import { getMetaAccountForProject } from "../services/traffic-analytics.js";
+import { funnels } from "../db/schema.js";
 
 const paramsSchema = z.object({
   funnelId: z.string().uuid(),
@@ -84,7 +84,7 @@ export default fp(async function lpCampaignsRoutes(fastify) {
       try {
         fastify.log.info(`[lp-campaigns] Fetching campaigns for funnelId=${funnelId}, stageId=${stageId}, days=${days}`);
 
-        // Resolve projectId do funil (getMetaAccountForProject exige db + projectId)
+        // getMetaAccountForProject espera o projectId — resolver o projeto dono do funil.
         const [funnel] = await fastify.db
           .select({ projectId: funnels.projectId })
           .from(funnels)
@@ -95,11 +95,11 @@ export default fp(async function lpCampaignsRoutes(fastify) {
           return reply.code(404).send({ error: "Funil nao encontrado" });
         }
 
-        const metaAccount = await getMetaAccountForProject(
-          fastify.db,
-          funnel.projectId,
+        const metaAccount = await getMetaAccountForProject(fastify.db, funnel.projectId);
+        // Nao logar o objeto (contem accessToken) — apenas o status da conexao.
+        fastify.log.info(
+          `[lp-campaigns] Meta account: ${metaAccount ? "configurado" : "nao configurado"}`,
         );
-        fastify.log.info({ metaAccount }, "[lp-campaigns] Meta account");
 
         if (!metaAccount) {
           return reply.code(400).send({
@@ -107,7 +107,7 @@ export default fp(async function lpCampaignsRoutes(fastify) {
           });
         }
 
-        // Fetch all ad insights (includes campaign_name)
+        // Fetch all ad insights (includes campaign_name). Filtro de LP e por nome (abaixo).
         fastify.log.info(`[lp-campaigns] Fetching all ad insights...`);
         const allInsights = await fetchAllAdInsights(
           metaAccount.metaAccountId,
