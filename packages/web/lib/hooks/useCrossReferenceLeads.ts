@@ -62,7 +62,12 @@ export function useCrossReferenceLeads({
   // - LEADS: "Planilhas vinculadas" (funnelSpreadsheets, type=leads) → content + Ad Name.
   // - PESQUISA: "Pesquisas vinculadas" (funnelSurveys) → utm_content + Faixa.
   const spreadsheetsQuery = useFunnelSpreadsheets(projectId, funnelId, stageId);
-  const leadsSheet = spreadsheetsQuery.data?.spreadsheets?.find((s) => s.type === "leads");
+  // Gratuita vincula a contagem como `leads` (n8n-leads-lp-cap-grat); a etapa
+  // Paga vincula como `sales` (n8n-kiwify-captação — mesma estrutura content +
+  // Ad Name, com faturamento extra). Pega o que existir.
+  const leadsSheet =
+    spreadsheetsQuery.data?.spreadsheets?.find((s) => s.type === "leads") ??
+    spreadsheetsQuery.data?.spreadsheets?.find((s) => s.type === "sales");
 
   const survey = surveys[0];
 
