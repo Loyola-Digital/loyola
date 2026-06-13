@@ -13,6 +13,7 @@
 import { useMemo } from "react";
 import { useFunnelSurveys } from "@/lib/hooks/use-google-sheets";
 import { useSheetData } from "@/lib/hooks/use-google-sheets";
+import { useFunnelSpreadsheets } from "@/lib/hooks/use-funnel-spreadsheets";
 import { normalizeNumericId } from "@/lib/utils/normalize-answer";
 
 interface CrossReferencedLeads {
@@ -56,21 +57,23 @@ export function useCrossReferenceLeads({
   const surveysQuery = useFunnelSurveys(projectId, funnelId, stageId);
   const surveys = surveysQuery.data?.surveys ?? [];
 
-  // Usar a primeira survey encontrada e forçar a aba "n8n-leads-lp-cap-grat" se for "Painel de Controle"
+  // Story 18.47: usa as planilhas/abas VINCULADAS por etapa (sem hardcode de nome).
+  // Generaliza para qualquer etapa (free/paid): cada uma vincula suas próprias abas.
+  // - LEADS: "Planilhas vinculadas" (funnelSpreadsheets, type=leads) → content + Ad Name.
+  // - PESQUISA: "Pesquisas vinculadas" (funnelSurveys) → utm_content + Faixa.
+  const spreadsheetsQuery = useFunnelSpreadsheets(projectId, funnelId, stageId);
+  const leadsSheet = spreadsheetsQuery.data?.spreadsheets?.find((s) => s.type === "leads");
+
   const survey = surveys[0];
-  const isPainel = survey?.spreadsheetName?.includes("Painel de Controle") ?? false;
-  const sheetName = isPainel
-    ? "n8n-leads-lp-cap-grat"
-    : survey?.sheetName ?? null;
 
-  const sheetQuery = useSheetData(survey?.spreadsheetId ?? null, sheetName);
-
-  // Story 18.47: aba de PESQUISA (com a coluna de Faixa). No "Painel de Controle"
-  // é a "Pesquisa-Captação-Grat"; nos demais casos, a aba configurada na survey.
-  const surveySheetName = isPainel
-    ? "Pesquisa-Captação-Grat"
-    : survey?.sheetName ?? null;
-  const surveyQuery = useSheetData(survey?.spreadsheetId ?? null, surveySheetName);
+  const sheetQuery = useSheetData(
+    leadsSheet?.spreadsheetId ?? null,
+    leadsSheet?.sheetName ?? null,
+  );
+  const surveyQuery = useSheetData(
+    survey?.spreadsheetId ?? null,
+    survey?.sheetName ?? null,
+  );
 
   // Computar cruzamento: coluna 5 = utm_content (adId), coluna 7 = utm_term (lpa/hot/cold/etc)
   const result = useMemo(() => {
@@ -86,12 +89,18 @@ export function useCrossReferenceLeads({
       return { leads, leadsByAdName, adNameByContent, terms, termsMapping, leadsByLp, totalLeads, isLoading: false };
     }
 
-    const CONTENT_INDEX = 5; // utm_content = adId / identificador da LP (contém lpa/lpb/...)
-    const TERM_INDEX = 7;    // utm_term (full string: "lpa-hot-...", "lpb-cold-...", etc)
+    const headers = (sheetQuery.data as unknown as { headers?: string[] }).headers ?? [];
+    // Story 18.47: localiza colunas por CABEÇALHO (robusto entre abas de etapas
+    // diferentes); cai pras posições legadas (5/7) quando o header não existe.
+    const findCol = (names: string[], fallback: number): number => {
+      const idx = headers.findIndex((h) => names.includes((h ?? "").trim().toLowerCase()));
+      return idx >= 0 ? idx : fallback;
+    };
+    const CONTENT_INDEX = findCol(["content", "utm_content"], 5); // utm_content = adId
+    const TERM_INDEX = findCol(["utm_term", "term"], 7);          // utm_term (lpX/hot/cold)
 
     // Story 18.46: localiza a coluna `source` (utm_source) pelo cabeçalho.
     // Lead pago = source ∈ {meta, google}; o resto (ig, etc.) é orgânico.
-    const headers = (sheetQuery.data as unknown as { headers?: string[] }).headers ?? [];
     const SOURCE_INDEX = headers.findIndex((h) => {
       const n = (h ?? "").trim().toLowerCase();
       return n === "source" || n === "utm_source";
@@ -186,8 +195,10 @@ export function useCrossReferenceLeads({
     const norm = (s: string) => (s ?? "").trim().toLowerCase();
     const utmContentIdx = headers.findIndex((h) => norm(h) === "utm_content");
     const utmSourceIdx = headers.findIndex((h) => norm(h) === "utm_source" || norm(h) === "source");
-    // Coluna de faixa: "Faixa 1" / "Faixa" / "faixa N" (case-insensitive).
-    const faixaIdx = headers.findIndex((h) => norm(h).startsWith("faixa"));
+    // Coluna de faixa: prefere "Faixa 1" (existe nas duas etapas); senão a 1ª
+    // coluna que começa com "faixa" (a Paga tem "Faixa" e "Faixa 1").
+    let faixaIdx = headers.findIndex((h) => norm(h) === "faixa 1");
+    if (faixaIdx === -1) faixaIdx = headers.findIndex((h) => norm(h).startsWith("faixa"));
 
     if (utmContentIdx === -1 || faixaIdx === -1) {
       return { bandsByAdName, bandLabels: [] as string[] };
@@ -217,7 +228,10 @@ export function useCrossReferenceLeads({
     return { bandsByAdName, bandLabels: Array.from(labels).sort() };
   }, [surveyQuery.data, result.adNameByContent]);
 
-  const isLoading = surveysQuery.isLoading || (survey ? sheetQuery.isLoading : false);
+  const isLoading =
+    surveysQuery.isLoading ||
+    spreadsheetsQuery.isLoading ||
+    (leadsSheet ? sheetQuery.isLoading : false);
   const error = surveysQuery.error?.message || sheetQuery.error?.message;
 
   return {
