@@ -27,7 +27,8 @@ function extractAdNamesFromSheet(
   const headers = data?.headers;
   if (!rows || !headers) return map;
   const norm = (s: string) => (s ?? "").trim().toLowerCase();
-  const contentIdx = headers.findIndex((h) => ["content", "utm_content"].includes(norm(h)));
+  // utm_content aparece como "content", "utm_content" ou "co=" (decisão Danilo).
+  const contentIdx = headers.findIndex((h) => ["content", "utm_content", "co="].includes(norm(h)));
   const adNameIdx = headers.findIndex((h) =>
     ["ad name", "ad_name", "adname", "nome do anúncio", "nome do anuncio"].includes(norm(h)),
   );
@@ -141,8 +142,8 @@ export function useCrossReferenceLeads({
       const idx = headers.findIndex((h) => names.includes((h ?? "").trim().toLowerCase()));
       return idx >= 0 ? idx : fallback;
     };
-    const CONTENT_INDEX = findCol(["content", "utm_content"], 5); // utm_content = adId
-    const TERM_INDEX = findCol(["utm_term", "term"], 7);          // utm_term (lpX/hot/cold)
+    const CONTENT_INDEX = findCol(["content", "utm_content", "co="], 5); // utm_content = adId
+    const TERM_INDEX = findCol(["utm_term", "term", "t="], 7);           // utm_term (lpX/hot/cold)
 
     // Story 18.46: localiza a coluna `source` (utm_source) pelo cabeçalho.
     // Lead pago = source ∈ {meta, google}; o resto (ig, etc.) é orgânico.
@@ -231,8 +232,8 @@ export function useCrossReferenceLeads({
     }
 
     const norm = (s: string) => (s ?? "").trim().toLowerCase();
-    const utmContentIdx = headers.findIndex((h) => norm(h) === "utm_content");
-    const utmSourceIdx = headers.findIndex((h) => norm(h) === "utm_source" || norm(h) === "source");
+    const utmContentIdx = headers.findIndex((h) => ["utm_content", "content", "co="].includes(norm(h)));
+    const utmSourceIdx = headers.findIndex((h) => ["utm_source", "source", "s="].includes(norm(h)));
     // Coluna de faixa: prefere "Faixa 1" (existe nas duas etapas); senão a 1ª
     // coluna que começa com "faixa" (a Paga tem "Faixa" e "Faixa 1").
     let faixaIdx = headers.findIndex((h) => norm(h) === "faixa 1");
@@ -263,24 +264,6 @@ export function useCrossReferenceLeads({
 
     return { bandsByAdName, bandLabels: Array.from(labels).sort() };
   }, [surveyQuery.data, adNameByContent]);
-
-  // Story 18.47: DEBUG temporário (remover depois) — headers das abas na Paga.
-  if (typeof window !== "undefined") {
-    // eslint-disable-next-line no-console
-    console.log("[18.47 debug headers]", {
-      stageId,
-      leadsType: leadsSheet?.type ?? null,
-      leadsName: leadsSheet?.sheetName ?? null,
-      leadsHeaders: (sheetQuery.data as unknown as { headers?: string[] })?.headers ?? [],
-      leadsRows: sheetQuery.data?.rows?.length ?? null,
-      salesType: salesSheet?.type ?? null,
-      salesName: salesSheet?.sheetName ?? null,
-      salesHeaders: (salesSheetQuery.data as unknown as { headers?: string[] })?.headers ?? [],
-      salesRows: salesSheetQuery.data?.rows?.length ?? null,
-      adNameByContentSize: Object.keys(adNameByContent).length,
-      bandLabels: bandsResult.bandLabels,
-    });
-  }
 
 
   const isLoading =
