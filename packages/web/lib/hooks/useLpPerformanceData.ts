@@ -17,6 +17,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useCrossReferenceLeads } from "@/lib/hooks/useCrossReferenceLeads";
+import { applyMetaAdsTax } from "@/lib/utils/funnel-metrics";
 import type { StageCreativePerformanceResponse } from "@/lib/hooks/useStageCreativePerformance";
 
 export interface LpRow {
@@ -82,6 +83,10 @@ export function useLpPerformanceData({
 
     const lpTotals: Record<string, LpRow> = {};
 
+    // Imposto Meta aplica a partir de 2026; o breakdown é agregado no período,
+    // sem data por linha — usamos a data atual (lançamentos correntes são 2026+).
+    const taxDate = new Date().toISOString().slice(0, 10);
+
     for (const entry of breakdown) {
       // Story 18.46 (AC7): filtro de público pela temperatura do breakdown
       if (publicoFilter !== "todos" && entry.temperature !== publicoFilter) continue;
@@ -99,7 +104,9 @@ export function useLpPerformanceData({
           faturamento: 0,
         };
       }
-      lpTotals[key].investimento += entry.spend;
+      // Imposto Meta Ads de 12,15% (2026+): o spend cru da API não inclui. Aplica
+      // pra bater com o card de Investimento / Dados Diários (que já usam applyMetaAdsTax).
+      lpTotals[key].investimento += applyMetaAdsTax(entry.spend, taxDate);
       lpTotals[key].cliques += entry.clicks;
       lpTotals[key].impressoes += entry.impressions;
       lpTotals[key].conversoes += entry.clicks; // conversão = clique (chegada à LP)
