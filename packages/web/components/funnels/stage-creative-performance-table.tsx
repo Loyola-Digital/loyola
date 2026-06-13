@@ -102,6 +102,19 @@ export function StageCreativePerformanceTable({
     return COLUMNS;
   }, [stageType]);
 
+  // Story 18.47: faixas dinâmicas (A/B/C/D…) vindas da pesquisa do stage.
+  // Gating genérico: só renderiza colunas de faixa quando o backend devolve
+  // bandLabels não-vazio (qualquer stageType — free ou paid). Lookup por adName
+  // porque o backend já agrega `bands` por ad_name (mesma chave das linhas).
+  const bandLabels = useMemo<string[]>(() => data?.bandLabels ?? [], [data]);
+  const bandsByAdName = useMemo(() => {
+    const map = new Map<string, Record<string, { count: number; pct: number }>>();
+    for (const c of data?.creatives ?? []) {
+      if (c.bands) map.set(c.adName, c.bands);
+    }
+    return map;
+  }, [data]);
+
   // Processa: metrics + filtro de temperatura
   // Story 18.28: Quando filtro é "all", compilar por ad_name (somar métricas)
   const processedData = useMemo(() => {
@@ -302,13 +315,23 @@ export function StageCreativePerformanceTable({
                   </span>
                 </TableHead>
               ))}
+              {/* Story 18.47: colunas dinâmicas de faixa (contagem + %) */}
+              {bandLabels.map((band) => (
+                <TableHead
+                  key={`band-${band}`}
+                  className="text-right text-xs font-semibold"
+                  title={`Leads da Faixa ${band} (contagem e % do total de leads do criativo)`}
+                >
+                  Faixa {band}
+                </TableHead>
+              ))}
               <TableHead className="text-center text-xs font-semibold">Preview</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {pageRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={visibleColumns.length + 2} className="py-10 text-center text-xs text-muted-foreground">
+                <TableCell colSpan={visibleColumns.length + bandLabels.length + 2} className="py-10 text-center text-xs text-muted-foreground">
                   Nenhum criativo encontrado neste período.
                 </TableCell>
               </TableRow>
@@ -349,6 +372,24 @@ export function StageCreativePerformanceTable({
                       {renderCellValue(row, col.key)}
                     </TableCell>
                   ))}
+                  {/* Story 18.47: células de faixa — contagem + % do total de leads do criativo */}
+                  {bandLabels.map((band) => {
+                    const cell = bandsByAdName.get(row.adName)?.[band];
+                    return (
+                      <TableCell key={`band-${band}`} className="text-right tabular-nums">
+                        {cell && cell.count > 0 ? (
+                          <span className="inline-flex flex-col items-end leading-tight">
+                            <span>{cell.count}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {cell.pct.toFixed(0)}%
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    );
+                  })}
                   <TableCell className="text-center">
                     <a
                       href={`https://www.facebook.com/ads/library/?id=${row.adId}`}

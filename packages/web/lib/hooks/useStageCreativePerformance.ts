@@ -26,6 +26,8 @@ export interface CreativePerformanceData {
   // Story 18.46: identificação de LP por Campaign Name (AC3) + LP View real (AC4)
   campaignName?: string | null;
   landingPageViews?: number;
+  // Story 18.47: breakdown de faixas (A/B/C/D…) por criativo — contagem + %
+  bands?: Record<string, { count: number; pct: number }>;
 }
 
 // Story 18.46: corte por LP × temperatura (para a tabela de Testes de LPs)
@@ -44,6 +46,8 @@ export interface StageCreativePerformanceResponse {
   days: number;
   creatives: CreativePerformanceData[];
   lpBreakdown?: LpBreakdownRow[];
+  // Story 18.47: faixas dinâmicas presentes na pesquisa do stage (ordenadas).
+  bandLabels?: string[];
   summary: {
     totalSpend: number;
     totalLeads: number;

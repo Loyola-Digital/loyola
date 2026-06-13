@@ -15,6 +15,7 @@ import {
   funnelStages,
   funnelSpreadsheets,
   stageSalesSpreadsheets,
+  funnelSurveys,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { fetchAllAdInsights, fetchCampaignInsights } from "../services/meta-ads.js";
@@ -41,6 +42,20 @@ interface CreativePerformanceResponse {
   // Story 18.46: identificação de LP (AC3) e LP View real (AC4)
   campaignName: string | null;
   landingPageViews: number;
+  // Story 18.47: breakdown de faixas (A/B/C/D…) por criativo — contagem + %
+  // do total de leads classificados daquele ad. Vazio quando não há pesquisa
+  // com coluna de faixa (etapas sem survey/faixa → tabela inalterada).
+  bands?: Record<string, { count: number; pct: number }>;
+}
+
+/**
+ * Story 18.47: localiza o índice de uma coluna pelo nome do cabeçalho
+ * (case-insensitive, trim). Espelha o `findCol` interno do bloco de leads.
+ */
+function findHeaderIndex(headers: string[], name: string | undefined): number {
+  if (!name) return -1;
+  const normalized = name.trim().toLowerCase();
+  return headers.findIndex((h) => h.trim().toLowerCase() === normalized);
 }
 
 /**
@@ -357,6 +372,72 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           }
         }
 
+        // Story 18.47: faixas (A/B/C/D…) por ad_id, lidas da planilha de PESQUISA
+        // do stage (funnelSurveys). A faixa vem PRÉ-CALCULADA na coluna mapeada
+        // em columnMapping.faixa (Story 18.17). Cruza utm_content da pesquisa →
+        // ad_id (mesmo ad dos criativos); o agrupamento por ad_name é feito no passo 7.
+        // Funciona em qualquer stage (free ou paid) que tenha survey com faixa.
+        const bandsByAdId = new Map<string, Map<string, number>>(); // adId → (faixa → count)
+        const bandSet = new Set<string>();
+        const [survey] = await fastify.db
+          .select()
+          .from(funnelSurveys)
+          .where(eq(funnelSurveys.stageId, stageId))
+          .limit(1);
+
+        const surveyMapping = (survey?.columnMapping ?? {}) as {
+          utm_content?: string;
+          faixa?: string;
+        };
+        if (survey && surveyMapping.faixa) {
+          let surveyData = null;
+          try {
+            surveyData = await readSheetData(survey.spreadsheetId, survey.sheetName);
+          } catch (err) {
+            fastify.log.warn(
+              { err },
+              "creative-performance: falha lendo planilha de pesquisa — bands vazio",
+            );
+          }
+          if (surveyData) {
+            const surveyUtmIdx = findHeaderIndex(
+              surveyData.headers,
+              surveyMapping.utm_content,
+            );
+            const surveyFaixaIdx = findHeaderIndex(
+              surveyData.headers,
+              surveyMapping.faixa,
+            );
+            if (surveyUtmIdx !== -1 && surveyFaixaIdx !== -1) {
+              for (const row of surveyData.rows) {
+                const adId = normalizeNumericId(row[surveyUtmIdx] ?? "");
+                if (!adId) continue;
+                const faixa = (row[surveyFaixaIdx] ?? "").trim().toUpperCase();
+                if (!faixa) continue;
+                bandSet.add(faixa);
+                let m = bandsByAdId.get(adId);
+                if (!m) {
+                  m = new Map();
+                  bandsByAdId.set(adId, m);
+                }
+                m.set(faixa, (m.get(faixa) ?? 0) + 1);
+              }
+            } else {
+              fastify.log.info({
+                debug: "creative-performance-bands",
+                stageId,
+                message: "utm_content ou faixa não encontrados na planilha de pesquisa",
+                surveyUtmIdx,
+                surveyFaixaIdx,
+                surveyHeaders: surveyData.headers,
+              });
+            }
+          }
+        }
+        // Faixas dinâmicas, ordenadas (A, B, C, D…). Derivadas das respostas
+        // presentes — cobre "as faixas variam por lançamento" sem hardcode.
+        const bandLabels = Array.from(bandSet).sort();
+
         // 6. Agrupa por ad_name (mesmo padrao da Top Creatives Gallery).
         // Quando o mesmo criativo e usado em N adsets, Meta cria N ad_ids
         // distintos com mesmo ad_name. Agrupar por ad_id quebra essa visao
@@ -446,6 +527,33 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             }
           }
 
+          // Story 18.47: agrega as faixas de todos os ad_ids do grupo e calcula
+          // a % de cada faixa sobre o total de leads CLASSIFICADOS deste criativo.
+          let bands: Record<string, { count: number; pct: number }> | undefined;
+          if (bandLabels.length > 0) {
+            const bandCounts = new Map<string, number>();
+            for (const adId of group.adIds) {
+              const m = bandsByAdId.get(adId);
+              if (m) {
+                for (const [faixa, count] of m.entries()) {
+                  bandCounts.set(faixa, (bandCounts.get(faixa) ?? 0) + count);
+                }
+              }
+            }
+            const totalBandLeads = Array.from(bandCounts.values()).reduce(
+              (a, b) => a + b,
+              0,
+            );
+            bands = {};
+            for (const faixa of bandLabels) {
+              const count = bandCounts.get(faixa) ?? 0;
+              bands[faixa] = {
+                count,
+                pct: totalBandLeads > 0 ? (count / totalBandLeads) * 100 : 0,
+              };
+            }
+          }
+
           // adId representativo = primeiro adId do grupo (uso pra link Ads Library)
           creatives.push({
             adId: group.adIds[0],
@@ -458,6 +566,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             utmTerm: topUtmTerm,
             campaignName: group.campaignName,
             landingPageViews: group.landingPageViews,
+            bands,
           });
         }
 
@@ -524,6 +633,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           days,
           creatives,
           lpBreakdown,
+          // Story 18.47: faixas dinâmicas (ordenadas) presentes na pesquisa do stage.
+          // Vazio → frontend não renderiza colunas de faixa (tabela inalterada).
+          bandLabels,
           summary: {
             totalSpend,
             totalLeads,
