@@ -264,6 +264,24 @@ export function useCrossReferenceLeads({
     return { bandsByAdName, bandLabels: Array.from(labels).sort() };
   }, [surveyQuery.data, adNameByContent]);
 
+  // Story 18.47: DEBUG temporário (remover depois) — headers das abas na Paga.
+  if (typeof window !== "undefined") {
+    // eslint-disable-next-line no-console
+    console.log("[18.47 debug headers]", {
+      stageId,
+      leadsType: leadsSheet?.type ?? null,
+      leadsName: leadsSheet?.sheetName ?? null,
+      leadsHeaders: (sheetQuery.data as unknown as { headers?: string[] })?.headers ?? [],
+      leadsRows: sheetQuery.data?.rows?.length ?? null,
+      salesType: salesSheet?.type ?? null,
+      salesName: salesSheet?.sheetName ?? null,
+      salesHeaders: (salesSheetQuery.data as unknown as { headers?: string[] })?.headers ?? [],
+      salesRows: salesSheetQuery.data?.rows?.length ?? null,
+      adNameByContentSize: Object.keys(adNameByContent).length,
+      bandLabels: bandsResult.bandLabels,
+    });
+  }
+
 
   const isLoading =
     surveysQuery.isLoading ||
