@@ -68,13 +68,43 @@ export function useCrossReferenceLeads({
     const CONTENT_INDEX = 5; // utm_content = adId / identificador da LP (contém lpa/lpb/...)
     const TERM_INDEX = 7;    // utm_term (full string: "lpa-hot-...", "lpb-cold-...", etc)
 
+    // Story 18.46: localiza a coluna `source` (utm_source) pelo cabeçalho.
+    // Lead pago = source ∈ {meta, google}; o resto (ig, etc.) é orgânico.
+    const headers = (sheetQuery.data as unknown as { headers?: string[] }).headers ?? [];
+    const SOURCE_INDEX = headers.findIndex((h) => {
+      const n = (h ?? "").trim().toLowerCase();
+      return n === "source" || n === "utm_source";
+    });
+    const PAID_SOURCES = new Set(["meta", "google"]);
+    const isPaidRow = (row: string[]): boolean => {
+      if (SOURCE_INDEX < 0) return true; // sem coluna source → não filtra (fallback)
+      const src = (row[SOURCE_INDEX] ?? "").trim().toLowerCase();
+      return PAID_SOURCES.has(src);
+    };
+
     // Contar leads por utm_content e armazenar termo
     for (const row of sheetQuery.data.rows) {
+      const termString = (row[TERM_INDEX]?.trim() ?? "").toLowerCase();
+      const utmContentRaw = (row[CONTENT_INDEX]?.trim() ?? "").toLowerCase();
+
+      // Story 18.46 (AC6): identificar a LP e a temperatura do lead.
+      // Os dados reais mostram que lpX/hot/cold vivem no utm_term (col 7), mas
+      // procuramos em ambas as colunas (5 e 7) para robustez.
+      // Conta APENAS leads pagos (source = meta/google) — Tx Conv usa esse número.
+      const haystack = `${utmContentRaw} ${termString}`;
+      const lpMatch = haystack.match(/lp([a-z])/);
+      if (lpMatch && isPaidRow(row)) {
+        const lpKey = `lp${lpMatch[1]}`;
+        if (!leadsByLp[lpKey]) leadsByLp[lpKey] = { hot: 0, cold: 0, total: 0 };
+        leadsByLp[lpKey].total += 1;
+        if (haystack.includes("hot")) leadsByLp[lpKey].hot += 1;
+        else if (haystack.includes("cold")) leadsByLp[lpKey].cold += 1;
+      }
+
       const utmContent = row[CONTENT_INDEX]?.trim() ?? "";
       if (!utmContent) continue;
 
       const adId = normalizeNumericId(utmContent);
-      const termString = (row[TERM_INDEX]?.trim() ?? "").toLowerCase();
 
       leads[adId] = (leads[adId] ?? 0) + 1;
 
@@ -90,17 +120,6 @@ export function useCrossReferenceLeads({
         } else if (termString.includes("cold")) {
           terms[adId] = "cold";
         }
-      }
-
-      // Story 18.46 (AC6): identificar a LP do lead pelo utm_content (contém lpX),
-      // e quebrar por temperatura (utm_term contém hot/cold) para o filtro (AC7).
-      const lpMatch = utmContent.toLowerCase().match(/lp([a-z])/);
-      if (lpMatch) {
-        const lpKey = `lp${lpMatch[1].toLowerCase()}`;
-        if (!leadsByLp[lpKey]) leadsByLp[lpKey] = { hot: 0, cold: 0, total: 0 };
-        leadsByLp[lpKey].total += 1;
-        if (termString.includes("hot")) leadsByLp[lpKey].hot += 1;
-        else if (termString.includes("cold")) leadsByLp[lpKey].cold += 1;
       }
 
       totalLeads += 1;

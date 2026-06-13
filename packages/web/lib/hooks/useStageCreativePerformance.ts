@@ -28,11 +28,22 @@ export interface CreativePerformanceData {
   landingPageViews?: number;
 }
 
+// Story 18.46: corte por LP × temperatura (para a tabela de Testes de LPs)
+export interface LpBreakdownRow {
+  lpName: string; // "LPA"
+  temperature: "hot" | "cold" | "unknown";
+  spend: number;
+  clicks: number;
+  impressions: number;
+  landingPageViews: number;
+}
+
 export interface StageCreativePerformanceResponse {
   stageId: string;
   stageType: string;
   days: number;
   creatives: CreativePerformanceData[];
+  lpBreakdown?: LpBreakdownRow[];
   summary: {
     totalSpend: number;
     totalLeads: number;

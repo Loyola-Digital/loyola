@@ -57,35 +57,35 @@ export function LpPerformanceTable({
   return (
     <div className="overflow-x-auto rounded-lg border">
       <Table>
-        <TableHeader className="bg-slate-700">
-          <TableRow className="hover:bg-slate-700">
-            <TableHead className="text-white">LP</TableHead>
-            <TableHead className="text-right text-white">Investimento (R$)</TableHead>
+        <TableHeader>
+          <TableRow>
+            <TableHead>LP</TableHead>
+            <TableHead className="text-right">Investimento (R$)</TableHead>
             {/* Story 18.45/18.46: métricas-chave logo após Investimento */}
             {!isPaid && (
               <>
-                <TableHead className="text-right text-white">Leads</TableHead>
-                <TableHead className="text-right text-white">CPL</TableHead>
+                <TableHead className="text-right">Leads</TableHead>
+                <TableHead className="text-right">CPL</TableHead>
               </>
             )}
             {isPaid && (
               <>
-                <TableHead className="text-right text-white">Vendas</TableHead>
-                <TableHead className="text-right text-white">CPV</TableHead>
+                <TableHead className="text-right">Vendas</TableHead>
+                <TableHead className="text-right">CPV</TableHead>
               </>
             )}
-            <TableHead className="text-right text-white">CPM</TableHead>
-            <TableHead className="text-right text-white">CPC</TableHead>
-            <TableHead className="text-right text-white">CTR (%)</TableHead>
-            <TableHead className="text-right text-white">LP View</TableHead>
-            <TableHead className="text-right text-white">Connect Rate (%)</TableHead>
-            <TableHead className="text-right text-white">Tx Conv. (%)</TableHead>
+            <TableHead className="text-right">CPM</TableHead>
+            <TableHead className="text-right">CPC</TableHead>
+            <TableHead className="text-right">CTR (%)</TableHead>
+            <TableHead className="text-right">LP View</TableHead>
+            <TableHead className="text-right">Connect Rate (%)</TableHead>
+            <TableHead className="text-right">Tx Conv. (%)</TableHead>
 
             {/* Colunas de resultado por stage (paid) — Faturamento/ROAS no final */}
             {isPaid && (
               <>
-                <TableHead className="text-right text-white">Faturamento (R$)</TableHead>
-                <TableHead className="text-right text-white">ROAS</TableHead>
+                <TableHead className="text-right">Faturamento (R$)</TableHead>
+                <TableHead className="text-right">ROAS</TableHead>
               </>
             )}
           </TableRow>
@@ -112,7 +112,7 @@ export function LpPerformanceTable({
                 });
 
             return (
-              <TableRow key={row.lpName} className="hover:bg-gray-50">
+              <TableRow key={row.lpName}>
                 <TableCell className="font-medium">{row.lpName}</TableCell>
                 <TableCell className="text-right">
                   {formatCurrency(row.investimento)}

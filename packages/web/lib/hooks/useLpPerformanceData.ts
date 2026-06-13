@@ -4,19 +4,19 @@
  * Story 18.44 / 18.46: Hook para agregação de performance de Landing Pages (LPs)
  *
  * Story 18.46:
- * - Identifica a LP pelo Campaign Name da API Meta Ads (contém lpa/lpb/...).
- *   Gasto sem lpX no Campaign Name → atribuído a LPA (decisão Danilo 2026-06-12).
- * - LP View real = landing_page_view da API (campo landingPageViews do endpoint).
- * - Leads contados da planilha n8n-leads-lp-cap-grat via utm_content (leadsByLp).
- * - Filtro de público (hot/cold/todos) efetivo, classificando por Campaign Name + utm_term.
- * - Retorna uma lista plana `lps` (uma linha por LP) para renderização em tabela única.
+ * - Usa o corte `lpBreakdown` do endpoint creative-performance (agregado por LP ×
+ *   temperatura sobre os ads BRUTOS, sem o colapso por ad_name). Cada LP vira 1 linha.
+ *   Identificação da LP pelo Campaign Name (sem lpX → LPA, decisão Danilo).
+ * - LP View real = landing_page_view da API (somado por LP no backend).
+ * - Leads contados da planilha n8n-leads-lp-cap-grat (utm_term/utm_content contém lpX),
+ *   quebrados por temperatura para o filtro de público.
+ * - Filtro de público (hot/cold/todos) efetivo via a temperatura do breakdown.
  */
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useCrossReferenceLeads } from "@/lib/hooks/useCrossReferenceLeads";
-import { calculateTemperature } from "@/lib/utils/creative-metrics-calculator";
 import type { StageCreativePerformanceResponse } from "@/lib/hooks/useStageCreativePerformance";
 
 export interface LpRow {
@@ -45,15 +45,6 @@ interface UseLpPerformanceDataOptions {
   publicoFilter?: "hot" | "cold" | "todos";
 }
 
-/**
- * Story 18.46 (AC3): extrai a LP do Campaign Name (contém lpa/lpb/...).
- * Default: LPA quando o Campaign Name não contém nenhum lpX (decisão Danilo).
- */
-function extractLpKey(campaignName: string | null | undefined): string {
-  const match = campaignName?.toLowerCase().match(/lp([a-z])/);
-  return match ? `lp${match[1]}` : "lpa";
-}
-
 export function useLpPerformanceData({
   projectId,
   funnelId,
@@ -63,7 +54,7 @@ export function useLpPerformanceData({
 }: UseLpPerformanceDataOptions): LpPerformanceResult {
   const apiClient = useApiClient();
 
-  // Creative performance traz spend/clicks/impressions + campaignName + landingPageViews (Story 18.46)
+  // creative-performance traz `lpBreakdown` (Story 18.46): agregado por LP × temperatura
   const creativesQuery = useQuery<StageCreativePerformanceResponse, Error>({
     queryKey: ["lp-performance-data", funnelId, stageId, days],
     queryFn: () =>
@@ -75,7 +66,7 @@ export function useLpPerformanceData({
     gcTime: 30 * 60 * 1000,
   });
 
-  // Leads por LP (via utm_content) quebrados por temperatura — Story 18.43/18.46
+  // Leads por LP (via planilha n8n), quebrados por temperatura
   const leadsQuery = useCrossReferenceLeads({
     projectId,
     funnelId,
@@ -84,27 +75,21 @@ export function useLpPerformanceData({
   });
 
   const result = useMemo(() => {
-    const creatives = creativesQuery.data?.creatives;
-    if (!creatives || creatives.length === 0) {
+    const breakdown = creativesQuery.data?.lpBreakdown;
+    if (!breakdown || breakdown.length === 0) {
       return { lps: [] as LpRow[], isLoading: false };
     }
 
     const lpTotals: Record<string, LpRow> = {};
 
-    for (const creative of creatives) {
-      // Story 18.46 (AC7): filtro de público por Campaign Name + utm_term
-      if (publicoFilter !== "todos") {
-        const temp = calculateTemperature(creative.utmTerm, creative.campaignName);
-        if (temp !== publicoFilter) continue;
-      }
+    for (const entry of breakdown) {
+      // Story 18.46 (AC7): filtro de público pela temperatura do breakdown
+      if (publicoFilter !== "todos" && entry.temperature !== publicoFilter) continue;
 
-      // Story 18.46 (AC3): LP identificada pelo Campaign Name (default LPA)
-      const key = extractLpKey(creative.campaignName);
-      const lpName = key.toUpperCase();
-
+      const key = entry.lpName.toLowerCase();
       if (!lpTotals[key]) {
         lpTotals[key] = {
-          lpName,
+          lpName: entry.lpName,
           investimento: 0,
           cliques: 0,
           impressoes: 0,
@@ -114,13 +99,11 @@ export function useLpPerformanceData({
           faturamento: 0,
         };
       }
-
-      lpTotals[key].investimento += creative.spend ?? 0;
-      lpTotals[key].cliques += creative.clicks ?? 0;
-      lpTotals[key].impressoes += creative.impressions ?? 0;
-      lpTotals[key].conversoes += creative.clicks ?? 0; // conversão = clique (chegada à LP)
-      lpTotals[key].lpViews += creative.landingPageViews ?? 0; // Story 18.46 (AC4): LP View real
-      lpTotals[key].faturamento = (lpTotals[key].faturamento ?? 0) + (creative.revenue ?? 0);
+      lpTotals[key].investimento += entry.spend;
+      lpTotals[key].cliques += entry.clicks;
+      lpTotals[key].impressoes += entry.impressions;
+      lpTotals[key].conversoes += entry.clicks; // conversão = clique (chegada à LP)
+      lpTotals[key].lpViews += entry.landingPageViews;
     }
 
     // Story 18.46 (AC6/AC7): leads por LP, respeitando o filtro de público

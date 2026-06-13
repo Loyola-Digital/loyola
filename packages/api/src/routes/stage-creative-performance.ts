@@ -17,7 +17,7 @@ import {
   stageSalesSpreadsheets,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
-import { fetchAllAdInsights } from "../services/meta-ads.js";
+import { fetchAllAdInsights, fetchCampaignInsights } from "../services/meta-ads.js";
 import { getMetaAccountForProject } from "../services/traffic-analytics.js";
 
 const paramsSchema = z.object({
@@ -465,11 +465,65 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         const totalLeads = creatives.reduce((s, c) => s + (c.leads || 0), 0);
         const totalRevenue = creatives.reduce((s, c) => s + (c.revenue || 0), 0);
 
+        // Story 18.46: corte por LP (campaign_name contém lpX) × temperatura.
+        // Usa insights por CAMPANHA (não por ad): no nível de ad o Meta infla
+        // link_click (conta cliques por adset/posicionamento sem dedup), o que
+        // divergia do card de Connect Rate do funil. O nível campanha bate com
+        // o card (mesma fonte: useCampaignDailyInsightsBulk). NÃO altera `creatives`.
+        type LpBreakdownRow = {
+          lpName: string; // "LPA"
+          temperature: "hot" | "cold" | "unknown";
+          spend: number;
+          clicks: number;
+          impressions: number;
+          landingPageViews: number;
+        };
+        const campaignInsights = await fetchCampaignInsights(
+          metaAccount.metaAccountId,
+          metaAccount.accessToken,
+          days,
+          undefined,
+          undefined,
+          campaignIdsForFetch, // Story 18.46: filtra na query (traz lpc/lpd de baixo volume)
+        );
+        const allowedCampaignIds = new Set(campaignIdsForFetch);
+        const lpBreakdownMap = new Map<string, LpBreakdownRow>();
+        for (const ci of campaignInsights) {
+          // Só campanhas do funil/stage (mesmo conjunto do fetch de ads)
+          if (allowedCampaignIds.size > 0 && !allowedCampaignIds.has(ci.campaign_id)) continue;
+          const cn = (ci.campaign_name || "").toLowerCase();
+          const m = cn.match(/lp([a-z])/);
+          // Sem lpX no campaign_name → LPA (decisão Danilo 2026-06-12)
+          const lpName = m ? `LP${m[1].toUpperCase()}` : "LPA";
+          const temperature: "hot" | "cold" | "unknown" = cn.includes("hot")
+            ? "hot"
+            : cn.includes("cold")
+              ? "cold"
+              : "unknown";
+          const key = `${lpName}__${temperature}`;
+          let agg = lpBreakdownMap.get(key);
+          if (!agg) {
+            agg = { lpName, temperature, spend: 0, clicks: 0, impressions: 0, landingPageViews: 0 };
+            lpBreakdownMap.set(key, agg);
+          }
+          const s = parseFloat(ci.spend || "0");
+          const i = parseFloat(ci.impressions || "0");
+          if (!isNaN(s)) agg.spend += s;
+          if (!isNaN(i)) agg.impressions += i;
+          // Story 18.46: "Inline Link Clicks" do nível campanha — bate com o
+          // que o gestor exporta do Ads Manager (ex: 4075 no total).
+          const ilc = parseFloat(ci.inline_link_clicks || "0");
+          if (!isNaN(ilc)) agg.clicks += ilc;
+          agg.landingPageViews += parseLandingPageViews(ci.actions);
+        }
+        const lpBreakdown = Array.from(lpBreakdownMap.values());
+
         return reply.code(200).send({
           stageId,
           stageType: stage.stageType,
           days,
           creatives,
+          lpBreakdown,
           summary: {
             totalSpend,
             totalLeads,
