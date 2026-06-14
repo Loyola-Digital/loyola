@@ -13,6 +13,7 @@ import {
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { fetchCampaignInsights, fetchAllAdSetInsights, fetchAllAdInsights, decryptAccountToken } from "../services/meta-ads.js";
+import { applyMetaTax } from "../utils/meta-tax.js";
 
 // ============================================================
 // SCHEMAS
@@ -879,7 +880,7 @@ async function computeCampaignBandBreakdown(
   const campaignDataByCampaignId = new Map<string, { campaign_name: string; spend: number }>();
   if (campaignInsights) {
     for (const insight of campaignInsights) {
-      const spend = parseFloat(insight.spend || "0");
+      const spend = applyMetaTax(parseFloat(insight.spend || "0"), new Date().toISOString().slice(0, 10)); // imposto Meta 12,15% (2026+)
       const existing = campaignDataByCampaignId.get(insight.campaign_id);
       if (existing) {
         existing.spend += spend;
@@ -1092,7 +1093,7 @@ async function computeAdsetBandBreakdown(
   const adsetDataByAdsetId = new Map<string, { adset_name: string; spend: number }>();
   if (adsetInsights) {
     for (const insight of adsetInsights) {
-      const spend = parseFloat(insight.spend || "0");
+      const spend = applyMetaTax(parseFloat(insight.spend || "0"), new Date().toISOString().slice(0, 10)); // imposto Meta 12,15% (2026+)
       const existing = adsetDataByAdsetId.get(insight.adset_id);
       if (existing) {
         existing.spend += spend;
@@ -1279,7 +1280,7 @@ async function computeAdBandBreakdown(
   const adDataByAdId = new Map<string, { ad_name: string; spend: number }>();
   if (adInsights) {
     for (const insight of adInsights) {
-      const spend = parseFloat(insight.spend || "0");
+      const spend = applyMetaTax(parseFloat(insight.spend || "0"), new Date().toISOString().slice(0, 10)); // imposto Meta 12,15% (2026+)
       const existing = adDataByAdId.get(insight.ad_id);
       if (existing) {
         existing.spend += spend;
