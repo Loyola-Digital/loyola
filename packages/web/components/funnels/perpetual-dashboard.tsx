@@ -113,12 +113,13 @@ function fmtCurrencyCompact(val: number | null | undefined): string {
 const META_TAX_EFFECTIVE_DATE = "2026-01-01";
 const META_TAX_RATE = 0.1215;
 
+// Imposto "por dentro" (gross-up): valor da API é líquido; total = valor / (1 − alíquota).
 function applyMetaTax(spend: number, dateIsoYmd: string): number {
-  return dateIsoYmd >= META_TAX_EFFECTIVE_DATE ? spend * (1 + META_TAX_RATE) : spend;
+  return dateIsoYmd >= META_TAX_EFFECTIVE_DATE ? spend / (1 - META_TAX_RATE) : spend;
 }
 
 function metaTaxAmount(spend: number, dateIsoYmd: string): number {
-  return dateIsoYmd >= META_TAX_EFFECTIVE_DATE ? spend * META_TAX_RATE : 0;
+  return dateIsoYmd >= META_TAX_EFFECTIVE_DATE ? (spend / (1 - META_TAX_RATE)) * META_TAX_RATE : 0;
 }
 
 function fmtNumber(val: number | null | undefined): string {
