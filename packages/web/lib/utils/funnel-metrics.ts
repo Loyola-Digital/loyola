@@ -11,16 +11,18 @@ import { normalizeEmail } from "@/lib/utils/normalize-answer";
 export const PAID_SOURCES = new Set(["meta", "meta-ads", "google-ads"]);
 
 /**
- * Taxa de imposto a ser acrescida ao investimento em Meta Ads a partir de 2026.
+ * Alíquota do imposto sobre Meta Ads a partir de 2026 (12,15%).
  * Aplicada uma única vez durante agregação de dados para evitar duplicação.
  */
-const META_ADS_TAX_RATE = 1.1215; // 12,15% de acréscimo
+const META_ADS_TAX_RATE = 0.1215; // 12,15%
 
 /**
  * Aplica o imposto de 12,15% ao valor de spend se a data for 2026 ou posterior.
- * A taxa é aplicada uma única vez durante a agregação de dados.
+ * Imposto "por dentro" (gross-up): o valor da API Meta é o líquido, e o imposto
+ * incide sobre o valor BRUTO. Total = valor / (1 − alíquota).
+ * Imposto (parcela) = valor / (1 − alíquota) × alíquota.
  *
- * @param spendValue - Valor de investimento em Meta Ads
+ * @param spendValue - Valor de investimento em Meta Ads (líquido, da API)
  * @param dateStr - Data no formato YYYY-MM-DD (ex: "2026-04-22")
  * @returns Valor de spend com imposto aplicado (se aplicável)
  */
@@ -28,7 +30,7 @@ export function applyMetaAdsTax(spendValue: number, dateStr: string): number {
   if (!dateStr || spendValue <= 0) return spendValue;
   const year = parseInt(dateStr.substring(0, 4), 10);
   if (year >= 2026) {
-    return spendValue * META_ADS_TAX_RATE;
+    return spendValue / (1 - META_ADS_TAX_RATE);
   }
   return spendValue;
 }

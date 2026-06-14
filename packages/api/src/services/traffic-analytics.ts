@@ -22,6 +22,7 @@ import {
   type MetaCampaignInsight,
 } from "./meta-ads.js";
 import { fetchCampaignDailyInsightsForIdsWithCache } from "./meta-insights-cache.js";
+import { applyMetaTax } from "../utils/meta-tax.js";
 
 // Story 18.26 Fase 2: TTL alinhado com meta_entity_names_cache (24h)
 const META_AD_CREATIVES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -329,7 +330,7 @@ export async function getProjectOverview(
     ? allCampaigns.filter((c) => idSet.has(c.campaign_id))
     : allCampaigns;
 
-  const totalSpend = campaigns.reduce((s, c) => s + parseFloat(c.spend || "0"), 0);
+  const totalSpend = campaigns.reduce((s, c) => s + applyMetaTax(parseFloat(c.spend || "0"), c.date_start), 0); // imposto Meta 12,15% (2026+)
   const totalImpressions = campaigns.reduce((s, c) => s + parseFloat(c.impressions || "0"), 0);
   const totalClicks = campaigns.reduce((s, c) => s + parseFloat(c.clicks || "0"), 0);
   const totalReach = campaigns.reduce((s, c) => s + parseFloat(c.reach || "0"), 0);
@@ -399,7 +400,7 @@ export async function getProjectCampaignAnalytics(
   );
 
   const campaigns: CampaignAnalytics[] = campaignInsights.map((c) => {
-    const spend = parseFloat(c.spend || "0");
+    const spend = applyMetaTax(parseFloat(c.spend || "0"), c.date_start); // imposto Meta 12,15% (2026+)
     const impressions = parseFloat(c.impressions || "0");
     const clicks = parseFloat(c.clicks || "0");
     const reach = parseFloat(c.reach || "0");
@@ -440,13 +441,13 @@ export async function getProjectAdSetAnalytics(
       const leads = parseLeadsFromActions(a.actions);
       const existing = adsetAgg.get(a.adset_id);
       if (existing) {
-        existing.spend += parseFloat(a.spend || "0");
+        existing.spend += applyMetaTax(parseFloat(a.spend || "0"), a.date_start);
         existing.impressions += parseFloat(a.impressions || "0");
         existing.clicks += parseFloat(a.clicks || "0");
         existing.reach += parseFloat(a.reach || "0");
         existing.leads += leads;
       } else {
-        adsetAgg.set(a.adset_id, { name: a.adset_name, spend: parseFloat(a.spend || "0"), impressions: parseFloat(a.impressions || "0"), clicks: parseFloat(a.clicks || "0"), reach: parseFloat(a.reach || "0"), leads });
+        adsetAgg.set(a.adset_id, { name: a.adset_name, spend: applyMetaTax(parseFloat(a.spend || "0"), a.date_start), impressions: parseFloat(a.impressions || "0"), clicks: parseFloat(a.clicks || "0"), reach: parseFloat(a.reach || "0"), leads });
       }
     }
     const adsets = Array.from(adsetAgg.entries()).map(([id, a]) =>
@@ -456,7 +457,7 @@ export async function getProjectAdSetAnalytics(
   }
 
   const adsets = adsetInsights.map((a) => {
-    const spend = parseFloat(a.spend || "0");
+    const spend = applyMetaTax(parseFloat(a.spend || "0"), a.date_start); // imposto Meta 12,15% (2026+)
     const impressions = parseFloat(a.impressions || "0");
     const clicks = parseFloat(a.clicks || "0");
     const reach = parseFloat(a.reach || "0");
@@ -491,7 +492,7 @@ export async function getProjectAdAnalytics(
   }
 
   const ads = adInsights.map((a) => {
-    const spend = parseFloat(a.spend || "0");
+    const spend = applyMetaTax(parseFloat(a.spend || "0"), a.date_start); // imposto Meta 12,15% (2026+)
     const impressions = parseFloat(a.impressions || "0");
     const clicks = parseFloat(a.clicks || "0");
     const reach = parseFloat(a.reach || "0");
@@ -575,7 +576,7 @@ export async function getTopPerformers(
 
   // Build analytics rows
   const ads: TopPerformerAd[] = allAds.map((a) => {
-    const spend = parseFloat(a.spend || "0");
+    const spend = applyMetaTax(parseFloat(a.spend || "0"), a.date_start); // imposto Meta 12,15% (2026+)
     const impressions = parseFloat(a.impressions || "0");
     const clicks = parseFloat(a.clicks || "0");
     const reach = parseFloat(a.reach || "0");
@@ -678,7 +679,7 @@ export async function getAllAdSetsForProject(
     const revenue = parsePurchaseRevenue(a.action_values);
     const existing = adsetMap.get(key);
     if (existing) {
-      existing.spend += parseFloat(a.spend || "0");
+      existing.spend += applyMetaTax(parseFloat(a.spend || "0"), a.date_start); // imposto Meta 12,15% (2026+)
       existing.impressions += parseFloat(a.impressions || "0");
       existing.clicks += parseFloat(a.clicks || "0");
       existing.reach += parseFloat(a.reach || "0");
@@ -691,7 +692,7 @@ export async function getAllAdSetsForProject(
       adsetMap.set(key, {
         id: a.adset_id,
         campaignName: a.campaign_name ?? "",
-        spend: parseFloat(a.spend || "0"),
+        spend: applyMetaTax(parseFloat(a.spend || "0"), a.date_start), // imposto Meta 12,15% (2026+)
         impressions: parseFloat(a.impressions || "0"),
         clicks: parseFloat(a.clicks || "0"),
         reach: parseFloat(a.reach || "0"),
@@ -747,7 +748,7 @@ export async function getAllAdsForProject(
     const revenue = parsePurchaseRevenue(a.action_values);
     const existing = adMap.get(key);
     if (existing) {
-      existing.spend += parseFloat(a.spend || "0");
+      existing.spend += applyMetaTax(parseFloat(a.spend || "0"), a.date_start); // imposto Meta 12,15% (2026+)
       existing.impressions += parseFloat(a.impressions || "0");
       existing.clicks += parseFloat(a.clicks || "0");
       existing.reach += parseFloat(a.reach || "0");
@@ -760,7 +761,7 @@ export async function getAllAdsForProject(
       adMap.set(key, {
         id: a.ad_id,
         campaignName: a.campaign_name,
-        spend: parseFloat(a.spend || "0"),
+        spend: applyMetaTax(parseFloat(a.spend || "0"), a.date_start), // imposto Meta 12,15% (2026+)
         impressions: parseFloat(a.impressions || "0"),
         clicks: parseFloat(a.clicks || "0"),
         reach: parseFloat(a.reach || "0"),
@@ -1003,11 +1004,13 @@ export async function getPlacementBreakdown(
     rawAll = await fetchPlacementBreakdown(metaAccount.metaAccountId, metaAccount.accessToken, days);
   }
 
-  // Aggregate by platform+position
+  // Aggregate by platform+position. Placement insights não trazem date_start
+  // (agregado por posicionamento); usa a data atual para decidir o imposto (2026+).
+  const placementTaxDate = new Date().toISOString().slice(0, 10);
   const agg = new Map<string, { spend: number; impressions: number; clicks: number; linkClicks: number; leads: number }>();
   for (const r of rawAll) {
     const key = `${r.publisher_platform}|${r.platform_position}`;
-    const spend = parseFloat(r.spend || "0");
+    const spend = applyMetaTax(parseFloat(r.spend || "0"), placementTaxDate); // imposto Meta 12,15% (2026+)
     const impressions = parseFloat(r.impressions || "0");
     const clicks = parseFloat(r.clicks || "0");
     const linkClicks = parseActionCount(r.actions, "link_click");

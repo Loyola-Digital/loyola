@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useCrossReferenceLeads } from "@/lib/hooks/useCrossReferenceLeads";
+import { applyMetaAdsTax } from "@/lib/utils/funnel-metrics";
 
 export interface CreativePerformanceData {
   adId: string;
@@ -105,9 +106,26 @@ export function useStageCreativePerformance({
   const enrichedData = useMemo(() => {
     if (!baseQuery.data) return baseQuery.data;
 
-    // If no projectId or no crossref data, return base data as-is
+    // Imposto Meta Ads de 12,15% (2026+): o spend cru da API não inclui. Aplica ao
+    // spend de cada criativo + summary pra bater com o card "Investimento" e a
+    // Dados Diários (que já usam applyMetaAdsTax). Como o spend é agregado no
+    // período, usamos a data atual (lançamentos correntes são 2026+).
+    const taxDate = new Date().toISOString().slice(0, 10);
+    const taxed: StageCreativePerformanceResponse = {
+      ...baseQuery.data,
+      creatives: baseQuery.data.creatives.map((c) => ({
+        ...c,
+        spend: applyMetaAdsTax(c.spend, taxDate),
+      })),
+      summary: {
+        ...baseQuery.data.summary,
+        totalSpend: applyMetaAdsTax(baseQuery.data.summary.totalSpend, taxDate),
+      },
+    };
+
+    // If no projectId or no crossref data, return taxed base data as-is
     if (!projectId || !crossrefQuery.leads || Object.keys(crossrefQuery.leads).length === 0) {
-      return baseQuery.data;
+      return taxed;
     }
 
     // Story 18.47: prioriza leads por Ad Name (soma TODOS os ad_ids daquele
@@ -120,8 +138,8 @@ export function useStageCreativePerformance({
       leadsByAdNameNorm[norm(k)] = v;
     }
 
-    // Enrich creatives with crossref leads and term
-    const enrichedCreatives = baseQuery.data.creatives.map((creative) => {
+    // Enrich creatives with crossref leads and term (spend já com imposto via `taxed`)
+    const enrichedCreatives = taxed.creatives.map((creative) => {
       const crossrefLeads =
         leadsByAdNameNorm[norm(creative.adName)] ??
         crossrefQuery.leads[creative.adId] ??
@@ -138,10 +156,10 @@ export function useStageCreativePerformance({
     const totalLeads = enrichedCreatives.reduce((sum, c) => sum + c.leads, 0);
 
     return {
-      ...baseQuery.data,
+      ...taxed,
       creatives: enrichedCreatives,
       summary: {
-        ...baseQuery.data.summary,
+        ...taxed.summary,
         totalLeads,
       },
     };
