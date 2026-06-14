@@ -30,6 +30,12 @@ interface CrossedFunnelDailyTableProps {
   surveyUnmatched?: number | null;
   salesByDay?: Record<string, number>;
   /**
+   * Story 18.48: vendas (ingressos) dedup por dia × origem. Na etapa Paga, as
+   * colunas de ingresso (Total/Pg/Org/s-track) usam ISSO em vez dos leads.
+   * O card "Leads Popup" (fora desta tabela) continua usando leads.
+   */
+  ingressosByDay?: Record<string, { pago: number; org: number; semTrack: number }>;
+  /**
    * Map de adset_id → adset_name vindo da Meta API. Quando informado, o
    * tooltip de Total Leads resolve `utm_medium` (que armazena o adset_id)
    * pro nome humano e re-agrupa pelos mesmos nomes (vários IDs com
@@ -150,6 +156,7 @@ export function CrossedFunnelDailyTable({
   surveyMatched,
   surveyUnmatched,
   salesByDay,
+  ingressosByDay,
   adsetsMap,
   projectId,
   funnelId,
@@ -157,6 +164,19 @@ export function CrossedFunnelDailyTable({
 }: CrossedFunnelDailyTableProps) {
   // Story 18.31: Condicionais por etapa (paid = Captação Paga, free = Captação Gratuita)
   const isPaidCapture = stageType === "paid";
+  // Story 18.48: na etapa Paga, as colunas de ingresso contam VENDAS (dedup) por
+  // origem, não leads. Só ativa quando há dados de vendas por dia.
+  const usesIngressos = isPaidCapture && !!ingressosByDay && Object.keys(ingressosByDay).length > 0;
+  const getIngresso = (date: string) => {
+    const v = ingressosByDay?.[date];
+    return { pago: v?.pago ?? 0, org: v?.org ?? 0, semTrack: v?.semTrack ?? 0 };
+  };
+  const ingressosTotais = usesIngressos
+    ? Object.values(ingressosByDay!).reduce(
+        (a, v) => ({ pago: a.pago + v.pago, org: a.org + v.org, semTrack: a.semTrack + v.semTrack }),
+        { pago: 0, org: 0, semTrack: 0 },
+      )
+    : null;
   const labels = useMemo(() => ({
     totalLeads: isPaidCapture ? "Total Ingressos" : "Total Leads",
     leadsPg: isPaidCapture ? "Ingressos Pg" : "Leads Pg",
@@ -308,7 +328,11 @@ export function CrossedFunnelDailyTable({
           </TableHeader>
           <TableBody>
             {rows.map((r) => {
-              const totalLeads = r.leadsPagos + r.leadsOrg + r.leadsSemTrack;
+              // Story 18.48: na Paga usa vendas (ingressos) por origem; senão leads.
+              const ing = usesIngressos
+                ? getIngresso(r.date)
+                : { pago: r.leadsPagos, org: r.leadsOrg, semTrack: r.leadsSemTrack };
+              const totalLeads = ing.pago + ing.org + ing.semTrack;
               const turn = turnsByDate.get(r.date);
               return (
                 <TableRow
@@ -335,7 +359,9 @@ export function CrossedFunnelDailyTable({
                     {fmtCurrency(salesByDay ? (salesByDay[r.date] ?? 0) : r.faturamento)}
                   </TableCell>
                   <TableCell className="text-right">
-                    {renderTotalLeadsCell(totalLeads, r.leadsByMedium, effectiveAdsetsMap)}
+                    {usesIngressos
+                      ? fmtInt(totalLeads)
+                      : renderTotalLeadsCell(totalLeads, r.leadsByMedium, effectiveAdsetsMap)}
                   </TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cplPg)}</TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cplG)}</TableCell>
@@ -347,9 +373,9 @@ export function CrossedFunnelDailyTable({
                   <TableCell className="text-right">{fmtInt(r.lpView)}</TableCell>
                   <TableCell className="text-right">{renderConnectRate(r.connectRate)}</TableCell>
                   <TableCell className="text-right">{fmtPercent(r.txConv)}</TableCell>
-                  <TableCell className="text-right">{fmtInt(r.leadsPagos)}</TableCell>
-                  <TableCell className="text-right">{fmtInt(r.leadsOrg)}</TableCell>
-                  <TableCell className="text-right">{fmtInt(r.leadsSemTrack)}</TableCell>
+                  <TableCell className="text-right">{fmtInt(ing.pago)}</TableCell>
+                  <TableCell className="text-right">{fmtInt(ing.org)}</TableCell>
+                  <TableCell className="text-right">{fmtInt(ing.semTrack)}</TableCell>
                 </TableRow>
               );
             })}
@@ -362,11 +388,13 @@ export function CrossedFunnelDailyTable({
                 {fmtCurrency(salesTotal !== null ? salesTotal : totals.faturamento)}
               </TableCell>
               <TableCell className="text-right">
-                {renderTotalLeadsCell(
-                  totals.leadsPagos + totals.leadsOrg + totals.leadsSemTrack,
-                  totals.leadsByMedium,
-                  effectiveAdsetsMap,
-                )}
+                {usesIngressos
+                  ? fmtInt(ingressosTotais!.pago + ingressosTotais!.org + ingressosTotais!.semTrack)
+                  : renderTotalLeadsCell(
+                      totals.leadsPagos + totals.leadsOrg + totals.leadsSemTrack,
+                      totals.leadsByMedium,
+                      effectiveAdsetsMap,
+                    )}
               </TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.cplPg)}</TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.cplG)}</TableCell>
@@ -378,9 +406,9 @@ export function CrossedFunnelDailyTable({
               <TableCell className="text-right">{fmtInt(totals.lpView)}</TableCell>
               <TableCell className="text-right">{renderConnectRate(totals.connectRate)}</TableCell>
               <TableCell className="text-right">{fmtPercent(totals.txConv)}</TableCell>
-              <TableCell className="text-right">{fmtInt(totals.leadsPagos)}</TableCell>
-              <TableCell className="text-right">{fmtInt(totals.leadsOrg)}</TableCell>
-              <TableCell className="text-right">{fmtInt(totals.leadsSemTrack)}</TableCell>
+              <TableCell className="text-right">{fmtInt(usesIngressos ? ingressosTotais!.pago : totals.leadsPagos)}</TableCell>
+              <TableCell className="text-right">{fmtInt(usesIngressos ? ingressosTotais!.org : totals.leadsOrg)}</TableCell>
+              <TableCell className="text-right">{fmtInt(usesIngressos ? ingressosTotais!.semTrack : totals.leadsSemTrack)}</TableCell>
             </TableRow>
           </TableFooter>
         </Table>
@@ -395,9 +423,9 @@ export function CrossedFunnelDailyTable({
         <div className="rounded-md border border-border/30 bg-muted/20 px-4 py-3 space-y-2 text-sm">
           <div className="flex flex-wrap gap-4">
             <div>
-              <span className="text-muted-foreground">Leads:</span>
+              <span className="text-muted-foreground">{usesIngressos ? "Ingressos:" : "Leads:"}</span>
               <span className="font-medium ml-2">
-                {fmtInt(totals.leadsPagos)} Pagos | {fmtInt(totals.leadsOrg)} Org | {fmtInt(totals.leadsSemTrack)} Sem origem
+                {fmtInt(usesIngressos ? ingressosTotais!.pago : totals.leadsPagos)} Pagos | {fmtInt(usesIngressos ? ingressosTotais!.org : totals.leadsOrg)} Org | {fmtInt(usesIngressos ? ingressosTotais!.semTrack : totals.leadsSemTrack)} Sem origem
               </span>
             </div>
             {surveyTotal != null && (
