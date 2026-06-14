@@ -164,6 +164,12 @@ export interface StageSalesData {
    */
   faturamentoPago: number;
   vendasPago: number;
+  /**
+   * Story 18.48: contagem de vendas (ingressos) deduplicadas por dia × origem.
+   * Mesma dedup do `totalVendas` → soma bate. Origem pela utm_source da venda.
+   * Usado pela Dados Diários da etapa Paga (Total Ingressos = vendas, não leads).
+   */
+  ingressosByDay?: Record<string, { pago: number; org: number; semTrack: number }>;
   porCanal: { canal: string; vendas: number; bruto: number; liquido: number }[];
   porFormaPagamento: { forma: string; vendas: number; bruto: number; liquido: number }[];
   porUtmSource: { fonte: string; vendas: number; bruto: number; liquido: number }[];

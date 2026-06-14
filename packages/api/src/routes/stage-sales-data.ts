@@ -463,10 +463,27 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       const utmMediumMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const utmTermMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const utmContentMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+      // Story 18.48: ingressos (vendas dedup) por dia × origem. Mesma dedup do
+      // total (emailMap) → soma bate com totalVendas da planilha. Origem por
+      // classifyFonte(utm_source); dia pela lastDate da entrada deduplicada.
+      const ingressosByDay: Record<string, { pago: number; org: number; semTrack: number }> = {};
+      const addIngresso = (date: Date | null, fonte: "Pago" | "Orgânico" | "Sem Track") => {
+        if (!date) return;
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, "0");
+        const d = String(date.getDate()).padStart(2, "0");
+        const key = `${y}-${m}-${d}`;
+        const e = ingressosByDay[key] ?? { pago: 0, org: 0, semTrack: 0 };
+        if (fonte === "Pago") e.pago += 1;
+        else if (fonte === "Sem Track") e.semTrack += 1;
+        else e.org += 1;
+        ingressosByDay[key] = e;
+      };
 
-      for (const { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent } of emailMap.values()) {
+      for (const { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate } of emailMap.values()) {
         totalBruto += bruto;
         totalLiquido += liquido;
+        addIngresso(lastDate, classifyFonte(utmSource)); // Story 18.48
 
         const canalEntry = canalMap.get(canal) ?? { vendas: 0, bruto: 0, liquido: 0 };
         canalEntry.vendas += 1;
@@ -535,6 +552,10 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         );
       const manualVendas = manualRows.length;
       const manualBruto = manualRows.reduce((s, r) => s + (Number(r.value) || 0), 0);
+      // Story 18.48: vendas manuais (PIX direto) entram como ingresso "sem track".
+      for (const mr of manualRows) {
+        addIngresso(mr.saleDate ? new Date(mr.saleDate) : null, "Sem Track");
+      }
 
       const totalVendas = totalVendasPlanilha + manualVendas;
       const totalBrutoCombined = totalBrutoPlanilha + manualBruto;
@@ -680,6 +701,8 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         ticketMedioSemTrack,
         faturamentoPago,
         vendasPago,
+        ingressosByDay, // Story 18.48: contagem de vendas (dedup) por dia × origem
+
         porCanal: Array.from(canalMap.entries())
           .map(([canal, v]) => ({ canal, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
