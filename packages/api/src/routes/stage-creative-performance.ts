@@ -214,6 +214,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           { count: number; emails: Set<string>; utmTermCounts: Map<string, number> }
         >();
         const revenueByAdId = new Map<string, number>();
+        // Story 18.49: rastreia de onde veio o revenue (co= da venda vs email do lead)
+        let revenueSource: "sale_content" | "lead_email" | "none" = "none";
 
         if (leadsSheet && salesSheet) {
           let leadsData, salesData;
@@ -258,8 +260,10 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             };
             const salesMapping = salesData && salesSheet ? (salesSheet.columnMapping as {
               email: string;
+              transactionId?: string;
               valorBruto?: string;
               valorLiquido?: string;
+              utm_content?: string;
             }) : null;
 
             function findCol(headers: string[], name: string | undefined): number {
@@ -279,11 +283,59 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             const saleEmailIdx = salesMapping ? findCol(salesData!.headers, salesMapping.email) : -1;
             const saleBrutoIdx = salesMapping ? findCol(salesData!.headers, salesMapping.valorBruto) : -1;
             const saleLiquidoIdx = salesMapping ? findCol(salesData!.headers, salesMapping.valorLiquido) : -1;
+            const saleUtmContentIdx = salesMapping ? findCol(salesData!.headers, salesMapping.utm_content) : -1;
+            const saleTxIdx = salesMapping ? findCol(salesData!.headers, salesMapping.transactionId) : -1;
+
+            // 5a-bis. Story 18.49: atribuição DIRETA de revenue pelo `co=`
+            // (utm_content) da própria VENDA → ad_id → ad_name. Resolve
+            // Faturamento/ROAS zerados na Paga: o comprador frequentemente NÃO é
+            // um lead popup, então o cruzamento por email do lead (5a/5b) falhava
+            // e o revenue caía pra 0. A planilha de vendas (`n8n-kiwify-captação`)
+            // já tem `co=`, `valorBruto` e a chave de dedup (transactionId/email,
+            // mesma estratégia da Story 18.48 — recompras acumulam, não duplicam).
+            // Quando há `co=` na venda, esta fonte SUBSTITUI o cruzamento por
+            // email (evita dupla contagem). Sem `co=`, mantém o fallback legacy.
+            let revenueFromSaleContent = false;
+            if (salesData && salesMapping && saleUtmContentIdx !== -1) {
+              // dedup por transactionId (preferido) ou email — espelha a 18.48.
+              const saleDedup = new Map<string, { adId: string; value: number }>();
+              for (const row of salesData.rows) {
+                const adId = normalizeNumericId(row[saleUtmContentIdx] ?? "");
+                if (!adId) continue;
+                const bruto = saleBrutoIdx !== -1 ? parseNumber(row[saleBrutoIdx]) : 0;
+                const liquido = saleLiquidoIdx !== -1 ? parseNumber(row[saleLiquidoIdx]) : 0;
+                const value = bruto > 0 ? bruto : liquido;
+                if (value <= 0) continue;
+
+                const email = saleEmailIdx !== -1 ? normalizeEmail(row[saleEmailIdx] ?? "") : "";
+                const txId = saleTxIdx !== -1 ? (row[saleTxIdx] ?? "").trim() : "";
+                const dedupKey = txId ? `tx|${txId}` : email ? `email|${email}` : null;
+
+                if (!dedupKey) {
+                  // sem chave de dedup → atribui direto (não há como deduplicar)
+                  revenueByAdId.set(adId, (revenueByAdId.get(adId) ?? 0) + value);
+                  continue;
+                }
+                const existing = saleDedup.get(dedupKey);
+                if (existing) {
+                  existing.value += value; // recompra: acumula no mesmo registro
+                  existing.adId = adId; // last-write do ad (espelha lastDate da 18.48)
+                } else {
+                  saleDedup.set(dedupKey, { adId, value });
+                }
+              }
+              for (const { adId, value } of saleDedup.values()) {
+                revenueByAdId.set(adId, (revenueByAdId.get(adId) ?? 0) + value);
+              }
+              revenueFromSaleContent = true;
+              revenueSource = "sale_content";
+            }
 
             // 5a. Agrega vendas por email (bruto preferido; liquido como fallback)
-            // Free stages may not have sales data — handle gracefully
+            // Fallback legacy (Gratuita / planilhas sem `co=`): cruza email do
+            // lead × venda. Só roda quando NÃO atribuímos via `co=` da venda.
             const salesByEmail = new Map<string, number>();
-            if (salesData && salesMapping && saleEmailIdx !== -1) {
+            if (!revenueFromSaleContent && salesData && salesMapping && saleEmailIdx !== -1) {
               for (const row of salesData.rows) {
                 const email = normalizeEmail(row[saleEmailIdx] ?? "");
                 if (!email) continue;
@@ -341,8 +393,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
                 }
                 if (!email) continue;
 
-                // Revenue: dedup por email dentro do ad (espelha creative-revenue)
-                if (!agg.emails.has(email)) {
+                // Revenue (fallback legacy): dedup por email dentro do ad.
+                // Story 18.49: pulado quando o revenue veio do `co=` da venda.
+                if (!revenueFromSaleContent && !agg.emails.has(email)) {
                   agg.emails.add(email);
                   const saleValue = salesByEmail.get(email);
                   if (saleValue && saleValue > 0) {
@@ -350,6 +403,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
                       adId,
                       (revenueByAdId.get(adId) ?? 0) + saleValue,
                     );
+                    revenueSource = "lead_email";
                   }
                 }
               }
@@ -539,6 +593,10 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           _debug: {
             leadsSheetExists: !!leadsSheet,
             salesSheetExists: !!salesSheet,
+            // Story 18.49: fonte do revenue (co= da venda vs email do lead)
+            revenueSource,
+            revenueByAdIdCount: revenueByAdId.size,
+            totalRevenue,
             leadsByAdIdCount: leadsByAdId.size,
             leadsByAdId: Array.from(leadsByAdId.entries()).map(([adId, agg]) => ({
               adId,

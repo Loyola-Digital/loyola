@@ -179,8 +179,10 @@ export default fp(async function creativeRevenueRoutes(fastify) {
       };
       const salesMapping = salesSheet.columnMapping as {
         email: string;
+        transactionId?: string;
         valorBruto?: string;
         valorLiquido?: string;
+        utm_content?: string;
         dataVenda?: string;
       };
 
@@ -197,9 +199,21 @@ export default fp(async function creativeRevenueRoutes(fastify) {
       const saleBrutoIdx = findCol(salesData.headers, salesMapping.valorBruto);
       const saleLiquidoIdx = findCol(salesData.headers, salesMapping.valorLiquido);
       const saleDateIdx = findCol(salesData.headers, salesMapping.dataVenda);
+      // Story 18.49: utm_content (co=) e transactionId da própria VENDA
+      const saleUtmContentIdx = findCol(salesData.headers, salesMapping.utm_content);
+      const saleTxIdx = findCol(salesData.headers, salesMapping.transactionId);
 
-      // Sem colunas críticas → nada a cruzar
-      if (leadEmailIdx === -1 || leadUtmIdx === -1 || saleEmailIdx === -1) {
+      // Story 18.49: usamos atribuição direta por `co=` da venda quando a
+      // planilha de vendas tem utm_content. Senão, fallback pro cruzamento
+      // legacy por email do lead (que falha na Paga — comprador != lead popup).
+      const useSaleContent = saleUtmContentIdx !== -1;
+
+      // Sem colunas críticas → nada a cruzar.
+      // - Caminho sale-content: precisa de co= + email/valor da venda.
+      // - Caminho legacy: precisa de email+utm_content do lead + email da venda.
+      if (useSaleContent) {
+        if (saleEmailIdx === -1 && saleTxIdx === -1) return EMPTY_RESPONSE;
+      } else if (leadEmailIdx === -1 || leadUtmIdx === -1 || saleEmailIdx === -1) {
         return EMPTY_RESPONSE;
       }
 
@@ -210,67 +224,133 @@ export default fp(async function creativeRevenueRoutes(fastify) {
         cutoff.setDate(cutoff.getDate() - query.data.days);
       }
 
-      // 5. Agrega vendas por email (dedup + soma)
-      type SaleAgg = { bruto: number; liquido: number };
-      const salesByEmail = new Map<string, SaleAgg>();
-      for (const row of salesData.rows) {
-        const email = normalizeEmail(row[saleEmailIdx] ?? "");
-        if (!email) continue;
-        if (cutoff && saleDateIdx !== -1) {
-          const dt = parseDate(row[saleDateIdx]);
-          if (!dt || dt < cutoff) continue;
-        }
-        const bruto = parseNumber(row[saleBrutoIdx] ?? "");
-        const liquido = parseNumber(row[saleLiquidoIdx] ?? "");
-        const existing = salesByEmail.get(email);
-        if (existing) {
-          existing.bruto += bruto;
-          existing.liquido += liquido;
-        } else {
-          salesByEmail.set(email, { bruto, liquido });
-        }
-      }
-
-      // 6. Cruza leads → vendas e agrega por adId
-      // Para cada ad, mantém um Set<email> pra dedup (AC-4/AC-8: cliente único
-      // por ad). O frontend deduplica de novo entre ad_ids do mesmo grupo.
+      // Para cada ad, mantém um Set de identidades de dedup. O frontend
+      // deduplica de novo entre ad_ids do mesmo criativo (AC-4/AC-8) usando
+      // essas strings (legacy: email; sale-content: tx/email da venda).
       type AdAgg = { faturamentoBruto: number; faturamentoLiquido: number; vendas: number; emails: Set<string> };
       const byAdIdMap = new Map<string, AdAgg>();
+      let totalBruto = 0;
+      let totalLiquido = 0;
+      let totalVendas = 0;
 
-      for (const row of leadsData.rows) {
-        const email = normalizeEmail(row[leadEmailIdx] ?? "");
-        if (!email) continue;
+      if (useSaleContent) {
+        // 5+6 (Story 18.49). Atribuição DIRETA por `co=` (utm_content) da
+        // própria VENDA → ad_id. Resolve revenue zerado na Paga (o comprador
+        // frequentemente não é lead popup → cruzamento por email falhava).
+        // Dedup por transactionId (preferido) ou email — espelha a 18.48
+        // (recompras acumulam no mesmo registro, contam 1 venda).
+        const saleDedup = new Map<string, { adId: string; bruto: number; liquido: number }>();
+        let noKeyCounter = 0;
+        for (const row of salesData.rows) {
+          const adId = normalizeNumericId(row[saleUtmContentIdx] ?? "");
+          if (!adId) continue;
+          if (cutoff && saleDateIdx !== -1) {
+            const dt = parseDate(row[saleDateIdx]);
+            if (!dt || dt < cutoff) continue;
+          }
+          const bruto = parseNumber(row[saleBrutoIdx] ?? "");
+          const liquido = parseNumber(row[saleLiquidoIdx] ?? "");
+          if (bruto <= 0 && liquido <= 0) continue;
 
-        // Filtro de data no LEAD também (se tem coluna de data mapeada).
-        // Caso contrário, todos os leads entram e o filtro já é aplicado nas
-        // vendas — dupla proteção é mais segura.
-        if (cutoff && leadDateIdx !== -1) {
-          const dt = parseDate(row[leadDateIdx]);
-          if (!dt || dt < cutoff) continue;
+          const email = saleEmailIdx !== -1 ? normalizeEmail(row[saleEmailIdx] ?? "") : "";
+          const txId = saleTxIdx !== -1 ? (row[saleTxIdx] ?? "").trim() : "";
+          let dedupKey = txId ? `tx:${txId}` : email ? `email:${email}` : "";
+          if (!dedupKey) dedupKey = `row:${noKeyCounter++}`;
+
+          const existing = saleDedup.get(dedupKey);
+          if (existing) {
+            existing.bruto += bruto;
+            existing.liquido += liquido;
+            existing.adId = adId; // last-write do ad (espelha lastDate da 18.48)
+          } else {
+            saleDedup.set(dedupKey, { adId, bruto, liquido });
+          }
         }
-
-        const sale = salesByEmail.get(email);
-        if (!sale) continue;
-
-        const adId = normalizeNumericId(row[leadUtmIdx] ?? "");
-        if (!adId) continue;
-
-        const ad = byAdIdMap.get(adId) ?? {
-          faturamentoBruto: 0,
-          faturamentoLiquido: 0,
-          vendas: 0,
-          emails: new Set<string>(),
-        };
-        if (!ad.emails.has(email)) {
-          ad.emails.add(email);
-          ad.faturamentoBruto += sale.bruto;
-          ad.faturamentoLiquido += sale.liquido;
+        for (const [identity, { adId, bruto, liquido }] of saleDedup.entries()) {
+          const ad = byAdIdMap.get(adId) ?? {
+            faturamentoBruto: 0,
+            faturamentoLiquido: 0,
+            vendas: 0,
+            emails: new Set<string>(),
+          };
+          ad.emails.add(identity);
+          ad.faturamentoBruto += bruto;
+          ad.faturamentoLiquido += liquido;
           ad.vendas += 1;
+          byAdIdMap.set(adId, ad);
+          totalBruto += bruto;
+          totalLiquido += liquido;
+          totalVendas += 1;
         }
-        byAdIdMap.set(adId, ad);
+      } else {
+        // 5. (Legacy) Agrega vendas por email (dedup + soma)
+        type SaleAgg = { bruto: number; liquido: number };
+        const salesByEmail = new Map<string, SaleAgg>();
+        for (const row of salesData.rows) {
+          const email = normalizeEmail(row[saleEmailIdx] ?? "");
+          if (!email) continue;
+          if (cutoff && saleDateIdx !== -1) {
+            const dt = parseDate(row[saleDateIdx]);
+            if (!dt || dt < cutoff) continue;
+          }
+          const bruto = parseNumber(row[saleBrutoIdx] ?? "");
+          const liquido = parseNumber(row[saleLiquidoIdx] ?? "");
+          const existing = salesByEmail.get(email);
+          if (existing) {
+            existing.bruto += bruto;
+            existing.liquido += liquido;
+          } else {
+            salesByEmail.set(email, { bruto, liquido });
+          }
+        }
+
+        // 6. (Legacy) Cruza leads → vendas e agrega por adId (cruzamento por email)
+        for (const row of leadsData.rows) {
+          const email = normalizeEmail(row[leadEmailIdx] ?? "");
+          if (!email) continue;
+
+          // Filtro de data no LEAD também (se tem coluna de data mapeada).
+          if (cutoff && leadDateIdx !== -1) {
+            const dt = parseDate(row[leadDateIdx]);
+            if (!dt || dt < cutoff) continue;
+          }
+
+          const sale = salesByEmail.get(email);
+          if (!sale) continue;
+
+          const adId = normalizeNumericId(row[leadUtmIdx] ?? "");
+          if (!adId) continue;
+
+          const ad = byAdIdMap.get(adId) ?? {
+            faturamentoBruto: 0,
+            faturamentoLiquido: 0,
+            vendas: 0,
+            emails: new Set<string>(),
+          };
+          if (!ad.emails.has(email)) {
+            ad.emails.add(email);
+            ad.faturamentoBruto += sale.bruto;
+            ad.faturamentoLiquido += sale.liquido;
+            ad.vendas += 1;
+          }
+          byAdIdMap.set(adId, ad);
+        }
+
+        // Totais globais legacy (dedup por email independente do ad)
+        const globalEmails = new Set<string>();
+        for (const ad of byAdIdMap.values()) {
+          for (const email of ad.emails) {
+            if (globalEmails.has(email)) continue;
+            globalEmails.add(email);
+            const sale = salesByEmail.get(email)!;
+            totalBruto += sale.bruto;
+            totalLiquido += sale.liquido;
+          }
+        }
+        totalVendas = globalEmails.size;
       }
 
-      // 7. Serializa byAdId (Set → array) + totais globais
+      // 7. Serializa byAdId (Set → array)
       const byAdId: Record<string, { faturamentoBruto: number; faturamentoLiquido: number; vendas: number; emails: string[] }> = {};
       for (const [adId, ad] of byAdIdMap.entries()) {
         byAdId[adId] = {
@@ -281,23 +361,9 @@ export default fp(async function creativeRevenueRoutes(fastify) {
         };
       }
 
-      // Totais globais (dedup por email independente do ad)
-      const globalEmails = new Set<string>();
-      let totalBruto = 0;
-      let totalLiquido = 0;
-      for (const ad of byAdIdMap.values()) {
-        for (const email of ad.emails) {
-          if (globalEmails.has(email)) continue;
-          globalEmails.add(email);
-          const sale = salesByEmail.get(email)!;
-          totalBruto += sale.bruto;
-          totalLiquido += sale.liquido;
-        }
-      }
-
       return {
         byAdId,
-        totalVendas: globalEmails.size,
+        totalVendas,
         faturamentoBruto: totalBruto,
         faturamentoLiquido: totalLiquido,
         semDados: false,
