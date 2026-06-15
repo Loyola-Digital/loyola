@@ -1,26 +1,23 @@
 "use client";
 
 import { Megaphone } from "lucide-react";
-import type { AutoPhase } from "./summary-utils";
 
 interface BlockSummaryCardProps {
-  /** Texto livre do manualContext. Renderiza no topo. */
+  /** Rótulo da seção (ex: "Contexto", "Bônus"). Default "Contexto". */
+  label?: string;
+  /** Texto livre da seção. Esconde quando vazio. */
   manualText?: string | null;
-  /** Fases derivadas das tasks com 📢 — usadas só pra decidir se renderiza
-   * (não exibidas dentro do card pra evitar duplicar com a seção "Fases"
-   * do CampaignCard). */
-  phases: AutoPhase[];
   accentColor: string;
 }
 
 /**
- * Story 31.8 iter — Card resumo: SÓ o texto manualContext. Fases viviam aqui
- * antes mas duplicavam visualmente com a seção "Fases" do CampaignCard, então
- * agora ficam só lá. Componente esconde quando não tem texto manual.
+ * Card de conteúdo de uma seção do Calendário Macro (Contexto, Bônus, etc).
+ * Renderiza o texto da seção com o rótulo escolhido pelo time. Esconde quando
+ * não há texto.
  */
-export function BlockSummaryCard({ manualText, phases: _phases, accentColor }: BlockSummaryCardProps) {
-  const hasManual = !!manualText && manualText.trim().length > 0;
-  if (!hasManual) return null;
+export function BlockSummaryCard({ label = "Contexto", manualText, accentColor }: BlockSummaryCardProps) {
+  const hasText = !!manualText && manualText.trim().length > 0;
+  if (!hasText) return null;
 
   return (
     <div
@@ -29,7 +26,7 @@ export function BlockSummaryCard({ manualText, phases: _phases, accentColor }: B
     >
       <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         <Megaphone className="h-3 w-3" />
-        Contexto do lançamento
+        {label}
       </div>
 
       <p className="text-xs leading-relaxed whitespace-pre-wrap text-foreground/90">
