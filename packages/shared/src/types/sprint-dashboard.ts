@@ -29,6 +29,19 @@ export interface SprintCampaignPhase {
   color?: string;
 }
 
+/**
+ * Seção de conteúdo do card no Calendário Macro. Cada seção vira um botão
+ * (ex: "Contexto", "Bônus") — clicar mostra/esconde o conteúdo. O time escolhe
+ * o label de cada botão.
+ */
+export interface SprintContextSection {
+  id: string;
+  /** Rótulo do botão (ex: "Contexto", "Bônus", "Oferta") */
+  label: string;
+  /** Texto livre exibido quando a seção está aberta */
+  content: string;
+}
+
 export interface SprintDashboardBlock {
   /** UUID gerado no frontend (estável entre updates) */
   id: string;
@@ -46,9 +59,12 @@ export interface SprintDashboardBlock {
   sortOrder: number;
   /** Fases da campanha pro Calendário Macro (opcional) */
   campaignPhases?: SprintCampaignPhase[];
-  /** Story 31.7: contexto manual no card resumo da Visão Geral. Sobrescreve
-   * qualquer task marcada com 📢/📣 no ClickUp. Empty/null = usa auto. */
+  /** Story 31.7: contexto manual (legado, seção única). Mantido por compat —
+   * migrado pra `contextSections` na 1ª edição. Empty/null = usa auto. */
   manualContext?: string | null;
+  /** Seções de conteúdo do Calendário Macro (botões: Contexto, Bônus, etc).
+   * Cada uma aparece só ao clicar no botão correspondente. */
+  contextSections?: SprintContextSection[];
   /** Escopo de prazo das tarefas exibidas no card da Visão Geral:
    * - "today_overdue": só tarefas de hoje + atrasadas (default de novos cards)
    * - "all": todas as tarefas do bloco

@@ -1,12 +1,18 @@
 "use client";
 
+import { useState } from "react";
 import { format, parseISO, isValid } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Megaphone } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { SprintDashboardBlock, SprintCampaignPhase } from "@loyola-x/shared";
 import type { ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
-import { collectBlockTasks, extractAutoPhases, type AutoPhase } from "./summary-utils";
+import {
+  collectBlockTasks,
+  extractAutoPhases,
+  getBlockContextSections,
+  type AutoPhase,
+} from "./summary-utils";
 import { BlockSummaryCard } from "./block-summary-card";
 
 interface MacroCalendarViewProps {
@@ -65,13 +71,12 @@ export function MacroCalendarView({ blocks, tasksByListId, onEditContext }: Macr
 
   return (
     <div className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-      {allBlocks.map(({ block, phases, source, autoPhases }) => (
+      {allBlocks.map(({ block, phases, source }) => (
         <CampaignCard
           key={block.id}
           block={block}
           phases={phases}
           source={source as "auto" | "manual"}
-          autoPhases={autoPhases}
           onEditContext={onEditContext}
         />
       ))}
@@ -83,19 +88,19 @@ function CampaignCard({
   block,
   phases,
   source,
-  autoPhases,
   onEditContext,
 }: {
   block: SprintDashboardBlock;
   phases: SprintCampaignPhase[];
   source: "auto" | "manual";
-  autoPhases: AutoPhase[];
   onEditContext?: (block: SprintDashboardBlock) => void;
 }) {
+  const [openSectionId, setOpenSectionId] = useState<string | null>(null);
   const phaseStates = phases.map((p) => derivePhaseState(p));
   const isLive = phaseStates.some((s) => s === "in-progress");
-  const manualText = block.manualContext?.trim() ?? "";
-  const hasSummary = manualText.length > 0 || autoPhases.length > 0;
+  // Seções de contexto (botões). Migra o manualContext legado pra seção "Contexto".
+  const sections = getBlockContextSections(block);
+  const openSection = sections.find((s) => s.id === openSectionId) ?? null;
 
   return (
     <div className="rounded-xl border border-border/40 bg-card/60 p-4 space-y-3">
@@ -127,22 +132,44 @@ function CampaignCard({
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 gap-1 text-[10px] text-muted-foreground hover:text-foreground shrink-0"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground shrink-0"
             onClick={() => onEditContext(block)}
-            title="Editar contexto do bloco"
+            title="Editar contexto e seções (Contexto, Bônus, …)"
           >
-            <Megaphone className="h-3 w-3" />
-            Contexto
+            <Pencil className="h-3.5 w-3.5" />
           </Button>
         )}
       </div>
 
-      {/* Story 31.8 iter — Resumo executivo (manual + fases auto) migrou
-          do BlockCard pra cá. Aparece quando há manualContext ou tasks 📢. */}
-      {hasSummary && (
+      {/* Botões de seção (Contexto, Bônus, …). O conteúdo aparece só ao clicar. */}
+      {sections.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {sections.map((s) => {
+            const active = s.id === openSectionId;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setOpenSectionId(active ? null : s.id)}
+                className={`text-[10px] font-medium px-2 py-1 rounded-full border transition-colors ${
+                  active
+                    ? "border-transparent text-white"
+                    : "border-border/50 text-muted-foreground hover:bg-muted/40"
+                }`}
+                style={active ? { background: block.color } : undefined}
+              >
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Conteúdo da seção aberta */}
+      {openSection && (
         <BlockSummaryCard
-          manualText={manualText}
-          phases={autoPhases}
+          label={openSection.label}
+          manualText={openSection.content}
           accentColor={block.color}
         />
       )}

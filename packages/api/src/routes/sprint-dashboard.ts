@@ -83,6 +83,16 @@ const blockSchema = z.object({
   manualContext: z.string().max(2000).nullable().optional(),
   /** Escopo de prazo das tarefas no card (default today_overdue) */
   dueScope: z.enum(["all", "today_overdue"]).optional(),
+  /** Seções de contexto (botões customizáveis no Calendário Macro) */
+  contextSections: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        label: z.string().min(1).max(40),
+        content: z.string().max(2000),
+      }),
+    )
+    .optional(),
 });
 
 const putBodySchema = z.object({

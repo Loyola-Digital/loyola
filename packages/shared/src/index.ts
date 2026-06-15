@@ -62,6 +62,7 @@ export type {
   SprintDashboardBlock,
   SprintDashboardConfig,
   SprintCampaignPhase,
+  SprintContextSection,
 } from "./types/sprint-dashboard.js";
 
 export type {

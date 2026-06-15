@@ -3,8 +3,22 @@
  * CampaignCard (Calendário Macro).
  */
 
-import type { SprintDashboardBlock } from "@loyola-x/shared";
+import type { SprintDashboardBlock, SprintContextSection } from "@loyola-x/shared";
 import type { ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
+
+/**
+ * Seções de contexto do bloco (botões do Calendário Macro). Migra o
+ * `manualContext` legado pra uma seção única "Contexto" quando o bloco ainda
+ * não tem `contextSections`. Retorna [] quando não há nada.
+ */
+export function getBlockContextSections(block: SprintDashboardBlock): SprintContextSection[] {
+  if (block.contextSections && block.contextSections.length > 0) {
+    return block.contextSections;
+  }
+  const legacy = block.manualContext?.trim();
+  if (legacy) return [{ id: "context", label: "Contexto", content: legacy }];
+  return [];
+}
 
 // Estados de "done" no ClickUp — variações usadas pelos times Loyola.
 const DONE_STATUSES = new Set([
