@@ -81,6 +81,8 @@ const blockSchema = z.object({
   campaignPhases: z.array(campaignPhaseSchema).optional(),
   /** Story 31.7 */
   manualContext: z.string().max(2000).nullable().optional(),
+  /** Escopo de prazo das tarefas no card (default today_overdue) */
+  dueScope: z.enum(["all", "today_overdue"]).optional(),
 });
 
 const putBodySchema = z.object({

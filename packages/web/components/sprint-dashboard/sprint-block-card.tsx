@@ -12,6 +12,7 @@ import {
   isDoneStatus,
   getCampaignHealth,
   shouldCountForHealth,
+  getPendingTasks,
 } from "./summary-utils";
 import { PendingTasksList } from "./pending-tasks-list";
 
@@ -48,7 +49,18 @@ export function SprintBlockCard({
     return applyFilters(all, block.filters);
   }, [block.clickupListIds, block.filters, tasksByListId]);
 
-  const tasks = useMemo(() => allTasks.filter(shouldCountForHealth), [allTasks]);
+  // Escopo de prazo do card. Default "today_overdue" (pedido do time): o card
+  // mostra só tarefas de hoje + atrasadas. "all" mostra tudo. Saúde (health)
+  // sempre usa o universo completo (allTasks), então a % não muda com o filtro.
+  const dueScope = block.dueScope ?? "today_overdue";
+  const tasks = useMemo(() => {
+    const counted = allTasks.filter(shouldCountForHealth);
+    if (dueScope === "today_overdue") {
+      const pendingIds = new Set(getPendingTasks(counted).map((p) => p.task.id));
+      return counted.filter((t) => pendingIds.has(t.id));
+    }
+    return counted;
+  }, [allTasks, dueScope]);
 
   const grouped = useMemo(() => {
     if (!block.groupBy) {
@@ -115,7 +127,9 @@ export function SprintBlockCard({
             </span>
           </div>
           <p className="text-[10px] text-muted-foreground">
-            {tasks.length} tarefa(s) · {completedCount} concluída(s)
+            {dueScope === "today_overdue"
+              ? `${tasks.length} pendente(s) · hoje + atrasadas`
+              : `${tasks.length} tarefa(s) · ${completedCount} concluída(s)`}
           </p>
         </div>
       </div>
@@ -132,7 +146,9 @@ export function SprintBlockCard({
         </div>
       ) : tasks.length === 0 ? (
         <p className="text-xs text-muted-foreground py-4 text-center">
-          Sem tarefas neste bloco
+          {dueScope === "today_overdue"
+            ? "Nenhuma tarefa pra hoje ou atrasada 🎉"
+            : "Sem tarefas neste bloco"}
         </p>
       ) : (
         <div className="space-y-3">
@@ -223,8 +239,12 @@ export function SprintBlockCard({
         </div>
       )}
 
-      {/* Story 31.9 — Tasks pendentes (atraso + hoje) migraram do Calendário Macro pra cá. */}
-      {!loading && <PendingTasksList block={block} tasksByListId={tasksByListId} />}
+      {/* Story 31.9 — Tasks pendentes (atraso + hoje) migraram do Calendário Macro pra cá.
+          No modo "today_overdue" a lista principal já é só pendentes, então essa
+          seção fica redundante e é omitida. */}
+      {!loading && dueScope === "all" && (
+        <PendingTasksList block={block} tasksByListId={tasksByListId} />
+      )}
     </div>
   );
 }
