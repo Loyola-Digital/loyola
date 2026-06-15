@@ -631,24 +631,23 @@ export default fp(async function manualSalesRoutes(fastify) {
           const dt = dataIdx !== -1 ? parseSheetDate(row[dataIdx]) : null;
           if (dt && dt < cutoff) continue;
 
-          // Dedup APENAS por transaction_id real (retry do gateway). Sem txId,
-          // cada linha da planilha é uma venda distinta — recompras do mesmo
-          // cliente (mesmo email/valor, ex: 2x no mesmo dia) NÃO são colapsadas.
-          // A chave antiga `email|valor` descartava essas recompras legítimas e
-          // fazia o faturamento da tabela divergir do KPI do topo.
+          // Dash de Vendas: dedup por (transaction_id + produto). Order bumps —
+          // mesmo pedido (mesmo ID) com produtos diferentes, ex: Basic + Advanced
+          // — contam como vendas separadas; só retry literal (mesmo pedido +
+          // mesmo produto) é colapsado. Sem txId, cada linha é uma venda distinta.
           const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
+          const explicitProduct = productIdx !== -1 ? (row[productIdx] ?? "").trim() : "";
           if (txId) {
-            const dedupKey = `${sheet.id}|tx|${txId}`;
+            const dedupKey = `${sheet.id}|tx|${txId}|${explicitProduct.toLowerCase()}`;
             if (seenDedup.has(dedupKey)) continue;
             seenDedup.add(dedupKey);
           }
-          const rowId = txId ? `tx|${txId}` : `row|${rowIndex}`;
+          const rowId = txId ? `tx|${txId}|${explicitProduct}` : `row|${rowIndex}`;
 
           const value = parseBrNumber(row[brutoIdx]);
           const canal = canalIdx !== -1 ? (row[canalIdx] ?? "").trim() : "";
           const utm = utmSourceIdx !== -1 ? (row[utmSourceIdx] ?? "").trim() : "";
           const explicitName = nameIdx !== -1 ? (row[nameIdx] ?? "").trim() : "";
-          const explicitProduct = productIdx !== -1 ? (row[productIdx] ?? "").trim() : "";
 
           out.push({
             id: `sheet:${sheet.id}:${rowId}`,

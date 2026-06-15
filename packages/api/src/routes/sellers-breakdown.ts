@@ -185,7 +185,7 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
 
       // Confirma stage pertence a esse funnel/projeto
       const [stage] = await fastify.db
-        .select({ id: funnelStages.id })
+        .select({ id: funnelStages.id, stageType: funnelStages.stageType })
         .from(funnelStages)
         .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
         .where(
@@ -362,6 +362,7 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
           valorBruto?: string;
           utm_source?: string;
           dataVenda?: string;
+          productName?: string;
         };
 
         let sheetData;
@@ -384,6 +385,7 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
         const brutoIdx = colIdx(mapping.valorBruto);
         const utmSourceIdx = colIdx(mapping.utm_source);
         const dataIdx = colIdx(mapping.dataVenda);
+        const productIdx = colIdx(mapping.productName);
 
         let rowIndex = -1;
         for (const row of rows) {
@@ -402,9 +404,17 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
           // gateway); sem txId, a chave usa o índice da linha pra não colapsar
           // recompras do mesmo cliente — mantém a contagem por vendedor igual à
           // tabela de vendas (all-sales) e ao KPI (sales-data).
+          //
+          // Dash de Vendas (stageType "sales"): inclui o produto na chave por
+          // txId pra order bumps (mesmo pedido, produtos diferentes) contarem
+          // separado. Outras etapas (paid) mantêm dedup só por txId.
           const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
+          const product =
+            stage.stageType === "sales" && productIdx !== -1
+              ? (row[productIdx] ?? "").trim().toLowerCase()
+              : "";
           const dedupKey = txId
-            ? `${spreadsheet.id}|tx|${txId}`
+            ? `${spreadsheet.id}|tx|${txId}${product ? `|${product}` : ""}`
             : `${spreadsheet.id}|row|${rowIndex}`;
           if (seenDedupKeys.has(dedupKey)) continue;
           seenDedupKeys.add(dedupKey);
