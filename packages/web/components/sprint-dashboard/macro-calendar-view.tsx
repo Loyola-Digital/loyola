@@ -35,31 +35,29 @@ function autoPhasesAsCampaignPhases(autoPhases: AutoPhase[]): SprintCampaignPhas
 }
 
 export function MacroCalendarView({ blocks, tasksByListId, onEditContext }: MacroCalendarViewProps) {
-  // Story 31.7 iter: cada bloco usa fases do ClickUp (tasks 📢) quando há;
-  // senão cai pro campaignPhases configurado manualmente. Cards só aparecem
-  // se um dos dois entrega ao menos 1 fase.
-  const blocksWithPhases = blocks
-    .map((block) => {
-      const allTasks = collectBlockTasks(block, tasksByListId);
-      const autoPhases = extractAutoPhases(allTasks);
-      const phases =
-        autoPhases.length > 0
-          ? autoPhasesAsCampaignPhases(autoPhases)
-          : block.campaignPhases ?? [];
-      const source = autoPhases.length > 0 ? "auto" : "manual";
-      return { block, phases, source, autoPhases };
-    })
-    .filter((b) => b.phases.length > 0);
+  // Cada bloco usa fases do ClickUp (tasks 📢) quando há; senão cai pro
+  // campaignPhases configurado manualmente. TODOS os blocos aparecem aqui —
+  // mesmo sem fases ainda — pra que o card criado na Visão Geral apareça
+  // automaticamente no Calendário Macro (as fases entram depois).
+  const allBlocks = blocks.map((block) => {
+    const allTasks = collectBlockTasks(block, tasksByListId);
+    const autoPhases = extractAutoPhases(allTasks);
+    const phases =
+      autoPhases.length > 0
+        ? autoPhasesAsCampaignPhases(autoPhases)
+        : block.campaignPhases ?? [];
+    const source = autoPhases.length > 0 ? "auto" : "manual";
+    return { block, phases, source, autoPhases };
+  });
 
-  if (blocksWithPhases.length === 0) {
+  if (allBlocks.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border/40 p-12 text-center space-y-2">
         <p className="text-sm text-muted-foreground">
-          Nenhum bloco com fases de campanha.
+          Nenhum bloco configurado ainda.
         </p>
         <p className="text-xs text-muted-foreground">
-          Marque tasks no ClickUp com <strong>📢</strong> pra detectar fases automaticamente, ou
-          configure manual em <strong>Configurar → editar bloco → Fases da campanha</strong>.
+          Crie um card em <strong>Visão Geral → Configurar</strong> — ele aparece aqui automaticamente.
         </p>
       </div>
     );
@@ -67,7 +65,7 @@ export function MacroCalendarView({ blocks, tasksByListId, onEditContext }: Macr
 
   return (
     <div className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-      {blocksWithPhases.map(({ block, phases, source, autoPhases }) => (
+      {allBlocks.map(({ block, phases, source, autoPhases }) => (
         <CampaignCard
           key={block.id}
           block={block}
@@ -151,9 +149,16 @@ function CampaignCard({
 
       {/* Fases */}
       <div className="space-y-1.5">
-        {phases.map((p, i) => (
-          <PhaseRow key={p.id} phase={p} state={phaseStates[i]} blockColor={block.color} />
-        ))}
+        {phases.length > 0 ? (
+          phases.map((p, i) => (
+            <PhaseRow key={p.id} phase={p} state={phaseStates[i]} blockColor={block.color} />
+          ))
+        ) : (
+          <p className="text-[11px] text-muted-foreground italic">
+            Fases ainda não definidas — marque tasks com 📢 no ClickUp ou configure em
+            Configurar → Fases da campanha.
+          </p>
+        )}
       </div>
       {/* Story 31.9 — lista de pendentes migrou pra Visão Geral (SprintBlockCard). */}
     </div>
