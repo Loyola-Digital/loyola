@@ -356,6 +356,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           utm_term?: string;
           utm_content?: string;
           dataVenda?: string;
+          productName?: string;
         };
 
         let sheetData;
@@ -384,6 +385,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         const utmTermIdx = colIdx(mapping.utm_term);
         const utmContentIdx = colIdx(mapping.utm_content);
         const dataIdx = colIdx(mapping.dataVenda);
+        const productIdx = colIdx(mapping.productName);
 
         if (emailIdx === -1) continue;
         if (dataIdx !== -1) anyHasDateFilter = true;
@@ -418,10 +420,19 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           // txId, a chave inclui o índice da linha — recompras do mesmo cliente
           // (mesmo email/valor) contam como vendas separadas, em vez de colapsar
           // por email e somar (que subcontava vendas e divergia da tabela).
+          //
+          // Dash de Vendas (stageType "sales"): inclui o produto na chave por
+          // txId pra order bumps (mesmo pedido, produtos diferentes: Basic +
+          // Advanced) contarem como vendas separadas. Outras etapas (paid)
+          // mantêm a dedup só por txId (1 pedido = 1 venda).
           const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
           if (txId) anyUsedTxId = true; else anyUsedEmail = true;
+          const product =
+            stage.stageType === "sales" && productIdx !== -1
+              ? (row[productIdx] ?? "").trim().toLowerCase()
+              : "";
           const dedupKey = txId
-            ? `${spreadsheet.id}|tx|${txId}`
+            ? `${spreadsheet.id}|tx|${txId}${product ? `|${product}` : ""}`
             : `${spreadsheet.id}|row|${rowIndex}`;
 
           // Retry do gateway (mesmo txId já visto) → ignora a duplicata exata.
