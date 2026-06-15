@@ -354,11 +354,13 @@ export function StageSalesSection({
             </p>
             {canEditSellers && <SellerAliasesDialog projectId={projectId} />}
           </div>
+          {/* Inclui TMB junto com o Produto Principal pra contar todas as
+              vendas do vendedor (Kiwify + TMB + PIX manual). */}
           <SellersBreakdownGrid
             projectId={projectId}
             funnelId={funnelId}
             stageId={stageId}
-            subtype={subtype}
+            subtype="main_product,tmb"
           />
         </div>
       )}

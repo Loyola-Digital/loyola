@@ -42,11 +42,23 @@ const paramsSchema = z.object({
 const querySchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  subtype: z.enum(["capture", "main_product", "sales"]).default("sales"),
+  // Aceita um subtype único OU CSV ("main_product,tmb") pra agregar Produto
+  // Principal + TMB no breakdown por vendedor — mesmo padrão de stage-sales-data.
+  subtype: z.string().default("sales"),
   /** Quando `1`, response inclui `_debug` com diagnóstico de match (survey/scoring
    * encontrados, tamanho do leadBandMap, samples de emails dos 2 lados). */
   debug: z.coerce.boolean().optional(),
 });
+
+const VALID_SUBTYPES = new Set(["capture", "main_product", "sales", "tmb"]);
+/** Parseia `subtype` (único ou CSV) em lista validada. Fallback ["sales"]. */
+function parseSubtypes(raw: string): string[] {
+  const list = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => VALID_SUBTYPES.has(s));
+  return list.length > 0 ? list : ["sales"];
+}
 
 // ============================================================
 // HELPERS
@@ -221,14 +233,16 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
         return { display: label, key: norm };
       }
 
-      // 1. Planilhas de venda do stage
+      // 1. Planilhas de venda do stage. subtype pode ser CSV ("main_product,tmb")
+      // pra incluir TMB no breakdown junto com o Produto Principal.
+      const requestedSubtypes = parseSubtypes(query.data.subtype);
       const salesSheets = await fastify.db
         .select()
         .from(stageSalesSpreadsheets)
         .where(
           and(
             eq(stageSalesSpreadsheets.stageId, params.data.stageId),
-            eq(stageSalesSpreadsheets.subtype, query.data.subtype),
+            inArray(stageSalesSpreadsheets.subtype, requestedSubtypes),
           ),
         );
 
@@ -371,7 +385,9 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
         const utmSourceIdx = colIdx(mapping.utm_source);
         const dataIdx = colIdx(mapping.dataVenda);
 
+        let rowIndex = -1;
         for (const row of rows) {
+          rowIndex += 1;
           const email = (row[emailIdx] ?? "").trim().toLowerCase();
           if (!email) continue;
 
@@ -382,11 +398,14 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
             if (endDate && dt > endDate) continue;
           }
 
-          // Dedup (Story 28.4): tx_id quando preenchido, senão email
+          // Cada linha = 1 venda. Dedup só por transaction_id real (retry do
+          // gateway); sem txId, a chave usa o índice da linha pra não colapsar
+          // recompras do mesmo cliente — mantém a contagem por vendedor igual à
+          // tabela de vendas (all-sales) e ao KPI (sales-data).
           const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
           const dedupKey = txId
             ? `${spreadsheet.id}|tx|${txId}`
-            : `${spreadsheet.id}|email|${email}`;
+            : `${spreadsheet.id}|row|${rowIndex}`;
           if (seenDedupKeys.has(dedupKey)) continue;
           seenDedupKeys.add(dedupKey);
 
