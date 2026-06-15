@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Wallet, FileSpreadsheet, ReceiptText } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Wallet, ReceiptText } from "lucide-react";
 import type { ManualSale } from "@loyola-x/shared";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -81,6 +81,33 @@ function salePlatform(sale: UnifiedSale): Exclude<Platform, "all"> {
   if (sale.source === "manual") return "manual";
   if (sale.sourceLabel === "TMB") return "tmb";
   return "main";
+}
+
+// Badge de origem da venda. PIX (manual) = verde; planilha (TMB / Kiwify) =
+// violeta. Substitui o antigo indicador (bolinha verde / ícone de planilha) por
+// um rótulo claro em todas as linhas.
+function SourceBadge({ sale }: { sale: UnifiedSale }) {
+  if (sale.source === "manual") {
+    return (
+      <span
+        className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+        title="Venda manual (PIX direto)"
+      >
+        PIX
+      </span>
+    );
+  }
+  // Planilha: usa o rótulo da fonte (ex: TMB); sem rótulo = export do checkout
+  // (Kiwify) vindo do slot Produto Principal.
+  const label = sale.sourceLabel ?? "Kiwify";
+  return (
+    <span
+      className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
+      title={`Venda da fonte ${label}`}
+    >
+      {label}
+    </span>
+  );
 }
 
 export function ManualPixSalesSection({
@@ -239,7 +266,7 @@ export function ManualPixSalesSection({
             <div className="px-3 py-2 bg-muted/30 text-xs font-medium flex items-center gap-2">
               <span>Vendas</span>
               <span className="text-muted-foreground font-normal">
-                · Manuais aparecem com 🟢 e podem ser editadas/removidas
+                · Vendas com badge PIX são manuais e podem ser editadas/removidas
               </span>
             </div>
             <table className="w-full text-xs">
@@ -267,26 +294,8 @@ export function ManualPixSalesSection({
                     <td className="px-3 py-2 tabular-nums">{formatDate(sale.saleDate)}</td>
                     <td className="px-3 py-2 max-w-[160px] truncate" title={sale.customerName ?? ""}>
                       <span className="inline-flex items-center gap-1.5">
-                        {sale.source === "manual" ? (
-                          <span
-                            className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0"
-                            title="Venda manual (PIX direto)"
-                          />
-                        ) : (
-                          <FileSpreadsheet
-                            className="h-3 w-3 text-muted-foreground/60 shrink-0"
-                            aria-label="Vinda da planilha"
-                          />
-                        )}
                         <span className="truncate">{sale.customerName ?? "—"}</span>
-                        {sale.sourceLabel && (
-                          <span
-                            className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
-                            title={`Venda da fonte ${sale.sourceLabel}`}
-                          >
-                            {sale.sourceLabel}
-                          </span>
-                        )}
+                        <SourceBadge sale={sale} />
                       </span>
                     </td>
                     <td className="px-3 py-2 text-muted-foreground max-w-[140px] truncate">

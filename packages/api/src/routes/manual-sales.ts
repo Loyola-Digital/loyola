@@ -622,19 +622,27 @@ export default fp(async function manualSalesRoutes(fastify) {
 
         if (emailIdx === -1) continue;
 
+        let rowIndex = -1;
         for (const row of rows) {
+          rowIndex++;
           const email = (row[emailIdx] ?? "").trim().toLowerCase();
           if (!email) continue;
 
           const dt = dataIdx !== -1 ? parseSheetDate(row[dataIdx]) : null;
           if (dt && dt < cutoff) continue;
 
+          // Dedup APENAS por transaction_id real (retry do gateway). Sem txId,
+          // cada linha da planilha é uma venda distinta — recompras do mesmo
+          // cliente (mesmo email/valor, ex: 2x no mesmo dia) NÃO são colapsadas.
+          // A chave antiga `email|valor` descartava essas recompras legítimas e
+          // fazia o faturamento da tabela divergir do KPI do topo.
           const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
-          const dedupKey = txId
-            ? `${sheet.id}|tx|${txId}`
-            : `${sheet.id}|email|${email}|${row[brutoIdx] ?? ""}`;
-          if (seenDedup.has(dedupKey)) continue;
-          seenDedup.add(dedupKey);
+          if (txId) {
+            const dedupKey = `${sheet.id}|tx|${txId}`;
+            if (seenDedup.has(dedupKey)) continue;
+            seenDedup.add(dedupKey);
+          }
+          const rowId = txId ? `tx|${txId}` : `row|${rowIndex}`;
 
           const value = parseBrNumber(row[brutoIdx]);
           const canal = canalIdx !== -1 ? (row[canalIdx] ?? "").trim() : "";
@@ -643,7 +651,7 @@ export default fp(async function manualSalesRoutes(fastify) {
           const explicitProduct = productIdx !== -1 ? (row[productIdx] ?? "").trim() : "";
 
           out.push({
-            id: `sheet:${sheet.id}:${dedupKey}`,
+            id: `sheet:${sheet.id}:${rowId}`,
             source: "spreadsheet",
             // Story 19.9 ext: usa coluna customerName quando mapeada, senão email
             customerName: explicitName || email,

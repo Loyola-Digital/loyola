@@ -321,10 +321,10 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         cutoffDate.setDate(cutoffDate.getDate() - query.data.days);
       }
 
-      // emailMap usa chave composta (spreadsheetId|<email|tx>|<value>) — mesma
-      // pessoa em planilhas diferentes vira 2 vendas separadas; quando
-      // `transactionId` está mapeado (Story 28.4) deduplicamos por transação
-      // (resolve recompras Kiwify), senão fallback pra email (legacy behavior).
+      // emailMap = uma entrada por VENDA. Chave: `spreadsheetId|tx|<txId>` quando
+      // a coluna transactionId está mapeada (dedup de retry do gateway), senão
+      // `spreadsheetId|row|<índice>` (cada linha = 1 venda). Recompras do mesmo
+      // cliente nunca colapsam — só retries com transactionId idêntico.
       const emailMap = new Map<
         string,
         { bruto: number; liquido: number; forma: string; canal: string; utmSource: string | null; utmMedium: string | null; utmTerm: string | null; utmContent: string | null; lastDate: Date | null }
@@ -389,8 +389,10 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         if (dataIdx !== -1) anyHasDateFilter = true;
 
         let validRowsForSheet = 0;
+        let rowIndex = -1;
 
         for (const row of rows) {
+          rowIndex += 1;
           debugCounters.totalRowsRead += 1;
           const email = (row[emailIdx] ?? "").trim().toLowerCase();
           if (!email) { debugCounters.skippedEmailEmpty += 1; continue; }
@@ -411,32 +413,22 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           const utmContent = utmContentIdx !== -1 ? sanitizeUtmValue(row[utmContentIdx]) : null;
           const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
 
-          // Story 28.4: dedup por transactionId quando mapeado e preenchido,
-          // senão fallback pra email (comportamento legacy)
+          // Cada linha da planilha é uma venda real. Só deduplicamos retries do
+          // gateway (mesmo transactionId, quando a coluna está mapeada). Sem
+          // txId, a chave inclui o índice da linha — recompras do mesmo cliente
+          // (mesmo email/valor) contam como vendas separadas, em vez de colapsar
+          // por email e somar (que subcontava vendas e divergia da tabela).
           const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
+          if (txId) anyUsedTxId = true; else anyUsedEmail = true;
           const dedupKey = txId
             ? `${spreadsheet.id}|tx|${txId}`
-            : `${spreadsheet.id}|email|${email}`;
-          if (txId) anyUsedTxId = true; else anyUsedEmail = true;
+            : `${spreadsheet.id}|row|${rowIndex}`;
+
+          // Retry do gateway (mesmo txId já visto) → ignora a duplicata exata.
+          if (txId && emailMap.has(dedupKey)) continue;
 
           validRowsForSheet += 1;
-
-          const existing = emailMap.get(dedupKey);
-          if (existing) {
-            existing.bruto += bruto;
-            existing.liquido += liquido;
-            if (rowDate && (!existing.lastDate || rowDate > existing.lastDate)) {
-              existing.forma = forma;
-              existing.canal = canal;
-              existing.utmSource = utmSource;
-              existing.utmMedium = utmMedium;
-              existing.utmTerm = utmTerm;
-              existing.utmContent = utmContent;
-              existing.lastDate = rowDate;
-            }
-          } else {
-            emailMap.set(dedupKey, { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate: rowDate });
-          }
+          emailMap.set(dedupKey, { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate: rowDate });
         }
 
         debugCounters.spreadsheetsLoaded.push({
