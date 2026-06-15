@@ -37,6 +37,9 @@ export interface LpBreakdownRow {
   clicks: number;
   impressions: number;
   landingPageViews: number;
+  // Story 18.50: vendas/faturamento por LP (atribuídos via co= → campanha)
+  vendas?: number;
+  faturamento?: number;
 }
 
 export interface StageCreativePerformanceResponse {

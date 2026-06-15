@@ -79,6 +79,27 @@ function normalizeNumericId(id: string): string {
   return trimmed;
 }
 
+/**
+ * Story 18.50: extrai LP (lpX no nome → LPA se ausente, decisão Danilo) e
+ * temperatura (hot/cold/unknown) do nome da campanha. É a MESMA regra usada
+ * pelo corte de spend (lpBreakdown) e pela atribuição de vendas (via co= →
+ * campanha do anúncio), garantindo que spend e faturamento batam por LP.
+ */
+function lpAndTempFromCampaignName(campaignName: string | null | undefined): {
+  lpName: string;
+  temperature: "hot" | "cold" | "unknown";
+} {
+  const cn = (campaignName || "").toLowerCase();
+  const m = cn.match(/lp([a-z])/);
+  const lpName = m ? `LP${m[1].toUpperCase()}` : "LPA";
+  const temperature: "hot" | "cold" | "unknown" = cn.includes("hot")
+    ? "hot"
+    : cn.includes("cold")
+      ? "cold"
+      : "unknown";
+  return { lpName, temperature };
+}
+
 export default fp(async function stageCreativePerformanceRoutes(fastify) {
   fastify.get<{
     Params: z.infer<typeof paramsSchema>;
@@ -217,6 +238,20 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         // Story 18.49: rastreia de onde veio o revenue (co= da venda vs email do lead)
         let revenueSource: "sale_content" | "lead_email" | "none" = "none";
 
+        // Story 18.50: vendas/faturamento por LP×temperatura, atribuídas via
+        // co= da venda → campanha do anúncio (mesma fonte de LP que o spend).
+        const salesByLp = new Map<string, { vendas: number; faturamento: number }>();
+        // Story 18.50: mapa ad_id → campaign_name (dos insights do Meta) pra
+        // herdar a LP da venda a partir do co=. Vendas cujo co= não casa com
+        // anúncio do stage (orgânico/recuperação) ficam de fora naturalmente.
+        const campaignByAdId = new Map<string, string>();
+        for (const ad of filteredAds) {
+          const aid = normalizeNumericId(ad.ad_id || "");
+          if (aid && ad.campaign_name && !campaignByAdId.has(aid)) {
+            campaignByAdId.set(aid, ad.campaign_name);
+          }
+        }
+
         if (leadsSheet && salesSheet) {
           let leadsData, salesData;
           try {
@@ -297,6 +332,19 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             // email (evita dupla contagem). Sem `co=`, mantém o fallback legacy.
             let revenueFromSaleContent = false;
             if (salesData && salesMapping && saleUtmContentIdx !== -1) {
+              // Story 18.50: contabiliza 1 venda (dedupada) na LP herdada do
+              // co= → campanha do anúncio. Vendas sem co= que case com anúncio
+              // do stage ficam fora (orgânico/recuperação não têm campanha paga).
+              const attributeSaleToLp = (adId: string, value: number) => {
+                const campaignName = campaignByAdId.get(adId);
+                if (!campaignName) return;
+                const { lpName, temperature } = lpAndTempFromCampaignName(campaignName);
+                const key = `${lpName}__${temperature}`;
+                const agg = salesByLp.get(key) ?? { vendas: 0, faturamento: 0 };
+                agg.vendas += 1;
+                agg.faturamento += value;
+                salesByLp.set(key, agg);
+              };
               // dedup por transactionId (preferido) ou email — espelha a 18.48.
               const saleDedup = new Map<string, { adId: string; value: number }>();
               for (const row of salesData.rows) {
@@ -314,6 +362,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
                 if (!dedupKey) {
                   // sem chave de dedup → atribui direto (não há como deduplicar)
                   revenueByAdId.set(adId, (revenueByAdId.get(adId) ?? 0) + value);
+                  attributeSaleToLp(adId, value);
                   continue;
                 }
                 const existing = saleDedup.get(dedupKey);
@@ -326,6 +375,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               }
               for (const { adId, value } of saleDedup.values()) {
                 revenueByAdId.set(adId, (revenueByAdId.get(adId) ?? 0) + value);
+                attributeSaleToLp(adId, value);
               }
               revenueFromSaleContent = true;
               revenueSource = "sale_content";
@@ -531,6 +581,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           clicks: number;
           impressions: number;
           landingPageViews: number;
+          // Story 18.50: vendas/faturamento por LP (atribuídos via co= → campanha)
+          vendas: number;
+          faturamento: number;
         };
         const campaignInsights = await fetchCampaignInsights(
           metaAccount.metaAccountId,
@@ -557,7 +610,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           const key = `${lpName}__${temperature}`;
           let agg = lpBreakdownMap.get(key);
           if (!agg) {
-            agg = { lpName, temperature, spend: 0, clicks: 0, impressions: 0, landingPageViews: 0 };
+            agg = { lpName, temperature, spend: 0, clicks: 0, impressions: 0, landingPageViews: 0, vendas: 0, faturamento: 0 };
             lpBreakdownMap.set(key, agg);
           }
           const s = parseFloat(ci.spend || "0");
@@ -569,6 +622,28 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           const ilc = parseFloat(ci.inline_link_clicks || "0");
           if (!isNaN(ilc)) agg.clicks += ilc;
           agg.landingPageViews += parseLandingPageViews(ci.actions);
+        }
+        // Story 18.50: injeta vendas/faturamento por LP×temperatura (atribuídos
+        // via co= → campanha). Cria linha nova se a LP só tem venda e nenhum
+        // spend no corte por campanha (raro, mas mantém o faturamento visível).
+        for (const [key, sv] of salesByLp.entries()) {
+          let agg = lpBreakdownMap.get(key);
+          if (!agg) {
+            const [lpName, temperature] = key.split("__");
+            agg = {
+              lpName,
+              temperature: temperature as "hot" | "cold" | "unknown",
+              spend: 0,
+              clicks: 0,
+              impressions: 0,
+              landingPageViews: 0,
+              vendas: 0,
+              faturamento: 0,
+            };
+            lpBreakdownMap.set(key, agg);
+          }
+          agg.vendas += sv.vendas;
+          agg.faturamento += sv.faturamento;
         }
         const lpBreakdown = Array.from(lpBreakdownMap.values());
 
