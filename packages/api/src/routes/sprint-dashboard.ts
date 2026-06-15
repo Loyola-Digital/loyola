@@ -370,8 +370,12 @@ export default fp(async function sprintDashboardRoutes(fastify) {
   // Story 31.6 — Metrics-resumo do header (eventos próximos)
   // ============================================================
 
-  // Agrega tasks por FOLDER (= lançamento no padrão Loyola). Cada folder
-  // vira um card no header com contadores: total / overdue / in_progress / done.
+  // Agrega tasks por LISTA (= campanha no padrão Loyola atual). Cada expert tem
+  // pastas genéricas "Campanhas: perpétuo/lançamentos" e cada campanha é uma
+  // LISTA dentro delas — então o nome útil (da campanha) vem da lista, não do
+  // folder. Cada lista vira um card de Saúde com contadores. O shape de resposta
+  // mantém `byFolder`/`folderName` (preenchidos com dados da lista) pra não
+  // quebrar o frontend.
   fastify.get("/api/sprint-dashboard/metrics", async (request, reply) => {
     const guestErr = denyGuest(request);
     if (guestErr) return reply.code(403).send(guestErr);
@@ -395,7 +399,8 @@ export default fp(async function sprintDashboardRoutes(fastify) {
       const now = Date.now();
       const finalStatuses = new Set(["done", "closed", "cancelado", "concluído", "concluido", "complete", "completed"]);
 
-      // Agrupa por folderId (fallback pra listId quando folder é null = folderless list)
+      // Agrupa por LISTA (cada campanha = 1 lista). O tipo mantém o nome
+      // FolderAgg/folderName por compat com o shape de resposta consumido no front.
       type FolderAgg = {
         folderId: string;
         folderName: string;
@@ -415,9 +420,10 @@ export default fp(async function sprintDashboardRoutes(fastify) {
         // contagens (overdue, inProgress, done, total).
         if ((t.customItemName ?? "").trim().toLowerCase() === "marco") continue;
 
-        // Quando task não tem folder (folderless list), usa listId+listName como pseudo-folder
-        const fid = t.folderId ?? `list:${t.listId}`;
-        const fname = t.folderName ?? t.listName;
+        // Agrupa pela LISTA (= campanha). O folder agora é genérico
+        // ("Campanhas: perpétuo/lançamentos"), então o nome da campanha vem da lista.
+        const fid = t.listId;
+        const fname = t.listName || t.folderName || "—";
         const agg = map.get(fid) ?? {
           folderId: fid,
           folderName: fname,
