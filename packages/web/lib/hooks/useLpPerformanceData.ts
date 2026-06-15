@@ -101,6 +101,7 @@ export function useLpPerformanceData({
           conversoes: 0,
           lpViews: 0,
           leads: 0,
+          vendas: 0,
           faturamento: 0,
         };
       }
@@ -111,6 +112,11 @@ export function useLpPerformanceData({
       lpTotals[key].impressoes += entry.impressions;
       lpTotals[key].conversoes += entry.clicks; // conversão = clique (chegada à LP)
       lpTotals[key].lpViews += entry.landingPageViews;
+      // Story 18.50: vendas/faturamento por LP (atribuídos no backend via co= →
+      // campanha). Somados respeitando o mesmo filtro de público do spend, já que
+      // cada entry é LP×temperatura — o ROAS por LP fica consistente com o gasto.
+      lpTotals[key].vendas = (lpTotals[key].vendas ?? 0) + (entry.vendas ?? 0);
+      lpTotals[key].faturamento = (lpTotals[key].faturamento ?? 0) + (entry.faturamento ?? 0);
     }
 
     // Story 18.46 (AC6/AC7): leads por LP, respeitando o filtro de público

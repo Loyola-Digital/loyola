@@ -11,8 +11,11 @@
  */
 
 import { useMemo } from "react";
+import { useQueries } from "@tanstack/react-query";
 import { useFunnelSurveys } from "@/lib/hooks/use-google-sheets";
 import { useSheetData } from "@/lib/hooks/use-google-sheets";
+import type { SheetData } from "@/lib/hooks/use-google-sheets";
+import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useFunnelSpreadsheets } from "@/lib/hooks/use-funnel-spreadsheets";
 import { normalizeNumericId } from "@/lib/utils/normalize-answer";
 
@@ -98,8 +101,6 @@ export function useCrossReferenceLeads({
   // Lemos as duas e combinamos o mapa ad_id → Ad Name.
   const salesSheet = spreadsheetsQuery.data?.spreadsheets?.find((s) => s.type === "sales");
 
-  const survey = surveys[0];
-
   const sheetQuery = useSheetData(
     leadsSheet?.spreadsheetId ?? null,
     leadsSheet?.sheetName ?? null,
@@ -108,10 +109,24 @@ export function useCrossReferenceLeads({
     salesSheet?.spreadsheetId ?? null,
     salesSheet?.sheetName ?? null,
   );
-  const surveyQuery = useSheetData(
-    survey?.spreadsheetId ?? null,
-    survey?.sheetName ?? null,
-  );
+
+  // Story 18.50: processa TODAS as pesquisas vinculadas (não só surveys[0]).
+  // Um stage pode vincular mais de uma aba de pesquisa (ex.: "Pesquisa-Captação"
+  // + "Pesquisa-Captação - Alunos"); usar só a primeira fazia as Faixas sumirem
+  // quando a 1ª aba (ordem do endpoint não é garantida) não tinha respostas
+  // pagas. Buscamos todas e agregamos as faixas das que tiverem dados válidos.
+  const apiClient = useApiClient();
+  const surveyResults = useQueries({
+    queries: surveys.map((s) => ({
+      queryKey: ["google-sheets-data", s.spreadsheetId, s.sheetName],
+      queryFn: () =>
+        apiClient<SheetData>(
+          `/api/google-sheets/spreadsheets/${s.spreadsheetId}/sheets/${encodeURIComponent(s.sheetName)}/data`,
+        ),
+      enabled: !!s.spreadsheetId && !!s.sheetName,
+      staleTime: 30 * 1000,
+    })),
+  });
 
   // Story 18.47: mapa ad_id → Ad Name combinando a aba de leads E a de sales
   // (a que tiver content + Ad Name preenche). Cobre Gratuita e Paga.
@@ -221,56 +236,62 @@ export function useCrossReferenceLeads({
   // Cada linha = um respondente, com utm_content (ad_id) + "Faixa N".
   // Filtra pago (utm_source = meta), cruza utm_content → Ad Name (aba de leads),
   // e agrupa a contagem de faixas por criativo.
+  // Story 18.50: dados de todas as pesquisas (referência estável p/ o useMemo).
+  const surveysData = surveyResults.map((r) => r.data);
+  const surveysDataKey = surveyResults.map((r) => r.dataUpdatedAt).join(",");
+
   const bandsResult = useMemo(() => {
     const bandsByAdName: Record<string, Record<string, number>> = {};
     const labels = new Set<string>();
-
-    const rows = surveyQuery.data?.rows;
-    const headers = (surveyQuery.data as unknown as { headers?: string[] })?.headers;
-    if (!rows || !headers || rows.length === 0) {
-      return { bandsByAdName, bandLabels: [] as string[] };
-    }
-
     const norm = (s: string) => (s ?? "").trim().toLowerCase();
-    const utmContentIdx = headers.findIndex((h) => ["utm_content", "content", "co="].includes(norm(h)));
-    const utmSourceIdx = headers.findIndex((h) => ["utm_source", "source", "s="].includes(norm(h)));
-    // Coluna de faixa: prefere "Faixa 1" (existe nas duas etapas); senão a 1ª
-    // coluna que começa com "faixa" (a Paga tem "Faixa" e "Faixa 1").
-    let faixaIdx = headers.findIndex((h) => norm(h) === "faixa 1");
-    if (faixaIdx === -1) faixaIdx = headers.findIndex((h) => norm(h).startsWith("faixa"));
 
-    if (utmContentIdx === -1 || faixaIdx === -1) {
-      return { bandsByAdName, bandLabels: [] as string[] };
-    }
+    // Story 18.50: agrega as faixas de TODAS as pesquisas vinculadas. Abas sem
+    // colunas válidas (utm_content/faixa) ou sem respostas pagas contribuem 0,
+    // então somar todas é seguro e robusto à ordem de vínculo.
+    for (const data of surveysData) {
+      const rows = data?.rows;
+      const headers = (data as unknown as { headers?: string[] })?.headers;
+      if (!rows || !headers || rows.length === 0) continue;
 
-    for (const row of rows) {
-      // Só leads pagos do Meta (utm_content = ad_id). ig/orgânico fora.
-      if (utmSourceIdx !== -1 && norm(row[utmSourceIdx] ?? "") !== "meta") continue;
+      const utmContentIdx = headers.findIndex((h) => ["utm_content", "content", "co="].includes(norm(h)));
+      const utmSourceIdx = headers.findIndex((h) => ["utm_source", "source", "s="].includes(norm(h)));
+      // Coluna de faixa: prefere "Faixa 1" (existe nas duas etapas); senão a 1ª
+      // coluna que começa com "faixa" (a Paga tem "Faixa" e "Faixa 1").
+      let faixaIdx = headers.findIndex((h) => norm(h) === "faixa 1");
+      if (faixaIdx === -1) faixaIdx = headers.findIndex((h) => norm(h).startsWith("faixa"));
 
-      const adId = normalizeNumericId(row[utmContentIdx] ?? "");
-      if (!adId) continue;
+      if (utmContentIdx === -1 || faixaIdx === -1) continue;
 
-      const faixa = (row[faixaIdx] ?? "").trim().toUpperCase();
-      if (!faixa) continue;
+      for (const row of rows) {
+        // Só leads pagos do Meta (utm_content = ad_id). ig/orgânico fora.
+        if (utmSourceIdx !== -1 && norm(row[utmSourceIdx] ?? "") !== "meta") continue;
 
-      // Nome do criativo via cruzamento com a aba de leads (utm_content → Ad Name).
-      const adName = adNameByContent[adId];
-      if (!adName) continue;
+        const adId = normalizeNumericId(row[utmContentIdx] ?? "");
+        if (!adId) continue;
 
-      labels.add(faixa);
-      if (!bandsByAdName[adName]) bandsByAdName[adName] = {};
-      bandsByAdName[adName][faixa] = (bandsByAdName[adName][faixa] ?? 0) + 1;
+        const faixa = (row[faixaIdx] ?? "").trim().toUpperCase();
+        if (!faixa) continue;
+
+        // Nome do criativo via cruzamento com a aba de leads (utm_content → Ad Name).
+        const adName = adNameByContent[adId];
+        if (!adName) continue;
+
+        labels.add(faixa);
+        if (!bandsByAdName[adName]) bandsByAdName[adName] = {};
+        bandsByAdName[adName][faixa] = (bandsByAdName[adName][faixa] ?? 0) + 1;
+      }
     }
 
     return { bandsByAdName, bandLabels: Array.from(labels).sort() };
-  }, [surveyQuery.data, adNameByContent]);
+  }, [surveysDataKey, adNameByContent]);
 
 
   const isLoading =
     surveysQuery.isLoading ||
     spreadsheetsQuery.isLoading ||
     (leadsSheet ? sheetQuery.isLoading : false) ||
-    (salesSheet ? salesSheetQuery.isLoading : false);
+    (salesSheet ? salesSheetQuery.isLoading : false) ||
+    surveyResults.some((r) => r.isLoading);
   const error = surveysQuery.error?.message || sheetQuery.error?.message;
 
   return {
