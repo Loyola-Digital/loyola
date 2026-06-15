@@ -49,6 +49,11 @@ export interface SprintDashboardBlock {
   /** Story 31.7: contexto manual no card resumo da Visão Geral. Sobrescreve
    * qualquer task marcada com 📢/📣 no ClickUp. Empty/null = usa auto. */
   manualContext?: string | null;
+  /** Escopo de prazo das tarefas exibidas no card da Visão Geral:
+   * - "today_overdue": só tarefas de hoje + atrasadas (default de novos cards)
+   * - "all": todas as tarefas do bloco
+   * undefined = today_overdue (padrão pedido pelo time). */
+  dueScope?: "all" | "today_overdue";
 }
 
 export interface SprintDashboardConfig {

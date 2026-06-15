@@ -56,6 +56,8 @@ export function SprintBuilderDialog({ open, onOpenChange, currentBlocks }: Build
         groupBy: null,
         sortOrder: prev.length,
         campaignPhases: [],
+        // Novos cards já nascem filtrando só hoje + atrasadas (pedido do time).
+        dueScope: "today_overdue",
       },
     ]);
   }
@@ -747,6 +749,23 @@ function FilterEditor({ block, onChange }: FilterEditorProps) {
             <SelectItem value="status">Status</SelectItem>
             <SelectItem value="tag">Tag</SelectItem>
             <SelectItem value="assignee">Responsável</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Escopo de prazo — quais tarefas o card exibe */}
+      <div className="space-y-1">
+        <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Tarefas exibidas</Label>
+        <Select
+          value={block.dueScope ?? "today_overdue"}
+          onValueChange={(v) => onChange({ dueScope: v as "all" | "today_overdue" })}
+        >
+          <SelectTrigger className="h-7 text-[11px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="today_overdue">Só hoje + atrasadas</SelectItem>
+            <SelectItem value="all">Todas as tarefas</SelectItem>
           </SelectContent>
         </Select>
       </div>
