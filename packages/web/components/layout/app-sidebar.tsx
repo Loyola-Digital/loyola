@@ -57,7 +57,7 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
   const settingsItem = navItems.find((i) => i.href === "/settings")!;
 
   return (
-    <ScrollArea className="flex-1">
+    <ScrollArea className="flex-1 min-h-0">
       <nav className="flex flex-col gap-1 p-2">
         {/* Global section */}
         {!collapsed && (
