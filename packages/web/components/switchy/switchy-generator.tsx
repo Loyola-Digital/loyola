@@ -46,6 +46,7 @@ export function SwitchyGenerator({ projectId, canEdit, funnelId, defaultCampaign
   const generate = useGenerateSwitchyLinks(projectId);
 
   const [checkoutUrl, setCheckoutUrl] = useState("");
+  const [note, setNote] = useState("");
   const [folderId, setFolderId] = useState<string>("");
   const [domain, setDomain] = useState<string>("");
   const [campaign, setCampaign] = useState(defaultCampaign ?? "");
@@ -130,6 +131,7 @@ export function SwitchyGenerator({ projectId, canEdit, funnelId, defaultCampaign
 
     const termTrim = term.trim();
     const contentTrim = content.trim();
+    const noteTrim = note.trim();
 
     generate.mutate(
       {
@@ -140,6 +142,7 @@ export function SwitchyGenerator({ projectId, canEdit, funnelId, defaultCampaign
         campaign: campaign.trim(),
         ...(termTrim ? { term: termTrim } : {}),
         ...(contentTrim ? { content: contentTrim } : {}),
+        ...(noteTrim ? { note: noteTrim } : {}),
         ...(funnelId ? { funnelId } : {}),
         channels: selectedChannels.map((p) => ({
           label: p.label,
@@ -188,6 +191,22 @@ export function SwitchyGenerator({ projectId, canEdit, funnelId, defaultCampaign
               URL base: <code className="bg-muted/50 px-1 rounded">{checkoutUrl}</code>
             </p>
           )}
+        </div>
+
+        {/* Descrição livre — do que se trata o link (ex: "Checkout produto X").
+            Vale pra todos os canais deste lote; aparece na tabela. */}
+        <div className="space-y-1">
+          <Label htmlFor="switchy-note" className="text-xs">
+            Descrição (opcional)
+          </Label>
+          <Input
+            id="switchy-note"
+            placeholder='ex: Checkout produto X, Página de captura'
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            disabled={!canEdit}
+            maxLength={500}
+          />
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
