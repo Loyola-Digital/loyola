@@ -249,34 +249,34 @@ export default fp(async function zoomStageRoutes(fastify) {
       const token = await getServerToServerToken(accountId, clientId, clientSecret);
       const allUuids = await resolveMeetingUuids(token, meetingNumericId);
 
-      // 1ª chamada: detecta source pra memoizar nas próximas instâncias
-      const firstResult = await fetchAllParticipants(token, meetingNumericId, allUuids[0]);
-      const detectedSource = firstResult.source;
+      // CRÍTICO: a Report API do Zoom é "Heavy" rate-limited. Buscar todas as
+      // instâncias em PARALELO estourava o limite → 429 silencioso → instâncias
+      // cheias (ex: CPL com 300+ pessoas) eram descartadas. Por isso buscamos
+      // SEQUENCIALMENTE. O source detectado na 1ª instância com dados memoiza as
+      // demais (preferSource) pra cortar chamadas pela metade.
+      const allInstanceResults: Array<{ participants: ZoomParticipantRaw[]; source: "webinar" | "meeting" }> = [];
+      let detectedSource: "webinar" | "meeting" | undefined;
+      for (const uuid of allUuids) {
+        const res = await fetchAllParticipants(token, meetingNumericId, uuid, detectedSource);
+        if (!detectedSource && res.participants.length > 0) detectedSource = res.source;
+        allInstanceResults.push(res);
+      }
+      const resolvedSource: "webinar" | "meeting" = detectedSource ?? "meeting";
 
-      // Demais instâncias em PARALELO usando preferSource
-      const restResults = allUuids.length > 1
-        ? await Promise.all(
-            allUuids.slice(1).map((uuid) =>
-              fetchAllParticipants(token, meetingNumericId, uuid, detectedSource),
-            ),
-          )
-        : [];
-
-      // Story 28.6: busca chat de TODAS instâncias em paralelo. Graceful — se
-      // chat não estiver disponível pra esta conta/reunião, retorna [] (sync de
-      // participants segue normal). Mesclamos resultados de instâncias múltiplas
-      // (Large Meetings agregadas).
-      const chatResults = await Promise.allSettled(
-        allUuids.map((uuid) => fetchMeetingChat(token, meetingNumericId, uuid)),
-      );
+      // Story 28.6: chat de TODAS instâncias, também SEQUENCIAL (mesmo motivo de
+      // rate limit). Graceful — se chat não estiver disponível, ignora a
+      // instância e segue. Mescla resultados (Large Meetings agregadas).
       const chatMap = new Map<string, ZoomChatMessage>();
-      for (const r of chatResults) {
-        if (r.status === "fulfilled") {
-          for (const msg of r.value) {
+      for (const uuid of allUuids) {
+        try {
+          const msgs = await fetchMeetingChat(token, meetingNumericId, uuid);
+          for (const msg of msgs) {
             // Dedup por (sender + dateTime + message) — instâncias podem repetir
             const key = `${msg.sender}|${msg.dateTime}|${msg.message}`;
             if (!chatMap.has(key)) chatMap.set(key, msg);
           }
+        } catch {
+          // chat indisponível nesta instância — segue (não quebra o sync)
         }
       }
       const chat = Array.from(chatMap.values()).sort((a, b) =>
@@ -284,7 +284,6 @@ export default fp(async function zoomStageRoutes(fastify) {
       );
 
       const allSessions: ZoomParticipantRaw[] = [];
-      const allInstanceResults = [firstResult, ...restResults];
       for (const inst of allInstanceResults) {
         const seen = new Set<string>();
         for (const p of inst.participants) {
@@ -362,7 +361,7 @@ export default fp(async function zoomStageRoutes(fastify) {
         }));
 
       const cachedData = {
-        source: detectedSource,
+        source: resolvedSource,
         instancesFound: allUuids.length,
         totalSessions: allSessions.length,
         participants: persons,

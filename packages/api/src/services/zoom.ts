@@ -117,9 +117,18 @@ async function fetchParticipantsFromEndpoint(
     const url = new URL(baseUrl);
     url.searchParams.set("page_size", "300");
     if (nextPageToken) url.searchParams.set("next_page_token", nextPageToken);
-    const res = await fetch(url.toString(), {
+    let res = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${token}` },
     });
+    // A Report API do Zoom tem rate limit "Heavy". Em 429, respeita o
+    // Retry-After (default 2s) e re-tenta a mesma página até 4x antes de falhar.
+    for (let retry = 0; res.status === 429 && retry < 4; retry++) {
+      const waitSeconds = Number(res.headers.get("Retry-After")) || 2;
+      await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+      res = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
     if (!res.ok) {
       const detail = await res.text();
       const err: Error & { status?: number } = new Error(`Zoom API ${res.status}: ${detail.slice(0, 200)}`);
