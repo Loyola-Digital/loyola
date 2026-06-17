@@ -574,9 +574,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           {dailyLoading ? <Skeleton className="h-48" /> : dailyChartData.length > 0 ? (
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={dailyChartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => fmtCurrencyCompact(v)} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
+                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => fmtCurrencyCompact(v)} />
                 <Tooltip content={<FormulaChartTooltip />} />
                 <Legend wrapperStyle={{ color: "#fff" }} />
                 <Line type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={{ r: 3, fill: "hsl(47 98% 54%)" }} name="Investimento">
@@ -595,11 +595,11 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           {dailyLoading ? <Skeleton className="h-48" /> : dailyChartData.length > 0 ? (
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={dailyChartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => fmtCurrencyCompact(v)} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
+                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => fmtCurrencyCompact(v)} />
                 <Tooltip content={<FormulaChartTooltip />} />
-                <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="4 4" />
+                <ReferenceLine y={0} stroke="var(--color-muted-foreground)" strokeDasharray="4 4" />
                 <Line type="monotone" dataKey="margin" stroke="hsl(150 60% 50%)" strokeWidth={2} dot={{ r: 3, fill: "hsl(150 60% 50%)" }} name="Margem (R$)">
                   <LabelList dataKey="margin" position="top" offset={8} fontSize={9} fill="hsl(150 60% 60%)" formatter={(v: unknown) => fmtCurrencyCompact(typeof v === "number" ? v : Number(v ?? 0))} />
                 </Line>
@@ -1060,7 +1060,7 @@ function HBarChart({ title, data, funnelContext, entityType }: {
       <h3 className="text-sm font-semibold mb-4">{title}</h3>
       <ResponsiveContainer width="100%" height={data.length * 36 + 20}>
         <BarChart data={enrichedData} layout="vertical" margin={{ left: 0, right: 10, top: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" horizontal={false} />
           <XAxis type="number" tick={{ fontSize: 10, fill: "#fff" }} tickFormatter={(v) => fmtCurrency(v)} />
           <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10, fill: "#fff" }} />
           <Tooltip content={<FormulaChartTooltip />} />

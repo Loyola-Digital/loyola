@@ -101,10 +101,10 @@ export function StatusDistributionChart({
       <h3 className="text-sm font-semibold mb-4">Distribuição de status</h3>
       <ResponsiveContainer width="100%" height={260}>
         <BarChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
-          <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.15} />
+          <CartesianGrid vertical={false} stroke="var(--color-border)" strokeOpacity={0.15} />
           <XAxis
             dataKey="label"
-            tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+            tick={{ fontSize: 10, fill: "var(--color-muted-foreground)" }}
             axisLine={false}
             tickLine={false}
             interval={0}
@@ -114,15 +114,15 @@ export function StatusDistributionChart({
           />
           <YAxis
             allowDecimals={false}
-            tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+            tick={{ fontSize: 10, fill: "var(--color-muted-foreground)" }}
             axisLine={false}
             tickLine={false}
           />
           <Tooltip
-            cursor={{ fill: "hsl(var(--muted))", fillOpacity: 0.15 }}
+            cursor={{ fill: "var(--color-muted)", fillOpacity: 0.15 }}
             contentStyle={{
-              backgroundColor: "hsl(var(--card))",
-              border: "1px solid hsl(var(--border))",
+              backgroundColor: "var(--color-card)",
+              border: "1px solid var(--color-border)",
               borderRadius: "8px",
               fontSize: "12px",
               color: "#fff",
