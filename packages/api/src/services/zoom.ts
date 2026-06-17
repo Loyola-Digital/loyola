@@ -196,8 +196,11 @@ export interface ZoomPastMeeting {
   type: number;
 }
 
-export async function listPastMeetings(token: string): Promise<ZoomPastMeeting[]> {
-  const url = `https://api.zoom.us/v2/users/me/meetings?type=previous_meetings&page_size=300`;
+export async function listPastMeetings(
+  token: string,
+  userId = "me",
+): Promise<ZoomPastMeeting[]> {
+  const url = `https://api.zoom.us/v2/users/${encodeURIComponent(userId)}/meetings?type=previous_meetings&page_size=300`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) {
     const detail = await res.text();
@@ -205,6 +208,69 @@ export async function listPastMeetings(token: string): Promise<ZoomPastMeeting[]
   }
   const data = (await res.json()) as { meetings?: ZoomPastMeeting[] };
   return data.meetings ?? [];
+}
+
+interface ZoomAccountUser {
+  id: string;
+  email: string;
+}
+
+/**
+ * Lista os usuários ativos da conta Zoom. Requer o scope `user:read` no app.
+ * Lança se não houver scope (4xx) — o caller decide o fallback. Pagina via
+ * next_page_token.
+ */
+export async function listAccountUsers(token: string): Promise<ZoomAccountUser[]> {
+  const users: ZoomAccountUser[] = [];
+  let nextPageToken = "";
+  do {
+    const url = `https://api.zoom.us/v2/users?status=active&page_size=300${nextPageToken ? `&next_page_token=${encodeURIComponent(nextPageToken)}` : ""}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(`Zoom listar usuários falhou (${res.status}): ${detail.slice(0, 200)}`);
+    }
+    const data = (await res.json()) as {
+      users?: { id: string; email: string }[];
+      next_page_token?: string;
+    };
+    for (const u of data.users ?? []) users.push({ id: u.id, email: u.email });
+    nextPageToken = data.next_page_token ?? "";
+  } while (nextPageToken);
+  return users;
+}
+
+/**
+ * Lista reuniões passadas de TODA a conta (todos os usuários), não só do dono
+ * do token. Necessário porque uma CPL pode ser hospedada por um co-host/expert
+ * (outro usuário da conta) — `/users/me/meetings` não traz essas.
+ *
+ * Fallback seguro: se o app não tiver o scope `user:read` (não consegue listar
+ * usuários), volta ao comportamento antigo (só "me") em vez de quebrar.
+ *
+ * Dedupe por uuid (cada instância de recorrente é única). Ordena por start_time
+ * desc (mais recentes primeiro).
+ */
+export async function listAllPastMeetings(token: string): Promise<ZoomPastMeeting[]> {
+  let accountUsers: ZoomAccountUser[];
+  try {
+    accountUsers = await listAccountUsers(token);
+  } catch {
+    return listPastMeetings(token, "me");
+  }
+  if (accountUsers.length === 0) return listPastMeetings(token, "me");
+
+  const perUser = await Promise.all(
+    accountUsers.map((u) => listPastMeetings(token, u.id).catch(() => [])),
+  );
+
+  const byUuid = new Map<string, ZoomPastMeeting>();
+  for (const list of perUser) {
+    for (const m of list) byUuid.set(m.uuid, m);
+  }
+  return [...byUuid.values()].sort((a, b) =>
+    a.start_time < b.start_time ? 1 : a.start_time > b.start_time ? -1 : 0,
+  );
 }
 
 // ============================================================

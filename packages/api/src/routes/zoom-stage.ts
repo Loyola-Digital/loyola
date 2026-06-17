@@ -14,7 +14,7 @@ import {
   fetchAllParticipants,
   fetchMeetingChat,
   getServerToServerToken,
-  listPastMeetings,
+  listAllPastMeetings,
   resolveMeetingUuids,
   type ZoomChatMessage,
   type ZoomParticipantRaw,
@@ -192,7 +192,7 @@ export default fp(async function zoomStageRoutes(fastify) {
     try {
       const decrypted = decryptZoomConnection(conn);
       const token = await getServerToServerToken(decrypted.accountId, decrypted.clientId, decrypted.clientSecret);
-      const meetings = await listPastMeetings(token);
+      const meetings = await listAllPastMeetings(token);
       return {
         meetings: meetings.map((m) => ({
           id: String(m.id),
