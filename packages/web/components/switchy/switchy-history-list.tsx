@@ -120,6 +120,7 @@ export function SwitchyHistoryList({ projectId, funnelId }: Props) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Canal</TableHead>
+                  <TableHead>Descrição</TableHead>
                   <TableHead>utm_campaign</TableHead>
                   <TableHead>Short URL</TableHead>
                   <TableHead>Data</TableHead>
@@ -133,6 +134,9 @@ export function SwitchyHistoryList({ projectId, funnelId }: Props) {
                     <TableRow key={l.id}>
                       <TableCell className="font-medium text-sm">
                         {l.channelLabel ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate" title={l.note ?? undefined}>
+                        {l.note ?? "—"}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {l.utmCampaign ?? "—"}

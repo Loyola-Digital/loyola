@@ -77,6 +77,9 @@ const generateBodySchema = z.object({
   campaign: z.string().min(1).max(120),
   term: z.string().max(120).optional(),
   content: z.string().max(120).optional(),
+  // Descrição livre do lote ("do que se trata o link"). Vai pro `note` do
+  // Switchy e pro histórico local.
+  note: z.string().max(500).optional(),
   // Domínio do shortlink escolhido no gerador (ex: links.loyoladigital.com).
   domain: z.string().min(1).max(255).optional(),
   channels: z.array(channelSchema).min(1),
@@ -502,6 +505,7 @@ export default fp(async function switchyRoutes(fastify) {
 
     const pixels = settings?.pixels ?? [];
     const showGdpr = settings?.showGdpr ?? false;
+    const note = (body.note ?? "").trim() || null;
 
     const results: Array<{
       label: string;
@@ -549,6 +553,7 @@ export default fp(async function switchyRoutes(fastify) {
             ...(p.workspaceId != null ? { workspaceId: p.workspaceId } : {}),
           })),
           showGDPR: showGdpr,
+          ...(note ? { note } : {}),
         });
         shortUrl = created.shortUrl;
         linkDomain = created.domain ?? body.domain ?? null;
@@ -575,6 +580,7 @@ export default fp(async function switchyRoutes(fastify) {
           utmSource: ch.source,
           utmTerm: term || null,
           utmContent: content || null,
+          note,
           sck,
           vkSource: "",
           fullUrl,

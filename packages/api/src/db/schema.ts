@@ -1459,6 +1459,9 @@ export const switchyShortenedLinks = pgTable(
     utmSource: varchar("utm_source", { length: 120 }),
     utmTerm: varchar("utm_term", { length: 120 }),
     utmContent: varchar("utm_content", { length: 120 }),
+    /** Descrição livre do lote ("do que se trata o link", ex: "Checkout produto
+     * X"). Preenchida no gerador; replicada como `note` no Switchy. */
+    note: varchar("note", { length: 500 }),
     sck: text("sck"),
     vkSource: text("vk_source"),
     fullUrl: text("full_url").notNull(),

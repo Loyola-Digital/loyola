@@ -85,6 +85,8 @@ export interface SwitchyGeneratePayload {
   campaign: string;
   term?: string;
   content?: string;
+  // Descrição livre do lote ("do que se trata o link"). Opcional.
+  note?: string;
   // Domínio do shortlink escolhido no gerador (ex: links.loyoladigital.com).
   domain?: string;
   channels: SwitchyGenerateChannel[];
@@ -110,6 +112,7 @@ export interface SwitchyHistoryItem {
   utmSource: string | null;
   utmTerm: string | null;
   utmContent: string | null;
+  note: string | null;
   checkoutBaseUrl: string;
   domain: string | null;
   shortUrl: string | null;
