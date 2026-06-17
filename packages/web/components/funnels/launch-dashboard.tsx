@@ -862,11 +862,11 @@ function CtrCpmChart({
   return (
     <ResponsiveContainer width="100%" height={260}>
       <LineChart data={chartData}>
-        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
         <XAxis
           dataKey="date"
           tick={{ fontSize: 11, fill: "#fff" }}
-          stroke="hsl(var(--muted-foreground))"
+          stroke="var(--color-muted-foreground)"
         />
         <YAxis
           yAxisId="ctr"

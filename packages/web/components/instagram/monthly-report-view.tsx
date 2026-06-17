@@ -416,10 +416,10 @@ function DailyTrendCard({ daily }: { daily: AccountReport["dailyTrend"] }) {
       <h3 className="text-sm font-semibold mb-3">Alcance diário</h3>
       <ResponsiveContainer width="100%" height={200}>
         <LineChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-          <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-          <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-          <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+          <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="var(--color-muted-foreground)" />
+          <YAxis tick={{ fontSize: 10 }} stroke="var(--color-muted-foreground)" />
+          <Tooltip contentStyle={{ backgroundColor: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "12px" }} />
           <Legend wrapperStyle={{ fontSize: "10px" }} />
           <Line type="monotone" dataKey="reach" stroke="hsl(190 80% 50%)" strokeWidth={2} dot={false} name="Alcance" />
         </LineChart>

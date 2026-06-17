@@ -240,11 +240,11 @@ function YouTubeFunnelDashboard({ accountId, days, campaignIds }: { accountId: s
           <h4 className="text-xs font-semibold mb-2">Spend & Views Diarios</h4>
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={dailyData.map((d) => ({ date: d.date.slice(5, 10), spend: d.spend, views: d.views }))}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
-              <YAxis yAxisId="spend" tick={{ fontSize: 10, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v}`} />
-              <YAxis yAxisId="views" orientation="right" tick={{ fontSize: 10, fill: "#fff" }} stroke="hsl(var(--muted-foreground))" />
-              <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "11px", color: "#fff" }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
+              <YAxis yAxisId="spend" tick={{ fontSize: 10, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => `R$${v}`} />
+              <YAxis yAxisId="views" orientation="right" tick={{ fontSize: 10, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
+              <Tooltip contentStyle={{ backgroundColor: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "11px", color: "#fff" }} />
               <Legend wrapperStyle={{ color: "#fff" }} />
               <Line yAxisId="spend" type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={false} name="Spend (R$)" />
               <Line yAxisId="views" type="monotone" dataKey="views" stroke="hsl(0 72% 55%)" strokeWidth={2} dot={false} name="Views" />

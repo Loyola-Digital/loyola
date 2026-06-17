@@ -151,7 +151,7 @@ function VideoRetentionSparkline({ metrics }: { metrics: VideoMetrics }) {
         <AreaChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
           <Area type="monotone" dataKey="value" stroke="hsl(200 80% 60%)" fill="hsl(200 80% 60% / 0.2)" strokeWidth={1.5} />
           <Tooltip
-            contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "10px", padding: "4px 6px" }}
+            contentStyle={{ backgroundColor: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "6px", fontSize: "10px", padding: "4px 6px" }}
             formatter={(v) => fmtNumber(Number(v))}
             labelFormatter={(l) => `Retenção ${l}`}
           />
