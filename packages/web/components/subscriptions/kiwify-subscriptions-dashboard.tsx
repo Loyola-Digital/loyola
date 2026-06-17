@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import { useEffect, useState } from "react";
 import {
   PackageOpen,
@@ -14,11 +13,10 @@ import {
   Clock,
   Percent,
   Repeat,
-  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   useKiwifyProducts,
   useKiwifyDashboard,
@@ -29,6 +27,7 @@ import { ProductPicker } from "@/components/subscriptions/product-picker";
 import { PeriodPicker } from "@/components/subscriptions/period-picker";
 import { StatusDistributionChart } from "@/components/subscriptions/status-distribution-chart";
 import { fmtInt, fmtPct } from "@/components/subscriptions/format";
+import { KpiCard, KpiTooltip, KpiSectionLabel } from "@/components/subscriptions/kpi-card";
 
 // ============================================================
 // Story 35.5 — Dashboard de recorrência Kiwify (UI honesta).
@@ -163,68 +162,6 @@ export function KiwifySubscriptionsDashboard({ projectId }: Props) {
 
 // ---- KPIs ----
 
-const KpiCard = React.forwardRef<
-  HTMLDivElement,
-  {
-    icon: React.ComponentType<{ className?: string }>;
-    label: string;
-    value: string;
-    sub?: string;
-    gradient?: string;
-    border?: string;
-    /** Card de gap honesto: visual esmaecido + cadeado. */
-    disabled?: boolean;
-  } & React.HTMLAttributes<HTMLDivElement>
->(function KpiCard(
-  {
-    icon: Icon,
-    label,
-    value,
-    sub,
-    gradient = "from-card/80 to-card/40",
-    border = "border-border/30",
-    disabled = false,
-    className,
-    ...rest
-  },
-  ref,
-) {
-  return (
-    <div
-      ref={ref}
-      {...rest}
-      className={`rounded-xl border ${border} bg-gradient-to-br ${gradient} p-4 ${
-        disabled ? "opacity-60" : ""
-      } ${className ?? ""}`}
-    >
-      <div className="mb-1.5 flex items-center justify-between">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">
-          {label}
-        </span>
-        {disabled ? (
-          <Lock className="h-4 w-4 text-muted-foreground/50" />
-        ) : (
-          <Icon className="h-4 w-4 text-muted-foreground/50" />
-        )}
-      </div>
-      <p className="text-2xl font-bold tracking-tight">{value}</p>
-      {sub && <p className="mt-0.5 text-[10px] text-muted-foreground">{sub}</p>}
-    </div>
-  );
-});
-
-/** Envolve um card com um tooltip de texto (explicação da fórmula/aproximação/gap). */
-function KpiTooltip({ explain, children }: { explain: string; children: React.ReactNode }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side="top" className="max-w-[260px] p-2 text-xs leading-relaxed">
-        {explain}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
 function KiwifyKpis({ data }: { data: KiwifyDashboard }) {
   const cur = data.currencyPrimary;
 
@@ -242,116 +179,114 @@ function KiwifyKpis({ data }: { data: KiwifyDashboard }) {
   const renewalPct = totalChanges > 0 ? data.newVsRenewal.renewal / totalChanges : 0;
 
   return (
-    <div className="space-y-3">
-      {/* Linha 1: receita */}
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        <KpiTooltip explain="Soma do net_amount (vendas paid/approved) do produto no período selecionado, por moeda. Valores na moeda primária; outras moedas no subtexto.">
-          <KpiCard
-            icon={DollarSign}
-            label="Receita recorrente"
-            value={fmtCentavos(revenue)}
-            sub={revenueSub ? `+ ${revenueSub}` : "no período"}
-            gradient="from-emerald-500/10 to-emerald-600/5"
-            border="border-emerald-500/20"
-          />
-        </KpiTooltip>
-        <KpiTooltip explain="Aproximação: receita recorrente dos últimos 30 dias — NÃO é MRR contratual. A API da Kiwify não expõe estado de assinatura; isto reflete o que foi efetivamente cobrado no mês.">
-          <KpiCard
-            icon={TrendingUp}
-            label="MRR aproximado"
-            value={fmtCentavos(mrr)}
-            sub={mrrSub ? `+ ${mrrSub}` : "últimos 30 dias (aprox.)"}
-            gradient="from-blue-500/10 to-blue-600/5"
-            border="border-blue-500/20"
-          />
-        </KpiTooltip>
-        <KpiTooltip explain="Novos = vendas sem parent_order_id (primeira cobrança). Renovações = vendas com parent_order_id (cobranças subsequentes da mesma assinatura).">
-          <KpiCard
-            icon={Repeat}
-            label="Novos vs renovações"
-            value={`${fmtInt(data.newVsRenewal.new)} / ${fmtInt(data.newVsRenewal.renewal)}`}
-            sub={totalChanges > 0 ? `${fmtPct(renewalPct)} renovação` : "novos / renovações"}
-            gradient="from-indigo-500/10 to-indigo-600/5"
-            border="border-indigo-500/20"
-          />
-        </KpiTooltip>
-        <KpiTooltip explain="Taxa de reembolso e de chargeback do produto no período, vindas de /v1/stats da Kiwify.">
-          <KpiCard
-            icon={Percent}
-            label="Taxas"
-            value={fmtPct(data.refundRate)}
-            sub={`chargeback ${fmtPct(data.chargebackRate)}`}
-            gradient="from-amber-500/10 to-amber-600/5"
-            border="border-amber-500/20"
-          />
-        </KpiTooltip>
-      </div>
+    <div className="space-y-5">
+      {/* Receita */}
+      <section>
+        <KpiSectionLabel>Receita</KpiSectionLabel>
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+          <KpiTooltip explain="Soma do net_amount (vendas paid/approved) do produto no período selecionado, por moeda. Valores na moeda primária; outras moedas no subtexto.">
+            <KpiCard
+              icon={DollarSign}
+              label="Receita recorrente"
+              value={fmtCentavos(revenue)}
+              sub={revenueSub ? `+ ${revenueSub}` : "no período"}
+              tone="positive"
+            />
+          </KpiTooltip>
+          <KpiTooltip explain="Aproximação: receita recorrente dos últimos 30 dias — NÃO é MRR contratual. A API da Kiwify não expõe estado de assinatura; isto reflete o que foi efetivamente cobrado no mês.">
+            <KpiCard
+              icon={TrendingUp}
+              label="MRR aproximado"
+              value={fmtCentavos(mrr)}
+              sub={mrrSub ? `+ ${mrrSub}` : "últimos 30 dias (aprox.)"}
+            />
+          </KpiTooltip>
+          <KpiTooltip explain="Novos = vendas sem parent_order_id (primeira cobrança). Renovações = vendas com parent_order_id (cobranças subsequentes da mesma assinatura).">
+            <KpiCard
+              icon={Repeat}
+              label="Novos vs renovações"
+              value={`${fmtInt(data.newVsRenewal.new)} / ${fmtInt(data.newVsRenewal.renewal)}`}
+              sub={totalChanges > 0 ? `${fmtPct(renewalPct)} renovação` : "novos / renovações"}
+            />
+          </KpiTooltip>
+          <KpiTooltip explain="Taxa de reembolso e de chargeback do produto no período, vindas de /v1/stats da Kiwify.">
+            <KpiCard
+              icon={Percent}
+              label="Taxas"
+              value={fmtPct(data.refundRate)}
+              sub={`chargeback ${fmtPct(data.chargebackRate)}`}
+              tone="warning"
+            />
+          </KpiTooltip>
+        </div>
+      </section>
 
-      {/* Linha 2: cobranças por bucket de status */}
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        <KpiTooltip explain="Cobranças com status paid + approved: quantidade e valor (moeda primária).">
-          <KpiCard
-            icon={CreditCard}
-            label="Pagas"
-            value={fmtInt(data.charges.paid.count)}
-            sub={fmtCentavos(paidVal)}
-            gradient="from-emerald-500/10 to-emerald-600/5"
-            border="border-emerald-500/20"
-          />
-        </KpiTooltip>
-        <KpiTooltip explain="Cobranças reembolsadas: refunded + refund_requested + pending_refund. Quantidade e valor (moeda primária).">
-          <KpiCard
-            icon={RotateCcw}
-            label="Reembolsadas"
-            value={fmtInt(data.charges.refunded.count)}
-            sub={fmtCentavos(refundedVal)}
-            gradient="from-amber-500/10 to-amber-600/5"
-            border="border-amber-500/20"
-          />
-        </KpiTooltip>
-        <KpiTooltip explain="Cobranças com chargeback (chargedback). Quantidade e valor (moeda primária).">
-          <KpiCard
-            icon={ShieldAlert}
-            label="Chargeback"
-            value={fmtInt(data.charges.chargeback.count)}
-            sub={fmtCentavos(chargebackVal)}
-            gradient="from-red-500/10 to-red-600/5"
-            border="border-red-500/20"
-          />
-        </KpiTooltip>
-        <KpiTooltip explain="Cobranças pendentes: waiting_payment + pending + processing + authorized. Apenas a quantidade (ainda sem receita confirmada).">
-          <KpiCard
-            icon={Clock}
-            label="Pendentes"
-            value={fmtInt(data.charges.pending.count)}
-            sub="aguardando confirmação"
-            gradient="from-slate-500/10 to-slate-600/5"
-            border="border-slate-500/20"
-          />
-        </KpiTooltip>
-      </div>
+      {/* Cobranças por bucket de status */}
+      <section>
+        <KpiSectionLabel>Cobranças</KpiSectionLabel>
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+          <KpiTooltip explain="Cobranças com status paid + approved: quantidade e valor (moeda primária).">
+            <KpiCard
+              icon={CreditCard}
+              label="Pagas"
+              value={fmtInt(data.charges.paid.count)}
+              sub={fmtCentavos(paidVal)}
+              tone="positive"
+            />
+          </KpiTooltip>
+          <KpiTooltip explain="Cobranças reembolsadas: refunded + refund_requested + pending_refund. Quantidade e valor (moeda primária).">
+            <KpiCard
+              icon={RotateCcw}
+              label="Reembolsadas"
+              value={fmtInt(data.charges.refunded.count)}
+              sub={fmtCentavos(refundedVal)}
+              tone="warning"
+            />
+          </KpiTooltip>
+          <KpiTooltip explain="Cobranças com chargeback (chargedback). Quantidade e valor (moeda primária).">
+            <KpiCard
+              icon={ShieldAlert}
+              label="Chargeback"
+              value={fmtInt(data.charges.chargeback.count)}
+              sub={fmtCentavos(chargebackVal)}
+              tone="negative"
+            />
+          </KpiTooltip>
+          <KpiTooltip explain="Cobranças pendentes: waiting_payment + pending + processing + authorized. Apenas a quantidade (ainda sem receita confirmada).">
+            <KpiCard
+              icon={Clock}
+              label="Pendentes"
+              value={fmtInt(data.charges.pending.count)}
+              sub="aguardando confirmação"
+            />
+          </KpiTooltip>
+        </div>
+      </section>
 
-      {/* Linha 3: cards de GAP HONESTO — desabilitados, sem número inventado */}
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        <KpiTooltip explain={GAP_TOOLTIP}>
-          <KpiCard
-            icon={CreditCard}
-            label="Assinaturas vigentes"
-            value="—"
-            sub="indisponível (fase 2)"
-            disabled
-          />
-        </KpiTooltip>
-        <KpiTooltip explain={GAP_TOOLTIP}>
-          <KpiCard
-            icon={Percent}
-            label="Churn"
-            value="—"
-            sub="indisponível (fase 2)"
-            disabled
-          />
-        </KpiTooltip>
-      </div>
+      {/* Recorrência — gaps honestos, desabilitados, sem número inventado */}
+      <section>
+        <KpiSectionLabel>Recorrência</KpiSectionLabel>
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+          <KpiTooltip explain={GAP_TOOLTIP}>
+            <KpiCard
+              icon={CreditCard}
+              label="Assinaturas vigentes"
+              value="—"
+              sub="indisponível (fase 2)"
+              disabled
+            />
+          </KpiTooltip>
+          <KpiTooltip explain={GAP_TOOLTIP}>
+            <KpiCard
+              icon={Percent}
+              label="Churn"
+              value="—"
+              sub="indisponível (fase 2)"
+              disabled
+            />
+          </KpiTooltip>
+        </div>
+      </section>
     </div>
   );
 }
