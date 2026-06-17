@@ -378,6 +378,57 @@ export default fp(async function sprintDashboardRoutes(fastify) {
     }
   });
 
+  // ---- PUT /api/sprint-dashboard/task/:taskId/complete ----
+  // Marca/desmarca como concluído resolvendo o NOME real do status pela LISTA.
+  // As listas do ClickUp usam status em pt ("concluído"/"não iniciado"), então
+  // mandar "done"/"to do" hardcoded falha. Aqui o front manda só a intenção
+  // (done) + a listId, e a gente escolhe o status pelo TYPE:
+  //   done=true  → type "closed" (concluído) preferido, senão "done", senão último
+  //   done=false → type "open" (não iniciado), senão primeiro
+  const completeBodySchema = z.object({
+    listId: z.string().min(1),
+    done: z.boolean(),
+  });
+
+  fastify.put("/api/sprint-dashboard/task/:taskId/complete", async (request, reply) => {
+    const guestErr = denyGuest(request);
+    if (guestErr) return reply.code(403).send(guestErr);
+    if (!fastify.clickupService.isConfigured()) {
+      return reply.code(503).send({ error: "ClickUp não configurado" });
+    }
+
+    const params = updateStatusParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const body = completeBodySchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: "Body inválido", details: body.error.flatten() });
+    }
+
+    try {
+      const statuses = await fastify.clickupService.getListStatuses(body.data.listId);
+      const byOrder = [...statuses].sort((a, b) => a.orderindex - b.orderindex);
+      const target = body.data.done
+        ? statuses.find((s) => s.type === "closed")?.status ??
+          statuses.find((s) => s.type === "done")?.status ??
+          byOrder[byOrder.length - 1]?.status
+        : statuses.find((s) => s.type === "open")?.status ?? byOrder[0]?.status;
+
+      if (!target) {
+        return reply.code(422).send({ error: "Lista do ClickUp sem status compatível" });
+      }
+
+      await fastify.clickupService.updateTaskStatus(params.data.taskId, target);
+      tasksCache.clear();
+      return { ok: true, taskId: params.data.taskId, status: target };
+    } catch (err) {
+      return reply.code(502).send({
+        error: "Erro ao atualizar status no ClickUp",
+        details: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
   // ============================================================
   // Story 31.6 — Metrics-resumo do header (eventos próximos)
   // ============================================================

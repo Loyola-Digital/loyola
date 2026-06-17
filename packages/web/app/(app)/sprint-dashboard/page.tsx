@@ -11,7 +11,6 @@ import {
   useSprintDashboardConfig,
   useSprintDashboardTasks,
   useSprintDashboardMetrics,
-  useUpdateTaskStatus,
   type ClickUpTaskShape,
 } from "@/lib/hooks/use-sprint-dashboard";
 import { SprintBuilderDialog } from "@/components/sprint-dashboard/sprint-builder-dialog";
@@ -42,7 +41,6 @@ export default function SprintDashboardPage() {
   const { data: tasksData, isLoading: tasksLoading, isFetching } = useSprintDashboardTasks(
     allListIds.length > 0 ? allListIds : null,
   );
-  const updateStatus = useUpdateTaskStatus();
 
   if (role === "guest") {
     return (
@@ -163,8 +161,6 @@ export default function SprintDashboardPage() {
               block={block}
               tasksByListId={tasksByListId}
               loading={tasksLoading}
-              onToggleStatus={(taskId, newStatus) => updateStatus.mutate({ taskId, status: newStatus })}
-              statusUpdating={updateStatus.isPending}
               onEditTask={(task) => setEditingTask(task)}
             />
           ))}
