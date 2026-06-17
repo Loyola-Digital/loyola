@@ -159,20 +159,20 @@ export function ZoomMeetingAnalytics({ participants, rawSessions, chat }: Props)
                       <stop offset="100%" stopColor="hsl(210 90% 60%)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.5} />
                   <XAxis
                     dataKey="clockTime"
                     interval={temporalTickInterval}
                     fontSize={10}
-                    stroke="hsl(var(--muted-foreground))"
-                    tick={{ fill: "hsl(var(--muted-foreground))" }}
+                    stroke="var(--color-muted-foreground)"
+                    tick={{ fill: "var(--color-muted-foreground)" }}
                   />
                   <YAxis
                     tickFormatter={(v) => `${v.toFixed(0)}%`}
                     domain={[0, 100]}
                     fontSize={10}
-                    stroke="hsl(var(--muted-foreground))"
-                    tick={{ fill: "hsl(var(--muted-foreground))" }}
+                    stroke="var(--color-muted-foreground)"
+                    tick={{ fill: "var(--color-muted-foreground)" }}
                   />
                   <Tooltip
                     formatter={(v) => `${Number(v).toFixed(1)}%`}
@@ -182,13 +182,13 @@ export function ZoomMeetingAnalytics({ participants, rawSessions, chat }: Props)
                     }}
                     contentStyle={{
                       fontSize: "11px",
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
+                      backgroundColor: "var(--color-popover)",
+                      border: "1px solid var(--color-border)",
                       borderRadius: "8px",
-                      color: "hsl(var(--foreground))",
+                      color: "var(--color-popover-foreground)",
                     }}
-                    labelStyle={{ color: "hsl(var(--foreground))" }}
-                    itemStyle={{ color: "hsl(var(--foreground))" }}
+                    labelStyle={{ color: "var(--color-popover-foreground)" }}
+                    itemStyle={{ color: "var(--color-popover-foreground)" }}
                   />
                   <Area
                     type="monotone"
@@ -213,18 +213,18 @@ export function ZoomMeetingAnalytics({ participants, rawSessions, chat }: Props)
               </div>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={temporalData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.5} />
                   <XAxis
                     dataKey="clockTime"
                     interval={temporalTickInterval}
                     fontSize={10}
-                    stroke="hsl(var(--muted-foreground))"
-                    tick={{ fill: "hsl(var(--muted-foreground))" }}
+                    stroke="var(--color-muted-foreground)"
+                    tick={{ fill: "var(--color-muted-foreground)" }}
                   />
                   <YAxis
                     fontSize={10}
-                    stroke="hsl(var(--muted-foreground))"
-                    tick={{ fill: "hsl(var(--muted-foreground))" }}
+                    stroke="var(--color-muted-foreground)"
+                    tick={{ fill: "var(--color-muted-foreground)" }}
                   />
                   <Tooltip
                     labelFormatter={(label, payload) => {
@@ -233,13 +233,13 @@ export function ZoomMeetingAnalytics({ participants, rawSessions, chat }: Props)
                     }}
                     contentStyle={{
                       fontSize: "11px",
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
+                      backgroundColor: "var(--color-popover)",
+                      border: "1px solid var(--color-border)",
                       borderRadius: "8px",
-                      color: "hsl(var(--foreground))",
+                      color: "var(--color-popover-foreground)",
                     }}
-                    labelStyle={{ color: "hsl(var(--foreground))" }}
-                    itemStyle={{ color: "hsl(var(--foreground))" }}
+                    labelStyle={{ color: "var(--color-popover-foreground)" }}
+                    itemStyle={{ color: "var(--color-popover-foreground)" }}
                   />
                   <Line
                     type="monotone"
@@ -285,7 +285,17 @@ export function ZoomMeetingAnalytics({ participants, rawSessions, chat }: Props)
                       <Cell key={entry.name} fill={entry.fill} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{ fontSize: "11px" }} />
+                  <Tooltip
+                    contentStyle={{
+                      fontSize: "11px",
+                      backgroundColor: "var(--color-popover)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "8px",
+                      color: "var(--color-popover-foreground)",
+                    }}
+                    labelStyle={{ color: "var(--color-popover-foreground)" }}
+                    itemStyle={{ color: "var(--color-popover-foreground)" }}
+                  />
                   <Legend wrapperStyle={{ fontSize: "10px" }} />
                 </PieChart>
               </ResponsiveContainer>
@@ -303,29 +313,29 @@ export function ZoomMeetingAnalytics({ participants, rawSessions, chat }: Props)
               </div>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={histogramData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.5} />
                   <XAxis
                     dataKey="name"
                     fontSize={10}
-                    stroke="hsl(var(--muted-foreground))"
-                    tick={{ fill: "hsl(var(--muted-foreground))" }}
+                    stroke="var(--color-muted-foreground)"
+                    tick={{ fill: "var(--color-muted-foreground)" }}
                   />
                   <YAxis
                     fontSize={10}
-                    stroke="hsl(var(--muted-foreground))"
-                    tick={{ fill: "hsl(var(--muted-foreground))" }}
+                    stroke="var(--color-muted-foreground)"
+                    tick={{ fill: "var(--color-muted-foreground)" }}
                   />
                   <Tooltip
                     labelFormatter={(label) => `Faixa: ${label}`}
                     contentStyle={{
                       fontSize: "11px",
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
+                      backgroundColor: "var(--color-popover)",
+                      border: "1px solid var(--color-border)",
                       borderRadius: "8px",
-                      color: "hsl(var(--foreground))",
+                      color: "var(--color-popover-foreground)",
                     }}
-                    labelStyle={{ color: "hsl(var(--foreground))" }}
-                    itemStyle={{ color: "hsl(var(--foreground))" }}
+                    labelStyle={{ color: "var(--color-popover-foreground)" }}
+                    itemStyle={{ color: "var(--color-popover-foreground)" }}
                   />
                   <Bar dataKey="count" fill="hsl(210 90% 60%)" name="Pessoas" />
                 </BarChart>
