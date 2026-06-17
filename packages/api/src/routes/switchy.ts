@@ -100,6 +100,8 @@ const updateLinkBodySchema = z.object({
   term: z.string().max(120).optional(),
   content: z.string().max(120).optional(),
   channelLabel: z.string().max(120).optional(),
+  // Descrição livre ("do que se trata"). String vazia limpa a descrição.
+  note: z.string().max(500).optional(),
 });
 
 const historyQuerySchema = z.object({
@@ -685,6 +687,9 @@ export default fp(async function switchyRoutes(fastify) {
     const b = bodyResult.data;
     const term = (b.term ?? "").trim();
     const content = (b.content ?? "").trim();
+    // note só é alterado quando o campo veio no body; "" limpa, undefined mantém.
+    const note =
+      b.note !== undefined ? (b.note.trim() || null) : existing.note ?? null;
 
     const fullUrl = buildTrackedCheckoutUrl({
       baseUrl: b.checkoutUrl,
@@ -701,7 +706,10 @@ export default fp(async function switchyRoutes(fastify) {
     // Atualiza o destino no Switchy quando temos o uniq do link.
     if (existing.switchyUniq != null) {
       try {
-        await updateSwitchyLink(getSwitchyToken(), existing.switchyUniq, { url: fullUrl });
+        await updateSwitchyLink(getSwitchyToken(), existing.switchyUniq, {
+          url: fullUrl,
+          ...(b.note !== undefined ? { note: b.note.trim() } : {}),
+        });
       } catch (e) {
         fastify.log.error(e, "Failed to update Switchy link destination");
         return reply.code(502).send({ error: "Falha ao atualizar o link no Switchy" });
@@ -718,6 +726,7 @@ export default fp(async function switchyRoutes(fastify) {
         utmSource: b.source,
         utmTerm: term || null,
         utmContent: content || null,
+        note,
         sck,
         fullUrl,
       })
