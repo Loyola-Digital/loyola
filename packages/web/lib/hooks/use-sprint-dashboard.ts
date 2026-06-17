@@ -117,6 +117,31 @@ export function useUpdateTaskStatus() {
   });
 }
 
+/**
+ * Marca/desmarca uma task como concluída. Manda só a intenção (done) + listId;
+ * o backend resolve o NOME real do status na lista do ClickUp pelo type
+ * (concluído/não iniciado em pt). Resolve o problema de mandar "done"/"to do"
+ * hardcoded, que o ClickUp rejeitava.
+ */
+export function useToggleTaskDone() {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, listId, done }: { taskId: string; listId: string; done: boolean }) =>
+      apiClient<{ ok: boolean; taskId: string; status: string }>(
+        `/api/sprint-dashboard/task/${taskId}/complete`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ listId, done }),
+        },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sprint-dashboard-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["sprint-dashboard-metrics"] });
+    },
+  });
+}
+
 export interface UpdateTaskInput {
   taskId: string;
   status?: string;

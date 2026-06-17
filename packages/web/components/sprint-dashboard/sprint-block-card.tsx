@@ -4,9 +4,10 @@ import { useMemo, useState } from "react";
 import { ExternalLink, Check, Circle, Clock } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SprintDashboardBlock } from "@loyola-x/shared";
-import type { ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
+import { useToggleTaskDone, type ClickUpTaskShape } from "@/lib/hooks/use-sprint-dashboard";
 import {
   applyFilters,
   isDoneStatus,
@@ -20,8 +21,6 @@ interface SprintBlockCardProps {
   block: SprintDashboardBlock;
   tasksByListId: Map<string, ClickUpTaskShape[]>;
   loading: boolean;
-  onToggleStatus: (taskId: string, newStatus: string) => void;
-  statusUpdating: boolean;
   /** Abre o dialog de edit (status / nome / due_date) pra essa task */
   onEditTask?: (task: ClickUpTaskShape) => void;
 }
@@ -30,11 +29,10 @@ export function SprintBlockCard({
   block,
   tasksByListId,
   loading,
-  onToggleStatus,
-  statusUpdating,
   onEditTask,
 }: SprintBlockCardProps) {
   const [optimisticDone, setOptimisticDone] = useState<Set<string>>(new Set());
+  const toggleDone = useToggleTaskDone();
 
   // `allTasks` é o universo bruto filtrado pelos block.filters (status/tag/assignee
   // configurados no builder). `tasks` (exibido) aplica ainda `shouldCountForHealth`
@@ -94,18 +92,34 @@ export function SprintBlockCard({
       : "text-red-500";
 
   function handleToggle(task: ClickUpTaskShape) {
-    if (statusUpdating) return;
+    if (toggleDone.isPending) return;
     const currentDone = isDoneStatus(task.status) || optimisticDone.has(task.id);
-    // Otimista: marca/desmarca local antes de servidor responder
+    const newDone = !currentDone;
+    // Otimista: marca/desmarca local antes do servidor responder.
     setOptimisticDone((prev) => {
       const next = new Set(prev);
-      if (currentDone) next.delete(task.id);
-      else next.add(task.id);
+      if (newDone) next.add(task.id);
+      else next.delete(task.id);
       return next;
     });
-    // Inverte: se done, volta pra "to do"; se !done, vai pra "done"
-    const newStatus = currentDone ? "to do" : "done";
-    onToggleStatus(task.id, newStatus);
+    // Manda só a intenção; o backend resolve o nome real do status na lista.
+    toggleDone.mutate(
+      { taskId: task.id, listId: task.listId, done: newDone },
+      {
+        onError: (e) => {
+          // Reverte o otimista e avisa — antes a falha era silenciosa.
+          setOptimisticDone((prev) => {
+            const next = new Set(prev);
+            if (newDone) next.delete(task.id);
+            else next.add(task.id);
+            return next;
+          });
+          toast.error(
+            `Não foi possível atualizar no ClickUp${e instanceof Error ? `: ${e.message}` : ""}`,
+          );
+        },
+      },
+    );
   }
 
   return (
@@ -172,7 +186,7 @@ export function SprintBlockCard({
                     >
                       <button
                         onClick={() => handleToggle(t)}
-                        disabled={statusUpdating}
+                        disabled={toggleDone.isPending}
                         className="mt-0.5 shrink-0 hover:scale-110 transition-transform disabled:opacity-40"
                         title={done ? "Marcar como aberto" : "Marcar como concluído"}
                       >
