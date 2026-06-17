@@ -248,6 +248,7 @@ function EditLinkDialog({
 }) {
   const updateMut = useUpdateSwitchyHistoryLink(projectId, funnelId);
   const [checkoutUrl, setCheckoutUrl] = useState(link.checkoutBaseUrl);
+  const [note, setNote] = useState(link.note ?? "");
   const [campaign, setCampaign] = useState(link.utmCampaign ?? "");
   const [medium, setMedium] = useState(link.utmMedium ?? "");
   const [source, setSource] = useState(link.utmSource ?? "");
@@ -266,6 +267,7 @@ function EditLinkDialog({
         campaign: campaign.trim(),
         medium: medium.trim(),
         source: source.trim(),
+        note: note.trim(),
         ...(term.trim() ? { term: term.trim() } : {}),
         ...(content.trim() ? { content: content.trim() } : {}),
       },
@@ -294,6 +296,16 @@ function EditLinkDialog({
           <div className="space-y-1">
             <Label htmlFor="edit-checkout" className="text-xs">Link de checkout</Label>
             <Input id="edit-checkout" value={checkoutUrl} onChange={(e) => setCheckoutUrl(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="edit-note" className="text-xs">Descrição (opcional)</Label>
+            <Input
+              id="edit-note"
+              placeholder='ex: Checkout produto X, Página de captura'
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              maxLength={500}
+            />
           </div>
           <div className="space-y-1">
             <Label htmlFor="edit-campaign" className="text-xs">utm_campaign</Label>

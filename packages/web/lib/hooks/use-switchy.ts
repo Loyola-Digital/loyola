@@ -132,6 +132,8 @@ export interface SwitchyUpdateLinkPayload {
   term?: string;
   content?: string;
   channelLabel?: string;
+  // Descrição livre ("do que se trata"). "" limpa a descrição.
+  note?: string;
 }
 
 // ============================================================
