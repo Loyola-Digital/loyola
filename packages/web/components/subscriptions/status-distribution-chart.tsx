@@ -9,6 +9,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
   Cell,
+  LabelList,
 } from "recharts";
 import { fmtInt } from "@/components/subscriptions/format";
 
@@ -87,9 +88,9 @@ export function StatusDistributionChart({
 
   if (data.length === 0) {
     return (
-      <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-5">
-        <h3 className="text-sm font-semibold mb-2">Distribuição de status</h3>
-        <p className="text-xs text-muted-foreground py-6 text-center">
+      <div className="rounded-lg border border-border bg-card p-5">
+        <h3 className="mb-2 text-sm font-semibold">Distribuição de status</h3>
+        <p className="py-6 text-center text-xs text-muted-foreground">
           {emptyMessage}
         </p>
       </div>
@@ -97,8 +98,8 @@ export function StatusDistributionChart({
   }
 
   return (
-    <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-5">
-      <h3 className="text-sm font-semibold mb-4">Distribuição de status</h3>
+    <div className="rounded-lg border border-border bg-card p-5">
+      <h3 className="mb-4 text-sm font-semibold">Distribuição de status</h3>
       <ResponsiveContainer width="100%" height={260}>
         <BarChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
           <CartesianGrid vertical={false} stroke="var(--color-border)" strokeOpacity={0.15} />
@@ -121,18 +122,27 @@ export function StatusDistributionChart({
           <Tooltip
             cursor={{ fill: "var(--color-muted)", fillOpacity: 0.15 }}
             contentStyle={{
-              backgroundColor: "var(--color-card)",
+              backgroundColor: "var(--color-popover)",
               border: "1px solid var(--color-border)",
               borderRadius: "8px",
               fontSize: "12px",
-              color: "#fff",
+              color: "var(--color-popover-foreground)",
             }}
+            labelStyle={{ color: "var(--color-popover-foreground)" }}
+            itemStyle={{ color: "var(--color-popover-foreground)" }}
             formatter={(value) => [fmtInt(Number(value)), seriesLabel]}
           />
-          <Bar dataKey="count" radius={[6, 6, 0, 0]} name={seriesLabel}>
+          <Bar dataKey="count" radius={[6, 6, 0, 0]} name={seriesLabel} maxBarSize={56}>
             {data.map((d) => (
               <Cell key={d.status} fill={colorFor(d.status)} />
             ))}
+            <LabelList
+              dataKey="count"
+              position="top"
+              fontSize={11}
+              fill="var(--color-muted-foreground)"
+              formatter={(v) => fmtInt(Number(v ?? 0))}
+            />
           </Bar>
         </BarChart>
       </ResponsiveContainer>
