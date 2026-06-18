@@ -753,6 +753,74 @@ export async function fetchAllAdInsights(
 }
 
 // ============================================================
+// AD DAILY INSIGHTS (Story 36.4) — level=ad + time_increment=1
+// ============================================================
+// Diferente de fetchAllAdInsights (agregado no período), traz breakdown POR DIA
+// por anúncio, para popular o cache persistente meta_ad_insights_daily.
+
+export interface AdDailyInsight {
+  ad_id: string;
+  ad_name?: string;
+  adset_id?: string;
+  adset_name?: string;
+  campaign_id?: string;
+  campaign_name?: string;
+  date_start: string;
+  spend?: string;
+  impressions?: string;
+  reach?: string;
+  clicks?: string;
+  actions?: { action_type: string; value: string }[];
+  action_values?: { action_type: string; value: string }[];
+  videoMetrics: ReturnType<typeof extractVideoMetrics>;
+}
+
+export async function fetchAdDailyInsights(
+  metaAccountId: string,
+  accessToken: string,
+  days: number = 7,
+  startDate?: string,
+  endDate?: string,
+): Promise<AdDailyInsight[]> {
+  const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
+  const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
+  const fields =
+    "impressions,reach,clicks,spend,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,actions,action_values,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions";
+
+  type RawDaily = RawAllAdInsight & { date_start: string };
+  type PageResponse = { data: RawDaily[]; paging?: { next?: string } };
+
+  const out: AdDailyInsight[] = [];
+  // Chunk 90d (limite da Meta com time_increment=1). Janelas curtas (7d) = 1 chunk.
+  for (const chunk of chunkDateRange(since, until)) {
+    const timeRange = buildTimeRangeParam(chunk.since, chunk.until);
+    let nextPath: string | null = `/act_${metaAccountId}/insights?fields=${fields}&time_range=${timeRange}&time_increment=1&level=ad&limit=500`;
+    let useFullUrl = false;
+    while (nextPath) {
+      let res: PageResponse;
+      if (useFullUrl) {
+        checkRateLimit();
+        const raw = await fetch(nextPath);
+        res = (await raw.json()) as PageResponse;
+      } else {
+        res = await fetchMeta<PageResponse>(nextPath, accessToken);
+      }
+      for (const raw of res.data ?? []) {
+        out.push({ ...raw, videoMetrics: extractVideoMetrics(raw) });
+      }
+      const nextUrl: string | undefined = res.paging?.next;
+      if (nextUrl) {
+        nextPath = nextUrl;
+        useFullUrl = true;
+      } else {
+        nextPath = null;
+      }
+    }
+  }
+  return out;
+}
+
+// ============================================================
 // PLACEMENT BREAKDOWN (Story 8.7)
 // ============================================================
 

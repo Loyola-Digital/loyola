@@ -26,6 +26,10 @@ const envSchema = z.object({
   // forçar os mocks de config dos testes.
   META_BACKFILL_HOUR: z.coerce.number().int().min(0).max(23).optional(),
   META_BACKFILL_ENABLED: z.enum(["true", "false"]).optional(),
+  // Story 36.4: refresh diário da performance Meta (ad/campaign insights) no cache.
+  // Hora local (0-23; default 4). META_PERF_SYNC_ENABLED=false desliga.
+  META_PERF_SYNC_HOUR: z.coerce.number().int().min(0).max(23).optional(),
+  META_PERF_SYNC_ENABLED: z.enum(["true", "false"]).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
