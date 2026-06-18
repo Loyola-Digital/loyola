@@ -16,10 +16,11 @@
 
 import { eq, and, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { metaCampaignInsightsDaily } from "../db/schema.js";
+import { metaCampaignInsightsDaily, metaAdInsightsDaily } from "../db/schema.js";
 import {
   fetchCampaignDailyInsightsForIds,
   type MetaDailyInsight,
+  type AdDailyInsight,
 } from "./meta-ads.js";
 
 // Story 18.38: só o DIA ATUAL tem TTL (1h). Qualquer dia passado já gravado no
@@ -301,4 +302,65 @@ export function triggerBackgroundSyncForNewCampaigns(
     newCampaignIds,
     days,
   );
+}
+
+/**
+ * Story 36.4: upsert dos insights por (ad, dia) em meta_ad_insights_daily.
+ * Espelha upsertCampaignInsights. Idempotente via chave (projectId, adId, dateStart).
+ * Retorna o nº de linhas gravadas.
+ */
+export async function upsertAdDailyInsights(
+  db: Database,
+  projectId: string,
+  rows: AdDailyInsight[],
+): Promise<number> {
+  if (rows.length === 0) return 0;
+  const now = new Date();
+  const values = rows
+    .filter((r) => r.ad_id && r.date_start)
+    .map((r) => ({
+      projectId,
+      adId: r.ad_id,
+      dateStart: r.date_start.slice(0, 10),
+      adsetId: r.adset_id ?? null,
+      adsetName: r.adset_name ?? null,
+      campaignId: r.campaign_id ?? null,
+      campaignName: r.campaign_name ?? null,
+      adName: r.ad_name ?? null,
+      spend: r.spend ?? "0",
+      impressions: r.impressions ?? "0",
+      reach: r.reach ?? "0",
+      clicks: r.clicks ?? "0",
+      actions: r.actions ?? null,
+      actionValues: r.action_values ?? null,
+      videoMetrics: r.videoMetrics ?? null,
+      lastSyncedAt: now,
+    }));
+  if (values.length === 0) return 0;
+  await db
+    .insert(metaAdInsightsDaily)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [
+        metaAdInsightsDaily.projectId,
+        metaAdInsightsDaily.adId,
+        metaAdInsightsDaily.dateStart,
+      ],
+      set: {
+        adsetId: sql`EXCLUDED.adset_id`,
+        adsetName: sql`EXCLUDED.adset_name`,
+        campaignId: sql`EXCLUDED.campaign_id`,
+        campaignName: sql`EXCLUDED.campaign_name`,
+        adName: sql`EXCLUDED.ad_name`,
+        spend: sql`EXCLUDED.spend`,
+        impressions: sql`EXCLUDED.impressions`,
+        reach: sql`EXCLUDED.reach`,
+        clicks: sql`EXCLUDED.clicks`,
+        actions: sql`EXCLUDED.actions`,
+        actionValues: sql`EXCLUDED.action_values`,
+        videoMetrics: sql`EXCLUDED.video_metrics`,
+        lastSyncedAt: sql`EXCLUDED.last_synced_at`,
+      },
+    });
+  return values.length;
 }

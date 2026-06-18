@@ -3,9 +3,7 @@ import { eq, and, gte, lte, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   projects,
-  metaCampaignInsightsDaily,
   metaAdInsightsDaily,
-  metaEntityNamesCache,
   metaAdCreativesCache,
 } from "../db/schema.js";
 import { requireScope } from "../middleware/api-key-auth.js";
@@ -174,91 +172,62 @@ export default fp(async function publicMetaRoutes(fastify) {
 
       const { from, to } = resolveRange(query.data.from, query.data.to);
 
-      const rows = (await fastify.db
+      // Agrega por campanha a partir do cache ad-level (meta_ad_insights_daily) —
+      // fonte ÚNICA, populada pelo job 36.4. campaignName vem direto da linha;
+      // activeCreatives = adIds distintos. Garante consistência campanha↔criativos.
+      const rows = await fastify.db
         .select({
-          campaignId: metaCampaignInsightsDaily.campaignId,
-          dateStart: metaCampaignInsightsDaily.dateStart,
-          spend: metaCampaignInsightsDaily.spend,
-          impressions: metaCampaignInsightsDaily.impressions,
-          reach: metaCampaignInsightsDaily.reach,
-          clicks: metaCampaignInsightsDaily.clicks,
-          actions: metaCampaignInsightsDaily.actions,
-          actionValues: metaCampaignInsightsDaily.actionValues,
-          lastSyncedAt: metaCampaignInsightsDaily.lastSyncedAt,
+          campaignId: metaAdInsightsDaily.campaignId,
+          campaignName: metaAdInsightsDaily.campaignName,
+          adId: metaAdInsightsDaily.adId,
+          dateStart: metaAdInsightsDaily.dateStart,
+          spend: metaAdInsightsDaily.spend,
+          impressions: metaAdInsightsDaily.impressions,
+          reach: metaAdInsightsDaily.reach,
+          clicks: metaAdInsightsDaily.clicks,
+          actions: metaAdInsightsDaily.actions,
+          actionValues: metaAdInsightsDaily.actionValues,
+          lastSyncedAt: metaAdInsightsDaily.lastSyncedAt,
         })
-        .from(metaCampaignInsightsDaily)
+        .from(metaAdInsightsDaily)
         .where(
           and(
-            eq(metaCampaignInsightsDaily.projectId, projectId),
-            gte(metaCampaignInsightsDaily.dateStart, from),
-            lte(metaCampaignInsightsDaily.dateStart, to)
+            eq(metaAdInsightsDaily.projectId, projectId),
+            gte(metaAdInsightsDaily.dateStart, from),
+            lte(metaAdInsightsDaily.dateStart, to)
           )
-        )) as (InsightRow & { campaignId: string })[];
+        );
 
-      const byCampaign = new Map<string, MetricAgg>();
+      interface CampaignAgg extends MetricAgg {
+        campaignName: string | null;
+        adIds: Set<string>;
+      }
+      const byCampaign = new Map<string, CampaignAgg>();
       const daysWithData = new Set<string>();
+      let lastSyncedAt: Date | null = null;
       for (const row of rows) {
+        if (!row.campaignId) continue;
         let agg = byCampaign.get(row.campaignId);
         if (!agg) {
-          agg = emptyAgg();
+          agg = { ...emptyAgg(), campaignName: row.campaignName, adIds: new Set<string>() };
           byCampaign.set(row.campaignId, agg);
         }
         accumulate(agg, row);
+        agg.adIds.add(row.adId);
+        if (!agg.campaignName && row.campaignName) agg.campaignName = row.campaignName;
         daysWithData.add(row.dateStart);
-      }
-
-      const campaignIds = [...byCampaign.keys()];
-
-      // Nomes (entity cache) + contagem de criativos ativos (ad insights no range).
-      const [nameRows, adRows] = await Promise.all([
-        campaignIds.length
-          ? fastify.db
-              .select({ entityId: metaEntityNamesCache.entityId, entityName: metaEntityNamesCache.entityName })
-              .from(metaEntityNamesCache)
-              .where(
-                and(
-                  eq(metaEntityNamesCache.projectId, projectId),
-                  eq(metaEntityNamesCache.entityType, "campaign"),
-                  inArray(metaEntityNamesCache.entityId, campaignIds)
-                )
-              )
-          : Promise.resolve([] as { entityId: string; entityName: string }[]),
-        fastify.db
-          .select({ campaignId: metaAdInsightsDaily.campaignId, adId: metaAdInsightsDaily.adId })
-          .from(metaAdInsightsDaily)
-          .where(
-            and(
-              eq(metaAdInsightsDaily.projectId, projectId),
-              gte(metaAdInsightsDaily.dateStart, from),
-              lte(metaAdInsightsDaily.dateStart, to)
-            )
-          ),
-      ]);
-
-      const nameMap = new Map(nameRows.map((r) => [r.entityId, r.entityName]));
-      const creativeCount = new Map<string, Set<string>>();
-      for (const r of adRows) {
-        if (!r.campaignId) continue;
-        let set = creativeCount.get(r.campaignId);
-        if (!set) {
-          set = new Set();
-          creativeCount.set(r.campaignId, set);
+        if (agg.lastSyncedAt && (!lastSyncedAt || agg.lastSyncedAt > lastSyncedAt)) {
+          lastSyncedAt = agg.lastSyncedAt;
         }
-        set.add(r.adId);
       }
 
-      let lastSyncedAt: Date | null = null;
-      const campaigns = campaignIds
-        .map((id) => {
-          const agg = byCampaign.get(id)!;
-          if (agg.lastSyncedAt && (!lastSyncedAt || agg.lastSyncedAt > lastSyncedAt)) lastSyncedAt = agg.lastSyncedAt;
-          return {
-            campaignId: id,
-            campaignName: nameMap.get(id) ?? null,
-            activeCreatives: creativeCount.get(id)?.size ?? 0,
-            ...deriveMetrics(agg),
-          };
-        })
+      const campaigns = [...byCampaign.entries()]
+        .map(([id, agg]) => ({
+          campaignId: id,
+          campaignName: agg.campaignName,
+          activeCreatives: agg.adIds.size,
+          ...deriveMetrics(agg),
+        }))
         .sort((a, b) => b.spend - a.spend);
 
       return {

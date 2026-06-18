@@ -3,6 +3,7 @@ import { eq, like, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { clerkClient } from "@clerk/fastify";
 import { users, messages, conversations } from "../db/schema.js";
+import { syncMetaPerformance } from "../services/meta-perf-sync.js";
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
@@ -20,6 +21,24 @@ export default fp(async function adminRoutes(fastify) {
       .limit(1);
 
     return rows[0] ?? null;
+  });
+
+  // ---- POST /api/admin/meta-perf-sync ---- (admin/manager only — Story 36.4)
+  // Disparo manual do refresh de performance Meta no cache. Útil para a primeira
+  // carga e debug. Body opcional: { days?: number } (1-90, default 7).
+  fastify.post("/api/admin/meta-perf-sync", async (request, reply) => {
+    if (request.userRole !== "admin" && request.userRole !== "manager") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+    const body = (request.body ?? {}) as { days?: number; projectIds?: string[] };
+    const days = Math.min(Math.max(Number(body.days) || 7, 1), 90);
+    const projectIds = Array.isArray(body.projectIds) ? body.projectIds : undefined;
+    const summary = await syncMetaPerformance(fastify.db, {
+      days,
+      projectIds,
+      log: (m) => fastify.log.info(m),
+    });
+    return { ok: true, days, ...summary };
   });
 
   // ---- GET /api/admin/users ---- (admin only — list users by status)
