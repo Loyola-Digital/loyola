@@ -5,6 +5,7 @@
 
 import fp from "fastify-plugin";
 import { syncMetaPerformance } from "../services/meta-perf-sync.js";
+import { syncLeadOrigin } from "../services/lead-origin-sync.js";
 
 /** ms até a próxima ocorrência de `hour:00:00` no horário local. */
 function msUntilNextRun(hour: number): number {
@@ -49,6 +50,17 @@ export default fp(async function metaPerfSchedulerPlugin(fastify) {
     } catch (err) {
       // Nunca derruba o processo — só loga.
       fastify.log.error(err, "[meta-perf] falhou");
+    }
+
+    // Leads por origem (Story 36.7) — recomputa o cache no mesmo ciclo.
+    try {
+      const leads = await syncLeadOrigin(fastify.db, { log: (m) => fastify.log.info(m) });
+      fastify.log.info(
+        { stagesProcessed: leads.stagesProcessed, stagesSkipped: leads.stagesSkipped, errors: leads.errors.length },
+        "[lead-origin] concluído",
+      );
+    } catch (err) {
+      fastify.log.error(err, "[lead-origin] falhou");
     }
   }
 
