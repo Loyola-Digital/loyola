@@ -80,6 +80,36 @@ export const users = pgTable(
 );
 
 // ============================================================
+// API KEYS (EPIC-36 — Meta Ads Creative Intelligence API / MCP)
+// ============================================================
+// Credencial máquina-a-máquina para consumo da API pública (Story 36.1).
+// Guarda apenas o hash SHA-256 da chave (irreversível) — o texto puro é exibido
+// uma única vez na criação. Consumida pelo middleware da Story 36.2.
+
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    keyPrefix: text("key_prefix").notNull(),
+    keyHash: text("key_hash").notNull(),
+    scopes: jsonb("scopes").$type<string[]>().notNull().default(["meta:read"]),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_api_keys_key_hash").on(table.keyHash),
+    index("idx_api_keys_created_by").on(table.createdBy),
+  ]
+);
+
+// ============================================================
 // PROJECTS TABLES (EPIC-4)
 // ============================================================
 

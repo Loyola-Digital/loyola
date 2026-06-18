@@ -32,6 +32,7 @@ import instagramRoutes from "./routes/instagram.js";
 import projectRoutes from "./routes/projects.js";
 import invitationsRoutes from "./routes/invitations.js";
 import adminRoutes from "./routes/admin.js";
+import apiKeysRoutes from "./routes/api-keys.js";
 import metaAdsRoutes from "./routes/meta-ads.js";
 import trafficAnalyticsRoutes from "./routes/traffic-analytics.js";
 import funnelRoutes from "./routes/funnels.js";
@@ -113,6 +114,7 @@ export async function buildServer() {
   await app.register(projectRoutes);
   await app.register(invitationsRoutes);
   await app.register(adminRoutes);
+  await app.register(apiKeysRoutes);
   await app.register(metaAdsRoutes);
   await app.register(trafficAnalyticsRoutes);
   await app.register(funnelRoutes);

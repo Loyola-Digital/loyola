@@ -40,6 +40,7 @@ const GOOGLE_TABS = [
 const ADMIN_TABS = [
   ...BASE_TABS,
   { label: "Usuários", href: "/settings/users", value: "users" },
+  { label: "API Keys", href: "/settings/api-keys", value: "api-keys" },
   { label: "Auditoria", href: "/settings/audit", value: "audit" },
 ] as const;
 
@@ -54,6 +55,7 @@ function getAllTabs(isAdmin: boolean): readonly Tab[] {
   if (isAdmin) {
     tabs.push(
       { label: "Usuários", href: "/settings/users", value: "users" },
+      { label: "API Keys", href: "/settings/api-keys", value: "api-keys" },
       { label: "Auditoria", href: "/settings/audit", value: "audit" },
     );
   }
@@ -99,6 +101,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const bottomTabs = isAdmin
     ? [
         { label: "Usuários", href: "/settings/users", value: "users" },
+        { label: "API Keys", href: "/settings/api-keys", value: "api-keys" },
         { label: "Auditoria", href: "/settings/audit", value: "audit" },
       ]
     : [];
