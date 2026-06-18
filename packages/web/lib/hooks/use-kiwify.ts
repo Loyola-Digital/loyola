@@ -163,3 +163,68 @@ export function useKiwifyDashboard(
     staleTime: STALE,
   });
 }
+
+// ---- Webhook de assinatura (fase 2) — Story 35.6 ----
+
+/** Resposta do GET/rotate do webhook. `path` é o caminho; o front compõe a URL absoluta. */
+export interface KiwifyWebhookResponse {
+  configured: boolean;
+  path: string;
+  token: string;
+}
+
+/** Monta a URL absoluta que o expert cola no painel da Kiwify. */
+export function buildKiwifyWebhookUrl(res: KiwifyWebhookResponse): string {
+  const base =
+    process.env.NEXT_PUBLIC_API_URL ||
+    (typeof window !== "undefined" ? window.location.origin : "");
+  return `${base}${res.path}?token=${res.token}`;
+}
+
+// GET /api/projects/:projectId/kiwify/webhook -> { configured, path, token }
+export function useKiwifyWebhook(projectId: string, enabled: boolean) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["kiwify-webhook", projectId],
+    queryFn: () => apiClient<KiwifyWebhookResponse>(`${projBase(projectId)}/webhook`),
+    enabled,
+    staleTime: STALE,
+  });
+}
+
+// POST /api/projects/:projectId/kiwify/webhook/rotate -> { configured, path, token }
+export function useRotateKiwifyWebhook(projectId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient<KiwifyWebhookResponse>(`${projBase(projectId)}/webhook/rotate`, { method: "POST" }),
+    onSuccess: (data) => {
+      qc.setQueryData(["kiwify-webhook", projectId], data);
+    },
+  });
+}
+
+// ---- Estado real de assinaturas (vindo dos webhooks) — Story 35.6 ----
+
+export interface KiwifySubscriptionsSummary {
+  total: number;
+  byStatus: Record<string, number>;
+  active: number;
+  canceled: number;
+  late: number;
+  /** MRR real (centavos) das assinaturas vigentes, por moeda. */
+  activeMrr: KiwifyMoneyByCurrency[];
+}
+
+// GET /api/projects/:projectId/kiwify/subscriptions/summary -> KiwifySubscriptionsSummary
+export function useKiwifySubscriptionsSummary(projectId: string, enabled: boolean) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["kiwify-subscriptions-summary", projectId],
+    queryFn: () =>
+      apiClient<KiwifySubscriptionsSummary>(`${projBase(projectId)}/subscriptions/summary`),
+    enabled,
+    staleTime: STALE,
+  });
+}

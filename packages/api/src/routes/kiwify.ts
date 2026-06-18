@@ -1,8 +1,15 @@
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
+import { randomBytes } from "node:crypto";
 import fp from "fastify-plugin";
 import { LRUCache } from "lru-cache";
-import { kiwifyConnections, kiwifyCache, projects, projectMembers } from "../db/schema.js";
+import {
+  kiwifyConnections,
+  kiwifyCache,
+  kiwifySubscriptions,
+  projects,
+  projectMembers,
+} from "../db/schema.js";
 import {
   encryptKiwifySecret,
   decryptKiwifySecret,
@@ -336,5 +343,115 @@ export default fp(async function kiwifyRoutes(fastify) {
         details: err instanceof Error ? err.message : String(err),
       });
     }
+  });
+
+  // ============================================================
+  // Story 35.6 (fase 2) — Webhook de assinatura por projeto.
+  // O sistema "gera o webhook" do projeto: uma URL única com token secreto que o
+  // expert cola no painel da Kiwify. O token vive na conexão Kiwify do projeto.
+  // ============================================================
+
+  const WEBHOOK_PATH = (projectId: string) => `/api/webhooks/kiwify/${projectId}`;
+
+  /** Gera (ou garante) o token de webhook do projeto. Requer conexão existente. */
+  async function ensureWebhookToken(projectId: string): Promise<string | null> {
+    const row = await getConnectionRow(projectId);
+    if (!row) return null;
+    if (row.webhookToken) return row.webhookToken;
+    const token = randomBytes(24).toString("hex");
+    await fastify.db
+      .update(kiwifyConnections)
+      .set({ webhookToken: token, updatedAt: new Date() })
+      .where(eq(kiwifyConnections.projectId, projectId));
+    return token;
+  }
+
+  // ---- GET webhook (URL + token p/ colar na Kiwify; gera token na 1ª vez) ----
+  fastify.get("/api/projects/:projectId/kiwify/webhook", async (request, reply) => {
+    // Token é segredo de configuração — só não-guests (mesma régua do PUT connection).
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const params = projectParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+    const token = await ensureWebhookToken(params.data.projectId);
+    if (!token) {
+      return reply.code(409).send({ error: "Conecte a Kiwify neste projeto antes de gerar o webhook" });
+    }
+    return { configured: true, path: WEBHOOK_PATH(params.data.projectId), token };
+  });
+
+  // ---- POST webhook/rotate (revoga o token antigo e gera um novo) ----
+  fastify.post("/api/projects/:projectId/kiwify/webhook/rotate", async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const params = projectParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+    const row = await getConnectionRow(params.data.projectId);
+    if (!row) {
+      return reply.code(409).send({ error: "Conecte a Kiwify neste projeto antes de gerar o webhook" });
+    }
+    const token = randomBytes(24).toString("hex");
+    await fastify.db
+      .update(kiwifyConnections)
+      .set({ webhookToken: token, updatedAt: new Date() })
+      .where(eq(kiwifyConnections.projectId, params.data.projectId));
+    return { configured: true, path: WEBHOOK_PATH(params.data.projectId), token };
+  });
+
+  // ---- GET subscriptions/summary (estado REAL vindo dos webhooks) ----
+  // Preenche os gaps honestos do Pull-MVP: vigentes/canceladas/atrasadas + MRR real
+  // (Σ amount das assinaturas vigentes, por moeda). Leitura para todos com acesso.
+  fastify.get("/api/projects/:projectId/kiwify/subscriptions/summary", async (request, reply) => {
+    const params = projectParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+    const statusRows = await fastify.db
+      .select({
+        status: kiwifySubscriptions.status,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(kiwifySubscriptions)
+      .where(eq(kiwifySubscriptions.projectId, params.data.projectId))
+      .groupBy(kiwifySubscriptions.status);
+
+    const mrrRows = await fastify.db
+      .select({
+        currency: kiwifySubscriptions.currency,
+        value: sql<number>`coalesce(sum(${kiwifySubscriptions.amount}), 0)::int`,
+      })
+      .from(kiwifySubscriptions)
+      .where(
+        and(
+          eq(kiwifySubscriptions.projectId, params.data.projectId),
+          eq(kiwifySubscriptions.status, "active"),
+        ),
+      )
+      .groupBy(kiwifySubscriptions.currency);
+
+    const byStatus: Record<string, number> = {};
+    let total = 0;
+    for (const r of statusRows) {
+      byStatus[r.status] = r.count;
+      total += r.count;
+    }
+
+    return {
+      total,
+      byStatus,
+      active: byStatus["active"] ?? 0,
+      canceled: byStatus["canceled"] ?? 0,
+      late: byStatus["late"] ?? 0,
+      // MRR real (centavos) das assinaturas vigentes, por moeda (BRL primeiro não
+      // garantido aqui — o front ordena/exibe).
+      activeMrr: mrrRows
+        .filter((r) => r.currency)
+        .map((r) => ({ currency: r.currency as string, value: r.value })),
+    };
   });
 });

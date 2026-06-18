@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, CreditCard, Plug, Unlink, RefreshCw } from "lucide-react";
+import { Loader2, CreditCard, Plug, Unlink, RefreshCw, Webhook, Copy, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,10 @@ import {
   useKiwifyConnection,
   useSetKiwifyConnection,
   useDeleteKiwifyConnection,
+  useKiwifyWebhook,
+  useRotateKiwifyWebhook,
+  useKiwifySubscriptionsSummary,
+  buildKiwifyWebhookUrl,
 } from "@/lib/hooks/use-kiwify";
 import { KiwifySubscriptionsDashboard } from "@/components/subscriptions/kiwify-subscriptions-dashboard";
 
@@ -69,12 +73,121 @@ export function KiwifyConnectionPanel({ projectId, isAdmin }: Props) {
         )}
       </section>
 
+      {/* Webhook de assinatura (fase 2 / Story 35.6) — só admin configura. */}
+      {connected && !conn.isError && isAdmin && (
+        <WebhookSection projectId={projectId} />
+      )}
+
+      {/* Estado real das assinaturas (vindo dos webhooks) — leitura p/ todos. */}
+      {connected && !conn.isError && (
+        <RealStateCard projectId={projectId} />
+      )}
+
       {/* Dashboard de recorrência (Story 35.5) — leitura para todos com acesso.
           KiwifySubscriptionsDashboard é um placeholder nesta story; a 35.5 o substitui. */}
       {connected && !conn.isError && (
         <KiwifySubscriptionsDashboard projectId={projectId} />
       )}
     </div>
+  );
+}
+
+// Story 35.6 — gera/mostra a URL única de webhook do projeto para colar na Kiwify.
+// O token é segredo: quem tiver a URL pode enviar eventos. Rotacionar revoga a antiga.
+function WebhookSection({ projectId }: { projectId: string }) {
+  const wh = useKiwifyWebhook(projectId, true);
+  const rotate = useRotateKiwifyWebhook(projectId);
+  const url = wh.data ? buildKiwifyWebhookUrl(wh.data) : "";
+
+  async function copy() {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("URL do webhook copiada");
+    } catch {
+      toast.error("Não foi possível copiar");
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-border/40 bg-card/60 p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Webhook className="h-4 w-4 text-primary" />
+        <h2 className="text-base font-semibold">Webhook de assinaturas</h2>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Cole esta URL no painel da Kiwify em <strong>Apps → Webhooks</strong> (eventos de
+        assinatura: aprovada, cancelada, atrasada, reembolsada). É exclusiva deste projeto — os
+        eventos recebidos atualizam o estado real das assinaturas (vigentes/canceladas/churn).
+      </p>
+
+      {wh.isLoading ? (
+        <Skeleton className="h-9" />
+      ) : wh.isError ? (
+        <div className="flex items-center gap-2 text-xs text-red-500">
+          <span>Erro ao carregar o webhook.</span>
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => wh.refetch()}>
+            <RefreshCw className="h-3 w-3" /> Tentar de novo
+          </Button>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2">
+            <Input readOnly value={url} className="font-mono text-[11px]" onFocus={(e) => e.currentTarget.select()} />
+            <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={copy}>
+              <Copy className="h-3.5 w-3.5" /> Copiar
+            </Button>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+            onClick={() =>
+              rotate.mutate(undefined, {
+                onSuccess: () => toast.success("Novo token gerado — atualize a URL na Kiwify"),
+                onError: (e) => toast.error(errMsg(e)),
+              })
+            }
+            disabled={rotate.isPending}
+          >
+            {rotate.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <KeyRound className="h-3 w-3" />}
+            Gerar novo token (revoga o atual)
+          </Button>
+        </>
+      )}
+    </section>
+  );
+}
+
+// Story 35.6 — resumo do estado real (derivado dos webhooks). Só aparece quando já
+// há eventos recebidos; antes disso fica oculto (evita mostrar zeros enganosos).
+function RealStateCard({ projectId }: { projectId: string }) {
+  const summary = useKiwifySubscriptionsSummary(projectId, true);
+  if (summary.isLoading || summary.isError || !summary.data || summary.data.total === 0) {
+    return null;
+  }
+  const s = summary.data;
+  const items: Array<{ label: string; value: number; tone: string }> = [
+    { label: "Vigentes", value: s.active, tone: "text-emerald-500" },
+    { label: "Atrasadas", value: s.late, tone: "text-amber-500" },
+    { label: "Canceladas", value: s.canceled, tone: "text-red-500" },
+  ];
+  return (
+    <section className="rounded-xl border border-border/40 bg-card/60 p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <CreditCard className="h-4 w-4 text-primary" />
+        <h2 className="text-base font-semibold">Assinaturas (estado real)</h2>
+        <Badge variant="secondary" className="text-[10px]">via webhook</Badge>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {items.map((it) => (
+          <div key={it.label} className="rounded-lg border border-border/30 bg-muted/20 px-3 py-2">
+            <p className={`text-xl font-semibold ${it.tone}`}>{it.value}</p>
+            <p className="text-[11px] text-muted-foreground">{it.label}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

@@ -1228,10 +1228,85 @@ export const kiwifyConnections = pgTable(
     clientSecretIv: text("client_secret_iv").notNull(),
     accountIdEncrypted: text("account_id_encrypted").notNull(),
     accountIdIv: text("account_id_iv").notNull(),
+    // Story 35.6 (fase 2 — webhooks): token secreto por projeto, embutido na URL
+    // única de webhook que o expert cola no painel da Kiwify
+    // (/api/webhooks/kiwify/<projectId>?token=<webhookToken>). Roteamento é pelo
+    // projectId no path; a autenticação do POST é a comparação constant-time deste
+    // token. Gerado sob demanda (crypto.randomBytes). NUNCA logar.
+    webhookToken: text("webhook_token").unique(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index("idx_kiwify_connections_project").on(table.projectId)]
+);
+
+// Story 35.6 (Epic 35 fase 2 — webhooks de assinatura). A Public API da Kiwify
+// NÃO expõe estado de assinatura (sem /subscriptions); o estado real (vigente,
+// cancelada, atrasada, reembolsada) chega via WEBHOOKS. Esta tabela é o log BRUTO
+// de TODO evento recebido (auditoria + reprocessamento). A idempotência usa
+// dedup_key = sha256(corpo cru) — reenvios da Kiwify (mesmo corpo) são ignorados.
+// O payload completo é sempre preservado, então a normalização pode ser refeita.
+export const kiwifyWebhookEvents = pgTable(
+  "kiwify_webhook_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    // webhook_event_type / order_status cru da Kiwify (ex.: order_approved,
+    // subscription_canceled, subscription_late, subscription_renewed).
+    eventType: text("event_type"),
+    orderId: text("order_id"),
+    subscriptionId: text("subscription_id"),
+    // sha256 hex do corpo cru — idempotência por projeto.
+    dedupKey: text("dedup_key").notNull(),
+    payload: jsonb("payload").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("kiwify_webhook_events_project_dedup_unique").on(table.projectId, table.dedupKey),
+    index("idx_kiwify_webhook_events_project").on(table.projectId),
+    index("idx_kiwify_webhook_events_subscription").on(table.projectId, table.subscriptionId),
+  ]
+);
+
+// Story 35.6 (fase 2): estado NORMALIZADO atual da assinatura — 1 linha por
+// assinatura (subscription_id) por projeto. Derivado dos webhooks (último evento
+// vence, com guarda anti-reordenação por last_event_at). É a fonte de verdade de
+// "vigentes / canceladas / atrasadas / churn" que o pull (/sales) não fornece.
+// amount em CENTAVOS. customer_email/customer_name são PII — NUNCA logar.
+export const kiwifySubscriptions = pgTable(
+  "kiwify_subscriptions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    subscriptionId: text("subscription_id").notNull(),
+    productId: text("product_id"),
+    productName: text("product_name"),
+    planName: text("plan_name"),
+    customerEmail: text("customer_email"),
+    customerName: text("customer_name"),
+    // Status canônico: active | waiting_payment | late | canceled | refunded |
+    // chargedback | trialing | completed | unknown.
+    status: text("status").notNull(),
+    orderId: text("order_id"),
+    /** valor da recorrência em CENTAVOS. */
+    amount: integer("amount"),
+    currency: text("currency"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    nextChargeAt: timestamp("next_charge_at", { withTimezone: true }),
+    canceledAt: timestamp("canceled_at", { withTimezone: true }),
+    lastEventType: text("last_event_type"),
+    lastEventAt: timestamp("last_event_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("kiwify_subscriptions_project_sub_unique").on(table.projectId, table.subscriptionId),
+    index("idx_kiwify_subscriptions_project_status").on(table.projectId, table.status),
+  ]
 );
 
 // Story 35.1 (perf): cache persistente do dashboard/products Kiwify. A API
