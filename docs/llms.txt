@@ -67,6 +67,11 @@ Splits de leads de um stage por origem (Pago/Orgânico/Sem Track) × temperatura
 Resposta: `{ projectId, stageId, computedAt, range:{from,to}, totalLeads, uniqueLeads, byOrigin:[{origem, leads, uniqueLeads}], byTemperature:[{temperatura, leads, uniqueLeads}], byOriginTemp:[{origem, temperatura, leads, uniqueLeads}], columnsResolved }` — ou `{ semDados:true }` se o stage não tem survey/cache.
 Regras: origem = utm_source meta/facebook/fb/google → Pago; outro valor → Orgânico; vazio → Sem Track. Temperatura = utm_term com hot/quente vs cold/frio. `uniqueLeads` pode vir 0 quando a planilha do stage não tem e-mail/telefone preenchidos.
 
+### GET /api/public/v1/projects/{projectId}/stages/{stageId}/survey
+Pesquisa de qualificação de um stage: distribuições por pergunta (profissão, renda, faixa A/B/C/D, "você é", etc.) × origem (total/pago/orgânico) + por criativo. Réplica fiel da agregação do dashboard. Zero PII.
+Resposta: `{ projectId, stageId, computedAt, totalResponses, usingFallback, questions:[{key,label}], byQuestion:{ <key>:[{label,count,pct}] }, byQuestionByOrigin:{ total, pago, organico }, byAdId:{ <adId>:{ <key>:[{label,count}] } } }` — ou `{ semDados:true }`.
+`byAdId` dá a distribuição de qualificação (incl. Faixa A/B/C/D) por criativo — cruze com `get_creative_performance` pelo adId. `usingFallback:true` = pesquisa sem mapping (detecção automática legada).
+
 ## Como interpretar os números (honestidade)
 
 - **`spend` já inclui o imposto Meta** (gross-up de 12,15% para datas ≥ 2026-01-01). Bate com o dashboard interno.
@@ -86,7 +91,6 @@ Formato: `{ "error": "mensagem", "code": "CODIGO" }`.
 
 Estes dados existem no Loyola X mas ainda não foram expostos (em construção). Se o usuário pedir, avise que ainda não está na API:
 
-- **Pesquisa de qualificação** (distribuições por sexo/idade/faixa A-B-C-D/renda/escolaridade/religião/profissão; taxa de resposta; faixaA% por anúncio). Fonte: planilhas de lead scoring.
 - **Splits de VENDAS por origem/quente-frio** e vendas únicas. (Leads por origem JÁ disponível em `/stages/{stageId}/leads-summary`.) O `purchases` dos endpoints Meta ainda é só do pixel.
 - **Receita/ROAS real** (cruzamento com vendas Kiwify/Hotmart por origem). O `roas` atual é do pixel. (Story 36.5.)
 - **Preview interativo do anúncio** (`previewUrl`). Por ora use `creative.thumbnailUrl`/`imageUrl`.
