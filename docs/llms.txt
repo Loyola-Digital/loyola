@@ -8,7 +8,7 @@
 - Uma única chave dá acesso a todos os projetos. O `projectId` vai sempre no path.
 - **Read-only:** somente `GET`/`HEAD`. Qualquer outro método retorna `405`.
 - **Rate limit:** 120 requisições/min por chave (`429` quando excedido, com header `Retry-After`).
-- Base URL: definida no deploy (ex.: `https://api.loyolax.com.br`). Todos os paths abaixo são relativos a ela.
+- Base URL de produção: `https://api.loyoladigital.com`. Todos os paths abaixo são relativos a ela.
 
 ## Como navegar (discovery hierárquico)
 

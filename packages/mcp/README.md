@@ -21,7 +21,7 @@ Duas variáveis de ambiente:
 
 | Variável | Descrição |
 |----------|-----------|
-| `LOYOLA_API_BASE_URL` | Base da API pública (ex.: `https://api.loyolax.com.br`) |
+| `LOYOLA_API_BASE_URL` | Base da API pública (ex.: `https://api.loyoladigital.com`) |
 | `LOYOLA_API_KEY` | API key admin — gere na tela de admin do Loyola X (Story 36.1), revogável |
 
 ## Rodar
@@ -30,7 +30,7 @@ Duas variáveis de ambiente:
 # da raiz do monorepo
 pnpm --filter @loyola-x/mcp build      # compila para dist/
 # ou, em dev, sem build:
-LOYOLA_API_BASE_URL=https://api.loyolax.com.br LOYOLA_API_KEY=sk_... pnpm --filter @loyola-x/mcp dev
+LOYOLA_API_BASE_URL=https://api.loyoladigital.com LOYOLA_API_KEY=sk_... pnpm --filter @loyola-x/mcp dev
 ```
 
 ## Registrar no cliente de IA
@@ -44,7 +44,7 @@ Exemplo de configuração MCP (Claude Desktop / Claude Code — `claude_desktop_
       "command": "node",
       "args": ["/caminho/absoluto/loyola/packages/mcp/dist/index.js"],
       "env": {
-        "LOYOLA_API_BASE_URL": "https://api.loyolax.com.br",
+        "LOYOLA_API_BASE_URL": "https://api.loyoladigital.com",
         "LOYOLA_API_KEY": "sk_sua_chave_aqui"
       }
     }
