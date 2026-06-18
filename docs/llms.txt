@@ -30,8 +30,8 @@ Funis de um projeto (ativos, não arquivados).
 Resposta: `{ "projectId", "funnels": [{ "id", "name", "type": "launch|perpetual", "metaCampaignCount", "googleCampaignCount" }] }`
 
 ### GET /api/public/v1/funnels/{funnelId}/stages
-Etapas de um funil.
-Resposta: `{ "funnelId", "projectId", "funnelName", "stages": [{ "id", "name", "stageType": "paid|free|sales|cpl", "sortOrder", "leadGoal", "projectionEndDate", "metaCampaignCount", "googleCampaignCount" }] }`
+Etapas de um funil, com a LISTA de campanhas vinculadas (o nome carrega o prefixo lpa/lpd/... = unidade de análise do gestor).
+Resposta: `{ "funnelId", "projectId", "funnelName", "stages": [{ "id", "name", "stageType": "paid|free|sales|cpl", "sortOrder", "leadGoal", "projectionEndDate", "metaCampaignCount", "googleCampaignCount", "campaigns": [{ "id", "name" }], "googleAdsCampaigns": [{ "id", "name" }] }] }`
 
 ## Endpoints — Meta Ads
 
@@ -54,6 +54,13 @@ Série diária das métricas de um criativo. `404` se o `adId` for desconhecido.
 Query: `from`, `to`.
 Resposta: `{ "projectId", "adId", "adName", "campaignId", "campaignName", "range", "partial", "lastSyncedAt", "series": [{ date, spend, impressions, reach, clicks, leads, purchases, revenue, landingPageViews, ctr, cpc, cpm, cpl, cpa, roas }] }`
 
+## Endpoints — Leads por origem (Story 36.7)
+
+### GET /api/public/v1/projects/{projectId}/stages/{stageId}/leads-summary
+Splits de leads de um stage por origem (Pago/Orgânico/Sem Track) × temperatura (quente/frio) + leads únicos (dedup e-mail/telefone). Lê de cache pré-computado por um job diário. Zero PII (só contagens).
+Resposta: `{ projectId, stageId, computedAt, range:{from,to}, totalLeads, uniqueLeads, byOrigin:[{origem, leads, uniqueLeads}], byTemperature:[{temperatura, leads, uniqueLeads}], byOriginTemp:[{origem, temperatura, leads, uniqueLeads}], columnsResolved }` — ou `{ semDados:true }` se o stage não tem survey/cache.
+Regras: origem = utm_source meta/facebook/fb/google → Pago; outro valor → Orgânico; vazio → Sem Track. Temperatura = utm_term com hot/quente vs cold/frio. `uniqueLeads` pode vir 0 quando a planilha do stage não tem e-mail/telefone preenchidos.
+
 ## Como interpretar os números (honestidade)
 
 - **`spend` já inclui o imposto Meta** (gross-up de 12,15% para datas ≥ 2026-01-01). Bate com o dashboard interno.
@@ -68,6 +75,16 @@ Resposta: `{ "projectId", "adId", "adName", "campaignId", "campaignName", "range
 
 Formato: `{ "error": "mensagem", "code": "CODIGO" }`.
 `API_KEY_MISSING` (401) · `API_KEY_INVALID` (401) · `API_KEY_REVOKED` (403) · `SCOPE_REQUIRED` (403) · `NOT_FOUND` (404) · `BAD_REQUEST` (400) · `RATE_LIMITED` (429) · `405` (método de escrita).
+
+## Ainda NÃO disponível na API (não invente — use só o que está acima)
+
+Estes dados existem no Loyola X mas ainda não foram expostos (em construção). Se o usuário pedir, avise que ainda não está na API:
+
+- **Pesquisa de qualificação** (distribuições por sexo/idade/faixa A-B-C-D/renda/escolaridade/religião/profissão; taxa de resposta; faixaA% por anúncio). Fonte: planilhas de lead scoring.
+- **Splits de VENDAS por origem/quente-frio** e vendas únicas. (Leads por origem JÁ disponível em `/stages/{stageId}/leads-summary`.) O `purchases` dos endpoints Meta ainda é só do pixel.
+- **Receita/ROAS real** (cruzamento com vendas Kiwify/Hotmart por origem). O `roas` atual é do pixel. (Story 36.5.)
+- **Connect Rate** (conexão no WhatsApp/messaging) — sem integração no backend ainda.
+- **Preview interativo do anúncio** (`previewUrl`). Por ora use `creative.thumbnailUrl`/`imageUrl`.
 
 ## MCP server
 

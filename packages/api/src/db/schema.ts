@@ -1530,3 +1530,25 @@ export const sellerAliases = pgTable(
   },
   (table) => [index("idx_seller_aliases_project").on(table.projectId)]
 );
+
+// ============================================================
+// PUBLIC METRICS CACHE (Story 36.7) — cache generico de agregados pre-computados
+// para a API publica. Serve buracos que leem de Google Sheets (leads por origem,
+// qualificacao, vendas reais): o job de sync grava o payload AGREGADO (ZERO PII)
+// e os endpoints /api/public/* leem direto, sem recalcular ao vivo.
+//   scope = tipo de metrica (ex: "leads-origin", "survey", "real-sales")
+//   key   = recorte (ex: stageId, funnelId, "stageId:months")
+// ============================================================
+export const publicMetricsCache = pgTable(
+  "public_metrics_cache",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    scope: varchar("scope", { length: 40 }).notNull(),
+    key: varchar("key", { length: 200 }).notNull(),
+    payload: jsonb("payload").notNull(),
+    computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.scope, table.key] })]
+);
