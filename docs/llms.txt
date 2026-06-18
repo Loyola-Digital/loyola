@@ -52,7 +52,13 @@ Resposta: `{ "projectId", "range", "campaignId", "orderBy", "partial", "lastSync
 ### GET /api/public/meta/v1/projects/{projectId}/creatives/{adId}/timeseries
 Série diária das métricas de um criativo. `404` se o `adId` for desconhecido.
 Query: `from`, `to`.
-Resposta: `{ "projectId", "adId", "adName", "campaignId", "campaignName", "range", "partial", "lastSyncedAt", "series": [{ date, spend, impressions, reach, clicks, leads, purchases, revenue, landingPageViews, ctr, cpc, cpm, cpl, cpa, roas }] }`
+Resposta: `{ "projectId", "adId", ..., "series": [{ date, spend, impressions, reach, clicks, leads, purchases, revenue, landingPageViews, ctr, cpc, cpm, cpl, cpa, roas, connectRate }] }`
+
+### GET /api/public/meta/v1/projects/{projectId}/daily
+"Dados Diários" (parte Meta): série diária agregada do projeto inteiro. Query `from`, `to`.
+Resposta: `{ projectId, range, partial, lastSyncedAt, days: [{ date, spend, impressions, reach, clicks, leads, purchases, revenue, landingPageViews, ctr, cpc, cpm, cpl, cpa, roas, connectRate }] }`
+
+> **connectRate** (= landingPageViews ÷ clicks × 100) está em TODOS os objetos Meta acima (campaigns, creatives, timeseries, daily). Faturamento/ingressos por origem (a outra metade do "Dados Diários") virão com a Story 36.5 (vendas reais).
 
 ## Endpoints — Leads por origem (Story 36.7)
 
@@ -83,7 +89,6 @@ Estes dados existem no Loyola X mas ainda não foram expostos (em construção).
 - **Pesquisa de qualificação** (distribuições por sexo/idade/faixa A-B-C-D/renda/escolaridade/religião/profissão; taxa de resposta; faixaA% por anúncio). Fonte: planilhas de lead scoring.
 - **Splits de VENDAS por origem/quente-frio** e vendas únicas. (Leads por origem JÁ disponível em `/stages/{stageId}/leads-summary`.) O `purchases` dos endpoints Meta ainda é só do pixel.
 - **Receita/ROAS real** (cruzamento com vendas Kiwify/Hotmart por origem). O `roas` atual é do pixel. (Story 36.5.)
-- **Connect Rate** (conexão no WhatsApp/messaging) — sem integração no backend ainda.
 - **Preview interativo do anúncio** (`previewUrl`). Por ora use `creative.thumbnailUrl`/`imageUrl`.
 
 ## MCP server

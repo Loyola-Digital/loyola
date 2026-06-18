@@ -144,6 +144,9 @@ function deriveMetrics(a: MetricAgg) {
     cpl: round(safeDiv(a.spend, a.leads)),
     cpa: round(safeDiv(a.spend, a.purchases)),
     roas: round(safeDiv(a.revenue, a.spend)),
+    // Connect Rate = LP views / cliques (proxy de quem chegou na LP/conexão).
+    // Bate com o "Connect Rate" do dashboard (ex.: 22.631 LPV / 35.882 cliques = 63%).
+    connectRate: a.clicks > 0 ? round((a.lpViews / a.clicks) * 100) : null,
   };
 }
 
@@ -427,6 +430,70 @@ export default fp(async function publicMetaRoutes(fastify) {
         partial: series.length < daysInRange(from, to),
         lastSyncedAt: lastSyncedAt ? (lastSyncedAt as Date).toISOString() : null,
         series,
+      };
+    }
+  );
+
+  // ---- GET /api/public/meta/v1/projects/:projectId/daily ----
+  // "Dados Diários" (parte Meta): série diária agregada do projeto inteiro com
+  // todas as métricas + connectRate. Faturamento/ingressos por origem (parte de
+  // vendas) virão quando a Story 36.5 entrar.
+  fastify.get<{ Params: z.infer<typeof projectParam>; Querystring: z.infer<typeof rangeQuerySchema> }>(
+    "/api/public/meta/v1/projects/:projectId/daily",
+    { preHandler: requireScope(PUBLIC_READ_SCOPE) },
+    async (request, reply) => {
+      const params = projectParam.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "projectId inválido", code: "BAD_REQUEST" });
+      const query = rangeQuerySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Parâmetros inválidos", code: "BAD_REQUEST", details: query.error.flatten().fieldErrors });
+
+      const { projectId } = params.data;
+      if (!(await assertProject(projectId))) return reply.code(404).send({ error: "Projeto não encontrado", code: "NOT_FOUND" });
+
+      const { from, to } = resolveRange(query.data.from, query.data.to);
+
+      const rows = (await fastify.db
+        .select({
+          dateStart: metaAdInsightsDaily.dateStart,
+          spend: metaAdInsightsDaily.spend,
+          impressions: metaAdInsightsDaily.impressions,
+          reach: metaAdInsightsDaily.reach,
+          clicks: metaAdInsightsDaily.clicks,
+          actions: metaAdInsightsDaily.actions,
+          actionValues: metaAdInsightsDaily.actionValues,
+          lastSyncedAt: metaAdInsightsDaily.lastSyncedAt,
+        })
+        .from(metaAdInsightsDaily)
+        .where(
+          and(
+            eq(metaAdInsightsDaily.projectId, projectId),
+            gte(metaAdInsightsDaily.dateStart, from),
+            lte(metaAdInsightsDaily.dateStart, to)
+          )
+        )) as InsightRow[];
+
+      const byDay = new Map<string, MetricAgg>();
+      let lastSyncedAt: Date | null = null;
+      for (const row of rows) {
+        let agg = byDay.get(row.dateStart);
+        if (!agg) {
+          agg = emptyAgg();
+          byDay.set(row.dateStart, agg);
+        }
+        accumulate(agg, row);
+        if (agg.lastSyncedAt && (!lastSyncedAt || agg.lastSyncedAt > lastSyncedAt)) lastSyncedAt = agg.lastSyncedAt;
+      }
+
+      const days = [...byDay.entries()]
+        .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+        .map(([date, agg]) => ({ date, ...deriveMetrics(agg) }));
+
+      return {
+        projectId,
+        range: { from, to },
+        partial: days.length < daysInRange(from, to),
+        lastSyncedAt: lastSyncedAt ? (lastSyncedAt as Date).toISOString() : null,
+        days,
       };
     }
   );
