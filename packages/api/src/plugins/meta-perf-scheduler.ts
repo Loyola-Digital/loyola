@@ -7,6 +7,7 @@ import fp from "fastify-plugin";
 import { syncMetaPerformance } from "../services/meta-perf-sync.js";
 import { syncLeadOrigin } from "../services/lead-origin-sync.js";
 import { syncSurvey } from "../services/survey-aggregation.js";
+import { syncSalesDaily } from "../services/sales-daily-sync.js";
 
 /** ms até a próxima ocorrência de `hour:00:00` no horário local. */
 function msUntilNextRun(hour: number): number {
@@ -73,6 +74,17 @@ export default fp(async function metaPerfSchedulerPlugin(fastify) {
       );
     } catch (err) {
       fastify.log.error(err, "[survey] falhou");
+    }
+
+    // Vendas diárias por origem (Story 36.7, Buraco 3 / Dados Diários).
+    try {
+      const sales = await syncSalesDaily(fastify.db, { log: (m) => fastify.log.info(m) });
+      fastify.log.info(
+        { stagesProcessed: sales.stagesProcessed, stagesSkipped: sales.stagesSkipped, errors: sales.errors.length },
+        "[sales-daily] concluído",
+      );
+    } catch (err) {
+      fastify.log.error(err, "[sales-daily] falhou");
     }
   }
 

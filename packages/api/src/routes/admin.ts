@@ -6,6 +6,7 @@ import { users, messages, conversations } from "../db/schema.js";
 import { syncMetaPerformance } from "../services/meta-perf-sync.js";
 import { syncLeadOrigin } from "../services/lead-origin-sync.js";
 import { syncSurvey } from "../services/survey-aggregation.js";
+import { syncSalesDaily } from "../services/sales-daily-sync.js";
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
@@ -48,7 +49,11 @@ export default fp(async function adminRoutes(fastify) {
       projectIds,
       log: (m) => fastify.log.info(m),
     });
-    return { ok: true, days, meta, leads, survey };
+    const salesDaily = await syncSalesDaily(fastify.db, {
+      projectIds,
+      log: (m) => fastify.log.info(m),
+    });
+    return { ok: true, days, meta, leads, survey, salesDaily };
   });
 
   // ---- GET /api/admin/users ---- (admin only — list users by status)
