@@ -9,6 +9,9 @@ export default fp(async function authPlugin(fastify) {
     if (request.method === "OPTIONS") return;
     if (request.url === "/api/health") return;
     if (request.url.startsWith("/api/webhooks/")) return;
+    // Story 36.2: rotas públicas autenticam por X-API-Key (middleware próprio),
+    // não pelo Clerk. Não exigir usuário Clerk aqui.
+    if (request.url.startsWith("/api/public/")) return;
     // Only invite info (GET) is public; the accept endpoint (POST) requires auth
     if (request.method === "GET" && request.url.startsWith("/api/invitations/")) return;
 

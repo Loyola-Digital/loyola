@@ -9,6 +9,7 @@ import rateLimitPlugin from "./middleware/rate-limit.js";
 import multipart from "@fastify/multipart";
 import authPlugin from "./middleware/auth.js";
 import guestGuardPlugin from "./middleware/guest-guard.js";
+import apiKeyAuthPlugin from "./middleware/api-key-auth.js";
 import dbPlugin from "./db/client.js";
 
 // Services
@@ -90,6 +91,10 @@ export async function buildServer() {
 
   // 4b. Guest access guard (needs DB + userRole from auth)
   await app.register(guestGuardPlugin);
+
+  // 4c. API Key auth para rotas públicas read-only /api/public/* (Story 36.2)
+  //     Roda após authPlugin (que ignora /api/public/) e dbPlugin.
+  await app.register(apiKeyAuthPlugin);
 
   // 5. Services
   await app.register(mindRegistryPlugin);
