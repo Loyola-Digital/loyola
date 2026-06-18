@@ -5,6 +5,7 @@ import { clerkClient } from "@clerk/fastify";
 import { users, messages, conversations } from "../db/schema.js";
 import { syncMetaPerformance } from "../services/meta-perf-sync.js";
 import { syncLeadOrigin } from "../services/lead-origin-sync.js";
+import { syncSurvey } from "../services/survey-aggregation.js";
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
@@ -43,7 +44,11 @@ export default fp(async function adminRoutes(fastify) {
       projectIds,
       log: (m) => fastify.log.info(m),
     });
-    return { ok: true, days, meta, leads };
+    const survey = await syncSurvey(fastify.db, {
+      projectIds,
+      log: (m) => fastify.log.info(m),
+    });
+    return { ok: true, days, meta, leads, survey };
   });
 
   // ---- GET /api/admin/users ---- (admin only — list users by status)

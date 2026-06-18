@@ -5,6 +5,7 @@ import { publicMetricsCache } from "../db/schema.js";
 import { requireScope } from "../middleware/api-key-auth.js";
 import { PUBLIC_READ_SCOPE } from "./public-discovery.js";
 import { LEAD_ORIGIN_SCOPE } from "../services/lead-origin-sync.js";
+import { SURVEY_SCOPE } from "../services/survey-aggregation.js";
 
 /**
  * Story 36.7 (Buraco 2): leads por origem (Pago/Orgânico/Sem Track) × temperatura
@@ -57,6 +58,45 @@ export default fp(async function publicLeadsRoutes(fastify) {
         computedAt: row.computedAt,
         ...(row.payload as Record<string, unknown>),
       };
+    },
+  );
+
+  // ---- GET /api/public/v1/projects/:projectId/stages/:stageId/survey ----
+  // Pesquisa de qualificação (Story 36.7, Buraco 1): distribuições por pergunta
+  // (profissão, renda, etc.) × origem (total/pago/orgânico) + por criativo (byAdId).
+  // Réplica fiel da agregação do dashboard. Zero PII.
+  fastify.get<{ Params: z.infer<typeof paramSchema> }>(
+    "/api/public/v1/projects/:projectId/stages/:stageId/survey",
+    { preHandler: requireScope(PUBLIC_READ_SCOPE) },
+    async (request, reply) => {
+      const parsed = paramSchema.safeParse(request.params);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "Parâmetros inválidos", code: "BAD_REQUEST" });
+      }
+      const { projectId, stageId } = parsed.data;
+
+      const [row] = await fastify.db
+        .select({ payload: publicMetricsCache.payload, computedAt: publicMetricsCache.computedAt })
+        .from(publicMetricsCache)
+        .where(
+          and(
+            eq(publicMetricsCache.projectId, projectId),
+            eq(publicMetricsCache.scope, SURVEY_SCOPE),
+            eq(publicMetricsCache.key, stageId),
+          ),
+        )
+        .limit(1);
+
+      if (!row) {
+        return {
+          projectId,
+          stageId,
+          semDados: true,
+          message: "Sem dados de pesquisa em cache (stage sem pesquisa conectada ou sync ainda não rodou).",
+        };
+      }
+
+      return { projectId, stageId, computedAt: row.computedAt, ...(row.payload as Record<string, unknown>) };
     },
   );
 });

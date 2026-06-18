@@ -6,6 +6,7 @@
 import fp from "fastify-plugin";
 import { syncMetaPerformance } from "../services/meta-perf-sync.js";
 import { syncLeadOrigin } from "../services/lead-origin-sync.js";
+import { syncSurvey } from "../services/survey-aggregation.js";
 
 /** ms até a próxima ocorrência de `hour:00:00` no horário local. */
 function msUntilNextRun(hour: number): number {
@@ -61,6 +62,17 @@ export default fp(async function metaPerfSchedulerPlugin(fastify) {
       );
     } catch (err) {
       fastify.log.error(err, "[lead-origin] falhou");
+    }
+
+    // Pesquisa de qualificação (Story 36.7, Buraco 1).
+    try {
+      const survey = await syncSurvey(fastify.db, { log: (m) => fastify.log.info(m) });
+      fastify.log.info(
+        { stagesProcessed: survey.stagesProcessed, stagesSkipped: survey.stagesSkipped, errors: survey.errors.length },
+        "[survey] concluído",
+      );
+    } catch (err) {
+      fastify.log.error(err, "[survey] falhou");
     }
   }
 
