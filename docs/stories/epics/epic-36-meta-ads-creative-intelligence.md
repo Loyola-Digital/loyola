@@ -28,12 +28,12 @@ Expor a **performance de criativos do Meta Ads por campanha** como uma **API con
 
 | # | Story | Status | Depende de | Donos extras |
 |---|-------|--------|-----------|--------------|
-| 36.1 | Infra de API Keys + tela admin | Draft | — | — |
-| 36.2 | Middleware auth `X-API-Key` (read-only) | Draft | 36.1 | @architect (scopes/rate limit) |
-| 36.3 | Endpoints públicos de leitura Meta | Draft | 36.2 | — |
+| 36.1 | Infra de API Keys + tela admin | ✅ Ready for Review (migration aplicada) | — | — |
+| 36.2 | Middleware auth `X-API-Key` (read-only) | ✅ Ready for Review | 36.1 | @architect (scopes/rate limit) |
+| 36.3 | Endpoints públicos de leitura Meta + discovery | 🔨 Implementado (local, Lote 1) | 36.2 | — |
 | 36.4 | Job de sync/refresh de performance | Draft | — (paralelo) | — |
 | 36.5 | ROAS real (Meta × vendas Kiwify/Hotmart) | Draft | 36.3 | @architect + @data-engineer |
-| 36.6 | MCP server + `llms.txt` | Draft | 36.3 | @devops (publicar) |
+| 36.6 | MCP server + `llms.txt` | 🔨 Implementado (local) | 36.3 | @devops (publicar) |
 
 **Sequência:** 36.1 → 36.2 → 36.3/36.4 (paralelo) → 36.6 → 36.5.
 
