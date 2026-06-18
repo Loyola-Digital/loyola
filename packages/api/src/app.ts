@@ -9,6 +9,7 @@ import rateLimitPlugin from "./middleware/rate-limit.js";
 import multipart from "@fastify/multipart";
 import authPlugin from "./middleware/auth.js";
 import guestGuardPlugin from "./middleware/guest-guard.js";
+import apiKeyAuthPlugin from "./middleware/api-key-auth.js";
 import dbPlugin from "./db/client.js";
 
 // Services
@@ -32,6 +33,9 @@ import instagramRoutes from "./routes/instagram.js";
 import projectRoutes from "./routes/projects.js";
 import invitationsRoutes from "./routes/invitations.js";
 import adminRoutes from "./routes/admin.js";
+import apiKeysRoutes from "./routes/api-keys.js";
+import publicDiscoveryRoutes from "./routes/public-discovery.js";
+import publicMetaRoutes from "./routes/public-meta.js";
 import metaAdsRoutes from "./routes/meta-ads.js";
 import trafficAnalyticsRoutes from "./routes/traffic-analytics.js";
 import funnelRoutes from "./routes/funnels.js";
@@ -90,6 +94,10 @@ export async function buildServer() {
   // 4b. Guest access guard (needs DB + userRole from auth)
   await app.register(guestGuardPlugin);
 
+  // 4c. API Key auth para rotas públicas read-only /api/public/* (Story 36.2)
+  //     Roda após authPlugin (que ignora /api/public/) e dbPlugin.
+  await app.register(apiKeyAuthPlugin);
+
   // 5. Services
   await app.register(mindRegistryPlugin);
   await app.register(mindEnginePlugin);
@@ -113,6 +121,10 @@ export async function buildServer() {
   await app.register(projectRoutes);
   await app.register(invitationsRoutes);
   await app.register(adminRoutes);
+  await app.register(apiKeysRoutes);
+  // API pública read-only (/api/public/*) — Story 36.3
+  await app.register(publicDiscoveryRoutes);
+  await app.register(publicMetaRoutes);
   await app.register(metaAdsRoutes);
   await app.register(trafficAnalyticsRoutes);
   await app.register(funnelRoutes);

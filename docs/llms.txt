@@ -1,0 +1,82 @@
+# Loyola X — Meta Ads Creative Intelligence API
+
+> API pública read-only que expõe a performance de criativos do Meta Ads (e a estrutura de funis) do Loyola X para consumo por IA/automação. Lê de um cache no banco — rápida e estável. Protegida por API Key admin. Existe também um MCP server que embrulha esta API como tools (ver seção MCP).
+
+## Autenticação
+
+- Header obrigatório: `X-API-Key: <sua-chave>` (gerada na tela de admin do Loyola X; revogável).
+- Uma única chave dá acesso a todos os projetos. O `projectId` vai sempre no path.
+- **Read-only:** somente `GET`/`HEAD`. Qualquer outro método retorna `405`.
+- **Rate limit:** 120 requisições/min por chave (`429` quando excedido, com header `Retry-After`).
+- Base URL de produção: `https://api.loyoladigital.com`. Todos os paths abaixo são relativos a ela.
+
+## Como navegar (discovery hierárquico)
+
+Comece no topo e desça — não adivinhe IDs:
+
+1. `GET /api/public/v1/projects` → pegue o `projectId`.
+2. `GET /api/public/v1/projects/{projectId}/funnels` → pegue o `funnelId`.
+3. `GET /api/public/v1/funnels/{funnelId}/stages` → etapas do funil.
+4. Métricas Meta usam o `projectId`: campanhas → criativos → série temporal.
+
+## Endpoints — Discovery
+
+### GET /api/public/v1/projects
+Lista os projetos (clientes). Sem parâmetros.
+Resposta: `{ "projects": [{ "id": "uuid", "name": "...", "clientName": "...", "isActive": true }] }`
+
+### GET /api/public/v1/projects/{projectId}/funnels
+Funis de um projeto (ativos, não arquivados).
+Resposta: `{ "projectId", "funnels": [{ "id", "name", "type": "launch|perpetual", "metaCampaignCount", "googleCampaignCount" }] }`
+
+### GET /api/public/v1/funnels/{funnelId}/stages
+Etapas de um funil.
+Resposta: `{ "funnelId", "projectId", "funnelName", "stages": [{ "id", "name", "stageType": "paid|free|sales|cpl", "sortOrder", "leadGoal", "projectionEndDate", "metaCampaignCount", "googleCampaignCount" }] }`
+
+## Endpoints — Meta Ads
+
+Parâmetros de data comuns: `from`, `to` (ISO `YYYY-MM-DD`; default = últimos 30 dias).
+
+### GET /api/public/meta/v1/projects/{projectId}/campaigns
+Performance agregada por campanha no período.
+Query: `from`, `to`.
+Resposta: `{ "projectId", "range": {"from","to"}, "partial": false, "lastSyncedAt": "ISO|null", "campaigns": [ Campaign ] }`
+`Campaign = { campaignId, campaignName, activeCreatives, spend, impressions, reach, clicks, leads, purchases, revenue, landingPageViews, ctr, cpc, cpm, cpl, cpa, roas }`
+
+### GET /api/public/meta/v1/projects/{projectId}/creatives
+Performance por criativo (anúncio). Ordenável e filtrável por campanha.
+Query: `campaignId` (opcional), `from`, `to`, `orderBy` (`spend|ctr|cpc|cpm|cpl|cpa|roas|leads|impressions|clicks`, default `spend`), `limit` (1–200, default 50).
+Resposta: `{ "projectId", "range", "campaignId", "orderBy", "partial", "lastSyncedAt", "count", "creatives": [ Creative ] }`
+`Creative = { adId, adName, campaignId, campaignName, adsetId, adsetName, creative: { imageUrl, thumbnailUrl, videoId, title, body, linkUrl, ctaType, objectType } | null, videoMetrics, ...(mesmas métricas de Campaign) }`
+
+### GET /api/public/meta/v1/projects/{projectId}/creatives/{adId}/timeseries
+Série diária das métricas de um criativo. `404` se o `adId` for desconhecido.
+Query: `from`, `to`.
+Resposta: `{ "projectId", "adId", "adName", "campaignId", "campaignName", "range", "partial", "lastSyncedAt", "series": [{ date, spend, impressions, reach, clicks, leads, purchases, revenue, landingPageViews, ctr, cpc, cpm, cpl, cpa, roas }] }`
+
+## Como interpretar os números (honestidade)
+
+- **`spend` já inclui o imposto Meta** (gross-up de 12,15% para datas ≥ 2026-01-01). Bate com o dashboard interno.
+- **`roas` é do PIXEL Meta** (`revenue` de eventos de compra / `spend`), NÃO o ROAS real cruzado com vendas Kiwify/Hotmart. O ROAS real virá numa versão futura (Story 36.5). Pode estar subestimado/superestimado conforme a atribuição do pixel.
+- **`leads`** usa apenas o evento `lead` do Meta (evita duplicação de eventos agrupados).
+- **Métricas derivadas** (`ctr/cpc/cpm/cpl/cpa/roas`) vêm `null` quando o denominador é 0.
+- **`partial: true`** = há dias no período pedido sem dado no cache (resposta incompleta).
+- **`lastSyncedAt`** = quando o cache foi atualizado pela última vez. Se for antigo, os números podem estar defasados.
+- **`reach`** é somado por dia (aproximação — não é alcance único do período).
+
+## Erros
+
+Formato: `{ "error": "mensagem", "code": "CODIGO" }`.
+`API_KEY_MISSING` (401) · `API_KEY_INVALID` (401) · `API_KEY_REVOKED` (403) · `SCOPE_REQUIRED` (403) · `NOT_FOUND` (404) · `BAD_REQUEST` (400) · `RATE_LIMITED` (429) · `405` (método de escrita).
+
+## MCP server
+
+O pacote `@loyola-x/mcp` (em `packages/mcp`) expõe esta API como tools MCP via stdio. Config por env: `LOYOLA_API_BASE_URL`, `LOYOLA_API_KEY`.
+
+Tools (mapeiam 1:1 nos endpoints):
+- `list_projects` → GET /api/public/v1/projects
+- `list_funnels(projectId)` → GET /api/public/v1/projects/{projectId}/funnels
+- `list_stages(funnelId)` → GET /api/public/v1/funnels/{funnelId}/stages
+- `list_campaigns(projectId, from?, to?)` → GET /api/public/meta/v1/projects/{projectId}/campaigns
+- `get_creative_performance(projectId, campaignId?, orderBy?, limit?, from?, to?)` → GET .../creatives
+- `get_creative_timeseries(projectId, adId, from?, to?)` → GET .../creatives/{adId}/timeseries
