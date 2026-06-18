@@ -1,7 +1,29 @@
 import type { FastifyInstance } from "fastify";
 import { Webhook } from "svix";
-import { eq, and, like, ne } from "drizzle-orm";
-import { users } from "../db/schema.js";
+import { timingSafeEqual } from "node:crypto";
+import { eq, and, like, ne, sql } from "drizzle-orm";
+import {
+  users,
+  kiwifyConnections,
+  kiwifyWebhookEvents,
+  kiwifySubscriptions,
+} from "../db/schema.js";
+import {
+  computeDedupKey,
+  extractEventType,
+  extractOrderId,
+  normalizeKiwifySubscriptionEvent,
+} from "../services/kiwify-subscriptions.js";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Comparação constant-time de tokens (false se tamanhos diferem — não lança). */
+function tokensMatch(a: string, b: string): boolean {
+  const ba = Buffer.from(a, "utf8");
+  const bb = Buffer.from(b, "utf8");
+  if (ba.length !== bb.length) return false;
+  return timingSafeEqual(ba, bb);
+}
 
 interface ClerkWebhookPayload {
   type: string;
@@ -147,5 +169,133 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
 
     // AC 8: Always return 200
     return reply.code(200).send({ success: true });
+  });
+
+  // ============================================================
+  // Story 35.6 (Epic 35 fase 2) — Webhook de assinatura Kiwify.
+  // URL única por projeto: POST /api/webhooks/kiwify/:projectId?token=<webhookToken>.
+  // O expert cola essa URL no painel da Kiwify dele. Roteamento pelo projectId no
+  // path; autenticação pela comparação constant-time do token (sem HMAC nesta fase).
+  //
+  // Estratégia: grava SEMPRE o evento bruto (idempotente via dedup_key = sha256 do
+  // corpo) e, se o evento referir uma assinatura, faz upsert do estado normalizado.
+  // Responde 200 em qualquer erro de processamento (não-2xx faz a Kiwify reenviar).
+  //
+  // SEGURANÇA: nunca logar o corpo (PII do customer) nem o token.
+  // ============================================================
+  fastify.post("/api/webhooks/kiwify/:projectId", async (request, reply) => {
+    const { projectId } = request.params as { projectId: string };
+    const token = (request.query as { token?: string }).token ?? "";
+
+    if (!UUID_RE.test(projectId)) {
+      return reply.code(404).send({ error: "Not found" });
+    }
+
+    // Roteia + autentica: token secreto guardado na conexão Kiwify do projeto.
+    const [conn] = await fastify.db
+      .select({ webhookToken: kiwifyConnections.webhookToken })
+      .from(kiwifyConnections)
+      .where(eq(kiwifyConnections.projectId, projectId))
+      .limit(1);
+
+    if (!conn?.webhookToken) {
+      // Projeto sem webhook configurado — não revela se o projeto existe.
+      return reply.code(404).send({ error: "Not found" });
+    }
+    if (!token || !tokensMatch(token, conn.webhookToken)) {
+      return reply.code(401).send({ error: "Invalid token" });
+    }
+
+    const rawBody = typeof request.body === "string" ? request.body : "";
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(rawBody) as Record<string, unknown>;
+    } catch {
+      fastify.log.warn({ projectId }, "Kiwify webhook: corpo não-JSON, ignorando");
+      return reply.code(200).send({ ok: true });
+    }
+
+    try {
+      const dedupKey = computeDedupKey(rawBody);
+      const eventType = extractEventType(payload);
+      const orderId = extractOrderId(payload);
+      const norm = normalizeKiwifySubscriptionEvent(payload);
+
+      // 1) Log bruto idempotente. Reenvio idêntico (mesmo corpo) colide e é no-op.
+      const inserted = await fastify.db
+        .insert(kiwifyWebhookEvents)
+        .values({
+          projectId,
+          eventType,
+          orderId,
+          subscriptionId: norm?.subscriptionId ?? null,
+          dedupKey,
+          payload,
+        })
+        .onConflictDoNothing({
+          target: [kiwifyWebhookEvents.projectId, kiwifyWebhookEvents.dedupKey],
+        })
+        .returning({ id: kiwifyWebhookEvents.id });
+
+      if (inserted.length === 0) {
+        return reply.code(200).send({ ok: true, duplicate: true });
+      }
+
+      // 2) Upsert do estado normalizado quando o evento referir uma assinatura.
+      // "Último recebido vence" (lastEventAt = hora de recebimento). Campos de
+      // identidade usam coalesce p/ não apagar valor já conhecido quando um evento
+      // posterior vier sem ele. Limitação conhecida: entrega fora de ordem pode
+      // sobrescrever um estado mais recente (raro; o log bruto permite reprocessar).
+      if (norm) {
+        const now = new Date();
+        await fastify.db
+          .insert(kiwifySubscriptions)
+          .values({
+            projectId,
+            subscriptionId: norm.subscriptionId,
+            productId: norm.productId,
+            productName: norm.productName,
+            planName: norm.planName,
+            customerEmail: norm.customerEmail,
+            customerName: norm.customerName,
+            status: norm.status,
+            orderId: norm.orderId,
+            amount: norm.amount,
+            currency: norm.currency,
+            startedAt: norm.startedAt,
+            nextChargeAt: norm.nextChargeAt,
+            canceledAt: norm.canceledAt,
+            lastEventType: norm.eventType,
+            lastEventAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: [kiwifySubscriptions.projectId, kiwifySubscriptions.subscriptionId],
+            set: {
+              status: norm.status,
+              orderId: norm.orderId,
+              amount: norm.amount,
+              nextChargeAt: norm.nextChargeAt,
+              canceledAt: norm.canceledAt,
+              lastEventType: norm.eventType,
+              lastEventAt: now,
+              updatedAt: now,
+              // Identidade: preserva o valor anterior se o novo vier nulo.
+              productId: sql`coalesce(excluded.product_id, ${kiwifySubscriptions.productId})`,
+              productName: sql`coalesce(excluded.product_name, ${kiwifySubscriptions.productName})`,
+              planName: sql`coalesce(excluded.plan_name, ${kiwifySubscriptions.planName})`,
+              customerEmail: sql`coalesce(excluded.customer_email, ${kiwifySubscriptions.customerEmail})`,
+              customerName: sql`coalesce(excluded.customer_name, ${kiwifySubscriptions.customerName})`,
+              currency: sql`coalesce(excluded.currency, ${kiwifySubscriptions.currency})`,
+              startedAt: sql`coalesce(excluded.started_at, ${kiwifySubscriptions.startedAt})`,
+            },
+          });
+      }
+    } catch (err) {
+      // Nunca propagar erro (não-2xx faz a Kiwify reenviar em loop). Só status.
+      fastify.log.error({ err, projectId }, "Kiwify webhook handler error");
+    }
+
+    return reply.code(200).send({ ok: true });
   });
 }
