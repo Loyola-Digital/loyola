@@ -30,8 +30,8 @@ Funis de um projeto (ativos, não arquivados).
 Resposta: `{ "projectId", "funnels": [{ "id", "name", "type": "launch|perpetual", "metaCampaignCount", "googleCampaignCount" }] }`
 
 ### GET /api/public/v1/funnels/{funnelId}/stages
-Etapas de um funil.
-Resposta: `{ "funnelId", "projectId", "funnelName", "stages": [{ "id", "name", "stageType": "paid|free|sales|cpl", "sortOrder", "leadGoal", "projectionEndDate", "metaCampaignCount", "googleCampaignCount" }] }`
+Etapas de um funil, com a LISTA de campanhas vinculadas (o nome carrega o prefixo lpa/lpd/... = unidade de análise do gestor).
+Resposta: `{ "funnelId", "projectId", "funnelName", "stages": [{ "id", "name", "stageType": "paid|free|sales|cpl", "sortOrder", "leadGoal", "projectionEndDate", "metaCampaignCount", "googleCampaignCount", "campaigns": [{ "id", "name" }], "googleAdsCampaigns": [{ "id", "name" }] }] }`
 
 ## Endpoints — Meta Ads
 
@@ -68,6 +68,16 @@ Resposta: `{ "projectId", "adId", "adName", "campaignId", "campaignName", "range
 
 Formato: `{ "error": "mensagem", "code": "CODIGO" }`.
 `API_KEY_MISSING` (401) · `API_KEY_INVALID` (401) · `API_KEY_REVOKED` (403) · `SCOPE_REQUIRED` (403) · `NOT_FOUND` (404) · `BAD_REQUEST` (400) · `RATE_LIMITED` (429) · `405` (método de escrita).
+
+## Ainda NÃO disponível na API (não invente — use só o que está acima)
+
+Estes dados existem no Loyola X mas ainda não foram expostos (em construção). Se o usuário pedir, avise que ainda não está na API:
+
+- **Pesquisa de qualificação** (distribuições por sexo/idade/faixa A-B-C-D/renda/escolaridade/religião/profissão; taxa de resposta; faixaA% por anúncio). Fonte: planilhas de lead scoring.
+- **Splits por origem** (Pago/Orgânico/Sem Track) e **quente/frio**, e **leads/vendas únicos** (dedup e-mail+telefone). Hoje `leads`/`purchases` são só do pixel Meta (tudo "pago").
+- **Receita/ROAS real** (cruzamento com vendas Kiwify/Hotmart por origem). O `roas` atual é do pixel. (Story 36.5.)
+- **Connect Rate** (conexão no WhatsApp/messaging) — sem integração no backend ainda.
+- **Preview interativo do anúncio** (`previewUrl`). Por ora use `creative.thumbnailUrl`/`imageUrl`.
 
 ## MCP server
 

@@ -148,6 +148,10 @@ export default fp(async function publicDiscoveryRoutes(fastify) {
           projectionEndDate: s.projectionEndDate,
           metaCampaignCount: s.campaigns.length,
           googleCampaignCount: s.googleAdsCampaigns.length,
+          // Lista de campanhas Meta/Google vinculadas (Buraco 5: mapa campanha->etapa).
+          // O nome carrega o prefixo (lpa/lpd/...) — a unidade de análise do gestor.
+          campaigns: s.campaigns,
+          googleAdsCampaigns: s.googleAdsCampaigns,
         })),
       };
     }
