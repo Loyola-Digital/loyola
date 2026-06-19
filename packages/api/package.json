@@ -11,6 +11,7 @@
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "backfill:meta-names": "tsx src/scripts/backfill-meta-names.ts",
+    "backfill:kiwify-subs": "tsx src/scripts/backfill-kiwify-subscriptions.ts",
     "start": "node dist/server.js"
   },
   "dependencies": {

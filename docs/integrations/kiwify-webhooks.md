@@ -62,36 +62,54 @@ Mapeamento dos sinônimos da Kiwify em `services/kiwify-subscriptions.ts`
 (`mapKiwifyStatus`): `paid/approved/authorized → active`, `pending/processing →
 waiting_payment`, `overdue/delayed → late`, `cancelled → canceled`, etc.
 
-## Backfill histórico (script seu)
+## Backfill histórico (CSV de Subscriptions)
 
-Para subir o histórico exportado da Kiwify, faça **upsert direto** em
-`kiwify_subscriptions` por `(project_id, subscription_id)`. Pontos de atenção:
+Há um script pronto que lê o **export "Subscriptions"** da Kiwify (CSV) e faz upsert
+em `kiwify_subscriptions`:
 
-- `amount` em **centavos** (multiplique por 100 se o export vier em reais).
-- `status` deve ser um dos valores canônicos acima (reaproveite `mapKiwifyStatus`).
-- Datas em `timestamptz` (UTC). O helper `parseKiwifyDate` aceita ISO e
-  `YYYY-MM-DD HH:mm:ss`.
-- `ON CONFLICT (project_id, subscription_id) DO UPDATE` — para o webhook ao vivo
-  prevalecer depois, deixe o backfill com `last_event_at` no passado (ou nulo).
+```bash
+# DATABASE_URL no ambiente. --project aceita UUID ou nome (ILIKE).
+pnpm --filter @loyola-x/api exec \
+  tsx src/scripts/backfill-kiwify-subscriptions.ts \
+  --project=<uuid-ou-nome-do-projeto> --file=/caminho/subscriptions.csv
 
-Exemplo de upsert:
-
-```sql
-INSERT INTO kiwify_subscriptions
-  (project_id, subscription_id, product_name, plan_name, customer_email,
-   status, amount, currency, started_at, next_charge_at, canceled_at, last_event_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, 'BRL', $8, $9, $10, NULL)
-ON CONFLICT (project_id, subscription_id) DO UPDATE SET
-  status = EXCLUDED.status,
-  amount = EXCLUDED.amount,
-  next_charge_at = EXCLUDED.next_charge_at,
-  canceled_at = EXCLUDED.canceled_at,
-  updated_at = now();
+# Pré-visualizar sem gravar:
+#   ... --project=... --file=... --dry
 ```
 
-> Dica: reusar `normalizeKiwifySubscriptionEvent` se o export tiver o mesmo shape
-> do webhook. Para auditoria, dá pra também inserir cada linha bruta em
-> `kiwify_webhook_events` com um `dedup_key` próprio (ex.: `sha256("backfill:"+id)`).
+### Colunas do CSV → `kiwify_subscriptions`
+
+| Coluna CSV | Coluna tabela | Observação |
+|---|---|---|
+| `Status` | `status` | normalizado por `mapKiwifyStatus` (`active` → `active`) |
+| `Product Name` | `product_name` | |
+| `Plan Name` | `plan_name` | |
+| `Customer Name` / `Customer Email` | `customer_name` / `customer_email` | PII |
+| `Price` | `amount` | **já vem em CENTAVOS** — gravado direto |
+| `Started At` | `started_at` | `YYYY-MM-DD HH:mm` tratado como UTC |
+| `Current Period End` | `next_charge_at` | data da próxima renovação |
+| `Canceled At` | `canceled_at` | vazio quando ativa |
+
+`currency` = `BRL` fixo. `order_id`/`product_id` ficam nulos (não há no export).
+
+> **`amount` não é normalizado para mensal** — é o valor da cobrança do período do
+> plano (anual/mensal/trimestral). O "MRR" do summary soma isso direto; ajuste se
+> precisar de MRR real.
+
+### ⚠️ Sem `subscription_id` no export
+
+O CSV de Subscriptions **não traz o ID da assinatura**. O script gera um id
+sintético determinístico: `csv:<sha1(email|produto|plano|started_at)>`. Implicações:
+
+- **Idempotente:** rodar o mesmo CSV de novo atualiza as mesmas linhas.
+- **Não reconcilia com webhooks ao vivo:** eventos de webhook usam o
+  `subscription_id` REAL da Kiwify → entram como linha nova. Trate o CSV como
+  **snapshot histórico**; quando os webhooks começarem a fluir, eles são a fonte
+  de verdade dali pra frente (e podem coexistir com a linha do CSV da mesma pessoa).
+- `last_event_type = 'backfill_csv'`, `last_event_at = NULL`.
+
+> Referência de validação: o export de exemplo (96 assinaturas ativas) somou
+> `amount` de vigentes = **R$ 43.697,10** (períodos mistos).
 
 ## Limitações conhecidas (fase 2 MVP)
 
