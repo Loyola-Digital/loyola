@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   funnelStages,
@@ -7,6 +7,7 @@ import {
   projects,
   projectMembers,
   metaAdsAccounts,
+  metaAdsAccountProjects,
 } from "../db/schema.js";
 import {
   fetchDailyInsights,
@@ -165,8 +166,63 @@ export default fp(async function metaAdsComparisonRoutes(fastify) {
         };
       }
 
-      // 4. Resolve campaigns + meta account
-      if (!compareFunnel.metaAccountId) {
+      // 4. Resolve a(s) conta(s) Meta candidatas + token.
+      // Funis antigos não gravam metaAccountId no nível do funil (só campanhas no
+      // stage) — a conta Meta é do PROJETO. Quando o funil aponta uma conta, usamos
+      // ela; senão, TODAS as contas do projeto viram candidatas e no passo 5
+      // escolhemos a que de fato tem as campanhas (filter por campaign.id numa conta
+      // que não as possui devolve [] sem erro, então é seguro varrer). Sem isto,
+      // comparar com lançamentos antigos retornava sempre "no_meta_account"; e pegar
+      // só a primeira conta quebrava de forma intermitente em projetos multi-conta.
+      const accountCandidates: Array<{ metaAccountId: string; accessToken: string }> = [];
+
+      if (compareFunnel.metaAccountId) {
+        const [metaAccount] = await fastify.db
+          .select({
+            metaAccountId: metaAdsAccounts.metaAccountId,
+            accessTokenEncrypted: metaAdsAccounts.accessTokenEncrypted,
+            accessTokenIv: metaAdsAccounts.accessTokenIv,
+          })
+          .from(metaAdsAccounts)
+          .where(eq(metaAdsAccounts.id, compareFunnel.metaAccountId))
+          .limit(1);
+        if (metaAccount) {
+          accountCandidates.push({
+            metaAccountId: metaAccount.metaAccountId,
+            accessToken: decryptAccountToken(metaAccount.accessTokenEncrypted, metaAccount.accessTokenIv),
+          });
+        }
+      }
+
+      if (accountCandidates.length === 0) {
+        // Funil sem conta gravada → todas as contas Meta vinculadas ao PROJETO
+        // viram candidatas. ORDER BY id pra ser determinístico (sem isso, a "primeira
+        // conta" em projeto multi-conta era arbitrária e quebrava de forma
+        // intermitente).
+        const links = await fastify.db
+          .select({ accountId: metaAdsAccountProjects.accountId })
+          .from(metaAdsAccountProjects)
+          .where(eq(metaAdsAccountProjects.projectId, params.data.projectId));
+        if (links.length > 0) {
+          const accts = await fastify.db
+            .select({
+              metaAccountId: metaAdsAccounts.metaAccountId,
+              accessTokenEncrypted: metaAdsAccounts.accessTokenEncrypted,
+              accessTokenIv: metaAdsAccounts.accessTokenIv,
+            })
+            .from(metaAdsAccounts)
+            .where(inArray(metaAdsAccounts.id, links.map((l) => l.accountId)))
+            .orderBy(metaAdsAccounts.id);
+          for (const a of accts) {
+            accountCandidates.push({
+              metaAccountId: a.metaAccountId,
+              accessToken: decryptAccountToken(a.accessTokenEncrypted, a.accessTokenIv),
+            });
+          }
+        }
+      }
+
+      if (accountCandidates.length === 0) {
         return {
           compareFunnelName: compareFunnel.name,
           compareStageName: compareStage.name,
@@ -177,45 +233,41 @@ export default fp(async function metaAdsComparisonRoutes(fastify) {
         };
       }
 
-      const [metaAccount] = await fastify.db
-        .select({
-          metaAccountId: metaAdsAccounts.metaAccountId,
-          accessTokenEncrypted: metaAdsAccounts.accessTokenEncrypted,
-          accessTokenIv: metaAdsAccounts.accessTokenIv,
-        })
-        .from(metaAdsAccounts)
-        .where(eq(metaAdsAccounts.id, compareFunnel.metaAccountId))
-        .limit(1);
-
-      if (!metaAccount) {
-        return { semDados: true };
-      }
-
-      const token = decryptAccountToken(metaAccount.accessTokenEncrypted, metaAccount.accessTokenIv);
-
       // Campaigns: stage campaigns take priority, then funnel campaigns
       const stageCampaigns = (compareStage.campaigns ?? []) as { id: string; name: string }[];
       const funnelCampaigns = (compareFunnel.campaigns ?? []) as { id: string; name: string }[];
       const campaigns = stageCampaigns.length > 0 ? stageCampaigns : funnelCampaigns;
+      const campaignIds = campaigns.map((c) => c.id);
 
-      const { days } = query.data;
+      // A comparação alinha por DIA do lançamento (D1, D2...), NÃO por data — e o
+      // lançamento comparado pode ser de meses ou do ANO PASSADO. Por isso ignoramos
+      // os `days` recentes do dashboard e buscamos uma janela LARGA: pegamos todo o
+      // histórico de atividade das campanhas do funil comparado e indexamos por dia
+      // ativo (aggregateByDate -> sort ASC -> dayIndex 1..N abaixo).
+      const COMPARISON_LOOKBACK_DAYS = 730; // ~2 anos (dentro do limite de histórico da Meta)
 
-      // 5. Fetch Meta Ads data — DB-first cache (meta_campaign_insights_daily)
-      // Uma única chamada cobrindo todas as campanhas; dias antigos (>7d) servem
-      // do Postgres com TTL infinito, evitando re-fetch Meta.
+      // 5. Fetch Meta Ads data — DB-first cache (meta_campaign_insights_daily).
+      // Varre as contas candidatas e fica com a primeira que retornar dados pras
+      // campanhas (em projeto multi-conta a conta dona das campanhas pode não ser a
+      // primeira; uma conta que não as possui devolve [] sem erro).
       let allInsights: MetaDailyInsight[] = [];
       try {
-        if (campaigns.length > 0) {
-          allInsights = await fetchCampaignDailyInsightsForIdsWithCache(
-            fastify.db,
-            params.data.projectId,
-            metaAccount.metaAccountId,
-            token,
-            campaigns.map((c) => c.id),
-            days
-          );
-        } else {
-          allInsights = await fetchDailyInsights(metaAccount.metaAccountId, token, days);
+        for (const acct of accountCandidates) {
+          const insights =
+            campaignIds.length > 0
+              ? await fetchCampaignDailyInsightsForIdsWithCache(
+                  fastify.db,
+                  params.data.projectId,
+                  acct.metaAccountId,
+                  acct.accessToken,
+                  campaignIds,
+                  COMPARISON_LOOKBACK_DAYS,
+                )
+              : await fetchDailyInsights(acct.metaAccountId, acct.accessToken, COMPARISON_LOOKBACK_DAYS);
+          if (insights.length > 0) {
+            allInsights = insights;
+            break;
+          }
         }
       } catch {
         return { semDados: true };
@@ -228,6 +280,10 @@ export default fp(async function metaAdsComparisonRoutes(fastify) {
           days: [],
           totals: { impressions: 0, clicks: 0, spend: 0, reach: 0 },
           semDados: true,
+          // Distingue do "no_meta_account": aqui há conta(s), mas nenhuma retornou
+          // insights pras campanhas no lookback (campanhas sem entrega ou, em
+          // multi-conta, campanhas que não pertencem a nenhuma conta vinculada).
+          reason: "no_data",
         };
       }
 
