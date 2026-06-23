@@ -540,7 +540,10 @@ async function fetchCampaignDailyInsightsForIdsSingleRange(
     JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }])
   );
 
-  let queryPath = `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,actions,action_values&time_increment=1&level=campaign&limit=500&filtering=${filtering}`;
+  // campaign_id é obrigatório no fields: sem ele a Graph API não devolve o id em
+  // cada row (mesmo com level=campaign), e upsertCampaignInsights descarta tudo
+  // (campaignId vazio) → o cache meta_campaign_insights_daily nunca persistia.
+  let queryPath = `/act_${metaAccountId}/insights?fields=campaign_id,impressions,reach,clicks,spend,ctr,cpc,cpm,actions,action_values&time_increment=1&level=campaign&limit=500&filtering=${filtering}`;
   queryPath += `&time_range=${buildTimeRangeParam(since, until)}`;
 
   type PageResponse = { data: MetaDailyInsight[]; paging?: { next?: string } };
@@ -554,11 +557,21 @@ async function fetchCampaignDailyInsightsForIdsSingleRange(
       : await fetchMeta<PageResponse>(nextPath, accessToken);
     allResults.push(...(res.data ?? []));
     const nextUrl = res.paging?.next;
-    // Hard cap: N campanhas × 90 dias = ~450 linhas no pior caso por chunk.
-    if (nextUrl && allResults.length < 2000) {
+    // Hard cap defensivo (anti-loop). level=campaign + time_increment=1 gera ~1 linha
+    // por campanha×dia: um stage com muitas campanhas × 90 dias estoura 2000 e
+    // truncaria SILENCIOSAMENTE — e o truncado gruda no cache (TTL infinito p/ dias
+    // passados). 5000 cobre folgado (≈55 campanhas × 90d); warn pra truncamento real
+    // não passar despercebido.
+    if (nextUrl && allResults.length < 5000) {
       nextPath = nextUrl;
       useFullUrl = true;
     } else {
+      if (nextUrl) {
+        console.warn(
+          `[meta-ads] cap de 5000 linhas atingido em fetchCampaignDailyInsightsForIdsSingleRange ` +
+            `(campanhas=${campaignIds.length}, range ${since}..${until}) — dados podem estar truncados`,
+        );
+      }
       nextPath = null;
     }
   }
