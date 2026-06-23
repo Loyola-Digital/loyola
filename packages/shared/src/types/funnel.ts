@@ -236,6 +236,9 @@ export interface Funnel {
   /** Story 18.40 fix: Gasto Total Projetado para gráfico
    * "Leads: Reais vs Projeção (Baseado em Custo)" — persistido no DB (era localStorage). */
   leadsGoalGastoTotal: number | null;
+  /** Story 10.9: NULL = ativo; preenchido = arquivado. Exposto p/ permitir
+   * escolher funis arquivados como comparação. */
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

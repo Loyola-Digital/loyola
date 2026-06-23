@@ -107,6 +107,7 @@ function funnelShape(f: typeof funnels.$inferSelect) {
     lastAuditAt: f.lastAuditAt ?? null,
     lastAuditBy: null as { id: string; name: string } | null,
     auditStatus: f.auditStatus ?? "pending",
+    archivedAt: f.archivedAt ? f.archivedAt.toISOString() : null,
     createdAt: f.createdAt,
     updatedAt: f.updatedAt,
   };

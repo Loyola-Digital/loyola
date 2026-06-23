@@ -86,12 +86,15 @@ export interface CampaignPickerResponse {
 
 const FUNNEL_STALE_TIME = 5 * 60 * 1000; // 5min
 
-export function useFunnels(projectId: string | null) {
+export function useFunnels(
+  projectId: string | null,
+  archived: "false" | "all" = "false",
+) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["funnels", projectId],
+    queryKey: ["funnels", projectId, archived],
     queryFn: () =>
-      apiClient<Funnel[]>(`/api/projects/${projectId}/funnels`),
+      apiClient<Funnel[]>(`/api/projects/${projectId}/funnels?archived=${archived}`),
     enabled: !!projectId,
     staleTime: FUNNEL_STALE_TIME,
   });
