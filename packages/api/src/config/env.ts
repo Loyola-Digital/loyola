@@ -30,6 +30,14 @@ const envSchema = z.object({
   // Hora local (0-23; default 4). META_PERF_SYNC_ENABLED=false desliga.
   META_PERF_SYNC_HOUR: z.coerce.number().int().min(0).max(23).optional(),
   META_PERF_SYNC_ENABLED: z.enum(["true", "false"]).optional(),
+  // Janela (dias) do refresh diário completo (com creatives). Default 14.
+  META_PERF_SYNC_DAYS: z.coerce.number().int().min(1).max(90).optional(),
+  // Epic 35+: refresh INTRADAY (mantém "hoje/recente" fresco no banco para os
+  // painéis lerem sem chamar a Meta). Intervalo em minutos (default 15) e janela
+  // curta de dias (default 3). META_PERF_INTRADAY_ENABLED=false desliga.
+  META_PERF_INTRADAY_ENABLED: z.enum(["true", "false"]).optional(),
+  META_PERF_INTRADAY_MINUTES: z.coerce.number().int().min(1).max(720).optional(),
+  META_PERF_INTRADAY_DAYS: z.coerce.number().int().min(1).max(90).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

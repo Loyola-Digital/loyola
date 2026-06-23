@@ -42,6 +42,7 @@ import { HotColdSpendDonut } from "./hot-cold-spend-donut";
 import { HotColdCountDonut } from "./hot-cold-count-donut";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { RefreshDataButton } from "./refresh-data-button";
+import { MetaFreshnessBadge } from "./meta-freshness-badge";
 import { CampaignSelector } from "./campaign-selector";
 import type { Funnel, FunnelCampaign, StageType, ComparisonDayMetrics } from "@loyola-x/shared";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
@@ -247,6 +248,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         <div className="flex items-center gap-2 flex-wrap">
           <DayRangePicker days={days} onDaysChange={setDays} />
           <RefreshDataButton />
+          <MetaFreshnessBadge projectId={projectId} />
         </div>
         <Button
           variant="outline"

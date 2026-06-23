@@ -25,6 +25,7 @@ import {
   type ResolveEntityNamesCacheAdapter,
 } from "../services/meta-ads.js";
 import { metaAdsAccounts, metaAdsAccountProjects, metaEntityNamesCache } from "../db/schema.js";
+import { getProjectMetaFreshness } from "../services/meta-sync-state.js";
 
 // Story 18.26 Fase 1 / 18.37: TTL alinhado com stage-sales-data.ts (30d). Evita
 // re-consultar a Meta a cada 24h e estourar rate limit; refresh vem do backfill.
@@ -713,6 +714,32 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
       } catch (err) {
         return reply.code(502).send({
           error: "Erro ao buscar video",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  );
+
+  // ---- GET /api/traffic/analytics/:projectId/meta-freshness ----
+  // Frescor do sync Meta (max last_success_at do projeto) para o selo
+  // "atualizado há X" nos painéis. Lê meta_sync_state — nunca chama a Meta.
+  fastify.get(
+    "/api/traffic/analytics/:projectId/meta-freshness",
+    async (request, reply) => {
+      if (request.userRole === "guest") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+
+      try {
+        return await getProjectMetaFreshness(fastify.db, paramResult.data.projectId);
+      } catch (err) {
+        return reply.code(502).send({
+          error: "Erro ao buscar freshness",
           details: err instanceof Error ? err.message : String(err),
         });
       }

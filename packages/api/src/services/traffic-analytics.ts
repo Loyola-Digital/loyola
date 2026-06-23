@@ -15,6 +15,7 @@ import {
   fetchPlacementBreakdown,
   decryptAccountToken,
   todayInTimezone,
+  dateRangeFromDays,
   type AdCreativeCacheAdapter,
   type MetaAdCreative,
   type MetaDailyInsight,
@@ -22,6 +23,8 @@ import {
   type MetaCampaignInsight,
 } from "./meta-ads.js";
 import { fetchCampaignDailyInsightsForIdsWithCache } from "./meta-insights-cache.js";
+import { getCampaignInsightsFromDb, getPlacementBreakdownFromDb } from "./meta-db-source.js";
+import { singleFlight } from "../utils/single-flight.js";
 import { applyMetaTax } from "../utils/meta-tax.js";
 
 // Story 18.26 Fase 2: TTL alinhado com meta_entity_names_cache (24h)
@@ -295,6 +298,35 @@ export async function getMetaAccountForProject(
   return { metaAccountId: account.metaAccountId, accessToken };
 }
 
+/**
+ * Retorna TODAS as contas Meta vinculadas a um projeto (não só a primeira).
+ * O sync usa isto para persistir a performance de cada conta — antes o
+ * `.limit(1)` do getMetaAccountForProject deixava contas extras sem cobertura no
+ * banco, forçando chamadas ao vivo.
+ */
+export async function getAllMetaAccountsForProject(
+  db: Database,
+  projectId: string
+): Promise<Array<{ metaAccountId: string; accessToken: string }>> {
+  const links = await db
+    .select({ accountId: metaAdsAccountProjects.accountId })
+    .from(metaAdsAccountProjects)
+    .where(eq(metaAdsAccountProjects.projectId, projectId));
+
+  if (links.length === 0) return [];
+
+  const accountIds = links.map((l) => l.accountId);
+  const accounts = await db
+    .select()
+    .from(metaAdsAccounts)
+    .where(inArray(metaAdsAccounts.id, accountIds));
+
+  return accounts.map((account) => ({
+    metaAccountId: account.metaAccountId,
+    accessToken: decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv),
+  }));
+}
+
 // ============================================================
 // PUBLIC API
 // ============================================================
@@ -317,13 +349,26 @@ export async function getProjectOverview(
     return { totalSpend: 0, totalImpressions: 0, totalClicks: 0, totalReach: null, avgFrequency: null, ctr: 0, cpc: 0, cpm: 0, totalLeads: null, avgCpl: null, totalLinkClicks: null, totalLandingPageViews: null, connectRate: null, totalQualifiedLeads: null, avgCplQualified: null, totalSales: null, totalRevenue: null, totalCheckouts: null, checkoutRate: null, checkoutConversionRate: null, roas: null, cac: null, margin: null, marginPercent: null, totalCampaigns: 0, hasCrm: false, hasQualification: false, hasSales: false };
   }
 
-  const allCampaigns = await fetchCampaignInsights(
-    metaAccount.metaAccountId,
-    metaAccount.accessToken,
-    days,
-    startDate,
-    endDate,
-  );
+  const { since, until } =
+    startDate && endDate ? { since: startDate, until: endDate } : dateRangeFromDays(days);
+
+  // DB-first: lê do cache diário (meta_campaign_insights_daily) que o sync mantém
+  // quente. Só cai no fetch ao vivo — e mesmo assim coalescido por single-flight —
+  // quando o banco ainda não tem cobertura para o range. Nunca há "consulta em dobro".
+  let allCampaigns = await getCampaignInsightsFromDb(db, projectId, since, until);
+  if (allCampaigns.length === 0) {
+    allCampaigns = await singleFlight(
+      `live:campaign-insights:${projectId}:${since}:${until}`,
+      () =>
+        fetchCampaignInsights(
+          metaAccount.metaAccountId,
+          metaAccount.accessToken,
+          days,
+          startDate,
+          endDate,
+        ),
+    );
+  }
 
   const idSet = campaignIds ? new Set(campaignIds) : null;
   const campaigns = idSet
@@ -393,11 +438,14 @@ export async function getProjectCampaignAnalytics(
     return { campaigns: [], unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
   }
 
-  const campaignInsights = await fetchCampaignInsights(
-    metaAccount.metaAccountId,
-    metaAccount.accessToken,
-    days
-  );
+  const { since, until } = dateRangeFromDays(days);
+  let campaignInsights = await getCampaignInsightsFromDb(db, projectId, since, until);
+  if (campaignInsights.length === 0) {
+    campaignInsights = await singleFlight(
+      `live:campaign-insights:${projectId}:${since}:${until}`,
+      () => fetchCampaignInsights(metaAccount.metaAccountId, metaAccount.accessToken, days),
+    );
+  }
 
   const campaigns: CampaignAnalytics[] = campaignInsights.map((c) => {
     const spend = applyMetaTax(parseFloat(c.spend || "0"), c.date_start); // imposto Meta 12,15% (2026+)
@@ -991,17 +1039,32 @@ export async function getPlacementBreakdown(
   const metaAccount = await getMetaAccountForProject(db, projectId);
   if (!metaAccount) return [];
 
-  // For multiple campaigns, fetch each and merge placement data
   let rawAll: import("./meta-ads.js").MetaPlacementInsight[] = [];
   if (campaignIds && campaignIds.length > 0) {
-    const results = await Promise.all(
-      campaignIds.map((cid) =>
-        fetchPlacementBreakdown(metaAccount.metaAccountId, metaAccount.accessToken, days, cid)
-      )
+    // Filtro por campanha não é coberto pelo cache diário (a tabela é por
+    // projeto/dia); fetch ao vivo, mas coalescido para não duplicar entre acessos
+    // simultâneos.
+    rawAll = await singleFlight(
+      `live:placements:${projectId}:${days}:${campaignIds.slice().sort().join(",")}`,
+      async () => {
+        const results = await Promise.all(
+          campaignIds.map((cid) =>
+            fetchPlacementBreakdown(metaAccount.metaAccountId, metaAccount.accessToken, days, cid),
+          ),
+        );
+        return results.flat();
+      },
     );
-    rawAll = results.flat();
   } else {
-    rawAll = await fetchPlacementBreakdown(metaAccount.metaAccountId, metaAccount.accessToken, days);
+    // DB-first: agrega de meta_placement_insights_daily; fallback coalescido.
+    const { since, until } = dateRangeFromDays(days);
+    rawAll = await getPlacementBreakdownFromDb(db, projectId, since, until);
+    if (rawAll.length === 0) {
+      rawAll = await singleFlight(
+        `live:placements:${projectId}:${days}:all`,
+        () => fetchPlacementBreakdown(metaAccount.metaAccountId, metaAccount.accessToken, days),
+      );
+    }
   }
 
   // Aggregate by platform+position. Placement insights não trazem date_start

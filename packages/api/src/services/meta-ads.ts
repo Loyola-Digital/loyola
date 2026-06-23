@@ -1,4 +1,5 @@
 import { decrypt } from "./encryption.js";
+import { singleFlight } from "../utils/single-flight.js";
 
 // ============================================================
 // CONSTANTS
@@ -6,8 +7,14 @@ import { decrypt } from "./encryption.js";
 
 const GRAPH_API_VERSION = "v21.0";
 const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
-const RATE_LIMIT_MAX = 200;
-const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+// Backoff/retry para o rate limit REAL da Meta. Substitui o antigo contador
+// local (que estourava em erro a 200/h e derrubava o sync). Agora respeitamos os
+// sinais da própria Meta (HTTP 429, códigos de throttle, headers de uso) e
+// fazemos backoff exponencial. Ver bloco "RATE LIMITER" abaixo.
+const META_MAX_RETRIES = 5;
+const META_BASE_BACKOFF_MS = 1_000;
+const META_MAX_BACKOFF_MS = 60_000;
 
 /**
  * Timezone usado pra calcular "hoje" e o range since/until.
@@ -59,7 +66,7 @@ function subtractDays(dateStr: string, days: number): string {
  * de horário onde "hoje" UTC ≠ "hoje" SP. Agora `until` é sempre o dia atual
  * no fuso da conta.
  */
-function dateRangeFromDays(
+export function dateRangeFromDays(
   days: number,
   timezone: string = ACCOUNT_TIMEZONE,
 ): { since: string; until: string } {
@@ -113,22 +120,109 @@ export function chunkDateRange(
 }
 
 // ============================================================
-// RATE LIMITER (per-process, same pattern as instagram.ts)
+// RATE LIMITER — backoff dirigido pelos sinais reais da Meta
 // ============================================================
+// Antes: contador local que lançava erro a 200 chamadas/h por processo. Isso
+// (a) não reflete o limite real da Meta (que é por score/BUC) e (b) convertia
+// concorrência em ERRO em vez de esperar. Agora, como só o SYNC chama a Meta
+// (leituras vêm do banco), tratamos o throttle de forma resiliente: detectamos
+// 429 + códigos de throttle, lemos os headers de uso e fazemos backoff.
 
-let requestCount = 0;
-let windowStart = Date.now();
+/** Códigos de erro Meta que significam "rate limited / throttled". */
+const META_RATE_LIMIT_CODES = new Set([
+  4, 17, 32, 613, 80000, 80001, 80002, 80003, 80004, 80005, 80006, 80008, 80014,
+]);
 
-function checkRateLimit() {
-  const now = Date.now();
-  if (now - windowStart > RATE_LIMIT_WINDOW_MS) {
-    requestCount = 0;
-    windowStart = now;
+/** Pausa global até este timestamp (ms). Setada quando a Meta sinaliza uso alto. */
+let cooldownUntil = 0;
+
+// `sleep(ms)` está definido mais abaixo (lógica de nomes) e é hoisted — reutilizado aqui.
+
+export function isMetaRateLimited(status: number, code: unknown): boolean {
+  return status === 429 || (typeof code === "number" && META_RATE_LIMIT_CODES.has(code));
+}
+
+/**
+ * Lê os headers de uso da Meta e devolve um cooldown sugerido em ms.
+ * - `estimated_time_to_regain_access` (minutos) → respeita exatamente.
+ * - qualquer métrica de uso (call_count/total_time/total_cputime/util_pct) ≥ 90%
+ *   → pausa preventiva de 60s pra não cruzar o teto.
+ * Best-effort: header malformado é ignorado.
+ */
+export function parseMetaUsageCooldownMs(headers: Headers): number {
+  let cooldownMs = 0;
+  const scan = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const item of node) scan(item);
+      return;
+    }
+    const obj = node as Record<string, unknown>;
+    for (const [key, val] of Object.entries(obj)) {
+      if (val && typeof val === "object") {
+        scan(val);
+      } else if (key === "estimated_time_to_regain_access") {
+        const mins = Number(val);
+        if (mins > 0) cooldownMs = Math.max(cooldownMs, mins * 60_000);
+      } else if (/call_count|total_cputime|total_time|util_pct|usage_pct/.test(key)) {
+        const pct = Number(val);
+        if (pct >= 90) cooldownMs = Math.max(cooldownMs, 60_000);
+      }
+    }
+  };
+  for (const header of ["x-business-use-case-usage", "x-ad-account-usage", "x-app-usage"]) {
+    const raw = headers.get(header);
+    if (!raw) continue;
+    try {
+      scan(JSON.parse(raw));
+    } catch {
+      /* header não-JSON — ignora */
+    }
   }
-  if (requestCount >= RATE_LIMIT_MAX) {
-    throw new Error("Meta Ads API rate limit exceeded. Try again later.");
+  return cooldownMs;
+}
+
+/**
+ * Faz GET na URL (completa, com access_token já embutido) com:
+ * - respeito a um cooldown global ativo,
+ * - retry com backoff exponencial + jitter em 429/códigos de throttle,
+ * - leitura proativa dos headers de uso.
+ * Lança em erro não-rate-limit (ou após esgotar os retries).
+ */
+async function fetchMetaUrl<T>(url: string): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    const waitFor = cooldownUntil - Date.now();
+    if (waitFor > 0) await sleep(waitFor);
+
+    const res = await fetch(url);
+    const data = (await res.json().catch(() => ({}))) as
+      | (Partial<GraphApiError> & Record<string, unknown>)
+      | undefined;
+
+    if (res.ok) {
+      const cd = parseMetaUsageCooldownMs(res.headers);
+      if (cd > 0) cooldownUntil = Date.now() + cd;
+      return data as T;
+    }
+
+    const code = data?.error?.code;
+    if (isMetaRateLimited(res.status, code) && attempt < META_MAX_RETRIES) {
+      const retryAfterMs = Number(res.headers.get("retry-after")) * 1_000;
+      const headerCd = parseMetaUsageCooldownMs(res.headers);
+      const expBackoff =
+        Math.min(META_MAX_BACKOFF_MS, META_BASE_BACKOFF_MS * 2 ** attempt) +
+        Math.floor(Math.random() * 250);
+      const backoff = retryAfterMs > 0 ? retryAfterMs : headerCd > 0 ? headerCd : expBackoff;
+      cooldownUntil = Date.now() + backoff;
+      console.warn(
+        `[meta-ads] rate limited (status=${res.status} code=${code ?? "?"}); backoff ${backoff}ms, attempt ${attempt + 1}/${META_MAX_RETRIES}`,
+      );
+      await sleep(backoff);
+      continue;
+    }
+
+    throw new Error(data?.error?.message ?? `Meta API error: ${res.status}`);
   }
-  requestCount++;
 }
 
 // ============================================================
@@ -254,19 +348,18 @@ export interface MetaAdCreative {
 // ============================================================
 
 async function fetchMeta<T>(path: string, token: string): Promise<T> {
-  checkRateLimit();
   const separator = path.includes("?") ? "&" : "?";
   const url = `${GRAPH_API_BASE}${path}${separator}access_token=${token}`;
-  const res = await fetch(url);
-  const data = await res.json();
+  return fetchMetaUrl<T>(url);
+}
 
-  if (!res.ok) {
-    const err = data as GraphApiError;
-    throw new Error(
-      err?.error?.message ?? `Meta API error: ${res.status}`
-    );
-  }
-  return data as T;
+/**
+ * Busca a próxima página de uma resposta paginada da Meta. `nextUrl` já vem
+ * completa (com access_token embutido) no campo `paging.next`. Passa pelo mesmo
+ * backoff/cooldown do fetchMeta — antes esses fetch crus furavam o rate control.
+ */
+export function fetchMetaNext<T>(nextUrl: string): Promise<T> {
+  return fetchMetaUrl<T>(nextUrl);
 }
 
 // ============================================================
@@ -307,13 +400,9 @@ export async function fetchCampaigns(
   let useFullUrl = false;
 
   while (nextPath) {
-    let res: PageResponse;
-    if (useFullUrl) {
-      const raw = await fetch(nextPath);
-      res = (await raw.json()) as PageResponse;
-    } else {
-      res = await fetchMeta<PageResponse>(nextPath, accessToken);
-    }
+    const res: PageResponse = useFullUrl
+      ? await fetchMetaNext<PageResponse>(nextPath)
+      : await fetchMeta<PageResponse>(nextPath, accessToken);
     allResults.push(...(res.data ?? []));
     // Hard cap defensivo — contas extremamente antigas podem ter milhares de
     // campanhas; 2000 é mais do que suficiente pro Loyola e evita loop infinito.
@@ -460,14 +549,9 @@ async function fetchCampaignDailyInsightsForIdsSingleRange(
   let useFullUrl = false;
 
   while (nextPath) {
-    let res: PageResponse;
-    if (useFullUrl) {
-      checkRateLimit();
-      const raw = await fetch(nextPath);
-      res = (await raw.json()) as PageResponse;
-    } else {
-      res = await fetchMeta<PageResponse>(nextPath, accessToken);
-    }
+    const res: PageResponse = useFullUrl
+      ? await fetchMetaNext<PageResponse>(nextPath)
+      : await fetchMeta<PageResponse>(nextPath, accessToken);
     allResults.push(...(res.data ?? []));
     const nextUrl = res.paging?.next;
     // Hard cap: N campanhas × 90 dias = ~450 linhas no pior caso por chunk.
@@ -528,7 +612,22 @@ export async function fetchCampaignDailyInsightsForIds(
   return allResults;
 }
 
-export async function fetchCampaignInsights(
+export function fetchCampaignInsights(
+  metaAccountId: string,
+  accessToken: string,
+  days: number = 30,
+  startDate?: string,
+  endDate?: string,
+  campaignIds?: string[],
+): Promise<MetaCampaignInsight[]> {
+  const ids = (campaignIds ?? []).slice().sort().join(",");
+  return singleFlight(
+    `fetchCampaignInsights:${metaAccountId}:${days}:${startDate ?? ""}:${endDate ?? ""}:${ids}`,
+    () => fetchCampaignInsightsImpl(metaAccountId, accessToken, days, startDate, endDate, campaignIds),
+  );
+}
+
+async function fetchCampaignInsightsImpl(
   metaAccountId: string,
   accessToken: string,
   days: number = 30,
@@ -556,7 +655,19 @@ export async function fetchCampaignInsights(
   return res.data ?? [];
 }
 
-export async function fetchAdSetInsights(
+export function fetchAdSetInsights(
+  metaAccountId: string,
+  accessToken: string,
+  campaignId: string,
+  days: number = 30,
+): Promise<MetaAdSetInsight[]> {
+  return singleFlight(
+    `fetchAdSetInsights:${metaAccountId}:${campaignId}:${days}`,
+    () => fetchAdSetInsightsImpl(metaAccountId, accessToken, campaignId, days),
+  );
+}
+
+async function fetchAdSetInsightsImpl(
   metaAccountId: string,
   accessToken: string,
   campaignId: string,
@@ -576,7 +687,18 @@ export async function fetchAdSetInsights(
   return res.data ?? [];
 }
 
-export async function fetchAllAdSetInsights(
+export function fetchAllAdSetInsights(
+  metaAccountId: string,
+  accessToken: string,
+  days: number = 30,
+): Promise<MetaAdSetInsight[]> {
+  return singleFlight(
+    `fetchAllAdSetInsights:${metaAccountId}:${days}`,
+    () => fetchAllAdSetInsightsImpl(metaAccountId, accessToken, days),
+  );
+}
+
+async function fetchAllAdSetInsightsImpl(
   metaAccountId: string,
   accessToken: string,
   days: number = 30
@@ -591,14 +713,9 @@ export async function fetchAllAdSetInsights(
   let useFullUrl = false;
 
   while (nextPath) {
-    let res: PageResponse;
-    if (useFullUrl) {
-      checkRateLimit();
-      const raw = await fetch(nextPath);
-      res = (await raw.json()) as PageResponse;
-    } else {
-      res = await fetchMeta<PageResponse>(nextPath, accessToken);
-    }
+    const res: PageResponse = useFullUrl
+      ? await fetchMetaNext<PageResponse>(nextPath)
+      : await fetchMeta<PageResponse>(nextPath, accessToken);
     allResults.push(...(res.data ?? []));
     const nextUrl = res.paging?.next;
     if (nextUrl && allResults.length < 500) {
@@ -637,7 +754,19 @@ function extractVideoMetrics(raw: RawAdInsight): VideoMetrics | null {
   return { p25, p50, p75, p100, thruplay };
 }
 
-export async function fetchAdInsights(
+export function fetchAdInsights(
+  metaAccountId: string,
+  accessToken: string,
+  adsetId: string,
+  days: number = 30,
+): Promise<MetaAdInsight[]> {
+  return singleFlight(
+    `fetchAdInsights:${metaAccountId}:${adsetId}:${days}`,
+    () => fetchAdInsightsImpl(metaAccountId, accessToken, adsetId, days),
+  );
+}
+
+async function fetchAdInsightsImpl(
   metaAccountId: string,
   accessToken: string,
   adsetId: string,
@@ -685,7 +814,24 @@ export interface AllAdInsight extends MetaAdInsight {
   actions?: { action_type: string; value: string }[];
 }
 
-export async function fetchAllAdInsights(
+export function fetchAllAdInsights(
+  metaAccountId: string,
+  accessToken: string,
+  days: number = 30,
+  campaignIds?: string | string[],
+  startDate?: string,
+  endDate?: string,
+): Promise<AllAdInsight[]> {
+  const ids = Array.isArray(campaignIds)
+    ? campaignIds.slice().sort().join(",")
+    : campaignIds ?? "";
+  return singleFlight(
+    `fetchAllAdInsights:${metaAccountId}:${days}:${ids}:${startDate ?? ""}:${endDate ?? ""}`,
+    () => fetchAllAdInsightsImpl(metaAccountId, accessToken, days, campaignIds, startDate, endDate),
+  );
+}
+
+async function fetchAllAdInsightsImpl(
   metaAccountId: string,
   accessToken: string,
   days: number = 30,
@@ -721,15 +867,10 @@ export async function fetchAllAdInsights(
   let useFullUrl = false;
 
   while (nextPath) {
-    let res: PageResponse;
-    if (useFullUrl) {
-      // Subsequent pages: Meta returns full absolute URL with token already included
-      checkRateLimit();
-      const raw = await fetch(nextPath);
-      res = (await raw.json()) as PageResponse;
-    } else {
-      res = await fetchMeta<PageResponse>(nextPath, accessToken);
-    }
+    // Páginas seguintes: a Meta devolve a URL absoluta com o token embutido.
+    const res: PageResponse = useFullUrl
+      ? await fetchMetaNext<PageResponse>(nextPath)
+      : await fetchMeta<PageResponse>(nextPath, accessToken);
 
     for (const raw of res.data ?? []) {
       allResults.push({
@@ -797,14 +938,9 @@ export async function fetchAdDailyInsights(
     let nextPath: string | null = `/act_${metaAccountId}/insights?fields=${fields}&time_range=${timeRange}&time_increment=1&level=ad&limit=500`;
     let useFullUrl = false;
     while (nextPath) {
-      let res: PageResponse;
-      if (useFullUrl) {
-        checkRateLimit();
-        const raw = await fetch(nextPath);
-        res = (await raw.json()) as PageResponse;
-      } else {
-        res = await fetchMeta<PageResponse>(nextPath, accessToken);
-      }
+      const res: PageResponse = useFullUrl
+        ? await fetchMetaNext<PageResponse>(nextPath)
+        : await fetchMeta<PageResponse>(nextPath, accessToken);
       for (const raw of res.data ?? []) {
         out.push({ ...raw, videoMetrics: extractVideoMetrics(raw) });
       }
@@ -853,6 +989,59 @@ export async function fetchPlacementBreakdown(
     accessToken
   );
   return res.data ?? [];
+}
+
+export interface MetaPlacementDailyInsight {
+  date_start: string;
+  publisher_platform: string;
+  platform_position: string;
+  spend?: string;
+  impressions?: string;
+  clicks?: string;
+  actions?: { action_type: string; value: string }[];
+  action_values?: { action_type: string; value: string }[];
+}
+
+/**
+ * Placement breakdown POR DIA (time_increment=1) no nível da conta, para popular
+ * meta_placement_insights_daily. Diferente de fetchPlacementBreakdown (agregado
+ * no período), aqui há 1 linha por (dia × publisher_platform × platform_position),
+ * o que permite somar qualquer range a partir do banco. Chunk 90d + paginação,
+ * tudo com backoff via fetchMeta/fetchMetaNext.
+ */
+export async function fetchPlacementDailyInsights(
+  metaAccountId: string,
+  accessToken: string,
+  days: number = 7,
+  startDate?: string,
+  endDate?: string,
+): Promise<MetaPlacementDailyInsight[]> {
+  const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
+  const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
+  const fields = "spend,impressions,clicks,actions,action_values";
+
+  type PageResponse = { data: MetaPlacementDailyInsight[]; paging?: { next?: string } };
+  const out: MetaPlacementDailyInsight[] = [];
+
+  for (const chunk of chunkDateRange(since, until)) {
+    const timeRange = buildTimeRangeParam(chunk.since, chunk.until);
+    let nextPath: string | null = `/act_${metaAccountId}/insights?fields=${fields}&breakdowns=publisher_platform,platform_position&time_range=${timeRange}&time_increment=1&level=account&limit=500`;
+    let useFullUrl = false;
+    while (nextPath) {
+      const res: PageResponse = useFullUrl
+        ? await fetchMetaNext<PageResponse>(nextPath)
+        : await fetchMeta<PageResponse>(nextPath, accessToken);
+      out.push(...(res.data ?? []));
+      const nextUrl = res.paging?.next;
+      if (nextUrl && out.length < 5000) {
+        nextPath = nextUrl;
+        useFullUrl = true;
+      } else {
+        nextPath = null;
+      }
+    }
+  }
+  return out;
 }
 
 // ============================================================

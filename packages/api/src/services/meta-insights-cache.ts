@@ -16,12 +16,20 @@
 
 import { eq, and, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { metaCampaignInsightsDaily, metaAdInsightsDaily } from "../db/schema.js";
+import {
+  metaCampaignInsightsDaily,
+  metaAdInsightsDaily,
+  metaPlacementInsightsDaily,
+  metaAdCreativesCache,
+} from "../db/schema.js";
 import {
   fetchCampaignDailyInsightsForIds,
   type MetaDailyInsight,
   type AdDailyInsight,
+  type MetaPlacementDailyInsight,
+  type MetaAdCreative,
 } from "./meta-ads.js";
+import { singleFlight } from "../utils/single-flight.js";
 
 // Story 18.38: só o DIA ATUAL tem TTL (1h). Qualquer dia passado já gravado no
 // banco serve indefinidamente — spend/impressões de dia fechado não mudam, e
@@ -140,7 +148,7 @@ function identifyCampaignsToRefetch(
  * Upsert das insights recém-buscados no DB.
  * Meta retorna 1 linha por (campaign, dia) — chave composta da tabela.
  */
-async function upsertCampaignInsights(
+export async function upsertCampaignInsights(
   db: Database,
   projectId: string,
   rows: Array<MetaDailyInsight & { campaign_id?: string }>,
@@ -214,23 +222,31 @@ export async function fetchCampaignDailyInsightsForIdsWithCache(
   // 2. Identifica campanhas com alguma data faltante/stale
   const toRefetch = identifyCampaignsToRefetch(campaignIds, dates, cached);
 
-  // 3. Fetch Meta pros faltantes (filter IN + paginação interna)
+  // 3. Fetch Meta pros faltantes (filter IN + paginação interna).
+  // Single-flight: N acessos simultâneos com o MESMO gap compartilham UMA busca
+  // (fetch + upsert), em vez de cada um bater na Meta — mata a "consulta em dobro".
+  // Com o sync intraday mantendo "hoje" fresco, este caminho raramente dispara.
   let fresh: MetaDailyInsight[] = [];
   if (toRefetch.length > 0) {
-    const rawFresh = await fetchCampaignDailyInsightsForIds(
-      metaAccountId,
-      accessToken,
-      toRefetch,
-      days,
-      startDate,
-      endDate,
-    );
-    fresh = rawFresh;
-
-    // Meta retorna campaign_id em cada row quando level=campaign — preservado
-    // pela paginação. Upsert no DB.
-    const rowsWithId = rawFresh as Array<MetaDailyInsight & { campaign_id?: string }>;
-    await upsertCampaignInsights(db, projectId, rowsWithId);
+    const key = `cmp-refetch:${projectId}:${toRefetch.slice().sort().join(",")}:${since}:${until}`;
+    fresh = await singleFlight(key, async () => {
+      const rawFresh = await fetchCampaignDailyInsightsForIds(
+        metaAccountId,
+        accessToken,
+        toRefetch,
+        days,
+        startDate,
+        endDate,
+      );
+      // Meta retorna campaign_id em cada row quando level=campaign — preservado
+      // pela paginação. Upsert no DB para os próximos acessos lerem do cache.
+      await upsertCampaignInsights(
+        db,
+        projectId,
+        rawFresh as Array<MetaDailyInsight & { campaign_id?: string }>,
+      );
+      return rawFresh;
+    });
   }
 
   // 4. Retorna cache (sem campaign_id) + fresh. Caller agrega por dia.
@@ -359,6 +375,97 @@ export async function upsertAdDailyInsights(
         actions: sql`EXCLUDED.actions`,
         actionValues: sql`EXCLUDED.action_values`,
         videoMetrics: sql`EXCLUDED.video_metrics`,
+        lastSyncedAt: sql`EXCLUDED.last_synced_at`,
+      },
+    });
+  return values.length;
+}
+
+/**
+ * Upsert de placement diário em meta_placement_insights_daily.
+ * Chave (projectId, dateStart, publisherPlatform, platformPosition). Idempotente.
+ */
+export async function upsertPlacementInsights(
+  db: Database,
+  projectId: string,
+  rows: MetaPlacementDailyInsight[],
+): Promise<number> {
+  if (rows.length === 0) return 0;
+  const now = new Date();
+  const values = rows
+    .filter((r) => r.date_start && r.publisher_platform && r.platform_position)
+    .map((r) => ({
+      projectId,
+      dateStart: r.date_start.slice(0, 10),
+      publisherPlatform: r.publisher_platform,
+      platformPosition: r.platform_position,
+      spend: r.spend ?? "0",
+      impressions: r.impressions ?? "0",
+      clicks: r.clicks ?? "0",
+      actions: r.actions ?? null,
+      actionValues: r.action_values ?? null,
+      lastSyncedAt: now,
+    }));
+  if (values.length === 0) return 0;
+  await db
+    .insert(metaPlacementInsightsDaily)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [
+        metaPlacementInsightsDaily.projectId,
+        metaPlacementInsightsDaily.dateStart,
+        metaPlacementInsightsDaily.publisherPlatform,
+        metaPlacementInsightsDaily.platformPosition,
+      ],
+      set: {
+        spend: sql`EXCLUDED.spend`,
+        impressions: sql`EXCLUDED.impressions`,
+        clicks: sql`EXCLUDED.clicks`,
+        actions: sql`EXCLUDED.actions`,
+        actionValues: sql`EXCLUDED.action_values`,
+        lastSyncedAt: sql`EXCLUDED.last_synced_at`,
+      },
+    });
+  return values.length;
+}
+
+/**
+ * Upsert de creative metadata em meta_ad_creatives_cache (1 linha por ad).
+ * Chave (projectId, adId). Idempotente. Mantém o cache de criativos quente sem
+ * depender de o usuário abrir o dashboard.
+ */
+export async function upsertAdCreatives(
+  db: Database,
+  projectId: string,
+  creatives: MetaAdCreative[],
+): Promise<number> {
+  if (creatives.length === 0) return 0;
+  const now = new Date();
+  const values = creatives
+    .filter((c) => c.adId)
+    .map((c) => ({
+      projectId,
+      adId: c.adId,
+      creative: {
+        imageUrl: c.imageUrl,
+        thumbnailUrl: c.thumbnailUrl,
+        videoId: c.videoId,
+        title: c.title,
+        body: c.body,
+        linkUrl: c.linkUrl,
+        ctaType: c.ctaType,
+        objectType: c.objectType,
+      },
+      lastSyncedAt: now,
+    }));
+  if (values.length === 0) return 0;
+  await db
+    .insert(metaAdCreativesCache)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [metaAdCreativesCache.projectId, metaAdCreativesCache.adId],
+      set: {
+        creative: sql`EXCLUDED.creative`,
         lastSyncedAt: sql`EXCLUDED.last_synced_at`,
       },
     });
