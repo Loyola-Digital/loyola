@@ -116,8 +116,10 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
   const [createOpen, setCreateOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [matchCodeDraft, setMatchCodeDraft] = useState<string>(funnel.matchCode ?? "");
-  const { data: allFunnels } = useFunnels(projectId);
-  const otherFunnels = (allFunnels ?? []).filter((f) => f.id !== funnel.id);
+  const { data: allFunnels } = useFunnels(projectId, "all");
+  const otherFunnels = (allFunnels ?? [])
+    .filter((f) => f.id !== funnel.id)
+    .sort((a, b) => (a.archivedAt ? 1 : 0) - (b.archivedAt ? 1 : 0)); // ativos primeiro
   const compareFunnelName = otherFunnels.find((f) => f.id === funnel.compareFunnelId)?.name;
 
   const funnelHref = `/projects/${projectId}/funnels/${funnel.id}`;
@@ -388,7 +390,7 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
                   <SelectItem value="none">Nenhum</SelectItem>
                   {otherFunnels.map((f) => (
                     <SelectItem key={f.id} value={f.id}>
-                      {f.name}
+                      {f.archivedAt ? `${f.name} (arquivado)` : f.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

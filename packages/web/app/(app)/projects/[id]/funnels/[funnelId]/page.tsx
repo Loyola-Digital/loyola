@@ -53,7 +53,7 @@ export default function FunnelPage() {
     }
   }, [funnelData?.funnel]);
   const { data: stages, isLoading: stagesLoading } = useFunnelStages(params.id, params.funnelId);
-  const { data: allFunnels } = useFunnels(params.id);
+  const { data: allFunnels } = useFunnels(params.id, "all");
   const createStage = useCreateStage(params.id, params.funnelId);
   const updateFunnel = useUpdateFunnel(params.id, params.funnelId);
 
@@ -105,7 +105,8 @@ export default function FunnelPage() {
 
   const { funnel } = funnelData;
 
-  const otherFunnels = allFunnels?.filter((f) => f.id !== params.funnelId) ?? [];
+  const otherFunnels = (allFunnels?.filter((f) => f.id !== params.funnelId) ?? [])
+    .sort((a, b) => (a.archivedAt ? 1 : 0) - (b.archivedAt ? 1 : 0)); // ativos primeiro, arquivados depois
   const compareFunnelName = otherFunnels.find((f) => f.id === funnel.compareFunnelId)?.name;
 
   function handleCompareFunnelChange(value: string) {
@@ -185,7 +186,7 @@ export default function FunnelPage() {
                     <SelectItem value="none">Nenhum</SelectItem>
                     {otherFunnels.map((f) => (
                       <SelectItem key={f.id} value={f.id}>
-                        {f.name}
+                        {f.archivedAt ? `${f.name} (arquivado)` : f.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
