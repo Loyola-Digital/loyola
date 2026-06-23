@@ -524,6 +524,15 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         ) : <EmptyState />}
       </div>
 
+      {/* Comparação de Lançamentos (atual × comparado) — só quando há funil de comparação */}
+      {hasComparison && compDays && dailyData && dailyData.length > 0 && (
+        <FunnelComparisonChart
+          data={dailyData}
+          comparisonDays={compDays}
+          compFunnelName={compData?.compareFunnelName}
+        />
+      )}
+
       {/* Donut Hot/Cold/Outros + Funil de Conversão lado-a-lado 50/50 (Story 18.4) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {funnelCampaigns.length > 0 ? (
@@ -920,6 +929,128 @@ function CtrCpmChart({
         )}
       </LineChart>
     </ResponsiveContainer>
+  );
+}
+
+// Comparação de funis/lançamentos — alinha os dois pelo DIA do lançamento
+// (Dia 1, Dia 2...), pois as datas reais diferem. Seletor de métrica reaproveita
+// todos os dados que o /meta-ads-comparison já traz (spend/ctr/cpc/cpm/clicks/impressions).
+type CompMetricKey = "spend" | "ctr" | "cpc" | "cpm" | "clicks" | "impressions";
+const COMPARISON_METRICS: { key: CompMetricKey; label: string; kind: "currency" | "percent" | "int" }[] = [
+  { key: "spend", label: "Investimento", kind: "currency" },
+  { key: "ctr", label: "CTR", kind: "percent" },
+  { key: "cpc", label: "CPC", kind: "currency" },
+  { key: "cpm", label: "CPM", kind: "currency" },
+  { key: "clicks", label: "Cliques", kind: "int" },
+  { key: "impressions", label: "Impressões", kind: "int" },
+];
+
+function atualMetricValue(d: CampaignDailyInsight, key: CompMetricKey): number {
+  return safeNum(d[key]);
+}
+function compMetricValue(c: ComparisonDayMetrics, key: CompMetricKey): number {
+  switch (key) {
+    case "spend": return c.spend;
+    case "ctr": return c.ctr;
+    case "cpc": return c.cpc;
+    case "clicks": return c.clicks;
+    case "impressions": return c.impressions;
+    // CPM não vem no payload de comparação — deriva de spend/impressions.
+    case "cpm": return c.impressions > 0 ? (c.spend / c.impressions) * 1000 : 0;
+  }
+}
+function fmtCompMetric(v: number | null | undefined, kind: "currency" | "percent" | "int"): string {
+  if (v == null) return "—";
+  if (kind === "currency") return fmtCurrency(v);
+  if (kind === "percent") return fmtPercent(v);
+  return Math.round(v).toLocaleString("pt-BR");
+}
+
+function FunnelComparisonChart({
+  data,
+  comparisonDays,
+  compFunnelName,
+}: {
+  data: CampaignDailyInsight[];
+  comparisonDays: ComparisonDayMetrics[];
+  compFunnelName?: string;
+}) {
+  const [metric, setMetric] = useState<CompMetricKey>("spend");
+  const meta = COMPARISON_METRICS.find((m) => m.key === metric)!;
+  const maxLen = Math.max(data.length, comparisonDays.length);
+  const chartData = Array.from({ length: maxLen }, (_, idx) => ({
+    dia: `Dia ${idx + 1}`,
+    atual: data[idx] ? atualMetricValue(data[idx], metric) : undefined,
+    comp: comparisonDays[idx] ? compMetricValue(comparisonDays[idx], metric) : undefined,
+  }));
+
+  return (
+    <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">Comparação de Lançamentos</h3>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            Este funil × {compFunnelName ?? "comparação"} — alinhado por dia do lançamento (datas diferentes)
+          </p>
+        </div>
+        <div className="flex gap-1 flex-wrap">
+          {COMPARISON_METRICS.map((m) => (
+            <Button
+              key={m.key}
+              size="sm"
+              variant={metric === m.key ? "secondary" : "ghost"}
+              className="h-7 text-xs px-2"
+              onClick={() => setMetric(m.key)}
+            >
+              {m.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height={260}>
+        <LineChart data={chartData}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+          <XAxis dataKey="dia" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
+          <YAxis
+            tick={{ fontSize: 11, fill: "#fff" }}
+            stroke="var(--color-muted-foreground)"
+            tickFormatter={(v) =>
+              meta.kind === "currency"
+                ? `R$${Math.round(v)}`
+                : meta.kind === "percent"
+                  ? `${v.toFixed(1)}%`
+                  : `${Math.round(v)}`
+            }
+          />
+          <Tooltip
+            formatter={(value) => fmtCompMetric(Number(value), meta.kind)}
+            contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", fontSize: 12 }}
+          />
+          <Legend wrapperStyle={{ color: "#fff" }} />
+          <Line
+            type="monotone"
+            dataKey="atual"
+            stroke="hsl(200 80% 60%)"
+            strokeWidth={2.5}
+            dot={{ r: 3, fill: "hsl(200 80% 60%)" }}
+            activeDot={{ r: 5 }}
+            name="Este funil"
+            connectNulls
+          />
+          <Line
+            type="monotone"
+            dataKey="comp"
+            stroke="hsl(30 100% 60%)"
+            strokeWidth={2}
+            strokeDasharray="5 3"
+            dot={false}
+            activeDot={{ r: 4 }}
+            name={compFunnelName ?? "Comparação"}
+            connectNulls
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
