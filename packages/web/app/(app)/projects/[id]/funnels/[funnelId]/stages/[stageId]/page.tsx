@@ -17,6 +17,9 @@ import { SurveyFunnelTab } from "@/components/funnels/survey-funnel-tab";
 import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-tab";
 import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-spreadsheet-section";
 import { SalesStageView } from "@/components/funnels/sales-stage-view";
+import { ManualPixSalesSection } from "@/components/funnels/manual-pix-sales-section";
+import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
+import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { GroupsSpreadsheetCard } from "@/components/funnels/groups-spreadsheet-card";
 import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
 import { SwitchyFunnelSection } from "@/components/funnels/switchy-funnel-section";
@@ -32,12 +35,16 @@ import { useGoogleAdsCampaignPicker } from "@/lib/hooks/use-funnels";
 import { useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import type { Funnel, FunnelCampaign } from "@loyola-x/shared";
+import type { Funnel, FunnelCampaign, ManualSale } from "@loyola-x/shared";
 
 export default function StagePage() {
   const params = useParams<{ id: string; funnelId: string; stageId: string }>();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [stageName, setStageName] = useState("");
+  // Vendas da captação paga (lançamento manual) — só usado quando stageType === "paid".
+  const [manualSaleOpen, setManualSaleOpen] = useState(false);
+  const [editingSale, setEditingSale] = useState<ManualSale | null>(null);
+  const [paidSalesDays, setPaidSalesDays] = useState(90);
 
   const { data: funnelData, isLoading: funnelLoading } = useFunnel(params.id, params.funnelId);
   const { data: stage, isLoading: stageLoading } = useFunnelStage(params.id, params.funnelId, params.stageId);
@@ -491,6 +498,38 @@ export default function StagePage() {
           <MauticStageTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
         </TabsContent>
       </Tabs>
+
+      {/* Vendas da captação paga: lançamento de venda manual + tabela unificada,
+          no fim da view. Só na etapa "paid" (Captação Paga). */}
+      {stage.stageType === "paid" && (
+        <div className="mt-2">
+          <div className="mb-2 flex justify-end">
+            <DayRangePicker days={paidSalesDays} onDaysChange={setPaidSalesDays} />
+          </div>
+          <ManualPixSalesSection
+            projectId={params.id}
+            funnelId={params.funnelId}
+            stageId={params.stageId}
+            days={paidSalesDays}
+            onLaunchClick={() => setManualSaleOpen(true)}
+            onEditSale={(sale) => {
+              setEditingSale(sale);
+              setManualSaleOpen(true);
+            }}
+          />
+          <ManualSaleDialog
+            projectId={params.id}
+            funnelId={params.funnelId}
+            stageId={params.stageId}
+            open={manualSaleOpen}
+            onOpenChange={(open) => {
+              setManualSaleOpen(open);
+              if (!open) setEditingSale(null);
+            }}
+            editingSale={editingSale}
+          />
+        </div>
+      )}
     </div>
   );
 }

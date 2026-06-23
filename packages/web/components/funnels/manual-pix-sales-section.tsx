@@ -146,6 +146,7 @@ export function ManualPixSalesSection({
   );
 
   const [platform, setPlatform] = useState<Platform>("all");
+  const [productFilter, setProductFilter] = useState<string>("all");
 
   // Contagem por plataforma pros chips de filtro (sobre o conjunto completo).
   const counts = useMemo(() => {
@@ -154,12 +155,23 @@ export function ManualPixSalesSection({
     return c;
   }, [sales]);
 
+  // Produtos distintos pro filtro por nome do produto.
+  const products = useMemo(
+    () =>
+      Array.from(
+        new Set(sales.map((s) => s.product).filter((p): p is string => Boolean(p))),
+      ).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [sales],
+  );
+
   const filteredSales = useMemo(
     () =>
-      platform === "all"
-        ? sales
-        : sales.filter((s) => salePlatform(s) === platform),
-    [sales, platform],
+      sales.filter(
+        (s) =>
+          (platform === "all" || salePlatform(s) === platform) &&
+          (productFilter === "all" || s.product === productFilter),
+      ),
+    [sales, platform, productFilter],
   );
 
   // Cards refletem o filtro ativo: total, faturamento e ticket médio são
@@ -175,6 +187,11 @@ export function ManualPixSalesSection({
 
   function selectPlatform(p: Platform) {
     setPlatform(p);
+    setPage(0);
+  }
+
+  function selectProduct(p: string) {
+    setProductFilter(p);
     setPage(0);
   }
 
@@ -246,6 +263,34 @@ export function ManualPixSalesSection({
               </button>
             ))}
           </div>
+
+          {/* Filtro por nome do produto */}
+          {products.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="text-[11px] text-muted-foreground">Produto:</label>
+              <select
+                value={productFilter}
+                onChange={(e) => selectProduct(e.target.value)}
+                className="h-7 max-w-[240px] rounded-md border border-border/50 bg-background px-2 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              >
+                <option value="all">Todos os produtos</option>
+                {products.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+              {productFilter !== "all" && (
+                <button
+                  type="button"
+                  onClick={() => selectProduct("all")}
+                  className="text-[11px] text-muted-foreground underline hover:text-foreground"
+                >
+                  limpar
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <StatCard label="Total de vendas" value={String(filteredSummary.totalSales)} />
