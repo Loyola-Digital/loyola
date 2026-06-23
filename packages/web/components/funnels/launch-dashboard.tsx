@@ -861,6 +861,11 @@ function CtrCpmChart({
       ctr,
       cpm,
       compCtr: comparisonDays?.[idx]?.ctr ?? undefined,
+      // CPM do antigo não vem pronto no payload de comparação — deriva de spend/impressions.
+      compCpm:
+        comparisonDays?.[idx] && comparisonDays[idx].impressions > 0
+          ? (comparisonDays[idx].spend / comparisonDays[idx].impressions) * 1000
+          : undefined,
       formulasByKey: {
         ctr: buildFunnelDailyFormula("CTR", "Meta Ads API · derivado (clicks ÷ impressions × 100)", ctr, false, dateLabel),
         cpm: buildFunnelDailyFormula("CPM", "Meta Ads API · derivado (spend ÷ impressions × 1000)", cpm, true, dateLabel),
@@ -925,6 +930,19 @@ function CtrCpmChart({
             dot={false}
             activeDot={{ r: 4 }}
             name={compFunnelName ? `CTR — ${compFunnelName}` : "CTR (Comparação)"}
+          />
+        )}
+        {comparisonDays && (
+          <Line
+            yAxisId="cpm"
+            type="monotone"
+            dataKey="compCpm"
+            stroke="hsl(0 72% 72%)"
+            strokeWidth={2}
+            strokeDasharray="5 3"
+            dot={false}
+            activeDot={{ r: 4 }}
+            name={compFunnelName ? `CPM — ${compFunnelName}` : "CPM (Comparação)"}
           />
         )}
       </LineChart>
