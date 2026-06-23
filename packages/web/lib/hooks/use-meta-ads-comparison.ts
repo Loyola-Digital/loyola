@@ -13,7 +13,10 @@ export function useMetaAdsComparison(
 ) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["meta-ads-comparison", projectId, funnelId, stageId, days ?? 30],
+    // `days` NÃO entra na key: o backend ignora o período (usa janela fixa de 730d
+    // pra alinhar Dia 1 × Dia 1), então trocar o range do dashboard não muda a
+    // resposta — manter days na key só dispararia refetch redundante.
+    queryKey: ["meta-ads-comparison", projectId, funnelId, stageId],
     queryFn: () =>
       apiClient<MetaAdsComparisonData>(
         `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/meta-ads-comparison?days=${days ?? 30}`
