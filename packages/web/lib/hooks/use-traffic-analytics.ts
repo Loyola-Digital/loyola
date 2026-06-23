@@ -143,6 +143,27 @@ export function useTrafficOverview(
   });
 }
 
+export interface MetaFreshness {
+  /** ISO do sync de performance Meta mais recente do projeto, ou null se nunca sincronizou. */
+  lastSyncedAt: string | null;
+}
+
+/**
+ * Frescor do cache Meta (quando o sync rodou pela última vez). Alimenta o selo
+ * "atualizado há X" nos painéis. refetch a cada 60s para o selo não envelhecer.
+ */
+export function useMetaFreshness(projectId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["meta-freshness", projectId],
+    queryFn: () =>
+      apiClient<MetaFreshness>(`/api/traffic/analytics/${projectId}/meta-freshness`),
+    enabled: !!projectId,
+    staleTime: 60 * 1000,
+    refetchInterval: 60 * 1000,
+  });
+}
+
 export function useTrafficCampaigns(projectId: string | null, days: number = 30) {
   const apiClient = useApiClient();
   return useQuery({

@@ -35,7 +35,8 @@ export default fp(async function metaPerfSchedulerPlugin(fastify) {
     fastify.log.info("[meta-perf] iniciando refresh diário de performance Meta");
     try {
       const summary = await syncMetaPerformance(fastify.db, {
-        days: 7,
+        days: fastify.config.META_PERF_SYNC_DAYS ?? 14,
+        creatives: true, // cadência diária popula também o cache de criativos
         log: (m) => fastify.log.info(m),
       });
       fastify.log.info(
@@ -103,7 +104,67 @@ export default fp(async function metaPerfSchedulerPlugin(fastify) {
 
   schedule();
 
+  // ── Cadência INTRADAY ──────────────────────────────────────────────────────
+  // Mantém "hoje/recente" fresco no banco (default a cada 15min, janela 3 dias,
+  // sem creatives) para os painéis lerem do DB sem nunca chamar a Meta ao vivo.
+  let intradayTimer: NodeJS.Timeout | null = null;
+  if (fastify.config.META_PERF_INTRADAY_ENABLED !== "false") {
+    const intervalMs = (fastify.config.META_PERF_INTRADAY_MINUTES ?? 15) * 60_000;
+    const intradayDays = fastify.config.META_PERF_INTRADAY_DAYS ?? 3;
+    let intradayRunning = false;
+
+    const runIntraday = async (): Promise<void> => {
+      if (intradayRunning) return; // não empilha se o ciclo anterior ainda roda
+      intradayRunning = true;
+      const startedAt = Date.now();
+      try {
+        const summary = await syncMetaPerformance(fastify.db, {
+          days: intradayDays,
+          creatives: false,
+          log: (m) => fastify.log.debug(m),
+        });
+        fastify.log.info(
+          {
+            projectsProcessed: summary.projectsProcessed,
+            accountsProcessed: summary.accountsProcessed,
+            adRowsUpserted: summary.adRowsUpserted,
+            campaignRowsUpserted: summary.campaignRowsUpserted,
+            placementRowsUpserted: summary.placementRowsUpserted,
+            errors: summary.errors.length,
+            durationMs: Date.now() - startedAt,
+          },
+          "[meta-perf:intraday] concluído",
+        );
+      } catch (err) {
+        fastify.log.error(err, "[meta-perf:intraday] falhou");
+      } finally {
+        intradayRunning = false;
+      }
+    };
+
+    const scheduleIntraday = (): void => {
+      intradayTimer = setTimeout(async () => {
+        await runIntraday();
+        scheduleIntraday();
+      }, intervalMs);
+      if (typeof intradayTimer.unref === "function") intradayTimer.unref();
+    };
+
+    // Warm-up: primeiro ciclo ~20s após o boot (aquece o cache no deploy/restart
+    // pra os painéis já lerem do banco), depois segue no intervalo normal. Em
+    // tsx watch, restarts rápidos cancelam o timer anterior (onClose) — não acumula.
+    intradayTimer = setTimeout(async () => {
+      await runIntraday();
+      scheduleIntraday();
+    }, 20_000);
+    if (typeof intradayTimer.unref === "function") intradayTimer.unref();
+    fastify.log.info(
+      `[meta-perf:intraday] ativo a cada ${Math.round(intervalMs / 60_000)}min (janela ${intradayDays}d), warm-up em ~20s`,
+    );
+  }
+
   fastify.addHook("onClose", async () => {
     if (timer) clearTimeout(timer);
+    if (intradayTimer) clearTimeout(intradayTimer);
   });
 });

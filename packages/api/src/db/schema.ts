@@ -1432,6 +1432,59 @@ export const metaAdInsightsDaily = pgTable(
   ]
 );
 
+// Epic 35+: breakdown de placement por dia (publisher_platform × platform_position).
+// Não é derivável de meta_ad_insights_daily (dimensão própria da Meta), então tem
+// tabela própria. Grão DIÁRIO (time_increment=1) pra somar qualquer range. Populado
+// só pelo sync; a rota /placements lê e agrega daqui.
+export const metaPlacementInsightsDaily = pgTable(
+  "meta_placement_insights_daily",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    dateStart: varchar("date_start", { length: 10 }).notNull(), // YYYY-MM-DD
+    publisherPlatform: varchar("publisher_platform", { length: 64 }).notNull(),
+    platformPosition: varchar("platform_position", { length: 64 }).notNull(),
+    spend: numeric("spend").notNull().default("0"),
+    impressions: numeric("impressions").notNull().default("0"),
+    clicks: numeric("clicks").notNull().default("0"),
+    actions: jsonb("actions").$type<{ action_type: string; value: string }[]>(),
+    actionValues: jsonb("action_values").$type<{ action_type: string; value: string }[]>(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.projectId, table.dateStart, table.publisherPlatform, table.platformPosition],
+    }),
+    index("idx_meta_placement_insights_lookup").on(table.projectId, table.dateStart),
+  ]
+);
+
+// Epic 35+: estado do sync Meta por (projeto, conta, tipo). Fonte do selo
+// "atualizado há X" nos painéis (max(last_success_at) do projeto) e da
+// observabilidade do producer. kind ∈ ad-daily | campaign-daily | placements |
+// creatives | names. status ∈ ok | error | running.
+export const metaSyncState = pgTable(
+  "meta_sync_state",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    accountId: varchar("account_id", { length: 64 }).notNull(), // metaAccountId (act_<id>)
+    kind: varchar("kind", { length: 32 }).notNull(),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+    rowsUpserted: integer("rows_upserted").notNull().default(0),
+    status: varchar("status", { length: 16 }),
+    error: text("error"),
+    durationMs: integer("duration_ms"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.accountId, table.kind] }),
+    index("idx_meta_sync_state_project").on(table.projectId),
+  ]
+);
+
 export const funnelStageZoomMeetings = pgTable(
   "funnel_stage_zoom_meetings",
   {

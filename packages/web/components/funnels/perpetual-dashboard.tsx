@@ -48,6 +48,7 @@ import {
 import { CampaignSelector } from "./campaign-selector";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { RefreshDataButton } from "./refresh-data-button";
+import { MetaFreshnessBadge } from "./meta-freshness-badge";
 import { PerpetualSpreadsheetWizardDialog } from "./perpetual-spreadsheet-wizard-dialog";
 import { usePerpetualSpreadsheet } from "@/lib/hooks/use-perpetual-spreadsheet";
 import {
@@ -399,6 +400,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             onRangeChange={setCustomRange}
           />
           <RefreshDataButton />
+          <MetaFreshnessBadge projectId={projectId} />
           <Button
             variant="outline"
             size="sm"
