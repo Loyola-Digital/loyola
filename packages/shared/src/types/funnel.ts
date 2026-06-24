@@ -165,6 +165,9 @@ export interface FunnelStage {
   googleAdsCampaigns: FunnelCampaign[];
   switchyFolderIds: SwitchyFolderRef[];
   switchyLinkedLinks: SwitchyLinkRef[];
+  /** GA4 (Epic 37): página (substring de landingPagePlusQueryString) que esta
+   * etapa analisa no GA4. Null = etapa sem análise GA4. */
+  ga4PageFilter: string | null;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;

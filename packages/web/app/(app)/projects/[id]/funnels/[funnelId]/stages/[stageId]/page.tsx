@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail } from "lucide-react";
+import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail, BarChart3 } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,6 +28,7 @@ import { LeadScoringTab } from "@/components/funnels/lead-scoring-tab";
 import { OrganicMediaTab } from "@/components/funnels/organic-media-tab";
 import { CplStageView } from "@/components/funnels/cpl-stage-view";
 import { MauticStageTab } from "@/components/funnels/mautic-stage-tab";
+import { Ga4StageTab } from "@/components/funnels/ga4-stage-tab";
 import { AuditStatusBadge } from "@/components/funnels/audit-status-badge";
 import { OrphanCampaignsBanner } from "@/components/funnels/orphan-campaigns-banner";
 import { CampaignSelector } from "@/components/funnels/campaign-selector";
@@ -402,6 +403,10 @@ export default function StagePage() {
             <Mail className="h-3.5 w-3.5 text-primary" />
             Mautic
           </TabsTrigger>
+          <TabsTrigger value="ga4" className="gap-1.5">
+            <BarChart3 className="h-3.5 w-3.5 text-orange-500" />
+            GA4
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="meta-ads" className="mt-6">
@@ -527,6 +532,10 @@ export default function StagePage() {
 
         <TabsContent value="mautic" className="mt-6">
           <MauticStageTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
+        </TabsContent>
+
+        <TabsContent value="ga4" className="mt-6">
+          <Ga4StageTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
         </TabsContent>
       </Tabs>
 

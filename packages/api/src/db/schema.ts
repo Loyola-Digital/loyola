@@ -684,6 +684,11 @@ export const funnelStages = pgTable(
     auditStatus: varchar("audit_status", { length: 20 }).default("pending").notNull(),
     projectionEndDate: date("projection_end_date"),
     leadGoal: integer("lead_goal"),
+    // GA4 (Epic 37): filtro de página desta etapa (substring de
+    // landingPagePlusQueryString) usado no runReport da GA4 Data API. A property
+    // GA4 e o token ficam em ga4_connections (por projeto); cada etapa só escolhe
+    // QUAL página analisar. NULL = etapa sem análise GA4 configurada.
+    ga4PageFilter: text("ga4_page_filter"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1512,6 +1517,31 @@ export const kiwifySubscriptions = pgTable(
     unique("kiwify_subscriptions_project_sub_unique").on(table.projectId, table.subscriptionId),
     index("idx_kiwify_subscriptions_project_status").on(table.projectId, table.status),
   ]
+);
+
+// Epic 37 — Integração GA4 (Google Analytics Data API) por projeto. Conexão via
+// OAuth Google (mesmo client GOOGLE_ADS_CLIENT_ID/SECRET, escopo analytics.readonly).
+// Guardamos o refresh_token cifrado (AES-256-GCM) + a property GA4 selecionada
+// (numérica, ex.: "313646970"). O access_token (1h) é obtido em runtime e NUNCA
+// armazenado. 1 property por projeto; cada ETAPA escolhe a página via
+// funnel_stages.ga4_page_filter. NUNCA logar refresh_token.
+export const ga4Connections = pgTable(
+  "ga4_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .unique()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    refreshTokenEncrypted: text("refresh_token_encrypted").notNull(),
+    refreshTokenIv: text("refresh_token_iv").notNull(),
+    /** ID numérico da property GA4 (sem o prefixo "properties/"). */
+    propertyId: varchar("property_id", { length: 32 }).notNull(),
+    propertyName: text("property_name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_ga4_connections_project").on(table.projectId)]
 );
 
 // Story 35.1 (perf): cache persistente do dashboard/products Kiwify. A API
