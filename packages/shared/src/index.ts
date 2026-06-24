@@ -108,3 +108,13 @@ export type {
   CreateManualSaleInput,
   InvoiceStatus,
 } from "./types/manual-sales.js";
+
+export type {
+  MemberkitEnrollmentStatus,
+  MemberkitMemberStatus,
+  MemberkitConnectionStatus,
+  MemberkitClassroom,
+  MemberkitCourse,
+  StageMemberkitEnrollment,
+  SetStageMemberkitEnrollmentInput,
+} from "./types/memberkit.js";

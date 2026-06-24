@@ -712,7 +712,11 @@ export const stageSalesSpreadsheets = pgTable(
       .notNull()
       .default({})
       .$type<{
-        email: string;
+        // Story 19.10: email opcional — planilha de Evento Presencial
+        // ("event_sales") identifica venda por linha (nome+telefone), sem email.
+        email?: string;
+        customerName?: string;
+        productName?: string;
         valorBruto?: string;
         valorLiquido?: string;
         formaPagamento?: string;
@@ -723,6 +727,11 @@ export const stageSalesSpreadsheets = pgTable(
         utm_campaign?: string;
         utm_content?: string;
         utm_term?: string;
+        // Story 19.10 — campos do Evento Presencial
+        closer?: string;
+        telefone?: string;
+        caixa?: string;
+        negociacao?: string;
       }>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -890,6 +899,16 @@ export const manualSales = pgTable(
     }),
     sellerName: varchar("seller_name", { length: 255 }).notNull(),
     saleDate: timestamp("sale_date", { withTimezone: true }).notNull(),
+    /** Story 19.10 — valor efetivamente recebido (Caixa) na venda de evento. */
+    valorRecebido: numeric("valor_recebido", { precision: 12, scale: 2 }),
+    /** Story 19.10 — texto livre da negociação (evento presencial). */
+    negociacao: text("negociacao"),
+    /** Story 19.11 — status da matrícula MemberKit: pending|enrolled|failed|skipped. */
+    memberkitStatus: varchar("memberkit_status", { length: 12 }),
+    /** Story 19.11 — quando a matrícula foi sincronizada com o MemberKit. */
+    memberkitSyncedAt: timestamp("memberkit_synced_at", { withTimezone: true }),
+    /** Story 19.11 — id do membro retornado pelo MemberKit. */
+    memberkitUserId: varchar("memberkit_user_id", { length: 64 }),
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
@@ -1238,6 +1257,50 @@ export const kiwifyConnections = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index("idx_kiwify_connections_project").on(table.projectId)]
+);
+
+// ============================================================
+// Story 19.11 — Integração MemberKit (área de membros / matrícula)
+// Conexão POR PROJETO (1 API key por cliente). A API key é cifrada via
+// AES-256-GCM (services/encryption.ts). A integração é OUTBOUND: ao lançar uma
+// venda na etapa de Evento Presencial, chamamos POST /api/v1/users (auth via
+// ?api_key=) para matricular o comprador. A key vai na query string da API do
+// MemberKit — NUNCA logar a URL com a key.
+// ============================================================
+export const memberkitConnections = pgTable(
+  "memberkit_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .unique()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    apiKeyEncrypted: text("api_key_encrypted").notNull(),
+    apiKeyIv: text("api_key_iv").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_memberkit_connections_project").on(table.projectId)]
+);
+
+// Config de matrícula POR ETAPA: em qual(is) turma(s) do MemberKit matricular o
+// comprador, com qual status, e se o disparo é automático ao lançar a venda.
+export const stageMemberkitEnrollment = pgTable(
+  "stage_memberkit_enrollment",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .unique()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    classroomIds: jsonb("classroom_ids").notNull().default([]).$type<number[]>(),
+    /** active | inactive | pending | expired (enum do POST /users do MemberKit). */
+    status: varchar("status", { length: 10 }).notNull().default("active"),
+    autoEnroll: boolean("auto_enroll").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_stage_memberkit_enrollment_stage").on(table.stageId)]
 );
 
 // Story 35.6 (Epic 35 fase 2 — webhooks de assinatura). A Public API da Kiwify

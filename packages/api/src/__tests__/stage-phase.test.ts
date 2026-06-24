@@ -28,6 +28,11 @@ describe("resolveStagePhaseSuffix", () => {
     expect(resolveStagePhaseSuffix("launch", "cpl", "Captação")).toBeNull();
   });
 
+  it("launch + event → null (Story 19.10, qualquer nome)", () => {
+    expect(resolveStagePhaseSuffix("launch", "event", "Evento Presencial")).toBeNull();
+    expect(resolveStagePhaseSuffix("launch", "event", "Imersão Vendas")).toBeNull();
+  });
+
   it("perpetual + qualquer → null", () => {
     expect(resolveStagePhaseSuffix("perpetual", "paid", "Captação Paga")).toBeNull();
     expect(resolveStagePhaseSuffix("perpetual", "sales", "Vendas")).toBeNull();

@@ -17,6 +17,7 @@ import { SurveyFunnelTab } from "@/components/funnels/survey-funnel-tab";
 import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-tab";
 import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-spreadsheet-section";
 import { SalesStageView } from "@/components/funnels/sales-stage-view";
+import { EventStageView } from "@/components/funnels/event-stage-view";
 import { ManualPixSalesSection } from "@/components/funnels/manual-pix-sales-section";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
@@ -96,6 +97,18 @@ export default function StagePage() {
   if (stage.stageType === "cpl") {
     return (
       <CplStageView
+        projectId={params.id}
+        funnelId={params.funnelId}
+        funnelName={funnel.name}
+        stage={stage}
+      />
+    );
+  }
+
+  // Story 19.10: etapa "event" (Evento Presencial) — vendas + MemberKit. Render dedicado.
+  if (stage.stageType === "event") {
+    return (
+      <EventStageView
         projectId={params.id}
         funnelId={params.funnelId}
         funnelName={funnel.name}
@@ -251,6 +264,24 @@ export default function StagePage() {
                   >
                     <span className="font-medium">CPL</span>
                     <span className="text-xs text-muted-foreground">Reuniões Zoom + retenção</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateStage.mutate(
+                        { stageType: "event" },
+                        { onSuccess: () => toast.success("Tipo alterado para Evento Presencial") }
+                      );
+                    }}
+                    className={cn(
+                      "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                      (stage.stageType as string) === "event"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border hover:bg-muted"
+                    )}
+                  >
+                    <span className="font-medium">Evento Presencial</span>
+                    <span className="text-xs text-muted-foreground">Vendas no local + MemberKit</span>
                   </button>
                 </div>
               </div>

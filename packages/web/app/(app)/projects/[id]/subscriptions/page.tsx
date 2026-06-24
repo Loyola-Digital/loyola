@@ -4,6 +4,7 @@ import { use } from "react";
 import { CreditCard } from "lucide-react";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import { HotmartConnectionPanel } from "@/components/subscriptions/hotmart-connection-panel";
+import { MemberkitConnectionPanel } from "@/components/subscriptions/memberkit-connection-panel";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -25,6 +26,7 @@ export default function ProjectSubscriptionsPage({ params }: Props) {
       </div>
 
       <HotmartConnectionPanel projectId={projectId} isAdmin={isAdmin} />
+      <MemberkitConnectionPanel projectId={projectId} isAdmin={isAdmin} />
     </div>
   );
 }

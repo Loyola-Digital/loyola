@@ -12,6 +12,7 @@ import { fetchCampaigns } from "./meta-ads.js";
  * - launch + qualquer + "principal/vendas/produto" → `vendas-principal`
  * - launch + sales → `vendas-principal`
  * - launch + cpl → null
+ * - launch + event → null (Evento Presencial não tem campanha Meta por fase)
  * - perpetual + qualquer → null
  * - nome ambíguo → null
  *
@@ -25,6 +26,8 @@ export function resolveStagePhaseSuffix(
 ): string | null {
   if (funnelType === "perpetual") return null;
   if (stageType === "cpl") return null;
+  // Story 19.10: Evento Presencial não casa campanha Meta por fase.
+  if (stageType === "event") return null;
 
   const lower = stageName.toLowerCase();
   const isCapture = /capta[cç][aã]o|captura|leads/.test(lower);

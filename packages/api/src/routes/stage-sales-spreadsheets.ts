@@ -21,7 +21,9 @@ const paramsSchema = z.object({
 });
 
 const saleColumnMappingSchema = z.object({
-  email: z.string().min(1),
+  // Story 19.10: email opcional aqui — exigência é validada por subtype no
+  // createSchema.superRefine (obrigatório p/ checkout, dispensado p/ evento).
+  email: z.string().min(1).optional(),
   /** Story 28.4 */
   transactionId: z.string().optional(),
   /** Story 19.9 ext: nome do cliente e do produto pra exibir na tabela unificada */
@@ -37,18 +39,37 @@ const saleColumnMappingSchema = z.object({
   utm_campaign: z.string().optional(),
   utm_content: z.string().optional(),
   utm_term: z.string().optional(),
+  // Story 19.10 — campos da planilha de Evento Presencial
+  closer: z.string().optional(),
+  telefone: z.string().optional(),
+  caixa: z.string().optional(),
+  negociacao: z.string().optional(),
 });
 
-const createSchema = z.object({
-  subtype: z.enum(["capture", "main_product", "sales", "tmb"]),
-  spreadsheetId: z.string().min(1),
-  spreadsheetName: z.string().min(1),
-  sheetName: z.string().min(1),
-  columnMapping: saleColumnMappingSchema,
-});
+const createSchema = z
+  .object({
+    subtype: z.enum(["capture", "main_product", "sales", "tmb", "event_sales"]),
+    spreadsheetId: z.string().min(1),
+    spreadsheetName: z.string().min(1),
+    sheetName: z.string().min(1),
+    columnMapping: saleColumnMappingSchema,
+  })
+  .superRefine((data, ctx) => {
+    if (data.subtype === "event_sales") {
+      // Story 19.10: planilha de evento não exige email; exige nome + valor.
+      if (!data.columnMapping.customerName) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["columnMapping", "customerName"], message: "Mapeie a coluna de Nome" });
+      }
+      if (!data.columnMapping.valorBruto) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["columnMapping", "valorBruto"], message: "Mapeie a coluna de Valor" });
+      }
+    } else if (!data.columnMapping.email) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["columnMapping", "email"], message: "Mapeie a coluna de Email" });
+    }
+  });
 
 const deleteParamsSchema = paramsSchema.extend({
-  subtype: z.enum(["capture", "main_product", "sales", "tmb"]),
+  subtype: z.enum(["capture", "main_product", "sales", "tmb", "event_sales"]),
 });
 
 // ============================================================
@@ -59,12 +80,14 @@ function shapeRow(row: typeof stageSalesSpreadsheets.$inferSelect) {
   return {
     id: row.id,
     stageId: row.stageId,
-    subtype: row.subtype as "capture" | "main_product" | "sales" | "tmb",
+    subtype: row.subtype as "capture" | "main_product" | "sales" | "tmb" | "event_sales",
     spreadsheetId: row.spreadsheetId,
     spreadsheetName: row.spreadsheetName,
     sheetName: row.sheetName,
     columnMapping: row.columnMapping as {
-      email: string;
+      email?: string;
+      customerName?: string;
+      productName?: string;
       valorBruto?: string;
       valorLiquido?: string;
       formaPagamento?: string;
@@ -75,6 +98,10 @@ function shapeRow(row: typeof stageSalesSpreadsheets.$inferSelect) {
       utm_campaign?: string;
       utm_content?: string;
       utm_term?: string;
+      closer?: string;
+      telefone?: string;
+      caixa?: string;
+      negociacao?: string;
     },
     createdAt: row.createdAt.toISOString(),
   };

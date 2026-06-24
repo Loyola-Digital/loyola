@@ -17,8 +17,12 @@ import {
   projectMembers,
   users,
   stageSalesSpreadsheets,
+  memberkitConnections,
+  stageMemberkitEnrollment,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import { enrollMember, decryptMemberkitKey } from "../services/memberkit.js";
+import type { MemberkitEnrollmentStatus, MemberkitMemberStatus } from "@loyola-x/shared";
 
 function parseBrNumber(val: string | undefined): number {
   if (!val) return 0;
@@ -68,6 +72,31 @@ function displayUserName(
   return "Usuário";
 }
 
+/** Shape único de venda manual pra todos os endpoints (GET/POST/PATCH). */
+function shapeManualSale(r: typeof manualSales.$inferSelect) {
+  return {
+    id: r.id,
+    stageId: r.stageId,
+    customerName: r.customerName,
+    customerEmail: r.customerEmail,
+    customerPhone: r.customerPhone,
+    value: Number(r.value),
+    sellerUserId: r.sellerUserId,
+    sellerName: r.sellerName,
+    saleDate: r.saleDate.toISOString(),
+    createdBy: r.createdBy,
+    createdAt: r.createdAt.toISOString(),
+    product: r.product,
+    invoiceStatus: r.invoiceStatus as "emitida" | "pendente" | null,
+    // Story 19.10 / 19.11
+    valorRecebido: r.valorRecebido != null ? Number(r.valorRecebido) : null,
+    negociacao: r.negociacao,
+    memberkitStatus: r.memberkitStatus as MemberkitEnrollmentStatus | null,
+    memberkitSyncedAt: r.memberkitSyncedAt ? r.memberkitSyncedAt.toISOString() : null,
+    memberkitUserId: r.memberkitUserId,
+  };
+}
+
 const stageParamsSchema = z.object({
   projectId: z.string().uuid(),
   funnelId: z.string().uuid(),
@@ -82,16 +111,29 @@ const listQuerySchema = z.object({
   days: z.coerce.number().int().positive().max(3650).default(30),
 });
 
-const createSaleSchema = z.object({
+// Objeto base (sem refine) — reusado pelo updateSaleSchema via .partial().
+const baseSaleObject = z.object({
   customerName: z.string().trim().min(2).max(255),
   customerEmail: z.string().trim().email().max(255).optional().or(z.literal("").transform(() => undefined)),
   customerPhone: z.string().trim().max(50).optional().or(z.literal("").transform(() => undefined)),
   value: z.number().positive().finite(),
-  sellerUserId: z.string().uuid(),
+  // Story 19.10: vendedor da plataforma (etapas sales/paid) — OPCIONAL. Na etapa
+  // de Evento Presencial o vendedor é o Closer (texto livre via `sellerName`).
+  sellerUserId: z.string().uuid().optional(),
+  sellerName: z.string().trim().min(2).max(255).optional().or(z.literal("").transform(() => undefined)),
   saleDate: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
   product: z.string().trim().max(255).optional().or(z.literal("").transform(() => undefined)),
   invoiceStatus: z.enum(["emitida", "pendente"]).nullable().optional(),
+  // Story 19.10 — Evento Presencial
+  valorRecebido: z.number().positive().finite().nullable().optional(),
+  // nullable pra permitir LIMPAR a negociação numa edição (PATCH).
+  negociacao: z.string().trim().max(2000).nullable().optional().or(z.literal("").transform(() => null)),
 });
+
+const createSaleSchema = baseSaleObject.refine(
+  (d) => Boolean(d.sellerUserId) || Boolean(d.sellerName),
+  { message: "Informe o vendedor (sellerUserId) ou o closer (sellerName)", path: ["sellerUserId"] },
+);
 
 export default fp(async function manualSalesRoutes(fastify) {
   async function getStageContext(
@@ -156,6 +198,84 @@ export default fp(async function manualSalesRoutes(fastify) {
         email: r.email,
       }))
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  }
+
+  /** Grava o status MemberKit numa venda manual (efeito colateral, nunca lança). */
+  async function setMemberkitStatus(
+    saleId: string,
+    status: MemberkitEnrollmentStatus,
+    syncedAt: Date | null,
+    memberkitUserId: string | null,
+  ): Promise<void> {
+    try {
+      await fastify.db
+        .update(manualSales)
+        .set({ memberkitStatus: status, memberkitSyncedAt: syncedAt, memberkitUserId })
+        .where(eq(manualSales.id, saleId));
+    } catch {
+      fastify.log.error("Falha ao gravar status MemberKit da venda");
+    }
+  }
+
+  /**
+   * Story 19.11 — matricula o comprador no MemberKit (efeito colateral da venda
+   * na etapa de Evento Presencial). NUNCA lança: a venda não pode falhar por
+   * causa do MemberKit. Decisão de produto: email é obrigatório na venda de
+   * evento, então `pending` aqui só ocorre em caminho defensivo.
+   * Retorna o status final pra refletir na resposta imediata da venda.
+   */
+  async function runMemberkitEnrollment(
+    projectId: string,
+    sale: typeof manualSales.$inferSelect,
+  ): Promise<MemberkitEnrollmentStatus> {
+    try {
+      if (!sale.customerEmail) {
+        await setMemberkitStatus(sale.id, "pending", null, null);
+        return "pending";
+      }
+      const [conn] = await fastify.db
+        .select()
+        .from(memberkitConnections)
+        .where(eq(memberkitConnections.projectId, projectId))
+        .limit(1);
+      const [cfg] = await fastify.db
+        .select()
+        .from(stageMemberkitEnrollment)
+        .where(eq(stageMemberkitEnrollment.stageId, sale.stageId))
+        .limit(1);
+
+      if (!conn || !cfg || !cfg.autoEnroll || cfg.classroomIds.length === 0) {
+        await setMemberkitStatus(sale.id, "skipped", null, null);
+        return "skipped";
+      }
+
+      let apiKey: string;
+      try {
+        apiKey = decryptMemberkitKey(conn.apiKeyEncrypted, conn.apiKeyIv);
+      } catch {
+        await setMemberkitStatus(sale.id, "failed", null, null);
+        return "failed";
+      }
+
+      const result = await enrollMember(apiKey, {
+        fullName: sale.customerName,
+        email: sale.customerEmail,
+        status: cfg.status as MemberkitMemberStatus,
+        classroomIds: cfg.classroomIds,
+      });
+
+      if (result.ok) {
+        await setMemberkitStatus(sale.id, "enrolled", new Date(), result.memberkitUserId ?? null);
+        return "enrolled";
+      }
+      fastify.log.error("Matrícula MemberKit falhou (resposta de erro da API)");
+      await setMemberkitStatus(sale.id, "failed", null, null);
+      return "failed";
+    } catch {
+      fastify.log.error("Matrícula MemberKit falhou (exceção)");
+      await setMemberkitStatus(sale.id, "failed", null, null);
+      return "failed";
+    }
   }
 
   // ---------------------------------------------------------------
@@ -225,21 +345,7 @@ export default fp(async function manualSalesRoutes(fastify) {
         )
         .orderBy(desc(manualSales.saleDate));
 
-      const sales = rows.map((r) => ({
-        id: r.id,
-        stageId: r.stageId,
-        customerName: r.customerName,
-        customerEmail: r.customerEmail,
-        customerPhone: r.customerPhone,
-        value: Number(r.value),
-        sellerUserId: r.sellerUserId,
-        sellerName: r.sellerName,
-        saleDate: r.saleDate.toISOString(),
-        createdBy: r.createdBy,
-        createdAt: r.createdAt.toISOString(),
-        product: r.product,
-        invoiceStatus: r.invoiceStatus as "emitida" | "pendente" | null,
-      }));
+      const sales = rows.map(shapeManualSale);
 
       const totalSales = sales.length;
       const totalRevenue = sales.reduce((acc, s) => acc + s.value, 0);
@@ -310,27 +416,43 @@ export default fp(async function manualSalesRoutes(fastify) {
       );
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      if (stage.stageType !== "sales") {
+      // Story 19.10: venda manual permitida em etapas "sales" e "event".
+      const isEvent = stage.stageType === "event";
+      if (stage.stageType !== "sales" && !isEvent) {
         return reply
           .code(400)
-          .send({ error: "Vendas manuais só podem ser lançadas em etapas do tipo Vendas" });
+          .send({ error: "Vendas manuais só podem ser lançadas em etapas do tipo Vendas ou Evento Presencial" });
       }
 
-      // Vendedor: qualquer usuário ativo da plataforma
-      const [sellerUser] = await fastify.db
-        .select({ id: users.id, name: users.name, email: users.email, status: users.status })
-        .from(users)
-        .where(eq(users.id, body.data.sellerUserId))
-        .limit(1);
-
-      if (!sellerUser || sellerUser.status === "blocked") {
-        return reply.code(403).send({ error: "Vendedor não é um usuário válido" });
+      // Story 19.10/19.11: na etapa de Evento Presencial o email é OBRIGATÓRIO
+      // (necessário para matricular o comprador no MemberKit).
+      if (isEvent && !body.data.customerEmail) {
+        return reply.code(400).send({
+          error: "Email do cliente é obrigatório na etapa de Evento Presencial (necessário para matrícula no MemberKit)",
+        });
       }
-      const sellerMembership = {
-        userId: sellerUser.id,
-        name: displayUserName(sellerUser.name, sellerUser.email),
-        email: sellerUser.email,
-      };
+
+      // Vendedor: usuário da plataforma (sellerUserId) OU closer texto livre (sellerName).
+      let resolvedSellerUserId: string | null = null;
+      let resolvedSellerName: string;
+      if (body.data.sellerUserId) {
+        const [sellerUser] = await fastify.db
+          .select({ id: users.id, name: users.name, email: users.email, status: users.status })
+          .from(users)
+          .where(eq(users.id, body.data.sellerUserId))
+          .limit(1);
+        if (!sellerUser || sellerUser.status === "blocked") {
+          return reply.code(403).send({ error: "Vendedor não é um usuário válido" });
+        }
+        resolvedSellerUserId = sellerUser.id;
+        resolvedSellerName = displayUserName(sellerUser.name, sellerUser.email);
+      } else {
+        // Closer texto livre (etapa de Evento Presencial).
+        resolvedSellerName = (body.data.sellerName ?? "").trim();
+        if (resolvedSellerName.length < 2) {
+          return reply.code(400).send({ error: "Informe o vendedor ou o closer" });
+        }
+      }
 
       // Parse saleDate — aceita ISO completo ou YYYY-MM-DD
       const saleDate = /^\d{4}-\d{2}-\d{2}$/.test(body.data.saleDate)
@@ -349,37 +471,40 @@ export default fp(async function manualSalesRoutes(fastify) {
           customerEmail: body.data.customerEmail ?? null,
           customerPhone: body.data.customerPhone ?? null,
           value: body.data.value.toFixed(2),
-          sellerUserId: sellerMembership.userId,
-          sellerName: sellerMembership.name,
+          sellerUserId: resolvedSellerUserId,
+          sellerName: resolvedSellerName,
           saleDate,
           createdBy: request.userId,
           product: body.data.product ?? null,
           invoiceStatus: body.data.invoiceStatus ?? null,
+          valorRecebido: body.data.valorRecebido != null ? body.data.valorRecebido.toFixed(2) : null,
+          negociacao: body.data.negociacao ?? null,
+          memberkitStatus: isEvent ? "pending" : null,
         })
         .returning();
 
-      return reply.code(201).send({
-        id: created.id,
-        stageId: created.stageId,
-        customerName: created.customerName,
-        customerEmail: created.customerEmail,
-        customerPhone: created.customerPhone,
-        value: Number(created.value),
-        sellerUserId: created.sellerUserId,
-        sellerName: created.sellerName,
-        saleDate: created.saleDate.toISOString(),
-        createdBy: created.createdBy,
-        createdAt: created.createdAt.toISOString(),
-        product: created.product,
-        invoiceStatus: created.invoiceStatus,
-      });
+      // Story 19.11: dispara matrícula MemberKit (efeito colateral) na etapa de
+      // evento. NUNCA derruba a venda — runMemberkitEnrollment trata o erro e
+      // grava o status. Re-lê a linha pra refletir o status na resposta.
+      let finalRow = created;
+      if (isEvent) {
+        await runMemberkitEnrollment(params.data.projectId, created);
+        const [refreshed] = await fastify.db
+          .select()
+          .from(manualSales)
+          .where(eq(manualSales.id, created.id))
+          .limit(1);
+        if (refreshed) finalRow = refreshed;
+      }
+
+      return reply.code(201).send(shapeManualSale(finalRow));
     },
   );
 
   // ---------------------------------------------------------------
   // PATCH — edita venda manual (parcial)
   // ---------------------------------------------------------------
-  const updateSaleSchema = createSaleSchema.partial();
+  const updateSaleSchema = baseSaleObject.partial();
 
   fastify.patch(
     "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/manual-sales/:saleId",
@@ -418,6 +543,18 @@ export default fp(async function manualSalesRoutes(fastify) {
         .limit(1);
       if (!existing) return reply.code(404).send({ error: "Venda não encontrada" });
 
+      // Story 19.10/19.11: na etapa de evento o email não pode ficar vazio
+      // (matrícula MemberKit depende dele). Valida o email FINAL (novo ou existente).
+      if (stage.stageType === "event") {
+        const finalEmail =
+          body.data.customerEmail !== undefined ? body.data.customerEmail : existing.customerEmail;
+        if (!finalEmail) {
+          return reply.code(400).send({
+            error: "Email é obrigatório na etapa de Evento Presencial (necessário para matrícula no MemberKit)",
+          });
+        }
+      }
+
       // Monta SET parcial — só campos presentes no body
       const updates: Partial<typeof manualSales.$inferInsert> = {};
 
@@ -441,6 +578,10 @@ export default fp(async function manualSalesRoutes(fastify) {
         }
         updates.sellerUserId = sellerUser.id;
         updates.sellerName = displayUserName(sellerUser.name, sellerUser.email);
+      } else if (body.data.sellerName !== undefined && body.data.sellerName) {
+        // Story 19.10: closer texto livre (etapa de evento) — sem usuário da plataforma.
+        updates.sellerName = body.data.sellerName.trim();
+        updates.sellerUserId = null;
       }
 
       if (body.data.saleDate !== undefined) {
@@ -455,6 +596,11 @@ export default fp(async function manualSalesRoutes(fastify) {
 
       if (body.data.product !== undefined) updates.product = body.data.product ?? null;
       if (body.data.invoiceStatus !== undefined) updates.invoiceStatus = body.data.invoiceStatus ?? null;
+      // Story 19.10 — Evento Presencial
+      if (body.data.valorRecebido !== undefined) {
+        updates.valorRecebido = body.data.valorRecebido != null ? body.data.valorRecebido.toFixed(2) : null;
+      }
+      if (body.data.negociacao !== undefined) updates.negociacao = body.data.negociacao ?? null;
 
       if (Object.keys(updates).length === 0) {
         return reply.code(400).send({ error: "Nenhum campo pra atualizar" });
@@ -466,21 +612,7 @@ export default fp(async function manualSalesRoutes(fastify) {
         .where(eq(manualSales.id, params.data.saleId))
         .returning();
 
-      return {
-        id: updated.id,
-        stageId: updated.stageId,
-        customerName: updated.customerName,
-        customerEmail: updated.customerEmail,
-        customerPhone: updated.customerPhone,
-        value: Number(updated.value),
-        sellerUserId: updated.sellerUserId,
-        sellerName: updated.sellerName,
-        saleDate: updated.saleDate.toISOString(),
-        createdBy: updated.createdBy,
-        createdAt: updated.createdAt.toISOString(),
-        product: updated.product,
-        invoiceStatus: updated.invoiceStatus,
-      };
+      return shapeManualSale(updated);
     },
   );
 
@@ -490,7 +622,7 @@ export default fp(async function manualSalesRoutes(fastify) {
   // Subtypes válidos de planilha de venda. 'all' = todos. Também aceita lista
   // CSV (ex: "main_product,tmb") pra a tabela unificada puxar só fontes
   // específicas. Vendas manuais SEMPRE entram, independente do subtype.
-  const VALID_SALE_SUBTYPES = ["capture", "main_product", "sales", "tmb"] as const;
+  const VALID_SALE_SUBTYPES = ["capture", "main_product", "sales", "tmb", "event_sales"] as const;
   const allSalesQuerySchema = z.object({
     // Default ALL. Cliente pode forçar subtypes específicos mandando
     // ?subtype=main_product ou ?subtype=main_product,tmb (CSV).
@@ -531,6 +663,9 @@ export default fp(async function manualSalesRoutes(fastify) {
         manualSaleId: string | null;
         /** Rótulo da fonte da venda (ex: "TMB"). null = sem rótulo especial. */
         sourceLabel: string | null;
+        /** Story 19.10 — valor recebido (Caixa) e negociação (evento). */
+        valorRecebido: number | null;
+        negociacao: string | null;
       };
 
       // 1. Vendas manuais
@@ -558,6 +693,8 @@ export default fp(async function manualSalesRoutes(fastify) {
         invoiceStatus: r.invoiceStatus as "emitida" | "pendente" | null,
         manualSaleId: r.id,
         sourceLabel: null,
+        valorRecebido: r.valorRecebido != null ? Number(r.valorRecebido) : null,
+        negociacao: r.negociacao,
       }));
 
       // 2. Vendas da planilha — 'all' pega todos os subtypes; CSV
@@ -598,6 +735,10 @@ export default fp(async function manualSalesRoutes(fastify) {
           canalOrigem?: string;
           dataVenda?: string;
           utm_source?: string;
+          closer?: string;
+          telefone?: string;
+          caixa?: string;
+          negociacao?: string;
         };
         let data;
         try {
@@ -619,6 +760,52 @@ export default fp(async function manualSalesRoutes(fastify) {
         const canalIdx = idxOf(mapping.canalOrigem);
         const dataIdx = idxOf(mapping.dataVenda);
         const utmSourceIdx = idxOf(mapping.utm_source);
+
+        // Story 19.10 — planilha de Evento Presencial: SEM email. Cada linha com
+        // nome OU valor = 1 venda; chave por índice de linha. Closer = vendedor;
+        // Telefone = telefone do cliente. Badge "Presencial".
+        if (sheet.subtype === "event_sales") {
+          const closerIdx = idxOf(mapping.closer);
+          const telefoneIdx = idxOf(mapping.telefone);
+          const caixaIdx = idxOf(mapping.caixa);
+          const negociacaoIdx = idxOf(mapping.negociacao);
+          let evRowIndex = -1;
+          for (const row of rows) {
+            evRowIndex++;
+            const nome = nameIdx !== -1 ? (row[nameIdx] ?? "").trim() : "";
+            const valorRaw = brutoIdx !== -1 ? row[brutoIdx] : undefined;
+            const value = parseBrNumber(valorRaw);
+            // Pula linhas vazias (sem nome E sem valor).
+            if (!nome && value <= 0) continue;
+
+            const dt = dataIdx !== -1 ? parseSheetDate(row[dataIdx]) : null;
+            if (dt && dt < cutoff) continue;
+
+            const closer = closerIdx !== -1 ? (row[closerIdx] ?? "").trim() : "";
+            const telefone = telefoneIdx !== -1 ? (row[telefoneIdx] ?? "").trim() : "";
+            const produto = productIdx !== -1 ? (row[productIdx] ?? "").trim() : "";
+            const caixa = caixaIdx !== -1 ? parseBrNumber(row[caixaIdx]) : 0;
+            const negociacao = negociacaoIdx !== -1 ? (row[negociacaoIdx] ?? "").trim() : "";
+
+            out.push({
+              id: `sheet:${sheet.id}:row|${evRowIndex}`,
+              source: "spreadsheet",
+              customerName: nome || null,
+              customerEmail: null,
+              customerPhone: telefone || null,
+              product: produto || null,
+              value,
+              sellerName: closer || null,
+              saleDate: dt ? dt.toISOString() : null,
+              invoiceStatus: null,
+              manualSaleId: null,
+              sourceLabel: "Presencial",
+              valorRecebido: caixaIdx !== -1 ? caixa : null,
+              negociacao: negociacao || null,
+            });
+          }
+          continue;
+        }
 
         if (emailIdx === -1) continue;
 
@@ -664,6 +851,8 @@ export default fp(async function manualSalesRoutes(fastify) {
             invoiceStatus: null,
             manualSaleId: null,
             sourceLabel: sheetSourceLabel,
+            valorRecebido: null,
+            negociacao: null,
           });
         }
       }
@@ -726,6 +915,53 @@ export default fp(async function manualSalesRoutes(fastify) {
       }
 
       return { success: true };
+    },
+  );
+
+  // ---------------------------------------------------------------
+  // POST /:saleId/memberkit-enroll — Story 19.11: matrícula manual/retry
+  // ---------------------------------------------------------------
+  fastify.post(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/manual-sales/:saleId/memberkit-enroll",
+    async (request, reply) => {
+      if (request.userRole === "guest") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const params = saleParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const stage = await getStageContext(
+        params.data.projectId,
+        params.data.funnelId,
+        params.data.stageId,
+        request.userId,
+        request.userRole,
+      );
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const [sale] = await fastify.db
+        .select()
+        .from(manualSales)
+        .where(and(eq(manualSales.id, params.data.saleId), eq(manualSales.stageId, params.data.stageId)))
+        .limit(1);
+      if (!sale) return reply.code(404).send({ error: "Venda não encontrada" });
+
+      if (!sale.customerEmail) {
+        return reply.code(400).send({ error: "Venda sem email — preencha o email do cliente antes de matricular" });
+      }
+
+      const status = await runMemberkitEnrollment(params.data.projectId, sale);
+      const [refreshed] = await fastify.db
+        .select()
+        .from(manualSales)
+        .where(eq(manualSales.id, sale.id))
+        .limit(1);
+
+      if (status !== "enrolled") {
+        return reply.code(502).send({ error: "Matrícula no MemberKit não concluída", status, sale: refreshed ? shapeManualSale(refreshed) : null });
+      }
+      return { status, sale: refreshed ? shapeManualSale(refreshed) : null };
     },
   );
 });

@@ -3,6 +3,8 @@
  * Coexistem com vendas vindas da planilha Google Sheets, em seção separada.
  */
 
+import type { MemberkitEnrollmentStatus } from "./memberkit.js";
+
 export type InvoiceStatus = "emitida" | "pendente";
 
 export interface ManualSale {
@@ -21,6 +23,16 @@ export interface ManualSale {
   product: string | null;
   /** Story 19.9 ext: status da NF — null = não preenchido. */
   invoiceStatus: InvoiceStatus | null;
+  /** Story 19.10 — valor efetivamente recebido (Caixa) na venda de evento. */
+  valorRecebido: number | null;
+  /** Story 19.10 — texto livre da negociação (evento presencial). */
+  negociacao: string | null;
+  /** Story 19.11 — status da matrícula MemberKit desta venda. */
+  memberkitStatus: MemberkitEnrollmentStatus | null;
+  /** Story 19.11 — quando a matrícula foi sincronizada (ISO). */
+  memberkitSyncedAt: string | null;
+  /** Story 19.11 — id do membro retornado pelo MemberKit. */
+  memberkitUserId: string | null;
 }
 
 export interface ManualSaleSellerRanking {
@@ -47,8 +59,19 @@ export interface CreateManualSaleInput {
   customerEmail?: string;
   customerPhone?: string;
   value: number;
-  sellerUserId: string;
+  /**
+   * Vendedor como usuário da plataforma (etapas "sales"/"paid"). Story 19.10:
+   * opcional — na etapa de Evento Presencial o vendedor é o Closer (texto livre,
+   * via `sellerName`), que não é usuário do app. Informar `sellerUserId` OU `sellerName`.
+   */
+  sellerUserId?: string;
+  /** Story 19.10 — nome do vendedor/closer (texto livre), usado quando não há `sellerUserId`. */
+  sellerName?: string;
   saleDate: string;
   product?: string;
   invoiceStatus?: InvoiceStatus | null;
+  /** Story 19.10 — valor efetivamente recebido (Caixa) na venda de evento. */
+  valorRecebido?: number | null;
+  /** Story 19.10 — texto livre da negociação (evento presencial); null limpa o campo. */
+  negociacao?: string | null;
 }
