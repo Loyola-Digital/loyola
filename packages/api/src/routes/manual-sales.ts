@@ -19,6 +19,7 @@ import {
   stageSalesSpreadsheets,
   memberkitConnections,
   stageMemberkitEnrollment,
+  stageEventProducts,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { enrollMember, decryptMemberkitKey } from "../services/memberkit.js";
@@ -244,7 +245,36 @@ export default fp(async function manualSalesRoutes(fastify) {
         .where(eq(stageMemberkitEnrollment.stageId, sale.stageId))
         .limit(1);
 
-      if (!conn || !cfg || !cfg.autoEnroll || cfg.classroomIds.length === 0) {
+      if (!conn || !cfg || !cfg.autoEnroll) {
+        await setMemberkitStatus(sale.id, "skipped", null, null);
+        return "skipped";
+      }
+
+      // Story 19.12: a turma vem do PRODUTO vendido (cada produto tem a sua).
+      // - Produto CADASTRADO: honra exatamente a turma dele. classroomId null =
+      //   "sem matrícula" intencional → [] → skipped (não cai no fallback).
+      // - Produto NÃO cadastrado (ex: venda legada / fora da lista): usa a turma
+      //   default da etapa (cfg.classroomIds) como fallback.
+      let classroomIds: number[] = cfg.classroomIds ?? [];
+      if (sale.product) {
+        const [prod] = await fastify.db
+          .select({ classroomId: stageEventProducts.memberkitClassroomId })
+          .from(stageEventProducts)
+          .where(
+            and(
+              eq(stageEventProducts.stageId, sale.stageId),
+              eq(stageEventProducts.name, sale.product),
+            ),
+          )
+          .orderBy(asc(stageEventProducts.sortOrder))
+          .limit(1);
+        if (prod) {
+          // Produto cadastrado encontrado → turma dele é a verdade (null = skip).
+          classroomIds = prod.classroomId != null ? [prod.classroomId] : [];
+        }
+      }
+
+      if (classroomIds.length === 0) {
         await setMemberkitStatus(sale.id, "skipped", null, null);
         return "skipped";
       }
@@ -261,7 +291,7 @@ export default fp(async function manualSalesRoutes(fastify) {
         fullName: sale.customerName,
         email: sale.customerEmail,
         status: cfg.status as MemberkitMemberStatus,
-        classroomIds: cfg.classroomIds,
+        classroomIds,
       });
 
       if (result.ok) {

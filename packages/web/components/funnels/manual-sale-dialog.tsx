@@ -25,6 +25,7 @@ import {
   useEligibleSellers,
   useUpdateManualSale,
 } from "@/lib/hooks/use-manual-sales";
+import { useEventProducts, useEventClosers } from "@/lib/hooks/use-event-config";
 import type { InvoiceStatus, ManualSale } from "@loyola-x/shared";
 
 interface ManualSaleDialogProps {
@@ -86,8 +87,13 @@ export function ManualSaleDialog({
   isEvent = false,
 }: ManualSaleDialogProps) {
   const isEditing = !!editingSale;
-  // No evento o vendedor é o Closer (texto livre) — não busca usuários da plataforma.
+  // No evento o vendedor é o Closer (lista cadastrada) — não busca usuários da plataforma.
   const { data: sellers, isLoading: loadingSellers } = useEligibleSellers(isEvent ? null : projectId);
+  // Story 19.12: no evento, Produto e Closer vêm de listas cadastradas na etapa.
+  const { data: productsData } = useEventProducts(projectId, funnelId, stageId, isEvent);
+  const { data: closersData } = useEventClosers(projectId, funnelId, stageId, isEvent);
+  const eventProducts = productsData?.products ?? [];
+  const eventClosers = closersData?.closers ?? [];
   const createMutation = useCreateManualSale(projectId, funnelId, stageId);
   const updateMutation = useUpdateManualSale(projectId, funnelId, stageId);
 
@@ -102,6 +108,11 @@ export function ManualSaleDialog({
   const [invoiceStatus, setInvoiceStatus] = useState<InvoiceStatus | "">("");
   const [valorRecebidoInput, setValorRecebidoInput] = useState(""); // Story 19.10 — Caixa
   const [negociacao, setNegociacao] = useState(""); // Story 19.10
+
+  // Story 19.12: ao editar venda antiga, produto/closer pode não estar mais na
+  // lista — mostramos o valor atual como item "(não cadastrado)" em vez de vazio.
+  const productOutOfList = !!product && !eventProducts.some((p) => p.name === product);
+  const closerOutOfList = !!closer && !eventClosers.some((c) => c.name === closer);
 
   // Hidrata form quando entra em modo edição (ou troca de venda em edição)
   useEffect(() => {
@@ -162,8 +173,12 @@ export function ManualSaleDialog({
         toast.error("Email é obrigatório (necessário para matrícula no MemberKit)");
         return;
       }
+      if (!product.trim()) {
+        toast.error("Selecione o produto");
+        return;
+      }
       if (closer.trim().length < 2) {
-        toast.error("Informe o closer (vendedor)");
+        toast.error("Selecione o closer");
         return;
       }
     } else if (!sellerUserId) {
@@ -300,15 +315,43 @@ export function ManualSaleDialog({
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <Label htmlFor="product">Produto</Label>
-              <Input
-                id="product"
-                value={product}
-                onChange={(e) => setProduct(e.target.value)}
-                placeholder="Ex: Mentoria 1:1 (opcional)"
-              />
-            </div>
+            {isEvent ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="product-select">Produto *</Label>
+                {eventProducts.length > 0 || productOutOfList ? (
+                  <Select value={product} onValueChange={setProduct}>
+                    <SelectTrigger id="product-select">
+                      <SelectValue placeholder="Selecione o produto" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {productOutOfList && (
+                        <SelectItem value={product}>{product} (não cadastrado)</SelectItem>
+                      )}
+                      {eventProducts.map((p) => (
+                        <SelectItem key={p.id} value={p.name}>
+                          {p.name}
+                          {p.memberkitClassroomName ? ` · ${p.memberkitClassroomName}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-xs text-amber-600">
+                    Nenhum produto cadastrado. Cadastre os produtos na aba <strong>Configuração</strong> da etapa.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="product">Produto</Label>
+                <Input
+                  id="product"
+                  value={product}
+                  onChange={(e) => setProduct(e.target.value)}
+                  placeholder="Ex: Mentoria 1:1 (opcional)"
+                />
+              </div>
+            )}
 
             {isEvent && (
               <div className="space-y-1.5">
@@ -341,13 +384,28 @@ export function ManualSaleDialog({
 
             {isEvent ? (
               <div className="space-y-1.5">
-                <Label htmlFor="closer">Closer (vendedor) *</Label>
-                <Input
-                  id="closer"
-                  value={closer}
-                  onChange={(e) => setCloser(e.target.value)}
-                  placeholder="Nome do closer que fechou"
-                />
+                <Label htmlFor="closer-select">Closer (vendedor) *</Label>
+                {eventClosers.length > 0 || closerOutOfList ? (
+                  <Select value={closer} onValueChange={setCloser}>
+                    <SelectTrigger id="closer-select">
+                      <SelectValue placeholder="Selecione o closer" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {closerOutOfList && (
+                        <SelectItem value={closer}>{closer} (não cadastrado)</SelectItem>
+                      )}
+                      {eventClosers.map((cl) => (
+                        <SelectItem key={cl.id} value={cl.name}>
+                          {cl.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-xs text-amber-600">
+                    Nenhum closer cadastrado. Cadastre os closers na aba <strong>Configuração</strong> da etapa.
+                  </p>
+                )}
               </div>
             ) : (
               <div className="space-y-1.5">
