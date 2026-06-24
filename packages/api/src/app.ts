@@ -70,6 +70,7 @@ import lpCampaignsRoutes from "./routes/lp-campaigns.js";
 import mauticRoutes from "./routes/mautic.js";
 import hotmartRoutes from "./routes/hotmart.js";
 import kiwifyRoutes from "./routes/kiwify.js";
+import memberkitRoutes from "./routes/memberkit.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -162,6 +163,7 @@ export async function buildServer() {
   await app.register(mauticRoutes);
   await app.register(hotmartRoutes);
   await app.register(kiwifyRoutes);
+  await app.register(memberkitRoutes);
 
   return app;
 }

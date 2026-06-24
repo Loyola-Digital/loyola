@@ -809,7 +809,7 @@ export default fp(async function funnelRoutes(fastify) {
     for (const stage of stages) {
       const phaseSuffix = resolveStagePhaseSuffix(
         funnel.type as "launch" | "perpetual",
-        (stage.stageType ?? "free") as "paid" | "free" | "sales" | "cpl",
+        (stage.stageType ?? "free") as "paid" | "free" | "sales" | "cpl" | "event",
         stage.name,
       );
       const selectedHere = new Set((stage.campaigns ?? []).map((c) => c.id));

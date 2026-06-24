@@ -16,11 +16,21 @@ export interface SwitchyLinkRef {
   domain: string;
 }
 
-export type StageType = "paid" | "free" | "sales" | "cpl";
-export type StageSalesSubtype = "capture" | "main_product" | "sales" | "tmb";
+// Story 19.10: "event" = Etapa de Evento Presencial (imersão). Código curto p/
+// caber no varchar(10) do banco; label de UI = "Evento Presencial".
+export type StageType = "paid" | "free" | "sales" | "cpl" | "event";
+// Story 19.10: "event_sales" = planilha de vendas de evento presencial (formato
+// Nome/Produto/Valor/Caixa/Closer/Telefone, SEM email).
+export type StageSalesSubtype = "capture" | "main_product" | "sales" | "tmb" | "event_sales";
 
 export interface SaleColumnMapping {
-  email: string;
+  /**
+   * Email do comprador. Obrigatório para planilhas de checkout
+   * (capture/main_product/sales/tmb), onde é a chave de dedup/cruzamento.
+   * Story 19.10: OPCIONAL para a planilha de Evento Presencial ("event_sales"),
+   * que identifica a venda por linha (nome+telefone), pois não traz email.
+   */
+  email?: string;
   /**
    * Story 28.4: identificador único da transação (Kiwify/Hotmart `ID` ou
    * `Transaction`). Quando mapeado, o backend deduplica vendas por este
@@ -48,6 +58,20 @@ export interface SaleColumnMapping {
   utm_campaign?: string;
   utm_content?: string;
   utm_term?: string;
+  /**
+   * Story 19.10 — campos da planilha de Evento Presencial ("event_sales").
+   * Mapeados para o pipeline existente quando possível:
+   *  - `closer` é tratado como `utm_source` no breakdown de vendedores;
+   *  - `telefone` → telefone do cliente;
+   *  - `caixa` → valor efetivamente recebido (à vista/entrada);
+   *  - `negociacao` → texto livre do acordo (só exibição/persistência).
+   * `valor` (valor contratado) usa o slot `valorBruto`; `nome` usa `customerName`;
+   * `produto` usa `productName`.
+   */
+  closer?: string;
+  telefone?: string;
+  caixa?: string;
+  negociacao?: string;
 }
 
 export interface StageSalesSpreadsheet {

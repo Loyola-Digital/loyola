@@ -142,7 +142,7 @@ export default fp(async function publicDiscoveryRoutes(fastify) {
         stages: rows.map((s) => ({
           id: s.id,
           name: s.name,
-          stageType: s.stageType, // "paid" | "free" | "sales" | "cpl"
+          stageType: s.stageType, // "paid" | "free" | "sales" | "cpl" | "event"
           sortOrder: s.sortOrder,
           leadGoal: s.leadGoal,
           projectionEndDate: s.projectionEndDate,

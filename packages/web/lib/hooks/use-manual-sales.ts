@@ -143,6 +143,9 @@ export interface UnifiedSale {
   manualSaleId: string | null;
   /** Rótulo da fonte da venda (ex: "TMB"). null = sem rótulo especial. */
   sourceLabel: string | null;
+  /** Story 19.10 — valor recebido (Caixa) e negociação (evento presencial). */
+  valorRecebido: number | null;
+  negociacao: string | null;
 }
 
 export interface AllSalesResponse {

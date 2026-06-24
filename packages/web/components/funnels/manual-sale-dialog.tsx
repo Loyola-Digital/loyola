@@ -35,6 +35,12 @@ interface ManualSaleDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Quando passado, dialog entra em modo edição (PATCH ao invés de POST). */
   editingSale?: ManualSale | null;
+  /**
+   * Story 19.10: etapa de Evento Presencial. Quando true: vendedor é o Closer
+   * (texto livre), email é obrigatório (matrícula MemberKit), e ganha os campos
+   * Caixa (valor recebido) + Negociação.
+   */
+  isEvent?: boolean;
 }
 
 function formatBrCurrencyFromNumber(value: number): string {
@@ -77,9 +83,11 @@ export function ManualSaleDialog({
   open,
   onOpenChange,
   editingSale,
+  isEvent = false,
 }: ManualSaleDialogProps) {
   const isEditing = !!editingSale;
-  const { data: sellers, isLoading: loadingSellers } = useEligibleSellers(projectId);
+  // No evento o vendedor é o Closer (texto livre) — não busca usuários da plataforma.
+  const { data: sellers, isLoading: loadingSellers } = useEligibleSellers(isEvent ? null : projectId);
   const createMutation = useCreateManualSale(projectId, funnelId, stageId);
   const updateMutation = useUpdateManualSale(projectId, funnelId, stageId);
 
@@ -88,9 +96,12 @@ export function ManualSaleDialog({
   const [customerPhone, setCustomerPhone] = useState("");
   const [valueInput, setValueInput] = useState("");
   const [sellerUserId, setSellerUserId] = useState<string>("");
+  const [closer, setCloser] = useState(""); // Story 19.10 — vendedor texto livre (evento)
   const [saleDate, setSaleDate] = useState<string>(todayIso());
   const [product, setProduct] = useState("");
   const [invoiceStatus, setInvoiceStatus] = useState<InvoiceStatus | "">("");
+  const [valorRecebidoInput, setValorRecebidoInput] = useState(""); // Story 19.10 — Caixa
+  const [negociacao, setNegociacao] = useState(""); // Story 19.10
 
   // Hidrata form quando entra em modo edição (ou troca de venda em edição)
   useEffect(() => {
@@ -101,9 +112,15 @@ export function ManualSaleDialog({
       setCustomerPhone(editingSale.customerPhone ?? "");
       setValueInput(formatBrCurrencyFromNumber(editingSale.value));
       setSellerUserId(editingSale.sellerUserId ?? "");
+      // No evento, sellerUserId é null e o nome do closer vive em sellerName.
+      setCloser(editingSale.sellerUserId ? "" : editingSale.sellerName ?? "");
       setSaleDate(saleDateToInput(editingSale.saleDate));
       setProduct(editingSale.product ?? "");
       setInvoiceStatus(editingSale.invoiceStatus ?? "");
+      setValorRecebidoInput(
+        editingSale.valorRecebido != null ? formatBrCurrencyFromNumber(editingSale.valorRecebido) : "",
+      );
+      setNegociacao(editingSale.negociacao ?? "");
     } else {
       resetForm();
     }
@@ -115,9 +132,12 @@ export function ManualSaleDialog({
     setCustomerPhone("");
     setValueInput("");
     setSellerUserId("");
+    setCloser("");
     setSaleDate(todayIso());
     setProduct("");
     setInvoiceStatus("");
+    setValorRecebidoInput("");
+    setNegociacao("");
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -135,17 +155,32 @@ export function ManualSaleDialog({
       return;
     }
 
-    if (!sellerUserId) {
+    // Story 19.10/19.11: no evento, email é obrigatório (matrícula MemberKit) e
+    // o vendedor é o Closer (texto livre). Fora do evento, vendedor = usuário.
+    if (isEvent) {
+      if (!customerEmail.trim()) {
+        toast.error("Email é obrigatório (necessário para matrícula no MemberKit)");
+        return;
+      }
+      if (closer.trim().length < 2) {
+        toast.error("Informe o closer (vendedor)");
+        return;
+      }
+    } else if (!sellerUserId) {
       toast.error("Selecione o vendedor");
       return;
     }
+
+    const valorRecebido = isEvent ? parseBrCurrency(valorRecebidoInput) : null;
 
     const payload = {
       customerName: name,
       customerEmail: customerEmail.trim() || undefined,
       customerPhone: customerPhone.trim() || undefined,
       value,
-      sellerUserId,
+      ...(isEvent
+        ? { sellerName: closer.trim(), valorRecebido, negociacao: negociacao.trim() || null }
+        : { sellerUserId }),
       saleDate,
       product: product.trim() || undefined,
       invoiceStatus: invoiceStatus || null,
@@ -181,12 +216,18 @@ export function ManualSaleDialog({
         <form onSubmit={handleSubmit} className="space-y-4">
           <DialogHeader>
             <DialogTitle>
-              {isEditing ? "Editar venda manual" : "Lançar venda manual (PIX direto)"}
+              {isEditing
+                ? "Editar venda"
+                : isEvent
+                  ? "Lançar venda (Evento Presencial)"
+                  : "Lançar venda manual (PIX direto)"}
             </DialogTitle>
             <DialogDescription>
               {isEditing
                 ? "Ajuste os campos abaixo e clique em Salvar."
-                : "Vendas registradas aqui ficam separadas das vendas vindas da planilha."}
+                : isEvent
+                  ? "Ao lançar, o comprador é matriculado automaticamente no MemberKit (se configurado na etapa)."
+                  : "Vendas registradas aqui ficam separadas das vendas vindas da planilha."}
             </DialogDescription>
           </DialogHeader>
 
@@ -204,13 +245,13 @@ export function ManualSaleDialog({
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="customer-email">Email</Label>
+                <Label htmlFor="customer-email">Email{isEvent ? " *" : ""}</Label>
                 <Input
                   id="customer-email"
                   type="email"
                   value={customerEmail}
                   onChange={(e) => setCustomerEmail(e.target.value)}
-                  placeholder="opcional"
+                  placeholder={isEvent ? "necessário p/ MemberKit" : "opcional"}
                 />
               </div>
               <div className="space-y-1.5">
@@ -246,6 +287,19 @@ export function ManualSaleDialog({
               </div>
             </div>
 
+            {isEvent && (
+              <div className="space-y-1.5">
+                <Label htmlFor="valor-recebido">Caixa (valor recebido)</Label>
+                <Input
+                  id="valor-recebido"
+                  inputMode="decimal"
+                  value={valorRecebidoInput}
+                  onChange={(e) => setValorRecebidoInput(e.target.value)}
+                  placeholder="opcional — ex: 1.000,00"
+                />
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label htmlFor="product">Produto</Label>
               <Input
@@ -255,6 +309,18 @@ export function ManualSaleDialog({
                 placeholder="Ex: Mentoria 1:1 (opcional)"
               />
             </div>
+
+            {isEvent && (
+              <div className="space-y-1.5">
+                <Label htmlFor="negociacao">Negociação</Label>
+                <Input
+                  id="negociacao"
+                  value={negociacao}
+                  onChange={(e) => setNegociacao(e.target.value)}
+                  placeholder="opcional — condições do acordo"
+                />
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label htmlFor="invoice-status">Nota fiscal</Label>
@@ -273,29 +339,41 @@ export function ManualSaleDialog({
               </Select>
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="seller">Vendedor *</Label>
-              <Select value={sellerUserId} onValueChange={setSellerUserId}>
-                <SelectTrigger id="seller">
-                  <SelectValue
-                    placeholder={loadingSellers ? "Carregando..." : "Selecione o vendedor"}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {sellers && sellers.length > 0 ? (
-                    sellers.map((s) => (
-                      <SelectItem key={s.userId} value={s.userId}>
-                        {s.name || s.email}
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                      Nenhum vendedor encontrado
-                    </div>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
+            {isEvent ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="closer">Closer (vendedor) *</Label>
+                <Input
+                  id="closer"
+                  value={closer}
+                  onChange={(e) => setCloser(e.target.value)}
+                  placeholder="Nome do closer que fechou"
+                />
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="seller">Vendedor *</Label>
+                <Select value={sellerUserId} onValueChange={setSellerUserId}>
+                  <SelectTrigger id="seller">
+                    <SelectValue
+                      placeholder={loadingSellers ? "Carregando..." : "Selecione o vendedor"}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sellers && sellers.length > 0 ? (
+                      sellers.map((s) => (
+                        <SelectItem key={s.userId} value={s.userId}>
+                          {s.name || s.email}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        Nenhum vendedor encontrado
+                      </div>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           <DialogFooter>

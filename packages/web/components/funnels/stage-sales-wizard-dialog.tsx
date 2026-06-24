@@ -47,6 +47,24 @@ const SALE_MAPPING_FIELDS: Array<{
   { key: "utm_term", label: "UTM Term" },
 ];
 
+// Story 19.10 — planilha de Evento Presencial (sem email). Nome + Valor
+// obrigatórios; Closer = vendedor; Caixa = valor recebido.
+const EVENT_MAPPING_FIELDS: Array<{
+  key: keyof SaleColumnMapping;
+  label: string;
+  required?: boolean;
+}> = [
+  { key: "customerName", label: "Nome", required: true },
+  { key: "valorBruto", label: "Valor", required: true },
+  { key: "productName", label: "Produto" },
+  { key: "closer", label: "Closer (vendedor)" },
+  { key: "caixa", label: "Caixa (recebido)" },
+  { key: "telefone", label: "Telefone" },
+  { key: "negociacao", label: "Negociação" },
+  { key: "dataVenda", label: "Data da Venda" },
+  { key: "email", label: "Email (opcional)" },
+];
+
 type Step = "spreadsheet" | "sheet" | "mapping";
 
 interface StageSalesWizardDialogProps {
@@ -89,7 +107,12 @@ export function StageSalesWizardDialog({
 
   const step: Step = !selectedSpreadsheet ? "spreadsheet" : !selectedSheet ? "sheet" : "mapping";
 
-  const canSave = !!(mapping.email && mapping.email.length > 0);
+  // Story 19.10: planilha de evento usa outro conjunto de campos (sem email).
+  const isEvent = subtype === "event_sales";
+  const mappingFields = isEvent ? EVENT_MAPPING_FIELDS : SALE_MAPPING_FIELDS;
+  const canSave = isEvent
+    ? !!(mapping.customerName && mapping.valorBruto)
+    : !!(mapping.email && mapping.email.length > 0);
 
   function resetState() {
     setSelectedSpreadsheet(null);
@@ -117,7 +140,7 @@ export function StageSalesWizardDialog({
   }
 
   function handleSave() {
-    if (!selectedSpreadsheet || !selectedSheet || !canSave || !mapping.email) return;
+    if (!selectedSpreadsheet || !selectedSheet || !canSave) return;
     connect.mutate(
       {
         subtype,
@@ -145,7 +168,9 @@ export function StageSalesWizardDialog({
         ? "TMB"
         : subtype === "sales"
           ? "Vendas"
-          : "Produto Principal";
+          : subtype === "event_sales"
+            ? "Evento Presencial"
+            : "Produto Principal";
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); else onOpenChange(v); }}>
@@ -284,7 +309,11 @@ export function StageSalesWizardDialog({
                 {selectedSpreadsheet?.name} / {selectedSheet}
               </p>
               <p className="text-xs text-muted-foreground">
-                Mapeie as colunas da sua planilha. O campo <strong>Email</strong> é obrigatório (usado para deduplicação de vendas).
+                {isEvent ? (
+                  <>Mapeie as colunas da planilha de evento. <strong>Nome</strong> e <strong>Valor</strong> são obrigatórios. O <strong>Closer</strong> vira o vendedor.</>
+                ) : (
+                  <>Mapeie as colunas da sua planilha. O campo <strong>Email</strong> é obrigatório (usado para deduplicação de vendas).</>
+                )}
               </p>
 
               {sheetDataLoading && columns.length === 0 ? (
@@ -293,7 +322,7 @@ export function StageSalesWizardDialog({
                 </div>
               ) : (
                 <div className="grid gap-3 grid-cols-2 md:grid-cols-3 pt-1">
-                  {SALE_MAPPING_FIELDS.map(({ key, label, required }) => (
+                  {mappingFields.map(({ key, label, required }) => (
                     <div key={key} className="space-y-1">
                       <Label className="text-xs">
                         {label}
@@ -324,7 +353,7 @@ export function StageSalesWizardDialog({
         <DialogFooter className="flex-col sm:flex-row items-stretch sm:items-center gap-2">
           {step === "mapping" && !canSave && (
             <p className="text-xs text-amber-600 sm:mr-auto">
-              Mapeie o campo Email para continuar.
+              {isEvent ? "Mapeie Nome e Valor para continuar." : "Mapeie o campo Email para continuar."}
             </p>
           )}
           <Button variant="outline" onClick={handleClose}>Cancelar</Button>
