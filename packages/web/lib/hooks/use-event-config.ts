@@ -8,6 +8,7 @@ import type {
   EventProductInput,
   EventCloserInput,
   FunnelSalesSpreadsheetRef,
+  EventLead,
 } from "@loyola-x/shared";
 
 // Story 19.12 — config da etapa de Evento: produtos (com turma) e closers.
@@ -76,6 +77,17 @@ export function useFunnelSalesSpreadsheets(projectId: string, funnelId: string, 
       apiClient<{ spreadsheets: FunnelSalesSpreadsheetRef[] }>(
         `/api/projects/${projectId}/funnels/${funnelId}/sales-spreadsheets-all`,
       ),
+    enabled,
+    staleTime: STALE,
+  });
+}
+
+export function useEventLeads(projectId: string, funnelId: string, stageId: string, enabled = true) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["event-leads", projectId, funnelId, stageId],
+    queryFn: () =>
+      apiClient<{ leads: EventLead[] }>(`${stageBase(projectId, funnelId, stageId)}/event-leads`),
     enabled,
     staleTime: STALE,
   });

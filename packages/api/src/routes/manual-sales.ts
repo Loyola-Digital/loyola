@@ -20,7 +20,6 @@ import {
   memberkitConnections,
   stageMemberkitEnrollment,
   stageEventProducts,
-  stageEventMirroredSheets,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { enrollMember, decryptMemberkitKey } from "../services/memberkit.js";
@@ -746,33 +745,13 @@ export default fp(async function manualSalesRoutes(fastify) {
       // planilhas de vendas ESPELHADAS (escolhidas de outras etapas do funil).
       // Essas planilhas são do formato padrão (com email), lidas pelo reader
       // normal abaixo. Para as demais etapas, o comportamento segue por subtype.
+      // Story 19.12c: na etapa de Evento, a tabela mostra SÓ as vendas manuais
+      // (vendas reais do evento). As planilhas espelhadas do funil NÃO viram
+      // venda aqui — elas alimentam o POOL DE LEADS (endpoint event-leads) usado
+      // pra buscar/selecionar o cliente na hora de lançar a venda.
       let sheets: (typeof stageSalesSpreadsheets.$inferSelect)[];
       if (stage.stageType === "event") {
-        const mirrored = await fastify.db
-          .select({ sourceSpreadsheetId: stageEventMirroredSheets.sourceSpreadsheetId })
-          .from(stageEventMirroredSheets)
-          .where(eq(stageEventMirroredSheets.eventStageId, params.data.stageId));
-        const ids = mirrored.map((m) => m.sourceSpreadsheetId);
-        const mirroredSheets =
-          ids.length === 0
-            ? []
-            : await fastify.db
-                .select()
-                .from(stageSalesSpreadsheets)
-                .where(inArray(stageSalesSpreadsheets.id, ids));
-        // Compat: etapas de evento legadas (Story 19.10) podem ter conectado a
-        // PRÓPRIA planilha event_sales. Continua lendo-as (reader sem-email)
-        // além das espelhadas, pra não sumir com vendas já cadastradas.
-        const ownEventSheets = await fastify.db
-          .select()
-          .from(stageSalesSpreadsheets)
-          .where(
-            and(
-              eq(stageSalesSpreadsheets.stageId, params.data.stageId),
-              eq(stageSalesSpreadsheets.subtype, "event_sales"),
-            ),
-          );
-        sheets = [...mirroredSheets, ...ownEventSheets];
+        sheets = [];
       } else {
         sheets =
           requestedSubtypes.length === 0
