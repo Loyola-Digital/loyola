@@ -1341,6 +1341,27 @@ export const stageEventClosers = pgTable(
   (table) => [index("idx_stage_event_closers_stage").on(table.stageId)]
 );
 
+// Story 19.12b — planilhas de vendas do funil "espelhadas" na etapa de Evento.
+// O evento NÃO conecta planilha própria: ele escolhe quais planilhas já
+// conectadas em outras etapas do funil devem aparecer agregadas aqui.
+export const stageEventMirroredSheets = pgTable(
+  "stage_event_mirrored_sheets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    eventStageId: uuid("event_stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    sourceSpreadsheetId: uuid("source_spreadsheet_id")
+      .notNull()
+      .references(() => stageSalesSpreadsheets.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_stage_event_mirrored_event_stage").on(table.eventStageId),
+    uniqueIndex("uq_stage_event_mirrored").on(table.eventStageId, table.sourceSpreadsheetId),
+  ]
+);
+
 // Story 35.6 (Epic 35 fase 2 — webhooks de assinatura). A Public API da Kiwify
 // NÃO expõe estado de assinatura (sem /subscriptions); o estado real (vigente,
 // cancelada, atrasada, reembolsada) chega via WEBHOOKS. Esta tabela é o log BRUTO

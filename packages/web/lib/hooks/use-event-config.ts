@@ -2,7 +2,13 @@
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { EventProduct, EventCloser, EventProductInput, EventCloserInput } from "@loyola-x/shared";
+import type {
+  EventProduct,
+  EventCloser,
+  EventProductInput,
+  EventCloserInput,
+  FunnelSalesSpreadsheetRef,
+} from "@loyola-x/shared";
 
 // Story 19.12 — config da etapa de Evento: produtos (com turma) e closers.
 const STALE = 60 * 1000;
@@ -57,6 +63,46 @@ export function useSetEventClosers(projectId: string, funnelId: string, stageId:
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["event-closers", projectId, funnelId, stageId] });
+    },
+  });
+}
+
+// ---- Espelhamento de planilhas do funil (Story 19.12b) ----
+export function useFunnelSalesSpreadsheets(projectId: string, funnelId: string, enabled = true) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["funnel-sales-spreadsheets", projectId, funnelId],
+    queryFn: () =>
+      apiClient<{ spreadsheets: FunnelSalesSpreadsheetRef[] }>(
+        `/api/projects/${projectId}/funnels/${funnelId}/sales-spreadsheets-all`,
+      ),
+    enabled,
+    staleTime: STALE,
+  });
+}
+
+export function useEventMirroredSheets(projectId: string, funnelId: string, stageId: string) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["event-mirrored-sheets", projectId, funnelId, stageId],
+    queryFn: () =>
+      apiClient<{ sourceSpreadsheetIds: string[] }>(`${stageBase(projectId, funnelId, stageId)}/event-mirrored-sheets`),
+    staleTime: STALE,
+  });
+}
+
+export function useSetEventMirroredSheets(projectId: string, funnelId: string, stageId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sourceSpreadsheetIds: string[]) =>
+      apiClient<{ sourceSpreadsheetIds: string[] }>(`${stageBase(projectId, funnelId, stageId)}/event-mirrored-sheets`, {
+        method: "PUT",
+        body: JSON.stringify({ sourceSpreadsheetIds }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event-mirrored-sheets", projectId, funnelId, stageId] });
+      qc.invalidateQueries({ queryKey: ["all-sales", projectId, funnelId, stageId] });
     },
   });
 }

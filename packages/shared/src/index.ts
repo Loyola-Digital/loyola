@@ -124,4 +124,5 @@ export type {
   EventCloser,
   EventProductInput,
   EventCloserInput,
+  FunnelSalesSpreadsheetRef,
 } from "./types/event-config.js";

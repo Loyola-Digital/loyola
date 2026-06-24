@@ -2,11 +2,13 @@
 // MemberKit cada) e closers cadastrados. PUT substitui a lista inteira.
 
 import { z } from "zod";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, ne, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   stageEventProducts,
   stageEventClosers,
+  stageEventMirroredSheets,
+  stageSalesSpreadsheets,
   funnelStages,
   funnels,
   projects,
@@ -33,6 +35,15 @@ const productsBodySchema = z.object({
 
 const closersBodySchema = z.object({
   closers: z.array(z.object({ name: z.string().trim().min(1).max(255) })).max(200),
+});
+
+const funnelParamsSchema = z.object({
+  projectId: z.string().uuid(),
+  funnelId: z.string().uuid(),
+});
+
+const mirrorBodySchema = z.object({
+  sourceSpreadsheetIds: z.array(z.string().uuid()).max(100),
 });
 
 export default fp(async function stageEventConfigRoutes(fastify) {
@@ -208,5 +219,112 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       .orderBy(asc(stageEventClosers.sortOrder), asc(stageEventClosers.name));
 
     return { closers: rows.map((r) => ({ id: r.id, stageId: r.stageId, name: r.name, sortOrder: r.sortOrder })) };
+  });
+
+  // ---- PLANILHAS DO FUNIL (para o evento escolher quais espelhar) ----
+  // Lista todas as planilhas de vendas conectadas em qualquer etapa do funil,
+  // exceto as do tipo event_sales (legado) — com o nome da etapa de origem.
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/sales-spreadsheets-all",
+    async (request, reply) => {
+      const params = funnelParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      // Confirma que o funil pertence ao projeto (evita IDOR cross-projeto).
+      const [funnel] = await fastify.db
+        .select({ id: funnels.id })
+        .from(funnels)
+        .where(and(eq(funnels.id, params.data.funnelId), eq(funnels.projectId, params.data.projectId)))
+        .limit(1);
+      if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
+
+      const rows = await fastify.db
+        .select({
+          id: stageSalesSpreadsheets.id,
+          stageId: stageSalesSpreadsheets.stageId,
+          stageName: funnelStages.name,
+          subtype: stageSalesSpreadsheets.subtype,
+          spreadsheetName: stageSalesSpreadsheets.spreadsheetName,
+          sheetName: stageSalesSpreadsheets.sheetName,
+        })
+        .from(stageSalesSpreadsheets)
+        .innerJoin(funnelStages, eq(funnelStages.id, stageSalesSpreadsheets.stageId))
+        .where(eq(funnelStages.funnelId, params.data.funnelId))
+        .orderBy(asc(funnelStages.sortOrder), asc(stageSalesSpreadsheets.subtype));
+
+      return {
+        spreadsheets: rows
+          .filter((r) => r.subtype !== "event_sales")
+          .map((r) => ({
+            id: r.id,
+            stageId: r.stageId,
+            stageName: r.stageName,
+            subtype: r.subtype,
+            spreadsheetName: r.spreadsheetName,
+            sheetName: r.sheetName,
+          })),
+      };
+    },
+  );
+
+  // ---- ESPELHAMENTO (quais planilhas do funil aparecem no evento) ----
+  fastify.get(`${base}/event-mirrored-sheets`, async (request, reply) => {
+    const params = stageParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+    const rows = await fastify.db
+      .select({ sourceSpreadsheetId: stageEventMirroredSheets.sourceSpreadsheetId })
+      .from(stageEventMirroredSheets)
+      .where(eq(stageEventMirroredSheets.eventStageId, params.data.stageId));
+
+    return { sourceSpreadsheetIds: rows.map((r) => r.sourceSpreadsheetId) };
+  });
+
+  fastify.put(`${base}/event-mirrored-sheets`, async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const params = stageParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const body = mirrorBodySchema.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+    // Valida que as planilhas escolhidas pertencem ao MESMO funil (segurança).
+    const ids = Array.from(new Set(body.data.sourceSpreadsheetIds));
+    let validIds: string[] = [];
+    if (ids.length > 0) {
+      const valid = await fastify.db
+        .select({ id: stageSalesSpreadsheets.id })
+        .from(stageSalesSpreadsheets)
+        .innerJoin(funnelStages, eq(funnelStages.id, stageSalesSpreadsheets.stageId))
+        .where(
+          and(
+            eq(funnelStages.funnelId, params.data.funnelId),
+            inArray(stageSalesSpreadsheets.id, ids),
+            // Não espelhar planilhas event_sales (alinha com o filtro do GET).
+            ne(stageSalesSpreadsheets.subtype, "event_sales"),
+          ),
+        );
+      validIds = valid.map((v) => v.id);
+    }
+
+    await fastify.db.transaction(async (tx) => {
+      await tx.delete(stageEventMirroredSheets).where(eq(stageEventMirroredSheets.eventStageId, params.data.stageId));
+      if (validIds.length > 0) {
+        await tx.insert(stageEventMirroredSheets).values(
+          validIds.map((sid) => ({ eventStageId: params.data.stageId, sourceSpreadsheetId: sid })),
+        );
+      }
+    });
+
+    return { sourceSpreadsheetIds: validIds };
   });
 });

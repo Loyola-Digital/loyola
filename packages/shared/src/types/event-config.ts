@@ -32,3 +32,16 @@ export interface EventProductInput {
 export interface EventCloserInput {
   name: string;
 }
+
+/**
+ * Story 19.12b — planilha de vendas conectada em alguma etapa do funil,
+ * candidata a ser "espelhada" na etapa de Evento.
+ */
+export interface FunnelSalesSpreadsheetRef {
+  id: string;
+  stageId: string;
+  stageName: string;
+  subtype: string;
+  spreadsheetName: string;
+  sheetName: string;
+}

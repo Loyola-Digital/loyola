@@ -40,7 +40,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
-import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-spreadsheet-section";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import {
@@ -61,6 +60,9 @@ import {
   useSetEventProducts,
   useEventClosers,
   useSetEventClosers,
+  useFunnelSalesSpreadsheets,
+  useEventMirroredSheets,
+  useSetEventMirroredSheets,
 } from "@/lib/hooks/use-event-config";
 
 interface EventStageViewProps {
@@ -238,7 +240,7 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
             <CalendarDays className="h-3.5 w-3.5" /> Vendas
           </TabsTrigger>
           <TabsTrigger value="planilha" className="gap-1.5">
-            Planilha
+            Planilhas do Funil
           </TabsTrigger>
           <TabsTrigger value="config" className="gap-1.5">
             <GraduationCap className="h-3.5 w-3.5" /> Configuração
@@ -286,15 +288,9 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
           )}
         </TabsContent>
 
-        {/* PLANILHA */}
+        {/* PLANILHAS DO FUNIL — escolher quais espelhar no evento */}
         <TabsContent value="planilha" className="mt-6">
-          <StageSalesSpreadsheetSection
-            projectId={projectId}
-            funnelId={funnelId}
-            stageId={stage.id}
-            subtype="event_sales"
-            title="Planilha do Evento"
-          />
+          <MirrorSheetsTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
         </TabsContent>
 
         {/* CONFIGURAÇÃO — produtos (com turma) + closers + auto-matrícula */}
@@ -678,6 +674,78 @@ function EventConfigTab({ projectId, funnelId, stageId }: { projectId: string; f
           {setCfg.isPending ? "Salvando..." : "Salvar auto-matrícula"}
         </Button>
       </section>
+    </div>
+  );
+}
+
+const MIRROR_SUBTYPE_LABELS: Record<string, string> = {
+  capture: "Captação",
+  main_product: "Produto Principal",
+  sales: "Vendas",
+  tmb: "TMB",
+};
+
+function MirrorSheetsTab({ projectId, funnelId, stageId }: { projectId: string; funnelId: string; stageId: string }) {
+  const sheetsQ = useFunnelSalesSpreadsheets(projectId, funnelId);
+  const mirroredQ = useEventMirroredSheets(projectId, funnelId, stageId);
+  const setMirror = useSetEventMirroredSheets(projectId, funnelId, stageId);
+
+  const [selected, setSelected] = useState<string[]>([]);
+  const [hydrated, setHydrated] = useState(false);
+  if (mirroredQ.data && !hydrated) {
+    setHydrated(true);
+    setSelected(mirroredQ.data.sourceSpreadsheetIds);
+  }
+
+  const sheets = sheetsQ.data?.spreadsheets ?? [];
+
+  function toggle(id: string) {
+    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  }
+
+  function save() {
+    setMirror.mutate(selected, {
+      onSuccess: () => toast.success("Planilhas espelhadas salvas"),
+      onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
+    });
+  }
+
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <p className="text-sm text-muted-foreground">
+        Escolha quais planilhas de vendas já conectadas no funil (captação paga, vendas, etc.) devem
+        aparecer <strong>agregadas</strong> nesta etapa de evento. As vendas manuais lançadas aqui entram junto.
+      </p>
+
+      {sheetsQ.isLoading ? (
+        <Skeleton className="h-24" />
+      ) : sheets.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
+          Nenhuma planilha de vendas conectada no funil ainda. Conecte as planilhas nas etapas de
+          Captação Paga / Vendas e elas aparecerão aqui para espelhar.
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {sheets.map((s) => (
+            <label
+              key={s.id}
+              className="flex items-center gap-2 rounded-md border border-border/40 px-3 py-2 text-sm cursor-pointer hover:bg-muted/30"
+            >
+              <input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggle(s.id)} />
+              <span className="flex-1">
+                <span className="font-medium">{s.stageName}</span>
+                <span className="text-muted-foreground">
+                  {" "}· {MIRROR_SUBTYPE_LABELS[s.subtype] ?? s.subtype} — {s.spreadsheetName} / {s.sheetName}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+
+      <Button size="sm" onClick={save} disabled={setMirror.isPending || !hydrated}>
+        {setMirror.isPending ? "Salvando..." : "Salvar seleção"}
+      </Button>
     </div>
   );
 }
