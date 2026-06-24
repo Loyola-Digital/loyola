@@ -19,6 +19,8 @@ import {
   stageSalesSpreadsheets,
   memberkitConnections,
   stageMemberkitEnrollment,
+  stageEventProducts,
+  stageEventMirroredSheets,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { enrollMember, decryptMemberkitKey } from "../services/memberkit.js";
@@ -244,7 +246,36 @@ export default fp(async function manualSalesRoutes(fastify) {
         .where(eq(stageMemberkitEnrollment.stageId, sale.stageId))
         .limit(1);
 
-      if (!conn || !cfg || !cfg.autoEnroll || cfg.classroomIds.length === 0) {
+      if (!conn || !cfg || !cfg.autoEnroll) {
+        await setMemberkitStatus(sale.id, "skipped", null, null);
+        return "skipped";
+      }
+
+      // Story 19.12: a turma vem do PRODUTO vendido (cada produto tem a sua).
+      // - Produto CADASTRADO: honra exatamente a turma dele. classroomId null =
+      //   "sem matrícula" intencional → [] → skipped (não cai no fallback).
+      // - Produto NÃO cadastrado (ex: venda legada / fora da lista): usa a turma
+      //   default da etapa (cfg.classroomIds) como fallback.
+      let classroomIds: number[] = cfg.classroomIds ?? [];
+      if (sale.product) {
+        const [prod] = await fastify.db
+          .select({ classroomId: stageEventProducts.memberkitClassroomId })
+          .from(stageEventProducts)
+          .where(
+            and(
+              eq(stageEventProducts.stageId, sale.stageId),
+              eq(stageEventProducts.name, sale.product),
+            ),
+          )
+          .orderBy(asc(stageEventProducts.sortOrder))
+          .limit(1);
+        if (prod) {
+          // Produto cadastrado encontrado → turma dele é a verdade (null = skip).
+          classroomIds = prod.classroomId != null ? [prod.classroomId] : [];
+        }
+      }
+
+      if (classroomIds.length === 0) {
         await setMemberkitStatus(sale.id, "skipped", null, null);
         return "skipped";
       }
@@ -261,7 +292,7 @@ export default fp(async function manualSalesRoutes(fastify) {
         fullName: sale.customerName,
         email: sale.customerEmail,
         status: cfg.status as MemberkitMemberStatus,
-        classroomIds: cfg.classroomIds,
+        classroomIds,
       });
 
       if (result.ok) {
@@ -711,18 +742,51 @@ export default fp(async function manualSalesRoutes(fastify) {
                 (VALID_SALE_SUBTYPES as readonly string[]).includes(s),
               );
 
-      const sheets =
-        requestedSubtypes.length === 0
-          ? []
-          : await fastify.db
-              .select()
-              .from(stageSalesSpreadsheets)
-              .where(
-                and(
-                  eq(stageSalesSpreadsheets.stageId, params.data.stageId),
-                  inArray(stageSalesSpreadsheets.subtype, requestedSubtypes),
-                ),
-              );
+      // Story 19.12b: a etapa de Evento NÃO tem planilha própria — agrega as
+      // planilhas de vendas ESPELHADAS (escolhidas de outras etapas do funil).
+      // Essas planilhas são do formato padrão (com email), lidas pelo reader
+      // normal abaixo. Para as demais etapas, o comportamento segue por subtype.
+      let sheets: (typeof stageSalesSpreadsheets.$inferSelect)[];
+      if (stage.stageType === "event") {
+        const mirrored = await fastify.db
+          .select({ sourceSpreadsheetId: stageEventMirroredSheets.sourceSpreadsheetId })
+          .from(stageEventMirroredSheets)
+          .where(eq(stageEventMirroredSheets.eventStageId, params.data.stageId));
+        const ids = mirrored.map((m) => m.sourceSpreadsheetId);
+        const mirroredSheets =
+          ids.length === 0
+            ? []
+            : await fastify.db
+                .select()
+                .from(stageSalesSpreadsheets)
+                .where(inArray(stageSalesSpreadsheets.id, ids));
+        // Compat: etapas de evento legadas (Story 19.10) podem ter conectado a
+        // PRÓPRIA planilha event_sales. Continua lendo-as (reader sem-email)
+        // além das espelhadas, pra não sumir com vendas já cadastradas.
+        const ownEventSheets = await fastify.db
+          .select()
+          .from(stageSalesSpreadsheets)
+          .where(
+            and(
+              eq(stageSalesSpreadsheets.stageId, params.data.stageId),
+              eq(stageSalesSpreadsheets.subtype, "event_sales"),
+            ),
+          );
+        sheets = [...mirroredSheets, ...ownEventSheets];
+      } else {
+        sheets =
+          requestedSubtypes.length === 0
+            ? []
+            : await fastify.db
+                .select()
+                .from(stageSalesSpreadsheets)
+                .where(
+                  and(
+                    eq(stageSalesSpreadsheets.stageId, params.data.stageId),
+                    inArray(stageSalesSpreadsheets.subtype, requestedSubtypes),
+                  ),
+                );
+      }
 
       const seenDedup = new Set<string>();
       for (const sheet of sheets) {

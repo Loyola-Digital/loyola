@@ -40,7 +40,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
-import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-spreadsheet-section";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import {
@@ -56,6 +55,15 @@ import {
   useSetStageMemberkitEnrollment,
   useEnrollSaleMemberkit,
 } from "@/lib/hooks/use-memberkit";
+import {
+  useEventProducts,
+  useSetEventProducts,
+  useEventClosers,
+  useSetEventClosers,
+  useFunnelSalesSpreadsheets,
+  useEventMirroredSheets,
+  useSetEventMirroredSheets,
+} from "@/lib/hooks/use-event-config";
 
 interface EventStageViewProps {
   projectId: string;
@@ -232,10 +240,10 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
             <CalendarDays className="h-3.5 w-3.5" /> Vendas
           </TabsTrigger>
           <TabsTrigger value="planilha" className="gap-1.5">
-            Planilha
+            Planilhas do Funil
           </TabsTrigger>
-          <TabsTrigger value="memberkit" className="gap-1.5">
-            <GraduationCap className="h-3.5 w-3.5" /> MemberKit
+          <TabsTrigger value="config" className="gap-1.5">
+            <GraduationCap className="h-3.5 w-3.5" /> Configuração
           </TabsTrigger>
         </TabsList>
 
@@ -280,20 +288,14 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
           )}
         </TabsContent>
 
-        {/* PLANILHA */}
+        {/* PLANILHAS DO FUNIL — escolher quais espelhar no evento */}
         <TabsContent value="planilha" className="mt-6">
-          <StageSalesSpreadsheetSection
-            projectId={projectId}
-            funnelId={funnelId}
-            stageId={stage.id}
-            subtype="event_sales"
-            title="Planilha do Evento"
-          />
+          <MirrorSheetsTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
         </TabsContent>
 
-        {/* MEMBERKIT */}
-        <TabsContent value="memberkit" className="mt-6">
-          <MemberkitEnrollmentConfig projectId={projectId} funnelId={funnelId} stageId={stage.id} />
+        {/* CONFIGURAÇÃO — produtos (com turma) + closers + auto-matrícula */}
+        <TabsContent value="config" className="mt-6">
+          <EventConfigTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
         </TabsContent>
       </Tabs>
 
@@ -470,86 +472,279 @@ function SalesTable({ sales, manualMap, days, onEdit, onDelete, onEnroll, enroll
   );
 }
 
-function MemberkitEnrollmentConfig({ projectId, funnelId, stageId }: { projectId: string; funnelId: string; stageId: string }) {
+function EventConfigTab({ projectId, funnelId, stageId }: { projectId: string; funnelId: string; stageId: string }) {
   const conn = useMemberkitConnection(projectId);
   const connected = conn.data?.connected === true;
   const classrooms = useMemberkitClassrooms(projectId, connected);
+  const classroomList = classrooms.data?.classrooms ?? [];
+
+  // Auto-matrícula (toggle por etapa)
   const cfg = useStageMemberkitEnrollment(projectId, funnelId, stageId);
   const setCfg = useSetStageMemberkitEnrollment(projectId, funnelId, stageId);
-
-  const [classroomId, setClassroomId] = useState<string>("");
   const [autoEnroll, setAutoEnroll] = useState(true);
-
-  // Hidrata o form quando a config carrega.
-  const cfgData = cfg.data;
-  const hydratedKey = cfgData ? `${cfgData.classroomIds[0] ?? ""}:${cfgData.autoEnroll}` : "";
-  const [lastHydrated, setLastHydrated] = useState<string | null>(null);
-  if (cfgData && lastHydrated !== hydratedKey) {
-    setLastHydrated(hydratedKey);
-    setClassroomId(cfgData.classroomIds[0] ? String(cfgData.classroomIds[0]) : "");
-    setAutoEnroll(cfgData.autoEnroll);
+  const [cfgHydrated, setCfgHydrated] = useState(false);
+  if (cfg.data && !cfgHydrated) {
+    setCfgHydrated(true);
+    setAutoEnroll(cfg.data.autoEnroll);
   }
 
-  function handleSave() {
-    const ids = classroomId ? [Number(classroomId)] : [];
-    if (autoEnroll && ids.length === 0) {
-      toast.error("Escolha uma turma para a matrícula automática");
-      return;
-    }
+  // Produtos (nome + turma)
+  const productsQ = useEventProducts(projectId, funnelId, stageId);
+  const setProductsMut = useSetEventProducts(projectId, funnelId, stageId);
+  const [products, setProducts] = useState<{ name: string; classroomId: string }[]>([]);
+  const [prodHydrated, setProdHydrated] = useState(false);
+  if (productsQ.data && !prodHydrated) {
+    setProdHydrated(true);
+    setProducts(
+      productsQ.data.products.map((p) => ({
+        name: p.name,
+        classroomId: p.memberkitClassroomId ? String(p.memberkitClassroomId) : "",
+      })),
+    );
+  }
+
+  // Closers (nomes)
+  const closersQ = useEventClosers(projectId, funnelId, stageId);
+  const setClosersMut = useSetEventClosers(projectId, funnelId, stageId);
+  const [closers, setClosers] = useState<string[]>([]);
+  const [closHydrated, setClosHydrated] = useState(false);
+  if (closersQ.data && !closHydrated) {
+    setClosHydrated(true);
+    setClosers(closersQ.data.closers.map((c) => c.name));
+  }
+
+  function saveAuto() {
     setCfg.mutate(
-      { classroomIds: ids, status: "active", autoEnroll },
+      { classroomIds: cfg.data?.classroomIds ?? [], status: "active", autoEnroll },
       {
-        onSuccess: () => toast.success("Configuração de matrícula salva"),
+        onSuccess: () => toast.success("Auto-matrícula salva"),
         onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
       },
     );
   }
 
-  if (!connected) {
-    return (
-      <div className="rounded-lg border border-dashed border-border/60 p-6 text-sm text-muted-foreground space-y-2">
-        <p className="font-medium text-foreground">MemberKit não conectado neste projeto.</p>
-        <p>
-          Conecte a API key do MemberKit na página <strong>Assinaturas</strong> do projeto. Depois volte aqui
-          para escolher a turma de matrícula.
-        </p>
-      </div>
-    );
+  function saveProducts() {
+    // Preserva o nome da turma já salvo (por classroomId) caso a lista de turmas
+    // ainda não tenha carregado — evita gravar memberkitClassroomName: null.
+    const prevNameById = new Map<string, string>();
+    for (const p of productsQ.data?.products ?? []) {
+      if (p.memberkitClassroomId != null && p.memberkitClassroomName) {
+        prevNameById.set(String(p.memberkitClassroomId), p.memberkitClassroomName);
+      }
+    }
+    const payload = products
+      .filter((p) => p.name.trim())
+      .map((p) => {
+        const cl = classroomList.find((c) => String(c.id) === p.classroomId);
+        return {
+          name: p.name.trim(),
+          memberkitClassroomId: p.classroomId ? Number(p.classroomId) : null,
+          memberkitClassroomName: cl?.name ?? prevNameById.get(p.classroomId) ?? null,
+        };
+      });
+    setProductsMut.mutate(payload, {
+      onSuccess: () => toast.success("Produtos salvos"),
+      onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar produtos"),
+    });
+  }
+
+  function saveClosers() {
+    const payload = closers.filter((c) => c.trim()).map((c) => ({ name: c.trim() }));
+    setClosersMut.mutate(payload, {
+      onSuccess: () => toast.success("Closers salvos"),
+      onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar closers"),
+    });
   }
 
   return (
-    <div className="space-y-4 max-w-lg">
+    <div className="space-y-8 max-w-2xl">
+      {/* Status da conexão MemberKit */}
+      {connected ? (
+        <p className="text-xs text-emerald-600 dark:text-emerald-400">
+          ✓ MemberKit conectado neste projeto — escolha a turma de cada produto abaixo.
+        </p>
+      ) : (
+        <div className="rounded-lg border border-dashed border-amber-400/60 bg-amber-50/40 dark:bg-amber-900/10 p-4 text-sm space-y-1">
+          <p className="font-medium">MemberKit não conectado.</p>
+          <p className="text-muted-foreground">
+            Conecte a API key do MemberKit na página <strong>Assinaturas</strong> do projeto para poder mapear as turmas. Você ainda pode cadastrar produtos/closers aqui.
+          </p>
+        </div>
+      )}
+
+      {/* PRODUTOS */}
+      <section className="space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold">Produtos vendidos</h3>
+          <p className="text-xs text-muted-foreground">
+            Cadastre os produtos do evento. Cada produto pode ter uma <strong>turma</strong> diferente no MemberKit — quem compra é matriculado nela.
+          </p>
+        </div>
+        <div className="space-y-2">
+          {products.map((p, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Input
+                value={p.name}
+                onChange={(e) => setProducts((arr) => arr.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
+                placeholder="Nome do produto"
+                className="flex-1"
+              />
+              <Select
+                value={p.classroomId || "none"}
+                onValueChange={(v) => setProducts((arr) => arr.map((x, j) => (j === i ? { ...x, classroomId: v === "none" ? "" : v } : x)))}
+              >
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="Turma MemberKit" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— Sem turma —</SelectItem>
+                  {classroomList.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {c.name}{c.courseName ? ` · ${c.courseName}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <button
+                type="button"
+                onClick={() => setProducts((arr) => arr.filter((_, j) => j !== i))}
+                className="text-muted-foreground hover:text-destructive p-1"
+                aria-label="Remover produto"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setProducts((arr) => [...arr, { name: "", classroomId: "" }])}>
+            <Plus className="h-3.5 w-3.5" /> Adicionar produto
+          </Button>
+          <Button size="sm" onClick={saveProducts} disabled={setProductsMut.isPending || !prodHydrated}>
+            {setProductsMut.isPending ? "Salvando..." : "Salvar produtos"}
+          </Button>
+        </div>
+      </section>
+
+      {/* CLOSERS */}
+      <section className="space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold">Closers</h3>
+          <p className="text-xs text-muted-foreground">
+            Cadastre os closers do evento. No lançamento da venda, o closer é escolhido desta lista.
+          </p>
+        </div>
+        <div className="space-y-2">
+          {closers.map((c, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Input
+                value={c}
+                onChange={(e) => setClosers((arr) => arr.map((x, j) => (j === i ? e.target.value : x)))}
+                placeholder="Nome do closer"
+                className="flex-1 max-w-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setClosers((arr) => arr.filter((_, j) => j !== i))}
+                className="text-muted-foreground hover:text-destructive p-1"
+                aria-label="Remover closer"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setClosers((arr) => [...arr, ""])}>
+            <Plus className="h-3.5 w-3.5" /> Adicionar closer
+          </Button>
+          <Button size="sm" onClick={saveClosers} disabled={setClosersMut.isPending || !closHydrated}>
+            {setClosersMut.isPending ? "Salvando..." : "Salvar closers"}
+          </Button>
+        </div>
+      </section>
+
+      {/* AUTO-MATRÍCULA */}
+      <section className="space-y-2 border-t border-border/40 pt-4">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={autoEnroll} onChange={(e) => setAutoEnroll(e.target.checked)} />
+          Matricular automaticamente no MemberKit ao lançar a venda
+        </label>
+        <Button size="sm" onClick={saveAuto} disabled={setCfg.isPending || !cfgHydrated}>
+          {setCfg.isPending ? "Salvando..." : "Salvar auto-matrícula"}
+        </Button>
+      </section>
+    </div>
+  );
+}
+
+const MIRROR_SUBTYPE_LABELS: Record<string, string> = {
+  capture: "Captação",
+  main_product: "Produto Principal",
+  sales: "Vendas",
+  tmb: "TMB",
+};
+
+function MirrorSheetsTab({ projectId, funnelId, stageId }: { projectId: string; funnelId: string; stageId: string }) {
+  const sheetsQ = useFunnelSalesSpreadsheets(projectId, funnelId);
+  const mirroredQ = useEventMirroredSheets(projectId, funnelId, stageId);
+  const setMirror = useSetEventMirroredSheets(projectId, funnelId, stageId);
+
+  const [selected, setSelected] = useState<string[]>([]);
+  const [hydrated, setHydrated] = useState(false);
+  if (mirroredQ.data && !hydrated) {
+    setHydrated(true);
+    setSelected(mirroredQ.data.sourceSpreadsheetIds);
+  }
+
+  const sheets = sheetsQ.data?.spreadsheets ?? [];
+
+  function toggle(id: string) {
+    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  }
+
+  function save() {
+    setMirror.mutate(selected, {
+      onSuccess: () => toast.success("Planilhas espelhadas salvas"),
+      onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
+    });
+  }
+
+  return (
+    <div className="space-y-4 max-w-2xl">
       <p className="text-sm text-muted-foreground">
-        Escolha a turma do MemberKit onde o comprador será matriculado ao lançar uma venda nesta etapa.
+        Escolha quais planilhas de vendas já conectadas no funil (captação paga, vendas, etc.) devem
+        aparecer <strong>agregadas</strong> nesta etapa de evento. As vendas manuais lançadas aqui entram junto.
       </p>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="memberkit-classroom">Turma de matrícula</Label>
-        {classrooms.isLoading ? (
-          <Skeleton className="h-9" />
-        ) : (
-          <Select value={classroomId} onValueChange={setClassroomId}>
-            <SelectTrigger id="memberkit-classroom">
-              <SelectValue placeholder="Selecione a turma" />
-            </SelectTrigger>
-            <SelectContent>
-              {(classrooms.data?.classrooms ?? []).map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>
-                  {c.name}{c.courseName ? ` · ${c.courseName}` : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </div>
+      {sheetsQ.isLoading ? (
+        <Skeleton className="h-24" />
+      ) : sheets.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
+          Nenhuma planilha de vendas conectada no funil ainda. Conecte as planilhas nas etapas de
+          Captação Paga / Vendas e elas aparecerão aqui para espelhar.
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {sheets.map((s) => (
+            <label
+              key={s.id}
+              className="flex items-center gap-2 rounded-md border border-border/40 px-3 py-2 text-sm cursor-pointer hover:bg-muted/30"
+            >
+              <input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggle(s.id)} />
+              <span className="flex-1">
+                <span className="font-medium">{s.stageName}</span>
+                <span className="text-muted-foreground">
+                  {" "}· {MIRROR_SUBTYPE_LABELS[s.subtype] ?? s.subtype} — {s.spreadsheetName} / {s.sheetName}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
 
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={autoEnroll} onChange={(e) => setAutoEnroll(e.target.checked)} />
-        Matricular automaticamente ao lançar a venda
-      </label>
-
-      <Button size="sm" onClick={handleSave} disabled={setCfg.isPending}>
-        {setCfg.isPending ? "Salvando..." : "Salvar configuração"}
+      <Button size="sm" onClick={save} disabled={setMirror.isPending || !hydrated}>
+        {setMirror.isPending ? "Salvando..." : "Salvar seleção"}
       </Button>
     </div>
   );

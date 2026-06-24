@@ -1303,6 +1303,65 @@ export const stageMemberkitEnrollment = pgTable(
   (table) => [index("idx_stage_memberkit_enrollment_stage").on(table.stageId)]
 );
 
+// ============================================================
+// Story 19.12 — Config da etapa de Evento Presencial:
+// produtos vendidos (cada um com sua turma MemberKit) + closers cadastrados.
+// O lançamento de venda no evento só permite escolher produtos/closers daqui.
+// ============================================================
+export const stageEventProducts = pgTable(
+  "stage_event_products",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 255 }).notNull(),
+    /** Turma do MemberKit onde matricular quem compra este produto (null = sem matrícula). */
+    memberkitClassroomId: integer("memberkit_classroom_id"),
+    memberkitClassroomName: varchar("memberkit_classroom_name", { length: 255 }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_stage_event_products_stage").on(table.stageId)]
+);
+
+export const stageEventClosers = pgTable(
+  "stage_event_closers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 255 }).notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_stage_event_closers_stage").on(table.stageId)]
+);
+
+// Story 19.12b — planilhas de vendas do funil "espelhadas" na etapa de Evento.
+// O evento NÃO conecta planilha própria: ele escolhe quais planilhas já
+// conectadas em outras etapas do funil devem aparecer agregadas aqui.
+export const stageEventMirroredSheets = pgTable(
+  "stage_event_mirrored_sheets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    eventStageId: uuid("event_stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    sourceSpreadsheetId: uuid("source_spreadsheet_id")
+      .notNull()
+      .references(() => stageSalesSpreadsheets.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_stage_event_mirrored_event_stage").on(table.eventStageId),
+    uniqueIndex("uq_stage_event_mirrored").on(table.eventStageId, table.sourceSpreadsheetId),
+  ]
+);
+
 // Story 35.6 (Epic 35 fase 2 — webhooks de assinatura). A Public API da Kiwify
 // NÃO expõe estado de assinatura (sem /subscriptions); o estado real (vigente,
 // cancelada, atrasada, reembolsada) chega via WEBHOOKS. Esta tabela é o log BRUTO

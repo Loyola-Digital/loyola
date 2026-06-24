@@ -118,3 +118,11 @@ export type {
   StageMemberkitEnrollment,
   SetStageMemberkitEnrollmentInput,
 } from "./types/memberkit.js";
+
+export type {
+  EventProduct,
+  EventCloser,
+  EventProductInput,
+  EventCloserInput,
+  FunnelSalesSpreadsheetRef,
+} from "./types/event-config.js";
