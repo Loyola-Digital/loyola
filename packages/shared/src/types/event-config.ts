@@ -35,7 +35,7 @@ export interface EventCloserInput {
 
 /**
  * Story 19.12b — planilha de vendas conectada em alguma etapa do funil,
- * candidata a ser "espelhada" na etapa de Evento.
+ * candidata a ser "espelhada" como fonte de leads da etapa de Evento.
  */
 export interface FunnelSalesSpreadsheetRef {
   id: string;
@@ -44,4 +44,14 @@ export interface FunnelSalesSpreadsheetRef {
   subtype: string;
   spreadsheetName: string;
   sheetName: string;
+}
+
+/**
+ * Story 19.12c — lead/participante do evento, derivado das planilhas espelhadas.
+ * Usado pra buscar/selecionar o cliente na hora de lançar a venda (chave: email).
+ */
+export interface EventLead {
+  email: string;
+  name: string;
+  phone: string;
 }

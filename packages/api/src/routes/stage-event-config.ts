@@ -14,6 +14,7 @@ import {
   projects,
   projectMembers,
 } from "../db/schema.js";
+import { readSheetData } from "../services/google-sheets.js";
 
 const stageParamsSchema = z.object({
   projectId: z.string().uuid(),
@@ -326,5 +327,76 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     });
 
     return { sourceSpreadsheetIds: validIds };
+  });
+
+  // ---- LEADS DO EVENTO (derivados das planilhas espelhadas) ----
+  // Lê as planilhas espelhadas e devolve a lista de leads (email/nome/telefone)
+  // deduplicada por email — usada pra buscar/selecionar o cliente no lançamento.
+  fastify.get(`${base}/event-leads`, async (request, reply) => {
+    const params = stageParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+    const mirrored = await fastify.db
+      .select({ sourceSpreadsheetId: stageEventMirroredSheets.sourceSpreadsheetId })
+      .from(stageEventMirroredSheets)
+      .where(eq(stageEventMirroredSheets.eventStageId, params.data.stageId));
+    const ids = mirrored.map((m) => m.sourceSpreadsheetId);
+    if (ids.length === 0) return { leads: [] };
+
+    // Defesa em profundidade: re-escopa as planilhas ao funil (não confia só
+    // na validação do PUT). Seleciona só as colunas necessárias (select flat).
+    const sheets = await fastify.db
+      .select({
+        spreadsheetId: stageSalesSpreadsheets.spreadsheetId,
+        sheetName: stageSalesSpreadsheets.sheetName,
+        columnMapping: stageSalesSpreadsheets.columnMapping,
+      })
+      .from(stageSalesSpreadsheets)
+      .innerJoin(funnelStages, eq(funnelStages.id, stageSalesSpreadsheets.stageId))
+      .where(
+        and(
+          eq(funnelStages.funnelId, params.data.funnelId),
+          inArray(stageSalesSpreadsheets.id, ids),
+        ),
+      );
+
+    const MAX_LEADS = 10000;
+    const byEmail = new Map<string, { email: string; name: string; phone: string }>();
+    for (const sheet of sheets) {
+      if (byEmail.size >= MAX_LEADS) break;
+      const mapping = sheet.columnMapping as {
+        email?: string;
+        customerName?: string;
+        telefone?: string;
+      };
+      let data;
+      try {
+        data = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
+      } catch {
+        continue;
+      }
+      const { headers, rows } = data;
+      const emailIdx = mapping.email ? headers.indexOf(mapping.email) : -1;
+      const nameIdx = mapping.customerName ? headers.indexOf(mapping.customerName) : -1;
+      const phoneIdx = mapping.telefone ? headers.indexOf(mapping.telefone) : -1;
+      if (emailIdx === -1) continue;
+      for (const row of rows) {
+        if (byEmail.size >= MAX_LEADS) break;
+        const email = (row[emailIdx] ?? "").trim().toLowerCase();
+        if (!email) continue;
+        if (byEmail.has(email)) continue;
+        byEmail.set(email, {
+          email,
+          name: nameIdx !== -1 ? (row[nameIdx] ?? "").trim() : "",
+          phone: phoneIdx !== -1 ? (row[phoneIdx] ?? "").trim() : "",
+        });
+      }
+    }
+
+    return { leads: Array.from(byEmail.values()) };
   });
 });

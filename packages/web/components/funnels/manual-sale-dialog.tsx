@@ -25,7 +25,7 @@ import {
   useEligibleSellers,
   useUpdateManualSale,
 } from "@/lib/hooks/use-manual-sales";
-import { useEventProducts, useEventClosers } from "@/lib/hooks/use-event-config";
+import { useEventProducts, useEventClosers, useEventLeads } from "@/lib/hooks/use-event-config";
 import type { InvoiceStatus, ManualSale } from "@loyola-x/shared";
 
 interface ManualSaleDialogProps {
@@ -92,8 +92,10 @@ export function ManualSaleDialog({
   // Story 19.12: no evento, Produto e Closer vêm de listas cadastradas na etapa.
   const { data: productsData } = useEventProducts(projectId, funnelId, stageId, isEvent);
   const { data: closersData } = useEventClosers(projectId, funnelId, stageId, isEvent);
+  const { data: leadsData } = useEventLeads(projectId, funnelId, stageId, isEvent);
   const eventProducts = productsData?.products ?? [];
   const eventClosers = closersData?.closers ?? [];
+  const eventLeads = leadsData?.leads ?? [];
   const createMutation = useCreateManualSale(projectId, funnelId, stageId);
   const updateMutation = useUpdateManualSale(projectId, funnelId, stageId);
 
@@ -113,6 +115,22 @@ export function ManualSaleDialog({
   // lista — mostramos o valor atual como item "(não cadastrado)" em vez de vazio.
   const productOutOfList = !!product && !eventProducts.some((p) => p.name === product);
   const closerOutOfList = !!closer && !eventClosers.some((c) => c.name === closer);
+
+  // Story 19.12c: busca de lead/participante (pool das planilhas espelhadas).
+  const [leadSearch, setLeadSearch] = useState("");
+  const leadQuery = leadSearch.trim().toLowerCase();
+  const leadMatches = leadQuery
+    ? eventLeads
+        .filter((l) => l.email.toLowerCase().includes(leadQuery) || l.name.toLowerCase().includes(leadQuery))
+        .slice(0, 8)
+    : [];
+
+  function selectLead(lead: { name: string; email: string; phone: string }) {
+    if (lead.name) setCustomerName(lead.name);
+    setCustomerEmail(lead.email);
+    if (lead.phone) setCustomerPhone(lead.phone);
+    setLeadSearch("");
+  }
 
   // Hidrata form quando entra em modo edição (ou troca de venda em edição)
   useEffect(() => {
@@ -149,6 +167,7 @@ export function ManualSaleDialog({
     setInvoiceStatus("");
     setValorRecebidoInput("");
     setNegociacao("");
+    setLeadSearch("");
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -247,6 +266,43 @@ export function ManualSaleDialog({
           </DialogHeader>
 
           <div className="space-y-3">
+            {isEvent && (
+              <div className="space-y-1.5 rounded-md border border-border/40 bg-muted/20 p-2.5">
+                <Label htmlFor="lead-search" className="text-xs">Buscar participante (lead)</Label>
+                <Input
+                  id="lead-search"
+                  value={leadSearch}
+                  onChange={(e) => setLeadSearch(e.target.value)}
+                  placeholder="Nome ou email do lead da planilha"
+                  autoComplete="off"
+                />
+                {leadQuery && (
+                  <div className="max-h-40 overflow-y-auto rounded-md border border-border/40 divide-y divide-border/30">
+                    {leadMatches.length === 0 ? (
+                      <p className="px-2 py-2 text-xs text-muted-foreground">
+                        Nenhum lead encontrado — preencha os campos abaixo para cadastrar novo.
+                      </p>
+                    ) : (
+                      leadMatches.map((l) => (
+                        <button
+                          key={l.email}
+                          type="button"
+                          onClick={() => selectLead(l)}
+                          className="w-full text-left px-2 py-1.5 text-xs hover:bg-muted/50"
+                        >
+                          <span className="font-medium">{l.name || "(sem nome)"}</span>
+                          <span className="text-muted-foreground"> · {l.email}</span>
+                          {l.phone ? <span className="text-muted-foreground"> · {l.phone}</span> : null}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+                <p className="text-[10px] text-muted-foreground">
+                  Selecione um participante pra autopreencher, ou preencha manualmente pra cadastrar novo.
+                </p>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="customer-name">Nome do cliente *</Label>
               <Input

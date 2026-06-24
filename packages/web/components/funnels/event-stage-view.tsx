@@ -240,7 +240,7 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
             <CalendarDays className="h-3.5 w-3.5" /> Vendas
           </TabsTrigger>
           <TabsTrigger value="planilha" className="gap-1.5">
-            Planilhas do Funil
+            Leads do Evento
           </TabsTrigger>
           <TabsTrigger value="config" className="gap-1.5">
             <GraduationCap className="h-3.5 w-3.5" /> Configuração
@@ -713,8 +713,10 @@ function MirrorSheetsTab({ projectId, funnelId, stageId }: { projectId: string; 
   return (
     <div className="space-y-4 max-w-2xl">
       <p className="text-sm text-muted-foreground">
-        Escolha quais planilhas de vendas já conectadas no funil (captação paga, vendas, etc.) devem
-        aparecer <strong>agregadas</strong> nesta etapa de evento. As vendas manuais lançadas aqui entram junto.
+        Escolha quais planilhas do funil (captação paga, vendas, etc.) fornecem a <strong>lista de
+        leads/participantes</strong> do evento. Esses leads aparecem no buscador ao lançar uma venda
+        (pra selecionar e autopreencher por email) — eles <strong>não</strong> entram como venda na tabela.
+        No futuro também alimentarão o mapa dos closers no evento.
       </p>
 
       {sheetsQ.isLoading ? (
