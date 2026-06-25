@@ -9,6 +9,8 @@ import type {
   EventCloserInput,
   FunnelSalesSpreadsheetRef,
   EventLead,
+  EventMapResponse,
+  SetEventLeadStatusInput,
 } from "@loyola-x/shared";
 
 // Story 19.12 — config da etapa de Evento: produtos (com turma) e closers.
@@ -90,6 +92,31 @@ export function useEventLeads(projectId: string, funnelId: string, stageId: stri
       apiClient<{ leads: EventLead[] }>(`${stageBase(projectId, funnelId, stageId)}/event-leads`),
     enabled,
     staleTime: STALE,
+  });
+}
+
+// ---- Mapa do Evento (Story 19.13) ----
+export function useEventMap(projectId: string, funnelId: string, stageId: string) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["event-map", projectId, funnelId, stageId],
+    queryFn: () => apiClient<EventMapResponse>(`${stageBase(projectId, funnelId, stageId)}/event-map`),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useSetEventLeadStatus(projectId: string, funnelId: string, stageId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SetEventLeadStatusInput) =>
+      apiClient<{ email: string; status: string }>(`${stageBase(projectId, funnelId, stageId)}/event-lead-status`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event-map", projectId, funnelId, stageId] });
+    },
   });
 }
 

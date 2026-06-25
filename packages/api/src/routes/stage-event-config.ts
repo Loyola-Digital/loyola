@@ -8,7 +8,9 @@ import {
   stageEventProducts,
   stageEventClosers,
   stageEventMirroredSheets,
+  stageEventLeadStatus,
   stageSalesSpreadsheets,
+  manualSales,
   funnelStages,
   funnels,
   projects,
@@ -329,26 +331,20 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     return { sourceSpreadsheetIds: validIds };
   });
 
-  // ---- LEADS DO EVENTO (derivados das planilhas espelhadas) ----
-  // Lê as planilhas espelhadas e devolve a lista de leads (email/nome/telefone)
-  // deduplicada por email — usada pra buscar/selecionar o cliente no lançamento.
-  fastify.get(`${base}/event-leads`, async (request, reply) => {
-    const params = stageParamsSchema.safeParse(request.params);
-    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
-    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
-    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
-    const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
-    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
-
+  // Helper: lê as planilhas espelhadas e devolve os leads (email/nome/telefone)
+  // deduplicados por email, re-escopados ao funil (defesa em profundidade).
+  async function loadEventLeads(
+    projectId: string,
+    funnelId: string,
+    stageId: string,
+  ): Promise<{ email: string; name: string; phone: string }[]> {
     const mirrored = await fastify.db
       .select({ sourceSpreadsheetId: stageEventMirroredSheets.sourceSpreadsheetId })
       .from(stageEventMirroredSheets)
-      .where(eq(stageEventMirroredSheets.eventStageId, params.data.stageId));
+      .where(eq(stageEventMirroredSheets.eventStageId, stageId));
     const ids = mirrored.map((m) => m.sourceSpreadsheetId);
-    if (ids.length === 0) return { leads: [] };
+    if (ids.length === 0) return [];
 
-    // Defesa em profundidade: re-escopa as planilhas ao funil (não confia só
-    // na validação do PUT). Seleciona só as colunas necessárias (select flat).
     const sheets = await fastify.db
       .select({
         spreadsheetId: stageSalesSpreadsheets.spreadsheetId,
@@ -357,22 +353,13 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       })
       .from(stageSalesSpreadsheets)
       .innerJoin(funnelStages, eq(funnelStages.id, stageSalesSpreadsheets.stageId))
-      .where(
-        and(
-          eq(funnelStages.funnelId, params.data.funnelId),
-          inArray(stageSalesSpreadsheets.id, ids),
-        ),
-      );
+      .where(and(eq(funnelStages.funnelId, funnelId), inArray(stageSalesSpreadsheets.id, ids)));
 
     const MAX_LEADS = 10000;
     const byEmail = new Map<string, { email: string; name: string; phone: string }>();
     for (const sheet of sheets) {
       if (byEmail.size >= MAX_LEADS) break;
-      const mapping = sheet.columnMapping as {
-        email?: string;
-        customerName?: string;
-        telefone?: string;
-      };
+      const mapping = sheet.columnMapping as { email?: string; customerName?: string; telefone?: string };
       let data;
       try {
         data = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
@@ -396,7 +383,102 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         });
       }
     }
+    return Array.from(byEmail.values());
+  }
 
-    return { leads: Array.from(byEmail.values()) };
+  // ---- LEADS DO EVENTO (buscador no lançamento da venda) ----
+  fastify.get(`${base}/event-leads`, async (request, reply) => {
+    const params = stageParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+    const leads = await loadEventLeads(params.data.projectId, params.data.funnelId, params.data.stageId);
+    return { leads };
+  });
+
+  // ---- MAPA DO EVENTO (leads + status: comprou auto / negativa-negociação-pendente) ----
+  fastify.get(`${base}/event-map`, async (request, reply) => {
+    const params = stageParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+    const leads = await loadEventLeads(params.data.projectId, params.data.funnelId, params.data.stageId);
+
+    // "comprou" = lead cujo email tem venda manual nesta etapa.
+    const saleRows = await fastify.db
+      .select({ email: manualSales.customerEmail })
+      .from(manualSales)
+      .where(eq(manualSales.stageId, params.data.stageId));
+    const boughtEmails = new Set(
+      saleRows.map((r) => (r.email ?? "").trim().toLowerCase()).filter(Boolean),
+    );
+
+    // status manual salvo (negativa / em negociação / pendente)
+    const statusRows = await fastify.db
+      .select({ leadEmail: stageEventLeadStatus.leadEmail, status: stageEventLeadStatus.status })
+      .from(stageEventLeadStatus)
+      .where(eq(stageEventLeadStatus.stageId, params.data.stageId));
+    const storedStatus = new Map(statusRows.map((r) => [r.leadEmail.toLowerCase(), r.status]));
+
+    const summary = { total: leads.length, bought: 0, negotiating: 0, declined: 0, pending: 0 };
+    const out = leads.map((l) => {
+      let status: "pending" | "negotiating" | "bought" | "declined";
+      if (boughtEmails.has(l.email)) {
+        status = "bought";
+      } else {
+        const s = storedStatus.get(l.email);
+        status = s === "negotiating" || s === "declined" ? s : "pending";
+      }
+      if (status === "bought") summary.bought += 1;
+      else if (status === "negotiating") summary.negotiating += 1;
+      else if (status === "declined") summary.declined += 1;
+      else summary.pending += 1;
+      return { ...l, status };
+    });
+
+    return { leads: out, summary };
+  });
+
+  // ---- SET status de um lead (closer marca negativa / em negociação / pendente) ----
+  const leadStatusBodySchema = z.object({
+    email: z.string().trim().email().max(255),
+    status: z.enum(["pending", "negotiating", "declined"]),
+    note: z.string().trim().max(2000).nullable().optional(),
+  });
+
+  fastify.put(`${base}/event-lead-status`, async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const params = stageParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const body = leadStatusBodySchema.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+    const email = body.data.email.toLowerCase();
+    const now = new Date();
+    await fastify.db
+      .insert(stageEventLeadStatus)
+      .values({
+        stageId: params.data.stageId,
+        leadEmail: email,
+        status: body.data.status,
+        note: body.data.note ?? null,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [stageEventLeadStatus.stageId, stageEventLeadStatus.leadEmail],
+        set: { status: body.data.status, note: body.data.note ?? null, updatedAt: now },
+      });
+
+    return { email, status: body.data.status };
   });
 });
