@@ -462,6 +462,11 @@ export default fp(async function manualSalesRoutes(fastify) {
         });
       }
 
+      // Story 19.14: telefone também é obrigatório na venda de evento.
+      if (isEvent && !body.data.customerPhone) {
+        return reply.code(400).send({ error: "Telefone do cliente é obrigatório na etapa de Evento Presencial" });
+      }
+
       // Vendedor: usuário da plataforma (sellerUserId) OU closer texto livre (sellerName).
       let resolvedSellerUserId: string | null = null;
       let resolvedSellerName: string;
@@ -582,6 +587,11 @@ export default fp(async function manualSalesRoutes(fastify) {
           return reply.code(400).send({
             error: "Email é obrigatório na etapa de Evento Presencial (necessário para matrícula no MemberKit)",
           });
+        }
+        const finalPhone =
+          body.data.customerPhone !== undefined ? body.data.customerPhone : existing.customerPhone;
+        if (!finalPhone) {
+          return reply.code(400).send({ error: "Telefone é obrigatório na etapa de Evento Presencial" });
         }
       }
 
