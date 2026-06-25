@@ -764,13 +764,6 @@ function MirrorSheetsTab({ projectId, funnelId, stageId }: { projectId: string; 
   );
 }
 
-const MAP_STATUS_META: Record<EventLeadStatus, { label: string; cls: string }> = {
-  bought: { label: "Comprou", cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
-  negotiating: { label: "Em negociação", cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
-  declined: { label: "Negativa", cls: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
-  pending: { label: "Pendente", cls: "bg-muted text-muted-foreground" },
-};
-
 function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funnelId: string; stageId: string }) {
   const { data, isLoading } = useEventMap(projectId, funnelId, stageId);
   const setStatus = useSetEventLeadStatus(projectId, funnelId, stageId);
@@ -793,22 +786,25 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
     );
   }
 
+  // Tema premium (escuro/dourado), no estilo do relatório — escopado a esta aba.
   if (isLoading) {
     return (
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
+      <div className="rounded-2xl bg-[#0a0e1a] border border-[#1f2937] p-6 space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-20 rounded-xl bg-[#111827] animate-pulse" />)}
         </div>
-        <Skeleton className="h-64" />
+        <div className="h-64 rounded-xl bg-[#111827] animate-pulse" />
       </div>
     );
   }
 
   if (leads.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border/60 p-8 text-center text-sm text-muted-foreground space-y-1">
-        <p className="font-medium text-foreground">Nenhum lead no mapa ainda.</p>
-        <p>Selecione as planilhas de leads na aba <strong>Leads do Evento</strong> — os participantes aparecem aqui.</p>
+      <div className="rounded-2xl bg-[#0a0e1a] border border-[#1f2937] p-8 text-center text-sm space-y-1">
+        <p className="font-medium text-[#f3f4f6]">Nenhum lead no mapa ainda.</p>
+        <p className="text-[#9ca3af]">
+          Selecione as planilhas de leads na aba <strong className="text-[#d4af37]">Leads do Evento</strong> — os participantes aparecem aqui.
+        </p>
       </div>
     );
   }
@@ -821,21 +817,35 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
     { key: "pending", label: "Pendente", count: summary?.pending ?? 0 },
   ];
 
+  const kpis: { label: string; value: string; gold?: boolean }[] = [
+    { label: "Participantes", value: String(summary?.total ?? leads.length) },
+    { label: "Comprou", value: String(summary?.bought ?? 0), gold: true },
+    { label: "Faturamento", value: formatCurrency(summary?.revenue ?? 0), gold: true },
+    { label: "Em negociação", value: String(summary?.negotiating ?? 0) },
+    { label: "Negativa", value: String(summary?.declined ?? 0) },
+    { label: "Pendente", value: String(summary?.pending ?? 0) },
+  ];
+
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        Participantes do evento (leads das planilhas marcadas em <strong>Leads do Evento</strong>). Marque o status de
-        cada um durante o evento — <strong>Comprou</strong> é automático quando há venda lançada para o email.
-      </p>
+    <div className="rounded-2xl bg-[#0a0e1a] text-[#f3f4f6] border border-[#1f2937] p-6 space-y-6">
+      {/* Header estilo relatório */}
+      <div className="border-b border-[#d4af37]/60 pb-4">
+        <div className="text-[11px] tracking-[2px] uppercase font-semibold text-[#d4af37]">Imersão Presencial</div>
+        <h2 className="text-2xl font-extrabold mt-1 text-[#f3f4f6]">Mapa do Evento</h2>
+        <p className="text-[13px] text-[#9ca3af] mt-1">
+          Participantes vindos das planilhas marcadas em <span className="text-[#d4af37]">Leads do Evento</span>.
+          Marque o status de cada um — <span className="text-[#d4af37]">Comprou</span> é automático quando há venda lançada.
+        </p>
+      </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-        <StatCard label="Total" value={String(summary?.total ?? leads.length)} />
-        <StatCard label="Comprou" value={String(summary?.bought ?? 0)} highlight />
-        <StatCard label="Faturamento" value={formatCurrency(summary?.revenue ?? 0)} highlight />
-        <StatCard label="Em negociação" value={String(summary?.negotiating ?? 0)} />
-        <StatCard label="Negativa" value={String(summary?.declined ?? 0)} />
-        <StatCard label="Pendente" value={String(summary?.pending ?? 0)} />
+        {kpis.map((k) => (
+          <div key={k.label} className="rounded-xl bg-[#111827] border border-[#1f2937] p-4 transition-colors hover:border-[#d4af37]/60">
+            <div className="text-[11px] uppercase tracking-[1px] text-[#6b7280] mb-2">{k.label}</div>
+            <div className={`text-2xl font-extrabold leading-none ${k.gold ? "text-[#d4af37]" : "text-[#f3f4f6]"}`}>{k.value}</div>
+          </div>
+        ))}
       </div>
 
       {/* Filtro */}
@@ -845,74 +855,74 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
             key={f.key}
             type="button"
             onClick={() => setFilter(f.key)}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+            className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
               filter === f.key
-                ? "bg-primary/10 text-primary border-primary/30"
-                : "text-muted-foreground border-border/50 hover:bg-muted/40"
+                ? "bg-[#d4af37] text-black border-[#d4af37]"
+                : "text-[#9ca3af] border-[#1f2937] hover:bg-[#1a2236]"
             }`}
           >
-            {f.label} <span className="ml-1 tabular-nums opacity-70">{f.count}</span>
+            {f.label} <span className="ml-1 tabular-nums opacity-80">{f.count}</span>
           </button>
         ))}
       </div>
 
       {/* Tabela de leads */}
-      <div className="rounded-lg border border-border/50 overflow-hidden">
-        <table className="w-full text-xs">
-          <thead className="bg-muted/10 text-muted-foreground">
+      <div className="rounded-xl border border-[#1f2937] overflow-hidden">
+        <table className="w-full text-[13px]">
+          <thead className="bg-[#1f2937] text-[#f3f4f6]">
             <tr>
-              <th className="text-left px-3 py-2 font-medium">Participante</th>
-              <th className="text-left px-3 py-2 font-medium">Email</th>
-              <th className="text-left px-3 py-2 font-medium">Telefone</th>
-              <th className="text-left px-3 py-2 font-medium">Produto</th>
-              <th className="text-right px-3 py-2 font-medium">Valor</th>
-              <th className="text-left px-3 py-2 font-medium">Vendedor</th>
-              <th className="text-left px-3 py-2 font-medium w-[170px]">Status</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Participante</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Email</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Telefone</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Produto</th>
+              <th className="text-right px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Valor</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Vendedor</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px] w-[170px]">Status</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="bg-[#111827]">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
+                <td colSpan={7} className="px-3 py-6 text-center text-[#6b7280]">
                   Nenhum participante com esse status.
                 </td>
               </tr>
             ) : (
               filtered.map((l) => (
-                <tr key={l.email} className="border-t border-border/30">
-                  <td className="px-3 py-2 max-w-[160px] truncate">{l.name || "—"}</td>
-                  <td className="px-3 py-2 text-muted-foreground max-w-[180px] truncate">{l.email}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{l.phone || "—"}</td>
-                  <td className="px-3 py-2 max-w-[140px] truncate" title={l.sale?.product ?? ""}>
+                <tr key={l.email} className="border-t border-[#1f2937] hover:bg-[#1a2236] transition-colors">
+                  <td className="px-3 py-2.5 max-w-[160px] truncate text-[#f3f4f6] font-medium">{l.name || "—"}</td>
+                  <td className="px-3 py-2.5 text-[#9ca3af] max-w-[180px] truncate">{l.email}</td>
+                  <td className="px-3 py-2.5 text-[#9ca3af]">{l.phone || "—"}</td>
+                  <td className="px-3 py-2.5 max-w-[140px] truncate text-[#9ca3af]" title={l.sale?.product ?? ""}>
                     {l.sale?.product || "—"}
                     {l.sale && l.sale.count > 1 ? (
-                      <span className="text-[10px] text-muted-foreground"> +{l.sale.count - 1}</span>
+                      <span className="text-[10px] text-[#6b7280]"> +{l.sale.count - 1}</span>
                     ) : null}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums font-medium">
-                    {l.sale ? formatCurrency(l.sale.value) : "—"}
+                  <td className="px-3 py-2.5 text-right tabular-nums font-bold text-[#d4af37]">
+                    {l.sale ? formatCurrency(l.sale.value) : <span className="text-[#6b7280] font-normal">—</span>}
                   </td>
-                  <td className="px-3 py-2 text-muted-foreground max-w-[120px] truncate">{l.sale?.sellerName || "—"}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2.5 text-[#9ca3af] max-w-[120px] truncate">{l.sale?.sellerName || "—"}</td>
+                  <td className="px-3 py-2.5">
                     {l.status === "bought" ? (
                       <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${MAP_STATUS_META.bought.cls}`}
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                         title={l.sale?.saleDate ? `Venda em ${formatDate(l.sale.saleDate)}` : undefined}
                       >
-                        {MAP_STATUS_META.bought.label}
+                        Comprou
                       </span>
                     ) : (
                       <Select
                         value={l.status}
                         onValueChange={(v) => changeStatus(l.email, v as "pending" | "negotiating" | "declined")}
                       >
-                        <SelectTrigger className="h-7 text-[11px]">
+                        <SelectTrigger className="h-7 text-[11px] bg-[#1a2236] border-[#1f2937] text-[#f3f4f6]">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pending">Pendente</SelectItem>
-                          <SelectItem value="negotiating">Em negociação</SelectItem>
-                          <SelectItem value="declined">Negativa</SelectItem>
+                        <SelectContent className="bg-[#111827] border-[#1f2937] text-[#f3f4f6]">
+                          <SelectItem value="pending" className="text-[#f3f4f6] focus:bg-[#1a2236] focus:text-[#f3f4f6]">Pendente</SelectItem>
+                          <SelectItem value="negotiating" className="text-amber-400 focus:bg-[#1a2236] focus:text-amber-400">Em negociação</SelectItem>
+                          <SelectItem value="declined" className="text-red-400 focus:bg-[#1a2236] focus:text-red-400">Negativa</SelectItem>
                         </SelectContent>
                       </Select>
                     )}
