@@ -1362,6 +1362,28 @@ export const stageEventMirroredSheets = pgTable(
   ]
 );
 
+// Story 19.13 — Mapa do Evento: status de cada lead/participante na etapa de
+// Evento (definido pelo closer). "comprou" é derivado das vendas manuais (não
+// gravado aqui); aqui guardamos negativa / em negociação / pendente.
+export const stageEventLeadStatus = pgTable(
+  "stage_event_lead_status",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    leadEmail: varchar("lead_email", { length: 255 }).notNull(),
+    /** pending | negotiating | declined (comprou é derivado das vendas manuais). */
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    note: text("note"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_stage_event_lead_status_stage").on(table.stageId),
+    uniqueIndex("uq_stage_event_lead_status").on(table.stageId, table.leadEmail),
+  ]
+);
+
 // Story 35.6 (Epic 35 fase 2 — webhooks de assinatura). A Public API da Kiwify
 // NÃO expõe estado de assinatura (sem /subscriptions); o estado real (vigente,
 // cancelada, atrasada, reembolsada) chega via WEBHOOKS. Esta tabela é o log BRUTO

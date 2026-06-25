@@ -55,3 +55,39 @@ export interface EventLead {
   name: string;
   phone: string;
 }
+
+/**
+ * Story 19.13 — Mapa do Evento. Status de um lead na etapa de evento.
+ * "bought" é derivado das vendas manuais (não é gravado); os demais o closer marca.
+ */
+export type EventLeadStatus = "pending" | "negotiating" | "bought" | "declined";
+
+/** Lead do mapa do evento: dados + status computado. */
+export interface EventMapLead {
+  email: string;
+  name: string;
+  phone: string;
+  status: EventLeadStatus;
+}
+
+export interface EventMapSummary {
+  total: number;
+  bought: number;
+  negotiating: number;
+  declined: number;
+  pending: number;
+}
+
+export interface EventMapResponse {
+  leads: EventMapLead[];
+  summary: EventMapSummary;
+}
+
+/** Status que o closer pode definir manualmente (bought é automático). */
+export type SettableEventLeadStatus = "pending" | "negotiating" | "declined";
+
+export interface SetEventLeadStatusInput {
+  email: string;
+  status: SettableEventLeadStatus;
+  note?: string | null;
+}

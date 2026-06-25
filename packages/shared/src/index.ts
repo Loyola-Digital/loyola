@@ -126,4 +126,10 @@ export type {
   EventCloserInput,
   FunnelSalesSpreadsheetRef,
   EventLead,
+  EventLeadStatus,
+  EventMapLead,
+  EventMapSummary,
+  EventMapResponse,
+  SettableEventLeadStatus,
+  SetEventLeadStatusInput,
 } from "./types/event-config.js";

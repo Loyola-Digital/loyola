@@ -12,6 +12,7 @@ import {
   XCircle,
   Clock,
   Loader2,
+  Map as MapIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { FunnelStage, ManualSale } from "@loyola-x/shared";
@@ -63,7 +64,10 @@ import {
   useFunnelSalesSpreadsheets,
   useEventMirroredSheets,
   useSetEventMirroredSheets,
+  useEventMap,
+  useSetEventLeadStatus,
 } from "@/lib/hooks/use-event-config";
+import type { EventLeadStatus } from "@loyola-x/shared";
 
 interface EventStageViewProps {
   projectId: string;
@@ -239,6 +243,9 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
           <TabsTrigger value="vendas" className="gap-1.5">
             <CalendarDays className="h-3.5 w-3.5" /> Vendas
           </TabsTrigger>
+          <TabsTrigger value="mapa" className="gap-1.5">
+            <MapIcon className="h-3.5 w-3.5" /> Mapa do Evento
+          </TabsTrigger>
           <TabsTrigger value="planilha" className="gap-1.5">
             Leads do Evento
           </TabsTrigger>
@@ -286,6 +293,11 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
               />
             </>
           )}
+        </TabsContent>
+
+        {/* MAPA DO EVENTO — leads com status (comprou/negociação/negativa/pendente) */}
+        <TabsContent value="mapa" className="mt-6">
+          <EventMapTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
         </TabsContent>
 
         {/* PLANILHAS DO FUNIL — escolher quais espelhar no evento */}
@@ -748,6 +760,152 @@ function MirrorSheetsTab({ projectId, funnelId, stageId }: { projectId: string; 
       <Button size="sm" onClick={save} disabled={setMirror.isPending || !hydrated}>
         {setMirror.isPending ? "Salvando..." : "Salvar seleção"}
       </Button>
+    </div>
+  );
+}
+
+const MAP_STATUS_META: Record<EventLeadStatus, { label: string; cls: string }> = {
+  bought: { label: "Comprou", cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
+  negotiating: { label: "Em negociação", cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
+  declined: { label: "Negativa", cls: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
+  pending: { label: "Pendente", cls: "bg-muted text-muted-foreground" },
+};
+
+function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funnelId: string; stageId: string }) {
+  const { data, isLoading } = useEventMap(projectId, funnelId, stageId);
+  const setStatus = useSetEventLeadStatus(projectId, funnelId, stageId);
+  const [filter, setFilter] = useState<"all" | EventLeadStatus>("all");
+
+  const leads = useMemo(() => data?.leads ?? [], [data]);
+  const summary = data?.summary;
+  const filtered = useMemo(
+    () => (filter === "all" ? leads : leads.filter((l) => l.status === filter)),
+    [leads, filter],
+  );
+
+  function changeStatus(email: string, status: "pending" | "negotiating" | "declined") {
+    setStatus.mutate(
+      { email, status },
+      {
+        onSuccess: () => toast.success("Status atualizado"),
+        onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar"),
+      },
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
+        </div>
+        <Skeleton className="h-64" />
+      </div>
+    );
+  }
+
+  if (leads.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border/60 p-8 text-center text-sm text-muted-foreground space-y-1">
+        <p className="font-medium text-foreground">Nenhum lead no mapa ainda.</p>
+        <p>Selecione as planilhas de leads na aba <strong>Leads do Evento</strong> — os participantes aparecem aqui.</p>
+      </div>
+    );
+  }
+
+  const FILTERS: { key: "all" | EventLeadStatus; label: string; count: number }[] = [
+    { key: "all", label: "Todos", count: summary?.total ?? leads.length },
+    { key: "bought", label: "Comprou", count: summary?.bought ?? 0 },
+    { key: "negotiating", label: "Em negociação", count: summary?.negotiating ?? 0 },
+    { key: "declined", label: "Negativa", count: summary?.declined ?? 0 },
+    { key: "pending", label: "Pendente", count: summary?.pending ?? 0 },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Participantes do evento (leads das planilhas marcadas em <strong>Leads do Evento</strong>). Marque o status de
+        cada um durante o evento — <strong>Comprou</strong> é automático quando há venda lançada para o email.
+      </p>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <StatCard label="Total" value={String(summary?.total ?? leads.length)} />
+        <StatCard label="Comprou" value={String(summary?.bought ?? 0)} highlight />
+        <StatCard label="Em negociação" value={String(summary?.negotiating ?? 0)} />
+        <StatCard label="Negativa" value={String(summary?.declined ?? 0)} />
+        <StatCard label="Pendente" value={String(summary?.pending ?? 0)} />
+      </div>
+
+      {/* Filtro */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {FILTERS.map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            onClick={() => setFilter(f.key)}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+              filter === f.key
+                ? "bg-primary/10 text-primary border-primary/30"
+                : "text-muted-foreground border-border/50 hover:bg-muted/40"
+            }`}
+          >
+            {f.label} <span className="ml-1 tabular-nums opacity-70">{f.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Tabela de leads */}
+      <div className="rounded-lg border border-border/50 overflow-hidden">
+        <table className="w-full text-xs">
+          <thead className="bg-muted/10 text-muted-foreground">
+            <tr>
+              <th className="text-left px-3 py-2 font-medium">Participante</th>
+              <th className="text-left px-3 py-2 font-medium">Email</th>
+              <th className="text-left px-3 py-2 font-medium">Telefone</th>
+              <th className="text-left px-3 py-2 font-medium w-[180px]">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
+                  Nenhum participante com esse status.
+                </td>
+              </tr>
+            ) : (
+              filtered.map((l) => (
+                <tr key={l.email} className="border-t border-border/30">
+                  <td className="px-3 py-2 max-w-[180px] truncate">{l.name || "—"}</td>
+                  <td className="px-3 py-2 text-muted-foreground max-w-[200px] truncate">{l.email}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{l.phone || "—"}</td>
+                  <td className="px-3 py-2">
+                    {l.status === "bought" ? (
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${MAP_STATUS_META.bought.cls}`}>
+                        {MAP_STATUS_META.bought.label}
+                      </span>
+                    ) : (
+                      <Select
+                        value={l.status}
+                        onValueChange={(v) => changeStatus(l.email, v as "pending" | "negotiating" | "declined")}
+                      >
+                        <SelectTrigger className="h-7 text-[11px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pending">Pendente</SelectItem>
+                          <SelectItem value="negotiating">Em negociação</SelectItem>
+                          <SelectItem value="declined">Negativa</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
