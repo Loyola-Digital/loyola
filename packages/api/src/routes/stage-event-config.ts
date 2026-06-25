@@ -2,7 +2,7 @@
 // MemberKit cada) e closers cadastrados. PUT substitui a lista inteira.
 
 import { z } from "zod";
-import { eq, and, asc, ne, inArray } from "drizzle-orm";
+import { eq, and, asc, desc, ne, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   stageEventProducts,
@@ -410,14 +410,42 @@ export default fp(async function stageEventConfigRoutes(fastify) {
 
     const leads = await loadEventLeads(params.data.projectId, params.data.funnelId, params.data.stageId);
 
-    // "comprou" = lead cujo email tem venda manual nesta etapa.
+    // "comprou" = lead cujo email tem venda manual nesta etapa. Agrega a info
+    // da venda por email: soma do valor + produto/closer/data da venda mais recente.
     const saleRows = await fastify.db
-      .select({ email: manualSales.customerEmail })
+      .select({
+        email: manualSales.customerEmail,
+        product: manualSales.product,
+        value: manualSales.value,
+        sellerName: manualSales.sellerName,
+        saleDate: manualSales.saleDate,
+      })
       .from(manualSales)
-      .where(eq(manualSales.stageId, params.data.stageId));
-    const boughtEmails = new Set(
-      saleRows.map((r) => (r.email ?? "").trim().toLowerCase()).filter(Boolean),
-    );
+      .where(eq(manualSales.stageId, params.data.stageId))
+      .orderBy(desc(manualSales.saleDate));
+
+    type SaleInfo = { product: string | null; value: number; sellerName: string | null; saleDate: string | null; count: number };
+    const saleByEmail = new Map<string, SaleInfo>();
+    for (const r of saleRows) {
+      const email = (r.email ?? "").trim().toLowerCase();
+      if (!email) continue;
+      const existing = saleByEmail.get(email);
+      const val = Number(r.value) || 0;
+      if (!existing) {
+        // saleRows vem ordenado por saleDate desc → o 1º por email é o mais recente.
+        saleByEmail.set(email, {
+          product: r.product,
+          value: val,
+          sellerName: r.sellerName,
+          saleDate: r.saleDate ? r.saleDate.toISOString() : null,
+          count: 1,
+        });
+      } else {
+        existing.value += val; // soma o valor de todas as vendas do mesmo email
+        existing.count += 1;
+      }
+    }
+    const boughtEmails = new Set(saleByEmail.keys());
 
     // status manual salvo (negativa / em negociação / pendente)
     const statusRows = await fastify.db
@@ -426,11 +454,14 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       .where(eq(stageEventLeadStatus.stageId, params.data.stageId));
     const storedStatus = new Map(statusRows.map((r) => [r.leadEmail.toLowerCase(), r.status]));
 
-    const summary = { total: leads.length, bought: 0, negotiating: 0, declined: 0, pending: 0 };
+    const summary = { total: leads.length, bought: 0, negotiating: 0, declined: 0, pending: 0, revenue: 0 };
     const out = leads.map((l) => {
       let status: "pending" | "negotiating" | "bought" | "declined";
+      let sale: { product: string | null; value: number; sellerName: string | null; saleDate: string | null; count: number } | null = null;
       if (boughtEmails.has(l.email)) {
         status = "bought";
+        sale = saleByEmail.get(l.email) ?? null;
+        if (sale) summary.revenue += sale.value;
       } else {
         const s = storedStatus.get(l.email);
         status = s === "negotiating" || s === "declined" ? s : "pending";
@@ -439,7 +470,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       else if (status === "negotiating") summary.negotiating += 1;
       else if (status === "declined") summary.declined += 1;
       else summary.pending += 1;
-      return { ...l, status };
+      return { ...l, status, sale };
     });
 
     return { leads: out, summary };

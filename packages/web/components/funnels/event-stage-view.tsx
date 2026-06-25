@@ -829,9 +829,10 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
       </p>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
         <StatCard label="Total" value={String(summary?.total ?? leads.length)} />
         <StatCard label="Comprou" value={String(summary?.bought ?? 0)} highlight />
+        <StatCard label="Faturamento" value={formatCurrency(summary?.revenue ?? 0)} highlight />
         <StatCard label="Em negociação" value={String(summary?.negotiating ?? 0)} />
         <StatCard label="Negativa" value={String(summary?.declined ?? 0)} />
         <StatCard label="Pendente" value={String(summary?.pending ?? 0)} />
@@ -863,25 +864,41 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
               <th className="text-left px-3 py-2 font-medium">Participante</th>
               <th className="text-left px-3 py-2 font-medium">Email</th>
               <th className="text-left px-3 py-2 font-medium">Telefone</th>
-              <th className="text-left px-3 py-2 font-medium w-[180px]">Status</th>
+              <th className="text-left px-3 py-2 font-medium">Produto</th>
+              <th className="text-right px-3 py-2 font-medium">Valor</th>
+              <th className="text-left px-3 py-2 font-medium">Vendedor</th>
+              <th className="text-left px-3 py-2 font-medium w-[170px]">Status</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
+                <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
                   Nenhum participante com esse status.
                 </td>
               </tr>
             ) : (
               filtered.map((l) => (
                 <tr key={l.email} className="border-t border-border/30">
-                  <td className="px-3 py-2 max-w-[180px] truncate">{l.name || "—"}</td>
-                  <td className="px-3 py-2 text-muted-foreground max-w-[200px] truncate">{l.email}</td>
+                  <td className="px-3 py-2 max-w-[160px] truncate">{l.name || "—"}</td>
+                  <td className="px-3 py-2 text-muted-foreground max-w-[180px] truncate">{l.email}</td>
                   <td className="px-3 py-2 text-muted-foreground">{l.phone || "—"}</td>
+                  <td className="px-3 py-2 max-w-[140px] truncate" title={l.sale?.product ?? ""}>
+                    {l.sale?.product || "—"}
+                    {l.sale && l.sale.count > 1 ? (
+                      <span className="text-[10px] text-muted-foreground"> +{l.sale.count - 1}</span>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums font-medium">
+                    {l.sale ? formatCurrency(l.sale.value) : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground max-w-[120px] truncate">{l.sale?.sellerName || "—"}</td>
                   <td className="px-3 py-2">
                     {l.status === "bought" ? (
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${MAP_STATUS_META.bought.cls}`}>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${MAP_STATUS_META.bought.cls}`}
+                        title={l.sale?.saleDate ? `Venda em ${formatDate(l.sale.saleDate)}` : undefined}
+                      >
                         {MAP_STATUS_META.bought.label}
                       </span>
                     ) : (

@@ -127,6 +127,7 @@ export type {
   FunnelSalesSpreadsheetRef,
   EventLead,
   EventLeadStatus,
+  EventLeadSale,
   EventMapLead,
   EventMapSummary,
   EventMapResponse,
