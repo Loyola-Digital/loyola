@@ -62,12 +62,28 @@ export interface EventLead {
  */
 export type EventLeadStatus = "pending" | "negotiating" | "bought" | "declined";
 
-/** Lead do mapa do evento: dados + status computado. */
+/** Infos da venda de um lead que comprou (agregadas por email). */
+export interface EventLeadSale {
+  /** Produto da venda mais recente. */
+  product: string | null;
+  /** Soma do valor de todas as vendas do lead na etapa. */
+  value: number;
+  /** Vendedor/closer da venda mais recente. */
+  sellerName: string | null;
+  /** Data da venda mais recente (ISO). */
+  saleDate: string | null;
+  /** Quantidade de vendas do lead na etapa. */
+  count: number;
+}
+
+/** Lead do mapa do evento: dados + status computado (+ venda, se comprou). */
 export interface EventMapLead {
   email: string;
   name: string;
   phone: string;
   status: EventLeadStatus;
+  /** Preenchido quando status = "bought". */
+  sale: EventLeadSale | null;
 }
 
 export interface EventMapSummary {
@@ -76,6 +92,8 @@ export interface EventMapSummary {
   negotiating: number;
   declined: number;
   pending: number;
+  /** Soma do valor das vendas dos leads que compraram. */
+  revenue: number;
 }
 
 export interface EventMapResponse {
