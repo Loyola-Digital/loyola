@@ -192,6 +192,10 @@ export function ManualSaleDialog({
         toast.error("Email é obrigatório (necessário para matrícula no MemberKit)");
         return;
       }
+      if (!customerPhone.trim()) {
+        toast.error("Telefone é obrigatório");
+        return;
+      }
       if (!product.trim()) {
         toast.error("Selecione o produto");
         return;
@@ -326,12 +330,12 @@ export function ManualSaleDialog({
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="customer-phone">Telefone</Label>
+                <Label htmlFor="customer-phone">Telefone{isEvent ? " *" : ""}</Label>
                 <Input
                   id="customer-phone"
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
-                  placeholder="opcional"
+                  placeholder={isEvent ? "obrigatório" : "opcional"}
                 />
               </div>
             </div>
