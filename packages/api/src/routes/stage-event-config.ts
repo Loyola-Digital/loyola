@@ -10,6 +10,7 @@ import {
   stageEventMirroredSheets,
   stageEventLeadStatus,
   stageSalesSpreadsheets,
+  stageSalesPlanSources,
   manualSales,
   funnelStages,
   funnels,
@@ -331,44 +332,37 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     return { sourceSpreadsheetIds: validIds };
   });
 
-  // Helper: lê as planilhas espelhadas e devolve os leads (email/nome/telefone)
-  // deduplicados por email, re-escopados ao funil (defesa em profundidade).
+  // Helper: lê as planilhas conectadas à etapa (Story 19.15 — fontes do evento,
+  // as mesmas do Plano de Vendas) e devolve os leads (email/nome/telefone)
+  // deduplicados por email. O Mapa do Evento usa esta lista de participantes.
   async function loadEventLeads(
-    projectId: string,
-    funnelId: string,
     stageId: string,
   ): Promise<{ email: string; name: string; phone: string }[]> {
-    const mirrored = await fastify.db
-      .select({ sourceSpreadsheetId: stageEventMirroredSheets.sourceSpreadsheetId })
-      .from(stageEventMirroredSheets)
-      .where(eq(stageEventMirroredSheets.eventStageId, stageId));
-    const ids = mirrored.map((m) => m.sourceSpreadsheetId);
-    if (ids.length === 0) return [];
-
-    const sheets = await fastify.db
+    const sources = await fastify.db
       .select({
-        spreadsheetId: stageSalesSpreadsheets.spreadsheetId,
-        sheetName: stageSalesSpreadsheets.sheetName,
-        columnMapping: stageSalesSpreadsheets.columnMapping,
+        spreadsheetId: stageSalesPlanSources.spreadsheetId,
+        sheetName: stageSalesPlanSources.sheetName,
+        mapping: stageSalesPlanSources.mapping,
       })
-      .from(stageSalesSpreadsheets)
-      .innerJoin(funnelStages, eq(funnelStages.id, stageSalesSpreadsheets.stageId))
-      .where(and(eq(funnelStages.funnelId, funnelId), inArray(stageSalesSpreadsheets.id, ids)));
+      .from(stageSalesPlanSources)
+      .where(eq(stageSalesPlanSources.stageId, stageId))
+      .orderBy(asc(stageSalesPlanSources.sortOrder));
+    if (sources.length === 0) return [];
 
     const MAX_LEADS = 10000;
     const byEmail = new Map<string, { email: string; name: string; phone: string }>();
-    for (const sheet of sheets) {
+    for (const src of sources) {
       if (byEmail.size >= MAX_LEADS) break;
-      const mapping = sheet.columnMapping as { email?: string; customerName?: string; telefone?: string };
+      const mapping = (src.mapping ?? {}) as { name?: string; email?: string; telefone?: string };
       let data;
       try {
-        data = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
+        data = await readSheetData(src.spreadsheetId, src.sheetName);
       } catch {
         continue;
       }
       const { headers, rows } = data;
       const emailIdx = mapping.email ? headers.indexOf(mapping.email) : -1;
-      const nameIdx = mapping.customerName ? headers.indexOf(mapping.customerName) : -1;
+      const nameIdx = mapping.name ? headers.indexOf(mapping.name) : -1;
       const phoneIdx = mapping.telefone ? headers.indexOf(mapping.telefone) : -1;
       if (emailIdx === -1) continue;
       for (const row of rows) {
@@ -395,7 +389,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
     if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-    const leads = await loadEventLeads(params.data.projectId, params.data.funnelId, params.data.stageId);
+    const leads = await loadEventLeads(params.data.stageId);
     return { leads };
   });
 
@@ -408,7 +402,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
     if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-    const leads = await loadEventLeads(params.data.projectId, params.data.funnelId, params.data.stageId);
+    const leads = await loadEventLeads(params.data.stageId);
 
     // "comprou" = lead cujo email tem venda manual nesta etapa. Agrega a info
     // da venda por email: soma do valor + produto/closer/data da venda mais recente.

@@ -1,32 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Trash2, Search, FileSpreadsheet, RefreshCw, Settings2, X } from "lucide-react";
+import { Plus, X, RefreshCw, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import type {
-  SalesPlanSource,
-  SalesPlanSourceInput,
   SalesPlanRule,
   SalesPlanRuleInput,
   SalesPlanParticipant,
 } from "@loyola-x/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  useSpreadsheets, useSpreadsheetSheets, useSheetData,
-} from "@/lib/hooks/use-google-sheets";
 import {
   useSalesPlan,
   useSalesPlanSources,
-  useSetSalesPlanSources,
   useSalesPlanRules,
   useSetSalesPlanRules,
 } from "@/lib/hooks/use-sales-plan";
@@ -46,25 +33,6 @@ function formatRange(min: number | null, max: number | null): string {
   if (min != null) return `≥ R$ ${k(min)}`;
   if (max != null) return `< R$ ${k(max)}`;
   return "Qualquer";
-}
-
-function extractSpreadsheetId(input: string): string | null {
-  const trimmed = input.trim();
-  const m = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  if (m) return m[1];
-  // já é um ID solto (sem barras/espaços)
-  if (/^[a-zA-Z0-9-_]{20,}$/.test(trimmed)) return trimmed;
-  return null;
-}
-
-function toInput(s: SalesPlanSource): SalesPlanSourceInput {
-  return {
-    tipo: s.tipo,
-    spreadsheetId: s.spreadsheetId,
-    spreadsheetName: s.spreadsheetName,
-    sheetName: s.sheetName,
-    mapping: s.mapping,
-  };
 }
 
 // ============================================================
@@ -108,8 +76,8 @@ export function SalesPlanTab({ projectId, funnelId, stageId }: { projectId: stri
           <div className="text-[11px] tracking-[2px] uppercase font-semibold text-[#d4af37]">Imersão Presencial</div>
           <h2 className="text-2xl font-extrabold mt-1 text-[#f3f4f6]">Plano de Vendas</h2>
           <p className="text-[13px] text-[#9ca3af] mt-1 max-w-2xl">
-            Cruzamento das pesquisas (por email) com a matriz de faturamento → oferta.
-            Cada participante cai numa faixa e recebe a oferta recomendada.
+            Cruzamento das planilhas do evento (por email) com a matriz de faturamento → oferta.
+            As planilhas são conectadas na aba <span className="text-[#d4af37]">Leads do Evento</span>.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -125,25 +93,24 @@ export function SalesPlanTab({ projectId, funnelId, stageId }: { projectId: stri
             onClick={() => setShowConfig((v) => !v)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold border border-[#d4af37]/40 text-[#d4af37] hover:bg-[#d4af37]/10 transition-colors"
           >
-            <Settings2 className="h-3.5 w-3.5" /> Configurar
+            <Settings2 className="h-3.5 w-3.5" /> Matriz de ofertas
           </button>
         </div>
       </div>
 
-      {/* Config (pesquisas + matriz) */}
-      {(showConfig || !hasSources) && (
-        <div className="space-y-5 rounded-xl border border-[#1f2937] bg-[#0d1424] p-4">
-          <SourcesEditor projectId={projectId} funnelId={funnelId} stageId={stageId} sources={sources} onChanged={() => setShowConfig(true)} />
-          <div className="h-px bg-[#1f2937]" />
+      {/* Matriz de ofertas (config) */}
+      {showConfig && (
+        <div className="rounded-xl border border-[#1f2937] bg-[#0d1424] p-4">
           <RulesEditor projectId={projectId} funnelId={funnelId} stageId={stageId} />
         </div>
       )}
 
       {!hasSources ? (
         <div className="rounded-xl bg-[#111827] border border-[#1f2937] p-8 text-center text-sm space-y-1">
-          <p className="font-medium text-[#f3f4f6]">Nenhuma pesquisa conectada ainda.</p>
+          <p className="font-medium text-[#f3f4f6]">Nenhuma planilha conectada ainda.</p>
           <p className="text-[#9ca3af]">
-            Conecte as planilhas de pesquisa (1 por tipo) acima — os participantes e o plano aparecem aqui.
+            Conecte as planilhas dos participantes na aba <strong className="text-[#d4af37]">Leads do Evento</strong> —
+            elas alimentam tanto o Mapa quanto este Plano de Vendas.
           </p>
         </div>
       ) : (
@@ -261,269 +228,6 @@ function SegmentTable({
         </tbody>
       </table>
     </div>
-  );
-}
-
-// ============================================================
-// Editor de pesquisas conectadas
-// ============================================================
-function SourcesEditor({
-  projectId, funnelId, stageId, sources, onChanged,
-}: { projectId: string; funnelId: string; stageId: string; sources: SalesPlanSource[]; onChanged?: () => void }) {
-  const setSources = useSetSalesPlanSources(projectId, funnelId, stageId);
-  const [dialogOpen, setDialogOpen] = useState(false);
-
-  function handleAdd(source: SalesPlanSourceInput) {
-    // fecha o dialog SÓ no sucesso — em erro mantém o wizard preenchido pra retry.
-    setSources.mutate([...sources.map(toInput), source], {
-      onSuccess: () => { toast.success("Pesquisa conectada"); onChanged?.(); setDialogOpen(false); },
-      onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
-    });
-  }
-
-  function handleRemove(id: string) {
-    setSources.mutate(sources.filter((s) => s.id !== id).map(toInput), {
-      onSuccess: () => { toast.success("Pesquisa removida"); onChanged?.(); },
-      onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
-    });
-  }
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[13px] font-semibold text-[#f3f4f6]">Pesquisas conectadas</div>
-          <div className="text-[11px] text-[#6b7280]">1 planilha por tipo (comprador, fornecedor, iFood…). Cruzadas por email.</div>
-        </div>
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => setDialogOpen(true)}
-          className="bg-[#d4af37] text-black hover:bg-[#d4af37]/90 h-8"
-        >
-          <Plus className="h-3.5 w-3.5 mr-1" /> Conectar pesquisa
-        </Button>
-      </div>
-
-      {sources.length === 0 ? (
-        <p className="text-[12px] text-[#6b7280] italic">Nenhuma pesquisa conectada.</p>
-      ) : (
-        <div className="space-y-2">
-          {sources.map((s) => (
-            <div key={s.id} className="flex items-center gap-3 rounded-lg border border-[#1f2937] bg-[#111827] px-3 py-2">
-              <span className="text-[10px] font-bold uppercase tracking-[1px] rounded-full bg-[#d4af37]/15 text-[#d4af37] px-2.5 py-1">{s.tipo}</span>
-              <div className="min-w-0 flex-1">
-                <div className="text-[12px] text-[#f3f4f6] truncate flex items-center gap-1.5">
-                  <FileSpreadsheet className="h-3.5 w-3.5 text-[#6b7280] shrink-0" />
-                  {s.spreadsheetName || s.spreadsheetId} <span className="text-[#6b7280]">/ {s.sheetName}</span>
-                </div>
-                <div className="text-[11px] text-[#6b7280] truncate">
-                  email: {s.mapping.email || "—"} · faturamento: {s.mapping.faturamento || "—"}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleRemove(s.id)}
-                disabled={setSources.isPending}
-                className="text-[#6b7280] hover:text-[#ef4444] transition-colors p-1"
-                title="Remover"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <ConnectSurveyDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        onConfirm={handleAdd}
-        saving={setSources.isPending}
-      />
-    </div>
-  );
-}
-
-// ============================================================
-// Dialog de conexão de pesquisa (planilha → aba → mapeamento + tipo)
-// ============================================================
-type Step = "spreadsheet" | "sheet" | "mapping";
-
-function ConnectSurveyDialog({
-  open, onOpenChange, onConfirm, saving,
-}: {
-  open: boolean;
-  onOpenChange: (o: boolean) => void;
-  onConfirm: (s: SalesPlanSourceInput) => void;
-  saving: boolean;
-}) {
-  const { data: spreadsheetsData, isLoading: spreadsheetsLoading } = useSpreadsheets();
-  const [selected, setSelected] = useState<{ id: string; name: string } | null>(null);
-  const [sheet, setSheet] = useState<string | null>(null);
-  const [tipo, setTipo] = useState("");
-  const [mapping, setMapping] = useState<{ name?: string; email?: string; faturamento?: string }>({});
-  const [search, setSearch] = useState("");
-  const [link, setLink] = useState("");
-
-  const { data: sheetsData, isLoading: sheetsLoading } = useSpreadsheetSheets(selected?.id ?? null);
-  const { data: sheetData, isLoading: sheetDataLoading } = useSheetData(selected?.id ?? null, sheet);
-
-  const spreadsheets = spreadsheetsData?.spreadsheets ?? [];
-  const filtered = search ? spreadsheets.filter((s) => s.name.toLowerCase().includes(search.toLowerCase())) : spreadsheets;
-
-  const rawHeaders = sheetData?.headers ?? [];
-  // Só colunas com header real: o backend resolve por nome (headers.indexOf),
-  // então um placeholder sintético ("Coluna N") não casaria e a fonte sumiria.
-  const columns = Array.from(new Set(rawHeaders.filter((h) => h && h.trim().length > 0)));
-
-  const step: Step = !selected ? "spreadsheet" : !sheet ? "sheet" : "mapping";
-  const canSave = !!(selected && sheet && tipo.trim() && mapping.email);
-
-  function reset() {
-    setSelected(null); setSheet(null); setTipo(""); setMapping({}); setSearch(""); setLink("");
-  }
-  function close() { reset(); onOpenChange(false); }
-
-  function useLink() {
-    const id = extractSpreadsheetId(link);
-    if (!id) { toast.error("Link inválido — cole a URL completa do Google Sheets"); return; }
-    setSelected({ id, name: "" });
-  }
-
-  function confirm() {
-    if (!canSave || !selected || !sheet) return;
-    // não reseta aqui: o pai fecha o dialog no sucesso (→ close() reseta).
-    // Se o save falhar, o dialog continua aberto com os dados preenchidos.
-    onConfirm({
-      tipo: tipo.trim(),
-      spreadsheetId: selected.id,
-      spreadsheetName: selected.name,
-      sheetName: sheet,
-      mapping,
-    });
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : close())}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            {step === "spreadsheet" && "Escolher planilha de pesquisa"}
-            {step === "sheet" && "Escolher a aba"}
-            {step === "mapping" && "Mapear colunas + tipo"}
-          </DialogTitle>
-        </DialogHeader>
-
-        {/* STEP 1 — planilha */}
-        {step === "spreadsheet" && (
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Colar link do Google Sheets</Label>
-              <div className="flex gap-2">
-                <Input placeholder="https://docs.google.com/spreadsheets/d/..." value={link} onChange={(e) => setLink(e.target.value)} />
-                <Button type="button" variant="secondary" onClick={useLink} disabled={!link.trim()}>Usar</Button>
-              </div>
-            </div>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="ou buscar nas suas planilhas..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" />
-            </div>
-            <div className="max-h-64 overflow-y-auto space-y-1">
-              {spreadsheetsLoading ? (
-                <><Skeleton className="h-9" /><Skeleton className="h-9" /><Skeleton className="h-9" /></>
-              ) : filtered.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4 text-center">Nenhuma planilha encontrada.</p>
-              ) : (
-                filtered.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => setSelected({ id: s.id, name: s.name })}
-                    className="w-full text-left px-3 py-2 rounded-md hover:bg-muted text-sm flex items-center gap-2"
-                  >
-                    <FileSpreadsheet className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <span className="truncate">{s.name}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* STEP 2 — aba */}
-        {step === "sheet" && (
-          <div className="space-y-3">
-            <button type="button" onClick={() => setSelected(null)} className="text-xs text-muted-foreground hover:underline">← trocar planilha</button>
-            {sheetsLoading ? (
-              <><Skeleton className="h-9" /><Skeleton className="h-9" /></>
-            ) : (
-              <div className="max-h-64 overflow-y-auto space-y-1">
-                {(sheetsData?.sheets ?? []).map((sh) => (
-                  <button
-                    key={sh.sheetId}
-                    type="button"
-                    onClick={() => setSheet(sh.title)}
-                    className="w-full text-left px-3 py-2 rounded-md hover:bg-muted text-sm flex items-center justify-between"
-                  >
-                    <span className="truncate">{sh.title}</span>
-                    <span className="text-xs text-muted-foreground">{sh.rowCount} linhas</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* STEP 3 — mapeamento */}
-        {step === "mapping" && (
-          <div className="space-y-3">
-            <button type="button" onClick={() => setSheet(null)} className="text-xs text-muted-foreground hover:underline">← trocar aba</button>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs">Tipo desta pesquisa <span className="text-red-500">*</span></Label>
-              <Input placeholder="comprador / fornecedor / ifood…" value={tipo} onChange={(e) => setTipo(e.target.value)} list="sales-plan-tipos" />
-              <datalist id="sales-plan-tipos">
-                <option value="comprador" /><option value="fornecedor" /><option value="ifood" />
-              </datalist>
-            </div>
-
-            {sheetDataLoading ? (
-              <Skeleton className="h-32" />
-            ) : (
-              <div className="space-y-2.5">
-                {([
-                  { key: "email", label: "Email", required: true },
-                  { key: "name", label: "Nome" },
-                  { key: "faturamento", label: "Faturamento" },
-                ] as const).map((f) => (
-                  <div key={f.key} className="grid grid-cols-[120px_1fr] items-center gap-2">
-                    <Label className="text-xs">{f.label}{"required" in f && f.required && <span className="text-red-500"> *</span>}</Label>
-                    <Select
-                      value={mapping[f.key] ?? "__none__"}
-                      onValueChange={(v) => setMapping((m) => ({ ...m, [f.key]: v === "__none__" ? undefined : v }))}
-                    >
-                      <SelectTrigger className="h-9"><SelectValue placeholder="selecione a coluna" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">—</SelectItem>
-                        {columns.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={close}>Cancelar</Button>
-          <Button type="button" onClick={confirm} disabled={!canSave || saving}>
-            {saving ? "Salvando..." : "Conectar"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 

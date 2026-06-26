@@ -11,13 +11,19 @@
  * - O "tipo" vem da própria fonte (não de uma coluna) e é só informativo.
  */
 
-/** Mapeamento de colunas de uma pesquisa → campos que o plano usa. */
+/**
+ * Mapeamento de colunas de uma planilha do evento → campos usados.
+ * Mesma fonte serve o Mapa do Evento (name/email/telefone) e o Plano de
+ * Vendas (tipo/email/faturamento).
+ */
 export interface SalesPlanSourceMapping {
   /** Coluna com o nome da pessoa. */
   name?: string;
   /** Coluna com o email — chave de cruzamento/dedup (obrigatória na prática). */
   email?: string;
-  /** Coluna com o faturamento (texto cru; parseado no servidor). */
+  /** Coluna com o telefone (usada no Mapa do Evento). */
+  telefone?: string;
+  /** Coluna com o faturamento (texto cru; parseado no servidor; usada no Plano). */
   faturamento?: string;
 }
 
