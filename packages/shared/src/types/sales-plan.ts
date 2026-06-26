@@ -11,27 +11,38 @@
  * - O "tipo" vem da própria fonte (não de uma coluna) e é só informativo.
  */
 
+/** Papel da planilha conectada à etapa. */
+export type SalesPlanSourceRole =
+  /** Lista mestre de participantes (todo mundo). Fornece nome/email/telefone/tipo. */
+  | "participants"
+  /** Respostas de pesquisa (Tally). Fornece faturamento por email (lookup na mestre). */
+  | "survey";
+
 /**
  * Mapeamento de colunas de uma planilha do evento → campos usados.
- * Mesma fonte serve o Mapa do Evento (name/email/telefone) e o Plano de
- * Vendas (tipo/email/faturamento).
+ * - role "participants": name/email/telefone/tipo (a lista do Mapa e do Plano).
+ * - role "survey": email/faturamento (enriquece a mestre por email).
  */
 export interface SalesPlanSourceMapping {
-  /** Coluna com o nome da pessoa. */
+  /** Coluna com o nome da pessoa (mestre). */
   name?: string;
-  /** Coluna com o email — chave de cruzamento/dedup (obrigatória na prática). */
+  /** Coluna com o email — chave de cruzamento/dedup (obrigatória). */
   email?: string;
-  /** Coluna com o telefone (usada no Mapa do Evento). */
+  /** Coluna com o telefone (mestre; usada no Mapa do Evento). */
   telefone?: string;
-  /** Coluna com o faturamento (texto cru; parseado no servidor; usada no Plano). */
+  /** Coluna com o tipo da pessoa: fornecedor/comprador/iFood (mestre). */
+  tipo?: string;
+  /** Coluna com o faturamento (respostas; texto cru, parseado no servidor). */
   faturamento?: string;
 }
 
-/** Pesquisa conectada à etapa de Evento (1 por tipo). */
+/** Planilha conectada à etapa de Evento. */
 export interface SalesPlanSource {
   id: string;
   stageId: string;
-  /** Tipo da pessoa nesta pesquisa: "comprador", "fornecedor", "ifood", … */
+  /** Papel: "participants" (mestre) ou "survey" (respostas). */
+  role: SalesPlanSourceRole;
+  /** Rótulo livre da planilha (opcional; só identificação na lista). */
   tipo: string;
   /** ID da planilha do Google (string, não uuid). */
   spreadsheetId: string;
@@ -44,7 +55,8 @@ export interface SalesPlanSource {
 
 /** Item ao salvar a lista de fontes (PUT substitui a lista inteira). */
 export interface SalesPlanSourceInput {
-  tipo: string;
+  role: SalesPlanSourceRole;
+  tipo?: string;
   spreadsheetId: string;
   spreadsheetName: string;
   sheetName: string;

@@ -345,7 +345,12 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         mapping: stageSalesPlanSources.mapping,
       })
       .from(stageSalesPlanSources)
-      .where(eq(stageSalesPlanSources.stageId, stageId))
+      .where(
+        and(
+          eq(stageSalesPlanSources.stageId, stageId),
+          eq(stageSalesPlanSources.role, "participants"),
+        ),
+      )
       .orderBy(asc(stageSalesPlanSources.sortOrder));
     if (sources.length === 0) return [];
 

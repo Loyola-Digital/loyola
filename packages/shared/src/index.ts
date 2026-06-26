@@ -136,6 +136,7 @@ export type {
 } from "./types/event-config.js";
 
 export type {
+  SalesPlanSourceRole,
   SalesPlanSourceMapping,
   SalesPlanSource,
   SalesPlanSourceInput,
