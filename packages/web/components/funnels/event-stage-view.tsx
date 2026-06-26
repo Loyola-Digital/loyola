@@ -14,6 +14,7 @@ import {
   Loader2,
   Map as MapIcon,
   Target,
+  Calculator,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { FunnelStage, ManualSale } from "@loyola-x/shared";
@@ -44,6 +45,7 @@ import {
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
 import { SalesPlanTab } from "@/components/funnels/sales-plan-tab";
+import { RoiCalculatorDialog, type RoiLead } from "@/components/funnels/roi-calculator";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import {
   useAllSales,
@@ -186,7 +188,7 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-5 sm:space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
@@ -198,7 +200,7 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
           </h1>
           <p className="text-sm text-muted-foreground">Vendas do evento + matrícula automática no MemberKit</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <DayRangePicker days={days} onDaysChange={setDays} />
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setEditingSale(null); setManualSaleOpen(true); }}>
             <Plus className="h-3.5 w-3.5" /> Lançar venda
@@ -239,7 +241,7 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
       </div>
 
       <Tabs defaultValue="vendas">
-        <TabsList>
+        <TabsList className="max-w-full justify-start overflow-x-auto">
           <TabsTrigger value="vendas" className="gap-1.5">
             <CalendarDays className="h-3.5 w-3.5" /> Vendas
           </TabsTrigger>
@@ -391,8 +393,8 @@ function SalesTable({ sales, manualMap, days, onEdit, onDelete, onEnroll, enroll
   }
 
   return (
-    <div className="rounded-lg border border-border/50 overflow-hidden">
-      <table className="w-full text-xs">
+    <div className="rounded-lg border border-border/50 overflow-x-auto">
+      <table className="w-full min-w-[680px] text-xs">
         <thead className="bg-muted/10 text-muted-foreground">
           <tr>
             <th className="text-left px-3 py-2 font-medium">Data</th>
@@ -702,6 +704,7 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
   const { data, isLoading } = useEventMap(projectId, funnelId, stageId);
   const setStatus = useSetEventLeadStatus(projectId, funnelId, stageId);
   const [filter, setFilter] = useState<"all" | EventLeadStatus>("all");
+  const [roiLead, setRoiLead] = useState<RoiLead | null>(null);
 
   const leads = useMemo(() => data?.leads ?? [], [data]);
   const summary = data?.summary;
@@ -720,10 +723,37 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
     );
   }
 
+  function statusControl(l: (typeof leads)[number]) {
+    if (l.status === "bought") {
+      return (
+        <span
+          className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+          title={l.sale?.saleDate ? `Venda em ${formatDate(l.sale.saleDate)}` : undefined}
+        >
+          Comprou
+        </span>
+      );
+    }
+    return (
+      <div onClick={(e) => e.stopPropagation()}>
+        <Select value={l.status} onValueChange={(v) => changeStatus(l.email, v as "pending" | "negotiating" | "declined")}>
+          <SelectTrigger className="h-7 text-[11px] bg-[#1a2236] border-[#1f2937] text-[#f3f4f6]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="bg-[#111827] border-[#1f2937] text-[#f3f4f6]">
+            <SelectItem value="pending" className="text-[#f3f4f6] focus:bg-[#1a2236] focus:text-[#f3f4f6]">Pendente</SelectItem>
+            <SelectItem value="negotiating" className="text-amber-400 focus:bg-[#1a2236] focus:text-amber-400">Em negociação</SelectItem>
+            <SelectItem value="declined" className="text-red-400 focus:bg-[#1a2236] focus:text-red-400">Negativa</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  }
+
   // Tema premium (escuro/dourado), no estilo do relatório — escopado a esta aba.
   if (isLoading) {
     return (
-      <div className="rounded-2xl bg-[#0a0e1a] border border-[#1f2937] p-6 space-y-4">
+      <div className="rounded-2xl bg-[#0a0e1a] border border-[#1f2937] p-4 sm:p-6 space-y-4">
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
           {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-20 rounded-xl bg-[#111827] animate-pulse" />)}
         </div>
@@ -737,7 +767,7 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
       <div className="rounded-2xl bg-[#0a0e1a] border border-[#1f2937] p-8 text-center text-sm space-y-1">
         <p className="font-medium text-[#f3f4f6]">Nenhum lead no mapa ainda.</p>
         <p className="text-[#9ca3af]">
-          Selecione as planilhas de leads na aba <strong className="text-[#d4af37]">Leads do Evento</strong> — os participantes aparecem aqui.
+          Conecte a planilha de <strong className="text-[#d4af37]">Participantes</strong> na aba Leads do Evento — eles aparecem aqui.
         </p>
       </div>
     );
@@ -761,35 +791,35 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
   ];
 
   return (
-    <div className="rounded-2xl bg-[#0a0e1a] text-[#f3f4f6] border border-[#1f2937] p-6 space-y-6">
+    <div className="rounded-2xl bg-[#0a0e1a] text-[#f3f4f6] border border-[#1f2937] p-4 sm:p-6 space-y-5 sm:space-y-6">
       {/* Header estilo relatório */}
       <div className="border-b border-[#d4af37]/60 pb-4">
         <div className="text-[11px] tracking-[2px] uppercase font-semibold text-[#d4af37]">Imersão Presencial</div>
-        <h2 className="text-2xl font-extrabold mt-1 text-[#f3f4f6]">Mapa do Evento</h2>
+        <h2 className="text-xl sm:text-2xl font-extrabold mt-1 text-[#f3f4f6]">Mapa do Evento</h2>
         <p className="text-[13px] text-[#9ca3af] mt-1">
-          Participantes vindos das planilhas marcadas em <span className="text-[#d4af37]">Leads do Evento</span>.
-          Marque o status de cada um — <span className="text-[#d4af37]">Comprou</span> é automático quando há venda lançada.
+          Toque num participante pra rodar a <span className="text-[#d4af37]">calculadora de ROI</span> ao vivo no número dele.
+          <span className="text-[#d4af37]"> Comprou</span> é automático quando há venda lançada.
         </p>
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 sm:gap-3">
         {kpis.map((k) => (
-          <div key={k.label} className="rounded-xl bg-[#111827] border border-[#1f2937] p-4 transition-colors hover:border-[#d4af37]/60">
-            <div className="text-[11px] uppercase tracking-[1px] text-[#6b7280] mb-2">{k.label}</div>
-            <div className={`text-2xl font-extrabold leading-none ${k.gold ? "text-[#d4af37]" : "text-[#f3f4f6]"}`}>{k.value}</div>
+          <div key={k.label} className="rounded-xl bg-[#111827] border border-[#1f2937] p-3 sm:p-4 transition-colors hover:border-[#d4af37]/60">
+            <div className="text-[10px] sm:text-[11px] uppercase tracking-[1px] text-[#6b7280] mb-1.5 sm:mb-2 truncate">{k.label}</div>
+            <div className={`text-lg sm:text-2xl font-extrabold leading-none ${k.gold ? "text-[#d4af37]" : "text-[#f3f4f6]"}`}>{k.value}</div>
           </div>
         ))}
       </div>
 
-      {/* Filtro */}
-      <div className="flex items-center gap-1.5 flex-wrap">
+      {/* Filtro (scroll horizontal no mobile) */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 sm:flex-wrap sm:overflow-visible">
         {FILTERS.map((f) => (
           <button
             key={f.key}
             type="button"
             onClick={() => setFilter(f.key)}
-            className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
+            className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
               filter === f.key
                 ? "bg-[#d4af37] text-black border-[#d4af37]"
                 : "text-[#9ca3af] border-[#1f2937] hover:bg-[#1a2236]"
@@ -800,73 +830,100 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
         ))}
       </div>
 
-      {/* Tabela de leads */}
-      <div className="rounded-xl border border-[#1f2937] overflow-hidden">
-        <table className="w-full text-[13px]">
-          <thead className="bg-[#1f2937] text-[#f3f4f6]">
-            <tr>
-              <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Participante</th>
-              <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Email</th>
-              <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Telefone</th>
-              <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Produto</th>
-              <th className="text-right px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Valor</th>
-              <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Vendedor</th>
-              <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px] w-[170px]">Status</th>
-            </tr>
-          </thead>
-          <tbody className="bg-[#111827]">
-            {filtered.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-[#6b7280]">
-                  Nenhum participante com esse status.
-                </td>
-              </tr>
-            ) : (
-              filtered.map((l) => (
-                <tr key={l.email} className="border-t border-[#1f2937] hover:bg-[#1a2236] transition-colors">
-                  <td className="px-3 py-2.5 max-w-[160px] truncate text-[#f3f4f6] font-medium">{l.name || "—"}</td>
-                  <td className="px-3 py-2.5 text-[#9ca3af] max-w-[180px] truncate">{l.email}</td>
-                  <td className="px-3 py-2.5 text-[#9ca3af]">{l.phone || "—"}</td>
-                  <td className="px-3 py-2.5 max-w-[140px] truncate text-[#9ca3af]" title={l.sale?.product ?? ""}>
-                    {l.sale?.product || "—"}
-                    {l.sale && l.sale.count > 1 ? (
-                      <span className="text-[10px] text-[#6b7280]"> +{l.sale.count - 1}</span>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums font-bold text-[#d4af37]">
-                    {l.sale ? formatCurrency(l.sale.value) : <span className="text-[#6b7280] font-normal">—</span>}
-                  </td>
-                  <td className="px-3 py-2.5 text-[#9ca3af] max-w-[120px] truncate">{l.sale?.sellerName || "—"}</td>
-                  <td className="px-3 py-2.5">
-                    {l.status === "bought" ? (
-                      <span
-                        className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                        title={l.sale?.saleDate ? `Venda em ${formatDate(l.sale.saleDate)}` : undefined}
-                      >
-                        Comprou
-                      </span>
-                    ) : (
-                      <Select
-                        value={l.status}
-                        onValueChange={(v) => changeStatus(l.email, v as "pending" | "negotiating" | "declined")}
-                      >
-                        <SelectTrigger className="h-7 text-[11px] bg-[#1a2236] border-[#1f2937] text-[#f3f4f6]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-[#111827] border-[#1f2937] text-[#f3f4f6]">
-                          <SelectItem value="pending" className="text-[#f3f4f6] focus:bg-[#1a2236] focus:text-[#f3f4f6]">Pendente</SelectItem>
-                          <SelectItem value="negotiating" className="text-amber-400 focus:bg-[#1a2236] focus:text-amber-400">Em negociação</SelectItem>
-                          <SelectItem value="declined" className="text-red-400 focus:bg-[#1a2236] focus:text-red-400">Negativa</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </td>
+      {filtered.length === 0 ? (
+        <div className="rounded-xl border border-[#1f2937] bg-[#111827] px-3 py-6 text-center text-[#6b7280] text-sm">
+          Nenhum participante com esse status.
+        </div>
+      ) : (
+        <>
+          {/* DESKTOP — tabela */}
+          <div className="hidden sm:block rounded-xl border border-[#1f2937] overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead className="bg-[#1f2937] text-[#f3f4f6]">
+                <tr>
+                  <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Participante</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Email</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Telefone</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Faturamento</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Produto</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Valor</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px] w-[170px]">Status</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody className="bg-[#111827]">
+                {filtered.map((l) => (
+                  <tr
+                    key={l.email}
+                    onClick={() => setRoiLead({ name: l.name, email: l.email, revenue: l.revenue })}
+                    className="border-t border-[#1f2937] hover:bg-[#1a2236] transition-colors cursor-pointer"
+                  >
+                    <td className="px-3 py-2.5 max-w-[160px] truncate text-[#f3f4f6] font-medium">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Calculator className="h-3.5 w-3.5 text-[#d4af37]/70 shrink-0" />
+                        {l.name || "—"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-[#9ca3af] max-w-[180px] truncate">{l.email}</td>
+                    <td className="px-3 py-2.5 text-[#9ca3af]">{l.phone || "—"}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums font-bold text-[#d4af37]">
+                      {l.revenue != null ? formatCurrency(l.revenue) : <span className="text-[#6b7280] font-normal">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 max-w-[140px] truncate text-[#9ca3af]" title={l.sale?.product ?? ""}>
+                      {l.sale?.product || "—"}
+                      {l.sale && l.sale.count > 1 ? <span className="text-[10px] text-[#6b7280]"> +{l.sale.count - 1}</span> : null}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums font-bold text-[#d4af37]">
+                      {l.sale ? formatCurrency(l.sale.value) : <span className="text-[#6b7280] font-normal">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5">{statusControl(l)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* MOBILE — cards */}
+          <div className="sm:hidden space-y-2">
+            {filtered.map((l) => (
+              <button
+                key={l.email}
+                type="button"
+                onClick={() => setRoiLead({ name: l.name, email: l.email, revenue: l.revenue })}
+                className="w-full text-left rounded-xl border border-[#1f2937] bg-[#111827] p-3 active:bg-[#1a2236] transition-colors"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 font-semibold text-[#f3f4f6] truncate">
+                      <Calculator className="h-3.5 w-3.5 text-[#d4af37] shrink-0" />
+                      {l.name || l.email}
+                    </div>
+                    <div className="text-[12px] text-[#9ca3af] truncate mt-0.5">{l.email}</div>
+                    {l.phone && <div className="text-[12px] text-[#6b7280] truncate">{l.phone}</div>}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-[10px] uppercase tracking-[1px] text-[#6b7280]">Fat.</div>
+                    <div className="font-bold tabular-nums text-[#d4af37]">
+                      {l.revenue != null ? formatCurrency(l.revenue) : "—"}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-[#1f2937]">
+                  {l.sale ? (
+                    <span className="text-[12px] text-[#9ca3af] truncate">
+                      {l.sale.product || "Venda"} · <span className="text-[#d4af37] font-semibold">{formatCurrency(l.sale.value)}</span>
+                    </span>
+                  ) : (
+                    <span className="text-[12px] text-[#6b7280]">toque para ROI</span>
+                  )}
+                  {statusControl(l)}
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      <RoiCalculatorDialog open={!!roiLead} onOpenChange={(o) => !o && setRoiLead(null)} lead={roiLead} />
     </div>
   );
 }

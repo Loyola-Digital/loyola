@@ -84,6 +84,8 @@ export interface EventMapLead {
   status: EventLeadStatus;
   /** Preenchido quando status = "bought". */
   sale: EventLeadSale | null;
+  /** Faturamento mensal da pesquisa (lookup por email); null se não respondeu. Base da calculadora de ROI. */
+  revenue: number | null;
 }
 
 export interface EventMapSummary {
