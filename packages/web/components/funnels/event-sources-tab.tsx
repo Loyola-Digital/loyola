@@ -73,7 +73,7 @@ export function EventSourcesTab({ projectId, funnelId, stageId }: { projectId: s
 
   return (
     <div className="space-y-4 max-w-2xl">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div className="text-sm text-muted-foreground space-y-1.5">
           <p>
             Conecte as planilhas do evento (por link do Google Sheets). Há dois papéis:
@@ -83,7 +83,7 @@ export function EventSourcesTab({ projectId, funnelId, stageId }: { projectId: s
             <li><strong className="text-foreground">Pesquisa</strong> — as respostas do Tally (email/faturamento). Cruzadas por email; quem não respondeu fica sem faturamento.</li>
           </ul>
         </div>
-        <Button size="sm" onClick={() => setDialogOpen(true)} className="shrink-0">
+        <Button size="sm" onClick={() => setDialogOpen(true)} className="shrink-0 w-full sm:w-auto">
           <Plus className="h-3.5 w-3.5 mr-1" /> Conectar planilha
         </Button>
       </div>

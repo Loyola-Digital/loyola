@@ -73,10 +73,10 @@ export function SalesPlanTab({ projectId, funnelId, stageId }: { projectId: stri
   return (
     <div className="rounded-2xl bg-[#0a0e1a] text-[#f3f4f6] border border-[#1f2937] p-4 sm:p-6 space-y-6">
       {/* Header estilo relatório */}
-      <div className="flex items-start justify-between gap-4 border-b border-[#d4af37]/60 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 border-b border-[#d4af37]/60 pb-4">
         <div>
           <div className="text-[11px] tracking-[2px] uppercase font-semibold text-[#d4af37]">Imersão Presencial</div>
-          <h2 className="text-2xl font-extrabold mt-1 text-[#f3f4f6]">Plano de Vendas</h2>
+          <h2 className="text-xl sm:text-2xl font-extrabold mt-1 text-[#f3f4f6]">Plano de Vendas</h2>
           <p className="text-[13px] text-[#9ca3af] mt-1 max-w-2xl">
             Cruzamento das planilhas (por email) com a matriz de faturamento → oferta.
             Toque num participante pra rodar a <span className="text-[#d4af37]">calculadora de ROI</span> no número dele.

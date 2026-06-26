@@ -97,11 +97,11 @@ function RoiCalculator({ lead }: { lead: RoiLead }) {
       {/* Inputs */}
       <div className="px-5 py-4 space-y-3">
         <Field label="Faturamento / mês" value={fat} onChange={setFat} prefix="R$" placeholder="200000" />
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <Field label="Margem hoje" value={mHoje} onChange={setMHoje} suffix="%" placeholder="6" />
           <Field label="Margem método" value={mMet} onChange={setMMet} suffix="%" placeholder="16" />
-          <Field label="Programa" value={preco} onChange={setPreco} prefix="R$" placeholder="15000" />
         </div>
+        <Field label="Preço do programa" value={preco} onChange={setPreco} prefix="R$" placeholder="15000" />
       </div>
 
       {/* Resultado — a conta */}
@@ -125,7 +125,7 @@ function RoiCalculator({ lead }: { lead: RoiLead }) {
           {/* O número que choca */}
           <div className="rounded-xl border border-[#ef4444]/40 bg-[#ef4444]/[0.07] px-4 py-4 text-center">
             <div className="text-[10px] uppercase tracking-[1.5px] text-[#ef4444] font-bold">deixando na mesa, todo ano</div>
-            <div className="text-4xl font-extrabold text-[#ef4444] tabular-nums mt-1 leading-none">{brl(novoAno)}</div>
+            <div className="text-3xl sm:text-4xl font-extrabold text-[#ef4444] tabular-nums mt-1 leading-none">{brl(novoAno)}</div>
           </div>
 
           {/* A frase de fechamento */}
