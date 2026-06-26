@@ -72,6 +72,7 @@ import hotmartRoutes from "./routes/hotmart.js";
 import kiwifyRoutes from "./routes/kiwify.js";
 import memberkitRoutes from "./routes/memberkit.js";
 import stageEventConfigRoutes from "./routes/stage-event-config.js";
+import stageSalesPlanRoutes from "./routes/stage-sales-plan.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -166,6 +167,7 @@ export async function buildServer() {
   await app.register(kiwifyRoutes);
   await app.register(memberkitRoutes);
   await app.register(stageEventConfigRoutes);
+  await app.register(stageSalesPlanRoutes);
 
   return app;
 }

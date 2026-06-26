@@ -1384,6 +1384,57 @@ export const stageEventLeadStatus = pgTable(
   ]
 );
 
+// ============================================================
+// Story 19.15 — Plano de Vendas (Evento Presencial).
+// N planilhas de pesquisa (1 por tipo) cruzadas por email + matriz GLOBAL de
+// faixas de faturamento → oferta. As pesquisas SÃO a lista de participantes.
+// ============================================================
+export const stageSalesPlanSources = pgTable(
+  "stage_sales_plan_sources",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    /** Tipo da pessoa nesta pesquisa: "comprador" | "fornecedor" | "ifood" | … (informativo). */
+    tipo: varchar("tipo", { length: 80 }).notNull(),
+    /** ID da planilha do Google (string, não uuid). */
+    spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
+    spreadsheetName: varchar("spreadsheet_name", { length: 500 }).notNull().default(""),
+    sheetName: varchar("sheet_name", { length: 255 }).notNull(),
+    /** { name?, email?, faturamento? } — colunas mapeadas. */
+    mapping: jsonb("mapping")
+      .$type<{ name?: string; email?: string; faturamento?: string }>()
+      .notNull()
+      .default({}),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_stage_sales_plan_sources_stage").on(table.stageId)]
+);
+
+// Matriz de decisão (global): faixa [min, max) de faturamento → oferta.
+// Oferta é TEXTO (não FK pra stage_event_products: o PUT de produtos recria os
+// IDs a cada save e quebraria a referência).
+export const stageSalesPlanRules = pgTable(
+  "stage_sales_plan_rules",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    label: varchar("label", { length: 255 }).notNull(),
+    minRevenue: numeric("min_revenue", { precision: 14, scale: 2 }),
+    maxRevenue: numeric("max_revenue", { precision: 14, scale: 2 }),
+    offer: varchar("offer", { length: 500 }).notNull().default(""),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_stage_sales_plan_rules_stage").on(table.stageId)]
+);
+
 // Story 35.6 (Epic 35 fase 2 — webhooks de assinatura). A Public API da Kiwify
 // NÃO expõe estado de assinatura (sem /subscriptions); o estado real (vigente,
 // cancelada, atrasada, reembolsada) chega via WEBHOOKS. Esta tabela é o log BRUTO
