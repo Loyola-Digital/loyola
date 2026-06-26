@@ -134,3 +134,16 @@ export type {
   SettableEventLeadStatus,
   SetEventLeadStatusInput,
 } from "./types/event-config.js";
+
+export type {
+  SalesPlanSourceMapping,
+  SalesPlanSource,
+  SalesPlanSourceInput,
+  SalesPlanRule,
+  SalesPlanRuleInput,
+  SalesPlanParticipant,
+  SalesPlanTierGroup,
+  SalesPlanTypeCount,
+  SalesPlanSummary,
+  SalesPlanResponse,
+} from "./types/sales-plan.js";

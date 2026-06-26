@@ -1,0 +1,635 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { Plus, Trash2, Search, FileSpreadsheet, RefreshCw, Settings2, X } from "lucide-react";
+import { toast } from "sonner";
+import type {
+  SalesPlanSource,
+  SalesPlanSourceInput,
+  SalesPlanRule,
+  SalesPlanRuleInput,
+  SalesPlanParticipant,
+} from "@loyola-x/shared";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  useSpreadsheets, useSpreadsheetSheets, useSheetData,
+} from "@/lib/hooks/use-google-sheets";
+import {
+  useSalesPlan,
+  useSalesPlanSources,
+  useSetSalesPlanSources,
+  useSalesPlanRules,
+  useSetSalesPlanRules,
+} from "@/lib/hooks/use-sales-plan";
+import { useEventProducts } from "@/lib/hooks/use-event-config";
+
+// ============================================================
+// Helpers
+// ============================================================
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(value);
+}
+
+/** Texto curto da faixa: "≥ R$ 100k", "R$ 20k–60k", "< R$ 20k", "Qualquer". */
+function formatRange(min: number | null, max: number | null): string {
+  const k = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+  if (min != null && max != null) return `R$ ${k(min)}–${k(max)}`;
+  if (min != null) return `≥ R$ ${k(min)}`;
+  if (max != null) return `< R$ ${k(max)}`;
+  return "Qualquer";
+}
+
+function extractSpreadsheetId(input: string): string | null {
+  const trimmed = input.trim();
+  const m = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (m) return m[1];
+  // já é um ID solto (sem barras/espaços)
+  if (/^[a-zA-Z0-9-_]{20,}$/.test(trimmed)) return trimmed;
+  return null;
+}
+
+function toInput(s: SalesPlanSource): SalesPlanSourceInput {
+  return {
+    tipo: s.tipo,
+    spreadsheetId: s.spreadsheetId,
+    spreadsheetName: s.spreadsheetName,
+    sheetName: s.sheetName,
+    mapping: s.mapping,
+  };
+}
+
+// ============================================================
+// SalesPlanTab (principal)
+// ============================================================
+export function SalesPlanTab({ projectId, funnelId, stageId }: { projectId: string; funnelId: string; stageId: string }) {
+  const { data, isLoading, refetch, isFetching } = useSalesPlan(projectId, funnelId, stageId);
+  const { data: sourcesData } = useSalesPlanSources(projectId, funnelId, stageId);
+  const sources = useMemo(() => sourcesData?.sources ?? [], [sourcesData]);
+
+  const [showConfig, setShowConfig] = useState(false);
+
+  if (isLoading) {
+    return (
+      <div className="rounded-2xl bg-[#0a0e1a] border border-[#1f2937] p-6 space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-20 rounded-xl bg-[#111827] animate-pulse" />)}
+        </div>
+        <div className="h-64 rounded-xl bg-[#111827] animate-pulse" />
+      </div>
+    );
+  }
+
+  const summary = data?.summary;
+  const tiers = data?.tiers ?? [];
+  const unmatched = data?.unmatched ?? [];
+  const hasSources = sources.length > 0;
+
+  const kpis: { label: string; value: string; gold?: boolean }[] = [
+    { label: "Participantes", value: String(summary?.totalParticipants ?? 0) },
+    { label: "Com faturamento", value: String(summary?.withRevenue ?? 0), gold: true },
+    { label: "Sem faturamento", value: String(summary?.withoutRevenue ?? 0) },
+    { label: "Potencial (base)", value: formatCurrency(summary?.totalRevenue ?? 0), gold: true },
+  ];
+
+  return (
+    <div className="rounded-2xl bg-[#0a0e1a] text-[#f3f4f6] border border-[#1f2937] p-6 space-y-6">
+      {/* Header estilo relatório */}
+      <div className="flex items-start justify-between gap-4 border-b border-[#d4af37]/60 pb-4">
+        <div>
+          <div className="text-[11px] tracking-[2px] uppercase font-semibold text-[#d4af37]">Imersão Presencial</div>
+          <h2 className="text-2xl font-extrabold mt-1 text-[#f3f4f6]">Plano de Vendas</h2>
+          <p className="text-[13px] text-[#9ca3af] mt-1 max-w-2xl">
+            Cruzamento das pesquisas (por email) com a matriz de faturamento → oferta.
+            Cada participante cai numa faixa e recebe a oferta recomendada.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold border border-[#1f2937] text-[#9ca3af] hover:bg-[#1a2236] transition-colors"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} /> Atualizar
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowConfig((v) => !v)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold border border-[#d4af37]/40 text-[#d4af37] hover:bg-[#d4af37]/10 transition-colors"
+          >
+            <Settings2 className="h-3.5 w-3.5" /> Configurar
+          </button>
+        </div>
+      </div>
+
+      {/* Config (pesquisas + matriz) */}
+      {(showConfig || !hasSources) && (
+        <div className="space-y-5 rounded-xl border border-[#1f2937] bg-[#0d1424] p-4">
+          <SourcesEditor projectId={projectId} funnelId={funnelId} stageId={stageId} sources={sources} onChanged={() => setShowConfig(true)} />
+          <div className="h-px bg-[#1f2937]" />
+          <RulesEditor projectId={projectId} funnelId={funnelId} stageId={stageId} />
+        </div>
+      )}
+
+      {!hasSources ? (
+        <div className="rounded-xl bg-[#111827] border border-[#1f2937] p-8 text-center text-sm space-y-1">
+          <p className="font-medium text-[#f3f4f6]">Nenhuma pesquisa conectada ainda.</p>
+          <p className="text-[#9ca3af]">
+            Conecte as planilhas de pesquisa (1 por tipo) acima — os participantes e o plano aparecem aqui.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* KPIs */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {kpis.map((k) => (
+              <div key={k.label} className="rounded-xl bg-[#111827] border border-[#1f2937] p-4 transition-colors hover:border-[#d4af37]/60">
+                <div className="text-[11px] uppercase tracking-[1px] text-[#6b7280] mb-2">{k.label}</div>
+                <div className={`text-2xl font-extrabold leading-none ${k.gold ? "text-[#d4af37]" : "text-[#f3f4f6]"}`}>{k.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Breakdown por tipo */}
+          {summary && summary.byType.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] uppercase tracking-[1px] text-[#6b7280]">Por tipo:</span>
+              {summary.byType.map((t) => (
+                <span key={t.tipo} className="text-[11px] rounded-full border border-[#1f2937] px-2.5 py-1 text-[#9ca3af]">
+                  {t.tipo} <strong className="text-[#f3f4f6]">{t.count}</strong>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Matriz de decisão (resumo) */}
+          {tiers.length > 0 && (
+            <div className="rounded-xl border border-[#1f2937] overflow-hidden">
+              <div className="px-4 py-2.5 bg-[#1f2937] text-[11px] uppercase tracking-[1px] font-semibold">Matriz de decisão</div>
+              <table className="w-full text-[13px]">
+                <thead className="bg-[#141c2e] text-[#9ca3af]">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-semibold text-[11px] uppercase tracking-[1px]">Faixa</th>
+                    <th className="text-left px-3 py-2 font-semibold text-[11px] uppercase tracking-[1px]">Oferta recomendada</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[11px] uppercase tracking-[1px]">Pessoas</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-[#111827]">
+                  {tiers.map((t) => (
+                    <tr key={t.ruleId} className="border-t border-[#1f2937]">
+                      <td className="px-3 py-2 text-[#f3f4f6] font-medium">
+                        {t.label} <span className="text-[#6b7280] font-normal">· {formatRange(t.minRevenue, t.maxRevenue)}</span>
+                      </td>
+                      <td className="px-3 py-2 text-[#d4af37] font-semibold">{t.offer || "—"}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-[#f3f4f6]">{t.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Tiers detalhados */}
+          {tiers.filter((t) => t.count > 0).map((t) => (
+            <SegmentTable
+              key={t.ruleId}
+              title={t.label}
+              subtitle={`${formatRange(t.minRevenue, t.maxRevenue)} · ${t.offer || "sem oferta definida"}`}
+              participants={t.participants}
+            />
+          ))}
+
+          {/* Sem faturamento / fora de faixa */}
+          {unmatched.length > 0 && (
+            <div className="rounded-xl border border-[#ef4444]/40 bg-[#ef4444]/[0.06] overflow-hidden">
+              <div className="px-4 py-2.5 text-[12px] font-bold uppercase tracking-[1px] text-[#ef4444]">
+                ⚠ {unmatched.length} sem faturamento / fora de faixa — cobrar pesquisa
+              </div>
+              <SegmentTable participants={unmatched} bare />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Tabela de participantes de um segmento
+// ============================================================
+function SegmentTable({
+  title, subtitle, participants, bare,
+}: { title?: string; subtitle?: string; participants: SalesPlanParticipant[]; bare?: boolean }) {
+  return (
+    <div className={bare ? "" : "rounded-xl border border-[#1f2937] overflow-hidden"}>
+      {title && (
+        <div className="px-4 py-3 bg-[#141c2e] border-b border-[#1f2937]">
+          <div className="text-[15px] font-bold text-[#d4af37]">{title}</div>
+          {subtitle && <div className="text-[12px] text-[#9ca3af] mt-0.5">{subtitle}</div>}
+        </div>
+      )}
+      <table className="w-full text-[13px]">
+        <thead className="bg-[#1f2937] text-[#f3f4f6]">
+          <tr>
+            <th className="text-left px-3 py-2 font-semibold text-[11px] uppercase tracking-[1px]">Nome</th>
+            <th className="text-left px-3 py-2 font-semibold text-[11px] uppercase tracking-[1px]">Email</th>
+            <th className="text-left px-3 py-2 font-semibold text-[11px] uppercase tracking-[1px]">Tipo</th>
+            <th className="text-right px-3 py-2 font-semibold text-[11px] uppercase tracking-[1px]">Faturamento</th>
+          </tr>
+        </thead>
+        <tbody className="bg-[#111827]">
+          {participants.map((p) => (
+            <tr key={p.email} className="border-t border-[#1f2937] hover:bg-[#1a2236] transition-colors">
+              <td className="px-3 py-2 text-[#f3f4f6] font-medium max-w-[180px] truncate">{p.name || "—"}</td>
+              <td className="px-3 py-2 text-[#9ca3af] max-w-[200px] truncate">{p.email}</td>
+              <td className="px-3 py-2">
+                <span className="text-[10px] rounded-full border border-[#1f2937] px-2 py-0.5 text-[#9ca3af]">{p.tipo}</span>
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums font-bold text-[#d4af37]" title={p.revenueRaw ?? undefined}>
+                {p.revenue != null ? formatCurrency(p.revenue) : <span className="text-[#6b7280] font-normal">—</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ============================================================
+// Editor de pesquisas conectadas
+// ============================================================
+function SourcesEditor({
+  projectId, funnelId, stageId, sources, onChanged,
+}: { projectId: string; funnelId: string; stageId: string; sources: SalesPlanSource[]; onChanged?: () => void }) {
+  const setSources = useSetSalesPlanSources(projectId, funnelId, stageId);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  function handleAdd(source: SalesPlanSourceInput) {
+    // fecha o dialog SÓ no sucesso — em erro mantém o wizard preenchido pra retry.
+    setSources.mutate([...sources.map(toInput), source], {
+      onSuccess: () => { toast.success("Pesquisa conectada"); onChanged?.(); setDialogOpen(false); },
+      onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
+    });
+  }
+
+  function handleRemove(id: string) {
+    setSources.mutate(sources.filter((s) => s.id !== id).map(toInput), {
+      onSuccess: () => { toast.success("Pesquisa removida"); onChanged?.(); },
+      onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
+    });
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-[13px] font-semibold text-[#f3f4f6]">Pesquisas conectadas</div>
+          <div className="text-[11px] text-[#6b7280]">1 planilha por tipo (comprador, fornecedor, iFood…). Cruzadas por email.</div>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => setDialogOpen(true)}
+          className="bg-[#d4af37] text-black hover:bg-[#d4af37]/90 h-8"
+        >
+          <Plus className="h-3.5 w-3.5 mr-1" /> Conectar pesquisa
+        </Button>
+      </div>
+
+      {sources.length === 0 ? (
+        <p className="text-[12px] text-[#6b7280] italic">Nenhuma pesquisa conectada.</p>
+      ) : (
+        <div className="space-y-2">
+          {sources.map((s) => (
+            <div key={s.id} className="flex items-center gap-3 rounded-lg border border-[#1f2937] bg-[#111827] px-3 py-2">
+              <span className="text-[10px] font-bold uppercase tracking-[1px] rounded-full bg-[#d4af37]/15 text-[#d4af37] px-2.5 py-1">{s.tipo}</span>
+              <div className="min-w-0 flex-1">
+                <div className="text-[12px] text-[#f3f4f6] truncate flex items-center gap-1.5">
+                  <FileSpreadsheet className="h-3.5 w-3.5 text-[#6b7280] shrink-0" />
+                  {s.spreadsheetName || s.spreadsheetId} <span className="text-[#6b7280]">/ {s.sheetName}</span>
+                </div>
+                <div className="text-[11px] text-[#6b7280] truncate">
+                  email: {s.mapping.email || "—"} · faturamento: {s.mapping.faturamento || "—"}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleRemove(s.id)}
+                disabled={setSources.isPending}
+                className="text-[#6b7280] hover:text-[#ef4444] transition-colors p-1"
+                title="Remover"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <ConnectSurveyDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onConfirm={handleAdd}
+        saving={setSources.isPending}
+      />
+    </div>
+  );
+}
+
+// ============================================================
+// Dialog de conexão de pesquisa (planilha → aba → mapeamento + tipo)
+// ============================================================
+type Step = "spreadsheet" | "sheet" | "mapping";
+
+function ConnectSurveyDialog({
+  open, onOpenChange, onConfirm, saving,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onConfirm: (s: SalesPlanSourceInput) => void;
+  saving: boolean;
+}) {
+  const { data: spreadsheetsData, isLoading: spreadsheetsLoading } = useSpreadsheets();
+  const [selected, setSelected] = useState<{ id: string; name: string } | null>(null);
+  const [sheet, setSheet] = useState<string | null>(null);
+  const [tipo, setTipo] = useState("");
+  const [mapping, setMapping] = useState<{ name?: string; email?: string; faturamento?: string }>({});
+  const [search, setSearch] = useState("");
+  const [link, setLink] = useState("");
+
+  const { data: sheetsData, isLoading: sheetsLoading } = useSpreadsheetSheets(selected?.id ?? null);
+  const { data: sheetData, isLoading: sheetDataLoading } = useSheetData(selected?.id ?? null, sheet);
+
+  const spreadsheets = spreadsheetsData?.spreadsheets ?? [];
+  const filtered = search ? spreadsheets.filter((s) => s.name.toLowerCase().includes(search.toLowerCase())) : spreadsheets;
+
+  const rawHeaders = sheetData?.headers ?? [];
+  // Só colunas com header real: o backend resolve por nome (headers.indexOf),
+  // então um placeholder sintético ("Coluna N") não casaria e a fonte sumiria.
+  const columns = Array.from(new Set(rawHeaders.filter((h) => h && h.trim().length > 0)));
+
+  const step: Step = !selected ? "spreadsheet" : !sheet ? "sheet" : "mapping";
+  const canSave = !!(selected && sheet && tipo.trim() && mapping.email);
+
+  function reset() {
+    setSelected(null); setSheet(null); setTipo(""); setMapping({}); setSearch(""); setLink("");
+  }
+  function close() { reset(); onOpenChange(false); }
+
+  function useLink() {
+    const id = extractSpreadsheetId(link);
+    if (!id) { toast.error("Link inválido — cole a URL completa do Google Sheets"); return; }
+    setSelected({ id, name: "" });
+  }
+
+  function confirm() {
+    if (!canSave || !selected || !sheet) return;
+    // não reseta aqui: o pai fecha o dialog no sucesso (→ close() reseta).
+    // Se o save falhar, o dialog continua aberto com os dados preenchidos.
+    onConfirm({
+      tipo: tipo.trim(),
+      spreadsheetId: selected.id,
+      spreadsheetName: selected.name,
+      sheetName: sheet,
+      mapping,
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : close())}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {step === "spreadsheet" && "Escolher planilha de pesquisa"}
+            {step === "sheet" && "Escolher a aba"}
+            {step === "mapping" && "Mapear colunas + tipo"}
+          </DialogTitle>
+        </DialogHeader>
+
+        {/* STEP 1 — planilha */}
+        {step === "spreadsheet" && (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Colar link do Google Sheets</Label>
+              <div className="flex gap-2">
+                <Input placeholder="https://docs.google.com/spreadsheets/d/..." value={link} onChange={(e) => setLink(e.target.value)} />
+                <Button type="button" variant="secondary" onClick={useLink} disabled={!link.trim()}>Usar</Button>
+              </div>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="ou buscar nas suas planilhas..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" />
+            </div>
+            <div className="max-h-64 overflow-y-auto space-y-1">
+              {spreadsheetsLoading ? (
+                <><Skeleton className="h-9" /><Skeleton className="h-9" /><Skeleton className="h-9" /></>
+              ) : filtered.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">Nenhuma planilha encontrada.</p>
+              ) : (
+                filtered.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setSelected({ id: s.id, name: s.name })}
+                    className="w-full text-left px-3 py-2 rounded-md hover:bg-muted text-sm flex items-center gap-2"
+                  >
+                    <FileSpreadsheet className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="truncate">{s.name}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* STEP 2 — aba */}
+        {step === "sheet" && (
+          <div className="space-y-3">
+            <button type="button" onClick={() => setSelected(null)} className="text-xs text-muted-foreground hover:underline">← trocar planilha</button>
+            {sheetsLoading ? (
+              <><Skeleton className="h-9" /><Skeleton className="h-9" /></>
+            ) : (
+              <div className="max-h-64 overflow-y-auto space-y-1">
+                {(sheetsData?.sheets ?? []).map((sh) => (
+                  <button
+                    key={sh.sheetId}
+                    type="button"
+                    onClick={() => setSheet(sh.title)}
+                    className="w-full text-left px-3 py-2 rounded-md hover:bg-muted text-sm flex items-center justify-between"
+                  >
+                    <span className="truncate">{sh.title}</span>
+                    <span className="text-xs text-muted-foreground">{sh.rowCount} linhas</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* STEP 3 — mapeamento */}
+        {step === "mapping" && (
+          <div className="space-y-3">
+            <button type="button" onClick={() => setSheet(null)} className="text-xs text-muted-foreground hover:underline">← trocar aba</button>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Tipo desta pesquisa <span className="text-red-500">*</span></Label>
+              <Input placeholder="comprador / fornecedor / ifood…" value={tipo} onChange={(e) => setTipo(e.target.value)} list="sales-plan-tipos" />
+              <datalist id="sales-plan-tipos">
+                <option value="comprador" /><option value="fornecedor" /><option value="ifood" />
+              </datalist>
+            </div>
+
+            {sheetDataLoading ? (
+              <Skeleton className="h-32" />
+            ) : (
+              <div className="space-y-2.5">
+                {([
+                  { key: "email", label: "Email", required: true },
+                  { key: "name", label: "Nome" },
+                  { key: "faturamento", label: "Faturamento" },
+                ] as const).map((f) => (
+                  <div key={f.key} className="grid grid-cols-[120px_1fr] items-center gap-2">
+                    <Label className="text-xs">{f.label}{"required" in f && f.required && <span className="text-red-500"> *</span>}</Label>
+                    <Select
+                      value={mapping[f.key] ?? "__none__"}
+                      onValueChange={(v) => setMapping((m) => ({ ...m, [f.key]: v === "__none__" ? undefined : v }))}
+                    >
+                      <SelectTrigger className="h-9"><SelectValue placeholder="selecione a coluna" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">—</SelectItem>
+                        {columns.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={close}>Cancelar</Button>
+          <Button type="button" onClick={confirm} disabled={!canSave || saving}>
+            {saving ? "Salvando..." : "Conectar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============================================================
+// Editor da matriz de faixas → oferta
+// ============================================================
+type DraftRule = { label: string; minRevenue: string; maxRevenue: string; offer: string };
+
+function ruleToDraft(r: SalesPlanRule): DraftRule {
+  return {
+    label: r.label,
+    minRevenue: r.minRevenue != null ? String(r.minRevenue) : "",
+    maxRevenue: r.maxRevenue != null ? String(r.maxRevenue) : "",
+    offer: r.offer,
+  };
+}
+
+function RulesEditor({ projectId, funnelId, stageId }: { projectId: string; funnelId: string; stageId: string }) {
+  const { data: rulesData, isLoading: rulesLoading } = useSalesPlanRules(projectId, funnelId, stageId);
+  const { data: productsData } = useEventProducts(projectId, funnelId, stageId);
+  const setRules = useSetSalesPlanRules(projectId, funnelId, stageId);
+
+  const serverRules = useMemo(() => rulesData?.rules ?? [], [rulesData]);
+  const [draft, setDraft] = useState<DraftRule[] | null>(null);
+  const rows = draft ?? serverRules.map(ruleToDraft);
+  const products = productsData?.products ?? [];
+
+  function update(i: number, patch: Partial<DraftRule>) {
+    setDraft(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  }
+  function addRow() { setDraft([...rows, { label: "", minRevenue: "", maxRevenue: "", offer: "" }]); }
+  function removeRow(i: number) { setDraft(rows.filter((_, idx) => idx !== i)); }
+
+  function parseNum(v: string): number | null {
+    const t = v.trim();
+    if (!t) return null;
+    const n = Number(t.replace(/\./g, "").replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function save() {
+    const payload: SalesPlanRuleInput[] = [];
+    for (const r of rows) {
+      if (!r.label.trim()) { toast.error("Toda faixa precisa de um rótulo"); return; }
+      const minRevenue = parseNum(r.minRevenue);
+      const maxRevenue = parseNum(r.maxRevenue);
+      if (minRevenue != null && maxRevenue != null && minRevenue >= maxRevenue) {
+        toast.error(`Faixa "${r.label}": mínimo deve ser menor que o máximo`);
+        return;
+      }
+      payload.push({ label: r.label.trim(), minRevenue, maxRevenue, offer: r.offer.trim() });
+    }
+    setRules.mutate(payload, {
+      onSuccess: () => { toast.success("Matriz salva"); setDraft(null); },
+      onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
+    });
+  }
+
+  const dirty = draft !== null;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-[13px] font-semibold text-[#f3f4f6]">Matriz de ofertas</div>
+          <div className="text-[11px] text-[#6b7280]">Faixa de faturamento → oferta. A 1ª faixa que contém o valor vence (deixe min/max vazio p/ sem limite).</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button type="button" size="sm" variant="secondary" onClick={addRow} className="h-8">
+            <Plus className="h-3.5 w-3.5 mr-1" /> Faixa
+          </Button>
+          {dirty && (
+            <Button type="button" size="sm" onClick={save} disabled={setRules.isPending} className="bg-[#d4af37] text-black hover:bg-[#d4af37]/90 h-8">
+              {setRules.isPending ? "Salvando..." : "Salvar matriz"}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {rows.length === 0 ? (
+        rulesLoading ? (
+          <Skeleton className="h-9" />
+        ) : (
+          <p className="text-[12px] text-[#6b7280] italic">Nenhuma faixa. Adicione faixas pra recomendar ofertas por faturamento.</p>
+        )
+      ) : (
+        <div className="space-y-2">
+          <div className="grid grid-cols-[1fr_90px_90px_1.2fr_32px] gap-2 px-1 text-[10px] uppercase tracking-[1px] text-[#6b7280]">
+            <span>Rótulo</span><span>Mín (R$)</span><span>Máx (R$)</span><span>Oferta</span><span />
+          </div>
+          {rows.map((r, i) => (
+            <div key={i} className="grid grid-cols-[1fr_90px_90px_1.2fr_32px] gap-2 items-center">
+              <Input value={r.label} onChange={(e) => update(i, { label: e.target.value })} placeholder="Tier A" className="h-9 bg-[#1a2236] border-[#1f2937] text-[#f3f4f6]" />
+              <Input value={r.minRevenue} onChange={(e) => update(i, { minRevenue: e.target.value })} placeholder="—" inputMode="numeric" className="h-9 bg-[#1a2236] border-[#1f2937] text-[#f3f4f6]" />
+              <Input value={r.maxRevenue} onChange={(e) => update(i, { maxRevenue: e.target.value })} placeholder="—" inputMode="numeric" className="h-9 bg-[#1a2236] border-[#1f2937] text-[#f3f4f6]" />
+              <Input value={r.offer} onChange={(e) => update(i, { offer: e.target.value })} placeholder="Pacote / produto" list="sales-plan-offers" className="h-9 bg-[#1a2236] border-[#1f2937] text-[#f3f4f6]" />
+              <button type="button" onClick={() => removeRow(i)} className="text-[#6b7280] hover:text-[#ef4444] transition-colors flex justify-center" title="Remover faixa">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+          <datalist id="sales-plan-offers">
+            {products.map((p) => <option key={p.id} value={p.name} />)}
+          </datalist>
+        </div>
+      )}
+    </div>
+  );
+}

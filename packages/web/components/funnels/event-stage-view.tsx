@@ -13,6 +13,7 @@ import {
   Clock,
   Loader2,
   Map as MapIcon,
+  Target,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { FunnelStage, ManualSale } from "@loyola-x/shared";
@@ -42,6 +43,7 @@ import {
 } from "@/components/ui/select";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
+import { SalesPlanTab } from "@/components/funnels/sales-plan-tab";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import {
   useAllSales,
@@ -246,6 +248,9 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
           <TabsTrigger value="mapa" className="gap-1.5">
             <MapIcon className="h-3.5 w-3.5" /> Mapa do Evento
           </TabsTrigger>
+          <TabsTrigger value="plano" className="gap-1.5">
+            <Target className="h-3.5 w-3.5" /> Plano de Vendas
+          </TabsTrigger>
           <TabsTrigger value="planilha" className="gap-1.5">
             Leads do Evento
           </TabsTrigger>
@@ -298,6 +303,11 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
         {/* MAPA DO EVENTO — leads com status (comprou/negociação/negativa/pendente) */}
         <TabsContent value="mapa" className="mt-6">
           <EventMapTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
+        </TabsContent>
+
+        {/* PLANO DE VENDAS — cruzamento das pesquisas (faturamento) com a matriz de ofertas */}
+        <TabsContent value="plano" className="mt-6">
+          <SalesPlanTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
         </TabsContent>
 
         {/* PLANILHAS DO FUNIL — escolher quais espelhar no evento */}
