@@ -188,15 +188,15 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
   return (
     <div className="p-4 sm:p-6 space-y-5 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="min-w-0">
           <p className="text-xs text-muted-foreground mb-0.5">{funnelName}</p>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <CalendarDays className="h-5 w-5 text-fuchsia-500" />
-            {stage.name}
-            <Badge variant="secondary" className="text-[10px]">Evento Presencial</Badge>
+          <h1 className="text-lg sm:text-2xl font-bold flex items-center gap-2 flex-wrap">
+            <CalendarDays className="h-4 w-4 sm:h-5 sm:w-5 text-fuchsia-500 shrink-0" />
+            <span className="truncate">{stage.name}</span>
+            <Badge variant="secondary" className="text-[10px] shrink-0">Evento Presencial</Badge>
           </h1>
-          <p className="text-sm text-muted-foreground">Vendas do evento + matrícula automática no MemberKit</p>
+          <p className="hidden sm:block text-sm text-muted-foreground">Vendas do evento + matrícula automática no MemberKit</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <DayRangePicker days={days} onDaysChange={setDays} />
@@ -239,21 +239,21 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
       </div>
 
       <Tabs defaultValue="vendas">
-        <TabsList className="max-w-full justify-start overflow-x-auto">
-          <TabsTrigger value="vendas" className="gap-1.5">
+        <TabsList className="max-w-full justify-start overflow-x-auto h-auto">
+          <TabsTrigger value="vendas" className="gap-1.5 shrink-0">
             <CalendarDays className="h-3.5 w-3.5" /> Vendas
           </TabsTrigger>
-          <TabsTrigger value="mapa" className="gap-1.5">
-            <MapIcon className="h-3.5 w-3.5" /> Mapa do Evento
+          <TabsTrigger value="mapa" className="gap-1.5 shrink-0">
+            <MapIcon className="h-3.5 w-3.5" /> Mapa
           </TabsTrigger>
-          <TabsTrigger value="plano" className="gap-1.5">
+          <TabsTrigger value="plano" className="gap-1.5 shrink-0">
             <Target className="h-3.5 w-3.5" /> Plano de Vendas
           </TabsTrigger>
-          <TabsTrigger value="planilha" className="gap-1.5">
-            Leads do Evento
+          <TabsTrigger value="planilha" className="gap-1.5 shrink-0">
+            Leads
           </TabsTrigger>
-          <TabsTrigger value="config" className="gap-1.5">
-            <GraduationCap className="h-3.5 w-3.5" /> Configuração
+          <TabsTrigger value="config" className="gap-1.5 shrink-0">
+            <GraduationCap className="h-3.5 w-3.5" /> Config
           </TabsTrigger>
         </TabsList>
 
