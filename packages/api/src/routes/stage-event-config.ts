@@ -18,6 +18,7 @@ import {
   projectMembers,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import { parseFaturamento } from "../services/parse-faturamento.js";
 
 const stageParamsSchema = z.object({
   projectId: z.string().uuid(),
@@ -385,6 +386,46 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     return Array.from(byEmail.values());
   }
 
+  // Helper: faturamento por email vindo das planilhas de RESPOSTAS (role
+  // "survey"). Usado pra preencher o ROI de cada lead no Mapa do Evento.
+  async function loadRevenueByEmail(stageId: string): Promise<Map<string, number>> {
+    const surveys = await fastify.db
+      .select({
+        spreadsheetId: stageSalesPlanSources.spreadsheetId,
+        sheetName: stageSalesPlanSources.sheetName,
+        mapping: stageSalesPlanSources.mapping,
+      })
+      .from(stageSalesPlanSources)
+      .where(
+        and(eq(stageSalesPlanSources.stageId, stageId), eq(stageSalesPlanSources.role, "survey")),
+      )
+      .orderBy(asc(stageSalesPlanSources.sortOrder));
+
+    const out = new Map<string, number>();
+    for (const src of surveys) {
+      const mapping = (src.mapping ?? {}) as { email?: string; faturamento?: string };
+      let data;
+      try {
+        data = await readSheetData(src.spreadsheetId, src.sheetName);
+      } catch {
+        continue;
+      }
+      const { headers, rows } = data;
+      const emailIdx = mapping.email ? headers.indexOf(mapping.email) : -1;
+      const fatIdx = mapping.faturamento ? headers.indexOf(mapping.faturamento) : -1;
+      if (emailIdx === -1 || fatIdx === -1) continue;
+      for (const row of rows) {
+        const email = (row[emailIdx] ?? "").trim().toLowerCase();
+        if (!email || out.has(email)) continue;
+        const raw = (row[fatIdx] ?? "").trim();
+        if (!raw) continue;
+        const value = parseFaturamento(raw);
+        if (value != null) out.set(email, value);
+      }
+    }
+    return out;
+  }
+
   // ---- LEADS DO EVENTO (buscador no lançamento da venda) ----
   fastify.get(`${base}/event-leads`, async (request, reply) => {
     const params = stageParamsSchema.safeParse(request.params);
@@ -408,6 +449,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
     const leads = await loadEventLeads(params.data.stageId);
+    const revenueByEmail = await loadRevenueByEmail(params.data.stageId);
 
     // "comprou" = lead cujo email tem venda manual nesta etapa. Agrega a info
     // da venda por email: soma do valor + produto/closer/data da venda mais recente.
@@ -469,7 +511,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       else if (status === "negotiating") summary.negotiating += 1;
       else if (status === "declined") summary.declined += 1;
       else summary.pending += 1;
-      return { ...l, status, sale };
+      return { ...l, status, sale, revenue: revenueByEmail.get(l.email) ?? null };
     });
 
     return { leads: out, summary };

@@ -69,7 +69,7 @@ export function SalesPlanTab({ projectId, funnelId, stageId }: { projectId: stri
   ];
 
   return (
-    <div className="rounded-2xl bg-[#0a0e1a] text-[#f3f4f6] border border-[#1f2937] p-6 space-y-6">
+    <div className="rounded-2xl bg-[#0a0e1a] text-[#f3f4f6] border border-[#1f2937] p-4 sm:p-6 space-y-6">
       {/* Header estilo relatório */}
       <div className="flex items-start justify-between gap-4 border-b border-[#d4af37]/60 pb-4">
         <div>
@@ -139,9 +139,9 @@ export function SalesPlanTab({ projectId, funnelId, stageId }: { projectId: stri
 
           {/* Matriz de decisão (resumo) */}
           {tiers.length > 0 && (
-            <div className="rounded-xl border border-[#1f2937] overflow-hidden">
+            <div className="rounded-xl border border-[#1f2937] overflow-x-auto">
               <div className="px-4 py-2.5 bg-[#1f2937] text-[11px] uppercase tracking-[1px] font-semibold">Matriz de decisão</div>
-              <table className="w-full text-[13px]">
+              <table className="w-full min-w-[440px] text-[13px]">
                 <thead className="bg-[#141c2e] text-[#9ca3af]">
                   <tr>
                     <th className="text-left px-3 py-2 font-semibold text-[11px] uppercase tracking-[1px]">Faixa</th>
@@ -203,7 +203,8 @@ function SegmentTable({
           {subtitle && <div className="text-[12px] text-[#9ca3af] mt-0.5">{subtitle}</div>}
         </div>
       )}
-      <table className="w-full text-[13px]">
+      <div className="overflow-x-auto">
+      <table className="w-full min-w-[520px] text-[13px]">
         <thead className="bg-[#1f2937] text-[#f3f4f6]">
           <tr>
             <th className="text-left px-3 py-2 font-semibold text-[11px] uppercase tracking-[1px]">Nome</th>
@@ -227,6 +228,7 @@ function SegmentTable({
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -314,12 +316,12 @@ function RulesEditor({ projectId, funnelId, stageId }: { projectId: string; funn
           <p className="text-[12px] text-[#6b7280] italic">Nenhuma faixa. Adicione faixas pra recomendar ofertas por faturamento.</p>
         )
       ) : (
-        <div className="space-y-2">
-          <div className="grid grid-cols-[1fr_90px_90px_1.2fr_32px] gap-2 px-1 text-[10px] uppercase tracking-[1px] text-[#6b7280]">
+        <div className="space-y-2 overflow-x-auto">
+          <div className="grid grid-cols-[1fr_90px_90px_1.2fr_32px] gap-2 px-1 min-w-[480px] text-[10px] uppercase tracking-[1px] text-[#6b7280]">
             <span>Rótulo</span><span>Mín (R$)</span><span>Máx (R$)</span><span>Oferta</span><span />
           </div>
           {rows.map((r, i) => (
-            <div key={i} className="grid grid-cols-[1fr_90px_90px_1.2fr_32px] gap-2 items-center">
+            <div key={i} className="grid grid-cols-[1fr_90px_90px_1.2fr_32px] gap-2 items-center min-w-[480px]">
               <Input value={r.label} onChange={(e) => update(i, { label: e.target.value })} placeholder="Tier A" className="h-9 bg-[#1a2236] border-[#1f2937] text-[#f3f4f6]" />
               <Input value={r.minRevenue} onChange={(e) => update(i, { minRevenue: e.target.value })} placeholder="—" inputMode="numeric" className="h-9 bg-[#1a2236] border-[#1f2937] text-[#f3f4f6]" />
               <Input value={r.maxRevenue} onChange={(e) => update(i, { maxRevenue: e.target.value })} placeholder="—" inputMode="numeric" className="h-9 bg-[#1a2236] border-[#1f2937] text-[#f3f4f6]" />
