@@ -35,6 +35,7 @@ const mappingSchema = z
   .object({
     name: z.string().trim().max(255).optional(),
     email: z.string().trim().max(255).optional(),
+    telefone: z.string().trim().max(255).optional(),
     faturamento: z.string().trim().max(255).optional(),
   })
   .strip();

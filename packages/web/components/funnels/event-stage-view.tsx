@@ -63,12 +63,10 @@ import {
   useSetEventProducts,
   useEventClosers,
   useSetEventClosers,
-  useFunnelSalesSpreadsheets,
-  useEventMirroredSheets,
-  useSetEventMirroredSheets,
   useEventMap,
   useSetEventLeadStatus,
 } from "@/lib/hooks/use-event-config";
+import { EventSourcesTab } from "@/components/funnels/event-sources-tab";
 import type { EventLeadStatus } from "@loyola-x/shared";
 
 interface EventStageViewProps {
@@ -310,9 +308,9 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
           <SalesPlanTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
         </TabsContent>
 
-        {/* PLANILHAS DO FUNIL — escolher quais espelhar no evento */}
+        {/* LEADS DO EVENTO — conectar as planilhas (fonte única: Mapa + Plano de Vendas) */}
         <TabsContent value="planilha" className="mt-6">
-          <MirrorSheetsTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
+          <EventSourcesTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
         </TabsContent>
 
         {/* CONFIGURAÇÃO — produtos (com turma) + closers + auto-matrícula */}
@@ -696,80 +694,6 @@ function EventConfigTab({ projectId, funnelId, stageId }: { projectId: string; f
           {setCfg.isPending ? "Salvando..." : "Salvar auto-matrícula"}
         </Button>
       </section>
-    </div>
-  );
-}
-
-const MIRROR_SUBTYPE_LABELS: Record<string, string> = {
-  capture: "Captação",
-  main_product: "Produto Principal",
-  sales: "Vendas",
-  tmb: "TMB",
-};
-
-function MirrorSheetsTab({ projectId, funnelId, stageId }: { projectId: string; funnelId: string; stageId: string }) {
-  const sheetsQ = useFunnelSalesSpreadsheets(projectId, funnelId);
-  const mirroredQ = useEventMirroredSheets(projectId, funnelId, stageId);
-  const setMirror = useSetEventMirroredSheets(projectId, funnelId, stageId);
-
-  const [selected, setSelected] = useState<string[]>([]);
-  const [hydrated, setHydrated] = useState(false);
-  if (mirroredQ.data && !hydrated) {
-    setHydrated(true);
-    setSelected(mirroredQ.data.sourceSpreadsheetIds);
-  }
-
-  const sheets = sheetsQ.data?.spreadsheets ?? [];
-
-  function toggle(id: string) {
-    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
-  }
-
-  function save() {
-    setMirror.mutate(selected, {
-      onSuccess: () => toast.success("Planilhas espelhadas salvas"),
-      onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
-    });
-  }
-
-  return (
-    <div className="space-y-4 max-w-2xl">
-      <p className="text-sm text-muted-foreground">
-        Escolha quais planilhas do funil (captação paga, vendas, etc.) fornecem a <strong>lista de
-        leads/participantes</strong> do evento. Esses leads aparecem no buscador ao lançar uma venda
-        (pra selecionar e autopreencher por email) — eles <strong>não</strong> entram como venda na tabela.
-        No futuro também alimentarão o mapa dos closers no evento.
-      </p>
-
-      {sheetsQ.isLoading ? (
-        <Skeleton className="h-24" />
-      ) : sheets.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
-          Nenhuma planilha de vendas conectada no funil ainda. Conecte as planilhas nas etapas de
-          Captação Paga / Vendas e elas aparecerão aqui para espelhar.
-        </div>
-      ) : (
-        <div className="space-y-1.5">
-          {sheets.map((s) => (
-            <label
-              key={s.id}
-              className="flex items-center gap-2 rounded-md border border-border/40 px-3 py-2 text-sm cursor-pointer hover:bg-muted/30"
-            >
-              <input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggle(s.id)} />
-              <span className="flex-1">
-                <span className="font-medium">{s.stageName}</span>
-                <span className="text-muted-foreground">
-                  {" "}· {MIRROR_SUBTYPE_LABELS[s.subtype] ?? s.subtype} — {s.spreadsheetName} / {s.sheetName}
-                </span>
-              </span>
-            </label>
-          ))}
-        </div>
-      )}
-
-      <Button size="sm" onClick={save} disabled={setMirror.isPending || !hydrated}>
-        {setMirror.isPending ? "Salvando..." : "Salvar seleção"}
-      </Button>
     </div>
   );
 }
