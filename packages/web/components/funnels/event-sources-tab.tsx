@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, Search, FileSpreadsheet } from "lucide-react";
+import { Plus, Trash2, Search, FileSpreadsheet, Users, ClipboardList } from "lucide-react";
 import { toast } from "sonner";
-import type { SalesPlanSource, SalesPlanSourceInput } from "@loyola-x/shared";
+import type { SalesPlanSource, SalesPlanSourceInput, SalesPlanSourceRole } from "@loyola-x/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,10 +19,16 @@ import {
 } from "@/lib/hooks/use-google-sheets";
 import { useSalesPlanSources, useSetSalesPlanSources } from "@/lib/hooks/use-sales-plan";
 
-// Story 19.15 — Fontes do evento (aba "Leads do Evento"). As planilhas
-// conectadas aqui são a lista única de participantes: alimentam o Mapa do
-// Evento (nome/email/telefone) E o Plano de Vendas (tipo/faturamento).
-// Substitui o antigo espelhamento de planilhas de outra etapa do funil.
+// Story 19.15 — Fontes do evento (aba "Leads do Evento").
+// - "participants": planilha MESTRE com todo mundo (nome/email/telefone/tipo).
+//   É a lista do Mapa do Evento e do Plano de Vendas.
+// - "survey": planilhas de RESPOSTAS (Tally), com faturamento por email. O
+//   faturamento é cruzado com a mestre; quem não respondeu fica sem faturamento.
+
+const ROLE_LABEL: Record<SalesPlanSourceRole, string> = {
+  participants: "Participantes",
+  survey: "Pesquisa",
+};
 
 function extractSpreadsheetId(input: string): string | null {
   const trimmed = input.trim();
@@ -34,6 +40,7 @@ function extractSpreadsheetId(input: string): string | null {
 
 function toInput(s: SalesPlanSource): SalesPlanSourceInput {
   return {
+    role: s.role,
     tipo: s.tipo,
     spreadsheetId: s.spreadsheetId,
     spreadsheetName: s.spreadsheetName,
@@ -47,6 +54,8 @@ export function EventSourcesTab({ projectId, funnelId, stageId }: { projectId: s
   const setSources = useSetSalesPlanSources(projectId, funnelId, stageId);
   const sources = data?.sources ?? [];
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  const hasMaster = sources.some((s) => s.role === "participants");
 
   function handleAdd(source: SalesPlanSourceInput) {
     setSources.mutate([...sources.map(toInput), source], {
@@ -65,28 +74,43 @@ export function EventSourcesTab({ projectId, funnelId, stageId }: { projectId: s
   return (
     <div className="space-y-4 max-w-2xl">
       <div className="flex items-start justify-between gap-4">
-        <p className="text-sm text-muted-foreground">
-          Conecte as planilhas de participantes do evento (1 por tipo: comprador, fornecedor, iFood…).
-          O <strong>email</strong> é a chave. Essas planilhas são a fonte única do evento — alimentam o
-          <strong> Mapa do Evento</strong> (nome/email/telefone) e o <strong>Plano de Vendas</strong> (tipo/faturamento).
-        </p>
+        <div className="text-sm text-muted-foreground space-y-1.5">
+          <p>
+            Conecte as planilhas do evento (por link do Google Sheets). Há dois papéis:
+          </p>
+          <ul className="list-disc pl-5 space-y-0.5">
+            <li><strong className="text-foreground">Participantes</strong> — a planilha mestre com <em>todo mundo</em> (nome/email/telefone/tipo). É a lista do Mapa e do Plano.</li>
+            <li><strong className="text-foreground">Pesquisa</strong> — as respostas do Tally (email/faturamento). Cruzadas por email; quem não respondeu fica sem faturamento.</li>
+          </ul>
+        </div>
         <Button size="sm" onClick={() => setDialogOpen(true)} className="shrink-0">
           <Plus className="h-3.5 w-3.5 mr-1" /> Conectar planilha
         </Button>
       </div>
+
+      {!hasMaster && !isLoading && sources.length > 0 && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+          Conecte uma planilha de <strong>Participantes</strong> (mestre) — sem ela o Mapa e o Plano ficam vazios.
+        </div>
+      )}
 
       {isLoading ? (
         <Skeleton className="h-24" />
       ) : sources.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
           Nenhuma planilha conectada ainda. Clique em <strong>Conectar planilha</strong> e cole o link do
-          Google Sheets (ex.: a planilha que o Tally alimenta) para cada tipo de participante.
+          Google Sheets.
         </div>
       ) : (
         <div className="space-y-1.5">
           {sources.map((s) => (
             <div key={s.id} className="flex items-center gap-3 rounded-md border border-border/40 px-3 py-2 text-sm">
-              <span className="text-[10px] font-bold uppercase tracking-wide rounded-full bg-primary/10 text-primary px-2.5 py-1 shrink-0">{s.tipo}</span>
+              <span className={`text-[10px] font-bold uppercase tracking-wide rounded-full px-2.5 py-1 shrink-0 inline-flex items-center gap-1 ${
+                s.role === "participants" ? "bg-primary/10 text-primary" : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+              }`}>
+                {s.role === "participants" ? <Users className="h-3 w-3" /> : <ClipboardList className="h-3 w-3" />}
+                {ROLE_LABEL[s.role]}
+              </span>
               <div className="min-w-0 flex-1">
                 <div className="truncate flex items-center gap-1.5">
                   <FileSpreadsheet className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -94,7 +118,9 @@ export function EventSourcesTab({ projectId, funnelId, stageId }: { projectId: s
                   <span className="text-muted-foreground">/ {s.sheetName}</span>
                 </div>
                 <div className="text-xs text-muted-foreground truncate">
-                  email: {s.mapping.email || "—"} · telefone: {s.mapping.telefone || "—"} · faturamento: {s.mapping.faturamento || "—"}
+                  {s.role === "participants"
+                    ? `email: ${s.mapping.email || "—"} · nome: ${s.mapping.name || "—"} · telefone: ${s.mapping.telefone || "—"} · tipo: ${s.mapping.tipo || "—"}`
+                    : `email: ${s.mapping.email || "—"} · faturamento: ${s.mapping.faturamento || "—"}`}
                 </div>
               </div>
               <button
@@ -122,9 +148,22 @@ export function EventSourcesTab({ projectId, funnelId, stageId }: { projectId: s
 }
 
 // ============================================================
-// Dialog de conexão (planilha → aba → tipo + mapeamento)
+// Dialog de conexão (planilha → aba → papel + mapeamento)
 // ============================================================
 type Step = "spreadsheet" | "sheet" | "mapping";
+
+const FIELDS_BY_ROLE: Record<SalesPlanSourceRole, { key: "email" | "name" | "telefone" | "tipo" | "faturamento"; label: string; required?: boolean }[]> = {
+  participants: [
+    { key: "email", label: "Email", required: true },
+    { key: "name", label: "Nome" },
+    { key: "telefone", label: "Telefone" },
+    { key: "tipo", label: "Tipo (coluna)" },
+  ],
+  survey: [
+    { key: "email", label: "Email", required: true },
+    { key: "faturamento", label: "Faturamento", required: true },
+  ],
+};
 
 function ConnectSourceDialog({
   open, onOpenChange, onConfirm, saving,
@@ -137,8 +176,8 @@ function ConnectSourceDialog({
   const { data: spreadsheetsData, isLoading: spreadsheetsLoading } = useSpreadsheets();
   const [selected, setSelected] = useState<{ id: string; name: string } | null>(null);
   const [sheet, setSheet] = useState<string | null>(null);
-  const [tipo, setTipo] = useState("");
-  const [mapping, setMapping] = useState<{ name?: string; email?: string; telefone?: string; faturamento?: string }>({});
+  const [role, setRole] = useState<SalesPlanSourceRole>("participants");
+  const [mapping, setMapping] = useState<{ name?: string; email?: string; telefone?: string; tipo?: string; faturamento?: string }>({});
   const [search, setSearch] = useState("");
   const [link, setLink] = useState("");
 
@@ -153,10 +192,11 @@ function ConnectSourceDialog({
   const columns = Array.from(new Set(rawHeaders.filter((h) => h && h.trim().length > 0)));
 
   const step: Step = !selected ? "spreadsheet" : !sheet ? "sheet" : "mapping";
-  const canSave = !!(selected && sheet && tipo.trim() && mapping.email);
+  const fields = FIELDS_BY_ROLE[role];
+  const canSave = !!(selected && sheet && mapping.email && (role === "participants" || mapping.faturamento));
 
   function reset() {
-    setSelected(null); setSheet(null); setTipo(""); setMapping({}); setSearch(""); setLink("");
+    setSelected(null); setSheet(null); setRole("participants"); setMapping({}); setSearch(""); setLink("");
   }
   function close() { reset(); onOpenChange(false); }
 
@@ -168,13 +208,19 @@ function ConnectSourceDialog({
 
   function confirm() {
     if (!canSave || !selected || !sheet) return;
-    // não reseta aqui: o pai fecha o dialog no sucesso (→ close() reseta).
+    // mantém no mapping só os campos do papel escolhido
+    const cleanMapping: { name?: string; email?: string; telefone?: string; tipo?: string; faturamento?: string } = {};
+    for (const f of fields) {
+      const v = mapping[f.key];
+      if (v) cleanMapping[f.key] = v;
+    }
     onConfirm({
-      tipo: tipo.trim(),
+      role,
+      tipo: "",
       spreadsheetId: selected.id,
       spreadsheetName: selected.name,
       sheetName: sheet,
-      mapping,
+      mapping: cleanMapping,
     });
   }
 
@@ -185,7 +231,7 @@ function ConnectSourceDialog({
           <DialogTitle>
             {step === "spreadsheet" && "Escolher planilha"}
             {step === "sheet" && "Escolher a aba"}
-            {step === "mapping" && "Tipo + mapeamento de colunas"}
+            {step === "mapping" && "Papel + mapeamento de colunas"}
           </DialogTitle>
         </DialogHeader>
 
@@ -252,25 +298,23 @@ function ConnectSourceDialog({
             <button type="button" onClick={() => setSheet(null)} className="text-xs text-muted-foreground hover:underline">← trocar aba</button>
 
             <div className="space-y-1.5">
-              <Label className="text-xs">Tipo desta planilha <span className="text-red-500">*</span></Label>
-              <Input placeholder="comprador / fornecedor / ifood…" value={tipo} onChange={(e) => setTipo(e.target.value)} list="event-source-tipos" />
-              <datalist id="event-source-tipos">
-                <option value="comprador" /><option value="fornecedor" /><option value="ifood" />
-              </datalist>
+              <Label className="text-xs">Papel desta planilha <span className="text-red-500">*</span></Label>
+              <Select value={role} onValueChange={(v) => setRole(v as SalesPlanSourceRole)}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="participants">Participantes (lista mestre — todo mundo)</SelectItem>
+                  <SelectItem value="survey">Pesquisa (respostas — faturamento)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {sheetDataLoading ? (
               <Skeleton className="h-40" />
             ) : (
               <div className="space-y-2.5">
-                {([
-                  { key: "email", label: "Email", required: true },
-                  { key: "name", label: "Nome" },
-                  { key: "telefone", label: "Telefone" },
-                  { key: "faturamento", label: "Faturamento" },
-                ] as const).map((f) => (
+                {fields.map((f) => (
                   <div key={f.key} className="grid grid-cols-[120px_1fr] items-center gap-2">
-                    <Label className="text-xs">{f.label}{"required" in f && f.required && <span className="text-red-500"> *</span>}</Label>
+                    <Label className="text-xs">{f.label}{f.required && <span className="text-red-500"> *</span>}</Label>
                     <Select
                       value={mapping[f.key] ?? "__none__"}
                       onValueChange={(v) => setMapping((m) => ({ ...m, [f.key]: v === "__none__" ? undefined : v }))}

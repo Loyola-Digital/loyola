@@ -1396,15 +1396,17 @@ export const stageSalesPlanSources = pgTable(
     stageId: uuid("stage_id")
       .notNull()
       .references(() => funnelStages.id, { onDelete: "cascade" }),
-    /** Tipo da pessoa nesta pesquisa: "comprador" | "fornecedor" | "ifood" | … (informativo). */
-    tipo: varchar("tipo", { length: 80 }).notNull(),
+    /** Papel: "participants" (lista mestre) | "survey" (respostas/faturamento). */
+    role: varchar("role", { length: 20 }).notNull().default("participants"),
+    /** Rótulo livre da planilha (identificação na lista). */
+    tipo: varchar("tipo", { length: 80 }).notNull().default(""),
     /** ID da planilha do Google (string, não uuid). */
     spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
     spreadsheetName: varchar("spreadsheet_name", { length: 500 }).notNull().default(""),
     sheetName: varchar("sheet_name", { length: 255 }).notNull(),
-    /** { name?, email?, faturamento? } — colunas mapeadas. */
+    /** { name?, email?, telefone?, tipo?, faturamento? } — colunas mapeadas. */
     mapping: jsonb("mapping")
-      .$type<{ name?: string; email?: string; faturamento?: string }>()
+      .$type<{ name?: string; email?: string; telefone?: string; tipo?: string; faturamento?: string }>()
       .notNull()
       .default({}),
     sortOrder: integer("sort_order").notNull().default(0),

@@ -19,6 +19,7 @@ import { readSheetData } from "../services/google-sheets.js";
 import { parseFaturamento } from "../services/parse-faturamento.js";
 import type {
   SalesPlanSource,
+  SalesPlanSourceRole,
   SalesPlanRule,
   SalesPlanParticipant,
   SalesPlanTierGroup,
@@ -36,6 +37,7 @@ const mappingSchema = z
     name: z.string().trim().max(255).optional(),
     email: z.string().trim().max(255).optional(),
     telefone: z.string().trim().max(255).optional(),
+    tipo: z.string().trim().max(255).optional(),
     faturamento: z.string().trim().max(255).optional(),
   })
   .strip();
@@ -44,7 +46,8 @@ const sourcesBodySchema = z.object({
   sources: z
     .array(
       z.object({
-        tipo: z.string().trim().min(1).max(80),
+        role: z.enum(["participants", "survey"]),
+        tipo: z.string().trim().max(80).default(""),
         spreadsheetId: z.string().trim().min(1).max(255),
         spreadsheetName: z.string().trim().max(500).default(""),
         sheetName: z.string().trim().min(1).max(255),
@@ -120,6 +123,7 @@ export default fp(async function stageSalesPlanRoutes(fastify) {
     return rows.map((r) => ({
       id: r.id,
       stageId: r.stageId,
+      role: (r.role as SalesPlanSourceRole) ?? "participants",
       tipo: r.tipo,
       spreadsheetId: r.spreadsheetId,
       spreadsheetName: r.spreadsheetName,
@@ -146,57 +150,68 @@ export default fp(async function stageSalesPlanRoutes(fastify) {
     }));
   }
 
-  // Lê todas as pesquisas da etapa e devolve participantes (dedup por email).
-  // tipo vem da própria fonte; faturamento é parseado do texto cru.
+  // Monta a lista de participantes: a base é a planilha MESTRE (role
+  // "participants" — todo mundo, com tipo). O faturamento é um lookup por email
+  // nas planilhas de RESPOSTAS (role "survey"); quem não respondeu fica sem
+  // faturamento. Dedup por email.
   async function loadParticipants(
     stageId: string,
   ): Promise<{ email: string; name: string; tipo: string; revenue: number | null; revenueRaw: string | null }[]> {
     const sources = await listSources(stageId);
     if (sources.length === 0) return [];
 
+    // 1) faturamento por email (todas as planilhas de respostas; 1ª que parseia vence)
+    const revenueByEmail = new Map<string, { raw: string; value: number }>();
+    for (const src of sources.filter((s) => s.role === "survey")) {
+      const mapping = src.mapping ?? {};
+      let data;
+      try {
+        data = await readSheetData(src.spreadsheetId, src.sheetName);
+      } catch {
+        continue;
+      }
+      const { headers, rows } = data;
+      const emailIdx = mapping.email ? headers.indexOf(mapping.email) : -1;
+      const fatIdx = mapping.faturamento ? headers.indexOf(mapping.faturamento) : -1;
+      if (emailIdx === -1 || fatIdx === -1) continue;
+      for (const row of rows) {
+        const email = (row[emailIdx] ?? "").trim().toLowerCase();
+        if (!email || revenueByEmail.has(email)) continue;
+        const raw = (row[fatIdx] ?? "").trim();
+        if (!raw) continue;
+        const value = parseFaturamento(raw);
+        if (value != null) revenueByEmail.set(email, { raw, value });
+      }
+    }
+
+    // 2) base de participantes (planilha mestre); enriquece com o faturamento
     type P = { email: string; name: string; tipo: string; revenue: number | null; revenueRaw: string | null };
     const byEmail = new Map<string, P>();
-
-    for (const src of sources) {
+    for (const src of sources.filter((s) => s.role === "participants")) {
       if (byEmail.size >= MAX_PARTICIPANTS) break;
       const mapping = src.mapping ?? {};
       let data;
       try {
         data = await readSheetData(src.spreadsheetId, src.sheetName);
       } catch {
-        continue; // planilha inacessível → ignora essa fonte
+        continue;
       }
       const { headers, rows } = data;
       const emailIdx = mapping.email ? headers.indexOf(mapping.email) : -1;
       const nameIdx = mapping.name ? headers.indexOf(mapping.name) : -1;
-      const fatIdx = mapping.faturamento ? headers.indexOf(mapping.faturamento) : -1;
-      if (emailIdx === -1) continue; // sem email não dá pra cruzar/dedup
-
+      const tipoIdx = mapping.tipo ? headers.indexOf(mapping.tipo) : -1;
+      if (emailIdx === -1) continue;
       for (const row of rows) {
         if (byEmail.size >= MAX_PARTICIPANTS) break;
         const email = (row[emailIdx] ?? "").trim().toLowerCase();
-        if (!email) continue;
-        const revenueRaw = fatIdx !== -1 ? ((row[fatIdx] ?? "").trim() || null) : null;
-
-        const existing = byEmail.get(email);
-        if (existing) {
-          // 1ª ocorrência vence; só completa faturamento se faltava E o novo parseia
-          // (não troca o raw exibido por um valor não-interpretável).
-          if (existing.revenue == null && revenueRaw) {
-            const parsed = parseFaturamento(revenueRaw);
-            if (parsed != null) {
-              existing.revenueRaw = revenueRaw;
-              existing.revenue = parsed;
-            }
-          }
-          continue;
-        }
+        if (!email || byEmail.has(email)) continue;
+        const fat = revenueByEmail.get(email) ?? null;
         byEmail.set(email, {
           email,
           name: nameIdx !== -1 ? (row[nameIdx] ?? "").trim() : "",
-          tipo: src.tipo,
-          revenueRaw,
-          revenue: parseFaturamento(revenueRaw),
+          tipo: tipoIdx !== -1 ? (row[tipoIdx] ?? "").trim() : "",
+          revenueRaw: fat?.raw ?? null,
+          revenue: fat?.value ?? null,
         });
       }
     }
@@ -232,6 +247,7 @@ export default fp(async function stageSalesPlanRoutes(fastify) {
       await fastify.db.insert(stageSalesPlanSources).values(
         body.data.sources.map((s, i) => ({
           stageId,
+          role: s.role,
           tipo: s.tipo,
           spreadsheetId: s.spreadsheetId,
           spreadsheetName: s.spreadsheetName,
