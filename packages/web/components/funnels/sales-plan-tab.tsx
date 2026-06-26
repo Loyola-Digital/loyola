@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, X, RefreshCw, Settings2 } from "lucide-react";
+import { Plus, X, RefreshCw, Settings2, Calculator } from "lucide-react";
 import { toast } from "sonner";
 import type {
   SalesPlanRule,
@@ -18,6 +18,7 @@ import {
   useSetSalesPlanRules,
 } from "@/lib/hooks/use-sales-plan";
 import { useEventProducts } from "@/lib/hooks/use-event-config";
+import { RoiCalculatorDialog, type RoiLead } from "@/components/funnels/roi-calculator";
 
 // ============================================================
 // Helpers
@@ -44,6 +45,7 @@ export function SalesPlanTab({ projectId, funnelId, stageId }: { projectId: stri
   const sources = useMemo(() => sourcesData?.sources ?? [], [sourcesData]);
 
   const [showConfig, setShowConfig] = useState(false);
+  const [roiLead, setRoiLead] = useState<RoiLead | null>(null);
 
   if (isLoading) {
     return (
@@ -76,8 +78,8 @@ export function SalesPlanTab({ projectId, funnelId, stageId }: { projectId: stri
           <div className="text-[11px] tracking-[2px] uppercase font-semibold text-[#d4af37]">Imersão Presencial</div>
           <h2 className="text-2xl font-extrabold mt-1 text-[#f3f4f6]">Plano de Vendas</h2>
           <p className="text-[13px] text-[#9ca3af] mt-1 max-w-2xl">
-            Cruzamento das planilhas do evento (por email) com a matriz de faturamento → oferta.
-            As planilhas são conectadas na aba <span className="text-[#d4af37]">Leads do Evento</span>.
+            Cruzamento das planilhas (por email) com a matriz de faturamento → oferta.
+            Toque num participante pra rodar a <span className="text-[#d4af37]">calculadora de ROI</span> no número dele.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -171,6 +173,7 @@ export function SalesPlanTab({ projectId, funnelId, stageId }: { projectId: stri
               title={t.label}
               subtitle={`${formatRange(t.minRevenue, t.maxRevenue)} · ${t.offer || "sem oferta definida"}`}
               participants={t.participants}
+              onPick={(p) => setRoiLead({ name: p.name, email: p.email, revenue: p.revenue })}
             />
           ))}
 
@@ -180,11 +183,13 @@ export function SalesPlanTab({ projectId, funnelId, stageId }: { projectId: stri
               <div className="px-4 py-2.5 text-[12px] font-bold uppercase tracking-[1px] text-[#ef4444]">
                 ⚠ {unmatched.length} sem faturamento / fora de faixa — cobrar pesquisa
               </div>
-              <SegmentTable participants={unmatched} bare />
+              <SegmentTable participants={unmatched} bare onPick={(p) => setRoiLead({ name: p.name, email: p.email, revenue: p.revenue })} />
             </div>
           )}
         </>
       )}
+
+      <RoiCalculatorDialog open={!!roiLead} onOpenChange={(o) => !o && setRoiLead(null)} lead={roiLead} />
     </div>
   );
 }
@@ -193,8 +198,8 @@ export function SalesPlanTab({ projectId, funnelId, stageId }: { projectId: stri
 // Tabela de participantes de um segmento
 // ============================================================
 function SegmentTable({
-  title, subtitle, participants, bare,
-}: { title?: string; subtitle?: string; participants: SalesPlanParticipant[]; bare?: boolean }) {
+  title, subtitle, participants, bare, onPick,
+}: { title?: string; subtitle?: string; participants: SalesPlanParticipant[]; bare?: boolean; onPick?: (p: SalesPlanParticipant) => void }) {
   return (
     <div className={bare ? "" : "rounded-xl border border-[#1f2937] overflow-hidden"}>
       {title && (
@@ -215,8 +220,17 @@ function SegmentTable({
         </thead>
         <tbody className="bg-[#111827]">
           {participants.map((p) => (
-            <tr key={p.email} className="border-t border-[#1f2937] hover:bg-[#1a2236] transition-colors">
-              <td className="px-3 py-2 text-[#f3f4f6] font-medium max-w-[180px] truncate">{p.name || "—"}</td>
+            <tr
+              key={p.email}
+              onClick={() => onPick?.(p)}
+              className="border-t border-[#1f2937] hover:bg-[#1a2236] transition-colors cursor-pointer"
+            >
+              <td className="px-3 py-2 text-[#f3f4f6] font-medium max-w-[180px] truncate">
+                <span className="inline-flex items-center gap-1.5">
+                  <Calculator className="h-3.5 w-3.5 text-[#d4af37]/70 shrink-0" />
+                  {p.name || "—"}
+                </span>
+              </td>
               <td className="px-3 py-2 text-[#9ca3af] max-w-[200px] truncate">{p.email}</td>
               <td className="px-3 py-2">
                 <span className="text-[10px] rounded-full border border-[#1f2937] px-2 py-0.5 text-[#9ca3af]">{p.tipo}</span>

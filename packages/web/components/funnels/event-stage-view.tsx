@@ -14,7 +14,6 @@ import {
   Loader2,
   Map as MapIcon,
   Target,
-  Calculator,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { FunnelStage, ManualSale } from "@loyola-x/shared";
@@ -45,7 +44,6 @@ import {
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
 import { SalesPlanTab } from "@/components/funnels/sales-plan-tab";
-import { RoiCalculatorDialog, type RoiLead } from "@/components/funnels/roi-calculator";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import {
   useAllSales,
@@ -704,7 +702,6 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
   const { data, isLoading } = useEventMap(projectId, funnelId, stageId);
   const setStatus = useSetEventLeadStatus(projectId, funnelId, stageId);
   const [filter, setFilter] = useState<"all" | EventLeadStatus>("all");
-  const [roiLead, setRoiLead] = useState<RoiLead | null>(null);
 
   const leads = useMemo(() => data?.leads ?? [], [data]);
   const summary = data?.summary;
@@ -797,8 +794,8 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
         <div className="text-[11px] tracking-[2px] uppercase font-semibold text-[#d4af37]">Imersão Presencial</div>
         <h2 className="text-xl sm:text-2xl font-extrabold mt-1 text-[#f3f4f6]">Mapa do Evento</h2>
         <p className="text-[13px] text-[#9ca3af] mt-1">
-          Toque num participante pra rodar a <span className="text-[#d4af37]">calculadora de ROI</span> ao vivo no número dele.
-          <span className="text-[#d4af37]"> Comprou</span> é automático quando há venda lançada.
+          Participantes vindos das planilhas de <span className="text-[#d4af37]">Leads do Evento</span>.
+          Marque o status de cada um — <span className="text-[#d4af37]">Comprou</span> é automático quando há venda lançada.
         </p>
       </div>
 
@@ -852,17 +849,8 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
               </thead>
               <tbody className="bg-[#111827]">
                 {filtered.map((l) => (
-                  <tr
-                    key={l.email}
-                    onClick={() => setRoiLead({ name: l.name, email: l.email, revenue: l.revenue })}
-                    className="border-t border-[#1f2937] hover:bg-[#1a2236] transition-colors cursor-pointer"
-                  >
-                    <td className="px-3 py-2.5 max-w-[160px] truncate text-[#f3f4f6] font-medium">
-                      <span className="inline-flex items-center gap-1.5">
-                        <Calculator className="h-3.5 w-3.5 text-[#d4af37]/70 shrink-0" />
-                        {l.name || "—"}
-                      </span>
-                    </td>
+                  <tr key={l.email} className="border-t border-[#1f2937] hover:bg-[#1a2236] transition-colors">
+                    <td className="px-3 py-2.5 max-w-[160px] truncate text-[#f3f4f6] font-medium">{l.name || "—"}</td>
                     <td className="px-3 py-2.5 text-[#9ca3af] max-w-[180px] truncate">{l.email}</td>
                     <td className="px-3 py-2.5 text-[#9ca3af]">{l.phone || "—"}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums font-bold text-[#d4af37]">
@@ -885,18 +873,10 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
           {/* MOBILE — cards */}
           <div className="sm:hidden space-y-2">
             {filtered.map((l) => (
-              <button
-                key={l.email}
-                type="button"
-                onClick={() => setRoiLead({ name: l.name, email: l.email, revenue: l.revenue })}
-                className="w-full text-left rounded-xl border border-[#1f2937] bg-[#111827] p-3 active:bg-[#1a2236] transition-colors"
-              >
+              <div key={l.email} className="rounded-xl border border-[#1f2937] bg-[#111827] p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 font-semibold text-[#f3f4f6] truncate">
-                      <Calculator className="h-3.5 w-3.5 text-[#d4af37] shrink-0" />
-                      {l.name || l.email}
-                    </div>
+                    <div className="font-semibold text-[#f3f4f6] truncate">{l.name || l.email}</div>
                     <div className="text-[12px] text-[#9ca3af] truncate mt-0.5">{l.email}</div>
                     {l.phone && <div className="text-[12px] text-[#6b7280] truncate">{l.phone}</div>}
                   </div>
@@ -913,17 +893,15 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                       {l.sale.product || "Venda"} · <span className="text-[#d4af37] font-semibold">{formatCurrency(l.sale.value)}</span>
                     </span>
                   ) : (
-                    <span className="text-[12px] text-[#6b7280]">toque para ROI</span>
+                    <span className="text-[12px] text-[#6b7280]">—</span>
                   )}
                   {statusControl(l)}
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         </>
       )}
-
-      <RoiCalculatorDialog open={!!roiLead} onOpenChange={(o) => !o && setRoiLead(null)} lead={roiLead} />
     </div>
   );
 }
