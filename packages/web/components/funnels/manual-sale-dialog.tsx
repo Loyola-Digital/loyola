@@ -51,6 +51,15 @@ function isValidCpf(value: string): boolean {
   return d1 === Number(cpf[9]) && d2 === Number(cpf[10]);
 }
 
+/** Título de seção do formulário (modo Evento, p/ organizar o form longo). */
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+      {children}
+    </p>
+  );
+}
+
 interface ManualSaleDialogProps {
   projectId: string;
   funnelId: string;
@@ -310,9 +319,9 @@ export function ManualSaleDialog({
         if (!next) resetForm();
       }}
     >
-      <DialogContent className="sm:max-w-md">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <DialogHeader>
+      <DialogContent className="flex max-h-[92dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <DialogHeader className="shrink-0 border-b px-5 py-4 pr-10">
             <DialogTitle>
               {isEditing
                 ? "Editar venda"
@@ -329,7 +338,8 @@ export function ManualSaleDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3">
+          {/* Corpo rolável — header e footer ficam fixos */}
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
             {isEvent && (
               <div className="space-y-1.5 rounded-md border border-border/40 bg-muted/20 p-2.5">
                 <Label htmlFor="lead-search" className="text-xs">Buscar participante (lead)</Label>
@@ -367,42 +377,23 @@ export function ManualSaleDialog({
                 </p>
               </div>
             )}
-            <div className="space-y-1.5">
-              <Label htmlFor="customer-name">Nome do cliente *</Label>
-              <Input
-                id="customer-name"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="Maria Silva"
-                autoFocus
-              />
-            </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            {/* ───── Dados do cliente ───── */}
+            <section className="space-y-3">
+              {isEvent && <SectionTitle>Dados do cliente</SectionTitle>}
               <div className="space-y-1.5">
-                <Label htmlFor="customer-email">Email{isEvent ? " *" : ""}</Label>
+                <Label htmlFor="customer-name">Nome completo *</Label>
                 <Input
-                  id="customer-email"
-                  type="email"
-                  value={customerEmail}
-                  onChange={(e) => setCustomerEmail(e.target.value)}
-                  placeholder={isEvent ? "necessário p/ MemberKit" : "opcional"}
+                  id="customer-name"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="Maria Silva"
+                  autoFocus
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="customer-phone">Telefone{isEvent ? " *" : ""}</Label>
-                <Input
-                  id="customer-phone"
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  placeholder={isEvent ? "obrigatório" : "opcional"}
-                />
-              </div>
-            </div>
 
-            {isEvent && (
-              <>
-                <div className="grid grid-cols-2 gap-3">
+              {isEvent && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label htmlFor="customer-cpf">CPF *</Label>
                     <Input
@@ -414,16 +405,55 @@ export function ManualSaleDialog({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="valor-nota">Valor da nota (R$) *</Label>
+                    <Label htmlFor="customer-phone-ev">Telefone *</Label>
                     <Input
-                      id="valor-nota"
-                      inputMode="decimal"
-                      value={valorNotaInput}
-                      onChange={(e) => setValorNotaInput(e.target.value)}
-                      placeholder="1.997,00"
+                      id="customer-phone-ev"
+                      inputMode="tel"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      placeholder="(11) 99999-9999"
                     />
                   </div>
                 </div>
+              )}
+
+              {isEvent ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="customer-email">Email *</Label>
+                  <Input
+                    id="customer-email"
+                    type="email"
+                    value={customerEmail}
+                    onChange={(e) => setCustomerEmail(e.target.value)}
+                    placeholder="necessário p/ matrícula no MemberKit"
+                  />
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="customer-email">Email</Label>
+                    <Input
+                      id="customer-email"
+                      type="email"
+                      value={customerEmail}
+                      onChange={(e) => setCustomerEmail(e.target.value)}
+                      placeholder="opcional"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="customer-phone">Telefone</Label>
+                    <Input
+                      id="customer-phone"
+                      inputMode="tel"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      placeholder="opcional"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {isEvent && (
                 <div className="space-y-1.5">
                   <Label htmlFor="customer-address">Endereço *</Label>
                   <Input
@@ -433,164 +463,186 @@ export function ManualSaleDialog({
                     placeholder="Rua, número, bairro, cidade/UF, CEP"
                   />
                 </div>
-              </>
-            )}
+              )}
+            </section>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="sale-value">Valor (R$) *</Label>
-                <Input
-                  id="sale-value"
-                  inputMode="decimal"
-                  value={valueInput}
-                  onChange={(e) => setValueInput(e.target.value)}
-                  placeholder="1.997,00"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="sale-date">Data da venda *</Label>
-                <Input
-                  id="sale-date"
-                  type="date"
-                  value={saleDate}
-                  onChange={(e) => setSaleDate(e.target.value)}
-                />
-              </div>
-            </div>
+            {/* ───── Dados da venda ───── */}
+            <section className="space-y-3">
+              {isEvent && <SectionTitle>Dados da venda</SectionTitle>}
 
-            {isEvent && (
-              <div className="space-y-1.5">
-                <Label htmlFor="valor-recebido">Caixa (valor recebido)</Label>
-                <Input
-                  id="valor-recebido"
-                  inputMode="decimal"
-                  value={valorRecebidoInput}
-                  onChange={(e) => setValorRecebidoInput(e.target.value)}
-                  placeholder="opcional — ex: 1.000,00"
-                />
-              </div>
-            )}
+              {isEvent ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="product-select">Produto *</Label>
+                  {eventProducts.length > 0 || productOutOfList ? (
+                    <Select value={product} onValueChange={setProduct}>
+                      <SelectTrigger id="product-select">
+                        <SelectValue placeholder="Selecione o produto" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {productOutOfList && (
+                          <SelectItem value={product}>{product} (não cadastrado)</SelectItem>
+                        )}
+                        {eventProducts.map((p) => (
+                          <SelectItem key={p.id} value={p.name}>
+                            {p.name}
+                            {p.memberkitClassroomName ? ` · ${p.memberkitClassroomName}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="text-xs text-amber-600">
+                      Nenhum produto cadastrado. Cadastre os produtos na aba <strong>Configuração</strong> da etapa.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label htmlFor="product">Produto</Label>
+                  <Input
+                    id="product"
+                    value={product}
+                    onChange={(e) => setProduct(e.target.value)}
+                    placeholder="Ex: Mentoria 1:1 (opcional)"
+                  />
+                </div>
+              )}
 
-            {isEvent ? (
-              <div className="space-y-1.5">
-                <Label htmlFor="product-select">Produto *</Label>
-                {eventProducts.length > 0 || productOutOfList ? (
-                  <Select value={product} onValueChange={setProduct}>
-                    <SelectTrigger id="product-select">
-                      <SelectValue placeholder="Selecione o produto" />
+              {isEvent ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="closer-select">Closer (vendedor) *</Label>
+                  {eventClosers.length > 0 || closerOutOfList ? (
+                    <Select value={closer} onValueChange={setCloser}>
+                      <SelectTrigger id="closer-select">
+                        <SelectValue placeholder="Selecione o closer" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {closerOutOfList && (
+                          <SelectItem value={closer}>{closer} (não cadastrado)</SelectItem>
+                        )}
+                        {eventClosers.map((cl) => (
+                          <SelectItem key={cl.id} value={cl.name}>
+                            {cl.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="text-xs text-amber-600">
+                      Nenhum closer cadastrado. Cadastre os closers na aba <strong>Configuração</strong> da etapa.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label htmlFor="seller">Vendedor *</Label>
+                  <Select value={sellerUserId} onValueChange={setSellerUserId}>
+                    <SelectTrigger id="seller">
+                      <SelectValue
+                        placeholder={loadingSellers ? "Carregando..." : "Selecione o vendedor"}
+                      />
                     </SelectTrigger>
                     <SelectContent>
-                      {productOutOfList && (
-                        <SelectItem value={product}>{product} (não cadastrado)</SelectItem>
+                      {sellers && sellers.length > 0 ? (
+                        sellers.map((s) => (
+                          <SelectItem key={s.userId} value={s.userId}>
+                            {s.name || s.email}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                          Nenhum vendedor encontrado
+                        </div>
                       )}
-                      {eventProducts.map((p) => (
-                        <SelectItem key={p.id} value={p.name}>
-                          {p.name}
-                          {p.memberkitClassroomName ? ` · ${p.memberkitClassroomName}` : ""}
-                        </SelectItem>
-                      ))}
                     </SelectContent>
                   </Select>
-                ) : (
-                  <p className="text-xs text-amber-600">
-                    Nenhum produto cadastrado. Cadastre os produtos na aba <strong>Configuração</strong> da etapa.
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <Label htmlFor="product">Produto</Label>
-                <Input
-                  id="product"
-                  value={product}
-                  onChange={(e) => setProduct(e.target.value)}
-                  placeholder="Ex: Mentoria 1:1 (opcional)"
-                />
-              </div>
-            )}
+                </div>
+              )}
 
-            {isEvent && (
-              <div className="space-y-1.5">
-                <Label htmlFor="negociacao">Negociação</Label>
-                <Input
-                  id="negociacao"
-                  value={negociacao}
-                  onChange={(e) => setNegociacao(e.target.value)}
-                  placeholder="opcional — condições do acordo"
-                />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="sale-value">Valor da venda (R$) *</Label>
+                  <Input
+                    id="sale-value"
+                    inputMode="decimal"
+                    value={valueInput}
+                    onChange={(e) => setValueInput(e.target.value)}
+                    placeholder="1.997,00"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="sale-date">Data da venda *</Label>
+                  <Input
+                    id="sale-date"
+                    type="date"
+                    value={saleDate}
+                    onChange={(e) => setSaleDate(e.target.value)}
+                  />
+                </div>
               </div>
-            )}
+            </section>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="invoice-status">Nota fiscal</Label>
-              <Select
-                value={invoiceStatus || "none"}
-                onValueChange={(v) => setInvoiceStatus(v === "none" ? "" : (v as InvoiceStatus))}
-              >
-                <SelectTrigger id="invoice-status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Não preenchido</SelectItem>
-                  <SelectItem value="emitida">Emitida</SelectItem>
-                  <SelectItem value="pendente">Pendente</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {/* ───── Nota fiscal & financeiro ───── */}
+            <section className="space-y-3">
+              {isEvent && <SectionTitle>Nota fiscal &amp; financeiro</SectionTitle>}
 
-            {isEvent ? (
-              <div className="space-y-1.5">
-                <Label htmlFor="closer-select">Closer (vendedor) *</Label>
-                {eventClosers.length > 0 || closerOutOfList ? (
-                  <Select value={closer} onValueChange={setCloser}>
-                    <SelectTrigger id="closer-select">
-                      <SelectValue placeholder="Selecione o closer" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {closerOutOfList && (
-                        <SelectItem value={closer}>{closer} (não cadastrado)</SelectItem>
-                      )}
-                      {eventClosers.map((cl) => (
-                        <SelectItem key={cl.id} value={cl.name}>
-                          {cl.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <p className="text-xs text-amber-600">
-                    Nenhum closer cadastrado. Cadastre os closers na aba <strong>Configuração</strong> da etapa.
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <Label htmlFor="seller">Vendedor *</Label>
-                <Select value={sellerUserId} onValueChange={setSellerUserId}>
-                  <SelectTrigger id="seller">
-                    <SelectValue
-                      placeholder={loadingSellers ? "Carregando..." : "Selecione o vendedor"}
+              {isEvent && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="valor-nota">Valor da nota (R$) *</Label>
+                    <Input
+                      id="valor-nota"
+                      inputMode="decimal"
+                      value={valorNotaInput}
+                      onChange={(e) => setValorNotaInput(e.target.value)}
+                      placeholder="1.997,00"
                     />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="valor-recebido">Caixa (valor recebido)</Label>
+                    <Input
+                      id="valor-recebido"
+                      inputMode="decimal"
+                      value={valorRecebidoInput}
+                      onChange={(e) => setValorRecebidoInput(e.target.value)}
+                      placeholder="opcional — ex: 1.000,00"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label htmlFor="invoice-status">Status da nota fiscal</Label>
+                <Select
+                  value={invoiceStatus || "none"}
+                  onValueChange={(v) => setInvoiceStatus(v === "none" ? "" : (v as InvoiceStatus))}
+                >
+                  <SelectTrigger id="invoice-status">
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {sellers && sellers.length > 0 ? (
-                      sellers.map((s) => (
-                        <SelectItem key={s.userId} value={s.userId}>
-                          {s.name || s.email}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                        Nenhum vendedor encontrado
-                      </div>
-                    )}
+                    <SelectItem value="none">Não preenchido</SelectItem>
+                    <SelectItem value="emitida">Emitida</SelectItem>
+                    <SelectItem value="pendente">Pendente</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-            )}
+
+              {isEvent && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="negociacao">Negociação</Label>
+                  <Input
+                    id="negociacao"
+                    value={negociacao}
+                    onChange={(e) => setNegociacao(e.target.value)}
+                    placeholder="opcional — condições do acordo"
+                  />
+                </div>
+              )}
+            </section>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t bg-background px-5 py-4">
             <Button
               type="button"
               variant="outline"
