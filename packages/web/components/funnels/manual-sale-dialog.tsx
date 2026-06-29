@@ -26,8 +26,29 @@ import {
   useUpdateManualSale,
 } from "@/lib/hooks/use-manual-sales";
 import { useEventProducts, useEventClosers, useEventLeads } from "@/lib/hooks/use-event-config";
-import { isValidCpf } from "@loyola-x/shared";
 import type { InvoiceStatus, ManualSale } from "@loyola-x/shared";
+
+/**
+ * Story 19.15 — valida CPF (com ou sem máscara) via dígitos verificadores.
+ * Inline aqui de propósito: o web consome `@loyola-x/shared` como type-only
+ * (sem resolução de `.js` no bundle do Next), então não importamos o valor.
+ * Espelha `isValidCpf` de `@loyola-x/shared` (usado server-side).
+ */
+function isValidCpf(value: string): boolean {
+  const cpf = value.replace(/\D/g, "");
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
+  const calcDigit = (slice: string, factorStart: number): number => {
+    let sum = 0;
+    for (let i = 0; i < slice.length; i++) {
+      sum += Number(slice[i]) * (factorStart - i);
+    }
+    const rest = (sum * 10) % 11;
+    return rest === 10 ? 0 : rest;
+  };
+  const d1 = calcDigit(cpf.slice(0, 9), 10);
+  const d2 = calcDigit(cpf.slice(0, 10), 11);
+  return d1 === Number(cpf[9]) && d2 === Number(cpf[10]);
+}
 
 interface ManualSaleDialogProps {
   projectId: string;
