@@ -108,6 +108,7 @@ export type {
   CreateManualSaleInput,
   InvoiceStatus,
 } from "./types/manual-sales.js";
+export { isValidCpf, normalizeCpf } from "./types/manual-sales.js";
 
 export type {
   MemberkitEnrollmentStatus,

@@ -903,6 +903,12 @@ export const manualSales = pgTable(
     valorRecebido: numeric("valor_recebido", { precision: 12, scale: 2 }),
     /** Story 19.10 — texto livre da negociação (evento presencial). */
     negociacao: text("negociacao"),
+    /** Story 19.15 — CPF do cliente p/ nota (Evento Presencial), normalizado (11 dígitos). */
+    customerCpf: varchar("customer_cpf", { length: 11 }),
+    /** Story 19.15 — endereço do cliente p/ emissão da nota (Evento Presencial). */
+    customerAddress: text("customer_address"),
+    /** Story 19.15 — valor da nota fiscal, distinto do valor da venda (Evento Presencial). */
+    valorNota: numeric("valor_nota", { precision: 12, scale: 2 }),
     /** Story 19.11 — status da matrícula MemberKit: pending|enrolled|failed|skipped. */
     memberkitStatus: varchar("memberkit_status", { length: 12 }),
     /** Story 19.11 — quando a matrícula foi sincronizada com o MemberKit. */
