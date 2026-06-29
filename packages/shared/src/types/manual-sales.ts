@@ -88,27 +88,9 @@ export interface CreateManualSaleInput {
   valorNota?: number | null;
 }
 
-/**
- * Story 19.15 — valida um CPF (com ou sem máscara) via dígitos verificadores.
- * Retorna false p/ sequências repetidas (ex: 11111111111) e tamanho != 11.
- */
-export function isValidCpf(value: string): boolean {
-  const cpf = value.replace(/\D/g, "");
-  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
-  const calcDigit = (slice: string, factorStart: number): number => {
-    let sum = 0;
-    for (let i = 0; i < slice.length; i++) {
-      sum += Number(slice[i]) * (factorStart - i);
-    }
-    const rest = (sum * 10) % 11;
-    return rest === 10 ? 0 : rest;
-  };
-  const d1 = calcDigit(cpf.slice(0, 9), 10);
-  const d2 = calcDigit(cpf.slice(0, 10), 11);
-  return d1 === Number(cpf[9]) && d2 === Number(cpf[10]);
-}
-
-/** Story 19.15 — remove máscara do CPF, deixando só dígitos. */
-export function normalizeCpf(value: string): string {
-  return value.replace(/\D/g, "");
-}
+// NOTA (Story 19.15): a validação de CPF (isValidCpf/normalizeCpf) NÃO mora aqui
+// como função exportada. `@loyola-x/shared` é consumido como type-only (web e
+// api) — um value import dele quebra o build/runtime, pois `main` aponta pro
+// `src/index.ts` cru, cujos re-exports `.js` não existem compilados. Os helpers
+// estão inline em packages/api/.../manual-sales.ts e no manual-sale-dialog.tsx.
+// Ver memória `web-shared-type-only`.
