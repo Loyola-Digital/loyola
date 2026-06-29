@@ -23,8 +23,34 @@ import {
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { enrollMember, decryptMemberkitKey } from "../services/memberkit.js";
-import { isValidCpf, normalizeCpf } from "@loyola-x/shared";
 import type { MemberkitEnrollmentStatus, MemberkitMemberStatus } from "@loyola-x/shared";
+
+/** Story 19.15 — remove máscara do CPF, deixando só dígitos. */
+function normalizeCpf(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+/**
+ * Story 19.15 — valida CPF (com ou sem máscara) via dígitos verificadores.
+ * Inline de propósito: `@loyola-x/shared` é consumido como type-only — um
+ * value import dele quebra o runtime (main aponta pro src/index.ts cru, cujos
+ * re-exports `.js` não existem no build). Ver memória `web-shared-type-only`.
+ */
+function isValidCpf(value: string): boolean {
+  const cpf = normalizeCpf(value);
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
+  const calcDigit = (slice: string, factorStart: number): number => {
+    let sum = 0;
+    for (let i = 0; i < slice.length; i++) {
+      sum += Number(slice[i]) * (factorStart - i);
+    }
+    const rest = (sum * 10) % 11;
+    return rest === 10 ? 0 : rest;
+  };
+  const d1 = calcDigit(cpf.slice(0, 9), 10);
+  const d2 = calcDigit(cpf.slice(0, 10), 11);
+  return d1 === Number(cpf[9]) && d2 === Number(cpf[10]);
+}
 
 function parseBrNumber(val: string | undefined): number {
   if (!val) return 0;

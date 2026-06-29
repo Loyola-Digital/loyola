@@ -30,9 +30,10 @@ import type { InvoiceStatus, ManualSale } from "@loyola-x/shared";
 
 /**
  * Story 19.15 — valida CPF (com ou sem máscara) via dígitos verificadores.
- * Inline aqui de propósito: o web consome `@loyola-x/shared` como type-only
- * (sem resolução de `.js` no bundle do Next), então não importamos o valor.
- * Espelha `isValidCpf` de `@loyola-x/shared` (usado server-side).
+ * Inline aqui de propósito: `@loyola-x/shared` é consumido como type-only (sem
+ * resolução de `.js` no bundle do Next), então não importamos valor de lá.
+ * Mesma lógica do helper inline em api/.../manual-sales.ts. Ver memória
+ * `web-shared-type-only`.
  */
 function isValidCpf(value: string): boolean {
   const cpf = value.replace(/\D/g, "");
