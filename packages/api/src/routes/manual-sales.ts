@@ -23,6 +23,7 @@ import {
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { enrollMember, decryptMemberkitKey } from "../services/memberkit.js";
+import { isValidCpf, normalizeCpf } from "@loyola-x/shared";
 import type { MemberkitEnrollmentStatus, MemberkitMemberStatus } from "@loyola-x/shared";
 
 function parseBrNumber(val: string | undefined): number {
@@ -92,6 +93,9 @@ function shapeManualSale(r: typeof manualSales.$inferSelect) {
     // Story 19.10 / 19.11
     valorRecebido: r.valorRecebido != null ? Number(r.valorRecebido) : null,
     negociacao: r.negociacao,
+    customerCpf: r.customerCpf,
+    customerAddress: r.customerAddress,
+    valorNota: r.valorNota != null ? Number(r.valorNota) : null,
     memberkitStatus: r.memberkitStatus as MemberkitEnrollmentStatus | null,
     memberkitSyncedAt: r.memberkitSyncedAt ? r.memberkitSyncedAt.toISOString() : null,
     memberkitUserId: r.memberkitUserId,
@@ -129,6 +133,10 @@ const baseSaleObject = z.object({
   valorRecebido: z.number().positive().finite().nullable().optional(),
   // nullable pra permitir LIMPAR a negociação numa edição (PATCH).
   negociacao: z.string().trim().max(2000).nullable().optional().or(z.literal("").transform(() => null)),
+  // Story 19.15 — dados fiscais p/ nota (obrigatórios na etapa de Evento, validados no handler).
+  customerCpf: z.string().trim().max(14).optional().or(z.literal("").transform(() => undefined)),
+  customerAddress: z.string().trim().max(500).optional().or(z.literal("").transform(() => undefined)),
+  valorNota: z.number().positive().finite().nullable().optional(),
 });
 
 const createSaleSchema = baseSaleObject.refine(
@@ -467,6 +475,22 @@ export default fp(async function manualSalesRoutes(fastify) {
         return reply.code(400).send({ error: "Telefone do cliente é obrigatório na etapa de Evento Presencial" });
       }
 
+      // Story 19.15: dados fiscais obrigatórios na venda de evento (emissão de nota).
+      if (isEvent) {
+        if (!body.data.customerCpf) {
+          return reply.code(400).send({ error: "CPF do cliente é obrigatório na etapa de Evento Presencial" });
+        }
+        if (!isValidCpf(body.data.customerCpf)) {
+          return reply.code(400).send({ error: "CPF inválido" });
+        }
+        if (!body.data.customerAddress) {
+          return reply.code(400).send({ error: "Endereço do cliente é obrigatório na etapa de Evento Presencial" });
+        }
+        if (body.data.valorNota == null) {
+          return reply.code(400).send({ error: "Valor da nota é obrigatório na etapa de Evento Presencial" });
+        }
+      }
+
       // Vendedor: usuário da plataforma (sellerUserId) OU closer texto livre (sellerName).
       let resolvedSellerUserId: string | null = null;
       let resolvedSellerName: string;
@@ -514,6 +538,9 @@ export default fp(async function manualSalesRoutes(fastify) {
           invoiceStatus: body.data.invoiceStatus ?? null,
           valorRecebido: body.data.valorRecebido != null ? body.data.valorRecebido.toFixed(2) : null,
           negociacao: body.data.negociacao ?? null,
+          customerCpf: body.data.customerCpf ? normalizeCpf(body.data.customerCpf) : null,
+          customerAddress: body.data.customerAddress ?? null,
+          valorNota: body.data.valorNota != null ? body.data.valorNota.toFixed(2) : null,
           memberkitStatus: isEvent ? "pending" : null,
         })
         .returning();
@@ -593,6 +620,25 @@ export default fp(async function manualSalesRoutes(fastify) {
         if (!finalPhone) {
           return reply.code(400).send({ error: "Telefone é obrigatório na etapa de Evento Presencial" });
         }
+        // Story 19.15 — dados fiscais não podem ficar vazios numa venda de evento.
+        if (body.data.customerCpf !== undefined && body.data.customerCpf && !isValidCpf(body.data.customerCpf)) {
+          return reply.code(400).send({ error: "CPF inválido" });
+        }
+        const finalCpf =
+          body.data.customerCpf !== undefined ? body.data.customerCpf : existing.customerCpf;
+        if (!finalCpf) {
+          return reply.code(400).send({ error: "CPF é obrigatório na etapa de Evento Presencial" });
+        }
+        const finalAddress =
+          body.data.customerAddress !== undefined ? body.data.customerAddress : existing.customerAddress;
+        if (!finalAddress) {
+          return reply.code(400).send({ error: "Endereço é obrigatório na etapa de Evento Presencial" });
+        }
+        const finalValorNota =
+          body.data.valorNota !== undefined ? body.data.valorNota : existing.valorNota;
+        if (finalValorNota == null) {
+          return reply.code(400).send({ error: "Valor da nota é obrigatório na etapa de Evento Presencial" });
+        }
       }
 
       // Monta SET parcial — só campos presentes no body
@@ -641,6 +687,16 @@ export default fp(async function manualSalesRoutes(fastify) {
         updates.valorRecebido = body.data.valorRecebido != null ? body.data.valorRecebido.toFixed(2) : null;
       }
       if (body.data.negociacao !== undefined) updates.negociacao = body.data.negociacao ?? null;
+      // Story 19.15 — dados fiscais
+      if (body.data.customerCpf !== undefined) {
+        updates.customerCpf = body.data.customerCpf ? normalizeCpf(body.data.customerCpf) : null;
+      }
+      if (body.data.customerAddress !== undefined) {
+        updates.customerAddress = body.data.customerAddress ?? null;
+      }
+      if (body.data.valorNota !== undefined) {
+        updates.valorNota = body.data.valorNota != null ? body.data.valorNota.toFixed(2) : null;
+      }
 
       if (Object.keys(updates).length === 0) {
         return reply.code(400).send({ error: "Nenhum campo pra atualizar" });

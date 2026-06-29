@@ -26,6 +26,7 @@ import {
   useUpdateManualSale,
 } from "@/lib/hooks/use-manual-sales";
 import { useEventProducts, useEventClosers, useEventLeads } from "@/lib/hooks/use-event-config";
+import { isValidCpf } from "@loyola-x/shared";
 import type { InvoiceStatus, ManualSale } from "@loyola-x/shared";
 
 interface ManualSaleDialogProps {
@@ -110,6 +111,10 @@ export function ManualSaleDialog({
   const [invoiceStatus, setInvoiceStatus] = useState<InvoiceStatus | "">("");
   const [valorRecebidoInput, setValorRecebidoInput] = useState(""); // Story 19.10 — Caixa
   const [negociacao, setNegociacao] = useState(""); // Story 19.10
+  // Story 19.15 — dados fiscais p/ nota (Evento Presencial)
+  const [customerCpf, setCustomerCpf] = useState("");
+  const [customerAddress, setCustomerAddress] = useState("");
+  const [valorNotaInput, setValorNotaInput] = useState("");
 
   // Story 19.12: ao editar venda antiga, produto/closer pode não estar mais na
   // lista — mostramos o valor atual como item "(não cadastrado)" em vez de vazio.
@@ -150,6 +155,11 @@ export function ManualSaleDialog({
         editingSale.valorRecebido != null ? formatBrCurrencyFromNumber(editingSale.valorRecebido) : "",
       );
       setNegociacao(editingSale.negociacao ?? "");
+      setCustomerCpf(editingSale.customerCpf ?? "");
+      setCustomerAddress(editingSale.customerAddress ?? "");
+      setValorNotaInput(
+        editingSale.valorNota != null ? formatBrCurrencyFromNumber(editingSale.valorNota) : "",
+      );
     } else {
       resetForm();
     }
@@ -167,6 +177,9 @@ export function ManualSaleDialog({
     setInvoiceStatus("");
     setValorRecebidoInput("");
     setNegociacao("");
+    setCustomerCpf("");
+    setCustomerAddress("");
+    setValorNotaInput("");
     setLeadSearch("");
   }
 
@@ -209,6 +222,24 @@ export function ManualSaleDialog({
       return;
     }
 
+    // Story 19.15 — dados fiscais obrigatórios no evento (emissão de nota).
+    let valorNota: number | null = null;
+    if (isEvent) {
+      if (!isValidCpf(customerCpf)) {
+        toast.error("CPF inválido");
+        return;
+      }
+      if (customerAddress.trim().length < 3) {
+        toast.error("Endereço é obrigatório");
+        return;
+      }
+      valorNota = parseBrCurrency(valorNotaInput);
+      if (valorNota === null) {
+        toast.error("Valor da nota inválido");
+        return;
+      }
+    }
+
     const valorRecebido = isEvent ? parseBrCurrency(valorRecebidoInput) : null;
 
     const payload = {
@@ -217,7 +248,14 @@ export function ManualSaleDialog({
       customerPhone: customerPhone.trim() || undefined,
       value,
       ...(isEvent
-        ? { sellerName: closer.trim(), valorRecebido, negociacao: negociacao.trim() || null }
+        ? {
+            sellerName: closer.trim(),
+            valorRecebido,
+            negociacao: negociacao.trim() || null,
+            customerCpf: customerCpf.trim(),
+            customerAddress: customerAddress.trim(),
+            valorNota,
+          }
         : { sellerUserId }),
       saleDate,
       product: product.trim() || undefined,
@@ -339,6 +377,42 @@ export function ManualSaleDialog({
                 />
               </div>
             </div>
+
+            {isEvent && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="customer-cpf">CPF *</Label>
+                    <Input
+                      id="customer-cpf"
+                      inputMode="numeric"
+                      value={customerCpf}
+                      onChange={(e) => setCustomerCpf(e.target.value)}
+                      placeholder="000.000.000-00"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="valor-nota">Valor da nota (R$) *</Label>
+                    <Input
+                      id="valor-nota"
+                      inputMode="decimal"
+                      value={valorNotaInput}
+                      onChange={(e) => setValorNotaInput(e.target.value)}
+                      placeholder="1.997,00"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="customer-address">Endereço *</Label>
+                  <Input
+                    id="customer-address"
+                    value={customerAddress}
+                    onChange={(e) => setCustomerAddress(e.target.value)}
+                    placeholder="Rua, número, bairro, cidade/UF, CEP"
+                  />
+                </div>
+              </>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
