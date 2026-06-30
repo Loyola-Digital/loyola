@@ -81,6 +81,8 @@ export interface EventMapLead {
   email: string;
   name: string;
   phone: string;
+  /** Tipo da pessoa (comprador / 2ª cadeira / iFood / fornecedor); "" se não mapeado. */
+  tipo: string;
   status: EventLeadStatus;
   /** Preenchido quando status = "bought". */
   sale: EventLeadSale | null;
@@ -117,6 +119,13 @@ export interface SetEventLeadStatusInput {
 /** Atribuir (ou desatribuir, com seller = null) um vendedor a um lead. */
 export interface SetEventLeadSellerInput {
   email: string;
+  /** Nome do vendedor/closer; null limpa a atribuição. */
+  seller: string | null;
+}
+
+/** Atribuir (ou desatribuir) um vendedor a vários leads de uma vez. */
+export interface SetEventLeadSellerBulkInput {
+  emails: string[];
   /** Nome do vendedor/closer; null limpa a atribuição. */
   seller: string | null;
 }

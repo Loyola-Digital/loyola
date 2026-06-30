@@ -12,6 +12,7 @@ import type {
   EventMapResponse,
   SetEventLeadStatusInput,
   SetEventLeadSellerInput,
+  SetEventLeadSellerBulkInput,
   EventLeadAnswersResponse,
 } from "@loyola-x/shared";
 
@@ -131,6 +132,24 @@ export function useSetEventLeadSeller(projectId: string, funnelId: string, stage
         method: "PUT",
         body: JSON.stringify(input),
       }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event-map", projectId, funnelId, stageId] });
+    },
+  });
+}
+
+export function useSetEventLeadSellerBulk(projectId: string, funnelId: string, stageId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SetEventLeadSellerBulkInput) =>
+      apiClient<{ count: number; seller: string | null }>(
+        `${stageBase(projectId, funnelId, stageId)}/event-lead-seller-bulk`,
+        {
+          method: "PUT",
+          body: JSON.stringify(input),
+        },
+      ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["event-map", projectId, funnelId, stageId] });
     },
