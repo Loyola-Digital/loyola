@@ -758,6 +758,9 @@ export default fp(async function stageEventConfigRoutes(fastify) {
   // email, agrupadas por planilha.
   const leadAnswersQuerySchema = z.object({
     email: z.string().trim().email().max(255),
+    // nome do lead — usado como fallback quando o email não casa em alguma fonte
+    // (comprou com um email e respondeu a pesquisa com outro).
+    name: z.string().trim().max(255).optional(),
   });
 
   fastify.get(`${base}/event-lead-answers`, async (request, reply) => {
@@ -771,6 +774,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
     const target = query.data.email.trim().toLowerCase();
+    const targetName = query.data.name ? normName(query.data.name) : "";
 
     const sources = await fastify.db
       .select({
@@ -787,7 +791,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
 
     const groups: { source: string; role: string; answers: { label: string; value: string }[] }[] = [];
     for (const src of sources) {
-      const mapping = (src.mapping ?? {}) as { email?: string };
+      const mapping = (src.mapping ?? {}) as { email?: string; name?: string };
       if (!mapping.email) continue;
       let data;
       try {
@@ -798,7 +802,15 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       const { headers, rows } = data;
       const emailIdx = headers.indexOf(mapping.email);
       if (emailIdx === -1) continue;
-      const match = rows.find((row) => (row[emailIdx] ?? "").trim().toLowerCase() === target);
+      let match = rows.find((row) => (row[emailIdx] ?? "").trim().toLowerCase() === target);
+      // Fallback por nome: o lead pode ter comprado com um email e respondido a
+      // pesquisa com outro — aí o match por email falha nesta fonte.
+      if (!match && targetName) {
+        const nameIdx = mapping.name ? headers.indexOf(mapping.name) : findNameIdx(headers);
+        if (nameIdx !== -1) {
+          match = rows.find((row) => normName(row[nameIdx] ?? "") === targetName);
+        }
+      }
       if (!match) continue;
       // Monta label→value de todas as colunas não vazias da linha (mantém a ordem das colunas).
       const answers: { label: string; value: string }[] = [];

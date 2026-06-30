@@ -97,7 +97,7 @@ export function LeadDetailDialog({
 function LeadInfos({
   lead, projectId, funnelId, stageId,
 }: { lead: RoiLead; projectId: string; funnelId: string; stageId: string }) {
-  const { data, isLoading, isError } = useEventLeadAnswers(projectId, funnelId, stageId, lead.email);
+  const { data, isLoading, isError } = useEventLeadAnswers(projectId, funnelId, stageId, lead.email, lead.name);
   const groups = data?.groups ?? [];
 
   return (

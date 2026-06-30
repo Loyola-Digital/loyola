@@ -163,14 +163,19 @@ export function useEventLeadAnswers(
   funnelId: string,
   stageId: string,
   email: string | null,
+  name?: string | null,
 ) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["event-lead-answers", projectId, funnelId, stageId, email],
-    queryFn: () =>
-      apiClient<EventLeadAnswersResponse>(
-        `${stageBase(projectId, funnelId, stageId)}/event-lead-answers?email=${encodeURIComponent(email ?? "")}`,
-      ),
+    queryKey: ["event-lead-answers", projectId, funnelId, stageId, email, name],
+    queryFn: () => {
+      // name é fallback: se o lead comprou com um email e respondeu a pesquisa
+      // com outro, o backend casa as respostas pelo nome.
+      const nameParam = name ? `&name=${encodeURIComponent(name)}` : "";
+      return apiClient<EventLeadAnswersResponse>(
+        `${stageBase(projectId, funnelId, stageId)}/event-lead-answers?email=${encodeURIComponent(email ?? "")}${nameParam}`,
+      );
+    },
     enabled: !!email,
     staleTime: STALE,
   });
