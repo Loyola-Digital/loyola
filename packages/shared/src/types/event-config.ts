@@ -94,8 +94,8 @@ export interface EventMapLead {
   sale: EventLeadSale | null;
   /** Faturamento mensal da pesquisa (lookup por email); null se não respondeu. Base da calculadora de ROI. */
   revenue: number | null;
-  /** Como o faturamento foi casado: "email"/"phone" (confiáveis), "name" (possível — confirmar) ou null. */
-  revenueMatch: "email" | "phone" | "name" | null;
+  /** Como o faturamento foi casado: "email"/"phone" (confiáveis), "name"/"time" (possível — confirmar) ou null. */
+  revenueMatch: "email" | "phone" | "name" | "time" | null;
   /** Evidência temporal do match por nome (compra × resposta da pesquisa). null p/ email ou sem dados. */
   revenueMatchInfo: EventRevenueMatchInfo | null;
   /** Vendedor/closer atribuído ao lead (nome); null se não atribuído. */

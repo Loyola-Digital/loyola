@@ -18,7 +18,7 @@ export interface RoiLead {
   email: string;
   phone?: string;
   revenue: number | null;
-  revenueMatch?: "email" | "phone" | "name" | null;
+  revenueMatch?: "email" | "phone" | "name" | "time" | null;
   revenueMatchInfo?: EventRevenueMatchInfo | null;
 }
 
@@ -33,63 +33,67 @@ export function matchGapLabel(info: EventRevenueMatchInfo | null | undefined): s
   return `${Math.round(abs / 1440)} d ${rel}`;
 }
 
-// Match por nome com a compra e a resposta a ~1h é praticamente a mesma pessoa
-// (só erra o email) — não precisa alarmar.
+// Match por nome com compra e resposta a ~1h é praticamente a mesma pessoa
+// (só errou o email) — não precisa alarmar.
 const STRONG_GAP_MIN = 60;
 
+type MatchTone = "ok" | "warn";
+export interface MatchDisplay {
+  tone: MatchTone;
+  label: string;
+  title: string;
+}
+
 /**
- * Confiança do match por NOME:
- * - "strong": compra e resposta bem próximas (≤ 1h) → quase certo que é a pessoa.
- * - "weak":   sem horário de compra OU muito distante → confirmar manualmente.
- * - null:     match por email (confiável) ou sem match.
+ * Fonte única do selo/aviso de match (tabela + modal). null = email (confiável,
+ * sem selo) ou sem match. "ok" = verde discreto; "warn" = âmbar "confirme".
  */
-export function matchConfidence(
-  revenueMatch: "email" | "phone" | "name" | null | undefined,
+export function matchDisplay(
+  revenueMatch: "email" | "phone" | "name" | "time" | null | undefined,
   info: EventRevenueMatchInfo | null | undefined,
-): "strong" | "weak" | null {
-  if (revenueMatch !== "name") return null;
-  const g = info?.gapMinutes;
-  return g != null && Math.abs(g) <= STRONG_GAP_MIN ? "strong" : "weak";
-}
-
-/** Texto pro tooltip / banner do match por nome. */
-export function matchEvidenceText(info: EventRevenueMatchInfo | null | undefined): string {
+): MatchDisplay | null {
+  if (!revenueMatch || revenueMatch === "email") return null;
   const gap = matchGapLabel(info);
-  if (info?.buyAt && gap) {
-    return `Casado pelo nome (comprou e respondeu a pesquisa com emails diferentes). Comprou em ${info.buyAt} e respondeu a pesquisa ${gap}.`;
+  if (revenueMatch === "phone") {
+    return {
+      tone: "ok",
+      label: "✓ por telefone",
+      title: "Casado pelo telefone — comprou e respondeu a pesquisa com emails diferentes, mas o telefone bate.",
+    };
   }
-  return "Casado pelo nome, sem horário de compra pra cruzar. Confirme se é a mesma pessoa.";
+  if (revenueMatch === "time") {
+    return {
+      tone: "warn",
+      label: `⏱️ horário${gap ? ` · ${gap}` : ""}`,
+      title: `Casado pelo HORÁRIO — resposta anônima da pesquisa enviada ${gap ?? "perto"} da compra. Provável, mas sem email/nome pra confirmar.`,
+    };
+  }
+  // name: forte (≤ 1h) → verde; senão → âmbar "confirme".
+  const strong = info?.gapMinutes != null && Math.abs(info.gapMinutes) <= STRONG_GAP_MIN;
+  const named = info?.buyAt && gap
+    ? `Casado pelo nome. Comprou em ${info.buyAt} e respondeu a pesquisa ${gap}.`
+    : "Casado pelo nome, sem horário de compra pra cruzar. Confirme se é a mesma pessoa.";
+  return strong
+    ? { tone: "ok", label: `✓ por nome${gap ? ` · ${gap}` : ""}`, title: named }
+    : { tone: "warn", label: "⚠️ confirme", title: named };
 }
 
-/** Selo de match por nome: verde discreto se forte, âmbar "confirme" se fraco. */
+/** Selo de match (tabela/card): verde se confiável, âmbar se precisa confirmar. */
 export function RevenueMatchBadge({
   revenueMatch,
   info,
 }: {
-  revenueMatch?: "email" | "phone" | "name" | null;
+  revenueMatch?: "email" | "phone" | "name" | "time" | null;
   info?: EventRevenueMatchInfo | null;
 }) {
-  if (revenueMatch === "phone") {
-    return (
-      <div
-        className="mt-0.5 text-[10px] font-normal text-emerald-400/90 cursor-help"
-        title="Casado pelo telefone — comprou e respondeu a pesquisa com emails diferentes, mas o telefone bate."
-      >
-        ✓ por telefone
-      </div>
-    );
-  }
-  const conf = matchConfidence(revenueMatch, info);
-  if (!conf) return null;
-  const gap = matchGapLabel(info);
-  const strong = conf === "strong";
+  const d = matchDisplay(revenueMatch, info);
+  if (!d) return null;
   return (
     <div
-      className={`mt-0.5 text-[10px] font-normal cursor-help ${strong ? "text-emerald-400/90" : "text-amber-400/90"}`}
-      title={matchEvidenceText(info)}
+      className={`mt-0.5 text-[10px] font-normal cursor-help ${d.tone === "ok" ? "text-emerald-400/90" : "text-amber-400/90"}`}
+      title={d.title}
     >
-      {strong ? "✓ por nome" : "⚠️ confirme"}
-      {gap ? ` · ${gap}` : ""}
+      {d.label}
     </div>
   );
 }
@@ -173,8 +177,11 @@ export function LeadDetailDialog({
 function LeadInfos({
   lead, projectId, funnelId, stageId,
 }: { lead: RoiLead; projectId: string; funnelId: string; stageId: string }) {
-  const { data, isLoading, isError } = useEventLeadAnswers(projectId, funnelId, stageId, lead.email, lead.name, lead.phone);
+  const { data, isLoading, isError } = useEventLeadAnswers(
+    projectId, funnelId, stageId, lead.email, lead.name, lead.phone, lead.revenueMatchInfo?.surveyAt,
+  );
   const groups = data?.groups ?? [];
+  const matchInfo = matchDisplay(lead.revenueMatch, lead.revenueMatchInfo);
 
   return (
     <div className="max-h-[80vh] overflow-y-auto">
@@ -182,24 +189,17 @@ function LeadInfos({
         <div className="text-[10px] tracking-[2px] uppercase font-bold text-[#d4af37]">Ficha do lead</div>
         <h2 className="text-lg font-extrabold mt-1 leading-tight truncate">{lead.name || lead.email}</h2>
         <p className="text-[12px] text-[#9ca3af] mt-0.5 truncate">{lead.email}</p>
-        {(() => {
-          const conf = matchConfidence(lead.revenueMatch, lead.revenueMatchInfo);
-          if (!conf) return null;
-          const strong = conf === "strong";
-          return (
-            <div
-              className={`mt-2 rounded-lg border px-3 py-2 text-[12px] ${
-                strong
-                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-                  : "border-amber-500/40 bg-amber-500/10 text-amber-200"
-              }`}
-            >
-              {strong ? "✓ " : "⚠️ "}
-              <strong>{strong ? "Match por nome (provável)" : "Match por nome (confirme)"}</strong>{" "}
-              — {matchEvidenceText(lead.revenueMatchInfo)}
-            </div>
-          );
-        })()}
+        {matchInfo && (
+          <div
+            className={`mt-2 rounded-lg border px-3 py-2 text-[12px] ${
+              matchInfo.tone === "ok"
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                : "border-amber-500/40 bg-amber-500/10 text-amber-200"
+            }`}
+          >
+            {matchInfo.title}
+          </div>
+        )}
       </div>
       <div className="px-5 py-4 space-y-4">
         {isLoading ? (
