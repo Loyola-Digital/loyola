@@ -15,7 +15,9 @@ import {
   Map as MapIcon,
   Target,
   Search,
+  Star,
 } from "lucide-react";
+import { NpsStageTab } from "@/components/funnels/nps-stage-tab";
 import { toast } from "sonner";
 import type { FunnelStage, ManualSale } from "@loyola-x/shared";
 import { Button } from "@/components/ui/button";
@@ -256,6 +258,9 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
           <TabsTrigger value="planilha" className="gap-1.5 shrink-0">
             Leads
           </TabsTrigger>
+          <TabsTrigger value="nps" className="gap-1.5 shrink-0">
+            <Star className="h-3.5 w-3.5 text-yellow-500" /> NPS
+          </TabsTrigger>
           <TabsTrigger value="config" className="gap-1.5 shrink-0">
             <GraduationCap className="h-3.5 w-3.5" /> Config
           </TabsTrigger>
@@ -315,6 +320,11 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
         {/* LEADS DO EVENTO — conectar as planilhas (fonte única: Mapa + Plano de Vendas) */}
         <TabsContent value="planilha" className="mt-6">
           <EventSourcesTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
+        </TabsContent>
+
+        {/* NPS — cruza a lista de NPS (planilha) com as respostas da etapa */}
+        <TabsContent value="nps" className="mt-6">
+          <NpsStageTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
         </TabsContent>
 
         {/* CONFIGURAÇÃO — produtos (com turma) + closers + auto-matrícula */}
