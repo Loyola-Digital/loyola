@@ -338,7 +338,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
   // deduplicados por email. O Mapa do Evento usa esta lista de participantes.
   async function loadEventLeads(
     stageId: string,
-  ): Promise<{ email: string; name: string; phone: string; tipo: string; invitedBy: string; saleEmail: string; buyAt: string }[]> {
+  ): Promise<{ email: string; name: string; phone: string; tipo: string; invitedBy: string; saleEmail: string; buyAt: string; ticket: string }[]> {
     const sources = await fastify.db
       .select({
         spreadsheetId: stageSalesPlanSources.spreadsheetId,
@@ -356,7 +356,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       .orderBy(asc(stageSalesPlanSources.sortOrder));
     if (sources.length === 0) return [];
 
-    type Lead = { email: string; name: string; phone: string; tipo: string; invitedBy: string; saleEmail: string; buyAt: string };
+    type Lead = { email: string; name: string; phone: string; tipo: string; invitedBy: string; saleEmail: string; buyAt: string; ticket: string };
     const MAX_LEADS = 10000;
     const byEmail = new Map<string, Lead>();
     for (const src of sources) {
@@ -381,6 +381,8 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       // Data/hora da compra do ingresso (coluna "data") — usada como evidência
       // temporal nos matches por nome (compra × resposta da pesquisa).
       const dataIdx = headers.findIndex((h) => norm(h) === "data");
+      // Tipo de ingresso (coluna "Ingresso") — ex.: VIP, BLACK, Empreendedor.
+      const ingressoIdx = headers.findIndex((h) => norm(h) === "ingresso");
       if (emailIdx === -1) continue;
       for (const row of rows) {
         if (byEmail.size >= MAX_LEADS) break;
@@ -397,6 +399,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
           invitedBy: convIdx !== -1 ? (row[convIdx] ?? "").trim() : "",
           saleEmail: saleEmailIdx !== -1 ? (row[saleEmailIdx] ?? "").trim() : "",
           buyAt: dataIdx !== -1 ? (row[dataIdx] ?? "").trim() : "",
+          ticket: ingressoIdx !== -1 ? (row[ingressoIdx] ?? "").trim() : "",
         });
       }
     }

@@ -87,6 +87,8 @@ export interface EventMapLead {
   invitedBy: string;
   /** Email da venda do ingresso (coluna "Email da venda"); "" se não houver. */
   saleEmail: string;
+  /** Tipo de ingresso (coluna "Ingresso"): ex. "VIP", "BLACK", "Empreendedor"; "" se não houver. */
+  ticket: string;
   /** True se respondeu "Empresário(a) dono de restaurante" no campo "Você é:" da pesquisa. */
   isRestaurantOwner: boolean;
   status: EventLeadStatus;

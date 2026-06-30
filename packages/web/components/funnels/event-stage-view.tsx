@@ -749,6 +749,32 @@ function TipoBadge({ lead }: { lead: { tipo: string; isRestaurantOwner: boolean 
   );
 }
 
+// Badge do tipo de ingresso — só VIP e Black ganham destaque.
+function TicketBadge({ ticket }: { ticket: string }) {
+  const t = (ticket || "").trim().toLowerCase();
+  if (t === "vip") {
+    return (
+      <span
+        className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold border bg-amber-500/20 text-amber-300 border-amber-500/50"
+        title="Ingresso VIP"
+      >
+        VIP
+      </span>
+    );
+  }
+  if (t === "black") {
+    return (
+      <span
+        className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold border bg-white/10 text-white border-white/40"
+        title="Ingresso Black"
+      >
+        BLACK
+      </span>
+    );
+  }
+  return null;
+}
+
 function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funnelId: string; stageId: string }) {
   const { data, isLoading } = useEventMap(projectId, funnelId, stageId);
   const setStatus = useSetEventLeadStatus(projectId, funnelId, stageId);
@@ -1112,6 +1138,7 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                     <td className="px-3 py-2.5 max-w-[220px] text-[#f3f4f6] font-medium">
                       <span className="inline-flex items-center gap-1.5">
                         <TipoBadge lead={l} />
+                        <TicketBadge ticket={l.ticket} />
                         <span className="truncate">{l.name || "—"}</span>
                       </span>
                       {normTipo(l.tipo).includes("cadeira") && l.invitedBy && (
@@ -1161,6 +1188,7 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <TipoBadge lead={l} />
+                      <TicketBadge ticket={l.ticket} />
                       <span className="font-semibold text-[#f3f4f6] truncate">{l.name || l.email}</span>
                     </div>
                     <div className="text-[12px] text-[#9ca3af] truncate mt-0.5">{l.email}</div>
