@@ -684,6 +684,11 @@ export const funnelStages = pgTable(
     auditStatus: varchar("audit_status", { length: 20 }).default("pending").notNull(),
     projectionEndDate: date("projection_end_date"),
     leadGoal: integer("lead_goal"),
+    // GA4 (Epic 37): filtro de página desta etapa (substring de
+    // landingPagePlusQueryString) usado no runReport da GA4 Data API. A property
+    // GA4 e o token ficam em ga4_connections (por projeto); cada etapa só escolhe
+    // QUAL página analisar. NULL = etapa sem análise GA4 configurada.
+    ga4PageFilter: text("ga4_page_filter"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -788,6 +793,38 @@ export const funnelSurveys = pgTable(
     index("idx_funnel_surveys_funnel").on(table.funnelId),
     index("idx_funnel_surveys_stage").on(table.stageId),
     index("idx_funnel_surveys_type").on(table.surveyType),
+  ]
+);
+
+// ============================================================
+// NPS DATASETS (Epic 38 — cruzamento de NPS com respostas do funil)
+// ============================================================
+// Lista de NPS (ex.: "NPS Dia 1") subida por etapa, lida ao vivo do Google Sheets
+// (mesmo padrão de funnel_surveys: spreadsheet + sheet + column_mapping). O app
+// cruza por e-mail (fallback: nome) com as respostas da pesquisa daquela etapa,
+// classifica promotor/neutro/detrator e mostra tudo numa aba. Vários datasets por
+// etapa (Dia 1, Dia 2, ...). score/name/email/timestamp são nomes de COLUNAS.
+export const funnelNpsDatasets = pgTable(
+  "funnel_nps_datasets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => funnels.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id").references(() => funnelStages.id, { onDelete: "cascade" }),
+    label: varchar("label", { length: 120 }).notNull().default("NPS"),
+    spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
+    spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
+    sheetName: varchar("sheet_name", { length: 255 }).notNull(),
+    columnMapping: jsonb("column_mapping")
+      .notNull()
+      .$type<{ name?: string; email?: string; score?: string; timestamp?: string }>()
+      .default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_funnel_nps_funnel").on(table.funnelId),
+    index("idx_funnel_nps_stage").on(table.stageId),
   ]
 );
 
@@ -1512,6 +1549,31 @@ export const kiwifySubscriptions = pgTable(
     unique("kiwify_subscriptions_project_sub_unique").on(table.projectId, table.subscriptionId),
     index("idx_kiwify_subscriptions_project_status").on(table.projectId, table.status),
   ]
+);
+
+// Epic 37 — Integração GA4 (Google Analytics Data API) por projeto. Conexão via
+// OAuth Google (mesmo client GOOGLE_ADS_CLIENT_ID/SECRET, escopo analytics.readonly).
+// Guardamos o refresh_token cifrado (AES-256-GCM) + a property GA4 selecionada
+// (numérica, ex.: "313646970"). O access_token (1h) é obtido em runtime e NUNCA
+// armazenado. 1 property por projeto; cada ETAPA escolhe a página via
+// funnel_stages.ga4_page_filter. NUNCA logar refresh_token.
+export const ga4Connections = pgTable(
+  "ga4_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .unique()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    refreshTokenEncrypted: text("refresh_token_encrypted").notNull(),
+    refreshTokenIv: text("refresh_token_iv").notNull(),
+    /** ID numérico da property GA4 (sem o prefixo "properties/"). */
+    propertyId: varchar("property_id", { length: 32 }).notNull(),
+    propertyName: text("property_name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_ga4_connections_project").on(table.projectId)]
 );
 
 // Story 35.1 (perf): cache persistente do dashboard/products Kiwify. A API

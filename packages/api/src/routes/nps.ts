@@ -1,0 +1,198 @@
+import { z } from "zod";
+import { eq, and } from "drizzle-orm";
+import fp from "fastify-plugin";
+import { funnelNpsDatasets, funnelSurveys, funnels } from "../db/schema.js";
+import { readSheetData, getSpreadsheetSheets } from "../services/google-sheets.js";
+import {
+  mapNpsRows,
+  indexLoyola,
+  crossNps,
+  summarizeNps,
+  pickHeader,
+  NAME_HEADER_CANDIDATES,
+  type LoyolaRecord,
+  type NpsColumnMapping,
+} from "../services/nps.js";
+
+// ============================================================
+// Epic 38 — Rotas NPS. Lista de NPS por etapa (planilha + mapeamento, igual
+// funnel_surveys) cruzada por e-mail/nome com as respostas da pesquisa da etapa.
+// Guest-block (mesma régua das surveys). Leitura de planilha ao vivo (Google).
+// ============================================================
+
+const stageParams = z.object({
+  projectId: z.string().uuid(),
+  funnelId: z.string().uuid(),
+  stageId: z.string().uuid(),
+});
+const datasetParams = stageParams.extend({ datasetId: z.string().uuid() });
+
+const createSchema = z.object({
+  label: z.string().min(1).max(120),
+  spreadsheetId: z.string().min(1),
+  spreadsheetName: z.string().min(1),
+  sheetName: z.string().min(1),
+});
+const mappingSchema = z.object({
+  name: z.string().optional(),
+  email: z.string().optional(),
+  score: z.string().optional(),
+  timestamp: z.string().optional(),
+});
+
+export default fp(async function npsRoutes(fastify) {
+  async function getFunnel(projectId: string, funnelId: string) {
+    const [f] = await fastify.db
+      .select({ id: funnels.id })
+      .from(funnels)
+      .where(and(eq(funnels.id, funnelId), eq(funnels.projectId, projectId)))
+      .limit(1);
+    return f ?? null;
+  }
+
+  // ---- GET datasets da etapa ----
+  fastify.get("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/nps", async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const p = stageParams.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!(await getFunnel(p.data.projectId, p.data.funnelId))) return reply.code(404).send({ error: "Funil não encontrado" });
+
+    const datasets = await fastify.db
+      .select()
+      .from(funnelNpsDatasets)
+      .where(and(eq(funnelNpsDatasets.funnelId, p.data.funnelId), eq(funnelNpsDatasets.stageId, p.data.stageId)));
+    return { datasets };
+  });
+
+  // ---- POST cria dataset (planilha + sheet) ----
+  fastify.post("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/nps", async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const p = stageParams.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const body = createSchema.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+    if (!(await getFunnel(p.data.projectId, p.data.funnelId))) return reply.code(404).send({ error: "Funil não encontrado" });
+
+    const [dataset] = await fastify.db
+      .insert(funnelNpsDatasets)
+      .values({
+        funnelId: p.data.funnelId,
+        stageId: p.data.stageId,
+        label: body.data.label,
+        spreadsheetId: body.data.spreadsheetId,
+        spreadsheetName: body.data.spreadsheetName,
+        sheetName: body.data.sheetName,
+      })
+      .returning();
+    return reply.code(201).send(dataset);
+  });
+
+  // ---- PATCH mapping (quais colunas são name/email/score/timestamp) ----
+  fastify.patch("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/nps/:datasetId/mapping", async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const p = datasetParams.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const body = mappingSchema.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    const [updated] = await fastify.db
+      .update(funnelNpsDatasets)
+      .set({ columnMapping: body.data })
+      .where(and(eq(funnelNpsDatasets.id, p.data.datasetId), eq(funnelNpsDatasets.stageId, p.data.stageId)))
+      .returning();
+    if (!updated) return reply.code(404).send({ error: "Dataset não encontrado" });
+    return updated;
+  });
+
+  // ---- DELETE dataset ----
+  fastify.delete("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/nps/:datasetId", async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const p = datasetParams.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const deleted = await fastify.db
+      .delete(funnelNpsDatasets)
+      .where(and(eq(funnelNpsDatasets.id, p.data.datasetId), eq(funnelNpsDatasets.stageId, p.data.stageId)))
+      .returning({ id: funnelNpsDatasets.id });
+    if (deleted.length === 0) return reply.code(404).send({ error: "Dataset não encontrado" });
+    return { success: true };
+  });
+
+  // ---- GET colunas (headers) da planilha do dataset — pra montar o mapeamento ----
+  fastify.get("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/nps/:datasetId/columns", async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const p = datasetParams.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const [ds] = await fastify.db.select().from(funnelNpsDatasets).where(eq(funnelNpsDatasets.id, p.data.datasetId)).limit(1);
+    if (!ds || ds.stageId !== p.data.stageId) return reply.code(404).send({ error: "Dataset não encontrado" });
+    try {
+      const sheet = await readSheetData(ds.spreadsheetId, ds.sheetName);
+      return { headers: sheet.headers };
+    } catch (err) {
+      return reply.code(502).send({ error: "Erro ao ler a planilha", details: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ---- GET cruzamento (NPS × respostas da etapa) ----
+  fastify.get("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/nps/:datasetId/cross", async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const p = datasetParams.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const [ds] = await fastify.db.select().from(funnelNpsDatasets).where(eq(funnelNpsDatasets.id, p.data.datasetId)).limit(1);
+    if (!ds || ds.stageId !== p.data.stageId) return reply.code(404).send({ error: "Dataset não encontrado" });
+
+    try {
+      // 1) Respondentes do NPS.
+      const npsSheet = await readSheetData(ds.spreadsheetId, ds.sheetName);
+      const respondents = mapNpsRows(npsSheet.headers, npsSheet.rows, ds.columnMapping as NpsColumnMapping);
+
+      // 2) Índice das respostas do Loyola (todas as pesquisas da etapa). e-mail
+      //    da columnMapping.email da survey; nome auto-detectado nos headers.
+      const surveys = await fastify.db
+        .select()
+        .from(funnelSurveys)
+        .where(eq(funnelSurveys.stageId, p.data.stageId));
+
+      const byEmail = new Map<string, LoyolaRecord>();
+      const byName = new Map<string, LoyolaRecord>();
+      const loyolaColumns = new Set<string>();
+      for (const s of surveys) {
+        try {
+          const sheet = await readSheetData(s.spreadsheetId, s.sheetName);
+          sheet.headers.forEach((h) => loyolaColumns.add(h));
+          const emailHeader = s.columnMapping?.email;
+          const nameHeader = pickHeader(sheet.headers, NAME_HEADER_CANDIDATES);
+          const idx = indexLoyola(sheet.headers, sheet.rows, emailHeader, nameHeader);
+          for (const [k, v] of idx.byEmail) if (!byEmail.has(k)) byEmail.set(k, v);
+          for (const [k, v] of idx.byName) if (!byName.has(k)) byName.set(k, v);
+        } catch (err) {
+          request.log.warn({ err, surveyId: s.id }, "NPS: falha ao ler planilha de pesquisa");
+        }
+      }
+
+      const rows = crossNps(respondents, { byEmail, byName });
+      return {
+        label: ds.label,
+        rows,
+        summary: summarizeNps(rows),
+        loyolaColumns: Array.from(loyolaColumns),
+        surveysFound: surveys.length,
+      };
+    } catch (err) {
+      request.log.error({ err }, "Erro no cruzamento NPS");
+      return reply.code(502).send({ error: "Erro ao cruzar NPS", details: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ---- GET helper: lista sheets de uma spreadsheet (pro wizard) ----
+  fastify.get("/api/projects/:projectId/nps/spreadsheets/:spreadsheetId/sheets", async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const { spreadsheetId } = request.params as { spreadsheetId: string };
+    try {
+      const result = await getSpreadsheetSheets(spreadsheetId);
+      return result;
+    } catch (err) {
+      return reply.code(502).send({ error: "Erro ao ler a planilha", details: err instanceof Error ? err.message : String(err) });
+    }
+  });
+});

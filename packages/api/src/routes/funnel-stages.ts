@@ -57,6 +57,7 @@ const updateStageSchema = z.object({
   googleAdsCampaigns: z.array(campaignSchema).optional(),
   switchyFolderIds: z.array(switchyFolderSchema).optional(),
   switchyLinkedLinks: z.array(switchyLinkRefSchema).optional(),
+  ga4PageFilter: z.string().max(2048).nullable().optional(),
 });
 
 const paramsSchema = z.object({
@@ -109,6 +110,7 @@ function stageShape(
     googleAdsCampaigns: (row.googleAdsCampaigns ?? []) as { id: string; name: string }[],
     switchyFolderIds: (row.switchyFolderIds ?? []) as { id: number; name: string }[],
     switchyLinkedLinks: (row.switchyLinkedLinks ?? []) as { uniq: number; id: string; domain: string }[],
+    ga4PageFilter: row.ga4PageFilter ?? null,
     sortOrder: row.sortOrder,
     lastAuditAt: row.lastAuditAt ? row.lastAuditAt.toISOString() : null,
     lastAuditBy: auditUser?.id
@@ -388,6 +390,7 @@ export default fp(async function funnelStageRoutes(fastify) {
     if (body.googleAdsCampaigns !== undefined) updates.googleAdsCampaigns = body.googleAdsCampaigns;
     if (body.switchyFolderIds !== undefined) updates.switchyFolderIds = body.switchyFolderIds;
     if (body.switchyLinkedLinks !== undefined) updates.switchyLinkedLinks = body.switchyLinkedLinks;
+    if (body.ga4PageFilter !== undefined) updates.ga4PageFilter = body.ga4PageFilter;
 
     const [row] = await fastify.db
       .update(funnelStages)

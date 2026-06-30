@@ -73,6 +73,8 @@ import kiwifyRoutes from "./routes/kiwify.js";
 import memberkitRoutes from "./routes/memberkit.js";
 import stageEventConfigRoutes from "./routes/stage-event-config.js";
 import stageSalesPlanRoutes from "./routes/stage-sales-plan.js";
+import ga4Routes from "./routes/ga4.js";
+import npsRoutes from "./routes/nps.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -168,6 +170,8 @@ export async function buildServer() {
   await app.register(memberkitRoutes);
   await app.register(stageEventConfigRoutes);
   await app.register(stageSalesPlanRoutes);
+  await app.register(ga4Routes);
+  await app.register(npsRoutes);
 
   return app;
 }

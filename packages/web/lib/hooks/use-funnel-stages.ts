@@ -15,6 +15,7 @@ export interface CreateStageInput {
   googleAdsCampaigns?: { id: string; name: string }[];
   switchyFolderIds?: { id: number; name: string }[];
   switchyLinkedLinks?: { uniq: number; id: string; domain: string }[];
+  ga4PageFilter?: string | null;
 }
 
 export type UpdateStageInput = Partial<CreateStageInput>;
