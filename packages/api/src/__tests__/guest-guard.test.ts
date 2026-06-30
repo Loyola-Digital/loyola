@@ -84,6 +84,7 @@ async function buildTestApp(userRole: string) {
   app.put("/api/projects/:id", async () => ({ ok: true }));
   app.delete("/api/projects/:id", async () => ({ ok: true }));
   app.post("/api/chat", async () => ({ ok: true }));
+  app.put("/api/projects/:id/funnels/:fid/stages/:sid/event-lead-status", async () => ({ ok: true }));
 
   await app.ready();
   return app;
@@ -229,6 +230,31 @@ describe("guestGuard — guest project membership checks", () => {
       headers: AUTH,
     });
     expect(res.statusCode).toBe(200);
+  });
+
+  // Evento Presencial: convidado membro PODE escrever status/vendedor do lead
+  // (allowlist no guard global; handler valida por membership).
+  it("guest allowed to PUT event-lead-status when member", async () => {
+    setupMemberQuery([MOCK_MEMBER_ROW]);
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${MOCK_PROJECT_ID}/funnels/${MOCK_PROJECT_ID}/stages/${MOCK_PROJECT_ID}/event-lead-status`,
+      headers: AUTH,
+      body: {},
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("guest blocked on PUT event-lead-status when not a member", async () => {
+    setupMemberQuery([]); // no membership
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${MOCK_PROJECT_ID}/funnels/${MOCK_PROJECT_ID}/stages/${MOCK_PROJECT_ID}/event-lead-status`,
+      headers: AUTH,
+      body: {},
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toBe("project_access_denied");
   });
 });
 
