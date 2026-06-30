@@ -70,7 +70,7 @@ import {
   useSetEventLeadSellerBulk,
 } from "@/lib/hooks/use-event-config";
 import { EventSourcesTab } from "@/components/funnels/event-sources-tab";
-import { LeadDetailDialog, matchGapLabel, matchEvidenceText, type RoiLead } from "@/components/funnels/roi-calculator";
+import { LeadDetailDialog, RevenueMatchBadge, type RoiLead } from "@/components/funnels/roi-calculator";
 import type { EventLeadStatus } from "@loyola-x/shared";
 
 interface EventStageViewProps {
@@ -1124,11 +1124,7 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                     <td className="px-3 py-2.5 text-[#9ca3af]">{l.phone || "—"}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums font-bold text-[#d4af37]">
                       {l.revenue != null ? formatCurrency(l.revenue) : <span className="text-[#6b7280] font-normal">—</span>}
-                      {l.revenueMatch === "name" && (
-                        <div className="mt-0.5 text-[10px] font-normal text-amber-400/90 cursor-help" title={matchEvidenceText(l.revenueMatchInfo)}>
-                          ⚠️ possível{matchGapLabel(l.revenueMatchInfo) ? ` · ${matchGapLabel(l.revenueMatchInfo)}` : ""}
-                        </div>
-                      )}
+                      <RevenueMatchBadge revenueMatch={l.revenueMatch} info={l.revenueMatchInfo} />
                     </td>
                     <td className="px-3 py-2.5 max-w-[140px] truncate text-[#9ca3af]" title={l.sale?.product ?? ""}>
                       {l.sale?.product || "—"}
@@ -1180,11 +1176,7 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                     <div className="font-bold tabular-nums text-[#d4af37]">
                       {l.revenue != null ? formatCurrency(l.revenue) : "—"}
                     </div>
-                    {l.revenueMatch === "name" && (
-                      <div className="text-[10px] font-normal text-amber-400/90 mt-0.5" title={matchEvidenceText(l.revenueMatchInfo)}>
-                        ⚠️ possível{matchGapLabel(l.revenueMatchInfo) ? ` · ${matchGapLabel(l.revenueMatchInfo)}` : ""}
-                      </div>
-                    )}
+                    <RevenueMatchBadge revenueMatch={l.revenueMatch} info={l.revenueMatchInfo} />
                   </div>
                 </div>
                 <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-[#1f2937]">
