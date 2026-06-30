@@ -129,6 +129,7 @@ export type {
   EventLeadStatus,
   EventLeadSale,
   EventMapLead,
+  EventRevenueMatchInfo,
   EventMapSummary,
   EventMapResponse,
   SettableEventLeadStatus,
