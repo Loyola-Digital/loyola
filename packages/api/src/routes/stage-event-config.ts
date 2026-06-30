@@ -439,9 +439,39 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     return out;
   }
 
-  // Helper: faturamento por email vindo das planilhas de RESPOSTAS (role
-  // "survey"). Usado pra preencher o ROI de cada lead no Mapa do Evento.
-  async function loadRevenueByEmail(stageId: string): Promise<Map<string, number>> {
+  // Normaliza nome p/ match tolerante: sem acento, minúsculo, espaços colapsados.
+  function normName(s: string): string {
+    return s
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+  }
+
+  // Detecta a coluna de NOME da pessoa numa survey pelo header (heurística):
+  // contém "nome" mas não se refere a restaurante/empresa/negócio.
+  function findNameIdx(headers: string[]): number {
+    return headers.findIndex((h) => {
+      const n = h.trim().toLowerCase();
+      return (
+        n.includes("nome") &&
+        !n.includes("restaurante") &&
+        !n.includes("empresa") &&
+        !n.includes("negócio") &&
+        !n.includes("negocio") &&
+        !n.includes("fantasia")
+      );
+    });
+  }
+
+  // Helper: faturamento das planilhas de RESPOSTAS (role "survey"), indexado por
+  // email E por nome. O nome é fallback pro caso de o lead comprar com um email e
+  // responder a pesquisa com outro. byName guarda `null` quando o mesmo nome
+  // aparece com faturamentos divergentes (ambíguo → não chuta).
+  async function loadRevenue(
+    stageId: string,
+  ): Promise<{ byEmail: Map<string, number>; byName: Map<string, number | null> }> {
     const surveys = await fastify.db
       .select({
         spreadsheetId: stageSalesPlanSources.spreadsheetId,
@@ -454,9 +484,10 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       )
       .orderBy(asc(stageSalesPlanSources.sortOrder));
 
-    const out = new Map<string, number>();
+    const byEmail = new Map<string, number>();
+    const byName = new Map<string, number | null>();
     for (const src of surveys) {
-      const mapping = (src.mapping ?? {}) as { email?: string; faturamento?: string };
+      const mapping = (src.mapping ?? {}) as { email?: string; faturamento?: string; name?: string };
       let data;
       try {
         data = await readSheetData(src.spreadsheetId, src.sheetName);
@@ -466,17 +497,29 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       const { headers, rows } = data;
       const emailIdx = mapping.email ? headers.indexOf(mapping.email) : -1;
       const fatIdx = mapping.faturamento ? headers.indexOf(mapping.faturamento) : -1;
-      if (emailIdx === -1 || fatIdx === -1) continue;
+      if (fatIdx === -1) continue;
+      // nome: usa o mapping se houver, senão detecta pelo header.
+      const nameIdx = mapping.name ? headers.indexOf(mapping.name) : findNameIdx(headers);
       for (const row of rows) {
-        const email = (row[emailIdx] ?? "").trim().toLowerCase();
-        if (!email || out.has(email)) continue;
         const raw = (row[fatIdx] ?? "").trim();
         if (!raw) continue;
         const value = parseFaturamento(raw);
-        if (value != null) out.set(email, value);
+        if (value == null) continue;
+
+        const email = emailIdx !== -1 ? (row[emailIdx] ?? "").trim().toLowerCase() : "";
+        if (email && !byEmail.has(email)) byEmail.set(email, value);
+
+        const name = nameIdx !== -1 ? normName(row[nameIdx] ?? "") : "";
+        if (name) {
+          if (byName.has(name)) {
+            if (byName.get(name) !== value) byName.set(name, null); // conflito → ambíguo
+          } else {
+            byName.set(name, value);
+          }
+        }
       }
     }
-    return out;
+    return { byEmail, byName };
   }
 
   // ---- LEADS DO EVENTO (buscador no lançamento da venda) ----
@@ -502,7 +545,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
     const leads = await loadEventLeads(params.data.stageId);
-    const revenueByEmail = await loadRevenueByEmail(params.data.stageId);
+    const revenue = await loadRevenue(params.data.stageId);
     const restaurantOwners = await loadRestaurantOwners(params.data.stageId);
 
     // "comprou" = lead cujo email tem venda manual nesta etapa. Agrega a info
@@ -577,7 +620,12 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         ...l,
         status,
         sale,
-        revenue: revenueByEmail.get(l.email) ?? null,
+        // email primeiro; se não casar, fallback por nome (comprou com um email
+        // e respondeu a pesquisa com outro). byName pode ser null (ambíguo) → null.
+        revenue:
+          revenue.byEmail.get(l.email) ??
+          (l.name ? revenue.byName.get(normName(l.name)) : undefined) ??
+          null,
         assignedSeller: sellerByEmail.get(l.email) ?? null,
         isRestaurantOwner: restaurantOwners.has(l.email),
       };
