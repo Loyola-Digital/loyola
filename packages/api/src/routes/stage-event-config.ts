@@ -488,12 +488,20 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     }
     const boughtEmails = new Set(saleByEmail.keys());
 
-    // status manual salvo (negativa / em negociação / pendente)
+    // status manual salvo (negativa / em negociação / pendente) + vendedor atribuído
     const statusRows = await fastify.db
-      .select({ leadEmail: stageEventLeadStatus.leadEmail, status: stageEventLeadStatus.status })
+      .select({
+        leadEmail: stageEventLeadStatus.leadEmail,
+        status: stageEventLeadStatus.status,
+        assignedSeller: stageEventLeadStatus.assignedSeller,
+      })
       .from(stageEventLeadStatus)
       .where(eq(stageEventLeadStatus.stageId, params.data.stageId));
     const storedStatus = new Map(statusRows.map((r) => [r.leadEmail.toLowerCase(), r.status]));
+    // Atribuição de vendedor é ortogonal ao status: vale para qualquer lead (até "comprou").
+    const sellerByEmail = new Map(
+      statusRows.filter((r) => r.assignedSeller).map((r) => [r.leadEmail.toLowerCase(), r.assignedSeller]),
+    );
 
     const summary = { total: leads.length, bought: 0, negotiating: 0, declined: 0, pending: 0, revenue: 0 };
     const out = leads.map((l) => {
@@ -511,7 +519,13 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       else if (status === "negotiating") summary.negotiating += 1;
       else if (status === "declined") summary.declined += 1;
       else summary.pending += 1;
-      return { ...l, status, sale, revenue: revenueByEmail.get(l.email) ?? null };
+      return {
+        ...l,
+        status,
+        sale,
+        revenue: revenueByEmail.get(l.email) ?? null,
+        assignedSeller: sellerByEmail.get(l.email) ?? null,
+      };
     });
 
     return { leads: out, summary };
@@ -552,5 +566,112 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       });
 
     return { email, status: body.data.status };
+  });
+
+  // ---- ATRIBUIR vendedor a um lead (ortogonal ao status) ----
+  const leadSellerBodySchema = z.object({
+    email: z.string().trim().email().max(255),
+    // null limpa a atribuição. String vazia também é tratada como null.
+    seller: z.string().trim().max(255).nullable().optional(),
+  });
+
+  fastify.put(`${base}/event-lead-seller`, async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const params = stageParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const body = leadSellerBodySchema.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+    const email = body.data.email.toLowerCase();
+    const seller = body.data.seller?.trim() ? body.data.seller.trim() : null;
+    const now = new Date();
+    // Upsert: cria a linha com status default 'pending' se ainda não existe;
+    // se já existe, só atualiza o vendedor (preserva o status atual).
+    await fastify.db
+      .insert(stageEventLeadStatus)
+      .values({
+        stageId: params.data.stageId,
+        leadEmail: email,
+        status: "pending",
+        assignedSeller: seller,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [stageEventLeadStatus.stageId, stageEventLeadStatus.leadEmail],
+        set: { assignedSeller: seller, updatedAt: now },
+      });
+
+    return { email, seller };
+  });
+
+  // ---- RESPOSTAS completas de um lead (todas as colunas das planilhas, por email) ----
+  // Usado pela aba "Infos" do modal do lead (Mapa + Plano de Vendas). Junta as
+  // linhas de TODAS as fontes conectadas (participants + survey) que casam pelo
+  // email, agrupadas por planilha.
+  const leadAnswersQuerySchema = z.object({
+    email: z.string().trim().email().max(255),
+  });
+
+  fastify.get(`${base}/event-lead-answers`, async (request, reply) => {
+    const params = stageParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const query = leadAnswersQuerySchema.safeParse(request.query);
+    if (!query.success) return reply.code(400).send({ error: "Email inválido" });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+    const target = query.data.email.trim().toLowerCase();
+
+    const sources = await fastify.db
+      .select({
+        role: stageSalesPlanSources.role,
+        tipo: stageSalesPlanSources.tipo,
+        spreadsheetName: stageSalesPlanSources.spreadsheetName,
+        spreadsheetId: stageSalesPlanSources.spreadsheetId,
+        sheetName: stageSalesPlanSources.sheetName,
+        mapping: stageSalesPlanSources.mapping,
+      })
+      .from(stageSalesPlanSources)
+      .where(eq(stageSalesPlanSources.stageId, params.data.stageId))
+      .orderBy(asc(stageSalesPlanSources.sortOrder));
+
+    const groups: { source: string; role: string; answers: { label: string; value: string }[] }[] = [];
+    for (const src of sources) {
+      const mapping = (src.mapping ?? {}) as { email?: string };
+      if (!mapping.email) continue;
+      let data;
+      try {
+        data = await readSheetData(src.spreadsheetId, src.sheetName);
+      } catch {
+        continue;
+      }
+      const { headers, rows } = data;
+      const emailIdx = headers.indexOf(mapping.email);
+      if (emailIdx === -1) continue;
+      const match = rows.find((row) => (row[emailIdx] ?? "").trim().toLowerCase() === target);
+      if (!match) continue;
+      // Monta label→value de todas as colunas não vazias da linha (mantém a ordem das colunas).
+      const answers: { label: string; value: string }[] = [];
+      for (let i = 0; i < headers.length; i++) {
+        const label = (headers[i] ?? "").trim();
+        const value = (match[i] ?? "").trim();
+        if (!label || !value) continue;
+        answers.push({ label, value });
+      }
+      if (answers.length === 0) continue;
+      groups.push({
+        source: src.spreadsheetName || src.tipo || src.sheetName,
+        role: src.role,
+        answers,
+      });
+    }
+
+    return { email: target, groups };
   });
 });

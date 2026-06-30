@@ -86,6 +86,8 @@ export interface EventMapLead {
   sale: EventLeadSale | null;
   /** Faturamento mensal da pesquisa (lookup por email); null se não respondeu. Base da calculadora de ROI. */
   revenue: number | null;
+  /** Vendedor/closer atribuído ao lead (nome); null se não atribuído. */
+  assignedSeller: string | null;
 }
 
 export interface EventMapSummary {
@@ -110,4 +112,31 @@ export interface SetEventLeadStatusInput {
   email: string;
   status: SettableEventLeadStatus;
   note?: string | null;
+}
+
+/** Atribuir (ou desatribuir, com seller = null) um vendedor a um lead. */
+export interface SetEventLeadSellerInput {
+  email: string;
+  /** Nome do vendedor/closer; null limpa a atribuição. */
+  seller: string | null;
+}
+
+/** Uma pergunta/resposta da planilha de um lead (label = cabeçalho da coluna). */
+export interface EventLeadAnswer {
+  label: string;
+  value: string;
+}
+
+/** Respostas de um lead agrupadas por planilha de origem. */
+export interface EventLeadAnswerGroup {
+  /** Nome amigável da planilha de origem. */
+  source: string;
+  /** Papel da planilha: "participants" (mestre) ou "survey" (respostas). */
+  role: string;
+  answers: EventLeadAnswer[];
+}
+
+export interface EventLeadAnswersResponse {
+  email: string;
+  groups: EventLeadAnswerGroup[];
 }

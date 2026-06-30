@@ -133,6 +133,10 @@ export type {
   EventMapResponse,
   SettableEventLeadStatus,
   SetEventLeadStatusInput,
+  SetEventLeadSellerInput,
+  EventLeadAnswer,
+  EventLeadAnswerGroup,
+  EventLeadAnswersResponse,
 } from "./types/event-config.js";
 
 export type {
