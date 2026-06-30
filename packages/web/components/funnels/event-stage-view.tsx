@@ -70,7 +70,7 @@ import {
   useSetEventLeadSellerBulk,
 } from "@/lib/hooks/use-event-config";
 import { EventSourcesTab } from "@/components/funnels/event-sources-tab";
-import { LeadDetailDialog, type RoiLead } from "@/components/funnels/roi-calculator";
+import { LeadDetailDialog, matchGapLabel, matchEvidenceText, type RoiLead } from "@/components/funnels/roi-calculator";
 import type { EventLeadStatus } from "@loyola-x/shared";
 
 interface EventStageViewProps {
@@ -1096,7 +1096,7 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                 {visible.map((l) => (
                   <tr
                     key={l.email}
-                    onClick={() => setDetailLead({ name: l.name, email: l.email, revenue: l.revenue })}
+                    onClick={() => setDetailLead({ name: l.name, email: l.email, revenue: l.revenue, revenueMatch: l.revenueMatch, revenueMatchInfo: l.revenueMatchInfo })}
                     className={`border-t border-[#1f2937] hover:bg-[#1a2236] transition-colors cursor-pointer ${selected.has(l.email) ? "bg-[#d4af37]/[0.06]" : ""}`}
                     title="Ver ficha e calculadora"
                   >
@@ -1124,6 +1124,11 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                     <td className="px-3 py-2.5 text-[#9ca3af]">{l.phone || "—"}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums font-bold text-[#d4af37]">
                       {l.revenue != null ? formatCurrency(l.revenue) : <span className="text-[#6b7280] font-normal">—</span>}
+                      {l.revenueMatch === "name" && (
+                        <div className="mt-0.5 text-[10px] font-normal text-amber-400/90 cursor-help" title={matchEvidenceText(l.revenueMatchInfo)}>
+                          ⚠️ possível{matchGapLabel(l.revenueMatchInfo) ? ` · ${matchGapLabel(l.revenueMatchInfo)}` : ""}
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 max-w-[140px] truncate text-[#9ca3af]" title={l.sale?.product ?? ""}>
                       {l.sale?.product || "—"}
@@ -1145,7 +1150,7 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
             {visible.map((l) => (
               <div
                 key={l.email}
-                onClick={() => setDetailLead({ name: l.name, email: l.email, revenue: l.revenue })}
+                onClick={() => setDetailLead({ name: l.name, email: l.email, revenue: l.revenue, revenueMatch: l.revenueMatch, revenueMatchInfo: l.revenueMatchInfo })}
                 className={`rounded-xl border bg-[#111827] p-3 cursor-pointer active:bg-[#1a2236] ${selected.has(l.email) ? "border-[#d4af37]/50" : "border-[#1f2937]"}`}
               >
                 <div className="flex items-start gap-2">
@@ -1175,6 +1180,11 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                     <div className="font-bold tabular-nums text-[#d4af37]">
                       {l.revenue != null ? formatCurrency(l.revenue) : "—"}
                     </div>
+                    {l.revenueMatch === "name" && (
+                      <div className="text-[10px] font-normal text-amber-400/90 mt-0.5" title={matchEvidenceText(l.revenueMatchInfo)}>
+                        ⚠️ possível{matchGapLabel(l.revenueMatchInfo) ? ` · ${matchGapLabel(l.revenueMatchInfo)}` : ""}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-[#1f2937]">

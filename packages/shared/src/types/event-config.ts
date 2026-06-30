@@ -94,8 +94,29 @@ export interface EventMapLead {
   sale: EventLeadSale | null;
   /** Faturamento mensal da pesquisa (lookup por email); null se não respondeu. Base da calculadora de ROI. */
   revenue: number | null;
+  /** Como o faturamento foi casado com a pesquisa: "email" (confiável), "name" (possível — confirmar) ou null. */
+  revenueMatch: "email" | "name" | null;
+  /** Evidência temporal do match por nome (compra × resposta da pesquisa). null p/ email ou sem dados. */
+  revenueMatchInfo: EventRevenueMatchInfo | null;
   /** Vendedor/closer atribuído ao lead (nome); null se não atribuído. */
   assignedSeller: string | null;
+}
+
+/**
+ * Evidência de um match por NOME (quando o lead comprou com um email e respondeu
+ * a pesquisa com outro). Mostra os dois horários pra confirmar visualmente.
+ */
+export interface EventRevenueMatchInfo {
+  /** Data/hora da compra (raw da planilha de participantes), ex: "19/06/2026 19:12:25". */
+  buyAt: string | null;
+  /** Data/hora da resposta da pesquisa (raw "Submitted at"). */
+  surveyAt: string | null;
+  /**
+   * Minutos entre compra e resposta, já normalizado pelo offset de fuso (derivado
+   * dos matches por email). Pequeno e positivo = respondeu logo após comprar →
+   * forte indício de ser a mesma pessoa. null se não dá pra calcular.
+   */
+  gapMinutes: number | null;
 }
 
 export interface EventMapSummary {

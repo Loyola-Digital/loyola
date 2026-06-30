@@ -338,7 +338,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
   // deduplicados por email. O Mapa do Evento usa esta lista de participantes.
   async function loadEventLeads(
     stageId: string,
-  ): Promise<{ email: string; name: string; phone: string; tipo: string; invitedBy: string; saleEmail: string }[]> {
+  ): Promise<{ email: string; name: string; phone: string; tipo: string; invitedBy: string; saleEmail: string; buyAt: string }[]> {
     const sources = await fastify.db
       .select({
         spreadsheetId: stageSalesPlanSources.spreadsheetId,
@@ -356,7 +356,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       .orderBy(asc(stageSalesPlanSources.sortOrder));
     if (sources.length === 0) return [];
 
-    type Lead = { email: string; name: string; phone: string; tipo: string; invitedBy: string; saleEmail: string };
+    type Lead = { email: string; name: string; phone: string; tipo: string; invitedBy: string; saleEmail: string; buyAt: string };
     const MAX_LEADS = 10000;
     const byEmail = new Map<string, Lead>();
     for (const src of sources) {
@@ -378,6 +378,9 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       const norm = (s: string) => s.trim().toLowerCase();
       const convIdx = headers.findIndex((h) => norm(h) === "convidado");
       const saleEmailIdx = headers.findIndex((h) => norm(h) === "email da venda");
+      // Data/hora da compra do ingresso (coluna "data") — usada como evidência
+      // temporal nos matches por nome (compra × resposta da pesquisa).
+      const dataIdx = headers.findIndex((h) => norm(h) === "data");
       if (emailIdx === -1) continue;
       for (const row of rows) {
         if (byEmail.size >= MAX_LEADS) break;
@@ -393,6 +396,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
           tipo: tipoCell || (src.tipo ?? "").trim(),
           invitedBy: convIdx !== -1 ? (row[convIdx] ?? "").trim() : "",
           saleEmail: saleEmailIdx !== -1 ? (row[saleEmailIdx] ?? "").trim() : "",
+          buyAt: dataIdx !== -1 ? (row[dataIdx] ?? "").trim() : "",
         });
       }
     }
@@ -465,13 +469,35 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     });
   }
 
+  // Parse "DD/MM/YYYY HH:MM[:SS]" (compra, planilha) → epoch ms (componentes
+  // tratados como UTC, só p/ comparação relativa). null se não casar.
+  function parseBuyAt(s: string): number | null {
+    const m = s.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})[ T](\d{2}):(\d{2})/);
+    if (!m) return null;
+    return Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4], +m[5]);
+  }
+  // Parse "YYYY-MM-DD HH:MM[:SS]" (resposta Tally) → epoch ms (idem).
+  function parseSurveyAt(s: string): number | null {
+    const m = s.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+    if (!m) return null;
+    return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  }
+  function median(nums: number[]): number | null {
+    if (nums.length === 0) return null;
+    const s = [...nums].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  }
+
   // Helper: faturamento das planilhas de RESPOSTAS (role "survey"), indexado por
   // email E por nome. O nome é fallback pro caso de o lead comprar com um email e
   // responder a pesquisa com outro. byName guarda `null` quando o mesmo nome
   // aparece com faturamentos divergentes (ambíguo → não chuta).
+  // Faturamento + horário da resposta (pra evidência temporal do match por nome).
+  type Rev = { value: number; surveyAt: string };
   async function loadRevenue(
     stageId: string,
-  ): Promise<{ byEmail: Map<string, number>; byName: Map<string, number | null> }> {
+  ): Promise<{ byEmail: Map<string, Rev>; byName: Map<string, Rev | null> }> {
     const surveys = await fastify.db
       .select({
         spreadsheetId: stageSalesPlanSources.spreadsheetId,
@@ -484,8 +510,8 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       )
       .orderBy(asc(stageSalesPlanSources.sortOrder));
 
-    const byEmail = new Map<string, number>();
-    const byName = new Map<string, number | null>();
+    const byEmail = new Map<string, Rev>();
+    const byName = new Map<string, Rev | null>();
     for (const src of surveys) {
       const mapping = (src.mapping ?? {}) as { email?: string; faturamento?: string; name?: string };
       let data;
@@ -500,21 +526,26 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       if (fatIdx === -1) continue;
       // nome: usa o mapping se houver, senão detecta pelo header.
       const nameIdx = mapping.name ? headers.indexOf(mapping.name) : findNameIdx(headers);
+      // horário da resposta (Tally) — pra evidência temporal do match por nome.
+      const subIdx = headers.findIndex((h) => h.trim().toLowerCase() === "submitted at");
       for (const row of rows) {
         const raw = (row[fatIdx] ?? "").trim();
         if (!raw) continue;
         const value = parseFaturamento(raw);
         if (value == null) continue;
+        const surveyAt = subIdx !== -1 ? (row[subIdx] ?? "").trim() : "";
+        const rev: Rev = { value, surveyAt };
 
         const email = emailIdx !== -1 ? (row[emailIdx] ?? "").trim().toLowerCase() : "";
-        if (email && !byEmail.has(email)) byEmail.set(email, value);
+        if (email && !byEmail.has(email)) byEmail.set(email, rev);
 
         const name = nameIdx !== -1 ? normName(row[nameIdx] ?? "") : "";
         if (name) {
           if (byName.has(name)) {
-            if (byName.get(name) !== value) byName.set(name, null); // conflito → ambíguo
+            const ex = byName.get(name);
+            if (ex && ex.value !== value) byName.set(name, null); // conflito → ambíguo
           } else {
-            byName.set(name, value);
+            byName.set(name, rev);
           }
         }
       }
@@ -600,8 +631,23 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       statusRows.filter((r) => r.assignedSeller).map((r) => [r.leadEmail.toLowerCase(), r.assignedSeller]),
     );
 
+    // Offset sistemático (fuso/relógio) entre a compra (planilha, BRT) e a resposta
+    // da pesquisa (Tally, UTC), derivado dos matches CONFIÁVEIS por email — é a mesma
+    // pessoa, então o gap deles é puro offset. Mediana é robusta a quem respondeu
+    // a pesquisa noutro dia. Usado pra normalizar o gap dos matches por nome.
+    const offsets: number[] = [];
+    for (const l of leads) {
+      const rev = revenue.byEmail.get(l.email);
+      if (!rev || !rev.surveyAt) continue;
+      const b = parseBuyAt(l.buyAt);
+      const s = parseSurveyAt(rev.surveyAt);
+      if (b != null && s != null) offsets.push(s - b);
+    }
+    const tzOffset = median(offsets); // ms; null se não houver pares por email
+
     const summary = { total: leads.length, bought: 0, negotiating: 0, declined: 0, pending: 0, revenue: 0 };
     const out = leads.map((l) => {
+      const { buyAt, ...base } = l;
       let status: "pending" | "negotiating" | "bought" | "declined";
       let sale: { product: string | null; value: number; sellerName: string | null; saleDate: string | null; count: number } | null = null;
       if (boughtEmails.has(l.email)) {
@@ -616,16 +662,38 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       else if (status === "negotiating") summary.negotiating += 1;
       else if (status === "declined") summary.declined += 1;
       else summary.pending += 1;
+
+      // Faturamento: email primeiro (confiável); senão nome (possível) — comprou com
+      // um email e respondeu a pesquisa com outro. byName null = ambíguo → ignora.
+      let revVal: number | null = null;
+      let revenueMatch: "email" | "name" | null = null;
+      let revenueMatchInfo: { buyAt: string | null; surveyAt: string | null; gapMinutes: number | null } | null = null;
+      const emailRev = revenue.byEmail.get(l.email);
+      if (emailRev) {
+        revVal = emailRev.value;
+        revenueMatch = "email";
+      } else if (l.name) {
+        const nameRev = revenue.byName.get(normName(l.name));
+        if (nameRev) {
+          revVal = nameRev.value;
+          revenueMatch = "name";
+          const b = parseBuyAt(buyAt);
+          const sAt = nameRev.surveyAt ? parseSurveyAt(nameRev.surveyAt) : null;
+          const gapMinutes =
+            b != null && sAt != null && tzOffset != null
+              ? Math.round((sAt - b - tzOffset) / 60000)
+              : null;
+          revenueMatchInfo = { buyAt: buyAt || null, surveyAt: nameRev.surveyAt || null, gapMinutes };
+        }
+      }
+
       return {
-        ...l,
+        ...base,
         status,
         sale,
-        // email primeiro; se não casar, fallback por nome (comprou com um email
-        // e respondeu a pesquisa com outro). byName pode ser null (ambíguo) → null.
-        revenue:
-          revenue.byEmail.get(l.email) ??
-          (l.name ? revenue.byName.get(normName(l.name)) : undefined) ??
-          null,
+        revenue: revVal,
+        revenueMatch,
+        revenueMatchInfo,
         assignedSeller: sellerByEmail.get(l.email) ?? null,
         isRestaurantOwner: restaurantOwners.has(l.email),
       };

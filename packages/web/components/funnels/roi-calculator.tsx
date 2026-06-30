@@ -5,6 +5,7 @@ import { Calculator, ListChecks, Eye, Share2 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useEventLeadAnswers } from "@/lib/hooks/use-event-config";
+import type { EventRevenueMatchInfo } from "@loyola-x/shared";
 
 // Story 19.15 — Calculadora de Lucro (BBE Escala) portada do HTML do closer.
 // Conceito: Lucro = Faturamento × Margem. Duas alavancas (margem + faturamento),
@@ -16,6 +17,28 @@ export interface RoiLead {
   name: string;
   email: string;
   revenue: number | null;
+  revenueMatch?: "email" | "name" | null;
+  revenueMatchInfo?: EventRevenueMatchInfo | null;
+}
+
+/** Proximidade temporal compra × resposta: "7 min depois", "2 h antes". null se sem gap. */
+export function matchGapLabel(info: EventRevenueMatchInfo | null | undefined): string | null {
+  const g = info?.gapMinutes;
+  if (g == null) return null;
+  const abs = Math.abs(g);
+  const rel = g >= 0 ? "depois" : "antes";
+  if (abs < 60) return `${abs} min ${rel}`;
+  if (abs < 1440) return `${Math.round(abs / 60)} h ${rel}`;
+  return `${Math.round(abs / 1440)} d ${rel}`;
+}
+
+/** Texto de aviso pro match por nome (tooltip / banner). */
+export function matchEvidenceText(info: EventRevenueMatchInfo | null | undefined): string {
+  const gap = matchGapLabel(info);
+  if (info?.buyAt && gap) {
+    return `Casado pelo NOME (comprou e respondeu a pesquisa com emails diferentes). Comprou em ${info.buyAt} e respondeu a pesquisa ${gap} — provavelmente a mesma pessoa. Confirme.`;
+  }
+  return "Casado pelo NOME — a pessoa comprou e respondeu a pesquisa com emails diferentes. Confirme se é a mesma pessoa.";
 }
 
 // ---- Motores (fixos, idênticos ao HTML) ----
@@ -106,6 +129,11 @@ function LeadInfos({
         <div className="text-[10px] tracking-[2px] uppercase font-bold text-[#d4af37]">Ficha do lead</div>
         <h2 className="text-lg font-extrabold mt-1 leading-tight truncate">{lead.name || lead.email}</h2>
         <p className="text-[12px] text-[#9ca3af] mt-0.5 truncate">{lead.email}</p>
+        {lead.revenueMatch === "name" && (
+          <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200">
+            ⚠️ <strong>Match por nome (possível)</strong> — {matchEvidenceText(lead.revenueMatchInfo)}
+          </div>
+        )}
       </div>
       <div className="px-5 py-4 space-y-4">
         {isLoading ? (
