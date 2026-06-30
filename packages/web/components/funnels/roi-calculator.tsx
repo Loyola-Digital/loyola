@@ -16,8 +16,9 @@ import type { EventRevenueMatchInfo } from "@loyola-x/shared";
 export interface RoiLead {
   name: string;
   email: string;
+  phone?: string;
   revenue: number | null;
-  revenueMatch?: "email" | "name" | null;
+  revenueMatch?: "email" | "phone" | "name" | null;
   revenueMatchInfo?: EventRevenueMatchInfo | null;
 }
 
@@ -43,7 +44,7 @@ const STRONG_GAP_MIN = 60;
  * - null:     match por email (confiável) ou sem match.
  */
 export function matchConfidence(
-  revenueMatch: "email" | "name" | null | undefined,
+  revenueMatch: "email" | "phone" | "name" | null | undefined,
   info: EventRevenueMatchInfo | null | undefined,
 ): "strong" | "weak" | null {
   if (revenueMatch !== "name") return null;
@@ -65,9 +66,19 @@ export function RevenueMatchBadge({
   revenueMatch,
   info,
 }: {
-  revenueMatch?: "email" | "name" | null;
+  revenueMatch?: "email" | "phone" | "name" | null;
   info?: EventRevenueMatchInfo | null;
 }) {
+  if (revenueMatch === "phone") {
+    return (
+      <div
+        className="mt-0.5 text-[10px] font-normal text-emerald-400/90 cursor-help"
+        title="Casado pelo telefone — comprou e respondeu a pesquisa com emails diferentes, mas o telefone bate."
+      >
+        ✓ por telefone
+      </div>
+    );
+  }
   const conf = matchConfidence(revenueMatch, info);
   if (!conf) return null;
   const gap = matchGapLabel(info);
@@ -162,7 +173,7 @@ export function LeadDetailDialog({
 function LeadInfos({
   lead, projectId, funnelId, stageId,
 }: { lead: RoiLead; projectId: string; funnelId: string; stageId: string }) {
-  const { data, isLoading, isError } = useEventLeadAnswers(projectId, funnelId, stageId, lead.email, lead.name);
+  const { data, isLoading, isError } = useEventLeadAnswers(projectId, funnelId, stageId, lead.email, lead.name, lead.phone);
   const groups = data?.groups ?? [];
 
   return (

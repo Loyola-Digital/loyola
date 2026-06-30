@@ -1096,7 +1096,7 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                 {visible.map((l) => (
                   <tr
                     key={l.email}
-                    onClick={() => setDetailLead({ name: l.name, email: l.email, revenue: l.revenue, revenueMatch: l.revenueMatch, revenueMatchInfo: l.revenueMatchInfo })}
+                    onClick={() => setDetailLead({ name: l.name, email: l.email, phone: l.phone, revenue: l.revenue, revenueMatch: l.revenueMatch, revenueMatchInfo: l.revenueMatchInfo })}
                     className={`border-t border-[#1f2937] hover:bg-[#1a2236] transition-colors cursor-pointer ${selected.has(l.email) ? "bg-[#d4af37]/[0.06]" : ""}`}
                     title="Ver ficha e calculadora"
                   >
@@ -1146,7 +1146,7 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
             {visible.map((l) => (
               <div
                 key={l.email}
-                onClick={() => setDetailLead({ name: l.name, email: l.email, revenue: l.revenue, revenueMatch: l.revenueMatch, revenueMatchInfo: l.revenueMatchInfo })}
+                onClick={() => setDetailLead({ name: l.name, email: l.email, phone: l.phone, revenue: l.revenue, revenueMatch: l.revenueMatch, revenueMatchInfo: l.revenueMatchInfo })}
                 className={`rounded-xl border bg-[#111827] p-3 cursor-pointer active:bg-[#1a2236] ${selected.has(l.email) ? "border-[#d4af37]/50" : "border-[#1f2937]"}`}
               >
                 <div className="flex items-start gap-2">

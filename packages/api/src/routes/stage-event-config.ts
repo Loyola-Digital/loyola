@@ -469,6 +469,22 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     });
   }
 
+  // Normaliza telefone p/ match: só dígitos, tira DDI 55, mantém os últimos 8
+  // (núcleo do número) — tolerante a DDD/9º dígito/formatação. "" se inválido.
+  function normPhone(s: string): string {
+    let d = (s ?? "").replace(/\D/g, "");
+    if (d.length > 11 && d.startsWith("55")) d = d.slice(2);
+    return d.length >= 8 ? d.slice(-8) : "";
+  }
+
+  // Detecta a coluna de telefone/WhatsApp numa survey pelo header.
+  function findPhoneIdx(headers: string[]): number {
+    return headers.findIndex((h) => {
+      const n = h.trim().toLowerCase();
+      return n.includes("whatsapp") || n.includes("telefone") || n.includes("celular");
+    });
+  }
+
   // Parse "DD/MM/YYYY HH:MM[:SS]" (compra, planilha) → epoch ms (componentes
   // tratados como UTC, só p/ comparação relativa). null se não casar.
   function parseBuyAt(s: string): number | null {
@@ -497,7 +513,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
   type Rev = { value: number; surveyAt: string };
   async function loadRevenue(
     stageId: string,
-  ): Promise<{ byEmail: Map<string, Rev>; byName: Map<string, Rev | null> }> {
+  ): Promise<{ byEmail: Map<string, Rev>; byPhone: Map<string, Rev | null>; byName: Map<string, Rev | null> }> {
     const surveys = await fastify.db
       .select({
         spreadsheetId: stageSalesPlanSources.spreadsheetId,
@@ -511,6 +527,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       .orderBy(asc(stageSalesPlanSources.sortOrder));
 
     const byEmail = new Map<string, Rev>();
+    const byPhone = new Map<string, Rev | null>();
     const byName = new Map<string, Rev | null>();
     for (const src of surveys) {
       const mapping = (src.mapping ?? {}) as { email?: string; faturamento?: string; name?: string };
@@ -526,8 +543,19 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       if (fatIdx === -1) continue;
       // nome: usa o mapping se houver, senão detecta pelo header.
       const nameIdx = mapping.name ? headers.indexOf(mapping.name) : findNameIdx(headers);
+      const phoneIdx = findPhoneIdx(headers);
       // horário da resposta (Tally) — pra evidência temporal do match por nome.
       const subIdx = headers.findIndex((h) => h.trim().toLowerCase() === "submitted at");
+      // helper de conflito → marca ambíguo (null) p/ não chutar.
+      const put = (map: Map<string, Rev | null>, key: string, rev: Rev, value: number) => {
+        if (!key) return;
+        if (map.has(key)) {
+          const ex = map.get(key);
+          if (ex && ex.value !== value) map.set(key, null);
+        } else {
+          map.set(key, rev);
+        }
+      };
       for (const row of rows) {
         const raw = (row[fatIdx] ?? "").trim();
         if (!raw) continue;
@@ -539,18 +567,11 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         const email = emailIdx !== -1 ? (row[emailIdx] ?? "").trim().toLowerCase() : "";
         if (email && !byEmail.has(email)) byEmail.set(email, rev);
 
-        const name = nameIdx !== -1 ? normName(row[nameIdx] ?? "") : "";
-        if (name) {
-          if (byName.has(name)) {
-            const ex = byName.get(name);
-            if (ex && ex.value !== value) byName.set(name, null); // conflito → ambíguo
-          } else {
-            byName.set(name, rev);
-          }
-        }
+        put(byPhone, phoneIdx !== -1 ? normPhone(row[phoneIdx] ?? "") : "", rev, value);
+        put(byName, nameIdx !== -1 ? normName(row[nameIdx] ?? "") : "", rev, value);
       }
     }
-    return { byEmail, byName };
+    return { byEmail, byPhone, byName };
   }
 
   // ---- LEADS DO EVENTO (buscador no lançamento da venda) ----
@@ -663,15 +684,21 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       else if (status === "declined") summary.declined += 1;
       else summary.pending += 1;
 
-      // Faturamento: email primeiro (confiável); senão nome (possível) — comprou com
-      // um email e respondeu a pesquisa com outro. byName null = ambíguo → ignora.
+      // Faturamento: email → telefone (ambos confiáveis e únicos) → nome (possível,
+      // com evidência temporal). Comprou com um email e respondeu a pesquisa com
+      // outro. byPhone/byName null = ambíguo → ignora.
       let revVal: number | null = null;
-      let revenueMatch: "email" | "name" | null = null;
+      let revenueMatch: "email" | "phone" | "name" | null = null;
       let revenueMatchInfo: { buyAt: string | null; surveyAt: string | null; gapMinutes: number | null } | null = null;
       const emailRev = revenue.byEmail.get(l.email);
+      const phone = normPhone(l.phone);
+      const phoneRev = phone ? revenue.byPhone.get(phone) : undefined;
       if (emailRev) {
         revVal = emailRev.value;
         revenueMatch = "email";
+      } else if (phoneRev) {
+        revVal = phoneRev.value;
+        revenueMatch = "phone";
       } else if (l.name) {
         const nameRev = revenue.byName.get(normName(l.name));
         if (nameRev) {
@@ -826,8 +853,9 @@ export default fp(async function stageEventConfigRoutes(fastify) {
   // email, agrupadas por planilha.
   const leadAnswersQuerySchema = z.object({
     email: z.string().trim().email().max(255),
-    // nome do lead — usado como fallback quando o email não casa em alguma fonte
+    // telefone e nome do lead — fallback quando o email não casa numa fonte
     // (comprou com um email e respondeu a pesquisa com outro).
+    phone: z.string().trim().max(40).optional(),
     name: z.string().trim().max(255).optional(),
   });
 
@@ -842,6 +870,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
     const target = query.data.email.trim().toLowerCase();
+    const targetPhone = query.data.phone ? normPhone(query.data.phone) : "";
     const targetName = query.data.name ? normName(query.data.name) : "";
 
     const sources = await fastify.db
@@ -871,8 +900,14 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       const emailIdx = headers.indexOf(mapping.email);
       if (emailIdx === -1) continue;
       let match = rows.find((row) => (row[emailIdx] ?? "").trim().toLowerCase() === target);
-      // Fallback por nome: o lead pode ter comprado com um email e respondido a
-      // pesquisa com outro — aí o match por email falha nesta fonte.
+      // Fallback por telefone e depois por nome: o lead pode ter comprado com um
+      // email e respondido a pesquisa com outro — aí o match por email falha aqui.
+      if (!match && targetPhone) {
+        const phoneIdx = findPhoneIdx(headers);
+        if (phoneIdx !== -1) {
+          match = rows.find((row) => normPhone(row[phoneIdx] ?? "") === targetPhone);
+        }
+      }
       if (!match && targetName) {
         const nameIdx = mapping.name ? headers.indexOf(mapping.name) : findNameIdx(headers);
         if (nameIdx !== -1) {
