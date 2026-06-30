@@ -11,6 +11,8 @@ import type {
   EventLead,
   EventMapResponse,
   SetEventLeadStatusInput,
+  SetEventLeadSellerInput,
+  EventLeadAnswersResponse,
 } from "@loyola-x/shared";
 
 // Story 19.12 — config da etapa de Evento: produtos (com turma) e closers.
@@ -117,6 +119,41 @@ export function useSetEventLeadStatus(projectId: string, funnelId: string, stage
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["event-map", projectId, funnelId, stageId] });
     },
+  });
+}
+
+export function useSetEventLeadSeller(projectId: string, funnelId: string, stageId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SetEventLeadSellerInput) =>
+      apiClient<{ email: string; seller: string | null }>(`${stageBase(projectId, funnelId, stageId)}/event-lead-seller`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event-map", projectId, funnelId, stageId] });
+    },
+  });
+}
+
+// Respostas completas de um lead (todas as colunas das planilhas), por email.
+// Só dispara quando há um email selecionado (modal aberto).
+export function useEventLeadAnswers(
+  projectId: string,
+  funnelId: string,
+  stageId: string,
+  email: string | null,
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["event-lead-answers", projectId, funnelId, stageId, email],
+    queryFn: () =>
+      apiClient<EventLeadAnswersResponse>(
+        `${stageBase(projectId, funnelId, stageId)}/event-lead-answers?email=${encodeURIComponent(email ?? "")}`,
+      ),
+    enabled: !!email,
+    staleTime: STALE,
   });
 }
 

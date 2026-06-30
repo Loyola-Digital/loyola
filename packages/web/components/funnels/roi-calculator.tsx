@@ -1,12 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Calculator, ListChecks } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useEventLeadAnswers } from "@/lib/hooks/use-event-config";
 
 // Story 19.15 — Calculadora de ROI ao vivo (PASSO 3, a alavanca-mãe).
 // Roda o ROI no número DELE, na frente DELE: a diferença entre a margem de
 // hoje e a do método, anualizada — "a conta que ele já está perdendo".
 // Regra de ouro: cenário conservador (número subestimado é inatacável).
+//
+// O dialog do lead tem 2 abas: "Infos" (todas as respostas da planilha dele) e
+// "Calculadora" (o ROI ao vivo). Usado no Mapa do Evento e no Plano de Vendas.
 
 export interface RoiLead {
   name: string;
@@ -32,15 +38,107 @@ function num(v: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-export function RoiCalculatorDialog({
-  open, onOpenChange, lead,
-}: { open: boolean; onOpenChange: (o: boolean) => void; lead: RoiLead | null }) {
+/**
+ * Modal do lead com abas "Infos" + "Calculadora".
+ * Quando projectId/funnelId/stageId são passados, a aba Infos busca as respostas
+ * da planilha do lead por email.
+ */
+export function LeadDetailDialog({
+  open, onOpenChange, lead, projectId, funnelId, stageId,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  lead: RoiLead | null;
+  projectId: string;
+  funnelId: string;
+  stageId: string;
+}) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[calc(100vw-1.5rem)] max-w-md p-0 overflow-hidden border-[#1f2937] bg-[#0a0e1a] text-[#f3f4f6] gap-0 sm:rounded-2xl">
-        {lead && <RoiCalculator key={lead.email} lead={lead} />}
+        <DialogTitle className="sr-only">Detalhes do lead</DialogTitle>
+        {lead && (
+          <Tabs key={lead.email} defaultValue="infos" className="flex flex-col gap-0">
+            <div className="px-4 pt-4">
+              <TabsList className="grid w-full grid-cols-2 bg-[#111827] border border-[#1f2937] p-1 h-auto">
+                <TabsTrigger
+                  value="infos"
+                  className="gap-1.5 text-[12px] data-[state=active]:bg-[#1f2937] data-[state=active]:text-[#d4af37] text-[#9ca3af]"
+                >
+                  <ListChecks className="h-3.5 w-3.5" /> Infos
+                </TabsTrigger>
+                <TabsTrigger
+                  value="roi"
+                  className="gap-1.5 text-[12px] data-[state=active]:bg-[#1f2937] data-[state=active]:text-[#d4af37] text-[#9ca3af]"
+                >
+                  <Calculator className="h-3.5 w-3.5" /> Calculadora
+                </TabsTrigger>
+              </TabsList>
+            </div>
+            <TabsContent value="infos" className="mt-0">
+              <LeadInfos lead={lead} projectId={projectId} funnelId={funnelId} stageId={stageId} />
+            </TabsContent>
+            <TabsContent value="roi" className="mt-0">
+              <RoiCalculator lead={lead} />
+            </TabsContent>
+          </Tabs>
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function LeadInfos({
+  lead, projectId, funnelId, stageId,
+}: { lead: RoiLead; projectId: string; funnelId: string; stageId: string }) {
+  const { data, isLoading, isError } = useEventLeadAnswers(projectId, funnelId, stageId, lead.email);
+  const groups = data?.groups ?? [];
+
+  return (
+    <div className="max-h-[80vh] overflow-y-auto">
+      {/* Header */}
+      <div className="px-5 pt-4 pb-4 border-b border-[#d4af37]/50">
+        <div className="text-[10px] tracking-[2px] uppercase font-bold text-[#d4af37]">Ficha do lead</div>
+        <h2 className="text-lg font-extrabold mt-1 leading-tight truncate">{lead.name || lead.email}</h2>
+        <p className="text-[12px] text-[#9ca3af] mt-0.5 truncate">{lead.email}</p>
+      </div>
+
+      <div className="px-5 py-4 space-y-4">
+        {isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-9 rounded-lg bg-[#111827] animate-pulse" />
+            ))}
+          </div>
+        ) : isError ? (
+          <p className="text-[13px] text-[#ef4444]">Não foi possível carregar as respostas deste lead.</p>
+        ) : groups.length === 0 ? (
+          <p className="text-[13px] text-[#6b7280]">
+            Nenhuma resposta encontrada nas planilhas para <strong className="text-[#9ca3af]">{lead.email}</strong>.
+            Confira o mapeamento das planilhas na aba <strong className="text-[#d4af37]">Leads</strong>.
+          </p>
+        ) : (
+          groups.map((g, gi) => (
+            <div key={gi} className="rounded-xl border border-[#1f2937] overflow-hidden">
+              <div className="px-3 py-2 bg-[#141c2e] border-b border-[#1f2937] flex items-center justify-between gap-2">
+                <span className="text-[12px] font-semibold text-[#f3f4f6] truncate">{g.source}</span>
+                <span className="text-[9px] uppercase tracking-[1px] text-[#6b7280] shrink-0">
+                  {g.role === "survey" ? "Respostas" : g.role === "participants" ? "Participantes" : g.role}
+                </span>
+              </div>
+              <dl className="divide-y divide-[#1f2937]">
+                {g.answers.map((a, ai) => (
+                  <div key={ai} className="px-3 py-2">
+                    <dt className="text-[10px] uppercase tracking-[0.5px] text-[#6b7280]">{a.label}</dt>
+                    <dd className="text-[13px] text-[#f3f4f6] mt-0.5 break-words whitespace-pre-wrap">{a.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -86,9 +184,9 @@ function RoiCalculator({ lead }: { lead: RoiLead }) {
   const ready = f > 0 && mh > 0 && mm > 0 && novoMes > 0;
 
   return (
-    <div className="max-h-[88vh] overflow-y-auto">
+    <div className="max-h-[80vh] overflow-y-auto">
       {/* Header */}
-      <div className="px-5 pt-5 pb-4 border-b border-[#d4af37]/50">
+      <div className="px-5 pt-4 pb-4 border-b border-[#d4af37]/50">
         <div className="text-[10px] tracking-[2px] uppercase font-bold text-[#d4af37]">ROI ao vivo · Passo 3</div>
         <h2 className="text-xl font-extrabold mt-1 leading-tight">A conta que ele já está perdendo</h2>
         <p className="text-[12px] text-[#9ca3af] mt-1 truncate">{lead.name || lead.email}</p>

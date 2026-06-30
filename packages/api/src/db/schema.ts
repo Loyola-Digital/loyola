@@ -1382,6 +1382,8 @@ export const stageEventLeadStatus = pgTable(
     /** pending | negotiating | declined (comprou é derivado das vendas manuais). */
     status: varchar("status", { length: 20 }).notNull().default("pending"),
     note: text("note"),
+    /** Vendedor/closer atribuído ao lead (nome livre; espelha stage_event_closers). */
+    assignedSeller: varchar("assigned_seller", { length: 255 }),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

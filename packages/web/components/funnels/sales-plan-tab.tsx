@@ -18,7 +18,7 @@ import {
   useSetSalesPlanRules,
 } from "@/lib/hooks/use-sales-plan";
 import { useEventProducts } from "@/lib/hooks/use-event-config";
-import { RoiCalculatorDialog, type RoiLead } from "@/components/funnels/roi-calculator";
+import { LeadDetailDialog, type RoiLead } from "@/components/funnels/roi-calculator";
 
 // ============================================================
 // Helpers
@@ -189,7 +189,14 @@ export function SalesPlanTab({ projectId, funnelId, stageId }: { projectId: stri
         </>
       )}
 
-      <RoiCalculatorDialog open={!!roiLead} onOpenChange={(o) => !o && setRoiLead(null)} lead={roiLead} />
+      <LeadDetailDialog
+        open={!!roiLead}
+        onOpenChange={(o) => !o && setRoiLead(null)}
+        lead={roiLead}
+        projectId={projectId}
+        funnelId={funnelId}
+        stageId={stageId}
+      />
     </div>
   );
 }

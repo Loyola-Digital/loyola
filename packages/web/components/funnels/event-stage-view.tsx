@@ -65,8 +65,10 @@ import {
   useSetEventClosers,
   useEventMap,
   useSetEventLeadStatus,
+  useSetEventLeadSeller,
 } from "@/lib/hooks/use-event-config";
 import { EventSourcesTab } from "@/components/funnels/event-sources-tab";
+import { LeadDetailDialog, type RoiLead } from "@/components/funnels/roi-calculator";
 import type { EventLeadStatus } from "@loyola-x/shared";
 
 interface EventStageViewProps {
@@ -701,7 +703,11 @@ function EventConfigTab({ projectId, funnelId, stageId }: { projectId: string; f
 function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funnelId: string; stageId: string }) {
   const { data, isLoading } = useEventMap(projectId, funnelId, stageId);
   const setStatus = useSetEventLeadStatus(projectId, funnelId, stageId);
+  const setSeller = useSetEventLeadSeller(projectId, funnelId, stageId);
+  const closersQ = useEventClosers(projectId, funnelId, stageId);
+  const closerNames = useMemo(() => closersQ.data?.closers.map((c) => c.name) ?? [], [closersQ.data]);
   const [filter, setFilter] = useState<"all" | EventLeadStatus>("all");
+  const [detailLead, setDetailLead] = useState<RoiLead | null>(null);
 
   const leads = useMemo(() => data?.leads ?? [], [data]);
   const summary = data?.summary;
@@ -717,6 +723,40 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
         onSuccess: () => toast.success("Status atualizado"),
         onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar"),
       },
+    );
+  }
+
+  function changeSeller(email: string, seller: string | null) {
+    setSeller.mutate(
+      { email, seller },
+      {
+        onSuccess: () => toast.success(seller ? "Vendedor atribuído" : "Atribuição removida"),
+        onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atribuir"),
+      },
+    );
+  }
+
+  // Seletor de vendedor por lead — para no clique pra não abrir o modal do lead.
+  function sellerControl(l: (typeof leads)[number]) {
+    return (
+      <div onClick={(e) => e.stopPropagation()}>
+        <Select
+          value={l.assignedSeller ?? "none"}
+          onValueChange={(v) => changeSeller(l.email, v === "none" ? null : v)}
+        >
+          <SelectTrigger className="h-7 text-[11px] bg-[#1a2236] border-[#1f2937] text-[#f3f4f6]">
+            <SelectValue placeholder="—" />
+          </SelectTrigger>
+          <SelectContent className="bg-[#111827] border-[#1f2937] text-[#f3f4f6]">
+            <SelectItem value="none" className="text-[#9ca3af] focus:bg-[#1a2236] focus:text-[#f3f4f6]">— Sem vendedor —</SelectItem>
+            {closerNames.map((name) => (
+              <SelectItem key={name} value={name} className="text-[#f3f4f6] focus:bg-[#1a2236] focus:text-[#f3f4f6]">
+                {name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     );
   }
 
@@ -845,11 +885,17 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                   <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Produto</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Valor</th>
                   <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px] w-[170px]">Status</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px] w-[160px]">Vendedor</th>
                 </tr>
               </thead>
               <tbody className="bg-[#111827]">
                 {filtered.map((l) => (
-                  <tr key={l.email} className="border-t border-[#1f2937] hover:bg-[#1a2236] transition-colors">
+                  <tr
+                    key={l.email}
+                    onClick={() => setDetailLead({ name: l.name, email: l.email, revenue: l.revenue })}
+                    className="border-t border-[#1f2937] hover:bg-[#1a2236] transition-colors cursor-pointer"
+                    title="Ver ficha e calculadora"
+                  >
                     <td className="px-3 py-2.5 max-w-[160px] truncate text-[#f3f4f6] font-medium">{l.name || "—"}</td>
                     <td className="px-3 py-2.5 text-[#9ca3af] max-w-[180px] truncate">{l.email}</td>
                     <td className="px-3 py-2.5 text-[#9ca3af]">{l.phone || "—"}</td>
@@ -864,6 +910,7 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                       {l.sale ? formatCurrency(l.sale.value) : <span className="text-[#6b7280] font-normal">—</span>}
                     </td>
                     <td className="px-3 py-2.5">{statusControl(l)}</td>
+                    <td className="px-3 py-2.5">{sellerControl(l)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -873,7 +920,11 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
           {/* MOBILE — cards */}
           <div className="sm:hidden space-y-2">
             {filtered.map((l) => (
-              <div key={l.email} className="rounded-xl border border-[#1f2937] bg-[#111827] p-3">
+              <div
+                key={l.email}
+                onClick={() => setDetailLead({ name: l.name, email: l.email, revenue: l.revenue })}
+                className="rounded-xl border border-[#1f2937] bg-[#111827] p-3 cursor-pointer active:bg-[#1a2236]"
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-semibold text-[#f3f4f6] truncate">{l.name || l.email}</div>
@@ -897,11 +948,24 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                   )}
                   {statusControl(l)}
                 </div>
+                <div className="mt-2.5 pt-2.5 border-t border-[#1f2937]">
+                  <div className="text-[10px] uppercase tracking-[1px] text-[#6b7280] mb-1">Vendedor</div>
+                  {sellerControl(l)}
+                </div>
               </div>
             ))}
           </div>
         </>
       )}
+
+      <LeadDetailDialog
+        open={!!detailLead}
+        onOpenChange={(o) => !o && setDetailLead(null)}
+        lead={detailLead}
+        projectId={projectId}
+        funnelId={funnelId}
+        stageId={stageId}
+      />
     </div>
   );
 }
