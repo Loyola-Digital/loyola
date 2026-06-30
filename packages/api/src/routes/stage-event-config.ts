@@ -513,7 +513,12 @@ export default fp(async function stageEventConfigRoutes(fastify) {
   type Rev = { value: number; surveyAt: string };
   async function loadRevenue(
     stageId: string,
-  ): Promise<{ byEmail: Map<string, Rev>; byPhone: Map<string, Rev | null>; byName: Map<string, Rev | null> }> {
+  ): Promise<{
+    byEmail: Map<string, Rev>;
+    byPhone: Map<string, Rev | null>;
+    byName: Map<string, Rev | null>;
+    anonymous: Rev[];
+  }> {
     const surveys = await fastify.db
       .select({
         spreadsheetId: stageSalesPlanSources.spreadsheetId,
@@ -529,6 +534,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     const byEmail = new Map<string, Rev>();
     const byPhone = new Map<string, Rev | null>();
     const byName = new Map<string, Rev | null>();
+    const anonymous: Rev[] = [];
     for (const src of surveys) {
       const mapping = (src.mapping ?? {}) as { email?: string; faturamento?: string; name?: string };
       let data;
@@ -565,13 +571,19 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         const rev: Rev = { value, surveyAt };
 
         const email = emailIdx !== -1 ? (row[emailIdx] ?? "").trim().toLowerCase() : "";
-        if (email && !byEmail.has(email)) byEmail.set(email, rev);
+        const phoneKey = phoneIdx !== -1 ? normPhone(row[phoneIdx] ?? "") : "";
+        const nameKey = nameIdx !== -1 ? normName(row[nameIdx] ?? "") : "";
 
-        put(byPhone, phoneIdx !== -1 ? normPhone(row[phoneIdx] ?? "") : "", rev, value);
-        put(byName, nameIdx !== -1 ? normName(row[nameIdx] ?? "") : "", rev, value);
+        if (email && !byEmail.has(email)) byEmail.set(email, rev);
+        put(byPhone, phoneKey, rev, value);
+        put(byName, nameKey, rev, value);
+
+        // Resposta sem NENHUMA identidade (email/telefone/nome) — só dá pra casar
+        // pela proximidade do horário da resposta com o da compra do lead.
+        if (!email && !phoneKey && !nameKey && surveyAt) anonymous.push(rev);
       }
     }
-    return { byEmail, byPhone, byName };
+    return { byEmail, byPhone, byName, anonymous };
   }
 
   // ---- LEADS DO EVENTO (buscador no lançamento da venda) ----
@@ -688,7 +700,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       // com evidência temporal). Comprou com um email e respondeu a pesquisa com
       // outro. byPhone/byName null = ambíguo → ignora.
       let revVal: number | null = null;
-      let revenueMatch: "email" | "phone" | "name" | null = null;
+      let revenueMatch: "email" | "phone" | "name" | "time" | null = null;
       let revenueMatchInfo: { buyAt: string | null; surveyAt: string | null; gapMinutes: number | null } | null = null;
       const emailRev = revenue.byEmail.get(l.email);
       const phone = normPhone(l.phone);
@@ -719,12 +731,48 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         status,
         sale,
         revenue: revVal,
-        revenueMatch,
+        // cast explícito: "time" é atribuído depois (passo de horário), então o
+        // TS estreitaria o tipo aqui sem ele.
+        revenueMatch: revenueMatch as "email" | "phone" | "name" | "time" | null,
         revenueMatchInfo,
         assignedSeller: sellerByEmail.get(l.email) ?? null,
         isRestaurantOwner: restaurantOwners.has(l.email),
       };
     });
+
+    // 4º nível — respostas ANÔNIMAS (sem email/telefone/nome) casadas por HORÁRIO:
+    // a pessoa compra e responde a pesquisa em minutos, então a resposta anônima
+    // mais próxima no tempo da compra de um lead ainda sem faturamento é dela.
+    // Atribuição 1:1 pelo menor gap, dentro de uma janela apertada.
+    if (tzOffset != null && revenue.anonymous.length > 0) {
+      const TIME_WINDOW_MIN = 30;
+      const candidates = out
+        .map((o, idx) => ({ o, buyAt: leads[idx].buyAt, buyMs: parseBuyAt(leads[idx].buyAt) }))
+        .filter((x) => x.o.revenue == null && x.buyMs != null);
+      const anon = revenue.anonymous
+        .map((a) => ({ a, subMs: a.surveyAt ? parseSurveyAt(a.surveyAt) : null }))
+        .filter((x) => x.subMs != null);
+      const pairs: { ci: number; ai: number; gap: number }[] = [];
+      candidates.forEach((c, ci) => {
+        anon.forEach((an, ai) => {
+          const gap = Math.round((an.subMs! - c.buyMs! - tzOffset) / 60000);
+          if (Math.abs(gap) <= TIME_WINDOW_MIN) pairs.push({ ci, ai, gap });
+        });
+      });
+      pairs.sort((x, y) => Math.abs(x.gap) - Math.abs(y.gap));
+      const usedC = new Set<number>();
+      const usedA = new Set<number>();
+      for (const p of pairs) {
+        if (usedC.has(p.ci) || usedA.has(p.ai)) continue;
+        usedC.add(p.ci);
+        usedA.add(p.ai);
+        const c = candidates[p.ci];
+        const an = anon[p.ai];
+        c.o.revenue = an.a.value;
+        c.o.revenueMatch = "time";
+        c.o.revenueMatchInfo = { buyAt: c.buyAt || null, surveyAt: an.a.surveyAt || null, gapMinutes: p.gap };
+      }
+    }
 
     return { leads: out, summary };
   });
@@ -857,6 +905,9 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     // (comprou com um email e respondeu a pesquisa com outro).
     phone: z.string().trim().max(40).optional(),
     name: z.string().trim().max(255).optional(),
+    // "Submitted at" da resposta casada por horário (resposta anônima) — fallback
+    // final pra localizar a linha exata pela hora de submissão.
+    surveyAt: z.string().trim().max(40).optional(),
   });
 
   fastify.get(`${base}/event-lead-answers`, async (request, reply) => {
@@ -872,6 +923,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     const target = query.data.email.trim().toLowerCase();
     const targetPhone = query.data.phone ? normPhone(query.data.phone) : "";
     const targetName = query.data.name ? normName(query.data.name) : "";
+    const targetSurveyAt = query.data.surveyAt ? query.data.surveyAt.trim() : "";
 
     const sources = await fastify.db
       .select({
@@ -912,6 +964,13 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         const nameIdx = mapping.name ? headers.indexOf(mapping.name) : findNameIdx(headers);
         if (nameIdx !== -1) {
           match = rows.find((row) => normName(row[nameIdx] ?? "") === targetName);
+        }
+      }
+      // Fallback por horário de submissão (resposta anônima casada por tempo).
+      if (!match && targetSurveyAt) {
+        const subIdx = headers.findIndex((h) => h.trim().toLowerCase() === "submitted at");
+        if (subIdx !== -1) {
+          match = rows.find((row) => (row[subIdx] ?? "").trim() === targetSurveyAt);
         }
       }
       if (!match) continue;
