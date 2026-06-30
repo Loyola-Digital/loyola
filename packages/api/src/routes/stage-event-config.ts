@@ -338,7 +338,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
   // deduplicados por email. O Mapa do Evento usa esta lista de participantes.
   async function loadEventLeads(
     stageId: string,
-  ): Promise<{ email: string; name: string; phone: string; tipo: string }[]> {
+  ): Promise<{ email: string; name: string; phone: string; tipo: string; invitedBy: string; saleEmail: string }[]> {
     const sources = await fastify.db
       .select({
         spreadsheetId: stageSalesPlanSources.spreadsheetId,
@@ -356,8 +356,9 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       .orderBy(asc(stageSalesPlanSources.sortOrder));
     if (sources.length === 0) return [];
 
+    type Lead = { email: string; name: string; phone: string; tipo: string; invitedBy: string; saleEmail: string };
     const MAX_LEADS = 10000;
-    const byEmail = new Map<string, { email: string; name: string; phone: string; tipo: string }>();
+    const byEmail = new Map<string, Lead>();
     for (const src of sources) {
       if (byEmail.size >= MAX_LEADS) break;
       const mapping = (src.mapping ?? {}) as { name?: string; email?: string; telefone?: string; tipo?: string };
@@ -372,6 +373,11 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       const nameIdx = mapping.name ? headers.indexOf(mapping.name) : -1;
       const phoneIdx = mapping.telefone ? headers.indexOf(mapping.telefone) : -1;
       const tipoIdx = mapping.tipo ? headers.indexOf(mapping.tipo) : -1;
+      // Colunas extras lidas por nome do cabeçalho (não mapeadas): quem convidou
+      // o participante (2ª cadeira) e o email da venda do ingresso.
+      const norm = (s: string) => s.trim().toLowerCase();
+      const convIdx = headers.findIndex((h) => norm(h) === "convidado");
+      const saleEmailIdx = headers.findIndex((h) => norm(h) === "email da venda");
       if (emailIdx === -1) continue;
       for (const row of rows) {
         if (byEmail.size >= MAX_LEADS) break;
@@ -385,10 +391,52 @@ export default fp(async function stageEventConfigRoutes(fastify) {
           name: nameIdx !== -1 ? (row[nameIdx] ?? "").trim() : "",
           phone: phoneIdx !== -1 ? (row[phoneIdx] ?? "").trim() : "",
           tipo: tipoCell || (src.tipo ?? "").trim(),
+          invitedBy: convIdx !== -1 ? (row[convIdx] ?? "").trim() : "",
+          saleEmail: saleEmailIdx !== -1 ? (row[saleEmailIdx] ?? "").trim() : "",
         });
       }
     }
     return Array.from(byEmail.values());
+  }
+
+  // Helper: emails que se declararam "Empresário(a) dono de restaurante" no
+  // campo "Você é:" de qualquer planilha de RESPOSTAS. Usado pra destacar o
+  // fornecedor que também é dono de restaurante no Mapa do Evento.
+  async function loadRestaurantOwners(stageId: string): Promise<Set<string>> {
+    const surveys = await fastify.db
+      .select({
+        spreadsheetId: stageSalesPlanSources.spreadsheetId,
+        sheetName: stageSalesPlanSources.sheetName,
+        mapping: stageSalesPlanSources.mapping,
+      })
+      .from(stageSalesPlanSources)
+      .where(
+        and(eq(stageSalesPlanSources.stageId, stageId), eq(stageSalesPlanSources.role, "survey")),
+      )
+      .orderBy(asc(stageSalesPlanSources.sortOrder));
+
+    const TARGET = "empresário(a) dono de restaurante";
+    const out = new Set<string>();
+    for (const src of surveys) {
+      const mapping = (src.mapping ?? {}) as { email?: string };
+      let data;
+      try {
+        data = await readSheetData(src.spreadsheetId, src.sheetName);
+      } catch {
+        continue;
+      }
+      const { headers, rows } = data;
+      const emailIdx = mapping.email ? headers.indexOf(mapping.email) : -1;
+      const norm = (s: string) => s.trim().toLowerCase();
+      const vidx = headers.findIndex((h) => norm(h).startsWith("você é") || norm(h).startsWith("voce e"));
+      if (emailIdx === -1 || vidx === -1) continue;
+      for (const row of rows) {
+        const email = (row[emailIdx] ?? "").trim().toLowerCase();
+        if (!email) continue;
+        if (norm(row[vidx] ?? "") === TARGET) out.add(email);
+      }
+    }
+    return out;
   }
 
   // Helper: faturamento por email vindo das planilhas de RESPOSTAS (role
@@ -455,6 +503,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
 
     const leads = await loadEventLeads(params.data.stageId);
     const revenueByEmail = await loadRevenueByEmail(params.data.stageId);
+    const restaurantOwners = await loadRestaurantOwners(params.data.stageId);
 
     // "comprou" = lead cujo email tem venda manual nesta etapa. Agrega a info
     // da venda por email: soma do valor + produto/closer/data da venda mais recente.
@@ -530,6 +579,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         sale,
         revenue: revenueByEmail.get(l.email) ?? null,
         assignedSeller: sellerByEmail.get(l.email) ?? null,
+        isRestaurantOwner: restaurantOwners.has(l.email),
       };
     });
 

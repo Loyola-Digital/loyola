@@ -701,33 +701,49 @@ function EventConfigTab({ projectId, funnelId, stageId }: { projectId: string; f
   );
 }
 
-// Prioridade de exibição por tipo: comprador → 2ª cadeira → iFood → outros → fornecedor (último).
-function tipoPriority(tipo: string): number {
-  const t = (tipo || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+function normTipo(tipo: string): string {
+  return (tipo || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+// Prioridade de exibição: comprador → 2ª cadeira → iFood → fornecedor-dono-de-
+// restaurante → outros (franqueados) → fornecedor comum (último).
+function leadRank(l: { tipo: string; isRestaurantOwner: boolean }): number {
+  const t = normTipo(l.tipo);
   if (t.includes("comprador")) return 0;
   if (t.includes("cadeira")) return 1;
   if (t.includes("ifood") || t.includes("i food")) return 2;
-  if (t.includes("fornecedor")) return 4;
-  return 3;
+  if (t.includes("fornecedor")) return l.isRestaurantOwner ? 3 : 5;
+  return 4;
 }
 
-// Badge de tipo (cor por categoria) exibido na frente do nome.
-function TipoBadge({ tipo }: { tipo: string }) {
-  if (!tipo) return null;
-  const p = tipoPriority(tipo);
+// Badge de tipo (cor por categoria) exibido na frente do nome. Fornecedor que
+// também é dono de restaurante ganha um badge próprio (destaque verde).
+function TipoBadge({ lead }: { lead: { tipo: string; isRestaurantOwner: boolean } }) {
+  const t = normTipo(lead.tipo);
+  if (t.includes("fornecedor") && lead.isRestaurantOwner) {
+    return (
+      <span
+        className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold border bg-emerald-500/20 text-emerald-300 border-emerald-500/50"
+        title="Fornecedor que é dono de restaurante"
+      >
+        🍴 Forn · Restaurante
+      </span>
+    );
+  }
+  if (!lead.tipo) return null;
   const cls =
-    p === 0
+    t.includes("comprador")
       ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-      : p === 1
+      : t.includes("cadeira")
         ? "bg-sky-500/15 text-sky-400 border-sky-500/30"
-        : p === 2
+        : t.includes("ifood") || t.includes("i food")
           ? "bg-red-500/15 text-red-400 border-red-500/30"
-          : p === 4
+          : t.includes("fornecedor")
             ? "bg-zinc-500/15 text-zinc-400 border-zinc-500/30"
             : "bg-[#d4af37]/15 text-[#d4af37] border-[#d4af37]/30";
   return (
-    <span className={`shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold border ${cls}`} title={tipo}>
-      {tipo}
+    <span className={`shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold border ${cls}`} title={lead.tipo}>
+      {lead.tipo}
     </span>
   );
 }
@@ -757,8 +773,8 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
       arr = arr.filter((l) => (sellerFilter === "none" ? !l.assignedSeller : l.assignedSeller === sellerFilter));
     }
     return [...arr].sort((a, b) => {
-      const pa = tipoPriority(a.tipo);
-      const pb = tipoPriority(b.tipo);
+      const pa = leadRank(a);
+      const pb = leadRank(b);
       if (pa !== pb) return pa - pb;
       return (b.revenue ?? -1) - (a.revenue ?? -1);
     });
@@ -1061,11 +1077,16 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                         aria-label={`Selecionar ${l.name || l.email}`}
                       />
                     </td>
-                    <td className="px-3 py-2.5 max-w-[200px] text-[#f3f4f6] font-medium">
+                    <td className="px-3 py-2.5 max-w-[220px] text-[#f3f4f6] font-medium">
                       <span className="inline-flex items-center gap-1.5">
-                        <TipoBadge tipo={l.tipo} />
+                        <TipoBadge lead={l} />
                         <span className="truncate">{l.name || "—"}</span>
                       </span>
+                      {normTipo(l.tipo).includes("cadeira") && l.invitedBy && (
+                        <div className="text-[10px] text-[#9ca3af] mt-0.5 truncate" title={`Convidado por ${l.invitedBy}${l.saleEmail ? " · " + l.saleEmail : ""}`}>
+                          👤 Convidado por {l.invitedBy}{l.saleEmail ? ` · ${l.saleEmail}` : ""}
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-[#9ca3af] max-w-[180px] truncate">{l.email}</td>
                     <td className="px-3 py-2.5 text-[#9ca3af]">{l.phone || "—"}</td>
@@ -1106,11 +1127,16 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <TipoBadge tipo={l.tipo} />
+                      <TipoBadge lead={l} />
                       <span className="font-semibold text-[#f3f4f6] truncate">{l.name || l.email}</span>
                     </div>
                     <div className="text-[12px] text-[#9ca3af] truncate mt-0.5">{l.email}</div>
                     {l.phone && <div className="text-[12px] text-[#6b7280] truncate">{l.phone}</div>}
+                    {normTipo(l.tipo).includes("cadeira") && l.invitedBy && (
+                      <div className="text-[11px] text-[#9ca3af] truncate mt-0.5">
+                        👤 Convidado por {l.invitedBy}{l.saleEmail ? ` · ${l.saleEmail}` : ""}
+                      </div>
+                    )}
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-[10px] uppercase tracking-[1px] text-[#6b7280]">Fat.</div>

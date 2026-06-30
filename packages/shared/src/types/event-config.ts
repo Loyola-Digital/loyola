@@ -83,6 +83,12 @@ export interface EventMapLead {
   phone: string;
   /** Tipo da pessoa (comprador / 2ª cadeira / iFood / fornecedor); "" se não mapeado. */
   tipo: string;
+  /** Quem convidou o participante (coluna "Convidado"); "" se não houver. Relevante p/ 2ª cadeira. */
+  invitedBy: string;
+  /** Email da venda do ingresso (coluna "Email da venda"); "" se não houver. */
+  saleEmail: string;
+  /** True se respondeu "Empresário(a) dono de restaurante" no campo "Você é:" da pesquisa. */
+  isRestaurantOwner: boolean;
   status: EventLeadStatus;
   /** Preenchido quando status = "bought". */
   sale: EventLeadSale | null;
