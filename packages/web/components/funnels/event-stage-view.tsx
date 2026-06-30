@@ -66,6 +66,7 @@ import {
   useEventMap,
   useSetEventLeadStatus,
   useSetEventLeadSeller,
+  useSetEventLeadSellerBulk,
 } from "@/lib/hooks/use-event-config";
 import { EventSourcesTab } from "@/components/funnels/event-sources-tab";
 import { LeadDetailDialog, type RoiLead } from "@/components/funnels/roi-calculator";
@@ -700,21 +701,110 @@ function EventConfigTab({ projectId, funnelId, stageId }: { projectId: string; f
   );
 }
 
+// Prioridade de exibição por tipo: comprador → 2ª cadeira → iFood → outros → fornecedor (último).
+function tipoPriority(tipo: string): number {
+  const t = (tipo || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (t.includes("comprador")) return 0;
+  if (t.includes("cadeira")) return 1;
+  if (t.includes("ifood") || t.includes("i food")) return 2;
+  if (t.includes("fornecedor")) return 4;
+  return 3;
+}
+
+// Badge de tipo (cor por categoria) exibido na frente do nome.
+function TipoBadge({ tipo }: { tipo: string }) {
+  if (!tipo) return null;
+  const p = tipoPriority(tipo);
+  const cls =
+    p === 0
+      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+      : p === 1
+        ? "bg-sky-500/15 text-sky-400 border-sky-500/30"
+        : p === 2
+          ? "bg-red-500/15 text-red-400 border-red-500/30"
+          : p === 4
+            ? "bg-zinc-500/15 text-zinc-400 border-zinc-500/30"
+            : "bg-[#d4af37]/15 text-[#d4af37] border-[#d4af37]/30";
+  return (
+    <span className={`shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold border ${cls}`} title={tipo}>
+      {tipo}
+    </span>
+  );
+}
+
 function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funnelId: string; stageId: string }) {
   const { data, isLoading } = useEventMap(projectId, funnelId, stageId);
   const setStatus = useSetEventLeadStatus(projectId, funnelId, stageId);
   const setSeller = useSetEventLeadSeller(projectId, funnelId, stageId);
+  const setSellerBulk = useSetEventLeadSellerBulk(projectId, funnelId, stageId);
   const closersQ = useEventClosers(projectId, funnelId, stageId);
   const closerNames = useMemo(() => closersQ.data?.closers.map((c) => c.name) ?? [], [closersQ.data]);
   const [filter, setFilter] = useState<"all" | EventLeadStatus>("all");
+  const [sellerFilter, setSellerFilter] = useState<string>("all"); // "all" | "none" | nome do closer
   const [detailLead, setDetailLead] = useState<RoiLead | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkSeller, setBulkSeller] = useState<string>("");
 
   const leads = useMemo(() => data?.leads ?? [], [data]);
   const summary = data?.summary;
-  const filtered = useMemo(
-    () => (filter === "all" ? leads : leads.filter((l) => l.status === filter)),
-    [leads, filter],
-  );
+
+  // Aplica filtros (status + vendedor) e ordena por prioridade de tipo, depois
+  // por maior faturamento (sem faturamento vai por último dentro do tipo).
+  const visible = useMemo(() => {
+    let arr = leads;
+    if (filter !== "all") arr = arr.filter((l) => l.status === filter);
+    if (sellerFilter !== "all") {
+      arr = arr.filter((l) => (sellerFilter === "none" ? !l.assignedSeller : l.assignedSeller === sellerFilter));
+    }
+    return [...arr].sort((a, b) => {
+      const pa = tipoPriority(a.tipo);
+      const pb = tipoPriority(b.tipo);
+      if (pa !== pb) return pa - pb;
+      return (b.revenue ?? -1) - (a.revenue ?? -1);
+    });
+  }, [leads, filter, sellerFilter]);
+
+  // Emails visíveis (base do "selecionar todos").
+  const visibleEmails = useMemo(() => visible.map((l) => l.email), [visible]);
+  const allVisibleSelected = visibleEmails.length > 0 && visibleEmails.every((e) => selected.has(e));
+
+  function toggleSelect(email: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(email)) next.delete(email);
+      else next.add(email);
+      return next;
+    });
+  }
+
+  function toggleAllVisible() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) visibleEmails.forEach((e) => next.delete(e));
+      else visibleEmails.forEach((e) => next.add(e));
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelected(new Set());
+  }
+
+  function applyBulk() {
+    const emails = Array.from(selected);
+    if (emails.length === 0) return;
+    const seller = bulkSeller && bulkSeller !== "none" ? bulkSeller : null;
+    setSellerBulk.mutate(
+      { emails, seller },
+      {
+        onSuccess: (res) => {
+          toast.success(seller ? `${res.count} lead(s) atribuído(s) a ${seller}` : `Atribuição removida de ${res.count} lead(s)`);
+          clearSelection();
+        },
+        onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atribuir em massa"),
+      },
+    );
+  }
 
   function changeStatus(email: string, status: "pending" | "negotiating" | "declined") {
     setStatus.mutate(
@@ -849,27 +939,84 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
         ))}
       </div>
 
-      {/* Filtro (scroll horizontal no mobile) */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 sm:flex-wrap sm:overflow-visible">
-        {FILTERS.map((f) => (
-          <button
-            key={f.key}
-            type="button"
-            onClick={() => setFilter(f.key)}
-            className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
-              filter === f.key
-                ? "bg-[#d4af37] text-black border-[#d4af37]"
-                : "text-[#9ca3af] border-[#1f2937] hover:bg-[#1a2236]"
-            }`}
-          >
-            {f.label} <span className="ml-1 tabular-nums opacity-80">{f.count}</span>
-          </button>
-        ))}
+      {/* Filtros: status (chips) + vendedor (select) */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 sm:flex-wrap sm:overflow-visible">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => setFilter(f.key)}
+              className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
+                filter === f.key
+                  ? "bg-[#d4af37] text-black border-[#d4af37]"
+                  : "text-[#9ca3af] border-[#1f2937] hover:bg-[#1a2236]"
+              }`}
+            >
+              {f.label} <span className="ml-1 tabular-nums opacity-80">{f.count}</span>
+            </button>
+          ))}
+        </div>
+        <div className="sm:ml-auto shrink-0">
+          <Select value={sellerFilter} onValueChange={setSellerFilter}>
+            <SelectTrigger className="h-8 w-[200px] text-[12px] bg-[#111827] border-[#1f2937] text-[#f3f4f6]">
+              <SelectValue placeholder="Filtrar por vendedor" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#111827] border-[#1f2937] text-[#f3f4f6]">
+              <SelectItem value="all" className="text-[#f3f4f6] focus:bg-[#1a2236] focus:text-[#f3f4f6]">Todos os vendedores</SelectItem>
+              <SelectItem value="none" className="text-[#9ca3af] focus:bg-[#1a2236] focus:text-[#f3f4f6]">Sem vendedor</SelectItem>
+              {closerNames.map((name) => (
+                <SelectItem key={name} value={name} className="text-[#f3f4f6] focus:bg-[#1a2236] focus:text-[#f3f4f6]">
+                  {name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {/* Barra de ação em massa — aparece quando há leads selecionados */}
+      {selected.size > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 rounded-xl border border-[#d4af37]/40 bg-[#d4af37]/[0.06] p-3">
+          <span className="text-[13px] font-semibold text-[#f3f4f6]">
+            {selected.size} selecionado{selected.size > 1 ? "s" : ""}
+          </span>
+          <div className="flex items-center gap-2 sm:ml-auto">
+            <Select value={bulkSeller} onValueChange={setBulkSeller}>
+              <SelectTrigger className="h-8 w-[180px] text-[12px] bg-[#111827] border-[#1f2937] text-[#f3f4f6]">
+                <SelectValue placeholder="Escolher vendedor" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#111827] border-[#1f2937] text-[#f3f4f6]">
+                <SelectItem value="none" className="text-[#9ca3af] focus:bg-[#1a2236] focus:text-[#f3f4f6]">— Sem vendedor —</SelectItem>
+                {closerNames.map((name) => (
+                  <SelectItem key={name} value={name} className="text-[#f3f4f6] focus:bg-[#1a2236] focus:text-[#f3f4f6]">
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              onClick={applyBulk}
+              disabled={!bulkSeller || setSellerBulk.isPending}
+              className="bg-[#d4af37] text-black hover:bg-[#d4af37]/90 h-8"
+            >
+              {setSellerBulk.isPending ? "Atribuindo..." : "Atribuir"}
+            </Button>
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="text-[12px] text-[#9ca3af] hover:text-[#f3f4f6] px-2"
+            >
+              Limpar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {visible.length === 0 ? (
         <div className="rounded-xl border border-[#1f2937] bg-[#111827] px-3 py-6 text-center text-[#6b7280] text-sm">
-          Nenhum participante com esse status.
+          Nenhum participante com esses filtros.
         </div>
       ) : (
         <>
@@ -878,6 +1025,15 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
             <table className="w-full text-[13px]">
               <thead className="bg-[#1f2937] text-[#f3f4f6]">
                 <tr>
+                  <th className="px-3 py-2.5 w-[40px]">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleAllVisible}
+                      className="accent-[#d4af37] cursor-pointer"
+                      aria-label="Selecionar todos"
+                    />
+                  </th>
                   <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Participante</th>
                   <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Email</th>
                   <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Telefone</th>
@@ -889,14 +1045,28 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                 </tr>
               </thead>
               <tbody className="bg-[#111827]">
-                {filtered.map((l) => (
+                {visible.map((l) => (
                   <tr
                     key={l.email}
                     onClick={() => setDetailLead({ name: l.name, email: l.email, revenue: l.revenue })}
-                    className="border-t border-[#1f2937] hover:bg-[#1a2236] transition-colors cursor-pointer"
+                    className={`border-t border-[#1f2937] hover:bg-[#1a2236] transition-colors cursor-pointer ${selected.has(l.email) ? "bg-[#d4af37]/[0.06]" : ""}`}
                     title="Ver ficha e calculadora"
                   >
-                    <td className="px-3 py-2.5 max-w-[160px] truncate text-[#f3f4f6] font-medium">{l.name || "—"}</td>
+                    <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(l.email)}
+                        onChange={() => toggleSelect(l.email)}
+                        className="accent-[#d4af37] cursor-pointer"
+                        aria-label={`Selecionar ${l.name || l.email}`}
+                      />
+                    </td>
+                    <td className="px-3 py-2.5 max-w-[200px] text-[#f3f4f6] font-medium">
+                      <span className="inline-flex items-center gap-1.5">
+                        <TipoBadge tipo={l.tipo} />
+                        <span className="truncate">{l.name || "—"}</span>
+                      </span>
+                    </td>
                     <td className="px-3 py-2.5 text-[#9ca3af] max-w-[180px] truncate">{l.email}</td>
                     <td className="px-3 py-2.5 text-[#9ca3af]">{l.phone || "—"}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums font-bold text-[#d4af37]">
@@ -919,15 +1089,26 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
 
           {/* MOBILE — cards */}
           <div className="sm:hidden space-y-2">
-            {filtered.map((l) => (
+            {visible.map((l) => (
               <div
                 key={l.email}
                 onClick={() => setDetailLead({ name: l.name, email: l.email, revenue: l.revenue })}
-                className="rounded-xl border border-[#1f2937] bg-[#111827] p-3 cursor-pointer active:bg-[#1a2236]"
+                className={`rounded-xl border bg-[#111827] p-3 cursor-pointer active:bg-[#1a2236] ${selected.has(l.email) ? "border-[#d4af37]/50" : "border-[#1f2937]"}`}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-semibold text-[#f3f4f6] truncate">{l.name || l.email}</div>
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(l.email)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleSelect(l.email)}
+                    className="accent-[#d4af37] cursor-pointer mt-1 shrink-0"
+                    aria-label={`Selecionar ${l.name || l.email}`}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <TipoBadge tipo={l.tipo} />
+                      <span className="font-semibold text-[#f3f4f6] truncate">{l.name || l.email}</span>
+                    </div>
                     <div className="text-[12px] text-[#9ca3af] truncate mt-0.5">{l.email}</div>
                     {l.phone && <div className="text-[12px] text-[#6b7280] truncate">{l.phone}</div>}
                   </div>

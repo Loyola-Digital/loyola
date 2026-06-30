@@ -338,11 +338,12 @@ export default fp(async function stageEventConfigRoutes(fastify) {
   // deduplicados por email. O Mapa do Evento usa esta lista de participantes.
   async function loadEventLeads(
     stageId: string,
-  ): Promise<{ email: string; name: string; phone: string }[]> {
+  ): Promise<{ email: string; name: string; phone: string; tipo: string }[]> {
     const sources = await fastify.db
       .select({
         spreadsheetId: stageSalesPlanSources.spreadsheetId,
         sheetName: stageSalesPlanSources.sheetName,
+        tipo: stageSalesPlanSources.tipo,
         mapping: stageSalesPlanSources.mapping,
       })
       .from(stageSalesPlanSources)
@@ -356,10 +357,10 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     if (sources.length === 0) return [];
 
     const MAX_LEADS = 10000;
-    const byEmail = new Map<string, { email: string; name: string; phone: string }>();
+    const byEmail = new Map<string, { email: string; name: string; phone: string; tipo: string }>();
     for (const src of sources) {
       if (byEmail.size >= MAX_LEADS) break;
-      const mapping = (src.mapping ?? {}) as { name?: string; email?: string; telefone?: string };
+      const mapping = (src.mapping ?? {}) as { name?: string; email?: string; telefone?: string; tipo?: string };
       let data;
       try {
         data = await readSheetData(src.spreadsheetId, src.sheetName);
@@ -370,16 +371,20 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       const emailIdx = mapping.email ? headers.indexOf(mapping.email) : -1;
       const nameIdx = mapping.name ? headers.indexOf(mapping.name) : -1;
       const phoneIdx = mapping.telefone ? headers.indexOf(mapping.telefone) : -1;
+      const tipoIdx = mapping.tipo ? headers.indexOf(mapping.tipo) : -1;
       if (emailIdx === -1) continue;
       for (const row of rows) {
         if (byEmail.size >= MAX_LEADS) break;
         const email = (row[emailIdx] ?? "").trim().toLowerCase();
         if (!email) continue;
         if (byEmail.has(email)) continue;
+        // tipo da coluna mapeada; se não houver, cai no rótulo livre da fonte (src.tipo).
+        const tipoCell = tipoIdx !== -1 ? (row[tipoIdx] ?? "").trim() : "";
         byEmail.set(email, {
           email,
           name: nameIdx !== -1 ? (row[nameIdx] ?? "").trim() : "",
           phone: phoneIdx !== -1 ? (row[phoneIdx] ?? "").trim() : "",
+          tipo: tipoCell || (src.tipo ?? "").trim(),
         });
       }
     }
@@ -606,6 +611,47 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       });
 
     return { email, seller };
+  });
+
+  // ---- ATRIBUIR vendedor a VÁRIOS leads de uma vez (bulk) ----
+  const leadSellerBulkBodySchema = z.object({
+    emails: z.array(z.string().trim().email().max(255)).min(1).max(5000),
+    seller: z.string().trim().max(255).nullable().optional(),
+  });
+
+  fastify.put(`${base}/event-lead-seller-bulk`, async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const params = stageParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const body = leadSellerBulkBodySchema.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+    const seller = body.data.seller?.trim() ? body.data.seller.trim() : null;
+    // Dedup dos emails (case-insensitive).
+    const emails = Array.from(new Set(body.data.emails.map((e) => e.toLowerCase())));
+    const now = new Date();
+
+    await fastify.db
+      .insert(stageEventLeadStatus)
+      .values(
+        emails.map((email) => ({
+          stageId: params.data.stageId,
+          leadEmail: email,
+          status: "pending",
+          assignedSeller: seller,
+          updatedAt: now,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [stageEventLeadStatus.stageId, stageEventLeadStatus.leadEmail],
+        set: { assignedSeller: seller, updatedAt: now },
+      });
+
+    return { count: emails.length, seller };
   });
 
   // ---- RESPOSTAS completas de um lead (todas as colunas das planilhas, por email) ----

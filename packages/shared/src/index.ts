@@ -134,6 +134,7 @@ export type {
   SettableEventLeadStatus,
   SetEventLeadStatusInput,
   SetEventLeadSellerInput,
+  SetEventLeadSellerBulkInput,
   EventLeadAnswer,
   EventLeadAnswerGroup,
   EventLeadAnswersResponse,
