@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -26,7 +26,9 @@ import { useMyMembership } from "@/lib/hooks/use-projects";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { useAutoCloseSidebarOnNavigation } from "@/lib/hooks/use-auto-close-sidebar";
 import { useFunnels } from "@/lib/hooks/use-funnels";
+import { useFunnelStages } from "@/lib/hooks/use-funnel-stages";
 import type { Project, ProjectPermissions } from "@/lib/hooks/use-projects";
+import type { Funnel } from "@loyola-x/shared";
 
 // ============================================================
 // Module config
@@ -46,6 +48,83 @@ const OTHER_MODULES = [
 const UNGATED_MODULES = [
   { label: "Vendas", href: "sales", icon: ArrowUpDown },
 ] as const;
+
+// ============================================================
+// GuestFunnelItem — funil colapsável (read-only) com etapas aninhadas
+// ============================================================
+
+function GuestFunnelItem({
+  funnel,
+  projectId,
+  pathname,
+}: {
+  funnel: Funnel;
+  projectId: string;
+  pathname: string;
+}) {
+  const { data: stages, isLoading: stagesLoading } = useFunnelStages(projectId, funnel.id);
+
+  const funnelHref = `/projects/${projectId}/funnels/${funnel.id}`;
+  const isActiveFunnel = pathname.startsWith(funnelHref);
+  const [open, setOpen] = useState(isActiveFunnel);
+
+  // Abre automaticamente ao navegar pra dentro do funil (inactive→active),
+  // depois respeita a escolha manual do guest.
+  const prevActiveRef = useRef(isActiveFunnel);
+  useEffect(() => {
+    if (isActiveFunnel && !prevActiveRef.current) setOpen(true);
+    prevActiveRef.current = isActiveFunnel;
+  }, [isActiveFunnel]);
+
+  const FunnelIcon = funnel.type === "launch" ? Rocket : Repeat;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <Button
+          variant={isActiveFunnel ? "secondary" : "ghost"}
+          className="w-full justify-start gap-1.5 h-8 text-sm min-w-0"
+        >
+          <FunnelIcon className="h-4 w-4 shrink-0" />
+          <span className="truncate flex-1 text-left">{funnel.name}</span>
+          <ChevronRight
+            className={cn(
+              "h-3 w-3 text-muted-foreground transition-transform shrink-0",
+              open && "rotate-90",
+            )}
+          />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="ml-4 flex flex-col gap-0.5 border-l pl-2 py-0.5">
+          {stagesLoading && <Skeleton className="h-6 w-full rounded-md" />}
+
+          {!stagesLoading && stages && stages.length > 0 &&
+            stages.map((stage) => {
+              const stageHref = `${funnelHref}/stages/${stage.id}`;
+              const isActive = pathname.startsWith(stageHref);
+              return (
+                <Button
+                  key={stage.id}
+                  variant={isActive ? "secondary" : "ghost"}
+                  className="justify-start gap-2 h-7 text-xs min-w-0"
+                  asChild
+                >
+                  <Link href={stageHref}>
+                    <span className="truncate">{stage.name}</span>
+                  </Link>
+                </Button>
+              );
+            })}
+
+          {!stagesLoading && (!stages || stages.length === 0) && (
+            <p className="px-2 py-1 text-[11px] text-muted-foreground">Sem etapas</p>
+          )}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
 
 // ============================================================
 // GuestProjectFolder — renders only permitted modules
@@ -180,28 +259,18 @@ function GuestProjectFolder({ project }: { project: Project }) {
             );
           })}
 
-          {/* Funnels (read-only for guests) */}
+          {/* Funnels (read-only for guests) — colapsável com etapas aninhadas */}
           {funnelList && funnelList.length > 0 && (
             <>
               <Separator className="my-1" />
-              {funnelList.map((funnel) => {
-                const href = `/projects/${project.id}/funnels/${funnel.id}`;
-                const isActive = pathname.startsWith(href);
-                const FunnelIcon = funnel.type === "launch" ? Rocket : Repeat;
-                return (
-                  <Button
-                    key={funnel.id}
-                    variant={isActive ? "secondary" : "ghost"}
-                    className="justify-start gap-2 h-8 text-sm"
-                    asChild
-                  >
-                    <Link href={href}>
-                      <FunnelIcon className="h-4 w-4 shrink-0" />
-                      <span className="truncate">{funnel.name}</span>
-                    </Link>
-                  </Button>
-                );
-              })}
+              {funnelList.map((funnel) => (
+                <GuestFunnelItem
+                  key={funnel.id}
+                  funnel={funnel}
+                  projectId={project.id}
+                  pathname={pathname}
+                />
+              ))}
             </>
           )}
         </div>
