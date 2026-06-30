@@ -24,7 +24,7 @@ import {
   type MetaEntityType,
   type ResolveEntityNamesCacheAdapter,
 } from "../services/meta-ads.js";
-import { metaAdsAccounts, metaAdsAccountProjects, metaEntityNamesCache } from "../db/schema.js";
+import { metaAdsAccounts, metaAdsAccountProjects, metaEntityNamesCache, projectMembers } from "../db/schema.js";
 import { getProjectMetaFreshness } from "../services/meta-sync-state.js";
 
 // Story 18.26 Fase 1 / 18.37: TTL alinhado com stage-sales-data.ts (30d). Evita
@@ -62,11 +62,41 @@ const adsetQuerySchema = z.object({
 // ============================================================
 
 export default fp(async function trafficAnalyticsRoutes(fastify) {
+  // Guests só acessam analytics de tráfego se forem membros do projeto COM a
+  // permissão `traffic` marcada no convite. Não-guests passam direto. Mantém
+  // alinhado com o sistema de convites (ProjectPermissions.traffic) em vez de
+  // bloquear todo guest indiscriminadamente.
+  async function guestCanAccessTraffic(
+    userRole: string,
+    userId: string,
+    projectId: string | undefined,
+  ): Promise<boolean> {
+    if (userRole !== "guest") return true;
+    if (!projectId) return false;
+    const [member] = await fastify.db
+      .select({ permissions: projectMembers.permissions })
+      .from(projectMembers)
+      .where(
+        and(
+          eq(projectMembers.projectId, projectId),
+          eq(projectMembers.userId, userId),
+        ),
+      )
+      .limit(1);
+    if (!member) return false;
+    const perms = member.permissions as { traffic?: boolean };
+    return perms.traffic === true;
+  }
+
   // ---- GET /api/traffic/analytics/:projectId/overview ----
   fastify.get(
     "/api/traffic/analytics/:projectId/overview",
     async (request, reply) => {
-      if (request.userRole === "guest") {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -106,7 +136,11 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/campaigns",
     async (request, reply) => {
-      if (request.userRole === "guest") {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -138,7 +172,11 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/adsets",
     async (request, reply) => {
-      if (request.userRole === "guest") {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -173,7 +211,11 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/ads",
     async (request, reply) => {
-      if (request.userRole === "guest") {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -220,7 +262,11 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/top-performers",
     async (request, reply) => {
-      if (request.userRole === "guest") {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -274,7 +320,11 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.post(
     "/api/traffic/analytics/:projectId/meta-names/resolve",
     async (request, reply) => {
-      if (request.userRole === "guest") {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
         return reply.code(403).send({ error: "Acesso negado" });
       }
       const paramResult = projectIdParamSchema.safeParse(request.params);
@@ -397,7 +447,11 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/all-adsets",
     async (request, reply) => {
-      if (request.userRole === "guest") {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -433,7 +487,11 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/all-ads",
     async (request, reply) => {
-      if (request.userRole === "guest") {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -480,7 +538,11 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/campaign-daily",
     async (request, reply) => {
-      if (request.userRole === "guest") {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -538,7 +600,11 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/placements",
     async (request, reply) => {
-      if (request.userRole === "guest") {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -578,7 +644,11 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/ad-creatives",
     async (request, reply) => {
-      if (request.userRole === "guest") {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -644,7 +714,11 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.post(
     "/api/traffic/analytics/:projectId/invalidate",
     async (request, reply) => {
-      if (request.userRole === "guest") {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -666,7 +740,11 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/video-source",
     async (request, reply) => {
-      if (request.userRole === "guest") {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
@@ -726,7 +804,11 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   fastify.get(
     "/api/traffic/analytics/:projectId/meta-freshness",
     async (request, reply) => {
-      if (request.userRole === "guest") {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
         return reply.code(403).send({ error: "Acesso negado" });
       }
 
