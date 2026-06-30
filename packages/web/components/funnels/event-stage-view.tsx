@@ -14,6 +14,7 @@ import {
   Loader2,
   Map as MapIcon,
   Target,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { FunnelStage, ManualSale } from "@loyola-x/shared";
@@ -757,6 +758,7 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
   const closerNames = useMemo(() => closersQ.data?.closers.map((c) => c.name) ?? [], [closersQ.data]);
   const [filter, setFilter] = useState<"all" | EventLeadStatus>("all");
   const [sellerFilter, setSellerFilter] = useState<string>("all"); // "all" | "none" | nome do closer
+  const [query, setQuery] = useState("");
   const [detailLead, setDetailLead] = useState<RoiLead | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkSeller, setBulkSeller] = useState<string>("");
@@ -772,13 +774,22 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
     if (sellerFilter !== "all") {
       arr = arr.filter((l) => (sellerFilter === "none" ? !l.assignedSeller : l.assignedSeller === sellerFilter));
     }
+    const q = query.trim().toLowerCase();
+    if (q) {
+      arr = arr.filter((l) =>
+        l.name.toLowerCase().includes(q) ||
+        l.email.toLowerCase().includes(q) ||
+        (l.phone ?? "").toLowerCase().includes(q) ||
+        (l.invitedBy ?? "").toLowerCase().includes(q),
+      );
+    }
     return [...arr].sort((a, b) => {
       const pa = leadRank(a);
       const pb = leadRank(b);
       if (pa !== pb) return pa - pb;
       return (b.revenue ?? -1) - (a.revenue ?? -1);
     });
-  }, [leads, filter, sellerFilter]);
+  }, [leads, filter, sellerFilter, query]);
 
   // Emails visíveis (base do "selecionar todos").
   const visibleEmails = useMemo(() => visible.map((l) => l.email), [visible]);
@@ -953,6 +964,27 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
             <div className={`text-lg sm:text-2xl font-extrabold leading-none ${k.gold ? "text-[#d4af37]" : "text-[#f3f4f6]"}`}>{k.value}</div>
           </div>
         ))}
+      </div>
+
+      {/* Busca em tempo real por nome / email / telefone / convidado */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#6b7280] pointer-events-none" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Buscar por nome, email ou telefone..."
+          className="w-full h-9 pl-9 pr-9 rounded-lg bg-[#111827] border border-[#1f2937] text-[#f3f4f6] text-[13px] placeholder:text-[#6b7280] outline-none focus:border-[#d4af37]/50"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6b7280] hover:text-[#f3f4f6] p-1"
+            aria-label="Limpar busca"
+          >
+            <XCircle className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       {/* Filtros: status (chips) + vendedor (select) */}
