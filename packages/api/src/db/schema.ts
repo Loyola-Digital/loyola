@@ -797,6 +797,38 @@ export const funnelSurveys = pgTable(
 );
 
 // ============================================================
+// NPS DATASETS (Epic 38 — cruzamento de NPS com respostas do funil)
+// ============================================================
+// Lista de NPS (ex.: "NPS Dia 1") subida por etapa, lida ao vivo do Google Sheets
+// (mesmo padrão de funnel_surveys: spreadsheet + sheet + column_mapping). O app
+// cruza por e-mail (fallback: nome) com as respostas da pesquisa daquela etapa,
+// classifica promotor/neutro/detrator e mostra tudo numa aba. Vários datasets por
+// etapa (Dia 1, Dia 2, ...). score/name/email/timestamp são nomes de COLUNAS.
+export const funnelNpsDatasets = pgTable(
+  "funnel_nps_datasets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => funnels.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id").references(() => funnelStages.id, { onDelete: "cascade" }),
+    label: varchar("label", { length: 120 }).notNull().default("NPS"),
+    spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
+    spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
+    sheetName: varchar("sheet_name", { length: 255 }).notNull(),
+    columnMapping: jsonb("column_mapping")
+      .notNull()
+      .$type<{ name?: string; email?: string; score?: string; timestamp?: string }>()
+      .default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_funnel_nps_funnel").on(table.funnelId),
+    index("idx_funnel_nps_stage").on(table.stageId),
+  ]
+);
+
+// ============================================================
 // LEAD SCORING SCHEMAS (Story 22.1 — v2 enriquecido)
 // ============================================================
 
