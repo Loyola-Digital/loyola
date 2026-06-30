@@ -544,7 +544,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
   });
 
   fastify.put(`${base}/event-lead-status`, async (request, reply) => {
-    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    // Convidados PODEM alterar status de lead (o acesso é validado por getProjectAccess/membership).
     const params = stageParamsSchema.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
     const body = leadStatusBodySchema.safeParse(request.body);
@@ -581,7 +581,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
   });
 
   fastify.put(`${base}/event-lead-seller`, async (request, reply) => {
-    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    // Convidados PODEM atribuir vendedor (o acesso é validado por getProjectAccess/membership).
     const params = stageParamsSchema.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
     const body = leadSellerBodySchema.safeParse(request.body);
@@ -620,7 +620,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
   });
 
   fastify.put(`${base}/event-lead-seller-bulk`, async (request, reply) => {
-    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    // Convidados PODEM atribuir vendedor em massa (o acesso é validado por getProjectAccess/membership).
     const params = stageParamsSchema.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
     const body = leadSellerBulkBodySchema.safeParse(request.body);
