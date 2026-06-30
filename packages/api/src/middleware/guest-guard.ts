@@ -20,6 +20,18 @@ function detectModule(subPath: string): keyof GuestPermissions | null {
 }
 
 /**
+ * Endpoints de ESCRITA que convidados PODEM usar (operação de Evento Presencial:
+ * marcar status do lead e atribuir vendedor). Os próprios handlers validam o
+ * acesso via membership — esta allowlist apenas evita que o bloqueio genérico de
+ * writes do guard global os barre antes de chegar lá.
+ */
+const GUEST_WRITABLE_PROJECT_PATHS: RegExp[] = [
+  /\/event-lead-status$/,
+  /\/event-lead-seller$/,
+  /\/event-lead-seller-bulk$/,
+];
+
+/**
  * Global preHandler that enforces guest access restrictions:
  *
  * - Guests cannot use write operations on project routes
@@ -34,10 +46,12 @@ export default fp(async function guestGuardPlugin(fastify) {
     const rawUrl = request.url.split("?")[0];
     const method = request.method.toUpperCase();
 
-    // Block write operations on any project route
+    // Block write operations on any project route, exceto as rotas que o guest
+    // tem permissão explícita de escrever (evento presencial — ver allowlist).
     if (
       rawUrl.startsWith("/api/projects") &&
-      ["POST", "PUT", "DELETE"].includes(method)
+      ["POST", "PUT", "DELETE"].includes(method) &&
+      !GUEST_WRITABLE_PROJECT_PATHS.some((re) => re.test(rawUrl))
     ) {
       return reply.code(403).send({ error: "project_access_denied" });
     }
