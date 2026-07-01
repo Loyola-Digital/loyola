@@ -278,8 +278,8 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
             <>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <StatCard label="Total de vendas" value={String(summary.totalSales)} />
+                <StatCard label="Valor coletado" value={formatCurrency(summary.totalColetado)} highlight tone="green" />
                 <StatCard label="Valor faturado" value={formatCurrency(summary.totalRevenue)} highlight />
-                <StatCard label="Valor coletado" value={formatCurrency(summary.totalColetado)} highlight />
                 <StatCard label="Ticket médio" value={formatCurrency(summary.ticket)} />
               </div>
 
@@ -369,11 +369,24 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
   );
 }
 
-function StatCard({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function StatCard({
+  label,
+  value,
+  highlight,
+  tone = "primary",
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+  tone?: "primary" | "green";
+}) {
+  const boxCls =
+    tone === "green" ? "border-emerald-500/40 bg-emerald-500/10" : "border-primary/30 bg-primary/5";
+  const textCls = tone === "green" ? "text-emerald-400" : "text-primary";
   return (
-    <div className={`rounded-lg border p-4 space-y-1 ${highlight ? "border-primary/30 bg-primary/5" : "border-border/50"}`}>
+    <div className={`rounded-lg border p-4 space-y-1 ${highlight ? boxCls : "border-border/50"}`}>
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={`text-lg font-bold ${highlight ? "text-primary" : ""}`}>{value}</p>
+      <p className={`text-lg font-bold ${highlight ? textCls : ""}`}>{value}</p>
     </div>
   );
 }
