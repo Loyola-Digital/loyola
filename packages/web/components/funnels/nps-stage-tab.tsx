@@ -404,8 +404,15 @@ function RowItem({
           {sb ? <span className={`text-[10px] px-1.5 py-0.5 rounded ${sb.cls}`}>{sb.label}</span> : <span className="text-[10px] text-muted-foreground">sem nota</span>}
         </td>
         <td className="px-2 py-1.5">
-          {ib ? (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded ${ib.cls}`} title={row.interest ?? ""}>{ib.label}</span>
+          {ib || row.interest ? (
+            <div className="flex flex-col gap-0.5 max-w-[240px]">
+              {ib && (
+                <span className={`inline-block w-fit text-[10px] px-1.5 py-0.5 rounded ${ib.cls}`}>{ib.label}</span>
+              )}
+              {row.interest && (
+                <span className="text-[11px] text-muted-foreground leading-snug break-words">{row.interest}</span>
+              )}
+            </div>
           ) : (
             <span className="text-[10px] text-muted-foreground">—</span>
           )}
