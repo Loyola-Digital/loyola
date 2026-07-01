@@ -29,6 +29,11 @@ const GUEST_WRITABLE_PROJECT_PATHS: RegExp[] = [
   /\/event-lead-status$/,
   /\/event-lead-seller$/,
   /\/event-lead-seller-bulk$/,
+  // Vendas manuais do evento presencial: guest (vendedor no evento) lança,
+  // edita, deleta e matricula no MemberKit. Membership validada nos handlers.
+  /\/manual-sales$/,
+  /\/manual-sales\/[^/]+$/,
+  /\/manual-sales\/[^/]+\/memberkit-enroll$/,
 ];
 
 /**

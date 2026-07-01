@@ -85,6 +85,7 @@ async function buildTestApp(userRole: string) {
   app.delete("/api/projects/:id", async () => ({ ok: true }));
   app.post("/api/chat", async () => ({ ok: true }));
   app.put("/api/projects/:id/funnels/:fid/stages/:sid/event-lead-status", async () => ({ ok: true }));
+  app.post("/api/projects/:id/funnels/:fid/stages/:sid/manual-sales", async () => ({ ok: true }));
 
   await app.ready();
   return app;
@@ -255,6 +256,18 @@ describe("guestGuard — guest project membership checks", () => {
     });
     expect(res.statusCode).toBe(403);
     expect(JSON.parse(res.body).error).toBe("project_access_denied");
+  });
+
+  // Evento Presencial: convidado membro PODE lançar venda (manual-sales).
+  it("guest allowed to POST manual-sales when member", async () => {
+    setupMemberQuery([MOCK_MEMBER_ROW]);
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/projects/${MOCK_PROJECT_ID}/funnels/${MOCK_PROJECT_ID}/stages/${MOCK_PROJECT_ID}/manual-sales`,
+      headers: AUTH,
+      body: {},
+    });
+    expect(res.statusCode).toBe(200);
   });
 });
 
