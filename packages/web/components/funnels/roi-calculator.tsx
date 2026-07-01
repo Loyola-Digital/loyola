@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Calculator, ListChecks, Eye, Share2 } from "lucide-react";
+import { Calculator, ListChecks, Eye, Share2, FileDown } from "lucide-react";
+import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useEventLeadAnswers } from "@/lib/hooks/use-event-config";
@@ -344,6 +345,104 @@ function RoiCalculator({ lead }: { lead: RoiLead }) {
     else window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank");
   }
 
+  // Gera um PDF branded do raio-X e compartilha (Web Share API com arquivo → o
+  // usuário escolhe WhatsApp). Fallback: baixa o PDF pra anexar manualmente.
+  async function sharePdf() {
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ unit: "mm", format: "a4" });
+      const W = 210, H = 297;
+      const green: [number, number, number] = [48, 209, 88];
+      const gold: [number, number, number] = [255, 194, 75];
+      const red: [number, number, number] = [255, 69, 58];
+      const white: [number, number, number] = [245, 245, 245];
+      const muted: [number, number, number] = [150, 150, 155];
+
+      doc.setFillColor(11, 11, 13); doc.rect(0, 0, W, H, "F");
+      doc.setFillColor(...green); doc.rect(0, 0, W, 4, "F");
+
+      let y = 26;
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...green); doc.setFontSize(11);
+      doc.text("RAIO-X DE MARGEM", 16, y); y += 11;
+      doc.setTextColor(...white); doc.setFontSize(23);
+      doc.text("Margem destrava.", 16, y); y += 9;
+      doc.text("Escala multiplica.", 16, y); y += 12;
+      if (lead.name) { doc.setTextColor(...gold); doc.setFontSize(13); doc.text(lead.name, 16, y); y += 11; }
+
+      doc.setFont("helvetica", "normal"); doc.setTextColor(...muted); doc.setFontSize(11);
+      doc.text("Faturamento / mês", 16, y);
+      doc.setFont("helvetica", "bold"); doc.setTextColor(...white); doc.setFontSize(15);
+      doc.text(fmt(c.fat), W - 16, y, { align: "right" }); y += 9;
+      doc.setFont("helvetica", "normal"); doc.setTextColor(...muted); doc.setFontSize(11);
+      doc.text("Margem", 16, y);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(13);
+      doc.setTextColor(...red); doc.text(pct(c.m0), W - 44, y, { align: "right" });
+      doc.setTextColor(...muted); doc.setFont("helvetica", "normal"); doc.text("->", W - 35, y, { align: "center" });
+      doc.setTextColor(...green); doc.setFont("helvetica", "bold"); doc.text(pct(c.mNew), W - 16, y, { align: "right" });
+      y += 14;
+
+      doc.setFont("helvetica", "bold"); doc.setTextColor(...muted); doc.setFontSize(10);
+      doc.text("CENÁRIOS DE LUCRO / MÊS", 16, y); y += 7;
+      const bars: { nm: string; v: number; col: [number, number, number] }[] = [
+        { nm: "Hoje", v: c.lHoje, col: red },
+        { nm: "Só faturamento", v: c.lFat, col: [200, 120, 120] },
+        { nm: "Só margem", v: c.lMarg, col: gold },
+        { nm: "Composto", v: c.lComp, col: green },
+      ];
+      const maxV = Math.max(...bars.map((b) => b.v), 1);
+      const barX = 60, barMaxW = W - 16 - barX;
+      for (const b of bars) {
+        doc.setFont("helvetica", "normal"); doc.setTextColor(...white); doc.setFontSize(10);
+        doc.text(b.nm, 16, y + 4.2);
+        const w = Math.max(20, (b.v / maxV) * barMaxW);
+        doc.setFillColor(...b.col); doc.roundedRect(barX, y, w, 6.5, 1.5, 1.5, "F");
+        doc.setTextColor(11, 11, 13); doc.setFont("helvetica", "bold"); doc.setFontSize(8.5);
+        doc.text(fmt(b.v), barX + w - 2.5, y + 4.4, { align: "right" });
+        y += 10.5;
+      }
+      y += 3;
+
+      doc.setDrawColor(...green); doc.setLineWidth(0.4); doc.setFillColor(14, 30, 20);
+      doc.roundedRect(16, y, W - 32, 26, 3, 3, "FD");
+      doc.setFont("helvetica", "normal"); doc.setTextColor(...muted); doc.setFontSize(10);
+      doc.text("Lucro composto / mês", 22, y + 9);
+      doc.setFont("helvetica", "bold"); doc.setTextColor(...green); doc.setFontSize(22);
+      doc.text(fmt(c.lComp), 22, y + 20);
+      doc.setFontSize(14); doc.text(g1(c.mult) + "x", W - 22, y + 15, { align: "right" });
+      y += 34;
+
+      doc.setFont("helvetica", "normal"); doc.setTextColor(...muted); doc.setFontSize(10);
+      doc.text("Dinheiro novo / mês", 16, y);
+      doc.text("Por ano", W / 2 + 4, y);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(16);
+      doc.setTextColor(...green); doc.text((c.novo >= 0 ? "+" : "") + fmt(c.novo), 16, y + 8);
+      doc.setTextColor(...gold); doc.text(fmt(c.ano), W / 2 + 4, y + 8);
+      y += 20;
+
+      doc.setFont("helvetica", "normal"); doc.setTextColor(...white); doc.setFontSize(11);
+      doc.text("Não é sorte, é sistema. Margem destrava, escala multiplica.", 16, y, { maxWidth: W - 32 });
+      doc.setTextColor(...muted); doc.setFontSize(9);
+      doc.text("BBE Escala · Loyola Digital", W / 2, H - 12, { align: "center" });
+
+      const blob = doc.output("blob");
+      const file = new File([blob], "raio-x-margem.pdf", { type: "application/pdf" });
+      const nav = navigator as Navigator & {
+        canShare?: (d: { files: File[] }) => boolean;
+        share?: (d: { files?: File[]; title?: string; text?: string }) => Promise<void>;
+      };
+      if (nav.canShare && nav.canShare({ files: [file] }) && nav.share) {
+        await nav.share({ files: [file], title: "Raio-X de Margem", text: "Seu raio-X de margem 📊" });
+      } else {
+        doc.save("raio-x-margem.pdf");
+        toast.info("PDF baixado — anexe no WhatsApp do lead.");
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return; // usuário cancelou o share
+      toast.error(err instanceof Error ? err.message : "Erro ao gerar o PDF");
+    }
+  }
+
   const scn = [
     { c: "hoje", nm: "Hoje", sub: pct(c.m0) + " · fat atual", v: c.lHoje, bg: "bg-[#2c2c2e] text-[rgba(235,235,245,0.62)]" },
     { c: "fat", nm: "Só faturamento", sub: "cresce, margem " + pct(c.m0), v: c.lFat, bg: "bg-gradient-to-r from-[#a33] to-[#ff453a] text-white" },
@@ -572,6 +671,10 @@ function RoiCalculator({ lead }: { lead: RoiLead }) {
 
           <button type="button" onClick={share} className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-bold text-[15px] bg-[#30d158] text-[#04210f] transition active:scale-[0.97]">
             <Share2 className="h-4 w-4" /> Mandar o número pro lead
+          </button>
+
+          <button type="button" onClick={sharePdf} className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-[14px] bg-[#1c1c1e] text-[#30d158] border border-[#30d158]/40 transition active:scale-[0.97]">
+            <FileDown className="h-4 w-4" /> Enviar PDF pro lead
           </button>
 
           {!leadMode && (
