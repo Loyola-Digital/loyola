@@ -61,13 +61,17 @@ export interface NpsCrossRow extends NpsRespondent {
   assignedSeller: string | null;
   /** tipo da pessoa (coluna "Tipo" do registro casado): comprador/2 cadeira/iFood/… */
   tipo: string | null;
+  /** nome de quem convidou (2ª cadeira — coluna "Convidado"); null se não houver. */
+  inviterName: string | null;
+  /** telefone de quem convidou (resolvido pela lista); null se não achado. */
+  inviterPhone: string | null;
 }
 
-/** Pega a coluna "Tipo" dos fields do registro casado (null se não houver). */
-function extractTipo(fields: Record<string, string> | null): string | null {
+/** Pega o 1º field cujo header normalizado está em `keys` (não vazio). */
+function pickField(fields: Record<string, string> | null, keys: string[]): string | null {
   if (!fields) return null;
   for (const [k, v] of Object.entries(fields)) {
-    if (normKey(k) === "tipo" && v.trim()) return v.trim();
+    if (keys.includes(normKey(k)) && v.trim()) return v.trim();
   }
   return null;
 }
@@ -338,15 +342,32 @@ export function crossNps(
     const contactEmail = match?.email ?? r.email ?? null;
     const assignedSeller =
       contactEmail && sellerByEmail ? sellerByEmail.get(normEmail(contactEmail)) ?? null : null;
+
+    // Convidante (2ª cadeira): "Email da venda" / "Convidado" no registro casado.
+    // Resolve o telefone dele buscando na própria lista (por email > nome).
+    const fields = match ? match.fields : null;
+    const inviterEmail = pickField(fields, ["email da venda"]);
+    let inviterName = pickField(fields, ["convidado"]);
+    let inviterPhone: string | null = null;
+    let inviterRec: LoyolaRecord | null | undefined;
+    if (inviterEmail) inviterRec = idx.byEmail.get(normEmail(inviterEmail));
+    if (!inviterRec && inviterName) inviterRec = resolveByName(inviterName, idx);
+    if (inviterRec) {
+      inviterPhone = inviterRec.phone;
+      if (!inviterName) inviterName = inviterRec.name;
+    }
+
     return {
       ...r,
       matched: Boolean(match),
       matchedBy,
-      loyola: match ? match.fields : null,
+      loyola: fields,
       brindeDelivered: false, // preenchido na rota a partir do banco
       phone,
       assignedSeller,
-      tipo: match ? extractTipo(match.fields) : null,
+      tipo: pickField(fields, ["tipo"]),
+      inviterName,
+      inviterPhone,
     };
   });
 }
