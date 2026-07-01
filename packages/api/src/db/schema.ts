@@ -828,6 +828,25 @@ export const funnelNpsDatasets = pgTable(
   ]
 );
 
+/** Epic 38 — status do brinde por respondente do NPS (marcado no evento). */
+export const npsBrindeStatus = pgTable(
+  "nps_brinde_status",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    datasetId: uuid("dataset_id")
+      .notNull()
+      .references(() => funnelNpsDatasets.id, { onDelete: "cascade" }),
+    /** Chave estável do respondente (Respondent ID do Tally, ou email/nome). */
+    respondentKey: varchar("respondent_key", { length: 255 }).notNull(),
+    delivered: boolean("delivered").notNull().default(false),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("uq_nps_brinde_dataset_respondent").on(table.datasetId, table.respondentKey),
+    index("idx_nps_brinde_dataset").on(table.datasetId),
+  ]
+);
+
 // ============================================================
 // LEAD SCORING SCHEMAS (Story 22.1 — v2 enriquecido)
 // ============================================================

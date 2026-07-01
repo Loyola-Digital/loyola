@@ -17,6 +17,9 @@ export interface NpsColumnMapping {
   timestamp?: string;
 }
 
+/** Nível de interesse declarado pelo respondente (pra ordenar/status). */
+export type NpsInterest = "quente" | "interessado" | "duvida" | "sem" | null;
+
 export interface NpsRespondent {
   name: string | null;
   email: string | null;
@@ -24,6 +27,14 @@ export interface NpsRespondent {
   sentiment: NpsSentiment | null;
   positive: boolean;
   timestamp: string | null;
+  /** Chave estável (Respondent ID do Tally, ou email/nome) — pra marcar o brinde. */
+  key: string;
+  /** Resposta crua da pergunta de interesse (se houver coluna). */
+  interest: string | null;
+  /** Status classificado do interesse. */
+  interestStatus: NpsInterest;
+  /** Rank de ordenação: menor = mais interessado (0 quente … 5 sem resposta). */
+  interestRank: number;
 }
 
 export interface LoyolaRecord {
@@ -40,6 +51,20 @@ export interface NpsCrossRow extends NpsRespondent {
   matchedBy: "email" | "nome" | null;
   /** infos da pessoa no Loyola (ou null se não casou). */
   loyola: Record<string, string> | null;
+  /** brinde já entregue (marcado no evento). */
+  brindeDelivered: boolean;
+}
+
+/** Classifica a resposta de interesse em status + rank de ordenação. */
+export function classifyInterest(raw: string | null): { status: NpsInterest; rank: number } {
+  if (!raw) return { status: null, rank: 5 };
+  const n = normKey(raw);
+  if (n.includes("muito interesse")) return { status: "quente", rank: 0 };
+  if (n.includes("nao tenho interesse") || n.includes("sem interesse") || n.includes("nenhum interesse"))
+    return { status: "sem", rank: 3 };
+  if (n.includes("duvida")) return { status: "duvida", rank: 2 };
+  if (n.includes("interesse")) return { status: "interessado", rank: 1 };
+  return { status: null, rank: 4 };
 }
 
 // ---- normalização ----
@@ -117,6 +142,13 @@ export function mapNpsRows(
   const iEmail = findCol(headers, mapping.email);
   const iScore = findCol(headers, mapping.score);
   const iTs = findCol(headers, mapping.timestamp);
+  // Chave estável do respondente (Respondent/Submission ID do Tally, se houver).
+  const iKey = headers.findIndex((h) => {
+    const n = normKey(h);
+    return n === "respondent id" || n === "submission id";
+  });
+  // Coluna de interesse (header contém "interesse").
+  const iInterest = headers.findIndex((h) => normKey(h).includes("interesse"));
 
   const out: NpsRespondent[] = [];
   for (const row of rows) {
@@ -127,6 +159,10 @@ export function mapNpsRows(
     if (!name && !email && cell(iScore) === "") continue;
     const score = parseScore(cell(iScore));
     const sentiment = classifyNps(score);
+    const interest = iInterest >= 0 ? cell(iInterest) || null : null;
+    const { status, rank } = classifyInterest(interest);
+    // Chave: Respondent ID > email > nome normalizado.
+    const key = (iKey >= 0 ? cell(iKey) : "") || email || normKey(name) || "";
     out.push({
       name,
       email,
@@ -134,6 +170,10 @@ export function mapNpsRows(
       sentiment,
       positive: sentiment === "promotor",
       timestamp: iTs >= 0 ? cell(iTs) || null : null,
+      key,
+      interest,
+      interestStatus: status,
+      interestRank: rank,
     });
   }
   return out;
@@ -267,6 +307,7 @@ export function crossNps(respondents: NpsRespondent[], idx: LoyolaIndex): NpsCro
       matched: Boolean(match),
       matchedBy,
       loyola: match ? match.fields : null,
+      brindeDelivered: false, // preenchido na rota a partir do banco
     };
   });
 }

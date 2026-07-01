@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { funnelNpsDatasets, funnelSurveys, funnels, stageSalesPlanSources } from "../db/schema.js";
+import { funnelNpsDatasets, funnelSurveys, funnels, stageSalesPlanSources, npsBrindeStatus } from "../db/schema.js";
 import { readSheetData, getSpreadsheetSheets } from "../services/google-sheets.js";
 import {
   mapNpsRows,
@@ -190,6 +190,18 @@ export default fp(async function npsRoutes(fastify) {
 
       const index = buildLoyolaIndex(records);
       const rows = crossNps(respondents, index);
+
+      // Status do brinde (marcado no evento) por respondente.
+      const brindeRows = await fastify.db
+        .select({ respondentKey: npsBrindeStatus.respondentKey, delivered: npsBrindeStatus.delivered })
+        .from(npsBrindeStatus)
+        .where(eq(npsBrindeStatus.datasetId, ds.id));
+      const brindeMap = new Map(brindeRows.map((b) => [b.respondentKey, b.delivered]));
+      for (const r of rows) r.brindeDelivered = r.key ? (brindeMap.get(r.key) ?? false) : false;
+
+      // Ordena: mais interessado primeiro (rank asc), depois maior nota.
+      rows.sort((a, b) => a.interestRank - b.interestRank || (b.score ?? -1) - (a.score ?? -1));
+
       return {
         label: ds.label,
         rows,
@@ -202,6 +214,41 @@ export default fp(async function npsRoutes(fastify) {
       return reply.code(502).send({ error: "Erro ao cruzar NPS", details: err instanceof Error ? err.message : String(err) });
     }
   });
+
+  // ---- PUT status do brinde de um respondente (marcado no evento) ----
+  fastify.put(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/nps/:datasetId/brinde",
+    async (request, reply) => {
+      // Guest membro PODE marcar — membership validada pelo guest-guard global
+      // (+ allowlist de writes). Sem bloqueio hard aqui.
+      const p = datasetParams.safeParse(request.params);
+      if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const body = z
+        .object({ respondentKey: z.string().min(1).max(255), delivered: z.boolean() })
+        .safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+      const [ds] = await fastify.db
+        .select({ id: funnelNpsDatasets.id, stageId: funnelNpsDatasets.stageId })
+        .from(funnelNpsDatasets)
+        .where(eq(funnelNpsDatasets.id, p.data.datasetId))
+        .limit(1);
+      if (!ds || ds.stageId !== p.data.stageId) return reply.code(404).send({ error: "Dataset não encontrado" });
+
+      await fastify.db
+        .insert(npsBrindeStatus)
+        .values({
+          datasetId: p.data.datasetId,
+          respondentKey: body.data.respondentKey,
+          delivered: body.data.delivered,
+        })
+        .onConflictDoUpdate({
+          target: [npsBrindeStatus.datasetId, npsBrindeStatus.respondentKey],
+          set: { delivered: body.data.delivered, updatedAt: new Date() },
+        });
+      return { ok: true, respondentKey: body.data.respondentKey, delivered: body.data.delivered };
+    },
+  );
 
   // ---- GET helper: lista sheets de uma spreadsheet (pro wizard) ----
   fastify.get("/api/projects/:projectId/nps/spreadsheets/:spreadsheetId/sheets", async (request, reply) => {

@@ -15,9 +15,11 @@ import {
   useDeleteNpsDataset,
   usePatchNpsMapping,
   useNpsCross,
+  useSetNpsBrinde,
   type NpsDataset,
   type NpsColumnMapping,
   type NpsCrossRow,
+  type NpsInterest,
 } from "@/lib/hooks/use-nps";
 
 // Epic 38 — Aba NPS da etapa. Sobe a lista de NPS (planilha + sheet), mapeia as
@@ -247,7 +249,13 @@ function DatasetView({ projectId, funnelId, stageId, dataset }: Props & { datase
           </Button>
         </div>
       ) : cross.data ? (
-        <CrossTable data={cross.data} />
+        <CrossTable
+          data={cross.data}
+          projectId={projectId}
+          funnelId={funnelId}
+          stageId={stageId}
+          datasetId={dataset.id}
+        />
       ) : null}
     </div>
   );
@@ -259,10 +267,30 @@ const sentimentBadge: Record<string, { label: string; cls: string }> = {
   detrator: { label: "Detrator", cls: "bg-red-500/15 text-red-500" },
 };
 
-function CrossTable({ data }: { data: NonNullable<ReturnType<typeof useNpsCross>["data"]> }) {
+const interestBadge: Record<NonNullable<NpsInterest>, { label: string; cls: string }> = {
+  quente: { label: "🔥 Quente", cls: "bg-emerald-500/25 text-emerald-400 font-semibold" },
+  interessado: { label: "Interessado", cls: "bg-emerald-500/15 text-emerald-500" },
+  duvida: { label: "Em dúvida", cls: "bg-amber-500/15 text-amber-500" },
+  sem: { label: "Sem interesse", cls: "bg-muted text-muted-foreground" },
+};
+
+function CrossTable({
+  data,
+  projectId,
+  funnelId,
+  stageId,
+  datasetId,
+}: {
+  data: NonNullable<ReturnType<typeof useNpsCross>["data"]>;
+  projectId: string;
+  funnelId: string;
+  stageId: string;
+  datasetId: string;
+}) {
   const [open, setOpen] = useState<Set<number>>(new Set());
   const rows = data.rows;
   const s = data.summary;
+  const setBrinde = useSetNpsBrinde(projectId, funnelId, stageId, datasetId);
 
   const toggle = (i: number) => setOpen((prev) => {
     const n = new Set(prev);
@@ -295,24 +323,34 @@ function CrossTable({ data }: { data: NonNullable<ReturnType<typeof useNpsCross>
         </p>
       )}
 
-      <div className="rounded-xl border border-border/40 overflow-hidden">
+      <div className="rounded-xl border border-border/40 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-[11px] uppercase text-muted-foreground">
             <tr>
+              <th className="w-14 text-center font-medium px-2 py-2">Brinde</th>
               <th className="w-6" />
               <th className="text-left font-medium px-2 py-2">Nome</th>
               <th className="text-left font-medium px-2 py-2">E-mail</th>
               <th className="text-center font-medium px-2 py-2">Nota</th>
               <th className="text-left font-medium px-2 py-2">Sentimento</th>
+              <th className="text-left font-medium px-2 py-2">Interesse</th>
               <th className="text-left font-medium px-2 py-2">No Loyola</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <RowItem key={i} row={r} i={i} open={open.has(i)} onToggle={() => toggle(i)} loyolaColumns={data.loyolaColumns} />
+              <RowItem
+                key={r.key || i}
+                row={r}
+                i={i}
+                open={open.has(i)}
+                onToggle={() => toggle(i)}
+                loyolaColumns={data.loyolaColumns}
+                onBrinde={(delivered) => r.key && setBrinde.mutate({ respondentKey: r.key, delivered })}
+              />
             ))}
             {rows.length === 0 && (
-              <tr><td colSpan={6} className="px-2 py-4 text-center text-xs text-muted-foreground">Sem respondentes na lista.</td></tr>
+              <tr><td colSpan={8} className="px-2 py-4 text-center text-xs text-muted-foreground">Sem respondentes na lista.</td></tr>
             )}
           </tbody>
         </table>
@@ -321,11 +359,37 @@ function CrossTable({ data }: { data: NonNullable<ReturnType<typeof useNpsCross>
   );
 }
 
-function RowItem({ row, i, open, onToggle, loyolaColumns }: { row: NpsCrossRow; i: number; open: boolean; onToggle: () => void; loyolaColumns: string[] }) {
+function RowItem({
+  row,
+  i,
+  open,
+  onToggle,
+  loyolaColumns,
+  onBrinde,
+}: {
+  row: NpsCrossRow;
+  i: number;
+  open: boolean;
+  onToggle: () => void;
+  loyolaColumns: string[];
+  onBrinde: (delivered: boolean) => void;
+}) {
   const sb = row.sentiment ? sentimentBadge[row.sentiment] : null;
+  const ib = row.interestStatus ? interestBadge[row.interestStatus] : null;
   return (
     <>
-      <tr className={`border-t border-border/30 ${i % 2 ? "bg-muted/10" : ""}`}>
+      <tr className={`border-t border-border/30 ${row.brindeDelivered ? "bg-emerald-500/[0.06]" : i % 2 ? "bg-muted/10" : ""}`}>
+        <td className="px-2 py-1.5 text-center">
+          <input
+            type="checkbox"
+            checked={row.brindeDelivered}
+            onChange={(e) => onBrinde(e.target.checked)}
+            disabled={!row.key}
+            className="h-4 w-4 accent-emerald-500 cursor-pointer disabled:cursor-not-allowed"
+            aria-label="Brinde entregue"
+            title={row.key ? "Marcar brinde como entregue" : "Sem identificador — não dá pra marcar"}
+          />
+        </td>
         <td className="px-1 text-center">
           {row.matched && (
             <button onClick={onToggle} className="text-muted-foreground hover:text-foreground">
@@ -340,6 +404,13 @@ function RowItem({ row, i, open, onToggle, loyolaColumns }: { row: NpsCrossRow; 
           {sb ? <span className={`text-[10px] px-1.5 py-0.5 rounded ${sb.cls}`}>{sb.label}</span> : <span className="text-[10px] text-muted-foreground">sem nota</span>}
         </td>
         <td className="px-2 py-1.5">
+          {ib ? (
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${ib.cls}`} title={row.interest ?? ""}>{ib.label}</span>
+          ) : (
+            <span className="text-[10px] text-muted-foreground">—</span>
+          )}
+        </td>
+        <td className="px-2 py-1.5">
           {row.matched
             ? <Badge variant="secondary" className="text-[10px]">sim ({row.matchedBy})</Badge>
             : <span className="text-[10px] text-muted-foreground">não encontrado</span>}
@@ -348,7 +419,8 @@ function RowItem({ row, i, open, onToggle, loyolaColumns }: { row: NpsCrossRow; 
       {open && row.loyola && (
         <tr className="bg-muted/20 border-t border-border/20">
           <td />
-          <td colSpan={5} className="px-3 py-2">
+          <td />
+          <td colSpan={6} className="px-3 py-2">
             <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
               {loyolaColumns.map((col) => {
                 const v = row.loyola?.[col];

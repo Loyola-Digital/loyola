@@ -25,6 +25,8 @@ export interface NpsDataset {
   createdAt: string;
 }
 
+export type NpsInterest = "quente" | "interessado" | "duvida" | "sem" | null;
+
 export interface NpsCrossRow {
   name: string | null;
   email: string | null;
@@ -35,6 +37,14 @@ export interface NpsCrossRow {
   matched: boolean;
   matchedBy: "email" | "nome" | null;
   loyola: Record<string, string> | null;
+  /** Chave estável do respondente (pra marcar o brinde). */
+  key: string;
+  /** Resposta crua da pergunta de interesse. */
+  interest: string | null;
+  interestStatus: NpsInterest;
+  interestRank: number;
+  /** Brinde já entregue. */
+  brindeDelivered: boolean;
 }
 
 export interface NpsCrossResponse {
@@ -97,6 +107,39 @@ export function usePatchNpsMapping(projectId: string, funnelId: string, stageId:
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["nps-datasets", projectId, funnelId, stageId] });
       qc.invalidateQueries({ queryKey: ["nps-cross", projectId, funnelId, stageId] });
+    },
+  });
+}
+
+/** Marca/desmarca o brinde de um respondente (otimista, sem refetch das planilhas). */
+export function useSetNpsBrinde(
+  projectId: string,
+  funnelId: string,
+  stageId: string,
+  datasetId: string,
+) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  const key = ["nps-cross", projectId, funnelId, stageId, datasetId] as const;
+  return useMutation({
+    mutationFn: (vars: { respondentKey: string; delivered: boolean }) =>
+      apiClient<{ ok: boolean }>(`${base(projectId, funnelId, stageId)}/${datasetId}/brinde`, {
+        method: "PUT",
+        body: JSON.stringify(vars),
+      }),
+    onMutate: async ({ respondentKey, delivered }) => {
+      await qc.cancelQueries({ queryKey: key });
+      const prev = qc.getQueryData<NpsCrossResponse>(key);
+      if (prev) {
+        qc.setQueryData<NpsCrossResponse>(key, {
+          ...prev,
+          rows: prev.rows.map((r) => (r.key === respondentKey ? { ...r, brindeDelivered: delivered } : r)),
+        });
+      }
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(key, ctx.prev);
     },
   });
 }
