@@ -109,6 +109,22 @@ function parseBrCurrency(input: string): number | null {
   return v;
 }
 
+/** Celebra a venda lançada com uma chuva de confetes. Nunca quebra o fluxo. */
+async function fireConfetti() {
+  try {
+    const confetti = (await import("canvas-confetti")).default;
+    const shoot = (ratio: number, opts: Record<string, unknown>) =>
+      confetti({ origin: { y: 0.7 }, particleCount: Math.floor(220 * ratio), ...opts });
+    shoot(0.25, { spread: 26, startVelocity: 55 });
+    shoot(0.2, { spread: 60 });
+    shoot(0.35, { spread: 100, decay: 0.91, scalar: 0.8 });
+    shoot(0.1, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2 });
+    shoot(0.1, { spread: 120, startVelocity: 45 });
+  } catch {
+    // confete é só um extra — não deve interromper a venda.
+  }
+}
+
 export function ManualSaleDialog({
   projectId,
   funnelId,
@@ -300,6 +316,7 @@ export function ManualSaleDialog({
       } else {
         await createMutation.mutateAsync(payload);
         toast.success("Venda lançada");
+        void fireConfetti();
       }
       resetForm();
       onOpenChange(false);
