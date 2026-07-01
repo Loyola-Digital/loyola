@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Trash2, Save, RefreshCw, ChevronDown, ChevronRight, Star } from "lucide-react";
+import { Loader2, Plus, Trash2, Save, RefreshCw, ChevronDown, ChevronRight, Star, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,13 @@ interface Props {
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/** Só dígitos + DDI 55 (se faltar) pro link wa.me. */
+function waDigits(phone: string): string {
+  let d = phone.replace(/\D/g, "");
+  if (d.length >= 10 && d.length <= 11 && !d.startsWith("55")) d = "55" + d;
+  return d;
 }
 
 const selectCls =
@@ -330,7 +337,8 @@ function CrossTable({
               <th className="w-14 text-center font-medium px-2 py-2">Brinde</th>
               <th className="w-6" />
               <th className="text-left font-medium px-2 py-2">Nome</th>
-              <th className="text-left font-medium px-2 py-2">E-mail</th>
+              <th className="text-left font-medium px-2 py-2">Telefone</th>
+              <th className="text-left font-medium px-2 py-2">Vendedor</th>
               <th className="text-center font-medium px-2 py-2">Nota</th>
               <th className="text-left font-medium px-2 py-2">Sentimento</th>
               <th className="text-left font-medium px-2 py-2">Interesse</th>
@@ -350,7 +358,7 @@ function CrossTable({
               />
             ))}
             {rows.length === 0 && (
-              <tr><td colSpan={8} className="px-2 py-4 text-center text-xs text-muted-foreground">Sem respondentes na lista.</td></tr>
+              <tr><td colSpan={9} className="px-2 py-4 text-center text-xs text-muted-foreground">Sem respondentes na lista.</td></tr>
             )}
           </tbody>
         </table>
@@ -398,7 +406,29 @@ function RowItem({
           )}
         </td>
         <td className="px-2 py-1.5 truncate max-w-[180px]">{row.name ?? "—"}</td>
-        <td className="px-2 py-1.5 truncate max-w-[200px] text-muted-foreground">{row.email ?? "—"}</td>
+        <td className="px-2 py-1.5 whitespace-nowrap">
+          {row.phone ? (
+            <a
+              href={`https://wa.me/${waDigits(row.phone)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-emerald-500 hover:underline"
+            >
+              <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+              {row.phone}
+            </a>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </td>
+        <td className="px-2 py-1.5 whitespace-nowrap">
+          {row.assignedSeller ? (
+            <span className="text-[11px]">{row.assignedSeller}</span>
+          ) : (
+            <span className="text-[10px] text-muted-foreground">—</span>
+          )}
+        </td>
         <td className="px-2 py-1.5 text-center font-medium">{row.score ?? "—"}</td>
         <td className="px-2 py-1.5">
           {sb ? <span className={`text-[10px] px-1.5 py-0.5 rounded ${sb.cls}`}>{sb.label}</span> : <span className="text-[10px] text-muted-foreground">sem nota</span>}
@@ -427,7 +457,7 @@ function RowItem({
         <tr className="bg-muted/20 border-t border-border/20">
           <td />
           <td />
-          <td colSpan={6} className="px-3 py-2">
+          <td colSpan={7} className="px-3 py-2">
             <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
               {loyolaColumns.map((col) => {
                 const v = row.loyola?.[col];
