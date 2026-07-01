@@ -14,6 +14,23 @@ function buildKey(projectId: string, funnelId: string, stageId: string, days: nu
   return ["manual-sales", projectId, funnelId, stageId, days] as const;
 }
 
+/**
+ * Invalida TODAS as queries que dependem de vendas manuais da etapa, pra a venda
+ * aparecer na hora (sem F5): a lista bruta (manual-sales), a lista unificada
+ * exibida na tela (all-sales) e o Mapa do Evento (event-map, status "comprou").
+ * Prefixo parcial → cobre qualquer subtype/days.
+ */
+function invalidateSalesQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+  projectId: string,
+  funnelId: string,
+  stageId: string,
+) {
+  for (const key of ["manual-sales", "all-sales", "event-map"]) {
+    queryClient.invalidateQueries({ queryKey: [key, projectId, funnelId, stageId] });
+  }
+}
+
 export interface EligibleSeller {
   userId: string;
   name: string;
@@ -68,9 +85,7 @@ export function useCreateManualSale(
         { method: "POST", body: JSON.stringify(input) },
       ),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["manual-sales", projectId, funnelId, stageId],
-      });
+      invalidateSalesQueries(queryClient, projectId, funnelId, stageId);
     },
   });
 }
@@ -89,9 +104,7 @@ export function useDeleteManualSale(
         { method: "DELETE" },
       ),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["manual-sales", projectId, funnelId, stageId],
-      });
+      invalidateSalesQueries(queryClient, projectId, funnelId, stageId);
     },
   });
 }
@@ -116,9 +129,7 @@ export function useUpdateManualSale(
         { method: "PATCH", body: JSON.stringify(input) },
       ),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["manual-sales", projectId, funnelId, stageId],
-      });
+      invalidateSalesQueries(queryClient, projectId, funnelId, stageId);
     },
   });
 }
