@@ -147,9 +147,11 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
 
   const summary = useMemo(() => {
     const totalRevenue = sales.reduce((acc, s) => acc + s.value, 0);
+    const totalColetado = sales.reduce((acc, s) => acc + (s.valorRecebido ?? 0), 0);
     return {
       totalSales: sales.length,
       totalRevenue,
+      totalColetado,
       ticket: sales.length > 0 ? totalRevenue / sales.length : 0,
     };
   }, [sales]);
@@ -269,14 +271,15 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
         {/* VENDAS */}
         <TabsContent value="vendas" className="mt-6 space-y-4">
           {isLoading || manualLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Skeleton className="h-20" /><Skeleton className="h-20" /><Skeleton className="h-20" />
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <Skeleton className="h-20" /><Skeleton className="h-20" /><Skeleton className="h-20" /><Skeleton className="h-20" />
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <StatCard label="Total de vendas" value={String(summary.totalSales)} />
-                <StatCard label="Faturamento total" value={formatCurrency(summary.totalRevenue)} highlight />
+                <StatCard label="Valor faturado" value={formatCurrency(summary.totalRevenue)} highlight />
+                <StatCard label="Valor coletado" value={formatCurrency(summary.totalColetado)} highlight />
                 <StatCard label="Ticket médio" value={formatCurrency(summary.ticket)} />
               </div>
 
@@ -414,8 +417,8 @@ function SalesTable({ sales, manualMap, days, onEdit, onDelete, onEnroll, enroll
             <th className="text-left px-3 py-2 font-medium">Produto</th>
             <th className="text-left px-3 py-2 font-medium">Closer</th>
             <th className="text-left px-3 py-2 font-medium">MemberKit</th>
-            <th className="text-right px-3 py-2 font-medium">Valor</th>
-            <th className="text-right px-3 py-2 font-medium">Caixa</th>
+            <th className="text-right px-3 py-2 font-medium">Faturado</th>
+            <th className="text-right px-3 py-2 font-medium">Coletado</th>
             <th className="px-3 py-2 w-20" />
           </tr>
         </thead>

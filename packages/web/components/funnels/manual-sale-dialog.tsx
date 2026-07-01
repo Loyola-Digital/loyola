@@ -599,7 +599,7 @@ export function ManualSaleDialog({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="valor-recebido">Caixa (valor recebido)</Label>
+                    <Label htmlFor="valor-recebido">Valor Coletado</Label>
                     <Input
                       id="valor-recebido"
                       inputMode="decimal"
