@@ -597,10 +597,8 @@ export default fp(async function manualSalesRoutes(fastify) {
   fastify.patch(
     "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/manual-sales/:saleId",
     async (request, reply) => {
-      if (request.userRole === "guest") {
-        return reply.code(403).send({ error: "Acesso negado" });
-      }
-
+      // Guest membro pode operar vendas no evento presencial — membership é
+      // validada por getStageContext abaixo (retorna null se não for membro).
       const params = saleParamsSchema.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
 
@@ -1024,10 +1022,8 @@ export default fp(async function manualSalesRoutes(fastify) {
   fastify.delete(
     "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/manual-sales/:saleId",
     async (request, reply) => {
-      if (request.userRole === "guest") {
-        return reply.code(403).send({ error: "Acesso negado" });
-      }
-
+      // Guest membro pode operar vendas no evento presencial — membership é
+      // validada por getStageContext abaixo (retorna null se não for membro).
       const params = saleParamsSchema.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
 
@@ -1059,10 +1055,8 @@ export default fp(async function manualSalesRoutes(fastify) {
   fastify.post(
     "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/manual-sales/:saleId/memberkit-enroll",
     async (request, reply) => {
-      if (request.userRole === "guest") {
-        return reply.code(403).send({ error: "Acesso negado" });
-      }
-
+      // Guest membro pode operar vendas no evento presencial — membership é
+      // validada por getStageContext abaixo (retorna null se não for membro).
       const params = saleParamsSchema.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
 
