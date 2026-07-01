@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { funnelNpsDatasets, funnelSurveys, funnels, stageSalesPlanSources, npsBrindeStatus } from "../db/schema.js";
+import { funnelNpsDatasets, funnelSurveys, funnels, stageSalesPlanSources, npsBrindeStatus, stageEventLeadStatus } from "../db/schema.js";
 import { readSheetData, getSpreadsheetSheets } from "../services/google-sheets.js";
 import {
   mapNpsRows,
@@ -188,8 +188,16 @@ export default fp(async function npsRoutes(fastify) {
         }
       }
 
+      // Vendedor atribuído no Mapa do Evento (por email do lead) — pra mostrar no NPS.
+      const sellerRows = await fastify.db
+        .select({ leadEmail: stageEventLeadStatus.leadEmail, assignedSeller: stageEventLeadStatus.assignedSeller })
+        .from(stageEventLeadStatus)
+        .where(eq(stageEventLeadStatus.stageId, p.data.stageId));
+      const sellerByEmail = new Map<string, string>();
+      for (const sr of sellerRows) if (sr.assignedSeller) sellerByEmail.set(sr.leadEmail.toLowerCase(), sr.assignedSeller);
+
       const index = buildLoyolaIndex(records);
-      const rows = crossNps(respondents, index);
+      const rows = crossNps(respondents, index, sellerByEmail);
 
       // Status do brinde (marcado no evento) por respondente.
       const brindeRows = await fastify.db

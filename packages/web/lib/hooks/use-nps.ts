@@ -45,6 +45,10 @@ export interface NpsCrossRow {
   interestRank: number;
   /** Brinde já entregue. */
   brindeDelivered: boolean;
+  /** Telefone da pessoa (do registro casado); null se não houver. Pro link wa.me. */
+  phone: string | null;
+  /** Vendedor/closer atribuído no Mapa do Evento; null se não houver. */
+  assignedSeller: string | null;
 }
 
 export interface NpsCrossResponse {

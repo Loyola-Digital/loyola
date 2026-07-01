@@ -40,6 +40,8 @@ export interface NpsRespondent {
 export interface LoyolaRecord {
   email: string | null;
   name: string | null;
+  /** telefone/WhatsApp da pessoa (se a planilha tiver a coluna). */
+  phone: string | null;
   /** todas as colunas da resposta do Loyola (header -> valor). */
   fields: Record<string, string>;
 }
@@ -53,6 +55,10 @@ export interface NpsCrossRow extends NpsRespondent {
   loyola: Record<string, string> | null;
   /** brinde já entregue (marcado no evento). */
   brindeDelivered: boolean;
+  /** telefone da pessoa (do registro casado); null se não houver. Pro link wa.me. */
+  phone: string | null;
+  /** vendedor/closer atribuído no Mapa do Evento (por email); null se não houver. */
+  assignedSeller: string | null;
 }
 
 /** Classifica a resposta de interesse em status + rank de ordenação. */
@@ -226,12 +232,18 @@ export function sheetToLoyolaRecords(
 ): LoyolaRecord[] {
   const iEmail = findCol(headers, emailHeader);
   const iName = findCol(headers, nameHeader);
+  // Telefone/WhatsApp — detectado por header (pro link wa.me no NPS).
+  const iPhone = headers.findIndex((h) => {
+    const n = normKey(h);
+    return n.includes("telefone") || n.includes("whatsapp") || n.includes("celular") || n.includes("fone") || n === "phone";
+  });
   return rows.map((row) => {
     const fields: Record<string, string> = {};
     headers.forEach((h, i) => { fields[h] = (row[i] ?? "").trim(); });
     return {
       email: iEmail >= 0 ? (row[iEmail] ?? "").trim() || null : null,
       name: iName >= 0 ? (row[iName] ?? "").trim() || null : null,
+      phone: iPhone >= 0 ? (row[iPhone] ?? "").trim() || null : null,
       fields,
     };
   });
@@ -289,8 +301,16 @@ export function resolveByName(name: string | null | undefined, idx: LoyolaIndex)
   return null;
 }
 
-/** Cruza respondentes do NPS com o índice do Loyola (e-mail > nome, com fuzzy). */
-export function crossNps(respondents: NpsRespondent[], idx: LoyolaIndex): NpsCrossRow[] {
+/**
+ * Cruza respondentes do NPS com o índice do Loyola (e-mail > nome, com fuzzy).
+ * sellerByEmail (email normalizado → vendedor) vem do Mapa do Evento pra anexar
+ * o vendedor atribuído.
+ */
+export function crossNps(
+  respondents: NpsRespondent[],
+  idx: LoyolaIndex,
+  sellerByEmail?: Map<string, string>,
+): NpsCrossRow[] {
   return respondents.map((r) => {
     let match: LoyolaRecord | null | undefined;
     let matchedBy: "email" | "nome" | null = null;
@@ -302,12 +322,19 @@ export function crossNps(respondents: NpsRespondent[], idx: LoyolaIndex): NpsCro
       match = resolveByName(r.name, idx);
       if (match) matchedBy = "nome";
     }
+    // Telefone e email de contato vêm do registro casado (o NPS não costuma ter).
+    const phone = match?.phone ?? null;
+    const contactEmail = match?.email ?? r.email ?? null;
+    const assignedSeller =
+      contactEmail && sellerByEmail ? sellerByEmail.get(normEmail(contactEmail)) ?? null : null;
     return {
       ...r,
       matched: Boolean(match),
       matchedBy,
       loyola: match ? match.fields : null,
       brindeDelivered: false, // preenchido na rota a partir do banco
+      phone,
+      assignedSeller,
     };
   });
 }
