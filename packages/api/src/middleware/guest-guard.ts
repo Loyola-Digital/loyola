@@ -34,6 +34,8 @@ const GUEST_WRITABLE_PROJECT_PATHS: RegExp[] = [
   /\/manual-sales$/,
   /\/manual-sales\/[^/]+$/,
   /\/manual-sales\/[^/]+\/memberkit-enroll$/,
+  // NPS: marcar brinde entregue (operação de evento).
+  /\/nps\/[^/]+\/brinde$/,
 ];
 
 /**
