@@ -281,6 +281,29 @@ const interestBadge: Record<NonNullable<NpsInterest>, { label: string; cls: stri
   sem: { label: "Sem interesse", cls: "bg-muted text-muted-foreground" },
 };
 
+/** Badge do tipo da pessoa (comprador / 2 cadeira / iFood / fornecedor). */
+function NpsTipoBadge({ tipo }: { tipo: string | null }) {
+  if (!tipo) return null;
+  const t = tipo.toLowerCase();
+  const cls = t.includes("comprador")
+    ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30"
+    : t.includes("cadeira")
+      ? "bg-sky-500/15 text-sky-400 border-sky-500/30"
+      : t.includes("ifood") || t.includes("i food")
+        ? "bg-red-500/15 text-red-400 border-red-500/30"
+        : t.includes("fornecedor")
+          ? "bg-zinc-500/15 text-zinc-400 border-zinc-500/30"
+          : "bg-amber-500/15 text-amber-500 border-amber-500/30";
+  return (
+    <span
+      className={`shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold border ${cls}`}
+      title={tipo}
+    >
+      {tipo}
+    </span>
+  );
+}
+
 function CrossTable({
   data,
   projectId,
@@ -405,7 +428,12 @@ function RowItem({
             </button>
           )}
         </td>
-        <td className="px-2 py-1.5 truncate max-w-[180px]">{row.name ?? "—"}</td>
+        <td className="px-2 py-1.5 max-w-[200px]">
+          <span className="inline-flex items-center gap-1.5">
+            <NpsTipoBadge tipo={row.tipo} />
+            <span className="truncate">{row.name ?? "—"}</span>
+          </span>
+        </td>
         <td className="px-2 py-1.5 whitespace-nowrap">
           {row.phone ? (
             <a

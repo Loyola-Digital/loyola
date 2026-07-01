@@ -59,6 +59,17 @@ export interface NpsCrossRow extends NpsRespondent {
   phone: string | null;
   /** vendedor/closer atribuído no Mapa do Evento (por email); null se não houver. */
   assignedSeller: string | null;
+  /** tipo da pessoa (coluna "Tipo" do registro casado): comprador/2 cadeira/iFood/… */
+  tipo: string | null;
+}
+
+/** Pega a coluna "Tipo" dos fields do registro casado (null se não houver). */
+function extractTipo(fields: Record<string, string> | null): string | null {
+  if (!fields) return null;
+  for (const [k, v] of Object.entries(fields)) {
+    if (normKey(k) === "tipo" && v.trim()) return v.trim();
+  }
+  return null;
 }
 
 /** Classifica a resposta de interesse em status + rank de ordenação. */
@@ -335,6 +346,7 @@ export function crossNps(
       brindeDelivered: false, // preenchido na rota a partir do banco
       phone,
       assignedSeller,
+      tipo: match ? extractTipo(match.fields) : null,
     };
   });
 }
