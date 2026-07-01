@@ -215,6 +215,7 @@ export default fp(async function npsRoutes(fastify) {
         rows,
         summary: summarizeNps(rows),
         loyolaColumns: Array.from(loyolaColumns),
+        npsColumns: npsSheet.headers,
         surveysFound: surveys.length + planSources.length,
       };
     } catch (err) {

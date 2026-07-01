@@ -55,6 +55,8 @@ export interface NpsCrossRow {
   inviterName: string | null;
   /** Telefone de quem convidou (resolvido); null se não achado. Pro link wa.me. */
   inviterPhone: string | null;
+  /** TODAS as colunas da linha do NPS (respostas da pessoa). */
+  fields: Record<string, string>;
 }
 
 export interface NpsCrossResponse {
@@ -70,6 +72,7 @@ export interface NpsCrossResponse {
     npsScore: number;
   };
   loyolaColumns: string[];
+  npsColumns: string[];
   surveysFound: number;
 }
 
