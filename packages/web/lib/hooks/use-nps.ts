@@ -49,6 +49,8 @@ export interface NpsCrossRow {
   phone: string | null;
   /** Vendedor/closer atribuído no Mapa do Evento; null se não houver. */
   assignedSeller: string | null;
+  /** Tipo da pessoa (comprador / 2 cadeira / iFood / fornecedor); null se não houver. */
+  tipo: string | null;
 }
 
 export interface NpsCrossResponse {
