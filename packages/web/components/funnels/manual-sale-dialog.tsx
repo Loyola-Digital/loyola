@@ -51,6 +51,30 @@ function isValidCpf(value: string): boolean {
   return d1 === Number(cpf[9]) && d2 === Number(cpf[10]);
 }
 
+/** Story 19.15 — valida CNPJ (14 dígitos) via dígitos verificadores. */
+function isValidCnpj(value: string): boolean {
+  const cnpj = value.replace(/\D/g, "");
+  if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false;
+  const digit = (base: string, weights: number[]): number => {
+    let sum = 0;
+    for (let i = 0; i < weights.length; i++) sum += Number(base[i]) * weights[i];
+    const rest = sum % 11;
+    return rest < 2 ? 0 : 11 - rest;
+  };
+  const w1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const w2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const d1 = digit(cnpj.slice(0, 12), w1);
+  const d2 = digit(cnpj.slice(0, 13), w2);
+  return d1 === Number(cnpj[12]) && d2 === Number(cnpj[13]);
+}
+
+/** Aceita CPF (11 dígitos) ou CNPJ (14 dígitos) — venda pode ser p/ PF ou PJ. */
+function isValidCpfOrCnpj(value: string): boolean {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 14) return isValidCnpj(digits);
+  return isValidCpf(digits);
+}
+
 /** Título de seção do formulário (modo Evento, p/ organizar o form longo). */
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -272,8 +296,8 @@ export function ManualSaleDialog({
     // Story 19.15 — dados fiscais obrigatórios no evento (emissão de nota).
     let valorNota: number | null = null;
     if (isEvent) {
-      if (!isValidCpf(customerCpf)) {
-        toast.error("CPF inválido");
+      if (!isValidCpfOrCnpj(customerCpf)) {
+        toast.error("CPF/CNPJ inválido");
         return;
       }
       if (customerAddress.trim().length < 3) {
@@ -412,13 +436,13 @@ export function ManualSaleDialog({
               {isEvent && (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label htmlFor="customer-cpf">CPF *</Label>
+                    <Label htmlFor="customer-cpf">CPF / CNPJ *</Label>
                     <Input
                       id="customer-cpf"
                       inputMode="numeric"
                       value={customerCpf}
                       onChange={(e) => setCustomerCpf(e.target.value)}
-                      placeholder="000.000.000-00"
+                      placeholder="CPF ou CNPJ"
                     />
                   </div>
                   <div className="space-y-1.5">
