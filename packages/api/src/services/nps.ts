@@ -35,6 +35,8 @@ export interface NpsRespondent {
   interestStatus: NpsInterest;
   /** Rank de ordenação: menor = mais interessado (0 quente … 5 sem resposta). */
   interestRank: number;
+  /** TODAS as colunas da linha do NPS (header -> valor) — pra ver as respostas. */
+  fields: Record<string, string>;
 }
 
 export interface LoyolaRecord {
@@ -184,6 +186,9 @@ export function mapNpsRows(
     const { status, rank } = classifyInterest(interest);
     // Chave: Respondent ID > email > nome normalizado.
     const key = (iKey >= 0 ? cell(iKey) : "") || email || normKey(name) || "";
+    // Todas as colunas da linha (pra exibir as respostas na expansão).
+    const fields: Record<string, string> = {};
+    headers.forEach((h, i) => { if (h) fields[h] = (row[i] ?? "").trim(); });
     out.push({
       name,
       email,
@@ -195,6 +200,7 @@ export function mapNpsRows(
       interest,
       interestStatus: status,
       interestRank: rank,
+      fields,
     });
   }
   return out;

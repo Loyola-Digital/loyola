@@ -377,6 +377,7 @@ function CrossTable({
                 open={open.has(i)}
                 onToggle={() => toggle(i)}
                 loyolaColumns={data.loyolaColumns}
+                npsColumns={data.npsColumns}
                 onBrinde={(delivered) => r.key && setBrinde.mutate({ respondentKey: r.key, delivered })}
               />
             ))}
@@ -396,6 +397,7 @@ function RowItem({
   open,
   onToggle,
   loyolaColumns,
+  npsColumns,
   onBrinde,
 }: {
   row: NpsCrossRow;
@@ -403,6 +405,7 @@ function RowItem({
   open: boolean;
   onToggle: () => void;
   loyolaColumns: string[];
+  npsColumns: string[];
   onBrinde: (delivered: boolean) => void;
 }) {
   const sb = row.sentiment ? sentimentBadge[row.sentiment] : null;
@@ -422,11 +425,9 @@ function RowItem({
           />
         </td>
         <td className="px-1 text-center">
-          {row.matched && (
-            <button onClick={onToggle} className="text-muted-foreground hover:text-foreground">
-              {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            </button>
-          )}
+          <button onClick={onToggle} className="text-muted-foreground hover:text-foreground" aria-label="Ver respostas">
+            {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
         </td>
         <td className="px-2 py-1.5 max-w-[200px]">
           <span className="inline-flex items-center gap-1.5">
@@ -481,13 +482,13 @@ function RowItem({
             : <span className="text-[10px] text-muted-foreground">não encontrado</span>}
         </td>
       </tr>
-      {open && row.loyola && (
+      {open && (
         <tr className="bg-muted/20 border-t border-border/20">
           <td />
           <td />
-          <td colSpan={7} className="px-3 py-2">
+          <td colSpan={7} className="px-3 py-3 space-y-3">
             {(row.inviterName || row.inviterPhone) && (
-              <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
                 <span className="text-muted-foreground">👤 Convidado por:</span>
                 <span className="font-medium">{row.inviterName ?? "—"}</span>
                 {row.inviterPhone && (
@@ -502,18 +503,48 @@ function RowItem({
                 )}
               </div>
             )}
-            <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
-              {loyolaColumns.map((col) => {
-                const v = row.loyola?.[col];
-                if (!v) return null;
-                return (
-                  <div key={col} className="text-[11px]">
-                    <span className="text-muted-foreground">{col}: </span>
-                    <span>{v}</span>
-                  </div>
-                );
-              })}
+
+            {/* Respostas do próprio NPS (todas as colunas da linha). */}
+            <div>
+              <p className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground mb-1">
+                Respostas do NPS
+              </p>
+              <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                {npsColumns.map((col) => {
+                  const v = row.fields?.[col];
+                  if (!v) return null;
+                  const n = col.trim().toLowerCase();
+                  if (n === "submission id" || n === "respondent id") return null; // ruído do Tally
+                  return (
+                    <div key={col} className="text-[11px]">
+                      <span className="text-muted-foreground">{col}: </span>
+                      <span className="break-words whitespace-pre-wrap">{v}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
+
+            {/* Infos casadas no Loyola (pesquisa da etapa). */}
+            {row.loyola && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground mb-1">
+                  No Loyola (pesquisa da etapa)
+                </p>
+                <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                  {loyolaColumns.map((col) => {
+                    const v = row.loyola?.[col];
+                    if (!v) return null;
+                    return (
+                      <div key={col} className="text-[11px]">
+                        <span className="text-muted-foreground">{col}: </span>
+                        <span className="break-words whitespace-pre-wrap">{v}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </td>
         </tr>
       )}
