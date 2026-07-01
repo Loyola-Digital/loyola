@@ -486,6 +486,22 @@ function RowItem({
           <td />
           <td />
           <td colSpan={7} className="px-3 py-2">
+            {(row.inviterName || row.inviterPhone) && (
+              <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                <span className="text-muted-foreground">👤 Convidado por:</span>
+                <span className="font-medium">{row.inviterName ?? "—"}</span>
+                {row.inviterPhone && (
+                  <a
+                    href={`https://wa.me/${waDigits(row.inviterPhone)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-emerald-500 hover:underline"
+                  >
+                    <MessageCircle className="h-3.5 w-3.5 shrink-0" /> {row.inviterPhone}
+                  </a>
+                )}
+              </div>
+            )}
             <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
               {loyolaColumns.map((col) => {
                 const v = row.loyola?.[col];

@@ -51,6 +51,10 @@ export interface NpsCrossRow {
   assignedSeller: string | null;
   /** Tipo da pessoa (comprador / 2 cadeira / iFood / fornecedor); null se não houver. */
   tipo: string | null;
+  /** Nome de quem convidou (2ª cadeira); null se não houver. */
+  inviterName: string | null;
+  /** Telefone de quem convidou (resolvido); null se não achado. Pro link wa.me. */
+  inviterPhone: string | null;
 }
 
 export interface NpsCrossResponse {
