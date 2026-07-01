@@ -139,45 +139,127 @@ export function mapNpsRows(
   return out;
 }
 
-/** Indexa respostas do Loyola por e-mail e por nome. emailHeader/nameHeader = nomes das colunas. */
+/** Tokens de um nome (>= 2 chars, sem acento/caixa). */
+function nameTokens(s: string | null | undefined): string[] {
+  return normKey(s).split(" ").filter((t) => t.length >= 2);
+}
+/** "primeiro último" — ignora nomes do meio. "" se < 2 tokens. */
+function firstLast(s: string | null | undefined): string {
+  const t = nameTokens(s);
+  return t.length < 2 ? "" : `${t[0]} ${t[t.length - 1]}`;
+}
+
+/**
+ * Detecta a coluna de NOME da pessoa por heurística: header contém "nome"/"name"
+ * e não se refere a restaurante/empresa/negócio. Mais robusto que a lista fixa —
+ * pega "Seu nome completo", "Qual é o seu nome", etc.
+ */
+export function findNameHeader(headers: string[]): string | undefined {
+  const i = headers.findIndex((h) => {
+    const n = normKey(h);
+    return (
+      (n.includes("nome") || n.includes("name")) &&
+      !n.includes("restaurante") &&
+      !n.includes("empresa") &&
+      !n.includes("negocio") &&
+      !n.includes("fantasia")
+    );
+  });
+  return i >= 0 ? headers[i] : undefined;
+}
+
+export interface LoyolaIndex {
+  byEmail: Map<string, LoyolaRecord>;
+  byName: Map<string, LoyolaRecord>;
+  /** null = firstLast ambíguo (2+ pessoas distintas). */
+  byFirstLast: Map<string, LoyolaRecord | null>;
+  /** match por subconjunto de tokens (deduplicado por nome exato). */
+  fuzzy: { tokens: Set<string>; rec: LoyolaRecord }[];
+}
+
+/** Extrai os registros (email/nome/fields) de uma planilha do Loyola. */
+export function sheetToLoyolaRecords(
+  headers: string[],
+  rows: string[][],
+  emailHeader: string | undefined,
+  nameHeader: string | undefined,
+): LoyolaRecord[] {
+  const iEmail = findCol(headers, emailHeader);
+  const iName = findCol(headers, nameHeader);
+  return rows.map((row) => {
+    const fields: Record<string, string> = {};
+    headers.forEach((h, i) => { fields[h] = (row[i] ?? "").trim(); });
+    return {
+      email: iEmail >= 0 ? (row[iEmail] ?? "").trim() || null : null,
+      name: iName >= 0 ? (row[iName] ?? "").trim() || null : null,
+      fields,
+    };
+  });
+}
+
+/** Constrói o índice do Loyola (email + nome exato + primeiro/último + fuzzy). */
+export function buildLoyolaIndex(records: LoyolaRecord[]): LoyolaIndex {
+  const byEmail = new Map<string, LoyolaRecord>();
+  const byName = new Map<string, LoyolaRecord>();
+  for (const rec of records) {
+    // Primeira ocorrência vence (não sobrescreve duplicatas).
+    if (rec.email) { const k = normEmail(rec.email); if (k && !byEmail.has(k)) byEmail.set(k, rec); }
+    if (rec.name) { const k = normKey(rec.name); if (k && !byName.has(k)) byName.set(k, rec); }
+  }
+  // firstLast/fuzzy a partir dos nomes ÚNICOS — evita falsa ambiguidade quando a
+  // mesma pessoa aparece em várias planilhas (participantes + respostas).
+  const byFirstLast = new Map<string, LoyolaRecord | null>();
+  const fuzzy: { tokens: Set<string>; rec: LoyolaRecord }[] = [];
+  for (const rec of byName.values()) {
+    const fl = firstLast(rec.name);
+    if (fl) byFirstLast.set(fl, byFirstLast.has(fl) ? null : rec);
+    fuzzy.push({ tokens: new Set(nameTokens(rec.name)), rec });
+  }
+  return { byEmail, byName, byFirstLast, fuzzy };
+}
+
+/** Indexa uma única planilha do Loyola (compat/testes). */
 export function indexLoyola(
   headers: string[],
   rows: string[][],
   emailHeader: string | undefined,
   nameHeader: string | undefined,
-): { byEmail: Map<string, LoyolaRecord>; byName: Map<string, LoyolaRecord> } {
-  const iEmail = findCol(headers, emailHeader);
-  const iName = findCol(headers, nameHeader);
-  const byEmail = new Map<string, LoyolaRecord>();
-  const byName = new Map<string, LoyolaRecord>();
-
-  for (const row of rows) {
-    const fields: Record<string, string> = {};
-    headers.forEach((h, i) => { fields[h] = (row[i] ?? "").trim(); });
-    const email = iEmail >= 0 ? (row[iEmail] ?? "").trim() || null : null;
-    const name = iName >= 0 ? (row[iName] ?? "").trim() || null : null;
-    const rec: LoyolaRecord = { email, name, fields };
-    // Primeira ocorrência vence (não sobrescreve duplicatas).
-    if (email) { const k = normEmail(email); if (!byEmail.has(k)) byEmail.set(k, rec); }
-    if (name) { const k = normKey(name); if (k && !byName.has(k)) byName.set(k, rec); }
-  }
-  return { byEmail, byName };
+): LoyolaIndex {
+  return buildLoyolaIndex(sheetToLoyolaRecords(headers, rows, emailHeader, nameHeader));
 }
 
-/** Cruza respondentes do NPS com o índice do Loyola (e-mail > nome). */
-export function crossNps(
-  respondents: NpsRespondent[],
-  index: { byEmail: Map<string, LoyolaRecord>; byName: Map<string, LoyolaRecord> },
-): NpsCrossRow[] {
+/**
+ * Resolve um nome contra o índice: exato → primeiro/último (se único) →
+ * subconjunto de tokens (se único). Cobre nome curto vs nome completo.
+ */
+export function resolveByName(name: string | null | undefined, idx: LoyolaIndex): LoyolaRecord | null {
+  if (!name) return null;
+  const exact = idx.byName.get(normKey(name));
+  if (exact) return exact;
+  const fl = firstLast(name);
+  if (fl) {
+    const r = idx.byFirstLast.get(fl);
+    if (r) return r; // r === null → ambíguo, não chuta
+  }
+  const t = nameTokens(name);
+  if (t.length >= 2) {
+    const cand = idx.fuzzy.filter((x) => t.every((tk) => x.tokens.has(tk)));
+    if (cand.length === 1) return cand[0].rec;
+  }
+  return null;
+}
+
+/** Cruza respondentes do NPS com o índice do Loyola (e-mail > nome, com fuzzy). */
+export function crossNps(respondents: NpsRespondent[], idx: LoyolaIndex): NpsCrossRow[] {
   return respondents.map((r) => {
-    let match: LoyolaRecord | undefined;
+    let match: LoyolaRecord | null | undefined;
     let matchedBy: "email" | "nome" | null = null;
     if (r.email) {
-      match = index.byEmail.get(normEmail(r.email));
+      match = idx.byEmail.get(normEmail(r.email));
       if (match) matchedBy = "email";
     }
     if (!match && r.name) {
-      match = index.byName.get(normKey(r.name));
+      match = resolveByName(r.name, idx);
       if (match) matchedBy = "nome";
     }
     return {

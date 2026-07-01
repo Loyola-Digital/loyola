@@ -1,15 +1,15 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { funnelNpsDatasets, funnelSurveys, funnels } from "../db/schema.js";
+import { funnelNpsDatasets, funnelSurveys, funnels, stageSalesPlanSources } from "../db/schema.js";
 import { readSheetData, getSpreadsheetSheets } from "../services/google-sheets.js";
 import {
   mapNpsRows,
-  indexLoyola,
+  buildLoyolaIndex,
+  sheetToLoyolaRecords,
   crossNps,
   summarizeNps,
-  pickHeader,
-  NAME_HEADER_CANDIDATES,
+  findNameHeader,
   type LoyolaRecord,
   type NpsColumnMapping,
 } from "../services/nps.js";
@@ -146,37 +146,56 @@ export default fp(async function npsRoutes(fastify) {
       const npsSheet = await readSheetData(ds.spreadsheetId, ds.sheetName);
       const respondents = mapNpsRows(npsSheet.headers, npsSheet.rows, ds.columnMapping as NpsColumnMapping);
 
-      // 2) Índice das respostas do Loyola (todas as pesquisas da etapa). e-mail
-      //    da columnMapping.email da survey; nome auto-detectado nos headers.
+      // 2) Respostas do Loyola pra cruzar: pesquisas do funil (funnel_surveys) E
+      //    fontes da etapa de EVENTO (stage_sales_plan_sources: participantes +
+      //    respostas). e-mail vem do mapping; nome do mapping.name ou detectado.
+      const records: LoyolaRecord[] = [];
+      const loyolaColumns = new Set<string>();
+      const addSheet = async (
+        spreadsheetId: string,
+        sheetName: string,
+        emailHeader: string | undefined,
+        mappedName: string | undefined,
+      ) => {
+        const sheet = await readSheetData(spreadsheetId, sheetName);
+        sheet.headers.forEach((h) => loyolaColumns.add(h));
+        const nameHeader = mappedName ?? findNameHeader(sheet.headers);
+        records.push(...sheetToLoyolaRecords(sheet.headers, sheet.rows, emailHeader, nameHeader));
+      };
+
       const surveys = await fastify.db
         .select()
         .from(funnelSurveys)
         .where(eq(funnelSurveys.stageId, p.data.stageId));
-
-      const byEmail = new Map<string, LoyolaRecord>();
-      const byName = new Map<string, LoyolaRecord>();
-      const loyolaColumns = new Set<string>();
       for (const s of surveys) {
         try {
-          const sheet = await readSheetData(s.spreadsheetId, s.sheetName);
-          sheet.headers.forEach((h) => loyolaColumns.add(h));
-          const emailHeader = s.columnMapping?.email;
-          const nameHeader = pickHeader(sheet.headers, NAME_HEADER_CANDIDATES);
-          const idx = indexLoyola(sheet.headers, sheet.rows, emailHeader, nameHeader);
-          for (const [k, v] of idx.byEmail) if (!byEmail.has(k)) byEmail.set(k, v);
-          for (const [k, v] of idx.byName) if (!byName.has(k)) byName.set(k, v);
+          await addSheet(s.spreadsheetId, s.sheetName, s.columnMapping?.email, undefined);
         } catch (err) {
-          request.log.warn({ err, surveyId: s.id }, "NPS: falha ao ler planilha de pesquisa");
+          request.log.warn({ err, surveyId: s.id }, "NPS: falha ao ler pesquisa do funil");
         }
       }
 
-      const rows = crossNps(respondents, { byEmail, byName });
+      const planSources = await fastify.db
+        .select()
+        .from(stageSalesPlanSources)
+        .where(eq(stageSalesPlanSources.stageId, p.data.stageId));
+      for (const s of planSources) {
+        try {
+          const m = (s.mapping ?? {}) as { email?: string; name?: string };
+          await addSheet(s.spreadsheetId, s.sheetName, m.email, m.name);
+        } catch (err) {
+          request.log.warn({ err, sourceId: s.id }, "NPS: falha ao ler fonte da etapa");
+        }
+      }
+
+      const index = buildLoyolaIndex(records);
+      const rows = crossNps(respondents, index);
       return {
         label: ds.label,
         rows,
         summary: summarizeNps(rows),
         loyolaColumns: Array.from(loyolaColumns),
-        surveysFound: surveys.length,
+        surveysFound: surveys.length + planSources.length,
       };
     } catch (err) {
       request.log.error({ err }, "Erro no cruzamento NPS");

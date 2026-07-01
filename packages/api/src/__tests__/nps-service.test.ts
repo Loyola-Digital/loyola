@@ -7,6 +7,7 @@ import {
   crossNps,
   summarizeNps,
   findCol,
+  findNameHeader,
 } from "../services/nps";
 
 describe("parseScore", () => {
@@ -101,5 +102,34 @@ describe("crossNps + summarize", () => {
     expect(s.matched).toBe(1);
     // %prom 33.3 - %detr 33.3 = 0
     expect(s.npsScore).toBe(0);
+  });
+});
+
+describe("findNameHeader + match por nome fuzzy", () => {
+  const headers = ["Seu nome completo", "Qual sua dor?"];
+  const rows = [
+    ["Daniele Aparecida de Godoy", "A"],
+    ["Bruno Alexandre Neris da Silva", "B"],
+    ["Marco Túlio Ferreira Naves", "C"],
+  ];
+  const idx = indexLoyola(headers, rows, undefined, findNameHeader(headers));
+  const cross = (name: string) =>
+    crossNps(mapNpsRows(["Nome", "Nota"], [[name, "9"]], { name: "Nome", score: "Nota" }), idx)[0];
+
+  it("detecta a coluna de nome por heurística (não só lista fixa)", () => {
+    expect(findNameHeader(headers)).toBe("Seu nome completo");
+    expect(findNameHeader(["Qual é o seu nome", "x"])).toBe("Qual é o seu nome");
+    expect(findNameHeader(["Nome do restaurante", "x"])).toBeUndefined();
+  });
+
+  it("casa nome curto vs completo (primeiro+último e subconjunto de tokens)", () => {
+    expect(cross("Daniele Godoy").matched).toBe(true);
+    expect(cross("Bruno Neris").matched).toBe(true);
+    expect(cross("Marco Túlio Ferreira").matched).toBe(true);
+    expect(cross("Daniele Godoy").loyola?.["Qual sua dor?"]).toBe("A");
+  });
+
+  it("não casa nome ausente", () => {
+    expect(cross("Fulano Inexistente").matched).toBe(false);
   });
 });
