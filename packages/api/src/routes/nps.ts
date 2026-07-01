@@ -52,7 +52,7 @@ export default fp(async function npsRoutes(fastify) {
 
   // ---- GET datasets da etapa ----
   fastify.get("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/nps", async (request, reply) => {
-    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    // Guest membro PODE ver o NPS — membership já validada pelo guest-guard global.
     const p = stageParams.safeParse(request.params);
     if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
     if (!(await getFunnel(p.data.projectId, p.data.funnelId))) return reply.code(404).send({ error: "Funil não encontrado" });
@@ -119,7 +119,7 @@ export default fp(async function npsRoutes(fastify) {
 
   // ---- GET colunas (headers) da planilha do dataset — pra montar o mapeamento ----
   fastify.get("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/nps/:datasetId/columns", async (request, reply) => {
-    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    // Guest membro PODE ler as colunas — membership validada pelo guest-guard global.
     const p = datasetParams.safeParse(request.params);
     if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
     const [ds] = await fastify.db.select().from(funnelNpsDatasets).where(eq(funnelNpsDatasets.id, p.data.datasetId)).limit(1);
@@ -134,7 +134,7 @@ export default fp(async function npsRoutes(fastify) {
 
   // ---- GET cruzamento (NPS × respostas da etapa) ----
   fastify.get("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/nps/:datasetId/cross", async (request, reply) => {
-    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    // Guest membro PODE ver o cruzamento de NPS — membership validada pelo guest-guard global.
     const p = datasetParams.safeParse(request.params);
     if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
 
