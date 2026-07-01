@@ -52,6 +52,28 @@ function isValidCpf(value: string): boolean {
   return d1 === Number(cpf[9]) && d2 === Number(cpf[10]);
 }
 
+/** Story 19.15 — valida CNPJ (14 dígitos) via dígitos verificadores. */
+function isValidCnpj(value: string): boolean {
+  const cnpj = normalizeCpf(value);
+  if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false;
+  const digit = (base: string, weights: number[]): number => {
+    let sum = 0;
+    for (let i = 0; i < weights.length; i++) sum += Number(base[i]) * weights[i];
+    const rest = sum % 11;
+    return rest < 2 ? 0 : 11 - rest;
+  };
+  const w1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const w2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const d1 = digit(cnpj.slice(0, 12), w1);
+  const d2 = digit(cnpj.slice(0, 13), w2);
+  return d1 === Number(cnpj[12]) && d2 === Number(cnpj[13]);
+}
+
+/** Aceita CPF (11 dígitos) ou CNPJ (14 dígitos) — venda pode ser p/ PF ou PJ. */
+function isValidCpfOrCnpj(value: string): boolean {
+  return normalizeCpf(value).length === 14 ? isValidCnpj(value) : isValidCpf(value);
+}
+
 function parseBrNumber(val: string | undefined): number {
   if (!val) return 0;
   const cleaned = String(val).replace(/[^\d.,-]/g, "");
@@ -504,10 +526,10 @@ export default fp(async function manualSalesRoutes(fastify) {
       // Story 19.15: dados fiscais obrigatórios na venda de evento (emissão de nota).
       if (isEvent) {
         if (!body.data.customerCpf) {
-          return reply.code(400).send({ error: "CPF do cliente é obrigatório na etapa de Evento Presencial" });
+          return reply.code(400).send({ error: "CPF/CNPJ do cliente é obrigatório na etapa de Evento Presencial" });
         }
-        if (!isValidCpf(body.data.customerCpf)) {
-          return reply.code(400).send({ error: "CPF inválido" });
+        if (!isValidCpfOrCnpj(body.data.customerCpf)) {
+          return reply.code(400).send({ error: "CPF/CNPJ inválido" });
         }
         if (!body.data.customerAddress) {
           return reply.code(400).send({ error: "Endereço do cliente é obrigatório na etapa de Evento Presencial" });
@@ -645,13 +667,13 @@ export default fp(async function manualSalesRoutes(fastify) {
           return reply.code(400).send({ error: "Telefone é obrigatório na etapa de Evento Presencial" });
         }
         // Story 19.15 — dados fiscais não podem ficar vazios numa venda de evento.
-        if (body.data.customerCpf !== undefined && body.data.customerCpf && !isValidCpf(body.data.customerCpf)) {
-          return reply.code(400).send({ error: "CPF inválido" });
+        if (body.data.customerCpf !== undefined && body.data.customerCpf && !isValidCpfOrCnpj(body.data.customerCpf)) {
+          return reply.code(400).send({ error: "CPF/CNPJ inválido" });
         }
         const finalCpf =
           body.data.customerCpf !== undefined ? body.data.customerCpf : existing.customerCpf;
         if (!finalCpf) {
-          return reply.code(400).send({ error: "CPF é obrigatório na etapa de Evento Presencial" });
+          return reply.code(400).send({ error: "CPF/CNPJ é obrigatório na etapa de Evento Presencial" });
         }
         const finalAddress =
           body.data.customerAddress !== undefined ? body.data.customerAddress : existing.customerAddress;
