@@ -474,12 +474,13 @@ function SalesTable({ sales, manualMap, days, resolveLead, onOpenSurvey, onEdit,
 
   return (
     <div className="rounded-lg border border-border/50 overflow-x-auto">
-      <table className="w-full min-w-[860px] text-xs">
+      <table className="w-full min-w-[960px] text-xs">
         <thead className="bg-muted/10 text-muted-foreground">
           <tr>
             <th className="text-left px-3 py-2 font-medium">Data</th>
             <th className="text-left px-3 py-2 font-medium">Cliente</th>
             <th className="text-left px-3 py-2 font-medium">Ingresso</th>
+            <th className="text-left px-3 py-2 font-medium">2ª cadeira / Sócio</th>
             <th className="text-left px-3 py-2 font-medium">Produto</th>
             <th className="text-left px-3 py-2 font-medium">Closer</th>
             <th className="text-left px-3 py-2 font-medium">MemberKit</th>
@@ -521,6 +522,23 @@ function SalesTable({ sales, manualMap, days, resolveLead, onOpenSurvey, onEdit,
                       <span className="text-[11px] text-muted-foreground" title={`Ingresso ${tk}`}>{tk}</span>
                     );
                   })()}
+                </td>
+                <td className="px-3 py-2">
+                  {lead && isSecondChair(lead.tipo) ? (
+                    <div className="flex flex-col items-start gap-0.5">
+                      <SecondChairBadge tipo={lead.tipo} />
+                      {lead.invitedBy?.trim() && (
+                        <span
+                          className="text-[10px] text-muted-foreground max-w-[150px] truncate"
+                          title={`Convidado por ${lead.invitedBy}`}
+                        >
+                          por {lead.invitedBy}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground/40">—</span>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-muted-foreground max-w-[140px] truncate">{sale.product ?? "—"}</td>
                 <td className="px-3 py-2">{sale.sellerName ?? "—"}</td>
@@ -889,6 +907,24 @@ function TicketBadge({ ticket }: { ticket: string }) {
     );
   }
   return null;
+}
+
+/** True se o tipo indica 2ª cadeira / sócio (participante trazido por um comprador). */
+function isSecondChair(tipo: string | null | undefined): boolean {
+  const t = (tipo || "").toLowerCase();
+  return t.includes("cadeira") || t.includes("socio") || t.includes("sócio");
+}
+
+/** Badge de 2ª cadeira / sócio (mesma cor do tipo "cadeira" no NPS). */
+function SecondChairBadge({ tipo }: { tipo: string }) {
+  return (
+    <span
+      className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold border bg-sky-500/15 text-sky-400 border-sky-500/30"
+      title={tipo}
+    >
+      {tipo}
+    </span>
+  );
 }
 
 function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funnelId: string; stageId: string }) {
