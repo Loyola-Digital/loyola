@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   CalendarDays,
   Plus,
@@ -73,7 +73,7 @@ import {
 } from "@/lib/hooks/use-event-config";
 import { EventSourcesTab } from "@/components/funnels/event-sources-tab";
 import { LeadDetailDialog, RevenueMatchBadge, type RoiLead } from "@/components/funnels/roi-calculator";
-import type { EventLeadStatus } from "@loyola-x/shared";
+import type { EventLeadStatus, EventMapLead } from "@loyola-x/shared";
 
 interface EventStageViewProps {
   projectId: string;
@@ -155,6 +155,33 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
       ticket: sales.length > 0 ? totalRevenue / sales.length : 0,
     };
   }, [sales]);
+
+  // Cruza cada venda com o Mapa do Evento (por email, fallback telefone) pra
+  // mostrar o ingresso (Black/VIP) e abrir a pesquisa respondida direto na
+  // tabela de vendas. react-query deduplica com o EventMapTab.
+  const { data: eventMapData } = useEventMap(projectId, funnelId, stage.id);
+  const [salesDetailLead, setSalesDetailLead] = useState<RoiLead | null>(null);
+  const leadIndex = useMemo(() => {
+    const byEmail = new Map<string, EventMapLead>();
+    const byPhone = new Map<string, EventMapLead>();
+    for (const l of eventMapData?.leads ?? []) {
+      const e = l.email?.trim().toLowerCase();
+      if (e) byEmail.set(e, l);
+      const p = (l.phone ?? "").replace(/\D/g, "");
+      if (p.length >= 8) byPhone.set(p.slice(-8), l);
+    }
+    return { byEmail, byPhone };
+  }, [eventMapData]);
+  const resolveLead = useCallback(
+    (sale: UnifiedSale): EventMapLead | null => {
+      const e = sale.customerEmail?.trim().toLowerCase();
+      if (e && leadIndex.byEmail.has(e)) return leadIndex.byEmail.get(e) ?? null;
+      const p = (sale.customerPhone ?? "").replace(/\D/g, "");
+      if (p.length >= 8) return leadIndex.byPhone.get(p.slice(-8)) ?? null;
+      return null;
+    },
+    [leadIndex],
+  );
 
   // Breakdown por closer (vendedor) — computado no cliente a partir do all-sales.
   const byCloser = useMemo(() => {
@@ -300,6 +327,17 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
                 sales={sales}
                 manualMap={manualMap}
                 days={days}
+                resolveLead={resolveLead}
+                onOpenSurvey={(l) =>
+                  setSalesDetailLead({
+                    name: l.name,
+                    email: l.email,
+                    phone: l.phone,
+                    revenue: l.revenue,
+                    revenueMatch: l.revenueMatch,
+                    revenueMatchInfo: l.revenueMatchInfo,
+                  })
+                }
                 onEdit={(ms) => { setEditingSale(ms); setManualSaleOpen(true); }}
                 onDelete={(id) => setConfirmDeleteId(id)}
                 onEnroll={handleEnroll}
@@ -365,6 +403,16 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Respostas da pesquisa do cliente da venda (cruzado por email/telefone). */}
+      <LeadDetailDialog
+        open={!!salesDetailLead}
+        onOpenChange={(o) => !o && setSalesDetailLead(null)}
+        lead={salesDetailLead}
+        projectId={projectId}
+        funnelId={funnelId}
+        stageId={stage.id}
+      />
     </div>
   );
 }
@@ -395,6 +443,10 @@ interface SalesTableProps {
   sales: UnifiedSale[];
   manualMap: Map<string, ManualSale>;
   days: number;
+  /** Casa a venda com o lead do Mapa do Evento (ingresso + pesquisa). */
+  resolveLead: (sale: UnifiedSale) => EventMapLead | null;
+  /** Abre as respostas da pesquisa do lead casado. */
+  onOpenSurvey: (lead: EventMapLead) => void;
   onEdit: (ms: ManualSale) => void;
   onDelete: (id: string) => void;
   onEnroll: (saleId: string) => void;
@@ -402,7 +454,7 @@ interface SalesTableProps {
   onLaunch: () => void;
 }
 
-function SalesTable({ sales, manualMap, days, onEdit, onDelete, onEnroll, enrollingId, onLaunch }: SalesTableProps) {
+function SalesTable({ sales, manualMap, days, resolveLead, onOpenSurvey, onEdit, onDelete, onEnroll, enrollingId, onLaunch }: SalesTableProps) {
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 10;
   const totalPages = Math.max(1, Math.ceil(sales.length / PAGE_SIZE));
@@ -422,22 +474,25 @@ function SalesTable({ sales, manualMap, days, onEdit, onDelete, onEnroll, enroll
 
   return (
     <div className="rounded-lg border border-border/50 overflow-x-auto">
-      <table className="w-full min-w-[680px] text-xs">
+      <table className="w-full min-w-[860px] text-xs">
         <thead className="bg-muted/10 text-muted-foreground">
           <tr>
             <th className="text-left px-3 py-2 font-medium">Data</th>
             <th className="text-left px-3 py-2 font-medium">Cliente</th>
+            <th className="text-left px-3 py-2 font-medium">Ingresso</th>
             <th className="text-left px-3 py-2 font-medium">Produto</th>
             <th className="text-left px-3 py-2 font-medium">Closer</th>
             <th className="text-left px-3 py-2 font-medium">MemberKit</th>
             <th className="text-right px-3 py-2 font-medium">Faturado</th>
             <th className="text-right px-3 py-2 font-medium">Coletado</th>
+            <th className="text-left px-3 py-2 font-medium">Pesquisa</th>
             <th className="px-3 py-2 w-20" />
           </tr>
         </thead>
         <tbody>
           {visible.map((sale) => {
             const ms = sale.source === "manual" && sale.manualSaleId ? manualMap.get(sale.manualSaleId) : undefined;
+            const lead = resolveLead(sale);
             return (
               <tr key={sale.id} className="border-t border-border/30">
                 <td className="px-3 py-2 tabular-nums">{formatDate(sale.saleDate)}</td>
@@ -456,12 +511,47 @@ function SalesTable({ sales, manualMap, days, onEdit, onDelete, onEnroll, enroll
                     </span>
                   </span>
                 </td>
+                <td className="px-3 py-2">
+                  {(() => {
+                    const tk = (lead?.ticket || "").trim();
+                    if (!tk) return <span className="text-muted-foreground/40">—</span>;
+                    const low = tk.toLowerCase();
+                    if (low === "vip" || low === "black") return <TicketBadge ticket={tk} />;
+                    return (
+                      <span className="text-[11px] text-muted-foreground" title={`Ingresso ${tk}`}>{tk}</span>
+                    );
+                  })()}
+                </td>
                 <td className="px-3 py-2 text-muted-foreground max-w-[140px] truncate">{sale.product ?? "—"}</td>
                 <td className="px-3 py-2">{sale.sellerName ?? "—"}</td>
                 <td className="px-3 py-2">{ms ? <MemberkitBadge status={ms.memberkitStatus} /> : <span className="text-muted-foreground/40">—</span>}</td>
                 <td className="px-3 py-2 text-right tabular-nums font-medium">{formatCurrency(sale.value)}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                   {sale.valorRecebido != null ? formatCurrency(sale.valorRecebido) : "—"}
+                </td>
+                <td className="px-3 py-2">
+                  {lead ? (
+                    (() => {
+                      const answered = lead.revenue != null || !!lead.revenueMatchInfo?.surveyAt;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => onOpenSurvey(lead)}
+                          className={`inline-flex items-center gap-1 text-[11px] ${
+                            answered
+                              ? "text-emerald-600 dark:text-emerald-400 hover:underline"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                          title={answered ? "Ver respostas da pesquisa" : "Ver infos do participante (sem pesquisa)"}
+                        >
+                          <Search className="h-3 w-3" />
+                          {answered ? "Respondeu" : "Ver"}
+                        </button>
+                      );
+                    })()
+                  ) : (
+                    <span className="text-muted-foreground/40">—</span>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-right">
                   {ms ? (
