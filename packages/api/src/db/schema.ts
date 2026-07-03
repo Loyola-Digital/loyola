@@ -16,6 +16,7 @@ import {
   primaryKey,
   numeric,
   bigint,
+  doublePrecision,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -2009,6 +2010,11 @@ export const debriefingComments = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
     text: text("text").notNull(),
+    // Story 37.3 — âncora do comentário no doc (estilo Figma): posição em %
+    // da largura/altura total do documento renderizado. NULL = comentário
+    // geral (sem pin).
+    anchorX: doublePrecision("anchor_x"),
+    anchorY: doublePrecision("anchor_y"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

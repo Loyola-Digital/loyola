@@ -31,9 +31,17 @@ const updateBodySchema = z
     message: "informe campaignName e/ou html",
   });
 
-const commentBodySchema = z.object({
-  text: z.string().trim().min(1).max(5000),
-});
+const commentBodySchema = z
+  .object({
+    text: z.string().trim().min(1).max(5000),
+    // Story 37.3 — âncora opcional (pin estilo Figma): % da largura/altura
+    // do doc. Ambos presentes ou ambos ausentes.
+    anchorX: z.number().min(0).max(100).optional(),
+    anchorY: z.number().min(0).max(100).optional(),
+  })
+  .refine((d) => (d.anchorX === undefined) === (d.anchorY === undefined), {
+    message: "anchorX e anchorY devem vir juntos",
+  });
 
 /** Extrai o valor de um field de texto do multipart (pode vir single ou array). */
 function multipartFieldValue(field: unknown): string | undefined {
@@ -283,6 +291,8 @@ export default fp(async function debriefingsRoutes(fastify) {
         id: debriefingComments.id,
         text: debriefingComments.text,
         createdAt: debriefingComments.createdAt,
+        anchorX: debriefingComments.anchorX,
+        anchorY: debriefingComments.anchorY,
         userId: debriefingComments.userId,
         userName: users.name,
         userAvatarUrl: users.avatarUrl,
@@ -328,6 +338,8 @@ export default fp(async function debriefingsRoutes(fastify) {
         debriefingId: params.data.id,
         userId: request.userId,
         text: body.data.text,
+        anchorX: body.data.anchorX,
+        anchorY: body.data.anchorY,
       })
       .returning({ id: debriefingComments.id });
 
