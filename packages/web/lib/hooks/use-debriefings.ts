@@ -44,6 +44,9 @@ export interface DebriefingComment {
   id: string;
   text: string;
   createdAt: string;
+  /** Story 37.3 — pin estilo Figma: % da largura/altura do doc; null = comentário geral */
+  anchorX: number | null;
+  anchorY: number | null;
   userName: string;
   userAvatarUrl: string | null;
   /** true quando o comentário é do usuário logado (computado no backend) */
@@ -176,15 +179,19 @@ export function useDeleteDebriefing() {
   });
 }
 
-// POST /api/debriefings/:id/comments
+// POST /api/debriefings/:id/comments — anchor opcional (pin no doc)
 export function useAddDebriefingComment(id: string) {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (text: string) =>
+    mutationFn: (data: {
+      text: string;
+      anchorX?: number;
+      anchorY?: number;
+    }) =>
       apiClient<{ id: string }>(`/api/debriefings/${id}/comments`, {
         method: "POST",
-        body: JSON.stringify({ text }),
+        body: JSON.stringify(data),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["debriefing-comments", id] });

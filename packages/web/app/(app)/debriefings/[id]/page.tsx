@@ -9,6 +9,7 @@ import {
   AlertCircle,
   ArrowLeft,
   MessageSquare,
+  MessageSquarePlus,
   MoreVertical,
   Pencil,
   Trash2,
@@ -47,6 +48,7 @@ import {
 } from "@/lib/debriefing-frame";
 import { EditDebriefingDialog } from "@/components/debriefings/edit-debriefing-dialog";
 import { DebriefingComments } from "@/components/debriefings/debriefing-comments";
+import { DebriefingPinLayer } from "@/components/debriefings/debriefing-pin-layer";
 
 // Story 37.1/37.2 — detalhe do debriefing. O HTML é renderizado FIELMENTE num
 // iframe com sandbox="allow-scripts" e SEM allow-same-origin (nunca usar
@@ -65,6 +67,9 @@ export default function DebriefingDetailPage() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  // Story 37.3 — pins estilo Figma
+  const [placing, setPlacing] = useState(false);
+  const [focusedCommentId, setFocusedCommentId] = useState<string | null>(null);
   const [frameHeight, setFrameHeight] = useState(MIN_FRAME_HEIGHT);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const savingRef = useRef(false);
@@ -210,7 +215,24 @@ export default function DebriefingDetailPage() {
         </div>
         <div className="flex gap-2">
           {!editMode && (
-            <Button size="sm" onClick={() => setEditMode(true)}>
+            <Button
+              size="sm"
+              variant={placing ? "secondary" : "outline"}
+              onClick={() => setPlacing((p) => !p)}
+            >
+              <MessageSquarePlus className="h-4 w-4 mr-2" />
+              {placing ? "Cancelar pin" : "Comentar no doc"}
+            </Button>
+          )}
+          {!editMode && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setPlacing(false);
+                setFocusedCommentId(null);
+                setEditMode(true);
+              }}
+            >
               <Pencil className="h-4 w-4 mr-2" />
               Editar
             </Button>
@@ -238,6 +260,21 @@ export default function DebriefingDetailPage() {
         </div>
       </div>
 
+      {/* Banner do modo "comentar no doc" */}
+      {placing && !editMode && (
+        <div className="sticky top-2 z-10 flex items-center gap-3 rounded-lg border border-primary/40 bg-primary/10 px-4 py-2.5 backdrop-blur">
+          <MessageSquarePlus className="h-4 w-4 shrink-0 text-primary" />
+          <p className="text-sm min-w-0 flex-1">
+            <span className="font-medium">Comentar no doc</span> — clique no
+            ponto do documento onde quer deixar o comentário.
+          </p>
+          <Button size="sm" variant="ghost" onClick={() => setPlacing(false)}>
+            <X className="h-4 w-4 mr-1" />
+            Cancelar
+          </Button>
+        </div>
+      )}
+
       {/* Banner do modo edição */}
       {editMode && (
         <div className="sticky top-2 z-10 flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 backdrop-blur">
@@ -263,22 +300,43 @@ export default function DebriefingDetailPage() {
 
       {/* Doc + comentários lado a lado (desktop); empilhado no mobile */}
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-6 space-y-6 lg:space-y-0">
-        {/* Renderização fiel e isolada — altura acompanha o doc (sem scroll interno) */}
-        <iframe
-          ref={iframeRef}
-          key={editMode ? "edit" : "view"}
-          srcDoc={srcDoc}
-          sandbox="allow-scripts"
-          scrolling="no"
-          title={`Debriefing — ${debriefing.campaignName}`}
-          className={`w-full rounded-xl border bg-white ${
-            editMode ? "border-amber-500/60 ring-2 ring-amber-500/20" : "border-border/40"
-          }`}
-          style={{ height: frameHeight }}
-        />
+        {/* Renderização fiel e isolada — altura acompanha o doc (sem scroll
+            interno). O wrapper relative ancora a camada de pins (37.3). */}
+        <div className="relative">
+          <iframe
+            ref={iframeRef}
+            key={editMode ? "edit" : "view"}
+            srcDoc={srcDoc}
+            sandbox="allow-scripts"
+            scrolling="no"
+            title={`Debriefing — ${debriefing.campaignName}`}
+            className={`w-full rounded-xl border bg-white ${
+              editMode ? "border-amber-500/60 ring-2 ring-amber-500/20" : "border-border/40"
+            }`}
+            style={{ height: frameHeight }}
+          />
+          {!editMode && (
+            <DebriefingPinLayer
+              debriefingId={params.id}
+              placing={placing}
+              onPlacingEnd={() => setPlacing(false)}
+              focusedId={focusedCommentId}
+              onFocusChange={setFocusedCommentId}
+            />
+          )}
+        </div>
 
         <aside className="lg:sticky lg:top-4 rounded-xl border border-border/40 bg-card p-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
-          <DebriefingComments debriefingId={params.id} />
+          <DebriefingComments
+            debriefingId={params.id}
+            focusedId={focusedCommentId}
+            onPinSelect={(c) => {
+              setFocusedCommentId(c.id);
+              document
+                .getElementById(`debriefing-pin-${c.id}`)
+                ?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }}
+          />
         </aside>
       </div>
 
