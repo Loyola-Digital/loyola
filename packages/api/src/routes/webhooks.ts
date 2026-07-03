@@ -87,7 +87,11 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
           const email = data.email_addresses?.[0]?.email_address ?? "";
           const firstName = data.first_name ?? "";
           const lastName = data.last_name ?? "";
-          const name = `${firstName} ${lastName}`.trim() || data.username || "Unknown";
+          const name =
+            `${firstName} ${lastName}`.trim() ||
+            data.username ||
+            email.split("@")[0] ||
+            "Usuário";
 
           // Check if there's an invited stub user with this email
           const stubUser = await fastify.db
@@ -138,7 +142,11 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
           const email = data.email_addresses?.[0]?.email_address ?? "";
           const firstName = data.first_name ?? "";
           const lastName = data.last_name ?? "";
-          const name = `${firstName} ${lastName}`.trim() || data.username || "Unknown";
+          const name =
+            `${firstName} ${lastName}`.trim() ||
+            data.username ||
+            email.split("@")[0] ||
+            "Usuário";
 
           await fastify.db
             .update(users)
