@@ -32,17 +32,25 @@ export default fp(async function authPlugin(fastify) {
     if (dbUser.length === 0) {
       // Fetch real user data from Clerk before provisioning
       let email = `${clerkId}@placeholder.dev`;
-      let name = clerkId;
+      let name = "";
       let avatarUrl: string | null = null;
       try {
         const clerkUser = await clerkClient.users.getUser(clerkId);
         email = clerkUser.emailAddresses?.[0]?.emailAddress ?? email;
         const firstName = clerkUser.firstName ?? "";
         const lastName = clerkUser.lastName ?? "";
-        name = `${firstName} ${lastName}`.trim() || clerkUser.username || name;
+        name = `${firstName} ${lastName}`.trim() || clerkUser.username || "";
         avatarUrl = clerkUser.imageUrl ?? null;
       } catch {
         // Fallback to placeholder if Clerk API fails
+      }
+      // Nunca usar o clerkId como nome exibível (vaza "user_xxx" na UI).
+      // Fallback: parte local do email real > "Usuário".
+      if (!name) {
+        const emailPrefix = email.endsWith("@placeholder.dev")
+          ? ""
+          : email.split("@")[0];
+        name = emailPrefix || "Usuário";
       }
 
       // Auto-provision new user as pending (requires admin approval)
@@ -90,24 +98,48 @@ export default fp(async function authPlugin(fastify) {
     request.userId = dbUser[0].id;
     request.userRole = dbUser[0].role;
 
-    // Auto-fix placeholder users on login (lazy sync with Clerk)
-    const userEmail = await fastify.db
-      .select({ email: users.email })
+    // Auto-fix placeholder/corrupted users on login (lazy sync with Clerk).
+    // Repara tanto email placeholder quanto name corrompido pelo fallback
+    // antigo (name = clerkId, ex.: "user_3BPD..." vazando na UI) ou o
+    // genérico "Usuário"/"Unknown" — assim que o Clerk tiver dados reais.
+    const [current] = await fastify.db
+      .select({ email: users.email, name: users.name })
       .from(users)
       .where(eq(users.id, dbUser[0].id))
       .limit(1);
 
-    if (userEmail[0]?.email?.endsWith("@placeholder.dev")) {
+    const corrupted =
+      current &&
+      (current.email.endsWith("@placeholder.dev") ||
+        current.name === clerkId ||
+        current.name.startsWith("user_") ||
+        current.name === "Usuário" ||
+        current.name === "Unknown");
+
+    if (current && corrupted) {
       try {
         const clerkUser = await clerkClient.users.getUser(clerkId);
-        const realEmail = clerkUser.emailAddresses?.[0]?.emailAddress;
-        if (realEmail) {
-          const firstName = clerkUser.firstName ?? "";
-          const lastName = clerkUser.lastName ?? "";
-          const realName = `${firstName} ${lastName}`.trim() || clerkUser.username || clerkId;
+        const realEmail =
+          clerkUser.emailAddresses?.[0]?.emailAddress ?? current.email;
+        const firstName = clerkUser.firstName ?? "";
+        const lastName = clerkUser.lastName ?? "";
+        const emailPrefix = realEmail.endsWith("@placeholder.dev")
+          ? ""
+          : realEmail.split("@")[0];
+        const realName =
+          `${firstName} ${lastName}`.trim() ||
+          clerkUser.username ||
+          emailPrefix ||
+          current.name;
+        if (realName !== current.name || realEmail !== current.email) {
           await fastify.db
             .update(users)
-            .set({ email: realEmail, name: realName, avatarUrl: clerkUser.imageUrl ?? null, updatedAt: new Date() })
+            .set({
+              email: realEmail,
+              name: realName,
+              avatarUrl: clerkUser.imageUrl ?? null,
+              updatedAt: new Date(),
+            })
             .where(eq(users.id, dbUser[0].id));
         }
       } catch {
