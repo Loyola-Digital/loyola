@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Brain, MessageSquare, CheckSquare, Settings, Plus, Eye, EyeOff, LayoutGrid } from "lucide-react";
+import { Brain, MessageSquare, CheckSquare, Settings, Plus, Eye, EyeOff, LayoutGrid, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { useHiddenProjectsStore } from "@/lib/stores/hidden-projects-store";
@@ -34,6 +34,8 @@ const navItems = [
   { label: "Tasks", href: "/tasks", icon: CheckSquare },
   // Epic 31: Sprint Dashboard — só visível pra não-guests (guard server-side)
   { label: "Sprint", href: "/sprint-dashboard", icon: LayoutGrid },
+  // Epic 37: Debriefings de campanha — só não-guests (guard server-side)
+  { label: "Debriefing", href: "/debriefings", icon: FileText },
   { label: "Settings", href: "/settings", icon: Settings },
 ] as const;
 

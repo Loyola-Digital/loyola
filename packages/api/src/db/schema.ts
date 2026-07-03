@@ -1966,3 +1966,57 @@ export const publicMetricsCache = pgTable(
   },
   (table) => [primaryKey({ columns: [table.projectId, table.scope, table.key] })]
 );
+
+// ============================================================
+// DEBRIEFINGS (EPIC-37 — Story 37.1)
+// ============================================================
+// Debriefings globais de campanha (sem projectId por design): o time sobe um
+// doc HTML que é renderizado fielmente no web em iframe sandbox. Guests não
+// acessam (bloqueio no guest-guard). O HTML fica em coluna text (teto de 5MB
+// no upload) — mesmo racional do snapshot do relatório mensal do Instagram.
+
+export const debriefings = pgTable(
+  "debriefings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    campaignName: text("campaign_name").notNull(),
+    html: text("html").notNull(),
+    fileName: text("file_name"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedBy: uuid("updated_by").references(() => users.id, {
+      onDelete: "restrict",
+    }),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("idx_debriefings_created_at").on(table.createdAt)]
+);
+
+export const debriefingComments = pgTable(
+  "debriefing_comments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    debriefingId: uuid("debriefing_id")
+      .notNull()
+      .references(() => debriefings.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    text: text("text").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("idx_debriefing_comments_debriefing_created").on(
+      table.debriefingId,
+      table.createdAt
+    ),
+  ]
+);

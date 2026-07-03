@@ -86,6 +86,10 @@ async function buildTestApp(userRole: string) {
   app.post("/api/chat", async () => ({ ok: true }));
   app.put("/api/projects/:id/funnels/:fid/stages/:sid/event-lead-status", async () => ({ ok: true }));
   app.post("/api/projects/:id/funnels/:fid/stages/:sid/manual-sales", async () => ({ ok: true }));
+  // Debriefings (Story 37.1) — global, bloqueado pra guest em qualquer método
+  app.get("/api/debriefings", async () => ({ ok: true }));
+  app.post("/api/debriefings", async () => ({ ok: true }));
+  app.post("/api/debriefings/:id/comments", async () => ({ ok: true }));
 
   await app.ready();
   return app;
@@ -120,6 +124,11 @@ describe("guestGuard — admin user", () => {
 
   it("admin can GET /api/conversations", async () => {
     const res = await app.inject({ method: "GET", url: "/api/conversations", headers: AUTH });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("admin can GET /api/debriefings", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/debriefings", headers: AUTH });
     expect(res.statusCode).toBe(200);
   });
 });
@@ -170,6 +179,27 @@ describe("guestGuard — guest blocked on global routes", () => {
 
   it("guest blocked on DELETE /api/projects/:id", async () => {
     const res = await app.inject({ method: "DELETE", url: `/api/projects/${MOCK_PROJECT_ID}`, headers: AUTH });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("guest blocked on GET /api/debriefings (Story 37.1)", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/debriefings", headers: AUTH });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toBe("project_access_denied");
+  });
+
+  it("guest blocked on POST /api/debriefings (Story 37.1)", async () => {
+    const res = await app.inject({ method: "POST", url: "/api/debriefings", headers: AUTH, body: {} });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("guest blocked on POST /api/debriefings/:id/comments (Story 37.1)", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/debriefings/40000000-0000-4000-8000-000000000004/comments",
+      headers: AUTH,
+      body: { text: "oi" },
+    });
     expect(res.statusCode).toBe(403);
   });
 });

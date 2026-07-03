@@ -64,6 +64,11 @@ export default fp(async function guestGuardPlugin(fastify) {
     }
 
     // Block global routes (non-project-scoped)
+    // Debriefings (Story 37.1) — recurso global exclusivo do time interno:
+    // guests não leem nem escrevem, qualquer método.
+    if (rawUrl.startsWith("/api/debriefings")) {
+      return reply.code(403).send({ error: "project_access_denied" });
+    }
     if (rawUrl === "/api/instagram/accounts" && method === "GET") {
       return reply.code(403).send({ error: "project_access_denied" });
     }
