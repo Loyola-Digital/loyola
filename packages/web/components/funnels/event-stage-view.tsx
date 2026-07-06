@@ -16,6 +16,8 @@ import {
   Target,
   Search,
   Star,
+  Undo2,
+  RotateCcw,
 } from "lucide-react";
 import { NpsStageTab } from "@/components/funnels/nps-stage-tab";
 import { toast } from "sonner";
@@ -44,6 +46,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
 import { SalesPlanTab } from "@/components/funnels/sales-plan-tab";
@@ -52,6 +63,8 @@ import {
   useAllSales,
   useManualSales,
   useDeleteManualSale,
+  useRefundManualSale,
+  useUnrefundManualSale,
   type UnifiedSale,
 } from "@/lib/hooks/use-manual-sales";
 import {
@@ -135,7 +148,13 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
   const { data: manualPayload, isLoading: manualLoading } = useManualSales(projectId, funnelId, stage.id, days);
   const deleteMutation = useDeleteManualSale(projectId, funnelId, stage.id);
   const enrollMutation = useEnrollSaleMemberkit(projectId, funnelId, stage.id);
+  const refundMutation = useRefundManualSale(projectId, funnelId, stage.id);
+  const unrefundMutation = useUnrefundManualSale(projectId, funnelId, stage.id);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // Reembolso do sinal: venda selecionada pra reembolsar + motivo digitado.
+  const [refundingSale, setRefundingSale] = useState<ManualSale | null>(null);
+  const [refundReason, setRefundReason] = useState("");
+  const [confirmUnrefundId, setConfirmUnrefundId] = useState<string | null>(null);
   // saleId em matrícula no momento — pra o spinner/disabled afetar só a linha clicada.
   const enrollingId = enrollMutation.isPending ? (enrollMutation.variables ?? null) : null;
 
@@ -146,13 +165,15 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
   );
 
   const summary = useMemo(() => {
-    const totalRevenue = sales.reduce((acc, s) => acc + s.value, 0);
-    const totalColetado = sales.reduce((acc, s) => acc + (s.valorRecebido ?? 0), 0);
+    // Vendas reembolsadas ficam na tabela (histórico) mas saem dos totais.
+    const active = sales.filter((s) => !s.refundedAt);
+    const totalRevenue = active.reduce((acc, s) => acc + s.value, 0);
+    const totalColetado = active.reduce((acc, s) => acc + (s.valorRecebido ?? 0), 0);
     return {
-      totalSales: sales.length,
+      totalSales: active.length,
       totalRevenue,
       totalColetado,
-      ticket: sales.length > 0 ? totalRevenue / sales.length : 0,
+      ticket: active.length > 0 ? totalRevenue / active.length : 0,
     };
   }, [sales]);
 
@@ -187,6 +208,7 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
   const byCloser = useMemo(() => {
     const map = new Map<string, { name: string; vendas: number; receita: number }>();
     for (const s of sales) {
+      if (s.refundedAt) continue; // reembolsada não conta pro closer
       const name = s.sellerName?.trim() || "Sem closer";
       const e = map.get(name) ?? { name, vendas: 0, receita: 0 };
       e.vendas += 1;
@@ -210,6 +232,29 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
       setConfirmDeleteId(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao remover venda");
+    }
+  }
+
+  async function handleRefund() {
+    if (!refundingSale || refundReason.trim().length < 3) return;
+    try {
+      await refundMutation.mutateAsync({ saleId: refundingSale.id, reason: refundReason.trim() });
+      toast.success("Reembolso lançado");
+      setRefundingSale(null);
+      setRefundReason("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao lançar reembolso");
+    }
+  }
+
+  async function handleUnrefund() {
+    if (!confirmUnrefundId) return;
+    try {
+      await unrefundMutation.mutateAsync(confirmUnrefundId);
+      toast.success("Reembolso desfeito");
+      setConfirmUnrefundId(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao desfazer reembolso");
     }
   }
 
@@ -342,6 +387,8 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
                 onDelete={(id) => setConfirmDeleteId(id)}
                 onEnroll={handleEnroll}
                 enrollingId={enrollingId}
+                onRefund={(ms) => { setRefundReason(""); setRefundingSale(ms); }}
+                onUnrefund={(id) => setConfirmUnrefundId(id)}
                 onLaunch={() => { setEditingSale(null); setManualSaleOpen(true); }}
               />
             </>
@@ -404,6 +451,74 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Reembolso do sinal — motivo obrigatório. */}
+      <Dialog open={!!refundingSale} onOpenChange={(o) => { if (!o) { setRefundingSale(null); setRefundReason(""); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Lançar reembolso</DialogTitle>
+            <DialogDescription>
+              {refundingSale ? (
+                <>
+                  Reembolsar o sinal de <strong>{refundingSale.customerName}</strong>
+                  {refundingSale.valorRecebido != null && (
+                    <> — coletado {formatCurrency(refundingSale.valorRecebido)}</>
+                  )}
+                  . A venda sai dos totais, mas fica no histórico marcada como reembolsada.
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="refund-reason">Motivo do reembolso *</Label>
+            <Textarea
+              id="refund-reason"
+              value={refundReason}
+              onChange={(e) => setRefundReason(e.target.value)}
+              placeholder="Ex: cliente desistiu da compra e pediu o sinal de volta"
+              rows={3}
+              maxLength={1000}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setRefundingSale(null); setRefundReason(""); }}
+              disabled={refundMutation.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleRefund}
+              disabled={refundMutation.isPending || refundReason.trim().length < 3}
+            >
+              {refundMutation.isPending ? "Lançando..." : "Confirmar reembolso"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Desfazer reembolso lançado por engano. */}
+      <AlertDialog open={!!confirmUnrefundId} onOpenChange={(o) => !o && setConfirmUnrefundId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Desfazer reembolso?</AlertDialogTitle>
+            <AlertDialogDescription>
+              A venda volta a contar nos totais de faturado e coletado.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={unrefundMutation.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleUnrefund(); }}
+              disabled={unrefundMutation.isPending}
+            >
+              {unrefundMutation.isPending ? "Desfazendo..." : "Desfazer"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Respostas da pesquisa do cliente da venda (cruzado por email/telefone). */}
       <LeadDetailDialog
         open={!!salesDetailLead}
@@ -451,10 +566,14 @@ interface SalesTableProps {
   onDelete: (id: string) => void;
   onEnroll: (saleId: string) => void;
   enrollingId: string | null;
+  /** Abre o dialog de reembolso do sinal (motivo obrigatório). */
+  onRefund: (ms: ManualSale) => void;
+  /** Desfaz um reembolso lançado por engano. */
+  onUnrefund: (id: string) => void;
   onLaunch: () => void;
 }
 
-function SalesTable({ sales, manualMap, days, resolveLead, onOpenSurvey, onEdit, onDelete, onEnroll, enrollingId, onLaunch }: SalesTableProps) {
+function SalesTable({ sales, manualMap, days, resolveLead, onOpenSurvey, onEdit, onDelete, onEnroll, enrollingId, onRefund, onUnrefund, onLaunch }: SalesTableProps) {
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 10;
   const totalPages = Math.max(1, Math.ceil(sales.length / PAGE_SIZE));
@@ -510,6 +629,14 @@ function SalesTable({ sales, manualMap, days, resolveLead, onOpenSurvey, onEdit,
                     }`}>
                       {sale.source === "manual" ? "Manual" : sale.sourceLabel ?? "Planilha"}
                     </span>
+                    {sale.refundedAt && (
+                      <span
+                        className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                        title={`Reembolsada em ${formatDate(sale.refundedAt)}${sale.refundReason ? ` — Motivo: ${sale.refundReason}` : ""}`}
+                      >
+                        Reembolsada
+                      </span>
+                    )}
                   </span>
                 </td>
                 <td className="px-3 py-2">
@@ -543,8 +670,10 @@ function SalesTable({ sales, manualMap, days, resolveLead, onOpenSurvey, onEdit,
                 <td className="px-3 py-2 text-muted-foreground max-w-[140px] truncate">{sale.product ?? "—"}</td>
                 <td className="px-3 py-2">{sale.sellerName ?? "—"}</td>
                 <td className="px-3 py-2">{ms ? <MemberkitBadge status={ms.memberkitStatus} /> : <span className="text-muted-foreground/40">—</span>}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-medium">{formatCurrency(sale.value)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                <td className={`px-3 py-2 text-right tabular-nums font-medium ${sale.refundedAt ? "line-through text-muted-foreground/60" : ""}`}>
+                  {formatCurrency(sale.value)}
+                </td>
+                <td className={`px-3 py-2 text-right tabular-nums text-muted-foreground ${sale.refundedAt ? "line-through text-muted-foreground/60" : ""}`}>
                   {sale.valorRecebido != null ? formatCurrency(sale.valorRecebido) : "—"}
                 </td>
                 <td className="px-3 py-2">
@@ -584,6 +713,27 @@ function SalesTable({ sales, manualMap, days, resolveLead, onOpenSurvey, onEdit,
                           aria-label="Matricular no MemberKit"
                         >
                           {enrollingId === ms.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GraduationCap className="h-3.5 w-3.5" />}
+                        </button>
+                      )}
+                      {ms.refundedAt ? (
+                        <button
+                          type="button"
+                          onClick={() => onUnrefund(ms.id)}
+                          className="text-muted-foreground hover:text-amber-600 transition-colors"
+                          title={`Desfazer reembolso${ms.refundReason ? ` — Motivo: ${ms.refundReason}` : ""}`}
+                          aria-label="Desfazer reembolso"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onRefund(ms)}
+                          className="text-muted-foreground hover:text-red-600 transition-colors"
+                          title="Lançar reembolso do sinal"
+                          aria-label="Lançar reembolso"
+                        >
+                          <Undo2 className="h-3.5 w-3.5" />
                         </button>
                       )}
                       <button

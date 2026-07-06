@@ -134,6 +134,49 @@ export function useUpdateManualSale(
   });
 }
 
+/**
+ * Reembolso (Evento Presencial): marca a venda como reembolsada com motivo.
+ * A venda continua na lista (histórico) mas sai dos totais de faturado/coletado.
+ */
+export function useRefundManualSale(
+  projectId: string,
+  funnelId: string,
+  stageId: string,
+) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ saleId, reason }: { saleId: string; reason: string }) =>
+      apiClient<ManualSale>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/manual-sales/${saleId}/refund`,
+        { method: "POST", body: JSON.stringify({ reason }) },
+      ),
+    onSuccess: () => {
+      invalidateSalesQueries(queryClient, projectId, funnelId, stageId);
+    },
+  });
+}
+
+/** Desfaz um reembolso lançado por engano. */
+export function useUnrefundManualSale(
+  projectId: string,
+  funnelId: string,
+  stageId: string,
+) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (saleId: string) =>
+      apiClient<ManualSale>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/manual-sales/${saleId}/refund`,
+        { method: "DELETE" },
+      ),
+    onSuccess: () => {
+      invalidateSalesQueries(queryClient, projectId, funnelId, stageId);
+    },
+  });
+}
+
 export { buildKey as buildManualSalesKey };
 
 // ============================================================
@@ -157,6 +200,9 @@ export interface UnifiedSale {
   /** Story 19.10 — valor recebido (Caixa) e negociação (evento presencial). */
   valorRecebido: number | null;
   negociacao: string | null;
+  /** Reembolso (Evento Presencial) — só vendas manuais podem ter. */
+  refundedAt: string | null;
+  refundReason: string | null;
 }
 
 export interface AllSalesResponse {

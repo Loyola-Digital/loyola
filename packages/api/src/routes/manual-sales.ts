@@ -147,6 +147,9 @@ function shapeManualSale(r: typeof manualSales.$inferSelect) {
     memberkitStatus: r.memberkitStatus as MemberkitEnrollmentStatus | null,
     memberkitSyncedAt: r.memberkitSyncedAt ? r.memberkitSyncedAt.toISOString() : null,
     memberkitUserId: r.memberkitUserId,
+    // Reembolso (Evento Presencial)
+    refundedAt: r.refundedAt ? r.refundedAt.toISOString() : null,
+    refundReason: r.refundReason,
   };
 }
 
@@ -433,15 +436,18 @@ export default fp(async function manualSalesRoutes(fastify) {
 
       const sales = rows.map(shapeManualSale);
 
-      const totalSales = sales.length;
-      const totalRevenue = sales.reduce((acc, s) => acc + s.value, 0);
+      // Vendas reembolsadas continuam na lista (histórico), mas saem dos
+      // totais e do ranking — receita reembolsada não é receita.
+      const active = sales.filter((s) => !s.refundedAt);
+      const totalSales = active.length;
+      const totalRevenue = active.reduce((acc, s) => acc + s.value, 0);
       const avgTicket = totalSales > 0 ? totalRevenue / totalSales : 0;
 
       const sellerMap = new Map<
         string,
         { sellerUserId: string | null; sellerName: string; totalSales: number; totalRevenue: number }
       >();
-      for (const s of sales) {
+      for (const s of active) {
         const key = s.sellerUserId ?? `name:${s.sellerName}`;
         const entry = sellerMap.get(key) ?? {
           sellerUserId: s.sellerUserId,
@@ -808,6 +814,9 @@ export default fp(async function manualSalesRoutes(fastify) {
         /** Story 19.10 — valor recebido (Caixa) e negociação (evento). */
         valorRecebido: number | null;
         negociacao: string | null;
+        /** Reembolso (Evento Presencial) — só vendas manuais podem ter. */
+        refundedAt: string | null;
+        refundReason: string | null;
       };
 
       // 1. Vendas manuais
@@ -837,6 +846,8 @@ export default fp(async function manualSalesRoutes(fastify) {
         sourceLabel: null,
         valorRecebido: r.valorRecebido != null ? Number(r.valorRecebido) : null,
         negociacao: r.negociacao,
+        refundedAt: r.refundedAt ? r.refundedAt.toISOString() : null,
+        refundReason: r.refundReason,
       }));
 
       // 2. Vendas da planilha — 'all' pega todos os subtypes; CSV
@@ -957,6 +968,8 @@ export default fp(async function manualSalesRoutes(fastify) {
               sourceLabel: "Presencial",
               valorRecebido: caixaIdx !== -1 ? caixa : null,
               negociacao: negociacao || null,
+              refundedAt: null,
+              refundReason: null,
             });
           }
           continue;
@@ -1008,6 +1021,8 @@ export default fp(async function manualSalesRoutes(fastify) {
             sourceLabel: sheetSourceLabel,
             valorRecebido: null,
             negociacao: null,
+            refundedAt: null,
+            refundReason: null,
           });
         }
       }
@@ -1018,10 +1033,11 @@ export default fp(async function manualSalesRoutes(fastify) {
         return b.saleDate.localeCompare(a.saleDate);
       });
 
-      const totalRevenue = out.reduce((s, x) => s + x.value, 0);
+      // Vendas reembolsadas ficam na lista (histórico) mas não somam receita.
+      const totalRevenue = out.reduce((s, x) => s + (x.refundedAt ? 0 : x.value), 0);
       const manualRevenue = out
         .filter((x) => x.source === "manual")
-        .reduce((s, x) => s + x.value, 0);
+        .reduce((s, x) => s + (x.refundedAt ? 0 : x.value), 0);
       const spreadsheetRevenue = totalRevenue - manualRevenue;
 
       return {
@@ -1068,6 +1084,99 @@ export default fp(async function manualSalesRoutes(fastify) {
       }
 
       return { success: true };
+    },
+  );
+
+  // ---------------------------------------------------------------
+  // POST /:saleId/refund — marca a venda como reembolsada (com motivo).
+  // Evento Presencial: cliente deu sinal e desistiu — a venda NÃO é apagada
+  // (histórico rastreável); ela sai dos totais de faturado/coletado.
+  // ---------------------------------------------------------------
+  const refundBodySchema = z.object({
+    reason: z.string().trim().min(3, "Informe o motivo do reembolso").max(1000),
+  });
+
+  fastify.post(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/manual-sales/:saleId/refund",
+    async (request, reply) => {
+      // Guest membro pode operar vendas no evento presencial — membership é
+      // validada por getStageContext abaixo (retorna null se não for membro).
+      const params = saleParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const body = refundBodySchema.safeParse(request.body);
+      if (!body.success) {
+        return reply.code(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+      }
+
+      const stage = await getStageContext(
+        params.data.projectId,
+        params.data.funnelId,
+        params.data.stageId,
+        request.userId,
+        request.userRole,
+      );
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const [existing] = await fastify.db
+        .select()
+        .from(manualSales)
+        .where(and(eq(manualSales.id, params.data.saleId), eq(manualSales.stageId, params.data.stageId)))
+        .limit(1);
+      if (!existing) return reply.code(404).send({ error: "Venda não encontrada" });
+      if (existing.refundedAt) {
+        return reply.code(409).send({ error: "Venda já está reembolsada" });
+      }
+
+      const [updated] = await fastify.db
+        .update(manualSales)
+        .set({
+          refundedAt: new Date(),
+          refundReason: body.data.reason,
+          refundedBy: request.userId,
+        })
+        .where(eq(manualSales.id, params.data.saleId))
+        .returning();
+
+      return shapeManualSale(updated);
+    },
+  );
+
+  // ---------------------------------------------------------------
+  // DELETE /:saleId/refund — desfaz o reembolso (lançado por engano).
+  // ---------------------------------------------------------------
+  fastify.delete(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/manual-sales/:saleId/refund",
+    async (request, reply) => {
+      const params = saleParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const stage = await getStageContext(
+        params.data.projectId,
+        params.data.funnelId,
+        params.data.stageId,
+        request.userId,
+        request.userRole,
+      );
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const [existing] = await fastify.db
+        .select()
+        .from(manualSales)
+        .where(and(eq(manualSales.id, params.data.saleId), eq(manualSales.stageId, params.data.stageId)))
+        .limit(1);
+      if (!existing) return reply.code(404).send({ error: "Venda não encontrada" });
+      if (!existing.refundedAt) {
+        return reply.code(409).send({ error: "Venda não está reembolsada" });
+      }
+
+      const [updated] = await fastify.db
+        .update(manualSales)
+        .set({ refundedAt: null, refundReason: null, refundedBy: null })
+        .where(eq(manualSales.id, params.data.saleId))
+        .returning();
+
+      return shapeManualSale(updated);
     },
   );
 
