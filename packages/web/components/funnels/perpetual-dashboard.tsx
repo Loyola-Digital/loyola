@@ -150,10 +150,11 @@ function safeNum(val: string | undefined): number {
 // continua Meta; nome continua vindo da linha. Sem match → vendas/receita = 0.
 function overlaySpreadsheetMetrics(
   rows: CampaignAnalytics[],
-  byId: Map<string, { vendas: number; bruto: number }>,
+  byKey: Map<string, { vendas: number; bruto: number }>,
+  keyOf: (r: CampaignAnalytics) => string = (r) => r.campaignId,
 ): CampaignAnalytics[] {
   return rows.map((r) => {
-    const match = byId.get(r.campaignId);
+    const match = byKey.get(keyOf(r));
     const revenue = match ? match.bruto : 0;
     const sales = match ? match.vendas : 0;
     return {
@@ -534,17 +535,46 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // Vendas/Receita/ROAS/CAC vêm da PLANILHA por match de UTM, não do Meta.
   // Público (adset) → utm_medium = adset_id · Criativo (ad) → utm_content = ad_id.
   // Spend continua Meta; nome continua vindo da linha (Meta all-adsets/all-ads).
+  // Story 29.20 (M1): soma vendas/receita da planilha por NOME resolvido do adset/ad
+  // (ids de mesmo nome somam). O backend agrega adset/ad por nome fixando 1 id, então
+  // casar por id perdia as vendas dos outros ids. Agora bate com revenueByPublico/Criativo.
+  const salesByAdsetName = useMemo(() => {
+    const m = new Map<string, { vendas: number; bruto: number }>();
+    if (!usingSpreadsheet || !salesData) return m;
+    for (const u of salesData.porUtmMedium ?? []) {
+      const name = adsetNamesMap.get(u.medium) ?? u.medium;
+      const e = m.get(name) ?? { vendas: 0, bruto: 0 };
+      e.vendas += u.vendas;
+      e.bruto += u.bruto;
+      m.set(name, e);
+    }
+    return m;
+  }, [salesData, usingSpreadsheet, adsetNamesMap]);
+
+  const salesByAdName = useMemo(() => {
+    const m = new Map<string, { vendas: number; bruto: number }>();
+    if (!usingSpreadsheet || !salesData) return m;
+    for (const u of salesData.porUtmContent ?? []) {
+      const name = adNamesMap.get(u.content) ?? u.content;
+      const e = m.get(name) ?? { vendas: 0, bruto: 0 };
+      e.vendas += u.vendas;
+      e.bruto += u.bruto;
+      m.set(name, e);
+    }
+    return m;
+  }, [salesData, usingSpreadsheet, adNamesMap]);
+
   const funnelAdSets = useMemo(() => {
     const base = adSetsData?.adsets ?? [];
     if (!usingSpreadsheet || !salesData) return base;
-    return overlaySpreadsheetMetrics(base, new Map((salesData.porUtmMedium ?? []).map((u) => [u.medium, u])));
-  }, [adSetsData, usingSpreadsheet, salesData]);
+    return overlaySpreadsheetMetrics(base, salesByAdsetName, (r) => r.campaignName);
+  }, [adSetsData, usingSpreadsheet, salesData, salesByAdsetName]);
 
   const funnelAds = useMemo(() => {
     const base = adsData?.ads ?? [];
     if (!usingSpreadsheet || !salesData) return base;
-    return overlaySpreadsheetMetrics(base, new Map((salesData.porUtmContent ?? []).map((u) => [u.content, u])));
-  }, [adsData, usingSpreadsheet, salesData]);
+    return overlaySpreadsheetMetrics(base, salesByAdName, (r) => r.campaignName);
+  }, [adsData, usingSpreadsheet, salesData, salesByAdName]);
 
   const tableData = useMemo((): CampaignAnalytics[] => {
     switch (tableFilter) {
@@ -575,14 +605,17 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         const spend = members.reduce((s, m) => s + m.spend, 0);
         const impressions = members.reduce((s, m) => s + m.impressions, 0);
         const clicks = members.reduce((s, m) => s + m.clicks, 0);
+        const linkClicks = members.reduce((s, m) => s + (m.linkClicks ?? 0), 0);
         const revenue = members.reduce((s, m) => s + (m.revenue ?? 0), 0);
         const sales = members.reduce((s, m) => s + (m.sales ?? 0), 0);
         base = {
           ...members[0],
           campaignName: name,
           spend, impressions, clicks, revenue, sales,
-          ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
-          cpc: clicks > 0 ? spend / clicks : 0,
+          linkClicks: linkClicks > 0 ? linkClicks : null,
+          // Story 29.20 (M2): CTR/CPC de LINK clicks (fallback total) — igual buildAnalyticsRow.
+          ctr: linkClicks > 0 && impressions > 0 ? (linkClicks / impressions) * 100 : (impressions > 0 ? (clicks / impressions) * 100 : 0),
+          cpc: linkClicks > 0 ? spend / linkClicks : (clicks > 0 ? spend / clicks : 0),
           cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
           roas: spend > 0 ? revenue / spend : null,
           costPerSale: sales > 0 ? spend / sales : null,
