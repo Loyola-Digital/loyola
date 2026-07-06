@@ -21,10 +21,10 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
   ReferenceLine,
   BarChart,
   Bar,
+  Cell,
   LabelList,
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -57,9 +57,9 @@ import {
 } from "@/lib/hooks/use-perpetual-sales-data";
 import type { Funnel, FunnelCampaign, StageType } from "@loyola-x/shared";
 import { StageSalesSection } from "./stage-sales-section";
-import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
+import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
 import {
@@ -144,6 +144,112 @@ function safeNum(val: string | undefined): number {
   return val ? parseFloat(val) : 0;
 }
 
+// Story 29.16/29.17: sobrepõe métricas da planilha (vendas/receita/ROAS/CAC)
+// numa lista de entidades Meta (campanha/adset/ad), casando o id da linha
+// (campaignId = campaign/adset/ad id) com a chave UTM da planilha. Spend
+// continua Meta; nome continua vindo da linha. Sem match → vendas/receita = 0.
+function overlaySpreadsheetMetrics(
+  rows: CampaignAnalytics[],
+  byId: Map<string, { vendas: number; bruto: number }>,
+): CampaignAnalytics[] {
+  return rows.map((r) => {
+    const match = byId.get(r.campaignId);
+    const revenue = match ? match.bruto : 0;
+    const sales = match ? match.vendas : 0;
+    return {
+      ...r,
+      revenue,
+      sales,
+      roas: r.spend > 0 && match ? match.bruto / r.spend : null,
+      costPerSale: sales > 0 ? r.spend / sales : null,
+    };
+  });
+}
+
+// Story 29.19: linha do Detalhamento (CampaignAnalytics + margens derivadas).
+type DetailRow = CampaignAnalytics & { marginPct: number | null; marginPerSale: number | null };
+
+// Story 29.19: remove o sufixo " — Cópia" (Meta duplica campanhas assim) do fim
+// do nome, pra normalizar e agrupar a cópia no nome base. Cobre —/–/- e número.
+const COPIA_SUFFIX_RE = /(\s*[—–-]\s*c[oó]pia(\s*\d+)?)+\s*$/i;
+function normalizeCampaignName(name: string): string {
+  const cleaned = name.replace(COPIA_SUFFIX_RE, "").trim();
+  return cleaned.length > 0 ? cleaned : name;
+}
+
+// Story 29.19: cores condicionais das colunas do Detalhamento.
+function roasColorClass(v: number | null | undefined): string {
+  if (v == null) return "";
+  if (v >= 2) return "text-emerald-400";
+  if (v >= 1) return "text-amber-400";
+  return "text-red-400";
+}
+function marginColorClass(v: number | null | undefined): string {
+  if (v == null) return "";
+  return v > 0 ? "text-emerald-400" : "text-red-400";
+}
+
+// Story 29.15: rótulo de valor a cada 7 dias no gráfico de linha de Investimento
+// (evita poluir mostrando o valor em todos os pontos).
+function Spend7DayLabel(props: {
+  x?: number;
+  y?: number;
+  value?: number | string;
+  index?: number;
+}) {
+  const { x, y, value, index } = props;
+  if (x == null || y == null || index == null || index % 7 !== 0) return null;
+  const num = typeof value === "number" ? value : Number(value ?? 0);
+  return (
+    <text x={x} y={y - 8} textAnchor="middle" fontSize={9} fontWeight={600} fill="hsl(47 98% 68%)">
+      {fmtCurrencyCompact(num)}
+    </text>
+  );
+}
+
+// Story 29.14: tooltip do gráfico de resultado/dia — mostra Investimento,
+// Receita e o Resultado do dia (verde/vermelho). `variant` escolhe se o
+// número herói é o resultado bruto (Receita − Investimento) ou a Margem líquida.
+function DailyResultTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{
+    payload?: { date?: string; spend?: number; revenue?: number; margin?: number };
+  }>;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const d = payload[0]?.payload;
+  if (!d) return null;
+  const result = d.margin ?? 0;
+  const resultLabel = "Margem (líquida)";
+  const positive = result >= 0;
+  return (
+    <div className="min-w-[172px] rounded-md border bg-popover p-2.5 text-xs text-popover-foreground shadow-md">
+      {d.date && <div className="mb-1.5 font-semibold">{d.date}</div>}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-muted-foreground">Investimento</span>
+          <span className="font-mono tabular-nums">{fmtCurrency(d.spend)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-muted-foreground">Receita</span>
+          <span className="font-mono tabular-nums">{fmtCurrency(d.revenue)}</span>
+        </div>
+        <div
+          className={`mt-1 flex items-center justify-between gap-3 border-t border-border/40 pt-1 font-semibold ${
+            positive ? "text-emerald-400" : "text-red-400"
+          }`}
+        >
+          <span>{resultLabel}</span>
+          <span className="font-mono tabular-nums">{fmtCurrency(result)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
@@ -157,6 +263,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const [showCampaignManager, setShowCampaignManager] = useState(false);
   const [showSpreadsheetWizard, setShowSpreadsheetWizard] = useState(false);
   const [tableFilter, setTableFilter] = useState<"campaign" | "adset" | "ad">("campaign");
+  // Story 29.19: ordenação de colunas + largura da coluna Dimensão no Detalhamento
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [dimWidth, setDimWidth] = useState(200);
   const { data: perpetualSpreadsheet } = usePerpetualSpreadsheet(projectId, funnel.id);
   const { data: salesData } = usePerpetualSalesData(
     projectId,
@@ -183,7 +293,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
     customRange?.startDate, customRange?.endDate,
   );
-  const { data: campaignData, isLoading: campaignsLoading } = useTrafficCampaigns(projectId, days);
+  const { data: campaignData } = useTrafficCampaigns(projectId, days);
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsightsBulk(
       projectId,
@@ -194,6 +304,20 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     );
   const { data: adSetsData } = useAllAdSets(projectId, days, campaignIds.length > 0 ? campaignIds : null);
   const { data: adsData } = useAllAds(projectId, days, campaignIds.length > 0 ? campaignIds : null);
+
+  // Story 29.13: resolve utm_medium (adset id) → adset name e utm_content
+  // (ad id) → ad name via cache de nomes Meta (/meta-names/resolve, DB 24h).
+  // Resolve qualquer id (não só os com insights na janela). Fallback pro id cru.
+  const mediumIds = useMemo(
+    () => salesData?.porUtmMedium?.map((u) => u.medium) ?? [],
+    [salesData],
+  );
+  const contentIds = useMemo(
+    () => salesData?.porUtmContent?.map((u) => u.content) ?? [],
+    [salesData],
+  );
+  const { namesMap: adsetNamesMap } = useResolveMetaNames(projectId, mediumIds, "adset");
+  const { namesMap: adNamesMap } = useResolveMetaNames(projectId, contentIds, "ad");
 
   const { data: compData } = useMetaAdsComparison(
     projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
@@ -209,8 +333,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // Filtered campaigns for this funnel
   const funnelCampaigns = useMemo(() => {
     if (!campaignData) return [];
-    return campaignData.campaigns.filter((c) => campaignIdSet.has(c.campaignId));
-  }, [campaignData, campaignIdSet]);
+    const base = campaignData.campaigns.filter((c) => campaignIdSet.has(c.campaignId));
+    // Story 29.16: com planilha conectada, Vendas/Receita/ROAS/CAC da tabela de
+    // campanha vêm da PLANILHA (match utm_campaign = campaignId). Spend continua Meta.
+    // O nome já está na linha (c.campaignName) — não precisa resolver via Meta.
+    if (!usingSpreadsheet || !salesData) return base;
+    return overlaySpreadsheetMetrics(base, new Map((salesData.porUtmCampaign ?? []).map((u) => [u.campaign, u])));
+  }, [campaignData, campaignIdSet, usingSpreadsheet, salesData]);
 
   // Daily chart data: investment + margin
   // Story 29.4 + 29.7: quando planilha conectada, Receita vem da planilha e
@@ -236,17 +365,19 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       );
       const metaRevenue = metaRevenueEntry ? parseFloat(metaRevenueEntry.value) : 0;
       const sheetRevenue = sheetByDay[d.date_start] ?? 0;
+      // Story 29.10: sem planilha de vendas conectada não há fonte de vendas —
+      // não herdar receita/margem/vendas do pixel Meta (evita número enganoso).
       // Quando usingSpreadsheet mas sem daily da planilha (não mapeou dataVenda),
       // usa Meta como fallback no gráfico — KPI Receita já mostra total da planilha.
-      const revenueBruto = sheetHasDaily ? sheetRevenue : metaRevenue;
-      const revenueLiquida = revenueBruto * (1 - feeRate);
-      const margin = revenueLiquida - spendComTax;
+      const revenueBruto = sheetHasDaily ? sheetRevenue : (usingSpreadsheet ? metaRevenue : 0);
+      // Story 29.20 (Danilo): margem LÍQUIDA — (Receita × (1−fees)) − Investimento c/ tax.
+      const margin = usingSpreadsheet ? (revenueBruto * (1 - feeRate)) - spendComTax : 0;
       const dateLabel = d.date_start.slice(5, 10);
       const revenueSource = sheetHasDaily
         ? "Planilha · faturamento bruto por dia"
         : usingSpreadsheet
           ? "Meta Ads · action_values.purchase (fallback: planilha sem dataVenda)"
-          : "Meta Ads API · action_values.purchase (time series)";
+          : "Sem fonte de vendas conectada · Receita = 0";
       const spendSource = taxAmount > 0
         ? `Meta Ads spend + 12.15% imposto (a partir de ${META_TAX_EFFECTIVE_DATE})`
         : "Meta Ads API · spend (time series)";
@@ -257,7 +388,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         spendTax: taxAmount,
         revenue: revenueBruto,
         margin,
-        sales: purchases ? parseInt(purchases.value) : 0,
+        sales: usingSpreadsheet && purchases ? parseInt(purchases.value) : 0,
         formulasByKey: {
           spend: buildFunnelDailyFormula("Investimento", spendSource, spendComTax, true, dateLabel),
           revenue: buildFunnelDailyFormula("Receita", revenueSource, revenueBruto, true, dateLabel),
@@ -295,10 +426,23 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       : overview.totalSpend;
 
     if (!usingSpreadsheet || !salesData) {
-      return { ...overview, totalSpend: effectiveSpend };
+      // Story 29.10: sem planilha de vendas conectada = sem fonte de vendas.
+      // NÃO herda vendas/receita do pixel Meta (era o bug — fallback silencioso).
+      // Vendas/Receita = 0; derivados (CAC/Margem/ROAS) = null → renderizam "—".
+      return {
+        ...overview,
+        totalSpend: effectiveSpend,
+        totalSales: 0,
+        totalRevenue: 0,
+        cac: null,
+        margin: null,
+        marginPercent: null,
+        roas: null,
+      };
     }
     const sales = salesData.totalVendas;
     const revenue = salesData.faturamentoBruto;
+    // Story 29.20 (Danilo): Margem = Receita LÍQUIDA (após fees da plataforma) − Investimento.
     const netRevenue = salesData.faturamentoLiquidoCalculado;
     const margin = netRevenue - effectiveSpend;
     return {
@@ -346,19 +490,35 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
 
   const revenueByPublico = useMemo(() => {
     if (!usingSpreadsheet || !salesData) return [];
-    return salesData.porUtmMedium.slice(0, 8).map((u) => ({
-      name: u.medium.length > 25 ? u.medium.slice(0, 25) + "..." : u.medium,
-      revenue: u.bruto,
-    }));
-  }, [salesData, usingSpreadsheet]);
+    // Story 29.13: resolve adset id → nome e re-agrupa (adsets com mesmo nome somam)
+    const byName = new Map<string, number>();
+    for (const u of salesData.porUtmMedium ?? []) {
+      const label = adsetNamesMap.get(u.medium) ?? u.medium;
+      byName.set(label, (byName.get(label) ?? 0) + u.bruto);
+    }
+    return Array.from(byName, ([name, revenue]) => ({
+      name: name.length > 25 ? name.slice(0, 25) + "..." : name,
+      revenue,
+    }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 8);
+  }, [salesData, usingSpreadsheet, adsetNamesMap]);
 
   const revenueByCriativo = useMemo(() => {
     if (!usingSpreadsheet || !salesData) return [];
-    return salesData.porUtmContent.slice(0, 8).map((u) => ({
-      name: u.content.length > 25 ? u.content.slice(0, 25) + "..." : u.content,
-      revenue: u.bruto,
-    }));
-  }, [salesData, usingSpreadsheet]);
+    // Story 29.13: resolve ad id → nome e re-agrupa (ads com mesmo nome somam)
+    const byName = new Map<string, number>();
+    for (const u of salesData.porUtmContent ?? []) {
+      const label = adNamesMap.get(u.content) ?? u.content;
+      byName.set(label, (byName.get(label) ?? 0) + u.bruto);
+    }
+    return Array.from(byName, ([name, revenue]) => ({
+      name: name.length > 25 ? name.slice(0, 25) + "..." : name,
+      revenue,
+    }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 8);
+  }, [salesData, usingSpreadsheet, adNamesMap]);
 
   // Legacy (Meta-based) — mantido pra quando NÃO há planilha conectada
   const revenueByCampaign = useMemo(() => {
@@ -370,14 +530,113 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   }, [funnelCampaigns]);
 
   // Table data based on filter
+  // Story 29.17: mesma lógica da campanha (29.16) aplicada a adset e ad —
+  // Vendas/Receita/ROAS/CAC vêm da PLANILHA por match de UTM, não do Meta.
+  // Público (adset) → utm_medium = adset_id · Criativo (ad) → utm_content = ad_id.
+  // Spend continua Meta; nome continua vindo da linha (Meta all-adsets/all-ads).
+  const funnelAdSets = useMemo(() => {
+    const base = adSetsData?.adsets ?? [];
+    if (!usingSpreadsheet || !salesData) return base;
+    return overlaySpreadsheetMetrics(base, new Map((salesData.porUtmMedium ?? []).map((u) => [u.medium, u])));
+  }, [adSetsData, usingSpreadsheet, salesData]);
+
+  const funnelAds = useMemo(() => {
+    const base = adsData?.ads ?? [];
+    if (!usingSpreadsheet || !salesData) return base;
+    return overlaySpreadsheetMetrics(base, new Map((salesData.porUtmContent ?? []).map((u) => [u.content, u])));
+  }, [adsData, usingSpreadsheet, salesData]);
+
   const tableData = useMemo((): CampaignAnalytics[] => {
     switch (tableFilter) {
       case "campaign": return funnelCampaigns;
-      case "adset": return adSetsData?.adsets ?? [];
-      case "ad": return adsData?.ads ?? [];
+      case "adset": return funnelAdSets;
+      case "ad": return funnelAds;
       default: return [];
     }
-  }, [tableFilter, funnelCampaigns, adSetsData, adsData]);
+  }, [tableFilter, funnelCampaigns, funnelAdSets, funnelAds]);
+
+  // Story 29.20 (Danilo): fee rate da plataforma pra Margem LÍQUIDA por linha.
+  const detailFeeRate = usingSpreadsheet && salesData ? salesData.feeRate : 0;
+  // Story 29.19: normaliza nomes (tira " — Cópia") e agrupa a cópia no nome base.
+  // Merge (>1 membro) soma métricas e re-deriva taxas; membro único fica intacto.
+  const detailRows = useMemo<DetailRow[]>(() => {
+    const groups = new Map<string, CampaignAnalytics[]>();
+    for (const row of tableData) {
+      const name = normalizeCampaignName(row.campaignName);
+      const arr = groups.get(name) ?? [];
+      arr.push(row);
+      groups.set(name, arr);
+    }
+    return Array.from(groups.entries()).map(([name, members]) => {
+      let base: CampaignAnalytics;
+      if (members.length === 1) {
+        base = { ...members[0], campaignName: name };
+      } else {
+        const spend = members.reduce((s, m) => s + m.spend, 0);
+        const impressions = members.reduce((s, m) => s + m.impressions, 0);
+        const clicks = members.reduce((s, m) => s + m.clicks, 0);
+        const revenue = members.reduce((s, m) => s + (m.revenue ?? 0), 0);
+        const sales = members.reduce((s, m) => s + (m.sales ?? 0), 0);
+        base = {
+          ...members[0],
+          campaignName: name,
+          spend, impressions, clicks, revenue, sales,
+          ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+          cpc: clicks > 0 ? spend / clicks : 0,
+          cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
+          roas: spend > 0 ? revenue / spend : null,
+          costPerSale: sales > 0 ? spend / sales : null,
+        };
+      }
+      const grossRevenue = base.revenue ?? 0;
+      const sales = base.sales ?? 0;
+      // Story 29.20 (Danilo): Margem = Receita LÍQUIDA (após fees) − Investimento.
+      const netRevenue = grossRevenue * (1 - detailFeeRate);
+      const margin = netRevenue - base.spend;
+      return {
+        ...base,
+        marginPct: grossRevenue > 0 ? (margin / grossRevenue) * 100 : null,
+        marginPerSale: sales > 0 ? margin / sales : null,
+      };
+    });
+  }, [tableData, detailFeeRate]);
+
+  const sortedRows = useMemo<DetailRow[]>(() => {
+    if (!sortCol) return detailRows;
+    const num = (v: number | null | undefined) => (v == null ? Number.NEGATIVE_INFINITY : v);
+    const key = (r: DetailRow): number | string => {
+      switch (sortCol) {
+        case "dimension": return r.campaignName.toLowerCase();
+        case "spend": return num(r.spend);
+        case "revenue": return num(r.revenue);
+        case "cac": return num(r.costPerSale);
+        case "roas": return num(r.roas);
+        case "marginPct": return num(r.marginPct);
+        case "marginPerSale": return num(r.marginPerSale);
+        case "ctr": return num(r.ctr);
+        case "cpc": return num(r.cpc);
+        case "cpm": return num(r.cpm);
+        default: return 0;
+      }
+    };
+    return [...detailRows].sort((a, b) => {
+      const ka = key(a);
+      const kb = key(b);
+      if (typeof ka === "string" && typeof kb === "string") {
+        return sortDir === "asc" ? ka.localeCompare(kb) : kb.localeCompare(ka);
+      }
+      return sortDir === "asc" ? (ka as number) - (kb as number) : (kb as number) - (ka as number);
+    });
+  }, [detailRows, sortCol, sortDir]);
+
+  const toggleSort = (col: string) => {
+    if (sortCol === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortCol(col);
+      setSortDir("desc");
+    }
+  };
+  const sortArrow = (col: string) => (sortCol === col ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
   if (campaignIds.length === 0) {
     return (
@@ -466,6 +725,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           const m = effectiveMetrics;
           // Marca KPIs cuja fonte mudou pra planilha
           const fromSheet = usingSpreadsheet;
+          // Story 29.10: sem planilha = sem fonte de vendas → aviso nos cards de venda
+          const noSalesSource = !usingSpreadsheet;
           return (
             <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-7">
               <MetricTooltip label="ROAS" value={fmtRoas(m.roas)} formula={buildFunnelRoasFormula(m.roas, f)}>
@@ -486,10 +747,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                 />
               </InvestmentBreakdownTooltip>
               <MetricTooltip label="Vendas" value={fmtNumber(m.totalSales)} formula={buildFunnelSalesCountFormula(m.totalSales, f)}>
-                <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(m.totalSales)} hintTooltip fromSheet={fromSheet} />
+                <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(m.totalSales)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
               </MetricTooltip>
               <MetricTooltip label="Receita" value={fmtCurrency(m.totalRevenue)} formula={buildFunnelRevenueFormula(m.totalRevenue, f)}>
-                <KpiCard icon={DollarSign} label="Receita" value={fmtCurrency(m.totalRevenue)} hintTooltip fromSheet={fromSheet} />
+                <KpiCard icon={DollarSign} label="Receita" value={fmtCurrency(m.totalRevenue)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
               </MetricTooltip>
               <MetricTooltip label="CAC" value={fmtCurrency(m.cac)} formula={buildFunnelCacFormula(m.cac, f)}>
                 <KpiCard icon={DollarSign} label="CAC" value={fmtCurrency(m.cac)} hintTooltip fromSheet={fromSheet} />
@@ -500,7 +761,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                 margin={m.margin}
                 platform={usingSpreadsheet ? salesData?.platform : null}
               >
-                <KpiCard icon={DollarSign} label="Margem" value={fmtCurrency(m.margin)} hintTooltip fromSheet={fromSheet} />
+                <KpiCard icon={DollarSign} label="Margem" value={fmtCurrency(m.margin)} hintTooltip fromSheet={fromSheet} signValue={m.margin} />
               </MarginBreakdownTooltip>
               <MetricTooltip label="Margem %" value={fmtPercent(m.marginPercent)} formula={buildFunnelMarginPercentFormula(m.marginPercent, f)}>
                 <KpiCard icon={BarChart3} label="Margem %" value={fmtPercent(m.marginPercent)} hintTooltip fromSheet={fromSheet} />
@@ -531,83 +792,159 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       })()}
 
       {/* ================================================================ */}
-      {/* DESEMPENHO POR CAMPANHA (CANAL)                                  */}
-      {/* ================================================================ */}
-      {!campaignsLoading && funnelCampaigns.length > 0 && (
-        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-          <h3 className="text-sm font-semibold mb-3">Desempenho por Canal (Campanha)</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-muted-foreground border-b border-border/20">
-                  <th className="text-left py-2 pr-3">Campanha</th>
-                  <th className="text-right px-2">Invest.</th>
-                  <th className="text-right px-2">Receita</th>
-                  <th className="text-right px-2">Vendas</th>
-                  <th className="text-right px-2">ROAS</th>
-                  <th className="text-right px-2">CAC</th>
-                  <th className="text-right pl-2">CTR</th>
-                </tr>
-              </thead>
-              <tbody>
-                {funnelCampaigns.map((c) => (
-                  <tr key={c.campaignId} className="border-b border-border/10 hover:bg-muted/5">
-                    <td className="py-2 pr-3 font-medium truncate max-w-[200px]">{c.campaignName}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtCurrency(c.spend)}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtCurrency(c.revenue)}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtNumber(c.sales)}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtRoas(c.roas)}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtCurrency(c.costPerSale)}</td>
-                    <td className="text-right pl-2 tabular-nums">{fmtPercent(c.ctr)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ================================================================ */}
       {/* GRÁFICOS EM LINHA: Investimento + Margem no tempo                */}
       {/* ================================================================ */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6">
+        {/* Story 29.15: Margem no Tempo (barras verde/vermelho) fica em cima */}
         <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-          <h3 className="text-sm font-semibold mb-4">Investimento no Tempo</h3>
+          <h3 className="text-sm font-semibold mb-1">Margem no Tempo</h3>
+          <p className="text-[11px] text-muted-foreground mb-3">
+            Margem líquida por dia (com fees) · <span className="text-emerald-400">verde = positiva</span> · <span className="text-red-400">vermelho = negativa</span>
+          </p>
           {dailyLoading ? <Skeleton className="h-48" /> : dailyChartData.length > 0 ? (
             <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={dailyChartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
+              <BarChart data={dailyChartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
+                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => fmtCurrencyCompact(v)} />
+                <Tooltip cursor={{ fill: "var(--color-muted)", opacity: 0.12 }} content={<DailyResultTooltip />} />
+                <ReferenceLine y={0} stroke="var(--color-muted-foreground)" />
+                <Bar dataKey="margin" name="Margem" radius={[2, 2, 0, 0]}>
+                  {dailyChartData.map((d, i) => (
+                    <Cell key={i} fill={d.margin >= 0 ? "hsl(150 60% 45%)" : "hsl(0 72% 55%)"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <EmptyState />}
+        </div>
+
+        {/* Story 29.15: Investimento no Tempo — linha, valor a cada 7 dias */}
+        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+          <h3 className="text-sm font-semibold mb-1">Investimento no Tempo</h3>
+          <p className="text-[11px] text-muted-foreground mb-3">
+            Investimento (Meta, com imposto) por dia · valor exibido a cada 7 dias
+          </p>
+          {dailyLoading ? <Skeleton className="h-48" /> : dailyChartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={dailyChartData} margin={{ top: 24, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
                 <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => fmtCurrencyCompact(v)} />
                 <Tooltip content={<FormulaChartTooltip />} />
-                <Legend wrapperStyle={{ color: "#fff" }} />
-                <Line type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={{ r: 3, fill: "hsl(47 98% 54%)" }} name="Investimento">
-                  <LabelList dataKey="spend" position="top" offset={8} fontSize={9} fill="hsl(47 98% 60%)" formatter={(v: unknown) => fmtCurrencyCompact(typeof v === "number" ? v : Number(v ?? 0))} />
-                </Line>
-                <Line type="monotone" dataKey="revenue" stroke="hsl(150 60% 50%)" strokeWidth={2} dot={{ r: 3, fill: "hsl(150 60% 50%)" }} name="Receita">
-                  <LabelList dataKey="revenue" position="bottom" offset={8} fontSize={9} fill="hsl(150 60% 60%)" formatter={(v: unknown) => fmtCurrencyCompact(typeof v === "number" ? v : Number(v ?? 0))} />
+                <Line type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={{ r: 2, fill: "hsl(47 98% 54%)" }} name="Investimento">
+                  <LabelList dataKey="spend" content={<Spend7DayLabel />} />
                 </Line>
               </LineChart>
             </ResponsiveContainer>
           ) : <EmptyState />}
         </div>
+      </div>
 
-        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-          <h3 className="text-sm font-semibold mb-4">Margem no Tempo</h3>
-          {dailyLoading ? <Skeleton className="h-48" /> : dailyChartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={dailyChartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
-                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => fmtCurrencyCompact(v)} />
-                <Tooltip content={<FormulaChartTooltip />} />
-                <ReferenceLine y={0} stroke="var(--color-muted-foreground)" strokeDasharray="4 4" />
-                <Line type="monotone" dataKey="margin" stroke="hsl(150 60% 50%)" strokeWidth={2} dot={{ r: 3, fill: "hsl(150 60% 50%)" }} name="Margem (R$)">
-                  <LabelList dataKey="margin" position="top" offset={8} fontSize={9} fill="hsl(150 60% 60%)" formatter={(v: unknown) => fmtCurrencyCompact(typeof v === "number" ? v : Number(v ?? 0))} />
-                </Line>
-              </LineChart>
-            </ResponsiveContainer>
-          ) : <EmptyState />}
+      {/* ================================================================ */}
+      {/* TABELA DETALHADA COM FILTRO — Story 29.18: movida pra baixo do gráfico */}
+      {/* ================================================================ */}
+      <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Filter className="h-4 w-4" />
+            Detalhamento
+          </h3>
+          <div className="flex items-center gap-2">
+            {/* Story 29.19: largura da coluna Dimensão */}
+            <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <span className="hidden sm:inline">Dimensão</span>
+              <button
+                type="button"
+                onClick={() => setDimWidth((w) => Math.max(120, w - 40))}
+                className="h-6 w-6 rounded border border-border/40 hover:bg-muted/40 leading-none"
+                title="Diminuir coluna Dimensão"
+              >−</button>
+              <button
+                type="button"
+                onClick={() => setDimWidth((w) => Math.min(480, w + 40))}
+                className="h-6 w-6 rounded border border-border/40 hover:bg-muted/40 leading-none"
+                title="Aumentar coluna Dimensão"
+              >+</button>
+            </div>
+            <Select value={tableFilter} onValueChange={(v) => setTableFilter(v as typeof tableFilter)}>
+              <SelectTrigger className="w-[160px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="campaign">Por Canal</SelectItem>
+                <SelectItem value="adset">Por Publico</SelectItem>
+                <SelectItem value="ad">Por Criativo</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-muted-foreground border-b border-border/20">
+                <th style={{ width: dimWidth, minWidth: dimWidth }} className="text-left py-2 pr-3 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("dimension")}>Dimensao{sortArrow("dimension")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("spend")}>Invest.{sortArrow("spend")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("revenue")}>Receita{sortArrow("revenue")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cac")}>CAC{sortArrow("cac")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("roas")}>ROAS{sortArrow("roas")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("marginPct")}>Margem %{sortArrow("marginPct")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("marginPerSale")}>Margem/Venda{sortArrow("marginPerSale")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("ctr")}>CTR (link){sortArrow("ctr")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cpc")}>CPC (link){sortArrow("cpc")}</th>
+                <th className="text-right pl-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cpm")}>CPM{sortArrow("cpm")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRows.length === 0 ? (
+                <tr><td colSpan={10} className="py-6 text-center text-muted-foreground">Sem dados</td></tr>
+              ) : sortedRows.map((row) => {
+                const f = { days, funnelType: "perpetual" as const, funnelName: funnel?.name };
+                const marginPct = row.marginPct;
+                const marginPerSale = row.marginPerSale;
+                const path: EntityPath =
+                  tableFilter === "campaign" ? { campaign: row.campaignName }
+                  : tableFilter === "adset" ? { adset: row.campaignName }
+                  : { ad: row.campaignName };
+                const renderCell = (
+                  col: string,
+                  label: string,
+                  value: string,
+                  formula: ReturnType<typeof enrichFormulaForEntity>,
+                  className: string,
+                ) => {
+                  if (!formula) return <td key={col} className={className}>{value}</td>;
+                  return (
+                    <td key={col} className={className}>
+                      <MetricTooltip label={label} value={value} formula={formula}>
+                        <span className="cursor-help underline decoration-dotted decoration-border/60 underline-offset-2">
+                          {value}
+                        </span>
+                      </MetricTooltip>
+                    </td>
+                  );
+                };
+                const cells: Array<[string, string, string, ReturnType<typeof enrichFormulaForEntity>, string]> = [
+                  ["spend", "Investimento", fmtCurrency(row.spend), enrichFormulaForEntity(buildFunnelSpendFormula(row.spend, f), path), "text-right px-2 tabular-nums"],
+                  ["revenue", "Receita", fmtCurrency(row.revenue), enrichFormulaForEntity(buildFunnelRevenueFormula(row.revenue, f), path), "text-right px-2 tabular-nums"],
+                  ["cac", "CAC", fmtCurrency(row.costPerSale), enrichFormulaForEntity(buildFunnelCacFormula(row.costPerSale ?? null, f), path), "text-right px-2 tabular-nums"],
+                  ["roas", "ROAS", fmtRoas(row.roas), enrichFormulaForEntity(buildFunnelRoasFormula(row.roas ?? null, f), path), `text-right px-2 tabular-nums font-medium ${roasColorClass(row.roas)}`],
+                  ["marginPct", "Margem %", fmtPercent(marginPct), enrichFormulaForEntity(buildFunnelMarginPercentFormula(marginPct, f), path), `text-right px-2 tabular-nums font-medium ${marginColorClass(marginPct)}`],
+                  ["marginPerSale", "Margem/Venda", fmtCurrency(marginPerSale), enrichFormulaForEntity(buildFunnelMarginFormula(marginPerSale, f), path), `text-right px-2 tabular-nums font-medium ${marginColorClass(marginPerSale)}`],
+                  ["ctr", "CTR", fmtPercent(row.ctr), enrichFormulaForEntity(buildFunnelCtrFormula(row.ctr, f), path), "text-right px-2 tabular-nums"],
+                  ["cpc", "CPC", fmtCurrency(row.cpc), enrichFormulaForEntity(buildFunnelCpcFormula(row.cpc, f), path), "text-right px-2 tabular-nums"],
+                  ["cpm", "CPM", fmtCurrency(row.cpm), enrichFormulaForEntity(buildFunnelCpmFormula(row.cpm, f), path), "text-right pl-2 tabular-nums"],
+                ];
+                return (
+                  <tr key={row.campaignName} className="border-b border-border/10 hover:bg-muted/5">
+                    <td className="py-2 pr-3 font-medium truncate" style={{ maxWidth: dimWidth, width: dimWidth }}>{row.campaignName}</td>
+                    {cells.map(([col, label, value, formula, cls]) => renderCell(col, label, value, formula, cls))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -677,96 +1014,6 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         endDate={customRange?.endDate}
       />
 
-      {/* ================================================================ */}
-      {/* TABELA DETALHADA COM FILTRO                                      */}
-      {/* ================================================================ */}
-      <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold flex items-center gap-2">
-            <Filter className="h-4 w-4" />
-            Detalhamento
-          </h3>
-          <Select value={tableFilter} onValueChange={(v) => setTableFilter(v as typeof tableFilter)}>
-            <SelectTrigger className="w-[160px] h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="campaign">Por Canal</SelectItem>
-              <SelectItem value="adset">Por Publico</SelectItem>
-              <SelectItem value="ad">Por Criativo</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-muted-foreground border-b border-border/20">
-                <th className="text-left py-2 pr-3 min-w-[150px]">Dimensao</th>
-                <th className="text-right px-2">Invest.</th>
-                <th className="text-right px-2">Receita</th>
-                <th className="text-right px-2">CAC</th>
-                <th className="text-right px-2">ROAS</th>
-                <th className="text-right px-2">Margem %</th>
-                <th className="text-right px-2">Margem/Venda</th>
-                <th className="text-right px-2">CTR (link)</th>
-                <th className="text-right px-2">CPC (link)</th>
-                <th className="text-right pl-2">CPM</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tableData.length === 0 ? (
-                <tr><td colSpan={10} className="py-6 text-center text-muted-foreground">Sem dados</td></tr>
-              ) : tableData.map((row) => {
-                const f = { days, funnelType: "perpetual" as const, funnelName: funnel?.name };
-                const margin = (row.revenue ?? 0) - row.spend;
-                const marginPct = (row.revenue ?? 0) > 0 ? (margin / row.revenue!) * 100 : null;
-                const marginPerSale = (row.sales ?? 0) > 0 ? margin / row.sales! : null;
-                const path: EntityPath =
-                  tableFilter === "campaign" ? { campaign: row.campaignName }
-                  : tableFilter === "adset" ? { adset: row.campaignName }
-                  : { ad: row.campaignName };
-                const renderCell = (
-                  col: string,
-                  label: string,
-                  value: string,
-                  formula: ReturnType<typeof enrichFormulaForEntity>,
-                  className: string,
-                ) => {
-                  if (!formula) return <td key={col} className={className}>{value}</td>;
-                  return (
-                    <td key={col} className={className}>
-                      <MetricTooltip label={label} value={value} formula={formula}>
-                        <span className="cursor-help underline decoration-dotted decoration-border/60 underline-offset-2">
-                          {value}
-                        </span>
-                      </MetricTooltip>
-                    </td>
-                  );
-                };
-                const cells: Array<[string, string, string, ReturnType<typeof enrichFormulaForEntity>, string]> = [
-                  ["spend", "Investimento", fmtCurrency(row.spend), enrichFormulaForEntity(buildFunnelSpendFormula(row.spend, f), path), "text-right px-2 tabular-nums"],
-                  ["revenue", "Receita", fmtCurrency(row.revenue), enrichFormulaForEntity(buildFunnelRevenueFormula(row.revenue, f), path), "text-right px-2 tabular-nums"],
-                  ["cac", "CAC", fmtCurrency(row.costPerSale), enrichFormulaForEntity(buildFunnelCacFormula(row.costPerSale ?? null, f), path), "text-right px-2 tabular-nums"],
-                  ["roas", "ROAS", fmtRoas(row.roas), enrichFormulaForEntity(buildFunnelRoasFormula(row.roas ?? null, f), path), "text-right px-2 tabular-nums"],
-                  ["marginPct", "Margem %", fmtPercent(marginPct), enrichFormulaForEntity(buildFunnelMarginPercentFormula(marginPct, f), path), "text-right px-2 tabular-nums"],
-                  ["marginPerSale", "Margem/Venda", fmtCurrency(marginPerSale), enrichFormulaForEntity(buildFunnelMarginFormula(marginPerSale, f), path), "text-right px-2 tabular-nums"],
-                  ["ctr", "CTR", fmtPercent(row.ctr), enrichFormulaForEntity(buildFunnelCtrFormula(row.ctr, f), path), "text-right px-2 tabular-nums"],
-                  ["cpc", "CPC", fmtCurrency(row.cpc), enrichFormulaForEntity(buildFunnelCpcFormula(row.cpc, f), path), "text-right px-2 tabular-nums"],
-                  ["cpm", "CPM", fmtCurrency(row.cpm), enrichFormulaForEntity(buildFunnelCpmFormula(row.cpm, f), path), "text-right pl-2 tabular-nums"],
-                ];
-                return (
-                  <tr key={row.campaignId} className="border-b border-border/10 hover:bg-muted/5">
-                    <td className="py-2 pr-3 font-medium truncate max-w-[200px]">{row.campaignName}</td>
-                    {cells.map(([col, label, value, formula, cls]) => renderCell(col, label, value, formula, cls))}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
       {/* Dashboard Financeiro — apenas etapas pagas (Story 19.6) */}
       {stageType === "paid" && stageId && (
         <div className="space-y-6 pt-2 border-t border-border/30">
@@ -793,19 +1040,6 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         </div>
       )}
 
-      {/* Story 18.41: Creative Performance Table for Free stages */}
-      {stageType === "free" && stageId && (
-        <div className="space-y-4 pt-2 border-t border-border/30">
-          <h3 className="text-base font-semibold">Desempenho de Criativos (Meta Ads)</h3>
-          <StageCreativePerformanceTable
-            projectId={projectId}
-            funnelId={funnel.id}
-            stageId={stageId}
-            days={days}
-            stageType={stageType}
-          />
-        </div>
-      )}
     </div>
   );
 }
@@ -969,20 +1203,31 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
   target?: number; actual?: number | null; hintTooltip?: boolean;
   comparison?: { display: string; delta: number; higherIsBetter: boolean };
   fromSheet?: boolean;
+  /** Story 29.10: aviso âmbar (ex: "Conectar fonte de vendas") quando falta fonte de dados. */
+  warning?: string;
+  /** Story 29.15: colore o card por sinal do valor (verde > 0, vermelho ≤ 0). Ex: Margem. */
+  signValue?: number | null;
 } & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
-  { icon: Icon, label, value, target, actual, hintTooltip, comparison, fromSheet, className, ...rest },
+  { icon: Icon, label, value, target, actual, hintTooltip, comparison, fromSheet, warning, signValue, className, ...rest },
   ref,
 ) {
   const isRoas = target !== undefined;
   const roasOk = isRoas && actual != null && actual >= target;
   const roasBad = isRoas && actual != null && actual < target;
+  // Story 29.15: coloração por sinal (ex: Margem — vermelho ≤ 0, verde > 0)
+  const signPos = signValue != null && signValue > 0;
+  const signNeg = signValue != null && signValue <= 0;
 
   return (
     <div
       ref={ref}
       {...rest}
       className={`relative rounded-xl border p-3 hover:border-border/50 transition-colors ${hintTooltip ? "cursor-help" : ""} ${
-        roasOk ? "border-emerald-500/30 bg-emerald-500/5" : roasBad ? "border-red-500/30 bg-red-500/5" : "border-border/30 bg-gradient-to-br from-card/80 to-card/40"
+        signPos ? "border-emerald-500/30 bg-emerald-500/5"
+          : signNeg ? "border-red-500/30 bg-red-500/5"
+          : roasOk ? "border-emerald-500/30 bg-emerald-500/5"
+          : roasBad ? "border-red-500/30 bg-red-500/5"
+          : "border-border/30 bg-gradient-to-br from-card/80 to-card/40"
       } ${className ?? ""}`}
     >
       {fromSheet && (
@@ -992,7 +1237,12 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
       </div>
-      <p className={`text-xl font-bold tracking-tight ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
+      <p className={`text-xl font-bold tracking-tight ${signPos ? "text-emerald-400" : signNeg ? "text-red-400" : ""} ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
+      {warning && (
+        <p className="mt-1 flex items-center gap-1 text-[10px] font-medium leading-tight text-amber-500/90">
+          <span aria-hidden>⚠️</span> {warning}
+        </p>
+      )}
       {comparison && (
         <div className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1.5 leading-tight">
           <span>vs {comparison.display}</span>

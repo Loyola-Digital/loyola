@@ -85,6 +85,7 @@ const EMPTY_SALES_DATA = {
   porUtmSource: [] as { source: string; vendas: number; bruto: number; liquido: number }[],
   porUtmMedium: [] as { medium: string; vendas: number; bruto: number; liquido: number }[],
   porUtmContent: [] as { content: string; vendas: number; bruto: number; liquido: number }[],
+  porUtmCampaign: [] as { campaign: string; vendas: number; bruto: number; liquido: number }[],
   porFormaPagamento: [] as { forma: string; vendas: number; bruto: number; liquido: number }[],
   semDados: true,
 };
@@ -164,6 +165,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         utm_source?: string;
         utm_medium?: string;
         utm_content?: string;
+        utm_campaign?: string;
         dataVenda?: string;
       };
 
@@ -188,6 +190,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       const utmSourceIdx = colIdx(mapping.utm_source);
       const utmMediumIdx = colIdx(mapping.utm_medium);
       const utmContentIdx = colIdx(mapping.utm_content);
+      const utmCampaignIdx = colIdx(mapping.utm_campaign);
       const dataIdx = colIdx(mapping.dataVenda);
 
       if (emailIdx === -1) return { ...EMPTY_SALES_DATA, semDados: true };
@@ -214,6 +217,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
           utmSource: string;
           utmMedium: string;
           utmContent: string;
+          utmCampaign: string;
           lastDate: Date | null;
         }
       >();
@@ -235,6 +239,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         const utmSource = sanitizeUtmValue(row[utmSourceIdx]) ?? SEM_ORIGEM_LABEL;
         const utmMedium = sanitizeUtmValue(row[utmMediumIdx]) ?? SEM_ORIGEM_LABEL;
         const utmContent = sanitizeUtmValue(row[utmContentIdx]) ?? SEM_ORIGEM_LABEL;
+        const utmCampaign = sanitizeUtmValue(row[utmCampaignIdx]) ?? SEM_ORIGEM_LABEL;
         const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
 
         const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
@@ -249,10 +254,11 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
             existing.utmSource = utmSource;
             existing.utmMedium = utmMedium;
             existing.utmContent = utmContent;
+            existing.utmCampaign = utmCampaign;
             existing.lastDate = rowDate;
           }
         } else {
-          dedupMap.set(dedupKey, { bruto, liquido, forma, utmSource, utmMedium, utmContent, lastDate: rowDate });
+          dedupMap.set(dedupKey, { bruto, liquido, forma, utmSource, utmMedium, utmContent, utmCampaign, lastDate: rowDate });
         }
       }
 
@@ -263,6 +269,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       const utmSourceMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const utmMediumMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const utmContentMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+      const utmCampaignMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const formaMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
 
       const addToMap = (
@@ -278,12 +285,13 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         m.set(key, e);
       };
 
-      for (const { bruto, liquido, forma, utmSource, utmMedium, utmContent } of dedupMap.values()) {
+      for (const { bruto, liquido, forma, utmSource, utmMedium, utmContent, utmCampaign } of dedupMap.values()) {
         totalBruto += bruto;
         totalLiquido += liquido;
         addToMap(utmSourceMap, utmSource, bruto, liquido);
         addToMap(utmMediumMap, utmMedium, bruto, liquido);
         addToMap(utmContentMap, utmContent, bruto, liquido);
+        addToMap(utmCampaignMap, utmCampaign, bruto, liquido);
         addToMap(formaMap, forma, bruto, liquido);
       }
 
@@ -309,6 +317,9 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
           .sort((a, b) => b.bruto - a.bruto),
         porUtmContent: Array.from(utmContentMap.entries())
           .map(([content, v]) => ({ content, ...v }))
+          .sort((a, b) => b.bruto - a.bruto),
+        porUtmCampaign: Array.from(utmCampaignMap.entries())
+          .map(([campaign, v]) => ({ campaign, ...v }))
           .sort((a, b) => b.bruto - a.bruto),
         porFormaPagamento: Array.from(formaMap.entries())
           .map(([forma, v]) => ({ forma, ...v }))

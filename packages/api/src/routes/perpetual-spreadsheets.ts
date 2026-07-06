@@ -20,12 +20,22 @@ const paramsSchema = z.object({
   funnelId: z.string().uuid(),
 });
 
+// Story 29.11: schema espelha o tipo canônico SaleColumnMapping (shared).
+// Antes faltavam `dataVenda` e `transactionId` (e havia um `date` fantasma que
+// ninguém lê) — como o Zod descarta chaves não declaradas, o mapeamento de
+// "Data da Venda" e "ID da Transação" era SILENCIOSAMENTE perdido no save.
+// Isso impossibilitava o filtro por período (dataVenda nunca chegava ao DB) e
+// causava os KPIs "all-time" inflados no dashboard do perpétuo.
 const columnMappingSchema = z.object({
   email: z.string().min(1),
+  transactionId: z.string().optional(),
+  customerName: z.string().optional(),
+  productName: z.string().optional(),
   valorBruto: z.string().optional(),
   valorLiquido: z.string().optional(),
   formaPagamento: z.string().optional(),
-  date: z.string().optional(),
+  canalOrigem: z.string().optional(),
+  dataVenda: z.string().optional(),
   utm_source: z.string().optional(),
   utm_medium: z.string().optional(),
   utm_campaign: z.string().optional(),
