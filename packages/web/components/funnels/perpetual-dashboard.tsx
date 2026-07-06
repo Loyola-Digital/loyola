@@ -213,19 +213,17 @@ function Spend7DayLabel(props: {
 function DailyResultTooltip({
   active,
   payload,
-  variant = "bruto",
 }: {
   active?: boolean;
   payload?: Array<{
-    payload?: { date?: string; spend?: number; revenue?: number; margin?: number; resultado?: number };
+    payload?: { date?: string; spend?: number; revenue?: number; margin?: number };
   }>;
-  variant?: "bruto" | "margem";
 }) {
   if (!active || !payload || payload.length === 0) return null;
   const d = payload[0]?.payload;
   if (!d) return null;
-  const result = (variant === "margem" ? d.margin : d.resultado) ?? 0;
-  const resultLabel = variant === "margem" ? "Margem (líquida)" : "Resultado";
+  const result = d.margin ?? 0;
+  const resultLabel = "Margem (líquida)";
   const positive = result >= 0;
   return (
     <div className="min-w-[172px] rounded-md border bg-popover p-2.5 text-xs text-popover-foreground shadow-md">
@@ -340,7 +338,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     // campanha vêm da PLANILHA (match utm_campaign = campaignId). Spend continua Meta.
     // O nome já está na linha (c.campaignName) — não precisa resolver via Meta.
     if (!usingSpreadsheet || !salesData) return base;
-    return overlaySpreadsheetMetrics(base, new Map(salesData.porUtmCampaign.map((u) => [u.campaign, u])));
+    return overlaySpreadsheetMetrics(base, new Map((salesData.porUtmCampaign ?? []).map((u) => [u.campaign, u])));
   }, [campaignData, campaignIdSet, usingSpreadsheet, salesData]);
 
   // Daily chart data: investment + margin
@@ -390,8 +388,6 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         spendTax: taxAmount,
         revenue: revenueBruto,
         margin,
-        // Story 29.14: resultado bruto do dia = Receita − Investimento (com tax).
-        resultado: revenueBruto - spendComTax,
         sales: usingSpreadsheet && purchases ? parseInt(purchases.value) : 0,
         formulasByKey: {
           spend: buildFunnelDailyFormula("Investimento", spendSource, spendComTax, true, dateLabel),
@@ -446,8 +442,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     }
     const sales = salesData.totalVendas;
     const revenue = salesData.faturamentoBruto;
-    const netRevenue = salesData.faturamentoLiquidoCalculado;
-    const margin = netRevenue - effectiveSpend;
+    // Story 29.20 (Danilo): card Margem usa receita BRUTA — consistente com a tabela Detalhamento.
+    const margin = revenue - effectiveSpend;
     return {
       ...overview,
       totalSpend: effectiveSpend,
@@ -495,7 +491,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     if (!usingSpreadsheet || !salesData) return [];
     // Story 29.13: resolve adset id → nome e re-agrupa (adsets com mesmo nome somam)
     const byName = new Map<string, number>();
-    for (const u of salesData.porUtmMedium) {
+    for (const u of salesData.porUtmMedium ?? []) {
       const label = adsetNamesMap.get(u.medium) ?? u.medium;
       byName.set(label, (byName.get(label) ?? 0) + u.bruto);
     }
@@ -511,7 +507,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     if (!usingSpreadsheet || !salesData) return [];
     // Story 29.13: resolve ad id → nome e re-agrupa (ads com mesmo nome somam)
     const byName = new Map<string, number>();
-    for (const u of salesData.porUtmContent) {
+    for (const u of salesData.porUtmContent ?? []) {
       const label = adNamesMap.get(u.content) ?? u.content;
       byName.set(label, (byName.get(label) ?? 0) + u.bruto);
     }
@@ -540,13 +536,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const funnelAdSets = useMemo(() => {
     const base = adSetsData?.adsets ?? [];
     if (!usingSpreadsheet || !salesData) return base;
-    return overlaySpreadsheetMetrics(base, new Map(salesData.porUtmMedium.map((u) => [u.medium, u])));
+    return overlaySpreadsheetMetrics(base, new Map((salesData.porUtmMedium ?? []).map((u) => [u.medium, u])));
   }, [adSetsData, usingSpreadsheet, salesData]);
 
   const funnelAds = useMemo(() => {
     const base = adsData?.ads ?? [];
     if (!usingSpreadsheet || !salesData) return base;
-    return overlaySpreadsheetMetrics(base, new Map(salesData.porUtmContent.map((u) => [u.content, u])));
+    return overlaySpreadsheetMetrics(base, new Map((salesData.porUtmContent ?? []).map((u) => [u.content, u])));
   }, [adsData, usingSpreadsheet, salesData]);
 
   const tableData = useMemo((): CampaignAnalytics[] => {
@@ -806,7 +802,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
                 <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => fmtCurrencyCompact(v)} />
-                <Tooltip cursor={{ fill: "var(--color-muted)", opacity: 0.12 }} content={<DailyResultTooltip variant="margem" />} />
+                <Tooltip cursor={{ fill: "var(--color-muted)", opacity: 0.12 }} content={<DailyResultTooltip />} />
                 <ReferenceLine y={0} stroke="var(--color-muted-foreground)" />
                 <Bar dataKey="margin" name="Margem" radius={[2, 2, 0, 0]}>
                   {dailyChartData.map((d, i) => (
