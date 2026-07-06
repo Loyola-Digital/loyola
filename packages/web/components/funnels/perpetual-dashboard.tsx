@@ -14,6 +14,8 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import {
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -23,6 +25,7 @@ import {
   BarChart,
   Bar,
   Cell,
+  LabelList,
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -140,6 +143,24 @@ function fmtRoas(val: number | null | undefined): string {
 
 function safeNum(val: string | undefined): number {
   return val ? parseFloat(val) : 0;
+}
+
+// Story 29.15: rótulo de valor a cada 7 dias no gráfico de linha de Investimento
+// (evita poluir mostrando o valor em todos os pontos).
+function Spend7DayLabel(props: {
+  x?: number;
+  y?: number;
+  value?: number | string;
+  index?: number;
+}) {
+  const { x, y, value, index } = props;
+  if (x == null || y == null || index == null || index % 7 !== 0) return null;
+  const num = typeof value === "number" ? value : Number(value ?? 0);
+  return (
+    <text x={x} y={y - 8} textAnchor="middle" fontSize={9} fontWeight={600} fill="hsl(47 98% 68%)">
+      {fmtCurrencyCompact(num)}
+    </text>
+  );
 }
 
 // Story 29.14: tooltip do gráfico de resultado/dia — mostra Investimento,
@@ -591,7 +612,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                 margin={m.margin}
                 platform={usingSpreadsheet ? salesData?.platform : null}
               >
-                <KpiCard icon={DollarSign} label="Margem" value={fmtCurrency(m.margin)} hintTooltip fromSheet={fromSheet} />
+                <KpiCard icon={DollarSign} label="Margem" value={fmtCurrency(m.margin)} hintTooltip fromSheet={fromSheet} signValue={m.margin} />
               </MarginBreakdownTooltip>
               <MetricTooltip label="Margem %" value={fmtPercent(m.marginPercent)} formula={buildFunnelMarginPercentFormula(m.marginPercent, f)}>
                 <KpiCard icon={BarChart3} label="Margem %" value={fmtPercent(m.marginPercent)} hintTooltip fromSheet={fromSheet} />
@@ -661,30 +682,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       {/* ================================================================ */}
       {/* GRÁFICOS EM LINHA: Investimento + Margem no tempo                */}
       {/* ================================================================ */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-          <h3 className="text-sm font-semibold mb-1">Resultado no Tempo</h3>
-          <p className="text-[11px] text-muted-foreground mb-3">
-            Receita − Investimento por dia · <span className="text-emerald-400">verde = lucro</span> · <span className="text-red-400">vermelho = prejuízo</span>
-          </p>
-          {dailyLoading ? <Skeleton className="h-48" /> : dailyChartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={dailyChartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
-                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => fmtCurrencyCompact(v)} />
-                <Tooltip cursor={{ fill: "var(--color-muted)", opacity: 0.12 }} content={<DailyResultTooltip variant="bruto" />} />
-                <ReferenceLine y={0} stroke="var(--color-muted-foreground)" />
-                <Bar dataKey="resultado" name="Resultado" radius={[2, 2, 0, 0]}>
-                  {dailyChartData.map((d, i) => (
-                    <Cell key={i} fill={d.resultado >= 0 ? "hsl(150 60% 45%)" : "hsl(0 72% 55%)"} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : <EmptyState />}
-        </div>
-
+      <div className="grid grid-cols-1 gap-6">
+        {/* Story 29.15: Margem no Tempo (barras verde/vermelho) fica em cima */}
         <div className="rounded-xl border border-border/30 bg-card/60 p-5">
           <h3 className="text-sm font-semibold mb-1">Margem no Tempo</h3>
           <p className="text-[11px] text-muted-foreground mb-3">
@@ -704,6 +703,27 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                   ))}
                 </Bar>
               </BarChart>
+            </ResponsiveContainer>
+          ) : <EmptyState />}
+        </div>
+
+        {/* Story 29.15: Investimento no Tempo — linha, valor a cada 7 dias */}
+        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+          <h3 className="text-sm font-semibold mb-1">Investimento no Tempo</h3>
+          <p className="text-[11px] text-muted-foreground mb-3">
+            Investimento (Meta, com imposto) por dia · valor exibido a cada 7 dias
+          </p>
+          {dailyLoading ? <Skeleton className="h-48" /> : dailyChartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={dailyChartData} margin={{ top: 24, right: 20, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
+                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => fmtCurrencyCompact(v)} />
+                <Tooltip content={<FormulaChartTooltip />} />
+                <Line type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={{ r: 2, fill: "hsl(47 98% 54%)" }} name="Investimento">
+                  <LabelList dataKey="spend" content={<Spend7DayLabel />} />
+                </Line>
+              </LineChart>
             </ResponsiveContainer>
           ) : <EmptyState />}
         </div>
@@ -1069,20 +1089,29 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
   fromSheet?: boolean;
   /** Story 29.10: aviso âmbar (ex: "Conectar fonte de vendas") quando falta fonte de dados. */
   warning?: string;
+  /** Story 29.15: colore o card por sinal do valor (verde > 0, vermelho ≤ 0). Ex: Margem. */
+  signValue?: number | null;
 } & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
-  { icon: Icon, label, value, target, actual, hintTooltip, comparison, fromSheet, warning, className, ...rest },
+  { icon: Icon, label, value, target, actual, hintTooltip, comparison, fromSheet, warning, signValue, className, ...rest },
   ref,
 ) {
   const isRoas = target !== undefined;
   const roasOk = isRoas && actual != null && actual >= target;
   const roasBad = isRoas && actual != null && actual < target;
+  // Story 29.15: coloração por sinal (ex: Margem — vermelho ≤ 0, verde > 0)
+  const signPos = signValue != null && signValue > 0;
+  const signNeg = signValue != null && signValue <= 0;
 
   return (
     <div
       ref={ref}
       {...rest}
       className={`relative rounded-xl border p-3 hover:border-border/50 transition-colors ${hintTooltip ? "cursor-help" : ""} ${
-        roasOk ? "border-emerald-500/30 bg-emerald-500/5" : roasBad ? "border-red-500/30 bg-red-500/5" : "border-border/30 bg-gradient-to-br from-card/80 to-card/40"
+        signPos ? "border-emerald-500/30 bg-emerald-500/5"
+          : signNeg ? "border-red-500/30 bg-red-500/5"
+          : roasOk ? "border-emerald-500/30 bg-emerald-500/5"
+          : roasBad ? "border-red-500/30 bg-red-500/5"
+          : "border-border/30 bg-gradient-to-br from-card/80 to-card/40"
       } ${className ?? ""}`}
     >
       {fromSheet && (
@@ -1092,7 +1121,7 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
       </div>
-      <p className={`text-xl font-bold tracking-tight ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
+      <p className={`text-xl font-bold tracking-tight ${signPos ? "text-emerald-400" : signNeg ? "text-red-400" : ""} ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
       {warning && (
         <p className="mt-1 flex items-center gap-1 text-[10px] font-medium leading-tight text-amber-500/90">
           <span aria-hidden>⚠️</span> {warning}
