@@ -223,7 +223,7 @@ function DailyResultTooltip({
   const d = payload[0]?.payload;
   if (!d) return null;
   const result = d.margin ?? 0;
-  const resultLabel = "Margem (bruta)";
+  const resultLabel = "Margem (líquida)";
   const positive = result >= 0;
   return (
     <div className="min-w-[172px] rounded-md border bg-popover p-2.5 text-xs text-popover-foreground shadow-md">
@@ -352,6 +352,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     const sheetHasDaily = usingSpreadsheet && salesDataDaily && !salesDataDaily.semDados
       && Object.keys(salesDataDaily.byDay ?? {}).length > 0;
     const sheetByDay = sheetHasDaily ? salesDataDaily!.byDay : {};
+    const feeRate = usingSpreadsheet && salesData ? salesData.feeRate : 0;
     return dailyData.map((d) => {
       const spendBruto = safeNum(d.spend);
       const spendComTax = applyMetaTax(spendBruto, d.date_start);
@@ -369,8 +370,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       // Quando usingSpreadsheet mas sem daily da planilha (não mapeou dataVenda),
       // usa Meta como fallback no gráfico — KPI Receita já mostra total da planilha.
       const revenueBruto = sheetHasDaily ? sheetRevenue : (usingSpreadsheet ? metaRevenue : 0);
-      // Story 29.20 (Danilo): margem BRUTA (Receita − Investimento c/ tax) em todo lugar.
-      const margin = usingSpreadsheet ? revenueBruto - spendComTax : 0;
+      // Story 29.20 (Danilo): margem LÍQUIDA — (Receita × (1−fees)) − Investimento c/ tax.
+      const margin = usingSpreadsheet ? (revenueBruto * (1 - feeRate)) - spendComTax : 0;
       const dateLabel = d.date_start.slice(5, 10);
       const revenueSource = sheetHasDaily
         ? "Planilha · faturamento bruto por dia"
@@ -391,11 +392,11 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         formulasByKey: {
           spend: buildFunnelDailyFormula("Investimento", spendSource, spendComTax, true, dateLabel),
           revenue: buildFunnelDailyFormula("Receita", revenueSource, revenueBruto, true, dateLabel),
-          margin: buildFunnelDailyFormula("Margem (Bruta − Spend c/ tax)", "Derivado · revenue − (spend × 1.1215)", margin, true, dateLabel),
+          margin: buildFunnelDailyFormula("Margem (Líquida − Spend c/ tax)", "Derivado · (revenue × (1−feeRate)) − (spend × 1.1215)", margin, true, dateLabel),
         },
       };
     });
-  }, [dailyData, usingSpreadsheet, salesDataDaily]);
+  }, [dailyData, usingSpreadsheet, salesDataDaily, salesData]);
 
   // Story 29.9: agregados com tax aplicado — sobrescreve totalSpend do overview
   // (que vem sem tax do Meta). Total tax exposto pra tooltip do KPI Investimento.
@@ -441,8 +442,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     }
     const sales = salesData.totalVendas;
     const revenue = salesData.faturamentoBruto;
-    // Story 29.20 (Danilo): card Margem usa receita BRUTA — consistente com a tabela Detalhamento.
-    const margin = revenue - effectiveSpend;
+    // Story 29.20 (Danilo): Margem = Receita LÍQUIDA (após fees da plataforma) − Investimento.
+    const netRevenue = salesData.faturamentoLiquidoCalculado;
+    const margin = netRevenue - effectiveSpend;
     return {
       ...overview,
       totalSpend: effectiveSpend,
@@ -553,6 +555,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     }
   }, [tableFilter, funnelCampaigns, funnelAdSets, funnelAds]);
 
+  // Story 29.20 (Danilo): fee rate da plataforma pra Margem LÍQUIDA por linha.
+  const detailFeeRate = usingSpreadsheet && salesData ? salesData.feeRate : 0;
   // Story 29.19: normaliza nomes (tira " — Cópia") e agrupa a cópia no nome base.
   // Merge (>1 membro) soma métricas e re-deriva taxas; membro único fica intacto.
   const detailRows = useMemo<DetailRow[]>(() => {
@@ -584,16 +588,18 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           costPerSale: sales > 0 ? spend / sales : null,
         };
       }
-      const revenue = base.revenue ?? 0;
+      const grossRevenue = base.revenue ?? 0;
       const sales = base.sales ?? 0;
-      const margin = revenue - base.spend;
+      // Story 29.20 (Danilo): Margem = Receita LÍQUIDA (após fees) − Investimento.
+      const netRevenue = grossRevenue * (1 - detailFeeRate);
+      const margin = netRevenue - base.spend;
       return {
         ...base,
-        marginPct: revenue > 0 ? (margin / revenue) * 100 : null,
+        marginPct: grossRevenue > 0 ? (margin / grossRevenue) * 100 : null,
         marginPerSale: sales > 0 ? margin / sales : null,
       };
     });
-  }, [tableData]);
+  }, [tableData, detailFeeRate]);
 
   const sortedRows = useMemo<DetailRow[]>(() => {
     if (!sortCol) return detailRows;
