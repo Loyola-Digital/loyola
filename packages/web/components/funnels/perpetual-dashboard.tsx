@@ -14,18 +14,15 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
   ReferenceLine,
   BarChart,
   Bar,
-  LabelList,
+  Cell,
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -143,6 +140,51 @@ function fmtRoas(val: number | null | undefined): string {
 
 function safeNum(val: string | undefined): number {
   return val ? parseFloat(val) : 0;
+}
+
+// Story 29.14: tooltip do gráfico de resultado/dia — mostra Investimento,
+// Receita e o Resultado do dia (verde/vermelho). `variant` escolhe se o
+// número herói é o resultado bruto (Receita − Investimento) ou a Margem líquida.
+function DailyResultTooltip({
+  active,
+  payload,
+  variant = "bruto",
+}: {
+  active?: boolean;
+  payload?: Array<{
+    payload?: { date?: string; spend?: number; revenue?: number; margin?: number; resultado?: number };
+  }>;
+  variant?: "bruto" | "margem";
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const d = payload[0]?.payload;
+  if (!d) return null;
+  const result = (variant === "margem" ? d.margin : d.resultado) ?? 0;
+  const resultLabel = variant === "margem" ? "Margem (líquida)" : "Resultado";
+  const positive = result >= 0;
+  return (
+    <div className="min-w-[172px] rounded-md border bg-popover p-2.5 text-xs text-popover-foreground shadow-md">
+      {d.date && <div className="mb-1.5 font-semibold">{d.date}</div>}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-muted-foreground">Investimento</span>
+          <span className="font-mono tabular-nums">{fmtCurrency(d.spend)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-muted-foreground">Receita</span>
+          <span className="font-mono tabular-nums">{fmtCurrency(d.revenue)}</span>
+        </div>
+        <div
+          className={`mt-1 flex items-center justify-between gap-3 border-t border-border/40 pt-1 font-semibold ${
+            positive ? "text-emerald-400" : "text-red-400"
+          }`}
+        >
+          <span>{resultLabel}</span>
+          <span className="font-mono tabular-nums">{fmtCurrency(result)}</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ============================================================
@@ -274,6 +316,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         spendTax: taxAmount,
         revenue: revenueBruto,
         margin,
+        // Story 29.14: resultado bruto do dia = Receita − Investimento (com tax).
+        resultado: revenueBruto - spendComTax,
         sales: usingSpreadsheet && purchases ? parseInt(purchases.value) : 0,
         formulasByKey: {
           spend: buildFunnelDailyFormula("Investimento", spendSource, spendComTax, true, dateLabel),
@@ -619,40 +663,47 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       {/* ================================================================ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-          <h3 className="text-sm font-semibold mb-4">Investimento no Tempo</h3>
+          <h3 className="text-sm font-semibold mb-1">Resultado no Tempo</h3>
+          <p className="text-[11px] text-muted-foreground mb-3">
+            Receita − Investimento por dia · <span className="text-emerald-400">verde = lucro</span> · <span className="text-red-400">vermelho = prejuízo</span>
+          </p>
           {dailyLoading ? <Skeleton className="h-48" /> : dailyChartData.length > 0 ? (
             <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={dailyChartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
+              <BarChart data={dailyChartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
                 <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => fmtCurrencyCompact(v)} />
-                <Tooltip content={<FormulaChartTooltip />} />
-                <Legend wrapperStyle={{ color: "#fff" }} />
-                <Line type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={{ r: 3, fill: "hsl(47 98% 54%)" }} name="Investimento">
-                  <LabelList dataKey="spend" position="top" offset={8} fontSize={9} fill="hsl(47 98% 60%)" formatter={(v: unknown) => fmtCurrencyCompact(typeof v === "number" ? v : Number(v ?? 0))} />
-                </Line>
-                <Line type="monotone" dataKey="revenue" stroke="hsl(150 60% 50%)" strokeWidth={2} dot={{ r: 3, fill: "hsl(150 60% 50%)" }} name="Receita">
-                  <LabelList dataKey="revenue" position="bottom" offset={8} fontSize={9} fill="hsl(150 60% 60%)" formatter={(v: unknown) => fmtCurrencyCompact(typeof v === "number" ? v : Number(v ?? 0))} />
-                </Line>
-              </LineChart>
+                <Tooltip cursor={{ fill: "var(--color-muted)", opacity: 0.12 }} content={<DailyResultTooltip variant="bruto" />} />
+                <ReferenceLine y={0} stroke="var(--color-muted-foreground)" />
+                <Bar dataKey="resultado" name="Resultado" radius={[2, 2, 0, 0]}>
+                  {dailyChartData.map((d, i) => (
+                    <Cell key={i} fill={d.resultado >= 0 ? "hsl(150 60% 45%)" : "hsl(0 72% 55%)"} />
+                  ))}
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
           ) : <EmptyState />}
         </div>
 
         <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-          <h3 className="text-sm font-semibold mb-4">Margem no Tempo</h3>
+          <h3 className="text-sm font-semibold mb-1">Margem no Tempo</h3>
+          <p className="text-[11px] text-muted-foreground mb-3">
+            Margem líquida por dia (com fees) · <span className="text-emerald-400">verde = positiva</span> · <span className="text-red-400">vermelho = negativa</span>
+          </p>
           {dailyLoading ? <Skeleton className="h-48" /> : dailyChartData.length > 0 ? (
             <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={dailyChartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
+              <BarChart data={dailyChartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
                 <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => fmtCurrencyCompact(v)} />
-                <Tooltip content={<FormulaChartTooltip />} />
-                <ReferenceLine y={0} stroke="var(--color-muted-foreground)" strokeDasharray="4 4" />
-                <Line type="monotone" dataKey="margin" stroke="hsl(150 60% 50%)" strokeWidth={2} dot={{ r: 3, fill: "hsl(150 60% 50%)" }} name="Margem (R$)">
-                  <LabelList dataKey="margin" position="top" offset={8} fontSize={9} fill="hsl(150 60% 60%)" formatter={(v: unknown) => fmtCurrencyCompact(typeof v === "number" ? v : Number(v ?? 0))} />
-                </Line>
-              </LineChart>
+                <Tooltip cursor={{ fill: "var(--color-muted)", opacity: 0.12 }} content={<DailyResultTooltip variant="margem" />} />
+                <ReferenceLine y={0} stroke="var(--color-muted-foreground)" />
+                <Bar dataKey="margin" name="Margem" radius={[2, 2, 0, 0]}>
+                  {dailyChartData.map((d, i) => (
+                    <Cell key={i} fill={d.margin >= 0 ? "hsl(150 60% 45%)" : "hsl(0 72% 55%)"} />
+                  ))}
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
           ) : <EmptyState />}
         </div>
