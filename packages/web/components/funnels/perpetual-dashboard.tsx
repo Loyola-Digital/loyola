@@ -236,17 +236,19 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       );
       const metaRevenue = metaRevenueEntry ? parseFloat(metaRevenueEntry.value) : 0;
       const sheetRevenue = sheetByDay[d.date_start] ?? 0;
+      // Story 29.10: sem planilha de vendas conectada não há fonte de vendas —
+      // não herdar receita/margem/vendas do pixel Meta (evita número enganoso).
       // Quando usingSpreadsheet mas sem daily da planilha (não mapeou dataVenda),
       // usa Meta como fallback no gráfico — KPI Receita já mostra total da planilha.
-      const revenueBruto = sheetHasDaily ? sheetRevenue : metaRevenue;
+      const revenueBruto = sheetHasDaily ? sheetRevenue : (usingSpreadsheet ? metaRevenue : 0);
       const revenueLiquida = revenueBruto * (1 - feeRate);
-      const margin = revenueLiquida - spendComTax;
+      const margin = usingSpreadsheet ? revenueLiquida - spendComTax : 0;
       const dateLabel = d.date_start.slice(5, 10);
       const revenueSource = sheetHasDaily
         ? "Planilha · faturamento bruto por dia"
         : usingSpreadsheet
           ? "Meta Ads · action_values.purchase (fallback: planilha sem dataVenda)"
-          : "Meta Ads API · action_values.purchase (time series)";
+          : "Sem fonte de vendas conectada · Receita = 0";
       const spendSource = taxAmount > 0
         ? `Meta Ads spend + 12.15% imposto (a partir de ${META_TAX_EFFECTIVE_DATE})`
         : "Meta Ads API · spend (time series)";
@@ -257,7 +259,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         spendTax: taxAmount,
         revenue: revenueBruto,
         margin,
-        sales: purchases ? parseInt(purchases.value) : 0,
+        sales: usingSpreadsheet && purchases ? parseInt(purchases.value) : 0,
         formulasByKey: {
           spend: buildFunnelDailyFormula("Investimento", spendSource, spendComTax, true, dateLabel),
           revenue: buildFunnelDailyFormula("Receita", revenueSource, revenueBruto, true, dateLabel),
@@ -295,7 +297,19 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       : overview.totalSpend;
 
     if (!usingSpreadsheet || !salesData) {
-      return { ...overview, totalSpend: effectiveSpend };
+      // Story 29.10: sem planilha de vendas conectada = sem fonte de vendas.
+      // NÃO herda vendas/receita do pixel Meta (era o bug — fallback silencioso).
+      // Vendas/Receita = 0; derivados (CAC/Margem/ROAS) = null → renderizam "—".
+      return {
+        ...overview,
+        totalSpend: effectiveSpend,
+        totalSales: 0,
+        totalRevenue: 0,
+        cac: null,
+        margin: null,
+        marginPercent: null,
+        roas: null,
+      };
     }
     const sales = salesData.totalVendas;
     const revenue = salesData.faturamentoBruto;
@@ -466,6 +480,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           const m = effectiveMetrics;
           // Marca KPIs cuja fonte mudou pra planilha
           const fromSheet = usingSpreadsheet;
+          // Story 29.10: sem planilha = sem fonte de vendas → aviso nos cards de venda
+          const noSalesSource = !usingSpreadsheet;
           return (
             <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-7">
               <MetricTooltip label="ROAS" value={fmtRoas(m.roas)} formula={buildFunnelRoasFormula(m.roas, f)}>
@@ -486,10 +502,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                 />
               </InvestmentBreakdownTooltip>
               <MetricTooltip label="Vendas" value={fmtNumber(m.totalSales)} formula={buildFunnelSalesCountFormula(m.totalSales, f)}>
-                <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(m.totalSales)} hintTooltip fromSheet={fromSheet} />
+                <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(m.totalSales)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
               </MetricTooltip>
               <MetricTooltip label="Receita" value={fmtCurrency(m.totalRevenue)} formula={buildFunnelRevenueFormula(m.totalRevenue, f)}>
-                <KpiCard icon={DollarSign} label="Receita" value={fmtCurrency(m.totalRevenue)} hintTooltip fromSheet={fromSheet} />
+                <KpiCard icon={DollarSign} label="Receita" value={fmtCurrency(m.totalRevenue)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
               </MetricTooltip>
               <MetricTooltip label="CAC" value={fmtCurrency(m.cac)} formula={buildFunnelCacFormula(m.cac, f)}>
                 <KpiCard icon={DollarSign} label="CAC" value={fmtCurrency(m.cac)} hintTooltip fromSheet={fromSheet} />
@@ -969,8 +985,10 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
   target?: number; actual?: number | null; hintTooltip?: boolean;
   comparison?: { display: string; delta: number; higherIsBetter: boolean };
   fromSheet?: boolean;
+  /** Story 29.10: aviso âmbar (ex: "Conectar fonte de vendas") quando falta fonte de dados. */
+  warning?: string;
 } & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
-  { icon: Icon, label, value, target, actual, hintTooltip, comparison, fromSheet, className, ...rest },
+  { icon: Icon, label, value, target, actual, hintTooltip, comparison, fromSheet, warning, className, ...rest },
   ref,
 ) {
   const isRoas = target !== undefined;
@@ -993,6 +1011,11 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
       </div>
       <p className={`text-xl font-bold tracking-tight ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
+      {warning && (
+        <p className="mt-1 flex items-center gap-1 text-[10px] font-medium leading-tight text-amber-500/90">
+          <span aria-hidden>⚠️</span> {warning}
+        </p>
+      )}
       {comparison && (
         <div className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1.5 leading-tight">
           <span>vs {comparison.display}</span>
