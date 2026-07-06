@@ -735,73 +735,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       </div>
 
       {/* ================================================================ */}
-      {/* GRÁFICOS EM BARRAS HORIZONTAIS — Story 29.8: 3 gráficos via UTM da planilha
-            Canal (utm_source) / Público (utm_medium) / Criativo (utm_content).
-            Sem planilha: fallback pros gráficos Meta legacy (campaign/adset/ad). */}
-      {/* ================================================================ */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {usingSpreadsheet ? (
-          <>
-            <HBarChart
-              title="Receita por Canal (utm_source)"
-              data={revenueByCanal}
-              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
-              entityType="campaign"
-            />
-            <HBarChart
-              title="Receita por Público (utm_medium)"
-              data={revenueByPublico}
-              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
-              entityType="adset"
-            />
-            <HBarChart
-              title="Receita por Criativo (utm_content)"
-              data={revenueByCriativo}
-              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
-              entityType="ad"
-            />
-          </>
-        ) : (
-          <>
-            <HBarChart
-              title="Receita por Canal"
-              data={revenueByCampaign}
-              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
-              entityType="campaign"
-            />
-            <HBarChart
-              title="Receita por Publico"
-              data={revenueByAudience}
-              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
-              entityType="adset"
-            />
-            <HBarChart
-              title="Receita por Criativo"
-              data={revenueByCreative}
-              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
-              entityType="ad"
-            />
-          </>
-        )}
-      </div>
-
-      {/* ================================================================ */}
-      {/* TOP CRIATIVOS                                                    */}
-      {/* ================================================================ */}
-      <TopCreativesGallery
-        projectId={projectId}
-        days={days}
-        campaignIds={campaignIds}
-        funnelId={funnel.id}
-        stageId={stageId}
-        funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
-        defaultShowAll
-        startDate={customRange?.startDate}
-        endDate={customRange?.endDate}
-      />
-
-      {/* ================================================================ */}
-      {/* TABELA DETALHADA COM FILTRO                                      */}
+      {/* TABELA DETALHADA COM FILTRO — Story 29.18: movida pra baixo do gráfico */}
       {/* ================================================================ */}
       <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
         <div className="flex items-center justify-between">
@@ -889,6 +823,72 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           </table>
         </div>
       </div>
+
+      {/* ================================================================ */}
+      {/* GRÁFICOS EM BARRAS HORIZONTAIS — Story 29.8: 3 gráficos via UTM da planilha
+            Canal (utm_source) / Público (utm_medium) / Criativo (utm_content).
+            Sem planilha: fallback pros gráficos Meta legacy (campaign/adset/ad). */}
+      {/* ================================================================ */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {usingSpreadsheet ? (
+          <>
+            <HBarChart
+              title="Receita por Canal (utm_source)"
+              data={revenueByCanal}
+              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+              entityType="campaign"
+            />
+            <HBarChart
+              title="Receita por Público (utm_medium)"
+              data={revenueByPublico}
+              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+              entityType="adset"
+            />
+            <HBarChart
+              title="Receita por Criativo (utm_content)"
+              data={revenueByCriativo}
+              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+              entityType="ad"
+            />
+          </>
+        ) : (
+          <>
+            <HBarChart
+              title="Receita por Canal"
+              data={revenueByCampaign}
+              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+              entityType="campaign"
+            />
+            <HBarChart
+              title="Receita por Publico"
+              data={revenueByAudience}
+              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+              entityType="adset"
+            />
+            <HBarChart
+              title="Receita por Criativo"
+              data={revenueByCreative}
+              funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+              entityType="ad"
+            />
+          </>
+        )}
+      </div>
+
+      {/* ================================================================ */}
+      {/* TOP CRIATIVOS                                                    */}
+      {/* ================================================================ */}
+      <TopCreativesGallery
+        projectId={projectId}
+        days={days}
+        campaignIds={campaignIds}
+        funnelId={funnel.id}
+        stageId={stageId}
+        funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
+        defaultShowAll
+        startDate={customRange?.startDate}
+        endDate={customRange?.endDate}
+      />
 
       {/* Dashboard Financeiro — apenas etapas pagas (Story 19.6) */}
       {stageType === "paid" && stageId && (
