@@ -57,7 +57,6 @@ import {
 } from "@/lib/hooks/use-perpetual-sales-data";
 import type { Funnel, FunnelCampaign, StageType } from "@loyola-x/shared";
 import { StageSalesSection } from "./stage-sales-section";
-import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
@@ -143,6 +142,28 @@ function fmtRoas(val: number | null | undefined): string {
 
 function safeNum(val: string | undefined): number {
   return val ? parseFloat(val) : 0;
+}
+
+// Story 29.16/29.17: sobrepõe métricas da planilha (vendas/receita/ROAS/CAC)
+// numa lista de entidades Meta (campanha/adset/ad), casando o id da linha
+// (campaignId = campaign/adset/ad id) com a chave UTM da planilha. Spend
+// continua Meta; nome continua vindo da linha. Sem match → vendas/receita = 0.
+function overlaySpreadsheetMetrics(
+  rows: CampaignAnalytics[],
+  byId: Map<string, { vendas: number; bruto: number }>,
+): CampaignAnalytics[] {
+  return rows.map((r) => {
+    const match = byId.get(r.campaignId);
+    const revenue = match ? match.bruto : 0;
+    const sales = match ? match.vendas : 0;
+    return {
+      ...r,
+      revenue,
+      sales,
+      roas: r.spend > 0 && match ? match.bruto / r.spend : null,
+      costPerSale: sales > 0 ? r.spend / sales : null,
+    };
+  });
 }
 
 // Story 29.15: rótulo de valor a cada 7 dias no gráfico de linha de Investimento
@@ -247,7 +268,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
     customRange?.startDate, customRange?.endDate,
   );
-  const { data: campaignData, isLoading: campaignsLoading } = useTrafficCampaigns(projectId, days);
+  const { data: campaignData } = useTrafficCampaigns(projectId, days);
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsightsBulk(
       projectId,
@@ -292,15 +313,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     // campanha vêm da PLANILHA (match utm_campaign = campaignId). Spend continua Meta.
     // O nome já está na linha (c.campaignName) — não precisa resolver via Meta.
     if (!usingSpreadsheet || !salesData) return base;
-    const salesByCampaignId = new Map(salesData.porUtmCampaign.map((u) => [u.campaign, u]));
-    return base.map((c) => {
-      const match = salesByCampaignId.get(c.campaignId);
-      const revenue = match ? match.bruto : 0;
-      const sales = match ? match.vendas : 0;
-      const roas = c.spend > 0 && match ? match.bruto / c.spend : null;
-      const costPerSale = sales > 0 ? c.spend / sales : null;
-      return { ...c, revenue, sales, roas, costPerSale };
-    });
+    return overlaySpreadsheetMetrics(base, new Map(salesData.porUtmCampaign.map((u) => [u.campaign, u])));
   }, [campaignData, campaignIdSet, usingSpreadsheet, salesData]);
 
   // Daily chart data: investment + margin
@@ -493,14 +506,30 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   }, [funnelCampaigns]);
 
   // Table data based on filter
+  // Story 29.17: mesma lógica da campanha (29.16) aplicada a adset e ad —
+  // Vendas/Receita/ROAS/CAC vêm da PLANILHA por match de UTM, não do Meta.
+  // Público (adset) → utm_medium = adset_id · Criativo (ad) → utm_content = ad_id.
+  // Spend continua Meta; nome continua vindo da linha (Meta all-adsets/all-ads).
+  const funnelAdSets = useMemo(() => {
+    const base = adSetsData?.adsets ?? [];
+    if (!usingSpreadsheet || !salesData) return base;
+    return overlaySpreadsheetMetrics(base, new Map(salesData.porUtmMedium.map((u) => [u.medium, u])));
+  }, [adSetsData, usingSpreadsheet, salesData]);
+
+  const funnelAds = useMemo(() => {
+    const base = adsData?.ads ?? [];
+    if (!usingSpreadsheet || !salesData) return base;
+    return overlaySpreadsheetMetrics(base, new Map(salesData.porUtmContent.map((u) => [u.content, u])));
+  }, [adsData, usingSpreadsheet, salesData]);
+
   const tableData = useMemo((): CampaignAnalytics[] => {
     switch (tableFilter) {
       case "campaign": return funnelCampaigns;
-      case "adset": return adSetsData?.adsets ?? [];
-      case "ad": return adsData?.ads ?? [];
+      case "adset": return funnelAdSets;
+      case "ad": return funnelAds;
       default: return [];
     }
-  }, [tableFilter, funnelCampaigns, adSetsData, adsData]);
+  }, [tableFilter, funnelCampaigns, funnelAdSets, funnelAds]);
 
   if (campaignIds.length === 0) {
     return (
@@ -654,43 +683,6 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           </div>
         );
       })()}
-
-      {/* ================================================================ */}
-      {/* DESEMPENHO POR CAMPANHA (CANAL)                                  */}
-      {/* ================================================================ */}
-      {!campaignsLoading && funnelCampaigns.length > 0 && (
-        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-          <h3 className="text-sm font-semibold mb-3">Desempenho por Canal (Campanha)</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-muted-foreground border-b border-border/20">
-                  <th className="text-left py-2 pr-3">Campanha</th>
-                  <th className="text-right px-2">Invest.</th>
-                  <th className="text-right px-2">Receita</th>
-                  <th className="text-right px-2">Vendas</th>
-                  <th className="text-right px-2">ROAS</th>
-                  <th className="text-right px-2">CAC</th>
-                  <th className="text-right pl-2">CTR</th>
-                </tr>
-              </thead>
-              <tbody>
-                {funnelCampaigns.map((c) => (
-                  <tr key={c.campaignId} className="border-b border-border/10 hover:bg-muted/5">
-                    <td className="py-2 pr-3 font-medium truncate max-w-[200px]">{c.campaignName}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtCurrency(c.spend)}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtCurrency(c.revenue)}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtNumber(c.sales)}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtRoas(c.roas)}</td>
-                    <td className="text-right px-2 tabular-nums">{fmtCurrency(c.costPerSale)}</td>
-                    <td className="text-right pl-2 tabular-nums">{fmtPercent(c.ctr)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* ================================================================ */}
       {/* GRÁFICOS EM LINHA: Investimento + Margem no tempo                */}
@@ -924,19 +916,6 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         </div>
       )}
 
-      {/* Story 18.41: Creative Performance Table for Free stages */}
-      {stageType === "free" && stageId && (
-        <div className="space-y-4 pt-2 border-t border-border/30">
-          <h3 className="text-base font-semibold">Desempenho de Criativos (Meta Ads)</h3>
-          <StageCreativePerformanceTable
-            projectId={projectId}
-            funnelId={funnel.id}
-            stageId={stageId}
-            days={days}
-            stageType={stageType}
-          />
-        </div>
-      )}
     </div>
   );
 }
