@@ -287,8 +287,21 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // Filtered campaigns for this funnel
   const funnelCampaigns = useMemo(() => {
     if (!campaignData) return [];
-    return campaignData.campaigns.filter((c) => campaignIdSet.has(c.campaignId));
-  }, [campaignData, campaignIdSet]);
+    const base = campaignData.campaigns.filter((c) => campaignIdSet.has(c.campaignId));
+    // Story 29.16: com planilha conectada, Vendas/Receita/ROAS/CAC da tabela de
+    // campanha vêm da PLANILHA (match utm_campaign = campaignId). Spend continua Meta.
+    // O nome já está na linha (c.campaignName) — não precisa resolver via Meta.
+    if (!usingSpreadsheet || !salesData) return base;
+    const salesByCampaignId = new Map(salesData.porUtmCampaign.map((u) => [u.campaign, u]));
+    return base.map((c) => {
+      const match = salesByCampaignId.get(c.campaignId);
+      const revenue = match ? match.bruto : 0;
+      const sales = match ? match.vendas : 0;
+      const roas = c.spend > 0 && match ? match.bruto / c.spend : null;
+      const costPerSale = sales > 0 ? c.spend / sales : null;
+      return { ...c, revenue, sales, roas, costPerSale };
+    });
+  }, [campaignData, campaignIdSet, usingSpreadsheet, salesData]);
 
   // Daily chart data: investment + margin
   // Story 29.4 + 29.7: quando planilha conectada, Receita vem da planilha e

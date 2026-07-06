@@ -141,6 +141,8 @@ export interface PerpetualSalesData {
   /** Story 29.8: por utm_medium (público) + utm_content (criativo) */
   porUtmMedium: { medium: string; vendas: number; bruto: number; liquido: number }[];
   porUtmContent: { content: string; vendas: number; bruto: number; liquido: number }[];
+  /** Story 29.16: por utm_campaign (= campaign id da Meta) pra cruzar receita/vendas na tabela de campanhas */
+  porUtmCampaign: { campaign: string; vendas: number; bruto: number; liquido: number }[];
   porFormaPagamento: { forma: string; vendas: number; bruto: number; liquido: number }[];
   semDados: boolean;
 }
