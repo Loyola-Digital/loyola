@@ -19,10 +19,17 @@ interface UseFunnelAdsetsMapResult {
  * Retorna Map vazio enquanto carrega — o consumidor faz fallback pro id
  * literal se a chave não estiver presente.
  */
-export function useResolveAdsetNames(
+/**
+ * Story 29.13: generaliza a resolução de nomes Meta (adset/ad/campaign) via
+ * endpoint POST /meta-names/resolve (cache DB 24h). Resolve QUALQUER id do tipo
+ * dado — não limitado à janela de insights. Consumidor faz fallback pro id
+ * literal quando a chave não estiver presente.
+ */
+export function useResolveMetaNames(
   projectId: string,
   ids: string[],
-): UseFunnelAdsetsMapResult {
+  entityType: "adset" | "ad" | "campaign",
+): { namesMap: Map<string, string>; isLoading: boolean } {
   const apiClient = useApiClient();
   // Dedup + ordena pra cache key estavel (queryKey hash)
   const dedupedIds = useMemo(() => {
@@ -32,21 +39,21 @@ export function useResolveAdsetNames(
   const idsKey = dedupedIds.join(",");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["meta-names-resolve", projectId, "adset", idsKey],
+    queryKey: ["meta-names-resolve", projectId, entityType, idsKey],
     queryFn: () =>
       apiClient<{ names: Record<string, string> }>(
         `/api/traffic/analytics/${projectId}/meta-names/resolve`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ entityType: "adset", ids: dedupedIds }),
+          body: JSON.stringify({ entityType, ids: dedupedIds }),
         },
       ),
     enabled: !!projectId && dedupedIds.length > 0,
     staleTime: 5 * 60 * 1000, // 5min no react-query (DB ja cacheia 24h)
   });
 
-  const adsetsMap = useMemo(() => {
+  const namesMap = useMemo(() => {
     const map = new Map<string, string>();
     if (!data?.names) return map;
     for (const [id, name] of Object.entries(data.names)) {
@@ -55,7 +62,15 @@ export function useResolveAdsetNames(
     return map;
   }, [data]);
 
-  return { adsetsMap, isLoading };
+  return { namesMap, isLoading };
+}
+
+export function useResolveAdsetNames(
+  projectId: string,
+  ids: string[],
+): UseFunnelAdsetsMapResult {
+  const { namesMap, isLoading } = useResolveMetaNames(projectId, ids, "adset");
+  return { adsetsMap: namesMap, isLoading };
 }
 
 /**

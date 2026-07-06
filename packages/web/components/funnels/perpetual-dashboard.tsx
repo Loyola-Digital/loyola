@@ -60,6 +60,7 @@ import { StageSalesSection } from "./stage-sales-section";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
+import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
 import {
@@ -194,6 +195,20 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     );
   const { data: adSetsData } = useAllAdSets(projectId, days, campaignIds.length > 0 ? campaignIds : null);
   const { data: adsData } = useAllAds(projectId, days, campaignIds.length > 0 ? campaignIds : null);
+
+  // Story 29.13: resolve utm_medium (adset id) → adset name e utm_content
+  // (ad id) → ad name via cache de nomes Meta (/meta-names/resolve, DB 24h).
+  // Resolve qualquer id (não só os com insights na janela). Fallback pro id cru.
+  const mediumIds = useMemo(
+    () => salesData?.porUtmMedium?.map((u) => u.medium) ?? [],
+    [salesData],
+  );
+  const contentIds = useMemo(
+    () => salesData?.porUtmContent?.map((u) => u.content) ?? [],
+    [salesData],
+  );
+  const { namesMap: adsetNamesMap } = useResolveMetaNames(projectId, mediumIds, "adset");
+  const { namesMap: adNamesMap } = useResolveMetaNames(projectId, contentIds, "ad");
 
   const { data: compData } = useMetaAdsComparison(
     projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
@@ -346,19 +361,35 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
 
   const revenueByPublico = useMemo(() => {
     if (!usingSpreadsheet || !salesData) return [];
-    return salesData.porUtmMedium.slice(0, 8).map((u) => ({
-      name: u.medium.length > 25 ? u.medium.slice(0, 25) + "..." : u.medium,
-      revenue: u.bruto,
-    }));
-  }, [salesData, usingSpreadsheet]);
+    // Story 29.13: resolve adset id → nome e re-agrupa (adsets com mesmo nome somam)
+    const byName = new Map<string, number>();
+    for (const u of salesData.porUtmMedium) {
+      const label = adsetNamesMap.get(u.medium) ?? u.medium;
+      byName.set(label, (byName.get(label) ?? 0) + u.bruto);
+    }
+    return Array.from(byName, ([name, revenue]) => ({
+      name: name.length > 25 ? name.slice(0, 25) + "..." : name,
+      revenue,
+    }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 8);
+  }, [salesData, usingSpreadsheet, adsetNamesMap]);
 
   const revenueByCriativo = useMemo(() => {
     if (!usingSpreadsheet || !salesData) return [];
-    return salesData.porUtmContent.slice(0, 8).map((u) => ({
-      name: u.content.length > 25 ? u.content.slice(0, 25) + "..." : u.content,
-      revenue: u.bruto,
-    }));
-  }, [salesData, usingSpreadsheet]);
+    // Story 29.13: resolve ad id → nome e re-agrupa (ads com mesmo nome somam)
+    const byName = new Map<string, number>();
+    for (const u of salesData.porUtmContent) {
+      const label = adNamesMap.get(u.content) ?? u.content;
+      byName.set(label, (byName.get(label) ?? 0) + u.bruto);
+    }
+    return Array.from(byName, ([name, revenue]) => ({
+      name: name.length > 25 ? name.slice(0, 25) + "..." : name,
+      revenue,
+    }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 8);
+  }, [salesData, usingSpreadsheet, adNamesMap]);
 
   // Legacy (Meta-based) — mantido pra quando NÃO há planilha conectada
   const revenueByCampaign = useMemo(() => {
