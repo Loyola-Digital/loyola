@@ -166,6 +166,29 @@ function overlaySpreadsheetMetrics(
   });
 }
 
+// Story 29.19: linha do Detalhamento (CampaignAnalytics + margens derivadas).
+type DetailRow = CampaignAnalytics & { marginPct: number | null; marginPerSale: number | null };
+
+// Story 29.19: remove o sufixo " — Cópia" (Meta duplica campanhas assim) do fim
+// do nome, pra normalizar e agrupar a cópia no nome base. Cobre —/–/- e número.
+const COPIA_SUFFIX_RE = /(\s*[—–-]\s*c[oó]pia(\s*\d+)?)+\s*$/i;
+function normalizeCampaignName(name: string): string {
+  const cleaned = name.replace(COPIA_SUFFIX_RE, "").trim();
+  return cleaned.length > 0 ? cleaned : name;
+}
+
+// Story 29.19: cores condicionais das colunas do Detalhamento.
+function roasColorClass(v: number | null | undefined): string {
+  if (v == null) return "";
+  if (v >= 2) return "text-emerald-400";
+  if (v >= 1) return "text-amber-400";
+  return "text-red-400";
+}
+function marginColorClass(v: number | null | undefined): string {
+  if (v == null) return "";
+  return v > 0 ? "text-emerald-400" : "text-red-400";
+}
+
 // Story 29.15: rótulo de valor a cada 7 dias no gráfico de linha de Investimento
 // (evita poluir mostrando o valor em todos os pontos).
 function Spend7DayLabel(props: {
@@ -242,6 +265,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const [showCampaignManager, setShowCampaignManager] = useState(false);
   const [showSpreadsheetWizard, setShowSpreadsheetWizard] = useState(false);
   const [tableFilter, setTableFilter] = useState<"campaign" | "adset" | "ad">("campaign");
+  // Story 29.19: ordenação de colunas + largura da coluna Dimensão no Detalhamento
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [dimWidth, setDimWidth] = useState(200);
   const { data: perpetualSpreadsheet } = usePerpetualSpreadsheet(projectId, funnel.id);
   const { data: salesData } = usePerpetualSalesData(
     projectId,
@@ -531,6 +558,85 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     }
   }, [tableFilter, funnelCampaigns, funnelAdSets, funnelAds]);
 
+  // Story 29.19: normaliza nomes (tira " — Cópia") e agrupa a cópia no nome base.
+  // Merge (>1 membro) soma métricas e re-deriva taxas; membro único fica intacto.
+  const detailRows = useMemo<DetailRow[]>(() => {
+    const groups = new Map<string, CampaignAnalytics[]>();
+    for (const row of tableData) {
+      const name = normalizeCampaignName(row.campaignName);
+      const arr = groups.get(name) ?? [];
+      arr.push(row);
+      groups.set(name, arr);
+    }
+    return Array.from(groups.entries()).map(([name, members]) => {
+      let base: CampaignAnalytics;
+      if (members.length === 1) {
+        base = { ...members[0], campaignName: name };
+      } else {
+        const spend = members.reduce((s, m) => s + m.spend, 0);
+        const impressions = members.reduce((s, m) => s + m.impressions, 0);
+        const clicks = members.reduce((s, m) => s + m.clicks, 0);
+        const revenue = members.reduce((s, m) => s + (m.revenue ?? 0), 0);
+        const sales = members.reduce((s, m) => s + (m.sales ?? 0), 0);
+        base = {
+          ...members[0],
+          campaignName: name,
+          spend, impressions, clicks, revenue, sales,
+          ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+          cpc: clicks > 0 ? spend / clicks : 0,
+          cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
+          roas: spend > 0 ? revenue / spend : null,
+          costPerSale: sales > 0 ? spend / sales : null,
+        };
+      }
+      const revenue = base.revenue ?? 0;
+      const sales = base.sales ?? 0;
+      const margin = revenue - base.spend;
+      return {
+        ...base,
+        marginPct: revenue > 0 ? (margin / revenue) * 100 : null,
+        marginPerSale: sales > 0 ? margin / sales : null,
+      };
+    });
+  }, [tableData]);
+
+  const sortedRows = useMemo<DetailRow[]>(() => {
+    if (!sortCol) return detailRows;
+    const num = (v: number | null | undefined) => (v == null ? Number.NEGATIVE_INFINITY : v);
+    const key = (r: DetailRow): number | string => {
+      switch (sortCol) {
+        case "dimension": return r.campaignName.toLowerCase();
+        case "spend": return num(r.spend);
+        case "revenue": return num(r.revenue);
+        case "cac": return num(r.costPerSale);
+        case "roas": return num(r.roas);
+        case "marginPct": return num(r.marginPct);
+        case "marginPerSale": return num(r.marginPerSale);
+        case "ctr": return num(r.ctr);
+        case "cpc": return num(r.cpc);
+        case "cpm": return num(r.cpm);
+        default: return 0;
+      }
+    };
+    return [...detailRows].sort((a, b) => {
+      const ka = key(a);
+      const kb = key(b);
+      if (typeof ka === "string" && typeof kb === "string") {
+        return sortDir === "asc" ? ka.localeCompare(kb) : kb.localeCompare(ka);
+      }
+      return sortDir === "asc" ? (ka as number) - (kb as number) : (kb as number) - (ka as number);
+    });
+  }, [detailRows, sortCol, sortDir]);
+
+  const toggleSort = (col: string) => {
+    if (sortCol === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortCol(col);
+      setSortDir("desc");
+    }
+  };
+  const sortArrow = (col: string) => (sortCol === col ? (sortDir === "asc" ? " ▲" : " ▼") : "");
+
   if (campaignIds.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border/30 p-12 text-center space-y-2">
@@ -738,47 +844,64 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       {/* TABELA DETALHADA COM FILTRO — Story 29.18: movida pra baixo do gráfico */}
       {/* ================================================================ */}
       <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold flex items-center gap-2">
             <Filter className="h-4 w-4" />
             Detalhamento
           </h3>
-          <Select value={tableFilter} onValueChange={(v) => setTableFilter(v as typeof tableFilter)}>
-            <SelectTrigger className="w-[160px] h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="campaign">Por Canal</SelectItem>
-              <SelectItem value="adset">Por Publico</SelectItem>
-              <SelectItem value="ad">Por Criativo</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            {/* Story 29.19: largura da coluna Dimensão */}
+            <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <span className="hidden sm:inline">Dimensão</span>
+              <button
+                type="button"
+                onClick={() => setDimWidth((w) => Math.max(120, w - 40))}
+                className="h-6 w-6 rounded border border-border/40 hover:bg-muted/40 leading-none"
+                title="Diminuir coluna Dimensão"
+              >−</button>
+              <button
+                type="button"
+                onClick={() => setDimWidth((w) => Math.min(480, w + 40))}
+                className="h-6 w-6 rounded border border-border/40 hover:bg-muted/40 leading-none"
+                title="Aumentar coluna Dimensão"
+              >+</button>
+            </div>
+            <Select value={tableFilter} onValueChange={(v) => setTableFilter(v as typeof tableFilter)}>
+              <SelectTrigger className="w-[160px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="campaign">Por Canal</SelectItem>
+                <SelectItem value="adset">Por Publico</SelectItem>
+                <SelectItem value="ad">Por Criativo</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="text-muted-foreground border-b border-border/20">
-                <th className="text-left py-2 pr-3 min-w-[150px]">Dimensao</th>
-                <th className="text-right px-2">Invest.</th>
-                <th className="text-right px-2">Receita</th>
-                <th className="text-right px-2">CAC</th>
-                <th className="text-right px-2">ROAS</th>
-                <th className="text-right px-2">Margem %</th>
-                <th className="text-right px-2">Margem/Venda</th>
-                <th className="text-right px-2">CTR (link)</th>
-                <th className="text-right px-2">CPC (link)</th>
-                <th className="text-right pl-2">CPM</th>
+                <th style={{ width: dimWidth, minWidth: dimWidth }} className="text-left py-2 pr-3 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("dimension")}>Dimensao{sortArrow("dimension")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("spend")}>Invest.{sortArrow("spend")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("revenue")}>Receita{sortArrow("revenue")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cac")}>CAC{sortArrow("cac")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("roas")}>ROAS{sortArrow("roas")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("marginPct")}>Margem %{sortArrow("marginPct")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("marginPerSale")}>Margem/Venda{sortArrow("marginPerSale")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("ctr")}>CTR (link){sortArrow("ctr")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cpc")}>CPC (link){sortArrow("cpc")}</th>
+                <th className="text-right pl-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cpm")}>CPM{sortArrow("cpm")}</th>
               </tr>
             </thead>
             <tbody>
-              {tableData.length === 0 ? (
+              {sortedRows.length === 0 ? (
                 <tr><td colSpan={10} className="py-6 text-center text-muted-foreground">Sem dados</td></tr>
-              ) : tableData.map((row) => {
+              ) : sortedRows.map((row) => {
                 const f = { days, funnelType: "perpetual" as const, funnelName: funnel?.name };
-                const margin = (row.revenue ?? 0) - row.spend;
-                const marginPct = (row.revenue ?? 0) > 0 ? (margin / row.revenue!) * 100 : null;
-                const marginPerSale = (row.sales ?? 0) > 0 ? margin / row.sales! : null;
+                const marginPct = row.marginPct;
+                const marginPerSale = row.marginPerSale;
                 const path: EntityPath =
                   tableFilter === "campaign" ? { campaign: row.campaignName }
                   : tableFilter === "adset" ? { adset: row.campaignName }
@@ -805,16 +928,16 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                   ["spend", "Investimento", fmtCurrency(row.spend), enrichFormulaForEntity(buildFunnelSpendFormula(row.spend, f), path), "text-right px-2 tabular-nums"],
                   ["revenue", "Receita", fmtCurrency(row.revenue), enrichFormulaForEntity(buildFunnelRevenueFormula(row.revenue, f), path), "text-right px-2 tabular-nums"],
                   ["cac", "CAC", fmtCurrency(row.costPerSale), enrichFormulaForEntity(buildFunnelCacFormula(row.costPerSale ?? null, f), path), "text-right px-2 tabular-nums"],
-                  ["roas", "ROAS", fmtRoas(row.roas), enrichFormulaForEntity(buildFunnelRoasFormula(row.roas ?? null, f), path), "text-right px-2 tabular-nums"],
-                  ["marginPct", "Margem %", fmtPercent(marginPct), enrichFormulaForEntity(buildFunnelMarginPercentFormula(marginPct, f), path), "text-right px-2 tabular-nums"],
-                  ["marginPerSale", "Margem/Venda", fmtCurrency(marginPerSale), enrichFormulaForEntity(buildFunnelMarginFormula(marginPerSale, f), path), "text-right px-2 tabular-nums"],
+                  ["roas", "ROAS", fmtRoas(row.roas), enrichFormulaForEntity(buildFunnelRoasFormula(row.roas ?? null, f), path), `text-right px-2 tabular-nums font-medium ${roasColorClass(row.roas)}`],
+                  ["marginPct", "Margem %", fmtPercent(marginPct), enrichFormulaForEntity(buildFunnelMarginPercentFormula(marginPct, f), path), `text-right px-2 tabular-nums font-medium ${marginColorClass(marginPct)}`],
+                  ["marginPerSale", "Margem/Venda", fmtCurrency(marginPerSale), enrichFormulaForEntity(buildFunnelMarginFormula(marginPerSale, f), path), `text-right px-2 tabular-nums font-medium ${marginColorClass(marginPerSale)}`],
                   ["ctr", "CTR", fmtPercent(row.ctr), enrichFormulaForEntity(buildFunnelCtrFormula(row.ctr, f), path), "text-right px-2 tabular-nums"],
                   ["cpc", "CPC", fmtCurrency(row.cpc), enrichFormulaForEntity(buildFunnelCpcFormula(row.cpc, f), path), "text-right px-2 tabular-nums"],
                   ["cpm", "CPM", fmtCurrency(row.cpm), enrichFormulaForEntity(buildFunnelCpmFormula(row.cpm, f), path), "text-right pl-2 tabular-nums"],
                 ];
                 return (
-                  <tr key={row.campaignId} className="border-b border-border/10 hover:bg-muted/5">
-                    <td className="py-2 pr-3 font-medium truncate max-w-[200px]">{row.campaignName}</td>
+                  <tr key={row.campaignName} className="border-b border-border/10 hover:bg-muted/5">
+                    <td className="py-2 pr-3 font-medium truncate" style={{ maxWidth: dimWidth, width: dimWidth }}>{row.campaignName}</td>
                     {cells.map(([col, label, value, formula, cls]) => renderCell(col, label, value, formula, cls))}
                   </tr>
                 );
