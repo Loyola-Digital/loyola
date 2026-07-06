@@ -39,6 +39,10 @@ export interface ManualSale {
   memberkitSyncedAt: string | null;
   /** Story 19.11 — id do membro retornado pelo MemberKit. */
   memberkitUserId: string | null;
+  /** Reembolso (Evento Presencial): quando a venda foi reembolsada (ISO). null = ativa. */
+  refundedAt: string | null;
+  /** Motivo do reembolso informado ao reembolsar. */
+  refundReason: string | null;
 }
 
 export interface ManualSaleSellerRanking {

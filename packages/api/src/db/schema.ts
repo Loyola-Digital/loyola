@@ -972,6 +972,12 @@ export const manualSales = pgTable(
     memberkitSyncedAt: timestamp("memberkit_synced_at", { withTimezone: true }),
     /** Story 19.11 — id do membro retornado pelo MemberKit. */
     memberkitUserId: varchar("memberkit_user_id", { length: 64 }),
+    /** Reembolso (Evento Presencial): quando a venda foi reembolsada. null = ativa. */
+    refundedAt: timestamp("refunded_at", { withTimezone: true }),
+    /** Motivo do reembolso (obrigatório ao reembolsar). */
+    refundReason: text("refund_reason"),
+    /** Quem lançou o reembolso. */
+    refundedBy: uuid("refunded_by").references(() => users.id, { onDelete: "set null" }),
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),

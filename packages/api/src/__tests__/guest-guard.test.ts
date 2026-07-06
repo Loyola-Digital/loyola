@@ -86,6 +86,8 @@ async function buildTestApp(userRole: string) {
   app.post("/api/chat", async () => ({ ok: true }));
   app.put("/api/projects/:id/funnels/:fid/stages/:sid/event-lead-status", async () => ({ ok: true }));
   app.post("/api/projects/:id/funnels/:fid/stages/:sid/manual-sales", async () => ({ ok: true }));
+  app.post("/api/projects/:id/funnels/:fid/stages/:sid/manual-sales/:saleId/refund", async () => ({ ok: true }));
+  app.delete("/api/projects/:id/funnels/:fid/stages/:sid/manual-sales/:saleId/refund", async () => ({ ok: true }));
   // Debriefings (Story 37.1) — global, bloqueado pra guest em qualquer método
   app.get("/api/debriefings", async () => ({ ok: true }));
   app.post("/api/debriefings", async () => ({ ok: true }));
@@ -296,6 +298,28 @@ describe("guestGuard — guest project membership checks", () => {
       url: `/api/projects/${MOCK_PROJECT_ID}/funnels/${MOCK_PROJECT_ID}/stages/${MOCK_PROJECT_ID}/manual-sales`,
       headers: AUTH,
       body: {},
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  // Evento Presencial: convidado membro PODE reembolsar/desfazer reembolso do sinal.
+  it("guest allowed to POST manual-sales refund when member", async () => {
+    setupMemberQuery([MOCK_MEMBER_ROW]);
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/projects/${MOCK_PROJECT_ID}/funnels/${MOCK_PROJECT_ID}/stages/${MOCK_PROJECT_ID}/manual-sales/${MOCK_PROJECT_ID}/refund`,
+      headers: AUTH,
+      body: { reason: "cliente desistiu" },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("guest allowed to DELETE manual-sales refund when member", async () => {
+    setupMemberQuery([MOCK_MEMBER_ROW]);
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/api/projects/${MOCK_PROJECT_ID}/funnels/${MOCK_PROJECT_ID}/stages/${MOCK_PROJECT_ID}/manual-sales/${MOCK_PROJECT_ID}/refund`,
+      headers: AUTH,
     });
     expect(res.statusCode).toBe(200);
   });
