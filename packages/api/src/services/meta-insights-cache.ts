@@ -193,6 +193,37 @@ export async function upsertCampaignInsights(
 }
 
 /**
+ * Une insights do cache DB (com campaign_id) com os recém-buscados da Meta
+ * (`fresh`), deduplicando por (campaign_id, date_start).
+ *
+ * POR QUE DEDUP (bug do "investimento em dobro"): o refetch em
+ * `fetchCampaignDailyInsightsForIdsWithCache` rebusca o range INTEIRO de qualquer
+ * campanha que tenha algum dia faltando no cache. Como a Meta não devolve linha
+ * pra dia sem gasto, toda campanha com dias zerados no range (o caso comum — ex.
+ * campanha pausada, ou range que inclui dias antes dela começar) cai SEMPRE nesse
+ * refetch, e o `fresh` reentrega dias que também vieram do cache. Concatenar cru
+ * duplicava esses dias e o caller (`getCampaignDailyInsightsBulk`) somava
+ * spend/impressões/actions em dobro.
+ *
+ * Preferimos a linha `fresh` (mais recente) em caso de colisão; se o refetch
+ * falhou (fresh vazio ou parcial), o que estava no cache é preservado — sem perda.
+ * A ordem do array retornado é irrelevante: o caller reordena por date_start.
+ */
+export function mergeCachedAndFreshInsights(
+  cached: Array<MetaDailyInsight & { campaign_id: string }>,
+  fresh: Array<MetaDailyInsight & { campaign_id?: string }>,
+): MetaDailyInsight[] {
+  const byKey = new Map<string, MetaDailyInsight>();
+  for (const { campaign_id, ...rest } of cached) {
+    byKey.set(`${campaign_id}|${rest.date_start}`, rest);
+  }
+  for (const { campaign_id, ...rest } of fresh) {
+    byKey.set(`${campaign_id ?? ""}|${rest.date_start}`, rest);
+  }
+  return Array.from(byKey.values());
+}
+
+/**
  * Wrapper DB-first do fetchCampaignDailyInsightsForIds.
  *
  * Retorna no shape de MetaDailyInsight (sem campaign_id) — mesma assinatura
@@ -249,10 +280,14 @@ export async function fetchCampaignDailyInsightsForIdsWithCache(
     });
   }
 
-  // 4. Retorna cache (sem campaign_id) + fresh. Caller agrega por dia.
-  // Pra cache: removo campaign_id antes de devolver (assinatura compativel)
-  const cachedClean: MetaDailyInsight[] = cached.map(({ campaign_id: _unused, ...rest }) => rest);
-  return [...cachedClean, ...fresh];
+  // 4. Une cache + fresh SEM duplicar (campaign_id, date_start). O refetch do passo 3
+  // rebusca o range inteiro das campanhas faltantes, então `fresh` reentrega dias que
+  // também estão em `cached` — concatenar cru dobrava o spend no agregado. Ver
+  // mergeCachedAndFreshInsights.
+  return mergeCachedAndFreshInsights(
+    cached,
+    fresh as Array<MetaDailyInsight & { campaign_id?: string }>,
+  );
 }
 
 /**
