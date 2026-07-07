@@ -746,6 +746,12 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             Edite o funil para vincular campanhas do Meta Ads — ou conecte a planilha de
             vendas para ver os dados dela mesmo sem tráfego rodando.
           </p>
+          <p className="mx-auto max-w-xl text-xs text-muted-foreground/80">
+            Este dashboard usa uma conexão própria de planilha de <strong>vendas</strong>{" "}
+            (botão abaixo), com mapeamento de valor, data da venda, UTMs e plataforma.
+            As planilhas da aba <strong>Planilhas</strong> (leads/pesquisas) não alimentam
+            estes números — você pode conectar a mesma planilha aqui.
+          </p>
           <Button
             variant="outline"
             size="sm"
