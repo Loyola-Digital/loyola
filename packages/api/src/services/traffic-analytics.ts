@@ -426,9 +426,12 @@ export async function getProjectOverview(
 export async function getProjectCampaignAnalytics(
   db: Database,
   projectId: string,
-  days: number
+  days: number,
+  startDate?: string,
+  endDate?: string,
 ): Promise<{ campaigns: CampaignAnalytics[]; unattributedLeads: number; unattributedSales: { count: number; revenue: number }; hasCrm: boolean; hasQualification: boolean; hasSales: boolean }> {
-  const cacheKey = `analytics:${projectId}:campaigns:${days}`;
+  const rangeKey = startDate && endDate ? `${startDate}_${endDate}` : `d${days}`;
+  const cacheKey = `analytics:${projectId}:campaigns:${rangeKey}`;
   type CampaignResult = { campaigns: CampaignAnalytics[]; unattributedLeads: number; unattributedSales: { count: number; revenue: number }; hasCrm: boolean; hasQualification: boolean; hasSales: boolean };
   const cached = getCached<CampaignResult>(cacheKey);
   if (cached) return cached;
@@ -438,12 +441,13 @@ export async function getProjectCampaignAnalytics(
     return { campaigns: [], unattributedLeads: 0, unattributedSales: { count: 0, revenue: 0 }, hasCrm: false, hasQualification: false, hasSales: false };
   }
 
-  const { since, until } = dateRangeFromDays(days);
+  const { since, until } =
+    startDate && endDate ? { since: startDate, until: endDate } : dateRangeFromDays(days);
   let campaignInsights = await getCampaignInsightsFromDb(db, projectId, since, until);
   if (campaignInsights.length === 0) {
     campaignInsights = await singleFlight(
       `live:campaign-insights:${projectId}:${since}:${until}`,
-      () => fetchCampaignInsights(metaAccount.metaAccountId, metaAccount.accessToken, days),
+      () => fetchCampaignInsights(metaAccount.metaAccountId, metaAccount.accessToken, days, startDate, endDate),
     );
   }
 
@@ -692,9 +696,12 @@ export async function getAllAdSetsForProject(
   db: Database,
   projectId: string,
   days: number,
-  campaignIds?: string[]
+  campaignIds?: string[],
+  startDate?: string,
+  endDate?: string,
 ): Promise<{ adsets: (CampaignAnalytics & { parentCampaignName: string })[]; hasCrm: boolean; hasQualification: boolean; hasSales: boolean }> {
-  const cacheKey = `analytics:${projectId}:alladsets:v2:${days}:${campaignIds?.sort().join(",") ?? "all"}`;
+  const rangeKey = startDate && endDate ? `${startDate}_${endDate}` : `d${days}`;
+  const cacheKey = `analytics:${projectId}:alladsets:v2:${rangeKey}:${campaignIds?.sort().join(",") ?? "all"}`;
   type AllAdSetsResult = { adsets: (CampaignAnalytics & { parentCampaignName: string })[]; hasCrm: boolean; hasQualification: boolean; hasSales: boolean };
   const cached = getCached<AllAdSetsResult>(cacheKey);
   if (cached) return cached;
@@ -708,7 +715,9 @@ export async function getAllAdSetsForProject(
   const adsetInsights = await fetchAllAdSetInsights(
     metaAccount.metaAccountId,
     metaAccount.accessToken,
-    days
+    days,
+    startDate,
+    endDate,
   );
 
   const idSet = campaignIds ? new Set(campaignIds) : null;
@@ -764,9 +773,12 @@ export async function getAllAdsForProject(
   db: Database,
   projectId: string,
   days: number,
-  campaignIds?: string[]
+  campaignIds?: string[],
+  startDate?: string,
+  endDate?: string,
 ): Promise<{ ads: (CampaignAnalytics & { parentCampaignName: string })[]; }> {
-  const cacheKey = `analytics:${projectId}:allads:${days}:${campaignIds?.sort().join(",") ?? "all"}`;
+  const rangeKey = startDate && endDate ? `${startDate}_${endDate}` : `d${days}`;
+  const cacheKey = `analytics:${projectId}:allads:${rangeKey}:${campaignIds?.sort().join(",") ?? "all"}`;
   type AllAdsResult = { ads: (CampaignAnalytics & { parentCampaignName: string })[] };
   const cached = getCached<AllAdsResult>(cacheKey);
   if (cached) return cached;
@@ -779,7 +791,10 @@ export async function getAllAdsForProject(
   const allAds = await fetchAllAdInsights(
     metaAccount.metaAccountId,
     metaAccount.accessToken,
-    days
+    days,
+    campaignIds,
+    startDate,
+    endDate,
   );
 
   const idSet = campaignIds ? new Set(campaignIds) : null;

@@ -312,7 +312,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     metaProjectId, days, hasCampaigns ? campaignIds : null,
     customRange?.startDate, customRange?.endDate,
   );
-  const { data: campaignData } = useTrafficCampaigns(metaProjectId, days);
+  const { data: campaignData } = useTrafficCampaigns(
+    metaProjectId, days, customRange?.startDate, customRange?.endDate,
+  );
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsightsBulk(
       projectId,
@@ -321,8 +323,14 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       customRange?.startDate,
       customRange?.endDate,
     );
-  const { data: adSetsData } = useAllAdSets(metaProjectId, days, hasCampaigns ? campaignIds : null);
-  const { data: adsData } = useAllAds(metaProjectId, days, hasCampaigns ? campaignIds : null);
+  const { data: adSetsData } = useAllAdSets(
+    metaProjectId, days, hasCampaigns ? campaignIds : null,
+    customRange?.startDate, customRange?.endDate,
+  );
+  const { data: adsData } = useAllAds(
+    metaProjectId, days, hasCampaigns ? campaignIds : null,
+    customRange?.startDate, customRange?.endDate,
+  );
 
   // Story 29.13: resolve utm_medium (adset id) → adset name e utm_content
   // (ad id) → ad name via cache de nomes Meta (/meta-names/resolve, DB 24h).
