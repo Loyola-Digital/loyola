@@ -170,12 +170,17 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
   const summary = useMemo(() => {
     // Vendas reembolsadas ficam na tabela (histórico) mas saem dos totais.
     const active = sales.filter((s) => !s.refundedAt);
+    const refunded = sales.filter((s) => s.refundedAt);
     const totalRevenue = active.reduce((acc, s) => acc + s.value, 0);
     const totalColetado = active.reduce((acc, s) => acc + (s.valorRecebido ?? 0), 0);
+    // Valor devolvido = o que tinha sido coletado (sinal) nas vendas reembolsadas.
+    const totalReembolsado = refunded.reduce((acc, s) => acc + (s.valorRecebido ?? 0), 0);
     return {
       totalSales: active.length,
       totalRevenue,
       totalColetado,
+      totalReembolsado,
+      refundedCount: refunded.length,
       ticket: active.length > 0 ? totalRevenue / active.length : 0,
     };
   }, [sales]);
@@ -361,11 +366,19 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className={`grid grid-cols-2 gap-3 ${summary.refundedCount > 0 ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
                 <StatCard label="Total de vendas" value={String(summary.totalSales)} />
                 <StatCard label="Valor coletado" value={formatCurrency(summary.totalColetado)} highlight tone="green" />
                 <StatCard label="Valor faturado" value={formatCurrency(summary.totalRevenue)} highlight />
                 <StatCard label="Ticket médio" value={formatCurrency(summary.ticket)} />
+                {summary.refundedCount > 0 && (
+                  <StatCard
+                    label={`Reembolsado (${summary.refundedCount} venda${summary.refundedCount !== 1 ? "s" : ""})`}
+                    value={formatCurrency(summary.totalReembolsado)}
+                    highlight
+                    tone="red"
+                  />
+                )}
               </div>
 
               {byCloser.length > 0 && (
@@ -559,11 +572,13 @@ function StatCard({
   label: string;
   value: string;
   highlight?: boolean;
-  tone?: "primary" | "green";
+  tone?: "primary" | "green" | "red";
 }) {
   const boxCls =
-    tone === "green" ? "border-emerald-500/40 bg-emerald-500/10" : "border-primary/30 bg-primary/5";
-  const textCls = tone === "green" ? "text-emerald-400" : "text-primary";
+    tone === "green" ? "border-emerald-500/40 bg-emerald-500/10"
+    : tone === "red" ? "border-red-500/40 bg-red-500/10"
+    : "border-primary/30 bg-primary/5";
+  const textCls = tone === "green" ? "text-emerald-400" : tone === "red" ? "text-red-400" : "text-primary";
   return (
     <div className={`rounded-lg border p-4 space-y-1 ${highlight ? boxCls : "border-border/50"}`}>
       <p className="text-xs text-muted-foreground">{label}</p>
@@ -634,12 +649,14 @@ function SalesTable({ sales, manualMap, days, resolveLead, onOpenSurvey, onEdit,
             return (
               <tr key={sale.id} className="border-t border-border/30">
                 <td className="px-3 py-2 tabular-nums">{formatDate(sale.saleDate)}</td>
+                {/* Badges shrink-0 num flex: o NOME trunca, as tags (Manual/
+                    Reembolsada) nunca são cortadas pela largura da coluna. */}
                 <td
-                  className="px-3 py-2 max-w-[160px] truncate"
+                  className="px-3 py-2 max-w-[220px]"
                   title={sale.negociacao ? `${sale.customerName ?? ""} — Negociação: ${sale.negociacao}` : (sale.customerName ?? "")}
                 >
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="truncate">{sale.customerName ?? "—"}</span>
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className="truncate min-w-0">{sale.customerName ?? "—"}</span>
                     <span className={`shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold ${
                       sale.source === "manual"
                         ? "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-400"
