@@ -1993,6 +1993,11 @@ export const debriefings = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     campaignName: text("campaign_name").notNull(),
+    /** Etapa (stageType "debriefing") a que o doc pertence. NULL = sem etapa
+     * (legado do menu global). SET NULL: excluir a etapa preserva os docs. */
+    stageId: uuid("stage_id").references(() => funnelStages.id, {
+      onDelete: "set null",
+    }),
     html: text("html").notNull(),
     fileName: text("file_name"),
     createdBy: uuid("created_by")
@@ -2008,7 +2013,10 @@ export const debriefings = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (table) => [index("idx_debriefings_created_at").on(table.createdAt)]
+  (table) => [
+    index("idx_debriefings_created_at").on(table.createdAt),
+    index("idx_debriefings_stage").on(table.stageId),
+  ]
 );
 
 export const debriefingComments = pgTable(

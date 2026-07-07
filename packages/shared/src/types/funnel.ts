@@ -18,7 +18,9 @@ export interface SwitchyLinkRef {
 
 // Story 19.10: "event" = Etapa de Evento Presencial (imersão). Código curto p/
 // caber no varchar(10) do banco; label de UI = "Evento Presencial".
-export type StageType = "paid" | "free" | "sales" | "cpl" | "event";
+// "debriefing" = etapa que agrupa os docs de debriefing da campanha (Epic 37 —
+// movido do menu global pra dentro do funil). Cabe exato no varchar(10).
+export type StageType = "paid" | "free" | "sales" | "cpl" | "event" | "debriefing";
 // Story 19.10: "event_sales" = planilha de vendas de evento presencial (formato
 // Nome/Produto/Valor/Caixa/Closer/Telefone, SEM email).
 export type StageSalesSubtype = "capture" | "main_product" | "sales" | "tmb" | "event_sales";

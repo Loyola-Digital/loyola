@@ -18,6 +18,7 @@ import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-
 import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-spreadsheet-section";
 import { SalesStageView } from "@/components/funnels/sales-stage-view";
 import { EventStageView } from "@/components/funnels/event-stage-view";
+import { DebriefingStageView } from "@/components/funnels/debriefing-stage-view";
 import { ManualPixSalesSection } from "@/components/funnels/manual-pix-sales-section";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
@@ -112,6 +113,18 @@ export default function StagePage() {
   if (stage.stageType === "event") {
     return (
       <EventStageView
+        projectId={params.id}
+        funnelId={params.funnelId}
+        funnelName={funnel.name}
+        stage={stage}
+      />
+    );
+  }
+
+  // Epic 37: etapa "debriefing" — docs de debriefing da campanha. Render dedicado.
+  if (stage.stageType === "debriefing") {
+    return (
+      <DebriefingStageView
         projectId={params.id}
         funnelId={params.funnelId}
         funnelName={funnel.name}
@@ -285,6 +298,24 @@ export default function StagePage() {
                   >
                     <span className="font-medium">Evento Presencial</span>
                     <span className="text-xs text-muted-foreground">Vendas no local + MemberKit</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateStage.mutate(
+                        { stageType: "debriefing" },
+                        { onSuccess: () => toast.success("Tipo alterado para Debriefing") }
+                      );
+                    }}
+                    className={cn(
+                      "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                      (stage.stageType as string) === "debriefing"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border hover:bg-muted"
+                    )}
+                  >
+                    <span className="font-medium">Debriefing</span>
+                    <span className="text-xs text-muted-foreground">Docs HTML + comentários</span>
                   </button>
                 </div>
               </div>
