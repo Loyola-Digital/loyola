@@ -170,6 +170,19 @@ function overlaySpreadsheetMetrics(
 // Story 29.19: linha do Detalhamento (CampaignAnalytics + margens derivadas).
 type DetailRow = CampaignAnalytics & { marginPct: number | null; marginPerSale: number | null };
 
+// Linha sintética do Detalhamento quando só há planilha (sem campanha Meta):
+// métricas de mídia zeradas; vendas/receita vêm da planilha.
+function sheetOnlyRow(id: string, name: string, vendas: number, bruto: number): CampaignAnalytics {
+  return {
+    campaignId: id,
+    campaignName: name,
+    spend: 0, impressions: 0, clicks: 0, reach: 0, frequency: 0, ctr: 0, cpc: 0, cpm: 0,
+    leads: null, cpl: null, linkClicks: null, landingPageViews: null, connectRate: null,
+    qualifiedLeads: null, cplQualified: null, qualificationRate: null,
+    sales: vendas, revenue: bruto, costPerSale: null, roas: null, conversionRate: null,
+  };
+}
+
 // Story 29.19: remove o sufixo " — Cópia" (Meta duplica campanhas assim) do fim
 // do nome, pra normalizar e agrupar a cópia no nome base. Cobre —/–/- e número.
 const COPIA_SUFFIX_RE = /(\s*[—–-]\s*c[oó]pia(\s*\d+)?)+\s*$/i;
@@ -288,23 +301,28 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const updateFunnel = useUpdateFunnel(projectId, funnel.id);
   const campaignIds = funnel.campaigns.map((c) => c.id);
   const campaignIdSet = new Set(campaignIds);
+  // Sem campanha Meta vinculada o dashboard opera 100% da planilha. Os hooks
+  // Meta são desabilitados (projectId null) — sem o filtro de campanha os
+  // endpoints retornariam dados do PROJETO inteiro (spend de outros funis).
+  const hasCampaigns = campaignIds.length > 0;
+  const metaProjectId = hasCampaigns ? projectId : null;
 
   // Data hooks — Fix 1 (29.8): propaga startDate/endDate quando custom range
   const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
-    projectId, days, campaignIds.length > 0 ? campaignIds : null,
+    metaProjectId, days, hasCampaigns ? campaignIds : null,
     customRange?.startDate, customRange?.endDate,
   );
-  const { data: campaignData } = useTrafficCampaigns(projectId, days);
+  const { data: campaignData } = useTrafficCampaigns(metaProjectId, days);
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsightsBulk(
       projectId,
-      campaignIds.length > 0 ? campaignIds : null,
+      hasCampaigns ? campaignIds : null,
       days,
       customRange?.startDate,
       customRange?.endDate,
     );
-  const { data: adSetsData } = useAllAdSets(projectId, days, campaignIds.length > 0 ? campaignIds : null);
-  const { data: adsData } = useAllAds(projectId, days, campaignIds.length > 0 ? campaignIds : null);
+  const { data: adSetsData } = useAllAdSets(metaProjectId, days, hasCampaigns ? campaignIds : null);
+  const { data: adsData } = useAllAds(metaProjectId, days, hasCampaigns ? campaignIds : null);
 
   // Story 29.13: resolve utm_medium (adset id) → adset name e utm_content
   // (ad id) → ad name via cache de nomes Meta (/meta-names/resolve, DB 24h).
@@ -319,6 +337,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   );
   const { namesMap: adsetNamesMap } = useResolveMetaNames(projectId, mediumIds, "adset");
   const { namesMap: adNamesMap } = useResolveMetaNames(projectId, contentIds, "ad");
+  // Sem campanhas Meta, o Detalhamento "Por Canal" vem da planilha
+  // (utm_campaign = campaign id) — resolve id → nome pelo cache Meta.
+  const campaignUtmIds = useMemo(
+    () => (!hasCampaigns ? salesData?.porUtmCampaign?.map((u) => u.campaign) ?? [] : []),
+    [salesData, hasCampaigns],
+  );
+  const { namesMap: campaignNamesMap } = useResolveMetaNames(projectId, campaignUtmIds, "campaign");
 
   const { data: compData } = useMetaAdsComparison(
     projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
@@ -348,24 +373,31 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // Story 29.9: spend ganha imposto 12.15% para dias >= 2026-01-01.
   //             Receita falla pra Meta se planilha não tem dataVenda mapeada.
   const dailyChartData = useMemo(() => {
-    if (!dailyData) return [];
     // Fallback: planilha sem dataVenda OU sem rows válidas no range → Meta revenue
     const sheetHasDaily = usingSpreadsheet && salesDataDaily && !salesDataDaily.semDados
       && Object.keys(salesDataDaily.byDay ?? {}).length > 0;
     const sheetByDay = sheetHasDaily ? salesDataDaily!.byDay : {};
     const feeRate = usingSpreadsheet && salesData ? salesData.feeRate : 0;
-    return dailyData.map((d) => {
-      const spendBruto = safeNum(d.spend);
-      const spendComTax = applyMetaTax(spendBruto, d.date_start);
-      const taxAmount = metaTaxAmount(spendBruto, d.date_start);
-      const purchases = d.actions?.find((a) =>
+    // Eixo de dias = união Meta ∪ planilha: dias com venda na planilha mas sem
+    // delivery Meta (ou sem campanha vinculada) também entram no gráfico.
+    const metaByDate = new Map((dailyData ?? []).map((d) => [d.date_start, d]));
+    const allDates = Array.from(
+      new Set([...metaByDate.keys(), ...(sheetHasDaily ? Object.keys(sheetByDay) : [])]),
+    ).sort();
+    if (allDates.length === 0) return [];
+    return allDates.map((date) => {
+      const d = metaByDate.get(date);
+      const spendBruto = d ? safeNum(d.spend) : 0;
+      const spendComTax = applyMetaTax(spendBruto, date);
+      const taxAmount = metaTaxAmount(spendBruto, date);
+      const purchases = d?.actions?.find((a) =>
         a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase"
       );
-      const metaRevenueEntry = d.action_values?.find((a) =>
+      const metaRevenueEntry = d?.action_values?.find((a) =>
         a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase"
       );
       const metaRevenue = metaRevenueEntry ? parseFloat(metaRevenueEntry.value) : 0;
-      const sheetRevenue = sheetByDay[d.date_start] ?? 0;
+      const sheetRevenue = sheetByDay[date] ?? 0;
       // Story 29.10: sem planilha de vendas conectada não há fonte de vendas —
       // não herdar receita/margem/vendas do pixel Meta (evita número enganoso).
       // Quando usingSpreadsheet mas sem daily da planilha (não mapeou dataVenda),
@@ -373,7 +405,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       const revenueBruto = sheetHasDaily ? sheetRevenue : (usingSpreadsheet ? metaRevenue : 0);
       // Story 29.20 (Danilo): margem LÍQUIDA — (Receita × (1−fees)) − Investimento c/ tax.
       const margin = usingSpreadsheet ? (revenueBruto * (1 - feeRate)) - spendComTax : 0;
-      const dateLabel = d.date_start.slice(5, 10);
+      const dateLabel = date.slice(5, 10);
       const revenueSource = sheetHasDaily
         ? "Planilha · faturamento bruto por dia"
         : usingSpreadsheet
@@ -421,6 +453,23 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // Story 29.7: Margem usa faturamentoLiquidoCalculado (descontou fees plataforma).
   // Story 29.9: spend Meta ganha imposto 12.15% para dias >= 2026-01-01 (via spendAggregates).
   const effectiveMetrics = useMemo(() => {
+    // Sem campanha Meta vinculada: KPIs 100% da planilha (investimento zero,
+    // ROAS/CAC sem sentido → "—"; Margem = receita líquida).
+    if (!hasCampaigns) {
+      if (!usingSpreadsheet || !salesData) return null;
+      const sales = salesData.totalVendas;
+      const revenue = salesData.faturamentoBruto;
+      const margin = salesData.faturamentoLiquidoCalculado;
+      return {
+        totalSpend: 0,
+        totalSales: sales,
+        totalRevenue: revenue,
+        cac: null,
+        margin,
+        marginPercent: revenue > 0 ? (margin / revenue) * 100 : null,
+        roas: null,
+      };
+    }
     if (!overview) return null;
     const effectiveSpend = spendAggregates.totalSpendComTax > 0
       ? spendAggregates.totalSpendComTax
@@ -456,7 +505,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       marginPercent: revenue > 0 ? (margin / revenue) * 100 : null,
       roas: effectiveSpend > 0 ? revenue / effectiveSpend : null,
     };
-  }, [overview, salesData, usingSpreadsheet, spendAggregates]);
+  }, [overview, salesData, usingSpreadsheet, spendAggregates, hasCampaigns]);
 
   // Revenue by audience (ad sets)
   const revenueByAudience = useMemo(() => {
@@ -577,13 +626,27 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   }, [adsData, usingSpreadsheet, salesData, salesByAdName]);
 
   const tableData = useMemo((): CampaignAnalytics[] => {
+    // Sem campanha Meta: linhas 100% da planilha, agrupadas por UTM.
+    if (!hasCampaigns) {
+      if (!usingSpreadsheet || !salesData) return [];
+      switch (tableFilter) {
+        case "campaign":
+          return (salesData.porUtmCampaign ?? []).map((u) =>
+            sheetOnlyRow(u.campaign, campaignNamesMap.get(u.campaign) ?? u.campaign, u.vendas, u.bruto));
+        case "adset":
+          return Array.from(salesByAdsetName, ([name, v]) => sheetOnlyRow(name, name, v.vendas, v.bruto));
+        case "ad":
+          return Array.from(salesByAdName, ([name, v]) => sheetOnlyRow(name, name, v.vendas, v.bruto));
+        default: return [];
+      }
+    }
     switch (tableFilter) {
       case "campaign": return funnelCampaigns;
       case "adset": return funnelAdSets;
       case "ad": return funnelAds;
       default: return [];
     }
-  }, [tableFilter, funnelCampaigns, funnelAdSets, funnelAds]);
+  }, [tableFilter, funnelCampaigns, funnelAdSets, funnelAds, hasCampaigns, usingSpreadsheet, salesData, campaignNamesMap, salesByAdsetName, salesByAdName]);
 
   // Story 29.20 (Danilo): fee rate da plataforma pra Margem LÍQUIDA por linha.
   const detailFeeRate = usingSpreadsheet && salesData ? salesData.feeRate : 0;
@@ -671,13 +734,36 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   };
   const sortArrow = (col: string) => (sortCol === col ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
-  if (campaignIds.length === 0) {
+  // Sem campanha E sem planilha conectada: nenhuma fonte de dados — empty state.
+  // Com planilha conectada, o dashboard renderiza normalmente só com dados dela.
+  if (!hasCampaigns && !perpetualSpreadsheet) {
     return (
-      <div className="rounded-xl border border-dashed border-border/30 p-12 text-center space-y-2">
-        <LinkIcon className="h-8 w-8 mx-auto text-muted-foreground" />
-        <p className="text-muted-foreground">Nenhuma campanha vinculada a este funil.</p>
-        <p className="text-sm text-muted-foreground">Edite o funil para vincular campanhas do Meta Ads.</p>
-      </div>
+      <>
+        <div className="rounded-xl border border-dashed border-border/30 p-12 text-center space-y-3">
+          <LinkIcon className="h-8 w-8 mx-auto text-muted-foreground" />
+          <p className="text-muted-foreground">Nenhuma campanha vinculada a este funil.</p>
+          <p className="text-sm text-muted-foreground">
+            Edite o funil para vincular campanhas do Meta Ads — ou conecte a planilha de
+            vendas para ver os dados dela mesmo sem tráfego rodando.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs"
+            onClick={() => setShowSpreadsheetWizard(true)}
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" />
+            Conectar planilha
+          </Button>
+        </div>
+        <PerpetualSpreadsheetWizardDialog
+          projectId={projectId}
+          funnelId={funnel.id}
+          current={perpetualSpreadsheet ?? null}
+          open={showSpreadsheetWizard}
+          onOpenChange={setShowSpreadsheetWizard}
+        />
+      </>
     );
   }
 
@@ -852,7 +938,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           ) : <EmptyState />}
         </div>
 
-        {/* Story 29.15: Investimento no Tempo — linha, valor a cada 7 dias */}
+        {/* Story 29.15: Investimento no Tempo — linha, valor a cada 7 dias.
+            Sem campanha vinculada não há investimento — oculta o gráfico. */}
+        {hasCampaigns && (
         <div className="rounded-xl border border-border/30 bg-card/60 p-5">
           <h3 className="text-sm font-semibold mb-1">Investimento no Tempo</h3>
           <p className="text-[11px] text-muted-foreground mb-3">
@@ -872,6 +960,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             </ResponsiveContainer>
           ) : <EmptyState />}
         </div>
+        )}
       </div>
 
       {/* ================================================================ */}
@@ -1033,8 +1122,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       </div>
 
       {/* ================================================================ */}
-      {/* TOP CRIATIVOS                                                    */}
+      {/* TOP CRIATIVOS — precisa de campanhas Meta (sem filtro viria o projeto inteiro) */}
       {/* ================================================================ */}
+      {hasCampaigns && (
       <TopCreativesGallery
         projectId={projectId}
         days={days}
@@ -1046,6 +1136,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         startDate={customRange?.startDate}
         endDate={customRange?.endDate}
       />
+      )}
 
       {/* Dashboard Financeiro — apenas etapas pagas (Story 19.6) */}
       {stageType === "paid" && stageId && (

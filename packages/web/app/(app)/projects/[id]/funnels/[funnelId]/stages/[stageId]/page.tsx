@@ -31,6 +31,7 @@ import { MauticStageTab } from "@/components/funnels/mautic-stage-tab";
 import { Ga4StageTab } from "@/components/funnels/ga4-stage-tab";
 import { NpsStageTab } from "@/components/funnels/nps-stage-tab";
 import { AuditStatusBadge } from "@/components/funnels/audit-status-badge";
+import { StageDeleteSection } from "@/components/funnels/stage-delete-section";
 import { OrphanCampaignsBanner } from "@/components/funnels/orphan-campaigns-banner";
 import { CampaignSelector } from "@/components/funnels/campaign-selector";
 import { useCampaignPicker } from "@/lib/hooks/use-funnels";
@@ -346,6 +347,13 @@ export default function StagePage() {
                   <p className="text-xs text-muted-foreground">Carregando campanhas...</p>
                 )}
               </div>
+
+              <StageDeleteSection
+                projectId={params.id}
+                funnelId={params.funnelId}
+                stageId={params.stageId}
+                stageName={stage.name}
+              />
             </div>
           </SheetContent>
         </Sheet>

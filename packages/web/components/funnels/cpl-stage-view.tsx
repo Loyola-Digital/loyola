@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { ZoomStageTab } from "./zoom-stage-tab";
+import { StageDeleteSection } from "./stage-delete-section";
 import { MauticStageTab } from "./mautic-stage-tab";
 import { toast } from "sonner";
 import type { FunnelStage } from "@loyola-x/shared";
@@ -83,6 +84,13 @@ export function CplStageView({ projectId, funnelId, funnelName, stage }: CplStag
                   </Button>
                 </div>
               </div>
+
+              <StageDeleteSection
+                projectId={projectId}
+                funnelId={funnelId}
+                stageId={stage.id}
+                stageName={stage.name}
+              />
             </div>
           </SheetContent>
         </Sheet>
