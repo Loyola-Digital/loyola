@@ -14,6 +14,7 @@ import { MultiSalesSpreadsheets } from "./multi-sales-spreadsheets";
 import { StageSalesSection } from "./stage-sales-section";
 import { StageSalesSpreadsheetSection } from "./stage-sales-spreadsheet-section";
 import { CampaignSelector } from "./campaign-selector";
+import { StageDeleteSection } from "./stage-delete-section";
 import { SalesMetaKpis } from "./sales-meta-kpis";
 import { MauticStageTab } from "./mautic-stage-tab";
 import { SalesConversionCard } from "./sales-conversion-card";
@@ -134,6 +135,13 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
                     <p className="text-xs text-muted-foreground">Carregando campanhas...</p>
                   )}
                 </div>
+
+                <StageDeleteSection
+                  projectId={projectId}
+                  funnelId={funnelId}
+                  stageId={stage.id}
+                  stageName={stage.name}
+                />
               </div>
             </SheetContent>
           </Sheet>

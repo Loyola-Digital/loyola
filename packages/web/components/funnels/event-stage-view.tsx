@@ -20,6 +20,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { NpsStageTab } from "@/components/funnels/nps-stage-tab";
+import { StageDeleteSection } from "@/components/funnels/stage-delete-section";
 import { toast } from "sonner";
 import type { FunnelStage, ManualSale } from "@loyola-x/shared";
 import { Button } from "@/components/ui/button";
@@ -312,6 +313,13 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
                     </Button>
                   </div>
                 </div>
+
+                <StageDeleteSection
+                  projectId={projectId}
+                  funnelId={funnelId}
+                  stageId={stage.id}
+                  stageName={stage.name}
+                />
               </div>
             </SheetContent>
           </Sheet>
