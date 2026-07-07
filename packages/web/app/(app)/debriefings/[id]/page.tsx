@@ -73,6 +73,14 @@ export default function DebriefingDetailPage() {
   const [frameHeight, setFrameHeight] = useState(MIN_FRAME_HEIGHT);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const savingRef = useRef(false);
+  // Epic 37 (etapa): quando aberto de dentro de uma etapa de Debriefing, o link
+  // vem com ?from=/projects/.../stages/... — Voltar retorna pra etapa. Lido via
+  // window.location (e não useSearchParams) pra não exigir Suspense no build.
+  const [backHref, setBackHref] = useState("/debriefings");
+  useEffect(() => {
+    const from = new URLSearchParams(window.location.search).get("from");
+    if (from && from.startsWith("/")) setBackHref(from);
+  }, []);
 
   const { data: debriefing, isLoading, error } = useDebriefing(params.id);
   const { data: listData } = useDebriefings();
@@ -155,7 +163,7 @@ export default function DebriefingDetailPage() {
         <AlertCircle className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
         <p className="text-sm text-muted-foreground">Debriefing não encontrado.</p>
         <Button variant="ghost" className="mt-4" asChild>
-          <Link href="/debriefings">
+          <Link href={backHref}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Voltar
           </Link>
@@ -176,7 +184,7 @@ export default function DebriefingDetailPage() {
     deleteDebriefing.mutate(params.id, {
       onSuccess: () => {
         toast.success("Debriefing excluído");
-        router.push("/debriefings");
+        router.push(backHref);
       },
       onError: (e) =>
         toast.error(e instanceof Error ? e.message : "Erro ao excluir"),
@@ -189,7 +197,7 @@ export default function DebriefingDetailPage() {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0">
           <Button variant="ghost" size="sm" className="mb-1 -ml-2" asChild>
-            <Link href="/debriefings">
+            <Link href={backHref}>
               <ArrowLeft className="h-4 w-4 mr-1" />
               Debriefings
             </Link>

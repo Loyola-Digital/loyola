@@ -20,9 +20,12 @@ import { useCreateDebriefing } from "@/lib/hooks/use-debriefings";
 export function CreateDebriefingDialog({
   open,
   onOpenChange,
+  stageId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Quando criado de dentro de uma etapa de Debriefing, o doc já nasce vinculado a ela. */
+  stageId?: string;
 }) {
   const [campaignName, setCampaignName] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -38,7 +41,7 @@ export function CreateDebriefingDialog({
       return;
     }
     create.mutate(
-      { campaignName: campaignName.trim(), file },
+      { campaignName: campaignName.trim(), stageId, file },
       {
         onSuccess: () => {
           toast.success("Debriefing criado!");

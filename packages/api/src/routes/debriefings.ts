@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import fp from "fastify-plugin";
 import type { MultipartFile } from "@fastify/multipart";
@@ -26,10 +26,19 @@ const updateBodySchema = z
   .object({
     campaignName: z.string().trim().min(1).max(300).optional(),
     html: z.string().min(1).optional(),
+    // Vínculo com etapa (stageType "debriefing"): uuid vincula, null desvincula.
+    stageId: z.string().uuid().nullable().optional(),
   })
-  .refine((d) => d.campaignName !== undefined || d.html !== undefined, {
-    message: "informe campaignName e/ou html",
-  });
+  .refine(
+    (d) => d.campaignName !== undefined || d.html !== undefined || d.stageId !== undefined,
+    { message: "informe campaignName, html e/ou stageId" },
+  );
+
+// Lista: sem filtro = todos; stageId = docs da etapa; unassigned = sem etapa.
+const listQuerySchema = z.object({
+  stageId: z.string().uuid().optional(),
+  unassigned: z.coerce.boolean().optional(),
+});
 
 const commentBodySchema = z
   .object({
@@ -96,23 +105,35 @@ export default fp(async function debriefingsRoutes(fastify) {
   // ----------------------------------------------------------
   // GET /api/debriefings — lista SEM o html (payload leve)
   // ----------------------------------------------------------
-  fastify.get("/api/debriefings", async () => {
+  fastify.get("/api/debriefings", async (request, reply) => {
+    const query = listQuerySchema.safeParse(request.query);
+    if (!query.success) return reply.code(400).send({ error: "query inválida" });
+
+    const stageFilter = query.data.stageId
+      ? eq(debriefings.stageId, query.data.stageId)
+      : query.data.unassigned
+        ? isNull(debriefings.stageId)
+        : undefined;
+
+    const listSelect = fastify.db
+      .select({
+        id: debriefings.id,
+        campaignName: debriefings.campaignName,
+        stageId: debriefings.stageId,
+        fileName: debriefings.fileName,
+        createdAt: debriefings.createdAt,
+        updatedAt: debriefings.updatedAt,
+        authorName: users.name,
+        authorAvatarUrl: users.avatarUrl,
+        editorName: editors.name,
+      })
+      .from(debriefings)
+      .innerJoin(users, eq(debriefings.createdBy, users.id))
+      .leftJoin(editors, eq(debriefings.updatedBy, editors.id))
+      .orderBy(desc(debriefings.createdAt));
+
     const [rows, counts] = await Promise.all([
-      fastify.db
-        .select({
-          id: debriefings.id,
-          campaignName: debriefings.campaignName,
-          fileName: debriefings.fileName,
-          createdAt: debriefings.createdAt,
-          updatedAt: debriefings.updatedAt,
-          authorName: users.name,
-          authorAvatarUrl: users.avatarUrl,
-          editorName: editors.name,
-        })
-        .from(debriefings)
-        .innerJoin(users, eq(debriefings.createdBy, users.id))
-        .leftJoin(editors, eq(debriefings.updatedBy, editors.id))
-        .orderBy(desc(debriefings.createdAt)),
+      stageFilter ? listSelect.where(stageFilter) : listSelect,
       fastify.db
         .select({
           debriefingId: debriefingComments.debriefingId,
@@ -144,6 +165,7 @@ export default fp(async function debriefingsRoutes(fastify) {
       .select({
         id: debriefings.id,
         campaignName: debriefings.campaignName,
+        stageId: debriefings.stageId,
         html: debriefings.html,
         fileName: debriefings.fileName,
         createdAt: debriefings.createdAt,
@@ -179,6 +201,12 @@ export default fp(async function debriefingsRoutes(fastify) {
         return reply.code(400).send({ error: "campaignName é obrigatório" });
       }
 
+      // Vínculo opcional com etapa (multipart field stageId).
+      const stageIdRaw = multipartFieldValue(file.fields.stageId)?.trim();
+      if (stageIdRaw && !z.string().uuid().safeParse(stageIdRaw).success) {
+        return reply.code(400).send({ error: "stageId inválido" });
+      }
+
       const upload = await readHtmlUpload(file);
       if (!upload.ok) {
         return reply.code(upload.code).send({ error: upload.error });
@@ -188,6 +216,7 @@ export default fp(async function debriefingsRoutes(fastify) {
         .insert(debriefings)
         .values({
           campaignName,
+          stageId: stageIdRaw || null,
           html: upload.html,
           fileName: upload.fileName,
           createdBy: request.userId,
@@ -221,6 +250,7 @@ export default fp(async function debriefingsRoutes(fastify) {
       campaignName: string;
       html: string;
       fileName: string;
+      stageId: string | null;
     }> = {};
 
     if (request.isMultipart()) {
@@ -247,6 +277,7 @@ export default fp(async function debriefingsRoutes(fastify) {
         changes.campaignName = body.data.campaignName;
       }
       if (body.data.html !== undefined) changes.html = body.data.html;
+      if (body.data.stageId !== undefined) changes.stageId = body.data.stageId;
     }
 
     await fastify.db

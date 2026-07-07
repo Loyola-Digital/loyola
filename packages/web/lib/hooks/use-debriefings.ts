@@ -18,6 +18,8 @@ const STALE = 60 * 1000;
 export interface DebriefingListItem {
   id: string;
   campaignName: string;
+  /** Etapa (stageType "debriefing") a que o doc pertence. null = sem etapa (legado). */
+  stageId: string | null;
   fileName: string | null;
   createdAt: string;
   updatedAt: string;
@@ -31,6 +33,7 @@ export interface DebriefingListItem {
 export interface DebriefingDetail {
   id: string;
   campaignName: string;
+  stageId: string | null;
   html: string;
   fileName: string | null;
   createdAt: string;
@@ -59,10 +62,11 @@ async function uploadDebriefing(
   token: string | null,
   method: "POST" | "PUT",
   path: string,
-  fields: { campaignName?: string; file: File }
+  fields: { campaignName?: string; stageId?: string; file: File }
 ): Promise<{ id?: string }> {
   const formData = new FormData();
   if (fields.campaignName) formData.append("campaignName", fields.campaignName);
+  if (fields.stageId) formData.append("stageId", fields.stageId);
   formData.append("file", fields.file);
 
   const res = await fetch(`${API_URL}${path}`, {
@@ -86,12 +90,18 @@ async function uploadDebriefing(
 // ---- Queries ----
 
 // GET /api/debriefings -> { debriefings }
-export function useDebriefings() {
+// filter: sem filtro = todos; { stageId } = docs da etapa; { unassigned } = sem etapa.
+export function useDebriefings(filter?: { stageId?: string; unassigned?: boolean }) {
   const apiClient = useApiClient();
+  const qs = filter?.stageId
+    ? `?stageId=${filter.stageId}`
+    : filter?.unassigned
+      ? "?unassigned=true"
+      : "";
   return useQuery({
-    queryKey: ["debriefings"],
+    queryKey: ["debriefings", filter?.stageId ?? (filter?.unassigned ? "unassigned" : "all")],
     queryFn: () =>
-      apiClient<{ debriefings: DebriefingListItem[] }>("/api/debriefings"),
+      apiClient<{ debriefings: DebriefingListItem[] }>(`/api/debriefings${qs}`),
     staleTime: STALE,
   });
 }
@@ -126,7 +136,7 @@ export function useCreateDebriefing() {
   const { getToken } = useAuth();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { campaignName: string; file: File }) =>
+    mutationFn: async (data: { campaignName: string; stageId?: string; file: File }) =>
       uploadDebriefing(await getToken(), "POST", "/api/debriefings", data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["debriefings"] });
@@ -143,6 +153,7 @@ export function useUpdateDebriefing(id: string) {
     mutationFn: async (data: {
       campaignName?: string;
       html?: string;
+      stageId?: string | null;
       file?: File | null;
     }) => {
       if (data.file) {
@@ -156,10 +167,29 @@ export function useUpdateDebriefing(id: string) {
         body: JSON.stringify({
           campaignName: data.campaignName,
           html: data.html,
+          stageId: data.stageId,
         }),
       });
     },
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["debriefings"] });
+      qc.invalidateQueries({ queryKey: ["debriefing", id] });
+    },
+  });
+}
+
+// PUT /api/debriefings/:id { stageId } — vincula/desvincula um doc a uma etapa
+// (usado pela view da etapa pra "trazer" debriefings sem etapa).
+export function useAssignDebriefingStage() {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, stageId }: { id: string; stageId: string | null }) =>
+      apiClient<{ ok: boolean }>(`/api/debriefings/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ stageId }),
+      }),
+    onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ["debriefings"] });
       qc.invalidateQueries({ queryKey: ["debriefing", id] });
     },
