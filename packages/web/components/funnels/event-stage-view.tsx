@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   CalendarDays,
+  CalendarClock,
   Plus,
   Pencil,
   Trash2,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 import { NpsStageTab } from "@/components/funnels/nps-stage-tab";
 import { StageDeleteSection } from "@/components/funnels/stage-delete-section";
+import { EventPaymentCalendar } from "@/components/funnels/event-payment-calendar";
 import { toast } from "sonner";
 import type { FunnelStage, ManualSale } from "@loyola-x/shared";
 import { Button } from "@/components/ui/button";
@@ -337,6 +339,9 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
           <TabsTrigger value="plano" className="gap-1.5 shrink-0">
             <Target className="h-3.5 w-3.5" /> Plano de Vendas
           </TabsTrigger>
+          <TabsTrigger value="calendario" className="gap-1.5 shrink-0">
+            <CalendarClock className="h-3.5 w-3.5" /> Calendário
+          </TabsTrigger>
           <TabsTrigger value="planilha" className="gap-1.5 shrink-0">
             Leads
           </TabsTrigger>
@@ -411,6 +416,11 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
         {/* PLANO DE VENDAS — cruzamento das pesquisas (faturamento) com a matriz de ofertas */}
         <TabsContent value="plano" className="mt-6">
           <SalesPlanTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
+        </TabsContent>
+
+        {/* CALENDÁRIO — parcelas combinadas nas vendas projetadas por data de vencimento */}
+        <TabsContent value="calendario" className="mt-6">
+          <EventPaymentCalendar projectId={projectId} funnelId={funnelId} stageId={stage.id} />
         </TabsContent>
 
         {/* LEADS DO EVENTO — conectar as planilhas (fonte única: Mapa + Plano de Vendas) */}
