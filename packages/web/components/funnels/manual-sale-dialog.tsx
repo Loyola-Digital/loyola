@@ -186,6 +186,10 @@ export function ManualSaleDialog({
   const [customerCpf, setCustomerCpf] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [valorNotaInput, setValorNotaInput] = useState("");
+  // Parcelamento combinado (Evento Presencial) — calendário de pagamento
+  const [installmentCountInput, setInstallmentCountInput] = useState("");
+  const [installmentAmountInput, setInstallmentAmountInput] = useState("");
+  const [firstInstallmentDate, setFirstInstallmentDate] = useState("");
 
   // Story 19.12: ao editar venda antiga, produto/closer pode não estar mais na
   // lista — mostramos o valor atual como item "(não cadastrado)" em vez de vazio.
@@ -231,6 +235,15 @@ export function ManualSaleDialog({
       setValorNotaInput(
         editingSale.valorNota != null ? formatBrCurrencyFromNumber(editingSale.valorNota) : "",
       );
+      setInstallmentCountInput(
+        editingSale.installmentCount != null ? String(editingSale.installmentCount) : "",
+      );
+      setInstallmentAmountInput(
+        editingSale.installmentAmount != null
+          ? formatBrCurrencyFromNumber(editingSale.installmentAmount)
+          : "",
+      );
+      setFirstInstallmentDate(editingSale.firstInstallmentDate ?? "");
     } else {
       resetForm();
     }
@@ -251,6 +264,9 @@ export function ManualSaleDialog({
     setCustomerCpf("");
     setCustomerAddress("");
     setValorNotaInput("");
+    setInstallmentCountInput("");
+    setInstallmentAmountInput("");
+    setFirstInstallmentDate("");
     setLeadSearch("");
   }
 
@@ -313,6 +329,35 @@ export function ManualSaleDialog({
 
     const valorRecebido = isEvent ? parseBrCurrency(valorRecebidoInput) : null;
 
+    // Parcelamento (evento): tudo-ou-nada — com qualquer campo preenchido,
+    // os 3 são obrigatórios. Tudo vazio = venda sem parcelamento (limpa na edição).
+    let installmentCount: number | null = null;
+    let installmentAmount: number | null = null;
+    let firstDate: string | null = null;
+    if (isEvent) {
+      const hasAny =
+        installmentCountInput.trim() !== "" ||
+        installmentAmountInput.trim() !== "" ||
+        firstInstallmentDate !== "";
+      if (hasAny) {
+        installmentCount = parseInt(installmentCountInput, 10);
+        if (!Number.isInteger(installmentCount) || installmentCount < 1 || installmentCount > 120) {
+          toast.error("Nº de parcelas inválido (1 a 120)");
+          return;
+        }
+        installmentAmount = parseBrCurrency(installmentAmountInput);
+        if (installmentAmount === null) {
+          toast.error("Valor mensal do parcelamento inválido");
+          return;
+        }
+        if (!firstInstallmentDate) {
+          toast.error("Informe a data da 1ª parcela");
+          return;
+        }
+        firstDate = firstInstallmentDate;
+      }
+    }
+
     const payload = {
       customerName: name,
       customerEmail: customerEmail.trim() || undefined,
@@ -326,6 +371,9 @@ export function ManualSaleDialog({
             customerCpf: customerCpf.trim(),
             customerAddress: customerAddress.trim(),
             valorNota,
+            installmentCount,
+            installmentAmount,
+            firstInstallmentDate: firstDate,
           }
         : { sellerUserId }),
       saleDate,
@@ -681,6 +729,48 @@ export function ManualSaleDialog({
                 </div>
               )}
             </section>
+
+            {/* ───── Parcelamento (calendário de pagamento) ───── */}
+            {isEvent && (
+              <section className="space-y-3">
+                <SectionTitle>Parcelamento (calendário de pagamento)</SectionTitle>
+                <p className="text-[11px] text-muted-foreground -mt-1.5">
+                  Opcional — registre o acordo de parcelamento pra ele aparecer na aba{" "}
+                  <strong>Calendário</strong> da etapa.
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="installment-count">Parcelas</Label>
+                    <Input
+                      id="installment-count"
+                      inputMode="numeric"
+                      value={installmentCountInput}
+                      onChange={(e) => setInstallmentCountInput(e.target.value)}
+                      placeholder="ex: 12"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="installment-amount">Valor mensal (R$)</Label>
+                    <Input
+                      id="installment-amount"
+                      inputMode="decimal"
+                      value={installmentAmountInput}
+                      onChange={(e) => setInstallmentAmountInput(e.target.value)}
+                      placeholder="ex: 500,00"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="first-installment-date">1ª parcela</Label>
+                    <Input
+                      id="first-installment-date"
+                      type="date"
+                      value={firstInstallmentDate}
+                      onChange={(e) => setFirstInstallmentDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </section>
+            )}
           </div>
 
           <DialogFooter className="shrink-0 border-t bg-background px-5 py-4">

@@ -147,6 +147,10 @@ function shapeManualSale(r: typeof manualSales.$inferSelect) {
     memberkitStatus: r.memberkitStatus as MemberkitEnrollmentStatus | null,
     memberkitSyncedAt: r.memberkitSyncedAt ? r.memberkitSyncedAt.toISOString() : null,
     memberkitUserId: r.memberkitUserId,
+    // Parcelamento (Evento Presencial) — calendário de pagamento
+    installmentCount: r.installmentCount,
+    installmentAmount: r.installmentAmount != null ? Number(r.installmentAmount) : null,
+    firstInstallmentDate: r.firstInstallmentDate,
     // Reembolso (Evento Presencial)
     refundedAt: r.refundedAt ? r.refundedAt.toISOString() : null,
     refundReason: r.refundReason,
@@ -188,7 +192,26 @@ const baseSaleObject = z.object({
   customerCpf: z.string().trim().max(14).optional().or(z.literal("").transform(() => undefined)),
   customerAddress: z.string().trim().max(500).optional().or(z.literal("").transform(() => undefined)),
   valorNota: z.number().positive().finite().nullable().optional(),
+  // Parcelamento combinado (Evento Presencial) — calendário de pagamento.
+  // Os 3 andam juntos: ou todos preenchidos, ou todos null (validado no handler).
+  installmentCount: z.number().int().min(1).max(120).nullable().optional(),
+  installmentAmount: z.number().positive().finite().nullable().optional(),
+  firstInstallmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 });
+
+/**
+ * Parcelamento é tudo-ou-nada: com qualquer um dos 3 campos preenchido, os
+ * outros 2 também precisam estar. Recebe os valores FINAIS (novo ?? existente).
+ */
+function installmentPlanError(
+  count: number | null | undefined,
+  amount: number | null | undefined,
+  firstDate: string | null | undefined,
+): string | null {
+  const filled = [count != null, amount != null, firstDate != null].filter(Boolean).length;
+  if (filled === 0 || filled === 3) return null;
+  return "Parcelamento incompleto: informe nº de parcelas, valor mensal e data da 1ª parcela (ou nenhum)";
+}
 
 const createSaleSchema = baseSaleObject.refine(
   (d) => Boolean(d.sellerUserId) || Boolean(d.sellerName),
@@ -576,6 +599,14 @@ export default fp(async function manualSalesRoutes(fastify) {
         return reply.code(400).send({ error: "Data de venda inválida" });
       }
 
+      // Parcelamento: tudo-ou-nada.
+      const planError = installmentPlanError(
+        body.data.installmentCount,
+        body.data.installmentAmount,
+        body.data.firstInstallmentDate,
+      );
+      if (planError) return reply.code(400).send({ error: planError });
+
       const [created] = await fastify.db
         .insert(manualSales)
         .values({
@@ -595,6 +626,9 @@ export default fp(async function manualSalesRoutes(fastify) {
           customerCpf: body.data.customerCpf ? normalizeCpf(body.data.customerCpf) : null,
           customerAddress: body.data.customerAddress ?? null,
           valorNota: body.data.valorNota != null ? body.data.valorNota.toFixed(2) : null,
+          installmentCount: body.data.installmentCount ?? null,
+          installmentAmount: body.data.installmentAmount != null ? body.data.installmentAmount.toFixed(2) : null,
+          firstInstallmentDate: body.data.firstInstallmentDate ?? null,
           memberkitStatus: isEvent ? "pending" : null,
         })
         .returning();
@@ -748,6 +782,38 @@ export default fp(async function manualSalesRoutes(fastify) {
       }
       if (body.data.valorNota !== undefined) {
         updates.valorNota = body.data.valorNota != null ? body.data.valorNota.toFixed(2) : null;
+      }
+      // Parcelamento: valida o estado FINAL (novo ?? existente) — tudo-ou-nada.
+      if (
+        body.data.installmentCount !== undefined ||
+        body.data.installmentAmount !== undefined ||
+        body.data.firstInstallmentDate !== undefined
+      ) {
+        const finalCount =
+          body.data.installmentCount !== undefined ? body.data.installmentCount : existing.installmentCount;
+        const finalAmount =
+          body.data.installmentAmount !== undefined
+            ? body.data.installmentAmount
+            : existing.installmentAmount != null
+              ? Number(existing.installmentAmount)
+              : null;
+        const finalFirstDate =
+          body.data.firstInstallmentDate !== undefined
+            ? body.data.firstInstallmentDate
+            : existing.firstInstallmentDate;
+        const planError = installmentPlanError(finalCount, finalAmount, finalFirstDate);
+        if (planError) return reply.code(400).send({ error: planError });
+
+        if (body.data.installmentCount !== undefined) {
+          updates.installmentCount = body.data.installmentCount ?? null;
+        }
+        if (body.data.installmentAmount !== undefined) {
+          updates.installmentAmount =
+            body.data.installmentAmount != null ? body.data.installmentAmount.toFixed(2) : null;
+        }
+        if (body.data.firstInstallmentDate !== undefined) {
+          updates.firstInstallmentDate = body.data.firstInstallmentDate ?? null;
+        }
       }
 
       if (Object.keys(updates).length === 0) {

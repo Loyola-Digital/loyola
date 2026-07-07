@@ -39,6 +39,12 @@ export interface ManualSale {
   memberkitSyncedAt: string | null;
   /** Story 19.11 — id do membro retornado pelo MemberKit. */
   memberkitUserId: string | null;
+  /** Parcelamento (Evento Presencial): nº de parcelas combinadas. null = à vista. */
+  installmentCount: number | null;
+  /** Parcelamento: valor combinado mensal de cada parcela. */
+  installmentAmount: number | null;
+  /** Parcelamento: data da 1ª parcela (YYYY-MM-DD); as demais vencem mensalmente. */
+  firstInstallmentDate: string | null;
   /** Reembolso (Evento Presencial): quando a venda foi reembolsada (ISO). null = ativa. */
   refundedAt: string | null;
   /** Motivo do reembolso informado ao reembolsar. */
@@ -90,6 +96,12 @@ export interface CreateManualSaleInput {
   customerAddress?: string | null;
   /** Story 19.15 — valor da nota fiscal (obrigatório no Evento Presencial). */
   valorNota?: number | null;
+  /** Parcelamento (Evento Presencial): nº de parcelas; null limpa o parcelamento. */
+  installmentCount?: number | null;
+  /** Parcelamento: valor combinado mensal de cada parcela. */
+  installmentAmount?: number | null;
+  /** Parcelamento: data da 1ª parcela (YYYY-MM-DD). */
+  firstInstallmentDate?: string | null;
 }
 
 // NOTA (Story 19.15): a validação de CPF (isValidCpf/normalizeCpf) NÃO mora aqui

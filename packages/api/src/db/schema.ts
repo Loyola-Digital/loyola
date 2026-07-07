@@ -972,6 +972,12 @@ export const manualSales = pgTable(
     memberkitSyncedAt: timestamp("memberkit_synced_at", { withTimezone: true }),
     /** Story 19.11 — id do membro retornado pelo MemberKit. */
     memberkitUserId: varchar("memberkit_user_id", { length: 64 }),
+    /** Parcelamento (Evento Presencial): nº de parcelas combinadas. null = à vista. */
+    installmentCount: integer("installment_count"),
+    /** Parcelamento: valor combinado mensal de cada parcela. */
+    installmentAmount: numeric("installment_amount", { precision: 12, scale: 2 }),
+    /** Parcelamento: data da 1ª parcela (as demais vencem mensalmente). */
+    firstInstallmentDate: date("first_installment_date"),
     /** Reembolso (Evento Presencial): quando a venda foi reembolsada. null = ativa. */
     refundedAt: timestamp("refunded_at", { withTimezone: true }),
     /** Motivo do reembolso (obrigatório ao reembolsar). */
