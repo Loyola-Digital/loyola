@@ -164,13 +164,20 @@ export function useMetaFreshness(projectId: string | null) {
   });
 }
 
-export function useTrafficCampaigns(projectId: string | null, days: number = 30) {
+export function useTrafficCampaigns(
+  projectId: string | null,
+  days: number = 30,
+  startDate?: string,
+  endDate?: string,
+) {
   const apiClient = useApiClient();
+  // Custom range (calendário no passado) tem prioridade; senão days retroativos.
+  const rangeParam = startDate && endDate ? `&startDate=${startDate}&endDate=${endDate}` : "";
   return useQuery({
-    queryKey: ["traffic-campaigns", projectId, days],
+    queryKey: ["traffic-campaigns", projectId, days, startDate, endDate],
     queryFn: () =>
       apiClient<CampaignAnalyticsResponse>(
-        `/api/traffic/analytics/${projectId}/campaigns?days=${days}`
+        `/api/traffic/analytics/${projectId}/campaigns?days=${days}${rangeParam}`
       ),
     enabled: !!projectId,
     staleTime: TRAFFIC_STALE_TIME,
@@ -406,14 +413,21 @@ export function useVideoSource(projectId: string | null, videoId: string | null)
   });
 }
 
-export function useAllAdSets(projectId: string | null, days: number = 30, campaignIds?: string[] | null) {
+export function useAllAdSets(
+  projectId: string | null,
+  days: number = 30,
+  campaignIds?: string[] | null,
+  startDate?: string,
+  endDate?: string,
+) {
   const apiClient = useApiClient();
   const campaignParam = campaignIds && campaignIds.length > 0 ? `&campaignIds=${campaignIds.join(",")}` : "";
+  const rangeParam = startDate && endDate ? `&startDate=${startDate}&endDate=${endDate}` : "";
   return useQuery({
-    queryKey: ["traffic-all-adsets", projectId, days, campaignIds],
+    queryKey: ["traffic-all-adsets", projectId, days, campaignIds, startDate, endDate],
     queryFn: () =>
       apiClient<AllAdSetsResponse>(
-        `/api/traffic/analytics/${projectId}/all-adsets?days=${days}${campaignParam}`
+        `/api/traffic/analytics/${projectId}/all-adsets?days=${days}${campaignParam}${rangeParam}`
       ),
     enabled: !!projectId,
     staleTime: TRAFFIC_STALE_TIME,
@@ -424,14 +438,21 @@ export interface AllAdsResponse {
   ads: (CampaignAnalytics & { parentCampaignName: string })[];
 }
 
-export function useAllAds(projectId: string | null, days: number = 30, campaignIds?: string[] | null) {
+export function useAllAds(
+  projectId: string | null,
+  days: number = 30,
+  campaignIds?: string[] | null,
+  startDate?: string,
+  endDate?: string,
+) {
   const apiClient = useApiClient();
   const campaignParam = campaignIds && campaignIds.length > 0 ? `&campaignIds=${campaignIds.join(",")}` : "";
+  const rangeParam = startDate && endDate ? `&startDate=${startDate}&endDate=${endDate}` : "";
   return useQuery({
-    queryKey: ["traffic-all-ads", projectId, days, campaignIds],
+    queryKey: ["traffic-all-ads", projectId, days, campaignIds, startDate, endDate],
     queryFn: () =>
       apiClient<AllAdsResponse>(
-        `/api/traffic/analytics/${projectId}/all-ads?days=${days}${campaignParam}`
+        `/api/traffic/analytics/${projectId}/all-ads?days=${days}${campaignParam}${rangeParam}`
       ),
     enabled: !!projectId,
     staleTime: TRAFFIC_STALE_TIME,

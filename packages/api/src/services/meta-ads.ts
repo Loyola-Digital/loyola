@@ -704,19 +704,25 @@ export function fetchAllAdSetInsights(
   metaAccountId: string,
   accessToken: string,
   days: number = 30,
+  startDate?: string,
+  endDate?: string,
 ): Promise<MetaAdSetInsight[]> {
   return singleFlight(
-    `fetchAllAdSetInsights:${metaAccountId}:${days}`,
-    () => fetchAllAdSetInsightsImpl(metaAccountId, accessToken, days),
+    `fetchAllAdSetInsights:${metaAccountId}:${days}:${startDate ?? ""}:${endDate ?? ""}`,
+    () => fetchAllAdSetInsightsImpl(metaAccountId, accessToken, days, startDate, endDate),
   );
 }
 
 async function fetchAllAdSetInsightsImpl(
   metaAccountId: string,
   accessToken: string,
-  days: number = 30
+  days: number = 30,
+  startDate?: string,
+  endDate?: string,
 ): Promise<MetaAdSetInsight[]> {
-  const { since, until } = dateRangeFromDays(days);
+  // Custom range explícito (calendário no passado) tem prioridade sobre `days`.
+  const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
+  const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
   const timeRange = buildTimeRangeParam(since, until);
   const fields = "impressions,reach,clicks,spend,ctr,cpc,cpm,adset_id,adset_name,campaign_id,campaign_name,actions,action_values";
 

@@ -151,12 +151,16 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
 
       const queryResult = daysQuerySchema.safeParse(request.query);
       const days = queryResult.success ? queryResult.data.days : 30;
+      const startDate = queryResult.success ? queryResult.data.startDate : undefined;
+      const endDate = queryResult.success ? queryResult.data.endDate : undefined;
 
       try {
         const result = await getProjectCampaignAnalytics(
           fastify.db,
           paramResult.data.projectId,
-          days
+          days,
+          startDate,
+          endDate,
         );
         return result;
       } catch (err) {
@@ -465,13 +469,17 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
       const campaignIds = queryResult.success
         ? queryResult.data.campaignIds?.split(",").filter(Boolean)
         : undefined;
+      const startDate = queryResult.success ? queryResult.data.startDate : undefined;
+      const endDate = queryResult.success ? queryResult.data.endDate : undefined;
 
       try {
         const result = await getAllAdSetsForProject(
           fastify.db,
           paramResult.data.projectId,
           days,
-          campaignIds
+          campaignIds,
+          startDate,
+          endDate,
         );
         return result;
       } catch (err) {
@@ -505,13 +513,17 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
       const campaignIds = queryResult.success
         ? queryResult.data.campaignIds?.split(",").filter(Boolean)
         : undefined;
+      const startDate = queryResult.success ? queryResult.data.startDate : undefined;
+      const endDate = queryResult.success ? queryResult.data.endDate : undefined;
 
       try {
         const result = await getAllAdsForProject(
           fastify.db,
           paramResult.data.projectId,
           days,
-          campaignIds
+          campaignIds,
+          startDate,
+          endDate,
         );
         return result;
       } catch (err) {
