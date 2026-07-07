@@ -78,6 +78,10 @@ import {
   enrichFormulaForEntity,
   type EntityPath,
 } from "@/lib/formulas/funnels";
+import {
+  aggregateSeriesByGranularity,
+  type ChartGranularity,
+} from "@/lib/utils/chart-granularity";
 
 interface PerpetualDashboardProps {
   funnel: Funnel;
@@ -203,16 +207,19 @@ function marginColorClass(v: number | null | undefined): string {
   return v > 0 ? "text-emerald-400" : "text-red-400";
 }
 
-// Story 29.15: rótulo de valor a cada 7 dias no gráfico de linha de Investimento
-// (evita poluir mostrando o valor em todos os pontos).
-function Spend7DayLabel(props: {
+// Story 29.15: rótulo de valor nos pontos do gráfico de Investimento. No modo
+// Diário mostra a cada 7 pontos (evita poluir); em Semanal/Mensal há poucos
+// pontos, então mostra em todos.
+function SpendPointLabel(props: {
   x?: number;
   y?: number;
   value?: number | string;
   index?: number;
+  granularity?: ChartGranularity;
 }) {
-  const { x, y, value, index } = props;
-  if (x == null || y == null || index == null || index % 7 !== 0) return null;
+  const { x, y, value, index, granularity } = props;
+  if (x == null || y == null || index == null) return null;
+  if (granularity === "day" && index % 7 !== 0) return null;
   const num = typeof value === "number" ? value : Number(value ?? 0);
   return (
     <text x={x} y={y - 8} textAnchor="middle" fontSize={9} fontWeight={600} fill="hsl(47 98% 68%)">
@@ -221,44 +228,124 @@ function Spend7DayLabel(props: {
   );
 }
 
-// Story 29.14: tooltip do gráfico de resultado/dia — mostra Investimento,
-// Receita e o Resultado do dia (verde/vermelho). `variant` escolhe se o
-// número herói é o resultado bruto (Receita − Investimento) ou a Margem líquida.
-function DailyResultTooltip({
+// Tooltip do gráfico "Margem no Tempo" — memorial completo de como se chega na
+// margem do período (dia/semana/mês): Receita Bruta → descontos da plataforma →
+// Receita Líquida → Investimento (Meta + imposto) → Margem. Mesmo padrão do
+// tooltip do KPI Margem, agora por barra. `platform` habilita o breakdown de fees.
+function MarginTimeTooltip({
+  active,
+  payload,
+  platform,
+}: {
+  active?: boolean;
+  payload?: Array<{
+    payload?: {
+      rangeLabel?: string; revenue?: number; spend?: number;
+      spendBruto?: number; spendTax?: number; margin?: number; sales?: number;
+    };
+  }>;
+  platform?: string | null;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const d = payload[0]?.payload;
+  if (!d) return null;
+  const bruto = d.revenue ?? 0;
+  const spend = d.spend ?? 0;
+  const margin = d.margin ?? 0;
+  const breakdown = platform ? PLATFORM_FEE_BREAKDOWN[platform] : null;
+  const totalFeeRate = breakdown ? breakdown.reduce((s, b) => s + b.rate, 0) : 0;
+  const receitaLiquida = bruto * (1 - totalFeeRate);
+  const positive = margin >= 0;
+  return (
+    <div className="min-w-[240px] max-w-[320px] rounded-md border bg-popover p-3 text-xs text-popover-foreground shadow-md space-y-2">
+      <div className="font-semibold text-sm border-b border-border/30 pb-1.5">
+        {d.rangeLabel ?? ""}
+      </div>
+      <div className="space-y-1">
+        <div className="flex justify-between gap-4">
+          <span className="text-muted-foreground">Receita Bruta</span>
+          <span className="tabular-nums font-medium">{fmtCurrency(bruto)}</span>
+        </div>
+        {breakdown && bruto > 0 && (
+          <>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider pt-1 border-t border-border/20">
+              Descontos da plataforma ({platform})
+            </div>
+            {breakdown.map((b) => (
+              <div key={b.label} className="flex justify-between gap-4 text-[11px]">
+                <span className="text-muted-foreground">− {b.label} ({(b.rate * 100).toFixed(2)}%)</span>
+                <span className="tabular-nums text-red-400">−{fmtCurrency(bruto * b.rate)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between gap-4 pt-1 border-t border-border/20">
+              <span className="font-medium">= Receita Líquida</span>
+              <span className="tabular-nums font-medium">{fmtCurrency(receitaLiquida)}</span>
+            </div>
+          </>
+        )}
+        <div className="text-[10px] text-muted-foreground uppercase tracking-wider pt-1 border-t border-border/20">
+          Investimento (Meta)
+        </div>
+        <div className="flex justify-between gap-4 text-[11px]">
+          <span className="text-muted-foreground">Spend bruto</span>
+          <span className="tabular-nums">{fmtCurrency(d.spendBruto)}</span>
+        </div>
+        {(d.spendTax ?? 0) > 0 && (
+          <div className="flex justify-between gap-4 text-[11px]">
+            <span className="text-muted-foreground">+ Imposto ({(META_TAX_RATE * 100).toFixed(2)}%)</span>
+            <span className="tabular-nums text-amber-400">+{fmtCurrency(d.spendTax)}</span>
+          </div>
+        )}
+        <div className="flex justify-between gap-4">
+          <span className="text-muted-foreground">− Investimento total</span>
+          <span className="tabular-nums text-red-400">−{fmtCurrency(spend)}</span>
+        </div>
+        <div className={`flex justify-between gap-4 pt-1.5 border-t border-border/30 font-semibold ${positive ? "text-emerald-400" : "text-red-400"}`}>
+          <span>= Margem</span>
+          <span className="tabular-nums">{fmtCurrency(margin)}</span>
+        </div>
+        {(d.sales ?? 0) > 0 && (
+          <div className="flex justify-between gap-4 text-[11px] text-muted-foreground pt-0.5">
+            <span>Vendas</span>
+            <span className="tabular-nums">{fmtNumber(d.sales)}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Tooltip do gráfico "Investimento no Tempo" — investimento do período (Meta +
+// imposto). Substitui o fallback simples quando a série é agregada por período.
+function SpendTimeTooltip({
   active,
   payload,
 }: {
   active?: boolean;
   payload?: Array<{
-    payload?: { date?: string; spend?: number; revenue?: number; margin?: number };
+    payload?: { rangeLabel?: string; spend?: number; spendBruto?: number; spendTax?: number };
   }>;
 }) {
   if (!active || !payload || payload.length === 0) return null;
   const d = payload[0]?.payload;
   if (!d) return null;
-  const result = d.margin ?? 0;
-  const resultLabel = "Margem (líquida)";
-  const positive = result >= 0;
+  const hasTax = (d.spendTax ?? 0) > 0;
   return (
-    <div className="min-w-[172px] rounded-md border bg-popover p-2.5 text-xs text-popover-foreground shadow-md">
-      {d.date && <div className="mb-1.5 font-semibold">{d.date}</div>}
-      <div className="space-y-1">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-muted-foreground">Investimento</span>
-          <span className="font-mono tabular-nums">{fmtCurrency(d.spend)}</span>
+    <div className="min-w-[200px] rounded-md border bg-popover p-2.5 text-xs text-popover-foreground shadow-md space-y-1">
+      <div className="font-semibold border-b border-border/30 pb-1.5 mb-1">{d.rangeLabel ?? ""}</div>
+      <div className="flex justify-between gap-4">
+        <span className="text-muted-foreground">Spend bruto (Meta)</span>
+        <span className="tabular-nums">{fmtCurrency(d.spendBruto)}</span>
+      </div>
+      {hasTax && (
+        <div className="flex justify-between gap-4 text-[11px]">
+          <span className="text-muted-foreground">+ Imposto ({(META_TAX_RATE * 100).toFixed(2)}%)</span>
+          <span className="tabular-nums text-amber-400">+{fmtCurrency(d.spendTax)}</span>
         </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-muted-foreground">Receita</span>
-          <span className="font-mono tabular-nums">{fmtCurrency(d.revenue)}</span>
-        </div>
-        <div
-          className={`mt-1 flex items-center justify-between gap-3 border-t border-border/40 pt-1 font-semibold ${
-            positive ? "text-emerald-400" : "text-red-400"
-          }`}
-        >
-          <span>{resultLabel}</span>
-          <span className="font-mono tabular-nums">{fmtCurrency(result)}</span>
-        </div>
+      )}
+      <div className="flex justify-between gap-4 pt-1 border-t border-border/30 font-semibold">
+        <span>= Investimento</span>
+        <span className="tabular-nums">{fmtCurrency(d.spend)}</span>
       </div>
     </div>
   );
@@ -274,6 +361,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // startDate/endDate explicitos e propaga pros hooks. Sem isso, days sozinho
   // sempre busca "X dias retroativos de hoje" — ignorando datas no passado.
   const [customRange, setCustomRange] = useState<{ startDate: string; endDate: string } | null>(null);
+  // Granularidade dos gráficos "no tempo" (Margem/Investimento): dia/semana/mês.
+  const [granularity, setGranularity] = useState<ChartGranularity>("day");
   const [showCampaignManager, setShowCampaignManager] = useState(false);
   const [showSpreadsheetWizard, setShowSpreadsheetWizard] = useState(false);
   const [tableFilter, setTableFilter] = useState<"campaign" | "adset" | "ad">("campaign");
@@ -424,6 +513,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         : "Meta Ads API · spend (time series)";
       return {
         date: dateLabel,
+        dateIso: date,
         spend: spendComTax,
         spendBruto,
         spendTax: taxAmount,
@@ -455,6 +545,14 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       hasTax: totalTax > 0,
     };
   }, [dailyChartData]);
+
+  // Séries dos gráficos "no tempo" agregadas por granularidade (dia/semana/mês).
+  // Parte de dailyChartData, que já vem filtrado por data + campanhas — então os
+  // gráficos respondem ao calendário e à seleção automaticamente.
+  const timeSeries = useMemo(
+    () => aggregateSeriesByGranularity(dailyChartData, granularity),
+    [dailyChartData, granularity],
+  );
 
   // Epic 29 Story 29.4 — quando planilha conectada, sobrescreve vendas/receita/CAC/margem/ROAS
   // com dados da planilha. Spend continua Meta.
@@ -925,25 +1023,44 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       })()}
 
       {/* ================================================================ */}
-      {/* GRÁFICOS EM LINHA: Investimento + Margem no tempo                */}
+      {/* GRÁFICOS EM LINHA: Margem + Investimento no tempo                */}
+      {/* Seletor Diário/Semanal/Mensal (no card Margem) controla os dois. */}
       {/* ================================================================ */}
+      {(() => {
+        const granLabel = granularity === "day" ? "dia" : granularity === "week" ? "semana" : "mês";
+        const marginPlatform = usingSpreadsheet ? salesData?.platform ?? null : null;
+        return (
       <div className="grid grid-cols-1 gap-6">
         {/* Story 29.15: Margem no Tempo (barras verde/vermelho) fica em cima */}
         <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-          <h3 className="text-sm font-semibold mb-1">Margem no Tempo</h3>
-          <p className="text-[11px] text-muted-foreground mb-3">
-            Margem líquida por dia (com fees) · <span className="text-emerald-400">verde = positiva</span> · <span className="text-red-400">vermelho = negativa</span>
-          </p>
-          {dailyLoading ? <Skeleton className="h-48" /> : dailyChartData.length > 0 ? (
+          <div className="flex items-start justify-between gap-2 mb-3">
+            <div>
+              <h3 className="text-sm font-semibold mb-1">Margem no Tempo</h3>
+              <p className="text-[11px] text-muted-foreground">
+                Margem líquida por {granLabel} (com fees) · <span className="text-emerald-400">verde = positiva</span> · <span className="text-red-400">vermelho = negativa</span>
+              </p>
+            </div>
+            <Select value={granularity} onValueChange={(v) => setGranularity(v as ChartGranularity)}>
+              <SelectTrigger className="w-[120px] h-8 text-xs shrink-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="day">Diário</SelectItem>
+                <SelectItem value="week">Semanal</SelectItem>
+                <SelectItem value="month">Mensal</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {dailyLoading ? <Skeleton className="h-48" /> : timeSeries.length > 0 ? (
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={dailyChartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
+              <BarChart data={timeSeries} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
                 <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => fmtCurrencyCompact(v)} />
-                <Tooltip cursor={{ fill: "var(--color-muted)", opacity: 0.12 }} content={<DailyResultTooltip />} />
+                <Tooltip cursor={{ fill: "var(--color-muted)", opacity: 0.12 }} content={<MarginTimeTooltip platform={marginPlatform} />} />
                 <ReferenceLine y={0} stroke="var(--color-muted-foreground)" />
                 <Bar dataKey="margin" name="Margem" radius={[2, 2, 0, 0]}>
-                  {dailyChartData.map((d, i) => (
+                  {timeSeries.map((d, i) => (
                     <Cell key={i} fill={d.margin >= 0 ? "hsl(150 60% 45%)" : "hsl(0 72% 55%)"} />
                   ))}
                 </Bar>
@@ -952,23 +1069,23 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           ) : <EmptyState />}
         </div>
 
-        {/* Story 29.15: Investimento no Tempo — linha, valor a cada 7 dias.
+        {/* Story 29.15: Investimento no Tempo — linha. Segue a mesma granularidade.
             Sem campanha vinculada não há investimento — oculta o gráfico. */}
         {hasCampaigns && (
         <div className="rounded-xl border border-border/30 bg-card/60 p-5">
           <h3 className="text-sm font-semibold mb-1">Investimento no Tempo</h3>
           <p className="text-[11px] text-muted-foreground mb-3">
-            Investimento (Meta, com imposto) por dia · valor exibido a cada 7 dias
+            Investimento (Meta, com imposto) por {granLabel}
           </p>
-          {dailyLoading ? <Skeleton className="h-48" /> : dailyChartData.length > 0 ? (
+          {dailyLoading ? <Skeleton className="h-48" /> : timeSeries.length > 0 ? (
             <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={dailyChartData} margin={{ top: 24, right: 20, left: 0, bottom: 0 }}>
+              <LineChart data={timeSeries} margin={{ top: 24, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
                 <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => fmtCurrencyCompact(v)} />
-                <Tooltip content={<FormulaChartTooltip />} />
+                <Tooltip content={<SpendTimeTooltip />} />
                 <Line type="monotone" dataKey="spend" stroke="hsl(47 98% 54%)" strokeWidth={2} dot={{ r: 2, fill: "hsl(47 98% 54%)" }} name="Investimento">
-                  <LabelList dataKey="spend" content={<Spend7DayLabel />} />
+                  <LabelList dataKey="spend" content={<SpendPointLabel granularity={granularity} />} />
                 </Line>
               </LineChart>
             </ResponsiveContainer>
@@ -976,6 +1093,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         </div>
         )}
       </div>
+        );
+      })()}
 
       {/* ================================================================ */}
       {/* TABELA DETALHADA COM FILTRO — Story 29.18: movida pra baixo do gráfico */}
