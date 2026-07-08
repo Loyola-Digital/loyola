@@ -76,6 +76,7 @@ import stageSalesPlanRoutes from "./routes/stage-sales-plan.js";
 import ga4Routes from "./routes/ga4.js";
 import npsRoutes from "./routes/nps.js";
 import debriefingsRoutes from "./routes/debriefings.js";
+import campaignLogRoutes from "./routes/campaign-log.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -174,6 +175,7 @@ export async function buildServer() {
   await app.register(ga4Routes);
   await app.register(npsRoutes);
   await app.register(debriefingsRoutes);
+  await app.register(campaignLogRoutes);
 
   return app;
 }

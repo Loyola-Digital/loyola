@@ -21,6 +21,7 @@ import {
 } from "@/lib/hooks/use-debriefings";
 import { CreateDebriefingDialog } from "@/components/debriefings/create-debriefing-dialog";
 import { StageDeleteSection } from "./stage-delete-section";
+import { CampaignLogButton } from "./campaign-log-link";
 import type { FunnelStage } from "@loyola-x/shared";
 
 interface DebriefingStageViewProps {
@@ -125,6 +126,7 @@ export function DebriefingStageView({ projectId, funnelId, funnelName, stage }: 
         </div>
 
         <div className="flex items-center gap-2">
+          <CampaignLogButton projectId={projectId} funnelId={funnelId} />
           <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
             <Plus className="h-3.5 w-3.5" />
             Novo debriefing
