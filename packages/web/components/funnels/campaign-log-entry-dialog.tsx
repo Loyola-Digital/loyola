@@ -170,7 +170,6 @@ export function CampaignLogEntryDialog({
     } else {
       resetForm();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editingEntry?.id]);
 
   function resetForm() {
