@@ -102,8 +102,10 @@ export default fp(async function authPlugin(fastify) {
     // Repara tanto email placeholder quanto name corrompido pelo fallback
     // antigo (name = clerkId, ex.: "user_3BPD..." vazando na UI) ou o
     // genérico "Usuário"/"Unknown" — assim que o Clerk tiver dados reais.
+    // Também sincroniza avatar ausente (login Google tem foto no Clerk mas a
+    // linha antiga ficou com avatarUrl null).
     const [current] = await fastify.db
-      .select({ email: users.email, name: users.name })
+      .select({ email: users.email, name: users.name, avatarUrl: users.avatarUrl })
       .from(users)
       .where(eq(users.id, dbUser[0].id))
       .limit(1);
@@ -114,7 +116,8 @@ export default fp(async function authPlugin(fastify) {
         current.name === clerkId ||
         current.name.startsWith("user_") ||
         current.name === "Usuário" ||
-        current.name === "Unknown");
+        current.name === "Unknown" ||
+        current.avatarUrl == null);
 
     if (current && corrupted) {
       try {
@@ -131,16 +134,31 @@ export default fp(async function authPlugin(fastify) {
           clerkUser.username ||
           emailPrefix ||
           current.name;
-        if (realName !== current.name || realEmail !== current.email) {
-          await fastify.db
-            .update(users)
-            .set({
-              email: realEmail,
-              name: realName,
-              avatarUrl: clerkUser.imageUrl ?? null,
-              updatedAt: new Date(),
-            })
-            .where(eq(users.id, dbUser[0].id));
+        const realAvatar = clerkUser.imageUrl ?? current.avatarUrl;
+        if (
+          realName !== current.name ||
+          realEmail !== current.email ||
+          realAvatar !== current.avatarUrl
+        ) {
+          try {
+            await fastify.db
+              .update(users)
+              .set({
+                email: realEmail,
+                name: realName,
+                avatarUrl: realAvatar,
+                updatedAt: new Date(),
+              })
+              .where(eq(users.id, dbUser[0].id));
+          } catch {
+            // Email real pode COLIDIR com outra linha (unique em users.email —
+            // conta duplicada). Sem este fallback o update inteiro morria e o
+            // usuário ficava "Usuário"/sem avatar pra sempre. Atualiza o que dá.
+            await fastify.db
+              .update(users)
+              .set({ name: realName, avatarUrl: realAvatar, updatedAt: new Date() })
+              .where(eq(users.id, dbUser[0].id));
+          }
         }
       } catch {
         // Non-critical — will retry next request
