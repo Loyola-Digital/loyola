@@ -2044,13 +2044,22 @@ export const campaignLogEntries = pgTable(
     notes: text("notes"),
     /** Preenchido só quando a ação foi de outra pessoa — default é o autor (createdBy). */
     responsavel: varchar("responsavel", { length: 255 }),
+    /** Origem da entrada: 'manual' | 'mautic' (futuros: meta, organic, zoom, webhook). */
+    source: varchar("source", { length: 20 }).notNull().default("manual"),
+    /** Dedup do sync automático (ex.: 'mautic-email:123'). NULL em entradas manuais. */
+    sourceId: varchar("source_id", { length: 120 }),
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index("idx_campaign_log_funnel_occurred").on(table.funnelId, table.occurredAt)]
+  (table) => [
+    index("idx_campaign_log_funnel_occurred").on(table.funnelId, table.occurredAt),
+    uniqueIndex("uq_campaign_log_source")
+      .on(table.funnelId, table.sourceId)
+      .where(sql`${table.sourceId} IS NOT NULL`),
+  ]
 );
 
 export const debriefingComments = pgTable(

@@ -14,10 +14,12 @@ import fp from "fastify-plugin";
 import {
   campaignLogEntries,
   funnels,
+  mauticConnections,
   projects,
   projectMembers,
   users,
 } from "../db/schema.js";
+import { decryptMauticPassword, listAllMauticEmails } from "../services/mautic.js";
 
 const funnelParamsSchema = z.object({
   projectId: z.string().uuid(),
@@ -62,6 +64,17 @@ const updateEntrySchema = baseEntryObject.partial();
  * com o caso extra do placeholder (emails @placeholder.dev não ajudam —
  * mantém como está; o dialog grava o nome real da sessão em `responsavel`).
  */
+/**
+ * Código do funil pra casar com o nome dos emails no Mautic (mesma regra do
+ * dashboard 32.2 em routes/mautic.ts): 2 primeiros segmentos do nome
+ * (ex.: "dg-pg02-abr-26" → "dg-pg02"). O matchCode do funil sobrescreve.
+ */
+function funnelMatchToken(funnelName: string): string {
+  const segs = funnelName.trim().split("-").filter(Boolean);
+  if (segs.length >= 2) return `${segs[0]}-${segs[1]}`;
+  return funnelName.trim();
+}
+
 function displayUserName(
   name: string | null | undefined,
   email: string | null | undefined,
@@ -96,6 +109,7 @@ function shapeEntry(
     categoria: r.categoria,
     notes: r.notes,
     responsavel: r.responsavel,
+    source: r.source,
     createdBy: r.createdBy,
     authorName: author?.name ?? null,
     authorAvatarUrl: author?.avatarUrl ?? null,
@@ -128,7 +142,7 @@ export default fp(async function campaignLogRoutes(fastify) {
     if (!project) return null;
 
     const [funnel] = await fastify.db
-      .select({ id: funnels.id })
+      .select({ id: funnels.id, name: funnels.name, matchCode: funnels.matchCode })
       .from(funnels)
       .where(and(eq(funnels.id, funnelId), eq(funnels.projectId, projectId)))
       .limit(1);
@@ -290,6 +304,93 @@ export default fp(async function campaignLogRoutes(fastify) {
   );
 
   // ---------------------------------------------------------------
+  // POST /mautic-sync — Story 38.2a: importa disparos de e-mail do Mautic
+  // como entradas automáticas do log. Filtra emails tipo "list" (broadcast),
+  // já enviados, cujo nome contém o código do funil (matchCode override ou
+  // prefixo do nome — mesma regra do dashboard Mautic 32.2). Dedup por
+  // source_id ('mautic-email:{id}') — re-sincronizar não duplica.
+  // ---------------------------------------------------------------
+  fastify.post(
+    "/api/projects/:projectId/funnels/:funnelId/campaign-log/mautic-sync",
+    { config: { rateLimit: { max: 6, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const params = funnelParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const funnel = await getFunnelContext(
+        params.data.projectId,
+        params.data.funnelId,
+        request.userId,
+        request.userRole,
+      );
+      if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
+
+      const [conn] = await fastify.db
+        .select()
+        .from(mauticConnections)
+        .where(eq(mauticConnections.projectId, params.data.projectId))
+        .limit(1);
+      // Sem Mautic conectado não é erro — a página chama o sync no load.
+      if (!conn) return { connected: false, matched: 0, created: 0 };
+
+      let password: string;
+      try {
+        password = decryptMauticPassword(conn.passwordEncrypted, conn.passwordIv);
+      } catch {
+        return reply.code(500).send({ error: "Credenciais Mautic inválidas — reconecte" });
+      }
+
+      const token = (funnel.matchCode ?? funnelMatchToken(funnel.name)).toLowerCase();
+
+      let emails;
+      try {
+        emails = await listAllMauticEmails(conn.baseUrl, conn.username, password);
+      } catch (err) {
+        return reply.code(502).send({
+          error: "Erro ao buscar emails do Mautic",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      // Broadcast ("list") já enviado + nome com o código do funil.
+      const matched = emails.filter(
+        (e) =>
+          e.emailType === "list" &&
+          e.sent > 0 &&
+          e.name.toLowerCase().includes(token),
+      );
+
+      let created = 0;
+      for (const email of matched) {
+        const occurredRaw = email.publishUp ?? email.dateAdded;
+        if (!occurredRaw) continue;
+        const occurredAt = new Date(occurredRaw);
+        if (isNaN(occurredAt.getTime())) continue;
+
+        const inserted = await fastify.db
+          .insert(campaignLogEntries)
+          .values({
+            funnelId: params.data.funnelId,
+            occurredAt,
+            evento: "Disparo de e-mail",
+            aplicativo: "Mautic",
+            categoria: null,
+            notes: `${email.name} · ${email.sent.toLocaleString("pt-BR")} enviados`,
+            responsavel: "Mautic (auto)",
+            source: "mautic",
+            sourceId: `mautic-email:${email.id}`,
+            createdBy: request.userId,
+          })
+          .onConflictDoNothing()
+          .returning({ id: campaignLogEntries.id });
+        if (inserted.length > 0) created += 1;
+      }
+
+      return { connected: true, matched: matched.length, created };
+    },
+  );
+
+  // ---------------------------------------------------------------
   // DELETE — remove entrada
   // ---------------------------------------------------------------
   fastify.delete(
@@ -305,6 +406,25 @@ export default fp(async function campaignLogRoutes(fastify) {
         request.userRole,
       );
       if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
+
+      // Entrada automática não pode ser excluída — o dedup (source_id) a
+      // recriaria no próximo sync. Ela some quando a origem sumir.
+      const [existing] = await fastify.db
+        .select({ source: campaignLogEntries.source })
+        .from(campaignLogEntries)
+        .where(
+          and(
+            eq(campaignLogEntries.id, params.data.entryId),
+            eq(campaignLogEntries.funnelId, params.data.funnelId),
+          ),
+        )
+        .limit(1);
+      if (!existing) return reply.code(404).send({ error: "Entrada não encontrada" });
+      if (existing.source !== "manual") {
+        return reply.code(400).send({
+          error: "Entrada automática (sync) não pode ser excluída — ela voltaria no próximo sync",
+        });
+      }
 
       const deleted = await fastify.db
         .delete(campaignLogEntries)

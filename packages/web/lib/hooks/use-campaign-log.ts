@@ -16,6 +16,8 @@ export interface CampaignLogEntry {
   categoria: string | null;
   notes: string | null;
   responsavel: string | null;
+  /** 'manual' | 'mautic' — entradas automáticas não podem ser excluídas. */
+  source: string;
   createdBy: string;
   authorName: string | null;
   authorAvatarUrl: string | null;
@@ -92,6 +94,33 @@ export function useUpdateLogEntry(projectId: string, funnelId: string) {
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["campaign-log", projectId, funnelId] });
+    },
+  });
+}
+
+export interface MauticSyncResult {
+  connected: boolean;
+  matched: number;
+  created: number;
+}
+
+/**
+ * Story 38.2a — importa disparos de e-mail do Mautic como entradas
+ * automáticas do log (dedup por email id; re-sincronizar não duplica).
+ */
+export function useSyncMauticLog(projectId: string, funnelId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient<MauticSyncResult>(
+        `/api/projects/${projectId}/funnels/${funnelId}/campaign-log/mautic-sync`,
+        { method: "POST", body: JSON.stringify({}) },
+      ),
+    onSuccess: (result) => {
+      if (result.created > 0) {
+        qc.invalidateQueries({ queryKey: ["campaign-log", projectId, funnelId] });
+      }
     },
   });
 }

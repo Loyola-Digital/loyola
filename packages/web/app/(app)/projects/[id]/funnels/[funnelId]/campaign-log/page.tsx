@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, MoreHorizontal, Pencil, Plus, ScrollText, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, MoreHorizontal, Pencil, Plus, RefreshCw, ScrollText, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,7 @@ import { useFunnel } from "@/lib/hooks/use-funnels";
 import {
   useCampaignLog,
   useDeleteLogEntry,
+  useSyncMauticLog,
   type CampaignLogEntry,
 } from "@/lib/hooks/use-campaign-log";
 import {
@@ -106,6 +107,38 @@ export default function CampaignLogPage() {
     q: qDebounced || undefined,
   });
   const deleteEntry = useDeleteLogEntry(params.id, params.funnelId);
+  const syncMautic = useSyncMauticLog(params.id, params.funnelId);
+  const syncMauticMutate = syncMautic.mutate;
+
+  // Story 38.2a — auto-sync do Mautic ao abrir a página (1x por mount).
+  // Silencioso: sem Mautic conectado ou sem novidade, nada acontece.
+  const autoSyncRan = useRef(false);
+  useEffect(() => {
+    if (autoSyncRan.current) return;
+    autoSyncRan.current = true;
+    syncMauticMutate(undefined, {
+      onSuccess: (r) => {
+        if (r.created > 0) {
+          toast.success(`${r.created} disparo${r.created !== 1 ? "s" : ""} de e-mail importado${r.created !== 1 ? "s" : ""} do Mautic`);
+        }
+      },
+    });
+  }, [syncMauticMutate]);
+
+  function handleManualSync() {
+    syncMauticMutate(undefined, {
+      onSuccess: (r) => {
+        if (!r.connected) {
+          toast.info("Mautic não conectado neste projeto");
+        } else if (r.created > 0) {
+          toast.success(`${r.created} disparo${r.created !== 1 ? "s" : ""} importado${r.created !== 1 ? "s" : ""} (${r.matched} encontrados)`);
+        } else {
+          toast.info(`Nenhum disparo novo (${r.matched} já registrados)`);
+        }
+      },
+      onError: (e) => toast.error(e instanceof Error ? e.message : "Erro no sync do Mautic"),
+    });
+  }
 
   const entries = useMemo(() => data?.entries ?? [], [data]);
 
@@ -155,10 +188,22 @@ export default function CampaignLogPage() {
             Tudo que foi feito na campanha — disparos, publicações, ajustes de tráfego e automações.
           </p>
         </div>
-        <Button className="gap-1.5" onClick={() => { setEditingEntry(null); setDialogOpen(true); }}>
-          <Plus className="h-4 w-4" />
-          Registrar ação
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="gap-1.5"
+            onClick={handleManualSync}
+            disabled={syncMautic.isPending}
+            title="Importa disparos de e-mail do Mautic (broadcast) com o código deste funil no nome"
+          >
+            <RefreshCw className={`h-4 w-4 ${syncMautic.isPending ? "animate-spin" : ""}`} />
+            Sincronizar Mautic
+          </Button>
+          <Button className="gap-1.5" onClick={() => { setEditingEntry(null); setDialogOpen(true); }}>
+            <Plus className="h-4 w-4" />
+            Registrar ação
+          </Button>
+        </div>
       </div>
 
       {/* Filtros */}
@@ -272,6 +317,14 @@ export default function CampaignLogPage() {
                           {e.aplicativo && (
                             <span className="text-[11px] text-muted-foreground">via {e.aplicativo}</span>
                           )}
+                          {e.source !== "manual" && (
+                            <span
+                              className="inline-flex items-center rounded-full border border-indigo-500/40 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-500"
+                              title="Entrada importada automaticamente (sync)"
+                            >
+                              Auto
+                            </span>
+                          )}
                         </div>
                         {e.notes && <p className="mt-1 text-sm">{e.notes}</p>}
                       </div>
@@ -300,13 +353,16 @@ export default function CampaignLogPage() {
                               <Pencil className="h-4 w-4 mr-2" />
                               Editar
                             </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => setConfirmDeleteId(e.id)}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Excluir
-                            </DropdownMenuItem>
+                            {/* Entrada automática não pode ser excluída — o dedup a recriaria no próximo sync. */}
+                            {e.source === "manual" && (
+                              <DropdownMenuItem
+                                onClick={() => setConfirmDeleteId(e.id)}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Excluir
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
