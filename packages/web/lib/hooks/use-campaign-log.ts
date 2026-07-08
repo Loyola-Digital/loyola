@@ -98,27 +98,35 @@ export function useUpdateLogEntry(projectId: string, funnelId: string) {
   });
 }
 
-export interface MauticSyncResult {
+export interface SyncSourceResult {
   connected: boolean;
   matched: number;
   created: number;
 }
 
+export interface CampaignLogSyncResult {
+  /** true = funil arquivado, sync não roda (histórico congela). */
+  archived: boolean;
+  mautic: SyncSourceResult;
+  instagram: SyncSourceResult;
+}
+
 /**
- * Story 38.2a — importa disparos de e-mail do Mautic como entradas
- * automáticas do log (dedup por email id; re-sincronizar não duplica).
+ * Stories 38.2a/38.2b — importa entradas automáticas pro log: disparos de
+ * e-mail do Mautic + posts do Instagram publicados com a campanha ativa.
+ * Dedup por source_id; re-sincronizar não duplica.
  */
-export function useSyncMauticLog(projectId: string, funnelId: string) {
+export function useSyncCampaignLog(projectId: string, funnelId: string) {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      apiClient<MauticSyncResult>(
-        `/api/projects/${projectId}/funnels/${funnelId}/campaign-log/mautic-sync`,
+      apiClient<CampaignLogSyncResult>(
+        `/api/projects/${projectId}/funnels/${funnelId}/campaign-log/sync`,
         { method: "POST", body: JSON.stringify({}) },
       ),
     onSuccess: (result) => {
-      if (result.created > 0) {
+      if (result.mautic.created > 0 || result.instagram.created > 0) {
         qc.invalidateQueries({ queryKey: ["campaign-log", projectId, funnelId] });
       }
     },

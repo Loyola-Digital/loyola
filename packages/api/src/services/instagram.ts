@@ -138,10 +138,21 @@ interface StoriesResponse {
   data: StoryMedia[];
 }
 
+/** Post cru (sem enrichment de insights) — pro auto-log do Log de Campanha. */
+export interface InstagramMediaBasic {
+  id: string;
+  caption?: string;
+  media_type: string;
+  permalink?: string;
+  timestamp: string;
+}
+
 interface InstagramService {
   validateToken(accessToken: string): Promise<{ id: string; name: string; username: string; profile_picture_url?: string }>;
   getProfile(accountId: string): Promise<InstagramProfile>;
   getMediaList(accountId: string, limit?: number, after?: string): Promise<{ data: InstagramMedia[]; nextCursor?: string }>;
+  /** Lista leve (1 chamada, sem insights) — Story 38.2b (auto-log de posts). */
+  getMediaListBasic(accountId: string, limit?: number): Promise<InstagramMediaBasic[]>;
   getMediaInsights(mediaId: string, accountId: string, mediaType?: string): Promise<InsightEntry[]>;
   getAccountInsights(accountId: string, period: string, since: number, until: number): Promise<InsightEntry[]>;
   getAudienceDemographics(accountId: string): Promise<InsightEntry[]>;
@@ -405,6 +416,18 @@ export default fp(async function instagramServicePlugin(fastify) {
 
     await setCachedMetric(accountId, "profile", profile, CACHE_TTL.profile);
     return profile;
+  }
+
+  async function getMediaListBasic(
+    accountId: string,
+    limit = 50,
+  ): Promise<InstagramMediaBasic[]> {
+    const { token, igUserId } = await getDecryptedToken(accountId);
+    const result = await graphFetch<{ data: InstagramMediaBasic[] }>(
+      `/${igUserId}/media?fields=id,caption,media_type,permalink,timestamp&limit=${limit}`,
+      token,
+    );
+    return result.data ?? [];
   }
 
   async function getMediaList(
@@ -723,6 +746,7 @@ export default fp(async function instagramServicePlugin(fastify) {
     validateToken,
     getProfile,
     getMediaList,
+    getMediaListBasic,
     getMediaInsights,
     getAccountInsights,
     getAudienceDemographics,
