@@ -282,6 +282,10 @@ export interface MauticEmailRow {
   name: string;
   /** "template" (campanha) | "list" (disparo direto) | null. */
   emailType: string | null;
+  /** Data/hora agendada do disparo (broadcast) — ISO do Mautic, ou null. */
+  publishUp: string | null;
+  /** Quando o email foi criado no Mautic — fallback de data pro auto-log. */
+  dateAdded: string | null;
   sent: number;
   opens: number;
   openRate: number | null;
@@ -313,7 +317,18 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
 
 type MauticEmailsListResponse = {
   total?: number | string;
-  emails?: Record<string, { id: number | string; name: string; emailType?: string; sentCount?: number | string; readCount?: number | string }>;
+  emails?: Record<
+    string,
+    {
+      id: number | string;
+      name: string;
+      emailType?: string;
+      sentCount?: number | string;
+      readCount?: number | string;
+      publishUp?: string | null;
+      dateAdded?: string | null;
+    }
+  >;
 };
 
 /** Lista TODOS os emails (paginado) com sent/opens do próprio objeto. */
@@ -340,6 +355,8 @@ export async function listAllMauticEmails(
         id: String(e.id),
         name: e.name,
         emailType: e.emailType ?? null,
+        publishUp: e.publishUp ?? null,
+        dateAdded: e.dateAdded ?? null,
         sent,
         opens,
         openRate: sent > 0 ? opens / sent : null,
