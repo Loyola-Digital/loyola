@@ -37,8 +37,9 @@ import { useFunnel } from "@/lib/hooks/use-funnels";
 import {
   useCampaignLog,
   useDeleteLogEntry,
-  useSyncMauticLog,
+  useSyncCampaignLog,
   type CampaignLogEntry,
+  type CampaignLogSyncResult,
 } from "@/lib/hooks/use-campaign-log";
 import {
   LOG_EVENTOS,
@@ -107,36 +108,50 @@ export default function CampaignLogPage() {
     q: qDebounced || undefined,
   });
   const deleteEntry = useDeleteLogEntry(params.id, params.funnelId);
-  const syncMautic = useSyncMauticLog(params.id, params.funnelId);
-  const syncMauticMutate = syncMautic.mutate;
+  const syncLog = useSyncCampaignLog(params.id, params.funnelId);
+  const syncLogMutate = syncLog.mutate;
 
-  // Story 38.2a — auto-sync do Mautic ao abrir a página (1x por mount).
-  // Silencioso: sem Mautic conectado ou sem novidade, nada acontece.
+  function syncSummary(r: CampaignLogSyncResult): string | null {
+    const parts: string[] = [];
+    if (r.mautic.created > 0) {
+      parts.push(`${r.mautic.created} disparo${r.mautic.created !== 1 ? "s" : ""} de e-mail`);
+    }
+    if (r.instagram.created > 0) {
+      parts.push(`${r.instagram.created} post${r.instagram.created !== 1 ? "s" : ""} do Instagram`);
+    }
+    return parts.length > 0 ? `Importado: ${parts.join(" + ")}` : null;
+  }
+
+  // Stories 38.2a/b — auto-sync (Mautic + Instagram) ao abrir a página
+  // (1x por mount). Silencioso: sem conexões ou sem novidade, nada acontece.
   const autoSyncRan = useRef(false);
   useEffect(() => {
     if (autoSyncRan.current) return;
     autoSyncRan.current = true;
-    syncMauticMutate(undefined, {
+    syncLogMutate(undefined, {
       onSuccess: (r) => {
-        if (r.created > 0) {
-          toast.success(`${r.created} disparo${r.created !== 1 ? "s" : ""} de e-mail importado${r.created !== 1 ? "s" : ""} do Mautic`);
-        }
+        const msg = syncSummary(r);
+        if (msg) toast.success(msg);
       },
     });
-  }, [syncMauticMutate]);
+  }, [syncLogMutate]);
 
   function handleManualSync() {
-    syncMauticMutate(undefined, {
+    syncLogMutate(undefined, {
       onSuccess: (r) => {
-        if (!r.connected) {
-          toast.info("Mautic não conectado neste projeto");
-        } else if (r.created > 0) {
-          toast.success(`${r.created} disparo${r.created !== 1 ? "s" : ""} importado${r.created !== 1 ? "s" : ""} (${r.matched} encontrados)`);
-        } else {
-          toast.info(`Nenhum disparo novo (${r.matched} já registrados)`);
+        if (r.archived) {
+          toast.info("Funil arquivado — o log não recebe entradas automáticas novas");
+          return;
         }
+        if (!r.mautic.connected && !r.instagram.connected) {
+          toast.info("Nenhuma integração conectada neste projeto (Mautic/Instagram)");
+          return;
+        }
+        const msg = syncSummary(r);
+        if (msg) toast.success(msg);
+        else toast.info(`Nada novo (${r.mautic.matched + r.instagram.matched} itens já registrados)`);
       },
-      onError: (e) => toast.error(e instanceof Error ? e.message : "Erro no sync do Mautic"),
+      onError: (e) => toast.error(e instanceof Error ? e.message : "Erro no sync"),
     });
   }
 
@@ -193,11 +208,11 @@ export default function CampaignLogPage() {
             variant="outline"
             className="gap-1.5"
             onClick={handleManualSync}
-            disabled={syncMautic.isPending}
-            title="Importa disparos de e-mail do Mautic (broadcast) com o código deste funil no nome"
+            disabled={syncLog.isPending}
+            title="Importa disparos de e-mail do Mautic e posts do Instagram publicados com a campanha ativa"
           >
-            <RefreshCw className={`h-4 w-4 ${syncMautic.isPending ? "animate-spin" : ""}`} />
-            Sincronizar Mautic
+            <RefreshCw className={`h-4 w-4 ${syncLog.isPending ? "animate-spin" : ""}`} />
+            Sincronizar
           </Button>
           <Button className="gap-1.5" onClick={() => { setEditingEntry(null); setDialogOpen(true); }}>
             <Plus className="h-4 w-4" />

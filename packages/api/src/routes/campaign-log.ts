@@ -14,6 +14,8 @@ import fp from "fastify-plugin";
 import {
   campaignLogEntries,
   funnels,
+  instagramAccounts,
+  instagramAccountProjects,
   mauticConnections,
   projects,
   projectMembers,
@@ -142,7 +144,13 @@ export default fp(async function campaignLogRoutes(fastify) {
     if (!project) return null;
 
     const [funnel] = await fastify.db
-      .select({ id: funnels.id, name: funnels.name, matchCode: funnels.matchCode })
+      .select({
+        id: funnels.id,
+        name: funnels.name,
+        matchCode: funnels.matchCode,
+        createdAt: funnels.createdAt,
+        archivedAt: funnels.archivedAt,
+      })
       .from(funnels)
       .where(and(eq(funnels.id, funnelId), eq(funnels.projectId, projectId)))
       .limit(1);
@@ -304,14 +312,18 @@ export default fp(async function campaignLogRoutes(fastify) {
   );
 
   // ---------------------------------------------------------------
-  // POST /mautic-sync — Story 38.2a: importa disparos de e-mail do Mautic
-  // como entradas automáticas do log. Filtra emails tipo "list" (broadcast),
-  // já enviados, cujo nome contém o código do funil (matchCode override ou
-  // prefixo do nome — mesma regra do dashboard Mautic 32.2). Dedup por
-  // source_id ('mautic-email:{id}') — re-sincronizar não duplica.
+  // POST /sync — Stories 38.2a/38.2b: importa entradas automáticas.
+  //  · Mautic: disparos de e-mail broadcast ("list") já enviados, cujo nome
+  //    contém o código do funil (matchCode override ou prefixo do nome —
+  //    mesma regra do dashboard Mautic 32.2).
+  //  · Instagram: posts das contas do projeto publicados ENQUANTO a campanha
+  //    está ativa (timestamp >= funnels.createdAt; funil arquivado não
+  //    sincroniza) — "se o post saiu com a campanha rodando, é dela".
+  // Dedup por source_id — re-sincronizar não duplica. Fontes independentes:
+  // falha em uma não derruba a outra.
   // ---------------------------------------------------------------
   fastify.post(
-    "/api/projects/:projectId/funnels/:funnelId/campaign-log/mautic-sync",
+    "/api/projects/:projectId/funnels/:funnelId/campaign-log/sync",
     { config: { rateLimit: { max: 6, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const params = funnelParamsSchema.safeParse(request.params);
@@ -325,68 +337,122 @@ export default fp(async function campaignLogRoutes(fastify) {
       );
       if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
 
+      const empty = { connected: false, matched: 0, created: 0 };
+      // Campanha arquivada não acumula entradas novas — histórico congela.
+      if (funnel.archivedAt) {
+        return { archived: true, mautic: empty, instagram: empty };
+      }
+
+      // ---- Mautic (38.2a) ----
+      let mauticResult = { ...empty };
       const [conn] = await fastify.db
         .select()
         .from(mauticConnections)
         .where(eq(mauticConnections.projectId, params.data.projectId))
         .limit(1);
-      // Sem Mautic conectado não é erro — a página chama o sync no load.
-      if (!conn) return { connected: false, matched: 0, created: 0 };
-
-      let password: string;
-      try {
-        password = decryptMauticPassword(conn.passwordEncrypted, conn.passwordIv);
-      } catch {
-        return reply.code(500).send({ error: "Credenciais Mautic inválidas — reconecte" });
+      if (conn) {
+        try {
+          const password = decryptMauticPassword(conn.passwordEncrypted, conn.passwordIv);
+          const token = (funnel.matchCode ?? funnelMatchToken(funnel.name)).toLowerCase();
+          const emails = await listAllMauticEmails(conn.baseUrl, conn.username, password);
+          // Broadcast ("list") já enviado + nome com o código do funil.
+          const matched = emails.filter(
+            (e) => e.emailType === "list" && e.sent > 0 && e.name.toLowerCase().includes(token),
+          );
+          let created = 0;
+          for (const email of matched) {
+            const occurredRaw = email.publishUp ?? email.dateAdded;
+            if (!occurredRaw) continue;
+            const occurredAt = new Date(occurredRaw);
+            if (isNaN(occurredAt.getTime())) continue;
+            const inserted = await fastify.db
+              .insert(campaignLogEntries)
+              .values({
+                funnelId: params.data.funnelId,
+                occurredAt,
+                evento: "Disparo de e-mail",
+                aplicativo: "Mautic",
+                categoria: null,
+                notes: `${email.name} · ${email.sent.toLocaleString("pt-BR")} enviados`,
+                responsavel: "Mautic (auto)",
+                source: "mautic",
+                sourceId: `mautic-email:${email.id}`,
+                createdBy: request.userId,
+              })
+              .onConflictDoNothing()
+              .returning({ id: campaignLogEntries.id });
+            if (inserted.length > 0) created += 1;
+          }
+          mauticResult = { connected: true, matched: matched.length, created };
+        } catch (err) {
+          fastify.log.warn({ err }, "campaign-log sync: Mautic falhou (segue Instagram)");
+          mauticResult = { connected: true, matched: 0, created: 0 };
+        }
       }
 
-      const token = (funnel.matchCode ?? funnelMatchToken(funnel.name)).toLowerCase();
+      // ---- Instagram (38.2b) ----
+      let instagramResult = { ...empty };
+      const igAccounts = await fastify.db
+        .select({ id: instagramAccounts.id })
+        .from(instagramAccounts)
+        .innerJoin(
+          instagramAccountProjects,
+          and(
+            eq(instagramAccountProjects.accountId, instagramAccounts.id),
+            eq(instagramAccountProjects.projectId, params.data.projectId),
+          ),
+        )
+        .where(eq(instagramAccounts.isActive, true));
 
-      let emails;
-      try {
-        emails = await listAllMauticEmails(conn.baseUrl, conn.username, password);
-      } catch (err) {
-        return reply.code(502).send({
-          error: "Erro ao buscar emails do Mautic",
-          details: err instanceof Error ? err.message : String(err),
-        });
+      if (igAccounts.length > 0) {
+        const funnelStart = funnel.createdAt;
+        let matched = 0;
+        let created = 0;
+        for (const account of igAccounts) {
+          try {
+            const media = await fastify.instagramService.getMediaListBasic(account.id, 50);
+            for (const post of media) {
+              const publishedAt = new Date(post.timestamp);
+              if (isNaN(publishedAt.getTime()) || publishedAt < funnelStart) continue;
+              matched += 1;
+
+              const categoria =
+                post.media_type === "CAROUSEL_ALBUM"
+                  ? "Carrossel"
+                  : post.media_type === "VIDEO"
+                    ? "Reel"
+                    : "Feed";
+              const captionLine =
+                (post.caption ?? "").split("\n")[0].trim().slice(0, 120) || "(sem legenda)";
+              const notes = post.permalink ? `${captionLine} · ${post.permalink}` : captionLine;
+
+              const inserted = await fastify.db
+                .insert(campaignLogEntries)
+                .values({
+                  funnelId: params.data.funnelId,
+                  occurredAt: publishedAt,
+                  evento: "Publicação em rede-social",
+                  aplicativo: "Instagram",
+                  categoria,
+                  notes,
+                  responsavel: "Instagram (auto)",
+                  source: "instagram",
+                  sourceId: `ig-media:${post.id}`,
+                  createdBy: request.userId,
+                })
+                .onConflictDoNothing()
+                .returning({ id: campaignLogEntries.id });
+              if (inserted.length > 0) created += 1;
+            }
+            instagramResult = { connected: true, matched, created };
+          } catch (err) {
+            fastify.log.warn({ err }, "campaign-log sync: Instagram falhou (conta segue)");
+            instagramResult = { connected: true, matched, created };
+          }
+        }
       }
 
-      // Broadcast ("list") já enviado + nome com o código do funil.
-      const matched = emails.filter(
-        (e) =>
-          e.emailType === "list" &&
-          e.sent > 0 &&
-          e.name.toLowerCase().includes(token),
-      );
-
-      let created = 0;
-      for (const email of matched) {
-        const occurredRaw = email.publishUp ?? email.dateAdded;
-        if (!occurredRaw) continue;
-        const occurredAt = new Date(occurredRaw);
-        if (isNaN(occurredAt.getTime())) continue;
-
-        const inserted = await fastify.db
-          .insert(campaignLogEntries)
-          .values({
-            funnelId: params.data.funnelId,
-            occurredAt,
-            evento: "Disparo de e-mail",
-            aplicativo: "Mautic",
-            categoria: null,
-            notes: `${email.name} · ${email.sent.toLocaleString("pt-BR")} enviados`,
-            responsavel: "Mautic (auto)",
-            source: "mautic",
-            sourceId: `mautic-email:${email.id}`,
-            createdBy: request.userId,
-          })
-          .onConflictDoNothing()
-          .returning({ id: campaignLogEntries.id });
-        if (inserted.length > 0) created += 1;
-      }
-
-      return { connected: true, matched: matched.length, created };
+      return { archived: false, mautic: mauticResult, instagram: instagramResult };
     },
   );
 

@@ -48,6 +48,9 @@ const mockInstagramService = {
     data: [{ id: "media1", caption: "Post" }],
     nextCursor: "cursor1",
   }),
+  getMediaListBasic: vi.fn().mockResolvedValue([
+    { id: "media1", caption: "Post", media_type: "IMAGE", timestamp: "2026-07-01T12:00:00+0000" },
+  ]),
   getMediaInsights: vi.fn().mockResolvedValue([{ name: "impressions", values: [{ value: 100 }] }]),
   getAccountInsights: vi.fn().mockResolvedValue([{ name: "reach", values: [{ value: 500 }] }]),
   getAudienceDemographics: vi.fn().mockResolvedValue([{ name: "audience_city", values: [{ value: {} }] }]),
