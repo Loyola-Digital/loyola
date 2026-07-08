@@ -9,6 +9,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { ZoomStageTab } from "./zoom-stage-tab";
 import { StageDeleteSection } from "./stage-delete-section";
+import { CampaignLogButton } from "./campaign-log-link";
 import { MauticStageTab } from "./mautic-stage-tab";
 import { toast } from "sonner";
 import type { FunnelStage } from "@loyola-x/shared";
@@ -51,6 +52,8 @@ export function CplStageView({ projectId, funnelId, funnelName, stage }: CplStag
           <p className="text-sm text-muted-foreground">Etapa CPL — retenção de reuniões Zoom.</p>
         </div>
 
+        <div className="flex items-center gap-2">
+        <CampaignLogButton projectId={projectId} funnelId={funnelId} />
         <Sheet open={settingsOpen} onOpenChange={(open) => {
           setSettingsOpen(open);
           if (open) setStageName(stage.name);
@@ -94,6 +97,7 @@ export function CplStageView({ projectId, funnelId, funnelName, stage }: CplStag
             </div>
           </SheetContent>
         </Sheet>
+        </div>
       </div>
 
       <ZoomStageTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />

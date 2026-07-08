@@ -60,6 +60,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
+import { CampaignLogButton } from "@/components/funnels/campaign-log-link";
 import { SalesPlanTab } from "@/components/funnels/sales-plan-tab";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import {
@@ -287,6 +288,7 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
           <p className="hidden sm:block text-sm text-muted-foreground">Vendas do evento + matrícula automática no MemberKit</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <CampaignLogButton projectId={projectId} funnelId={funnelId} />
           <DayRangePicker days={days} onDaysChange={setDays} />
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setEditingSale(null); setManualSaleOpen(true); }}>
             <Plus className="h-3.5 w-3.5" /> Lançar venda

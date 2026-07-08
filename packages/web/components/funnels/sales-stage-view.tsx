@@ -15,6 +15,7 @@ import { StageSalesSection } from "./stage-sales-section";
 import { StageSalesSpreadsheetSection } from "./stage-sales-spreadsheet-section";
 import { CampaignSelector } from "./campaign-selector";
 import { StageDeleteSection } from "./stage-delete-section";
+import { CampaignLogButton } from "./campaign-log-link";
 import { SalesMetaKpis } from "./sales-meta-kpis";
 import { MauticStageTab } from "./mautic-stage-tab";
 import { SalesConversionCard } from "./sales-conversion-card";
@@ -68,6 +69,7 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
         </div>
 
         <div className="flex items-center gap-2">
+          <CampaignLogButton projectId={projectId} funnelId={funnelId} />
           <DayRangePicker days={days} onDaysChange={setDays} />
 
           <Button

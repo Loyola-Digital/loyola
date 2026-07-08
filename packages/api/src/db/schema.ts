@@ -2019,6 +2019,40 @@ export const debriefings = pgTable(
   ]
 );
 
+// ============================================================
+// CAMPAIGN LOG (EPIC-38 — Story 38.1)
+// ============================================================
+// Log de Campanha: registro fixo por funil das ações executadas na campanha
+// (disparo de e-mail/WhatsApp/SMS, publicações, ações no gerenciador, etc.).
+// Substitui a planilha manual (Data/Hora/Evento/Aplicativo/Categoria/
+// Responsável/Observações). Vocabulários vivem no web como constantes —
+// aqui grava texto livre (adicionar opção nova não exige migration).
+
+export const campaignLogEntries = pgTable(
+  "campaign_log_entries",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => funnels.id, { onDelete: "cascade" }),
+    /** Data+hora da ação (a planilha separava Data e Hora; aqui é um campo só). */
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    evento: varchar("evento", { length: 80 }).notNull(),
+    aplicativo: varchar("aplicativo", { length: 80 }),
+    categoria: varchar("categoria", { length: 80 }),
+    /** Observações / título da mensagem disparada. */
+    notes: text("notes"),
+    /** Preenchido só quando a ação foi de outra pessoa — default é o autor (createdBy). */
+    responsavel: varchar("responsavel", { length: 255 }),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_campaign_log_funnel_occurred").on(table.funnelId, table.occurredAt)]
+);
+
 export const debriefingComments = pgTable(
   "debriefing_comments",
   {
