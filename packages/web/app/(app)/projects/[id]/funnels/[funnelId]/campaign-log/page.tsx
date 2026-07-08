@@ -207,7 +207,7 @@ export default function CampaignLogPage() {
           />
         </div>
         <span className="ml-auto text-xs text-muted-foreground">
-          {entries.length} açõe{entries.length === 1 ? "" : "s"} no período
+          {entries.length} {entries.length === 1 ? "ação" : "ações"} no período
         </span>
       </div>
 
@@ -241,7 +241,7 @@ export default function CampaignLogPage() {
               <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {dayLabel(dateKey)}
                 <span className="ml-2 font-normal normal-case">
-                  {dayEntries.length} açõe{dayEntries.length === 1 ? "" : "s"}
+                  {dayEntries.length} {dayEntries.length === 1 ? "ação" : "ações"}
                 </span>
               </h3>
               <div className="space-y-1.5">
@@ -278,7 +278,7 @@ export default function CampaignLogPage() {
                       <div className="flex shrink-0 items-center gap-2">
                         <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground" title={`Registrado por ${e.authorName ?? "—"}`}>
                           <Avatar className="h-5 w-5">
-                            {e.authorAvatarUrl && !e.responsavel && (
+                            {e.authorAvatarUrl && (
                               <AvatarImage src={e.authorAvatarUrl} alt={who} />
                             )}
                             <AvatarFallback className="text-[9px]">{initials(who)}</AvatarFallback>

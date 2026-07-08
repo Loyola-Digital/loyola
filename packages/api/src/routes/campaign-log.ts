@@ -55,6 +55,34 @@ const baseEntryObject = z.object({
 const createEntrySchema = baseEntryObject;
 const updateEntrySchema = baseEntryObject.partial();
 
+/**
+ * Normaliza nome do usuário pra exibição: detecta Clerk ID literal
+ * ("user_xxx"), cópia do email ou placeholder "Usuário" e tenta derivar do
+ * local-part do email. Mesma lógica de manual-sales.ts/funnel-stages.ts,
+ * com o caso extra do placeholder (emails @placeholder.dev não ajudam —
+ * mantém como está; o dialog grava o nome real da sessão em `responsavel`).
+ */
+function displayUserName(
+  name: string | null | undefined,
+  email: string | null | undefined,
+): string {
+  const looksLikeClerkId = typeof name === "string" && /^user_[A-Za-z0-9]+$/.test(name);
+  const isPlaceholderName = name === "Usuário";
+  const nameIsEmail = name && email && name === email;
+  if (name && !looksLikeClerkId && !nameIsEmail && !isPlaceholderName) return name;
+
+  if (email && !email.endsWith("@placeholder.dev")) {
+    const local = email.split("@")[0].split("+")[0];
+    return local
+      .replace(/[._-]+/g, " ")
+      .split(" ")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+  return name ?? "Usuário";
+}
+
 function shapeEntry(
   r: typeof campaignLogEntries.$inferSelect,
   author?: { name: string | null; avatarUrl: string | null } | null,
@@ -140,6 +168,7 @@ export default fp(async function campaignLogRoutes(fastify) {
         .select({
           entry: campaignLogEntries,
           authorName: users.name,
+          authorEmail: users.email,
           authorAvatarUrl: users.avatarUrl,
         })
         .from(campaignLogEntries)
@@ -149,7 +178,10 @@ export default fp(async function campaignLogRoutes(fastify) {
 
       return {
         entries: rows.map((r) =>
-          shapeEntry(r.entry, { name: r.authorName, avatarUrl: r.authorAvatarUrl }),
+          shapeEntry(r.entry, {
+            name: displayUserName(r.authorName, r.authorEmail),
+            avatarUrl: r.authorAvatarUrl,
+          }),
         ),
       };
     },

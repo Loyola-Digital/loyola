@@ -217,7 +217,9 @@ export function CampaignLogEntryDialog({
       aplicativo: resolveOutro(aplicativo, aplicativoOutro),
       categoria: resolveOutro(categoria, categoriaOutro),
       notes: notes.trim() || null,
-      responsavel: responsavel.trim() || null,
+      // Responsável vazio = usuário logado. Grava o nome REAL da sessão Clerk —
+      // users.name no banco pode estar desatualizado ("Usuário"/placeholder).
+      responsavel: responsavel.trim() || user?.fullName || null,
     };
 
     try {
