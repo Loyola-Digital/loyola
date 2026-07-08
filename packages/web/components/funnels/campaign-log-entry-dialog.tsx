@@ -90,7 +90,7 @@ function SearchSelect({
           <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-1" align="start">
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-1" align="start">
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -204,8 +204,16 @@ export function CampaignLogEntryDialog({
       return;
     }
 
+    // Converte no BROWSER (que conhece o fuso do usuário) pra ISO/UTC — o
+    // servidor roda em UTC e parsearia "YYYY-MM-DDTHH:mm" com 3h de desvio.
+    const occurredAtDate = new Date(occurredAt);
+    if (isNaN(occurredAtDate.getTime())) {
+      toast.error("Data/hora da ação inválida");
+      return;
+    }
+
     const input = {
-      occurredAt,
+      occurredAt: occurredAtDate.toISOString(),
       evento: eventoFinal,
       aplicativo: resolveOutro(aplicativo, aplicativoOutro),
       categoria: resolveOutro(categoria, categoriaOutro),

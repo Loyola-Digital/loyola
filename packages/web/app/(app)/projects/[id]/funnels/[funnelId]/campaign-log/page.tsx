@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, MoreHorizontal, Pencil, Plus, ScrollText, Search, Trash2 } from "lucide-react";
@@ -86,6 +86,12 @@ export default function CampaignLogPage() {
   const [aplicativo, setAplicativo] = useState("");
   const [categoria, setCategoria] = useState("");
   const [q, setQ] = useState("");
+  // Debounce da busca: sem isso, cada tecla dispara um request (queryKey muda).
+  const [qDebounced, setQDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(q.trim()), 350);
+    return () => clearTimeout(t);
+  }, [q]);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<CampaignLogEntry | null>(null);
@@ -97,7 +103,7 @@ export default function CampaignLogPage() {
     evento: evento || undefined,
     aplicativo: aplicativo || undefined,
     categoria: categoria || undefined,
-    q: q.trim() || undefined,
+    q: qDebounced || undefined,
   });
   const deleteEntry = useDeleteLogEntry(params.id, params.funnelId);
 
@@ -117,7 +123,7 @@ export default function CampaignLogPage() {
     return Array.from(groups.entries());
   }, [entries]);
 
-  const hasFilters = !!(evento || aplicativo || categoria || q.trim());
+  const hasFilters = !!(evento || aplicativo || categoria || qDebounced);
 
   async function handleDelete() {
     if (!confirmDeleteId) return;
