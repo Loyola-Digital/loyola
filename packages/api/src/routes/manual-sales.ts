@@ -532,11 +532,15 @@ export default fp(async function manualSalesRoutes(fastify) {
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
       // Story 19.10: venda manual permitida em etapas "sales" e "event".
+      // Captação Paga ("paid") também — a etapa tem a seção "Vendas da captação"
+      // com lançamento manual (ManualPixSalesSection) desde a 19.9.
       const isEvent = stage.stageType === "event";
-      if (stage.stageType !== "sales" && !isEvent) {
-        return reply
-          .code(400)
-          .send({ error: "Vendas manuais só podem ser lançadas em etapas do tipo Vendas ou Evento Presencial" });
+      const allowedTypes = ["sales", "event", "paid"];
+      if (!allowedTypes.includes(stage.stageType ?? "")) {
+        return reply.code(400).send({
+          error:
+            "Vendas manuais só podem ser lançadas em etapas do tipo Vendas, Evento Presencial ou Captação Paga",
+        });
       }
 
       // Story 19.10/19.11: na etapa de Evento Presencial o email é OBRIGATÓRIO
