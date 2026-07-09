@@ -207,6 +207,24 @@ function marginColorClass(v: number | null | undefined): string {
   return v > 0 ? "text-emerald-400" : "text-red-400";
 }
 
+// Story 29.21: badge de status Meta da campanha (só modo Por Campanha). Reusa o
+// mapa de cores do campaign-selector. Sem match (adset/ad, linha só-planilha,
+// ou id não encontrado) → "—" neutro.
+const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
+  ACTIVE: { label: "Ativo", cls: "bg-green-500/15 text-green-700 dark:text-green-400" },
+  PAUSED: { label: "Pausado", cls: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400" },
+  ARCHIVED: { label: "Arquivado", cls: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-400" },
+};
+function StatusBadge({ status }: { status: string | undefined }) {
+  const meta = status ? STATUS_BADGE[status] : undefined;
+  if (!meta) return <span className="text-muted-foreground">—</span>;
+  return (
+    <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${meta.cls}`}>
+      {meta.label}
+    </span>
+  );
+}
+
 // Story 29.15: rótulo de valor nos pontos do gráfico de Investimento. No modo
 // Diário mostra a cada 7 pontos (evita poluir); em Semanal/Mensal há poucos
 // pontos, então mostra em todos.
@@ -224,6 +242,36 @@ function SpendPointLabel(props: {
   return (
     <text x={x} y={y - 8} textAnchor="middle" fontSize={9} fontWeight={600} fill="hsl(47 98% 68%)">
       {fmtCurrencyCompact(num)}
+    </text>
+  );
+}
+
+// Story 29.21: rótulo de valor em cada barra do gráfico "Margem no Tempo".
+// Valor arredondado pra cima (Math.ceil), fonte pequena, na mesma cor da barra
+// (verde se ≥ 0, vermelho se < 0). Positivos acima da barra; negativos abaixo.
+function MarginBarLabel(props: {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  value?: number | string;
+}) {
+  const { x, y, width, height, value } = props;
+  if (x == null || y == null || width == null || height == null) return null;
+  const num = typeof value === "number" ? value : Number(value ?? 0);
+  const positive = num >= 0;
+  const cx = x + width / 2;
+  const ty = positive ? y - 4 : y + height + 11;
+  return (
+    <text
+      x={cx}
+      y={ty}
+      textAnchor="middle"
+      fontSize={9}
+      fontWeight={600}
+      fill={positive ? "hsl(150 60% 45%)" : "hsl(0 72% 55%)"}
+    >
+      {fmtCurrencyCompact(Math.ceil(num))}
     </text>
   );
 }
@@ -370,6 +418,26 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [dimWidth, setDimWidth] = useState(200);
+  // Story 29.21: resize da coluna Dimensão arrastando a borda (estilo Excel).
+  // Substitui os botões −/+ da 29.19. Os listeners no document são removidos no
+  // mouseup (sem leak). Clamp 120–640px. startW captura a largura no início do drag.
+  const startDimResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = dimWidth;
+    const onMove = (ev: MouseEvent) => {
+      setDimWidth(Math.max(120, Math.min(640, startW + (ev.clientX - startX))));
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+    };
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
   const { data: perpetualSpreadsheet } = usePerpetualSpreadsheet(projectId, funnel.id);
   const { data: salesData } = usePerpetualSalesData(
     projectId,
@@ -395,6 +463,15 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // endpoints retornariam dados do PROJETO inteiro (spend de outros funis).
   const hasCampaigns = campaignIds.length > 0;
   const metaProjectId = hasCampaigns ? projectId : null;
+  // Story 29.21: status (Ativo/Pausado/Arquivado) por campanha p/ a coluna do
+  // Detalhamento. Reusa o picker meta-campaigns (mesma queryKey → sem request
+  // novo). Só o modo Por Campanha consulta o mapa (id da linha = id da campanha).
+  const { data: campaignPicker } = useCampaignPicker(hasCampaigns ? projectId : null);
+  const campaignStatusById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of campaignPicker?.campaigns ?? []) m.set(c.id, c.status);
+    return m;
+  }, [campaignPicker]);
 
   // Data hooks — Fix 1 (29.8): propaga startDate/endDate quando custom range
   const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
@@ -1063,6 +1140,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                   {timeSeries.map((d, i) => (
                     <Cell key={i} fill={d.margin >= 0 ? "hsl(150 60% 45%)" : "hsl(0 72% 55%)"} />
                   ))}
+                  {/* Story 29.21: valor numérico (Math.ceil) em cada barra, cor da barra */}
+                  <LabelList dataKey="margin" content={<MarginBarLabel />} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -1106,28 +1185,12 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             Detalhamento
           </h3>
           <div className="flex items-center gap-2">
-            {/* Story 29.19: largura da coluna Dimensão */}
-            <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-              <span className="hidden sm:inline">Dimensão</span>
-              <button
-                type="button"
-                onClick={() => setDimWidth((w) => Math.max(120, w - 40))}
-                className="h-6 w-6 rounded border border-border/40 hover:bg-muted/40 leading-none"
-                title="Diminuir coluna Dimensão"
-              >−</button>
-              <button
-                type="button"
-                onClick={() => setDimWidth((w) => Math.min(480, w + 40))}
-                className="h-6 w-6 rounded border border-border/40 hover:bg-muted/40 leading-none"
-                title="Aumentar coluna Dimensão"
-              >+</button>
-            </div>
             <Select value={tableFilter} onValueChange={(v) => setTableFilter(v as typeof tableFilter)}>
               <SelectTrigger className="w-[160px] h-8 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="campaign">Por Canal</SelectItem>
+                <SelectItem value="campaign">Por Campanha</SelectItem>
                 <SelectItem value="adset">Por Publico</SelectItem>
                 <SelectItem value="ad">Por Criativo</SelectItem>
               </SelectContent>
@@ -1139,7 +1202,17 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           <table className="w-full text-xs">
             <thead>
               <tr className="text-muted-foreground border-b border-border/20">
-                <th style={{ width: dimWidth, minWidth: dimWidth }} className="text-left py-2 pr-3 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("dimension")}>Dimensao{sortArrow("dimension")}</th>
+                {/* Story 29.21: status Meta da campanha (informativo — não ordena/filtra) */}
+                <th className="text-left py-2 pr-3 select-none">Status</th>
+                <th style={{ width: dimWidth, minWidth: dimWidth }} className="relative text-left py-2 pr-3 select-none">
+                  <span className="cursor-pointer hover:text-foreground" onClick={() => toggleSort("dimension")}>Dimensao{sortArrow("dimension")}</span>
+                  {/* Story 29.21: alça de resize — arraste a borda pra ajustar a largura */}
+                  <span
+                    onMouseDown={startDimResize}
+                    className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-primary/40"
+                    title="Arraste para ajustar a largura da coluna"
+                  />
+                </th>
                 <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("spend")}>Invest.{sortArrow("spend")}</th>
                 <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("revenue")}>Receita{sortArrow("revenue")}</th>
                 <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cac")}>CAC{sortArrow("cac")}</th>
@@ -1153,7 +1226,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             </thead>
             <tbody>
               {sortedRows.length === 0 ? (
-                <tr><td colSpan={10} className="py-6 text-center text-muted-foreground">Sem dados</td></tr>
+                <tr><td colSpan={11} className="py-6 text-center text-muted-foreground">Sem dados</td></tr>
               ) : sortedRows.map((row) => {
                 const f = { days, funnelType: "perpetual" as const, funnelName: funnel?.name };
                 const marginPct = row.marginPct;
@@ -1193,6 +1266,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                 ];
                 return (
                   <tr key={row.campaignName} className="border-b border-border/10 hover:bg-muted/5">
+                    <td className="py-2 pr-3"><StatusBadge status={tableFilter === "campaign" ? campaignStatusById.get(row.campaignId) : undefined} /></td>
                     <td className="py-2 pr-3 font-medium truncate" style={{ maxWidth: dimWidth, width: dimWidth }}>{row.campaignName}</td>
                     {cells.map(([col, label, value, formula, cls]) => renderCell(col, label, value, formula, cls))}
                   </tr>
