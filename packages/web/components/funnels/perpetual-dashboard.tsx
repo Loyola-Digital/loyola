@@ -248,7 +248,8 @@ function SpendPointLabel(props: {
 
 // Story 29.21: rótulo de valor em cada barra do gráfico "Margem no Tempo".
 // Valor arredondado pra cima (Math.ceil), fonte pequena, na mesma cor da barra
-// (verde se ≥ 0, vermelho se < 0). Positivos acima da barra; negativos abaixo.
+// (verde se ≥ 0, vermelho se < 0). Sempre FORA da ponta da barra: positivos acima
+// do topo, negativos abaixo da base.
 function MarginBarLabel(props: {
   x?: number;
   y?: number;
@@ -261,13 +262,18 @@ function MarginBarLabel(props: {
   const num = typeof value === "number" ? value : Number(value ?? 0);
   const positive = num >= 0;
   const cx = x + width / 2;
-  const ty = positive ? y - 4 : y + height + 11;
+  // Recharts passa height negativo em barras negativas — usar as duas extremidades
+  // garante que o rótulo fica sempre FORA da ponta da barra (positivo acima do topo,
+  // negativo abaixo da base), nunca colado no eixo zero.
+  const top = Math.min(y, y + height);
+  const bottom = Math.max(y, y + height);
+  const ty = positive ? top - 4 : bottom + 11;
   return (
     <text
       x={cx}
       y={ty}
       textAnchor="middle"
-      fontSize={9}
+      fontSize={8}
       fontWeight={600}
       fill={positive ? "hsl(150 60% 45%)" : "hsl(0 72% 55%)"}
     >
