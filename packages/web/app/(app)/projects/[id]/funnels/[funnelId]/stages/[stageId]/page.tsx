@@ -591,9 +591,9 @@ export default function StagePage() {
         </TabsContent>
       </Tabs>
 
-      {/* Vendas da captação paga: lançamento de venda manual + tabela unificada,
-          no fim da view. Só na etapa "paid" (Captação Paga). */}
-      {stage.stageType === "paid" && (
+      {/* Vendas da captação: lançamento de venda manual + tabela unificada,
+          no fim da view. Etapas "paid" (Captação Paga) e "free" (Gratuita). */}
+      {(stage.stageType === "paid" || stage.stageType === "free") && (
         <div className="mt-2">
           <div className="mb-2 flex justify-end">
             <DayRangePicker days={paidSalesDays} onDaysChange={setPaidSalesDays} />

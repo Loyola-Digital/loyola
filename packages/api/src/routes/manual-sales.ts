@@ -532,14 +532,13 @@ export default fp(async function manualSalesRoutes(fastify) {
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
       // Story 19.10: venda manual permitida em etapas "sales" e "event".
-      // Captação Paga ("paid") também — a etapa tem a seção "Vendas da captação"
-      // com lançamento manual (ManualPixSalesSection) desde a 19.9.
+      // Captação Paga ("paid") e Gratuita ("free") também — ambas têm a seção
+      // "Vendas da captação" com lançamento manual (ManualPixSalesSection).
       const isEvent = stage.stageType === "event";
-      const allowedTypes = ["sales", "event", "paid"];
+      const allowedTypes = ["sales", "event", "paid", "free"];
       if (!allowedTypes.includes(stage.stageType ?? "")) {
         return reply.code(400).send({
-          error:
-            "Vendas manuais só podem ser lançadas em etapas do tipo Vendas, Evento Presencial ou Captação Paga",
+          error: "Vendas manuais não são permitidas neste tipo de etapa",
         });
       }
 
