@@ -111,3 +111,8 @@ Tools (mapeiam 1:1 nos endpoints):
 - `list_campaigns(projectId, from?, to?)` → GET /api/public/meta/v1/projects/{projectId}/campaigns
 - `get_creative_performance(projectId, campaignId?, orderBy?, limit?, from?, to?)` → GET .../creatives
 - `get_creative_timeseries(projectId, adId, from?, to?)` → GET .../creatives/{adId}/timeseries
+- `get_daily(projectId, from?, to?)` → GET /api/public/meta/v1/projects/{projectId}/daily
+- `get_stage_daily(projectId, stageId, from?, to?)` → GET /api/public/meta/v1/projects/{projectId}/stages/{stageId}/daily (mídia SÓ das campanhas da etapa — sem contaminação entre funis/evergreen)
+- `get_stage_leads_summary(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/leads-summary
+- `get_stage_survey(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/survey
+- `get_stage_sales_daily(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/sales-daily

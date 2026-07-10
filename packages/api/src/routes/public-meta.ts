@@ -3,6 +3,8 @@ import { eq, and, gte, lte, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   projects,
+  funnels,
+  funnelStages,
   metaAdInsightsDaily,
   metaAdCreativesCache,
 } from "../db/schema.js";
@@ -490,6 +492,96 @@ export default fp(async function publicMetaRoutes(fastify) {
 
       return {
         projectId,
+        range: { from, to },
+        partial: days.length < daysInRange(from, to),
+        lastSyncedAt: lastSyncedAt ? (lastSyncedAt as Date).toISOString() : null,
+        days,
+      };
+    }
+  );
+
+  // ---- GET /api/public/meta/v1/projects/:projectId/stages/:stageId/daily ----
+  // Auditoria da metodologia (Tier 1.2): o /daily de projeto mistura funis e
+  // evergreen no mesmo balde. Esta variante agrega SÓ as campanhas vinculadas
+  // à ETAPA (funnel_stages.campaigns) — mídia isolada por etapa, sem contaminação.
+  const stageDailyParam = z.object({ projectId: z.string().uuid(), stageId: z.string().uuid() });
+  fastify.get<{ Params: z.infer<typeof stageDailyParam>; Querystring: z.infer<typeof rangeQuerySchema> }>(
+    "/api/public/meta/v1/projects/:projectId/stages/:stageId/daily",
+    { preHandler: requireScope(PUBLIC_READ_SCOPE) },
+    async (request, reply) => {
+      const params = stageDailyParam.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos", code: "BAD_REQUEST" });
+      const query = rangeQuerySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Parâmetros inválidos", code: "BAD_REQUEST", details: query.error.flatten().fieldErrors });
+
+      const { projectId, stageId } = params.data;
+      const [stage] = await fastify.db
+        .select({ id: funnelStages.id, name: funnelStages.name, campaigns: funnelStages.campaigns })
+        .from(funnelStages)
+        .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+        .where(and(eq(funnelStages.id, stageId), eq(funnels.projectId, projectId)))
+        .limit(1);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada", code: "NOT_FOUND" });
+
+      const campaignIds = ((stage.campaigns ?? []) as { id: string }[]).map((c) => c.id);
+      const { from, to } = resolveRange(query.data.from, query.data.to);
+
+      // Etapa sem campanha vinculada = série vazia (não é erro — etapa orgânica).
+      if (campaignIds.length === 0) {
+        return {
+          projectId,
+          stageId,
+          stageName: stage.name,
+          campaignIds: [],
+          range: { from, to },
+          partial: true,
+          lastSyncedAt: null,
+          days: [],
+        };
+      }
+
+      const rows = (await fastify.db
+        .select({
+          dateStart: metaAdInsightsDaily.dateStart,
+          spend: metaAdInsightsDaily.spend,
+          impressions: metaAdInsightsDaily.impressions,
+          reach: metaAdInsightsDaily.reach,
+          clicks: metaAdInsightsDaily.clicks,
+          actions: metaAdInsightsDaily.actions,
+          actionValues: metaAdInsightsDaily.actionValues,
+          lastSyncedAt: metaAdInsightsDaily.lastSyncedAt,
+        })
+        .from(metaAdInsightsDaily)
+        .where(
+          and(
+            eq(metaAdInsightsDaily.projectId, projectId),
+            inArray(metaAdInsightsDaily.campaignId, campaignIds),
+            gte(metaAdInsightsDaily.dateStart, from),
+            lte(metaAdInsightsDaily.dateStart, to)
+          )
+        )) as InsightRow[];
+
+      const byDay = new Map<string, MetricAgg>();
+      let lastSyncedAt: Date | null = null;
+      for (const row of rows) {
+        let agg = byDay.get(row.dateStart);
+        if (!agg) {
+          agg = emptyAgg();
+          byDay.set(row.dateStart, agg);
+        }
+        accumulate(agg, row);
+        if (agg.lastSyncedAt && (!lastSyncedAt || agg.lastSyncedAt > lastSyncedAt)) lastSyncedAt = agg.lastSyncedAt;
+      }
+
+      const days = [...byDay.entries()]
+        .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+        .map(([date, agg]) => ({ date, ...deriveMetrics(agg) }));
+
+      return {
+        projectId,
+        stageId,
+        stageName: stage.name,
+        campaignIds,
         range: { from, to },
         partial: days.length < daysInRange(from, to),
         lastSyncedAt: lastSyncedAt ? (lastSyncedAt as Date).toISOString() : null,

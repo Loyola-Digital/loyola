@@ -152,4 +152,107 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
         )
       )
   );
+
+  // ---- Dados Diários (Meta) ----
+  server.registerTool(
+    "get_daily",
+    {
+      title: "Dados Diários (Meta) do projeto",
+      description:
+        "Série diária agregada do projeto INTEIRO (metade Meta de 'Dados Diários'): spend, impressions, clicks, ctr, cpc, cpm, leads, cpl, landingPageViews, connectRate, etc. por dia. Combine por `date` com get_stage_sales_daily para o 'Dados Diários' completo e o ROAS REAL.",
+      inputSchema: {
+        projectId: z.string().uuid().describe("ID do projeto (de list_projects)."),
+        from: fromField,
+        to: toField,
+      },
+    },
+    async ({ projectId, from, to }) =>
+      run(() =>
+        client.get(`/api/public/meta/v1/projects/${encodeURIComponent(projectId)}/daily`, {
+          from,
+          to,
+        })
+      )
+  );
+
+  // ---- Dados Diários (Meta) POR ETAPA — mídia isolada, sem contaminação ----
+  server.registerTool(
+    "get_stage_daily",
+    {
+      title: "Dados Diários (Meta) da ETAPA",
+      description:
+        "Série diária Meta agregada SÓ das campanhas vinculadas à etapa (sem contaminação de outros funis/evergreen — auditoria Tier 1.2). Mesmas métricas do get_daily (spend com imposto, impressions, clicks, ctr, cpl, connectRate...). PREFIRA este ao get_daily quando analisar um lançamento/etapa específica. `campaignIds` no retorno mostra o que entrou no balde; etapa sem campanha vinculada retorna days:[].",
+      inputSchema: {
+        projectId: z.string().uuid().describe("ID do projeto (de list_projects)."),
+        stageId: z.string().describe("ID da etapa (de list_stages)."),
+        from: fromField,
+        to: toField,
+      },
+    },
+    async ({ projectId, stageId, from, to }) =>
+      run(() =>
+        client.get(
+          `/api/public/meta/v1/projects/${encodeURIComponent(projectId)}/stages/${encodeURIComponent(stageId)}/daily`,
+          { from, to }
+        )
+      )
+  );
+
+  // ---- Etapa: leads por origem / pesquisa / vendas ----
+  server.registerTool(
+    "get_stage_leads_summary",
+    {
+      title: "Leads por origem × temperatura (etapa)",
+      description:
+        "Splits de LEADS de uma etapa por origem (Pago/Orgânico/Sem Track) × temperatura (quente/frio) + leads únicos (dedup e-mail/telefone). Só contagens (zero PII). Use o stageId de list_stages. Retorna {semDados:true} se a etapa não tem planilha de leads.",
+      inputSchema: {
+        projectId: z.string().uuid().describe("ID do projeto (de list_projects)."),
+        stageId: z.string().describe("ID da etapa (de list_stages)."),
+      },
+    },
+    async ({ projectId, stageId }) =>
+      run(() =>
+        client.get(
+          `/api/public/v1/projects/${encodeURIComponent(projectId)}/stages/${encodeURIComponent(stageId)}/leads-summary`
+        )
+      )
+  );
+
+  server.registerTool(
+    "get_stage_survey",
+    {
+      title: "Pesquisa de qualificação (etapa)",
+      description:
+        "Distribuições da pesquisa de qualificação de uma etapa por pergunta (renda, Faixa A/B/C/D, profissão, escolaridade, ...) no total e por origem, MAIS a quebra por criativo em `byAdId` (cruze pelo adId com get_creative_performance para achar o criativo que traz público mais qualificado). Só contagens (zero PII). Retorna {semDados:true} se a etapa não tem pesquisa.",
+      inputSchema: {
+        projectId: z.string().uuid().describe("ID do projeto (de list_projects)."),
+        stageId: z.string().describe("ID da etapa (de list_stages)."),
+      },
+    },
+    async ({ projectId, stageId }) =>
+      run(() =>
+        client.get(
+          `/api/public/v1/projects/${encodeURIComponent(projectId)}/stages/${encodeURIComponent(stageId)}/survey`
+        )
+      )
+  );
+
+  server.registerTool(
+    "get_stage_sales_daily",
+    {
+      title: "Vendas diárias por origem (etapa)",
+      description:
+        "Vendas diárias de uma etapa por origem: faturamento (bruto/líquido) e ingressos por dia × origem (Pago/Orgânico/Sem Track). O ROAS REAL = faturamentoBruto ÷ investimento (combine com get_daily) — NÃO use o `roas` do pixel para decisões de receita. Só contagens (zero PII). Retorna {semDados:true} se a etapa não tem vendas.",
+      inputSchema: {
+        projectId: z.string().uuid().describe("ID do projeto (de list_projects)."),
+        stageId: z.string().describe("ID da etapa (de list_stages)."),
+      },
+    },
+    async ({ projectId, stageId }) =>
+      run(() =>
+        client.get(
+          `/api/public/v1/projects/${encodeURIComponent(projectId)}/stages/${encodeURIComponent(stageId)}/sales-daily`
+        )
+      )
+  );
 }
