@@ -229,7 +229,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         cutoffStart.setDate(cutoffStart.getDate() - query.data.days);
       }
 
-      // Dedup por transactionId quando mapeado, senão por email (Story 28.4 pattern)
+      // Dedup por transactionId quando mapeado, senão por email (Story 28.4 pattern).
       const dedupMap = new Map<
         string,
         {
@@ -240,12 +240,21 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
           utmMedium: string;
           utmContent: string;
           utmCampaign: string;
-          status: string;
           lastDate: Date | null;
         }
       >();
 
+      // Reembolsos/chargebacks são contados por TRANSAÇÃO (txId) ou por LINHA
+      // quando não há txId — NUNCA colapsados por email. Se caíssem na dedup por
+      // email, vários reembolsos do mesmo cliente virariam um só (bug: 51 → 12).
+      const refundMap = new Map<string, { bruto: number; liquido: number }>();
+      // txIds reembolsados → remove a linha "paid" pareada da mesma transação
+      // (planilhas que trazem paid + refunded como linhas separadas).
+      const refundedTxIds = new Set<string>();
+
+      let rowIndex = -1;
       for (const row of rows) {
+        rowIndex += 1;
         const email = (row[emailIdx] ?? "").trim().toLowerCase();
         if (!email) continue;
 
@@ -267,6 +276,21 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         const status = hasStatusCol ? (row[statusIdx] ?? "").trim() : "";
 
         const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
+
+        // Reembolso/chargeback: fora da dedup por email.
+        if (isRefundBucket(classifyRefundStatus(status, hasStatusCol))) {
+          const refundKey = txId ? `tx|${txId}` : `row|${rowIndex}`;
+          const ex = refundMap.get(refundKey);
+          if (ex) {
+            ex.bruto += bruto;
+            ex.liquido += liquido;
+          } else {
+            refundMap.set(refundKey, { bruto, liquido });
+          }
+          if (txId) refundedTxIds.add(txId);
+          continue;
+        }
+
         const dedupKey = txId ? `tx|${txId}` : `email|${email}`;
 
         const existing = dedupMap.get(dedupKey);
@@ -279,25 +303,28 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
             existing.utmMedium = utmMedium;
             existing.utmContent = utmContent;
             existing.utmCampaign = utmCampaign;
-            // Status vale o da linha mais recente da transação (paid → refunded).
-            existing.status = status;
             existing.lastDate = rowDate;
-          } else if (!existing.lastDate && !existing.status && status) {
-            // Sem datas para desempatar: preserva o primeiro status não-vazio.
-            existing.status = status;
           }
         } else {
-          dedupMap.set(dedupKey, { bruto, liquido, forma, utmSource, utmMedium, utmContent, utmCampaign, status, lastDate: rowDate });
+          dedupMap.set(dedupKey, { bruto, liquido, forma, utmSource, utmMedium, utmContent, utmCampaign, lastDate: rowDate });
         }
       }
 
-      if (dedupMap.size === 0) return { ...EMPTY_SALES_DATA, semDados: false };
+      // Remove das vendas as transações reembolsadas (paid + refunded pareados por txId).
+      for (const txId of refundedTxIds) dedupMap.delete(`tx|${txId}`);
+
+      let reembolsoBruto = 0;
+      let reembolsoLiquido = 0;
+      for (const r of refundMap.values()) {
+        reembolsoBruto += r.bruto;
+        reembolsoLiquido += r.liquido;
+      }
+      const vendasReembolsadas = refundMap.size;
+
+      if (dedupMap.size === 0 && refundMap.size === 0) return { ...EMPTY_SALES_DATA, semDados: false };
 
       let totalBruto = 0;
       let totalLiquido = 0;
-      let reembolsoBruto = 0;
-      let reembolsoLiquido = 0;
-      let vendasReembolsadas = 0;
       let totalVendas = 0;
       const utmSourceMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const utmMediumMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
@@ -318,15 +345,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         m.set(key, e);
       };
 
-      for (const { bruto, liquido, forma, utmSource, utmMedium, utmContent, utmCampaign, status } of dedupMap.values()) {
-        // Reembolso/chargeback saem do faturamento e vão para o balde de reembolso.
-        // Não entram nos rankings de UTM/forma (não são receita realizada).
-        if (isRefundBucket(classifyRefundStatus(status, hasStatusCol))) {
-          reembolsoBruto += bruto;
-          reembolsoLiquido += liquido;
-          vendasReembolsadas += 1;
-          continue;
-        }
+      for (const { bruto, liquido, forma, utmSource, utmMedium, utmContent, utmCampaign } of dedupMap.values()) {
         totalVendas += 1;
         totalBruto += bruto;
         totalLiquido += liquido;
