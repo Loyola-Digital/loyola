@@ -116,9 +116,12 @@ export function buildAlertMessage(
   lines.push("");
   lines.push(`**Total do dia: ${fmtBRL(total)}** (${payments.length} parcela${payments.length !== 1 ? "s" : ""})`);
   if (mentionUsers.length > 0) {
-    // Menção inline (v3 chat) + followers no POST garantem a notificação.
+    // A API de chat não suporta menção inline no texto — os nomes aqui são
+    // visuais; a notificação real vem do assignee + followers no POST.
     lines.push("");
-    lines.push(mentionUsers.map((u) => `<@${u.id}>`).join(" ") + " — confirmar recebimento ✅");
+    lines.push(
+      `👤 ${mentionUsers.map((u) => `**@${u.username}**`).join(", ")} — confirmar recebimento ✅`,
+    );
   }
   return lines.join("\n");
 }
@@ -155,11 +158,12 @@ export async function runPaymentAlerts(fastify: FastifyInstance): Promise<AlertR
       const payments = await getDuePayments(fastify.db, alert.stageId, today);
       if (payments.length > 0) {
         const message = buildAlertMessage(stageName, today, payments, alert.mentionUsers);
-        await fastify.clickupService.sendChatMessage(
-          alert.channelId,
-          message,
-          alert.mentionUsers.map((u) => u.id),
-        );
+        await fastify.clickupService.sendChatMessage(alert.channelId, message, {
+          // Mensagem ATRIBUÍDA ao 1º colaborador (notificação real + item
+          // atribuído no chat); os demais entram como followers.
+          assignee: alert.mentionUsers[0]?.id,
+          followers: alert.mentionUsers.map((u) => u.id),
+        });
         summary.messagesSent += 1;
       }
       await fastify.db

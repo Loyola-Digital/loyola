@@ -197,15 +197,14 @@ export default fp(async function eventPaymentAlertsRoutes(fastify) {
         ? buildAlertMessage(stage.name, today, payments, alert.mentionUsers)
         : `🧪 **Teste do alerta de pagamentos — ${stage.name}**\nNenhuma parcela vence hoje (${today.split("-").reverse().join("/")}). Quando houver, a mensagem lista quem paga, valores e o total do dia.` +
           (alert.mentionUsers.length > 0
-            ? `\n${alert.mentionUsers.map((u) => `<@${u.id}>`).join(" ")}`
+            ? `\n👤 ${alert.mentionUsers.map((u) => `**@${u.username}**`).join(", ")}`
             : "");
 
     try {
-      await fastify.clickupService.sendChatMessage(
-        alert.channelId,
-        message,
-        alert.mentionUsers.map((u) => u.id),
-      );
+      await fastify.clickupService.sendChatMessage(alert.channelId, message, {
+        assignee: alert.mentionUsers[0]?.id,
+        followers: alert.mentionUsers.map((u) => u.id),
+      });
     } catch (err) {
       return reply.code(502).send({
         error: "Falha ao enviar no ClickUp",
