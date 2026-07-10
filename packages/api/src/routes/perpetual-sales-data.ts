@@ -8,6 +8,7 @@ import {
   projectMembers,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
 
 // ============================================================
 // Epic 29 Story 29.3 — agregação de vendas do perpétuo
@@ -67,10 +68,21 @@ const PLATFORM_FEE_RATES: Record<string, number> = {
   other: 0,
 };
 
-function applyPlatformFee(bruto: number, platform: string | null): number {
-  if (!platform) return bruto;
+// Componente de reembolso ESTIMADO embutido nas taxas acima (Kiwify/Hotmart).
+// Quando a planilha tem coluna de status, o reembolso é medido de verdade e já
+// sai do bruto — então removemos esta estimativa pra não descontar em dobro.
+const REFUND_FEE_ESTIMATE = 0.04;
+
+/**
+ * Fee efetivo da plataforma. Se a planilha traz status real de reembolso
+ * (hasStatusCol), remove o componente estimado de 4% — o reembolso real já
+ * foi subtraído do bruto.
+ */
+function effectivePlatformFeeRate(platform: string | null, hasStatusCol: boolean): number {
+  if (!platform) return 0;
   const rate = PLATFORM_FEE_RATES[platform] ?? 0;
-  return bruto * (1 - rate);
+  if (hasStatusCol && rate > 0) return Math.max(0, rate - REFUND_FEE_ESTIMATE);
+  return rate;
 }
 
 const EMPTY_SALES_DATA = {
@@ -78,6 +90,13 @@ const EMPTY_SALES_DATA = {
   faturamentoBruto: 0,
   faturamentoLiquido: 0,
   faturamentoLiquidoCalculado: 0,
+  // Reembolsos (refunded + chargeback) — já descontados do faturamento acima.
+  reembolsoBruto: 0,
+  reembolsoLiquido: 0,
+  vendasReembolsadas: 0,
+  // true quando a planilha tem coluna de status → reembolso medido de verdade
+  // (e o 4% estimado da plataforma é removido da Margem).
+  reembolsoReal: false,
   platform: null as string | null,
   feeRate: 0,
   ticketMedioBruto: 0,
@@ -167,6 +186,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         utm_content?: string;
         utm_campaign?: string;
         dataVenda?: string;
+        status?: string;
       };
 
       let sheetData;
@@ -192,6 +212,8 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       const utmContentIdx = colIdx(mapping.utm_content);
       const utmCampaignIdx = colIdx(mapping.utm_campaign);
       const dataIdx = colIdx(mapping.dataVenda);
+      const statusIdx = colIdx(mapping.status);
+      const hasStatusCol = statusIdx !== -1;
 
       if (emailIdx === -1) return { ...EMPTY_SALES_DATA, semDados: true };
 
@@ -218,6 +240,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
           utmMedium: string;
           utmContent: string;
           utmCampaign: string;
+          status: string;
           lastDate: Date | null;
         }
       >();
@@ -241,6 +264,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         const utmContent = sanitizeUtmValue(row[utmContentIdx]) ?? SEM_ORIGEM_LABEL;
         const utmCampaign = sanitizeUtmValue(row[utmCampaignIdx]) ?? SEM_ORIGEM_LABEL;
         const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
+        const status = hasStatusCol ? (row[statusIdx] ?? "").trim() : "";
 
         const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
         const dedupKey = txId ? `tx|${txId}` : `email|${email}`;
@@ -255,10 +279,15 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
             existing.utmMedium = utmMedium;
             existing.utmContent = utmContent;
             existing.utmCampaign = utmCampaign;
+            // Status vale o da linha mais recente da transação (paid → refunded).
+            existing.status = status;
             existing.lastDate = rowDate;
+          } else if (!existing.lastDate && !existing.status && status) {
+            // Sem datas para desempatar: preserva o primeiro status não-vazio.
+            existing.status = status;
           }
         } else {
-          dedupMap.set(dedupKey, { bruto, liquido, forma, utmSource, utmMedium, utmContent, utmCampaign, lastDate: rowDate });
+          dedupMap.set(dedupKey, { bruto, liquido, forma, utmSource, utmMedium, utmContent, utmCampaign, status, lastDate: rowDate });
         }
       }
 
@@ -266,6 +295,10 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
 
       let totalBruto = 0;
       let totalLiquido = 0;
+      let reembolsoBruto = 0;
+      let reembolsoLiquido = 0;
+      let vendasReembolsadas = 0;
+      let totalVendas = 0;
       const utmSourceMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const utmMediumMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const utmContentMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
@@ -285,7 +318,16 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         m.set(key, e);
       };
 
-      for (const { bruto, liquido, forma, utmSource, utmMedium, utmContent, utmCampaign } of dedupMap.values()) {
+      for (const { bruto, liquido, forma, utmSource, utmMedium, utmContent, utmCampaign, status } of dedupMap.values()) {
+        // Reembolso/chargeback saem do faturamento e vão para o balde de reembolso.
+        // Não entram nos rankings de UTM/forma (não são receita realizada).
+        if (isRefundBucket(classifyRefundStatus(status, hasStatusCol))) {
+          reembolsoBruto += bruto;
+          reembolsoLiquido += liquido;
+          vendasReembolsadas += 1;
+          continue;
+        }
+        totalVendas += 1;
         totalBruto += bruto;
         totalLiquido += liquido;
         addToMap(utmSourceMap, utmSource, bruto, liquido);
@@ -295,16 +337,19 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         addToMap(formaMap, forma, bruto, liquido);
       }
 
-      const totalVendas = dedupMap.size;
       const platform = spreadsheet.platform;
-      const feeRate = platform ? PLATFORM_FEE_RATES[platform] ?? 0 : 0;
-      const faturamentoLiquidoCalculado = applyPlatformFee(totalBruto, platform);
+      const feeRate = effectivePlatformFeeRate(platform, hasStatusCol);
+      const faturamentoLiquidoCalculado = totalBruto * (1 - feeRate);
 
       return {
         totalVendas,
         faturamentoBruto: totalBruto,
         faturamentoLiquido: totalLiquido,
         faturamentoLiquidoCalculado,
+        reembolsoBruto,
+        reembolsoLiquido,
+        vendasReembolsadas,
+        reembolsoReal: hasStatusCol,
         platform,
         feeRate,
         ticketMedioBruto: totalVendas > 0 ? totalBruto / totalVendas : 0,
@@ -352,6 +397,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         email: string;
         valorBruto?: string;
         dataVenda?: string;
+        status?: string;
       };
 
       let sheetData;
@@ -370,6 +416,8 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       const emailIdx = colIdx(mapping.email);
       const brutoIdx = colIdx(mapping.valorBruto);
       const dataIdx = colIdx(mapping.dataVenda);
+      const statusIdx = colIdx(mapping.status);
+      const hasStatusCol = statusIdx !== -1;
 
       if (dataIdx === -1) return { byDay: {} as Record<string, number>, semDados: true };
 
@@ -397,6 +445,9 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
           const email = (row[emailIdx] ?? "").trim();
           if (!email) continue;
         }
+
+        // Reembolso/chargeback não entram na série de receita no tempo.
+        if (hasStatusCol && isRefundBucket(classifyRefundStatus(row[statusIdx], hasStatusCol))) continue;
 
         const bruto = parseNumber(row[brutoIdx] ?? "");
         if (bruto <= 0) continue;

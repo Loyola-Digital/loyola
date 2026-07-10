@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileSpreadsheet, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,7 @@ const PERPETUAL_MAPPING_FIELDS: Array<{
   { key: "valorLiquido", label: "Valor Líquido" },
   { key: "dataVenda", label: "Data da Venda" },
   { key: "formaPagamento", label: "Forma de Pagamento" },
+  { key: "status", label: "Status do Pagamento (reembolso/chargeback)" },
   { key: "utm_source", label: "UTM Source (Origem)" },
   { key: "utm_medium", label: "UTM Medium" },
   { key: "utm_campaign", label: "UTM Campaign" },
@@ -62,13 +63,21 @@ export function PerpetualSpreadsheetWizardDialog({
   const [search, setSearch] = useState("");
   const [directLink, setDirectLink] = useState("");
 
-  // Pré-popula em edit mode (planilha já conectada)
+  // Pré-popula em edit mode (planilha já conectada). Hidrata UMA vez por
+  // abertura — senão um refetch do react-query (novo objeto `current`) reexecuta
+  // o efeito e apaga as edições em andamento do usuário.
+  const hydratedRef = useRef(false);
   useEffect(() => {
-    if (open && current) {
+    if (!open) {
+      hydratedRef.current = false;
+      return;
+    }
+    if (current && !hydratedRef.current) {
       setSelectedSpreadsheet({ id: current.spreadsheetId, name: current.spreadsheetName });
       setSelectedSheet(current.sheetName);
       setMapping(current.columnMapping ?? {});
       setPlatform(current.platform ?? "");
+      hydratedRef.current = true;
     }
   }, [open, current]);
 

@@ -34,6 +34,7 @@ const saleColumnMappingSchema = z.object({
   formaPagamento: z.string().optional(),
   canalOrigem: z.string().optional(),
   dataVenda: z.string().optional(),
+  status: z.string().optional(),
   utm_source: z.string().optional(),
   utm_medium: z.string().optional(),
   utm_campaign: z.string().optional(),
@@ -93,6 +94,7 @@ function shapeRow(row: typeof stageSalesSpreadsheets.$inferSelect) {
       formaPagamento?: string;
       canalOrigem?: string;
       dataVenda?: string;
+      status?: string;
       utm_source?: string;
       utm_medium?: string;
       utm_campaign?: string;
@@ -293,6 +295,78 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
         );
 
       return reply.code(204).send();
+    }
+  );
+
+  // PUT /api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-spreadsheets/by-id/:id
+  // Atualiza uma planilha específica por id (edita mapeamento sem remapear tudo).
+  fastify.put(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-spreadsheets/by-id/:id",
+    async (request, reply) => {
+      const byIdParamsSchema = paramsSchema.extend({ id: z.string().uuid() });
+      const params = byIdParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const stage = await getStage(params.data.stageId, params.data.funnelId, params.data.projectId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const [existing] = await fastify.db
+        .select()
+        .from(stageSalesSpreadsheets)
+        .where(
+          and(
+            eq(stageSalesSpreadsheets.id, params.data.id),
+            eq(stageSalesSpreadsheets.stageId, params.data.stageId)
+          )
+        )
+        .limit(1);
+      if (!existing) return reply.code(404).send({ error: "Planilha não encontrada" });
+
+      const updateSchema = z.object({
+        spreadsheetId: z.string().min(1),
+        spreadsheetName: z.string().min(1),
+        sheetName: z.string().min(1),
+        columnMapping: saleColumnMappingSchema,
+      });
+      const bodyResult = updateSchema.safeParse(request.body);
+      if (!bodyResult.success)
+        return reply.code(400).send({ error: "Dados inválidos", details: bodyResult.error.flatten() });
+      const body = bodyResult.data;
+
+      // Mesma validação de mapeamento do create (por subtype da planilha existente).
+      if (existing.subtype === "event_sales") {
+        if (!body.columnMapping.customerName || !body.columnMapping.valorBruto)
+          return reply.code(400).send({ error: "Mapeie as colunas de Nome e Valor" });
+      } else if (!body.columnMapping.email) {
+        return reply.code(400).send({ error: "Mapeie a coluna de Email" });
+      }
+
+      // Invalida cache da planilha antiga e da nova (caso tenha trocado de aba/arquivo).
+      clearSheetDataCache(existing.spreadsheetId, existing.sheetName);
+      clearSheetDataCache(body.spreadsheetId, body.sheetName);
+
+      const [row] = await fastify.db
+        .update(stageSalesSpreadsheets)
+        .set({
+          spreadsheetId: body.spreadsheetId,
+          spreadsheetName: body.spreadsheetName,
+          sheetName: body.sheetName,
+          columnMapping: body.columnMapping,
+        })
+        .where(
+          and(
+            eq(stageSalesSpreadsheets.id, params.data.id),
+            eq(stageSalesSpreadsheets.stageId, params.data.stageId)
+          )
+        )
+        .returning();
+
+      return reply.code(200).send(shapeRow(row));
     }
   );
 });
