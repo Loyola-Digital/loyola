@@ -2,7 +2,8 @@
   "name": "loyola-digital-x",
   "private": true,
   "scripts": {
-    "dev": "turbo dev",
+    "dev": "turbo dev --filter=!@loyola-x/mcp",
+    "dev:mcp": "turbo dev --filter=@loyola-x/mcp",
     "build": "turbo build",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck"
