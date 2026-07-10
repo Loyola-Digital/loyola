@@ -177,6 +177,52 @@ export interface PerpetualSalesDataDaily {
   semDados: boolean;
 }
 
+/**
+ * Story 29.22 — planilha de Upsell High Ticket conectada ao funil perpétuo.
+ */
+export interface PerpetualUpsellSpreadsheet {
+  id: string;
+  funnelId: string;
+  spreadsheetId: string;
+  spreadsheetName: string;
+  sheetName: string;
+  columnMapping: SaleColumnMapping;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Story 29.22 — cruzamento de cross-sell: quem comprou o perpétuo e DEPOIS
+ * comprou o high ticket (nunca antes). Match por email; reembolsos excluídos.
+ */
+export interface PerpetualUpsellData {
+  /** Compradores únicos do perpétuo (excl. reembolso) — denominador da taxa. */
+  basePerpetuo: number;
+  /** Compradores que fizeram ao menos 1 upsell HT válido (após o perpétuo). */
+  upsells: number;
+  /** Total de compras HT válidas (uma pessoa pode ter mais de uma). */
+  upsellTransacoes: number;
+  /** upsells / basePerpetuo × 100. */
+  taxaUpsell: number;
+  faturamentoHighTicket: number;
+  ticketMedioHighTicket: number;
+  compradores: {
+    email: string;
+    nome: string | null;
+    /** 1ª compra do perpétuo (ISO). */
+    dataPerpetuo: string | null;
+    /** 1ª compra HT válida (ISO). */
+    dataHighTicket: string | null;
+    valorHighTicket: number;
+    comprasHighTicket: number;
+  }[];
+  /** true quando não há planilha de vendas do perpétuo conectada. */
+  semPerpetuo: boolean;
+  /** true quando não há planilha de upsell HT conectada. */
+  semUpsell: boolean;
+  semDados: boolean;
+}
+
 export interface FunnelStage {
   id: string;
   funnelId: string;

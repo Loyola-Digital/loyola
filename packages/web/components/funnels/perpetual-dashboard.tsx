@@ -58,6 +58,7 @@ import {
 } from "@/lib/hooks/use-perpetual-sales-data";
 import type { Funnel, FunnelCampaign, StageType } from "@loyola-x/shared";
 import { StageSalesSection } from "./stage-sales-section";
+import { PerpetualUpsellSection } from "./perpetual-upsell-section";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
@@ -1372,6 +1373,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         endDate={customRange?.endDate}
       />
       )}
+
+      {/* ================================================================ */}
+      {/* UPSELL HIGH TICKET — Story 29.22: cross-sell perpétuo → high ticket */}
+      {/* ================================================================ */}
+      <div className="space-y-6 pt-2 border-t border-border/30">
+        <PerpetualUpsellSection projectId={projectId} funnelId={funnel.id} />
+      </div>
 
       {/* Dashboard Financeiro — apenas etapas pagas (Story 19.6) */}
       {stageType === "paid" && stageId && (
