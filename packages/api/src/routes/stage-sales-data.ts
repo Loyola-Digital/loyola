@@ -332,8 +332,17 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       // cliente nunca colapsam — só retries com transactionId idêntico.
       const emailMap = new Map<
         string,
-        { bruto: number; liquido: number; forma: string; canal: string; utmSource: string | null; utmMedium: string | null; utmTerm: string | null; utmContent: string | null; lastDate: Date | null; isRefund: boolean }
+        { bruto: number; liquido: number; forma: string; canal: string; utmSource: string | null; utmMedium: string | null; utmTerm: string | null; utmContent: string | null; lastDate: Date | null; txId: string }
       >();
+
+      // Reembolso NÃO deduplica: a pessoa compra (linha paid, id X) e ao reembolsar
+      // volta como NOVA linha refunded com o MESMO id X. Cada linha refunded/
+      // chargeback é um reembolso real (1:1 com as linhas). Fora do emailMap pra
+      // não cair no retry-guard (que trataria o refund como duplicata do paid).
+      let reembolsoBruto = 0;
+      let reembolsoLiquido = 0;
+      let vendasReembolsadas = 0;
+      const refundedTxIds = new Set<string>();
 
       let anyHasDateFilter = false;
 
@@ -421,8 +430,17 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           const utmTerm = utmTermIdx !== -1 ? sanitizeUtmValue(row[utmTermIdx]) : null;
           const utmContent = utmContentIdx !== -1 ? sanitizeUtmValue(row[utmContentIdx]) : null;
           const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
-          // Reembolso/chargeback (quando a planilha traz coluna de status).
-          const isRefund = statusIdx !== -1 && isRefundBucket(classifyRefundStatus(row[statusIdx], true));
+
+          const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
+
+          // Reembolso/chargeback: conta cada linha (sem dedup), fora do emailMap.
+          if (statusIdx !== -1 && isRefundBucket(classifyRefundStatus(row[statusIdx], true))) {
+            reembolsoBruto += bruto;
+            reembolsoLiquido += liquido;
+            vendasReembolsadas += 1;
+            if (txId) refundedTxIds.add(txId);
+            continue;
+          }
 
           // Cada linha da planilha é uma venda real. Só deduplicamos retries do
           // gateway (mesmo transactionId, quando a coluna está mapeada). Sem
@@ -434,7 +452,6 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           // txId pra order bumps (mesmo pedido, produtos diferentes: Basic +
           // Advanced) contarem como vendas separadas. Outras etapas (paid)
           // mantêm a dedup só por txId (1 pedido = 1 venda).
-          const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
           if (txId) anyUsedTxId = true; else anyUsedEmail = true;
           const product =
             stage.stageType === "sales" && productIdx !== -1
@@ -448,7 +465,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           if (txId && emailMap.has(dedupKey)) continue;
 
           validRowsForSheet += 1;
-          emailMap.set(dedupKey, { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate: rowDate, isRefund });
+          emailMap.set(dedupKey, { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate: rowDate, txId });
         }
 
         debugCounters.spreadsheetsLoaded.push({
@@ -463,15 +480,20 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       // declarada pra documentar a intenção, mesmo se não usada hoje).
       void anyHasDateFilter;
 
-      if (emailMap.size === 0) {
+      // Remove das vendas a linha "paid" cujo id foi reembolsado (a compra
+      // reembolsada não é receita realizada).
+      if (refundedTxIds.size > 0) {
+        for (const [key, entry] of emailMap) {
+          if (entry.txId && refundedTxIds.has(entry.txId)) emailMap.delete(key);
+        }
+      }
+
+      if (emailMap.size === 0 && vendasReembolsadas === 0) {
         return { ...EMPTY_RESPONSE, semDados: false };
       }
 
       let totalBruto = 0;
       let totalLiquido = 0;
-      let reembolsoBruto = 0;
-      let reembolsoLiquido = 0;
-      let vendasReembolsadas = 0;
       let vendasValidasPlanilha = 0;
       const canalMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const formaMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
@@ -496,15 +518,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         ingressosByDay[key] = e;
       };
 
-      for (const { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate, isRefund } of emailMap.values()) {
-        // Reembolso/chargeback saem do faturamento e não entram em rankings
-        // (canal/forma/utm) nem na contagem de ingressos.
-        if (isRefund) {
-          reembolsoBruto += bruto;
-          reembolsoLiquido += liquido;
-          vendasReembolsadas += 1;
-          continue;
-        }
+      for (const { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate } of emailMap.values()) {
         vendasValidasPlanilha += 1;
         totalBruto += bruto;
         totalLiquido += liquido;
@@ -1072,6 +1086,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       for (const spreadsheet of spreadsheets) {
         const mapping = spreadsheet.columnMapping as {
           email: string;
+          transactionId?: string;
           valorBruto?: string;
           dataVenda?: string;
           status?: string;
@@ -1093,11 +1108,24 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         }
 
         const emailIdx = colIdx(mapping.email);
+        const txIdx = colIdx(mapping.transactionId);
         const brutoIdx = colIdx(mapping.valorBruto);
         const dataIdx = colIdx(mapping.dataVenda);
         const statusIdx = colIdx(mapping.status);
 
         if (dataIdx === -1) continue;
+
+        // Pass 1: ids reembolsados → exclui tanto a linha refunded quanto a compra
+        // "paid" pareada (mesmo id) da série de receita no tempo.
+        const refundedTxIds = new Set<string>();
+        if (statusIdx !== -1 && txIdx !== -1) {
+          for (const row of rows) {
+            if (isRefundBucket(classifyRefundStatus(row[statusIdx], true))) {
+              const txId = (row[txIdx] ?? "").trim();
+              if (txId) refundedTxIds.add(txId);
+            }
+          }
+        }
 
       for (const row of rows) {
         const rowDate = parseDate(row[dataIdx]);
@@ -1112,8 +1140,15 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           if (!email) continue;
         }
 
-        // Reembolso/chargeback não entram na série de receita no tempo.
-        if (statusIdx !== -1 && isRefundBucket(classifyRefundStatus(row[statusIdx], true))) continue;
+        // Reembolso/chargeback não entram na série de receita no tempo — nem a
+        // linha refunded, nem a compra "paid" pareada (mesmo id).
+        if (statusIdx !== -1) {
+          if (isRefundBucket(classifyRefundStatus(row[statusIdx], true))) continue;
+          if (txIdx !== -1) {
+            const txId = (row[txIdx] ?? "").trim();
+            if (txId && refundedTxIds.has(txId)) continue;
+          }
+        }
 
         const bruto = parseNumber(row[brutoIdx] ?? "");
         if (bruto <= 0) continue;
