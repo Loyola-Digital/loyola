@@ -392,22 +392,27 @@ export default fp(async function clickupService(fastify) {
 
   async function getChatChannels(): Promise<Array<{ id: string; name: string }>> {
     const teamId = await resolveTeamId();
-    const out: Array<{ id: string; name: string }> = [];
+    // Map por id = dedup (se a API repetir item entre páginas, não duplica).
+    const byId = new Map<string, { id: string; name: string }>();
     let cursor: string | undefined;
     // Paginação defensiva (máx. 5 páginas de 100 — canais de verdade são poucos).
+    // O parâmetro de página é `cursor` (o `next_cursor` só existe na RESPOSTA —
+    // mandar com o nome errado fazia a API repetir a 1ª página: canais 5x).
     for (let page = 0; page < 5; page++) {
-      const qs = cursor ? `?limit=100&next_cursor=${encodeURIComponent(cursor)}` : "?limit=100";
+      const qs = cursor ? `?limit=100&cursor=${encodeURIComponent(cursor)}` : "?limit=100";
       const data = await fetchApiV3<{
-        data?: Array<{ id: string; name?: string; type?: string }>;
+        data?: Array<{ id: string; name?: string; type?: string; archived?: boolean }>;
         next_cursor?: string | null;
       }>(`/workspaces/${teamId}/chat/channels${qs}`);
       for (const ch of data.data ?? []) {
-        if (ch.type === "CHANNEL" && ch.name) out.push({ id: ch.id, name: ch.name });
+        if (ch.type === "CHANNEL" && ch.name && !ch.archived) {
+          byId.set(ch.id, { id: ch.id, name: ch.name });
+        }
       }
       if (!data.next_cursor) break;
       cursor = data.next_cursor;
     }
-    return out.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }
 
   async function sendChatMessage(
