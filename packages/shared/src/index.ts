@@ -45,6 +45,8 @@ export type {
   SalesPlatform,
   PerpetualSalesData,
   PerpetualSalesDataDaily,
+  PerpetualUpsellSpreadsheet,
+  PerpetualUpsellData,
   FunnelStage,
   StageSalesData,
   Funnel,

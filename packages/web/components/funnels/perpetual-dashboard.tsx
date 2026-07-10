@@ -13,6 +13,7 @@ import {
   FileSpreadsheet,
   CheckCircle2,
   Undo2,
+  TrendingUp,
 } from "lucide-react";
 import {
   LineChart,
@@ -58,6 +59,9 @@ import {
 } from "@/lib/hooks/use-perpetual-sales-data";
 import type { Funnel, FunnelCampaign, StageType } from "@loyola-x/shared";
 import { StageSalesSection } from "./stage-sales-section";
+import { PerpetualUpsellSection } from "./perpetual-upsell-section";
+import { PerpetualUpsellWizardDialog } from "./perpetual-upsell-wizard-dialog";
+import { usePerpetualUpsellSpreadsheet } from "@/lib/hooks/use-perpetual-upsell";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
@@ -420,6 +424,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const [granularity, setGranularity] = useState<ChartGranularity>("day");
   const [showCampaignManager, setShowCampaignManager] = useState(false);
   const [showSpreadsheetWizard, setShowSpreadsheetWizard] = useState(false);
+  const [showUpsellWizard, setShowUpsellWizard] = useState(false);
   const [tableFilter, setTableFilter] = useState<"campaign" | "adset" | "ad">("campaign");
   // Story 29.19: ordenação de colunas + largura da coluna Dimensão no Detalhamento
   const [sortCol, setSortCol] = useState<string | null>(null);
@@ -446,6 +451,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     document.addEventListener("mouseup", onUp);
   };
   const { data: perpetualSpreadsheet } = usePerpetualSpreadsheet(projectId, funnel.id);
+  const { data: upsellSpreadsheet } = usePerpetualUpsellSpreadsheet(projectId, funnel.id);
   const { data: salesData } = usePerpetualSalesData(
     projectId,
     funnel.id,
@@ -994,6 +1000,25 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
               </>
             )}
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className={`gap-1.5 text-xs ${upsellSpreadsheet ? "border-purple-500/40 text-purple-400 hover:text-purple-300" : ""}`}
+            onClick={() => setShowUpsellWizard(true)}
+          >
+            {upsellSpreadsheet ? (
+              <>
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span className="max-w-[160px] truncate">HT: {upsellSpreadsheet.spreadsheetName}</span>
+                <span className="text-muted-foreground/70">(editar)</span>
+              </>
+            ) : (
+              <>
+                <TrendingUp className="h-3.5 w-3.5" />
+                Conectar High Ticket
+              </>
+            )}
+          </Button>
         </div>
         <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setShowCampaignManager(!showCampaignManager)}>
           <Settings2 className="h-3.5 w-3.5" />
@@ -1007,6 +1032,14 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         current={perpetualSpreadsheet ?? null}
         open={showSpreadsheetWizard}
         onOpenChange={setShowSpreadsheetWizard}
+      />
+
+      <PerpetualUpsellWizardDialog
+        projectId={projectId}
+        funnelId={funnel.id}
+        current={upsellSpreadsheet ?? null}
+        open={showUpsellWizard}
+        onOpenChange={setShowUpsellWizard}
       />
 
       {showCampaignManager && pickerData && (
@@ -1372,6 +1405,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         endDate={customRange?.endDate}
       />
       )}
+
+      {/* ================================================================ */}
+      {/* UPSELL HIGH TICKET — Story 29.22: cross-sell perpétuo → high ticket */}
+      {/* ================================================================ */}
+      <div className="space-y-6 pt-2 border-t border-border/30">
+        <PerpetualUpsellSection projectId={projectId} funnelId={funnel.id} />
+      </div>
 
       {/* Dashboard Financeiro — apenas etapas pagas (Story 19.6) */}
       {stageType === "paid" && stageId && (

@@ -56,6 +56,8 @@ import sellerAliasesRoutes from "./routes/seller-aliases.js";
 import manualSalesRoutes from "./routes/manual-sales.js";
 import perpetualSpreadsheetsRoutes from "./routes/perpetual-spreadsheets.js";
 import perpetualSalesDataRoutes from "./routes/perpetual-sales-data.js";
+import perpetualUpsellSpreadsheetsRoutes from "./routes/perpetual-upsell-spreadsheets.js";
+import perpetualUpsellDataRoutes from "./routes/perpetual-upsell-data.js";
 import sprintDashboardRoutes from "./routes/sprint-dashboard.js";
 import creativeRevenueRoutes from "./routes/creative-revenue.js";
 import metaAdsComparisonRoutes from "./routes/meta-ads-comparison.js";
@@ -158,6 +160,8 @@ export async function buildServer() {
   await app.register(manualSalesRoutes);
   await app.register(perpetualSpreadsheetsRoutes);
   await app.register(perpetualSalesDataRoutes);
+  await app.register(perpetualUpsellSpreadsheetsRoutes);
+  await app.register(perpetualUpsellDataRoutes);
   await app.register(sprintDashboardRoutes);
   await app.register(creativeRevenueRoutes);
   await app.register(metaAdsComparisonRoutes);
