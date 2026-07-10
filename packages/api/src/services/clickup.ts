@@ -34,8 +34,16 @@ interface ClickUpService {
   // ---- Story 38.3: chat (API v3) + membros — alerta de pagamentos ----
   /** Canais de chat do workspace (só type CHANNEL). */
   getChatChannels(): Promise<Array<{ id: string; name: string }>>;
-  /** Envia mensagem markdown num canal; followers são notificados. */
-  sendChatMessage(channelId: string, content: string, followers?: string[]): Promise<void>;
+  /**
+   * Envia mensagem markdown num canal. A API de chat NÃO suporta menção
+   * inline no texto (feature request aberta) — a notificação real vem de
+   * `assignee` (mensagem atribuída) + `followers` (até 10).
+   */
+  sendChatMessage(
+    channelId: string,
+    content: string,
+    options?: { followers?: string[]; assignee?: string },
+  ): Promise<void>;
   /** Membros do workspace (pra escolher quem mencionar). */
   getWorkspaceMembers(): Promise<Array<{ id: string; username: string; email: string | null }>>;
 }
@@ -405,7 +413,7 @@ export default fp(async function clickupService(fastify) {
   async function sendChatMessage(
     channelId: string,
     content: string,
-    followers?: string[],
+    options?: { followers?: string[]; assignee?: string },
   ): Promise<void> {
     const teamId = await resolveTeamId();
     const body: Record<string, unknown> = {
@@ -413,7 +421,10 @@ export default fp(async function clickupService(fastify) {
       content_format: "text/md",
       content,
     };
-    if (followers && followers.length > 0) body.followers = followers;
+    if (options?.assignee) body.assignee = options.assignee;
+    if (options?.followers && options.followers.length > 0) {
+      body.followers = options.followers.slice(0, 10); // limite da API
+    }
     await fetchApiV3(`/workspaces/${teamId}/chat/channels/${encodeURIComponent(channelId)}/messages`, {
       method: "POST",
       body: JSON.stringify(body),
