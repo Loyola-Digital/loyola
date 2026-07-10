@@ -12,6 +12,7 @@ import {
   Settings2,
   FileSpreadsheet,
   CheckCircle2,
+  Undo2,
 } from "lucide-react";
 import {
   LineChart,
@@ -1074,6 +1075,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                 spend={m.totalSpend}
                 margin={m.margin}
                 platform={usingSpreadsheet ? salesData?.platform : null}
+                reembolsoReal={usingSpreadsheet ? (salesData?.reembolsoReal ?? false) : false}
+                reembolsoBruto={usingSpreadsheet ? (salesData?.reembolsoBruto ?? 0) : 0}
               >
                 <KpiCard icon={DollarSign} label="Margem" value={fmtCurrency(m.margin)} hintTooltip fromSheet={fromSheet} signValue={m.margin} />
               </MarginBreakdownTooltip>
@@ -1084,6 +1087,25 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           );
         })()
       ) : <EmptyState />}
+
+      {/* ================================================================ */}
+      {/* REEMBOLSOS — status refunded/chargeback já descontados da Receita */}
+      {/* ================================================================ */}
+      {usingSpreadsheet && salesData && salesData.reembolsoBruto > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+            <Undo2 className="h-5 w-5" />
+          </div>
+          <div className="flex-1">
+            <div className="text-sm font-medium text-amber-700 dark:text-amber-300">
+              Reembolsos {fmtCurrency(salesData.reembolsoBruto)}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {fmtNumber(salesData.vendasReembolsadas)} venda(s) com status reembolsado/chargeback — já descontado(s) da Receita e das Vendas.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ================================================================ */}
       {/* TAXAS DE CONVERSÃO                                               */}
@@ -1407,17 +1429,28 @@ function MarginBreakdownTooltip({
   spend,
   margin,
   platform,
+  reembolsoReal = false,
+  reembolsoBruto = 0,
   children,
 }: {
   receitaBruta: number | null | undefined;
   spend: number | null | undefined;
   margin: number | null | undefined;
   platform: string | null | undefined;
+  /** Quando true, o reembolso real já saiu do bruto → não aplica o 4% estimado. */
+  reembolsoReal?: boolean;
+  reembolsoBruto?: number;
   children: React.ReactNode;
 }) {
   const bruto = receitaBruta ?? 0;
   const sp = spend ?? 0;
-  const breakdown = platform ? PLATFORM_FEE_BREAKDOWN[platform] : null;
+  const rawBreakdown = platform ? PLATFORM_FEE_BREAKDOWN[platform] : null;
+  // Com reembolso real, tira a linha estimada de "Reembolso" (já descontado do bruto).
+  const breakdown = rawBreakdown
+    ? reembolsoReal
+      ? rawBreakdown.filter((b) => b.label !== "Reembolso")
+      : rawBreakdown
+    : null;
   const totalFeeRate = breakdown ? breakdown.reduce((s, b) => s + b.rate, 0) : 0;
   const receitaLiquida = bruto * (1 - totalFeeRate);
 
@@ -1434,6 +1467,13 @@ function MarginBreakdownTooltip({
               <span className="text-muted-foreground">Receita Bruta</span>
               <span className="tabular-nums font-medium">{fmtCurrency(bruto)}</span>
             </div>
+
+            {reembolsoReal && reembolsoBruto > 0 && (
+              <div className="flex justify-between gap-4 text-[11px]">
+                <span className="text-muted-foreground">Reembolsos reais (já descontados)</span>
+                <span className="tabular-nums text-amber-400">−{fmtCurrency(reembolsoBruto)}</span>
+              </div>
+            )}
 
             {breakdown && (
               <>

@@ -50,6 +50,12 @@ export interface SaleColumnMapping {
   canalOrigem?: string;
   dataVenda?: string;
   /**
+   * Status do pagamento (ex.: "paid"/"approved" vs "refunded"/"chargeback").
+   * Quando mapeado, o backend desconta reembolsos/chargebacks do faturamento.
+   * Opcional — sem esta coluna, todas as linhas contam como venda (legado).
+   */
+  status?: string;
+  /**
    * UTMs da venda (opcionais) — quando a planilha de vendas já registra as
    * UTMs da compra (Kiwify, Hotmart, etc.), mapear aqui permite atribuir
    * venda diretamente a ad/campanha sem depender do cruzamento por email
@@ -135,6 +141,19 @@ export interface PerpetualSalesData {
   faturamentoLiquido: number;
   /** Story 29.7: bruto × (1 − feeRate) — sempre confiável (calculado server) */
   faturamentoLiquidoCalculado: number;
+  /**
+   * Reembolsos (status refunded/chargeback) — já descontados do
+   * faturamento acima. Só > 0 quando a planilha tem coluna de status mapeada.
+   */
+  reembolsoBruto: number;
+  reembolsoLiquido: number;
+  vendasReembolsadas: number;
+  /**
+   * true quando a planilha tem coluna de status mapeada → reembolso é medido de
+   * verdade. Nesse caso o `feeRate` já vem SEM o componente de reembolso
+   * estimado (4%), pois o reembolso real já saiu do `faturamentoBruto`.
+   */
+  reembolsoReal: boolean;
   platform: SalesPlatform | null;
   feeRate: number;
   ticketMedioBruto: number;
@@ -183,6 +202,13 @@ export interface StageSalesData {
   totalVendas: number;
   faturamentoBruto: number;
   faturamentoLiquido: number;
+  /**
+   * Reembolsos (status refunded/chargeback) — já descontados do faturamento
+   * acima. Só > 0 quando a planilha tem coluna de status mapeada.
+   */
+  reembolsoBruto: number;
+  reembolsoLiquido: number;
+  vendasReembolsadas: number;
   ticketMedioBruto: number;
   ticketMedioLiquido: number;
   ticketMedioPago: number;

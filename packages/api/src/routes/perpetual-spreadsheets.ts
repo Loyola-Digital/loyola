@@ -36,6 +36,7 @@ const columnMappingSchema = z.object({
   formaPagamento: z.string().optional(),
   canalOrigem: z.string().optional(),
   dataVenda: z.string().optional(),
+  status: z.string().optional(),
   utm_source: z.string().optional(),
   utm_medium: z.string().optional(),
   utm_campaign: z.string().optional(),

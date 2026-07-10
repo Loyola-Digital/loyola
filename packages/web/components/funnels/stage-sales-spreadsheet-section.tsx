@@ -86,7 +86,7 @@ export function StageSalesSpreadsheetSection({
               className="h-7 gap-1 text-xs"
               onClick={() => setWizardOpen(true)}
             >
-              Reconectar
+              Editar
             </Button>
             <Button
               size="icon"
@@ -109,6 +109,7 @@ export function StageSalesSpreadsheetSection({
         subtype={subtype}
         open={wizardOpen}
         onOpenChange={setWizardOpen}
+        current={spreadsheet}
       />
 
       <AlertDialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>

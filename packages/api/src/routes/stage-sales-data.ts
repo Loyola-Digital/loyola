@@ -19,6 +19,7 @@ import {
   manualSales,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
 import {
   decryptAccountToken,
   resolveEntityNames,
@@ -147,6 +148,10 @@ const EMPTY_RESPONSE = {
   totalVendas: 0,
   faturamentoBruto: 0,
   faturamentoLiquido: 0,
+  // Reembolsos (refunded + chargeback) — já descontados do faturamento acima.
+  reembolsoBruto: 0,
+  reembolsoLiquido: 0,
+  vendasReembolsadas: 0,
   ticketMedioBruto: 0,
   ticketMedioLiquido: 0,
   ticketMedioPago: 0,
@@ -327,7 +332,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       // cliente nunca colapsam — só retries com transactionId idêntico.
       const emailMap = new Map<
         string,
-        { bruto: number; liquido: number; forma: string; canal: string; utmSource: string | null; utmMedium: string | null; utmTerm: string | null; utmContent: string | null; lastDate: Date | null }
+        { bruto: number; liquido: number; forma: string; canal: string; utmSource: string | null; utmMedium: string | null; utmTerm: string | null; utmContent: string | null; lastDate: Date | null; isRefund: boolean }
       >();
 
       let anyHasDateFilter = false;
@@ -357,6 +362,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           utm_content?: string;
           dataVenda?: string;
           productName?: string;
+          status?: string;
         };
 
         let sheetData;
@@ -386,6 +392,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         const utmContentIdx = colIdx(mapping.utm_content);
         const dataIdx = colIdx(mapping.dataVenda);
         const productIdx = colIdx(mapping.productName);
+        const statusIdx = colIdx(mapping.status);
 
         if (emailIdx === -1) continue;
         if (dataIdx !== -1) anyHasDateFilter = true;
@@ -414,6 +421,8 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           const utmTerm = utmTermIdx !== -1 ? sanitizeUtmValue(row[utmTermIdx]) : null;
           const utmContent = utmContentIdx !== -1 ? sanitizeUtmValue(row[utmContentIdx]) : null;
           const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
+          // Reembolso/chargeback (quando a planilha traz coluna de status).
+          const isRefund = statusIdx !== -1 && isRefundBucket(classifyRefundStatus(row[statusIdx], true));
 
           // Cada linha da planilha é uma venda real. Só deduplicamos retries do
           // gateway (mesmo transactionId, quando a coluna está mapeada). Sem
@@ -439,7 +448,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           if (txId && emailMap.has(dedupKey)) continue;
 
           validRowsForSheet += 1;
-          emailMap.set(dedupKey, { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate: rowDate });
+          emailMap.set(dedupKey, { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate: rowDate, isRefund });
         }
 
         debugCounters.spreadsheetsLoaded.push({
@@ -460,6 +469,10 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       let totalBruto = 0;
       let totalLiquido = 0;
+      let reembolsoBruto = 0;
+      let reembolsoLiquido = 0;
+      let vendasReembolsadas = 0;
+      let vendasValidasPlanilha = 0;
       const canalMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const formaMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const utmSourceMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
@@ -483,7 +496,16 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         ingressosByDay[key] = e;
       };
 
-      for (const { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate } of emailMap.values()) {
+      for (const { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate, isRefund } of emailMap.values()) {
+        // Reembolso/chargeback saem do faturamento e não entram em rankings
+        // (canal/forma/utm) nem na contagem de ingressos.
+        if (isRefund) {
+          reembolsoBruto += bruto;
+          reembolsoLiquido += liquido;
+          vendasReembolsadas += 1;
+          continue;
+        }
+        vendasValidasPlanilha += 1;
         totalBruto += bruto;
         totalLiquido += liquido;
         addIngresso(lastDate, classifyFonte(utmSource)); // Story 18.48
@@ -529,7 +551,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         utmContentMap.set(contentKey, contentEntry);
       }
 
-      const totalVendasPlanilha = emailMap.size;
+      const totalVendasPlanilha = vendasValidasPlanilha;
       const totalBrutoPlanilha = totalBruto;
       const totalLiquidoPlanilha = totalLiquido;
 
@@ -684,6 +706,9 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         totalVendas,
         faturamentoBruto: totalBruto,
         faturamentoLiquido: totalLiquido,
+        reembolsoBruto,
+        reembolsoLiquido,
+        vendasReembolsadas,
         ticketMedioBruto: totalVendas > 0 ? totalBruto / totalVendas : 0,
         ticketMedioLiquido: totalVendas > 0 ? totalLiquido / totalVendas : 0,
         // Story 19.9 ext: breakdown pro tooltip — quanto veio da planilha vs manual
@@ -1049,6 +1074,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           email: string;
           valorBruto?: string;
           dataVenda?: string;
+          status?: string;
         };
 
         let sheetData;
@@ -1069,6 +1095,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         const emailIdx = colIdx(mapping.email);
         const brutoIdx = colIdx(mapping.valorBruto);
         const dataIdx = colIdx(mapping.dataVenda);
+        const statusIdx = colIdx(mapping.status);
 
         if (dataIdx === -1) continue;
 
@@ -1084,6 +1111,9 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           const email = (row[emailIdx] ?? "").trim();
           if (!email) continue;
         }
+
+        // Reembolso/chargeback não entram na série de receita no tempo.
+        if (statusIdx !== -1 && isRefundBucket(classifyRefundStatus(row[statusIdx], true))) continue;
 
         const bruto = parseNumber(row[brutoIdx] ?? "");
         if (bruto <= 0) continue;

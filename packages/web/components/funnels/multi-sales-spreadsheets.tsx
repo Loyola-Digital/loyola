@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FileSpreadsheet, Plus, Trash2 } from "lucide-react";
+import { FileSpreadsheet, Plus, Trash2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -20,6 +20,7 @@ import {
   useDeleteSaleSpreadsheetById,
 } from "@/lib/hooks/use-stage-sales-spreadsheets";
 import { StageSalesWizardDialog } from "./stage-sales-wizard-dialog";
+import type { StageSalesSpreadsheet } from "@loyola-x/shared";
 
 interface MultiSalesSpreadsheetsProps {
   projectId: string;
@@ -38,7 +39,21 @@ export function MultiSalesSpreadsheets({
   stageId,
 }: MultiSalesSpreadsheetsProps) {
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [editing, setEditing] = useState<StageSalesSpreadsheet | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
+  function openAdd() {
+    setEditing(null);
+    setWizardOpen(true);
+  }
+  function openEdit(sheet: StageSalesSpreadsheet) {
+    setEditing(sheet);
+    setWizardOpen(true);
+  }
+  function handleWizardOpenChange(open: boolean) {
+    setWizardOpen(open);
+    if (!open) setEditing(null);
+  }
 
   const { data: all, isLoading } = useStageSalesSpreadsheets(projectId, funnelId, stageId);
   const deleteById = useDeleteSaleSpreadsheetById(projectId, funnelId, stageId);
@@ -61,7 +76,7 @@ export function MultiSalesSpreadsheets({
           size="sm"
           variant="outline"
           className="gap-1.5 h-8"
-          onClick={() => setWizardOpen(true)}
+          onClick={openAdd}
         >
           <Plus className="h-3.5 w-3.5" />
           Adicionar planilha
@@ -91,15 +106,26 @@ export function MultiSalesSpreadsheets({
                   <p className="text-xs text-muted-foreground truncate">Aba: {sheet.sheetName}</p>
                 </div>
               </div>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 text-destructive/70 hover:text-destructive shrink-0 ml-3"
-                onClick={() => setPendingDeleteId(sheet.id)}
-                aria-label="Desconectar"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+              <div className="flex items-center gap-1 shrink-0 ml-3">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={() => openEdit(sheet)}
+                  aria-label="Editar mapeamento"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 text-destructive/70 hover:text-destructive"
+                  onClick={() => setPendingDeleteId(sheet.id)}
+                  aria-label="Desconectar"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
           ))}
         </div>
@@ -111,7 +137,8 @@ export function MultiSalesSpreadsheets({
         stageId={stageId}
         subtype="sales"
         open={wizardOpen}
-        onOpenChange={setWizardOpen}
+        onOpenChange={handleWizardOpenChange}
+        current={editing}
       />
 
       <AlertDialog open={!!pendingDeleteId} onOpenChange={(open) => !open && setPendingDeleteId(null)}>

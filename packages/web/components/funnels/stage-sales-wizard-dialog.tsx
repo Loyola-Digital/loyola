@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileSpreadsheet, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,8 @@ import {
 import {
   useSpreadsheets, useSpreadsheetSheets, useSheetData,
 } from "@/lib/hooks/use-google-sheets";
-import { useConnectSaleSpreadsheet } from "@/lib/hooks/use-stage-sales-spreadsheets";
-import type { SaleColumnMapping, StageSalesSubtype } from "@loyola-x/shared";
+import { useConnectSaleSpreadsheet, useUpdateSaleSpreadsheetById } from "@/lib/hooks/use-stage-sales-spreadsheets";
+import type { SaleColumnMapping, StageSalesSubtype, StageSalesSpreadsheet } from "@loyola-x/shared";
 
 // ============================================================
 // SALE MAPPING FIELDS
@@ -40,6 +40,7 @@ const SALE_MAPPING_FIELDS: Array<{
   { key: "formaPagamento", label: "Forma de Pagamento" },
   { key: "canalOrigem", label: "Canal de Origem" },
   { key: "dataVenda", label: "Data da Venda" },
+  { key: "status", label: "Status do Pagamento (reembolso/chargeback)" },
   { key: "utm_source", label: "UTM Source" },
   { key: "utm_medium", label: "UTM Medium" },
   { key: "utm_campaign", label: "UTM Campaign" },
@@ -74,10 +75,12 @@ interface StageSalesWizardDialogProps {
   subtype: StageSalesSubtype;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Quando setado, abre em modo edição (pré-preenchido) e atualiza por id. */
+  current?: StageSalesSpreadsheet | null;
 }
 
 export function StageSalesWizardDialog({
-  projectId, funnelId, stageId, subtype, open, onOpenChange,
+  projectId, funnelId, stageId, subtype, open, onOpenChange, current = null,
 }: StageSalesWizardDialogProps) {
   const { data: spreadsheetsData, isLoading: spreadsheetsLoading } = useSpreadsheets();
   const [selectedSpreadsheet, setSelectedSpreadsheet] = useState<{ id: string; name: string } | null>(null);
@@ -85,6 +88,22 @@ export function StageSalesWizardDialog({
   const [mapping, setMapping] = useState<Partial<SaleColumnMapping>>({});
   const [search, setSearch] = useState("");
   const [directLink, setDirectLink] = useState("");
+
+  // Pré-popula em modo edição. Hidrata UMA vez por abertura pra não apagar
+  // edições em andamento quando o react-query refaz o fetch (novo `current`).
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      hydratedRef.current = false;
+      return;
+    }
+    if (current && !hydratedRef.current) {
+      setSelectedSpreadsheet({ id: current.spreadsheetId, name: current.spreadsheetName });
+      setSelectedSheet(current.sheetName);
+      setMapping(current.columnMapping ?? {});
+      hydratedRef.current = true;
+    }
+  }, [open, current]);
 
   const { data: sheetsData, isLoading: sheetsLoading } = useSpreadsheetSheets(
     selectedSpreadsheet?.id ?? null
@@ -94,6 +113,7 @@ export function StageSalesWizardDialog({
     selectedSheet
   );
   const connect = useConnectSaleSpreadsheet(projectId, funnelId, stageId);
+  const update = useUpdateSaleSpreadsheetById(projectId, funnelId, stageId);
 
   const spreadsheets = spreadsheetsData?.spreadsheets ?? [];
   const filtered = search
@@ -141,13 +161,38 @@ export function StageSalesWizardDialog({
 
   function handleSave() {
     if (!selectedSpreadsheet || !selectedSheet || !canSave) return;
+    const spreadsheetName = sheetsData?.name ?? selectedSpreadsheet.name;
+    const columnMapping = mapping as SaleColumnMapping;
+
+    if (current) {
+      update.mutate(
+        {
+          id: current.id,
+          spreadsheetId: selectedSpreadsheet.id,
+          spreadsheetName,
+          sheetName: selectedSheet,
+          columnMapping,
+        },
+        {
+          onSuccess: () => {
+            toast.success("Mapeamento atualizado!");
+            handleClose();
+          },
+          onError: (err) => {
+            toast.error(err instanceof Error ? err.message : "Erro ao atualizar planilha.");
+          },
+        }
+      );
+      return;
+    }
+
     connect.mutate(
       {
         subtype,
         spreadsheetId: selectedSpreadsheet.id,
-        spreadsheetName: sheetsData?.name ?? selectedSpreadsheet.name,
+        spreadsheetName,
         sheetName: selectedSheet,
-        columnMapping: mapping as SaleColumnMapping,
+        columnMapping,
       },
       {
         onSuccess: () => {
@@ -178,11 +223,13 @@ export function StageSalesWizardDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5 text-green-600" />
-            {step === "spreadsheet"
-              ? `Planilha de ${subtypeLabel} — selecione o arquivo`
-              : step === "sheet"
-                ? `Planilha de ${subtypeLabel} — selecione a aba`
-                : `Planilha de ${subtypeLabel} — mapear colunas`}
+            {current && step === "mapping"
+              ? `Planilha de ${subtypeLabel} — editar mapeamento`
+              : step === "spreadsheet"
+                ? `Planilha de ${subtypeLabel} — selecione o arquivo`
+                : step === "sheet"
+                  ? `Planilha de ${subtypeLabel} — selecione a aba`
+                  : `Planilha de ${subtypeLabel} — mapear colunas`}
           </DialogTitle>
         </DialogHeader>
 
@@ -358,8 +405,10 @@ export function StageSalesWizardDialog({
           )}
           <Button variant="outline" onClick={handleClose}>Cancelar</Button>
           {step === "mapping" && (
-            <Button onClick={handleSave} disabled={!canSave || connect.isPending}>
-              {connect.isPending ? "Salvando..." : "Conectar planilha"}
+            <Button onClick={handleSave} disabled={!canSave || connect.isPending || update.isPending}>
+              {connect.isPending || update.isPending
+                ? "Salvando..."
+                : current ? "Atualizar" : "Conectar planilha"}
             </Button>
           )}
         </DialogFooter>

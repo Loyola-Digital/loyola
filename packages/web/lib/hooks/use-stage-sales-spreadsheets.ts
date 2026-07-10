@@ -82,6 +82,34 @@ export function useDisconnectSaleSpreadsheet(
   });
 }
 
+export interface UpdateSaleSpreadsheetInput {
+  id: string;
+  spreadsheetId: string;
+  spreadsheetName: string;
+  sheetName: string;
+  columnMapping: SaleColumnMapping;
+}
+
+// Atualiza uma planilha específica por id (edita mapeamento sem remapear tudo).
+export function useUpdateSaleSpreadsheetById(
+  projectId: string,
+  funnelId: string,
+  stageId: string
+) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: UpdateSaleSpreadsheetInput) =>
+      apiClient<StageSalesSpreadsheet>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/sales-spreadsheets/by-id/${id}`,
+        { method: "PUT", body: JSON.stringify(data) }
+      ),
+    onSuccess: () => {
+      invalidateStageSalesData(queryClient, projectId, funnelId, stageId);
+    },
+  });
+}
+
 // Deleta planilha específica por id (etapa Vendas tem N planilhas com
 // subtype='sales'; subtype-only delete apagaria todas).
 export function useDeleteSaleSpreadsheetById(
