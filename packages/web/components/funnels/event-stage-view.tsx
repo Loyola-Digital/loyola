@@ -61,6 +61,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
 import { CampaignLogButton } from "@/components/funnels/campaign-log-link";
+import { EventPaymentAlertCard } from "@/components/funnels/event-payment-alert-card";
 import { SalesPlanTab } from "@/components/funnels/sales-plan-tab";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import {
@@ -449,8 +450,10 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
         </TabsContent>
 
         {/* CONFIGURAÇÃO — produtos (com turma) + closers + auto-matrícula */}
-        <TabsContent value="config" className="mt-6">
+        <TabsContent value="config" className="mt-6 space-y-6">
           <EventConfigTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
+          {/* Story 38.3 — alerta diário de pagamentos no chat do ClickUp */}
+          <EventPaymentAlertCard projectId={projectId} funnelId={funnelId} stageId={stage.id} />
         </TabsContent>
       </Tabs>
 

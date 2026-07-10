@@ -31,6 +31,13 @@ interface ClickUpService {
   updateTask(taskId: string, partial: UpdateTaskPartial): Promise<void>;
   /** Epic 31: status disponíveis pra uma lista (pra UI do builder). */
   getListStatuses(listId: string): Promise<Array<{ status: string; color: string; orderindex: number; type: string }>>;
+  // ---- Story 38.3: chat (API v3) + membros — alerta de pagamentos ----
+  /** Canais de chat do workspace (só type CHANNEL). */
+  getChatChannels(): Promise<Array<{ id: string; name: string }>>;
+  /** Envia mensagem markdown num canal; followers são notificados. */
+  sendChatMessage(channelId: string, content: string, followers?: string[]): Promise<void>;
+  /** Membros do workspace (pra escolher quem mencionar). */
+  getWorkspaceMembers(): Promise<Array<{ id: string; username: string; email: string | null }>>;
 }
 
 interface UpdateTaskPartial {
@@ -347,6 +354,89 @@ export default fp(async function clickupService(fastify) {
     return data.statuses ?? [];
   }
 
+  // ---- Story 38.3: chat (API v3) + membros ----------------------------------
+  // O chat vive na API v3 (workspaces/{id}/chat/...), diferente do resto (v2).
+  let cachedTeamId: string | null = null;
+  async function resolveTeamId(): Promise<string> {
+    if (cachedTeamId) return cachedTeamId;
+    const teams = await getTeams();
+    if (teams.length === 0) throw new Error("Nenhum workspace ClickUp acessível com este token");
+    cachedTeamId = teams[0].id;
+    return cachedTeamId;
+  }
+
+  async function fetchApiV3<T>(path: string, options?: RequestInit): Promise<T> {
+    if (!token) throw new Error("ClickUp not configured");
+    const response = await fetch(`https://api.clickup.com/api/v3${path}`, {
+      ...options,
+      headers: {
+        Authorization: token,
+        "Content-Type": "application/json",
+        ...options?.headers,
+      },
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`ClickUp API v3 error (${response.status}): ${text}`);
+    }
+    return response.json() as Promise<T>;
+  }
+
+  async function getChatChannels(): Promise<Array<{ id: string; name: string }>> {
+    const teamId = await resolveTeamId();
+    const out: Array<{ id: string; name: string }> = [];
+    let cursor: string | undefined;
+    // Paginação defensiva (máx. 5 páginas de 100 — canais de verdade são poucos).
+    for (let page = 0; page < 5; page++) {
+      const qs = cursor ? `?limit=100&next_cursor=${encodeURIComponent(cursor)}` : "?limit=100";
+      const data = await fetchApiV3<{
+        data?: Array<{ id: string; name?: string; type?: string }>;
+        next_cursor?: string | null;
+      }>(`/workspaces/${teamId}/chat/channels${qs}`);
+      for (const ch of data.data ?? []) {
+        if (ch.type === "CHANNEL" && ch.name) out.push({ id: ch.id, name: ch.name });
+      }
+      if (!data.next_cursor) break;
+      cursor = data.next_cursor;
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  }
+
+  async function sendChatMessage(
+    channelId: string,
+    content: string,
+    followers?: string[],
+  ): Promise<void> {
+    const teamId = await resolveTeamId();
+    const body: Record<string, unknown> = {
+      type: "message",
+      content_format: "text/md",
+      content,
+    };
+    if (followers && followers.length > 0) body.followers = followers;
+    await fetchApiV3(`/workspaces/${teamId}/chat/channels/${encodeURIComponent(channelId)}/messages`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function getWorkspaceMembers(): Promise<
+    Array<{ id: string; username: string; email: string | null }>
+  > {
+    // v2 /team retorna os members de cada workspace.
+    const data = await fetchApi<{
+      teams: Array<{ id: string; members?: Array<{ user: { id: number; username: string; email?: string } }> }>;
+    }>("/team");
+    const team = data.teams[0];
+    return (team?.members ?? [])
+      .map((m) => ({
+        id: String(m.user.id),
+        username: m.user.username,
+        email: m.user.email ?? null,
+      }))
+      .sort((a, b) => a.username.localeCompare(b.username, "pt-BR"));
+  }
+
   if (!token) {
     fastify.log.warn(
       "CLICKUP_API_TOKEN not set — ClickUp integration disabled",
@@ -370,5 +460,8 @@ export default fp(async function clickupService(fastify) {
     updateTaskStatus,
     updateTask,
     getListStatuses,
+    getChatChannels,
+    sendChatMessage,
+    getWorkspaceMembers,
   });
 });

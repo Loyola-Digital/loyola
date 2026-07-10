@@ -38,6 +38,11 @@ const envSchema = z.object({
   META_PERF_INTRADAY_ENABLED: z.enum(["true", "false"]).optional(),
   META_PERF_INTRADAY_MINUTES: z.coerce.number().int().min(1).max(720).optional(),
   META_PERF_INTRADAY_DAYS: z.coerce.number().int().min(1).max(90).optional(),
+  // Story 38.3: alerta diário de pagamentos (Evento Presencial) no chat do
+  // ClickUp. Hora local de São Paulo a partir da qual envia (default 8).
+  // PAYMENT_ALERT_ENABLED=false desliga (sempre desligado em NODE_ENV=test).
+  PAYMENT_ALERT_HOUR: z.coerce.number().int().min(0).max(23).optional(),
+  PAYMENT_ALERT_ENABLED: z.enum(["true", "false"]).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
