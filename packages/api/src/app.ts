@@ -77,6 +77,8 @@ import ga4Routes from "./routes/ga4.js";
 import npsRoutes from "./routes/nps.js";
 import debriefingsRoutes from "./routes/debriefings.js";
 import campaignLogRoutes from "./routes/campaign-log.js";
+import eventPaymentAlertsRoutes from "./routes/event-payment-alerts.js";
+import paymentAlertsSchedulerPlugin from "./plugins/payment-alerts-scheduler.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -119,6 +121,7 @@ export async function buildServer() {
   await app.register(metaNamesSchedulerPlugin);
   // Refresh diário da performance Meta no cache (Story 36.4)
   await app.register(metaPerfSchedulerPlugin);
+  await app.register(paymentAlertsSchedulerPlugin);
 
   // 6. Routes (last — consume services)
   await app.register(healthRoutes);
@@ -176,6 +179,7 @@ export async function buildServer() {
   await app.register(npsRoutes);
   await app.register(debriefingsRoutes);
   await app.register(campaignLogRoutes);
+  await app.register(eventPaymentAlertsRoutes);
 
   return app;
 }

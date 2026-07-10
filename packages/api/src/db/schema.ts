@@ -2020,6 +2020,36 @@ export const debriefings = pgTable(
 );
 
 // ============================================================
+// EVENT PAYMENT ALERTS (Story 38.3 — Evento Presencial)
+// ============================================================
+// Alerta diário no chat do ClickUp: quem deve pagar parcela HOJE (calendário
+// de pagamento da etapa de evento), mencionando colaboradores configurados.
+
+export const stageEventPaymentAlerts = pgTable("stage_event_payment_alerts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  stageId: uuid("stage_id")
+    .notNull()
+    .unique()
+    .references(() => funnelStages.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(true),
+  /** Canal de chat do ClickUp (v3) que recebe o aviso. */
+  channelId: text("channel_id").notNull(),
+  channelName: text("channel_name"),
+  /** Colaboradores mencionados: [{ id, username }]. */
+  mentionUsers: jsonb("mention_users")
+    .$type<{ id: string; username: string }[]>()
+    .notNull()
+    .default([]),
+  /** Última data (local SP) em que o check diário rodou — dedup do envio. */
+  lastSentDate: date("last_sent_date"),
+  createdBy: uuid("created_by")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ============================================================
 // CAMPAIGN LOG (EPIC-38 — Story 38.1)
 // ============================================================
 // Log de Campanha: registro fixo por funil das ações executadas na campanha
