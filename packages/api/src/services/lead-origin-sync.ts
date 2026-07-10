@@ -29,6 +29,11 @@ const SCOPE = "leads-origin";
 const ALIASES: Record<string, string[]> = {
   utmSource: ["utm_source", "utmsource", "fonte", "source", "origem"],
   utmTerm: ["utm_term", "utmterm", "termo", "term"],
+  // Story 39.2 (auditoria Tier 2.1): sem estas 3 o classificador não acha
+  // Closer nem separa Quente/Frio pela campanha.
+  utmMedium: ["utm_medium", "utmmedium", "medium", "midia", "medio"],
+  utmContent: ["utm_content", "utmcontent", "content", "conteudo", "criativo"],
+  utmCampaign: ["utm_campaign", "utmcampaign", "campaign", "campanha"],
   email: ["email", "e-mail", "emaillead", "enderecodeemail"],
   phone: ["telefone", "phone", "whatsapp", "celular", "fone", "tel", "whats", "numero"],
   date: ["data", "date", "timestamp", "carimbodedatahora", "carimbodedata", "datadecadastro", "datahora", "createdat"],
@@ -73,7 +78,33 @@ export interface LeadOriginPayload {
   byOrigin: { origem: Origem; leads: number; uniqueLeads: number }[];
   byTemperature: { temperatura: Temperatura; leads: number; uniqueLeads: number }[];
   byOriginTemp: { origem: Origem; temperatura: Temperatura; leads: number; uniqueLeads: number }[];
-  columnsResolved: { utmSource: boolean; utmTerm: boolean; email: boolean; phone: boolean };
+  /** Story 39.2: distribuição de leads por valor de cada UTM (top 30 + "(outros)";
+   * vazio vira "(vazio)"). Matéria-prima do classificador fino (Closer, IG, WPP...). */
+  byUtm: {
+    source: { value: string; leads: number }[];
+    medium: { value: string; leads: number }[];
+    campaign: { value: string; leads: number }[];
+    content: { value: string; leads: number }[];
+    term: { value: string; leads: number }[];
+  };
+  columnsResolved: {
+    utmSource: boolean;
+    utmTerm: boolean;
+    utmMedium: boolean;
+    utmContent: boolean;
+    utmCampaign: boolean;
+    email: boolean;
+    phone: boolean;
+  };
+}
+
+/** Top-N valores por contagem; o resto colapsa em "(outros)". */
+function topCounts(map: Map<string, number>, top = 30): { value: string; leads: number }[] {
+  const entries = [...map.entries()].sort((a, b) => b[1] - a[1]);
+  const head = entries.slice(0, top).map(([value, leads]) => ({ value, leads }));
+  const rest = entries.slice(top).reduce((s, [, n]) => s + n, 0);
+  if (rest > 0) head.push({ value: "(outros)", leads: rest });
+  return head;
 }
 
 /**
@@ -113,6 +144,9 @@ export async function computeLeadOriginForStage(
   const idx = {
     utmSource: findColIdx(sheet.headers, ALIASES.utmSource),
     utmTerm: findColIdx(sheet.headers, ALIASES.utmTerm),
+    utmMedium: findColIdx(sheet.headers, ALIASES.utmMedium),
+    utmContent: findColIdx(sheet.headers, ALIASES.utmContent),
+    utmCampaign: findColIdx(sheet.headers, ALIASES.utmCampaign),
     email: findColIdx(sheet.headers, ALIASES.email),
     phone: findColIdx(sheet.headers, ALIASES.phone),
     date: findColIdx(sheet.headers, ALIASES.date),
@@ -124,6 +158,18 @@ export async function computeLeadOriginForStage(
   const byOrigin = new Map<Origem, Bucket>();
   const byTemp = new Map<Temperatura, Bucket>();
   const byOT = new Map<string, Bucket>();
+  // Story 39.2: contagens cruas por valor de UTM (base do classificador fino).
+  const utmCounts = {
+    source: new Map<string, number>(),
+    medium: new Map<string, number>(),
+    campaign: new Map<string, number>(),
+    content: new Map<string, number>(),
+    term: new Map<string, number>(),
+  };
+  const bumpUtm = (map: Map<string, number>, raw: string) => {
+    const v = raw.toLowerCase() || "(vazio)";
+    map.set(v, (map.get(v) ?? 0) + 1);
+  };
   let total = 0;
   let minDate: string | null = null;
   let maxDate: string | null = null;
@@ -150,6 +196,12 @@ export async function computeLeadOriginForStage(
     bump(byTemp as Map<string, Bucket>, temperatura, key);
     bump(byOT, `${origem}|${temperatura}`, key);
 
+    bumpUtm(utmCounts.source, cell(row, idx.utmSource));
+    bumpUtm(utmCounts.medium, cell(row, idx.utmMedium));
+    bumpUtm(utmCounts.campaign, cell(row, idx.utmCampaign));
+    bumpUtm(utmCounts.content, cell(row, idx.utmContent));
+    bumpUtm(utmCounts.term, cell(row, idx.utmTerm));
+
     const d = cell(row, idx.date).slice(0, 10);
     if (d) {
       if (!minDate || d < minDate) minDate = d;
@@ -167,9 +219,19 @@ export async function computeLeadOriginForStage(
       const [origem, temperatura] = k.split("|") as [Origem, Temperatura];
       return { origem, temperatura, leads: b.leads, uniqueLeads: b.keys.size };
     }),
+    byUtm: {
+      source: topCounts(utmCounts.source),
+      medium: topCounts(utmCounts.medium),
+      campaign: topCounts(utmCounts.campaign),
+      content: topCounts(utmCounts.content),
+      term: topCounts(utmCounts.term),
+    },
     columnsResolved: {
       utmSource: idx.utmSource >= 0,
       utmTerm: idx.utmTerm >= 0,
+      utmMedium: idx.utmMedium >= 0,
+      utmContent: idx.utmContent >= 0,
+      utmCampaign: idx.utmCampaign >= 0,
       email: idx.email >= 0,
       phone: idx.phone >= 0,
     },

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { stageSalesSpreadsheets, funnelStages, funnels, publicMetricsCache } from "../db/schema.js";
 import { readSheetData } from "./google-sheets.js";
@@ -56,31 +56,53 @@ export interface SalesDailyPayload {
     ingressos: { pago: number; org: number; semTrack: number; total: number };
   }[];
   porOrigem: { origem: Origem; vendas: number; bruto: number; liquido: number }[];
+  /** Story 39.5 (parcial): quebra por produto (top 30) — base pra separar ingresso × order bump. */
+  porProduto: { produto: string; vendas: number; bruto: number; liquido: number }[];
+  /** Story 39.6: subtypes de planilha que entraram na conta (capture fica FORA). */
+  subtypesConsidered: string[];
 }
 
 type Mapping = {
   email?: string;
   transactionId?: string;
+  productName?: string;
   valorBruto?: string;
   valorLiquido?: string;
   utm_source?: string;
   dataVenda?: string;
 };
 
+// Story 39.6 (auditoria Tier 3.3): a etapa Vendas devolvia milhares de "vendas"
+// porque somava TODAS as planilhas do stage — inclusive CAPTAÇÃO. Vendas de
+// verdade = estes subtypes (capture fica fora).
+const SALES_SUBTYPES = ["main_product", "sales", "tmb", "event_sales"];
+
 export async function computeSalesDailyForStage(db: Database, stageId: string): Promise<SalesDailyPayload | null> {
   const sheets = await db
     .select({
       id: stageSalesSpreadsheets.id,
+      subtype: stageSalesSpreadsheets.subtype,
       spreadsheetId: stageSalesSpreadsheets.spreadsheetId,
       sheetName: stageSalesSpreadsheets.sheetName,
       columnMapping: stageSalesSpreadsheets.columnMapping,
     })
     .from(stageSalesSpreadsheets)
-    .where(eq(stageSalesSpreadsheets.stageId, stageId));
+    .where(
+      and(
+        eq(stageSalesSpreadsheets.stageId, stageId),
+        inArray(stageSalesSpreadsheets.subtype, SALES_SUBTYPES),
+      ),
+    );
   if (sheets.length === 0) return null;
 
-  // dedup igual ao stage-sales-data: chave por txId (ou índice da linha).
-  const sales = new Map<string, { bruto: number; liquido: number; utmSource: string | null; date: Date | null }>();
+  // Dedup por (txId + produto) — MESMA chave do all-sales do dashboard
+  // (manual-sales.ts): order bumps (mesmo pedido, produtos diferentes) contam
+  // como vendas separadas; retry literal (mesmo pedido+produto) colapsa.
+  const sales = new Map<
+    string,
+    { bruto: number; liquido: number; utmSource: string | null; date: Date | null; produto: string }
+  >();
+  const subtypesConsidered = new Set<string>();
 
   for (const sheet of sheets) {
     const mapping = (sheet.columnMapping ?? {}) as Mapping;
@@ -94,11 +116,13 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
     const col = (name: string | undefined): number => (name ? data.headers.indexOf(name) : -1);
     const emailIdx = col(mapping.email);
     const txIdx = col(mapping.transactionId);
+    const produtoIdx = col(mapping.productName);
     const brutoIdx = col(mapping.valorBruto);
     const liquidoIdx = col(mapping.valorLiquido);
     const utmSourceIdx = col(mapping.utm_source);
     const dataIdx = col(mapping.dataVenda);
     if (emailIdx === -1) continue;
+    subtypesConsidered.add(sheet.subtype);
 
     let rowIndex = -1;
     for (const row of data.rows) {
@@ -106,13 +130,17 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
       const email = (row[emailIdx] ?? "").trim().toLowerCase();
       if (!email) continue;
       const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
-      const dedupKey = txId ? `${sheet.id}|tx|${txId}` : `${sheet.id}|row|${rowIndex}`;
+      const produto = produtoIdx >= 0 ? (row[produtoIdx] ?? "").trim() : "";
+      const dedupKey = txId
+        ? `${sheet.id}|tx|${txId}|${produto.toLowerCase()}`
+        : `${sheet.id}|row|${rowIndex}`;
       if (txId && sales.has(dedupKey)) continue;
       sales.set(dedupKey, {
         bruto: parseNumber(row[brutoIdx] ?? ""),
         liquido: parseNumber(row[liquidoIdx] ?? ""),
         utmSource: utmSourceIdx !== -1 ? sanitizeUtmValue(row[utmSourceIdx]) : null,
         date: dataIdx !== -1 ? parseDate(row[dataIdx]) : null,
+        produto: produto || "(sem produto)",
       });
     }
   }
@@ -121,6 +149,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
 
   const byDay = new Map<string, { bruto: number; liquido: number; pago: number; org: number; semTrack: number }>();
   const porOrigem = new Map<Origem, { vendas: number; bruto: number; liquido: number }>();
+  const porProduto = new Map<string, { vendas: number; bruto: number; liquido: number }>();
   let totalBruto = 0;
   let totalLiquido = 0;
   let minDate: string | null = null;
@@ -135,6 +164,12 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
     po.bruto += s.bruto;
     po.liquido += s.liquido;
     porOrigem.set(origem, po);
+
+    const pp = porProduto.get(s.produto) ?? { vendas: 0, bruto: 0, liquido: 0 };
+    pp.vendas += 1;
+    pp.bruto += s.bruto;
+    pp.liquido += s.liquido;
+    porProduto.set(s.produto, pp);
 
     if (s.date) {
       const key = ymd(s.date);
@@ -169,6 +204,16 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
       bruto: Math.round(v.bruto * 100) / 100,
       liquido: Math.round(v.liquido * 100) / 100,
     })),
+    porProduto: [...porProduto.entries()]
+      .sort((a, b) => b[1].vendas - a[1].vendas)
+      .slice(0, 30)
+      .map(([produto, v]) => ({
+        produto,
+        vendas: v.vendas,
+        bruto: Math.round(v.bruto * 100) / 100,
+        liquido: Math.round(v.liquido * 100) / 100,
+      })),
+    subtypesConsidered: [...subtypesConsidered].sort(),
   };
 }
 

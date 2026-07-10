@@ -83,6 +83,7 @@ interface MetricAgg {
   impressions: number;
   reach: number;
   clicks: number;
+  linkClicks: number;
   leads: number;
   purchases: number;
   revenue: number;
@@ -96,6 +97,7 @@ function emptyAgg(): MetricAgg {
     impressions: 0,
     reach: 0,
     clicks: 0,
+    linkClicks: 0,
     leads: 0,
     purchases: 0,
     revenue: 0,
@@ -120,6 +122,9 @@ function accumulate(agg: MetricAgg, row: InsightRow): void {
   agg.impressions += parseFloat(row.impressions || "0");
   agg.reach += parseFloat(row.reach || "0");
   agg.clicks += parseFloat(row.clicks || "0");
+  // Auditoria 6.2/39.9: `clicks` da Meta são cliques TOTAIS — link_click é a
+  // métrica de tráfego real (a que o dashboard interno usa no Detalhamento).
+  agg.linkClicks += parseActionCount(row.actions, "link_click");
   agg.leads += parseLeads(row.actions);
   agg.purchases += parsePurchases(row.actions);
   agg.revenue += parsePurchaseRevenue(row.actionValues);
@@ -142,6 +147,10 @@ function deriveMetrics(a: MetricAgg) {
     landingPageViews: a.lpViews,
     ctr: a.impressions > 0 ? round((a.clicks / a.impressions) * 100) : null,
     cpc: round(safeDiv(a.spend, a.clicks)),
+    // 39.9: variantes por LINK CLICK (tráfego real; ctr/cpc acima usam cliques totais)
+    linkClicks: a.linkClicks,
+    ctrLink: a.impressions > 0 ? round((a.linkClicks / a.impressions) * 100) : null,
+    cpcLink: round(safeDiv(a.spend, a.linkClicks)),
     cpm: a.impressions > 0 ? round((a.spend / a.impressions) * 1000) : null,
     cpl: round(safeDiv(a.spend, a.leads)),
     cpa: round(safeDiv(a.spend, a.purchases)),

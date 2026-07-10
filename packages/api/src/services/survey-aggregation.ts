@@ -91,6 +91,16 @@ function resolveColumnIndexes(headers: string[], mapping: Mapping): { indexes: C
       if (idx >= 0) { questions.set(key, idx); questionLabels.set(key, def.label); }
     }
   }
+  // Story 39.7 (auditoria Tier 4.1): a coluna Faixa (lead score A→D) já existia
+  // no columnMapping (Story 18.17) mas não era agregada — sem ela a Fase 9 da
+  // metodologia não roda. Entra como "pergunta" extra e ganha origem/byAdId de graça.
+  if (mapping?.faixa && !questions.has("faixa")) {
+    const idx = findHeaderIndexByName(headers, mapping.faixa);
+    if (idx >= 0) {
+      questions.set("faixa", idx);
+      questionLabels.set("faixa", "Faixa (lead score)");
+    }
+  }
   const utmContent = mapping?.utm_content ? findHeaderIndexByName(headers, mapping.utm_content) : findHeaderIndex(headers, UTM_CONTENT_MATCHERS);
   const utmSource = mapping?.utm_source ? findHeaderIndexByName(headers, mapping.utm_source) : findHeaderIndex(headers, UTM_SOURCE_MATCHERS);
   return { indexes: { questions, questionLabels, utmContent, utmSource }, usedFallback };
