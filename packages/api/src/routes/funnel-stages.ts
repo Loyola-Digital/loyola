@@ -1,4 +1,4 @@
-import { z } from "zod";
+﻿import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
@@ -39,7 +39,7 @@ const switchyLinkRefSchema = z.object({
 
 const createStageSchema = z.object({
   name: z.string().min(1).max(255),
-  stageType: z.enum(["paid", "free", "sales", "cpl", "event", "debriefing"]).default("free"),
+  stageType: z.enum(["paid", "free", "sales", "cpl", "event", "debriefing", "comercial"]).default("free"),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).default([]),
   googleAdsAccountId: z.string().uuid().nullable().optional(),
@@ -50,7 +50,7 @@ const createStageSchema = z.object({
 
 const updateStageSchema = z.object({
   name: z.string().min(1).max(255).optional(),
-  stageType: z.enum(["paid", "free", "sales", "cpl", "event", "debriefing"]).optional(),
+  stageType: z.enum(["paid", "free", "sales", "cpl", "event", "debriefing", "comercial"]).optional(),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).optional(),
   googleAdsAccountId: z.string().uuid().nullable().optional(),
@@ -92,7 +92,7 @@ function displayUserName(name: string | null | undefined, email: string | null |
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(" ");
   }
-  return "Usuário";
+  return "UsuÃ¡rio";
 }
 
 function stageShape(
@@ -103,7 +103,7 @@ function stageShape(
     id: row.id,
     funnelId: row.funnelId,
     name: row.name,
-    stageType: (row.stageType ?? "free") as "paid" | "free" | "sales" | "cpl" | "event" | "debriefing",
+    stageType: (row.stageType ?? "free") as "paid" | "free" | "sales" | "cpl" | "event" | "debriefing" | "comercial",
     metaAccountId: row.metaAccountId,
     campaigns: (row.campaigns ?? []) as { id: string; name: string }[],
     googleAdsAccountId: row.googleAdsAccountId,
@@ -144,8 +144,8 @@ export default fp(async function funnelStageRoutes(fastify) {
     return project ?? null;
   }
 
-  // Epic 30 Story 30.2: fire-and-forget background sync histórico Meta (365d)
-  // pra campanhas recém-vinculadas a uma stage.
+  // Epic 30 Story 30.2: fire-and-forget background sync histÃ³rico Meta (365d)
+  // pra campanhas recÃ©m-vinculadas a uma stage.
   async function fireBackgroundMetaSync(
     projectId: string,
     metaAccountIdSelected: string,
@@ -194,8 +194,8 @@ export default fp(async function funnelStageRoutes(fastify) {
 
   /**
    * Resolve o matchCode efetivo do funil: override do user em `matchCode`,
-   * fallback pro próprio nome do funil (lowercased), null se ambos vazios.
-   * Mesmo critério usado em `/orphan-campaigns`.
+   * fallback pro prÃ³prio nome do funil (lowercased), null se ambos vazios.
+   * Mesmo critÃ©rio usado em `/orphan-campaigns`.
    */
   function effectiveMatchCode(funnel: { name: string | null; matchCode: string | null }): string | null {
     const override = (funnel.matchCode ?? "").trim().toLowerCase();
@@ -206,7 +206,7 @@ export default fp(async function funnelStageRoutes(fastify) {
 
   /**
    * Pega o metaAccountId + token decifrado da conta Meta vinculada ao projeto.
-   * Retorna null se não tem conta vinculada (sem erro — auto-popular cai pra
+   * Retorna null se nÃ£o tem conta vinculada (sem erro â€” auto-popular cai pra
    * lista vazia).
    */
   async function getMetaAccountForProject(projectId: string) {
@@ -233,13 +233,13 @@ export default fp(async function funnelStageRoutes(fastify) {
   // GET /api/projects/:projectId/funnels/:funnelId/stages
   fastify.get("/api/projects/:projectId/funnels/:funnelId/stages", async (request, reply) => {
     const params = paramsSchema.safeParse(request.params);
-    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!params.success) return reply.code(400).send({ error: "ParÃ¢metros invÃ¡lidos" });
 
     const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
-    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    if (!project) return reply.code(404).send({ error: "Projeto nÃ£o encontrado" });
 
     const funnel = await getFunnel(params.data.funnelId, params.data.projectId);
-    if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
+    if (!funnel) return reply.code(404).send({ error: "Funil nÃ£o encontrado" });
 
     const rows = await fastify.db
       .select({
@@ -257,10 +257,10 @@ export default fp(async function funnelStageRoutes(fastify) {
   // GET /api/projects/:projectId/funnels/:funnelId/stages/:stageId
   fastify.get("/api/projects/:projectId/funnels/:funnelId/stages/:stageId", async (request, reply) => {
     const params = stageParamsSchema.safeParse(request.params);
-    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!params.success) return reply.code(400).send({ error: "ParÃ¢metros invÃ¡lidos" });
 
     const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
-    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    if (!project) return reply.code(404).send({ error: "Projeto nÃ£o encontrado" });
 
     const [row] = await fastify.db
       .select({
@@ -277,25 +277,25 @@ export default fp(async function funnelStageRoutes(fastify) {
       )
       .limit(1);
 
-    if (!row) return reply.code(404).send({ error: "Etapa não encontrada" });
+    if (!row) return reply.code(404).send({ error: "Etapa nÃ£o encontrada" });
     return stageShape(row.stage, row.auditUser);
   });
 
   // POST /api/projects/:projectId/funnels/:funnelId/stages
   fastify.post("/api/projects/:projectId/funnels/:funnelId/stages", async (request, reply) => {
     const params = paramsSchema.safeParse(request.params);
-    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!params.success) return reply.code(400).send({ error: "ParÃ¢metros invÃ¡lidos" });
 
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
 
     const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
-    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    if (!project) return reply.code(404).send({ error: "Projeto nÃ£o encontrado" });
 
     const funnel = await getFunnel(params.data.funnelId, params.data.projectId);
-    if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
+    if (!funnel) return reply.code(404).send({ error: "Funil nÃ£o encontrado" });
 
     const bodyResult = createStageSchema.safeParse(request.body);
-    if (!bodyResult.success) return reply.code(400).send({ error: "Dados inválidos", details: bodyResult.error.flatten() });
+    if (!bodyResult.success) return reply.code(400).send({ error: "Dados invÃ¡lidos", details: bodyResult.error.flatten() });
 
     const body = bodyResult.data;
 
@@ -308,10 +308,10 @@ export default fp(async function funnelStageRoutes(fastify) {
       ? Math.max(...existing.map((r) => r.sortOrder)) + 1
       : 0;
 
-    // Auto-popular `campaigns` quando o cliente não passou nenhuma. Só roda
-    // quando a heurística de fase é confiante (phaseSuffix != null) E temos
-    // conta Meta vinculada no projeto. Falhas silenciam pra []  — criação da
-    // stage NÃO deve depender da Meta API.
+    // Auto-popular `campaigns` quando o cliente nÃ£o passou nenhuma. SÃ³ roda
+    // quando a heurÃ­stica de fase Ã© confiante (phaseSuffix != null) E temos
+    // conta Meta vinculada no projeto. Falhas silenciam pra []  â€” criaÃ§Ã£o da
+    // stage NÃƒO deve depender da Meta API.
     let resolvedCampaigns = body.campaigns;
     if (resolvedCampaigns.length === 0) {
       const stageTypeFinal = body.stageType ?? "free";
@@ -328,7 +328,7 @@ export default fp(async function funnelStageRoutes(fastify) {
               phaseSuffix,
             );
           } catch (err) {
-            fastify.log.warn({ err }, "[funnel-stages] auto-popular campaigns falhou — seguindo com []");
+            fastify.log.warn({ err }, "[funnel-stages] auto-popular campaigns falhou â€” seguindo com []");
           }
         }
       }
@@ -356,12 +356,12 @@ export default fp(async function funnelStageRoutes(fastify) {
   // PUT /api/projects/:projectId/funnels/:funnelId/stages/:stageId
   fastify.put("/api/projects/:projectId/funnels/:funnelId/stages/:stageId", async (request, reply) => {
     const params = stageParamsSchema.safeParse(request.params);
-    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!params.success) return reply.code(400).send({ error: "ParÃ¢metros invÃ¡lidos" });
 
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
 
     const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
-    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    if (!project) return reply.code(404).send({ error: "Projeto nÃ£o encontrado" });
 
     const [existing] = await fastify.db
       .select()
@@ -374,10 +374,10 @@ export default fp(async function funnelStageRoutes(fastify) {
       )
       .limit(1);
 
-    if (!existing) return reply.code(404).send({ error: "Etapa não encontrada" });
+    if (!existing) return reply.code(404).send({ error: "Etapa nÃ£o encontrada" });
 
     const bodyResult = updateStageSchema.safeParse(request.body);
-    if (!bodyResult.success) return reply.code(400).send({ error: "Dados inválidos", details: bodyResult.error.flatten() });
+    if (!bodyResult.success) return reply.code(400).send({ error: "Dados invÃ¡lidos", details: bodyResult.error.flatten() });
 
     const body = bodyResult.data;
     const updates: Partial<typeof funnelStages.$inferInsert> = { updatedAt: new Date() };
@@ -398,7 +398,7 @@ export default fp(async function funnelStageRoutes(fastify) {
       .where(eq(funnelStages.id, params.data.stageId))
       .returning();
 
-    // Epic 30 Story 30.2: detecta campanhas adicionadas e dispara sync histórico.
+    // Epic 30 Story 30.2: detecta campanhas adicionadas e dispara sync histÃ³rico.
     if (body.campaigns !== undefined && row.metaAccountId) {
       const oldIds = new Set((existing.campaigns ?? []).map((c) => c.id));
       const newCampaignIds = (row.campaigns ?? [])
@@ -413,12 +413,12 @@ export default fp(async function funnelStageRoutes(fastify) {
   });
 
   // POST /api/projects/:projectId/funnels/:funnelId/stages/reorder
-  // Body: { stageIds: string[] } — nova ordem das etapas
+  // Body: { stageIds: string[] } â€” nova ordem das etapas
   fastify.post(
     "/api/projects/:projectId/funnels/:funnelId/stages/reorder",
     async (request, reply) => {
       const params = paramsSchema.safeParse(request.params);
-      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      if (!params.success) return reply.code(400).send({ error: "ParÃ¢metros invÃ¡lidos" });
 
       const userId = request.userId;
       if (!userId) return reply.code(401).send({ error: "Unauthorized" });
@@ -427,10 +427,10 @@ export default fp(async function funnelStageRoutes(fastify) {
         stageIds: z.array(z.string().uuid()).min(1),
       });
       const body = bodySchema.safeParse(request.body);
-      if (!body.success) return reply.code(400).send({ error: "Body inválido", details: body.error.flatten() });
+      if (!body.success) return reply.code(400).send({ error: "Body invÃ¡lido", details: body.error.flatten() });
 
       const project = await getProjectAccess(params.data.projectId, userId, request.userRole);
-      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      if (!project) return reply.code(404).send({ error: "Projeto nÃ£o encontrado" });
 
       // Verifica que todas as stages pertencem ao funil
       const existing = await fastify.db
@@ -440,11 +440,11 @@ export default fp(async function funnelStageRoutes(fastify) {
       const existingIds = new Set(existing.map((r) => r.id));
       for (const id of body.data.stageIds) {
         if (!existingIds.has(id)) {
-          return reply.code(400).send({ error: `Stage ${id} não pertence ao funil` });
+          return reply.code(400).send({ error: `Stage ${id} nÃ£o pertence ao funil` });
         }
       }
 
-      // Atualiza sortOrder de cada stage de acordo com a posição na lista
+      // Atualiza sortOrder de cada stage de acordo com a posiÃ§Ã£o na lista
       const now = new Date();
       for (let i = 0; i < body.data.stageIds.length; i++) {
         await fastify.db
@@ -467,13 +467,13 @@ export default fp(async function funnelStageRoutes(fastify) {
     "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/audit",
     async (request, reply) => {
       const params = stageParamsSchema.safeParse(request.params);
-      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      if (!params.success) return reply.code(400).send({ error: "ParÃ¢metros invÃ¡lidos" });
 
       const userId = request.userId;
       if (!userId) return reply.code(401).send({ error: "Unauthorized" });
 
       const project = await getProjectAccess(params.data.projectId, userId, request.userRole);
-      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      if (!project) return reply.code(404).send({ error: "Projeto nÃ£o encontrado" });
 
       const [existing] = await fastify.db
         .select({ id: funnelStages.id })
@@ -486,7 +486,7 @@ export default fp(async function funnelStageRoutes(fastify) {
         )
         .limit(1);
 
-      if (!existing) return reply.code(404).send({ error: "Etapa não encontrada" });
+      if (!existing) return reply.code(404).send({ error: "Etapa nÃ£o encontrada" });
 
       const now = new Date();
       await fastify.db
@@ -517,19 +517,19 @@ export default fp(async function funnelStageRoutes(fastify) {
   );
 
   // DELETE /api/projects/:projectId/funnels/:funnelId/stages/:stageId/audit
-  // Cancela (desfaz) a auditoria da etapa — volta pro estado "pending" e
+  // Cancela (desfaz) a auditoria da etapa â€” volta pro estado "pending" e
   // zera lastAuditAt/lastAuditBy. Isolado por stage.
   fastify.delete(
     "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/audit",
     async (request, reply) => {
       const params = stageParamsSchema.safeParse(request.params);
-      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      if (!params.success) return reply.code(400).send({ error: "ParÃ¢metros invÃ¡lidos" });
 
       const userId = request.userId;
       if (!userId) return reply.code(401).send({ error: "Unauthorized" });
 
       const project = await getProjectAccess(params.data.projectId, userId, request.userRole);
-      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      if (!project) return reply.code(404).send({ error: "Projeto nÃ£o encontrado" });
 
       const [existing] = await fastify.db
         .select({ id: funnelStages.id })
@@ -542,7 +542,7 @@ export default fp(async function funnelStageRoutes(fastify) {
         )
         .limit(1);
 
-      if (!existing) return reply.code(404).send({ error: "Etapa não encontrada" });
+      if (!existing) return reply.code(404).send({ error: "Etapa nÃ£o encontrada" });
 
       await fastify.db
         .update(funnelStages)
@@ -569,17 +569,17 @@ export default fp(async function funnelStageRoutes(fastify) {
       stageId: z.string().uuid(),
     }).safeParse(request.params);
 
-    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!params.success) return reply.code(400).send({ error: "ParÃ¢metros invÃ¡lidos" });
 
     const body = leadInputsSchema.safeParse(request.body);
-    if (!body.success) return reply.code(400).send({ error: "Dados inválidos", details: body.error.issues });
+    if (!body.success) return reply.code(400).send({ error: "Dados invÃ¡lidos", details: body.error.issues });
 
-    // Validação: projectionEndDate >= hoje (em horário local)
+    // ValidaÃ§Ã£o: projectionEndDate >= hoje (em horÃ¡rio local)
     if (body.data.projectionEndDate) {
       const today = new Date();
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
       if (body.data.projectionEndDate < todayStr) {
-        return reply.code(400).send({ error: "Data final não pode ser menor que hoje" });
+        return reply.code(400).send({ error: "Data final nÃ£o pode ser menor que hoje" });
       }
     }
 
@@ -595,7 +595,7 @@ export default fp(async function funnelStageRoutes(fastify) {
       .then(rows => rows[0]);
 
     if (!stage) {
-      return reply.code(404).send({ error: "Etapa não encontrada" });
+      return reply.code(404).send({ error: "Etapa nÃ£o encontrada" });
     }
 
     const updated = await fastify.db
@@ -614,12 +614,12 @@ export default fp(async function funnelStageRoutes(fastify) {
   // DELETE /api/projects/:projectId/funnels/:funnelId/stages/:stageId
   fastify.delete("/api/projects/:projectId/funnels/:funnelId/stages/:stageId", async (request, reply) => {
     const params = stageParamsSchema.safeParse(request.params);
-    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!params.success) return reply.code(400).send({ error: "ParÃ¢metros invÃ¡lidos" });
 
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
 
     const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
-    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    if (!project) return reply.code(404).send({ error: "Projeto nÃ£o encontrado" });
 
     const allStages = await fastify.db
       .select({ id: funnelStages.id })
@@ -627,7 +627,7 @@ export default fp(async function funnelStageRoutes(fastify) {
       .where(eq(funnelStages.funnelId, params.data.funnelId));
 
     if (allStages.length <= 1) {
-      return reply.code(409).send({ error: "Não é possível remover a última etapa do funil" });
+      return reply.code(409).send({ error: "NÃ£o Ã© possÃ­vel remover a Ãºltima etapa do funil" });
     }
 
     await fastify.db

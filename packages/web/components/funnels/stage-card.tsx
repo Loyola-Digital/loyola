@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, TrendingUp, Youtube, Pencil, Trash2, CreditCard, Gift, DollarSign, Video, CalendarDays, FileText } from "lucide-react";
+import { MoreHorizontal, TrendingUp, Youtube, Pencil, Trash2, CreditCard, Gift, DollarSign, Video, CalendarDays, FileText, Handshake } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -97,9 +97,10 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
                   : stage.stageType === "cpl" ? "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400"
                   : stage.stageType === "event" ? "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-400"
                   : stage.stageType === "debriefing" ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
+                  : stage.stageType === "comercial" ? "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400"
                   : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                 }`}>
-                  {stage.stageType === "paid" ? "Paga" : stage.stageType === "sales" ? "Vendas" : stage.stageType === "cpl" ? "CPL" : stage.stageType === "event" ? "Evento Presencial" : stage.stageType === "debriefing" ? "Debriefing" : "Gratuita"}
+                  {stage.stageType === "paid" ? "Paga" : stage.stageType === "sales" ? "Vendas" : stage.stageType === "cpl" ? "CPL" : stage.stageType === "event" ? "Evento Presencial" : stage.stageType === "debriefing" ? "Debriefing" : stage.stageType === "comercial" ? "Comercial" : "Gratuita"}
                 </span>
               </div>
               <div className="mt-2 space-y-1">
@@ -122,6 +123,11 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <FileText className="h-3 w-3 shrink-0 text-indigo-500" />
                     <span>Debriefings da campanha</span>
+                  </div>
+                ) : stage.stageType === "comercial" ? (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Handshake className="h-3 w-3 shrink-0 text-cyan-500" />
+                    <span>CRM · kanban de compradores</span>
                   </div>
                 ) : (
                   <>
@@ -167,7 +173,7 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
                     <Pencil className="h-4 w-4 mr-2" />
                     Renomear
                   </DropdownMenuItem>
-                  {stage.stageType !== "sales" && stage.stageType !== "cpl" && stage.stageType !== "event" && stage.stageType !== "debriefing" && (
+                  {stage.stageType !== "sales" && stage.stageType !== "cpl" && stage.stageType !== "event" && stage.stageType !== "debriefing" && stage.stageType !== "comercial" && (
                     <DropdownMenuItem
                       onClick={() => {
                         const newType = stage.stageType === "paid" ? "free" : "paid";

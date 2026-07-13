@@ -19,6 +19,7 @@ import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-s
 import { SalesStageView } from "@/components/funnels/sales-stage-view";
 import { EventStageView } from "@/components/funnels/event-stage-view";
 import { DebriefingStageView } from "@/components/funnels/debriefing-stage-view";
+import { ComercialStageView } from "@/components/funnels/comercial-stage-view";
 import { ManualPixSalesSection } from "@/components/funnels/manual-pix-sales-section";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
@@ -126,6 +127,18 @@ export default function StagePage() {
   if (stage.stageType === "debriefing") {
     return (
       <DebriefingStageView
+        projectId={params.id}
+        funnelId={params.funnelId}
+        funnelName={funnel.name}
+        stage={stage}
+      />
+    );
+  }
+
+  // Epic 40: etapa "comercial" — CRM kanban de compradores. Render dedicado.
+  if (stage.stageType === "comercial") {
+    return (
+      <ComercialStageView
         projectId={params.id}
         funnelId={params.funnelId}
         funnelName={funnel.name}
