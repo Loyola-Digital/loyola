@@ -476,6 +476,11 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           surveyUnmatched={survey.unmatchedResponses}
           salesByDay={salesByDay ?? undefined}
           ingressosByDay={salesData?.ingressosByDay}
+          ingressosUnicosByDay={salesData?.ingressosUnicosByDay}
+          ingressosTotaisByDay={salesData?.ingressosTotaisByDay}
+          faturamentoUnicoByDay={salesData?.faturamentoUnicoByDay}
+          faturamentoTotalByDay={salesData?.faturamentoTotalByDay}
+          ingressosPorProduto={salesData?.ingressosPorProduto}
           adsetsMap={adsetsMap}
           projectId={projectId}
           funnelId={funnel.id}
