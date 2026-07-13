@@ -75,8 +75,10 @@ byAdId.<adId>.faixa                              ← Faixa × criativo (Fase 9!)
 
 Se `"faixa"` NÃO estiver em `questions`, a etapa não tem a coluna mapeada — reporte isso, não invente.
 Gate da Fase 8 continua: só use as perguntas listadas em `questions`.
-QA jul/13: sem chave duplicada `Faixa`/`faixa` (dedupe por coluna) e `byAdId` só com
-ad ids reais (numéricos ≥10 dígitos — "org"/"link_in_bio"/"{{ad.id}}" ficam fora).
+QA jul/13: dedupe SEMÂNTICO da Faixa — com `mapping.faixa` configurado ele é a fonte
+canônica; qualquer pergunta chamada "Faixa" sai do payload (planilhas reais têm duas
+colunas de faixa, uma incompleta). Só a chave `faixa` existe. `byAdId` só com ad ids
+reais (numéricos ≥10 dígitos — "org"/"link_in_bio"/"{{ad.id}}" ficam fora).
 
 ### 4. `get_stage_sales_daily` — dedup real + produto
 

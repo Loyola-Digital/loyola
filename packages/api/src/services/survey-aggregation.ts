@@ -102,12 +102,20 @@ function resolveColumnIndexes(headers: string[], mapping: Mapping): { indexes: C
   // Story 39.7 (auditoria Tier 4.1): a coluna Faixa (lead score A→D) já existia
   // no columnMapping (Story 18.17) mas não era agregada — sem ela a Fase 9 da
   // metodologia não roda. Entra como "pergunta" extra e ganha origem/byAdId de graça.
-  // Dedup por ÍNDICE: se a mesma coluna já entrou como pergunta mapeada (ex.:
-  // pergunta "Faixa"), não cria a chave "faixa" duplicada.
-  if (mapping?.faixa && !questions.has("faixa")) {
+  // Dedup SEMÂNTICO (QA jul/13): planilhas reais têm DUAS colunas de faixa (ex.:
+  // pergunta "Faixa" com buracos + "Faixa 1" completa no mapping.faixa). Com
+  // mapping.faixa configurado, ele é a fonte CANÔNICA — qualquer pergunta cujo
+  // nome/label normalize pra "faixa" sai, e só a chave "faixa" fica.
+  if (mapping?.faixa) {
     const idx = findHeaderIndexByName(headers, mapping.faixa);
-    const alreadyMapped = idx >= 0 && [...questions.values()].includes(idx);
-    if (idx >= 0 && !alreadyMapped) {
+    if (idx >= 0) {
+      for (const key of [...questions.keys()]) {
+        const label = questionLabels.get(key) ?? key;
+        if (normalizeForMatch(key) === "faixa" || normalizeForMatch(label) === "faixa") {
+          questions.delete(key);
+          questionLabels.delete(key);
+        }
+      }
       questions.set("faixa", idx);
       questionLabels.set("faixa", "Faixa (lead score)");
     }
