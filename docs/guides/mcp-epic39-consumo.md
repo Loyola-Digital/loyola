@@ -19,6 +19,7 @@ lançamento/etapa, use a família `get_stage_*`:
 | Leads por origem/temperatura + UTMs cruas | `get_stage_leads_summary(projectId, stageId)` |
 | Qualificação (perguntas, Faixa A→D, por criativo) | `get_stage_survey(projectId, stageId)` |
 | Vendas/faturamento por dia/origem/produto | `get_stage_sales_daily(projectId, stageId)` |
+| Custos operacionais do evento (venue, staff...) | `get_stage_operational_costs(projectId, stageId)` **← NOVO** |
 
 Descoberta de IDs: `list_projects` → `list_funnels(projectId)` → `list_stages(funnelId)`. Não adivinhe IDs.
 
@@ -114,6 +115,10 @@ reais (numéricos ≥10 dígitos — "org"/"link_in_bio"/"{{ad.id}}" ficam fora)
 - **`porProduto`** (novo): `[{ produto, vendas, bruto, liquido }]` top 30 — separe
   ingresso × order bump pelas keywords do nome do produto. `"(sem produto)"` = coluna não mapeada.
 - Origem da venda = `utm_source` **da própria linha de venda** (não do lead).
+- **NOVO (Brief v5 #1) — vendas MANUAIS entram:** vendas lançadas no app (Evento
+  Presencial, etapa Vendas) agora contam — `manualSalesIncluded` no payload diz quantas.
+  Reembolsadas ficam fora; `bruto` = valor combinado, `liquido` = valor recebido (Caixa);
+  sem UTM → "Sem Track". Etapa de evento SÓ com vendas manuais deixou de ser `semDados`.
 - **NOVO (Resumão v4 #3) — `porOrigemTemperatura`:** matriz Origem × Temperatura pelo
   `utm_term` da venda: `[{ origem, temperatura: "hot"|"cold"|null, vendas, bruto, liquido }]`.
   `temperatura: null` = venda sem split hot/cold. ROAS por temperatura = `bruto` do bloco ÷
@@ -144,12 +149,25 @@ confie no flag, não assuma.
 
 1. **`spend` JÁ inclui o imposto Meta**: gross-up de **12,15% "por dentro"** (`spend ÷ (1−0,1215)`),
    só para datas ≥ 2026-01-01. **NUNCA reaplique** (nem ×1,13 — não é a taxa nem o método).
+   ⚠️ **Brief v5 #10 estava ERRADO:** o spend NÃO "vem cru pro cliente aplicar ÷0,8785" —
+   o backend aplica `applyMetaTax` em TODA linha antes de servir (`public-meta.ts`).
+   Cliente que aplicar ÷0,8785 de novo infla o investimento em ~13,8% (dupla taxação).
+   Dashboards derivados (dash_data.json etc.) devem consumir o spend **como vem**.
 2. **`roas` dos endpoints Meta é do PIXEL.** ROAS real = `faturamentoBruto` (get_stage_sales_daily)
    ÷ `spend` (get_stage_daily), combinando por `date`.
 3. Métricas derivadas vêm `null` com denominador 0; `reach` é soma diária (não alcance único).
 4. `computedAt` (caches de leads/survey/vendas) e `lastSyncedAt` (Meta) dizem o frescor — cite-os.
 
 ## Receitas prontas
+
+**ROAS REAL de evento presencial (com custos operacionais — Brief v5 #2):**
+```
+V = get_stage_sales_daily(p, s)        → faturamentoBruto
+M = get_stage_daily(p, s)              → spend total do período
+C = get_stage_operational_costs(p, s)  → totalCosts (venue+staff+logística+...)
+ROAS_REAL = V.faturamentoBruto / (M.spend_total + C.totalCosts)
+→ {semDados:true} em C = nenhum custo lançado ainda; reporte "custos pendentes", não assuma 0
+```
 
 **ROAS real de uma etapa, por dia:**
 ```

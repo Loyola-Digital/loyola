@@ -54,6 +54,7 @@ import stageSalesDataRoutes from "./routes/stage-sales-data.js";
 import sellersBreakdownRoutes from "./routes/sellers-breakdown.js";
 import sellerAliasesRoutes from "./routes/seller-aliases.js";
 import manualSalesRoutes from "./routes/manual-sales.js";
+import stageOperationalCostsRoutes from "./routes/stage-operational-costs.js";
 import perpetualSpreadsheetsRoutes from "./routes/perpetual-spreadsheets.js";
 import perpetualSalesDataRoutes from "./routes/perpetual-sales-data.js";
 import perpetualUpsellSpreadsheetsRoutes from "./routes/perpetual-upsell-spreadsheets.js";
@@ -159,6 +160,7 @@ export async function buildServer() {
   await app.register(sellersBreakdownRoutes);
   await app.register(sellerAliasesRoutes);
   await app.register(manualSalesRoutes);
+  await app.register(stageOperationalCostsRoutes);
   await app.register(perpetualSpreadsheetsRoutes);
   await app.register(perpetualSalesDataRoutes);
   await app.register(perpetualUpsellSpreadsheetsRoutes);

@@ -2138,6 +2138,28 @@ export const stageEventPaymentAlerts = pgTable("stage_event_payment_alerts", {
 });
 
 // ============================================================
+// STAGE OPERATIONAL COSTS (Brief v5 #2 — Evento Presencial)
+// ============================================================
+// Custos operacionais da etapa (venue, staff, logística, hospedagem...) —
+// denominador que faltava pro ROAS REAL do evento (spend Meta ≠ custo total).
+
+export const stageOperationalCosts = pgTable("stage_operational_costs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  stageId: uuid("stage_id")
+    .notNull()
+    .references(() => funnelStages.id, { onDelete: "cascade" }),
+  /** venue | staff | logistica | hospedagem | alimentacao | marketing | outros */
+  category: varchar("category", { length: 20 }).notNull(),
+  description: varchar("description", { length: 255 }),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  /** Data em que o custo ocorreu/ocorrerá (opcional). */
+  incurredAt: date("incurred_at"),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ============================================================
 // CAMPAIGN LOG (EPIC-38 — Story 38.1)
 // ============================================================
 // Log de Campanha: registro fixo por funil das ações executadas na campanha

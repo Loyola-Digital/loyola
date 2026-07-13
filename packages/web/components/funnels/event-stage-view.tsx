@@ -62,6 +62,7 @@ import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
 import { CampaignLogButton } from "@/components/funnels/campaign-log-link";
 import { EventPaymentAlertCard } from "@/components/funnels/event-payment-alert-card";
+import { OperationalCostsTab } from "@/components/funnels/operational-costs-tab";
 import { SalesPlanTab } from "@/components/funnels/sales-plan-tab";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import {
@@ -350,6 +351,9 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
           <TabsTrigger value="calendario" className="gap-1.5 shrink-0">
             <CalendarClock className="h-3.5 w-3.5" /> Calendário
           </TabsTrigger>
+          <TabsTrigger value="custos" className="gap-1.5 shrink-0">
+            Custos
+          </TabsTrigger>
           <TabsTrigger value="planilha" className="gap-1.5 shrink-0">
             Leads
           </TabsTrigger>
@@ -437,6 +441,11 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
         {/* CALENDÁRIO — parcelas combinadas nas vendas projetadas por data de vencimento */}
         <TabsContent value="calendario" className="mt-6">
           <EventPaymentCalendar projectId={projectId} funnelId={funnelId} stageId={stage.id} />
+        </TabsContent>
+
+        {/* CUSTOS — operacionais do evento (venue, staff...) = denominador do ROAS real */}
+        <TabsContent value="custos" className="mt-6">
+          <OperationalCostsTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
         </TabsContent>
 
         {/* LEADS DO EVENTO — conectar as planilhas (fonte única: Mapa + Plano de Vendas) */}

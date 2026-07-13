@@ -1,6 +1,6 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { stageSalesSpreadsheets, funnelStages, funnels, publicMetricsCache } from "../db/schema.js";
+import { stageSalesSpreadsheets, manualSales, funnelStages, funnels, publicMetricsCache } from "../db/schema.js";
 import { readSheetData } from "./google-sheets.js";
 import { classifyOrigem, type Origem } from "../utils/lead-origin.js";
 
@@ -81,6 +81,10 @@ export interface SalesDailyPayload {
   porProduto: { produto: string; vendas: number; bruto: number; liquido: number }[];
   /** Story 39.6: subtypes de planilha que entraram na conta (capture fica FORA). */
   subtypesConsidered: string[];
+  /** Brief v5 #1: vendas MANUAIS (Evento Presencial/Vendas) incluídas na conta —
+   * reembolsadas ficam FORA. bruto = valor combinado; liquido = valor recebido
+   * (Caixa) quando lançado, senão o combinado. Sem UTM → origem "Sem Track". */
+  manualSalesIncluded: number;
 }
 
 type Mapping = {
@@ -114,7 +118,21 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
         inArray(stageSalesSpreadsheets.subtype, SALES_SUBTYPES),
       ),
     );
-  if (sheets.length === 0) return null;
+
+  // Brief v5 #1: vendas manuais (Evento Presencial / Vendas / captações) —
+  // reembolsadas (refundedAt != null) ficam fora, mesma regra do dashboard.
+  const manualRows = await db
+    .select({
+      id: manualSales.id,
+      value: manualSales.value,
+      valorRecebido: manualSales.valorRecebido,
+      product: manualSales.product,
+      saleDate: manualSales.saleDate,
+    })
+    .from(manualSales)
+    .where(and(eq(manualSales.stageId, stageId), isNull(manualSales.refundedAt)));
+
+  if (sheets.length === 0 && manualRows.length === 0) return null;
 
   // Dedup por (txId + produto) — MESMA chave do all-sales do dashboard
   // (manual-sales.ts): order bumps (mesmo pedido, produtos diferentes) contam
@@ -166,6 +184,19 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
         produto: produto || "(sem produto)",
       });
     }
+  }
+
+  for (const m of manualRows) {
+    const bruto = parseFloat(m.value ?? "0") || 0;
+    const recebido = m.valorRecebido != null ? parseFloat(m.valorRecebido) || 0 : null;
+    sales.set(`manual|${m.id}`, {
+      bruto,
+      liquido: recebido ?? bruto,
+      utmSource: null,
+      utmTerm: null,
+      date: m.saleDate,
+      produto: (m.product ?? "").trim() || "(venda manual)",
+    });
   }
 
   if (sales.size === 0) return null;
@@ -253,6 +284,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
         liquido: Math.round(v.liquido * 100) / 100,
       })),
     subtypesConsidered: [...subtypesConsidered].sort(),
+    manualSalesIncluded: manualRows.length,
   };
 }
 
@@ -282,11 +314,25 @@ export async function syncSalesDaily(
   const log = opts.log ?? (() => {});
   const summary: SalesDailySyncSummary = { stagesProcessed: 0, stagesSkipped: 0, errors: [] };
 
-  const rows = await db
+  const sheetStages = await db
     .selectDistinct({ stageId: stageSalesSpreadsheets.stageId, projectId: funnels.projectId })
     .from(stageSalesSpreadsheets)
     .innerJoin(funnelStages, eq(funnelStages.id, stageSalesSpreadsheets.stageId))
     .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId));
+
+  // Brief v5 #1: etapas SÓ com vendas manuais (Evento Presencial) também
+  // entram no sync — antes ficavam eternamente semDados.
+  const manualStages = await db
+    .selectDistinct({ stageId: manualSales.stageId, projectId: funnels.projectId })
+    .from(manualSales)
+    .innerJoin(funnelStages, eq(funnelStages.id, manualSales.stageId))
+    .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+    .where(isNull(manualSales.refundedAt));
+
+  const byStage = new Map<string, string>();
+  for (const r of sheetStages) byStage.set(r.stageId, r.projectId);
+  for (const r of manualStages) byStage.set(r.stageId, r.projectId);
+  const rows = [...byStage.entries()].map(([stageId, projectId]) => ({ stageId, projectId }));
 
   const filter = opts.projectIds ? new Set(opts.projectIds) : null;
   for (const { stageId, projectId } of rows) {

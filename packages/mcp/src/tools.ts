@@ -255,4 +255,24 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
         )
       )
   );
+
+  // ---- Custos operacionais da etapa (Brief v5 #2 — Evento Presencial) ----
+  server.registerTool(
+    "get_stage_operational_costs",
+    {
+      title: "Custos operacionais da etapa",
+      description:
+        "Custos operacionais lançados na etapa (venue, staff, logística, hospedagem, alimentação, marketing, outros): totalCosts + byCategory + items. É o denominador que falta pro ROAS REAL de evento presencial: ROAS_real = faturamento ÷ (spend Meta + totalCosts). Retorna {semDados:true} se nenhum custo foi lançado.",
+      inputSchema: {
+        projectId: z.string().uuid().describe("ID do projeto (de list_projects)."),
+        stageId: z.string().describe("ID da etapa (de list_stages)."),
+      },
+    },
+    async ({ projectId, stageId }) =>
+      run(() =>
+        client.get(
+          `/api/public/v1/projects/${encodeURIComponent(projectId)}/stages/${encodeURIComponent(stageId)}/operational-costs`
+        )
+      )
+  );
 }
