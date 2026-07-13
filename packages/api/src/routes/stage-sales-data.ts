@@ -470,18 +470,18 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           // (mesmo email/valor) contam como vendas separadas, em vez de colapsar
           // por email e somar (que subcontava vendas e divergia da tabela).
           //
-          // Dash de Vendas (stageType "sales"): inclui o produto na chave por
-          // txId pra order bumps (mesmo pedido, produtos diferentes: Basic +
-          // Advanced) contarem como vendas separadas. Outras etapas (paid)
-          // mantêm a dedup só por txId (1 pedido = 1 venda).
+          // Story 18.51a: o produto entra na chave por txId em TODAS as etapas
+          // (antes só "sales"). No mesmo pedido, ingresso e order bumps
+          // compartilham o transactionId — sem o produto na chave, o retry-guard
+          // descartava o bump (undercount de vendas/faturamento na Paga). Com o
+          // produto, um retry REAL (mesmo tx + mesmo produto) segue deduplicado,
+          // mas order bump (produto diferente) conta como venda separada.
           if (txId) anyUsedTxId = true; else anyUsedEmail = true;
-          // Story 18.51a: productName original (case preservado) da linha, quando
-          // a coluna está mapeada. Usado pra classificar captação vs order bump.
+          // productName original (case preservado) da linha, quando a coluna está
+          // mapeada. Usado na dedupKey (por produto) e pra classificar captação
+          // vs order bump.
           const productNameRaw = productIdx !== -1 ? (row[productIdx] ?? "").trim() : "";
-          const product =
-            stage.stageType === "sales" && productIdx !== -1
-              ? productNameRaw.toLowerCase()
-              : "";
+          const product = productIdx !== -1 ? productNameRaw.toLowerCase() : "";
           const dedupKey = txId
             ? `${spreadsheet.id}|tx|${txId}${product ? `|${product}` : ""}`
             : `${spreadsheet.id}|row|${rowIndex}`;
@@ -643,12 +643,16 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         return `${y}-${m}-${d}`;
       };
 
-      // Chave do único = e-mail (lowercased). Sem e-mail (manual sem e-mail) não
-      // colapsa: cada venda é 1 ingresso único avulso (chave sintética).
-      const capturaByEmail = new Map<string, { bruto: number; lastDate: Date | null; utmSource: string | null }>();
+      // Único = uma captura por e-mail (a compra mais recente). Sem e-mail
+      // (manual sem e-mail) não colapsa → cada venda é 1 ingresso avulso, mantido
+      // numa lista à parte (evita chave sintética que poderia colidir com um
+      // customerEmail literal).
+      type Captura = { bruto: number; lastDate: Date | null; utmSource: string | null };
+      const capturaByEmail = new Map<string, Captura>();
+      const capturaNoEmail: Captura[] = [];
       const considerCaptura = (email: string, bruto: number, lastDate: Date | null, utmSource: string | null) => {
         if (!email) {
-          capturaByEmail.set(`__noemail__${capturaByEmail.size}`, { bruto, lastDate, utmSource });
+          capturaNoEmail.push({ bruto, lastDate, utmSource });
           return;
         }
         const cur = capturaByEmail.get(email);
@@ -657,16 +661,21 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       };
 
       // Ingressos por produto (TOTAIS — todas as linhas) pro tooltip de 18.51b.
-      const ingressosPorProdutoMap = new Map<string, { count: number; bruto: number; isOrderBump: boolean }>();
+      // Chave case-insensitive (mesma dedup do wizard de order bumps), preservando
+      // o rótulo original pra exibição.
+      const ingressosPorProdutoMap = new Map<string, { name: string; count: number; bruto: number; isOrderBump: boolean }>();
       const faturamentoTotalByDay: Record<string, number> = {};
+      const addProduto = (label: string, bruto: number, bump: boolean) => {
+        const key = label.toLowerCase();
+        const pp = ingressosPorProdutoMap.get(key) ?? { name: label, count: 0, bruto: 0, isOrderBump: bump };
+        pp.count += 1;
+        pp.bruto += bruto;
+        ingressosPorProdutoMap.set(key, pp);
+      };
 
       for (const entry of emailMap.values()) {
         const bump = isOrderBump(entry.product);
-        const prodLabel = entry.product || "(sem produto)";
-        const pp = ingressosPorProdutoMap.get(prodLabel) ?? { count: 0, bruto: 0, isOrderBump: bump };
-        pp.count += 1;
-        pp.bruto += entry.bruto;
-        ingressosPorProdutoMap.set(prodLabel, pp);
+        addProduto(entry.product || "(sem produto)", entry.bruto, bump);
         if (entry.lastDate) {
           const k = dayKeyOf(entry.lastDate);
           faturamentoTotalByDay[k] = (faturamentoTotalByDay[k] ?? 0) + entry.bruto;
@@ -682,20 +691,16 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         const dt = mr.saleDate ? new Date(mr.saleDate) : null;
         const prod = (mr.product ?? "").trim();
         const bump = isOrderBump(prod);
-        const prodLabel = prod || MANUAL_PRODUCT_LABEL;
-        const pp = ingressosPorProdutoMap.get(prodLabel) ?? { count: 0, bruto: 0, isOrderBump: bump };
-        pp.count += 1;
-        pp.bruto += val;
-        ingressosPorProdutoMap.set(prodLabel, pp);
+        addProduto(prod || MANUAL_PRODUCT_LABEL, val, bump);
         if (dt) faturamentoTotalByDay[dayKeyOf(dt)] = (faturamentoTotalByDay[dayKeyOf(dt)] ?? 0) + val;
         if (!bump) considerCaptura((mr.email ?? "").trim().toLowerCase(), val, dt, null);
       }
 
-      // Fecha o único: faturamento único + recortes por dia.
+      // Fecha o único: faturamento único + recortes por dia (e-mail dedup + avulsos).
       const ingressosUnicosByDay: Record<string, { pago: number; org: number; semTrack: number }> = {};
       const faturamentoUnicoByDay: Record<string, number> = {};
       let faturamentoUnico = 0;
-      for (const c of capturaByEmail.values()) {
+      for (const c of [...capturaByEmail.values(), ...capturaNoEmail]) {
         faturamentoUnico += c.bruto;
         if (c.lastDate) {
           const k = dayKeyOf(c.lastDate);
@@ -708,11 +713,11 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           faturamentoUnicoByDay[k] = (faturamentoUnicoByDay[k] ?? 0) + c.bruto;
         }
       }
-      const ingressosUnicos = capturaByEmail.size;
+      const ingressosUnicos = capturaByEmail.size + capturaNoEmail.length;
       const ingressosTotais = totalVendas;
       const faturamentoTotal = totalBruto;
-      const ingressosPorProduto = Array.from(ingressosPorProdutoMap.entries())
-        .map(([produto, v]) => ({ produto, count: v.count, bruto: v.bruto, isOrderBump: v.isOrderBump }))
+      const ingressosPorProduto = Array.from(ingressosPorProdutoMap.values())
+        .map((v) => ({ produto: v.name, count: v.count, bruto: v.bruto, isOrderBump: v.isOrderBump }))
         .sort((a, b) => b.count - a.count);
       // ingressosTotaisByDay == ingressosByDay (todas as vendas por dia×origem).
 
