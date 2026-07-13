@@ -117,7 +117,7 @@ function KanbanCard({ card, onOpen }: { card: CrmCard; onOpen: (c: CrmCard) => v
           <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
             <span className="font-semibold tabular-nums text-emerald-500">{fmtBRL(card.totalValue)}</span>
             <span className="flex items-center gap-1.5">
-              {(card.callCount > 0 || card.callStatus) && (
+              {((Number(card.callCount) || 0) > 0 || card.callStatus) && (
                 <span
                   className={`flex items-center gap-0.5 ${
                     card.callStatus === "atendeu" ? "text-emerald-500" : card.callStatus === "nao_atendeu" ? "text-red-400" : ""
@@ -125,7 +125,7 @@ function KanbanCard({ card, onOpen }: { card: CrmCard; onOpen: (c: CrmCard) => v
                   title={`${card.callCount} ligação(ões)${card.callStatus === "atendeu" ? " · atendeu" : card.callStatus === "nao_atendeu" ? " · não atendeu" : ""}`}
                 >
                   {card.callStatus === "nao_atendeu" ? <PhoneOff className="h-3 w-3" /> : <Phone className="h-3 w-3" />}
-                  {card.callCount > 0 && <span className="tabular-nums">{card.callCount}</span>}
+                  {(Number(card.callCount) || 0) > 0 && <span className="tabular-nums">{Number(card.callCount) || 0}</span>}
                 </span>
               )}
               <span>{fmtDate(card.firstPurchaseAt)}</span>
@@ -228,8 +228,10 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
     if (openCard) {
       setCardNotes(openCard.notes ?? "");
       setCardAssignee(openCard.assigneeName ?? "");
-      setCardCallStatus(openCard.callStatus);
-      setCardCallCount(openCard.callCount);
+      // Coerção defensiva: API anterior ao deploy do call-tracking devolve o
+      // card SEM esses campos — sem isso, undefined + 1 vira NaN no contador.
+      setCardCallStatus(openCard.callStatus ?? null);
+      setCardCallCount(Number(openCard.callCount) || 0);
     }
   }, [openCard]);
 
