@@ -34,13 +34,15 @@ const stageParamsSchema = z.object({
   stageId: z.string().uuid(),
 });
 
+// Colunas padrão definidas pelo Lucas (fluxo real do comercial).
 const DEFAULT_COLUMNS: { name: string; isTerminal: boolean }[] = [
   { name: "Novo", isTerminal: false },
-  { name: "Contato feito", isTerminal: false },
-  { name: "Em negociação", isTerminal: false },
-  { name: "Proposta enviada", isTerminal: false },
-  { name: "Ganhou", isTerminal: true },
-  { name: "Perdeu", isTerminal: true },
+  { name: "Ligação feita", isTerminal: false },
+  { name: "Aplicação pendente", isTerminal: false },
+  { name: "Reprovado na call", isTerminal: true },
+  { name: "Reprovado na aplicação", isTerminal: true },
+  { name: "Aplicou", isTerminal: false },
+  { name: "Matriculou / Venda", isTerminal: true },
 ];
 
 // Subtypes de planilha que são VENDA de verdade (39.6 — capture fica fora).
@@ -98,6 +100,8 @@ function shapeCard(r: typeof stageCrmCards.$inferSelect) {
     firstPurchaseAt: r.firstPurchaseAt ? r.firstPurchaseAt.toISOString() : null,
     notes: r.notes,
     assigneeName: r.assigneeName,
+    callStatus: r.callStatus as "atendeu" | "nao_atendeu" | null,
+    callCount: r.callCount,
     sortOrder: r.sortOrder,
     updatedAt: r.updatedAt.toISOString(),
   };
@@ -611,6 +615,8 @@ export default fp(async function stageComercialRoutes(fastify) {
     sortOrder: z.number().int().min(0).optional(),
     notes: z.string().max(5000).nullable().optional(),
     assigneeName: z.string().max(255).nullable().optional(),
+    callStatus: z.enum(["atendeu", "nao_atendeu"]).nullable().optional(),
+    callCount: z.number().int().min(0).max(999).optional(),
   });
   fastify.patch(`${base}/cards/:cardId`, async (request, reply) => {
     const params = cardParamsSchema.safeParse(request.params);
@@ -639,6 +645,8 @@ export default fp(async function stageComercialRoutes(fastify) {
     if (body.data.sortOrder !== undefined) updates.sortOrder = body.data.sortOrder;
     if (body.data.notes !== undefined) updates.notes = body.data.notes ?? null;
     if (body.data.assigneeName !== undefined) updates.assigneeName = body.data.assigneeName?.trim() || null;
+    if (body.data.callStatus !== undefined) updates.callStatus = body.data.callStatus ?? null;
+    if (body.data.callCount !== undefined) updates.callCount = body.data.callCount;
 
     const [updatedCard] = await fastify.db
       .update(stageCrmCards)

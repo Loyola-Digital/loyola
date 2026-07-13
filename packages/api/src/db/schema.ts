@@ -2084,6 +2084,10 @@ export const stageCrmCards = pgTable(
     notes: text("notes"),
     /** Responsável (texto livre — como o Closer do evento). */
     assigneeName: varchar("assignee_name", { length: 255 }),
+    /** Rastreio de ligação: 'atendeu' | 'nao_atendeu' | null (sem tentativa registrada). */
+    callStatus: varchar("call_status", { length: 12 }),
+    /** "Liguei X vezes". */
+    callCount: integer("call_count").notNull().default(0),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
