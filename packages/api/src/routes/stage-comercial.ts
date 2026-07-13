@@ -293,6 +293,12 @@ export default fp(async function stageComercialRoutes(fastify) {
           if (nameIdx === -1) nameIdx = findHeaderByAliases(data.headers, NAME_ALIASES);
           let produtoIdx = col(mapping.productName);
           if (produtoIdx === -1) produtoIdx = findHeaderByAliases(data.headers, PRODUCT_ALIASES);
+          // 2ª coluna candidata (ex.: "Oferta") — alguns eventos do webhook
+          // Kiwify deixam a célula "Produto" vazia mas preenchem "Oferta".
+          const produtoAltIdx = findHeaderByAliases(
+            data.headers.map((h, i) => (i === produtoIdx ? "" : h)),
+            PRODUCT_ALIASES,
+          );
           const brutoIdx = col(mapping.valorBruto);
           const dataIdx = col(mapping.dataVenda);
           const telIdx = findHeaderByAliases(data.headers, PHONE_ALIASES);
@@ -305,7 +311,9 @@ export default fp(async function stageComercialRoutes(fastify) {
                 continue;
               }
               const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
-              const produto = produtoIdx >= 0 ? (row[produtoIdx] ?? "").trim() : "";
+              const produto =
+                (produtoIdx >= 0 ? (row[produtoIdx] ?? "").trim() : "") ||
+                (produtoAltIdx >= 0 ? (row[produtoAltIdx] ?? "").trim() : "");
               if (txId) {
                 const k = `perp|tx|${txId}|${produto.toLowerCase()}`;
                 if (seenPerp.has(k)) continue;
