@@ -14,6 +14,9 @@ import {
 } from "@dnd-kit/core";
 import {
   Handshake,
+  Minus,
+  Phone,
+  PhoneOff,
   Plus,
   RefreshCw,
   Settings2,
@@ -113,7 +116,20 @@ function KanbanCard({ card, onOpen }: { card: CrmCard; onOpen: (c: CrmCard) => v
           </div>
           <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
             <span className="font-semibold tabular-nums text-emerald-500">{fmtBRL(card.totalValue)}</span>
-            <span>{fmtDate(card.firstPurchaseAt)}</span>
+            <span className="flex items-center gap-1.5">
+              {(card.callCount > 0 || card.callStatus) && (
+                <span
+                  className={`flex items-center gap-0.5 ${
+                    card.callStatus === "atendeu" ? "text-emerald-500" : card.callStatus === "nao_atendeu" ? "text-red-400" : ""
+                  }`}
+                  title={`${card.callCount} ligação(ões)${card.callStatus === "atendeu" ? " · atendeu" : card.callStatus === "nao_atendeu" ? " · não atendeu" : ""}`}
+                >
+                  {card.callStatus === "nao_atendeu" ? <PhoneOff className="h-3 w-3" /> : <Phone className="h-3 w-3" />}
+                  {card.callCount > 0 && <span className="tabular-nums">{card.callCount}</span>}
+                </span>
+              )}
+              <span>{fmtDate(card.firstPurchaseAt)}</span>
+            </span>
           </div>
           {card.assigneeName && (
             <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
@@ -202,6 +218,8 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
   const [openCard, setOpenCard] = useState<CrmCard | null>(null);
   const [cardNotes, setCardNotes] = useState("");
   const [cardAssignee, setCardAssignee] = useState("");
+  const [cardCallStatus, setCardCallStatus] = useState<"atendeu" | "nao_atendeu" | null>(null);
+  const [cardCallCount, setCardCallCount] = useState(0);
   const [confirmDeleteCard, setConfirmDeleteCard] = useState<string | null>(null);
   const { data: survey, isLoading: surveyLoading } = useCrmCardSurvey(
     projectId, funnelId, stage.id, openCard?.id ?? null,
@@ -210,6 +228,8 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
     if (openCard) {
       setCardNotes(openCard.notes ?? "");
       setCardAssignee(openCard.assigneeName ?? "");
+      setCardCallStatus(openCard.callStatus);
+      setCardCallCount(openCard.callCount);
     }
   }, [openCard]);
 
@@ -317,7 +337,15 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
   function handleSaveCardDetails() {
     if (!openCard) return;
     updateCard.mutate(
-      { cardId: openCard.id, input: { notes: cardNotes.trim() || null, assigneeName: cardAssignee.trim() || null } },
+      {
+        cardId: openCard.id,
+        input: {
+          notes: cardNotes.trim() || null,
+          assigneeName: cardAssignee.trim() || null,
+          callStatus: cardCallStatus,
+          callCount: cardCallCount,
+        },
+      },
       {
         onSuccess: () => toast.success("Card atualizado"),
         onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
@@ -587,6 +615,60 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                   ) : (
                     <p className="text-sm text-muted-foreground">Sem pesquisa respondida.</p>
                   )}
+                </div>
+
+                {/* Rastreio de ligação — pedido do Lucas: Atendeu / Não atendeu / Liguei X vezes */}
+                <div className="space-y-1.5">
+                  <p className="text-muted-foreground text-xs uppercase tracking-wide font-semibold flex items-center gap-1.5">
+                    <Phone className="h-3.5 w-3.5" />
+                    Ligação
+                  </p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={cardCallStatus === "atendeu" ? "default" : "outline"}
+                      className="gap-1.5"
+                      onClick={() => setCardCallStatus(cardCallStatus === "atendeu" ? null : "atendeu")}
+                    >
+                      <Phone className="h-3.5 w-3.5" />
+                      Atendeu
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={cardCallStatus === "nao_atendeu" ? "destructive" : "outline"}
+                      className="gap-1.5"
+                      onClick={() => setCardCallStatus(cardCallStatus === "nao_atendeu" ? null : "nao_atendeu")}
+                    >
+                      <PhoneOff className="h-3.5 w-3.5" />
+                      Não atendeu
+                    </Button>
+                    <div className="flex items-center gap-1 rounded-md border border-border/50 px-1 py-0.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        disabled={cardCallCount <= 0}
+                        onClick={() => setCardCallCount((n) => Math.max(0, n - 1))}
+                      >
+                        <Minus className="h-3 w-3" />
+                      </Button>
+                      <span className="min-w-[86px] text-center text-xs tabular-nums">
+                        Liguei {cardCallCount}x
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => setCardCallCount((n) => Math.min(999, n + 1))}
+                      >
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">

@@ -23,6 +23,10 @@ export interface CrmCard {
   firstPurchaseAt: string | null;
   notes: string | null;
   assigneeName: string | null;
+  /** Rastreio de ligação: atendeu | nao_atendeu | null. */
+  callStatus: "atendeu" | "nao_atendeu" | null;
+  /** "Liguei X vezes". */
+  callCount: number;
   sortOrder: number;
   updatedAt: string;
 }
@@ -162,7 +166,14 @@ export function useUpdateCrmCard(projectId: string, funnelId: string, stageId: s
       input,
     }: {
       cardId: string;
-      input: { columnId?: string; sortOrder?: number; notes?: string | null; assigneeName?: string | null };
+      input: {
+        columnId?: string;
+        sortOrder?: number;
+        notes?: string | null;
+        assigneeName?: string | null;
+        callStatus?: "atendeu" | "nao_atendeu" | null;
+        callCount?: number;
+      };
     }) =>
       apiClient<CrmCard>(`${basePath(projectId, funnelId, stageId)}/cards/${cardId}`, {
         method: "PATCH",
