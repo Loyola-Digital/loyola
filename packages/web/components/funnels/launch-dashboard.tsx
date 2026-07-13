@@ -144,6 +144,11 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
     days,
   );
   const salesByDay = salesByDayData && !salesByDayData.semDados ? salesByDayData.byDay : null;
+  // Story 18.51b: só passa os recortes único/total quando há planilha de vendas
+  // com dados. Sem planilha, o backend devolve EMPTY_RESPONSE com objetos vazios
+  // ({}), não undefined — passar `undefined` aqui aciona o AC-BUG.1 (tabela mostra
+  // "—" em vez de 0/leads sob rótulo "Ingressos").
+  const salesTableData = salesData && !salesData.semDados ? salesData : undefined;
   const metrics = useCrossedFunnelMetrics(
     projectId,
     funnel,
@@ -475,12 +480,11 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           surveyMatched={survey.matchedResponses}
           surveyUnmatched={survey.unmatchedResponses}
           salesByDay={salesByDay ?? undefined}
-          ingressosByDay={salesData?.ingressosByDay}
-          ingressosUnicosByDay={salesData?.ingressosUnicosByDay}
-          ingressosTotaisByDay={salesData?.ingressosTotaisByDay}
-          faturamentoUnicoByDay={salesData?.faturamentoUnicoByDay}
-          faturamentoTotalByDay={salesData?.faturamentoTotalByDay}
-          ingressosPorProduto={salesData?.ingressosPorProduto}
+          ingressosUnicosByDay={salesTableData?.ingressosUnicosByDay}
+          ingressosTotaisByDay={salesTableData?.ingressosTotaisByDay}
+          faturamentoUnicoByDay={salesTableData?.faturamentoUnicoByDay}
+          faturamentoTotalByDay={salesTableData?.faturamentoTotalByDay}
+          ingressosPorProduto={salesTableData?.ingressosPorProduto}
           adsetsMap={adsetsMap}
           projectId={projectId}
           funnelId={funnel.id}

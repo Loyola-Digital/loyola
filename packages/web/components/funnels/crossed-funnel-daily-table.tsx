@@ -145,14 +145,20 @@ interface ContextMenuState {
 }
 
 /**
- * Tabela diária cruzada (Meta Ads + planilha de leads).
+ * Tabela diária cruzada (Meta Ads + planilha de leads/vendas).
  *
- * Ordem das colunas: Dia, Investimento, Faturamento, Cliques, Impressões,
- * Total Leads, CPL Pg, CPL G, CPM, CPC, CTR, LP View, Connect Rate, Tx Conv.,
- * Leads pagos, Leads org, Leads s/ track. Última linha é o total via footer.
+ * Ordem das colunas (Story 18.51b):
+ * - Gratuita (free): Dia, Investimento, Faturamento, Total Leads, CPL Pg, CPL
+ *   Geral, Cliques, Impressões, CPM, CPC, CTR, LP View, Connect Rate, Tx Conv.,
+ *   Leads Pg, Leads Org, Leads s/ track (17 colunas).
+ * - Paga (paid): Dia, Investimento, Faturamento único, Faturamento Total,
+ *   Ingressos únicos, Ingressos totais, CPL Pg, CPL Geral, Ticket médio (únicos),
+ *   Ticket médio (total), Cliques, Impressões, CPM, CPC, CTR, LP View, Connect
+ *   Rate, Tx Conv., Ingressos Pg, Ingressos Org, Ingressos s/ track (21 colunas).
+ * Última linha é o total via footer (soma dos recortes por dia).
  *
- * Total Leads + CPL Pg/G ficam logo após Impressões para destacar a métrica
- * de custo de aquisição cedo na leitura.
+ * A coluna de leads/ingressos + CPL Pg/Geral ficam cedo na leitura para destacar
+ * a métrica de custo de aquisição.
  *
  * Quando `projectId` e `funnelId` forem informados, ativa marcação manual de
  * "virada de lote" via clique direito (Story 27.1).
