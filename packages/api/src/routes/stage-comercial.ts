@@ -15,6 +15,7 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   funnels,
+  funnelSpreadsheets,
   funnelStages,
   funnelSurveys,
   manualSales,
@@ -140,8 +141,13 @@ export default fp(async function stageComercialRoutes(fastify) {
     return stage ?? null;
   }
 
-  /** Compradores das etapas-fonte: planilhas de venda + vendas manuais ativas. */
-  async function collectBuyers(sourceStageIds: string[]): Promise<{ buyers: Map<string, Buyer>; skippedNoEmail: number }> {
+  /**
+   * Compradores das etapas-fonte: planilhas de venda de etapa + vendas manuais
+   * ativas + (funil perpétuo) a planilha de vendas do PERPÉTUO — que é ligada
+   * ao FUNIL (type='perpetual_sales', stage_id NULL), não à etapa. Sem ela,
+   * fonte = etapa de dashboard do perpétuo vinha vazia.
+   */
+  async function collectBuyers(funnelId: string, sourceStageIds: string[]): Promise<{ buyers: Map<string, Buyer>; skippedNoEmail: number }> {
     const buyers = new Map<string, Buyer>();
     let skippedNoEmail = 0;
 
@@ -231,7 +237,70 @@ export default fp(async function stageComercialRoutes(fastify) {
       }
     }
 
-    // 2) Vendas manuais ATIVAS (reembolsada não entra no CRM).
+    // 2) Planilha de vendas do PERPÉTUO (funnel-level) — entra quando alguma
+    // etapa-fonte é a de dashboard (free/paid), que é quem essa planilha atende.
+    const sourceStages = await fastify.db
+      .select({ id: funnelStages.id, stageType: funnelStages.stageType })
+      .from(funnelStages)
+      .where(inArray(funnelStages.id, sourceStageIds));
+    const hasDashboardSource = sourceStages.some(
+      (s) => s.stageType === "free" || s.stageType === "paid",
+    );
+    if (hasDashboardSource) {
+      const [pSheet] = await fastify.db
+        .select()
+        .from(funnelSpreadsheets)
+        .where(and(eq(funnelSpreadsheets.funnelId, funnelId), eq(funnelSpreadsheets.type, "perpetual_sales")))
+        .limit(1);
+      if (pSheet) {
+        const mapping = (pSheet.columnMapping ?? {}) as {
+          email?: string;
+          transactionId?: string;
+          customerName?: string;
+          productName?: string;
+          valorBruto?: string;
+          dataVenda?: string;
+        };
+        try {
+          const data = await readSheetData(pSheet.spreadsheetId, pSheet.sheetName);
+          const col = (n: string | undefined) => (n ? data.headers.indexOf(n) : -1);
+          const emailIdx = col(mapping.email);
+          const txIdx = col(mapping.transactionId);
+          const nameIdx = col(mapping.customerName);
+          const produtoIdx = col(mapping.productName);
+          const brutoIdx = col(mapping.valorBruto);
+          const dataIdx = col(mapping.dataVenda);
+          if (emailIdx !== -1) {
+            const seenPerp = new Set<string>();
+            for (const row of data.rows) {
+              const email = (row[emailIdx] ?? "").trim();
+              if (!email) {
+                skippedNoEmail++;
+                continue;
+              }
+              const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
+              const produto = produtoIdx >= 0 ? (row[produtoIdx] ?? "").trim() : "";
+              if (txId) {
+                const k = `perp|tx|${txId}|${produto.toLowerCase()}`;
+                if (seenPerp.has(k)) continue;
+                seenPerp.add(k);
+              }
+              const dt = dataIdx >= 0 ? parseSheetDate(row[dataIdx]) : null;
+              addPurchase(email, nameIdx >= 0 ? (row[nameIdx] ?? "").trim() || null : null, null, {
+                produto: produto || "(sem produto)",
+                valor: brutoIdx >= 0 ? parseBrNumber(row[brutoIdx]) : 0,
+                dataVenda: dt ? dt.toISOString() : null,
+                fonte: "planilha:perpetuo",
+              });
+            }
+          }
+        } catch {
+          // planilha inacessível — segue com as demais fontes
+        }
+      }
+    }
+
+    // 3) Vendas manuais ATIVAS (reembolsada não entra no CRM).
     const manualRows = await fastify.db
       .select()
       .from(manualSales)
@@ -372,7 +441,7 @@ export default fp(async function stageComercialRoutes(fastify) {
       }
       const firstColumn = columns[0];
 
-      const { buyers, skippedNoEmail } = await collectBuyers(sourceStageIds);
+      const { buyers, skippedNoEmail } = await collectBuyers(params.data.funnelId, sourceStageIds);
 
       const existingCards = await fastify.db
         .select()
