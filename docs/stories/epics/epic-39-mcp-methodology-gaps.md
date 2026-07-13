@@ -2,7 +2,7 @@
 
 **Origem:** auditoria da metodologia rodada via MCP (jul/2026) — mapa de gaps por tier, com legenda de esforço: 🟢 resolve no Loyola X · 🟠 depende do time de dados/conexão · 🔴 desenvolvimento de produto.
 
-**Status:** tranches 1 e 2 entregues (39.1, 39.2, 39.6, 39.7, 39.8, 39.9 + 39.5 parcial). Pendentes: 39.3 (classificador fino — próxima), 39.4 (datas-chave), 39.5 restante (bump keywords + meio de pagamento).
+**Status:** tranches 1, 2 e 3 (Resumão v4) entregues. Pendentes: 39.3 (classificador fino — próxima), 39.4 (datas-chave), 39.5 restante (bump keywords + meio de pagamento), 39.10 (preview_link), 39.11 (connect real WhatsApp — decisão de fonte de dado), 39.12 (hasLandingPage).
 
 ---
 
@@ -19,6 +19,14 @@
 | 39.7 | 4.1 | **Faixa (lead score A→D)**: `mapping.faixa` (Story 18.17, já existia no columnMapping) agora agregada no survey como pergunta "Faixa (lead score)" — com origem e byAdId de graça. | ✅ Done (tranche 2) |
 | 39.8 | 6.1 | **Retenção/backfill do daily**: o script já existia (36.4) — backfill de 120 dias RODADO (7.316 ad-rows; 1 conta com erro transitório da Meta, reprocessável). Cache é append-only → histórico retido. | ✅ Done (tranche 2) |
 | 39.9 | 6.2 | **linkClicks no público**: `linkClicks`/`ctrLink`/`cpcLink` em todos os endpoints Meta públicos (daily, stage-daily, campaigns, creatives). | ✅ Done (tranche 2) |
+| 39.R1 | v4 #1 | **Elegibilidade do leads-summary**: cache de leads pra QUALQUER etapa com planilha de pesquisa (Lead Scoring deixou de ser pré-requisito) — 4 etapas `semDados` do PG02 resolvidas (3 → 9 stages com cache). | ✅ Done (Resumão v4) |
+| 39.R2 | v4 #2 | **byQuestionByTerm**: os 5 blocos da metodologia (pagoHot/pagoCold/pagoTotal/organico/total) por utm_term no survey + `termDenominators`. ⚠️ pagoTotal ≠ hot+cold. | ✅ Done (Resumão v4) |
+| 39.R3 | v4 #3 | **porOrigemTemperatura**: matriz Origem × Temperatura (utm_term da venda) no sales-daily — ROAS hot vs cold. | ✅ Done (Resumão v4) |
+| 39.R4 | v4 #5/#7 | **lpRate + checkouts/checkoutRate**: alias honesto de connectRate (chegada na LP) + `initiate_checkout` do pixel e purchases÷checkouts em todos os objetos Meta. | ✅ Done (Resumão v4) |
+| 39.R5 | v4 #6 | **surveyResponseRate**: survey cruza com cache de leads do mesmo stage → `totalLeads` + `totalResponses÷totalLeads×100` (null sem denominador). Meta: ≥75%. | ✅ Done (Resumão v4) |
+| 39.10 | v4 #4 | **preview_link nos criativos**: Graph API `/{ad-id}/previews` no sync de criativos + expor em `get_creative_performance` (link clicável do anúncio). | Backlog |
+| 39.11 | v4 #5b | **Connect real de WhatsApp**: taxa de resposta/atendimento de fato. O dado NÃO entra no Loyola X por nenhuma integração hoje — precisa decidir a fonte (Evolution API? planilha do comercial? webhook ManyChat?) antes de codar. | Backlog (decisão) |
+| 39.12 | v4 #8 | **hasLandingPage**: flag no funil/etapa dizendo se há LP no fluxo (define se lpRate/CPL de LP se aplicam ou se o funil é clique-direto-WhatsApp). | Backlog |
 
 ## Respostas 6.2 (autoritativas, do código)
 

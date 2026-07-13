@@ -56,6 +56,9 @@ byUtm: {
   PREENCHIDO. `uniqueLeads: 0` com `identifiersFilled: {email:0, phone:0}` = planilha
   anônima (colunas existem, valores não) — limitação do dado, não bug.
 - `range` agora vem em ISO (o bug do range invertido com datas DD/MM foi corrigido).
+- **Elegibilidade ampliada (Resumão v4 #1):** o cache agora existe para QUALQUER etapa
+  com planilha de pesquisa conectada — Lead Scoring configurado deixou de ser pré-requisito.
+  `semDados: true` agora significa de verdade "etapa sem planilha", não "sem scoring".
 
 **Uso correto:** os 3 baldes de `byOrigin` (Pago/Orgânico/Sem Track) são grosseiros.
 Antes de afirmar que um canal "não existe" (Closer, ManyChat, WhatsApp, IG bio...),
@@ -72,6 +75,27 @@ byQuestion.faixa: [{ label: "C", count, pct }, { label: "B", ... }, ...]
 byQuestionByOrigin.pago.faixa / organico.faixa   ← Faixa × origem
 byAdId.<adId>.faixa                              ← Faixa × criativo (Fase 9!)
 ```
+
+**NOVO (Resumão v4 #2) — `byQuestionByTerm`:** os 5 blocos da metodologia por `utm_term`:
+
+```
+byQuestionByTerm: {
+  pagoHot:   { <key>: [{label,count}] },   // 🔥 Pago + term hot/quente
+  pagoCold:  { ... },                       // ❄️ Pago + term cold/frio
+  pagoTotal: { ... },                       // 🟢 TODO o Pago (com E sem split hot/cold)
+  organico:  { ... },                       // 🟡 source não-pago OU term captura/alunos/captacao
+  total:     { ... }                        // ⚪ tudo
+}
+termDenominators: { pagoHot, pagoCold, pagoTotal, organico, total }  // N de cada bloco
+```
+
+⚠️ **`pagoTotal ≠ pagoHot + pagoCold`** — inclui Pago sem split de temperatura. Use
+`termDenominators` como denominador de cada bloco (não `totalResponses`).
+
+**NOVO (Resumão v4 #6) — `totalLeads` + `surveyResponseRate`:** o endpoint cruza com o
+cache de leads do MESMO stage: `surveyResponseRate = totalResponses ÷ totalLeads × 100`.
+Vem `null` quando o stage não tem cache de leads — sem denominador, não invente.
+Meta da metodologia: ≥75%.
 
 Se `"faixa"` NÃO estiver em `questions`, a etapa não tem a coluna mapeada — reporte isso, não invente.
 Gate da Fase 8 continua: só use as perguntas listadas em `questions`.
@@ -90,12 +114,23 @@ reais (numéricos ≥10 dígitos — "org"/"link_in_bio"/"{{ad.id}}" ficam fora)
 - **`porProduto`** (novo): `[{ produto, vendas, bruto, liquido }]` top 30 — separe
   ingresso × order bump pelas keywords do nome do produto. `"(sem produto)"` = coluna não mapeada.
 - Origem da venda = `utm_source` **da própria linha de venda** (não do lead).
+- **NOVO (Resumão v4 #3) — `porOrigemTemperatura`:** matriz Origem × Temperatura pelo
+  `utm_term` da venda: `[{ origem, temperatura: "hot"|"cold"|null, vendas, bruto, liquido }]`.
+  `temperatura: null` = venda sem split hot/cold. ROAS por temperatura = `bruto` do bloco ÷
+  spend correspondente (get_stage_daily).
 
 ### 5. Todos os endpoints Meta — `linkClicks`/`ctrLink`/`cpcLink`
 
 - `clicks` (e `ctr`/`cpc`) = cliques **TOTAIS** da Meta (inclui curtida, clique no perfil...).
 - `linkClicks` = evento `link_click` (tráfego real) · `ctrLink` = linkClicks/impressões ·
   `cpcLink` = spend/linkClicks. **Para análise de tráfego, use as variantes link.**
+- **NOVO (Resumão v4 #5/#7):**
+  - **`lpRate`** — alias honesto de `connectRate` (mesmo valor: landingPageViews ÷ clicks × 100).
+    ⚠️ Isso é **chegada na LP**, NÃO connect de WhatsApp/atendimento. As metas de mercado
+    "connect ≥70%" NÃO se aplicam a este campo. O connect real de WhatsApp não existe como
+    dado no Loyola X (backlog 39.11) — não invente.
+  - **`checkouts`** = evento `initiate_checkout` do pixel · **`checkoutRate`** =
+    purchases ÷ checkouts × 100. Em todos os objetos Meta (campaigns, creatives, daily, stage-daily).
 
 ### 6. Histórico do `get_daily`/`get_stage_daily`
 
@@ -149,4 +184,8 @@ V = get_stage_sales_daily(p, s)
   **fallback UTM-da-venda para "Sem Track"** — 39.3, em backlog. Use `byUtm` manualmente.
 - **Datas-chave da etapa** (abertura/fim de carrinho, reabertura) — 39.4.
 - **Meio de pagamento** (excluir valor TMB) e **bump keywords** como config — resto da 39.5.
+- **`preview_link` dos criativos** (Graph API `/previews`) — 39.10, em backlog.
+- **Connect real de WhatsApp** (taxa de resposta/atendimento) — 39.11; o dado não entra
+  no Loyola X hoje por nenhuma integração. `lpRate` é o proxy disponível.
+- **`hasLandingPage`** (flag de funil com/sem LP, para saber se lpRate se aplica) — 39.12.
 - Coorte D+x, listas Front/Comunidade, cross-launch (PII row-level) — decisão de produto pendente.

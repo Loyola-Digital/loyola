@@ -44,6 +44,24 @@ function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// Resumão v4 #3: utm_term não está no columnMapping das planilhas de venda —
+// detecção por matcher no cabeçalho (mesmos aliases do survey).
+function findTermHeader(headers: string[]): number {
+  const norm = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const H = headers.map(norm);
+  for (const m of ["utm_term", "utm term", "t=", "termo"]) {
+    const i = H.findIndex((h) => h === m || h.includes(m));
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+function classifyTemperaturaVenda(termRaw: string | null): "hot" | "cold" | null {
+  const t = (termRaw ?? "").toLowerCase();
+  if (t.includes("hot") || t.includes("quente")) return "hot";
+  if (t.includes("cold") || t.includes("frio")) return "cold";
+  return null;
+}
+
 export interface SalesDailyPayload {
   range: { from: string | null; to: string | null };
   totalVendas: number;
@@ -56,6 +74,9 @@ export interface SalesDailyPayload {
     ingressos: { pago: number; org: number; semTrack: number; total: number };
   }[];
   porOrigem: { origem: Origem; vendas: number; bruto: number; liquido: number }[];
+  /** Resumão v4 #3: matriz Origem × Temperatura (utm_term da VENDA: hot/cold/null).
+   * ROAS por temperatura = bruto do bloco ÷ spend hot/cold do stage-daily. */
+  porOrigemTemperatura: { origem: Origem; temperatura: "hot" | "cold" | null; vendas: number; bruto: number; liquido: number }[];
   /** Story 39.5 (parcial): quebra por produto (top 30) — base pra separar ingresso × order bump. */
   porProduto: { produto: string; vendas: number; bruto: number; liquido: number }[];
   /** Story 39.6: subtypes de planilha que entraram na conta (capture fica FORA). */
@@ -100,7 +121,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
   // como vendas separadas; retry literal (mesmo pedido+produto) colapsa.
   const sales = new Map<
     string,
-    { bruto: number; liquido: number; utmSource: string | null; date: Date | null; produto: string }
+    { bruto: number; liquido: number; utmSource: string | null; utmTerm: string | null; date: Date | null; produto: string }
   >();
   const subtypesConsidered = new Set<string>();
 
@@ -120,6 +141,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
     const brutoIdx = col(mapping.valorBruto);
     const liquidoIdx = col(mapping.valorLiquido);
     const utmSourceIdx = col(mapping.utm_source);
+    const utmTermIdx = findTermHeader(data.headers);
     const dataIdx = col(mapping.dataVenda);
     if (emailIdx === -1) continue;
     subtypesConsidered.add(sheet.subtype);
@@ -139,6 +161,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
         bruto: parseNumber(row[brutoIdx] ?? ""),
         liquido: parseNumber(row[liquidoIdx] ?? ""),
         utmSource: utmSourceIdx !== -1 ? sanitizeUtmValue(row[utmSourceIdx]) : null,
+        utmTerm: utmTermIdx !== -1 ? sanitizeUtmValue(row[utmTermIdx]) : null,
         date: dataIdx !== -1 ? parseDate(row[dataIdx]) : null,
         produto: produto || "(sem produto)",
       });
@@ -149,6 +172,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
 
   const byDay = new Map<string, { bruto: number; liquido: number; pago: number; org: number; semTrack: number }>();
   const porOrigem = new Map<Origem, { vendas: number; bruto: number; liquido: number }>();
+  const porOT = new Map<string, { origem: Origem; temperatura: "hot" | "cold" | null; vendas: number; bruto: number; liquido: number }>();
   const porProduto = new Map<string, { vendas: number; bruto: number; liquido: number }>();
   let totalBruto = 0;
   let totalLiquido = 0;
@@ -170,6 +194,14 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
     pp.bruto += s.bruto;
     pp.liquido += s.liquido;
     porProduto.set(s.produto, pp);
+
+    const temperatura = classifyTemperaturaVenda(s.utmTerm);
+    const otKey = `${origem}|${temperatura ?? "null"}`;
+    const ot = porOT.get(otKey) ?? { origem, temperatura, vendas: 0, bruto: 0, liquido: 0 };
+    ot.vendas += 1;
+    ot.bruto += s.bruto;
+    ot.liquido += s.liquido;
+    porOT.set(otKey, ot);
 
     if (s.date) {
       const key = ymd(s.date);
@@ -200,6 +232,13 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
       })),
     porOrigem: [...porOrigem.entries()].map(([origem, v]) => ({
       origem,
+      vendas: v.vendas,
+      bruto: Math.round(v.bruto * 100) / 100,
+      liquido: Math.round(v.liquido * 100) / 100,
+    })),
+    porOrigemTemperatura: [...porOT.values()].map((v) => ({
+      origem: v.origem,
+      temperatura: v.temperatura,
       vendas: v.vendas,
       bruto: Math.round(v.bruto * 100) / 100,
       liquido: Math.round(v.liquido * 100) / 100,
