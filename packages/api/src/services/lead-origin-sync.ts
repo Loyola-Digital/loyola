@@ -130,21 +130,37 @@ export async function computeLeadOriginForStage(
   db: Database,
   stageId: string,
 ): Promise<LeadOriginPayload | null> {
+  // Elegibilidade (Resumão v4 #1): antes SÓ etapas com Lead Scoring
+  // configurado entravam — todas as outras devolviam semDados mesmo com
+  // pesquisa rica. Agora: Lead Scoring (quando existe) tem prioridade;
+  // fallback = QUALQUER planilha de pesquisa conectada na etapa.
   const [scoring] = await db
     .select({ surveyId: stageLeadScoringSchemas.surveyId })
     .from(stageLeadScoringSchemas)
     .where(eq(stageLeadScoringSchemas.stageId, stageId))
     .limit(1);
-  if (!scoring?.surveyId) return null;
 
-  const [survey] = await db
-    .select({
-      spreadsheetId: funnelSurveys.spreadsheetId,
-      sheetName: funnelSurveys.sheetName,
-    })
-    .from(funnelSurveys)
-    .where(eq(funnelSurveys.id, scoring.surveyId))
-    .limit(1);
+  let survey: { spreadsheetId: string; sheetName: string } | undefined;
+  if (scoring?.surveyId) {
+    [survey] = await db
+      .select({
+        spreadsheetId: funnelSurveys.spreadsheetId,
+        sheetName: funnelSurveys.sheetName,
+      })
+      .from(funnelSurveys)
+      .where(eq(funnelSurveys.id, scoring.surveyId))
+      .limit(1);
+  }
+  if (!survey) {
+    [survey] = await db
+      .select({
+        spreadsheetId: funnelSurveys.spreadsheetId,
+        sheetName: funnelSurveys.sheetName,
+      })
+      .from(funnelSurveys)
+      .where(eq(funnelSurveys.stageId, stageId))
+      .limit(1);
+  }
   if (!survey) return null;
 
   let sheet: { headers: string[]; rows: string[][] };
@@ -297,7 +313,7 @@ export async function syncLeadOrigin(
   const summary: LeadOriginSyncSummary = { stagesProcessed: 0, stagesSkipped: 0, errors: [] };
 
   const baseWhere = isNotNull(stageLeadScoringSchemas.surveyId);
-  const rows = await db
+  const scoringRows = await db
     .select({ stageId: stageLeadScoringSchemas.stageId, projectId: funnels.projectId })
     .from(stageLeadScoringSchemas)
     .innerJoin(funnelStages, eq(funnelStages.id, stageLeadScoringSchemas.stageId))
@@ -307,6 +323,25 @@ export async function syncLeadOrigin(
         ? and(baseWhere, inArray(funnels.projectId, opts.projectIds))
         : baseWhere,
     );
+
+  // Resumão v4 #1: também elegíveis as etapas com pesquisa conectada (sem
+  // exigir Lead Scoring) — antes 100% delas devolviam semDados.
+  const surveyBase = isNotNull(funnelSurveys.stageId);
+  const surveyRows = await db
+    .selectDistinct({ stageId: funnelSurveys.stageId, projectId: funnels.projectId })
+    .from(funnelSurveys)
+    .innerJoin(funnelStages, eq(funnelStages.id, funnelSurveys.stageId))
+    .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+    .where(
+      opts.projectIds && opts.projectIds.length > 0
+        ? and(surveyBase, inArray(funnels.projectId, opts.projectIds))
+        : surveyBase,
+    );
+
+  const byStage = new Map<string, string>();
+  for (const r of scoringRows) byStage.set(r.stageId, r.projectId);
+  for (const r of surveyRows) if (r.stageId) byStage.set(r.stageId, r.projectId);
+  const rows = [...byStage.entries()].map(([stageId, projectId]) => ({ stageId, projectId }));
 
   for (const { stageId, projectId } of rows) {
     try {

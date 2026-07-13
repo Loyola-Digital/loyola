@@ -97,7 +97,38 @@ export default fp(async function publicLeadsRoutes(fastify) {
         };
       }
 
-      return { projectId, stageId, computedAt: row.computedAt, ...(row.payload as Record<string, unknown>) };
+      // Resumão v4 #6: taxa de resposta da pesquisa — cruza com o cache de
+      // leads-origin do MESMO stage (totalLeads da planilha de leads). null
+      // quando o stage não tem cache de leads (sem denominador — não invente).
+      const payload = row.payload as Record<string, unknown>;
+      let surveyResponseRate: number | null = null;
+      let totalLeads: number | null = null;
+      const [leadsRow] = await fastify.db
+        .select({ payload: publicMetricsCache.payload })
+        .from(publicMetricsCache)
+        .where(
+          and(
+            eq(publicMetricsCache.projectId, projectId),
+            eq(publicMetricsCache.scope, LEAD_ORIGIN_SCOPE),
+            eq(publicMetricsCache.key, stageId),
+          ),
+        )
+        .limit(1);
+      const leadsPayload = leadsRow?.payload as { totalLeads?: number } | undefined;
+      const totalResponses = (payload as { totalResponses?: number }).totalResponses ?? 0;
+      if (leadsPayload?.totalLeads && leadsPayload.totalLeads > 0) {
+        totalLeads = leadsPayload.totalLeads;
+        surveyResponseRate = Math.round((totalResponses / leadsPayload.totalLeads) * 10000) / 100;
+      }
+
+      return {
+        projectId,
+        stageId,
+        computedAt: row.computedAt,
+        totalLeads,
+        surveyResponseRate,
+        ...payload,
+      };
     },
   );
 

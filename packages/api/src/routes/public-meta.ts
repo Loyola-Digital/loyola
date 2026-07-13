@@ -88,6 +88,7 @@ interface MetricAgg {
   purchases: number;
   revenue: number;
   lpViews: number;
+  checkouts: number;
   lastSyncedAt: Date | null;
 }
 
@@ -102,6 +103,7 @@ function emptyAgg(): MetricAgg {
     purchases: 0,
     revenue: 0,
     lpViews: 0,
+    checkouts: 0,
     lastSyncedAt: null,
   };
 }
@@ -129,6 +131,8 @@ function accumulate(agg: MetricAgg, row: InsightRow): void {
   agg.purchases += parsePurchases(row.actions);
   agg.revenue += parsePurchaseRevenue(row.actionValues);
   agg.lpViews += parseActionCount(row.actions, "landing_page_view");
+  // Resumão v4 #7: funil de checkout (initiate_checkout do pixel).
+  agg.checkouts += parseActionCount(row.actions, "initiate_checkout");
   if (!agg.lastSyncedAt || row.lastSyncedAt > agg.lastSyncedAt) {
     agg.lastSyncedAt = row.lastSyncedAt;
   }
@@ -155,9 +159,15 @@ function deriveMetrics(a: MetricAgg) {
     cpl: round(safeDiv(a.spend, a.leads)),
     cpa: round(safeDiv(a.spend, a.purchases)),
     roas: round(safeDiv(a.revenue, a.spend)),
-    // Connect Rate = LP views / cliques (proxy de quem chegou na LP/conexão).
-    // Bate com o "Connect Rate" do dashboard (ex.: 22.631 LPV / 35.882 cliques = 63%).
+    // ⚠️ Resumão v4 #5: este "connectRate" é LP views ÷ cliques — NÃO é a taxa
+    // de conexão WhatsApp/atendimento do mercado. `lpRate` é o nome honesto
+    // (mesmo valor); `connectRate` fica por compatibilidade. O connect real de
+    // WhatsApp não existe como dado no Loyola X ainda (story 39.11).
     connectRate: a.clicks > 0 ? round((a.lpViews / a.clicks) * 100) : null,
+    lpRate: a.clicks > 0 ? round((a.lpViews / a.clicks) * 100) : null,
+    // Resumão v4 #7: purchases ÷ initiate_checkout (funil de checkout do pixel).
+    checkouts: a.checkouts,
+    checkoutRate: a.checkouts > 0 ? round((a.purchases / a.checkouts) * 100) : null,
   };
 }
 

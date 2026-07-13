@@ -27,6 +27,34 @@ const SURVEY_QUESTION_MAP: Record<string, { matchers: string[]; label: string }>
 };
 const UTM_CONTENT_MATCHERS = ["utm_content"];
 const UTM_SOURCE_MATCHERS = ["utm_source", "utm source", "s=", "source"];
+const UTM_TERM_MATCHERS = ["utm_term", "utm term", "t=", "termo"];
+
+// Resumão v4 #2: classificação em 5 blocos (Pago Quente/Frio/Total, Orgânico,
+// Total) pela regra do CLAUDE.md do gestor. Fontes pagas incluem as variantes
+// vistas nas planilhas reais.
+const PAID_SOURCES_TERM = new Set([
+  "meta", "meta-ads", "meta_ads", "metaads", "facebook", "fb", "google", "google-ads",
+]);
+export type TermBucket = "pagoHot" | "pagoCold" | "pagoTotal" | "organico" | "total";
+/**
+ * Buckets de uma resposta (sempre inclui "total"). Regras, em ordem:
+ * 1. utm_term contém hot/quente → pagoHot (+pagoTotal)
+ * 2. utm_term contém cold/frio → pagoCold (+pagoTotal)
+ * 3. utm_source pago sem hot/cold → só pagoTotal (por isso pagoTotal ≠ hot+cold)
+ * 4. utm_source outro não-vazio OU utm_term contém captura|alunos|captacao → organico
+ * 5. tudo vazio → semTrack (só "total")
+ */
+function classifyTermBuckets(sourceRaw: string, termRaw: string): TermBucket[] {
+  const s = normalizeForMatch(sourceRaw ?? "");
+  const t = normalizeForMatch(termRaw ?? "");
+  const out: TermBucket[] = ["total"];
+  if (t.includes("hot") || t.includes("quente")) return [...out, "pagoHot", "pagoTotal"];
+  if (t.includes("cold") || t.includes("frio")) return [...out, "pagoCold", "pagoTotal"];
+  if (/captura|alunos|captacao/.test(t)) return [...out, "organico"];
+  if (PAID_SOURCES_TERM.has(s)) return [...out, "pagoTotal"];
+  if (s) return [...out, "organico"];
+  return out; // semTrack
+}
 
 // ---- utils (espelham normalize-answer.ts / use-survey-aggregation.ts) ----
 function normalizeAnswer(raw: string): string {
@@ -80,6 +108,7 @@ interface ColumnIndexes {
   questionLabels: Map<string, string>;
   utmContent: number;
   utmSource: number;
+  utmTerm: number;
 }
 function resolveColumnIndexes(headers: string[], mapping: Mapping): { indexes: ColumnIndexes; usedFallback: boolean } {
   const questions = new Map<string, number>();
@@ -122,7 +151,9 @@ function resolveColumnIndexes(headers: string[], mapping: Mapping): { indexes: C
   }
   const utmContent = mapping?.utm_content ? findHeaderIndexByName(headers, mapping.utm_content) : findHeaderIndex(headers, UTM_CONTENT_MATCHERS);
   const utmSource = mapping?.utm_source ? findHeaderIndexByName(headers, mapping.utm_source) : findHeaderIndex(headers, UTM_SOURCE_MATCHERS);
-  return { indexes: { questions, questionLabels, utmContent, utmSource }, usedFallback };
+  // utm_term não existe no columnMapping — detecção só por matcher.
+  const utmTerm = findHeaderIndex(headers, UTM_TERM_MATCHERS);
+  return { indexes: { questions, questionLabels, utmContent, utmSource, utmTerm }, usedFallback };
 }
 
 type Origin = "total" | "pago" | "organico";
@@ -133,6 +164,11 @@ export interface SurveyPayload {
   questions: { key: string; label: string }[];
   byQuestion: Record<string, SurveyDist[]>;
   byQuestionByOrigin: Record<Origin, Record<string, SurveyDist[]>>;
+  /** Resumão v4 #2: 5 blocos (🔥 pagoHot · ❄️ pagoCold · 🟢 pagoTotal · 🟡 organico
+   * · ⚪ total). ATENÇÃO: pagoTotal ≠ pagoHot + pagoCold — inclui Pago sem split. */
+  byQuestionByTerm: Record<TermBucket, Record<string, SurveyDist[]>>;
+  /** Denominadores (nº de respostas) de cada bloco do byQuestionByTerm. */
+  termDenominators: Record<TermBucket, number>;
   byAdId: Record<string, Record<string, { label: string; count: number }[]>>;
 }
 
@@ -159,6 +195,13 @@ export async function computeSurveyForStage(db: Database, stageId: string): Prom
   type Bucket = Map<string, { rawValues: string[]; count: number }>;
   const bucketsByOrigin: Record<Origin, Map<string, Bucket>> = { total: new Map(), pago: new Map(), organico: new Map() };
   const denom: Record<Origin, number> = { total: 0, pago: 0, organico: 0 };
+  const TERM_KEYS: TermBucket[] = ["pagoHot", "pagoCold", "pagoTotal", "organico", "total"];
+  const bucketsByTerm: Record<TermBucket, Map<string, Bucket>> = {
+    pagoHot: new Map(), pagoCold: new Map(), pagoTotal: new Map(), organico: new Map(), total: new Map(),
+  };
+  const termDenominators: Record<TermBucket, number> = {
+    pagoHot: 0, pagoCold: 0, pagoTotal: 0, organico: 0, total: 0,
+  };
   const byAdBuckets: Record<string, Map<string, Bucket>> = {};
   const questionsMeta = new Map<string, string>();
   let totalResponses = 0;
@@ -192,12 +235,23 @@ export async function computeSurveyForStage(db: Database, stageId: string): Prom
       const origin = classifyOrigin(indexes.utmSource >= 0 ? row[indexes.utmSource] : "");
       denom.total += 1;
       denom[origin] += 1;
+      // Resumão v4 #2: blocos por temperatura (utm_term).
+      const termBuckets = classifyTermBuckets(
+        indexes.utmSource >= 0 ? row[indexes.utmSource] ?? "" : "",
+        indexes.utmTerm >= 0 ? row[indexes.utmTerm] ?? "" : "",
+      );
+      for (const tb of termBuckets) termDenominators[tb] += 1;
       for (const [qKey, colIdx] of indexes.questions) {
         if (colIdx < 0) continue;
         const raw = (row[colIdx] ?? "").trim();
         if (!raw) continue;
         add(getBucket("total", qKey), raw);
         add(getBucket(origin, qKey), raw);
+        for (const tb of termBuckets) {
+          let m = bucketsByTerm[tb].get(qKey);
+          if (!m) { m = new Map(); bucketsByTerm[tb].set(qKey, m); }
+          add(m, raw);
+        }
       }
       if (indexes.utmContent >= 0) {
         const adId = normalizeNumericId((row[indexes.utmContent] ?? "").trim());
@@ -223,6 +277,15 @@ export async function computeSurveyForStage(db: Database, stageId: string): Prom
       if (bucket.size > 0) byQuestionByOrigin[origin][key] = finalize(bucket, denom[origin]);
     }
   }
+  const byQuestionByTerm: Record<TermBucket, Record<string, SurveyDist[]>> = {
+    pagoHot: {}, pagoCold: {}, pagoTotal: {}, organico: {}, total: {},
+  };
+  for (const tb of TERM_KEYS) {
+    for (const [key, bucket] of bucketsByTerm[tb]) {
+      if (bucket.size > 0) byQuestionByTerm[tb][key] = finalize(bucket, termDenominators[tb]);
+    }
+  }
+
   const byAdId: SurveyPayload["byAdId"] = {};
   for (const [adId, perQ] of Object.entries(byAdBuckets)) {
     const o: Record<string, { label: string; count: number }[]> = {};
@@ -238,6 +301,8 @@ export async function computeSurveyForStage(db: Database, stageId: string): Prom
     questions: [...questionsMeta.entries()].map(([key, label]) => ({ key, label })),
     byQuestion: byQuestionByOrigin.total,
     byQuestionByOrigin,
+    byQuestionByTerm,
+    termDenominators,
     byAdId,
   };
 }
