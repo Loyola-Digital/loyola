@@ -58,16 +58,24 @@ export default function FunnelPage() {
   const createStage = useCreateStage(params.id, params.funnelId);
   const updateFunnel = useUpdateFunnel(params.id, params.funnelId);
 
-  // Auto-redirect when there is exactly one stage (no need to show the list)
+  // Auto-redirect when there is exactly one stage (no need to show the list).
+  // Epic 40: NÃO redireciona mais no perpétuo — a página do funil agora tem
+  // função lá (Nova Etapa: Comercial/Debriefing/etc + card do Log). Sem isso o
+  // botão de criar etapa era inalcançável em funil perpétuo de etapa única.
   useEffect(() => {
-    if (!redirectedRef.current && stages && stages.length === 1) {
+    if (
+      !redirectedRef.current &&
+      stages &&
+      stages.length === 1 &&
+      funnelData?.funnelType !== "perpetual"
+    ) {
       redirectedRef.current = true;
       router.replace(
         `/projects/${params.id}/funnels/${params.funnelId}/stages/${stages[0].id}`
       );
     }
     // router intentionally omitted — Next.js router reference is unstable
-  }, [stages, params.id, params.funnelId]);
+  }, [stages, params.id, params.funnelId, funnelData?.funnelType]);
 
   const isLoading = funnelLoading || stagesLoading;
 
@@ -93,7 +101,8 @@ export default function FunnelPage() {
   }
 
   // Single-stage funnels redirect above; show a blank skeleton while navigating
-  if (stages && stages.length === 1) {
+  // (perpétuo não redireciona — cai no render normal com o grid).
+  if (stages && stages.length === 1 && funnelData?.funnelType !== "perpetual") {
     return (
       <div className="p-6 space-y-4">
         <Skeleton className="h-8 w-64" />
@@ -226,12 +235,12 @@ export default function FunnelPage() {
               </div>
             </PopoverContent>
           </Popover>
-          {funnelData.funnelType !== "perpetual" && (
-            <Button size="sm" className="gap-1.5" onClick={() => { setStageName(""); setCreateOpen(true); }}>
-              <Plus className="h-4 w-4" />
-              Nova Etapa
-            </Button>
-          )}
+          {/* Epic 40: perpétuo também cria etapas (Comercial/Debriefing/etc) —
+              o dashboard único do perpétuo segue sendo a etapa principal. */}
+          <Button size="sm" className="gap-1.5" onClick={() => { setStageName(""); setCreateOpen(true); }}>
+            <Plus className="h-4 w-4" />
+            Nova Etapa
+          </Button>
         </div>
       </div>
 
@@ -261,8 +270,7 @@ export default function FunnelPage() {
         funnelName={funnel.name}
       />
 
-      {/* Dialog Nova Etapa — só pra launch (perpetual não tem stages) */}
-      {funnelData.funnelType !== "perpetual" && (
+      {/* Dialog Nova Etapa — Epic 40: disponível também no perpétuo */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -385,7 +393,6 @@ export default function FunnelPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      )}
     </div>
   );
 }
