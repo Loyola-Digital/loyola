@@ -739,6 +739,15 @@ export const stageSalesSpreadsheets = pgTable(
         caixa?: string;
         negociacao?: string;
       }>(),
+    // Story 18.51a: nomes de produtos (productName) marcados como ORDER BUMP.
+    // Todo produto NÃO listado aqui é tratado como "produto da captação" (o
+    // ingresso). Base das métricas "únicas" (dedup por e-mail, só captação) vs
+    // "totais" (todos os produtos, sem dedup) na etapa Paga. Match é
+    // case-insensitive sobre productName.trim().toLowerCase(). Default [].
+    orderBumpProducts: jsonb("order_bump_products")
+      .notNull()
+      .default([])
+      .$type<string[]>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

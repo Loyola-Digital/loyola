@@ -2,7 +2,12 @@
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { StageSalesSpreadsheet, SaleColumnMapping, StageSalesSubtype } from "@loyola-x/shared";
+import type {
+  StageSalesSpreadsheet,
+  SaleColumnMapping,
+  StageSalesSubtype,
+  StageSalesProductsResponse,
+} from "@loyola-x/shared";
 
 const STALE_TIME = 2 * 60 * 1000;
 
@@ -88,6 +93,65 @@ export interface UpdateSaleSpreadsheetInput {
   spreadsheetName: string;
   sheetName: string;
   columnMapping: SaleColumnMapping;
+  /** Story 18.51a: opcional — preserva marcação existente quando ausente. */
+  orderBumpProducts?: string[];
+}
+
+// Story 18.51a: lista os productName distintos da planilha (via id) pro wizard
+// de order bumps. Não usa staleTime longo — reflete edições recentes.
+export function useStageSalesProducts(
+  projectId: string,
+  funnelId: string,
+  stageId: string,
+  spreadsheetId: string | null,
+  enabled: boolean
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["stage-sales-products", projectId, funnelId, stageId, spreadsheetId],
+    queryFn: () =>
+      apiClient<StageSalesProductsResponse>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/sales-spreadsheets/by-id/${spreadsheetId}/products`
+      ),
+    enabled: enabled && !!projectId && !!funnelId && !!stageId && !!spreadsheetId,
+    staleTime: 30 * 1000,
+  });
+}
+
+// Story 18.51a: salva só a marcação de order bumps. Reenvia os campos
+// existentes da planilha (o PUT exige mapping), variando só orderBumpProducts.
+export interface UpdateOrderBumpsInput {
+  current: StageSalesSpreadsheet;
+  orderBumpProducts: string[];
+}
+
+export function useUpdateOrderBumps(
+  projectId: string,
+  funnelId: string,
+  stageId: string
+) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ current, orderBumpProducts }: UpdateOrderBumpsInput) =>
+      apiClient<StageSalesSpreadsheet>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/sales-spreadsheets/by-id/${current.id}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            spreadsheetId: current.spreadsheetId,
+            spreadsheetName: current.spreadsheetName,
+            sheetName: current.sheetName,
+            columnMapping: current.columnMapping,
+            orderBumpProducts,
+          }),
+        }
+      ),
+    onSuccess: () => {
+      invalidateStageSalesData(queryClient, projectId, funnelId, stageId);
+      queryClient.invalidateQueries({ queryKey: ["stage-sales-products", projectId, funnelId, stageId] });
+    },
+  });
 }
 
 // Atualiza uma planilha específica por id (edita mapeamento sem remapear tudo).

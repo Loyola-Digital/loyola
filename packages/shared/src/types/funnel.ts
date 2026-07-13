@@ -91,7 +91,26 @@ export interface StageSalesSpreadsheet {
   spreadsheetName: string;
   sheetName: string;
   columnMapping: SaleColumnMapping;
+  /**
+   * Story 18.51a: productNames marcados como ORDER BUMP. Produto não listado =
+   * produto da captação (ingresso). Base das métricas únicas vs totais.
+   */
+  orderBumpProducts: string[];
   createdAt: string;
+}
+
+/** Story 18.51a: item retornado pelo endpoint de produtos distintos da planilha. */
+export interface StageSalesProduct {
+  name: string;
+  count: number;
+  isOrderBump: boolean;
+}
+
+/** Story 18.51a: resposta do endpoint de produtos distintos. */
+export interface StageSalesProductsResponse {
+  productMapped: boolean;
+  products: StageSalesProduct[];
+  orderBumpProducts: string[];
 }
 
 /**
@@ -274,6 +293,25 @@ export interface StageSalesData {
    * Usado pela Dados Diários da etapa Paga (Total Ingressos = vendas, não leads).
    */
   ingressosByDay?: Record<string, { pago: number; org: number; semTrack: number }>;
+  /**
+   * Story 18.51a: métricas ÚNICAS vs TOTAIS da etapa Captação Paga.
+   * - Único = e-mails distintos que compraram o(s) produto(s) da captação (não
+   *   marcados como order bump); por e-mail, a compra mais recente. Recompra não
+   *   soma no faturamento.
+   * - Total = todas as vendas (todos produtos, sem dedup por e-mail).
+   * `ingressosTotaisByDay` espelha `ingressosByDay`. Presentes só quando há
+   * planilha de vendas conectada (stageType "paid"/"sales").
+   */
+  ingressosUnicos?: number;
+  ingressosTotais?: number;
+  faturamentoUnico?: number;
+  faturamentoTotal?: number;
+  ingressosUnicosByDay?: Record<string, { pago: number; org: number; semTrack: number }>;
+  ingressosTotaisByDay?: Record<string, { pago: number; org: number; semTrack: number }>;
+  faturamentoUnicoByDay?: Record<string, number>;
+  faturamentoTotalByDay?: Record<string, number>;
+  /** Ingressos (vendas) por produto — todos os produtos, sem dedup. Tooltip de "Ingressos totais". */
+  ingressosPorProduto?: { produto: string; count: number; bruto: number; isOrderBump: boolean }[];
   porCanal: { canal: string; vendas: number; bruto: number; liquido: number }[];
   porFormaPagamento: { forma: string; vendas: number; bruto: number; liquido: number }[];
   porUtmSource: { fonte: string; vendas: number; bruto: number; liquido: number }[];
