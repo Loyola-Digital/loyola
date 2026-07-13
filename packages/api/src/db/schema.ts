@@ -2023,6 +2023,78 @@ export const debriefings = pgTable(
 );
 
 // ============================================================
+// COMERCIAL CRM (EPIC-40 — Story 40.1)
+// ============================================================
+// Etapa "comercial": kanban de compradores. Config aponta as etapas-fonte;
+// cada comprador (dedup por email) vira 1 card com N compras em `products`.
+
+export const stageComercialConfig = pgTable("stage_comercial_config", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  stageId: uuid("stage_id")
+    .notNull()
+    .unique()
+    .references(() => funnelStages.id, { onDelete: "cascade" }),
+  /** Etapas do funil de onde puxar os compradores. */
+  sourceStageIds: jsonb("source_stage_ids").$type<string[]>().notNull().default([]),
+  createdBy: uuid("created_by")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const stageCrmColumns = pgTable(
+  "stage_crm_columns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 80 }).notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    /** Coluna terminal (Ganhou/Perdeu) — semântica de fechamento. */
+    isTerminal: boolean("is_terminal").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_crm_columns_stage_sort").on(table.stageId, table.sortOrder)]
+);
+
+export const stageCrmCards = pgTable(
+  "stage_crm_cards",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    // RESTRICT: coluna com card não pode ser excluída.
+    columnId: uuid("column_id")
+      .notNull()
+      .references(() => stageCrmColumns.id, { onDelete: "restrict" }),
+    customerEmail: varchar("customer_email", { length: 255 }).notNull(),
+    customerName: varchar("customer_name", { length: 255 }),
+    customerPhone: varchar("customer_phone", { length: 50 }),
+    /** Compras do comprador: [{produto, valor, dataVenda, fonte}]. */
+    products: jsonb("products")
+      .$type<{ produto: string; valor: number; dataVenda: string | null; fonte: string }[]>()
+      .notNull()
+      .default([]),
+    totalValue: numeric("total_value", { precision: 12, scale: 2 }).notNull().default("0"),
+    firstPurchaseAt: timestamp("first_purchase_at", { withTimezone: true }),
+    notes: text("notes"),
+    /** Responsável (texto livre — como o Closer do evento). */
+    assigneeName: varchar("assignee_name", { length: 255 }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_crm_cards_stage_email").on(table.stageId, table.customerEmail),
+    index("idx_crm_cards_stage_column_sort").on(table.stageId, table.columnId, table.sortOrder),
+  ]
+);
+
+// ============================================================
 // EVENT PAYMENT ALERTS (Story 38.3 — Evento Presencial)
 // ============================================================
 // Alerta diário no chat do ClickUp: quem deve pagar parcela HOJE (calendário
