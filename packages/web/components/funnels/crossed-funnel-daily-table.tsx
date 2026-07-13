@@ -52,9 +52,21 @@ interface CrossedFunnelDailyTableProps {
   /**
    * Stage type para renderizar labels condicionalmente:
    * - Captação Gratuita: Total Leads, Leads Pg, Leads Org, Leads s/ track
-   * - Captação Paga: Total Ingressos, Ingressos Pg, Ingressos Org, Ingressos s/ track
+   * - Captação Paga: Ingressos únicos/totais, Ingressos Pg, Ingressos Org, Ingressos s/ track
    */
   stageType?: StageType;
+  /**
+   * Story 18.51b: recortes por dia × origem das métricas ÚNICAS (produto da
+   * captação, dedup por e-mail) e TOTAIS (todos os produtos, sem dedup) da etapa
+   * Paga. `ingressosTotaisByDay` espelha `ingressosByDay`. Presentes só quando há
+   * planilha de vendas conectada — `undefined` = sem planilha (AC-BUG.1).
+   */
+  ingressosUnicosByDay?: Record<string, { pago: number; org: number; semTrack: number }>;
+  ingressosTotaisByDay?: Record<string, { pago: number; org: number; semTrack: number }>;
+  faturamentoUnicoByDay?: Record<string, number>;
+  faturamentoTotalByDay?: Record<string, number>;
+  /** Ingressos (vendas) por produto — todos os produtos. Tooltip de "Ingressos totais". */
+  ingressosPorProduto?: { produto: string; count: number; bruto: number; isOrderBump: boolean }[];
 }
 
 function fmtCurrency(v: number | null | undefined): string {
@@ -133,14 +145,20 @@ interface ContextMenuState {
 }
 
 /**
- * Tabela diária cruzada (Meta Ads + planilha de leads).
+ * Tabela diária cruzada (Meta Ads + planilha de leads/vendas).
  *
- * Ordem das colunas: Dia, Investimento, Faturamento, Cliques, Impressões,
- * Total Leads, CPL Pg, CPL G, CPM, CPC, CTR, LP View, Connect Rate, Tx Conv.,
- * Leads pagos, Leads org, Leads s/ track. Última linha é o total via footer.
+ * Ordem das colunas (Story 18.51b):
+ * - Gratuita (free): Dia, Investimento, Faturamento, Total Leads, CPL Pg, CPL
+ *   Geral, Cliques, Impressões, CPM, CPC, CTR, LP View, Connect Rate, Tx Conv.,
+ *   Leads Pg, Leads Org, Leads s/ track (17 colunas).
+ * - Paga (paid): Dia, Investimento, Faturamento único, Faturamento Total,
+ *   Ingressos únicos, Ingressos totais, CPL Pg, CPL Geral, Ticket médio (únicos),
+ *   Ticket médio (total), Cliques, Impressões, CPM, CPC, CTR, LP View, Connect
+ *   Rate, Tx Conv., Ingressos Pg, Ingressos Org, Ingressos s/ track (21 colunas).
+ * Última linha é o total via footer (soma dos recortes por dia).
  *
- * Total Leads + CPL Pg/G ficam logo após Impressões para destacar a métrica
- * de custo de aquisição cedo na leitura.
+ * A coluna de leads/ingressos + CPL Pg/Geral ficam cedo na leitura para destacar
+ * a métrica de custo de aquisição.
  *
  * Quando `projectId` e `funnelId` forem informados, ativa marcação manual de
  * "virada de lote" via clique direito (Story 27.1).
@@ -156,7 +174,11 @@ export function CrossedFunnelDailyTable({
   surveyMatched,
   surveyUnmatched,
   salesByDay,
-  ingressosByDay,
+  ingressosUnicosByDay,
+  ingressosTotaisByDay,
+  faturamentoUnicoByDay,
+  faturamentoTotalByDay,
+  ingressosPorProduto,
   adsetsMap,
   projectId,
   funnelId,
@@ -164,32 +186,85 @@ export function CrossedFunnelDailyTable({
 }: CrossedFunnelDailyTableProps) {
   // Story 18.31: Condicionais por etapa (paid = Captação Paga, free = Captação Gratuita)
   const isPaidCapture = stageType === "paid";
-  // Story 18.48: na etapa Paga, as colunas de ingresso contam VENDAS (dedup) por
-  // origem, não leads. Só ativa quando há dados de vendas por dia.
-  const usesIngressos = isPaidCapture && !!ingressosByDay && Object.keys(ingressosByDay).length > 0;
-  const getIngresso = (date: string) => {
-    const v = ingressosByDay?.[date];
+  // Story 18.51b: sabe se há planilha de vendas conectada (undefined = sem
+  // planilha → AC-BUG.1: exibe "—" em vez de leads sob rótulo "Ingressos").
+  const hasSalesData = isPaidCapture && ingressosUnicosByDay !== undefined;
+
+  // Breakdown por origem dos ingressos ÚNICOS (base das colunas Pg/Org/s-track na
+  // Paga). "Ingressos únicos" = pago + org + semTrack.
+  const getUnicoOrigem = (date: string) => {
+    const v = ingressosUnicosByDay?.[date];
     return { pago: v?.pago ?? 0, org: v?.org ?? 0, semTrack: v?.semTrack ?? 0 };
   };
-  const ingressosTotais = usesIngressos
-    ? Object.values(ingressosByDay!).reduce(
+  const sumOrigem = (v?: { pago: number; org: number; semTrack: number }) =>
+    v ? v.pago + v.org + v.semTrack : 0;
+  const unicoDia = (date: string) => sumOrigem(ingressosUnicosByDay?.[date]);
+  const totalDia = (date: string) => sumOrigem(ingressosTotaisByDay?.[date]);
+  const fatUnicoDia = (date: string) => faturamentoUnicoByDay?.[date] ?? 0;
+  const fatTotalDia = (date: string) => faturamentoTotalByDay?.[date] ?? 0;
+  const ticket = (fat: number, qtd: number): number | null => (qtd > 0 ? fat / qtd : null);
+
+  // Totais (footer) — soma dos recortes por dia, pra bater com as colunas.
+  const sumAllOrigem = (rec?: Record<string, { pago: number; org: number; semTrack: number }>) =>
+    rec ? Object.values(rec).reduce((a, v) => a + v.pago + v.org + v.semTrack, 0) : 0;
+  const sumAllNum = (rec?: Record<string, number>) =>
+    rec ? Object.values(rec).reduce((a, v) => a + v, 0) : 0;
+  const totUnicos = sumAllOrigem(ingressosUnicosByDay);
+  const totTotais = sumAllOrigem(ingressosTotaisByDay);
+  const totFatUnico = sumAllNum(faturamentoUnicoByDay);
+  const totFatTotal = sumAllNum(faturamentoTotalByDay);
+  const totUnicosOrigem = ingressosUnicosByDay
+    ? Object.values(ingressosUnicosByDay).reduce(
         (a, v) => ({ pago: a.pago + v.pago, org: a.org + v.org, semTrack: a.semTrack + v.semTrack }),
         { pago: 0, org: 0, semTrack: 0 },
       )
-    : null;
+    : { pago: 0, org: 0, semTrack: 0 };
+
+  // Story 18.51b AC1b.3: tooltip de "Ingressos totais" com nº por produto.
+  const ingressosTotaisTooltip = useMemo(() => {
+    if (!ingressosPorProduto || ingressosPorProduto.length === 0) {
+      return "Ingressos totais = todas as vendas (todos os produtos), sem deduplicar e-mail.";
+    }
+    const linhas = ingressosPorProduto
+      .map((p) => `  ${p.produto}${p.isOrderBump ? " (order bump)" : ""}: ${fmtInt(p.count)}`)
+      .join("\n");
+    return "Ingressos totais = todas as vendas (todos os produtos), sem dedup.\nPor produto:\n" + linhas;
+  }, [ingressosPorProduto]);
+
   const labels = useMemo(() => ({
-    totalLeads: isPaidCapture ? "Total Ingressos" : "Total Leads",
+    totalLeads: isPaidCapture ? "Ingressos únicos" : "Total Leads",
     leadsPg: isPaidCapture ? "Ingressos Pg" : "Leads Pg",
     leadsOrg: isPaidCapture ? "Ingressos Org" : "Leads Org",
     leadsSemTrack: isPaidCapture ? "Ingressos s/ track" : "Leads s/ track",
     // Story 18.34 AC1: Tooltip formatado com quebras de linha legíveis
     totalLeadsTooltip: isPaidCapture
-      ? "Total Ingressos = Ingressos Pg + Ingressos Org + Ingressos s/ track\nIngressos Pg = Ingressos que vieram de mídia paga\nIngressos Org = Ingressos com origem orgânica"
+      ? "Ingressos únicos = e-mails distintos que compraram o produto da captação (não order bump), deduplicados.\n= Ingressos Pg + Ingressos Org + Ingressos s/ track"
       : "Total Leads = Leads Pg + Leads Org + Leads s/ track\nLeads Pg = Leads que vieram de mídia paga\nLeads Org = Leads com origem orgânica",
   }), [isPaidCapture]);
   const salesTotal = salesByDay
     ? Object.values(salesByDay).reduce((a, b) => a + b, 0)
     : null;
+
+  // Story 18.51b AC1e: tooltips de cálculo por cabeçalho (reusados no header).
+  const TT = {
+    investimento: "Investimento = gasto de mídia (Meta Ads) no dia.",
+    fatUnico: "Faturamento único = soma do valorBruto de 1 compra por e-mail (a mais recente) do produto da captação.",
+    fatTotal: "Faturamento Total = soma do valorBruto de TODAS as vendas (produto da captação + order bumps), sem dedup.",
+    faturamento: "Faturamento bruto das vendas no dia.",
+    ingUnicos: "Ingressos únicos = e-mails distintos que compraram o produto da captação (dedup por e-mail).",
+    tmUnico: "Ticket médio (únicos) = Faturamento único ÷ Ingressos únicos.",
+    tmTotal: "Ticket médio (total) = Faturamento Total ÷ Ingressos totais.",
+    cplPg: "CPL Pago = Investimento ÷ Ingressos/Leads pagos.",
+    cplG: "CPL Geral = Investimento ÷ (todos os ingressos/leads).",
+    cliques: "Cliques no link do anúncio (Meta).",
+    impressoes: "Impressões dos anúncios (Meta).",
+    cpm: "CPM = custo por mil impressões.",
+    cpc: "CPC = custo por clique no link.",
+    ctr: "CTR = cliques ÷ impressões × 100.",
+    lpview: "LP View = visualizações da landing page.",
+    connect: "Connect Rate = LP Views ÷ cliques × 100 (quantos cliques chegaram na LP).",
+    txconv: "Taxa de conversão = Leads pagos ÷ cliques × 100.",
+  };
 
   // Story 18.26 Fase 1.5: resolve adset names dos ids que aparecem em
   // leadsByMedium das rows usando o cache DB (meta_entity_names_cache 24h).
@@ -303,36 +378,61 @@ export function CrossedFunnelDailyTable({
           <TableHeader>
             <TableRow>
               <TableHead className="sticky left-0 bg-background z-10 min-w-[90px]">Dia</TableHead>
-              <TableHead className="text-right min-w-[110px]">Investimento</TableHead>
-              <TableHead className="text-right min-w-[110px]">Faturamento</TableHead>
+              <TableHead className="text-right min-w-[110px] cursor-help" title={TT.investimento}>Investimento</TableHead>
+              {isPaidCapture ? (
+                <>
+                  <TableHead className="text-right min-w-[120px] cursor-help" title={TT.fatUnico}>Faturamento único</TableHead>
+                  <TableHead className="text-right min-w-[120px] cursor-help" title={TT.fatTotal}>Faturamento Total</TableHead>
+                </>
+              ) : (
+                <TableHead className="text-right min-w-[110px] cursor-help" title={TT.faturamento}>Faturamento</TableHead>
+              )}
               <TableHead
-                className="text-right min-w-[100px] font-semibold cursor-help"
+                className="text-right min-w-[110px] font-semibold cursor-help"
                 title={labels.totalLeadsTooltip}
               >
                 {labels.totalLeads}
               </TableHead>
-              <TableHead className="text-right min-w-[90px]">CPL Pg</TableHead>
-              <TableHead className="text-right min-w-[80px]">CPL Geral</TableHead>
-              <TableHead className="text-right min-w-[80px]">Cliques</TableHead>
-              <TableHead className="text-right min-w-[100px]">Impressões</TableHead>
-              <TableHead className="text-right min-w-[80px]">CPM</TableHead>
-              <TableHead className="text-right min-w-[80px]">CPC</TableHead>
-              <TableHead className="text-right min-w-[70px]">CTR</TableHead>
-              <TableHead className="text-right min-w-[80px]">LP View</TableHead>
-              <TableHead className="text-right min-w-[110px]">Connect Rate</TableHead>
-              <TableHead className="text-right min-w-[90px]" title="Leads Pagos ÷ Link Clicks × 100">Tx Conv.</TableHead>
-              <TableHead className="text-right min-w-[100px]">{labels.leadsPg}</TableHead>
-              <TableHead className="text-right min-w-[90px]">{labels.leadsOrg}</TableHead>
-              <TableHead className="text-right min-w-[110px]">{labels.leadsSemTrack}</TableHead>
+              {isPaidCapture && (
+                <TableHead className="text-right min-w-[110px] font-semibold cursor-help" title={ingressosTotaisTooltip}>
+                  Ingressos totais
+                </TableHead>
+              )}
+              <TableHead className="text-right min-w-[90px] cursor-help" title={TT.cplPg}>CPL Pg</TableHead>
+              <TableHead className="text-right min-w-[80px] cursor-help" title={TT.cplG}>CPL Geral</TableHead>
+              {isPaidCapture && (
+                <>
+                  <TableHead className="text-right min-w-[120px] cursor-help" title={TT.tmUnico}>Ticket médio (únicos)</TableHead>
+                  <TableHead className="text-right min-w-[120px] cursor-help" title={TT.tmTotal}>Ticket médio (total)</TableHead>
+                </>
+              )}
+              <TableHead className="text-right min-w-[80px] cursor-help" title={TT.cliques}>Cliques</TableHead>
+              <TableHead className="text-right min-w-[100px] cursor-help" title={TT.impressoes}>Impressões</TableHead>
+              <TableHead className="text-right min-w-[80px] cursor-help" title={TT.cpm}>CPM</TableHead>
+              <TableHead className="text-right min-w-[80px] cursor-help" title={TT.cpc}>CPC</TableHead>
+              <TableHead className="text-right min-w-[70px] cursor-help" title={TT.ctr}>CTR</TableHead>
+              <TableHead className="text-right min-w-[80px] cursor-help" title={TT.lpview}>LP View</TableHead>
+              <TableHead className="text-right min-w-[110px] cursor-help" title={TT.connect}>Connect Rate</TableHead>
+              <TableHead className="text-right min-w-[90px] cursor-help" title={TT.txconv}>Tx Conv.</TableHead>
+              <TableHead className="text-right min-w-[100px] cursor-help" title={labels.totalLeadsTooltip}>{labels.leadsPg}</TableHead>
+              <TableHead className="text-right min-w-[90px] cursor-help" title={labels.totalLeadsTooltip}>{labels.leadsOrg}</TableHead>
+              <TableHead className="text-right min-w-[110px] cursor-help" title={labels.totalLeadsTooltip}>{labels.leadsSemTrack}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((r) => {
-              // Story 18.48: na Paga usa vendas (ingressos) por origem; senão leads.
-              const ing = usesIngressos
-                ? getIngresso(r.date)
+              // Story 18.51b: na Paga, o breakdown Pg/Org/s-track vem dos ingressos
+              // ÚNICOS (dedup por e-mail). Sem planilha de vendas (hasSalesData
+              // false) → null → células "—" (AC-BUG.1: não mostra leads sob rótulo
+              // "Ingressos"). Free segue com leads.
+              const ing = hasSalesData
+                ? getUnicoOrigem(r.date)
+                : isPaidCapture
+                ? null
                 : { pago: r.leadsPagos, org: r.leadsOrg, semTrack: r.leadsSemTrack };
-              const totalLeads = ing.pago + ing.org + ing.semTrack;
+              const totalLeads = ing ? ing.pago + ing.org + ing.semTrack : 0;
+              const tmU = ticket(fatUnicoDia(r.date), unicoDia(r.date));
+              const tmT = ticket(fatTotalDia(r.date), totalDia(r.date));
               const turn = turnsByDate.get(r.date);
               return (
                 <TableRow
@@ -355,16 +455,32 @@ export function CrossedFunnelDailyTable({
                     </span>
                   </TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.spend)}</TableCell>
+                  {isPaidCapture ? (
+                    <>
+                      <TableCell className="text-right">{hasSalesData ? fmtCurrency(fatUnicoDia(r.date)) : "—"}</TableCell>
+                      <TableCell className="text-right">{hasSalesData ? fmtCurrency(fatTotalDia(r.date)) : "—"}</TableCell>
+                    </>
+                  ) : (
+                    <TableCell className="text-right">
+                      {fmtCurrency(salesByDay ? (salesByDay[r.date] ?? 0) : r.faturamento)}
+                    </TableCell>
+                  )}
                   <TableCell className="text-right">
-                    {fmtCurrency(salesByDay ? (salesByDay[r.date] ?? 0) : r.faturamento)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {usesIngressos
-                      ? fmtInt(totalLeads)
+                    {isPaidCapture
+                      ? hasSalesData ? fmtInt(unicoDia(r.date)) : "—"
                       : renderTotalLeadsCell(totalLeads, r.leadsByMedium, effectiveAdsetsMap)}
                   </TableCell>
+                  {isPaidCapture && (
+                    <TableCell className="text-right">{hasSalesData ? fmtInt(totalDia(r.date)) : "—"}</TableCell>
+                  )}
                   <TableCell className="text-right">{fmtCurrency(r.cplPg)}</TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cplG)}</TableCell>
+                  {isPaidCapture && (
+                    <>
+                      <TableCell className="text-right">{tmU !== null ? fmtCurrency(tmU) : "—"}</TableCell>
+                      <TableCell className="text-right">{tmT !== null ? fmtCurrency(tmT) : "—"}</TableCell>
+                    </>
+                  )}
                   <TableCell className="text-right">{fmtInt(r.linkClicks)}</TableCell>
                   <TableCell className="text-right">{fmtInt(r.impressions)}</TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cpm)}</TableCell>
@@ -373,9 +489,9 @@ export function CrossedFunnelDailyTable({
                   <TableCell className="text-right">{fmtInt(r.lpView)}</TableCell>
                   <TableCell className="text-right">{renderConnectRate(r.connectRate)}</TableCell>
                   <TableCell className="text-right">{fmtPercent(r.txConv)}</TableCell>
-                  <TableCell className="text-right">{fmtInt(ing.pago)}</TableCell>
-                  <TableCell className="text-right">{fmtInt(ing.org)}</TableCell>
-                  <TableCell className="text-right">{fmtInt(ing.semTrack)}</TableCell>
+                  <TableCell className="text-right">{ing ? fmtInt(ing.pago) : "—"}</TableCell>
+                  <TableCell className="text-right">{ing ? fmtInt(ing.org) : "—"}</TableCell>
+                  <TableCell className="text-right">{ing ? fmtInt(ing.semTrack) : "—"}</TableCell>
                 </TableRow>
               );
             })}
@@ -384,20 +500,40 @@ export function CrossedFunnelDailyTable({
             <TableRow className="font-semibold">
               <TableCell className="sticky left-0 bg-muted/50 z-10">Total</TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.spend)}</TableCell>
+              {isPaidCapture ? (
+                <>
+                  <TableCell className="text-right">{hasSalesData ? fmtCurrency(totFatUnico) : "—"}</TableCell>
+                  <TableCell className="text-right">{hasSalesData ? fmtCurrency(totFatTotal) : "—"}</TableCell>
+                </>
+              ) : (
+                <TableCell className="text-right">
+                  {fmtCurrency(salesTotal !== null ? salesTotal : totals.faturamento)}
+                </TableCell>
+              )}
               <TableCell className="text-right">
-                {fmtCurrency(salesTotal !== null ? salesTotal : totals.faturamento)}
-              </TableCell>
-              <TableCell className="text-right">
-                {usesIngressos
-                  ? fmtInt(ingressosTotais!.pago + ingressosTotais!.org + ingressosTotais!.semTrack)
+                {isPaidCapture
+                  ? hasSalesData ? fmtInt(totUnicos) : "—"
                   : renderTotalLeadsCell(
                       totals.leadsPagos + totals.leadsOrg + totals.leadsSemTrack,
                       totals.leadsByMedium,
                       effectiveAdsetsMap,
                     )}
               </TableCell>
+              {isPaidCapture && (
+                <TableCell className="text-right">{hasSalesData ? fmtInt(totTotais) : "—"}</TableCell>
+              )}
               <TableCell className="text-right">{fmtCurrency(totals.cplPg)}</TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.cplG)}</TableCell>
+              {isPaidCapture && (() => {
+                const tmU = ticket(totFatUnico, totUnicos);
+                const tmT = ticket(totFatTotal, totTotais);
+                return (
+                  <>
+                    <TableCell className="text-right">{tmU !== null ? fmtCurrency(tmU) : "—"}</TableCell>
+                    <TableCell className="text-right">{tmT !== null ? fmtCurrency(tmT) : "—"}</TableCell>
+                  </>
+                );
+              })()}
               <TableCell className="text-right">{fmtInt(totals.linkClicks)}</TableCell>
               <TableCell className="text-right">{fmtInt(totals.impressions)}</TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.cpm)}</TableCell>
@@ -406,9 +542,9 @@ export function CrossedFunnelDailyTable({
               <TableCell className="text-right">{fmtInt(totals.lpView)}</TableCell>
               <TableCell className="text-right">{renderConnectRate(totals.connectRate)}</TableCell>
               <TableCell className="text-right">{fmtPercent(totals.txConv)}</TableCell>
-              <TableCell className="text-right">{fmtInt(usesIngressos ? ingressosTotais!.pago : totals.leadsPagos)}</TableCell>
-              <TableCell className="text-right">{fmtInt(usesIngressos ? ingressosTotais!.org : totals.leadsOrg)}</TableCell>
-              <TableCell className="text-right">{fmtInt(usesIngressos ? ingressosTotais!.semTrack : totals.leadsSemTrack)}</TableCell>
+              <TableCell className="text-right">{isPaidCapture ? (hasSalesData ? fmtInt(totUnicosOrigem.pago) : "—") : fmtInt(totals.leadsPagos)}</TableCell>
+              <TableCell className="text-right">{isPaidCapture ? (hasSalesData ? fmtInt(totUnicosOrigem.org) : "—") : fmtInt(totals.leadsOrg)}</TableCell>
+              <TableCell className="text-right">{isPaidCapture ? (hasSalesData ? fmtInt(totUnicosOrigem.semTrack) : "—") : fmtInt(totals.leadsSemTrack)}</TableCell>
             </TableRow>
           </TableFooter>
         </Table>
@@ -423,10 +559,13 @@ export function CrossedFunnelDailyTable({
         <div className="rounded-md border border-border/30 bg-muted/20 px-4 py-3 space-y-2 text-sm">
           <div className="flex flex-wrap gap-4">
             <div>
-              <span className="text-muted-foreground">{usesIngressos ? "Ingressos:" : "Leads:"}</span>
+              <span className="text-muted-foreground">{isPaidCapture ? "Ingressos únicos:" : "Leads:"}</span>
               <span className="font-medium ml-2">
-                {fmtInt(usesIngressos ? ingressosTotais!.pago : totals.leadsPagos)} Pagos | {fmtInt(usesIngressos ? ingressosTotais!.org : totals.leadsOrg)} Org | {fmtInt(usesIngressos ? ingressosTotais!.semTrack : totals.leadsSemTrack)} Sem origem
+                {fmtInt(isPaidCapture ? totUnicosOrigem.pago : totals.leadsPagos)} Pagos | {fmtInt(isPaidCapture ? totUnicosOrigem.org : totals.leadsOrg)} Org | {fmtInt(isPaidCapture ? totUnicosOrigem.semTrack : totals.leadsSemTrack)} Sem origem
               </span>
+              {isPaidCapture && hasSalesData && (
+                <span className="text-muted-foreground ml-2">· Ingressos totais: <span className="font-medium text-foreground">{fmtInt(totTotais)}</span></span>
+              )}
             </div>
             {surveyTotal != null && (
               <div>
