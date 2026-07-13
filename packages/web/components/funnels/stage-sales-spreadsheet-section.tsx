@@ -20,6 +20,8 @@ import {
   useDisconnectSaleSpreadsheet,
 } from "@/lib/hooks/use-stage-sales-spreadsheets";
 import { StageSalesWizardDialog } from "./stage-sales-wizard-dialog";
+import { OrderBumpsDialog } from "./order-bumps-dialog";
+import { Package } from "lucide-react";
 import type { StageSalesSubtype } from "@loyola-x/shared";
 
 interface StageSalesSpreadsheetSectionProps {
@@ -39,6 +41,7 @@ export function StageSalesSpreadsheetSection({
 }: StageSalesSpreadsheetSectionProps) {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
+  const [orderBumpsOpen, setOrderBumpsOpen] = useState(false);
 
   const { data: all, isLoading } = useStageSalesSpreadsheets(projectId, funnelId, stageId);
   const disconnect = useDisconnectSaleSpreadsheet(projectId, funnelId, stageId);
@@ -80,6 +83,23 @@ export function StageSalesSpreadsheetSection({
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0 ml-3">
+            {subtype === "capture" && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 gap-1 text-xs"
+                onClick={() => setOrderBumpsOpen(true)}
+                title="Marcar quais produtos são order bump (o resto é produto da captação)"
+              >
+                <Package className="h-3.5 w-3.5" />
+                Order bumps
+                {spreadsheet.orderBumpProducts?.length > 0 && (
+                  <span className="ml-0.5 rounded bg-muted px-1 text-[10px] font-medium">
+                    {spreadsheet.orderBumpProducts.length}
+                  </span>
+                )}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"
@@ -111,6 +131,17 @@ export function StageSalesSpreadsheetSection({
         onOpenChange={setWizardOpen}
         current={spreadsheet}
       />
+
+      {subtype === "capture" && spreadsheet && (
+        <OrderBumpsDialog
+          projectId={projectId}
+          funnelId={funnelId}
+          stageId={stageId}
+          spreadsheet={spreadsheet}
+          open={orderBumpsOpen}
+          onOpenChange={setOrderBumpsOpen}
+        />
+      )}
 
       <AlertDialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>
         <AlertDialogContent>

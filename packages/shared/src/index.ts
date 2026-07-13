@@ -41,6 +41,8 @@ export type {
   StageSalesSubtype,
   SaleColumnMapping,
   StageSalesSpreadsheet,
+  StageSalesProduct,
+  StageSalesProductsResponse,
   PerpetualSpreadsheet,
   SalesPlatform,
   PerpetualSalesData,

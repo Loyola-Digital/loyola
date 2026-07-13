@@ -8,7 +8,7 @@ import {
   projects,
   projectMembers,
 } from "../db/schema.js";
-import { clearSheetDataCache } from "../services/google-sheets.js";
+import { readSheetData, clearSheetDataCache } from "../services/google-sheets.js";
 
 // ============================================================
 // SCHEMAS
@@ -54,6 +54,8 @@ const createSchema = z
     spreadsheetName: z.string().min(1),
     sheetName: z.string().min(1),
     columnMapping: saleColumnMappingSchema,
+    // Story 18.51a: productNames marcados como order bump. Opcional (default []).
+    orderBumpProducts: z.array(z.string()).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.subtype === "event_sales") {
@@ -105,6 +107,9 @@ function shapeRow(row: typeof stageSalesSpreadsheets.$inferSelect) {
       caixa?: string;
       negociacao?: string;
     },
+    // Story 18.51a: order bumps marcados (productNames). Default [] p/ linhas
+    // antigas sem a coluna preenchida.
+    orderBumpProducts: (row.orderBumpProducts as string[] | null) ?? [],
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -232,6 +237,7 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
           spreadsheetName: body.spreadsheetName,
           sheetName: body.sheetName,
           columnMapping: body.columnMapping,
+          orderBumpProducts: body.orderBumpProducts ?? [],
         })
         .returning();
 
@@ -332,6 +338,9 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
         spreadsheetName: z.string().min(1),
         sheetName: z.string().min(1),
         columnMapping: saleColumnMappingSchema,
+        // Story 18.51a: order bumps. Opcional — quando ausente, preserva o
+        // valor existente (não sobrescreve com []).
+        orderBumpProducts: z.array(z.string()).optional(),
       });
       const bodyResult = updateSchema.safeParse(request.body);
       if (!bodyResult.success)
@@ -357,6 +366,9 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
           spreadsheetName: body.spreadsheetName,
           sheetName: body.sheetName,
           columnMapping: body.columnMapping,
+          // Preserva order bumps existentes quando o body não manda (edição só
+          // de mapeamento não deve zerar a marcação).
+          orderBumpProducts: body.orderBumpProducts ?? (existing.orderBumpProducts as string[] | null) ?? [],
         })
         .where(
           and(
@@ -367,6 +379,75 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
         .returning();
 
       return reply.code(200).send(shapeRow(row));
+    }
+  );
+
+  // GET /api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-spreadsheets/by-id/:id/products
+  // Story 18.51a: lista os productName DISTINTOS da planilha, com contagem de
+  // linhas por produto. Alimenta o wizard de order bumps (usuário marca quais
+  // são bump). `productMapped=false` quando a coluna de produto não foi mapeada.
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-spreadsheets/by-id/:id/products",
+    async (request, reply) => {
+      const byIdParamsSchema = paramsSchema.extend({ id: z.string().uuid() });
+      const params = byIdParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const stage = await getStage(params.data.stageId, params.data.funnelId, params.data.projectId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const [sheet] = await fastify.db
+        .select()
+        .from(stageSalesSpreadsheets)
+        .where(
+          and(
+            eq(stageSalesSpreadsheets.id, params.data.id),
+            eq(stageSalesSpreadsheets.stageId, params.data.stageId)
+          )
+        )
+        .limit(1);
+      if (!sheet) return reply.code(404).send({ error: "Planilha não encontrada" });
+
+      const mapping = sheet.columnMapping as { productName?: string };
+      const orderBumps = ((sheet.orderBumpProducts as string[] | null) ?? []);
+      if (!mapping.productName) {
+        // Story 18.51a AC0.3: sem coluna de produto → não dá pra separar.
+        return { productMapped: false, products: [], orderBumpProducts: orderBumps };
+      }
+
+      let sheetData;
+      try {
+        sheetData = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
+      } catch {
+        return reply.code(502).send({ error: "Não foi possível ler a planilha" });
+      }
+
+      const productIdx = sheetData.headers.indexOf(mapping.productName);
+      if (productIdx === -1) {
+        return { productMapped: false, products: [], orderBumpProducts: orderBumps };
+      }
+
+      // Agrupa preservando o primeiro rótulo visto (case original), mas dedup
+      // case-insensitive pra não listar "Imersão" e "imersão" separado.
+      const byKey = new Map<string, { name: string; count: number }>();
+      for (const row of sheetData.rows) {
+        const raw = (row[productIdx] ?? "").trim();
+        if (!raw) continue;
+        const key = raw.toLowerCase();
+        const entry = byKey.get(key) ?? { name: raw, count: 0 };
+        entry.count += 1;
+        byKey.set(key, entry);
+      }
+
+      const bumpSet = new Set(orderBumps.map((p) => p.trim().toLowerCase()));
+      const products = Array.from(byKey.values())
+        .map((p) => ({ name: p.name, count: p.count, isOrderBump: bumpSet.has(p.name.trim().toLowerCase()) }))
+        .sort((a, b) => b.count - a.count);
+
+      return { productMapped: true, products, orderBumpProducts: orderBumps };
     }
   );
 });
