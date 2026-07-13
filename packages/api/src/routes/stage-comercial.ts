@@ -11,7 +11,7 @@
  */
 
 import { z } from "zod";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   funnels,
@@ -51,6 +51,22 @@ const SALES_SUBTYPES = ["main_product", "sales", "tmb", "event_sales"];
 function normalizeEmail(raw: string | null | undefined): string {
   return (raw ?? "").trim().toLowerCase();
 }
+
+/** Match de cabeçalho por aliases (exato, normalizado sem acento/pontuação). */
+function findHeaderByAliases(headers: string[], aliases: string[]): number {
+  const norm = (s: string) =>
+    s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const H = headers.map(norm);
+  for (const a of aliases) {
+    const i = H.indexOf(norm(a));
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+const PRODUCT_ALIASES = ["produto", "product", "nome do produto", "oferta", "plano", "curso"];
+const NAME_ALIASES = ["nome", "name", "nome completo", "cliente", "nome do cliente"];
+const PHONE_ALIASES = ["telefone", "phone", "whatsapp", "celular", "fone"];
+const EMAIL_ALIASES = ["email", "e-mail", "e mail"];
 function phoneTail8(raw: string | null | undefined): string {
   const digits = (raw ?? "").replace(/\D/g, "");
   return digits.length >= 8 ? digits.slice(-8) : "";
@@ -270,10 +286,16 @@ export default fp(async function stageComercialRoutes(fastify) {
           const col = (n: string | undefined) => (n ? data.headers.indexOf(n) : -1);
           const emailIdx = col(mapping.email);
           const txIdx = col(mapping.transactionId);
-          const nameIdx = col(mapping.customerName);
-          const produtoIdx = col(mapping.productName);
+          // Fallback por alias quando o wizard não mapeou Nome/Produto (caso
+          // real: mapping do perpétuo sem productName/customerName → cards
+          // "(sem produto)"/"(sem nome)"). Mapping explícito sempre vence.
+          let nameIdx = col(mapping.customerName);
+          if (nameIdx === -1) nameIdx = findHeaderByAliases(data.headers, NAME_ALIASES);
+          let produtoIdx = col(mapping.productName);
+          if (produtoIdx === -1) produtoIdx = findHeaderByAliases(data.headers, PRODUCT_ALIASES);
           const brutoIdx = col(mapping.valorBruto);
           const dataIdx = col(mapping.dataVenda);
+          const telIdx = findHeaderByAliases(data.headers, PHONE_ALIASES);
           if (emailIdx !== -1) {
             const seenPerp = new Set<string>();
             for (const row of data.rows) {
@@ -290,12 +312,17 @@ export default fp(async function stageComercialRoutes(fastify) {
                 seenPerp.add(k);
               }
               const dt = dataIdx >= 0 ? parseSheetDate(row[dataIdx]) : null;
-              addPurchase(email, nameIdx >= 0 ? (row[nameIdx] ?? "").trim() || null : null, null, {
-                produto: produto || "(sem produto)",
-                valor: brutoIdx >= 0 ? parseBrNumber(row[brutoIdx]) : 0,
-                dataVenda: dt ? dt.toISOString() : null,
-                fonte: "planilha:perpetuo",
-              });
+              addPurchase(
+                email,
+                nameIdx >= 0 ? (row[nameIdx] ?? "").trim() || null : null,
+                telIdx >= 0 ? (row[telIdx] ?? "").trim() || null : null,
+                {
+                  produto: produto || "(sem produto)",
+                  valor: brutoIdx >= 0 ? parseBrNumber(row[brutoIdx]) : 0,
+                  dataVenda: dt ? dt.toISOString() : null,
+                  fonte: "planilha:perpetuo",
+                },
+              );
             }
           }
         } catch {
@@ -699,10 +726,22 @@ export default fp(async function stageComercialRoutes(fastify) {
     const sourceStageIds = config?.sourceStageIds ?? [];
     if (sourceStageIds.length === 0) return { matched: false, answers: [] };
 
+    // Surveys das etapas-fonte + as de nível FUNIL (stage_id NULL — legado).
+    const sourceStages = await fastify.db
+      .select({ id: funnelStages.id, funnelId: funnelStages.funnelId })
+      .from(funnelStages)
+      .where(inArray(funnelStages.id, sourceStageIds));
+    const funnelIds = [...new Set(sourceStages.map((s) => s.funnelId))];
+
     const surveys = await fastify.db
       .select()
       .from(funnelSurveys)
-      .where(inArray(funnelSurveys.stageId, sourceStageIds));
+      .where(
+        or(
+          inArray(funnelSurveys.stageId, sourceStageIds),
+          and(inArray(funnelSurveys.funnelId, funnelIds), isNull(funnelSurveys.stageId)),
+        ),
+      );
 
     const targetEmail = normalizeEmail(card.customerEmail);
     const targetPhone = phoneTail8(card.customerPhone);
@@ -759,6 +798,57 @@ export default fp(async function stageComercialRoutes(fastify) {
       }
 
       return { matched: true, matchedBy: emailIdx >= 0 && targetEmail && normalizeEmail(row[emailIdx]) === targetEmail ? "email" : "phone", answers };
+    }
+
+    // Fallback (caso real do perpétuo): a pesquisa não está em funnel_surveys —
+    // as respostas vivem na PLANILHA DE LEADS da aba Planilhas (funnel_spreadsheets
+    // type 'leads'/'custom'). Match por email/telefone (mapping ou alias) e Q&A =
+    // colunas menos identificadores/UTM/timestamp.
+    const leadSheets = await fastify.db
+      .select()
+      .from(funnelSpreadsheets)
+      .where(
+        and(
+          inArray(funnelSpreadsheets.funnelId, funnelIds),
+          inArray(funnelSpreadsheets.type, ["leads", "custom"]),
+        ),
+      );
+
+    for (const sheet of leadSheets) {
+      const mapping = (sheet.columnMapping ?? {}) as { email?: string; phone?: string; name?: string };
+      let data: { headers: string[]; rows: string[][] };
+      try {
+        data = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
+      } catch {
+        continue;
+      }
+      let emailIdx = mapping.email ? data.headers.indexOf(mapping.email) : -1;
+      if (emailIdx === -1) emailIdx = findHeaderByAliases(data.headers, EMAIL_ALIASES);
+      let phoneIdx = mapping.phone ? data.headers.indexOf(mapping.phone) : -1;
+      if (phoneIdx === -1) phoneIdx = findHeaderByAliases(data.headers, PHONE_ALIASES);
+      if (emailIdx === -1 && phoneIdx === -1) continue;
+
+      const row = data.rows.find((r) => {
+        if (emailIdx >= 0 && targetEmail && normalizeEmail(r[emailIdx]) === targetEmail) return true;
+        if (phoneIdx >= 0 && targetPhone && phoneTail8(r[phoneIdx]) === targetPhone) return true;
+        return false;
+      });
+      if (!row) continue;
+
+      const skipRe = /email|e-mail|telefone|phone|whats|celular|utm_|timestamp|carimbo|^data|^[a-z]{1,2}=$/i;
+      const answers: { label: string; answer: string }[] = [];
+      data.headers.forEach((h, i) => {
+        if (skipRe.test(h.trim())) return;
+        const val = (row[i] ?? "").trim();
+        if (val) answers.push({ label: h.trim(), answer: val });
+      });
+      if (answers.length === 0) continue;
+
+      return {
+        matched: true,
+        matchedBy: emailIdx >= 0 && targetEmail && normalizeEmail(row[emailIdx]) === targetEmail ? "email" : "phone",
+        answers,
+      };
     }
 
     return { matched: false, answers: [] };
