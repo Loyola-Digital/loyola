@@ -24,9 +24,14 @@
 | 39.R3 | v4 #3 | **porOrigemTemperatura**: matriz Origem × Temperatura (utm_term da venda) no sales-daily — ROAS hot vs cold. | ✅ Done (Resumão v4) |
 | 39.R4 | v4 #5/#7 | **lpRate + checkouts/checkoutRate**: alias honesto de connectRate (chegada na LP) + `initiate_checkout` do pixel e purchases÷checkouts em todos os objetos Meta. | ✅ Done (Resumão v4) |
 | 39.R5 | v4 #6 | **surveyResponseRate**: survey cruza com cache de leads do mesmo stage → `totalLeads` + `totalResponses÷totalLeads×100` (null sem denominador). Meta: ≥75%. | ✅ Done (Resumão v4) |
+| 39.B1 | v5 #1 | **Vendas manuais no sales-daily**: vendas lançadas no app (Evento Presencial/Vendas) entram na conta (`manualSalesIncluded`); reembolsadas fora; liquido = valor recebido (Caixa). Etapa de evento deixou de ser `semDados` (fa37ff0f: 9 vendas, R$ 270k). | ✅ Done (Brief v5) |
+| 39.B2 | v5 #2 | **Custos operacionais da etapa**: tabela `stage_operational_costs` (venue/staff/logistica/hospedagem/alimentacao/marketing/outros) + CRUD interno + aba "Custos" no Evento Presencial + endpoint público `/operational-costs` + tool `get_stage_operational_costs`. Denominador do ROAS REAL do evento. | ✅ Done (Brief v5) |
+| 39.B3 | v5 #3 | **Leads da Captação gratuita BBE**: já resolvido pela 39.R1 (elegibilidade ampliada) — stage 2b8bff9a com 214 leads no cache. | ✅ Done (via 39.R1) |
 | 39.10 | v4 #4 | **preview_link nos criativos**: Graph API `/{ad-id}/previews` no sync de criativos + expor em `get_creative_performance` (link clicável do anúncio). | Backlog |
 | 39.11 | v4 #5b | **Connect real de WhatsApp**: taxa de resposta/atendimento de fato. O dado NÃO entra no Loyola X por nenhuma integração hoje — precisa decidir a fonte (Evolution API? planilha do comercial? webhook ManyChat?) antes de codar. | Backlog (decisão) |
 | 39.12 | v4 #8 | **hasLandingPage**: flag no funil/etapa dizendo se há LP no fluxo (define se lpRate/CPL de LP se aplicam ou se o funil é clique-direto-WhatsApp). | Backlog |
+| 39.13 | v5 #5 | **Endpoint especializado de evento**: attendees, no_show_rate, comparecimento × venda. Depende de o dado de presença entrar no app (lista de presença/check-in). | Backlog (decisão) |
+| 39.14 | v5 #11 | **Scoring B2B derivado** (A/B/C/D por faturamento+funcionários) quando stageType=event. | Backlog |
 
 ## Respostas 6.2 (autoritativas, do código)
 
