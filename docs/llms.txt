@@ -70,7 +70,8 @@ Resposta: `{ projectId, stageId, stageName, campaignIds: [..], range, partial, l
 
 ### GET /api/public/v1/projects/{projectId}/stages/{stageId}/leads-summary
 Splits de leads de um stage por origem (Pago/Orgânico/Sem Track) × temperatura (quente/frio) + leads únicos (dedup e-mail/telefone). Lê de cache pré-computado por um job diário. Zero PII (só contagens).
-Resposta: `{ projectId, stageId, computedAt, range:{from,to}, totalLeads, uniqueLeads, byOrigin:[{origem, leads, uniqueLeads}], byTemperature:[{temperatura, leads, uniqueLeads}], byOriginTemp:[{origem, temperatura, leads, uniqueLeads}], byUtm, columnsResolved }` — ou `{ semDados:true }` se o stage não tem survey/cache.
+Resposta: `{ projectId, stageId, computedAt, range:{from,to}, totalLeads, uniqueLeads, byOrigin:[{origem, leads, uniqueLeads}], byTemperature:[{temperatura, leads, uniqueLeads}], byOriginTemp:[{origem, temperatura, leads, uniqueLeads}], identifiersFilled:{email,phone}, byUtm, columnsResolved }` — ou `{ semDados:true }` se o stage não tem survey/cache.
+`range` vem em ISO (YYYY-MM-DD). **identifiersFilled** = quantas LINHAS têm email/telefone preenchidos — se vier 0/0, `uniqueLeads: 0` é limitação da planilha (ex.: pesquisa anônima), não erro.
 **byUtm** (Epic 39 / Tier 2.1): distribuição CRUA de leads por valor de cada UTM — `{ source, medium, campaign, content, term }`, cada um `[{value, leads}]` (top 30 + `"(outros)"`; vazio = `"(vazio)"`, valores em lowercase). É a matéria-prima pra achar canais finos (Closer, ManyChat, WhatsApp, IG bio...) que os 3 baldes de `byOrigin` escondem — SEMPRE inspecione `byUtm` antes de concluir que um canal "não existe".
 `columnsResolved` reporta as 5 UTMs + email/phone: `{ utmSource, utmTerm, utmMedium, utmContent, utmCampaign, email, phone }` (booleans — se false, a coluna não foi achada na planilha).
 Regras: origem = utm_source meta/facebook/fb/google → Pago; outro valor → Orgânico; vazio → Sem Track. Temperatura = utm_term com hot/quente vs cold/frio. `uniqueLeads` pode vir 0 quando a planilha do stage não tem e-mail/telefone preenchidos.
@@ -78,7 +79,7 @@ Regras: origem = utm_source meta/facebook/fb/google → Pago; outro valor → Or
 ### GET /api/public/v1/projects/{projectId}/stages/{stageId}/survey
 Pesquisa de qualificação de um stage: distribuições por pergunta (profissão, renda, faixa A/B/C/D, "você é", etc.) × origem (total/pago/orgânico) + por criativo. Réplica fiel da agregação do dashboard. Zero PII.
 Resposta: `{ projectId, stageId, computedAt, totalResponses, usingFallback, questions:[{key,label}], byQuestion:{ <key>:[{label,count,pct}] }, byQuestionByOrigin:{ total, pago, organico }, byAdId:{ <adId>:{ <key>:[{label,count}] } } }` — ou `{ semDados:true }`.
-`byAdId` dá a distribuição de qualificação (incl. Faixa A/B/C/D) por criativo — cruze com `get_creative_performance` pelo adId. `usingFallback:true` = pesquisa sem mapping (detecção automática legada).
+`byAdId` dá a distribuição de qualificação (incl. Faixa A/B/C/D) por criativo — cruze com `get_creative_performance` pelo adId. Contém SÓ ad ids reais (numéricos ≥10 dígitos); rótulos agregados de utm_content ("org", "link_in_bio") e macros não resolvidas ("{{ad.id}}") ficam fora. `usingFallback:true` = pesquisa sem mapping (detecção automática legada).
 **Faixa (Epic 39 / Tier 4.1):** quando a etapa tem a coluna Faixa mapeada, ela aparece como pergunta `key: "faixa"` / label `"Faixa (lead score)"` em `questions`/`byQuestion`/`byQuestionByOrigin`/`byAdId` — é o lead score A→D da Fase 9. Se `"faixa"` não estiver em `questions`, a etapa não tem a coluna mapeada (não invente).
 
 ### GET /api/public/v1/projects/{projectId}/stages/{stageId}/sales-daily

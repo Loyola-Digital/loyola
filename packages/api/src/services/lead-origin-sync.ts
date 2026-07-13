@@ -78,6 +78,9 @@ export interface LeadOriginPayload {
   byOrigin: { origem: Origem; leads: number; uniqueLeads: number }[];
   byTemperature: { temperatura: Temperatura; leads: number; uniqueLeads: number }[];
   byOriginTemp: { origem: Origem; temperatura: Temperatura; leads: number; uniqueLeads: number }[];
+  /** Quantas linhas têm o identificador PREENCHIDO — explica uniqueLeads baixo/0
+   * (cabeçalho pode existir mas os valores estarem vazios na planilha). */
+  identifiersFilled: { email: number; phone: number };
   /** Story 39.2: distribuição de leads por valor de cada UTM (top 30 + "(outros)";
    * vazio vira "(vazio)"). Matéria-prima do classificador fino (Closer, IG, WPP...). */
   byUtm: {
@@ -96,6 +99,17 @@ export interface LeadOriginPayload {
     email: boolean;
     phone: boolean;
   };
+}
+
+/** Normaliza data da célula pra YYYY-MM-DD (aceita DD/MM/YYYY e ISO). */
+function toIsoDate(raw: string): string | null {
+  const t = raw.trim();
+  if (!t) return null;
+  const br = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (br) return `${br[3]}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}`;
+  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  return null;
 }
 
 /** Top-N valores por contagem; o resto colapsa em "(outros)". */
@@ -171,6 +185,8 @@ export async function computeLeadOriginForStage(
     map.set(v, (map.get(v) ?? 0) + 1);
   };
   let total = 0;
+  let emailFilled = 0;
+  let phoneFilled = 0;
   let minDate: string | null = null;
   let maxDate: string | null = null;
 
@@ -189,7 +205,10 @@ export async function computeLeadOriginForStage(
     const origem = classifyOrigem(cell(row, idx.utmSource));
     const temperatura = classifyTemperatura(cell(row, idx.utmTerm));
     const email = normalizeEmail(cell(row, idx.email));
-    const key = email || phoneTail(cell(row, idx.phone)) || null;
+    const phone = phoneTail(cell(row, idx.phone));
+    if (email) emailFilled++;
+    if (phone) phoneFilled++;
+    const key = email || phone || null;
     if (key) globalKeys.add(key);
 
     bump(byOrigin as Map<string, Bucket>, origem, key);
@@ -202,7 +221,9 @@ export async function computeLeadOriginForStage(
     bumpUtm(utmCounts.content, cell(row, idx.utmContent));
     bumpUtm(utmCounts.term, cell(row, idx.utmTerm));
 
-    const d = cell(row, idx.date).slice(0, 10);
+    // Range em ISO: a planilha usa DD/MM/YYYY — comparar a string crua invertia
+    // o min/max ("01/06" < "31/05" lexicográfico). Normaliza antes de comparar.
+    const d = toIsoDate(cell(row, idx.date));
     if (d) {
       if (!minDate || d < minDate) minDate = d;
       if (!maxDate || d > maxDate) maxDate = d;
@@ -219,6 +240,7 @@ export async function computeLeadOriginForStage(
       const [origem, temperatura] = k.split("|") as [Origem, Temperatura];
       return { origem, temperatura, leads: b.leads, uniqueLeads: b.keys.size };
     }),
+    identifiersFilled: { email: emailFilled, phone: phoneFilled },
     byUtm: {
       source: topCounts(utmCounts.source),
       medium: topCounts(utmCounts.medium),

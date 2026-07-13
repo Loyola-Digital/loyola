@@ -46,6 +46,14 @@ function normalizeNumericId(id: string): string {
   if (t.startsWith("_") && /^\d+$/.test(t.slice(1))) return t.slice(1);
   return t;
 }
+/**
+ * Auditoria Epic 39: byAdId deve conter SÓ ad ids reais da Meta (numéricos,
+ * longos). utm_content com rótulos agregados ("org", "link_in_bio") ou macro
+ * não resolvida ("{{ad.id}}") não é criativo — fica fora do byAdId.
+ */
+function isLikelyAdId(id: string): boolean {
+  return /^\d{10,}$/.test(id);
+}
 function normalizeForMatch(s: string): string {
   return s.toLowerCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ");
 }
@@ -94,9 +102,12 @@ function resolveColumnIndexes(headers: string[], mapping: Mapping): { indexes: C
   // Story 39.7 (auditoria Tier 4.1): a coluna Faixa (lead score A→D) já existia
   // no columnMapping (Story 18.17) mas não era agregada — sem ela a Fase 9 da
   // metodologia não roda. Entra como "pergunta" extra e ganha origem/byAdId de graça.
+  // Dedup por ÍNDICE: se a mesma coluna já entrou como pergunta mapeada (ex.:
+  // pergunta "Faixa"), não cria a chave "faixa" duplicada.
   if (mapping?.faixa && !questions.has("faixa")) {
     const idx = findHeaderIndexByName(headers, mapping.faixa);
-    if (idx >= 0) {
+    const alreadyMapped = idx >= 0 && [...questions.values()].includes(idx);
+    if (idx >= 0 && !alreadyMapped) {
       questions.set("faixa", idx);
       questionLabels.set("faixa", "Faixa (lead score)");
     }
@@ -182,7 +193,7 @@ export async function computeSurveyForStage(db: Database, stageId: string): Prom
       }
       if (indexes.utmContent >= 0) {
         const adId = normalizeNumericId((row[indexes.utmContent] ?? "").trim());
-        if (adId) {
+        if (adId && isLikelyAdId(adId)) {
           let perQ = byAdBuckets[adId];
           if (!perQ) { perQ = new Map(); byAdBuckets[adId] = perQ; }
           for (const [qKey, colIdx] of indexes.questions) {

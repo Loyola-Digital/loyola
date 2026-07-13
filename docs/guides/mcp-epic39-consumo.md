@@ -52,6 +52,11 @@ byUtm: {
 }
 ```
 
+- **`identifiersFilled: {email, phone}`** (QA jul/13): quantas linhas têm o identificador
+  PREENCHIDO. `uniqueLeads: 0` com `identifiersFilled: {email:0, phone:0}` = planilha
+  anônima (colunas existem, valores não) — limitação do dado, não bug.
+- `range` agora vem em ISO (o bug do range invertido com datas DD/MM foi corrigido).
+
 **Uso correto:** os 3 baldes de `byOrigin` (Pago/Orgânico/Sem Track) são grosseiros.
 Antes de afirmar que um canal "não existe" (Closer, ManyChat, WhatsApp, IG bio...),
 **inspecione `byUtm.source` e `byUtm.medium`** — é lá que os canais finos aparecem.
@@ -70,6 +75,8 @@ byAdId.<adId>.faixa                              ← Faixa × criativo (Fase 9!)
 
 Se `"faixa"` NÃO estiver em `questions`, a etapa não tem a coluna mapeada — reporte isso, não invente.
 Gate da Fase 8 continua: só use as perguntas listadas em `questions`.
+QA jul/13: sem chave duplicada `Faixa`/`faixa` (dedupe por coluna) e `byAdId` só com
+ad ids reais (numéricos ≥10 dígitos — "org"/"link_in_bio"/"{{ad.id}}" ficam fora).
 
 ### 4. `get_stage_sales_daily` — dedup real + produto
 
