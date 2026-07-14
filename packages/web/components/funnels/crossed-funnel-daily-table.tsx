@@ -96,10 +96,11 @@ function formatDateLabel(d: string) {
 
 function renderConnectRate(v: number | null) {
   if (v == null) return "—";
-  const warn = v < 70;
+  // Story 18.52 AC8: >70% verde, <=70% amarelo.
+  const good = v > 70;
   return (
-    <span className={warn ? "text-amber-600 font-medium" : ""}>
-      {warn ? "⚠️ " : ""}
+    <span className={good ? "text-emerald-600 font-medium" : "text-amber-600 font-medium"}>
+      {good ? "" : "⚠️ "}
       {fmtPercent(v)}
     </span>
   );
@@ -223,12 +224,12 @@ export function CrossedFunnelDailyTable({
   // Story 18.51b AC1b.3: tooltip de "Ingressos totais" com nº por produto.
   const ingressosTotaisTooltip = useMemo(() => {
     if (!ingressosPorProduto || ingressosPorProduto.length === 0) {
-      return "Ingressos totais = todas as vendas (todos os produtos), sem deduplicar e-mail.";
+      return "Ingresso+OrderBump = todas as vendas (produto da captação + order bumps), sem deduplicar e-mail.";
     }
     const linhas = ingressosPorProduto
       .map((p) => `  ${p.produto}${p.isOrderBump ? " (order bump)" : ""}: ${fmtInt(p.count)}`)
       .join("\n");
-    return "Ingressos totais = todas as vendas (todos os produtos), sem dedup.\nPor produto:\n" + linhas;
+    return "Ingresso+OrderBump = todas as vendas (captação + order bumps), sem dedup.\nPor produto:\n" + linhas;
   }, [ingressosPorProduto]);
 
   const labels = useMemo(() => ({
@@ -240,6 +241,11 @@ export function CrossedFunnelDailyTable({
     totalLeadsTooltip: isPaidCapture
       ? "Ingressos únicos = e-mails distintos que compraram o produto da captação (não order bump), deduplicados.\n= Ingressos Pg + Ingressos Org + Ingressos s/ track"
       : "Total Leads = Leads Pg + Leads Org + Leads s/ track\nLeads Pg = Leads que vieram de mídia paga\nLeads Org = Leads com origem orgânica",
+    // Story 18.52 AC1: "Ingressos totais" → "Ingresso+OrderBump".
+    ingressoTotal: "Ingresso+OrderBump",
+    // Story 18.52 AC2/AC3: CPL por ingressos únicos na Paga.
+    cplPg: isPaidCapture ? "CPL Pago Único" : "CPL Pg",
+    cplG: isPaidCapture ? "CPL Geral Único" : "CPL Geral",
   }), [isPaidCapture]);
   const salesTotal = salesByDay
     ? Object.values(salesByDay).reduce((a, b) => a + b, 0)
@@ -254,8 +260,12 @@ export function CrossedFunnelDailyTable({
     ingUnicos: "Ingressos únicos = e-mails distintos que compraram o produto da captação (dedup por e-mail).",
     tmUnico: "Ticket médio (únicos) = Faturamento único ÷ Ingressos únicos.",
     tmTotal: "Ticket médio (total) = Faturamento Total ÷ Ingressos totais.",
-    cplPg: "CPL Pago = Investimento ÷ Ingressos/Leads pagos.",
-    cplG: "CPL Geral = Investimento ÷ (todos os ingressos/leads).",
+    cplPg: isPaidCapture
+      ? "CPL Pago Único = Investimento ÷ Ingressos únicos pagos."
+      : "CPL Pago = Investimento ÷ Leads pagos.",
+    cplG: isPaidCapture
+      ? "CPL Geral Único = Investimento ÷ Ingressos únicos totais (pago+org+sem track)."
+      : "CPL Geral = Investimento ÷ Total de leads.",
     cliques: "Cliques no link do anúncio (Meta).",
     impressoes: "Impressões dos anúncios (Meta).",
     cpm: "CPM = custo por mil impressões.",
@@ -263,7 +273,9 @@ export function CrossedFunnelDailyTable({
     ctr: "CTR = cliques ÷ impressões × 100.",
     lpview: "LP View = visualizações da landing page.",
     connect: "Connect Rate = LP Views ÷ cliques × 100 (quantos cliques chegaram na LP).",
-    txconv: "Taxa de conversão = Leads pagos ÷ cliques × 100.",
+    txconv: isPaidCapture
+      ? "Taxa de conversão = Ingressos únicos pagos ÷ cliques × 100."
+      : "Taxa de conversão = Leads pagos ÷ cliques × 100.",
   };
 
   // Story 18.26 Fase 1.5: resolve adset names dos ids que aparecem em
@@ -394,18 +406,20 @@ export function CrossedFunnelDailyTable({
                 {labels.totalLeads}
               </TableHead>
               {isPaidCapture && (
-                <TableHead className="text-right min-w-[110px] font-semibold cursor-help" title={ingressosTotaisTooltip}>
-                  Ingressos totais
+                <TableHead className="text-right min-w-[130px] font-semibold cursor-help" title={ingressosTotaisTooltip}>
+                  {labels.ingressoTotal}
                 </TableHead>
               )}
-              <TableHead className="text-right min-w-[90px] cursor-help" title={TT.cplPg}>CPL Pg</TableHead>
-              <TableHead className="text-right min-w-[80px] cursor-help" title={TT.cplG}>CPL Geral</TableHead>
+              <TableHead className="text-right min-w-[110px] cursor-help" title={TT.cplPg}>{labels.cplPg}</TableHead>
+              <TableHead className="text-right min-w-[110px] cursor-help" title={TT.cplG}>{labels.cplG}</TableHead>
               {isPaidCapture && (
                 <>
                   <TableHead className="text-right min-w-[120px] cursor-help" title={TT.tmUnico}>Ticket médio (únicos)</TableHead>
                   <TableHead className="text-right min-w-[120px] cursor-help" title={TT.tmTotal}>Ticket médio (total)</TableHead>
                 </>
               )}
+              {/* Story 18.52 AC5: Tx Conv. movida para a esquerda de Cliques. */}
+              <TableHead className="text-right min-w-[90px] cursor-help" title={TT.txconv}>Tx Conv.</TableHead>
               <TableHead className="text-right min-w-[80px] cursor-help" title={TT.cliques}>Cliques</TableHead>
               <TableHead className="text-right min-w-[100px] cursor-help" title={TT.impressoes}>Impressões</TableHead>
               <TableHead className="text-right min-w-[80px] cursor-help" title={TT.cpm}>CPM</TableHead>
@@ -413,7 +427,6 @@ export function CrossedFunnelDailyTable({
               <TableHead className="text-right min-w-[70px] cursor-help" title={TT.ctr}>CTR</TableHead>
               <TableHead className="text-right min-w-[80px] cursor-help" title={TT.lpview}>LP View</TableHead>
               <TableHead className="text-right min-w-[110px] cursor-help" title={TT.connect}>Connect Rate</TableHead>
-              <TableHead className="text-right min-w-[90px] cursor-help" title={TT.txconv}>Tx Conv.</TableHead>
               <TableHead className="text-right min-w-[100px] cursor-help" title={labels.totalLeadsTooltip}>{labels.leadsPg}</TableHead>
               <TableHead className="text-right min-w-[90px] cursor-help" title={labels.totalLeadsTooltip}>{labels.leadsOrg}</TableHead>
               <TableHead className="text-right min-w-[110px] cursor-help" title={labels.totalLeadsTooltip}>{labels.leadsSemTrack}</TableHead>
@@ -481,6 +494,8 @@ export function CrossedFunnelDailyTable({
                       <TableCell className="text-right">{tmT !== null ? fmtCurrency(tmT) : "—"}</TableCell>
                     </>
                   )}
+                  {/* Story 18.52 AC5: Tx Conv. à esquerda de Cliques. */}
+                  <TableCell className="text-right">{fmtPercent(r.txConv)}</TableCell>
                   <TableCell className="text-right">{fmtInt(r.linkClicks)}</TableCell>
                   <TableCell className="text-right">{fmtInt(r.impressions)}</TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.cpm)}</TableCell>
@@ -488,7 +503,6 @@ export function CrossedFunnelDailyTable({
                   <TableCell className="text-right">{fmtPercent(r.ctr)}</TableCell>
                   <TableCell className="text-right">{fmtInt(r.lpView)}</TableCell>
                   <TableCell className="text-right">{renderConnectRate(r.connectRate)}</TableCell>
-                  <TableCell className="text-right">{fmtPercent(r.txConv)}</TableCell>
                   <TableCell className="text-right">{ing ? fmtInt(ing.pago) : "—"}</TableCell>
                   <TableCell className="text-right">{ing ? fmtInt(ing.org) : "—"}</TableCell>
                   <TableCell className="text-right">{ing ? fmtInt(ing.semTrack) : "—"}</TableCell>
@@ -534,6 +548,8 @@ export function CrossedFunnelDailyTable({
                   </>
                 );
               })()}
+              {/* Story 18.52 AC5: Tx Conv. à esquerda de Cliques. */}
+              <TableCell className="text-right">{fmtPercent(totals.txConv)}</TableCell>
               <TableCell className="text-right">{fmtInt(totals.linkClicks)}</TableCell>
               <TableCell className="text-right">{fmtInt(totals.impressions)}</TableCell>
               <TableCell className="text-right">{fmtCurrency(totals.cpm)}</TableCell>
@@ -541,7 +557,6 @@ export function CrossedFunnelDailyTable({
               <TableCell className="text-right">{fmtPercent(totals.ctr)}</TableCell>
               <TableCell className="text-right">{fmtInt(totals.lpView)}</TableCell>
               <TableCell className="text-right">{renderConnectRate(totals.connectRate)}</TableCell>
-              <TableCell className="text-right">{fmtPercent(totals.txConv)}</TableCell>
               <TableCell className="text-right">{isPaidCapture ? (hasSalesData ? fmtInt(totUnicosOrigem.pago) : "—") : fmtInt(totals.leadsPagos)}</TableCell>
               <TableCell className="text-right">{isPaidCapture ? (hasSalesData ? fmtInt(totUnicosOrigem.org) : "—") : fmtInt(totals.leadsOrg)}</TableCell>
               <TableCell className="text-right">{isPaidCapture ? (hasSalesData ? fmtInt(totUnicosOrigem.semTrack) : "—") : fmtInt(totals.leadsSemTrack)}</TableCell>

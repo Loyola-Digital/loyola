@@ -17,6 +17,12 @@ import type { DailyRow } from "@/lib/utils/funnel-metrics";
 interface CplComparisonChartProps {
   rows: DailyRow[];
   title?: string;
+  /**
+   * Story 18.52: na Captação Paga, CPL é calculado por ingressos únicos e os
+   * rótulos passam a "CPL Pago Único" / "CPL Geral Único". O breakdown de leads
+   * no tooltip é ocultado (seria enganoso — o denominador são ingressos).
+   */
+  isPaidCapture?: boolean;
 }
 
 const CPL_COLORS = { pago: "hsl(220 80% 55%)", geral: "hsl(280 60% 55%)" };
@@ -62,21 +68,25 @@ function renderPointLabel(props: any) {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function CustomTooltip(props: any) {
-  const { active, payload } = props;
+  const { active, payload, isPaidCapture } = props;
   if (!active || !payload || payload.length === 0) return null;
 
   const data = payload[0].payload;
+  const pagoLabel = isPaidCapture ? "CPL Pago Único" : "CPL Pago";
+  const geralLabel = isPaidCapture ? "CPL Geral Único" : "CPL Geral";
   return (
     <div className="rounded-lg border border-border bg-background p-3 shadow-lg space-y-1 text-xs">
       <div className="font-semibold">{data.date}</div>
       <div className="text-muted-foreground">Investimento: {fmtCurrency(data.Investimento)}</div>
-      <div className="text-muted-foreground">CPL Pago: {fmtCurrency(data["CPL Pago"])}</div>
-      <div className="text-muted-foreground">CPL Geral: {fmtCurrency(data["CPL Geral"])}</div>
-      <div className="border-t border-border/30 pt-1 mt-1">
-        <div className="text-muted-foreground">
-          Leads: {data.leadsPagos} Pagos | {data.leadsOrg} Org | {data.leadsSemTrack} Sem origem
+      <div className="text-muted-foreground">{pagoLabel}: {fmtCurrency(data["CPL Pago"])}</div>
+      <div className="text-muted-foreground">{geralLabel}: {fmtCurrency(data["CPL Geral"])}</div>
+      {!isPaidCapture && (
+        <div className="border-t border-border/30 pt-1 mt-1">
+          <div className="text-muted-foreground">
+            Leads: {data.leadsPagos} Pagos | {data.leadsOrg} Org | {data.leadsSemTrack} Sem origem
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -114,13 +124,17 @@ function renderBarLabel(props: any) {
  */
 export function CplComparisonChart({
   rows,
-  title = "CPL Pago vs CPL Geral",
+  title,
+  isPaidCapture = false,
 }: CplComparisonChartProps) {
   const data = buildCplChartData(rows);
+  const pagoLabel = isPaidCapture ? "CPL Pago Único" : "CPL Pago";
+  const geralLabel = isPaidCapture ? "CPL Geral Único" : "CPL Geral";
+  const resolvedTitle = title ?? `${pagoLabel} vs ${geralLabel}`;
 
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-2">
-      <h3 className="text-sm font-semibold">{title}</h3>
+      <h3 className="text-sm font-semibold">{resolvedTitle}</h3>
       <ResponsiveContainer width="100%" height={360}>
         <ComposedChart data={data} margin={{ top: 20, right: 30, bottom: 5, left: 10 }}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -140,7 +154,7 @@ export function CplComparisonChart({
             domain={[0, "auto"]}
             allowDataOverflow={false}
           />
-          <Tooltip content={<CustomTooltip />} />
+          <Tooltip content={<CustomTooltip isPaidCapture={isPaidCapture} />} />
           <Legend />
           <Bar
             yAxisId="invest"
@@ -155,6 +169,7 @@ export function CplComparisonChart({
             yAxisId="cpl"
             type="monotone"
             dataKey="CPL Pago"
+            name={pagoLabel}
             stroke={CPL_COLORS.pago}
             strokeWidth={2}
             dot={{ r: 3 }}
@@ -166,6 +181,7 @@ export function CplComparisonChart({
             yAxisId="cpl"
             type="monotone"
             dataKey="CPL Geral"
+            name={geralLabel}
             stroke={CPL_COLORS.geral}
             strokeWidth={2}
             dot={{ r: 3 }}
