@@ -393,6 +393,12 @@ export interface ComparisonDayMetrics {
   reach: number;
   ctr: number;
   cpc: number;
+  /** Métricas de negócio na Comparação de Lançamentos (leads do pixel Meta;
+   * faturamento/vendas do cache sales-daily somado por dia nas etapas do funil). */
+  leads?: number;
+  cpl?: number | null;
+  faturamento?: number;
+  vendas?: number;
 }
 
 export interface OrphanCampaign {
@@ -425,6 +431,9 @@ export interface MetaAdsComparisonData {
     spend: number;
     reach: number;
   };
+  /** Faturamento/vendas por DATA (YYYY-MM-DD) do funil ATUAL — o front casa
+   * com o `date_start` de cada dia do dailyData pra alinhar por Dia N. */
+  atualSalesByDay?: Record<string, { faturamento: number; vendas: number }>;
   semDados: boolean;
   reason?: string;
 }

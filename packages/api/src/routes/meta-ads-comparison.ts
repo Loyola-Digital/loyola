@@ -8,7 +8,9 @@ import {
   projectMembers,
   metaAdsAccounts,
   metaAdsAccountProjects,
+  publicMetricsCache,
 } from "../db/schema.js";
+import { SALES_DAILY_SCOPE, type SalesDailyPayload } from "../services/sales-daily-sync.js";
 import {
   fetchDailyInsights,
   decryptAccountToken,
@@ -39,9 +41,16 @@ interface DayAgg {
   clicks: number;
   spend: number;
   reach: number;
+  leads: number;
 }
 
-function aggregateInsights(insights: MetaDailyInsight[]): DayAgg {
+/** Leads do pixel: só o evento `lead` (mesma regra do public-meta — evita duplicação). */
+function parseLeadAction(actions?: { action_type: string; value: string }[]): number {
+  const lead = actions?.find((a) => a.action_type === "lead");
+  return lead ? Number(lead.value) || 0 : 0;
+}
+
+function aggregateInsights(insights: MetaDailyInsight[]): Omit<DayAgg, "leads"> {
   return insights.reduce(
     (acc, item) => ({
       impressions: acc.impressions + (Number(item.impressions) || 0),
@@ -57,11 +66,12 @@ function aggregateByDate(allInsights: MetaDailyInsight[]): Map<string, DayAgg> {
   const dateMap = new Map<string, DayAgg>();
   for (const item of allInsights) {
     const key = item.date_start;
-    const existing = dateMap.get(key) ?? { impressions: 0, clicks: 0, spend: 0, reach: 0 };
+    const existing = dateMap.get(key) ?? { impressions: 0, clicks: 0, spend: 0, reach: 0, leads: 0 };
     existing.impressions += Number(item.impressions) || 0;
     existing.clicks += Number(item.clicks) || 0;
     existing.spend += Number(item.spend) || 0;
     existing.reach += Number(item.reach) || 0;
+    existing.leads += parseLeadAction(item.actions);
     dateMap.set(key, existing);
   }
   return dateMap;
@@ -72,6 +82,44 @@ function aggregateByDate(allInsights: MetaDailyInsight[]): Map<string, DayAgg> {
 // ============================================================
 
 export default fp(async function metaAdsComparisonRoutes(fastify) {
+  /**
+   * Faturamento/vendas por DATA de um funil inteiro: soma o byDay dos caches
+   * sales-daily (public_metrics_cache) de TODAS as etapas do funil — mesmos
+   * números do MCP (planilhas dedupadas + vendas manuais, reembolso fora).
+   * Cache vazio → mapa vazio (o front mostra "—", não zero fake).
+   */
+  async function salesByDayForFunnel(
+    funnelId: string,
+  ): Promise<Record<string, { faturamento: number; vendas: number }>> {
+    const stages = await fastify.db
+      .select({ id: funnelStages.id })
+      .from(funnelStages)
+      .where(eq(funnelStages.funnelId, funnelId));
+    if (stages.length === 0) return {};
+
+    const rows = await fastify.db
+      .select({ payload: publicMetricsCache.payload })
+      .from(publicMetricsCache)
+      .where(
+        and(
+          eq(publicMetricsCache.scope, SALES_DAILY_SCOPE),
+          inArray(publicMetricsCache.key, stages.map((s) => s.id)),
+        ),
+      );
+
+    const out: Record<string, { faturamento: number; vendas: number }> = {};
+    for (const row of rows) {
+      const payload = row.payload as SalesDailyPayload;
+      for (const d of payload.byDay ?? []) {
+        const e = out[d.date] ?? { faturamento: 0, vendas: 0 };
+        e.faturamento += d.faturamentoBruto;
+        e.vendas += d.ingressos.total;
+        out[d.date] = e;
+      }
+    }
+    return out;
+  }
+
   async function getProjectAccess(projectId: string, userId: string, userRole: string) {
     if (userRole === "guest") {
       const [member] = await fastify.db
@@ -293,7 +341,15 @@ export default fp(async function metaAdsComparisonRoutes(fastify) {
         a[0].localeCompare(b[0])
       );
 
-      const dayMetrics = sortedEntries.map(([, v], idx) => ({
+      // Faturamento/vendas por data dos DOIS funis (cache sales-daily somado
+      // por etapa). Comparado: casa pela data de cada dia ativo; atual: vai
+      // cru na resposta e o front casa com o date_start do dailyData.
+      const [compSales, atualSales] = await Promise.all([
+        salesByDayForFunnel(row.compareFunnelId),
+        salesByDayForFunnel(params.data.funnelId),
+      ]);
+
+      const dayMetrics = sortedEntries.map(([date, v], idx) => ({
         dayIndex: idx + 1,
         impressions: v.impressions,
         clicks: v.clicks,
@@ -301,6 +357,10 @@ export default fp(async function metaAdsComparisonRoutes(fastify) {
         reach: v.reach,
         ctr: v.impressions > 0 ? (v.clicks / v.impressions) * 100 : 0,
         cpc: v.clicks > 0 ? v.spend / v.clicks : 0,
+        leads: v.leads,
+        cpl: v.leads > 0 ? v.spend / v.leads : null,
+        faturamento: compSales[date]?.faturamento ?? 0,
+        vendas: compSales[date]?.vendas ?? 0,
       }));
 
       const totalsAgg = aggregateInsights(allInsights);
@@ -310,6 +370,7 @@ export default fp(async function metaAdsComparisonRoutes(fastify) {
         compareStageName: compareStage.name,
         days: dayMetrics,
         totals: totalsAgg,
+        atualSalesByDay: atualSales,
         semDados: false,
       };
     }
