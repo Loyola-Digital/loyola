@@ -365,6 +365,33 @@ export function computeTotals(rows: DailyRow[]): DailyRow {
   };
 }
 
+/**
+ * Story 18.52: na etapa Captação Paga, CPL e Taxa de Conversão devem usar
+ * INGRESSOS ÚNICOS (compras dedup por e-mail do produto da captação) no
+ * denominador/numerador — não os leads. Os ingressos únicos vêm de outra fonte
+ * (`salesData.ingressosUnicosByDay`), então sobrescrevemos aqui sem tocar no
+ * cálculo base (que continua correto para a Gratuita e demais etapas).
+ *
+ * - CPL Pago Único = spend ÷ ingressos únicos PAGOS
+ * - CPL Geral Único = spend ÷ ingressos únicos TOTAIS (pago+org+semTrack únicos)
+ * - Tx Conv. = ingressos únicos pagos ÷ cliques × 100
+ *
+ * O numerador do CPL é o `spend` total do dia (igual à semântica original —
+ * a distinção pago/geral é sobre a origem dos ingressos, não do investimento).
+ */
+export function overrideCplWithUniqueIngressos(
+  row: DailyRow,
+  ingUnicosPagos: number,
+  ingUnicosTotais: number,
+): DailyRow {
+  return {
+    ...row,
+    cplPg: safeDivide(row.spend, ingUnicosPagos),
+    cplG: safeDivide(row.spend, ingUnicosTotais),
+    txConv: row.linkClicks > 0 ? (ingUnicosPagos / row.linkClicks) * 100 : null,
+  };
+}
+
 // ============================================================
 // HOT/COLD AGGREGATION BY UTM_TERM
 // ============================================================
