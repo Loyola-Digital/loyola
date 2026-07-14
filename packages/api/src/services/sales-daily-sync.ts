@@ -79,6 +79,12 @@ export interface SalesDailyPayload {
   porOrigemTemperatura: { origem: Origem; temperatura: "hot" | "cold" | null; vendas: number; bruto: number; liquido: number }[];
   /** Story 39.5 (parcial): quebra por produto (top 30) — base pra separar ingresso × order bump. */
   porProduto: { produto: string; vendas: number; bruto: number; liquido: number }[];
+  /** Brief v6 #6: quebra por plataforma (= subtype da planilha de origem, ou
+   * "manual"). Permite excluir TMB do total sem depender do nome do produto. */
+  porPlataforma: { plataforma: string; vendas: number; bruto: number; liquido: number }[];
+  /** Brief v6 #6: produto × plataforma (top 30 por vendas) — expõe o TMB
+   * "escondido" dentro do mesmo nome de produto vindo de planilhas diferentes. */
+  porProdutoPlataforma: { produto: string; plataforma: string; vendas: number; bruto: number; liquido: number }[];
   /** Story 39.6: subtypes de planilha que entraram na conta (capture fica FORA). */
   subtypesConsidered: string[];
   /** Brief v5 #1: vendas MANUAIS (Evento Presencial/Vendas) incluídas na conta —
@@ -149,7 +155,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
   // como vendas separadas; retry literal (mesmo pedido+produto) colapsa.
   const sales = new Map<
     string,
-    { bruto: number; liquido: number; utmSource: string | null; utmTerm: string | null; date: Date | null; produto: string }
+    { bruto: number; liquido: number; utmSource: string | null; utmTerm: string | null; date: Date | null; produto: string; plataforma: string }
   >();
   const subtypesConsidered = new Set<string>();
 
@@ -192,6 +198,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
         utmTerm: utmTermIdx !== -1 ? sanitizeUtmValue(row[utmTermIdx]) : null,
         date: dataIdx !== -1 ? parseDate(row[dataIdx]) : null,
         produto: produto || "(sem produto)",
+        plataforma: sheet.subtype,
       });
     }
   }
@@ -206,6 +213,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
       utmTerm: null,
       date: m.saleDate,
       produto: (m.product ?? "").trim() || "(venda manual)",
+      plataforma: "manual",
     });
   }
 
@@ -215,6 +223,8 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
   const porOrigem = new Map<Origem, { vendas: number; bruto: number; liquido: number }>();
   const porOT = new Map<string, { origem: Origem; temperatura: "hot" | "cold" | null; vendas: number; bruto: number; liquido: number }>();
   const porProduto = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+  const porPlataforma = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+  const porProdutoPlataforma = new Map<string, { produto: string; plataforma: string; vendas: number; bruto: number; liquido: number }>();
   let totalBruto = 0;
   let totalLiquido = 0;
   let minDate: string | null = null;
@@ -235,6 +245,19 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
     pp.bruto += s.bruto;
     pp.liquido += s.liquido;
     porProduto.set(s.produto, pp);
+
+    const pf = porPlataforma.get(s.plataforma) ?? { vendas: 0, bruto: 0, liquido: 0 };
+    pf.vendas += 1;
+    pf.bruto += s.bruto;
+    pf.liquido += s.liquido;
+    porPlataforma.set(s.plataforma, pf);
+
+    const ppfKey = `${s.produto}|${s.plataforma}`;
+    const ppf = porProdutoPlataforma.get(ppfKey) ?? { produto: s.produto, plataforma: s.plataforma, vendas: 0, bruto: 0, liquido: 0 };
+    ppf.vendas += 1;
+    ppf.bruto += s.bruto;
+    ppf.liquido += s.liquido;
+    porProdutoPlataforma.set(ppfKey, ppf);
 
     const temperatura = classifyTemperaturaVenda(s.utmTerm);
     const otKey = `${origem}|${temperatura ?? "null"}`;
@@ -289,6 +312,24 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
       .slice(0, 30)
       .map(([produto, v]) => ({
         produto,
+        vendas: v.vendas,
+        bruto: Math.round(v.bruto * 100) / 100,
+        liquido: Math.round(v.liquido * 100) / 100,
+      })),
+    porPlataforma: [...porPlataforma.entries()]
+      .sort((a, b) => b[1].bruto - a[1].bruto)
+      .map(([plataforma, v]) => ({
+        plataforma,
+        vendas: v.vendas,
+        bruto: Math.round(v.bruto * 100) / 100,
+        liquido: Math.round(v.liquido * 100) / 100,
+      })),
+    porProdutoPlataforma: [...porProdutoPlataforma.values()]
+      .sort((a, b) => b.vendas - a.vendas)
+      .slice(0, 30)
+      .map((v) => ({
+        produto: v.produto,
+        plataforma: v.plataforma,
         vendas: v.vendas,
         bruto: Math.round(v.bruto * 100) / 100,
         liquido: Math.round(v.liquido * 100) / 100,
