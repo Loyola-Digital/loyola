@@ -309,8 +309,38 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           const showFaturamento = stageType === "paid" && !!stageId && !!salesData && !salesData.semDados;
           const showVendaIngressos = metrics.totalVendas !== null;
           const showTaxaCheckout = metrics.checkoutConversionRate !== null;
+          // Story 18.51c: cards de ingressos/faturamento único vs total. Somam os
+          // *ByDay (mesma base do footer da tabela 18.51b) — NÃO os escalares
+          // ingressosUnicos/faturamentoUnico — pra bater exatamente com a tabela e
+          // o gráfico quando há venda sem dataVenda (carry-forward QA #2/#3).
+          const sumOrigem = (v?: { pago: number; org: number; semTrack: number }) =>
+            v ? v.pago + v.org + v.semTrack : 0;
+          const sumAllOrigem = (rec?: Record<string, { pago: number; org: number; semTrack: number }>) =>
+            rec ? Object.values(rec).reduce((s, v) => s + sumOrigem(v), 0) : 0;
+          const sumAllNum = (rec?: Record<string, number>) =>
+            rec ? Object.values(rec).reduce((s, v) => s + v, 0) : 0;
+          const ingressosUnicosCard = sumAllOrigem(salesData?.ingressosUnicosByDay);
+          const ingressosTotaisCard = sumAllOrigem(salesData?.ingressosTotaisByDay);
+          const faturamentoUnicoCard = sumAllNum(salesData?.faturamentoUnicoByDay);
+          const faturamentoTotalCard = sumAllNum(salesData?.faturamentoTotalByDay);
+          // Tooltip "Ingressos totais" = detalhamento por produto (mesmo formato da
+          // tabela 18.51b). Reusado nos cards Ingressos e Venda ingressos.
+          const ingressosTotaisTooltip = (() => {
+            const pp = salesData?.ingressosPorProduto;
+            if (!pp || pp.length === 0) {
+              return "Ingressos totais = todas as vendas (todos os produtos), sem deduplicar e-mail.";
+            }
+            const linhas = pp
+              .map((p) => `  ${p.produto}${p.isOrderBump ? " (order bump)" : ""}: ${fmtNumber(p.count)}`)
+              .join("\n");
+            return "Ingressos totais = todas as vendas (todos os produtos), sem dedup.\nPor produto:\n" + linhas;
+          })();
+          const ingressosUnicosTooltip =
+            "Ingressos únicos = e-mails distintos que compraram o produto da captação (order bumps não contam). Por e-mail, a compra mais recente.";
+          const showIngressos = showFaturamento;
           let colCount = 7; // base: Investimento, Leads, CPL, Connect, CTR, CPC, CPM
           if (showFaturamento) colCount++;
+          if (showIngressos) colCount++;
           if (showVendaIngressos) colCount++;
           if (showTaxaCheckout) colCount++;
           if (surveyResponseRate !== null) colCount++;
@@ -340,7 +370,12 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                 <KpiCard
                   icon={Banknote}
                   label="Faturamento"
-                  value={fmtCurrency(salesData!.faturamentoBruto)}
+                  value={fmtCurrency(faturamentoUnicoCard)}
+                  title={
+                    "Faturamento (captação): produto da captação, dedup por e-mail (compra mais recente).\n" +
+                    "Total: todos os produtos (captação + order bumps), sem dedup.\n" +
+                    "Distribuição por origem abaixo (base: faturamento total)."
+                  }
                   subValue={
                     (() => {
                       const total = salesData!.faturamentoBruto;
@@ -350,6 +385,9 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                       const order = ["Pago", "Orgânico", "Sem Track"];
                       return (
                         <>
+                          <div className="font-medium text-foreground">
+                            Total: {fmtCurrency(faturamentoTotalCard)}
+                          </div>
                           {order.map(fonte => {
                             const item = byFonte.get(fonte);
                             const bruto = item?.bruto ?? 0;
@@ -384,12 +422,37 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   hintTooltip={metrics.hasLinkedSheet}
                 />
               </MetricTooltip>
+              {showIngressos && (
+                <KpiCard
+                  icon={UserCheck}
+                  label="Ingressos"
+                  value={fmtNumber(ingressosUnicosCard)}
+                  title={ingressosUnicosTooltip + "\n\n" + ingressosTotaisTooltip}
+                  subValue={
+                    <div title={ingressosTotaisTooltip} className="cursor-help">
+                      Totais: {fmtNumber(ingressosTotaisCard)}
+                    </div>
+                  }
+                  hintTooltip
+                />
+              )}
               {stageType === "paid" && metrics.totalVendas !== null && (
                 <KpiCard
                   icon={Banknote}
                   label="Venda ingressos"
-                  value={fmtNumber(metrics.totalVendas)}
-                  subValue={`${metrics.checkoutVisits ? fmtNumber(metrics.checkoutVisits) : "—"} visitas checkout`}
+                  value={fmtNumber(showIngressos ? ingressosUnicosCard : metrics.totalVendas)}
+                  title={showIngressos ? ingressosUnicosTooltip + "\n\n" + ingressosTotaisTooltip : undefined}
+                  subValue={
+                    <>
+                      {showIngressos && (
+                        <div title={ingressosTotaisTooltip} className="cursor-help">
+                          Totais: {fmtNumber(ingressosTotaisCard)}
+                        </div>
+                      )}
+                      <div>{metrics.checkoutVisits ? fmtNumber(metrics.checkoutVisits) : "—"} visitas checkout</div>
+                    </>
+                  }
+                  hintTooltip={showIngressos}
                 />
               )}
               <MetricTooltip label="CPL" value={metrics.hasLinkedSheet ? fmtCurrency(metrics.cplPago) : "—"} formula={metrics.hasLinkedSheet ? buildFunnelCplFormula(metrics.spend, metrics.leadsPagos, f, "pago") : undefined}>
