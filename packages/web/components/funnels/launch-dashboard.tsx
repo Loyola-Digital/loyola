@@ -636,6 +636,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           data={dailyData}
           comparisonDays={compDays}
           compFunnelName={compData?.compareFunnelName}
+          atualSalesByDay={compData?.atualSalesByDay}
         />
       )}
 
@@ -1060,10 +1061,17 @@ function CtrCpmChart({
 
 // Comparação de funis/lançamentos — alinha os dois pelo DIA do lançamento
 // (Dia 1, Dia 2...), pois as datas reais diferem. Seletor de métrica reaproveita
-// todos os dados que o /meta-ads-comparison já traz (spend/ctr/cpc/cpm/clicks/impressions).
-type CompMetricKey = "spend" | "ctr" | "cpc" | "cpm" | "clicks" | "impressions";
+// os dados do /meta-ads-comparison (mídia + leads do pixel + faturamento/vendas
+// do cache sales-daily somado por etapa).
+type CompMetricKey =
+  | "spend" | "ctr" | "cpc" | "cpm" | "clicks" | "impressions"
+  | "leads" | "cpl" | "faturamento" | "vendas";
 const COMPARISON_METRICS: { key: CompMetricKey; label: string; kind: "currency" | "percent" | "int" }[] = [
   { key: "spend", label: "Investimento", kind: "currency" },
+  { key: "faturamento", label: "Faturamento", kind: "currency" },
+  { key: "vendas", label: "Vendas", kind: "int" },
+  { key: "leads", label: "Leads", kind: "int" },
+  { key: "cpl", label: "CPL", kind: "currency" },
   { key: "ctr", label: "CTR", kind: "percent" },
   { key: "cpc", label: "CPC", kind: "currency" },
   { key: "cpm", label: "CPM", kind: "currency" },
@@ -1071,10 +1079,29 @@ const COMPARISON_METRICS: { key: CompMetricKey; label: string; kind: "currency" 
   { key: "impressions", label: "Impressões", kind: "int" },
 ];
 
-function atualMetricValue(d: CampaignDailyInsight, key: CompMetricKey): number {
-  return safeNum(d[key]);
+/** Leads do pixel: só o evento `lead` (mesma regra do backend). */
+function leadsFromActions(d: CampaignDailyInsight): number {
+  const lead = d.actions?.find((a) => a.action_type === "lead");
+  return lead ? Number(lead.value) || 0 : 0;
 }
-function compMetricValue(c: ComparisonDayMetrics, key: CompMetricKey): number {
+
+function atualMetricValue(
+  d: CampaignDailyInsight,
+  key: CompMetricKey,
+  salesByDay?: Record<string, { faturamento: number; vendas: number }>,
+): number | undefined {
+  switch (key) {
+    case "leads": return leadsFromActions(d);
+    case "cpl": {
+      const leads = leadsFromActions(d);
+      return leads > 0 ? safeNum(d.spend) / leads : undefined;
+    }
+    case "faturamento": return salesByDay?.[d.date_start]?.faturamento ?? 0;
+    case "vendas": return salesByDay?.[d.date_start]?.vendas ?? 0;
+    default: return safeNum(d[key]);
+  }
+}
+function compMetricValue(c: ComparisonDayMetrics, key: CompMetricKey): number | undefined {
   switch (key) {
     case "spend": return c.spend;
     case "ctr": return c.ctr;
@@ -1083,6 +1110,11 @@ function compMetricValue(c: ComparisonDayMetrics, key: CompMetricKey): number {
     case "impressions": return c.impressions;
     // CPM não vem no payload de comparação — deriva de spend/impressions.
     case "cpm": return c.impressions > 0 ? (c.spend / c.impressions) * 1000 : 0;
+    // Payload antigo em cache pode não ter os campos novos — vira gap, não zero fake.
+    case "leads": return c.leads ?? undefined;
+    case "cpl": return c.cpl ?? undefined;
+    case "faturamento": return c.faturamento ?? undefined;
+    case "vendas": return c.vendas ?? undefined;
   }
 }
 function fmtCompMetric(v: number | null | undefined, kind: "currency" | "percent" | "int"): string {
@@ -1096,17 +1128,19 @@ function FunnelComparisonChart({
   data,
   comparisonDays,
   compFunnelName,
+  atualSalesByDay,
 }: {
   data: CampaignDailyInsight[];
   comparisonDays: ComparisonDayMetrics[];
   compFunnelName?: string;
+  atualSalesByDay?: Record<string, { faturamento: number; vendas: number }>;
 }) {
   const [metric, setMetric] = useState<CompMetricKey>("spend");
   const meta = COMPARISON_METRICS.find((m) => m.key === metric)!;
   const maxLen = Math.max(data.length, comparisonDays.length);
   const chartData = Array.from({ length: maxLen }, (_, idx) => ({
     dia: `Dia ${idx + 1}`,
-    atual: data[idx] ? atualMetricValue(data[idx], metric) : undefined,
+    atual: data[idx] ? atualMetricValue(data[idx], metric, atualSalesByDay) : undefined,
     comp: comparisonDays[idx] ? compMetricValue(comparisonDays[idx], metric) : undefined,
   }));
 
