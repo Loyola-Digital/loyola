@@ -256,6 +256,9 @@ export default fp(async function publicMetaRoutes(fastify) {
 
       return {
         projectId,
+        // Selo anti-dupla-taxação (Brief v5 #10): o gross-up de 12,15% JÁ está
+        // aplicado no spend servido — cliente NUNCA deve reaplicar (÷0,8785 ou ×1,13).
+        spendIncludesMetaTax: true,
         range: { from, to },
         partial: daysWithData.size < daysInRange(from, to),
         lastSyncedAt: lastSyncedAt ? (lastSyncedAt as Date).toISOString() : null,
@@ -371,6 +374,7 @@ export default fp(async function publicMetaRoutes(fastify) {
 
       return {
         projectId,
+        spendIncludesMetaTax: true,
         range: { from, to },
         campaignId: campaignId ?? null,
         orderBy,
@@ -443,6 +447,7 @@ export default fp(async function publicMetaRoutes(fastify) {
       const head = rows[0];
       return {
         projectId,
+        spendIncludesMetaTax: true,
         adId,
         adName: head?.adName ?? null,
         campaignId: head?.campaignId ?? null,
@@ -511,6 +516,7 @@ export default fp(async function publicMetaRoutes(fastify) {
 
       return {
         projectId,
+        spendIncludesMetaTax: true,
         range: { from, to },
         partial: days.length < daysInRange(from, to),
         lastSyncedAt: lastSyncedAt ? (lastSyncedAt as Date).toISOString() : null,
@@ -543,6 +549,10 @@ export default fp(async function publicMetaRoutes(fastify) {
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada", code: "NOT_FOUND" });
 
       const campaignIds = ((stage.campaigns ?? []) as { id: string }[]).map((c) => c.id);
+      // Sem from/to: série COMPLETA das campanhas da etapa. Um lançamento é
+      // finito e frequentemente PASSADO — o default "últimos 30 dias" (herdado
+      // do /daily de projeto) devolvia days:[] pra etapa encerrada (BBE mar/26).
+      const explicitRange = Boolean(query.data.from || query.data.to);
       const { from, to } = resolveRange(query.data.from, query.data.to);
 
       // Etapa sem campanha vinculada = série vazia (não é erro — etapa orgânica).
@@ -552,13 +562,17 @@ export default fp(async function publicMetaRoutes(fastify) {
           stageId,
           stageName: stage.name,
           campaignIds: [],
-          range: { from, to },
+          range: explicitRange ? { from, to } : { from: null, to: null },
           partial: true,
           lastSyncedAt: null,
           days: [],
         };
       }
 
+      const baseConditions = [
+        eq(metaAdInsightsDaily.projectId, projectId),
+        inArray(metaAdInsightsDaily.campaignId, campaignIds),
+      ];
       const rows = (await fastify.db
         .select({
           dateStart: metaAdInsightsDaily.dateStart,
@@ -572,12 +586,9 @@ export default fp(async function publicMetaRoutes(fastify) {
         })
         .from(metaAdInsightsDaily)
         .where(
-          and(
-            eq(metaAdInsightsDaily.projectId, projectId),
-            inArray(metaAdInsightsDaily.campaignId, campaignIds),
-            gte(metaAdInsightsDaily.dateStart, from),
-            lte(metaAdInsightsDaily.dateStart, to)
-          )
+          explicitRange
+            ? and(...baseConditions, gte(metaAdInsightsDaily.dateStart, from), lte(metaAdInsightsDaily.dateStart, to))
+            : and(...baseConditions)
         )) as InsightRow[];
 
       const byDay = new Map<string, MetricAgg>();
@@ -596,13 +607,20 @@ export default fp(async function publicMetaRoutes(fastify) {
         .sort((a, b) => (a[0] < b[0] ? -1 : 1))
         .map(([date, agg]) => ({ date, ...deriveMetrics(agg) }));
 
+      // Range efetivo: o pedido (explícito) ou o observado nos dados (default).
+      const effFrom = explicitRange ? from : (days[0]?.date ?? null);
+      const effTo = explicitRange ? to : (days[days.length - 1]?.date ?? null);
+
       return {
         projectId,
         stageId,
         stageName: stage.name,
+        spendIncludesMetaTax: true,
         campaignIds,
-        range: { from, to },
-        partial: days.length < daysInRange(from, to),
+        range: { from: effFrom, to: effTo },
+        partial: explicitRange
+          ? days.length < daysInRange(from, to)
+          : effFrom != null && days.length < daysInRange(effFrom, effTo as string),
         lastSyncedAt: lastSyncedAt ? (lastSyncedAt as Date).toISOString() : null,
         days,
       };

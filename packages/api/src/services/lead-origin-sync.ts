@@ -34,7 +34,10 @@ const ALIASES: Record<string, string[]> = {
   utmMedium: ["utm_medium", "utmmedium", "medium", "midia", "medio"],
   utmContent: ["utm_content", "utmcontent", "content", "conteudo", "criativo"],
   utmCampaign: ["utm_campaign", "utmcampaign", "campaign", "campanha"],
-  email: ["email", "e-mail", "emaillead", "enderecodeemail"],
+  // Brief v6 #5 (FZ/LGPD): "email_sha256" ANTES de "email" — planilha com as
+  // duas colunas (email vazio por LGPD + hash preenchido) resolve pro hash.
+  // O dedup não exige formato de e-mail: qualquer valor estável serve de chave.
+  email: ["emailsha256", "emailhash", "hashemail", "email", "e-mail", "emaillead", "enderecodeemail"],
   phone: ["telefone", "phone", "whatsapp", "celular", "fone", "tel", "whats", "numero"],
   date: ["data", "date", "timestamp", "carimbodedatahora", "carimbodedata", "datadecadastro", "datahora", "createdat"],
 };
