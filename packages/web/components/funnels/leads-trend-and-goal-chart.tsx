@@ -31,6 +31,8 @@ interface LeadsTrendAndGoalChartProps {
   projectId?: string;
   /** Story 18.27: stageId para usar inputs da etapa (projectionEndDate + leadGoal) */
   stageId?: string;
+  /** Story 18.53: na Captação Paga as rows trazem ingressos únicos; rótulos → "Ingressos". */
+  isPaidCapture?: boolean;
 }
 
 const COLORS = {
@@ -112,7 +114,9 @@ function CustomTooltip({ active, payload }: TooltipProps) {
   );
 }
 
-export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeção vs Meta", funnelId, funnel, projectId, stageId }: LeadsTrendAndGoalChartProps) {
+export function LeadsTrendAndGoalChart({ rows, title, funnelId, funnel, projectId, stageId, isPaidCapture = false }: LeadsTrendAndGoalChartProps) {
+  const term = isPaidCapture ? "Ingressos" : "Leads";
+  const resolvedTitle = title ?? (isPaidCapture ? "Ingressos: Reais vs Projeção vs Meta" : "Leads: Reais vs Projeção vs Meta");
   const [dataFinal, setDataFinal] = useState<string>("");
   const [metaTotal, setMetaTotal] = useState<number>(0);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -238,7 +242,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">{title}</h3>
+        <h3 className="text-sm font-semibold">{resolvedTitle}</h3>
         {projectionPercentage > 0 && (
           <div className="text-xs">
             <span className={projectionPercentage >= 100 ? "text-green-600" : "text-amber-600"}>
@@ -297,7 +301,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
               dataKey="dailyReal"
               fill={COLORS.bars}
               opacity={OPACITIES.dailyReal}
-              name="Leads Reais (Dia)"
+              name={`${term} Reais (Dia)`}
               radius={[2, 2, 0, 0]}
               label={{ position: "top", fontSize: 9, formatter: (value: unknown) => (typeof value === 'number' ? Math.round(value) : "") }}
             />
@@ -307,7 +311,7 @@ export function LeadsTrendAndGoalChart({ rows, title = "Leads: Reais vs Projeç�
               dataKey="dailyProjected"
               fill={COLORS.barsProjected}
               opacity={OPACITIES.dailyProjected}
-              name="Leads Projetados (Dia)"
+              name={`${term} Projetados (Dia)`}
               radius={[2, 2, 0, 0]}
               label={{ position: "top", fontSize: 9, formatter: (value: unknown) => (typeof value === 'number' ? Math.round(value) : "") }}
             />

@@ -27,6 +27,8 @@ interface LeadsProjectionCostBasedChartProps {
   funnel?: Funnel;
   projectId?: string;
   stageId?: string;
+  /** Story 18.53: na Captação Paga as rows trazem ingressos únicos; rótulos → "Ingressos". */
+  isPaidCapture?: boolean;
 }
 
 const COLORS = {
@@ -129,13 +131,18 @@ function CustomTooltip({ active, payload }: TooltipProps) {
 
 export function LeadsProjectionCostBasedChart({
   rows,
-  title = "Leads: Reais vs Projeção (Baseado em Custo)",
+  title,
   funnelId,
   funnel,
   projectId,
   stageId,
+  isPaidCapture = false,
 }: LeadsProjectionCostBasedChartProps) {
   const [mounted, setMounted] = useState(false);
+  const term = isPaidCapture ? "Ingressos" : "Leads";
+  const resolvedTitle = title ?? (isPaidCapture
+    ? "Ingressos: Reais vs Projeção (Baseado em Custo)"
+    : "Leads: Reais vs Projeção (Baseado em Custo)");
 
   // Story 18.27: Se stageId fornecido, usar inputs de etapa
   const usingStageInputs = !!stageId;
@@ -257,7 +264,7 @@ export function LeadsProjectionCostBasedChart({
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">{title}</h3>
+        <h3 className="text-sm font-semibold">{resolvedTitle}</h3>
         {projectionPercentage > 0 && (
           <div className="text-xs">
             <span className={projectionPercentage >= 100 ? "text-green-600" : "text-amber-600"}>
@@ -375,7 +382,7 @@ export function LeadsProjectionCostBasedChart({
               dataKey="dailyRealPaid"
               fill={COLORS.barsPaidReal}
               opacity={OPACITIES.dailyReal}
-              name="Leads Pagos Reais (Dia)"
+              name={`${term} Pagos Reais (Dia)`}
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
             />
@@ -383,7 +390,7 @@ export function LeadsProjectionCostBasedChart({
               dataKey="dailyRealOrg"
               fill={COLORS.barsOrgReal}
               opacity={OPACITIES.dailyReal}
-              name="Leads Orgânicos Reais (Dia)"
+              name={`${term} Orgânicos Reais (Dia)`}
               radius={[2, 2, 0, 0]}
               stackId="realDaily"
               label={{ position: "top", fill: "#FFF", stroke: "#000", strokeWidth: 0.5, fontSize: 11 }}
@@ -394,7 +401,7 @@ export function LeadsProjectionCostBasedChart({
               dataKey="dailyProjectedPaid"
               fill={COLORS.barsPaidProjected}
               opacity={0.7}
-              name="Leads Pagos Projetados (Dia)"
+              name={`${term} Pagos Projetados (Dia)`}
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
             />
@@ -402,7 +409,7 @@ export function LeadsProjectionCostBasedChart({
               dataKey="dailyProjectedOrg"
               fill={COLORS.barsOrgProjected}
               opacity={0.7}
-              name="Leads Orgânicos Projetados (Dia)"
+              name={`${term} Orgânicos Projetados (Dia)`}
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
               label={(props: any) => {
