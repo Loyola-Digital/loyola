@@ -592,22 +592,23 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         <CplComparisonChart rows={paidRows} isPaidCapture={stageType === "paid"} />
       ) : null}
 
-      {/* Leads Acumulados (Story 18.4) */}
+      {/* Leads Acumulados (Story 18.4) — Story 18.53: paidRows + rótulos "Ingressos" na Paga */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
         <LeadsCumulativeChart
-          rows={metrics.rows}
+          rows={paidRows}
           leadsGratuitosByDay={organicLeads.hasOrganicSurveys ? organicLeads.byDay : undefined}
+          isPaidCapture={stageType === "paid"}
         />
       ) : null}
 
-      {/* Leads: Tendência + Meta (Story 18.19) + Inputs por Etapa (Story 18.27) */}
+      {/* Leads: Tendência + Meta (Story 18.19) + Inputs por Etapa (Story 18.27) — Story 18.53 */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
-        <LeadsTrendAndGoalChart rows={metrics.rows} funnelId={funnel.id} funnel={funnel} projectId={projectId} stageId={stageId} />
+        <LeadsTrendAndGoalChart rows={paidRows} funnelId={funnel.id} funnel={funnel} projectId={projectId} stageId={stageId} isPaidCapture={stageType === "paid"} />
       ) : null}
 
       {/* NOVO: Leads Projeção Baseada em Custo (Story 18.39) */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
-        <LeadsProjectionCostBasedChart rows={paidRows} funnelId={funnel.id} funnel={funnel} projectId={projectId} stageId={stageId} />
+        <LeadsProjectionCostBasedChart rows={paidRows} funnelId={funnel.id} funnel={funnel} projectId={projectId} stageId={stageId} isPaidCapture={stageType === "paid"} />
       ) : null}
 
       {/* CTR × CPM — Saturation Chart */}

@@ -23,6 +23,11 @@ interface LeadsCumulativeChartProps {
    * adicional "Leads Gratuitos" no gráfico cumulativo.
    */
   leadsGratuitosByDay?: Record<string, number>;
+  /**
+   * Story 18.53: na Captação Paga as rows trazem ingressos únicos (não leads),
+   * então os rótulos passam a "Ingressos …".
+   */
+  isPaidCapture?: boolean;
 }
 
 const LEADS_COLORS = {
@@ -80,19 +85,21 @@ function renderPointLabel(props: any) {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function CustomTooltip(props: any) {
-  const { active, payload } = props;
+  const { active, payload, isPaidCapture } = props;
   if (!active || !payload || payload.length === 0) return null;
 
   const data = payload[0].payload;
   const hasGratuitos = data["Leads Gratuitos"] !== undefined;
+  const term = isPaidCapture ? "Ingressos" : "Leads";
+  const totalLabel = isPaidCapture ? "Ingressos únicos" : "Total Leads";
   return (
     <div className="rounded-lg border border-border bg-background p-3 shadow-lg space-y-1 text-xs">
       <div className="font-semibold">{data.date}</div>
-      <div className="text-muted-foreground">Total Leads: {data["Total Leads"]}</div>
+      <div className="text-muted-foreground">{totalLabel}: {data["Total Leads"]}</div>
       <div className="border-t border-border/30 pt-1 mt-1">
-        <div className="text-muted-foreground">Leads Pagos: {data["Leads Pagos"]}</div>
-        <div className="text-muted-foreground">Leads Org: {data["Leads Org"]}</div>
-        <div className="text-muted-foreground">Leads s/ Track: {data["Leads s/ Track"]}</div>
+        <div className="text-muted-foreground">{term} Pagos: {data["Leads Pagos"]}</div>
+        <div className="text-muted-foreground">{term} Org: {data["Leads Org"]}</div>
+        <div className="text-muted-foreground">{term} s/ Track: {data["Leads s/ Track"]}</div>
         {hasGratuitos && (
           <div className="text-muted-foreground">Leads Gratuitos: {data["Leads Gratuitos"]}</div>
         )}
@@ -110,15 +117,18 @@ function CustomTooltip(props: any) {
  */
 export function LeadsCumulativeChart({
   rows,
-  title = "Leads Acumulados",
+  title,
   leadsGratuitosByDay,
+  isPaidCapture = false,
 }: LeadsCumulativeChartProps) {
   const data = buildLeadsCumulativeData(rows, leadsGratuitosByDay);
   const showGratuitos = !!leadsGratuitosByDay;
+  const term = isPaidCapture ? "Ingressos" : "Leads";
+  const resolvedTitle = title ?? (isPaidCapture ? "Ingressos Acumulados" : "Leads Acumulados");
 
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-2">
-      <h3 className="text-sm font-semibold">{title}</h3>
+      <h3 className="text-sm font-semibold">{resolvedTitle}</h3>
       <ResponsiveContainer width="100%" height={360}>
         <ComposedChart data={data} margin={{ top: 20, right: 30, bottom: 5, left: 10 }}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -129,11 +139,12 @@ export function LeadsCumulativeChart({
             allowDecimals={false}
             allowDataOverflow={false}
           />
-          <Tooltip content={<CustomTooltip />} />
+          <Tooltip content={<CustomTooltip isPaidCapture={isPaidCapture} />} />
           <Legend />
           <Area
             type="monotone"
             dataKey="Total Leads"
+            name={isPaidCapture ? "Ingressos únicos" : "Total Leads"}
             fill="hsl(220 15% 70%)"
             fillOpacity={0.12}
             stroke="hsl(220 15% 60%)"
@@ -146,6 +157,7 @@ export function LeadsCumulativeChart({
           <Line
             type="monotone"
             dataKey="Leads Pagos"
+            name={`${term} Pagos`}
             stroke={LEADS_COLORS.pagos}
             strokeWidth={2}
             dot={{ r: 3 }}
@@ -155,6 +167,7 @@ export function LeadsCumulativeChart({
           <Line
             type="monotone"
             dataKey="Leads Org"
+            name={`${term} Org`}
             stroke={LEADS_COLORS.org}
             strokeWidth={2}
             dot={{ r: 3 }}
@@ -164,6 +177,7 @@ export function LeadsCumulativeChart({
           <Line
             type="monotone"
             dataKey="Leads s/ Track"
+            name={`${term} s/ Track`}
             stroke={LEADS_COLORS.semTrack}
             strokeWidth={2}
             dot={{ r: 3 }}
