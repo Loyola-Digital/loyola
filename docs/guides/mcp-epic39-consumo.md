@@ -112,6 +112,8 @@ reais (numéricos ≥10 dígitos — "org"/"link_in_bio"/"{{ad.id}}" ficam fora)
 - **Planilhas de captação ficam FORA** — só subtypes de venda contam (`subtypesConsidered`
   no payload mostra quais entraram: `main_product`/`sales`/`tmb`/`event_sales`).
   Se historicamente você viu milhares de "vendas" numa etapa, era captação contaminando.
+  **Exceção (jul/14):** etapa de CAPTAÇÃO PAGA sem planilha de venda usa a `capture`
+  como fallback (é o checkout do ingresso) — `subtypesConsidered: ["capture"]` denuncia.
 - **`porProduto`** (novo): `[{ produto, vendas, bruto, liquido }]` top 30 — separe
   ingresso × order bump pelas keywords do nome do produto. `"(sem produto)"` = coluna não mapeada.
 - Origem da venda = `utm_source` **da própria linha de venda** (não do lead).
