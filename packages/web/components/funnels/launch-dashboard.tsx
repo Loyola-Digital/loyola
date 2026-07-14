@@ -52,6 +52,7 @@ import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-tabl
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
+import { overrideCplWithUniqueIngressos } from "@/lib/utils/funnel-metrics";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { useStageSalesByDay } from "@/lib/hooks/use-stage-sales-by-day";
@@ -157,6 +158,37 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
     salesData && !salesData.semDados ? salesData : null,
     salesByDay,
   );
+  // Story 18.52: na Captação Paga, CPL Pago/Geral e Tx Conv. usam ingressos
+  // ÚNICOS (não leads). Recalculamos as rows aqui e passamos as MESMAS rows para
+  // a tabela e os gráficos de CPL — assim tabela e gráficos ficam coerentes.
+  const ingUnicosByDay = stageType === "paid" ? salesTableData?.ingressosUnicosByDay : undefined;
+  const paidRows = useMemo(() => {
+    if (!ingUnicosByDay) return metrics.rows;
+    return metrics.rows.map((r) => {
+      const iu = ingUnicosByDay[r.date];
+      const pagos = iu ? iu.pago : 0;
+      const org = iu ? iu.org : 0;
+      const semTrack = iu ? iu.semTrack : 0;
+      // Sobrescreve leads→ingressos únicos: além do CPL (helper), o gráfico de
+      // Projeção por custo (useLeadsProjection) deriva o CPL de leadsPagos/Org/
+      // SemTrack, então precisa desses campos = ingressos únicos na Paga. A tabela
+      // não é afetada — na Paga com vendas ela usa ingressosUnicosByDay direto.
+      return {
+        ...overrideCplWithUniqueIngressos(r, pagos, pagos + org + semTrack),
+        leadsPagos: pagos,
+        leadsOrg: org,
+        leadsSemTrack: semTrack,
+      };
+    });
+  }, [metrics.rows, ingUnicosByDay]);
+  const paidTotals = useMemo(() => {
+    if (!ingUnicosByDay) return metrics.totals;
+    const all = Object.values(ingUnicosByDay);
+    const pagos = all.reduce((s, v) => s + v.pago, 0);
+    const totais = all.reduce((s, v) => s + v.pago + v.org + v.semTrack, 0);
+    return overrideCplWithUniqueIngressos(metrics.totals, pagos, totais);
+  }, [metrics.totals, ingUnicosByDay]);
+
   const survey = useSurveyAggregation(projectId, funnel.id, stageId ?? null);
   const { data: campaignData } = useTrafficCampaigns(projectId, days);
   const { data: dailyData, isLoading: dailyLoading } =
@@ -309,8 +341,45 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           const showFaturamento = stageType === "paid" && !!stageId && !!salesData && !salesData.semDados;
           const showVendaIngressos = metrics.totalVendas !== null;
           const showTaxaCheckout = metrics.checkoutConversionRate !== null;
+          // Story 18.51c: cards de ingressos/faturamento único vs total. Somam os
+          // *ByDay (mesma base do footer da tabela 18.51b) — NÃO os escalares
+          // ingressosUnicos/faturamentoUnico — pra bater exatamente com a tabela e
+          // o gráfico quando há venda sem dataVenda (carry-forward QA #2/#3).
+          const sumOrigem = (v?: { pago: number; org: number; semTrack: number }) =>
+            v ? v.pago + v.org + v.semTrack : 0;
+          const sumAllOrigem = (rec?: Record<string, { pago: number; org: number; semTrack: number }>) =>
+            rec ? Object.values(rec).reduce((s, v) => s + sumOrigem(v), 0) : 0;
+          const sumAllNum = (rec?: Record<string, number>) =>
+            rec ? Object.values(rec).reduce((s, v) => s + v, 0) : 0;
+          const ingressosUnicosCard = sumAllOrigem(salesData?.ingressosUnicosByDay);
+          const ingressosTotaisCard = sumAllOrigem(salesData?.ingressosTotaisByDay);
+          const faturamentoUnicoCard = sumAllNum(salesData?.faturamentoUnicoByDay);
+          const faturamentoTotalCard = sumAllNum(salesData?.faturamentoTotalByDay);
+          // Tooltip "Ingressos totais" = detalhamento por produto (mesmo formato da
+          // tabela 18.51b). Reusado nos cards Ingressos e Venda ingressos.
+          const ingressosTotaisTooltip = (() => {
+            const pp = salesData?.ingressosPorProduto;
+            if (!pp || pp.length === 0) {
+              return "Ingressos totais = todas as vendas (todos os produtos), sem deduplicar e-mail.";
+            }
+            const linhas = pp
+              .map((p) => `  ${p.produto}${p.isOrderBump ? " (order bump)" : ""}: ${fmtNumber(p.count)}`)
+              .join("\n");
+            return "Ingressos totais = todas as vendas (todos os produtos), sem dedup.\nPor produto:\n" + linhas;
+          })();
+          const ingressosUnicosTooltip =
+            "Ingressos únicos = e-mails distintos que compraram o produto da captação (order bumps não contam). Por e-mail, a compra mais recente.";
+          const showIngressos = showFaturamento;
+          // Story 18.52 AC2/AC3: na Paga o CPL usa ingressos únicos (paidTotals já
+          // recalculado) e os rótulos viram "CPL Pago Único" / "CPL Geral Único".
+          const isPaidCapture = stageType === "paid";
+          const cplPagoVal = isPaidCapture ? paidTotals.cplPg : metrics.cplPago;
+          const cplGeralVal = isPaidCapture ? paidTotals.cplG : metrics.cplGeral;
+          const cplPagoLabel = isPaidCapture ? "CPL Pago Único" : "CPL Pago";
+          const cplGeralLabel = isPaidCapture ? "CPL Geral Único" : "CPL Geral";
           let colCount = 7; // base: Investimento, Leads, CPL, Connect, CTR, CPC, CPM
           if (showFaturamento) colCount++;
+          // Story 18.52 AC6: card "Ingressos" removido — não conta mais no grid.
           if (showVendaIngressos) colCount++;
           if (showTaxaCheckout) colCount++;
           if (surveyResponseRate !== null) colCount++;
@@ -340,16 +409,26 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                 <KpiCard
                   icon={Banknote}
                   label="Faturamento"
-                  value={fmtCurrency(salesData!.faturamentoBruto)}
+                  value={fmtCurrency(faturamentoUnicoCard)}
+                  title={
+                    "Faturamento (captação): produto da captação, dedup por e-mail (compra mais recente).\n" +
+                    "Total: todos os produtos (captação + order bumps), sem dedup.\n" +
+                    "Distribuição por origem abaixo (base: Total)."
+                  }
                   subValue={
                     (() => {
-                      const total = salesData!.faturamentoBruto;
+                      // Story 18.52 AC7: base dos percentuais = o "Total" exibido
+                      // (soma dos *ByDay), alinhado com o número mostrado.
+                      const total = faturamentoTotalCard;
                       const byFonte = new Map(
                         (salesData?.porUtmSource ?? []).map(item => [item.fonte, item])
                       );
                       const order = ["Pago", "Orgânico", "Sem Track"];
                       return (
                         <>
+                          <div className="font-medium text-foreground">
+                            Total: {fmtCurrency(faturamentoTotalCard)}
+                          </div>
                           {order.map(fonte => {
                             const item = byFonte.get(fonte);
                             const bruto = item?.bruto ?? 0;
@@ -384,27 +463,43 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   hintTooltip={metrics.hasLinkedSheet}
                 />
               </MetricTooltip>
+              {/* Story 18.52 AC6: card "Ingressos" removido (consolidado aqui). */}
               {stageType === "paid" && metrics.totalVendas !== null && (
                 <KpiCard
                   icon={Banknote}
                   label="Venda ingressos"
-                  value={fmtNumber(metrics.totalVendas)}
-                  subValue={`${metrics.checkoutVisits ? fmtNumber(metrics.checkoutVisits) : "—"} visitas checkout`}
+                  value={fmtNumber(showIngressos ? ingressosUnicosCard : metrics.totalVendas)}
+                  title={showIngressos ? ingressosUnicosTooltip + "\n\n" + ingressosTotaisTooltip : undefined}
+                  subValue={
+                    <>
+                      {showIngressos && (
+                        <div title={ingressosTotaisTooltip} className="cursor-help">
+                          Totais: {fmtNumber(ingressosTotaisCard)}
+                        </div>
+                      )}
+                    </>
+                  }
+                  hintTooltip={showIngressos}
                 />
               )}
-              <MetricTooltip label="CPL" value={metrics.hasLinkedSheet ? fmtCurrency(metrics.cplPago) : "—"} formula={metrics.hasLinkedSheet ? buildFunnelCplFormula(metrics.spend, metrics.leadsPagos, f, "pago") : undefined}>
+              <MetricTooltip label={cplPagoLabel} value={metrics.hasLinkedSheet ? fmtCurrency(cplPagoVal) : "—"} formula={!isPaidCapture && metrics.hasLinkedSheet ? buildFunnelCplFormula(metrics.spend, metrics.leadsPagos, f, "pago") : undefined}>
                 <KpiCard
                   icon={Target}
-                  label="CPL Pago"
-                  value={metrics.hasLinkedSheet ? fmtCurrency(metrics.cplPago) : "—"}
+                  label={cplPagoLabel}
+                  value={metrics.hasLinkedSheet ? fmtCurrency(cplPagoVal) : "—"}
+                  title={isPaidCapture
+                    ? "CPL Pago Único = Investimento ÷ Ingressos únicos pagos.\nCPL Geral Único = Investimento ÷ Ingressos únicos totais (pago+org+sem track)."
+                    : undefined}
                   subValue={metrics.hasLinkedSheet
-                    ? `Geral: ${fmtCurrency(metrics.cplGeral)}`
+                    ? `${cplGeralLabel}: ${fmtCurrency(cplGeralVal)}`
                     : "Vincule uma planilha"}
                   hintTooltip={metrics.hasLinkedSheet}
                 />
               </MetricTooltip>
               <MetricTooltip label="Connect Rate" value={fmtPercent(metrics.connectRate)} formula={buildFunnelConnectRateFormula(metrics.connectRate, f)}>
-                <KpiCard icon={Link2} label="Connect Rate" value={fmtPercent(metrics.connectRate)} hintTooltip />
+                <KpiCard icon={Link2} label="Connect Rate" value={fmtPercent(metrics.connectRate)}
+                  valueClassName={metrics.connectRate != null ? (metrics.connectRate > 70 ? "text-emerald-500" : "text-amber-500") : undefined}
+                  hintTooltip />
               </MetricTooltip>
               <MetricTooltip label="CTR" value={fmtPercent(metrics.ctr)} formula={buildFunnelCtrFormula(metrics.ctr, f)}>
                 <KpiCard icon={Percent} label="CTR" value={fmtPercent(metrics.ctr)} hintTooltip
@@ -474,8 +569,8 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
       {/* Dados diários — tabela cruzada (Story 18.3) */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
         <CrossedFunnelDailyTable
-          rows={metrics.rows}
-          totals={metrics.totals}
+          rows={paidRows}
+          totals={paidTotals}
           surveyTotal={survey.totalResponses}
           surveyMatched={survey.matchedResponses}
           surveyUnmatched={survey.unmatchedResponses}
@@ -492,9 +587,9 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         />
       ) : null}
 
-      {/* CPL Pago vs CPL Geral (Story 18.4) */}
+      {/* CPL Pago vs CPL Geral (Story 18.4) — Story 18.52: rows com CPL por ingressos únicos na Paga */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
-        <CplComparisonChart rows={metrics.rows} />
+        <CplComparisonChart rows={paidRows} isPaidCapture={stageType === "paid"} />
       ) : null}
 
       {/* Leads Acumulados (Story 18.4) */}
@@ -512,7 +607,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
       {/* NOVO: Leads Projeção Baseada em Custo (Story 18.39) */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
-        <LeadsProjectionCostBasedChart rows={metrics.rows} funnelId={funnel.id} funnel={funnel} projectId={projectId} stageId={stageId} />
+        <LeadsProjectionCostBasedChart rows={paidRows} funnelId={funnel.id} funnel={funnel} projectId={projectId} stageId={stageId} />
       ) : null}
 
       {/* CTR × CPM — Saturation Chart */}
@@ -717,9 +812,11 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
   value: string;
   subValue?: React.ReactNode;
   hintTooltip?: boolean;
+  /** Story 18.52: classe extra no valor (ex.: cor do Connect Rate). */
+  valueClassName?: string;
   comparison?: { display: string; delta: number; higherIsBetter: boolean };
 } & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
-  { icon: Icon, label, value, subValue, hintTooltip, comparison, className, ...rest },
+  { icon: Icon, label, value, subValue, hintTooltip, valueClassName, comparison, className, ...rest },
   ref,
 ) {
   return (
@@ -732,7 +829,7 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
       </div>
-      <p className={`text-xl font-bold tracking-tight ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
+      <p className={`text-xl font-bold tracking-tight ${valueClassName ?? ""} ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
       {comparison && (
         <div className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1.5 leading-tight">
           <span>vs {comparison.display}</span>
