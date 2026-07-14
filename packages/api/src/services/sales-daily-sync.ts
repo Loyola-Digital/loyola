@@ -103,7 +103,13 @@ type Mapping = {
 const SALES_SUBTYPES = ["main_product", "sales", "tmb", "event_sales"];
 
 export async function computeSalesDailyForStage(db: Database, stageId: string): Promise<SalesDailyPayload | null> {
-  const sheets = await db
+  const [stageRow] = await db
+    .select({ stageType: funnelStages.stageType })
+    .from(funnelStages)
+    .where(eq(funnelStages.id, stageId))
+    .limit(1);
+
+  const allSheets = await db
     .select({
       id: stageSalesSpreadsheets.id,
       subtype: stageSalesSpreadsheets.subtype,
@@ -112,12 +118,16 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
       columnMapping: stageSalesSpreadsheets.columnMapping,
     })
     .from(stageSalesSpreadsheets)
-    .where(
-      and(
-        eq(stageSalesSpreadsheets.stageId, stageId),
-        inArray(stageSalesSpreadsheets.subtype, SALES_SUBTYPES),
-      ),
-    );
+    .where(eq(stageSalesSpreadsheets.stageId, stageId));
+
+  // Exceção à 39.6: em CAPTAÇÃO PAGA a planilha capture É o checkout do ingresso
+  // (Kiwify — cada linha é compra com valor). Mas SÓ como FALLBACK quando a etapa
+  // não tem planilha de venda — quando tem as duas, a capture costuma repetir as
+  // MESMAS transações (dedup é por sheet) e dobraria o faturamento.
+  let sheets = allSheets.filter((s) => SALES_SUBTYPES.includes(s.subtype));
+  if (sheets.length === 0 && stageRow?.stageType === "paid") {
+    sheets = allSheets.filter((s) => s.subtype === "capture");
+  }
 
   // Brief v5 #1: vendas manuais (Evento Presencial / Vendas / captações) —
   // reembolsadas (refundedAt != null) ficam fora, mesma regra do dashboard.
