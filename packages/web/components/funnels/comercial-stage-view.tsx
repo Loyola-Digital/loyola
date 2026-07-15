@@ -24,6 +24,8 @@ import {
   User,
   FileSpreadsheet,
   GripVertical,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -50,6 +52,7 @@ import {
   useCreateCrmColumn,
   useUpdateCrmColumn,
   useDeleteCrmColumn,
+  useReorderCrmColumns,
   useUpdateCrmCard,
   useDeleteCrmCard,
   useCrmCardSurvey,
@@ -202,6 +205,7 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
   const createColumn = useCreateCrmColumn(projectId, funnelId, stage.id);
   const updateColumn = useUpdateCrmColumn(projectId, funnelId, stage.id);
   const deleteColumn = useDeleteCrmColumn(projectId, funnelId, stage.id);
+  const reorderColumns = useReorderCrmColumns(projectId, funnelId, stage.id);
   const updateCard = useUpdateCrmCard(projectId, funnelId, stage.id);
   const deleteCard = useDeleteCrmCard(projectId, funnelId, stage.id);
 
@@ -459,8 +463,38 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Colunas do kanban</Label>
                   <div className="space-y-1">
-                    {columns.map((c) => (
+                    {columns.map((c, idx) => (
                       <div key={c.id} className="flex items-center gap-1.5">
+                        <div className="flex flex-col shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-4 w-6"
+                            disabled={idx === 0 || reorderColumns.isPending}
+                            title="Mover pra esquerda no kanban"
+                            onClick={() => {
+                              const ids = columns.map((x) => x.id);
+                              [ids[idx - 1], ids[idx]] = [ids[idx], ids[idx - 1]];
+                              reorderColumns.mutate(ids);
+                            }}
+                          >
+                            <ChevronUp className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-4 w-6"
+                            disabled={idx === columns.length - 1 || reorderColumns.isPending}
+                            title="Mover pra direita no kanban"
+                            onClick={() => {
+                              const ids = columns.map((x) => x.id);
+                              [ids[idx], ids[idx + 1]] = [ids[idx + 1], ids[idx]];
+                              reorderColumns.mutate(ids);
+                            }}
+                          >
+                            <ChevronDown className="h-3 w-3" />
+                          </Button>
+                        </div>
                         <Input
                           defaultValue={c.name}
                           className="h-8 text-sm"
