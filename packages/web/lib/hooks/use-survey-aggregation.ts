@@ -392,7 +392,18 @@ export function useSurveyAggregation(
         if (!questionsMeta.has(key)) questionsMeta.set(key, label);
       }
 
-      const effectiveRows = data.rows;
+      // Story 18.54 AC3: descarta linhas 100% vazias (arrasto/linhas em branco no
+      // fim da planilha) — sem email, sem telefone e sem nenhuma resposta mapeada.
+      // Linha com qualquer resposta preenchida permanece (unmatched legítimo).
+      const effectiveRows = data.rows.filter((row) => {
+        const hasEmail = indexes.email >= 0 && (row[indexes.email] ?? "").trim() !== "";
+        const hasPhone = indexes.phone >= 0 && (row[indexes.phone] ?? "").trim() !== "";
+        if (hasEmail || hasPhone) return true;
+        for (const columnIdx of indexes.questions.values()) {
+          if (columnIdx >= 0 && (row[columnIdx] ?? "").trim() !== "") return true;
+        }
+        return false;
+      });
       totalResponses += effectiveRows.length;
 
       // Match leads

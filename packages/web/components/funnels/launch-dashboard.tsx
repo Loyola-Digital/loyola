@@ -408,17 +408,17 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
               {showFaturamento && (
                 <KpiCard
                   icon={Banknote}
-                  label="Faturamento"
-                  value={fmtCurrency(faturamentoUnicoCard)}
+                  label="Faturamento Total"
+                  value={fmtCurrency(faturamentoTotalCard)}
                   title={
-                    "Faturamento (captação): produto da captação, dedup por e-mail (compra mais recente).\n" +
-                    "Total: todos os produtos (captação + order bumps), sem dedup.\n" +
-                    "Distribuição por origem abaixo (base: Total)."
+                    "Faturamento Total: todos os produtos (captação + order bumps), sem dedup.\n" +
+                    "Distribuição por origem abaixo (base: Total).\n" +
+                    "Único: produto da captação, dedup por e-mail (compra mais recente)."
                   }
                   subValue={
                     (() => {
-                      // Story 18.52 AC7: base dos percentuais = o "Total" exibido
-                      // (soma dos *ByDay), alinhado com o número mostrado.
+                      // Story 18.54 AC1: valor principal = Total; origem abaixo; Único
+                      // no rodapé. Percentuais com base no Total exibido (soma dos *ByDay).
                       const total = faturamentoTotalCard;
                       const byFonte = new Map(
                         (salesData?.porUtmSource ?? []).map(item => [item.fonte, item])
@@ -426,9 +426,6 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                       const order = ["Pago", "Orgânico", "Sem Track"];
                       return (
                         <>
-                          <div className="font-medium text-foreground">
-                            Total: {fmtCurrency(faturamentoTotalCard)}
-                          </div>
                           {order.map(fonte => {
                             const item = byFonte.get(fonte);
                             const bruto = item?.bruto ?? 0;
@@ -439,6 +436,9 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                               </div>
                             );
                           })}
+                          <div className="font-medium text-foreground">
+                            Único: {fmtCurrency(faturamentoUnicoCard)}
+                          </div>
                         </>
                       );
                     })()
@@ -467,14 +467,14 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
               {stageType === "paid" && metrics.totalVendas !== null && (
                 <KpiCard
                   icon={Banknote}
-                  label="Venda ingressos"
+                  label="Venda Ingressos Únicos"
                   value={fmtNumber(showIngressos ? ingressosUnicosCard : metrics.totalVendas)}
                   title={showIngressos ? ingressosUnicosTooltip + "\n\n" + ingressosTotaisTooltip : undefined}
                   subValue={
                     <>
                       {showIngressos && (
                         <div title={ingressosTotaisTooltip} className="cursor-help">
-                          Totais: {fmtNumber(ingressosTotaisCard)}
+                          Ingresso+OrderBump: {fmtNumber(ingressosTotaisCard)}
                         </div>
                       )}
                     </>
