@@ -685,6 +685,14 @@ export const funnelStages = pgTable(
     auditStatus: varchar("audit_status", { length: 20 }).default("pending").notNull(),
     projectionEndDate: date("projection_end_date"),
     leadGoal: integer("lead_goal"),
+    // Story 18.56: URL manual de cada LP da tabela "Desempenho de Testes de
+    // LPs". Chave = lpName normalizado (trim+lowercase, ex. "lpa"); valor =
+    // URL http(s). As LPs são derivadas do Campaign Name (18.46), então o
+    // link é metadado por etapa — LPA da Paga ≠ LPA da Gratuita.
+    lpLinks: jsonb("lp_links")
+      .notNull()
+      .default({})
+      .$type<Record<string, string>>(),
     // GA4 (Epic 37): filtro de página desta etapa (substring de
     // landingPagePlusQueryString) usado no runReport da GA4 Data API. A property
     // GA4 e o token ficam em ga4_connections (por projeto); cada etapa só escolhe

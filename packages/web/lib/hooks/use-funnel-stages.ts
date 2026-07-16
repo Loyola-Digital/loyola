@@ -16,6 +16,8 @@ export interface CreateStageInput {
   switchyFolderIds?: { id: number; name: string }[];
   switchyLinkedLinks?: { uniq: number; id: string; domain: string }[];
   ga4PageFilter?: string | null;
+  /** Story 18.56: URL manual por LP (chave = lpName trim+lowercase; valor vazio remove). */
+  lpLinks?: Record<string, string>;
 }
 
 export type UpdateStageInput = Partial<CreateStageInput>;

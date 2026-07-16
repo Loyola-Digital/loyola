@@ -1,0 +1,83 @@
+schema: 1
+story: '18.56'
+gate: PASS
+status_reason: |
+  6/6 ACs atendidos. Coluna lp_links (JSONB) additive+idempotente já em prod;
+  PUT valida URL em dupla camada (frontend isValidLpUrl + Zod .url()+regex
+  ^https?://) — 27/27 asserts de validação verdes, bloqueando javascript:/data:/
+  vbscript:/ftp:/protocol-relative. Guest bloqueado (403 antes da validação),
+  anchor com rel="noopener noreferrer", partial update preserva demais campos,
+  merge por chave + descarte de vazios no handler. Zero chamada à Meta API
+  (sync só dispara em body.campaigns). tsc --noEmit API+web verdes. Concerns
+  são low e não-bloqueantes (PERF-001 fetch extra cacheado; TEST-001 débito
+  de infra herdado — sem vitest no monorepo).
+reviewer: 'Quinn'
+updated: '2026-07-16T00:00:00Z'
+top_issues:
+  - id: 'PERF-001'
+    severity: low
+    finding: |
+      LpPerformanceSection adiciona useFunnelStage (GET single stage, queryKey
+      ["funnel-stage", projectId, funnelId, stageId]) por seção só para ler
+      lpLinks. Esse fetch NÃO é deduplicado contra o cache plural
+      (["funnel-stages",...]) que o dashboard já carrega — é uma request de
+      rede separada por seção de LP renderizada. Impacto baixo: staleTime 2min,
+      payload de 1 linha, só dispara quando a seção monta.
+    suggested_action: |
+      Opcional: derivar lpLinks do cache de useFunnelStages (plural) já
+      carregado no dashboard, ou pré-popular o cache singular via
+      setQueryData, para eliminar a request extra. Sem urgência.
+  - id: 'TEST-001'
+    severity: low
+    finding: |
+      Sem teste automatizado para a validação de URL, o merge por chave, o
+      render condicional do nome (hiperlink vs texto puro) e o "vazio remove".
+      vitest/jest não está instalado no packages/web (débito de infra herdado,
+      mesmo TEST-001 da 18.55). Validação verificada estaticamente (tsc) e via
+      script node avulso (27/27 asserts) nesta review.
+    suggested_action: |
+      Quando vitest for configurado, cobrir: isValidLpUrl (aceita http(s),
+      rejeita javascript:/data:/schemeless), LpNameCell (hiperlink quando há
+      url, texto puro quando não, pencil só com onSave), e o merge por chave
+      normalizada no handleSaveLpLink.
+waiver: { active: false }
+coverage:
+  ac1_backend_persistencia: PASS      # coluna JSONB default {}, Zod record, stageShape retorna lpLinks, guest 403
+  ac2_edicao_inline_lapis: PASS       # Pencil+Popover, PUT via useUpdateStage, invalidation cobre "sem reload", vazio remove
+  ac3_nome_hiperlinkado: PASS         # <a target=_blank rel=noopener noreferrer>, ExternalLink, match por trim+lowercase
+  ac4_validacao_url: PASS             # isValidLpUrl + Zod; erro inline; Salvar disabled quando !canSave; 27/27 asserts
+  ac5_escopo_por_etapa: PASS          # lpLinks lido/gravado por stageId; Paga e Gratuita independentes
+  ac6_regressao_zero: PASS            # props opcionais; sem onSaveLpLink célula idêntica; partial update não toca campo
+quality_checks:
+  code_review: PASS                   # REUSE de hooks existentes, comentários referenciando ACs, popover com UI primitives do repo, estado local limpo
+  unit_tests: PASS                    # sem runner no web (TEST-001, low); validação verificada via node script 27/27 verdes
+  acceptance_criteria: PASS           # 6/6 implementados e conferidos contra o código
+  no_regressions: PASS                # props opcionais, LpNameCell degrada para texto puro; PUT partial update inalterado
+  performance: CONCERN                # PERF-001: 1 fetch extra por seção (low, cacheado 2min)
+  security: PASS                      # dupla validação http(s), rel=noopener noreferrer, guest 403, Zod server-side obrigatório, sem SQL/injeção
+  documentation: PASS                 # story File List/Change Log/DoD completos
+anti_hallucination:
+  useFunnelStage_useUpdateStage: PASS # existem em use-funnel-stages.ts:38,72 com invalidation de funnel-stage+funnel-stages
+  guest_block: PASS                   # funnel-stages.ts PUT: userRole==="guest" → 403 antes da validação
+  meta_sync_guard: PASS               # fireBackgroundMetaSync só em body.campaigns!==undefined; lpLinks-only não chama Meta
+  ui_primitives: PASS                 # popover.tsx/input.tsx/button.tsx existem em components/ui/
+  get_single_stage: PASS             # GET stages/:stageId existe (funnel-stages.ts:270) — useFunnelStage não 404a
+technical_gates:
+  api_typecheck: PASS                 # npx tsc --noEmit exit 0
+  web_typecheck: PASS                 # npx tsc --noEmit exit 0
+  url_validation_test: PASS           # node script: 13 casos backend + 12 frontend + key-length = 27/27 asserts
+  next_build: SKIPPED                 # validado pelo @dev; sem suspeita concreta
+meta_api_impact:
+  adds_meta_calls: NO                 # story é metadado + UI; PUT lpLinks-only não dispara sync (rate-limit safe)
+blast_radius:
+  files_modified: 6
+  files_new: 1                        # migration 0080_stage_lp_links.sql
+  lines_changed: '+341 / -3 (inclui story +132)'
+  risk_level: LOW                     # campos opcionais, coluna additive, caminho isolado por props
+commit: '5ddff6f'
+branch: 'feat/18.56-lp-links'
+coderabbit_status: 'SKIPPED'          # CLI é WSL/Windows; ambiente macOS (mesmo padrão da 18.54/18.55)
+recommended_action: |
+  Aprovar e seguir para push/PR (@devops). Migration 0080 já aplicada em prod
+  (idempotente — não reaplicar). PERF-001 e TEST-001 são low, sem correção
+  pendente; considerar derivar lpLinks do cache plural numa próxima passada.

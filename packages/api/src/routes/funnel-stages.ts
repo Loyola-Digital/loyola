@@ -58,6 +58,17 @@ const updateStageSchema = z.object({
   switchyFolderIds: z.array(switchyFolderSchema).optional(),
   switchyLinkedLinks: z.array(switchyLinkRefSchema).optional(),
   ga4PageFilter: z.string().max(2048).nullable().optional(),
+  // Story 18.56: URL manual por LP (chave = lpName trim+lowercase). Valor
+  // vazio = remover o link (o handler descarta chaves vazias antes de gravar).
+  lpLinks: z
+    .record(
+      z.string().max(100),
+      z.union([
+        z.literal(""),
+        z.string().trim().max(2048).url().regex(/^https?:\/\//i, "URL deve usar http:// ou https://"),
+      ]),
+    )
+    .optional(),
 });
 
 const paramsSchema = z.object({
@@ -111,6 +122,7 @@ function stageShape(
     switchyFolderIds: (row.switchyFolderIds ?? []) as { id: number; name: string }[],
     switchyLinkedLinks: (row.switchyLinkedLinks ?? []) as { uniq: number; id: string; domain: string }[],
     ga4PageFilter: row.ga4PageFilter ?? null,
+    lpLinks: (row.lpLinks ?? {}) as Record<string, string>,
     sortOrder: row.sortOrder,
     lastAuditAt: row.lastAuditAt ? row.lastAuditAt.toISOString() : null,
     lastAuditBy: auditUser?.id
@@ -391,6 +403,18 @@ export default fp(async function funnelStageRoutes(fastify) {
     if (body.switchyFolderIds !== undefined) updates.switchyFolderIds = body.switchyFolderIds;
     if (body.switchyLinkedLinks !== undefined) updates.switchyLinkedLinks = body.switchyLinkedLinks;
     if (body.ga4PageFilter !== undefined) updates.ga4PageFilter = body.ga4PageFilter;
+    // Story 18.56: normaliza chaves (trim+lowercase) e descarta valores vazios
+    // (vazio = remoção do link). O objeto substitui o anterior por inteiro —
+    // o client envia o mapa completo com merge por chave.
+    if (body.lpLinks !== undefined) {
+      const cleaned: Record<string, string> = {};
+      for (const [lp, url] of Object.entries(body.lpLinks)) {
+        const key = lp.trim().toLowerCase();
+        const value = url.trim();
+        if (key && value) cleaned[key] = value;
+      }
+      updates.lpLinks = cleaned;
+    }
 
     const [row] = await fastify.db
       .update(funnelStages)

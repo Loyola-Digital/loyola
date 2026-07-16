@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   DollarSign,
   MousePointerClick,
@@ -50,6 +50,8 @@ import { StageSalesSection } from "./stage-sales-section";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
+// Story 18.56: links manuais por LP (lê o stage e salva via PUT existente)
+import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { overrideCplWithUniqueIngressos } from "@/lib/utils/funnel-metrics";
@@ -1345,6 +1347,21 @@ function LpPerformanceSection({
     publicoFilter,
   });
 
+  // Story 18.56: links manuais por LP (funnel_stages.lp_links). O stage já é
+  // cacheado pelo React Query (staleTime 2min) — sem fetch novo por render.
+  const { data: stage } = useFunnelStage(projectId, funnelId, stageId);
+  const updateStage = useUpdateStage(projectId, funnelId, stageId);
+  const lpLinks = stage?.lpLinks ?? {};
+
+  const handleSaveLpLink = useCallback(
+    async (lpName: string, url: string) => {
+      // Merge por chave: só a LP editada muda; vazio remove (backend descarta).
+      const next = { ...lpLinks, [lpName.trim().toLowerCase()]: url.trim() };
+      await updateStage.mutateAsync({ lpLinks: next });
+    },
+    [lpLinks, updateStage],
+  );
+
   const isPaid = stageType === "paid";
 
   return (
@@ -1377,6 +1394,8 @@ function LpPerformanceSection({
           rows={lps}
           stageType={isPaid ? "paid" : "free"}
           isLoading={false}
+          lpLinks={lpLinks}
+          onSaveLpLink={handleSaveLpLink}
         />
       )}
     </div>
