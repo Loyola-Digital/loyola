@@ -19,6 +19,10 @@ import {
 import { readSheetData } from "../services/google-sheets.js";
 import { fetchAllAdInsights, fetchCampaignInsights } from "../services/meta-ads.js";
 import { getMetaAccountForProject } from "../services/traffic-analytics.js";
+import {
+  computeCreativeSalesMetrics,
+  type CreativeSalesMetrics,
+} from "../utils/creative-sales-metrics.js";
 
 const paramsSchema = z.object({
   funnelId: z.string().uuid(),
@@ -41,6 +45,12 @@ interface CreativePerformanceResponse {
   // Story 18.46: identificação de LP (AC3) e LP View real (AC4)
   campaignName: string | null;
   landingPageViews: number;
+  // Story 18.55: Único/Total por criativo (só quando revenueSource=sale_content;
+  // regras da 18.51a espelhadas em utils/creative-sales-metrics.ts)
+  ingressosUnicos?: number;
+  ingressosTotais?: number;
+  revenueTotal?: number;
+  revenueUnico?: number;
 }
 
 /**
@@ -237,6 +247,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         const revenueByAdId = new Map<string, number>();
         // Story 18.49: rastreia de onde veio o revenue (co= da venda vs email do lead)
         let revenueSource: "sale_content" | "lead_email" | "none" = "none";
+        // Story 18.55: Único/Total por criativo — preenchido só no modo sale_content
+        let creativeSaleMetrics: CreativeSalesMetrics | null = null;
 
         // Story 18.50: vendas/faturamento por LP×temperatura, atribuídas via
         // co= da venda → campanha do anúncio (mesma fonte de LP que o spend).
@@ -299,6 +311,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               valorBruto?: string;
               valorLiquido?: string;
               utm_content?: string;
+              // Story 18.55: produto (order bump) e data (compra mais recente)
+              productName?: string;
+              dataVenda?: string;
             }) : null;
 
             function findCol(headers: string[], name: string | undefined): number {
@@ -320,6 +335,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             const saleLiquidoIdx = salesMapping ? findCol(salesData!.headers, salesMapping.valorLiquido) : -1;
             const saleUtmContentIdx = salesMapping ? findCol(salesData!.headers, salesMapping.utm_content) : -1;
             const saleTxIdx = salesMapping ? findCol(salesData!.headers, salesMapping.transactionId) : -1;
+            // Story 18.55: colunas de produto (order bump) e data da venda
+            const saleProductIdx = salesMapping ? findCol(salesData!.headers, salesMapping.productName) : -1;
+            const saleDataIdx = salesMapping ? findCol(salesData!.headers, salesMapping.dataVenda) : -1;
 
             // 5a-bis. Story 18.49: atribuição DIRETA de revenue pelo `co=`
             // (utm_content) da própria VENDA → ad_id → ad_name. Resolve
@@ -346,6 +364,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
                 salesByLp.set(key, agg);
               };
               // dedup por transactionId (preferido) ou email — espelha a 18.48.
+              // Story 18.55: este loop agora alimenta SÓ a atribuição por LP
+              // (18.50, semântica intacta). O revenue por criativo passou pro
+              // computeCreativeSalesMetrics abaixo (Fat. Total linha-a-linha).
               const saleDedup = new Map<string, { adId: string; value: number }>();
               for (const row of salesData.rows) {
                 const adId = normalizeNumericId(row[saleUtmContentIdx] ?? "");
@@ -361,7 +382,6 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
 
                 if (!dedupKey) {
                   // sem chave de dedup → atribui direto (não há como deduplicar)
-                  revenueByAdId.set(adId, (revenueByAdId.get(adId) ?? 0) + value);
                   attributeSaleToLp(adId, value);
                   continue;
                 }
@@ -374,8 +394,28 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
                 }
               }
               for (const { adId, value } of saleDedup.values()) {
-                revenueByAdId.set(adId, (revenueByAdId.get(adId) ?? 0) + value);
                 attributeSaleToLp(adId, value);
+              }
+
+              // Story 18.55: Único/Total por criativo (regras 18.51a).
+              creativeSaleMetrics = computeCreativeSalesMetrics(
+                salesData.rows,
+                {
+                  utmContent: saleUtmContentIdx,
+                  email: saleEmailIdx,
+                  bruto: saleBrutoIdx,
+                  liquido: saleLiquidoIdx,
+                  tx: saleTxIdx,
+                  product: saleProductIdx,
+                  date: saleDataIdx,
+                },
+                (salesSheet.orderBumpProducts as string[] | null) ?? [],
+              );
+              // AC1: revenue legado = Fat. Total. Vs 18.49: recompra deixa de
+              // acumular no último ad (last-write) — cada compra fica no
+              // criativo do próprio co=. Total do stage inalterado.
+              for (const [adId, v] of creativeSaleMetrics.revenueTotalByAdId) {
+                revenueByAdId.set(adId, v);
               }
               revenueFromSaleContent = true;
               revenueSource = "sale_content";
@@ -522,6 +562,11 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         for (const group of groupedByName.values()) {
           let totalLeads = 0;
           let totalRevenue = 0;
+          // Story 18.55: Único/Total consolidados de todos os ad_ids do grupo
+          let groupIngressosUnicos = 0;
+          let groupIngressosTotais = 0;
+          let groupRevenueTotal = 0;
+          let groupRevenueUnico = 0;
           const aggregatedTermCounts = new Map<string, number>();
 
           for (const adId of group.adIds) {
@@ -536,6 +581,12 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               }
             }
             totalRevenue += revenueByAdId.get(adId) ?? 0;
+            if (creativeSaleMetrics) {
+              groupIngressosUnicos += creativeSaleMetrics.ingressosUnicosByAdId.get(adId) ?? 0;
+              groupIngressosTotais += creativeSaleMetrics.ingressosTotaisByAdId.get(adId) ?? 0;
+              groupRevenueTotal += creativeSaleMetrics.revenueTotalByAdId.get(adId) ?? 0;
+              groupRevenueUnico += creativeSaleMetrics.revenueUnicoByAdId.get(adId) ?? 0;
+            }
           }
 
           // Determina topUtmTerm (moda) sobre o conjunto agregado
@@ -562,6 +613,16 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             utmTerm: topUtmTerm,
             campaignName: group.campaignName,
             landingPageViews: group.landingPageViews,
+            // Story 18.55: só no modo sale_content (senão os campos ficam fora
+            // da resposta e o frontend mantém o comportamento legado)
+            ...(creativeSaleMetrics
+              ? {
+                  ingressosUnicos: groupIngressosUnicos,
+                  ingressosTotais: groupIngressosTotais,
+                  revenueTotal: groupRevenueTotal,
+                  revenueUnico: groupRevenueUnico,
+                }
+              : {}),
           });
         }
 

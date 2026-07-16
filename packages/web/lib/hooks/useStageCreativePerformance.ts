@@ -27,6 +27,12 @@ export interface CreativePerformanceData {
   // Story 18.46: identificação de LP por Campaign Name (AC3) + LP View real (AC4)
   campaignName?: string | null;
   landingPageViews?: number;
+  // Story 18.55: Único/Total por criativo (vendas atribuídas via co= da venda;
+  // presentes só quando o backend atribuiu por sale_content)
+  ingressosUnicos?: number;
+  ingressosTotais?: number;
+  revenueTotal?: number;
+  revenueUnico?: number;
 }
 
 // Story 18.46: corte por LP × temperatura (para a tabela de Testes de LPs)

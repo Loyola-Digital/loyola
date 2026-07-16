@@ -55,11 +55,16 @@ type SortableCol =
   | "leads"
   | "cpl"
   | "revenue"
-  | "roas";
+  | "roas"
+  // Story 18.55 (Captação Paga)
+  | "ingressosUnicos"
+  | "ingressosTotais"
+  | "revenueTotal"
+  | "revenueUnico";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
-const COLUMNS: Array<{ key: SortableCol; label: string }> = [
+const COLUMNS: Array<{ key: SortableCol; label: string; title?: string }> = [
   { key: "spend", label: "Invest." },
   { key: "spendPercent", label: "%" },
   { key: "leads", label: "Leads" },
@@ -71,6 +76,43 @@ const COLUMNS: Array<{ key: SortableCol; label: string }> = [
   { key: "cpm", label: "CPM" },
   { key: "revenue", label: "Faturamento" },
   { key: "roas", label: "ROAS" },
+];
+
+// Story 18.55: na Captação Paga, Leads → Ing. Únicos/Totais e Faturamento →
+// Fat. Total/Único (vendas atribuídas ao criativo via co= da venda; vendas
+// sem co= — orgânico/recuperação/manual — ficam fora da tabela).
+const PAID_COLUMNS: Array<{ key: SortableCol; label: string; title?: string }> = [
+  { key: "spend", label: "Invest." },
+  { key: "spendPercent", label: "%" },
+  {
+    key: "ingressosUnicos",
+    label: "Ing. Únicos",
+    title: "Compradores únicos de ingresso (dedup por email, sem order bump), atribuídos ao criativo via co= da venda",
+  },
+  {
+    key: "ingressosTotais",
+    label: "Ing. Totais",
+    title: "Todas as vendas (ingresso + order bump) atribuídas ao criativo via co= da venda",
+  },
+  {
+    key: "cpl",
+    label: "CPL",
+    title: "Invest ÷ Ingressos Únicos (vendas atribuídas ao criativo via co=)",
+  },
+  { key: "ctr", label: "CTR" },
+  { key: "cpc", label: "CPC" },
+  { key: "cpm", label: "CPM" },
+  {
+    key: "revenueTotal",
+    label: "Fat. Total",
+    title: "Faturamento bruto de todas as vendas (ingresso + order bump) atribuídas via co=",
+  },
+  {
+    key: "revenueUnico",
+    label: "Fat. Único",
+    title: "Faturamento das compras únicas de captação (dedup por email, sem order bump)",
+  },
+  { key: "roas", label: "ROAS", title: "Fat. Total ÷ Investimento" },
 ];
 
 export function StageCreativePerformanceTable({
@@ -96,7 +138,11 @@ export function StageCreativePerformanceTable({
 
   // Story 18.41: Filter columns based on stage type
   // For free stages, suppress revenue and ROAS columns
+  // Story 18.55: paid stages usam o conjunto Ingressos/Faturamento Único-Total
   const visibleColumns = useMemo(() => {
+    if (stageType === 'paid') {
+      return PAID_COLUMNS;
+    }
     if (stageType === 'free') {
       return COLUMNS.filter(col => !['revenue', 'roas'].includes(col.key));
     }
@@ -139,6 +185,17 @@ export function StageCreativePerformanceTable({
           revenue: creative.revenue,
           utmTerm: creative.utmTerm,
           totalSpend,
+          // Story 18.55: só na Paga — repassar Único/Total muda CPL (÷ Ing.
+          // Únicos) e ROAS (Fat. Total ÷ Invest) dentro do calculator. Nas
+          // demais etapas os campos ficam de fora e nada muda (AC8).
+          ...(stageType === 'paid' && creative.ingressosUnicos != null
+            ? {
+                ingressosUnicos: creative.ingressosUnicos,
+                ingressosTotais: creative.ingressosTotais,
+                revenueTotal: creative.revenueTotal,
+                revenueUnico: creative.revenueUnico,
+              }
+            : {}),
         };
         return calculateCreativeMetrics(metricsInput);
       });
@@ -157,7 +214,7 @@ export function StageCreativePerformanceTable({
 
     // Modo normal: filtrar por temperatura (hot/cold)
     return metrics.filter((m) => m.temperature === temperatureFilter);
-  }, [data, temperatureFilter]);
+  }, [data, temperatureFilter, stageType]);
 
   const sortedData = useMemo(() => {
     return [...processedData].sort((a, b) => {
@@ -217,6 +274,15 @@ export function StageCreativePerformanceTable({
         return formatMetricValue(row.revenue, "currency", { compact: true });
       case "roas":
         return row.roas != null ? `${row.roas.toFixed(2)}x` : "—";
+      // Story 18.55 (Captação Paga)
+      case "ingressosUnicos":
+        return formatMetricValue(row.ingressosUnicos, "number");
+      case "ingressosTotais":
+        return formatMetricValue(row.ingressosTotais, "number");
+      case "revenueTotal":
+        return formatMetricValue(row.revenueTotal, "currency", { compact: true });
+      case "revenueUnico":
+        return formatMetricValue(row.revenueUnico, "currency", { compact: true });
       default:
         return "—";
     }
@@ -313,6 +379,7 @@ export function StageCreativePerformanceTable({
                 <TableHead
                   key={c.key}
                   onClick={() => handleSort(c.key)}
+                  title={c.title}
                   className="text-right text-xs font-semibold cursor-pointer select-none hover:text-foreground"
                 >
                   <span className="inline-flex items-center justify-end gap-1">
@@ -452,19 +519,46 @@ export function StageCreativePerformanceTable({
       )}
 
       {/* Summary */}
+      {/* Story 18.55 (AC7): na Paga, "Leads totais" vira "Ingressos únicos" e
+          o faturamento soma o Fat. Total dos criativos (vendas com co=) */}
       {data && totalRows > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
             <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Gasto total</p>
             <p className="text-base font-bold tabular-nums">{formatMetricValue(data.summary.totalSpend, "currency")}</p>
           </div>
-          <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
-            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Leads totais</p>
-            <p className="text-base font-bold tabular-nums">{formatMetricValue(data.summary.totalLeads, "number")}</p>
-          </div>
-          <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
+          {stageType === 'paid' ? (
+            <div
+              className="rounded-lg border border-border/30 bg-muted/20 p-3"
+              title="Compradores únicos de ingresso atribuídos aos criativos via co= da venda"
+            >
+              <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Ingressos únicos</p>
+              <p className="text-base font-bold tabular-nums">
+                {formatMetricValue(
+                  data.creatives.reduce((s, c) => s + (c.ingressosUnicos ?? 0), 0),
+                  "number",
+                )}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
+              <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Leads totais</p>
+              <p className="text-base font-bold tabular-nums">{formatMetricValue(data.summary.totalLeads, "number")}</p>
+            </div>
+          )}
+          <div
+            className="rounded-lg border border-border/30 bg-muted/20 p-3"
+            title={stageType === 'paid' ? "Soma do Fat. Total (ingresso + order bump) das vendas atribuídas via co=" : undefined}
+          >
             <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Faturamento total</p>
-            <p className="text-base font-bold tabular-nums">{formatMetricValue(data.summary.totalRevenue, "currency")}</p>
+            <p className="text-base font-bold tabular-nums">
+              {formatMetricValue(
+                stageType === 'paid'
+                  ? data.creatives.reduce((s, c) => s + (c.revenueTotal ?? 0), 0)
+                  : data.summary.totalRevenue,
+                "currency",
+              )}
+            </p>
           </div>
         </div>
       )}

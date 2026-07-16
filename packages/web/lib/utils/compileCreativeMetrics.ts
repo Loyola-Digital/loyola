@@ -47,6 +47,14 @@ export function compileCreativeMetricsByName(
     const sumLeads = group.reduce((sum, m) => sum + m.leads, 0);
     const sumRevenue = group.reduce((sum, m) => sum + m.revenue, 0);
 
+    // Story 18.55 (Captação Paga): soma Único/Total e recalcula CPL/ROAS
+    // sobre os somados — mesmo padrão do spendPercent (recalculado depois).
+    const isPaidMode = group.some((m) => m.ingressosUnicos != null);
+    const sumIngressosUnicos = group.reduce((sum, m) => sum + (m.ingressosUnicos ?? 0), 0);
+    const sumIngressosTotais = group.reduce((sum, m) => sum + (m.ingressosTotais ?? 0), 0);
+    const sumRevenueTotal = group.reduce((sum, m) => sum + (m.revenueTotal ?? 0), 0);
+    const sumRevenueUnico = group.reduce((sum, m) => sum + (m.revenueUnico ?? 0), 0);
+
     // Porcentagens: será recalculado pela tabela
     // Usamos 0 como placeholder, será recalculado baseado no contexto total
     const spendPercent = 0;
@@ -59,11 +67,15 @@ export function compileCreativeMetricsByName(
     const cpc = sumClicks > 0 ? sumSpend / sumClicks : 0;
     const cpm = sumImpressions > 0 ? (sumSpend / sumImpressions) * 1000 : 0;
 
-    // CPL: cost per lead
-    const cpl = sumLeads > 0 ? sumSpend / sumLeads : 0;
+    // CPL: cost per lead (Paga: cost per ingresso único)
+    const cpl = isPaidMode
+      ? (sumIngressosUnicos > 0 ? sumSpend / sumIngressosUnicos : 0)
+      : (sumLeads > 0 ? sumSpend / sumLeads : 0);
 
-    // ROAS: revenue / spend
-    const roas = sumSpend > 0 ? sumRevenue / sumSpend : 0;
+    // ROAS: revenue / spend (Paga: Fat. Total / spend)
+    const roas = isPaidMode
+      ? (sumSpend > 0 ? sumRevenueTotal / sumSpend : 0)
+      : (sumSpend > 0 ? sumRevenue / sumSpend : 0);
 
     // ROI: (revenue - spend) / spend * 100
     const roi = sumSpend > 0 ? ((sumRevenue - sumSpend) / sumSpend) * 100 : 0;
@@ -89,6 +101,15 @@ export function compileCreativeMetricsByName(
       compiled: true,
       originalCount: group.length,
       totalSpend: sumSpend, // Será usado para recalcular percentual na tabela
+      // Story 18.55: Único/Total somados por Ad Name (só na Paga)
+      ...(isPaidMode
+        ? {
+            ingressosUnicos: sumIngressosUnicos,
+            ingressosTotais: sumIngressosTotais,
+            revenueTotal: sumRevenueTotal,
+            revenueUnico: sumRevenueUnico,
+          }
+        : {}),
     });
   }
 

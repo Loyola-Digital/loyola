@@ -1,0 +1,86 @@
+schema: 1
+story: '18.55'
+gate: PASS
+status_reason: |
+  8/8 ACs atendidos. Backend espelha fielmente as regras Único/Total da 18.51a
+  por ad_id (retry-guard tx+produto, dedup por email/mais recente, order bump via
+  orderBumpProducts) em helper puro com 7/7 testes verdes. Frontend troca colunas,
+  CPL e ROAS condicionados a stageType === "paid"; calculator data-driven protege
+  sales/cpl. tsc --noEmit API+Web verdes. Concern único (REG-001) é a redistribuição
+  de revenue por criativo no modo sale_content — documentada como R2, baixo impacto
+  e arguably corretiva (remove double-count de retry).
+reviewer: 'Quinn'
+updated: '2026-07-16T00:00:00Z'
+top_issues:
+  - id: 'REG-001'
+    severity: low
+    finding: |
+      revenueByAdId no modo sale_content passou a vir de
+      computeCreativeSalesMetrics.revenueTotalByAdId (linha-a-linha, retry-guard
+      tx+produto) em vez do saleDedup por txId com last-write do ad. Consequência:
+      em etapas NÃO-pagas que também usam sale_content (ex.: "sales"), o Faturamento
+      e o ROAS por criativo podem se deslocar levemente — recompra fica no co= da
+      própria compra (não mais no último ad) e retries reais deixam de dobrar valor.
+      AC8 declara "byte-a-byte" para sales/cpl, mas o valor de revenue por criativo
+      dessas etapas tecnicamente muda. Total do stage praticamente inalterado (só
+      double-counts de gateway removidos). Documentado como R2 na story e aceito.
+    suggested_action: |
+      Spot-check pós-deploy da aba de uma etapa "sales" (sale_content, não-paga):
+      confirmar que o Faturamento total do stage não moveu de forma inesperada.
+      Se mover, é remoção de double-count (melhoria) ou redistribuição entre
+      criativos — ambos esperados. Sem ação de código necessária.
+  - id: 'TEST-001'
+    severity: low
+    finding: |
+      A lógica de troca de colunas / CPL por Ing. Únicos / ROAS por Fat. Total no
+      frontend (calculator, compile, tabela) não tem teste automatizado: vitest não
+      está instalado no monorepo e o teste existente stage-creative-performance-table.test.tsx
+      (stageType "awareness") não é executável. O novo helper de backend tem
+      cobertura sólida (7 testes node --test), mas o caminho paid do frontend é
+      verificado só estaticamente (typecheck) e manualmente.
+    suggested_action: |
+      Quando vitest/jest for configurado no packages/web, cobrir: PAID_COLUMNS
+      renderizadas quando stageType="paid", CPL = spend÷ingressosUnicos, ROAS =
+      revenueTotal÷spend, e AC8 (awareness/free/sales inalterados). Débito de infra
+      herdado do projeto.
+waiver: { active: false }
+coverage:
+  ac1_backend_unico_total: PASS       # helper espelha 18.51a; 7/7 testes
+  ac2_colunas_ingressos: PASS         # Leads → Ing. Únicos/Totais na Paga, ordenáveis
+  ac3_cpl_ingresso_unico: PASS        # spend÷ingressosUnicos + tooltip; "—" sem ingressos
+  ac4_colunas_faturamento: PASS       # Fat. Total/Único antes do ROAS, currency compact
+  ac5_roas_fat_total: PASS            # revenueTotal÷spend + tooltip header
+  ac6_modo_compilado_todos: PASS      # compileCreativeMetricsByName soma 4 campos + recalc
+  ac7_cards_resumo: PASS              # "Ingressos únicos" + soma revenueTotal (endpoint)
+  ac8_regressao_zero: CONCERN         # colunas/CPL/ROAS ok; revenue por criativo sales muda (REG-001, R2)
+quality_checks:
+  code_review: PASS                   # helper puro, comentários referenciando ACs/18.51a, spread condicional limpo
+  unit_tests: PASS                    # 7/7 node --test verdes; frontend sem runner (TEST-001, low)
+  acceptance_criteria: PASS           # 8/8 implementados; AC8 com concern não-bloqueante
+  no_regressions: CONCERN             # REG-001 (documentado como R2); free/awareness intactos
+  performance: PASS                   # O(n) duas passadas, Map/Set, memória limitada por rows
+  security: PASS                      # helper sem I/O; endpoint já sob project access + Zod; regex lineares; sem SQL/injeção
+  documentation: PASS                 # story File List/Change Log/DoD completos; tooltips explicam divergência (R1)
+anti_hallucination:
+  orderBumpProducts_schema: PASS      # schema.ts:747 jsonb order_bump_products
+  productName_dataVenda_mapping: PASS # columnMapping (confirmado em stage-sales-data.ts 18.51a)
+  regras_18_51a_espelhadas: PASS      # retry-guard tx+produto, dedup email/mais recente, order bump
+technical_gates:
+  api_typecheck: PASS                 # npx tsc --noEmit exit 0
+  web_typecheck: PASS                 # npx tsc --noEmit exit 0
+  helper_tests: PASS                  # node --test 7/7 (168ms)
+  next_build: SKIPPED                 # validado pelo @dev; sem suspeita concreta que justifique rerun
+blast_radius:
+  files_modified: 6
+  files_new: 2                        # creative-sales-metrics.ts + creative-sales-metrics.test.mts
+  lines_changed: '+495 / -19 (código; story +156)'
+  risk_level: LOW                     # campos opcionais, caminho paid isolado por stageType
+commit: '27a6c72'
+branch: 'feat/18.55-criativos-ingressos-faturamento'
+coderabbit_status: 'SKIPPED'          # CLI é WSL/Windows; ambiente macOS (mesmo padrão da 18.54)
+recommended_action: |
+  Aprovar e seguir para push/PR (@devops). Spot-check pós-deploy da aba de uma
+  etapa sales (sale_content) para confirmar que o total de Faturamento não moveu
+  de forma inesperada — se mover, é remoção de double-count de retry ou
+  redistribuição entre criativos (ambos esperados, R2). Nenhuma correção de
+  código pendente.

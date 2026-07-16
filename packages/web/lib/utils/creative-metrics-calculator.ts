@@ -13,6 +13,14 @@ export interface CreativeMetrics {
   revenue: number;
   utmTerm: string | null;
   totalSpend?: number; // para cálculo de percentual
+  // Story 18.55 (Captação Paga): quando presentes, CPL passa a ser
+  // Invest ÷ Ingressos Únicos e ROAS = Fat. Total ÷ Invest. A tabela só
+  // repassa esses campos quando stageType === "paid" (demais etapas mantêm
+  // CPL por leads e ROAS pelo revenue legado).
+  ingressosUnicos?: number;
+  ingressosTotais?: number;
+  revenueTotal?: number;
+  revenueUnico?: number;
 }
 
 export interface CalculatedMetrics {
@@ -26,11 +34,16 @@ export interface CalculatedMetrics {
   cpc: number | null; // Invest / Cliques
   cpm: number | null; // (Invest / Impressões) * 1000
   leads: number;
-  cpl: number | null; // Invest / Leads
+  cpl: number | null; // Invest / Leads (Paga: Invest / Ingressos Únicos)
   revenue: number;
-  roas: number | null; // Faturamento / Invest
+  roas: number | null; // Faturamento / Invest (Paga: Fat. Total / Invest)
   utmTerm: string | null;
   temperature: "hot" | "cold" | "unknown";
+  // Story 18.55: presentes apenas no modo Captação Paga
+  ingressosUnicos?: number;
+  ingressosTotais?: number;
+  revenueTotal?: number;
+  revenueUnico?: number;
 }
 
 /**
@@ -114,6 +127,8 @@ export function calculateCreativeMetrics(
   creative: CreativeMetrics
 ): CalculatedMetrics {
   const totalSpend = creative.totalSpend || creative.spend;
+  // Story 18.55: modo Captação Paga — CPL por Ingresso Único, ROAS pelo Total
+  const isPaidMode = creative.ingressosUnicos != null;
 
   return {
     adId: creative.adId,
@@ -126,11 +141,23 @@ export function calculateCreativeMetrics(
     cpc: calculateCpc(creative.spend, creative.clicks),
     cpm: calculateCpm(creative.spend, creative.impressions),
     leads: creative.leads,
-    cpl: calculateCpl(creative.spend, creative.leads),
+    cpl: isPaidMode
+      ? calculateCpl(creative.spend, creative.ingressosUnicos!)
+      : calculateCpl(creative.spend, creative.leads),
     revenue: creative.revenue,
-    roas: calculateRoas(creative.revenue, creative.spend),
+    roas: isPaidMode
+      ? calculateRoas(creative.revenueTotal ?? 0, creative.spend)
+      : calculateRoas(creative.revenue, creative.spend),
     utmTerm: creative.utmTerm,
     temperature: calculateTemperature(creative.utmTerm),
+    ...(isPaidMode
+      ? {
+          ingressosUnicos: creative.ingressosUnicos,
+          ingressosTotais: creative.ingressosTotais ?? 0,
+          revenueTotal: creative.revenueTotal ?? 0,
+          revenueUnico: creative.revenueUnico ?? 0,
+        }
+      : {}),
   };
 }
 
