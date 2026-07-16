@@ -257,6 +257,9 @@ export interface FunnelStage {
   /** GA4 (Epic 37): página (substring de landingPagePlusQueryString) que esta
    * etapa analisa no GA4. Null = etapa sem análise GA4. */
   ga4PageFilter: string | null;
+  /** Story 18.56: URL manual por LP da tabela de Testes de LPs.
+   * Chave = lpName normalizado (trim+lowercase, ex. "lpa"); valor = URL http(s). */
+  lpLinks: Record<string, string>;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
