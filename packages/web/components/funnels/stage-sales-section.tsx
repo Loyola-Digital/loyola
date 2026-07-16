@@ -173,6 +173,13 @@ interface StageSalesSectionProps {
    * nome humano e re-agrupa pelos mesmos nomes de adset.
    */
   adsetsMap?: Map<string, string>;
+  /**
+   * Story 18.57: permite ocultar a tabela Desempenho de Criativos embutida
+   * (subtype capture). A Captação Paga do launch dashboard renderiza a tabela
+   * como seção standalone abaixo dos Testes de LPs e passa `false` aqui;
+   * Perpétuo e etapa Vendas mantêm o default `true` (embutida como sempre).
+   */
+  showCreativeTable?: boolean;
 }
 
 export function StageSalesSection({
@@ -184,6 +191,7 @@ export function StageSalesSection({
   days,
   stageType,
   adsetsMap,
+  showCreativeTable = true,
 }: StageSalesSectionProps) {
   const { data, isLoading, isError } = useStageSalesData(
     projectId,
@@ -340,8 +348,9 @@ export function StageSalesSection({
         />
       </div>
 
-      {/* Story 18.24: Tabela de Desempenho de Criativos | Story 18.41: Now also for Free stages */}
-      {subtype === "capture" && (
+      {/* Story 18.24: Tabela de Desempenho de Criativos | Story 18.41: Now also for Free stages
+          Story 18.57: ocultável via showCreativeTable (Paga renderiza standalone) */}
+      {subtype === "capture" && showCreativeTable && (
         <div className="space-y-2 border-t pt-4 mt-4">
           <p className="text-xs font-medium text-muted-foreground">Desempenho de Criativos (Meta Ads)</p>
           <StageCreativePerformanceTable

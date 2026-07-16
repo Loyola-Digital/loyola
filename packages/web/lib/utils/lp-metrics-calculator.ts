@@ -1,15 +1,19 @@
 /**
  * Story 18.44: Calculadora de métricas para tabela de LPs
  *
- * Funções puras para cálculo de:
+ * Funções puras para cálculo de (fórmulas atualizadas pela 18.46):
  * - CPM: (Investimento ÷ Impressões) × 1000
  * - CPC: Investimento ÷ Cliques
  * - CTR: (Cliques ÷ Impressões) × 100
- * - Connect Rate: (Conversões ÷ Cliques) × 100
- * - Tx Conv.: (Conversões ÷ LP Views) × 100
+ * - Connect Rate: (LP Views ÷ Cliques no link) × 100
+ * - Tx Conv.: (Resultado ÷ Cliques no link) × 100 — Resultado = Leads (free) ou Vendas (paid)
  * - CPL: Investimento ÷ Leads
  * - CPV: Investimento ÷ Vendas
  * - ROAS: Faturamento ÷ Investimento
+ *
+ * Story 18.58: os tooltips dos headers da tabela descrevem estas fórmulas —
+ * ao mudar um cálculo aqui, atualizar COLUMN_TOOLTIPS em
+ * lib/components/funnels/lp-performance-table.tsx.
  */
 
 export interface MetricsCalculated {
