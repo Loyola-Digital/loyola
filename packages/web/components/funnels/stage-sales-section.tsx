@@ -50,21 +50,30 @@ interface SalesCardProps {
   value: string | number;
   highlight?: boolean;
   tooltip?: string;
+  /** Tom vermelho pro card de Reembolsado (mesmo padrão do Evento Presencial). */
+  tone?: "red";
 }
 
-function SalesCard({ label, value, highlight, tooltip }: SalesCardProps) {
+function SalesCard({ label, value, highlight, tooltip, tone }: SalesCardProps) {
+  const toneClasses =
+    tone === "red"
+      ? "border-red-500/30 bg-red-500/5"
+      : highlight
+        ? "border-primary/30 bg-primary/5"
+        : "border-border/50";
   return (
-    <div
-      className={`rounded-lg border p-4 space-y-1 ${highlight ? "border-primary/30 bg-primary/5" : "border-border/50"}`}
-      title={tooltip}
-    >
+    <div className={`rounded-lg border p-4 space-y-1 ${toneClasses}`} title={tooltip}>
       <p className="text-xs text-muted-foreground flex items-center gap-1">
         {label}
         {tooltip && (
           <span className="text-[9px] text-muted-foreground/60 cursor-help" title={tooltip}>(i)</span>
         )}
       </p>
-      <p className={`text-lg font-bold ${highlight ? "text-primary" : ""} whitespace-pre-wrap`}>{value}</p>
+      <p
+        className={`text-lg font-bold ${tone === "red" ? "text-red-500 dark:text-red-400" : highlight ? "text-primary" : ""} whitespace-pre-wrap`}
+      >
+        {value}
+      </p>
     </div>
   );
 }
@@ -284,7 +293,7 @@ export function StageSalesSection({
           ? `Planilha: ${formatCurrency(br.spreadsheet.bruto)} (${br.spreadsheet.vendas})\nManuais: ${formatCurrency(br.manual.bruto)} (${br.manual.vendas})`
           : undefined;
         return (
-          <div className="grid grid-cols-2 gap-3">
+          <div className={`grid gap-3 ${data.reembolsoBruto > 0 ? "grid-cols-2 lg:grid-cols-3" : "grid-cols-2"}`}>
             <SalesCard
               label="Total de Vendas"
               value={data.totalVendas}
@@ -296,21 +305,18 @@ export function StageSalesSection({
               value={formatCurrency(data.faturamentoBruto)}
               tooltip={tooltipBruto}
             />
+            {/* Reembolsos (status refunded/chargeback) — já descontados do Faturamento */}
+            {data.reembolsoBruto > 0 && (
+              <SalesCard
+                label={`Reembolsado (${data.vendasReembolsadas} venda${data.vendasReembolsadas !== 1 ? "s" : ""})`}
+                value={`−${formatCurrency(data.reembolsoBruto)}`}
+                tone="red"
+                tooltip="Vendas reembolsadas/chargeback — já descontadas do Faturamento e do Total de Vendas."
+              />
+            )}
           </div>
         );
       })()}
-
-      {/* Reembolsos (status refunded/chargeback) — já descontados do Faturamento */}
-      {data.reembolsoBruto > 0 && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-          <div className="text-sm font-medium text-amber-700 dark:text-amber-300">
-            Reembolsos −{formatCurrency(data.reembolsoBruto)}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {data.vendasReembolsadas} venda(s) reembolsada(s)/chargeback — já descontada(s) do Faturamento e do Total de Vendas.
-          </div>
-        </div>
-      )}
 
       {/* Canal de Origem */}
       <div className="space-y-2">
