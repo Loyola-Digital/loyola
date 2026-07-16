@@ -1,0 +1,69 @@
+schema: 1
+story: '18.58'
+gate: PASS
+status_reason: |
+  4/4 ACs atendidos. COLUMN_TOOLTIPS (15 textos, Tx Conv. duplo por stage)
+  conferido texto a texto contra as implementações reais: calculadora
+  (lp-metrics-calculator.ts), agregação/imposto (useLpPerformanceData.ts:110
+  applyMetaAdsTax 12,15% gross-up 2026+), leads via utm_term/utm_content
+  contém lpX com filtro Hot/Cold (useCrossReferenceLeads :199-205) e
+  vendas/faturamento via co= → campanha com dedup tx/email e exclusão de
+  vendas sem co= (stage-creative-performance.ts :352-400). Mecanismo title
+  nativo (padrão 18.55) com affordance cursor-help + underline pontilhado,
+  só no header (zero conflito com lápis/link 18.56). Cabeçalho stale do
+  calculator corrigido + nota R1 (nota do PO atendida). tsc web verde.
+reviewer: 'Quinn'
+updated: '2026-07-16T00:00:00Z'
+top_issues:
+  - id: 'TEST-001'
+    severity: low
+    finding: |
+      Sem teste automatizado para presença/conteúdo dos tooltips — vitest/jest
+      não instalado no packages/web (débito de infra herdado, mesmo TEST-001
+      das 18.55-18.57). Fidelidade verificada estaticamente nesta review
+      (15 textos × implementações reais, incluindo backend).
+    suggested_action: |
+      Quando o runner for configurado, cobrir: todos os TableHead renderizam
+      com title definido; Tx Conv. troca o texto por stage (paid=Vendas,
+      free=Leads); colunas condicionais free/paid.
+waiver: { active: false }
+coverage:
+  ac1_tooltip_todos_headers: PASS             # 14 colunas cobertas via HeadWithTooltip (LP, Investimento, Leads/CPL free, Vendas/CPV paid, CPM, CPC, CTR, LP View, Connect Rate, Tx Conv., Faturamento/ROAS paid); condicionais respeitam isPaid
+  ac2_conteudo_fiel_ao_codigo: PASS           # ver anti_hallucination — cada texto conferido contra a função/agregação real; imposto 12,15%, co=, denominador cliques no link e Connect Rate >100% presentes
+  ac3_mecanismo_consistente: PASS             # UM padrão (title nativo, 18.55) em TODAS as colunas; affordance cursor-help + underline decoration-dotted; tooltip só no header (span interno) — sem conflito com ordenação (tabela não ordena por clique) nem com LpNameCell/lápis (célula, intocada)
+  ac4_regressao_zero: PASS                    # diff só troca TableHead → HeadWithTooltip (que rende TableHead por dentro) + constantes; body/colunas/filtros intocados; mesma contagem de colunas free e paid
+quality_checks:
+  code_review: PASS                           # constante única COLUMN_TOOLTIPS as const (mitigação R1), componente pequeno e tipado, comentários referenciam a story
+  unit_tests: PASS                            # sem runner no web (TEST-001, low, herdado); validação estática completa
+  acceptance_criteria: PASS                   # 4/4 implementados e conferidos contra o código
+  no_regressions: PASS                        # headers com mesma classe/alinhamento (className repassado); zero mudança em valores/dados/ordenação
+  performance: PASS                           # title nativo = zero JS/estado/listener; nenhum fetch/render extra
+  security: PASS                              # texto estático hardcoded em atributo title (React escapa); nenhum input de usuário
+  documentation: PASS                         # File List (2 arquivos), Change Log, DoD 4/4 [x]; cabeçalho stale do calculator corrigido com fórmulas pós-18.46 + nota cruzada para COLUMN_TOOLTIPS
+anti_hallucination:
+  lp: PASS                                    # lpAndTempFromCampaignName (stage-creative-performance.ts :104): match lpX no campaign name; sem match → "LPA"
+  investimento: PASS                          # useLpPerformanceData.ts :110 applyMetaAdsTax(spend) por LP; funnel-metrics.ts :33 gross-up /(1-0,1215) para 2026+
+  leads: PASS                                 # useCrossReferenceLeads :199-205 haystack(utm_term/utm_content).match(/lp([a-z])/) + quebra hot/cold; filtro aplicado no hook (:126-131)
+  cpl_cpv_cpm_cpc_ctr_roas: PASS              # fórmulas idênticas às funções calculateCPL/CPV/CPM/CPC/CTR/ROAS
+  vendas: PASS                                # backend :352-400 — co= da venda → campanha; dedup transactionId (preferido) ou email; vendas cujo co= não casa com anúncio do stage ficam fora (comentário :257-258 confirma)
+  lp_view: PASS                               # entry.landingPageViews da Meta API somado por LP (:114)
+  connect_rate: PASS                          # calculateConnectRate = lpViews/cliques×100; JSDoc :57 confirma que pode passar de 100% por rastreamento
+  tx_conv_por_stage: PASS                     # calculatePaidMetrics txConv=vendas/cliques; calculateFreeMetrics txConv=leads/cliques; header usa isPaid ? txConvPaid : txConvFree
+  faturamento: PASS                           # agg.faturamento += value, value = bruto preferido (liquido só como fallback quando bruto<=0 — mesma semântica "bruto" do Contexto/18.50); divergência vs cards real (cards contam todas as vendas)
+  calculator_header_fix: PASS                 # linhas 8-9 agora refletem 18.46 (Connect Rate = LP Views÷Cliques, Tx Conv = Resultado÷Cliques) + nota R1 (:14-16)
+technical_gates:
+  web_typecheck: PASS                         # npx tsc --noEmit exit 0 (rodado nesta review)
+  next_build: SKIPPED                         # validado pelo @dev; sem suspeita concreta
+meta_api_impact:
+  adds_meta_calls: NO                         # texto estático em headers; zero diff em packages/api (rate-limit safe)
+blast_radius:
+  files_modified: 2                           # lp-performance-table.tsx (+66/-11), lp-metrics-calculator.ts (+7/-3)
+  files_new: 0
+  lines_changed: '+73 / -14 (código; story doc à parte)'
+  risk_level: LOW                             # UI-only, atributo nativo, constante isolada
+commit: 'da5eb29'
+branch: 'feat/18.57-18.58-lps-reorder-tooltips'
+coderabbit_status: 'SKIPPED'                  # CLI é WSL/Windows; ambiente macOS (mesmo padrão das 18.54-18.57)
+recommended_action: |
+  Aprovar e seguir para push/PR (@devops), junto com a 18.57 (mesma branch).
+  TEST-001 é low, débito herdado — sem correção pendente.
