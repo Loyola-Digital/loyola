@@ -47,6 +47,49 @@ interface LpPerformanceTableProps {
   onSaveLpLink?: (lpName: string, url: string) => Promise<void>;
 }
 
+/**
+ * Story 18.58: explicação de cálculo/fonte de cada coluna (tooltip do header).
+ * Fonte de verdade das fórmulas: lp-metrics-calculator.ts (implementações) e
+ * useLpPerformanceData.ts (agregação/imposto/atribuição). Se uma fórmula
+ * mudar lá, atualizar o texto aqui.
+ */
+const COLUMN_TOOLTIPS = {
+  lp: "LP identificada pelo Campaign Name da campanha Meta (nome contém \"lpX\"; sem lpX → LPA)",
+  investimento: "Soma do gasto Meta das campanhas da LP + imposto de 12,15%",
+  leads: "Leads da planilha atribuídos à LP (utm_term/utm_content contém lpX), respeitando o filtro Hot/Cold",
+  cpl: "Investimento ÷ Leads",
+  vendas: "Vendas da planilha atribuídas via co= da venda → campanha da LP (dedupadas); vendas sem co= ficam fora",
+  cpv: "Investimento ÷ Vendas",
+  cpm: "(Investimento ÷ Impressões) × 1000",
+  cpc: "Investimento ÷ Cliques",
+  ctr: "(Cliques ÷ Impressões) × 100",
+  lpView: "Landing Page Views reais da Meta API, somados por LP",
+  connectRate: "(LP Views ÷ Cliques no link) × 100 — % dos cliques que carregaram a LP; pode passar de 100% por particularidades de rastreamento",
+  txConvPaid: "(Vendas ÷ Cliques no link) × 100",
+  txConvFree: "(Leads ÷ Cliques no link) × 100",
+  faturamento: "Soma do valor bruto das vendas atribuídas via co= → campanha da LP; pode divergir dos cards (que contam todas as vendas)",
+  roas: "Faturamento ÷ Investimento",
+} as const;
+
+/** Story 18.58: header com tooltip nativo (padrão da 18.55) + cursor-help. */
+function HeadWithTooltip({
+  tooltip,
+  className,
+  children,
+}: {
+  tooltip: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <TableHead className={className}>
+      <span title={tooltip} className="cursor-help underline decoration-dotted decoration-muted-foreground/40 underline-offset-4">
+        {children}
+      </span>
+    </TableHead>
+  );
+}
+
 /** Story 18.56 (AC4): só http(s):// — bloqueia typos e esquemas maliciosos. */
 function isValidLpUrl(url: string): boolean {
   if (!/^https?:\/\//i.test(url)) return false;
@@ -196,34 +239,40 @@ export function LpPerformanceTable({
     <div className="overflow-x-auto rounded-lg border">
       <Table>
         <TableHeader>
+          {/* Story 18.58: todos os headers com tooltip de cálculo/fonte */}
           <TableRow>
-            <TableHead>LP</TableHead>
-            <TableHead className="text-right">Investimento (R$)</TableHead>
+            <HeadWithTooltip tooltip={COLUMN_TOOLTIPS.lp}>LP</HeadWithTooltip>
+            <HeadWithTooltip tooltip={COLUMN_TOOLTIPS.investimento} className="text-right">Investimento (R$)</HeadWithTooltip>
             {/* Story 18.45/18.46: métricas-chave logo após Investimento */}
             {!isPaid && (
               <>
-                <TableHead className="text-right">Leads</TableHead>
-                <TableHead className="text-right">CPL</TableHead>
+                <HeadWithTooltip tooltip={COLUMN_TOOLTIPS.leads} className="text-right">Leads</HeadWithTooltip>
+                <HeadWithTooltip tooltip={COLUMN_TOOLTIPS.cpl} className="text-right">CPL</HeadWithTooltip>
               </>
             )}
             {isPaid && (
               <>
-                <TableHead className="text-right">Vendas</TableHead>
-                <TableHead className="text-right">CPV</TableHead>
+                <HeadWithTooltip tooltip={COLUMN_TOOLTIPS.vendas} className="text-right">Vendas</HeadWithTooltip>
+                <HeadWithTooltip tooltip={COLUMN_TOOLTIPS.cpv} className="text-right">CPV</HeadWithTooltip>
               </>
             )}
-            <TableHead className="text-right">CPM</TableHead>
-            <TableHead className="text-right">CPC</TableHead>
-            <TableHead className="text-right">CTR (%)</TableHead>
-            <TableHead className="text-right">LP View</TableHead>
-            <TableHead className="text-right">Connect Rate (%)</TableHead>
-            <TableHead className="text-right">Tx Conv. (%)</TableHead>
+            <HeadWithTooltip tooltip={COLUMN_TOOLTIPS.cpm} className="text-right">CPM</HeadWithTooltip>
+            <HeadWithTooltip tooltip={COLUMN_TOOLTIPS.cpc} className="text-right">CPC</HeadWithTooltip>
+            <HeadWithTooltip tooltip={COLUMN_TOOLTIPS.ctr} className="text-right">CTR (%)</HeadWithTooltip>
+            <HeadWithTooltip tooltip={COLUMN_TOOLTIPS.lpView} className="text-right">LP View</HeadWithTooltip>
+            <HeadWithTooltip tooltip={COLUMN_TOOLTIPS.connectRate} className="text-right">Connect Rate (%)</HeadWithTooltip>
+            <HeadWithTooltip
+              tooltip={isPaid ? COLUMN_TOOLTIPS.txConvPaid : COLUMN_TOOLTIPS.txConvFree}
+              className="text-right"
+            >
+              Tx Conv. (%)
+            </HeadWithTooltip>
 
             {/* Colunas de resultado por stage (paid) — Faturamento/ROAS no final */}
             {isPaid && (
               <>
-                <TableHead className="text-right">Faturamento (R$)</TableHead>
-                <TableHead className="text-right">ROAS</TableHead>
+                <HeadWithTooltip tooltip={COLUMN_TOOLTIPS.faturamento} className="text-right">Faturamento (R$)</HeadWithTooltip>
+                <HeadWithTooltip tooltip={COLUMN_TOOLTIPS.roas} className="text-right">ROAS</HeadWithTooltip>
               </>
             )}
           </TableRow>

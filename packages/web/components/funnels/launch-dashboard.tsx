@@ -603,6 +603,31 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         />
       ) : null}
 
+      {/* Story 18.57: na Paga, os blocos de análise de mídia ficam em sequência
+          logo abaixo de Ingressos Acumulados — Testes de LPs e, na sequência,
+          Desempenho de Criativos (extraído de dentro de "Vendas de Captação"). */}
+      {stageType === "paid" && stageId && (
+        <LpPerformanceSection
+          projectId={projectId}
+          funnelId={funnel.id}
+          stageId={stageId}
+          days={days}
+          stageType={stageType}
+        />
+      )}
+      {stageType === "paid" && stageId && (
+        <div className="space-y-4 pt-2 border-t border-border/30">
+          <h3 className="text-base font-semibold">Desempenho de Criativos (Meta Ads)</h3>
+          <StageCreativePerformanceTable
+            projectId={projectId}
+            funnelId={funnel.id}
+            stageId={stageId}
+            days={days}
+            stageType={stageType}
+          />
+        </div>
+      )}
+
       {/* Leads: Tendência + Meta (Story 18.19) + Inputs por Etapa (Story 18.27) — Story 18.53 */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
         <LeadsTrendAndGoalChart rows={paidRows} funnelId={funnel.id} funnel={funnel} projectId={projectId} stageId={stageId} isPaidCapture={stageType === "paid"} />
@@ -738,6 +763,8 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
       {stageType === "paid" && stageId && (
         <div className="space-y-6 pt-2 border-t border-border/30">
           <h3 className="text-base font-semibold">Vendas</h3>
+          {/* Story 18.57: tabela de Criativos saiu daqui — vive standalone
+              abaixo dos Testes de LPs (após Ingressos Acumulados) */}
           <StageSalesSection
             projectId={projectId}
             funnelId={funnel.id}
@@ -747,6 +774,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             days={days}
             stageType={stageType}
             adsetsMap={adsetsMap}
+            showCreativeTable={false}
           />
           <div className="border-t border-border/20" />
           <StageSalesSection
@@ -778,8 +806,10 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         </div>
       )}
 
-      {/* Story 18.44: LP Performance Table (Testes de Landing Pages) */}
-      {stageId && stageType && (
+      {/* Story 18.44: LP Performance Table (Testes de Landing Pages)
+          Story 18.57: na Paga a seção mudou pra baixo de Ingressos Acumulados;
+          aqui só as demais etapas (Gratuita etc.) — sem duplicar. */}
+      {stageId && stageType && stageType !== "paid" && (
         <LpPerformanceSection
           projectId={projectId}
           funnelId={funnel.id}

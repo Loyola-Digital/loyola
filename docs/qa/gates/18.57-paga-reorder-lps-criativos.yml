@@ -1,0 +1,75 @@
+schema: 1
+story: '18.57'
+gate: PASS
+status_reason: |
+  5/5 ACs atendidos. Na Paga a ordem é Ingressos Acumulados → Testes de LPs →
+  Desempenho de Criativos (standalone), sem duplicação: render antigo da
+  LpPerformanceSection condicionado a stageType !== "paid" e tabela embutida
+  ocultada só no call site capture do launch (showCreativeTable={false}).
+  Todos os 6 demais call sites de StageSalesSection (launch main_product,
+  perpetual :1420/:1430, sales-stage-view :183/:192/:201) mantêm o default
+  true — regressão zero em Gratuita/Perpétuo/Vendas. Bloco free 18.41 intacto.
+  Zero fetch novo no caminho principal, zero chamada Meta API. tsc web verde.
+reviewer: 'Quinn'
+updated: '2026-07-16T00:00:00Z'
+top_issues:
+  - id: 'REQ-001'
+    severity: low
+    finding: |
+      Mudança de comportamento documentada pelo @dev (Change Log): na posição
+      standalone a tabela de Criativos renderiza na Paga mesmo SEM planilha de
+      vendas conectada — antes o early return da StageSalesSection
+      (isError || !data || semDados) a escondia junto. Nesse edge case há 1
+      request creative-performance a mais (cacheada, staleTime 5min). Avaliado
+      e aceito: os dados da tabela vêm de endpoint próprio (não dependem da
+      planilha de vendas), então escondê-la era acoplamento acidental —
+      a mudança é melhoria de consistência, não regressão.
+    suggested_action: |
+      Nenhuma ação. Se o produto preferir esconder a tabela sem planilha,
+      tratar como story nova (decisão de produto, não bug).
+  - id: 'TEST-001'
+    severity: low
+    finding: |
+      Sem teste automatizado para a reordenação/prop showCreativeTable —
+      vitest/jest não instalado no packages/web (débito de infra herdado,
+      mesmo TEST-001 das 18.55/18.56). Validação estática: diff + leitura de
+      todos os call sites + tsc.
+    suggested_action: |
+      Quando o runner for configurado, cobrir: StageSalesSection renderiza a
+      tabela embutida com default true e a oculta com showCreativeTable={false}.
+waiver: { active: false }
+coverage:
+  ac1_lps_abaixo_ingressos_acumulados: PASS   # LpPerformanceSection logo após LeadsCumulativeChart e antes de LeadsTrendAndGoalChart; render antigo com stageType !== "paid" (sem duplicar)
+  ac2_criativos_abaixo_lps: PASS              # bloco standalone h3 text-base font-semibold (padrão do bloco free 18.41), mesmos props projectId/funnelId/stageId/days/stageType; capture do launch com showCreativeTable={false}
+  ac3_ordem_final_paga: PASS                  # Dados Diários → CPL Pago vs Geral → Ingressos Acumulados → Testes de LPs → Criativos → Tendência+Meta → Projeção → CTR×CPM → Vendas (sem tabela embutida, Produto Principal intacto) → Grupos → Top Creatives
+  ac4_regressao_zero_fora_da_paga: PASS       # free: bloco 18.41 (:795-807) e LP section (:809-820) intactos; perpetual :1420/:1430 e sales-stage-view :183/:192/:201 sem a prop (default true); guard stageId && stageType preservado
+  ac5_funcionalidades_secoes_movidas: PASS    # mesmos componentes/props — filtro Hot/Cold e lpLinks vivem DENTRO da LpPerformanceSection (estado local :1370); tabela de Criativos idêntica (só mudou o pai)
+quality_checks:
+  code_review: PASS                           # mudança mínima e cirúrgica; comentários referenciam a story; prop opcional documentada com JSDoc; padrão do bloco free reusado (REUSE)
+  unit_tests: PASS                            # sem runner no web (TEST-001, low, herdado); stage-creative-performance-table.test.tsx não depende de posição (risco R2 confirmado nulo)
+  acceptance_criteria: PASS                   # 5/5 conferidos contra o código
+  no_regressions: PASS                        # 7 call sites de StageSalesSection auditados — só 1 passa false; nenhuma duplicação de LP section ou Criativos em nenhum stageType
+  performance: PASS                           # layout puro; standalone usa os mesmos hooks; única request adicional é no edge case sem planilha (REQ-001, cacheada)
+  security: PASS                              # zero input novo, zero endpoint novo, zero dado novo exposto
+  documentation: PASS                         # File List (2 arquivos), Change Log com decisão documentada, DoD 5/5 [x]
+anti_hallucination:
+  call_sites_stage_sales_section: PASS        # grep: launch :768 (capture, false) + :780 (main_product, default); perpetual :1420/:1430 default; sales-stage-view :183/:192/:201 default
+  free_creative_block_intact: PASS            # stageType === "free" && stageId (:795) byte-a-byte igual
+  lp_section_declaration: PASS                # function LpPerformanceSection no próprio arquivo (:1362), props batem com os 2 renders
+  early_return_behavior_change: PASS          # stage-sales-section.tsx :218 confirma o early return citado no Change Log do @dev
+technical_gates:
+  web_typecheck: PASS                         # npx tsc --noEmit exit 0 (rodado nesta review)
+  next_build: SKIPPED                         # validado pelo @dev; sem suspeita concreta
+meta_api_impact:
+  adds_meta_calls: NO                         # mudança 100% de layout no web; zero diff em packages/api (rate-limit safe)
+blast_radius:
+  files_modified: 2                           # launch-dashboard.tsx (+31/-3), stage-sales-section.tsx (+11/-2)
+  files_new: 0
+  lines_changed: '+42 / -5 (código; story doc à parte)'
+  risk_level: LOW                             # prop opcional com default preservando comportamento; condicionais isoladas por stageType
+commit: 'da5eb29'
+branch: 'feat/18.57-18.58-lps-reorder-tooltips'
+coderabbit_status: 'SKIPPED'                  # CLI é WSL/Windows; ambiente macOS (mesmo padrão das 18.54-18.56)
+recommended_action: |
+  Aprovar e seguir para push/PR (@devops), junto com a 18.58 (mesma branch).
+  REQ-001 e TEST-001 são low, sem correção pendente.
