@@ -50,7 +50,7 @@ export function PerpetualUpsellSection({ projectId, funnelId }: PerpetualUpsellS
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold flex items-center gap-2">
           <TrendingUp className="h-4 w-4 text-purple-600" />
-          Upsell High Ticket
+          Upsell
         </h3>
         {connected ? (
           <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs" onClick={() => setWizardOpen(true)}>
@@ -70,9 +70,9 @@ export function PerpetualUpsellSection({ projectId, funnelId }: PerpetualUpsellS
       ) : !connected ? (
         <div className="rounded-lg border border-dashed border-border/50 p-6 text-center">
           <FileSpreadsheet className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground">Nenhuma planilha de high ticket conectada.</p>
+          <p className="text-sm text-muted-foreground">Nenhuma planilha de upsell conectada.</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Conecte a planilha do produto upsell pra ver quem comprou o perpétuo e depois subiu pro high ticket.
+            Conecte a planilha do produto upsell pra ver quem comprou o perpétuo e depois comprou o upsell.
           </p>
         </div>
       ) : dataLoading ? (
@@ -89,8 +89,8 @@ export function PerpetualUpsellSection({ projectId, funnelId }: PerpetualUpsellS
             <Kpi label="Base do perpétuo" value={fmtNumber(data.basePerpetuo)} />
             <Kpi label="Upsells (após)" value={fmtNumber(data.upsells)} highlight />
             <Kpi label="Taxa de upsell" value={fmtPercent(data.taxaUpsell)} highlight />
-            <Kpi label="Faturamento HT" value={formatCurrency(data.faturamentoHighTicket)} />
-            <Kpi label="Ticket médio HT" value={formatCurrency(data.ticketMedioHighTicket)} />
+            <Kpi label="Faturamento Upsell" value={formatCurrency(data.faturamentoHighTicket)} />
+            <Kpi label="Ticket médio Upsell" value={formatCurrency(data.ticketMedioHighTicket)} />
           </div>
 
           {data.compradores.length > 0 ? (
@@ -101,9 +101,9 @@ export function PerpetualUpsellSection({ projectId, funnelId }: PerpetualUpsellS
                     <tr className="border-b border-border/50 bg-muted/30 text-xs text-muted-foreground">
                       <th className="py-2 px-3 text-left font-medium">Comprador</th>
                       <th className="py-2 px-3 text-left font-medium whitespace-nowrap">Compra perpétuo</th>
-                      <th className="py-2 px-3 text-left font-medium whitespace-nowrap">Compra HT</th>
-                      <th className="py-2 px-3 text-right font-medium">Compras HT</th>
-                      <th className="py-2 px-3 text-right font-medium">Valor HT</th>
+                      <th className="py-2 px-3 text-left font-medium whitespace-nowrap">Compra Upsell</th>
+                      <th className="py-2 px-3 text-right font-medium">Compras Upsell</th>
+                      <th className="py-2 px-3 text-right font-medium">Valor Upsell</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -125,7 +125,7 @@ export function PerpetualUpsellSection({ projectId, funnelId }: PerpetualUpsellS
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Ninguém do perpétuo comprou o high ticket depois ainda.
+              Ninguém do perpétuo comprou o upsell depois ainda.
             </p>
           )}
         </>
