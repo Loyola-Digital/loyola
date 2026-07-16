@@ -1416,9 +1416,11 @@ export async function resolveEntityNames(
   const missing = unique.filter((id) => !result.has(id));
   if (missing.length === 0) return result;
 
-  // 3. Batch Meta API com retry logic (Story 18.33 AC2)
+  // 3. Batch Meta API. maxRetries=1: o fetchMetaUrl JÁ retenta rate-limit
+  // internamente com cooldown — retentar aqui em cima multiplicava a espera
+  // (2 camadas de retry × backoff) e segurava resposta de endpoint interativo.
   const fresh: CachedEntityName[] = [];
-  const maxRetries = 2;
+  const maxRetries = 1;
   const retryBackoffMs = 500;
 
   for (let i = 0; i < missing.length; i += META_NAMES_BATCH_LIMIT) {
@@ -1437,6 +1439,13 @@ export async function resolveEntityNames(
           if (entry?.name) {
             result.set(id, entry.name);
             fresh.push({ entityId: id, entityName: entry.name });
+          } else {
+            // Cache NEGATIVO: a Meta respondeu o batch e NÃO devolveu este id
+            // (deletado/sem permissão) — é determinístico, não transitório.
+            // Sem isto, todo reload do dashboard rebatia estes ids na Meta,
+            // alimentando o rate limit que travava os endpoints de vendas.
+            result.set(id, id);
+            fresh.push({ entityId: id, entityName: id });
           }
         }
         batchResolved = true;

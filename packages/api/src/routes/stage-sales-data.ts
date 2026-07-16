@@ -755,7 +755,13 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       if (metaToken && (mediumIds.length > 0 || termIds.length > 0 || contentIds.length > 0)) {
         const adsetAdapter = makeMetaNamesCacheAdapter(params.data.projectId, "adset");
         const adAdapter = makeMetaNamesCacheAdapter(params.data.projectId, "ad");
-        const [resolvedMedium, resolvedTerm, resolvedContent] = await Promise.all([
+        // Nome de adset/ad é COSMÉTICO — orçamento de 4s. Quando a Meta está em
+        // rate limit, o cooldown global do fetchMeta segurava esta resolução por
+        // minutos e o dashboard inteiro ficava "carregando" (vendas, LPs, daily).
+        // Estourou o orçamento → segue com os ids crus; o front já trata
+        // (badge "Adset #id") e a resolução em andamento ainda popula o cache
+        // pro próximo load.
+        const resolution = Promise.all([
           mediumIds.length > 0
             ? resolveEntityNames(mediumIds, metaToken, adsetAdapter)
             : Promise.resolve(new Map<string, string>()),
@@ -765,10 +771,17 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           contentIds.length > 0
             ? resolveEntityNames(contentIds, metaToken, adAdapter)
             : Promise.resolve(new Map<string, string>()),
-        ]);
-        mediumNames = resolvedMedium;
-        termNames = resolvedTerm;
-        contentNames = resolvedContent;
+        ]).catch(() => null);
+        const NAMES_BUDGET_MS = 4_000;
+        const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), NAMES_BUDGET_MS));
+        const resolved = await Promise.race([resolution, timeout]);
+        if (resolved) {
+          mediumNames = resolved[0];
+          termNames = resolved[1];
+          contentNames = resolved[2];
+        } else {
+          request.log.warn("[sales-data] resolução de nomes estourou o orçamento — servindo ids crus");
+        }
       }
 
       // Story 18.32 AC2 + Story 18.35: Group by adset_name with smart fallback for unresolved IDs
