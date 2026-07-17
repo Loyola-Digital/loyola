@@ -21,7 +21,7 @@ const mockMetrics: CreativeMetrics[] = [
     spendPercent: 50,
     impressions: 1000,
     clicks: 50,
-    ctr: 0.05,
+    ctr: 5,
     cpc: 2,
     cpm: 100,
     leads: 5,
@@ -29,7 +29,7 @@ const mockMetrics: CreativeMetrics[] = [
     revenue: 200,
     roas: 2,
     roi: 100,
-    cvr: 0.005,
+    cvr: 0.5,
     utmTerm: "test_1",
     temperature: "hot" as const,
     totalSpend: 200,
@@ -41,7 +41,7 @@ const mockMetrics: CreativeMetrics[] = [
     spendPercent: 50,
     impressions: 1000,
     clicks: 30,
-    ctr: 0.03,
+    ctr: 3,
     cpc: 3.33,
     cpm: 100,
     leads: 3,
@@ -49,7 +49,7 @@ const mockMetrics: CreativeMetrics[] = [
     revenue: 150,
     roas: 1.5,
     roi: 50,
-    cvr: 0.003,
+    cvr: 0.3,
     utmTerm: "test_1",
     temperature: "cold" as const,
     totalSpend: 200,
@@ -61,7 +61,7 @@ const mockMetrics: CreativeMetrics[] = [
     spendPercent: 75,
     impressions: 2000,
     clicks: 100,
-    ctr: 0.05,
+    ctr: 5,
     cpc: 1.5,
     cpm: 75,
     leads: 10,
@@ -69,7 +69,7 @@ const mockMetrics: CreativeMetrics[] = [
     revenue: 300,
     roas: 2,
     roi: 100,
-    cvr: 0.005,
+    cvr: 0.5,
     utmTerm: "test_2",
     temperature: "hot" as const,
     totalSpend: 200,
@@ -113,10 +113,30 @@ describe("compileCreativeMetrics", () => {
       expect(creativoA?.impressions).toBe(2000); // 1000 + 1000
     });
 
-    it("deve calcular CTR como média ponderada (cliques / impressões)", () => {
+    it("deve calcular CTR como média ponderada em PERCENTUAL (cliques / impressões × 100)", () => {
       const creativoA = compiled.find((c) => c.adName === "Criativo A");
-      // (50 + 30) / (1000 + 1000) = 80 / 2000 = 0.04
-      expect(creativoA?.ctr).toBeCloseTo(0.04, 5);
+      // Story 18.59: (50 + 30) / (1000 + 1000) × 100 = 80 / 2000 × 100 = 4%
+      // (mesma unidade do caminho individual calculateCtr)
+      expect(creativoA?.ctr).toBeCloseTo(4, 5);
+    });
+
+    it("deve calcular CVR em percentual (leads / impressões × 100)", () => {
+      const creativoA = compiled.find((c) => c.adName === "Criativo A");
+      // Story 18.59: (5 + 3) / (1000 + 1000) × 100 = 0.4%
+      expect(creativoA?.cvr).toBeCloseTo(0.4, 5);
+    });
+
+    it("regressão Story 18.59: exemplo real do bug report (22 cliques no link / 1647 impressões)", () => {
+      const real: CreativeMetrics = {
+        ...mockMetrics[0],
+        adName: "adv06--ia--pg04--cap-ads-claude",
+        spend: 113.31,
+        impressions: 1647,
+        clicks: 22,
+      };
+      const result = compileCreativeMetricsByName([real]);
+      // Gerenciador de Anúncios: CTR ≈ 1,34% (não 0,02%)
+      expect(result[0].ctr).toBeCloseTo(1.34, 2);
     });
 
     it("deve calcular CPC como média aritmética (spend / cliques)", () => {
