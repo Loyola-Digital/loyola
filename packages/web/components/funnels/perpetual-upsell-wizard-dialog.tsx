@@ -129,7 +129,7 @@ export function PerpetualUpsellWizardDialog({
       },
       {
         onSuccess: () => {
-          toast.success(current ? "Planilha atualizada!" : "Planilha de high ticket conectada!");
+          toast.success(current ? "Planilha atualizada!" : "Planilha de upsell conectada!");
           handleClose();
         },
         onError: (err) => {
@@ -160,12 +160,12 @@ export function PerpetualUpsellWizardDialog({
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5 text-purple-600" />
             {current && step === "mapping"
-              ? "Upsell High Ticket — editar mapeamento"
+              ? "Upsell — editar mapeamento"
               : step === "spreadsheet"
-                ? "Upsell High Ticket — selecione o arquivo"
+                ? "Upsell — selecione o arquivo"
                 : step === "sheet"
-                  ? "Upsell High Ticket — selecione a aba"
-                  : "Upsell High Ticket — mapear colunas"}
+                  ? "Upsell — selecione a aba"
+                  : "Upsell — mapear colunas"}
           </DialogTitle>
         </DialogHeader>
 
@@ -292,7 +292,7 @@ export function PerpetualUpsellWizardDialog({
                 {selectedSpreadsheet?.name} / {selectedSheet}
               </p>
               <p className="text-xs text-muted-foreground">
-                Mapeie as colunas da planilha de high ticket. <strong>Email</strong> é obrigatório (chave do cruzamento). Mapeie <strong>Data da Venda</strong> para garantir que o HT só conte se for <strong>depois</strong> da compra do perpétuo.
+                Mapeie as colunas da planilha de upsell. <strong>Email</strong> é obrigatório (chave do cruzamento). Mapeie <strong>Data da Venda</strong> para garantir que o upsell só conte se for <strong>depois</strong> da compra do perpétuo.
               </p>
 
               {sheetDataLoading && columns.length === 0 ? (

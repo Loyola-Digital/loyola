@@ -1015,7 +1015,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             ) : (
               <>
                 <TrendingUp className="h-3.5 w-3.5" />
-                Conectar High Ticket
+                Conectar Upsell
               </>
             )}
           </Button>
