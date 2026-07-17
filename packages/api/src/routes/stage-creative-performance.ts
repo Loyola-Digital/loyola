@@ -65,6 +65,21 @@ function parseLandingPageViews(
   return lpv ? parseNumber(lpv.value) : 0;
 }
 
+/**
+ * Story 18.59 (AC3/AC4): extrai Cliques no Link do array `actions` do Meta Ads.
+ * Meta retorna `{ action_type: "link_click", value: "22" }`. Igual à seção de
+ * LPs (que usa inline_link_clicks), o CTR/CPC dos criativos deve usar cliques
+ * no link — `ad.clicks` (cliques totais: perfil, reações etc.) inflava o
+ * denominador e distorcia o CTR vs Gerenciador de Anúncios.
+ */
+function parseLinkClicks(
+  actions: { action_type: string; value: string }[] | undefined,
+): number {
+  if (!actions) return 0;
+  const lc = actions.find((a) => a.action_type === "link_click");
+  return lc ? parseNumber(lc.value) : 0;
+}
+
 function parseNumber(val: string | undefined): number {
   if (!val) return 0;
   const cleaned = val.replace(/[^\d.,]/g, "").replace(",", ".");
@@ -540,7 +555,10 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
 
           const spend = parseFloat(ad.spend || "0");
           const impressions = parseFloat(ad.impressions || "0");
-          const clicks = parseFloat(ad.clicks || "0");
+          // Story 18.59 (AC3): cliques no link (action link_click já buscada) em
+          // vez de ad.clicks (totais) — alinha CTR/CPC ao Gerenciador e à tabela
+          // de LPs. Zero chamadas novas à Meta API (AC4).
+          const clicks = parseLinkClicks(ad.actions);
 
           if (!isNaN(spend)) group.spend += spend;
           if (!isNaN(impressions)) group.impressions += impressions;

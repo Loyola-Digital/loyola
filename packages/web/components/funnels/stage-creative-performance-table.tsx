@@ -71,9 +71,10 @@ const COLUMNS: Array<{ key: SortableCol; label: string; title?: string }> = [
   { key: "cpl", label: "CPL" },
   // Story 18.46 (AC1): Impressões/Cliques ocultadas da tabela (CTR/CPC/CPM
   // continuam sendo calculados internamente a partir desses valores).
-  { key: "ctr", label: "CTR" },
-  { key: "cpc", label: "CPC" },
-  { key: "cpm", label: "CPM" },
+  // Story 18.59: cliques = cliques no link (link_click da Meta), como na tabela de LPs.
+  { key: "ctr", label: "CTR", title: "Cliques no link ÷ Impressões × 100 (Meta Ads · action link_click)" },
+  { key: "cpc", label: "CPC", title: "Investimento ÷ Cliques no link" },
+  { key: "cpm", label: "CPM", title: "Investimento ÷ Impressões × 1000" },
   { key: "revenue", label: "Faturamento" },
   { key: "roas", label: "ROAS" },
 ];
@@ -99,9 +100,10 @@ const PAID_COLUMNS: Array<{ key: SortableCol; label: string; title?: string }> =
     label: "CPL",
     title: "Invest ÷ Ingressos Únicos (vendas atribuídas ao criativo via co=)",
   },
-  { key: "ctr", label: "CTR" },
-  { key: "cpc", label: "CPC" },
-  { key: "cpm", label: "CPM" },
+  // Story 18.59: cliques = cliques no link (link_click da Meta), como na tabela de LPs.
+  { key: "ctr", label: "CTR", title: "Cliques no link ÷ Impressões × 100 (Meta Ads · action link_click)" },
+  { key: "cpc", label: "CPC", title: "Investimento ÷ Cliques no link" },
+  { key: "cpm", label: "CPM", title: "Investimento ÷ Impressões × 1000" },
   {
     key: "revenueTotal",
     label: "Fat. Total",

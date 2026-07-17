@@ -10,14 +10,14 @@ export interface CompiledCreativeMetric extends Omit<CalculatedMetrics, 'tempera
   originalCount: number; // Quantos criativos foram compilados neste
   temperature: 'all'; // Temperature fixo para modo compilado
   roi: number; // ROI = (revenue - spend) / spend * 100
-  cvr: number; // CVR = leads / impressions
+  cvr: number; // CVR = (leads / impressions) × 100 — percentual (Story 18.59)
   totalSpend?: number; // Para cálculos de percentual
 }
 
 /**
  * Compila métricas por ad_name (soma + média ponderada)
  * - Soma simples: spend, impressions, clicks, conversions, leads, revenue
- * - Média ponderada (por impressões): ctr, cvr
+ * - Média ponderada (por impressões): ctr, cvr — em percentual (×100), Story 18.59
  * - Média aritmética: cpc, cpm, roi
  * - ROAS compilado: sum(revenue) / sum(spend)
  */
@@ -59,9 +59,12 @@ export function compileCreativeMetricsByName(
     // Usamos 0 como placeholder, será recalculado baseado no contexto total
     const spendPercent = 0;
 
-    // Médias ponderadas (por impressões)
-    const ctr = sumImpressions > 0 ? sumClicks / sumImpressions : 0;
-    const cvr = sumImpressions > 0 ? sumLeads / sumImpressions : 0;
+    // Médias ponderadas (por impressões) — Story 18.59: ×100 para manter a
+    // mesma unidade (percentual) do caminho individual (calculateCtr), que a
+    // tabela formata com formatMetricValue(..., "percentage"). Sem o ×100 o
+    // modo compilado exibia CTR/CVR 100× menores.
+    const ctr = sumImpressions > 0 ? (sumClicks / sumImpressions) * 100 : 0;
+    const cvr = sumImpressions > 0 ? (sumLeads / sumImpressions) * 100 : 0;
 
     // Médias aritméticas
     const cpc = sumClicks > 0 ? sumSpend / sumClicks : 0;
