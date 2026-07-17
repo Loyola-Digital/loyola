@@ -1,0 +1,16 @@
+schema: 1
+story: '18.60'
+gate: PASS
+status_reason: '10/10 ACs atendidos; padrão da tabela de Criativos replicado por LP sem tocar creative-sales-metrics.ts (Criativos intacto) nem chamar Meta API; tsc api+web verdes, next build verde.'
+reviewer: 'Quinn'
+updated: '2026-07-17T00:00:00Z'
+top_issues:
+  - id: 'TEST-001'
+    severity: low
+    finding: 'Sem runner de testes no packages/web (vitest não instalado) — débito herdado das stories 18.55/18.56/18.59.'
+    suggested_action: 'Lógica do calculator validada via harness node (10/10). Instalar vitest no monorepo em story de infra futura.'
+  - id: 'REQ-001'
+    severity: low
+    finding: 'Validação visual dos Ingressos Únicos/Totais por LP no dashboard não coberta por teste automatizado (atribuição de vendas por co= → LP).'
+    suggested_action: 'Conferir visualmente 1 LP no dashboard (Ing. Únicos/Totais e Fat. Único/Total batendo com a tabela de Criativos e cards) antes/depois do merge.'
+waiver: { active: false }
