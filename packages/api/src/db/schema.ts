@@ -2146,6 +2146,24 @@ export const stageEventPaymentAlerts = pgTable("stage_event_payment_alerts", {
 });
 
 // ============================================================
+// SPRINT REPORTS (relatórios HTML gerados por IA — ex.: skill da Agatha)
+// ============================================================
+// O Claude da gestora POSTa o dashboard HTML autocontido via API key
+// (scope reports:write); a aba Sprint lista e renderiza em iframe sandbox.
+
+export const sprintReports = pgTable("sprint_reports", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
+  /** Quem gerou (texto livre — ex.: "Agatha"). */
+  author: varchar("author", { length: 120 }),
+  /** Tipo do relatório (ex.: "dashboard-campanhas"). */
+  kind: varchar("kind", { length: 60 }),
+  /** HTML autocontido (sem dependências externas). */
+  html: text("html").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ============================================================
 // STAGE OPERATIONAL COSTS (Brief v5 #2 — Evento Presencial)
 // ============================================================
 // Custos operacionais da etapa (venue, staff, logística, hospedagem...) —
