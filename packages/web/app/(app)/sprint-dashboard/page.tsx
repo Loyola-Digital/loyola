@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LayoutGrid, Settings2, RefreshCw, AlertCircle, AlertTriangle, Clock, Check, Circle, CalendarRange, Activity } from "lucide-react";
+import { LayoutGrid, Settings2, RefreshCw, AlertCircle, AlertTriangle, Clock, Check, Circle, CalendarRange, Activity, FileBarChart2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { SprintBlockCard } from "@/components/sprint-dashboard/sprint-block-card
 import { TaskEditDialog } from "@/components/sprint-dashboard/task-edit-dialog";
 import { MacroCalendarView } from "@/components/sprint-dashboard/macro-calendar-view";
 import { BlockContextDialog } from "@/components/sprint-dashboard/block-context-dialog";
+import { SprintReportsSection } from "@/components/sprint-dashboard/sprint-reports-section";
 import { useQueryClient } from "@tanstack/react-query";
 import type { SprintDashboardBlock } from "@loyola-x/shared";
 
@@ -26,7 +27,7 @@ export default function SprintDashboardPage() {
   const queryClient = useQueryClient();
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ClickUpTaskShape | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "macro" | "health">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "macro" | "health" | "reports">("overview");
   // Story 31.7
   const [contextBlock, setContextBlock] = useState<SprintDashboardBlock | null>(null);
 
@@ -123,6 +124,12 @@ export default function SprintDashboardPage() {
           icon={<Activity className="h-3.5 w-3.5" />}
           label="Saúde"
         />
+        <TabButton
+          active={activeTab === "reports"}
+          onClick={() => setActiveTab("reports")}
+          icon={<FileBarChart2 className="h-3.5 w-3.5" />}
+          label="Relatórios"
+        />
       </div>
 
       {/* Builder dialog */}
@@ -132,8 +139,10 @@ export default function SprintDashboardPage() {
         currentBlocks={blocks}
       />
 
-      {/* Empty state */}
-      {configLoading ? (
+      {/* Relatórios independem dos blocos ClickUp — renderiza antes do empty state */}
+      {activeTab === "reports" ? (
+        <SprintReportsSection />
+      ) : configLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-64 rounded-xl" />
