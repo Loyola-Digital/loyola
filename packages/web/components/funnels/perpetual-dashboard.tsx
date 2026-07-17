@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Undo2,
   TrendingUp,
+  ClipboardList,
 } from "lucide-react";
 import {
   LineChart,
@@ -63,6 +64,7 @@ import { PerpetualUpsellSection } from "./perpetual-upsell-section";
 import { PerpetualUpsellWizardDialog } from "./perpetual-upsell-wizard-dialog";
 import { usePerpetualUpsellSpreadsheet } from "@/lib/hooks/use-perpetual-upsell";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
+import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -450,6 +452,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
   };
+  // Taxa de resposta da pesquisa = respostas da pesquisa conectada ÷ vendas.
+  const surveyAgg = useSurveyAggregation(projectId, funnel.id, stageId);
   const { data: perpetualSpreadsheet } = usePerpetualSpreadsheet(projectId, funnel.id);
   const { data: upsellSpreadsheet } = usePerpetualUpsellSpreadsheet(projectId, funnel.id);
   const { data: salesData } = usePerpetualSalesData(
@@ -1116,6 +1120,16 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
               <MetricTooltip label="Margem %" value={fmtPercent(m.marginPercent)} formula={buildFunnelMarginPercentFormula(m.marginPercent, f)}>
                 <KpiCard icon={BarChart3} label="Margem %" value={fmtPercent(m.marginPercent)} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
+              {/* Resposta da pesquisa ÷ vendas — só quando há pesquisa conectada com respostas */}
+              {surveyAgg.totalResponses > 0 && (
+                <KpiCard
+                  icon={ClipboardList}
+                  label="Resposta Pesquisa"
+                  value={m.totalSales > 0 ? fmtPercent((surveyAgg.totalResponses / m.totalSales) * 100) : "—"}
+                  title={`${surveyAgg.totalResponses} resposta${surveyAgg.totalResponses !== 1 ? "s" : ""} ÷ ${m.totalSales} venda${m.totalSales !== 1 ? "s" : ""}`}
+                  warning={m.totalSales === 0 ? "Sem vendas no período" : undefined}
+                />
+              )}
             </div>
           );
         })()
