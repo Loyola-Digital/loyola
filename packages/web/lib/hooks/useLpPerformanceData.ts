@@ -30,6 +30,11 @@ export interface LpRow {
   leads: number;
   vendas?: number;
   faturamento?: number;
+  // Story 18.60: Ing. Únicos/Totais + Fat. Único/Total por LP (Captação Paga)
+  ingressosUnicos?: number;
+  ingressosTotais?: number;
+  revenueUnico?: number;
+  revenueTotal?: number;
 }
 
 interface LpPerformanceResult {
@@ -103,6 +108,10 @@ export function useLpPerformanceData({
           leads: 0,
           vendas: 0,
           faturamento: 0,
+          ingressosUnicos: 0,
+          ingressosTotais: 0,
+          revenueUnico: 0,
+          revenueTotal: 0,
         };
       }
       // Imposto Meta Ads de 12,15% (2026+): o spend cru da API não inclui. Aplica
@@ -117,6 +126,12 @@ export function useLpPerformanceData({
       // cada entry é LP×temperatura — o ROAS por LP fica consistente com o gasto.
       lpTotals[key].vendas = (lpTotals[key].vendas ?? 0) + (entry.vendas ?? 0);
       lpTotals[key].faturamento = (lpTotals[key].faturamento ?? 0) + (entry.faturamento ?? 0);
+      // Story 18.60: Ing. Únicos/Totais + Fat. Único/Total por LP — somados sob o
+      // mesmo filtro de público (cada entry é LP×temperatura, já filtrado acima).
+      lpTotals[key].ingressosUnicos = (lpTotals[key].ingressosUnicos ?? 0) + (entry.ingressosUnicos ?? 0);
+      lpTotals[key].ingressosTotais = (lpTotals[key].ingressosTotais ?? 0) + (entry.ingressosTotais ?? 0);
+      lpTotals[key].revenueUnico = (lpTotals[key].revenueUnico ?? 0) + (entry.revenueUnico ?? 0);
+      lpTotals[key].revenueTotal = (lpTotals[key].revenueTotal ?? 0) + (entry.revenueTotal ?? 0);
     }
 
     // Story 18.46 (AC6/AC7): leads por LP, respeitando o filtro de público

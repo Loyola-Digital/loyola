@@ -46,6 +46,11 @@ export interface LpBreakdownRow {
   // Story 18.50: vendas/faturamento por LP (atribuídos via co= → campanha)
   vendas?: number;
   faturamento?: number;
+  // Story 18.60: Ing. Únicos/Totais + Fat. Único/Total por LP (18.55 por ad_id → LP)
+  ingressosUnicos?: number;
+  ingressosTotais?: number;
+  revenueUnico?: number;
+  revenueTotal?: number;
 }
 
 export interface StageCreativePerformanceResponse {

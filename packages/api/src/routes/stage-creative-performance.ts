@@ -268,6 +268,13 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         // Story 18.50: vendas/faturamento por LP×temperatura, atribuídas via
         // co= da venda → campanha do anúncio (mesma fonte de LP que o spend).
         const salesByLp = new Map<string, { vendas: number; faturamento: number }>();
+        // Story 18.60: Ing. Únicos/Totais + Fat. Único/Total por LP×temperatura,
+        // agregados dos mapas por ad_id da 18.55. Populado logo após
+        // computeCreativeSalesMetrics (mesma cadeia adId → campanha → LP).
+        const salesUniqueByLp = new Map<
+          string,
+          { ingressosUnicos: number; ingressosTotais: number; revenueUnico: number; revenueTotal: number }
+        >();
         // Story 18.50: mapa ad_id → campaign_name (dos insights do Meta) pra
         // herdar a LP da venda a partir do co=. Vendas cujo co= não casa com
         // anúncio do stage (orgânico/recuperação) ficam de fora naturalmente.
@@ -432,6 +439,33 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               for (const [adId, v] of creativeSaleMetrics.revenueTotalByAdId) {
                 revenueByAdId.set(adId, v);
               }
+              // Story 18.60: agrega os 4 mapas por ad_id (18.55) em LP×temperatura,
+              // reusando a mesma cadeia adId → campanha → LP do attributeSaleToLp.
+              // O ÚNICO já foi resolvido a 1 adId por email em
+              // computeCreativeSalesMetrics, então somar por LP não duplica.
+              const addUniqueToLp = (
+                adIdMap: Map<string, number>,
+                field: "ingressosUnicos" | "ingressosTotais" | "revenueUnico" | "revenueTotal",
+              ) => {
+                for (const [adId, val] of adIdMap) {
+                  const campaignName = campaignByAdId.get(adId);
+                  if (!campaignName) continue;
+                  const { lpName, temperature } = lpAndTempFromCampaignName(campaignName);
+                  const key = `${lpName}__${temperature}`;
+                  const agg = salesUniqueByLp.get(key) ?? {
+                    ingressosUnicos: 0,
+                    ingressosTotais: 0,
+                    revenueUnico: 0,
+                    revenueTotal: 0,
+                  };
+                  agg[field] += val;
+                  salesUniqueByLp.set(key, agg);
+                }
+              };
+              addUniqueToLp(creativeSaleMetrics.ingressosTotaisByAdId, "ingressosTotais");
+              addUniqueToLp(creativeSaleMetrics.ingressosUnicosByAdId, "ingressosUnicos");
+              addUniqueToLp(creativeSaleMetrics.revenueTotalByAdId, "revenueTotal");
+              addUniqueToLp(creativeSaleMetrics.revenueUnicoByAdId, "revenueUnico");
               revenueFromSaleContent = true;
               revenueSource = "sale_content";
             }
@@ -663,6 +697,11 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           // Story 18.50: vendas/faturamento por LP (atribuídos via co= → campanha)
           vendas: number;
           faturamento: number;
+          // Story 18.60: Ing. Únicos/Totais + Fat. Único/Total por LP (18.55 por ad_id → LP)
+          ingressosUnicos?: number;
+          ingressosTotais?: number;
+          revenueUnico?: number;
+          revenueTotal?: number;
         };
         const campaignInsights = await fetchCampaignInsights(
           metaAccount.metaAccountId,
@@ -723,6 +762,28 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           }
           agg.vendas += sv.vendas;
           agg.faturamento += sv.faturamento;
+        }
+        // Story 18.60: injeta Ing. Únicos/Totais + Fat. Único/Total por LP×temperatura.
+        for (const [key, uv] of salesUniqueByLp.entries()) {
+          let agg = lpBreakdownMap.get(key);
+          if (!agg) {
+            const [lpName, temperature] = key.split("__");
+            agg = {
+              lpName,
+              temperature: temperature as "hot" | "cold" | "unknown",
+              spend: 0,
+              clicks: 0,
+              impressions: 0,
+              landingPageViews: 0,
+              vendas: 0,
+              faturamento: 0,
+            };
+            lpBreakdownMap.set(key, agg);
+          }
+          agg.ingressosUnicos = (agg.ingressosUnicos ?? 0) + uv.ingressosUnicos;
+          agg.ingressosTotais = (agg.ingressosTotais ?? 0) + uv.ingressosTotais;
+          agg.revenueUnico = (agg.revenueUnico ?? 0) + uv.revenueUnico;
+          agg.revenueTotal = (agg.revenueTotal ?? 0) + uv.revenueTotal;
         }
         const lpBreakdown = Array.from(lpBreakdownMap.values());
 
