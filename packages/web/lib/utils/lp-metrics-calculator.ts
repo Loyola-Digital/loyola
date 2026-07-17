@@ -22,7 +22,8 @@ export interface MetricsCalculated {
   ctr: number | null; // %
   connectRate: number | null; // %
   txConv: number | null; // %
-  cpv?: number | null; // R$ (Captação Paga)
+  cpv?: number | null; // R$ (legado — substituído por cplPagoUnico na 18.60)
+  cplPagoUnico?: number | null; // R$ (Captação Paga — Story 18.60: Invest ÷ Ing. Únicos)
   roas?: number | null; // ratio (Captação Paga)
   cpl?: number | null; // R$ (Captação Gratuita)
 }
@@ -88,6 +89,18 @@ export function calculateCPV(investimento: number, vendas: number): number | nul
 }
 
 /**
+ * Story 18.60: CPL Pago Único = Investimento ÷ Ingressos Únicos
+ * Custo por comprador único de ingresso atribuído à LP (via co= da venda).
+ */
+export function calculateCplPagoUnico(
+  investimento: number,
+  ingressosUnicos: number,
+): number | null {
+  if (ingressosUnicos === 0) return null;
+  return investimento / ingressosUnicos;
+}
+
+/**
  * ROAS = Faturamento ÷ Investimento
  * Return on Ad Spend
  */
@@ -117,8 +130,10 @@ export function calculatePaidMetrics(params: {
   impressoes: number;
   conversoes: number;
   lpViews: number;
-  vendas: number;
-  faturamento: number;
+  // Story 18.60: Ing. Únicos + Fat. Total substituem Vendas/Faturamento como base
+  // das métricas de resultado (CPL Pago Único, Tx Conv., ROAS).
+  ingressosUnicos: number;
+  revenueTotal: number;
 }): MetricsCalculated {
   return {
     cpm: calculateCPM(params.investimento, params.impressoes),
@@ -126,10 +141,12 @@ export function calculatePaidMetrics(params: {
     ctr: calculateCTR(params.cliques, params.impressoes),
     // Story 18.46 (AC5): Connect Rate = LP View ÷ Link Clicks
     connectRate: calculateConnectRate(params.lpViews, params.cliques),
-    // Story 18.46: Tx Conv. = Vendas ÷ Link Clicks (paid)
-    txConv: calculateTxConv(params.vendas, params.cliques),
-    cpv: calculateCPV(params.investimento, params.vendas),
-    roas: calculateROAS(params.faturamento, params.investimento),
+    // Story 18.60: Tx Conv. (paga) = Ing. Únicos ÷ Link Clicks (alinha 18.52)
+    txConv: calculateTxConv(params.ingressosUnicos, params.cliques),
+    // Story 18.60: CPL Pago Único = Investimento ÷ Ing. Únicos
+    cplPagoUnico: calculateCplPagoUnico(params.investimento, params.ingressosUnicos),
+    // Story 18.60: ROAS = Fat. Total ÷ Investimento
+    roas: calculateROAS(params.revenueTotal, params.investimento),
   };
 }
 
