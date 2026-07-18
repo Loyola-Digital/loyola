@@ -1,0 +1,53 @@
+schema: 1
+story: '18.61'
+gate: CONCERNS
+status_reason: 'Todas as 8 ACs implementadas fielmente (regra OR + tooltip + coluna ordenável), tsc api+web verde, zero scope creep. Ressalvas não-bloqueantes: lógica nova de status sem teste executável e validação em conta Meta real pendente de deploy/sync.'
+reviewer: 'Quinn'
+updated: '2026-07-18T00:00:00Z'
+waiver: { active: false }
+
+quality_checks:
+  code_review: PASS
+  tests: CONCERN
+  acceptance_criteria: PASS
+  regressions: PASS
+  performance: PASS
+  security: PASS
+  documentation: PASS
+
+anti_hallucination:
+  verdict: PASS
+  note: 'File List da story == 11 arquivos do commit 489c943 (exato). Nenhum arquivo fora do escopo declarado.'
+
+technical_gates:
+  api_tsc: PASS
+  web_tsc: PASS
+  next_build: 'declarado verde pelo @dev (não re-executado nesta sessão; tsc web verde é forte indicador)'
+
+acceptance_criteria_coverage:
+  AC1: met       # Coluna Status pós Ad Name em COLUMNS + PAID_COLUMNS; badge verde/neutro/"—"
+  AC2: met       # Regra OR: activeAdIds.length>0 → active (stage-creative-performance.ts:685-693)
+  AC3: met       # unknown → "—" no badge; nunca "Pausado" por ausência total de dado
+  AC4: met       # Tooltip "Ativo em: <adsets>" via title; adsetNameByAdId sem novo I/O
+  AC5: met       # effective_status no fields do batch/backfill + migration 0082 idempotente + COALESCE
+  AC6: met       # status + activeAdsets aditivos na CreativePerformanceResponse
+  AC7: met       # sort por statusRank Ativo→Pausado→"—" (asc inverte)
+  AC8: met       # tsc api+web verde; propagação aditiva; colunas 18.55/18.59/crossref intactas
+
+top_issues:
+  - id: 'TEST-001'
+    severity: medium
+    finding: 'A lógica nova de status (regra OR no endpoint + merge OR/união no compileCreativeMetrics) não tem teste executável. O arquivo stage-creative-performance-table.test.tsx importa vitest, que NÃO está instalado no repo, e __tests__ está excluído do tsconfig do web — logo os casos de Status adicionados não são type-checked nem executados (débito herdado de 18.55/18.60).'
+    suggested_action: 'Instalar vitest (ou adicionar harness runnable node --strip-types para a lógica OR/union) num follow-up. No mínimo, validar manualmente após o deploy. Não bloqueia — dashboard interno.'
+  - id: 'REL-001'
+    severity: medium
+    finding: 'A coluna Status exibirá "—" em todas as linhas até que (a) a API com o novo field effective_status seja deployada (deploy é com o Lucas) E (b) o backfill diário de nomes rode gravando o status no cache. Sem isso, meta_entity_names_cache.effective_status fica NULL.'
+    suggested_action: 'Após deploy da API + primeira execução do backfill, conferir os valores de status contra o Gerenciador de Anúncios (DoD item pendente). Comunicar ao usuário que "—" no dia do merge é esperado, não bug.'
+  - id: 'REQ-001'
+    severity: low
+    finding: 'Edge case: grupo com ≥1 ad_id conhecido não-ativo + alguns ad_ids ausentes do cache resolve como "paused" (knownAdIds.length>0), não "—". Diverge de uma leitura literal estrita da AC3, mas segue EXATAMENTE a fórmula prescrita nas Dev Notes da story (temAlgumStatusConhecido ? paused : unknown), validada pelo @po (GO 10/10).'
+    suggested_action: 'Aceitável. Documentar que "Pausado" pode aparecer quando ≥1 anúncio é conhecido-pausado e nenhum é conhecido-ativo, mesmo que algum irmão esteja fora do cache (janela transitória — o backfill resolve todos os ad_ids, inclusive pausados/arquivados).'
+  - id: 'MNT-001'
+    severity: low
+    finding: 'sortedData trocou (a[sortCol] as number) ?? 0 por Number(...) || 0. Coerção explícita é mais segura para ordenação numérica, mas altera sutilmente o tratamento de NaN/strings.'
+    suggested_action: 'Nenhuma ação — valores das colunas são numéricos; comportamento equivalente ou melhor. Registrado por transparência.'
