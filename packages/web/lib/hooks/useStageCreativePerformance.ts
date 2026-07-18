@@ -33,6 +33,10 @@ export interface CreativePerformanceData {
   ingressosTotais?: number;
   revenueTotal?: number;
   revenueUnico?: number;
+  // Story 18.61: estado atual do criativo na Meta (agregação OR por ad_id no
+  // backend) + adsets onde está ativo (tooltip). Aditivo; ausência → "—".
+  status?: "active" | "paused" | "unknown";
+  activeAdsets?: string[];
 }
 
 // Story 18.46: corte por LP × temperatura (para a tabela de Testes de LPs)

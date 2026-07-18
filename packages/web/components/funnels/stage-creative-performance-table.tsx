@@ -45,6 +45,8 @@ interface StageCreativePerformanceTableProps {
 
 type TemperatureFilter = "all" | "hot" | "cold";
 type SortableCol =
+  // Story 18.61: coluna Status (ordenável — sort especial por rank Ativo→Pausado→—)
+  | "status"
   | "spend"
   | "spendPercent"
   | "impressions"
@@ -64,7 +66,54 @@ type SortableCol =
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
+// Story 18.61: badge de estado atual do criativo na Meta. Reusa o padrão visual
+// de perpetual-dashboard.tsx (STATUS_BADGE). Reconciliação de cor: Ativo=verde,
+// Pausado=neutro/muted (AC1 "cinza/neutro"), desconhecido → "—" (nunca "Pausado"
+// por ausência de dado — AC3). Tooltip nativo (mesmo padrão `title` da tabela).
+const CREATIVE_STATUS_BADGE: Record<"active" | "paused", { label: string; cls: string }> = {
+  active: { label: "Ativo", cls: "bg-green-500/15 text-green-700 dark:text-green-400" },
+  paused: { label: "Pausado", cls: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-400" },
+};
+
+function CreativeStatusBadge({
+  status,
+  activeAdsets,
+}: {
+  status?: "active" | "paused" | "unknown";
+  activeAdsets?: string[];
+}) {
+  if (status !== "active" && status !== "paused") {
+    // AC3: desconhecido / linha só-planilha → neutro "—", sem tooltip de adset
+    return <span className="text-muted-foreground">—</span>;
+  }
+  const meta = CREATIVE_STATUS_BADGE[status];
+  // AC4: tooltip lista os adsets ativos só quando Ativo; Pausado sem adsets.
+  const tooltip =
+    status === "active" && activeAdsets && activeAdsets.length > 0
+      ? `Ativo em: ${activeAdsets.join(", ")}`
+      : status === "active"
+        ? "Ativo na Meta (estado atual, não do período)"
+        : "Pausado na Meta (estado atual, não do período)";
+  return (
+    <span
+      className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${meta.cls}`}
+      title={tooltip}
+    >
+      {meta.label}
+    </span>
+  );
+}
+
+const STATUS_COLUMN: { key: SortableCol; label: string; title?: string } = {
+  key: "status",
+  label: "Status",
+  title:
+    "Estado atual do criativo na Meta — Ativo se ≥1 anúncio do criativo está ativo (estado atual, não do período)",
+};
+
 const COLUMNS: Array<{ key: SortableCol; label: string; title?: string }> = [
+  // Story 18.61: Status logo após Ad Name, antes de Invest.
+  STATUS_COLUMN,
   { key: "spend", label: "Invest." },
   { key: "spendPercent", label: "%" },
   { key: "leads", label: "Leads" },
@@ -83,6 +132,8 @@ const COLUMNS: Array<{ key: SortableCol; label: string; title?: string }> = [
 // Fat. Total/Único (vendas atribuídas ao criativo via co= da venda; vendas
 // sem co= — orgânico/recuperação/manual — ficam fora da tabela).
 const PAID_COLUMNS: Array<{ key: SortableCol; label: string; title?: string }> = [
+  // Story 18.61: Status logo após Ad Name, antes de Invest.
+  STATUS_COLUMN,
   { key: "spend", label: "Invest." },
   { key: "spendPercent", label: "%" },
   {
@@ -187,6 +238,9 @@ export function StageCreativePerformanceTable({
           revenue: creative.revenue,
           utmTerm: creative.utmTerm,
           totalSpend,
+          // Story 18.61: status/adsets ativos fluem até o badge (aditivo)
+          status: creative.status,
+          activeAdsets: creative.activeAdsets,
           // Story 18.55: só na Paga — repassar Único/Total muda CPL (÷ Ing.
           // Únicos) e ROAS (Fat. Total ÷ Invest) dentro do calculator. Nas
           // demais etapas os campos ficam de fora e nada muda (AC8).
@@ -219,9 +273,17 @@ export function StageCreativePerformanceTable({
   }, [data, temperatureFilter, stageType]);
 
   const sortedData = useMemo(() => {
+    // Story 18.61: rank de status para ordenar Ativo → Pausado → "—". No sentido
+    // padrão (desc) Ativo vem primeiro (rank maior); asc inverte.
+    const statusRank = (s: unknown) => (s === "active" ? 2 : s === "paused" ? 1 : 0);
     return [...processedData].sort((a, b) => {
-      const av = (a[sortCol] as number) ?? 0;
-      const bv = (b[sortCol] as number) ?? 0;
+      if (sortCol === "status") {
+        const av = statusRank((a as { status?: string }).status);
+        const bv = statusRank((b as { status?: string }).status);
+        return sortDir === "asc" ? av - bv : bv - av;
+      }
+      const av = Number((a as Record<string, unknown>)[sortCol]) || 0;
+      const bv = Number((b as Record<string, unknown>)[sortCol]) || 0;
       return sortDir === "asc" ? av - bv : bv - av;
     });
   }, [processedData, sortCol, sortDir]);
@@ -254,6 +316,9 @@ export function StageCreativePerformanceTable({
 
   function renderCellValue(row: any, colKey: SortableCol): React.ReactNode {
     switch (colKey) {
+      case "status":
+        // Story 18.61: badge Ativo/Pausado/"—" + tooltip de adsets ativos
+        return <CreativeStatusBadge status={row.status} activeAdsets={row.activeAdsets} />;
       case "spend":
         return formatMetricValue(row.spend, "currency", { compact: true });
       case "spendPercent":

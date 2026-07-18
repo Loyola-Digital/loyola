@@ -1362,6 +1362,9 @@ export type MetaEntityType = "ad" | "adset" | "campaign";
 export interface CachedEntityName {
   entityId: string;
   entityName: string;
+  // Story 18.61: estado atual da entidade na Meta (ACTIVE, PAUSED, …). Opcional
+  // — o caminho de nomes puro não o resolve; o backfill grava o valor no cache.
+  effectiveStatus?: string;
 }
 
 export interface ResolveEntityNamesCacheAdapter {
@@ -1430,15 +1433,19 @@ export async function resolveEntityNames(
 
     while (retries < maxRetries && !batchResolved) {
       try {
-        const data = await fetchMeta<Record<string, { id: string; name: string }>>(
-          `/?ids=${batch.join(",")}&fields=id,name`,
+        const data = await fetchMeta<
+          Record<string, { id: string; name: string; effective_status?: string }>
+        >(
+          // Story 18.61: pede effective_status junto do nome (mesmo batch de 50,
+          // zero chamadas novas) — o backfill persiste o valor no cache.
+          `/?ids=${batch.join(",")}&fields=id,name,effective_status`,
           accessToken,
         );
         for (const id of batch) {
           const entry = data[id];
           if (entry?.name) {
             result.set(id, entry.name);
-            fresh.push({ entityId: id, entityName: entry.name });
+            fresh.push({ entityId: id, entityName: entry.name, effectiveStatus: entry.effective_status });
           } else {
             // Cache NEGATIVO: a Meta respondeu o batch e NÃO devolveu este id
             // (deletado/sem permissão) — é determinístico, não transitório.

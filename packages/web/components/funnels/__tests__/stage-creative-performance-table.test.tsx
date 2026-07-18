@@ -246,6 +246,109 @@ describe("StageCreativePerformanceTable", () => {
     });
   });
 
+  // Story 18.61: coluna Status (badge Ativo/Pausado/"—" + tooltip de adsets).
+  // Modo padrão "Todos" (compilado) agrega por ad_name → o status compilado é OR
+  // (Ativo se qualquer ad_id/linha do mesmo criativo estiver ativo).
+  describe("Story 18.61: coluna Status", () => {
+    it("AC2 (regra OR): criativo é Ativo se ≥1 linha do mesmo ad_name está active", () => {
+      vi.spyOn(useStageCreativePerformanceModule, "useStageCreativePerformance").mockReturnValue({
+        data: {
+          ...mockCreativeData,
+          creatives: [
+            // Mesmo ad_name, um paused e outro active → compilado deve ser Ativo
+            { ...mockCreativeData.creatives[0], status: "paused", activeAdsets: [] },
+            {
+              ...mockCreativeData.creatives[1],
+              status: "active",
+              activeAdsets: ["Lookalike 1%"],
+            },
+            // ad_name distinto, sem status conhecido → "—"
+            { ...mockCreativeData.creatives[2], status: "unknown" },
+          ],
+        },
+        isLoading: false,
+        error: null,
+      });
+
+      render(
+        <StageCreativePerformanceTable funnelId="funnel-1" stageId="stage-1" days={30} />,
+      );
+
+      // Header "Status" presente
+      expect(screen.getByText("Status")).toBeInTheDocument();
+      // Criativo A (paused + active) compilado → Ativo
+      expect(screen.getByText("Ativo")).toBeInTheDocument();
+      // Criativo B (unknown) → "—" (nunca "Pausado" por ausência de dado — AC3)
+      expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+    });
+
+    it("AC3 (fallback): status desconhecido em todas as linhas → '—', nunca 'Pausado'", () => {
+      vi.spyOn(useStageCreativePerformanceModule, "useStageCreativePerformance").mockReturnValue({
+        data: {
+          ...mockCreativeData,
+          creatives: mockCreativeData.creatives.map((c) => ({ ...c, status: "unknown" as const })),
+        },
+        isLoading: false,
+        error: null,
+      });
+
+      render(
+        <StageCreativePerformanceTable funnelId="funnel-1" stageId="stage-1" days={30} />,
+      );
+
+      expect(screen.queryByText("Pausado")).not.toBeInTheDocument();
+      expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+    });
+
+    it("AC4 (tooltip): badge Ativo lista os adsets ativos via title", () => {
+      vi.spyOn(useStageCreativePerformanceModule, "useStageCreativePerformance").mockReturnValue({
+        data: {
+          ...mockCreativeData,
+          creatives: [
+            {
+              ...mockCreativeData.creatives[0],
+              adName: "Criativo Único",
+              status: "active" as const,
+              activeAdsets: ["Interesses — Empreendedorismo", "Lookalike 1%"],
+            },
+          ],
+        },
+        isLoading: false,
+        error: null,
+      });
+
+      render(
+        <StageCreativePerformanceTable funnelId="funnel-1" stageId="stage-1" days={30} />,
+      );
+
+      const badge = screen.getByText("Ativo");
+      expect(badge).toHaveAttribute(
+        "title",
+        "Ativo em: Interesses — Empreendedorismo, Lookalike 1%",
+      );
+    });
+
+    it("AC7 (ordenável): header Status é clicável para sort", () => {
+      vi.spyOn(useStageCreativePerformanceModule, "useStageCreativePerformance").mockReturnValue({
+        data: {
+          ...mockCreativeData,
+          creatives: mockCreativeData.creatives.map((c) => ({ ...c, status: "active" as const })),
+        },
+        isLoading: false,
+        error: null,
+      });
+
+      render(
+        <StageCreativePerformanceTable funnelId="funnel-1" stageId="stage-1" days={30} />,
+      );
+
+      const statusHeader = screen.getByText("Status").closest("th");
+      expect(statusHeader).toHaveClass("cursor-pointer");
+      fireEvent.click(statusHeader!);
+      expect(statusHeader).toBeInTheDocument();
+    });
+  });
+
   describe("Snapshot tests", () => {
     it("deve fazer snapshot de tabela em modo compilado", () => {
       const { container } = render(

@@ -1657,6 +1657,11 @@ export const metaEntityNamesCache = pgTable(
     entityType: varchar("entity_type", { length: 20 }).notNull(),
     entityId: varchar("entity_id", { length: 64 }).notNull(),
     entityName: varchar("entity_name", { length: 500 }).notNull(),
+    // Story 18.61: estado ATUAL da entidade na Meta (ACTIVE, PAUSED, ARCHIVED,
+    // CAMPAIGN_PAUSED, ADSET_PAUSED, DISAPPROVED, …). Nullable: entradas legadas
+    // e entidades sem status resolvido ficam NULL → o dashboard exibe "—", nunca
+    // "Pausado" por ausência de dado. Sincronizado pelo backfill de nomes.
+    effectiveStatus: varchar("effective_status", { length: 40 }),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
