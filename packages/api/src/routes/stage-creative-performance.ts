@@ -18,6 +18,7 @@ import {
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { fetchAllAdInsights, fetchCampaignInsights } from "../services/meta-ads.js";
+import { getAdEffectiveStatusFromDb } from "../services/meta-db-source.js";
 import { getMetaAccountForProject } from "../services/traffic-analytics.js";
 import {
   computeCreativeSalesMetrics,
@@ -51,6 +52,13 @@ interface CreativePerformanceResponse {
   ingressosTotais?: number;
   revenueTotal?: number;
   revenueUnico?: number;
+  // Story 18.61: estado atual do criativo na Meta, agregado por regra OR sobre
+  // os ad_ids do grupo. "active" se ≥1 ad_id ACTIVE; "paused" se todos os ad_ids
+  // conhecidos são não-ACTIVE; "unknown" quando nenhum ad_id tem status no cache.
+  status?: "active" | "paused" | "unknown";
+  // Story 18.61: adset_name distintos dos ad_ids ativos (tooltip). Só presente
+  // quando status === "active".
+  activeAdsets?: string[];
 }
 
 /**
@@ -567,10 +575,18 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         };
         const groupedByName = new Map<string, AdNameGroup>();
 
+        // Story 18.61: adset_name por ad_id (dos insights já buscados — sem novo
+        // I/O à Meta) para o tooltip "Ativo em: <adsets>" (AC4).
+        const adsetNameByAdId = new Map<string, string>();
+
         for (const ad of filteredAds) {
           const adId = ad.ad_id || "";
           const adName = (ad.ad_name || "").trim() || "(sem nome)";
           if (!adId) continue;
+
+          if (ad.adset_name && !adsetNameByAdId.has(adId)) {
+            adsetNameByAdId.set(adId, ad.adset_name);
+          }
 
           let group = groupedByName.get(adName);
           if (!group) {
@@ -604,6 +620,19 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           }
           group.landingPageViews += parseLandingPageViews(ad.actions);
         }
+
+        // Story 18.61: estado atual (effective_status) por ad_id, lido do cache
+        // (meta_entity_names_cache, entity_type='ad'). NUNCA chama a Meta no
+        // request do dashboard (regra batch+cache) — o backfill de nomes mantém
+        // o status quente. Ausência de status = "unknown" → "—" no frontend.
+        const allAdIds = filteredAds
+          .map((ad) => ad.ad_id || "")
+          .filter((id) => id.length > 0);
+        const statusByAdId = await getAdEffectiveStatusFromDb(
+          fastify.db,
+          funnel.projectId,
+          allAdIds,
+        );
 
         // 7. Monta resposta — uma linha por ad_name.
         // O filtro de campanha ja foi aplicado no fetchAllAdInsights (Meta API
@@ -653,6 +682,29 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             }
           }
 
+          // Story 18.61: regra OR de status por ad_name. "active" se ALGUM ad_id
+          // do grupo estiver ACTIVE; "paused" se todos os ad_ids conhecidos são
+          // não-ACTIVE; "unknown" quando NENHUM ad_id tem status no cache.
+          const activeAdIds = group.adIds.filter(
+            (id) => statusByAdId.get(id) === "ACTIVE",
+          );
+          const knownAdIds = group.adIds.filter((id) => statusByAdId.has(id));
+          let status: "active" | "paused" | "unknown";
+          if (activeAdIds.length > 0) status = "active";
+          else if (knownAdIds.length > 0) status = "paused";
+          else status = "unknown";
+          // adset_name distintos dos ad_ids ativos (tooltip AC4) — só quando Ativo.
+          const activeAdsets =
+            status === "active"
+              ? Array.from(
+                  new Set(
+                    activeAdIds
+                      .map((id) => adsetNameByAdId.get(id))
+                      .filter((n): n is string => !!n),
+                  ),
+                )
+              : [];
+
           // adId representativo = primeiro adId do grupo (uso pra link Ads Library)
           creatives.push({
             adId: group.adIds[0],
@@ -665,6 +717,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             utmTerm: topUtmTerm,
             campaignName: group.campaignName,
             landingPageViews: group.landingPageViews,
+            // Story 18.61: status agregado (OR) + adsets ativos (aditivo)
+            status,
+            ...(activeAdsets.length > 0 ? { activeAdsets } : {}),
             // Story 18.55: só no modo sale_content (senão os campos ficam fora
             // da resposta e o frontend mantém o comportamento legado)
             ...(creativeSaleMetrics

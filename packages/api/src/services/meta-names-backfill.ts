@@ -54,13 +54,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Puxa todos os objetos {id,name} de um edge, paginado. Inclui arquivados/pausados. */
+/** Puxa todos os objetos {id,name,effective_status} de um edge, paginado. Inclui arquivados/pausados. */
 async function fetchAllEdge(
   metaAccountId: string,
   edge: EdgeName,
   token: string,
-): Promise<Array<{ id: string; name: string }>> {
-  const out: Array<{ id: string; name: string }> = [];
+): Promise<Array<{ id: string; name: string; effectiveStatus?: string }>> {
+  const out: Array<{ id: string; name: string; effectiveStatus?: string }> = [];
   const filtering = encodeURIComponent(
     JSON.stringify([
       {
@@ -81,11 +81,13 @@ async function fetchAllEdge(
       },
     ]),
   );
-  let url: string | null = `${GRAPH_API_BASE}/act_${metaAccountId}/${edge}?fields=id,name&limit=${PAGE_LIMIT}&filtering=${filtering}&access_token=${token}`;
+  // Story 18.61: pede effective_status junto de id,name — mesmo edge paginado,
+  // sem chamadas novas. Grava o estado atual da entidade no cache.
+  let url: string | null = `${GRAPH_API_BASE}/act_${metaAccountId}/${edge}?fields=id,name,effective_status&limit=${PAGE_LIMIT}&filtering=${filtering}&access_token=${token}`;
   while (url) {
     const res: Response = await fetch(url);
     const body = (await res.json()) as {
-      data?: Array<{ id: string; name?: string }>;
+      data?: Array<{ id: string; name?: string; effective_status?: string }>;
       paging?: { next?: string };
       error?: unknown;
     };
@@ -96,7 +98,7 @@ async function fetchAllEdge(
       );
     }
     for (const o of body.data ?? []) {
-      if (o.id && o.name) out.push({ id: o.id, name: o.name });
+      if (o.id && o.name) out.push({ id: o.id, name: o.name, effectiveStatus: o.effective_status });
     }
     url = body.paging?.next ?? null;
     if (url) await sleep(THROTTLE_MS);
@@ -108,7 +110,7 @@ async function upsert(
   db: Database,
   projectId: string,
   entityType: "ad" | "adset" | "campaign",
-  rows: Array<{ id: string; name: string }>,
+  rows: Array<{ id: string; name: string; effectiveStatus?: string }>,
 ): Promise<number> {
   if (rows.length === 0) return 0;
   const now = new Date();
@@ -119,6 +121,9 @@ async function upsert(
       entityId: r.id,
       // entity_name é varchar(500) — trunca defensivamente
       entityName: r.name.slice(0, 500),
+      // Story 18.61: effective_status atual (nullable). varchar(40) — trunca
+      // defensivamente; ausência vira NULL (dashboard trata como "—").
+      effectiveStatus: r.effectiveStatus ? r.effectiveStatus.slice(0, 40) : null,
       lastSyncedAt: now,
     }));
     await db
@@ -132,6 +137,9 @@ async function upsert(
         ],
         set: {
           entityName: sql`excluded.entity_name`,
+          // COALESCE preserva o status existente quando o novo vier NULL (ex.:
+          // resolução só-nome em outro fluxo não zera o status já sincronizado).
+          effectiveStatus: sql`COALESCE(excluded.effective_status, ${metaEntityNamesCache.effectiveStatus})`,
           lastSyncedAt: sql`excluded.last_synced_at`,
         },
       });
@@ -200,7 +208,7 @@ export async function backfillMetaNames(
     }
 
     try {
-      const edges: Record<EdgeName, Array<{ id: string; name: string }>> = {
+      const edges: Record<EdgeName, Array<{ id: string; name: string; effectiveStatus?: string }>> = {
         ads: [],
         adsets: [],
         campaigns: [],

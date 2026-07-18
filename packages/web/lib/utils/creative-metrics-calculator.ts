@@ -21,6 +21,9 @@ export interface CreativeMetrics {
   ingressosTotais?: number;
   revenueTotal?: number;
   revenueUnico?: number;
+  // Story 18.61: estado atual do criativo na Meta + adsets ativos (tooltip).
+  status?: "active" | "paused" | "unknown";
+  activeAdsets?: string[];
 }
 
 export interface CalculatedMetrics {
@@ -44,6 +47,9 @@ export interface CalculatedMetrics {
   ingressosTotais?: number;
   revenueTotal?: number;
   revenueUnico?: number;
+  // Story 18.61: estado atual do criativo na Meta + adsets ativos (tooltip).
+  status?: "active" | "paused" | "unknown";
+  activeAdsets?: string[];
 }
 
 /**
@@ -150,6 +156,9 @@ export function calculateCreativeMetrics(
       : calculateRoas(creative.revenue, creative.spend),
     utmTerm: creative.utmTerm,
     temperature: calculateTemperature(creative.utmTerm),
+    // Story 18.61: propaga status/adsets ativos (aditivo — não afeta métricas)
+    status: creative.status,
+    activeAdsets: creative.activeAdsets,
     ...(isPaidMode
       ? {
           ingressosUnicos: creative.ingressosUnicos,

@@ -83,6 +83,20 @@ export function compileCreativeMetricsByName(
     // ROI: (revenue - spend) / spend * 100
     const roi = sumSpend > 0 ? ((sumRevenue - sumSpend) / sumSpend) * 100 : 0;
 
+    // Story 18.61: status por OR (active se qualquer parte for active; senão
+    // paused se alguma for paused; senão unknown) e activeAdsets por união —
+    // não sobrescrever com o valor da última linha (R4).
+    const mergedStatus: "active" | "paused" | "unknown" = group.some(
+      (m) => m.status === "active",
+    )
+      ? "active"
+      : group.some((m) => m.status === "paused")
+        ? "paused"
+        : "unknown";
+    const mergedActiveAdsets = Array.from(
+      new Set(group.flatMap((m) => m.activeAdsets ?? [])),
+    );
+
     compiled.push({
       adId: `compiled_${adName}`, // ID fake para ser único
       adName,
@@ -104,6 +118,9 @@ export function compileCreativeMetricsByName(
       compiled: true,
       originalCount: group.length,
       totalSpend: sumSpend, // Será usado para recalcular percentual na tabela
+      // Story 18.61: status agregado (OR) + união dos adsets ativos
+      status: mergedStatus,
+      ...(mergedActiveAdsets.length > 0 ? { activeAdsets: mergedActiveAdsets } : {}),
       // Story 18.55: Único/Total somados por Ad Name (só na Paga)
       ...(isPaidMode
         ? {

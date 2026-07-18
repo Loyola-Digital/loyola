@@ -151,3 +151,42 @@ export async function getPlacementBreakdownFromDb(
     };
   });
 }
+
+/**
+ * Story 18.61: estado ATUAL (effective_status) por ad_id, lido do
+ * meta_entity_names_cache (entity_type='ad'). Devolve Map<adId, status>.
+ *
+ * Leitura NOVA e ad-scoped — separada do join campaign-scoped de
+ * getCampaignInsightsFromDb (que resolve NOMES de campanha). Só ids com status
+ * conhecido entram no Map; ausência = desconhecido (o caller exibe "—", nunca
+ * "Pausado"). Sem TTL: o status é sempre o último sincronizado pelo backfill de
+ * nomes. NUNCA chama a Meta (regra batch+cache: dashboard lê do banco).
+ */
+export async function getAdEffectiveStatusFromDb(
+  db: Database,
+  projectId: string,
+  adIds: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const ids = Array.from(new Set(adIds.filter((x) => x && x.trim().length > 0)));
+  if (ids.length === 0) return out;
+
+  const rows = await db
+    .select({
+      entityId: metaEntityNamesCache.entityId,
+      effectiveStatus: metaEntityNamesCache.effectiveStatus,
+    })
+    .from(metaEntityNamesCache)
+    .where(
+      and(
+        eq(metaEntityNamesCache.projectId, projectId),
+        eq(metaEntityNamesCache.entityType, "ad"),
+        inArray(metaEntityNamesCache.entityId, ids),
+      ),
+    );
+
+  for (const r of rows) {
+    if (r.effectiveStatus) out.set(r.entityId, r.effectiveStatus);
+  }
+  return out;
+}
