@@ -70,6 +70,9 @@ export function useLpPerformanceData({
     enabled: !!funnelId && !!stageId,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
+    // Mesmo endpoint do creative-performance (pode custar ~25s no 1º compute).
+    // Cap o retry pra falha não virar minutos de "loading".
+    retry: 1,
   });
 
   // Leads por LP (via planilha n8n), quebrados por temperatura
