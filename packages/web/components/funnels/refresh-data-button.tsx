@@ -28,6 +28,9 @@ const SHEET_QUERY_PREFIXES = [
   "funnel-surveys",
   "meta-ads-comparison",
   "sales-ascension",
+  // Desempenho de Criativos + Testes de LPs (mesmo endpoint, cache DB no backend)
+  "stage-creative-performance",
+  "lp-performance-data",
 ];
 
 export function RefreshDataButton() {

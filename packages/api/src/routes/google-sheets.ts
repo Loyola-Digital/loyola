@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { funnelSurveys, funnels } from "../db/schema.js";
+import { funnelSurveys, funnels, publicMetricsCache } from "../db/schema.js";
 import {
   listSpreadsheets,
   getSpreadsheetSheets,
@@ -39,13 +39,25 @@ export default fp(async function googleSheetsRoutes(fastify) {
   });
 
   // ---- POST /api/google-sheets/invalidate-cache ----
-  // Limpa o cache in-memory de readSheetData. Usado pelo botão "Atualizar"
-  // do dashboard pra forçar refetch de dados frescos da Google Sheets API.
+  // Limpa o cache in-memory de readSheetData + o cache DB de creative-performance.
+  // Usado pelo botão "Atualizar" do dashboard pra forçar refetch de dados frescos.
   fastify.post("/api/google-sheets/invalidate-cache", async (request, reply) => {
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
     const cleared = clearAllSheetDataCache();
-    fastify.log.info({ cleared }, "[google-sheets] cache invalidated");
-    return { cleared };
+    // Zera o cache DB de Desempenho de Criativos/LPs pra o próximo request
+    // recomputar ao vivo (o "Atualizar" tem que trazer dados frescos de verdade).
+    let creativeCacheCleared = 0;
+    try {
+      const del = await fastify.db
+        .delete(publicMetricsCache)
+        .where(eq(publicMetricsCache.scope, "creative-performance"))
+        .returning({ key: publicMetricsCache.key });
+      creativeCacheCleared = del.length;
+    } catch (err) {
+      fastify.log.error({ err }, "[google-sheets] falha ao limpar cache de creative-performance");
+    }
+    fastify.log.info({ cleared, creativeCacheCleared }, "[google-sheets] cache invalidated");
+    return { cleared, creativeCacheCleared };
   });
 
   // ---- GET /api/google-sheets/spreadsheets/:spreadsheetId/sheets/:sheetName/data ----

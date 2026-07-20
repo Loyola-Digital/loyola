@@ -15,6 +15,7 @@ import {
   funnelStages,
   funnelSpreadsheets,
   stageSalesSpreadsheets,
+  publicMetricsCache,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { fetchAllAdInsights, fetchCampaignInsights } from "../services/meta-ads.js";
@@ -32,7 +33,17 @@ const paramsSchema = z.object({
 
 const querySchema = z.object({
   days: z.coerce.number().int().min(1).max(365).default(30),
+  // refresh=1 ignora o cache e recomputa ao vivo (botão Atualizar).
+  refresh: z.coerce.boolean().optional().default(false),
 });
+
+// Cache DB-first (Story perf): este endpoint chama a Meta AO VIVO
+// (fetchAllAdInsights + fetchCampaignInsights) + lê 2 planilhas por request —
+// caro e lento a cada abertura do dash. Guardamos a resposta montada em
+// public_metrics_cache e servimos instantâneo por CACHE_TTL. A 1ª abertura
+// (ou refresh) paga; as próximas leem do banco. Zero mudança nos números.
+const CREATIVE_PERF_SCOPE = "creative-performance";
+const CREATIVE_PERF_TTL_MS = 10 * 60 * 1000; // 10 min
 
 interface CreativePerformanceResponse {
   adId: string;
@@ -156,7 +167,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           details: queryResult.error.flatten().fieldErrors,
         });
       }
-      const { days } = queryResult.data;
+      const { days, refresh } = queryResult.data;
+      const cacheKey = `${stageId}:${days}`;
 
       try {
         // 1. Valida stage dentro do funil + obtem projectId do funil
@@ -188,6 +200,28 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
 
         if (!funnel) {
           return reply.code(404).send({ error: "Funil nao encontrado" });
+        }
+
+        // Cache DB-first: serve instantâneo se houver resposta fresca (< TTL) e
+        // não for refresh. Antes da chamada cara à Meta.
+        if (!refresh) {
+          const [cached] = await fastify.db
+            .select({ payload: publicMetricsCache.payload, computedAt: publicMetricsCache.computedAt })
+            .from(publicMetricsCache)
+            .where(
+              and(
+                eq(publicMetricsCache.projectId, funnel.projectId),
+                eq(publicMetricsCache.scope, CREATIVE_PERF_SCOPE),
+                eq(publicMetricsCache.key, cacheKey),
+              ),
+            )
+            .limit(1);
+          if (cached && Date.now() - new Date(cached.computedAt).getTime() < CREATIVE_PERF_TTL_MS) {
+            return reply.code(200).send({
+              ...(cached.payload as Record<string, unknown>),
+              _cache: { hit: true, computedAt: cached.computedAt },
+            });
+          }
         }
 
         // 2. Meta Ads account ligado ao projeto
@@ -842,7 +876,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         }
         const lpBreakdown = Array.from(lpBreakdownMap.values());
 
-        return reply.code(200).send({
+        const payload = {
           stageId,
           stageType: stage.stageType,
           days,
@@ -873,7 +907,21 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               count: agg.count,
             })),
           },
-        });
+        };
+
+        // Grava no cache (upsert) pra as próximas aberturas do dash serem
+        // instantâneas. Fire-and-forget: falha de cache não derruba a resposta.
+        const now = new Date();
+        void fastify.db
+          .insert(publicMetricsCache)
+          .values({ projectId: funnel.projectId, scope: CREATIVE_PERF_SCOPE, key: cacheKey, payload, computedAt: now })
+          .onConflictDoUpdate({
+            target: [publicMetricsCache.projectId, publicMetricsCache.scope, publicMetricsCache.key],
+            set: { payload, computedAt: now },
+          })
+          .catch((err) => fastify.log.error({ err }, "[creative-performance] falha ao gravar cache"));
+
+        return reply.code(200).send({ ...payload, _cache: { hit: false, computedAt: now } });
       } catch (error) {
         fastify.log.error(error);
         return reply.code(500).send({
