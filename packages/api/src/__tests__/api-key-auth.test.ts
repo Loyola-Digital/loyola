@@ -42,6 +42,11 @@ async function buildTestApp() {
   app.get("/api/public/admin/test", { preHandler: requireScope("admin:read") }, async () => ({ ok: true }));
   app.get("/api/public/plain", async (req) => ({ ok: true, scopes: req.apiKey?.scopes ?? null }));
   app.post("/api/public/meta/test", async () => ({ ok: true }));
+  // Rota da allowlist de escrita (ingestão de relatórios) — POST é liberado.
+  app.post("/api/public/v1/reports", { preHandler: requireScope("reports:write") }, async (req) => ({
+    ok: true,
+    apiKeyId: req.apiKey?.id ?? null,
+  }));
   app.get("/api/other", async () => ({ ok: true })); // rota não-pública: middleware ignora
 
   await app.ready();
@@ -105,6 +110,30 @@ describe("apiKeyAuth — validação", () => {
       body: {},
     });
     expect(res.statusCode).toBe(405);
+  });
+
+  it("allowlist de escrita: POST /api/public/v1/reports passa com scope reports:write", async () => {
+    setKeyRow({ id: "kreports", keyHash: KEY_HASH, scopes: ["reports:write"], revokedAt: null });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/public/v1/reports",
+      headers: { "x-api-key": RAW_KEY },
+      body: { title: "t", html: "<html></html>" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).apiKeyId).toBe("kreports");
+  });
+
+  it("allowlist de escrita: POST /api/public/v1/reports SEM o scope → 403 (não 405)", async () => {
+    setKeyRow({ id: "knoscope", keyHash: KEY_HASH, scopes: ["meta:read"], revokedAt: null });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/public/v1/reports",
+      headers: { "x-api-key": RAW_KEY },
+      body: { title: "t", html: "<html></html>" },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).code).toBe("SCOPE_REQUIRED");
   });
 
   it("200 com key válida e popula request.apiKey", async () => {
