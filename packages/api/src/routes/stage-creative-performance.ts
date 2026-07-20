@@ -43,7 +43,31 @@ const querySchema = z.object({
 // public_metrics_cache e servimos instantâneo por CACHE_TTL. A 1ª abertura
 // (ou refresh) paga; as próximas leem do banco. Zero mudança nos números.
 const CREATIVE_PERF_SCOPE = "creative-performance";
-const CREATIVE_PERF_TTL_MS = 10 * 60 * 1000; // 10 min
+// TTL longo: depois de semeado uma vez, o dash abre INSTANTÂNEO por 2h sem
+// re-bater na Meta (o botão Atualizar força fresco na hora). Evita o "loading
+// infinito" que vinha de recomputar ao vivo a cada abertura.
+const CREATIVE_PERF_TTL_MS = 2 * 60 * 60 * 1000; // 2h
+// Orçamento de tempo pras chamadas à Meta: sob rate limit elas retentam com
+// backoff (até minutos) e o request ficava preso. Estourou → serve o cache
+// vencido (se houver) e não trava o usuário.
+const META_FETCH_BUDGET_MS = 25_000;
+
+class MetaBudgetExceeded extends Error {
+  constructor() {
+    super("Meta fetch excedeu o orçamento de tempo");
+    this.name = "MetaBudgetExceeded";
+  }
+}
+
+function withBudget<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new MetaBudgetExceeded()), ms);
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
 
 interface CreativePerformanceResponse {
   adId: string;
@@ -169,6 +193,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
       }
       const { days, refresh } = queryResult.data;
       const cacheKey = `${stageId}:${days}`;
+      // Fora do try pra o catch (serve-stale-on-error) enxergar.
+      let staleCached: { payload: unknown; computedAt: Date } | null = null;
 
       try {
         // 1. Valida stage dentro do funil + obtem projectId do funil
@@ -203,8 +229,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         }
 
         // Cache DB-first: serve instantâneo se houver resposta fresca (< TTL) e
-        // não for refresh. Antes da chamada cara à Meta.
-        if (!refresh) {
+        // não for refresh. `staleCached` guarda a linha (mesmo vencida) pra usar
+        // como fallback se a Meta travar/rate-limit — nunca deixar o dash preso.
+        {
           const [cached] = await fastify.db
             .select({ payload: publicMetricsCache.payload, computedAt: publicMetricsCache.computedAt })
             .from(publicMetricsCache)
@@ -216,11 +243,14 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               ),
             )
             .limit(1);
-          if (cached && Date.now() - new Date(cached.computedAt).getTime() < CREATIVE_PERF_TTL_MS) {
-            return reply.code(200).send({
-              ...(cached.payload as Record<string, unknown>),
-              _cache: { hit: true, computedAt: cached.computedAt },
-            });
+          if (cached) {
+            staleCached = { payload: cached.payload, computedAt: cached.computedAt };
+            if (!refresh && Date.now() - new Date(cached.computedAt).getTime() < CREATIVE_PERF_TTL_MS) {
+              return reply.code(200).send({
+                ...(cached.payload as Record<string, unknown>),
+                _cache: { hit: true, computedAt: cached.computedAt },
+              });
+            }
           }
         }
 
@@ -265,11 +295,14 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           });
         }
 
-        const filteredAds = await fetchAllAdInsights(
-          metaAccount.metaAccountId,
-          metaAccount.accessToken,
-          days,
-          campaignIdsForFetch,
+        const filteredAds = await withBudget(
+          fetchAllAdInsights(
+            metaAccount.metaAccountId,
+            metaAccount.accessToken,
+            days,
+            campaignIdsForFetch,
+          ),
+          META_FETCH_BUDGET_MS,
         );
 
         // 4. Planilhas de leads e vendas do stage (mesmo padrao do creative-revenue)
@@ -792,13 +825,16 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           revenueUnico?: number;
           revenueTotal?: number;
         };
-        const campaignInsights = await fetchCampaignInsights(
-          metaAccount.metaAccountId,
-          metaAccount.accessToken,
-          days,
-          undefined,
-          undefined,
-          campaignIdsForFetch, // Story 18.46: filtra na query (traz lpc/lpd de baixo volume)
+        const campaignInsights = await withBudget(
+          fetchCampaignInsights(
+            metaAccount.metaAccountId,
+            metaAccount.accessToken,
+            days,
+            undefined,
+            undefined,
+            campaignIdsForFetch, // Story 18.46: filtra na query (traz lpc/lpd de baixo volume)
+          ),
+          META_FETCH_BUDGET_MS,
         );
         const allowedCampaignIds = new Set(campaignIdsForFetch);
         const lpBreakdownMap = new Map<string, LpBreakdownRow>();
@@ -923,10 +959,29 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
 
         return reply.code(200).send({ ...payload, _cache: { hit: false, computedAt: now } });
       } catch (error) {
+        // Serve-stale-on-error: se a Meta travou/rate-limit (orçamento estourado)
+        // ou qualquer falha, devolve o cache vencido em vez de 500 — o dash NÃO
+        // fica preso em "loading infinito". Fresco vem no próximo Atualizar.
+        if (staleCached) {
+          fastify.log.warn(
+            { err: error instanceof Error ? error.message : String(error) },
+            "[creative-performance] falha ao computar ao vivo — servindo cache vencido",
+          );
+          return reply.code(200).send({
+            ...(staleCached.payload as Record<string, unknown>),
+            _cache: { hit: true, stale: true, computedAt: staleCached.computedAt },
+          });
+        }
         fastify.log.error(error);
-        return reply.code(500).send({
-          error: "Erro ao buscar dados de criativos",
-          details: error instanceof Error ? error.message : String(error),
+        // Sem cache algum + falha na Meta: resposta vazia graciosa (não 500 —
+        // o frontend mostra "sem dados" em vez de girar/retentar infinito).
+        return reply.code(200).send({
+          stageId,
+          days,
+          creatives: [],
+          lpBreakdown: [],
+          summary: { totalSpend: 0, totalLeads: 0, totalRevenue: 0 },
+          _cache: { hit: false, error: true },
         });
       }
     },

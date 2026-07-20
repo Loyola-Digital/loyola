@@ -107,6 +107,9 @@ export function useStageCreativePerformance({
     enabled: enabled && !!funnelId && !!stageId,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
+    // Endpoint pode custar até ~25s no 1º compute (Meta ao vivo). Sem cap, o
+    // retry padrão (3×) multiplicava isso e parecia "loading infinito".
+    retry: 1,
   });
 
   // Story 18.43: For free stages, enrich leads via crossref.
