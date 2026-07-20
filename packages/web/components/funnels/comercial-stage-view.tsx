@@ -79,6 +79,14 @@ function fmtDate(iso: string | null): string {
   return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR");
 }
 
+/** Respostas booleanas do Tally vêm como TRUE/FALSE — traduz pra Sim/Não. */
+function prettyAnswer(raw: string): { text: string; bool: "sim" | "nao" | null } {
+  const t = (raw ?? "").trim();
+  if (/^true$/i.test(t)) return { text: "Sim", bool: "sim" };
+  if (/^false$/i.test(t)) return { text: "Não", bool: "nao" };
+  return { text: t, bool: null };
+}
+
 // ---- Card draggable ----
 function KanbanCard({ card, onOpen }: { card: CrmCard; onOpen: (c: CrmCard) => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -607,31 +615,33 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
         <SheetContent className="w-full sm:max-w-md overflow-y-auto">
           {openCard && (
             <>
-              <SheetHeader>
-                <SheetTitle className="truncate">{openCard.customerName || openCard.customerEmail}</SheetTitle>
+              <SheetHeader className="pb-0">
+                <SheetTitle className="truncate text-base">{openCard.customerName || openCard.customerEmail}</SheetTitle>
               </SheetHeader>
-              <div className="mt-5 space-y-5">
+              <div className="px-4 pb-6 space-y-6">
                 <div className="space-y-1 text-sm">
                   <p className="text-muted-foreground text-xs uppercase tracking-wide font-semibold">Contato</p>
-                  <p>{openCard.customerEmail}</p>
-                  {openCard.customerPhone && <p>{openCard.customerPhone}</p>}
+                  <p className="break-all">{openCard.customerEmail}</p>
+                  {openCard.customerPhone && <p className="tabular-nums">{openCard.customerPhone}</p>}
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <p className="text-muted-foreground text-xs uppercase tracking-wide font-semibold">
-                    Compras · {fmtBRL(openCard.totalValue)}
+                    Compras · <span className="text-foreground/80 normal-case">{fmtBRL(openCard.totalValue)}</span>
                   </p>
-                  {openCard.products.map((p, i) => (
-                    <div key={i} className="flex items-center justify-between gap-2 rounded-md border border-border/40 px-2.5 py-1.5 text-sm">
-                      <span className="truncate">{p.produto}</span>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {fmtBRL(p.valor)} · {fmtDate(p.dataVenda)}
-                      </span>
-                    </div>
-                  ))}
+                  <div className="space-y-2">
+                    {openCard.products.map((p, i) => (
+                      <div key={i} className="flex items-center justify-between gap-3 rounded-lg border border-border/40 px-3 py-2 text-sm">
+                        <span className="truncate">{p.produto}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                          {fmtBRL(p.valor)} · {fmtDate(p.dataVenda)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <p className="text-muted-foreground text-xs uppercase tracking-wide font-semibold flex items-center gap-1.5">
                     <FileSpreadsheet className="h-3.5 w-3.5 text-green-600" />
                     Pesquisa
@@ -639,22 +649,41 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                   {surveyLoading ? (
                     <Skeleton className="h-16" />
                   ) : survey?.matched ? (
-                    <div className="space-y-1">
-                      {survey.answers.map((a, i) => (
-                        <div key={i} className="rounded-md bg-muted/30 px-2.5 py-1.5 text-sm">
-                          <p className="text-[10px] text-muted-foreground">{a.label}</p>
-                          <p>{a.answer}</p>
-                        </div>
-                      ))}
-                      <p className="text-[10px] text-muted-foreground">match por {survey.matchedBy === "phone" ? "telefone" : "email"}</p>
+                    <div className="space-y-2">
+                      <div className="rounded-lg border border-border/40 divide-y divide-border/40 overflow-hidden">
+                        {survey.answers.map((a, i) => {
+                          const pretty = prettyAnswer(a.answer);
+                          return (
+                            <div key={i} className="px-3 py-2.5">
+                              <p className="text-[11px] leading-snug text-muted-foreground mb-1">{a.label}</p>
+                              {pretty.bool ? (
+                                <span
+                                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                                    pretty.bool === "sim"
+                                      ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                                      : "bg-muted text-muted-foreground"
+                                  }`}
+                                >
+                                  {pretty.text}
+                                </span>
+                              ) : (
+                                <p className="text-sm leading-snug">{pretty.text}</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">
+                        match por {survey.matchedBy === "phone" ? "telefone" : "email"}
+                      </p>
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">Sem pesquisa respondida.</p>
+                    <p className="text-sm text-muted-foreground italic">Sem pesquisa respondida.</p>
                   )}
                 </div>
 
                 {/* Rastreio de ligação — pedido do Lucas: Atendeu / Não atendeu / Liguei X vezes */}
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <p className="text-muted-foreground text-xs uppercase tracking-wide font-semibold flex items-center gap-1.5">
                     <Phone className="h-3.5 w-3.5" />
                     Ligação
@@ -707,7 +736,7 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 border-t border-border/40 pt-5">
                   <Label htmlFor="card-assignee">Responsável</Label>
                   <Input
                     id="card-assignee"
