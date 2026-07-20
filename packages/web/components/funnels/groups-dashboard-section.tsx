@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FileSpreadsheet,
   RefreshCw,
@@ -125,6 +125,19 @@ export function GroupsDashboardSection({ projectId, funnelId }: Props) {
     return rows;
   }, [filteredCampaigns]);
 
+  // Auto-sync ao abrir: puxa a planilha sozinho quando o último sync está
+  // "velho" (> 10 min). Sync é barato (só lê a planilha + upsert, sem Meta) e
+  // idempotente, então é seguro. O botão continua pra forçar refresh na hora.
+  const autoSyncRan = useRef(false);
+  const lastSyncedAt = linkQuery.data?.lastSyncedAt ?? null;
+  useEffect(() => {
+    if (!isLinked || autoSyncRan.current || sync.isPending) return;
+    const lastMs = lastSyncedAt ? new Date(lastSyncedAt).getTime() : 0;
+    if (Date.now() - lastMs <= 10 * 60 * 1000) return; // fresco: não re-sincroniza
+    autoSyncRan.current = true;
+    sync.mutate(undefined); // silencioso — o refetch do daily já atualiza a tela
+  }, [isLinked, lastSyncedAt, sync]);
+
   function handleSync() {
     sync.mutate(undefined, {
       onSuccess: (r) => {
@@ -244,7 +257,11 @@ export function GroupsDashboardSection({ projectId, funnelId }: Props) {
 
       {campaigns.length === 0 ? (
         <div className="text-sm text-muted-foreground text-center py-8 border border-dashed border-border/40 rounded">
-          Nenhum dado nos últimos {days} dias. Clique em <strong>Sincronizar</strong> para puxar da planilha.
+          {sync.isPending ? (
+            <>Sincronizando com a planilha…</>
+          ) : (
+            <>Nenhum dado nos últimos {days} dias. Sincroniza sozinho ao abrir — ou clique em <strong>Sincronizar</strong> pra forçar agora.</>
+          )}
         </div>
       ) : (
         <div>
