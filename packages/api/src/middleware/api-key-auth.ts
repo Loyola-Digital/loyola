@@ -15,6 +15,17 @@ import { hashApiKey, safeCompareHash } from "../services/api-key.js";
 
 const PUBLIC_PREFIX = "/api/public/";
 
+// Exceções ao read-only: rotas públicas de ESCRITA (ingestão via API key com
+// scope próprio). O guard genérico bloqueia todo POST/PUT/DELETE em /api/public/*;
+// estas rotas são liberadas p/ escrita e protegidas pelo requireScope da própria
+// rota. Compara só o pathname (ignora querystring).
+const PUBLIC_WRITE_ALLOWLIST = new Set(["/api/public/v1/reports"]);
+
+function isPublicWriteAllowed(url: string): boolean {
+  const pathname = url.split("?")[0];
+  return PUBLIC_WRITE_ALLOWLIST.has(pathname);
+}
+
 // Rate limit por chave — janela fixa in-memory.
 // LIMITAÇÃO: não funciona com múltiplas instâncias (cada uma tem seu contador).
 // Documentado na Story 36.2; migrar p/ store compartilhado se houver multi-instância.
@@ -56,8 +67,9 @@ export default fp(async function apiKeyAuthPlugin(fastify) {
     if (request.method === "OPTIONS") return;
     if (!request.url.startsWith(PUBLIC_PREFIX)) return; // só rotas públicas
 
-    // API read-only — qualquer método de escrita é recusado.
-    if (request.method !== "GET" && request.method !== "HEAD") {
+    // API read-only — qualquer método de escrita é recusado, EXCETO rotas na
+    // allowlist de escrita (protegidas por scope próprio via requireScope).
+    if (request.method !== "GET" && request.method !== "HEAD" && !isPublicWriteAllowed(request.url)) {
       return reply.code(405).send({ error: "Método não permitido (API read-only)" });
     }
 
