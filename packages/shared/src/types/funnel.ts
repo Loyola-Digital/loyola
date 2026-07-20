@@ -392,9 +392,13 @@ export interface ComparisonDayMetrics {
   dayIndex: number;
   impressions: number;
   clicks: number;
+  /** Cliques no LINK (link_click) — usado pra CTR de tráfego real. */
+  linkClicks?: number;
   spend: number;
   reach: number;
+  /** CTR do LINK (linkClicks ÷ impressões). Para o clique total use `ctrTotal`. */
   ctr: number;
+  ctrTotal?: number;
   cpc: number;
   /** Métricas de negócio na Comparação de Lançamentos (leads do pixel Meta;
    * faturamento/vendas do cache sales-daily somado por dia nas etapas do funil). */
