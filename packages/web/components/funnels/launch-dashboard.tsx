@@ -996,7 +996,8 @@ function CtrCpmChart({
 }) {
   const chartData = data.map((d, idx) => {
     const dateLabel = d.date_start.slice(5, 10);
-    const ctr = safeNum(d.ctr);
+    // CTR de LINK (clique no link ÷ impressões) — tráfego real, não clique total.
+    const ctr = linkCtr(d);
     const cpm = safeNum(d.cpm);
     return {
       date: dateLabel,
@@ -1009,7 +1010,7 @@ function CtrCpmChart({
           ? (comparisonDays[idx].spend / comparisonDays[idx].impressions) * 1000
           : undefined,
       formulasByKey: {
-        ctr: buildFunnelDailyFormula("CTR", "Meta Ads API · derivado (clicks ÷ impressions × 100)", ctr, false, dateLabel),
+        ctr: buildFunnelDailyFormula("CTR", "Meta Ads API · derivado (link_click ÷ impressions × 100)", ctr, false, dateLabel),
         cpm: buildFunnelDailyFormula("CPM", "Meta Ads API · derivado (spend ÷ impressions × 1000)", cpm, true, dateLabel),
       },
     };
@@ -1118,6 +1119,18 @@ function leadsFromActions(d: CampaignDailyInsight): number {
   return lead ? Number(lead.value) || 0 : 0;
 }
 
+/** Cliques no LINK (link_click) de uma linha diária. */
+function linkClicksFromInsight(d: CampaignDailyInsight): number {
+  const lc = d.actions?.find((a) => a.action_type === "link_click");
+  return lc ? Number(lc.value) || 0 : 0;
+}
+
+/** CTR do LINK (clique no link ÷ impressões × 100) — tráfego real, não total. */
+function linkCtr(d: CampaignDailyInsight): number {
+  const imp = safeNum(d.impressions);
+  return imp > 0 ? (linkClicksFromInsight(d) / imp) * 100 : 0;
+}
+
 function atualMetricValue(
   d: CampaignDailyInsight,
   key: CompMetricKey,
@@ -1129,6 +1142,8 @@ function atualMetricValue(
       const leads = leadsFromActions(d);
       return leads > 0 ? safeNum(d.spend) / leads : undefined;
     }
+    // CTR do gráfico de comparação usa CLIQUE NO LINK, não o clique total.
+    case "ctr": return linkCtr(d);
     case "faturamento": return salesByDay?.[d.date_start]?.faturamento ?? 0;
     case "vendas": return salesByDay?.[d.date_start]?.vendas ?? 0;
     default: return safeNum(d[key]);

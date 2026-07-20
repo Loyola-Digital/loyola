@@ -42,6 +42,7 @@ interface DayAgg {
   spend: number;
   reach: number;
   leads: number;
+  linkClicks: number;
 }
 
 /** Leads do pixel: só o evento `lead` (mesma regra do public-meta — evita duplicação). */
@@ -50,7 +51,14 @@ function parseLeadAction(actions?: { action_type: string; value: string }[]): nu
   return lead ? Number(lead.value) || 0 : 0;
 }
 
-function aggregateInsights(insights: MetaDailyInsight[]): Omit<DayAgg, "leads"> {
+/** Cliques no LINK (evento link_click) — tráfego real, não o clique total. */
+function parseLinkClicks(item: MetaDailyInsight): number {
+  if (item.inline_link_clicks != null) return Number(item.inline_link_clicks) || 0;
+  const lc = item.actions?.find((a) => a.action_type === "link_click");
+  return lc ? Number(lc.value) || 0 : 0;
+}
+
+function aggregateInsights(insights: MetaDailyInsight[]): Pick<DayAgg, "impressions" | "clicks" | "spend" | "reach"> {
   return insights.reduce(
     (acc, item) => ({
       impressions: acc.impressions + (Number(item.impressions) || 0),
@@ -66,12 +74,13 @@ function aggregateByDate(allInsights: MetaDailyInsight[]): Map<string, DayAgg> {
   const dateMap = new Map<string, DayAgg>();
   for (const item of allInsights) {
     const key = item.date_start;
-    const existing = dateMap.get(key) ?? { impressions: 0, clicks: 0, spend: 0, reach: 0, leads: 0 };
+    const existing = dateMap.get(key) ?? { impressions: 0, clicks: 0, spend: 0, reach: 0, leads: 0, linkClicks: 0 };
     existing.impressions += Number(item.impressions) || 0;
     existing.clicks += Number(item.clicks) || 0;
     existing.spend += Number(item.spend) || 0;
     existing.reach += Number(item.reach) || 0;
     existing.leads += parseLeadAction(item.actions);
+    existing.linkClicks += parseLinkClicks(item);
     dateMap.set(key, existing);
   }
   return dateMap;
@@ -353,9 +362,13 @@ export default fp(async function metaAdsComparisonRoutes(fastify) {
         dayIndex: idx + 1,
         impressions: v.impressions,
         clicks: v.clicks,
+        linkClicks: v.linkClicks,
         spend: v.spend,
         reach: v.reach,
-        ctr: v.impressions > 0 ? (v.clicks / v.impressions) * 100 : 0,
+        // ctr = CLIQUE NO LINK / impressões (tráfego real). `ctrTotal` fica
+        // disponível pra quem quiser o clique total.
+        ctr: v.impressions > 0 ? (v.linkClicks / v.impressions) * 100 : 0,
+        ctrTotal: v.impressions > 0 ? (v.clicks / v.impressions) * 100 : 0,
         cpc: v.clicks > 0 ? v.spend / v.clicks : 0,
         leads: v.leads,
         cpl: v.leads > 0 ? v.spend / v.leads : null,

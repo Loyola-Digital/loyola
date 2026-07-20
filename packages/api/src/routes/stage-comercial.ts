@@ -63,6 +63,15 @@ function findHeaderByAliases(headers: string[], aliases: string[]): number {
   }
   return -1;
 }
+// Detecção fuzzy de email/telefone por SUBSTRING — o findHeaderByAliases só
+// casa exato, e planilhas de pesquisa (Tally) usam headers como "Agora seu
+// e-mail:" / "E o seu WhatsApp:". Mesma heurística do survey-aggregation.
+function findEmailHeader(headers: string[]): number {
+  return headers.findIndex((h) => /e-?mail/i.test(h));
+}
+function findPhoneHeader(headers: string[]): number {
+  return headers.findIndex((h) => /whats|telefone|celular|phone|fone/i.test(h));
+}
 const PRODUCT_ALIASES = ["produto", "product", "nome do produto", "oferta", "plano", "curso"];
 const NAME_ALIASES = ["nome", "name", "nome completo", "cliente", "nome do cliente"];
 const PHONE_ALIASES = ["telefone", "phone", "whatsapp", "celular", "fone"];
@@ -768,8 +777,13 @@ export default fp(async function stageComercialRoutes(fastify) {
         continue;
       }
       const col = (n: string | undefined) => (n ? data.headers.indexOf(n) : -1);
-      const emailIdx = col(mapping.email);
-      const phoneIdx = col(mapping.phone);
+      // Fallback fuzzy: pesquisa Tally costuma NÃO ter email/telefone mapeados
+      // (só as perguntas). Sem isto, o card de quem respondeu + comprou fica
+      // "sem pesquisa" mesmo com a resposta na planilha.
+      let emailIdx = col(mapping.email);
+      if (emailIdx === -1) emailIdx = findEmailHeader(data.headers);
+      let phoneIdx = col(mapping.phone);
+      if (phoneIdx === -1) phoneIdx = findPhoneHeader(data.headers);
       if (emailIdx === -1 && phoneIdx === -1) continue;
 
       const row = data.rows.find((r) => {
@@ -790,11 +804,14 @@ export default fp(async function stageComercialRoutes(fastify) {
           if (val) answers.push({ label: q.label, answer: val });
         }
       } else {
-        const skipRe = /email|e-mail|telefone|phone|whats|utm_|timestamp|carimbo|^data$/i;
+        // Sem mapping.questions: toda coluna vira resposta MENOS identificadores/
+        // UTM/timestamp e as colunas de SISTEMA do Tally (Submission/Respondent
+        // ID, Submitted at) — que senão apareciam como "resposta" lixo no card.
+        const skipRe = /email|e-mail|telefone|phone|whats|celular|utm_|timestamp|carimbo|^data$|submission|respondent|submitted/i;
         data.headers.forEach((h, i) => {
-          if (skipRe.test(h)) return;
+          if (skipRe.test(h.trim())) return;
           const val = (row[i] ?? "").trim();
-          if (val) answers.push({ label: h, answer: val });
+          if (val) answers.push({ label: h.trim(), answer: val });
         });
       }
       if (mapping.faixa) {
@@ -832,8 +849,10 @@ export default fp(async function stageComercialRoutes(fastify) {
       }
       let emailIdx = mapping.email ? data.headers.indexOf(mapping.email) : -1;
       if (emailIdx === -1) emailIdx = findHeaderByAliases(data.headers, EMAIL_ALIASES);
+      if (emailIdx === -1) emailIdx = findEmailHeader(data.headers);
       let phoneIdx = mapping.phone ? data.headers.indexOf(mapping.phone) : -1;
       if (phoneIdx === -1) phoneIdx = findHeaderByAliases(data.headers, PHONE_ALIASES);
+      if (phoneIdx === -1) phoneIdx = findPhoneHeader(data.headers);
       if (emailIdx === -1 && phoneIdx === -1) continue;
 
       const row = data.rows.find((r) => {
