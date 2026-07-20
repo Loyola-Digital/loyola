@@ -96,7 +96,7 @@ export function SprintReportsSection() {
       </div>
 
       <Dialog open={!!openReport} onOpenChange={(v) => { if (!v) setOpenReport(null); }}>
-        <DialogContent className="max-w-none w-screen h-screen top-0 left-0 translate-x-0 translate-y-0 rounded-none border-0 p-3 gap-2 flex flex-col">
+        <DialogContent className="max-w-none sm:max-w-none w-screen h-screen inset-0 top-0 left-0 translate-x-0 translate-y-0 rounded-none border-0 p-3 gap-2 flex flex-col">
           <DialogHeader className="flex-row items-center justify-between gap-3 space-y-0 pr-10">
             <DialogTitle className="text-sm truncate">
               {openReport?.title}
