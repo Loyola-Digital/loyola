@@ -32,6 +32,17 @@ export function SprintReportsSection() {
   const [openReport, setOpenReport] = useState<SprintReportMeta | null>(null);
   const { data: fullReport, isLoading: htmlLoading } = useSprintReport(openReport?.id ?? null);
 
+  // Abre o relatório numa aba nova (página inteira, fora do modal). Blob de
+  // text/html — não precisa de endpoint próprio nem de token. Revoga a URL
+  // depois que a aba já carregou pra não vazar memória.
+  function openInNewTab() {
+    if (!fullReport) return;
+    const blob = new Blob([fullReport.html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -85,30 +96,41 @@ export function SprintReportsSection() {
       </div>
 
       <Dialog open={!!openReport} onOpenChange={(v) => { if (!v) setOpenReport(null); }}>
-        <DialogContent className="max-w-[96vw] w-[96vw] h-[92vh] flex flex-col p-3 gap-2">
-          <DialogHeader className="flex-row items-center justify-between space-y-0 pr-8">
+        <DialogContent className="max-w-none w-screen h-screen top-0 left-0 translate-x-0 translate-y-0 rounded-none border-0 p-3 gap-2 flex flex-col">
+          <DialogHeader className="flex-row items-center justify-between gap-3 space-y-0 pr-10">
             <DialogTitle className="text-sm truncate">
               {openReport?.title}
               <span className="ml-2 text-xs font-normal text-muted-foreground">
                 {openReport ? `${openReport.author ?? "IA"} · ${fmtDateTime(openReport.createdAt)}` : ""}
               </span>
             </DialogTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1 text-xs text-muted-foreground hover:text-destructive"
-              disabled={deleteMutation.isPending}
-              onClick={() => {
-                if (!openReport) return;
-                if (!confirm(`Excluir o relatório "${openReport.title}"?`)) return;
-                deleteMutation.mutate(openReport.id, {
-                  onSuccess: () => { toast.success("Relatório excluído"); setOpenReport(null); },
-                  onError: () => toast.error("Erro ao excluir"),
-                });
-              }}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Excluir
-            </Button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1 text-xs"
+                disabled={!fullReport}
+                onClick={openInNewTab}
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> Nova aba
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 text-xs text-muted-foreground hover:text-destructive"
+                disabled={deleteMutation.isPending}
+                onClick={() => {
+                  if (!openReport) return;
+                  if (!confirm(`Excluir o relatório "${openReport.title}"?`)) return;
+                  deleteMutation.mutate(openReport.id, {
+                    onSuccess: () => { toast.success("Relatório excluído"); setOpenReport(null); },
+                    onError: () => toast.error("Erro ao excluir"),
+                  });
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Excluir
+              </Button>
+            </div>
           </DialogHeader>
           <div className="flex-1 rounded-lg border border-border/30 overflow-hidden bg-white">
             {htmlLoading || !fullReport ? (
