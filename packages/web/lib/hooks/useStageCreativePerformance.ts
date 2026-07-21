@@ -192,6 +192,8 @@ export function useStageCreativePerformance({
     // Story 18.47: faixas por Ad Name (da aba de pesquisa) + labels dinâmicos.
     bandsByAdName: crossrefQuery.bandsByAdName,
     bandLabels: crossrefQuery.bandLabels,
+    // Story 18.63: diagnóstico p/ o estado informativo quando não há faixas.
+    bandsDiagnostic: crossrefQuery.bandsDiagnostic,
     isLoading: projectId ? (baseQuery.isLoading || crossrefQuery.isLoading) : baseQuery.isLoading,
     error: baseQuery.error || (projectId && crossrefQuery.error ? new Error(crossrefQuery.error) : undefined),
   };

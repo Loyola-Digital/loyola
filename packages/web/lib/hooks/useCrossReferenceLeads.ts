@@ -57,6 +57,15 @@ interface CrossReferencedLeads {
   // (coluna "Faixa N"), cruzadas via utm_content → Ad Name. + labels dinâmicos.
   bandsByAdName: Record<string, Record<string, number>>; // { adName: { faixa: count } }
   bandLabels: string[];
+  // Story 18.63: diagnóstico leve p/ o estado informativo quando NÃO há faixas.
+  // Baseado só em dados que o client já tem — permite distinguir "sem pesquisa
+  // vinculada" de "planilha sem coluna Ad Name" de "sem respostas cruzadas".
+  bandsDiagnostic: {
+    surveysLinked: number; // pesquisas vinculadas ao stage (funnelSurveys)
+    hasLeadsSheet: boolean; // planilha de leads/sales vinculada ao stage
+    hasAdNameMap: boolean; // cruzamento utm_content → Ad Name resolveu ≥1 entrada
+    surveyHasRows: boolean; // alguma aba de pesquisa retornou linhas
+  };
   terms: Record<string, string>; // { ad_id: "hot" | "cold" }
   termsMapping: Record<string, string>; // { ad_id: full utm_term string }
   // Story 18.46 (AC6/AC7): contagem de leads por LP via utm_content, quebrada
@@ -294,12 +303,24 @@ export function useCrossReferenceLeads({
     surveyResults.some((r) => r.isLoading);
   const error = surveysQuery.error?.message || sheetQuery.error?.message;
 
+  // Story 18.63: diagnóstico do estado das faixas (só client-side data).
+  const bandsDiagnostic = useMemo(
+    () => ({
+      surveysLinked: surveys.length,
+      hasLeadsSheet: !!leadsSheet,
+      hasAdNameMap: Object.keys(adNameByContent).length > 0,
+      surveyHasRows: surveysData.some((d) => ((d?.rows?.length ?? 0) > 0)),
+    }),
+    [surveys.length, leadsSheet, adNameByContent, surveysDataKey],
+  );
+
   return {
     leads: result.leads,
     leadsByAdName: result.leadsByAdName,
     adNameByContent,
     bandsByAdName: bandsResult.bandsByAdName,
     bandLabels: bandsResult.bandLabels,
+    bandsDiagnostic,
     terms: result.terms,
     termsMapping: result.termsMapping,
     leadsByLp: result.leadsByLp,
