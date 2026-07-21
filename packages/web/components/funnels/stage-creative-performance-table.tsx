@@ -23,6 +23,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -288,6 +289,57 @@ export function StageCreativePerformanceTable({
     });
   }, [processedData, sortCol, sortDir]);
 
+  // Story 18.62: linha "Total" no rodapé. Soma os inputs crus de TODO o conjunto
+  // filtrado (sortedData — todas as páginas, não `pageRows`) e recalcula as
+  // derivadas pela MESMA calculadora (AC3 — nunca média; AC4 — imune ao sort/
+  // paginação). totalSpend = Σspend → coluna "%" fecha em 100% (AC). As faixas
+  // somam a contagem por banda. Bate com os cards de resumo (AC6, mesma base).
+  const totalsRow = useMemo(() => {
+    if (sortedData.length === 0) return null;
+    const sum = sortedData.reduce(
+      (acc, r) => ({
+        spend: acc.spend + (r.spend ?? 0),
+        impressions: acc.impressions + (r.impressions ?? 0),
+        clicks: acc.clicks + (r.clicks ?? 0),
+        leads: acc.leads + (r.leads ?? 0),
+        revenue: acc.revenue + (r.revenue ?? 0),
+        ingressosUnicos: acc.ingressosUnicos + (r.ingressosUnicos ?? 0),
+        ingressosTotais: acc.ingressosTotais + (r.ingressosTotais ?? 0),
+        revenueTotal: acc.revenueTotal + (r.revenueTotal ?? 0),
+        revenueUnico: acc.revenueUnico + (r.revenueUnico ?? 0),
+      }),
+      { spend: 0, impressions: 0, clicks: 0, leads: 0, revenue: 0, ingressosUnicos: 0, ingressosTotais: 0, revenueTotal: 0, revenueUnico: 0 },
+    );
+    const metrics = calculateCreativeMetrics({
+      adId: "__total__",
+      adName: "Total",
+      spend: sum.spend,
+      impressions: sum.impressions,
+      clicks: sum.clicks,
+      leads: sum.leads,
+      revenue: sum.revenue,
+      utmTerm: null,
+      totalSpend: sum.spend,
+      ...(stageType === "paid"
+        ? {
+            ingressosUnicos: sum.ingressosUnicos,
+            ingressosTotais: sum.ingressosTotais,
+            revenueTotal: sum.revenueTotal,
+            revenueUnico: sum.revenueUnico,
+          }
+        : {}),
+    });
+    const bandTotals: Record<string, number> = {};
+    for (const band of bandLabels) {
+      let count = 0;
+      for (const r of sortedData) {
+        count += bandsByAdName.get(r.adName.trim().toLowerCase())?.[band]?.count ?? 0;
+      }
+      bandTotals[band] = count;
+    }
+    return { metrics, bandTotals };
+  }, [sortedData, stageType, bandLabels, bandsByAdName]);
+
   // Volta pra pagina 0 quando filtro/sort/pageSize muda — evita ficar em pagina inexistente
   useEffect(() => {
     setPageIndex(0);
@@ -545,6 +597,31 @@ export function StageCreativePerformanceTable({
               ))
             )}
           </TableBody>
+          {/* Story 18.62: linha "Total" fixa no rodapé (todo o conjunto filtrado,
+              imune ao sort e à paginação) */}
+          {totalsRow && (
+            <TableFooter>
+              <TableRow className="bg-muted/50 hover:bg-muted/50 text-xs font-semibold border-t-2">
+                <TableCell className="font-semibold">Total</TableCell>
+                {visibleColumns.map((col) => (
+                  <TableCell
+                    key={col.key}
+                    className={`text-right tabular-nums font-semibold ${
+                      col.key === "spendPercent" ? "text-muted-foreground" : ""
+                    }`}
+                  >
+                    {col.key === "status" ? null : renderCellValue(totalsRow.metrics, col.key)}
+                  </TableCell>
+                ))}
+                {bandLabels.map((band) => (
+                  <TableCell key={`band-total-${band}`} className="text-right tabular-nums font-semibold">
+                    {totalsRow.bandTotals[band] > 0 ? totalsRow.bandTotals[band] : <span className="text-muted-foreground">—</span>}
+                  </TableCell>
+                ))}
+                <TableCell />
+              </TableRow>
+            </TableFooter>
+          )}
         </Table>
       </div>
 
