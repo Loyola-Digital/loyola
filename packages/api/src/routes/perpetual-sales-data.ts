@@ -457,6 +457,10 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       }
 
       const byDay: Record<string, number> = {};
+      // Story 29.23: contagem de vendas por dia (mesmo filtro/linhas de `byDay`,
+      // contando transações em vez de somar faturamento) — base de Vendas/CPV/
+      // Ticket Médio por dia no Quadro de Dados Diários.
+      const salesByDay: Record<string, number> = {};
       let counted = 0;
 
       for (const row of rows) {
@@ -488,12 +492,13 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         const d = String(rowDate.getDate()).padStart(2, "0");
         const key = `${y}-${m}-${d}`;
         byDay[key] = (byDay[key] ?? 0) + bruto;
+        salesByDay[key] = (salesByDay[key] ?? 0) + 1;
         counted++;
       }
 
       return counted > 0
-        ? { byDay, semDados: false }
-        : { byDay: {} as Record<string, number>, semDados: false };
+        ? { byDay, salesByDay, semDados: false }
+        : { byDay: {} as Record<string, number>, salesByDay: {} as Record<string, number>, semDados: false };
     },
   );
 });

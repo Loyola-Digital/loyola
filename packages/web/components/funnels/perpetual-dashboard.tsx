@@ -39,6 +39,14 @@ import {
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { toast } from "sonner";
 import {
   useTrafficOverview,
@@ -153,6 +161,125 @@ function fmtRoas(val: number | null | undefined): string {
 
 function safeNum(val: string | undefined): number {
   return val ? parseFloat(val) : 0;
+}
+
+// Story 29.23: contagem de uma action por dia (link_click, landing_page_view…)
+// a partir do array `actions` de um CampaignDailyInsight.
+function dailyActionCount(
+  actions: Array<{ action_type: string; value: string }> | undefined,
+  type: string,
+): number {
+  const a = actions?.find((x) => x.action_type === type);
+  return a ? safeNum(a.value) : 0;
+}
+
+// ============================================================
+// Story 29.23: QUADRO DE DADOS DIÁRIOS (tabela por dia)
+// ============================================================
+
+interface PerpetualDailyRow {
+  date: string;
+  dateIso: string;
+  spend: number; // Investimento com imposto 12,15%
+  revenue: number; // Faturamento bruto
+  margin: number; // Margem de Contribuição (líquida − spend c/ tax)
+  salesCount: number;
+  impressions: number;
+  linkClicks: number;
+  lpViews: number;
+}
+
+// Colunas na ordem pedida (elicitação 29.23). `title` = memorial da fórmula
+// (tooltip no header, mesmo padrão das tabelas de LPs/Criativos — 18.58/18.60).
+const PERPETUAL_DAILY_COLUMNS: Array<{ label: string; title: string }> = [
+  { label: "Investimento", title: "Gasto Meta do dia + imposto de 12,15% (a partir de 2026-01-01)" },
+  { label: "Faturamento", title: "Receita bruta do dia (planilha; fallback pixel Meta)" },
+  { label: "Vendas", title: "Contagem de vendas do dia (planilha; fallback pixel Meta)" },
+  { label: "CPV", title: "Investimento ÷ Vendas" },
+  { label: "ROAS", title: "Faturamento ÷ Investimento" },
+  { label: "Margem de Contribuição", title: "Receita líquida (após fees) − Investimento c/ imposto" },
+  { label: "Ticket Médio", title: "Faturamento ÷ Vendas" },
+  { label: "Tx Conv.", title: "Vendas ÷ Cliques no link × 100" },
+  { label: "Cliques", title: "Cliques no link (link_click da Meta)" },
+  { label: "Impressões", title: "Impressões da Meta" },
+  { label: "CPM", title: "Investimento ÷ Impressões × 1000" },
+  { label: "CPC", title: "Investimento ÷ Cliques no link" },
+  { label: "CTR", title: "Cliques no link ÷ Impressões × 100" },
+  { label: "Connect Rate", title: "LP Views ÷ Cliques no link × 100" },
+];
+
+function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
+  if (rows.length === 0) return null;
+  // Guarda de divisão: denominador 0 → null → "—" (nunca NaN/Infinity, AC4).
+  const div = (n: number, d: number): number | null => (d > 0 ? n / d : null);
+
+  return (
+    <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
+      <div>
+        <h3 className="text-sm font-semibold">Dados Diários</h3>
+        <p className="text-[11px] text-muted-foreground">
+          {rows.length} {rows.length === 1 ? "dia" : "dias"} · métricas monetárias com imposto de 12,15%
+        </p>
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-border/30">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/40 hover:bg-muted/40">
+              <TableHead className="text-xs font-semibold">Dia</TableHead>
+              {PERPETUAL_DAILY_COLUMNS.map((c) => (
+                <TableHead
+                  key={c.label}
+                  title={c.title}
+                  className="text-right text-xs font-semibold cursor-help"
+                >
+                  {c.label}
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r) => {
+              const cpv = div(r.spend, r.salesCount);
+              const roas = div(r.revenue, r.spend);
+              const ticket = div(r.revenue, r.salesCount);
+              const txConv = r.linkClicks > 0 ? (r.salesCount / r.linkClicks) * 100 : null;
+              const cpm = r.impressions > 0 ? (r.spend / r.impressions) * 1000 : null;
+              const cpc = div(r.spend, r.linkClicks);
+              const ctr = r.impressions > 0 ? (r.linkClicks / r.impressions) * 100 : null;
+              const connect = r.linkClicks > 0 ? (r.lpViews / r.linkClicks) * 100 : null;
+              return (
+                <TableRow key={r.dateIso} className="text-xs">
+                  <TableCell className="font-medium whitespace-nowrap">{r.date}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtCurrency(r.spend)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtCurrency(r.revenue)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtNumber(r.salesCount)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtCurrency(cpv)}</TableCell>
+                  <TableCell className="text-right tabular-nums font-medium">{fmtRoas(roas)}</TableCell>
+                  <TableCell
+                    className={`text-right tabular-nums font-medium ${
+                      r.margin >= 0
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-red-600 dark:text-red-400"
+                    }`}
+                  >
+                    {fmtCurrency(r.margin)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtCurrency(ticket)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtPercent(txConv)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtNumber(r.linkClicks)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtNumber(r.impressions)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtCurrency(cpm)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtCurrency(cpc)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtPercent(ctr)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtPercent(connect)}</TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
 }
 
 // Story 29.16/29.17: sobrepõe métricas da planilha (vendas/receita/ROAS/CAC)
@@ -568,6 +695,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     const sheetHasDaily = usingSpreadsheet && salesDataDaily && !salesDataDaily.semDados
       && Object.keys(salesDataDaily.byDay ?? {}).length > 0;
     const sheetByDay = sheetHasDaily ? salesDataDaily!.byDay : {};
+    // Story 29.23: contagem de vendas por dia da planilha (novo campo do backend).
+    const sheetSalesByDay = sheetHasDaily ? (salesDataDaily!.salesByDay ?? {}) : {};
     const feeRate = usingSpreadsheet && salesData ? salesData.feeRate : 0;
     // Eixo de dias = união Meta ∪ planilha: dias com venda na planilha mas sem
     // delivery Meta (ou sem campanha vinculada) também entram no gráfico.
@@ -596,6 +725,15 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       const revenueBruto = sheetHasDaily ? sheetRevenue : (usingSpreadsheet ? metaRevenue : 0);
       // Story 29.20 (Danilo): margem LÍQUIDA — (Receita × (1−fees)) − Investimento c/ tax.
       const margin = usingSpreadsheet ? (revenueBruto * (1 - feeRate)) - spendComTax : 0;
+      // Story 29.23: métricas cruas Meta por dia (base do Quadro de Dados Diários).
+      const impressions = d ? safeNum(d.impressions) : 0;
+      const linkClicks = dailyActionCount(d?.actions, "link_click");
+      const lpViews = dailyActionCount(d?.actions, "landing_page_view");
+      // Vendas/dia: planilha (fonte oficial) quando há daily; senão fallback pixel
+      // Meta — mesma lógica de fonte da Receita (:596). Sem planilha → 0 (29.10).
+      const salesFromSheet = sheetHasDaily ? (sheetSalesByDay[date] ?? 0) : 0;
+      const salesFromPixel = purchases ? parseInt(purchases.value) : 0;
+      const salesCount = sheetHasDaily ? salesFromSheet : (usingSpreadsheet ? salesFromPixel : 0);
       const dateLabel = date.slice(5, 10);
       const revenueSource = sheetHasDaily
         ? "Planilha · faturamento bruto por dia"
@@ -614,6 +752,11 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         revenue: revenueBruto,
         margin,
         sales: usingSpreadsheet && purchases ? parseInt(purchases.value) : 0,
+        // Story 29.23: campos crus por dia para o Quadro de Dados Diários.
+        impressions,
+        linkClicks,
+        lpViews,
+        salesCount,
         formulasByKey: {
           spend: buildFunnelDailyFormula("Investimento", spendSource, spendComTax, true, dateLabel),
           revenue: buildFunnelDailyFormula("Receita", revenueSource, revenueBruto, true, dateLabel),
@@ -1115,10 +1258,11 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                 reembolsoReal={usingSpreadsheet ? (salesData?.reembolsoReal ?? false) : false}
                 reembolsoBruto={usingSpreadsheet ? (salesData?.reembolsoBruto ?? 0) : 0}
               >
-                <KpiCard icon={DollarSign} label="Margem" value={fmtCurrency(m.margin)} hintTooltip fromSheet={fromSheet} signValue={m.margin} />
+                {/* Story 29.23: "Margem" → "Margem de Contribuição" (só o rótulo muda). */}
+                <KpiCard icon={DollarSign} label="Margem de Contribuição" value={fmtCurrency(m.margin)} hintTooltip fromSheet={fromSheet} signValue={m.margin} />
               </MarginBreakdownTooltip>
-              <MetricTooltip label="Margem %" value={fmtPercent(m.marginPercent)} formula={buildFunnelMarginPercentFormula(m.marginPercent, f)}>
-                <KpiCard icon={BarChart3} label="Margem %" value={fmtPercent(m.marginPercent)} hintTooltip fromSheet={fromSheet} />
+              <MetricTooltip label="Margem de Contribuição %" value={fmtPercent(m.marginPercent)} formula={buildFunnelMarginPercentFormula(m.marginPercent, f)}>
+                <KpiCard icon={BarChart3} label="Margem de Contribuição %" value={fmtPercent(m.marginPercent)} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
               {/* Resposta da pesquisa ÷ vendas — só quando há pesquisa conectada com respostas */}
               {surveyAgg.totalResponses > 0 && (
@@ -1249,6 +1393,11 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       </div>
         );
       })()}
+
+      {/* ================================================================ */}
+      {/* QUADRO DE DADOS DIÁRIOS — Story 29.23: tabela por dia (15 colunas) */}
+      {/* ================================================================ */}
+      <PerpetualDailyTable rows={dailyChartData} />
 
       {/* ================================================================ */}
       {/* TABELA DETALHADA COM FILTRO — Story 29.18: movida pra baixo do gráfico */}
