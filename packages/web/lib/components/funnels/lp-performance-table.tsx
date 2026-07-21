@@ -17,6 +17,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -356,6 +357,76 @@ export function LpPerformanceTable({
     });
   }, [rows, isPaid, sortCol, sortDir]);
 
+  // Story 18.62: linha "Total" no rodapé. Aditivas = soma dos inputs crus de
+  // TODAS as `rows` (não `sortedRows` → imune ao sort, AC4); derivadas =
+  // recalculadas pela MESMA calculadora aplicada aos totais (AC3 — nunca média).
+  // `rows` já vem filtrada (Hot/Cold/range) pela seção pai, então o total bate
+  // com as linhas visíveis (AC5) e o Investimento já traz o imposto de 12,15%.
+  const totalsRow: Record<LpSortKey, number | null> | null = useMemo(() => {
+    if (!rows || rows.length === 0) return null;
+    const sum = rows.reduce(
+      (acc, r) => ({
+        investimento: acc.investimento + r.investimento,
+        cliques: acc.cliques + r.cliques,
+        impressoes: acc.impressoes + r.impressoes,
+        conversoes: acc.conversoes + r.conversoes,
+        lpViews: acc.lpViews + r.lpViews,
+        ingressosUnicos: acc.ingressosUnicos + (r.ingressosUnicos ?? 0),
+        ingressosTotais: acc.ingressosTotais + (r.ingressosTotais ?? 0),
+        revenueUnico: acc.revenueUnico + (r.revenueUnico ?? 0),
+        revenueTotal: acc.revenueTotal + (r.revenueTotal ?? 0),
+        leads: acc.leads + (r.leads ?? 0),
+      }),
+      {
+        investimento: 0,
+        cliques: 0,
+        impressoes: 0,
+        conversoes: 0,
+        lpViews: 0,
+        ingressosUnicos: 0,
+        ingressosTotais: 0,
+        revenueUnico: 0,
+        revenueTotal: 0,
+        leads: 0,
+      },
+    );
+    const m = isPaid
+      ? calculatePaidMetrics({
+          investimento: sum.investimento,
+          cliques: sum.cliques,
+          impressoes: sum.impressoes,
+          conversoes: sum.conversoes,
+          lpViews: sum.lpViews,
+          ingressosUnicos: sum.ingressosUnicos,
+          revenueTotal: sum.revenueTotal,
+        })
+      : calculateFreeMetrics({
+          investimento: sum.investimento,
+          cliques: sum.cliques,
+          impressoes: sum.impressoes,
+          conversoes: sum.conversoes,
+          lpViews: sum.lpViews,
+          leads: sum.leads,
+        });
+    return {
+      investimento: sum.investimento,
+      ingressosUnicos: sum.ingressosUnicos,
+      ingressosTotais: sum.ingressosTotais,
+      revenueUnico: sum.revenueUnico,
+      revenueTotal: sum.revenueTotal,
+      roas: m.roas ?? null,
+      cplPagoUnico: m.cplPagoUnico ?? null,
+      txConv: m.txConv,
+      cpm: m.cpm,
+      cpc: m.cpc,
+      ctr: m.ctr,
+      lpViews: sum.lpViews,
+      connectRate: m.connectRate,
+      leads: sum.leads,
+      cpl: m.cpl ?? null,
+    };
+  }, [rows, isPaid]);
+
   if (isLoading) {
     return <div className="p-4 text-center text-gray-500">Carregando...</div>;
   }
@@ -424,6 +495,19 @@ export function LpPerformanceTable({
             </TableRow>
           ))}
         </TableBody>
+        {/* Story 18.62: linha "Total" fixa no rodapé (imune ao sort). */}
+        {totalsRow && (
+          <TableFooter>
+            <TableRow className="border-t-2 bg-muted/50 font-semibold hover:bg-muted/50">
+              <TableCell className="font-semibold">Total</TableCell>
+              {columns.map((col) => (
+                <TableCell key={col.key} className="text-right tabular-nums font-semibold">
+                  {formatCell(totalsRow[col.key], col.kind)}
+                </TableCell>
+              ))}
+            </TableRow>
+          </TableFooter>
+        )}
       </Table>
     </div>
   );
