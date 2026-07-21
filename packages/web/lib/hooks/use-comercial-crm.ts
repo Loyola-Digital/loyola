@@ -27,6 +27,8 @@ export interface CrmCard {
   callStatus: "atendeu" | "nao_atendeu" | null;
   /** "Liguei X vezes". */
   callCount: number;
+  /** Perfil hot/cold do lead (utm_term da venda). null = sem track. */
+  temperature: "hot" | "cold" | null;
   sortOrder: number;
   updatedAt: string;
 }
