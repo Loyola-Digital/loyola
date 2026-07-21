@@ -115,19 +115,26 @@ interface Buyer {
   temperature: "hot" | "cold" | null;
 }
 
-// Detecção da coluna utm_term por matcher (planilha de venda não mapeia utm_term
-// no columnMapping — mesma heurística do sales-daily-sync).
+// Detecção da coluna utm_term por matcher. A planilha usa a short-form "t="
+// (não "utm_term"), então o exato "t=" é essencial. Exatos primeiro pra evitar
+// que "content="/"co=" casem "t=" por substring.
 function findTermHeader(headers: string[]): number {
   const norm = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const H = headers.map(norm);
-  for (const m of ["utm_term", "utm term", "termo"]) {
-    const i = H.findIndex((h) => h === m || h.includes(m));
+  for (const m of ["t=", "utm_term", "utm term"]) {
+    const i = H.indexOf(m);
+    if (i >= 0) return i;
+  }
+  for (const m of ["utm_term", "termo"]) {
+    const i = H.findIndex((h) => h.includes(m));
     if (i >= 0) return i;
   }
   return -1;
 }
 function classifyTemp(termRaw: string | null | undefined): "hot" | "cold" | null {
   const t = (termRaw ?? "").toLowerCase();
+  // O valor é composto (ex.: "...--venda--perpetuo--cold--estaticos|..."); basta
+  // conter hot/quente ou cold/frio. hot vence cold se ambos aparecerem.
   if (t.includes("hot") || t.includes("quente")) return "hot";
   if (t.includes("cold") || t.includes("frio")) return "cold";
   return null;
