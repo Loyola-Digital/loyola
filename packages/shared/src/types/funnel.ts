@@ -194,6 +194,13 @@ export interface PerpetualSalesData {
  */
 export interface PerpetualSalesDataDaily {
   byDay: Record<string, number>;
+  /**
+   * Story 29.23: contagem de vendas por dia (mesmas linhas que alimentam `byDay`,
+   * mas contando transações em vez de somar faturamento). Base para Vendas/CPV/
+   * Ticket Médio por dia no Quadro de Dados Diários. Opcional — ausente em
+   * respostas `semDados`.
+   */
+  salesByDay?: Record<string, number>;
   semDados: boolean;
 }
 
