@@ -111,6 +111,26 @@ interface Buyer {
   name: string | null;
   phone: string | null;
   purchases: Purchase[];
+  /** Perfil hot/cold pela utm_term da venda (hot vence cold vence null). */
+  temperature: "hot" | "cold" | null;
+}
+
+// Detecção da coluna utm_term por matcher (planilha de venda não mapeia utm_term
+// no columnMapping — mesma heurística do sales-daily-sync).
+function findTermHeader(headers: string[]): number {
+  const norm = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const H = headers.map(norm);
+  for (const m of ["utm_term", "utm term", "termo"]) {
+    const i = H.findIndex((h) => h === m || h.includes(m));
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+function classifyTemp(termRaw: string | null | undefined): "hot" | "cold" | null {
+  const t = (termRaw ?? "").toLowerCase();
+  if (t.includes("hot") || t.includes("quente")) return "hot";
+  if (t.includes("cold") || t.includes("frio")) return "cold";
+  return null;
 }
 
 function shapeCard(r: typeof stageCrmCards.$inferSelect) {
@@ -127,6 +147,7 @@ function shapeCard(r: typeof stageCrmCards.$inferSelect) {
     assigneeName: r.assigneeName,
     callStatus: r.callStatus as "atendeu" | "nao_atendeu" | null,
     callCount: r.callCount,
+    temperature: r.temperature as "hot" | "cold" | null,
     sortOrder: r.sortOrder,
     updatedAt: r.updatedAt.toISOString(),
   };
@@ -180,7 +201,13 @@ export default fp(async function stageComercialRoutes(fastify) {
     const buyers = new Map<string, Buyer>();
     let skippedNoEmail = 0;
 
-    const addPurchase = (emailRaw: string, name: string | null, phone: string | null, p: Purchase) => {
+    const addPurchase = (
+      emailRaw: string,
+      name: string | null,
+      phone: string | null,
+      p: Purchase,
+      temperature: "hot" | "cold" | null = null,
+    ) => {
       const email = normalizeEmail(emailRaw);
       if (!email) {
         skippedNoEmail++;
@@ -188,11 +215,14 @@ export default fp(async function stageComercialRoutes(fastify) {
       }
       let b = buyers.get(email);
       if (!b) {
-        b = { email, name: null, phone: null, purchases: [] };
+        b = { email, name: null, phone: null, purchases: [], temperature: null };
         buyers.set(email, b);
       }
       if (!b.name && name) b.name = name;
       if (!b.phone && phone) b.phone = phone;
+      // hot vence cold vence null (perfil "mais quente" do comprador).
+      if (temperature === "hot") b.temperature = "hot";
+      else if (temperature === "cold" && b.temperature !== "hot") b.temperature = "cold";
       b.purchases.push(p);
     };
 
@@ -234,6 +264,7 @@ export default fp(async function stageComercialRoutes(fastify) {
       const brutoIdx = col(mapping.valorBruto);
       const dataIdx = col(mapping.dataVenda);
       const telIdx = col(mapping.telefone);
+      const termIdx = findTermHeader(data.headers);
       if (emailIdx === -1) continue; // planilha sem email (ex. event_sales) não alimenta CRM
 
       let rowIndex = -1;
@@ -262,6 +293,7 @@ export default fp(async function stageComercialRoutes(fastify) {
             dataVenda: dt ? dt.toISOString() : null,
             fonte: `planilha:${sheet.subtype}`,
           },
+          termIdx >= 0 ? classifyTemp(row[termIdx]) : null,
         );
       }
     }
@@ -311,6 +343,7 @@ export default fp(async function stageComercialRoutes(fastify) {
           const brutoIdx = col(mapping.valorBruto);
           const dataIdx = col(mapping.dataVenda);
           const telIdx = findHeaderByAliases(data.headers, PHONE_ALIASES);
+          const termIdx = findTermHeader(data.headers);
           if (emailIdx !== -1) {
             const seenPerp = new Set<string>();
             for (const row of data.rows) {
@@ -339,6 +372,7 @@ export default fp(async function stageComercialRoutes(fastify) {
                   dataVenda: dt ? dt.toISOString() : null,
                   fonte: "planilha:perpetuo",
                 },
+                termIdx >= 0 ? classifyTemp(row[termIdx]) : null,
               );
             }
           }
@@ -521,6 +555,7 @@ export default fp(async function stageComercialRoutes(fastify) {
             products: buyer.purchases,
             totalValue: totalValue.toFixed(2),
             firstPurchaseAt: firstPurchase,
+            temperature: buyer.temperature,
             sortOrder: maxSortInFirst,
           }).onConflictDoNothing();
           created++;
@@ -528,7 +563,8 @@ export default fp(async function stageComercialRoutes(fastify) {
           // Merge: atualiza compras/contatos, PRESERVA coluna/notas/responsável.
           const changed =
             JSON.stringify(existing.products) !== JSON.stringify(buyer.purchases) ||
-            Number(existing.totalValue) !== totalValue;
+            Number(existing.totalValue) !== totalValue ||
+            (existing.temperature ?? null) !== (buyer.temperature ?? null);
           if (changed || (!existing.customerName && buyer.name) || (!existing.customerPhone && buyer.phone)) {
             await fastify.db
               .update(stageCrmCards)
@@ -538,6 +574,9 @@ export default fp(async function stageComercialRoutes(fastify) {
                 firstPurchaseAt: firstPurchase ?? existing.firstPurchaseAt,
                 customerName: existing.customerName ?? buyer.name,
                 customerPhone: existing.customerPhone ?? buyer.phone,
+                // Atualiza a temperatura só quando conseguimos classificar (não
+                // apaga um hot/cold já detectado se um re-sync vier sem utm_term).
+                temperature: buyer.temperature ?? existing.temperature,
                 updatedAt: new Date(),
               })
               .where(eq(stageCrmCards.id, existing.id));

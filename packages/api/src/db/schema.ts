@@ -2110,6 +2110,8 @@ export const stageCrmCards = pgTable(
     callStatus: varchar("call_status", { length: 12 }),
     /** "Liguei X vezes". */
     callCount: integer("call_count").notNull().default(0),
+    /** Temperatura do lead (perfil hot/cold pela utm_term da venda). null = sem track. */
+    temperature: varchar("temperature", { length: 10 }),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

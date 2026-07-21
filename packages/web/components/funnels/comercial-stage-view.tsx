@@ -87,6 +87,23 @@ function prettyAnswer(raw: string): { text: string; bool: "sim" | "nao" | null }
   return { text: t, bool: null };
 }
 
+// Badge de perfil hot/cold do lead (mesma linguagem visual dos outros dashboards).
+function TemperatureBadge({ temperature }: { temperature: "hot" | "cold" }) {
+  const hot = temperature === "hot";
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+        hot
+          ? "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
+          : "bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400"
+      }`}
+      title={hot ? "Lead quente (hot)" : "Lead frio (cold)"}
+    >
+      {hot ? "🔥 Hot" : "❄️ Cold"}
+    </span>
+  );
+}
+
 // ---- Card draggable ----
 function KanbanCard({ card, onOpen }: { card: CrmCard; onOpen: (c: CrmCard) => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -120,6 +137,7 @@ function KanbanCard({ card, onOpen }: { card: CrmCard; onOpen: (c: CrmCard) => v
             {card.customerName || card.customerEmail}
           </p>
           <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+            {card.temperature && <TemperatureBadge temperature={card.temperature} />}
             <span className="inline-flex max-w-[150px] items-center truncate rounded-full bg-cyan-100 px-1.5 py-0.5 text-[10px] font-medium text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400">
               {mainProduct}
             </span>
@@ -616,7 +634,10 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
           {openCard && (
             <>
               <SheetHeader className="pb-0">
-                <SheetTitle className="truncate text-base">{openCard.customerName || openCard.customerEmail}</SheetTitle>
+                <SheetTitle className="flex items-center gap-2 min-w-0">
+                  <span className="truncate text-base">{openCard.customerName || openCard.customerEmail}</span>
+                  {openCard.temperature && <TemperatureBadge temperature={openCard.temperature} />}
+                </SheetTitle>
               </SheetHeader>
               <div className="px-4 pb-6 space-y-6">
                 <div className="space-y-1 text-sm">
