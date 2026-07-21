@@ -6,7 +6,7 @@
  */
 
 import { useMemo, useState, useEffect } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, ExternalLink, Info } from "lucide-react";
 import {
   calculateCreativeMetrics,
   formatMetricValue,
@@ -168,6 +168,32 @@ const PAID_COLUMNS: Array<{ key: SortableCol; label: string; title?: string }> =
   { key: "roas", label: "ROAS", title: "Fat. Total ÷ Investimento" },
 ];
 
+// Story 18.63: mensagem factual quando as colunas de Faixa não aparecem. As
+// faixas dependem de config POR STAGE (pesquisa vinculada + planilha com "Ad
+// Name" + respostas pagas cruzadas). Em vez de sumir silenciosamente, explica a
+// causa provável — distinguida pelos flags que o client já tem (sem I/O extra).
+function bandsEmptyMessage(diag: {
+  surveysLinked: number;
+  hasLeadsSheet: boolean;
+  hasAdNameMap: boolean;
+  surveyHasRows: boolean;
+} | undefined): string | null {
+  if (!diag) return null;
+  if (diag.surveysLinked === 0) {
+    return 'Sem faixas: nenhuma pesquisa vinculada a este stage. Vincule uma pesquisa (colunas utm_content + Faixa) para ver a distribuição de faixas por criativo.';
+  }
+  if (!diag.hasLeadsSheet) {
+    return 'Sem faixas: há pesquisa vinculada, mas nenhuma planilha de leads/sales vinculada a este stage — necessária para cruzar utm_content → Ad Name.';
+  }
+  if (!diag.hasAdNameMap) {
+    return 'Sem faixas: a planilha de leads/sales deste stage não tem a coluna "Ad Name" (com "content"/"utm_content") — necessária para cruzar as respostas da pesquisa com os criativos.';
+  }
+  if (!diag.surveyHasRows) {
+    return 'Sem faixas: a(s) pesquisa(s) vinculada(s) não retornaram respostas.';
+  }
+  return 'Sem faixas: nenhuma resposta paga (utm_source = meta) com coluna "Faixa" foi cruzada com os criativos deste período.';
+}
+
 export function StageCreativePerformanceTable({
   projectId,
   funnelId,
@@ -181,7 +207,7 @@ export function StageCreativePerformanceTable({
   const [pageSize, setPageSize] = useState<number>(10);
   const [pageIndex, setPageIndex] = useState<number>(0);
 
-  const { data, isLoading, error, bandsByAdName: rawBandsByAdName, bandLabels: rawBandLabels } =
+  const { data, isLoading, error, bandsByAdName: rawBandsByAdName, bandLabels: rawBandLabels, bandsDiagnostic } =
     useStageCreativePerformance({
       projectId,
       funnelId,
@@ -384,6 +410,14 @@ export function StageCreativePerformanceTable({
             {visibleColumns.find((c) => c.key === sortCol)?.label.toLowerCase() ?? sortCol} (
             {sortDir === "desc" ? "maior → menor" : "menor → maior"})
           </p>
+          {/* Story 18.63: estado informativo quando as colunas de Faixa não
+              aparecem — explica a causa provável em vez de sumir silenciosamente. */}
+          {!isLoading && bandLabels.length === 0 && bandsEmptyMessage(bandsDiagnostic) && (
+            <p className="text-[11px] text-amber-600/90 dark:text-amber-400/90 mt-1 flex items-start gap-1 max-w-xl">
+              <Info className="h-3 w-3 mt-0.5 shrink-0" />
+              <span>{bandsEmptyMessage(bandsDiagnostic)}</span>
+            </p>
+          )}
           {/* Transparencia: mostra qual filtro de campanha esta ativo */}
           {data?.appliedFilter && data.appliedFilter.campaigns.length > 0 && (
             <p
