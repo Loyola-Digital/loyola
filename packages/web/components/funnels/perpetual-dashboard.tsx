@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   DollarSign,
   LinkIcon,
@@ -15,6 +15,8 @@ import {
   Undo2,
   TrendingUp,
   ClipboardList,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   LineChart,
@@ -43,6 +45,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -208,10 +211,43 @@ const PERPETUAL_DAILY_COLUMNS: Array<{ label: string; title: string }> = [
   { label: "Connect Rate", title: "LP Views ÷ Cliques no link × 100" },
 ];
 
+// Story 29.25: paginação do Quadro de Dados Diários — 16 linhas por página.
+const PERPETUAL_DAILY_PAGE_SIZE = 16;
+
 function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
-  if (rows.length === 0) return null;
-  // Guarda de divisão: denominador 0 → null → "—" (nunca NaN/Infinity, AC4).
+  // Guarda de divisão: denominador 0 → null → "—" (nunca NaN/Infinity).
   const div = (n: number, d: number): number | null => (d > 0 ? n / d : null);
+
+  // Story 29.25: paginação (16/página). Estado antes de qualquer early-return
+  // (Rules of Hooks). Reset p/ página 0 quando o range/filtro muda (rows nova ref).
+  const [pageIndex, setPageIndex] = useState(0);
+  useEffect(() => {
+    setPageIndex(0);
+  }, [rows]);
+
+  // Story 29.25: totais do PERÍODO INTEIRO (não da página) — aditivas somam;
+  // derivadas recalculadas pelos totais na renderização do rodapé (AC2).
+  const totals = useMemo(() => {
+    return rows.reduce(
+      (a, r) => ({
+        spend: a.spend + r.spend,
+        revenue: a.revenue + r.revenue,
+        margin: a.margin + r.margin,
+        salesCount: a.salesCount + r.salesCount,
+        impressions: a.impressions + r.impressions,
+        linkClicks: a.linkClicks + r.linkClicks,
+        lpViews: a.lpViews + r.lpViews,
+      }),
+      { spend: 0, revenue: 0, margin: 0, salesCount: 0, impressions: 0, linkClicks: 0, lpViews: 0 },
+    );
+  }, [rows]);
+
+  if (rows.length === 0) return null;
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / PERPETUAL_DAILY_PAGE_SIZE));
+  const safePage = Math.min(pageIndex, totalPages - 1);
+  const pageStart = safePage * PERPETUAL_DAILY_PAGE_SIZE;
+  const pageRows = rows.slice(pageStart, pageStart + PERPETUAL_DAILY_PAGE_SIZE);
 
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
@@ -238,7 +274,7 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((r) => {
+            {pageRows.map((r) => {
               const cpv = div(r.spend, r.salesCount);
               const roas = div(r.revenue, r.spend);
               const ticket = div(r.revenue, r.salesCount);
@@ -276,8 +312,69 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
               );
             })}
           </TableBody>
+          {/* Story 29.25: linha Total do PERÍODO INTEIRO (imune à paginação). */}
+          <TableFooter>
+            <TableRow className="bg-muted/50 hover:bg-muted/50 text-xs font-semibold border-t-2">
+              <TableCell className="font-semibold whitespace-nowrap">Total</TableCell>
+              <TableCell className="text-right tabular-nums">{fmtCurrency(totals.spend)}</TableCell>
+              <TableCell className="text-right tabular-nums">{fmtCurrency(totals.revenue)}</TableCell>
+              <TableCell className="text-right tabular-nums">{fmtNumber(totals.salesCount)}</TableCell>
+              <TableCell className="text-right tabular-nums">{fmtCurrency(div(totals.spend, totals.salesCount))}</TableCell>
+              <TableCell className="text-right tabular-nums">{fmtRoas(div(totals.revenue, totals.spend))}</TableCell>
+              <TableCell
+                className={`text-right tabular-nums ${
+                  totals.margin >= 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-red-600 dark:text-red-400"
+                }`}
+              >
+                {fmtCurrency(totals.margin)}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">{fmtCurrency(div(totals.revenue, totals.salesCount))}</TableCell>
+              <TableCell className="text-right tabular-nums">{fmtPercent(totals.linkClicks > 0 ? (totals.salesCount / totals.linkClicks) * 100 : null)}</TableCell>
+              <TableCell className="text-right tabular-nums">{fmtNumber(totals.linkClicks)}</TableCell>
+              <TableCell className="text-right tabular-nums">{fmtNumber(totals.impressions)}</TableCell>
+              <TableCell className="text-right tabular-nums">{fmtCurrency(totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : null)}</TableCell>
+              <TableCell className="text-right tabular-nums">{fmtCurrency(div(totals.spend, totals.linkClicks))}</TableCell>
+              <TableCell className="text-right tabular-nums">{fmtPercent(totals.impressions > 0 ? (totals.linkClicks / totals.impressions) * 100 : null)}</TableCell>
+              <TableCell className="text-right tabular-nums">{fmtPercent(totals.linkClicks > 0 ? (totals.lpViews / totals.linkClicks) * 100 : null)}</TableCell>
+            </TableRow>
+          </TableFooter>
         </Table>
       </div>
+      {/* Story 29.25: paginação de 16 linhas por página. */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] text-muted-foreground">
+            Dias {pageStart + 1}–{Math.min(pageStart + PERPETUAL_DAILY_PAGE_SIZE, rows.length)} de {rows.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPageIndex((i) => Math.max(0, i - 1))}
+              disabled={safePage === 0}
+              className="h-7 px-2 rounded-md border border-border/40 text-xs inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-muted/50 transition-colors"
+              aria-label="Página anterior"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Anterior
+            </button>
+            <span className="text-[11px] text-muted-foreground tabular-nums">
+              {safePage + 1} / {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPageIndex((i) => Math.min(totalPages - 1, i + 1))}
+              disabled={safePage >= totalPages - 1}
+              className="h-7 px-2 rounded-md border border-border/40 text-xs inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-muted/50 transition-colors"
+              aria-label="Próxima página"
+            >
+              Próxima
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1261,8 +1358,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
               <MetricTooltip label="Vendas" value={fmtNumber(m.totalSales)} formula={buildFunnelSalesCountFormula(m.totalSales, f)}>
                 <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(m.totalSales)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
               </MetricTooltip>
-              <MetricTooltip label="Receita" value={fmtCurrency(m.totalRevenue)} formula={buildFunnelRevenueFormula(m.totalRevenue, f)}>
-                <KpiCard icon={DollarSign} label="Receita" value={fmtCurrency(m.totalRevenue)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
+              {/* Story 29.25: "Receita" → "Faturamento" (só o rótulo muda). */}
+              <MetricTooltip label="Faturamento" value={fmtCurrency(m.totalRevenue)} formula={buildFunnelRevenueFormula(m.totalRevenue, f)}>
+                <KpiCard icon={DollarSign} label="Faturamento" value={fmtCurrency(m.totalRevenue)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
               </MetricTooltip>
               <MetricTooltip label="CAC" value={fmtCurrency(m.cac)} formula={buildFunnelCacFormula(m.cac, f)}>
                 <KpiCard icon={DollarSign} label="CAC" value={fmtCurrency(m.cac)} hintTooltip fromSheet={fromSheet} />
