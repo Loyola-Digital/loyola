@@ -996,6 +996,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // Story 29.19: normaliza nomes (tira " — Cópia") e agrupa a cópia no nome base.
   // Merge (>1 membro) soma métricas e re-deriva taxas; membro único fica intacto.
   const detailRows = useMemo<DetailRow[]>(() => {
+    // Story 29.24: multiplicador de imposto do período. Aplica 12,15% ao spend de
+    // cada linha de forma que Σlinhas = card agregado (que usa effectiveSpend c/
+    // imposto). ~1.1215 quando todo o range é pós-vigência (2026-01-01);
+    // proporcional se o range cruza a data. Fonte única: spendAggregates.
+    const taxMultiplier = spendAggregates.totalSpendBruto > 0
+      ? spendAggregates.totalSpendComTax / spendAggregates.totalSpendBruto
+      : 1;
     const groups = new Map<string, CampaignAnalytics[]>();
     for (const row of tableData) {
       const name = normalizeCampaignName(row.campaignName);
@@ -1029,16 +1036,26 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       }
       const grossRevenue = base.revenue ?? 0;
       const sales = base.sales ?? 0;
-      // Story 29.20 (Danilo): Margem = Receita LÍQUIDA (após fees) − Investimento.
+      // Story 29.24: aplica o imposto ao spend da linha e RE-DERIVA todas as
+      // métricas de custo (Invest./ROAS/CAC/Margem/CPC/CPM) sobre a MESMA base
+      // do card agregado. ROAS mantém numerador BRUTO (29.20); só o denominador
+      // ganha imposto. Margem segue líquida − investimento c/ imposto.
+      const spendComTax = base.spend * taxMultiplier;
       const netRevenue = grossRevenue * (1 - detailFeeRate);
-      const margin = netRevenue - base.spend;
+      const margin = netRevenue - spendComTax;
+      const costClicks = base.linkClicks && base.linkClicks > 0 ? base.linkClicks : base.clicks;
       return {
         ...base,
+        spend: spendComTax,
+        cpc: costClicks > 0 ? spendComTax / costClicks : 0,
+        cpm: base.impressions > 0 ? (spendComTax / base.impressions) * 1000 : 0,
+        roas: spendComTax > 0 ? grossRevenue / spendComTax : null,
+        costPerSale: sales > 0 ? spendComTax / sales : null,
         marginPct: grossRevenue > 0 ? (margin / grossRevenue) * 100 : null,
         marginPerSale: sales > 0 ? margin / sales : null,
       };
     });
-  }, [tableData, detailFeeRate]);
+  }, [tableData, detailFeeRate, spendAggregates]);
 
   const sortedRows = useMemo<DetailRow[]>(() => {
     if (!sortCol) return detailRows;
