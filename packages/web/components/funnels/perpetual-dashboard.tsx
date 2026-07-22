@@ -1270,13 +1270,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             {upsellSpreadsheet ? (
               <>
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                <span className="max-w-[160px] truncate">HT: {upsellSpreadsheet.spreadsheetName}</span>
+                <span className="max-w-[160px] truncate">Ascensão: {upsellSpreadsheet.spreadsheetName}</span>
                 <span className="text-muted-foreground/70">(editar)</span>
               </>
             ) : (
               <>
                 <TrendingUp className="h-3.5 w-3.5" />
-                Conectar Upsell
+                Conectar Ascensão
               </>
             )}
           </Button>
