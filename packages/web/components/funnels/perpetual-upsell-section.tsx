@@ -14,6 +14,10 @@ import { PerpetualUpsellWizardDialog } from "./perpetual-upsell-wizard-dialog";
 interface PerpetualUpsellSectionProps {
   projectId: string;
   funnelId: string;
+  /** Período do dashboard — filtra os eventos de ascensão (compra HT). */
+  days?: number;
+  startDate?: string;
+  endDate?: string;
 }
 
 function fmtNumber(n: number): string {
@@ -38,10 +42,10 @@ function Kpi({ label, value, highlight }: { label: string; value: string; highli
   );
 }
 
-export function PerpetualUpsellSection({ projectId, funnelId }: PerpetualUpsellSectionProps) {
+export function PerpetualUpsellSection({ projectId, funnelId, days, startDate, endDate }: PerpetualUpsellSectionProps) {
   const [wizardOpen, setWizardOpen] = useState(false);
   const { data: sheet, isLoading: sheetLoading } = usePerpetualUpsellSpreadsheet(projectId, funnelId);
-  const { data, isLoading: dataLoading } = usePerpetualUpsellData(projectId, funnelId);
+  const { data, isLoading: dataLoading } = usePerpetualUpsellData(projectId, funnelId, days, startDate, endDate);
 
   const connected = !!sheet;
 

@@ -1688,7 +1688,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       {/* UPSELL HIGH TICKET — Story 29.22: cross-sell perpétuo → high ticket */}
       {/* ================================================================ */}
       <div className="space-y-6 pt-2 border-t border-border/30">
-        <PerpetualUpsellSection projectId={projectId} funnelId={funnel.id} />
+        <PerpetualUpsellSection
+          projectId={projectId}
+          funnelId={funnel.id}
+          days={days}
+          startDate={customRange?.startDate}
+          endDate={customRange?.endDate}
+        />
       </div>
 
       {/* Dashboard Financeiro — apenas etapas pagas (Story 19.6) */}
