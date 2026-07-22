@@ -26,6 +26,7 @@ import {
   GripVertical,
   ChevronUp,
   ChevronDown,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,13 @@ function fmtDate(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
   return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR");
+}
+/** Data + hora curtas (ex.: "22/07 14:30") pra "última movimentação". */
+function fmtDateTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 /** Respostas booleanas do Tally vêm como TRUE/FALSE — traduz pra Sim/Não. */
@@ -164,6 +172,12 @@ function KanbanCard({ card, onOpen }: { card: CrmCard; onOpen: (c: CrmCard) => v
             <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
               <User className="h-3 w-3" />
               <span className="truncate">{card.assigneeName}</span>
+            </div>
+          )}
+          {card.lastActivityAt && (
+            <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground/80" title="Última movimentação/edição">
+              <Clock className="h-3 w-3" />
+              <span className="tabular-nums">{fmtDateTime(card.lastActivityAt)}</span>
             </div>
           )}
         </button>
@@ -638,6 +652,11 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                   <span className="truncate text-base">{openCard.customerName || openCard.customerEmail}</span>
                   {openCard.temperature && <TemperatureBadge temperature={openCard.temperature} />}
                 </SheetTitle>
+                {openCard.lastActivityAt && (
+                  <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <Clock className="h-3 w-3" /> Última movimentação: {fmtDateTime(openCard.lastActivityAt)}
+                  </p>
+                )}
               </SheetHeader>
               <div className="px-4 pb-6 space-y-6">
                 <div className="space-y-1 text-sm">
