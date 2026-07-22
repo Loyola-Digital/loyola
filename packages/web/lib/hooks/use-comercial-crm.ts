@@ -29,6 +29,8 @@ export interface CrmCard {
   callCount: number;
   /** Perfil hot/cold do lead (utm_term da venda). null = sem track. */
   temperature: "hot" | "cold" | null;
+  /** Última ação manual (mover no kanban / editar card). null = sem ação ainda. */
+  lastActivityAt: string | null;
   sortOrder: number;
   updatedAt: string;
 }

@@ -155,6 +155,7 @@ function shapeCard(r: typeof stageCrmCards.$inferSelect) {
     callStatus: r.callStatus as "atendeu" | "nao_atendeu" | null,
     callCount: r.callCount,
     temperature: r.temperature as "hot" | "cold" | null,
+    lastActivityAt: r.lastActivityAt ? r.lastActivityAt.toISOString() : null,
     sortOrder: r.sortOrder,
     updatedAt: r.updatedAt.toISOString(),
   };
@@ -730,7 +731,9 @@ export default fp(async function stageComercialRoutes(fastify) {
       if (!colOk) return reply.code(400).send({ error: "Coluna inválida" });
     }
 
-    const updates: Partial<typeof stageCrmCards.$inferInsert> = { updatedAt: new Date() };
+    // lastActivityAt = agora: só ações manuais (mover/editar) passam por aqui.
+    const now = new Date();
+    const updates: Partial<typeof stageCrmCards.$inferInsert> = { updatedAt: now, lastActivityAt: now };
     if (body.data.columnId !== undefined) updates.columnId = body.data.columnId;
     if (body.data.sortOrder !== undefined) updates.sortOrder = body.data.sortOrder;
     if (body.data.notes !== undefined) updates.notes = body.data.notes ?? null;

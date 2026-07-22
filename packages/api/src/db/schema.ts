@@ -2112,6 +2112,9 @@ export const stageCrmCards = pgTable(
     callCount: integer("call_count").notNull().default(0),
     /** Temperatura do lead (perfil hot/cold pela utm_term da venda). null = sem track. */
     temperature: varchar("temperature", { length: 10 }),
+    /** Última AÇÃO manual (mover no kanban / editar card). Não é bumpado pelo
+     * sync — reflete só o que a pessoa fez. null = nenhuma ação ainda. */
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
