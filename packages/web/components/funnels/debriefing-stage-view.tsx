@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { FileText, MessageSquare, Plus, Settings2, ArrowDownToLine } from "lucide-react";
+import { FileText, MessageSquare, Plus, Settings2, ArrowDownToLine, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import {
   useDebriefings,
   useAssignDebriefingStage,
+  useUpdateDebriefing,
   type DebriefingListItem,
 } from "@/lib/hooks/use-debriefings";
 import { CreateDebriefingDialog } from "@/components/debriefings/create-debriefing-dialog";
@@ -42,32 +43,99 @@ function initials(name: string): string {
 }
 
 function DebriefingCard({ d, from }: { d: DebriefingListItem; from: string }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(d.campaignName);
+  const update = useUpdateDebriefing(d.id);
+
+  function startEdit(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setName(d.campaignName);
+    setEditing(true);
+  }
+  async function save() {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === d.campaignName) {
+      setEditing(false);
+      return;
+    }
+    try {
+      await update.mutateAsync({ campaignName: trimmed });
+      toast.success("Nome atualizado");
+      setEditing(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao renomear");
+    }
+  }
+
+  const cardInner = (
+    <Card className="h-full transition-colors group-hover:border-primary/40">
+      <CardHeader className="pb-2">
+        {editing ? (
+          <div className="flex items-center gap-1.5" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+            <Input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); save(); }
+                if (e.key === "Escape") { e.preventDefault(); setEditing(false); }
+              }}
+              className="h-8 text-sm"
+            />
+            <Button size="sm" className="h-8 shrink-0" disabled={update.isPending} onClick={save}>
+              Salvar
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8 shrink-0" onClick={() => setEditing(false)}>
+              Cancelar
+            </Button>
+          </div>
+        ) : (
+          <CardTitle className="text-base truncate pr-7">{d.campaignName}</CardTitle>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Avatar className="h-6 w-6">
+            {d.authorAvatarUrl && <AvatarImage src={d.authorAvatarUrl} alt={d.authorName} />}
+            <AvatarFallback className="text-[10px]">{initials(d.authorName)}</AvatarFallback>
+          </Avatar>
+          <span className="text-xs text-muted-foreground truncate">
+            {d.authorName} · {format(new Date(d.createdAt), "dd MMM yyyy", { locale: ptBR })}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <MessageSquare className="h-3.5 w-3.5" />
+          {d.commentCount} {d.commentCount === 1 ? "comentário" : "comentários"}
+          {d.editorName && (
+            <span className="ml-auto truncate">editado por {d.editorName}</span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
   return (
-    <Link href={`/debriefings/${d.id}?from=${encodeURIComponent(from)}`} className="group">
-      <Card className="h-full transition-colors group-hover:border-primary/40">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base truncate">{d.campaignName}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Avatar className="h-6 w-6">
-              {d.authorAvatarUrl && <AvatarImage src={d.authorAvatarUrl} alt={d.authorName} />}
-              <AvatarFallback className="text-[10px]">{initials(d.authorName)}</AvatarFallback>
-            </Avatar>
-            <span className="text-xs text-muted-foreground truncate">
-              {d.authorName} · {format(new Date(d.createdAt), "dd MMM yyyy", { locale: ptBR })}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <MessageSquare className="h-3.5 w-3.5" />
-            {d.commentCount} {d.commentCount === 1 ? "comentário" : "comentários"}
-            {d.editorName && (
-              <span className="ml-auto truncate">editado por {d.editorName}</span>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
+    <div className="relative group">
+      {editing ? (
+        cardInner
+      ) : (
+        <Link href={`/debriefings/${d.id}?from=${encodeURIComponent(from)}`} className="block">
+          {cardInner}
+        </Link>
+      )}
+      {!editing && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="absolute top-2 right-2 h-7 w-7 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
+          title="Renomear debriefing"
+          onClick={startEdit}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      )}
+    </div>
   );
 }
 
