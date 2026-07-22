@@ -83,14 +83,26 @@ export function useDisconnectPerpetualUpsellSpreadsheet(
 export function usePerpetualUpsellData(
   projectId: string | null,
   funnelId: string | null,
+  days?: number,
+  startDate?: string,
+  endDate?: string,
 ) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["perpetual-upsell-data", projectId, funnelId],
-    queryFn: () =>
-      apiClient<PerpetualUpsellData>(
-        `/api/projects/${projectId}/funnels/${funnelId}/perpetual-upsell/data`,
-      ),
+    queryKey: ["perpetual-upsell-data", projectId, funnelId, days ?? null, startDate ?? null, endDate ?? null],
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (startDate && endDate) {
+        qs.set("startDate", startDate);
+        qs.set("endDate", endDate);
+      } else if (days) {
+        qs.set("days", String(days));
+      }
+      const q = qs.toString();
+      return apiClient<PerpetualUpsellData>(
+        `/api/projects/${projectId}/funnels/${funnelId}/perpetual-upsell/data${q ? `?${q}` : ""}`,
+      );
+    },
     enabled: !!projectId && !!funnelId,
     staleTime: STALE_TIME,
   });

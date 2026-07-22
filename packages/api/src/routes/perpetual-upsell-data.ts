@@ -24,6 +24,15 @@ const paramsSchema = z.object({
   funnelId: z.string().uuid(),
 });
 
+// Período do dashboard: filtra os EVENTOS de ascensão (compra HT) pela data.
+// A base do perpétuo e a regra "nunca antes" seguem all-time — só o evento de
+// ascensão é limitado à janela. Mesmo padrão de perpetual-sales-data.
+const querySchema = z.object({
+  days: z.coerce.number().int().positive().optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
 // ---- helpers (mesmo padrão de perpetual-sales-data) ----
 function parseNumber(val: string | undefined): number {
   if (!val) return 0;
@@ -118,6 +127,9 @@ export default fp(async function perpetualUpsellDataRoutes(fastify) {
       const params = paramsSchema.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
 
+      const query = querySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Query inválida" });
+
       const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
       if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
 
@@ -155,6 +167,17 @@ export default fp(async function perpetualUpsellDataRoutes(fastify) {
         }
       } catch {
         return { ...EMPTY, semDados: true };
+      }
+
+      // Janela do dashboard (aplica só aos eventos de ascensão abaixo).
+      let cutoffStart: Date | null = null;
+      let cutoffEnd: Date | null = null;
+      if (query.data.startDate && query.data.endDate) {
+        cutoffStart = new Date(query.data.startDate + "T00:00:00");
+        cutoffEnd = new Date(query.data.endDate + "T23:59:59");
+      } else if (query.data.days) {
+        cutoffStart = new Date();
+        cutoffStart.setDate(cutoffStart.getDate() - query.data.days);
       }
 
       // ---- lê o high ticket: monta as compras (deduped, sem reembolso) ----
@@ -198,9 +221,18 @@ export default fp(async function perpetualUpsellDataRoutes(fastify) {
               seenTx.add(txId);
             }
 
+            const htDate = dataI !== -1 ? parseDate(row[dataI]) : null;
+            // Filtro de período: evento de ascensão fora da janela não entra.
+            // Sem data + janela ativa → não dá pra atribuir ao período, sai.
+            if (cutoffStart || cutoffEnd) {
+              if (!htDate) continue;
+              if (cutoffStart && htDate < cutoffStart) continue;
+              if (cutoffEnd && htDate > cutoffEnd) continue;
+            }
+
             htPurchases.push({
               email,
-              date: dataI !== -1 ? parseDate(row[dataI]) : null,
+              date: htDate,
               value: parseNumber(row[brutoI] ?? ""),
               name: nomeI !== -1 ? (row[nomeI] ?? "").trim() || null : null,
             });
