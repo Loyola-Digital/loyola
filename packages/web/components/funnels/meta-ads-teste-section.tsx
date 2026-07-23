@@ -28,11 +28,12 @@ import {
   CartesianGrid,
   Tooltip,
 } from "recharts";
-import { FlaskConical, ImageIcon, Sparkles, LayoutTemplate } from "lucide-react";
-import { useTrafficOverview } from "@/lib/hooks/use-traffic-analytics";
+import { FlaskConical, ImageIcon, Sparkles, LayoutTemplate, PieChart as PieChartIcon, ClipboardList } from "lucide-react";
+import { useTrafficOverview, useTrafficCampaigns } from "@/lib/hooks/use-traffic-analytics";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { useStageSalesByDay } from "@/lib/hooks/use-stage-sales-by-day";
+import { useStageHotColdBuyers } from "@/lib/hooks/use-stage-hot-cold-buyers";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
@@ -40,6 +41,10 @@ import { overrideCplWithUniqueIngressos, type DailyRow } from "@/lib/utils/funne
 import { Skeleton } from "@/components/ui/skeleton";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { TopCreativesGallery } from "./top-creatives-gallery";
+import { ConversionFunnel } from "./conversion-funnel";
+import { HotColdSpendDonut } from "./hot-cold-spend-donut";
+import { HotColdCountDonut } from "./hot-cold-count-donut";
+import { SurveyQualificationSection } from "./survey-qualification-section";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
 import type { Funnel, StageType } from "@loyola-x/shared";
 
@@ -112,6 +117,10 @@ export function MetaAdsTesteTab({
     salesDataRaw && !salesDataRaw.semDados ? salesDataRaw : null, salesByDay,
   );
   const survey = useSurveyAggregation(projectId, funnel.id, stageId ?? null);
+  const { data: campaignData } = useTrafficCampaigns(projectId, days);
+  const { data: stageHotColdBuyers } = useStageHotColdBuyers(
+    isPaid ? projectId : null, isPaid ? funnel.id : null, isPaid ? (stageId ?? null) : null, "capture", days,
+  );
 
   // ingressos únicos sobrescrevem leads na Paga (mesma regra do dash)
   const ingUnicosByDay = isPaid ? salesData?.ingressosUnicosByDay : undefined;
@@ -166,6 +175,8 @@ export function MetaAdsTesteTab({
   }
 
   const loading = metrics.isLoading;
+  const campaignIdSet = new Set(campaignIds);
+  const funnelCampaigns = (campaignData?.campaigns ?? []).filter((c) => campaignIdSet.has(c.campaignId));
 
   // ---- KPIs (paridade com o dash) ----
   const sumOrigem = (v?: { pago: number; org: number; semTrack: number }) => (v ? v.pago + v.org + v.semTrack : 0);
@@ -440,6 +451,78 @@ export function MetaAdsTesteTab({
                   surveyQuestions={survey.questions}
                 />
               </SectionShell>
+
+              {/* ---- Leva 3: Segmentação (Hot/Cold + Funil) + Pesquisa ---- */}
+              <div className="space-y-4">
+                <GroupHeading icon={PieChartIcon} title="SEGMENTAÇÃO & FUNIL" subtitle="Distribuição de investimento, leads/compradores e conversão" />
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  {funnelCampaigns.length > 0 ? (
+                    <HotColdSpendDonut campaigns={funnelCampaigns} />
+                  ) : (
+                    <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+                      <h3 className="mb-4 text-sm font-semibold">Distribuição de Investimento</h3>
+                      <p className="py-8 text-center text-sm text-muted-foreground">Sem dados no período.</p>
+                    </div>
+                  )}
+                  <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+                    <h3 className="mb-4 text-sm font-semibold">Funil de Conversão</h3>
+                    <ConversionFunnel
+                      impressions={overview?.totalImpressions ?? 0}
+                      linkClicks={overview?.totalLinkClicks ?? null}
+                      landingPageViews={overview?.totalLandingPageViews ?? null}
+                      leads={metrics.totalLeads}
+                      checkoutVisits={isPaid ? metrics.checkoutVisits : null}
+                      sales={isPaid ? metrics.totalVendas : null}
+                      leadsLabel={isPaid ? "Leads Popup" : undefined}
+                    />
+                  </div>
+                </div>
+
+                {(metrics.hotColdLeads || metrics.hotColdBuyers) && (
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    {metrics.hotColdLeads ? (
+                      <HotColdCountDonut aggregate={metrics.hotColdLeads} title="Distribuição de Leads (Hot/Cold)" noun={{ singular: "lead", plural: "leads" }} />
+                    ) : (
+                      <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+                        <h3 className="mb-4 text-sm font-semibold">Distribuição de Leads (Hot/Cold)</h3>
+                        <p className="py-8 text-center text-sm text-muted-foreground">Mapeie a coluna <span className="font-mono">utm_term</span> na planilha de leads.</p>
+                      </div>
+                    )}
+                    {isPaid && (() => {
+                      const stageBuyers = stageHotColdBuyers?.hasMapping
+                        ? { hot: stageHotColdBuyers.hot, cold: stageHotColdBuyers.cold, outros: stageHotColdBuyers.outros, total: stageHotColdBuyers.total, items: stageHotColdBuyers.items }
+                        : null;
+                      const buyers = stageBuyers ?? metrics.hotColdBuyers;
+                      return buyers ? (
+                        <HotColdCountDonut aggregate={buyers} title="Distribuição de Compradores (Hot/Cold)" noun={{ singular: "comprador", plural: "compradores" }} />
+                      ) : (
+                        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+                          <h3 className="mb-4 text-sm font-semibold">Distribuição de Compradores (Hot/Cold)</h3>
+                          <p className="py-8 text-center text-sm text-muted-foreground">Mapeie a coluna <span className="font-mono">utm_term</span> na planilha de vendas.</p>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <GroupHeading icon={ClipboardList} title="QUALIFICAÇÃO DA PESQUISA" subtitle="Perfil do público que respondeu" />
+                <SurveyQualificationSection
+                  isLoading={survey.isLoading}
+                  hasSurveys={survey.totalResponses > 0 || !!survey.fallbackReason}
+                  data={{
+                    byQuestion: survey.byQuestion,
+                    byQuestionByOrigin: survey.byQuestionByOrigin,
+                    questions: survey.questions,
+                    totalResponses: survey.totalResponses,
+                    usingFallback: survey.usingFallback,
+                    fallbackReason: survey.fallbackReason,
+                    matchedResponses: survey.matchedResponses,
+                    unmatchedResponses: survey.unmatchedResponses,
+                  }}
+                />
+              </div>
             </>
           )}
         </div>
@@ -477,6 +560,33 @@ function SectionShell({
       </div>
       <div className="h-px w-full" style={{ background: "linear-gradient(90deg, rgba(253,212,73,.35), transparent)" }} />
       {children}
+    </div>
+  );
+}
+
+// Cabeçalho de grupo estilizado (sem container) — pra grupos de cards que já têm
+// seu próprio card (donuts, funil), evitando aninhar bordas.
+function GroupHeading({
+  icon: Icon,
+  title,
+  subtitle,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "rgba(253,212,73,.12)", border: "1px solid rgba(253,212,73,.25)", color: T.gold }}>
+          <Icon className="h-4 w-4" />
+        </div>
+        <div>
+          <h3 style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: "2px", lineHeight: 1, color: T.text }}>{title}</h3>
+          {subtitle && <p className="text-[10px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>{subtitle}</p>}
+        </div>
+      </div>
+      <div className="h-px w-full" style={{ background: "linear-gradient(90deg, rgba(253,212,73,.35), transparent)" }} />
     </div>
   );
 }
