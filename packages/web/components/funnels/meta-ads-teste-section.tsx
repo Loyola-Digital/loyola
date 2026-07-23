@@ -24,8 +24,10 @@ import {
   CartesianGrid,
   Tooltip,
 } from "recharts";
-import type { CampaignDailyInsight } from "@/lib/hooks/use-traffic-analytics";
+import { useState } from "react";
+import { useCampaignDailyInsightsBulk, type CampaignDailyInsight } from "@/lib/hooks/use-traffic-analytics";
 import { applyMetaAdsTax } from "@/lib/utils/funnel-metrics";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // ---- tokens do design system extraído ----
 const T = {
@@ -345,5 +347,60 @@ export function MetaAdsTesteSection({ data }: { data: CampaignDailyInsight[] }) 
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * Wrapper de ABA: busca o dailyData (mesmo hook do dash) e cuida de
+ * loading/vazio/sem-campanha. Usado como uma aba própria na página da etapa.
+ */
+export function MetaAdsTesteTab({
+  projectId,
+  campaignIds,
+}: {
+  projectId: string;
+  campaignIds: string[];
+}) {
+  const [days, setDays] = useState(30);
+  const { data, isLoading } = useCampaignDailyInsightsBulk(
+    projectId,
+    campaignIds.length > 0 ? campaignIds : null,
+    days,
+  );
+
+  if (campaignIds.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-border/40 p-12 text-center text-sm text-muted-foreground">
+        Vincule campanhas Meta a esta etapa (aba Meta Ads → Configurar) pra ver o experimento.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <div className="inline-flex rounded-lg border border-border/50 p-0.5 text-xs">
+          {[7, 30, 90].map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setDays(d)}
+              className={`rounded-md px-2.5 py-1 transition-colors ${days === d ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
+      </div>
+      {isLoading ? (
+        <Skeleton className="h-[600px] rounded-2xl" />
+      ) : data && data.length > 0 ? (
+        <MetaAdsTesteSection data={data} />
+      ) : (
+        <div className="rounded-xl border border-dashed border-border/40 p-12 text-center text-sm text-muted-foreground">
+          Sem dados Meta no período.
+        </div>
+      )}
+    </div>
   );
 }
