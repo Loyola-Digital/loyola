@@ -15,7 +15,7 @@
  * comparação — reestilizados.
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode, type ComponentType } from "react";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -28,14 +28,19 @@ import {
   CartesianGrid,
   Tooltip,
 } from "recharts";
-import { FlaskConical } from "lucide-react";
+import { FlaskConical, ImageIcon, Sparkles, LayoutTemplate } from "lucide-react";
 import { useTrafficOverview } from "@/lib/hooks/use-traffic-analytics";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { useStageSalesByDay } from "@/lib/hooks/use-stage-sales-by-day";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
+import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
+import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { overrideCplWithUniqueIngressos, type DailyRow } from "@/lib/utils/funnel-metrics";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
+import { TopCreativesGallery } from "./top-creatives-gallery";
+import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
 import type { Funnel, StageType } from "@loyola-x/shared";
 
 // ---- paleta Loyola (estrutura do ref, cores nossas) ----
@@ -410,10 +415,117 @@ export function MetaAdsTesteTab({
                   </table>
                 </div>
               )}
+
+              {/* ---- Leva 2: Criativos + LPs (componentes reais em moldura estilizada) ---- */}
+              {isPaid && stageId && (
+                <SectionShell icon={ImageIcon} title="CRIATIVOS" subtitle="Desempenho dos anúncios · Meta Ads">
+                  <StageCreativePerformanceTable projectId={projectId} funnelId={funnel.id} stageId={stageId} days={days} stageType={stageType} />
+                </SectionShell>
+              )}
+
+              {stageId && stageType && (
+                <TesteLpSection projectId={projectId} funnelId={funnel.id} stageId={stageId} days={days} stageType={stageType} />
+              )}
+
+              <SectionShell icon={Sparkles} title="TOP CRIATIVOS" subtitle="Ranking dos melhores anúncios do período">
+                <TopCreativesGallery
+                  projectId={projectId}
+                  days={days}
+                  campaignIds={campaignIds}
+                  funnelId={funnel.id}
+                  stageId={stageId}
+                  funnelContext={{ days, funnelType: "launch", funnelName: funnel?.name }}
+                  surveyDataByAdId={survey.byAdId}
+                  surveyDataByAdIdDynamic={survey.byAdIdDynamic}
+                  surveyQuestions={survey.questions}
+                />
+              </SectionShell>
             </>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// Moldura de seção estilizada (header Bebas Neue + faixa gradiente ouro).
+// Envolve os componentes REAIS do dashboard pra manter dados/features 1:1
+// dando a eles a identidade visual do TESTE.
+// ============================================================
+function SectionShell({
+  icon: Icon,
+  title,
+  subtitle,
+  children,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  subtitle?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-[12px] border p-[17px] space-y-4" style={{ background: T.surface, borderColor: T.border }}>
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "rgba(253,212,73,.12)", border: "1px solid rgba(253,212,73,.25)", color: T.gold }}>
+          <Icon className="h-4 w-4" />
+        </div>
+        <div>
+          <h3 style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: "2px", lineHeight: 1, color: T.text }}>{title}</h3>
+          {subtitle && <p className="text-[10px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>{subtitle}</p>}
+        </div>
+      </div>
+      <div className="h-px w-full" style={{ background: "linear-gradient(90deg, rgba(253,212,73,.35), transparent)" }} />
+      {children}
+    </div>
+  );
+}
+
+// Testes de LPs — replica a seção do LaunchDashboard (mesmos hooks/tabela) com header estilizado.
+function TesteLpSection({
+  projectId,
+  funnelId,
+  stageId,
+  days,
+  stageType,
+}: {
+  projectId: string;
+  funnelId: string;
+  stageId: string;
+  days: number;
+  stageType: StageType;
+}) {
+  const [publicoFilter, setPublicoFilter] = useState<"todos" | "hot" | "cold">("todos");
+  const { lps, isLoading } = useLpPerformanceData({ projectId, funnelId, stageId, days, publicoFilter });
+  const { data: stage } = useFunnelStage(projectId, funnelId, stageId);
+  const updateStage = useUpdateStage(projectId, funnelId, stageId);
+  const lpLinks = stage?.lpLinks ?? {};
+  const handleSaveLpLink = useCallback(
+    async (lpName: string, url: string) => {
+      const next = { ...lpLinks, [lpName.trim().toLowerCase()]: url.trim() };
+      await updateStage.mutateAsync({ lpLinks: next });
+    },
+    [lpLinks, updateStage],
+  );
+  const isPaid = stageType === "paid";
+
+  return (
+    <SectionShell icon={LayoutTemplate} title="TESTES DE LPs" subtitle="Desempenho das landing pages">
+      <div className="-mt-1 flex justify-end">
+        <div className="flex items-center gap-1 rounded-md border border-border/40 p-0.5">
+          {(["todos", "hot", "cold"] as const).map((opt) => (
+            <button key={opt} type="button" onClick={() => setPublicoFilter(opt)}
+              className={`h-6 rounded px-2.5 text-[11px] font-medium transition-colors ${publicoFilter === opt ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/50"}`}>
+              {opt === "todos" ? "Todos" : opt === "hot" ? "🔥 Hot" : "❄️ Cold"}
+            </button>
+          ))}
+        </div>
+      </div>
+      {isLoading ? (
+        <div className="p-4 text-center text-sm text-muted-foreground">Carregando dados de LPs...</div>
+      ) : (
+        <LpPerformanceTable rows={lps} stageType={isPaid ? "paid" : "free"} isLoading={false} lpLinks={lpLinks} onSaveLpLink={handleSaveLpLink} />
+      )}
+    </SectionShell>
   );
 }
