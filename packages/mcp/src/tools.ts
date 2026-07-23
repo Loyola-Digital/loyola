@@ -256,6 +256,43 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
       )
   );
 
+  // ---- Row-level de vendas (39.I3 — Inácio) ----
+  server.registerTool(
+    "get_stage_sales_rows",
+    {
+      title: "Vendas ROW-LEVEL da etapa (por transação)",
+      description:
+        "Uma linha por TRANSAÇÃO das planilhas de venda da etapa (mesmas fontes do sales-daily): txId, emailHash (sha256 — zero PII, mesma chave do cross-launch), produto, plataforma (subtype: main_product/tmb/perpetual_sales/... — exclua tmb pra tirar TMB), valorBruto/Liquido, dataVendaRaw (célula CRUA — n8n grava UTC, faça você o corte UTC→BRT) + dataVenda (ISO), statusBucket (paid/refunded/chargeback/other — reembolsos INCLUÍDOS, filtre), as 5 UTMs da venda, origem/canal/temperatura classificados, e amarração lead↔venda (leadMatch, leadUtmSource/Term, leadCreatedAt → coorte D+x = dataVenda − leadCreatedAt). SEM dedup — chave do dashboard é txId+produto.",
+      inputSchema: {
+        projectId: z.string().uuid().describe("ID do projeto (de list_projects)."),
+        stageId: z.string().describe("ID da etapa (de list_stages)."),
+      },
+    },
+    async ({ projectId, stageId }) =>
+      run(() =>
+        client.get(
+          `/api/public/v1/projects/${encodeURIComponent(projectId)}/stages/${encodeURIComponent(stageId)}/sales-rows`
+        )
+      )
+  );
+
+  // ---- Cross-launch (39.I4 — Inácio) ----
+  server.registerTool(
+    "get_cross_launch",
+    {
+      title: "Cross-launch do projeto (recompra entre funis)",
+      description:
+        "Recompra entre lançamentos/funis do projeto, match server-side por sha256 de e-mail (zero PII): compradores únicos por funil, multiFunnelBuyers (compraram em 2+), e overlaps por par com direção (aThenB = comprou em A antes de B, pela 1ª compra em cada). Pré-computado em cache — semDados = sync pendente.",
+      inputSchema: {
+        projectId: z.string().uuid().describe("ID do projeto (de list_projects)."),
+      },
+    },
+    async ({ projectId }) =>
+      run(() =>
+        client.get(`/api/public/v1/projects/${encodeURIComponent(projectId)}/cross-launch`)
+      )
+  );
+
   // ---- Custos operacionais da etapa (Brief v5 #2 — Evento Presencial) ----
   server.registerTool(
     "get_stage_operational_costs",
