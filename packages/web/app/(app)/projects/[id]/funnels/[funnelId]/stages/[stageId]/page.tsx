@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail, BarChart3, Star } from "lucide-react";
+import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail, BarChart3, Star, FlaskConical } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,6 +11,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LaunchDashboard } from "@/components/funnels/launch-dashboard";
+import { MetaAdsTesteTab } from "@/components/funnels/meta-ads-teste-section";
 import { PerpetualDashboard } from "@/components/funnels/perpetual-dashboard";
 import { YouTubeFunnelSection } from "@/components/funnels/youtube-funnel-section";
 import { SurveyFunnelTab } from "@/components/funnels/survey-funnel-tab";
@@ -429,6 +430,12 @@ export default function StagePage() {
               <span className="ml-1 text-[10px] bg-muted rounded-full px-1.5 py-0.5">{metaCount}</span>
             )}
           </TabsTrigger>
+          {funnelType === "launch" && (stage.stageType as string) === "paid" && (
+            <TabsTrigger value="meta-ads-teste" className="gap-1.5">
+              <FlaskConical className="h-3.5 w-3.5 text-cyan-400" />
+              Meta Ads TESTE
+            </TabsTrigger>
+          )}
           <TabsTrigger value="youtube-ads" className="gap-1.5">
             <Youtube className="h-3.5 w-3.5 text-red-500" />
             YouTube Ads
@@ -499,6 +506,12 @@ export default function StagePage() {
             />
           )}
         </TabsContent>
+
+        {funnelType === "launch" && (stage.stageType as string) === "paid" && (
+          <TabsContent value="meta-ads-teste" className="mt-6">
+            <MetaAdsTesteTab projectId={params.id} campaignIds={stage.campaigns.map((c) => c.id)} />
+          </TabsContent>
+        )}
 
         <TabsContent value="youtube-ads" className="mt-6">
           <YouTubeFunnelSection funnel={stageAsFunnel} projectId={params.id} days={30} />
