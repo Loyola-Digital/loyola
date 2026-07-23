@@ -986,7 +986,7 @@ function GroupsKpiCardWithTooltip({
 // CTR × CPM — Saturation Chart (ref: Samuel Diogenes)
 // ============================================================
 
-function CtrCpmChart({
+export function CtrCpmChart({
   data,
   comparisonDays,
   compFunnelName,
@@ -1173,7 +1173,7 @@ function fmtCompMetric(v: number | null | undefined, kind: "currency" | "percent
   return Math.round(v).toLocaleString("pt-BR");
 }
 
-function FunnelComparisonChart({
+export function FunnelComparisonChart({
   data,
   comparisonDays,
   compFunnelName,
@@ -1263,7 +1263,7 @@ function FunnelComparisonChart({
   );
 }
 
-function SaturationBadge({ dailyData }: { dailyData: CampaignDailyInsight[] | null }) {
+export function SaturationBadge({ dailyData }: { dailyData: CampaignDailyInsight[] | null }) {
   if (!dailyData || dailyData.length < 4) return null;
 
   const mid = Math.floor(dailyData.length / 2);

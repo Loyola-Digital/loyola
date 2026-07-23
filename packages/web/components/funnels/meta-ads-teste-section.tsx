@@ -28,8 +28,8 @@ import {
   CartesianGrid,
   Tooltip,
 } from "recharts";
-import { FlaskConical, ImageIcon, Sparkles, LayoutTemplate, PieChart as PieChartIcon, ClipboardList } from "lucide-react";
-import { useTrafficOverview, useTrafficCampaigns } from "@/lib/hooks/use-traffic-analytics";
+import { FlaskConical, ImageIcon, Sparkles, LayoutTemplate, PieChart as PieChartIcon, ClipboardList, Activity, ArrowLeftRight, Banknote, Users } from "lucide-react";
+import { useTrafficOverview, useTrafficCampaigns, useCampaignDailyInsightsBulk } from "@/lib/hooks/use-traffic-analytics";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { useStageSalesByDay } from "@/lib/hooks/use-stage-sales-by-day";
@@ -37,6 +37,8 @@ import { useStageHotColdBuyers } from "@/lib/hooks/use-stage-hot-cold-buyers";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
+import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
+import { useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { overrideCplWithUniqueIngressos, type DailyRow } from "@/lib/utils/funnel-metrics";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
@@ -45,6 +47,9 @@ import { ConversionFunnel } from "./conversion-funnel";
 import { HotColdSpendDonut } from "./hot-cold-spend-donut";
 import { HotColdCountDonut } from "./hot-cold-count-donut";
 import { SurveyQualificationSection } from "./survey-qualification-section";
+import { StageSalesSection } from "./stage-sales-section";
+import { GroupsDashboardSection } from "./groups-dashboard-section";
+import { CtrCpmChart, SaturationBadge, FunnelComparisonChart } from "./launch-dashboard";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
 import type { Funnel, StageType } from "@loyola-x/shared";
 
@@ -121,6 +126,13 @@ export function MetaAdsTesteTab({
   const { data: stageHotColdBuyers } = useStageHotColdBuyers(
     isPaid ? projectId : null, isPaid ? funnel.id : null, isPaid ? (stageId ?? null) : null, "capture", days,
   );
+  const { data: dailyData, isLoading: dailyLoading } = useCampaignDailyInsightsBulk(
+    projectId, campaignIds.length > 0 ? campaignIds : null, days,
+  );
+  const { data: compData } = useMetaAdsComparison(projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days);
+  const { adsetsMap } = useFunnelAdsetsMap(projectId, campaignIds, days);
+  const hasComparison = !!(compData && !compData.semDados);
+  const compDays = hasComparison ? compData!.days : null;
 
   // ingressos únicos sobrescrevem leads na Paga (mesma regra do dash)
   const ingUnicosByDay = isPaid ? salesData?.ingressosUnicosByDay : undefined;
@@ -522,6 +534,50 @@ export function MetaAdsTesteTab({
                     unmatchedResponses: survey.unmatchedResponses,
                   }}
                 />
+              </div>
+
+              {/* ---- Leva 4: CTR×CPM + Comparação + Vendas + Grupos ---- */}
+              <div className="rounded-[12px] border p-[17px]" style={{ background: T.surface, borderColor: T.border }}>
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "rgba(253,212,73,.12)", border: "1px solid rgba(253,212,73,.25)", color: T.gold }}>
+                      <Activity className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h3 style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: "2px", lineHeight: 1, color: T.text }}>CTR × CPM — SATURAÇÃO</h3>
+                      <p className="text-[10px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>Quando CTR cai e CPM sobe, os anúncios estão saturando</p>
+                    </div>
+                  </div>
+                  <SaturationBadge dailyData={dailyData ?? null} />
+                </div>
+                {dailyLoading ? (
+                  <Skeleton className="h-56" style={{ background: T.surface2 }} />
+                ) : dailyData && dailyData.length > 0 ? (
+                  <CtrCpmChart data={dailyData} comparisonDays={compDays ?? undefined} compFunnelName={compData?.compareFunnelName} />
+                ) : (
+                  <p className="py-8 text-center text-sm text-muted-foreground">Sem dados no período.</p>
+                )}
+              </div>
+
+              {hasComparison && compDays && dailyData && dailyData.length > 0 && (
+                <div className="space-y-4">
+                  <GroupHeading icon={ArrowLeftRight} title="COMPARAÇÃO DE LANÇAMENTOS" subtitle={`Este funil × ${compData?.compareFunnelName ?? "comparação"} — alinhado por dia`} />
+                  <FunnelComparisonChart data={dailyData} comparisonDays={compDays} compFunnelName={compData?.compareFunnelName} atualSalesByDay={compData?.atualSalesByDay} />
+                </div>
+              )}
+
+              {isPaid && stageId && (
+                <div className="space-y-5">
+                  <GroupHeading icon={Banknote} title="VENDAS" subtitle="Captação e produto principal" />
+                  <StageSalesSection projectId={projectId} funnelId={funnel.id} stageId={stageId} subtype="capture" title="Vendas de Captação" days={days} stageType={stageType} adsetsMap={adsetsMap} showCreativeTable={false} />
+                  <div className="border-t border-border/20" />
+                  <StageSalesSection projectId={projectId} funnelId={funnel.id} stageId={stageId} subtype="main_product" title="Produto Principal" days={days} adsetsMap={adsetsMap} />
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <GroupHeading icon={Users} title="GRUPOS" subtitle="Tracking de participantes" />
+                <GroupsDashboardSection projectId={projectId} funnelId={funnel.id} />
               </div>
             </>
           )}
