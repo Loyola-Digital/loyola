@@ -510,8 +510,10 @@ export default function StagePage() {
         {funnelType === "launch" && (stage.stageType as string) === "paid" && (
           <TabsContent value="meta-ads-teste" className="mt-6">
             <MetaAdsTesteTab
+              funnel={stageAsFunnel}
               projectId={params.id}
-              campaignIds={(stage.campaigns ?? []).map((c) => c.id)}
+              stageId={params.stageId}
+              stageType={stage.stageType}
             />
           </TabsContent>
         )}
