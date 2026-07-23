@@ -47,6 +47,7 @@ import { CampaignSelector } from "./campaign-selector";
 import type { Funnel, FunnelCampaign, StageType, ComparisonDayMetrics } from "@loyola-x/shared";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { StageSalesSection } from "./stage-sales-section";
+import { MetaAdsTesteSection } from "./meta-ads-teste-section";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
@@ -666,6 +667,11 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           compFunnelName={compData?.compareFunnelName}
           atualSalesByDay={compData?.atualSalesByDay}
         />
+      )}
+
+      {/* META ADS — TESTE: experimento visual (design system maycofix) sobre os mesmos dados */}
+      {stageType === "paid" && dailyData && dailyData.length > 0 && (
+        <MetaAdsTesteSection data={dailyData} />
       )}
 
       {/* Donut Hot/Cold/Outros + Funil de Conversão lado-a-lado 50/50 (Story 18.4) */}
