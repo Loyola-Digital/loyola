@@ -509,7 +509,20 @@ export default function StagePage() {
 
         {funnelType === "launch" && (stage.stageType as string) === "paid" && (
           <TabsContent value="meta-ads-teste" className="mt-6">
-            <MetaAdsTesteTab projectId={params.id} campaignIds={stage.campaigns.map((c) => c.id)} />
+            <MetaAdsTesteTab>
+              <LaunchDashboard
+                funnel={stageAsFunnel}
+                projectId={params.id}
+                stageId={params.stageId}
+                stageType={stage.stageType}
+                onCampaignsChange={(campaigns) => {
+                  updateStage.mutate(
+                    { campaigns },
+                    { onSuccess: () => toast.success("Campanhas atualizadas") }
+                  );
+                }}
+              />
+            </MetaAdsTesteTab>
           </TabsContent>
         )}
 
