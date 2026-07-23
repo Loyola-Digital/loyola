@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, isNull, asc } from "drizzle-orm";
+import { eq, and, isNull, asc, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { projects, funnels, funnelStages } from "../db/schema.js";
 import { requireScope } from "../middleware/api-key-auth.js";
@@ -86,15 +86,39 @@ export default fp(async function publicDiscoveryRoutes(fastify) {
         .where(and(eq(funnels.projectId, projectId), isNull(funnels.archivedAt)))
         .orderBy(asc(funnels.type), asc(funnels.sortOrder));
 
+      // Inácio RS-02: metaCampaignCount vinha 0 quando as campanhas estão
+      // vinculadas nas ETAPAS (o caso comum) — contava só funnels.campaigns.
+      // Agora é a união (distinct por id) de funil + etapas.
+      const funnelIds = rows.map((f) => f.id);
+      const stageCampRows = funnelIds.length
+        ? await fastify.db
+            .select({ funnelId: funnelStages.funnelId, campaigns: funnelStages.campaigns })
+            .from(funnelStages)
+            .where(inArray(funnelStages.funnelId, funnelIds))
+        : [];
+      const stageCampsByFunnel = new Map<string, Set<string>>();
+      for (const s of stageCampRows) {
+        let set = stageCampsByFunnel.get(s.funnelId);
+        if (!set) {
+          set = new Set();
+          stageCampsByFunnel.set(s.funnelId, set);
+        }
+        for (const c of (s.campaigns ?? []) as { id: string }[]) set.add(c.id);
+      }
+
       return {
         projectId,
-        funnels: rows.map((f) => ({
-          id: f.id,
-          name: f.name,
-          type: f.type, // "launch" | "perpetual"
-          metaCampaignCount: f.campaigns.length,
-          googleCampaignCount: f.googleAdsCampaigns.length,
-        })),
+        funnels: rows.map((f) => {
+          const ids = new Set<string>(stageCampsByFunnel.get(f.id) ?? []);
+          for (const c of (f.campaigns ?? []) as { id: string }[]) ids.add(c.id);
+          return {
+            id: f.id,
+            name: f.name,
+            type: f.type, // "launch" | "perpetual"
+            metaCampaignCount: ids.size,
+            googleCampaignCount: f.googleAdsCampaigns.length,
+          };
+        }),
       };
     }
   );

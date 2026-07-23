@@ -1,8 +1,9 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { stageSalesSpreadsheets, manualSales, funnelStages, funnels, publicMetricsCache } from "../db/schema.js";
+import { stageSalesSpreadsheets, manualSales, funnelStages, funnels, funnelSpreadsheets, publicMetricsCache } from "../db/schema.js";
 import { readSheetData } from "./google-sheets.js";
 import { classifyOrigem, type Origem } from "../utils/lead-origin.js";
+import { classifyRefundStatus, isRefundBucket } from "./sales-status.js";
 
 /**
  * Story 36.7 (Buraco 3 / "Dados Diários" — metade de vendas): faturamento +
@@ -101,6 +102,8 @@ type Mapping = {
   valorLiquido?: string;
   utm_source?: string;
   dataVenda?: string;
+  /** Status do pagamento (refunded/chargeback saem — mesmo critério do dashboard). */
+  status?: string;
 };
 
 // Story 39.6 (auditoria Tier 3.3): a etapa Vendas devolvia milhares de "vendas"
@@ -110,7 +113,7 @@ const SALES_SUBTYPES = ["main_product", "sales", "tmb", "event_sales"];
 
 export async function computeSalesDailyForStage(db: Database, stageId: string): Promise<SalesDailyPayload | null> {
   const [stageRow] = await db
-    .select({ stageType: funnelStages.stageType })
+    .select({ stageType: funnelStages.stageType, funnelId: funnelStages.funnelId })
     .from(funnelStages)
     .where(eq(funnelStages.id, stageId))
     .limit(1);
@@ -133,6 +136,36 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
   let sheets = allSheets.filter((s) => SALES_SUBTYPES.includes(s.subtype));
   if (sheets.length === 0 && stageRow?.stageType === "paid") {
     sheets = allSheets.filter((s) => s.subtype === "capture");
+  }
+
+  // Inácio M1 (mapeamento jul/22): FUNIL PERPÉTUO guarda as vendas reais
+  // (n8n-Kiwify) na planilha do FUNIL (funnel_spreadsheets type='perpetual_sales',
+  // stage_id NULL) — os 4 perpétuos em prod têm 0 planilhas de etapa, então o
+  // get_stage_sales_daily devolvia semDados pra TODOS. A etapa de dashboard
+  // (free/paid) herda a planilha do funil como fonte de vendas.
+  if (stageRow && (stageRow.stageType === "free" || stageRow.stageType === "paid")) {
+    const [perpSheet] = await db
+      .select({
+        id: funnelSpreadsheets.id,
+        spreadsheetId: funnelSpreadsheets.spreadsheetId,
+        sheetName: funnelSpreadsheets.sheetName,
+        columnMapping: funnelSpreadsheets.columnMapping,
+      })
+      .from(funnelSpreadsheets)
+      .where(and(eq(funnelSpreadsheets.funnelId, stageRow.funnelId), eq(funnelSpreadsheets.type, "perpetual_sales")))
+      .limit(1);
+    if (perpSheet) {
+      sheets = [
+        ...sheets,
+        {
+          id: perpSheet.id,
+          subtype: "perpetual_sales",
+          spreadsheetId: perpSheet.spreadsheetId,
+          sheetName: perpSheet.sheetName,
+          columnMapping: perpSheet.columnMapping as Mapping,
+        },
+      ];
+    }
   }
 
   // Brief v5 #1: vendas manuais (Evento Presencial / Vendas / captações) —
@@ -177,6 +210,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
     const utmSourceIdx = col(mapping.utm_source);
     const utmTermIdx = findTermHeader(data.headers);
     const dataIdx = col(mapping.dataVenda);
+    const statusIdx = col(mapping.status);
     if (emailIdx === -1) continue;
     subtypesConsidered.add(sheet.subtype);
 
@@ -185,6 +219,9 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
       rowIndex += 1;
       const email = (row[emailIdx] ?? "").trim().toLowerCase();
       if (!email) continue;
+      // Reembolso/chargeback fora (quando a coluna status está mapeada) —
+      // mesmo critério do dashboard/perpetual-sales-data.
+      if (statusIdx !== -1 && isRefundBucket(classifyRefundStatus(row[statusIdx], true))) continue;
       const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
       const produto = produtoIdx >= 0 ? (row[produtoIdx] ?? "").trim() : "";
       const dedupKey = txId
@@ -380,9 +417,24 @@ export async function syncSalesDaily(
     .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
     .where(isNull(manualSales.refundedAt));
 
+  // Inácio M1: etapas de dashboard (free/paid) de funis com planilha do
+  // PERPÉTUO (perpetual_sales) — a fonte de vendas é a planilha do funil.
+  const perpStages = await db
+    .selectDistinct({ stageId: funnelStages.id, projectId: funnels.projectId })
+    .from(funnelSpreadsheets)
+    .innerJoin(funnels, eq(funnels.id, funnelSpreadsheets.funnelId))
+    .innerJoin(funnelStages, eq(funnelStages.funnelId, funnels.id))
+    .where(
+      and(
+        eq(funnelSpreadsheets.type, "perpetual_sales"),
+        inArray(funnelStages.stageType, ["free", "paid"]),
+      ),
+    );
+
   const byStage = new Map<string, string>();
   for (const r of sheetStages) byStage.set(r.stageId, r.projectId);
   for (const r of manualStages) byStage.set(r.stageId, r.projectId);
+  for (const r of perpStages) byStage.set(r.stageId, r.projectId);
   const rows = [...byStage.entries()].map(([stageId, projectId]) => ({ stageId, projectId }));
 
   const filter = opts.projectIds ? new Set(opts.projectIds) : null;
