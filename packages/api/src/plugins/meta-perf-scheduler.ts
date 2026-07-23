@@ -8,6 +8,7 @@ import { syncMetaPerformance } from "../services/meta-perf-sync.js";
 import { syncLeadOrigin } from "../services/lead-origin-sync.js";
 import { syncSurvey } from "../services/survey-aggregation.js";
 import { syncSalesDaily } from "../services/sales-daily-sync.js";
+import { syncCrossLaunch } from "../services/cross-launch-sync.js";
 
 /** ms até a próxima ocorrência de `hour:00:00` no horário local. */
 function msUntilNextRun(hour: number): number {
@@ -86,6 +87,17 @@ export default fp(async function metaPerfSchedulerPlugin(fastify) {
       );
     } catch (err) {
       fastify.log.error(err, "[sales-daily] falhou");
+    }
+
+    // Cross-launch (Story 39.I4): recompra entre funis por hash de e-mail.
+    try {
+      const cl = await syncCrossLaunch(fastify.db, { log: (m) => fastify.log.info(m) });
+      fastify.log.info(
+        { projectsProcessed: cl.projectsProcessed, projectsSkipped: cl.projectsSkipped, errors: cl.errors.length },
+        "[cross-launch] concluído",
+      );
+    } catch (err) {
+      fastify.log.error(err, "[cross-launch] falhou");
     }
   }
 

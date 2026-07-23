@@ -11,10 +11,12 @@ import { readSheetData } from "./google-sheets.js";
 import {
   classifyOrigem,
   classifyTemperatura,
+  classifyCanal,
   normalizeEmail,
   phoneTail,
   type Origem,
   type Temperatura,
+  type Canal,
 } from "../utils/lead-origin.js";
 
 /**
@@ -81,6 +83,10 @@ export interface LeadOriginPayload {
   byOrigin: { origem: Origem; leads: number; uniqueLeads: number }[];
   byTemperature: { temperatura: Temperatura; leads: number; uniqueLeads: number }[];
   byOriginTemp: { origem: Origem; temperatura: Temperatura; leads: number; uniqueLeads: number }[];
+  /** Story 39.3: canal NOMEADO (Closer, WhatsApp, ManyChat, Instagram, Meta/Google
+   * Ads, E-mail, YouTube, Outros, Sem Track) por utm_source+utm_medium — os canais
+   * finos que os 3 baldes de byOrigin escondem. */
+  byCanal: { canal: Canal; leads: number; uniqueLeads: number }[];
   /** Quantas linhas têm o identificador PREENCHIDO — explica uniqueLeads baixo/0
    * (cabeçalho pode existir mas os valores estarem vazios na planilha). */
   identifiersFilled: { email: number; phone: number };
@@ -191,6 +197,7 @@ export async function computeLeadOriginForStage(
   const byOrigin = new Map<Origem, Bucket>();
   const byTemp = new Map<Temperatura, Bucket>();
   const byOT = new Map<string, Bucket>();
+  const byCanal = new Map<Canal, Bucket>();
   // Story 39.2: contagens cruas por valor de UTM (base do classificador fino).
   const utmCounts = {
     source: new Map<string, number>(),
@@ -233,6 +240,7 @@ export async function computeLeadOriginForStage(
     bump(byOrigin as Map<string, Bucket>, origem, key);
     bump(byTemp as Map<string, Bucket>, temperatura, key);
     bump(byOT, `${origem}|${temperatura}`, key);
+    bump(byCanal as Map<string, Bucket>, classifyCanal(cell(row, idx.utmSource), cell(row, idx.utmMedium)), key);
 
     bumpUtm(utmCounts.source, cell(row, idx.utmSource));
     bumpUtm(utmCounts.medium, cell(row, idx.utmMedium));
@@ -259,6 +267,9 @@ export async function computeLeadOriginForStage(
       const [origem, temperatura] = k.split("|") as [Origem, Temperatura];
       return { origem, temperatura, leads: b.leads, uniqueLeads: b.keys.size };
     }),
+    byCanal: [...byCanal.entries()]
+      .map(([canal, b]) => ({ canal, leads: b.leads, uniqueLeads: b.keys.size }))
+      .sort((a, b) => b.leads - a.leads),
     identifiersFilled: { email: emailFilled, phone: phoneFilled },
     byUtm: {
       source: topCounts(utmCounts.source),

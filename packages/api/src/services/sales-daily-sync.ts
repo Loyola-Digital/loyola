@@ -2,7 +2,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { stageSalesSpreadsheets, manualSales, funnelStages, funnels, funnelSpreadsheets, publicMetricsCache } from "../db/schema.js";
 import { readSheetData } from "./google-sheets.js";
-import { classifyOrigem, type Origem } from "../utils/lead-origin.js";
+import { classifyOrigem, classifyCanal, type Origem, type Canal } from "../utils/lead-origin.js";
 import { classifyRefundStatus, isRefundBucket } from "./sales-status.js";
 
 /**
@@ -75,6 +75,9 @@ export interface SalesDailyPayload {
     ingressos: { pago: number; org: number; semTrack: number; total: number };
   }[];
   porOrigem: { origem: Origem; vendas: number; bruto: number; liquido: number }[];
+  /** Story 39.3: canal NOMEADO da venda (Closer, WhatsApp, ManyChat, Instagram...)
+   * por utm_source+utm_medium da própria linha de venda. */
+  porCanal: { canal: Canal; vendas: number; bruto: number; liquido: number }[];
   /** Resumão v4 #3: matriz Origem × Temperatura (utm_term da VENDA: hot/cold/null).
    * ROAS por temperatura = bruto do bloco ÷ spend hot/cold do stage-daily. */
   porOrigemTemperatura: { origem: Origem; temperatura: "hot" | "cold" | null; vendas: number; bruto: number; liquido: number }[];
@@ -101,6 +104,7 @@ type Mapping = {
   valorBruto?: string;
   valorLiquido?: string;
   utm_source?: string;
+  utm_medium?: string;
   dataVenda?: string;
   /** Status do pagamento (refunded/chargeback saem — mesmo critério do dashboard). */
   status?: string;
@@ -111,7 +115,24 @@ type Mapping = {
 // verdade = estes subtypes (capture fica fora).
 const SALES_SUBTYPES = ["main_product", "sales", "tmb", "event_sales"];
 
-export async function computeSalesDailyForStage(db: Database, stageId: string): Promise<SalesDailyPayload | null> {
+/** Planilha de venda resolvida pra uma etapa (usada pelo agregado e pelo row-level). */
+export interface ResolvedSalesSheet {
+  id: string;
+  subtype: string;
+  spreadsheetId: string;
+  sheetName: string;
+  columnMapping: unknown;
+}
+
+/**
+ * Resolve as planilhas de VENDA de uma etapa (regras 39.6 + capture-fallback +
+ * herança da planilha do perpétuo). Exportado pra o endpoint row-level (39.I3)
+ * usar EXATAMENTE as mesmas fontes do agregado.
+ */
+export async function resolveSalesSheetsForStage(
+  db: Database,
+  stageId: string,
+): Promise<{ sheets: ResolvedSalesSheet[]; stageType: string | null }> {
   const [stageRow] = await db
     .select({ stageType: funnelStages.stageType, funnelId: funnelStages.funnelId })
     .from(funnelStages)
@@ -133,7 +154,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
   // (Kiwify — cada linha é compra com valor). Mas SÓ como FALLBACK quando a etapa
   // não tem planilha de venda — quando tem as duas, a capture costuma repetir as
   // MESMAS transações (dedup é por sheet) e dobraria o faturamento.
-  let sheets = allSheets.filter((s) => SALES_SUBTYPES.includes(s.subtype));
+  let sheets: ResolvedSalesSheet[] = allSheets.filter((s) => SALES_SUBTYPES.includes(s.subtype));
   if (sheets.length === 0 && stageRow?.stageType === "paid") {
     sheets = allSheets.filter((s) => s.subtype === "capture");
   }
@@ -155,18 +176,14 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
       .where(and(eq(funnelSpreadsheets.funnelId, stageRow.funnelId), eq(funnelSpreadsheets.type, "perpetual_sales")))
       .limit(1);
     if (perpSheet) {
-      sheets = [
-        ...sheets,
-        {
-          id: perpSheet.id,
-          subtype: "perpetual_sales",
-          spreadsheetId: perpSheet.spreadsheetId,
-          sheetName: perpSheet.sheetName,
-          columnMapping: perpSheet.columnMapping as Mapping,
-        },
-      ];
+      sheets = [...sheets, { ...perpSheet, subtype: "perpetual_sales" }];
     }
   }
+  return { sheets, stageType: stageRow?.stageType ?? null };
+}
+
+export async function computeSalesDailyForStage(db: Database, stageId: string): Promise<SalesDailyPayload | null> {
+  const { sheets } = await resolveSalesSheetsForStage(db, stageId);
 
   // Brief v5 #1: vendas manuais (Evento Presencial / Vendas / captações) —
   // reembolsadas (refundedAt != null) ficam fora, mesma regra do dashboard.
@@ -188,7 +205,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
   // como vendas separadas; retry literal (mesmo pedido+produto) colapsa.
   const sales = new Map<
     string,
-    { bruto: number; liquido: number; utmSource: string | null; utmTerm: string | null; date: Date | null; produto: string; plataforma: string }
+    { bruto: number; liquido: number; utmSource: string | null; utmMedium: string | null; utmTerm: string | null; date: Date | null; produto: string; plataforma: string }
   >();
   const subtypesConsidered = new Set<string>();
 
@@ -208,6 +225,10 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
     const brutoIdx = col(mapping.valorBruto);
     const liquidoIdx = col(mapping.valorLiquido);
     const utmSourceIdx = col(mapping.utm_source);
+    // 39.3: medium entra no classificador de canal. Mapping primeiro; fallback
+    // short-form do n8n ("m=") por matcher exato.
+    let utmMediumIdx = col(mapping.utm_medium);
+    if (utmMediumIdx === -1) utmMediumIdx = data.headers.findIndex((h) => h.trim().toLowerCase() === "m=" || h.trim().toLowerCase() === "utm_medium");
     const utmTermIdx = findTermHeader(data.headers);
     const dataIdx = col(mapping.dataVenda);
     const statusIdx = col(mapping.status);
@@ -232,6 +253,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
         bruto: parseNumber(row[brutoIdx] ?? ""),
         liquido: parseNumber(row[liquidoIdx] ?? ""),
         utmSource: utmSourceIdx !== -1 ? sanitizeUtmValue(row[utmSourceIdx]) : null,
+        utmMedium: utmMediumIdx !== -1 ? sanitizeUtmValue(row[utmMediumIdx]) : null,
         utmTerm: utmTermIdx !== -1 ? sanitizeUtmValue(row[utmTermIdx]) : null,
         date: dataIdx !== -1 ? parseDate(row[dataIdx]) : null,
         produto: produto || "(sem produto)",
@@ -247,6 +269,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
       bruto,
       liquido: recebido ?? bruto,
       utmSource: null,
+      utmMedium: null,
       utmTerm: null,
       date: m.saleDate,
       produto: (m.product ?? "").trim() || "(venda manual)",
@@ -258,6 +281,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
 
   const byDay = new Map<string, { bruto: number; liquido: number; pago: number; org: number; semTrack: number }>();
   const porOrigem = new Map<Origem, { vendas: number; bruto: number; liquido: number }>();
+  const porCanal = new Map<Canal, { vendas: number; bruto: number; liquido: number }>();
   const porOT = new Map<string, { origem: Origem; temperatura: "hot" | "cold" | null; vendas: number; bruto: number; liquido: number }>();
   const porProduto = new Map<string, { vendas: number; bruto: number; liquido: number }>();
   const porPlataforma = new Map<string, { vendas: number; bruto: number; liquido: number }>();
@@ -276,6 +300,13 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
     po.bruto += s.bruto;
     po.liquido += s.liquido;
     porOrigem.set(origem, po);
+
+    const canal = classifyCanal(s.utmSource, s.utmMedium);
+    const pc = porCanal.get(canal) ?? { vendas: 0, bruto: 0, liquido: 0 };
+    pc.vendas += 1;
+    pc.bruto += s.bruto;
+    pc.liquido += s.liquido;
+    porCanal.set(canal, pc);
 
     const pp = porProduto.get(s.produto) ?? { vendas: 0, bruto: 0, liquido: 0 };
     pp.vendas += 1;
@@ -337,6 +368,14 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
       bruto: Math.round(v.bruto * 100) / 100,
       liquido: Math.round(v.liquido * 100) / 100,
     })),
+    porCanal: [...porCanal.entries()]
+      .map(([canal, v]) => ({
+        canal,
+        vendas: v.vendas,
+        bruto: Math.round(v.bruto * 100) / 100,
+        liquido: Math.round(v.liquido * 100) / 100,
+      }))
+      .sort((a, b) => b.bruto - a.bruto),
     porOrigemTemperatura: [...porOT.values()].map((v) => ({
       origem: v.origem,
       temperatura: v.temperatura,

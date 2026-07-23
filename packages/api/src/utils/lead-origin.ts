@@ -30,6 +30,42 @@ export function classifyOrigem(utmSource: string | null | undefined): Origem {
   return PAID_UTM_SOURCES.has(n) ? "Pago" : "Orgânico";
 }
 
+/**
+ * Story 39.3 (classificador fino): canal NOMEADO a partir de utm_source+utm_medium.
+ * Vai além dos 3 baldes Pago/Orgânico/Sem Track — Closer, WhatsApp, ManyChat e
+ * Instagram deixam de ficar invisíveis dentro de "Orgânico". Regras default
+ * (config por projeto fica pra evolução; ordem importa — específico primeiro).
+ */
+export type Canal =
+  | "Meta Ads"
+  | "Google Ads"
+  | "Closer"
+  | "ManyChat"
+  | "WhatsApp"
+  | "Instagram"
+  | "E-mail"
+  | "YouTube"
+  | "Outros"
+  | "Sem Track";
+
+export function classifyCanal(
+  utmSource: string | null | undefined,
+  utmMedium: string | null | undefined,
+): Canal {
+  const s = (utmSource ?? "").trim().toLowerCase();
+  const m = (utmMedium ?? "").trim().toLowerCase();
+  if (!s && !m) return "Sem Track";
+  const both = `${s} ${m}`;
+  if (/closer|vendedor/.test(both)) return "Closer";
+  if (/manychat|many_chat|many-chat/.test(both)) return "ManyChat";
+  if (/whats|wpp|\bzap\b/.test(both)) return "WhatsApp";
+  if (/instagram|linkinbio|link_in_bio|link-in-bio|\bbio\b|\big\b/.test(both)) return "Instagram";
+  if (/e-?mail|mautic|activecampaign|\bac\b/.test(both)) return "E-mail";
+  if (/youtube|\byt\b/.test(both)) return "YouTube";
+  if (PAID_UTM_SOURCES.has(s)) return s.startsWith("google") ? "Google Ads" : "Meta Ads";
+  return "Outros";
+}
+
 export type Temperatura = "quente" | "frio" | "indefinido";
 
 /** Quente/frio a partir do utm_term (hot/quente vs cold/frio). */
