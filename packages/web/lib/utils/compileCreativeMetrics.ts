@@ -46,6 +46,9 @@ export function compileCreativeMetricsByName(
     const sumClicks = group.reduce((sum, m) => sum + m.clicks, 0);
     const sumLeads = group.reduce((sum, m) => sum + m.leads, 0);
     const sumRevenue = group.reduce((sum, m) => sum + m.revenue, 0);
+    // Story 18.65: soma retenção de vídeo (crus) p/ recalcular Hook/Hold/Body
+    const sumVideoViews3s = group.reduce((sum, m) => sum + (m.videoViews3s ?? 0), 0);
+    const sumVideoViews75 = group.reduce((sum, m) => sum + (m.videoViews75 ?? 0), 0);
 
     // Story 18.55 (Captação Paga): soma Único/Total e recalcula CPL/ROAS
     // sobre os somados — mesmo padrão do spendPercent (recalculado depois).
@@ -65,6 +68,12 @@ export function compileCreativeMetricsByName(
     // modo compilado exibia CTR/CVR 100× menores.
     const ctr = sumImpressions > 0 ? (sumClicks / sumImpressions) * 100 : 0;
     const cvr = sumImpressions > 0 ? (sumLeads / sumImpressions) * 100 : 0;
+
+    // Story 18.65: Hook/Hold/Body recalculados sobre os SOMADOS (nunca média de
+    // percentuais) — mesma semântica da linha Total.
+    const hookRate = sumImpressions > 0 ? (sumVideoViews3s / sumImpressions) * 100 : 0;
+    const holdRate = sumVideoViews3s > 0 ? (sumVideoViews75 / sumVideoViews3s) * 100 : 0;
+    const bodyConv = sumVideoViews75 > 0 ? (sumLeads / sumVideoViews75) * 100 : 0;
 
     // Médias aritméticas
     const cpc = sumClicks > 0 ? sumSpend / sumClicks : 0;
@@ -113,6 +122,12 @@ export function compileCreativeMetricsByName(
       roas,
       roi,
       cvr,
+      // Story 18.65: retenção de vídeo — derivadas (sobre somados) + crus
+      hookRate,
+      holdRate,
+      bodyConv,
+      videoViews3s: sumVideoViews3s,
+      videoViews75: sumVideoViews75,
       utmTerm: group[0].utmTerm ?? null, // Usar primeira
       temperature: 'all' as const, // Temperature fixo para modo compilado
       compiled: true,

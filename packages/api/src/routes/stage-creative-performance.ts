@@ -94,6 +94,10 @@ interface CreativePerformanceResponse {
   // Story 18.61: adset_name distintos dos ad_ids ativos (tooltip). Só presente
   // quando status === "active".
   activeAdsets?: string[];
+  // Story 18.65: retenção de vídeo (crus, somáveis) — 3s (video_view no actions)
+  // e 75% (videoMetrics.p75). O front deriva Hook/Hold/Body Conv. a partir deles.
+  videoViews3s?: number;
+  videoViews75?: number;
 }
 
 /**
@@ -121,6 +125,20 @@ function parseLinkClicks(
   if (!actions) return 0;
   const lc = actions.find((a) => a.action_type === "link_click");
   return lc ? parseNumber(lc.value) : 0;
+}
+
+/**
+ * Story 18.65: extrai "Reproduções de vídeo de 3 segundos" do array `actions`.
+ * A Meta expõe isso como `{ action_type: "video_view", value: "..." }` — o
+ * `video_view` do Gerenciador é a métrica de 3-second video plays. Já vem no
+ * `actions` buscado (fields inclui `actions`) — zero chamada nova à Meta.
+ */
+function parseVideo3sViews(
+  actions: { action_type: string; value: string }[] | undefined,
+): number {
+  if (!actions) return 0;
+  const v = actions.find((a) => a.action_type === "video_view");
+  return v ? parseNumber(v.value) : 0;
 }
 
 function parseNumber(val: string | undefined): number {
@@ -639,6 +657,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           // Story 18.46: campaign_name (AC3) e landing_page_view agregado (AC4)
           campaignName: string | null;
           landingPageViews: number;
+          // Story 18.65: retenção de vídeo (3s do actions, 75% do videoMetrics)
+          videoViews3s: number;
+          videoViews75: number;
         };
         const groupedByName = new Map<string, AdNameGroup>();
 
@@ -665,6 +686,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               clicks: 0,
               campaignName: null,
               landingPageViews: 0,
+              videoViews3s: 0,
+              videoViews75: 0,
             };
             groupedByName.set(adName, group);
           }
@@ -686,6 +709,10 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             group.campaignName = ad.campaign_name;
           }
           group.landingPageViews += parseLandingPageViews(ad.actions);
+          // Story 18.65: 3s (video_view no actions) + 75% (videoMetrics.p75) —
+          // ambos já disponíveis no insight buscado; nenhuma chamada nova à Meta.
+          group.videoViews3s += parseVideo3sViews(ad.actions);
+          group.videoViews75 += ad.videoMetrics?.p75 ?? 0;
         }
 
         // Story 18.61: estado atual (effective_status) por ad_id, lido do cache
@@ -784,6 +811,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             utmTerm: topUtmTerm,
             campaignName: group.campaignName,
             landingPageViews: group.landingPageViews,
+            // Story 18.65: retenção de vídeo (crus) p/ Hook/Hold/Body no front
+            videoViews3s: group.videoViews3s,
+            videoViews75: group.videoViews75,
             // Story 18.61: status agregado (OR) + adsets ativos (aditivo)
             status,
             ...(activeAdsets.length > 0 ? { activeAdsets } : {}),
