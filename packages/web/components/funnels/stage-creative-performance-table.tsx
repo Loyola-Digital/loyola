@@ -59,6 +59,10 @@ type SortableCol =
   | "cpl"
   | "revenue"
   | "roas"
+  // Story 18.65: retenção de vídeo
+  | "hookRate"
+  | "holdRate"
+  | "bodyConv"
   // Story 18.55 (Captação Paga)
   | "ingressosUnicos"
   | "ingressosTotais"
@@ -125,6 +129,10 @@ const COLUMNS: Array<{ key: SortableCol; label: string; title?: string }> = [
   { key: "ctr", label: "CTR", title: "Cliques no link ÷ Impressões × 100 (Meta Ads · action link_click)" },
   { key: "cpc", label: "CPC", title: "Investimento ÷ Cliques no link" },
   { key: "cpm", label: "CPM", title: "Investimento ÷ Impressões × 1000" },
+  // Story 18.65: retenção de vídeo (Hook / Hold / Body Conv.)
+  { key: "hookRate", label: "Hook", title: "Visualização 3s ÷ Impressões × 100 — Atenção Inicial (verde ≥ 25%)" },
+  { key: "holdRate", label: "Hold", title: "Visualização 75% ÷ Visualização 3s × 100 — Retenção Real (verde ≥ 13%)" },
+  { key: "bodyConv", label: "Body Conv.", title: "Leads ÷ Visualização 75% × 100 — Conversão do Corpo (verde ≥ 3,7%)" },
   { key: "revenue", label: "Faturamento" },
   { key: "roas", label: "ROAS" },
 ];
@@ -156,6 +164,10 @@ const PAID_COLUMNS: Array<{ key: SortableCol; label: string; title?: string }> =
   { key: "ctr", label: "CTR", title: "Cliques no link ÷ Impressões × 100 (Meta Ads · action link_click)" },
   { key: "cpc", label: "CPC", title: "Investimento ÷ Cliques no link" },
   { key: "cpm", label: "CPM", title: "Investimento ÷ Impressões × 1000" },
+  // Story 18.65: retenção de vídeo (Hook / Hold / Body Conv.)
+  { key: "hookRate", label: "Hook", title: "Visualização 3s ÷ Impressões × 100 — Atenção Inicial (verde ≥ 25%)" },
+  { key: "holdRate", label: "Hold", title: "Visualização 75% ÷ Visualização 3s × 100 — Retenção Real (verde ≥ 13%)" },
+  { key: "bodyConv", label: "Body Conv.", title: "Leads ÷ Visualização 75% × 100 — Conversão do Corpo (verde ≥ 3,7%)" },
   {
     key: "revenueTotal",
     label: "Fat. Total",
@@ -187,12 +199,25 @@ function bandsEmptyMessage(diag: {
     return 'Sem faixas: há pesquisa vinculada, mas nenhuma planilha de leads/sales vinculada a este stage — necessária para cruzar utm_content → Ad Name.';
   }
   if (!diag.hasAdNameMap) {
-    return 'Sem faixas: a planilha de leads/sales deste stage não tem a coluna "Ad Name" (com "content"/"utm_content") — necessária para cruzar as respostas da pesquisa com os criativos.';
+    // Story 18.65: o Ad Name agora é resolvido pela coluna "Ad Name" da planilha
+    // OU pelo utm_content via Meta. Se ainda assim não resolveu, aponta as duas vias.
+    return 'Sem faixas: não foi possível resolver o "Ad Name" dos criativos — nem pela coluna "Ad Name" da planilha, nem pelo utm_content via Meta. Verifique se a conta Meta está vinculada e se as respostas têm utm_content.';
   }
   if (!diag.surveyHasRows) {
     return 'Sem faixas: a(s) pesquisa(s) vinculada(s) não retornaram respostas.';
   }
   return 'Sem faixas: nenhuma resposta paga (utm_source = meta) com coluna "Faixa" foi cruzada com os criativos deste período.';
+}
+
+/** Story 18.65: renderiza uma taxa (%) destacando em verde quando bate a meta. */
+function renderRateWithGoal(value: number | undefined, goal: number): React.ReactNode {
+  const v = value ?? 0;
+  const hit = v >= goal;
+  return (
+    <span className={hit ? "text-green-600 dark:text-green-400 font-semibold" : undefined}>
+      {formatMetricValue(v, "percentage")}
+    </span>
+  );
 }
 
 export function StageCreativePerformanceTable({
@@ -268,6 +293,9 @@ export function StageCreativePerformanceTable({
           // Story 18.61: status/adsets ativos fluem até o badge (aditivo)
           status: creative.status,
           activeAdsets: creative.activeAdsets,
+          // Story 18.65: retenção de vídeo (crus) → Hook/Hold/Body no calculator
+          videoViews3s: creative.videoViews3s,
+          videoViews75: creative.videoViews75,
           // Story 18.55: só na Paga — repassar Único/Total muda CPL (÷ Ing.
           // Únicos) e ROAS (Fat. Total ÷ Invest) dentro do calculator. Nas
           // demais etapas os campos ficam de fora e nada muda (AC8).
@@ -329,12 +357,14 @@ export function StageCreativePerformanceTable({
         clicks: acc.clicks + (r.clicks ?? 0),
         leads: acc.leads + (r.leads ?? 0),
         revenue: acc.revenue + (r.revenue ?? 0),
+        videoViews3s: acc.videoViews3s + (r.videoViews3s ?? 0),
+        videoViews75: acc.videoViews75 + (r.videoViews75 ?? 0),
         ingressosUnicos: acc.ingressosUnicos + (r.ingressosUnicos ?? 0),
         ingressosTotais: acc.ingressosTotais + (r.ingressosTotais ?? 0),
         revenueTotal: acc.revenueTotal + (r.revenueTotal ?? 0),
         revenueUnico: acc.revenueUnico + (r.revenueUnico ?? 0),
       }),
-      { spend: 0, impressions: 0, clicks: 0, leads: 0, revenue: 0, ingressosUnicos: 0, ingressosTotais: 0, revenueTotal: 0, revenueUnico: 0 },
+      { spend: 0, impressions: 0, clicks: 0, leads: 0, revenue: 0, videoViews3s: 0, videoViews75: 0, ingressosUnicos: 0, ingressosTotais: 0, revenueTotal: 0, revenueUnico: 0 },
     );
     const metrics = calculateCreativeMetrics({
       adId: "__total__",
@@ -346,6 +376,8 @@ export function StageCreativePerformanceTable({
       revenue: sum.revenue,
       utmTerm: null,
       totalSpend: sum.spend,
+      videoViews3s: sum.videoViews3s,
+      videoViews75: sum.videoViews75,
       ...(stageType === "paid"
         ? {
             ingressosUnicos: sum.ingressosUnicos,
@@ -411,6 +443,13 @@ export function StageCreativePerformanceTable({
         return formatMetricValue(row.cpc, "currency");
       case "cpm":
         return formatMetricValue(row.cpm, "currency");
+      // Story 18.65: retenção de vídeo — célula verde quando bate a meta
+      case "hookRate":
+        return renderRateWithGoal(row.hookRate, 25);
+      case "holdRate":
+        return renderRateWithGoal(row.holdRate, 13);
+      case "bodyConv":
+        return renderRateWithGoal(row.bodyConv, 3.7);
       case "leads":
         return formatMetricValue(row.leads, "number");
       case "cpl":

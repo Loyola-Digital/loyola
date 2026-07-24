@@ -37,6 +37,9 @@ export interface CreativePerformanceData {
   // backend) + adsets onde está ativo (tooltip). Aditivo; ausência → "—".
   status?: "active" | "paused" | "unknown";
   activeAdsets?: string[];
+  // Story 18.65: retenção de vídeo (crus) — Hook/Hold/Body Conv. derivam no front.
+  videoViews3s?: number;
+  videoViews75?: number;
 }
 
 // Story 18.46: corte por LP × temperatura (para a tabela de Testes de LPs)

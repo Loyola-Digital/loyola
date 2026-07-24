@@ -18,6 +18,7 @@ import type { SheetData } from "@/lib/hooks/use-google-sheets";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useFunnelSpreadsheets } from "@/lib/hooks/use-funnel-spreadsheets";
 import { normalizeNumericId } from "@/lib/utils/normalize-answer";
+import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
 
 // Story 18.47: extrai um mapa ad_id (content/utm_content) → Ad Name de uma aba
 // (leads OU sales). Usado para nomear as respostas da pesquisa (que só têm
@@ -137,14 +138,50 @@ export function useCrossReferenceLeads({
     })),
   });
 
-  // Story 18.47: mapa ad_id → Ad Name combinando a aba de leads E a de sales
-  // (a que tiver content + Ad Name preenche). Cobre Gratuita e Paga.
+  // Story 18.65 (fix ponto 8): resolve Ad Name via Meta a partir do utm_content
+  // (ad_id), para as faixas cruzarem MESMO quando a planilha não tem a coluna
+  // "Ad Name". Coleta os ad_ids das pesquisas + planilhas e resolve pelo cache
+  // de nomes da Meta (meta_entity_names_cache, 24h) — sem chamada Meta ao vivo.
+  const surveyDatasForIds = surveyResults.map((r) => r.data);
+  const surveyIdsKey = surveyResults.map((r) => r.dataUpdatedAt).join(",");
+  const contentAdIds = useMemo(() => {
+    const ids = new Set<string>();
+    const norm = (s: string) => (s ?? "").trim().toLowerCase();
+    const collect = (data: { headers?: string[]; rows?: string[][] } | null | undefined) => {
+      const rows = data?.rows;
+      const headers = data?.headers;
+      if (!rows || !headers) return;
+      const idx = headers.findIndex((h) => ["utm_content", "content", "co="].includes(norm(h)));
+      if (idx === -1) return;
+      for (const row of rows) {
+        const adId = normalizeNumericId(row[idx] ?? "");
+        if (adId) ids.add(adId);
+      }
+    };
+    for (const d of surveyDatasForIds) collect(d);
+    collect(sheetQuery.data);
+    collect(salesSheetQuery.data);
+    return [...ids];
+  }, [surveyIdsKey, sheetQuery.data, salesSheetQuery.data]);
+
+  const { namesMap: metaAdNames } = useResolveMetaNames(projectId, contentAdIds, "ad");
+
+  // Story 18.47 + 18.65: mapa ad_id → Ad Name. Base = nomes da Meta (fix ponto 8);
+  // a planilha (quando tem a coluna "Ad Name") tem PRIORIDADE — preserva 100% o
+  // comportamento dos stages que já funcionavam, e o Meta só preenche os ad_ids
+  // que a planilha não nomeia.
   const adNameByContent = useMemo<Record<string, string>>(() => {
+    // O serviço devolve name===id quando não resolve — descartamos esses.
+    const fromMeta: Record<string, string> = {};
+    for (const [id, name] of metaAdNames) {
+      if (name && name !== id) fromMeta[id] = name;
+    }
     return {
+      ...fromMeta,
       ...extractAdNamesFromSheet(salesSheetQuery.data),
       ...extractAdNamesFromSheet(sheetQuery.data),
     };
-  }, [sheetQuery.data, salesSheetQuery.data]);
+  }, [sheetQuery.data, salesSheetQuery.data, metaAdNames]);
 
   // Computar cruzamento: coluna 5 = utm_content (adId), coluna 7 = utm_term (lpa/hot/cold/etc)
   const result = useMemo(() => {

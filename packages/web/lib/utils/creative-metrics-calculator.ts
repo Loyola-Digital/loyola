@@ -24,6 +24,9 @@ export interface CreativeMetrics {
   // Story 18.61: estado atual do criativo na Meta + adsets ativos (tooltip).
   status?: "active" | "paused" | "unknown";
   activeAdsets?: string[];
+  // Story 18.65: retenção de vídeo (crus) — Hook/Hold/Body Conv. derivam daqui.
+  videoViews3s?: number;
+  videoViews75?: number;
 }
 
 export interface CalculatedMetrics {
@@ -50,6 +53,12 @@ export interface CalculatedMetrics {
   // Story 18.61: estado atual do criativo na Meta + adsets ativos (tooltip).
   status?: "active" | "paused" | "unknown";
   activeAdsets?: string[];
+  // Story 18.65: retenção de vídeo — derivadas (%) + crus (somáveis no Total).
+  hookRate: number; // 3s ÷ impressões × 100 (Atenção Inicial)
+  holdRate: number; // 75% ÷ 3s × 100 (Retenção Real)
+  bodyConv: number; // leads ÷ 75% × 100 (Conversão do Corpo)
+  videoViews3s: number;
+  videoViews75: number;
 }
 
 /**
@@ -75,6 +84,36 @@ export function calculateTemperature(
 export function calculateCtr(clicks: number, impressions: number): number {
   if (impressions === 0) return 0;
   return (clicks / impressions) * 100;
+}
+
+/**
+ * Story 18.65: Hook Rate — Visualização 3s ÷ Impressões × 100 (Atenção Inicial:
+ * dos que viram o anúncio, quantos assistiram os primeiros 3 segundos).
+ * Verde ≥ 25%. Retorna 0 se impressões = 0 (mantém a coluna ordenável).
+ */
+export function calculateHookRate(views3s: number, impressions: number): number {
+  if (impressions === 0) return 0;
+  return (views3s / impressions) * 100;
+}
+
+/**
+ * Story 18.65: Hold Rate — Visualização 75% ÷ Visualização 3s × 100 (Retenção
+ * Real: dos que passaram pelo gancho, quantos seguiram retidos até 75% do corpo).
+ * Verde ≥ 13%. Retorna 0 se 3s = 0.
+ */
+export function calculateHoldRate(views75: number, views3s: number): number {
+  if (views3s === 0) return 0;
+  return (views75 / views3s) * 100;
+}
+
+/**
+ * Story 18.65: Body Conv. — Leads ÷ Visualização 75% × 100 (Conversão do Corpo:
+ * dos que viram o corpo do vídeo, quantos converteram em lead).
+ * Verde ≥ 3,7%. Retorna 0 se 75% = 0.
+ */
+export function calculateBodyConv(leads: number, views75: number): number {
+  if (views75 === 0) return 0;
+  return (leads / views75) * 100;
 }
 
 /**
@@ -159,6 +198,12 @@ export function calculateCreativeMetrics(
     // Story 18.61: propaga status/adsets ativos (aditivo — não afeta métricas)
     status: creative.status,
     activeAdsets: creative.activeAdsets,
+    // Story 18.65: retenção de vídeo — derivadas + crus (p/ o Total recalcular)
+    hookRate: calculateHookRate(creative.videoViews3s ?? 0, creative.impressions),
+    holdRate: calculateHoldRate(creative.videoViews75 ?? 0, creative.videoViews3s ?? 0),
+    bodyConv: calculateBodyConv(creative.leads, creative.videoViews75 ?? 0),
+    videoViews3s: creative.videoViews3s ?? 0,
+    videoViews75: creative.videoViews75 ?? 0,
     ...(isPaidMode
       ? {
           ingressosUnicos: creative.ingressosUnicos,

@@ -1,0 +1,53 @@
+schema: 1
+story: '18.65'
+gate: CONCERNS
+status_reason: 'AC1–AC4 implementadas: fix Faixas por Ad Name via Meta (planilha prioritária, zero regressão), 3s/75% agregados no backend SEM mudar a chamada Meta (video_view no actions + videoMetrics.p75 já vinham), Hook/Hold/Body no calculator (padrão CTR) com sinalização verde 25/13/3,7%, Total e modo "Todos" recalculando sobre crus. web tsc + next build verdes. Ressalvas não-bloqueantes: semântica de video_view (3s) a validar contra o Gerenciador, cache de 2h serve payload antigo até expirar, e novas funções puras sem teste executável.'
+reviewer: 'Quinn'
+updated: '2026-07-24T00:00:00Z'
+waiver: { active: false }
+
+quality_checks:
+  code_review: PASS
+  tests: CONCERN
+  acceptance_criteria: PASS
+  regressions: PASS
+  performance: PASS
+  security: PASS
+  documentation: PASS
+
+anti_hallucination:
+  verdict: PASS
+  note: 'File List (7 arquivos) == diff do commit 778aad4 EXATO; meta-ads.ts NÃO está no commit (confirma "não alterado"). Símbolos confirmados: calculateHookRate/HoldRate/BodyConv (creative-metrics-calculator.ts:94/104/114), parseVideo3sViews (stage-creative-performance.ts:136), renderRateWithGoal + case "hookRate" (tabela:213/447), useResolveMetaNames(projectId, contentAdIds, "ad") (useCrossReferenceLeads.ts:167).'
+
+technical_gates:
+  web_tsc: PASS
+  next_build: PASS   # executado nesta sessão — verde (27/27 páginas)
+  api_tsc: PREEXISTING_FAIL   # erro em backfill-cross-launch.ts (drizzle(pool) s/ schema) idêntico na origin/main; stage-creative-performance.ts type-clean
+
+acceptance_criteria_coverage:
+  AC1: met   # useCrossReferenceLeads resolve utm_content→Ad Name via useResolveMetaNames; planilha prioritária (fromMeta base, extractAdNamesFromSheet sobrescreve); name===id descartado
+  AC2: met   # AdNameGroup.videoViews3s (parseVideo3sViews: video_view do actions) + videoViews75 (ad.videoMetrics?.p75) expostos no creative; hook repassa via CreativePerformanceData
+  AC3: met   # calculateHookRate/HoldRate/BodyConv (0 se den=0); 3 colunas em COLUMNS+PAID_COLUMNS ordenáveis; renderRateWithGoal verde ≥25/13/3,7; Total + compile recalculam sobre crus
+  AC4: met   # web tsc verde; next build verde; sem remoção de colunas; meta-ads.ts intacto; cache degrada graceful (?? 0)
+
+top_issues:
+  - id: 'REL-001'
+    severity: medium
+    finding: 'O 3s usa o action_type "video_view" do array actions, assumido = "Reproduções de vídeo de 3 segundos" do Gerenciador. Se a conta não retornar video_view no actions (ou a semântica divergir), o Hook Rate fica 0/off. Fallback é graceful (parseVideo3sViews → 0).'
+    suggested_action: 'Validação visual: conferir o Hook Rate de um criativo conhecido contra o Gerenciador de Anúncios. Se divergir, trocar para video_play_actions ou o campo video_3_sec_watched_actions no fields= (meta-ads.ts). DoD pendente.'
+  - id: 'CACHE-001'
+    severity: medium
+    finding: 'A rota persiste o payload inteiro em public_metrics_cache (TTL 2h). Respostas gravadas antes do deploy vêm sem videoViews3s/75 → Hook/Hold/Body exibem 0% até expirar ou refresh=1. Frontend faz ?? 0 (não quebra).'
+    suggested_action: 'Após deploy, aguardar 2h ou forçar refresh=1 para popular. Comunicar que 0% no dia do merge é esperado, não bug.'
+  - id: 'TEST-001'
+    severity: medium
+    finding: 'calculateHookRate/HoldRate/BodyConv (funções puras, triviais de testar) e a soma no compileCreativeMetrics não têm teste executável — o repo testa via node --strip-types mas os arquivos de teste de criativos importam vitest (não instalado). compileCreativeMetrics.test.ts pode precisar de atualização de shape (novos campos), mas não roda no CI.'
+    suggested_action: 'Follow-up: cobrir as 3 funções por node --strip-types (entrada→saída + guarda div-zero). Não bloqueia — funções seguem o padrão testado de calculateCtr.'
+  - id: 'REG-001'
+    severity: low
+    finding: 'O fix do ponto 8 (Meta preenche Ad Name faltante) pode fazer aparecer/alterar faixas em stages cuja planilha nomeava só PARTE dos ad_ids — agora o Meta completa. É exatamente o comportamento pedido, mas muda contagens vs. o estado anterior nesses stages.'
+    suggested_action: 'Aceitável (é o objetivo do fix). Se algum stage regredir, a prioridade da planilha (spread depois de fromMeta) preserva os nomes manuais.'
+  - id: 'API-TSC-001'
+    severity: low
+    finding: 'tsc --noEmit da API inteira falha por erro pré-existente em src/scripts/backfill-cross-launch.ts (drizzle(pool) sem schema tipado), herdado da main (idêntico em origin/main) — NÃO desta story. O arquivo alterado por esta story (stage-creative-performance.ts) é type-clean.'
+    suggested_action: 'Reportar ao dono da feature cross-launch: drizzle(pool, { schema }). Fora do escopo da 18.65.'
