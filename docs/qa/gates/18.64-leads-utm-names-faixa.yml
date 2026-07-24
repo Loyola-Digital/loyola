@@ -1,0 +1,53 @@
+schema: 1
+story: '18.64'
+gate: CONCERNS
+status_reason: 'Todas as 8 ACs implementadas fielmente (tradução ID→Name com fallback, agrupamento por Name, sort clicável, paginação 10, cruzamento e-mail OU telefone, colunas Respondeu?/Faixa), tsc web verde + next build verde (executados nesta sessão), reuso correto da infra existente (useResolveMetaNames, primitivas de normalize-answer). Ressalvas não-bloqueantes: hook novo sem teste executável (sem harness no repo) e validação com dados de produção (conta Meta + pesquisa vinculada) pendente.'
+reviewer: 'Quinn'
+updated: '2026-07-24T00:00:00Z'
+waiver: { active: false }
+
+quality_checks:
+  code_review: PASS
+  tests: CONCERN
+  acceptance_criteria: PASS
+  regressions: PASS
+  performance: PASS
+  security: PASS
+  documentation: PASS
+
+anti_hallucination:
+  verdict: PASS
+  note: 'Símbolos reusados confirmados no código: useResolveMetaNames (use-funnel-adsets-map.ts:28), useFunnelSurveys (use-google-sheets.ts:100), normalizeEmail/getLast8DigitsPhone/normalizeNumericId (normalize-answer.ts:54/62/79), SURVEY_EMAIL/PHONE_MATCHERS (survey-questions.ts:77/82). File List (2 arquivos) == diff do commit 9821cee. Sem arquivo fora do escopo.'
+
+technical_gates:
+  web_tsc: PASS
+  next_build: PASS   # executado nesta sessão — verde (após fix do eslint-disable de regra inexistente)
+  api_tsc: N/A       # story 100% frontend
+
+acceptance_criteria_coverage:
+  AC1: met       # PAGE_SIZE=10 (leads-by-utm-table.tsx)
+  AC2: met       # handleSort/SortIcon; dim via localeCompare(pt-BR, numeric), métricas numérico; reseta ao trocar groupBy
+  AC3: met       # displayValue → useResolveMetaNames(campaign/adset/ad) + normalizeNumericId; fallback map.get(id) ?? raw
+  AC4: met       # getGroup usa o Name resolvido como chave → vários IDs consolidam numa linha (somas agregadas)
+  AC5: met       # cells = Names; lista expandida com leads; outras dims da lista também traduzidas
+  AC6: met       # useSurveyBandByContact (byEmail/byPhone) + lookup e-mail OU telefone; colunas só quando surveysLinked>0
+  AC7: met       # "Respondeu?" (Sim/Não, verde no Sim) + "Faixa" (uppercase) na lista
+  AC8: met       # tsc web verde; next build verde; props do componente inalteradas (launch-dashboard.tsx:595)
+
+top_issues:
+  - id: 'TEST-001'
+    severity: medium
+    finding: 'O hook novo use-survey-band-by-contact.ts (parsing de header, match e-mail/telefone, leitura de faixa) não tem teste executável. O repo não tem runner instalado (vitest ausente) e testa apenas utils puros via node --strip-types. A lógica reusa primitivas já testadas (normalize-answer), o que mitiga.'
+    suggested_action: 'Follow-up: extrair as funções puras (findByName/findByMatchers/findFaixaIndex + loop de indexação) para um util testável e cobrir por node --strip-types. Não bloqueia — dashboard interno, padrão herdado (18.55/18.60/18.61).'
+  - id: 'REL-001'
+    severity: medium
+    finding: 'A resolução de Names e as faixas dependem de dados de PRODUÇÃO: (a) Names só resolvem com conta Meta vinculada — sem ela, exibe o ID cru (fallback correto, não bug); (b) colunas Respondeu?/Faixa só aparecem com pesquisa vinculada ao stage tendo coluna e-mail/telefone (+ faixa). Não validável sem dados reais.'
+    suggested_action: 'Validação visual no dashboard com a conta Meta + planilhas/pesquisa reais (DoD pendente). Comunicar que ID cru aparece quando a conta Meta não resolve aquele id — esperado.'
+  - id: 'SEARCH-001'
+    severity: low
+    finding: 'A busca textual passou a operar sobre os Names nas dimensões traduzidas (cells). Buscar pelo ID cru de campaign/adset/ad não retorna mais resultado nessas dimensões.'
+    suggested_action: 'Aceitável e esperado dado o objetivo (mostrar Names). Registrar; se necessário, um follow-up pode indexar o ID cru na busca além do Name.'
+  - id: 'PERF-001'
+    severity: low
+    finding: 'filterSheetRowsByDays roda 2x sobre as mesmas linhas (coletor de IDs + agrupamento). Impacto baixo (planilhas de dezenas/centenas de linhas).'
+    suggested_action: 'Nenhuma ação obrigatória. Se um dia o volume crescer, unificar num único passo que colete IDs e agrupe.'
