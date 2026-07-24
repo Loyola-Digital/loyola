@@ -8,20 +8,31 @@
  * UTM (source / medium / campaign / content / term — ou a combinação das cinco).
  * Cada grupo mostra: leads (dedup por e-mail), vendas (linhas de venda na janela),
  * faturamento (soma do valor) e conversão (vendas ÷ leads). Expande pra listar
- * quem são os leads do grupo. Paginação de 5 grupos por página.
+ * quem são os leads do grupo. Paginação de 10 grupos por página.
+ *
+ * Story 18.64:
+ * - Traduz os IDs de UTM da Meta para Names (utm_campaign→Campaign Name,
+ *   utm_medium→Adset Name, utm_content→Ad Name) via `useResolveMetaNames`; vários
+ *   IDs que resolvem pro mesmo Name são consolidados num único grupo (fallback:
+ *   id cru quando não resolve).
+ * - Ordenação clicável por coluna (A→Z / Z→A).
+ * - Cruza cada lead com a Pesquisa (e-mail OU telefone) e mostra "Respondeu a
+ *   pesquisa?" (Sim/Não) e "Faixa" (A/B/C/D) na lista de leads.
  *
  * Respeita a janela de dias do dashboard (filterSheetRowsByDays) e mostra as
  * planilhas inteiras do funil (sem filtro por campanha).
  */
 
 import { Fragment, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, ListFilter, Search, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, ListFilter, Search, Users } from "lucide-react";
 import {
   useFunnelSpreadsheets,
   useFunnelSpreadsheetData,
 } from "@/lib/hooks/use-funnel-spreadsheets";
+import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
+import { useSurveyBandByContact } from "@/lib/hooks/use-survey-band-by-contact";
 import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
-import { normalizeEmail } from "@/lib/utils/normalize-answer";
+import { normalizeEmail, getLast8DigitsPhone, normalizeNumericId } from "@/lib/utils/normalize-answer";
 import {
   Table,
   TableBody,
@@ -38,24 +49,34 @@ type UtmKey = "utm_source" | "utm_medium" | "utm_campaign" | "utm_content" | "ut
 const DIMENSIONS: { key: "combo" | UtmKey; label: string }[] = [
   { key: "combo", label: "Combinação" },
   { key: "utm_source", label: "Source" },
-  { key: "utm_medium", label: "Medium" },
-  { key: "utm_campaign", label: "Campaign" },
-  { key: "utm_content", label: "Content" },
+  { key: "utm_medium", label: "Adset Name" },
+  { key: "utm_campaign", label: "Campaign Name" },
+  { key: "utm_content", label: "Ad Name" },
   { key: "utm_term", label: "Term" },
 ];
 
 const UTM_KEYS: UtmKey[] = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
 const UTM_LABEL: Record<UtmKey, string> = {
   utm_source: "Source",
-  utm_medium: "Medium",
-  utm_campaign: "Campaign",
-  utm_content: "Content",
+  utm_medium: "Adset Name",
+  utm_campaign: "Campaign Name",
+  utm_content: "Ad Name",
   utm_term: "Term",
 };
 
-const PAGE_SIZE = 5;
+// Story 18.64: quais dimensões vêm como ID da Meta e para qual entityType resolvem.
+const META_ENTITY_BY_UTM: Partial<Record<UtmKey, "campaign" | "adset" | "ad">> = {
+  utm_campaign: "campaign",
+  utm_medium: "adset",
+  utm_content: "ad",
+};
+
+const PAGE_SIZE = 10;
 const EMPTY = "—";
 const clean = (v: string | undefined) => (v ?? "").trim();
+
+/** Story 18.64: colunas ordenáveis — dimensão por índice, ou uma das métricas. */
+type SortKey = `dim:${number}` | "leads" | "vendas" | "faturamento" | "conv";
 
 /** Parseia valor monetário PT-BR ("R$ 1.234,56" | "297,00" | "1234.56"). */
 function parseValor(raw: string | undefined): number {
@@ -76,6 +97,7 @@ const brl = (v: number) =>
 interface LeadItem {
   name: string;
   email: string;
+  phone: string;
   date: string;
   utms: Record<UtmKey, string>;
 }
@@ -103,6 +125,8 @@ export function LeadsByUtmTable({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
+  const [sortCol, setSortCol] = useState<SortKey>("leads");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const { data: sheets } = useFunnelSpreadsheets(projectId, funnelId, stageId ?? null);
   const leadsSheet =
@@ -114,6 +138,48 @@ export function LeadsByUtmTable({
 
   const visibleDims: UtmKey[] = groupBy === "combo" ? UTM_KEYS : [groupBy];
 
+  // Story 18.64: coleta os IDs de campaign/adset/ad (normalizados) das linhas na
+  // janela, pra resolver os Names da Meta em uma chamada por dimensão.
+  const { campaignIds, mediumIds, contentIds } = useMemo(() => {
+    const camp = new Set<string>();
+    const med = new Set<string>();
+    const cont = new Set<string>();
+    const collect = (data: typeof leadsData) => {
+      if (!data) return;
+      for (const r of filterSheetRowsByDays(data, days)) {
+        const c = normalizeNumericId(clean(r.named.utm_campaign));
+        if (c) camp.add(c);
+        const m = normalizeNumericId(clean(r.named.utm_medium));
+        if (m) med.add(m);
+        const ct = normalizeNumericId(clean(r.named.utm_content));
+        if (ct) cont.add(ct);
+      }
+    };
+    collect(leadsData);
+    collect(salesData);
+    return { campaignIds: [...camp], mediumIds: [...med], contentIds: [...cont] };
+  }, [leadsData, salesData, days]);
+
+  const { namesMap: campaignNames } = useResolveMetaNames(projectId, campaignIds, "campaign");
+  const { namesMap: adsetNames } = useResolveMetaNames(projectId, mediumIds, "adset");
+  const { namesMap: adNames } = useResolveMetaNames(projectId, contentIds, "ad");
+
+  // Story 18.64: respostas da Pesquisa indexadas por e-mail/telefone (Faixa).
+  const surveyBand = useSurveyBandByContact(projectId, funnelId, stageId ?? null);
+  const hasSurvey = surveyBand.surveysLinked > 0;
+
+  // Story 18.64: traduz o valor cru de uma UTM pro Name da Meta (fallback: cru).
+  const displayValue = useMemo(() => {
+    return (key: UtmKey, raw: string): string => {
+      if (!raw) return raw;
+      const entity = META_ENTITY_BY_UTM[key];
+      if (!entity) return raw;
+      const id = normalizeNumericId(raw);
+      const map = entity === "campaign" ? campaignNames : entity === "adset" ? adsetNames : adNames;
+      return map.get(id) ?? raw;
+    };
+  }, [campaignNames, adsetNames, adNames]);
+
   const { groups, totalLeads, totalVendas, totalFat } = useMemo(() => {
     const map = new Map<string, Group>();
     const utmsOf = (r: { named: Partial<Record<string, string>> }): Record<UtmKey, string> => ({
@@ -123,11 +189,13 @@ export function LeadsByUtmTable({
       utm_content: clean(r.named.utm_content),
       utm_term: clean(r.named.utm_term),
     });
+    // Chave/células do grupo usam o Name resolvido (consolida vários IDs sob 1 Name).
     const getGroup = (utms: Record<UtmKey, string>): Group => {
-      const key = visibleDims.map((d) => utms[d] || "(sem)").join(" › ");
+      const disp = visibleDims.map((d) => displayValue(d, utms[d]));
+      const key = disp.map((v) => v || "(sem)").join(" › ");
       let g = map.get(key);
       if (!g) {
-        g = { key, cells: visibleDims.map((d) => utms[d] || EMPTY), leads: [], seenLead: new Set(), vendas: 0, faturamento: 0 };
+        g = { key, cells: disp.map((v) => v || EMPTY), leads: [], seenLead: new Set(), vendas: 0, faturamento: 0 };
         map.set(key, g);
       }
       return g;
@@ -143,7 +211,7 @@ export function LeadsByUtmTable({
         const g = getGroup(utms);
         if (!g.seenLead.has(dedupKey)) {
           g.seenLead.add(dedupKey);
-          g.leads.push({ name: clean(r.named.name), email, date: clean(r.named.date), utms });
+          g.leads.push({ name: clean(r.named.name), email, phone: clean(r.named.phone), date: clean(r.named.date), utms });
         }
         seenGlobal.add(dedupKey);
       });
@@ -164,7 +232,7 @@ export function LeadsByUtmTable({
       });
     }
 
-    let arr = [...map.values()].sort((a, b) => b.leads.length - a.leads.length || b.vendas - a.vendas);
+    let arr = [...map.values()];
     const q = query.trim().toLowerCase();
     if (q) {
       arr = arr.filter(
@@ -173,18 +241,58 @@ export function LeadsByUtmTable({
           g.leads.some((l) => l.name.toLowerCase().includes(q) || l.email.toLowerCase().includes(q)),
       );
     }
+
+    // Ordenação por coluna (AC2)
+    const convOf = (g: Group) => (g.leads.length > 0 ? g.vendas / g.leads.length : -1);
+    arr.sort((a, b) => {
+      if (sortCol.startsWith("dim:")) {
+        const i = Number(sortCol.slice(4));
+        const cmp = (a.cells[i] ?? "").localeCompare(b.cells[i] ?? "", "pt-BR", { numeric: true });
+        return sortDir === "asc" ? cmp : -cmp;
+      }
+      const av =
+        sortCol === "leads" ? a.leads.length : sortCol === "vendas" ? a.vendas : sortCol === "faturamento" ? a.faturamento : convOf(a);
+      const bv =
+        sortCol === "leads" ? b.leads.length : sortCol === "vendas" ? b.vendas : sortCol === "faturamento" ? b.faturamento : convOf(b);
+      return sortDir === "asc" ? av - bv : bv - av;
+    });
+
     return { groups: arr, totalLeads: seenGlobal.size, totalVendas, totalFat };
-  }, [leadsData, salesData, days, groupBy, query, visibleDims]);
+  }, [leadsData, salesData, days, groupBy, query, visibleDims, displayValue, sortCol, sortDir]);
 
   const pageCount = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const pageGroups = groups.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
   const colSpan = visibleDims.length + 5;
 
-  const resetTo = (fn: () => void) => {
-    fn();
+  const changeGroupBy = (d: "combo" | UtmKey) => {
+    setGroupBy(d);
     setPage(0);
     setExpanded(null);
+    setSortCol("leads");
+    setSortDir("desc");
+  };
+
+  const changeQuery = (v: string) => {
+    setQuery(v);
+    setPage(0);
+    setExpanded(null);
+  };
+
+  const handleSort = (col: SortKey) => {
+    if (sortCol === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      setSortDir(col.startsWith("dim:") ? "asc" : "desc");
+    }
+    setPage(0);
+    setExpanded(null);
+  };
+
+  const SortIcon = ({ col }: { col: SortKey }) => {
+    if (sortCol !== col) return <ArrowUpDown className="h-3 w-3 opacity-40" />;
+    return sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />;
   };
 
   return (
@@ -201,7 +309,7 @@ export function LeadsByUtmTable({
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
-            onChange={(e) => resetTo(() => setQuery(e.target.value))}
+            onChange={(e) => changeQuery(e.target.value)}
             placeholder="Buscar UTM, nome ou e-mail…"
             className="h-8 w-56 pl-7 text-xs"
           />
@@ -216,7 +324,7 @@ export function LeadsByUtmTable({
           <button
             key={d.key}
             type="button"
-            onClick={() => resetTo(() => setGroupBy(d.key))}
+            onClick={() => changeGroupBy(d.key)}
             className={`h-6 rounded px-2.5 text-[11px] font-medium transition-colors ${
               groupBy === d.key
                 ? "bg-primary text-primary-foreground"
@@ -233,13 +341,30 @@ export function LeadsByUtmTable({
           <TableHeader>
             <TableRow>
               <TableHead className="w-8" />
-              {visibleDims.map((d) => (
-                <TableHead key={d} className="text-xs">{UTM_LABEL[d]}</TableHead>
+              {visibleDims.map((d, i) => (
+                <TableHead
+                  key={d}
+                  onClick={() => handleSort(`dim:${i}`)}
+                  className="text-xs cursor-pointer select-none hover:text-foreground"
+                >
+                  <span className="inline-flex items-center gap-1">
+                    {UTM_LABEL[d]}
+                    <SortIcon col={`dim:${i}`} />
+                  </span>
+                </TableHead>
               ))}
-              <TableHead className="text-right text-xs">Leads</TableHead>
-              <TableHead className="text-right text-xs">Vendas</TableHead>
-              <TableHead className="text-right text-xs">Faturamento</TableHead>
-              <TableHead className="text-right text-xs">Conv.</TableHead>
+              <TableHead onClick={() => handleSort("leads")} className="text-right text-xs cursor-pointer select-none hover:text-foreground">
+                <span className="inline-flex items-center justify-end gap-1">Leads <SortIcon col="leads" /></span>
+              </TableHead>
+              <TableHead onClick={() => handleSort("vendas")} className="text-right text-xs cursor-pointer select-none hover:text-foreground">
+                <span className="inline-flex items-center justify-end gap-1">Vendas <SortIcon col="vendas" /></span>
+              </TableHead>
+              <TableHead onClick={() => handleSort("faturamento")} className="text-right text-xs cursor-pointer select-none hover:text-foreground">
+                <span className="inline-flex items-center justify-end gap-1">Faturamento <SortIcon col="faturamento" /></span>
+              </TableHead>
+              <TableHead onClick={() => handleSort("conv")} className="text-right text-xs cursor-pointer select-none hover:text-foreground">
+                <span className="inline-flex items-center justify-end gap-1">Conv. <SortIcon col="conv" /></span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -271,7 +396,7 @@ export function LeadsByUtmTable({
                         <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
                       </TableCell>
                       {g.cells.map((c, i) => (
-                        <TableCell key={i} className="py-2 font-mono text-xs">{c}</TableCell>
+                        <TableCell key={i} className="py-2 text-xs">{c}</TableCell>
                       ))}
                       <TableCell className="py-2 text-right font-semibold tabular-nums">{g.leads.length.toLocaleString("pt-BR")}</TableCell>
                       <TableCell className="py-2 text-right tabular-nums">{g.vendas.toLocaleString("pt-BR")}</TableCell>
@@ -291,6 +416,8 @@ export function LeadsByUtmTable({
                                     <th className="pb-1.5 pr-3 font-medium">Nome</th>
                                     <th className="pb-1.5 pr-3 font-medium">E-mail</th>
                                     <th className="pb-1.5 pr-3 font-medium">Data</th>
+                                    {hasSurvey && <th className="pb-1.5 pr-3 font-medium">Respondeu?</th>}
+                                    {hasSurvey && <th className="pb-1.5 pr-3 font-medium">Faixa</th>}
                                     {groupBy !== "combo" &&
                                       UTM_KEYS.filter((k) => k !== groupBy).map((k) => (
                                         <th key={k} className="pb-1.5 pr-3 font-medium">{UTM_LABEL[k]}</th>
@@ -298,17 +425,33 @@ export function LeadsByUtmTable({
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {g.leads.map((l, i) => (
-                                    <tr key={i} className="border-t border-border/20">
-                                      <td className="py-1 pr-3">{l.name || EMPTY}</td>
-                                      <td className="py-1 pr-3 text-muted-foreground">{l.email || EMPTY}</td>
-                                      <td className="py-1 pr-3 tabular-nums text-muted-foreground">{l.date || EMPTY}</td>
-                                      {groupBy !== "combo" &&
-                                        UTM_KEYS.filter((k) => k !== groupBy).map((k) => (
-                                          <td key={k} className="py-1 pr-3 font-mono text-muted-foreground">{l.utms[k] || EMPTY}</td>
-                                        ))}
-                                    </tr>
-                                  ))}
+                                  {g.leads.map((l, i) => {
+                                    const info =
+                                      (l.email && surveyBand.byEmail.get(normalizeEmail(l.email))) ||
+                                      (l.phone && surveyBand.byPhone.get(getLast8DigitsPhone(l.phone))) ||
+                                      null;
+                                    const respondeu = !!info;
+                                    const faixa = info?.faixa ?? null;
+                                    return (
+                                      <tr key={i} className="border-t border-border/20">
+                                        <td className="py-1 pr-3">{l.name || EMPTY}</td>
+                                        <td className="py-1 pr-3 text-muted-foreground">{l.email || EMPTY}</td>
+                                        <td className="py-1 pr-3 tabular-nums text-muted-foreground">{l.date || EMPTY}</td>
+                                        {hasSurvey && (
+                                          <td className={`py-1 pr-3 ${respondeu ? "text-emerald-500" : "text-muted-foreground"}`}>
+                                            {respondeu ? "Sim" : "Não"}
+                                          </td>
+                                        )}
+                                        {hasSurvey && (
+                                          <td className="py-1 pr-3 font-medium">{faixa || EMPTY}</td>
+                                        )}
+                                        {groupBy !== "combo" &&
+                                          UTM_KEYS.filter((k) => k !== groupBy).map((k) => (
+                                            <td key={k} className="py-1 pr-3 text-muted-foreground">{displayValue(k, l.utms[k]) || EMPTY}</td>
+                                          ))}
+                                      </tr>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             )}
