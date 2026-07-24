@@ -693,6 +693,12 @@ export const funnelStages = pgTable(
       .notNull()
       .default({})
       .$type<Record<string, string>>(),
+    // Controle Diário (Meta Ads TESTE): observação de texto livre por dia.
+    // Chave = data YYYY-MM-DD; valor = texto da observação. Nota vazia = removida.
+    dayNotes: jsonb("day_notes")
+      .notNull()
+      .default({})
+      .$type<Record<string, string>>(),
     // GA4 (Epic 37): filtro de página desta etapa (substring de
     // landingPagePlusQueryString) usado no runReport da GA4 Data API. A property
     // GA4 e o token ficam em ga4_connections (por projeto); cada etapa só escolhe

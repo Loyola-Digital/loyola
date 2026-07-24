@@ -18,6 +18,8 @@ export interface CreateStageInput {
   ga4PageFilter?: string | null;
   /** Story 18.56: URL manual por LP (chave = lpName trim+lowercase; valor vazio remove). */
   lpLinks?: Record<string, string>;
+  /** Controle Diário: observação por dia (chave = data YYYY-MM-DD; valor vazio remove). */
+  dayNotes?: Record<string, string>;
 }
 
 export type UpdateStageInput = Partial<CreateStageInput>;
