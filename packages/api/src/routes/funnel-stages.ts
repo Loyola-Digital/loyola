@@ -69,6 +69,9 @@ const updateStageSchema = z.object({
       ]),
     )
     .optional(),
+  // Controle Diário: observação por dia (chave = data YYYY-MM-DD). Valor vazio =
+  // remover a nota (handler descarta chaves vazias antes de gravar).
+  dayNotes: z.record(z.string().max(10), z.string().max(2000)).optional(),
 });
 
 const paramsSchema = z.object({
@@ -123,6 +126,7 @@ function stageShape(
     switchyLinkedLinks: (row.switchyLinkedLinks ?? []) as { uniq: number; id: string; domain: string }[],
     ga4PageFilter: row.ga4PageFilter ?? null,
     lpLinks: (row.lpLinks ?? {}) as Record<string, string>,
+    dayNotes: (row.dayNotes ?? {}) as Record<string, string>,
     sortOrder: row.sortOrder,
     lastAuditAt: row.lastAuditAt ? row.lastAuditAt.toISOString() : null,
     lastAuditBy: auditUser?.id
@@ -414,6 +418,18 @@ export default fp(async function funnelStageRoutes(fastify) {
         if (key && value) cleaned[key] = value;
       }
       updates.lpLinks = cleaned;
+    }
+
+    // Controle Diário: observação por dia. Chave = data (trim, sem lowercase);
+    // valor vazio = remover a nota. Substitui o mapa por inteiro (merge no client).
+    if (body.dayNotes !== undefined) {
+      const cleaned: Record<string, string> = {};
+      for (const [date, note] of Object.entries(body.dayNotes)) {
+        const key = date.trim();
+        const value = note.trim();
+        if (key && value) cleaned[key] = value;
+      }
+      updates.dayNotes = cleaned;
     }
 
     const [row] = await fastify.db

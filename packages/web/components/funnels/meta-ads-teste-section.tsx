@@ -15,7 +15,7 @@
  * comparação — reestilizados.
  */
 
-import { useCallback, useMemo, useState, type ReactNode, type ComponentType } from "react";
+import { Fragment, useCallback, useMemo, useState, type ReactNode, type ComponentType } from "react";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -98,6 +98,19 @@ function weekdayOf(dateStr: string): string {
   return WEEKDAYS[new Date(y, m - 1, d).getDay()] ?? "";
 }
 
+// dinheiro sem centavos (igual print: "R$ 40.103")
+const money0 = (v: number | null) =>
+  v == null ? "—" : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+
+// Estilo da linha de marco (acima do dia): virada pra frente (verde), retorno
+// (âmbar) ou fase/separador (roxo). Detecta pelo texto do label do batch turn.
+function turnStyle(label: string): { color: string; bg: string; prefix: string } {
+  const l = label.toLowerCase();
+  if (/retorno|volta|↩/.test(l)) return { color: T.amber, bg: "rgba(245,158,11,.12)", prefix: "↩" };
+  if (label.trim().startsWith("—") || /\bfase\b/.test(l)) return { color: T.muted2, bg: "rgba(124,58,237,.14)", prefix: "—" };
+  return { color: T.emerald, bg: "rgba(16,185,129,.12)", prefix: "⇢" };
+}
+
 interface Kpi {
   l: string;
   v: string;
@@ -148,7 +161,7 @@ export function MetaAdsTesteTab({
   const hasComparison = !!(compData && !compData.semDados);
   const compDays = hasComparison ? compData!.days : null;
 
-  // Viradas de lote (observação do dia) — mesmo backend da tabela diária original.
+  // Viradas de lote (linha de marco acima do dia) — mesmo backend da tabela original.
   const batchTurns = useFunnelBatchTurns(projectId, funnel.id);
   const createTurn = useCreateFunnelBatchTurn(projectId, funnel.id);
   const updateTurn = useUpdateFunnelBatchTurn(projectId, funnel.id);
@@ -158,6 +171,14 @@ export function MetaAdsTesteTab({
     (batchTurns.data ?? []).forEach((t) => m.set(t.date, t));
     return m;
   }, [batchTurns.data]);
+
+  // Observação por dia (campo dayNotes da etapa) — Controle Diário.
+  const { data: stageData } = useFunnelStage(projectId, funnel.id, stageId ?? "");
+  const updateStageNotes = useUpdateStage(projectId, funnel.id, stageId ?? "");
+  const dayNotes = stageData?.dayNotes ?? {};
+  const saveNote = (date: string, text: string) => {
+    updateStageNotes.mutate({ dayNotes: { ...dayNotes, [date]: text } });
+  };
 
   // ingressos únicos sobrescrevem leads na Paga (mesma regra do dash)
   const ingUnicosByDay = isPaid ? salesData?.ingressosUnicosByDay : undefined;
@@ -284,10 +305,36 @@ export function MetaAdsTesteTab({
       if (next.trim() === "") deleteTurn.mutate(turn.id);
       else if (next.trim() !== turn.label) updateTurn.mutate({ id: turn.id, label: next.trim() });
     } else {
-      const l = window.prompt(`Virada de lote em ${label}\nLabel (ex: "Lote 2 → 3", "Início bônus"):`, "");
+      const l = window.prompt(`Virada de lote em ${label}\nLabel (ex: "Virada para Lote 02", "Fase 1: Abertura", "Retorno ao Lote 01"):`, "");
       if (l && l.trim()) createTurn.mutate({ date, label: l.trim() });
     }
   };
+
+  const editNote = (date: string) => {
+    const label = `${date.slice(8, 10)}/${date.slice(5, 7)}`;
+    const next = window.prompt(`Observação de ${label} (vazio remove):`, dayNotes[date] ?? "");
+    if (next != null) saveNote(date, next.trim());
+  };
+
+  // Controle Diário — 1 linha por dia (crescente), com financeiro derivado.
+  const fatByDay = salesData?.faturamentoTotalByDay;
+  const totaisByDay = salesData?.ingressosTotaisByDay;
+  let acumIngressos = 0;
+  const controleRows = rows.map((r) => {
+    const ingressos = derived.leadsOf(r);
+    acumIngressos += ingressos;
+    const td = totaisByDay?.[r.date];
+    const totais = td ? td.pago + td.org + td.semTrack : null;
+    const bumps = totais != null ? Math.max(0, totais - ingressos) : null;
+    const pctBump = bumps != null && ingressos > 0 ? (bumps / ingressos) * 100 : null;
+    const fat = fatByDay ? (fatByDay[r.date] ?? 0) : null;
+    const invest = r.spend;
+    const cpa = ingressos > 0 ? invest / ingressos : null;
+    const lucro = fat != null ? fat - invest : null;
+    const roi = lucro != null && invest > 0 ? (lucro / invest) * 100 : null;
+    const lucrativo = lucro != null ? lucro >= 0 : ingressos >= derived.avgLeads;
+    return { date: r.date, ingressos, bumps, pctBump, fat, invest, cpa, lucro, roi, acum: acumIngressos, lucrativo, obs: dayNotes[r.date] ?? "", turn: turnsByDate.get(r.date) };
+  });
 
   return (
     <div className="space-y-3">
@@ -444,52 +491,73 @@ export function MetaAdsTesteTab({
                 </div>
               )}
 
-              {/* Tabela diária */}
+              {/* Controle Diário Completo */}
               {rows.length > 0 && (
                 <div className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: "2px", lineHeight: 1, color: T.text }}>CONTROLE DIÁRIO COMPLETO</h3>
+                    <div className="flex items-center gap-4 text-[10px]" style={{ color: T.muted, fontFamily: "'JetBrains Mono',monospace" }}>
+                      <span className="inline-flex items-center gap-1"><span style={{ width: 8, height: 8, borderRadius: 2, background: T.emerald, display: "inline-block" }} />Lucrativo</span>
+                      <span className="inline-flex items-center gap-1"><span style={{ width: 8, height: 8, borderRadius: 2, background: T.red, display: "inline-block" }} />Prejuízo</span>
+                      <span className="inline-flex items-center gap-1"><span style={{ width: 8, height: 8, borderRadius: 2, background: T.amber, display: "inline-block" }} />Sprint / Lote</span>
+                    </div>
+                  </div>
                   <div className="overflow-x-auto rounded-[12px] border" style={{ borderColor: T.border }}>
                     <table className="w-full text-right" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>
                       <thead>
                         <tr style={{ background: T.surface2 }}>
-                          {["Dia", "Invest", isPaid ? "Ingr" : "Leads", "CPL", "CTR", "CPC", "CPM", "LP View", "Connect", "Obs"].map((h, i) => (
-                            <th key={h} className={`px-3 py-2 text-[8px] uppercase ${i === 0 || h === "Obs" ? "text-left" : ""}`} style={{ color: T.muted, letterSpacing: "1px" }}>{h}</th>
+                          {["Dia", "St", "Ingr.", "Bumps", "% Bump", "Fat. 100%", "Invest. c/ Imp.", "CPA", "Lucro", "ROI", "Acum.", "Observação"].map((h, i) => (
+                            <th key={h} className={`px-3 py-2 text-[8px] uppercase whitespace-nowrap ${i === 0 || i === 1 || h === "Observação" ? "text-left" : ""}`} style={{ color: T.muted, letterSpacing: "1px" }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {[...rows].reverse().map((r) => {
-                          const isToday = r.date === today;
-                          const leads = derived.leadsOf(r);
-                          const good = leads >= derived.avgLeads;
-                          const turn = turnsByDate.get(r.date);
+                        {controleRows.map((row) => {
+                          const isToday = row.date === today;
+                          const st = row.turn ? turnStyle(row.turn.label) : null;
                           return (
-                            <tr key={r.date}
-                              onContextMenu={(e) => { e.preventDefault(); markTurn(r.date); }}
-                              title="Clique direito: marcar/editar virada de lote"
-                              style={{ background: isToday ? "rgba(253,212,73,.06)" : good ? "rgba(16,185,129,.02)" : "rgba(239,68,68,.024)", outline: isToday ? `1px solid ${T.gold}66` : undefined, outlineOffset: -1, borderTop: `1px solid ${T.border}`, borderLeft: turn ? `3px solid ${T.amber}` : "3px solid transparent" }}>
-                              <td className="px-3 py-1.5 text-left whitespace-nowrap" style={{ color: isToday ? T.gold : T.muted2 }}>
-                                {r.date.slice(8, 10)}/{r.date.slice(5, 7)}
-                                <span style={{ color: T.muted }}> · {weekdayOf(r.date)}</span>
-                                {isToday ? <span style={{ color: T.gold }}> · hoje</span> : ""}
-                              </td>
-                              <td className="px-3 py-1.5">{brl(r.spend)}</td>
-                              <td className="px-3 py-1.5" style={{ color: good ? T.emerald : T.red }}>{int(leads)}</td>
-                              <td className="px-3 py-1.5" style={{ color: derived.avgCpl != null && r.cplG != null && r.cplG > derived.avgCpl ? T.red : T.text }}>{brl(r.cplG)}</td>
-                              <td className="px-3 py-1.5">{pct(r.ctr)}</td>
-                              <td className="px-3 py-1.5">{brl(r.cpc)}</td>
-                              <td className="px-3 py-1.5">{brl(r.cpm)}</td>
-                              <td className="px-3 py-1.5">{int(r.lpView)}</td>
-                              <td className="px-3 py-1.5">{pct(r.connectRate)}</td>
-                              <td className="px-3 py-1.5 text-left whitespace-nowrap" style={{ color: T.amber }}>
-                                {turn ? <span title={`Virada de lote: ${turn.label}`}>📦 {turn.label}</span> : ""}
-                              </td>
-                            </tr>
+                            <Fragment key={row.date}>
+                              {row.turn && st && (
+                                <tr style={{ background: st.bg, borderTop: `1px solid ${T.border}` }}>
+                                  <td colSpan={12} className="px-3 py-1.5 text-left whitespace-nowrap" style={{ color: st.color, fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", fontSize: 10 }}>
+                                    {st.prefix} {row.turn.label}
+                                  </td>
+                                </tr>
+                              )}
+                              <tr
+                                onContextMenu={(e) => { e.preventDefault(); markTurn(row.date); }}
+                                title="Clique direito: marcar virada de lote / fase"
+                                style={{ background: isToday ? "rgba(253,212,73,.05)" : undefined, borderTop: `1px solid ${T.border}`, borderLeft: row.turn && st ? `3px solid ${st.color}` : "3px solid transparent" }}
+                              >
+                                <td className="px-3 py-1.5 text-left whitespace-nowrap" style={{ color: isToday ? T.gold : T.muted2 }}>
+                                  <span style={{ color: T.muted }}>{weekdayOf(row.date)}</span> {row.date.slice(8, 10)}/{row.date.slice(5, 7)}
+                                </td>
+                                <td className="px-2 py-1.5 text-center">
+                                  <span style={{ display: "inline-flex", width: 16, height: 16, borderRadius: 4, alignItems: "center", justifyContent: "center", background: row.lucrativo ? "rgba(16,185,129,.15)" : "rgba(239,68,68,.15)", color: row.lucrativo ? T.emerald : T.red, fontSize: 10 }}>{row.lucrativo ? "✓" : "↓"}</span>
+                                </td>
+                                <td className="px-3 py-1.5" style={{ color: T.emerald }}>{int(row.ingressos)}</td>
+                                <td className="px-3 py-1.5" style={{ color: T.muted2 }}>{row.bumps != null ? int(row.bumps) : "—"}</td>
+                                <td className="px-3 py-1.5" style={{ color: T.muted }}>{row.pctBump != null ? `${row.pctBump.toFixed(1)}%` : "—"}</td>
+                                <td className="px-3 py-1.5" style={{ color: T.emerald }}>{money0(row.fat)}</td>
+                                <td className="px-3 py-1.5" style={{ color: T.red }}>{money0(row.invest)}</td>
+                                <td className="px-3 py-1.5" style={{ color: T.muted2 }}>{money0(row.cpa)}</td>
+                                <td className="px-3 py-1.5 font-semibold" style={{ color: row.lucro == null ? T.muted2 : row.lucro >= 0 ? T.emerald : T.red }}>{money0(row.lucro)}</td>
+                                <td className="px-3 py-1.5 font-semibold" style={{ color: row.roi == null ? T.muted2 : row.roi >= 0 ? T.emerald : T.red }}>{row.roi != null ? `${row.roi.toFixed(1)}%` : "—"}</td>
+                                <td className="px-3 py-1.5" style={{ color: T.muted2 }}>{int(row.acum)}</td>
+                                <td className="px-3 py-1.5 text-left" style={{ color: row.obs ? T.muted2 : T.muted, cursor: "pointer", minWidth: 180, maxWidth: 320 }}
+                                  onClick={() => editNote(row.date)} title="Clique pra editar a observação">
+                                  {row.obs || <span style={{ opacity: 0.45 }}>+ obs</span>}
+                                </td>
+                              </tr>
+                            </Fragment>
                           );
                         })}
                       </tbody>
                     </table>
                   </div>
-                  <p className="text-[10px]" style={{ color: T.muted, fontFamily: "'JetBrains Mono',monospace" }}>Clique direito num dia pra marcar/editar a virada de lote (mesma marcação da tabela original).</p>
+                  <p className="text-[10px]" style={{ color: T.muted, fontFamily: "'JetBrains Mono',monospace" }}>
+                    Clique na coluna Observação pra anotar o dia · clique direito num dia pra marcar virada de lote / fase (aparece como linha acima). Fat.=faturamento total · Invest.=spend c/ imposto · Lucro=Fat−Invest · Bumps=ingressos totais−únicos.
+                  </p>
                 </div>
               )}
 
