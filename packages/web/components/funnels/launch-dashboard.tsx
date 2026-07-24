@@ -34,6 +34,7 @@ import {
 } from "@/lib/hooks/use-traffic-analytics";
 import { ConversionFunnel } from "./conversion-funnel";
 import { CrossedFunnelDailyTable } from "./crossed-funnel-daily-table";
+import { LeadsByUtmTable } from "./leads-by-utm-table";
 import { CplComparisonChart } from "./cpl-comparison-chart";
 import { LeadsCumulativeChart } from "./leads-cumulative-chart";
 import { LeadsTrendAndGoalChart } from "./leads-trend-and-goal-chart";
@@ -588,6 +589,11 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           stageType={stageType}
         />
       ) : null}
+
+      {/* Leads captados por UTM — explorador da planilha de leads conectada */}
+      {metrics.hasLinkedSheet && (
+        <LeadsByUtmTable projectId={projectId} funnelId={funnel.id} stageId={stageId} days={days} />
+      )}
 
       {/* CPL Pago vs CPL Geral (Story 18.4) — Story 18.52: rows com CPL por ingressos únicos na Paga */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
