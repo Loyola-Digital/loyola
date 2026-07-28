@@ -513,6 +513,29 @@ export default function StagePage() {
               }}
             />
           )}
+
+          {/* Vendas da captação: lançamento de venda manual + tabela unificada.
+              Vive DENTRO da aba Meta Ads — antes ficava fora do <Tabs> e por
+              isso aparecia embaixo de todas as abas (NPS, GA4, Planilhas...).
+              Etapas "paid" (Captação Paga) e "free" (Gratuita). */}
+          {(stage.stageType === "paid" || stage.stageType === "free") && (
+            <div className="mt-2">
+              <div className="mb-2 flex justify-end">
+                <DayRangePicker days={paidSalesDays} onDaysChange={setPaidSalesDays} />
+              </div>
+              <ManualPixSalesSection
+                projectId={params.id}
+                funnelId={params.funnelId}
+                stageId={params.stageId}
+                days={paidSalesDays}
+                onLaunchClick={() => setManualSaleOpen(true)}
+                onEditSale={(sale) => {
+                  setEditingSale(sale);
+                  setManualSaleOpen(true);
+                }}
+              />
+            </div>
+          )}
         </TabsContent>
 
         {funnelType === "launch" && (stage.stageType as string) === "paid" && (
@@ -640,36 +663,21 @@ export default function StagePage() {
         </TabsContent>
       </Tabs>
 
-      {/* Vendas da captação: lançamento de venda manual + tabela unificada,
-          no fim da view. Etapas "paid" (Captação Paga) e "free" (Gratuita). */}
+      {/* Dialog de venda manual fica FORA do <Tabs>: é overlay controlado por
+          estado, não conteúdo de aba — desmontá-lo na troca de aba fecharia o
+          formulário no meio do preenchimento. */}
       {(stage.stageType === "paid" || stage.stageType === "free") && (
-        <div className="mt-2">
-          <div className="mb-2 flex justify-end">
-            <DayRangePicker days={paidSalesDays} onDaysChange={setPaidSalesDays} />
-          </div>
-          <ManualPixSalesSection
-            projectId={params.id}
-            funnelId={params.funnelId}
-            stageId={params.stageId}
-            days={paidSalesDays}
-            onLaunchClick={() => setManualSaleOpen(true)}
-            onEditSale={(sale) => {
-              setEditingSale(sale);
-              setManualSaleOpen(true);
-            }}
-          />
-          <ManualSaleDialog
-            projectId={params.id}
-            funnelId={params.funnelId}
-            stageId={params.stageId}
-            open={manualSaleOpen}
-            onOpenChange={(open) => {
-              setManualSaleOpen(open);
-              if (!open) setEditingSale(null);
-            }}
-            editingSale={editingSale}
-          />
-        </div>
+        <ManualSaleDialog
+          projectId={params.id}
+          funnelId={params.funnelId}
+          stageId={params.stageId}
+          open={manualSaleOpen}
+          onOpenChange={(open) => {
+            setManualSaleOpen(open);
+            if (!open) setEditingSale(null);
+          }}
+          editingSale={editingSale}
+        />
       )}
     </div>
   );
