@@ -36,6 +36,7 @@ import {
   type PerpetualRates,
   type RateOrigem,
 } from "@/lib/hooks/use-perpetual-report-config";
+import { PerpetualReportButton } from "@/components/funnels/perpetual-report-button";
 
 interface Props {
   projectId: string;
@@ -452,6 +453,12 @@ export function PerpetualReportConfigSection({ projectId, funnelId }: Props) {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Story 41.9 — o botão vive abaixo da config, na mesma aba: quem valida
+          é quem gera, e o estado do gate já está visível acima. */}
+      <div className="border-t border-border/60 pt-4">
+        <PerpetualReportButton projectId={projectId} funnelId={funnelId} />
       </div>
     </div>
   );

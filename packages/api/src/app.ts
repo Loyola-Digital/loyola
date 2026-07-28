@@ -58,6 +58,7 @@ import stageOperationalCostsRoutes from "./routes/stage-operational-costs.js";
 import sprintReportsRoutes from "./routes/sprint-reports.js";
 import launchReportConfigRoutes from "./routes/launch-report-config.js";
 import perpetualReportConfigRoutes from "./routes/perpetual-report-config.js";
+import perpetualReportRoutes from "./routes/perpetual-report.js";
 import publicSalesRowsRoutes from "./routes/public-sales-rows.js";
 import publicCrossLaunchRoutes from "./routes/public-cross-launch.js";
 import perpetualSpreadsheetsRoutes from "./routes/perpetual-spreadsheets.js";
@@ -169,6 +170,7 @@ export async function buildServer() {
   await app.register(sprintReportsRoutes);
   await app.register(launchReportConfigRoutes);
   await app.register(perpetualReportConfigRoutes);
+  await app.register(perpetualReportRoutes);
   await app.register(publicSalesRowsRoutes);
   await app.register(publicCrossLaunchRoutes);
   await app.register(perpetualSpreadsheetsRoutes);

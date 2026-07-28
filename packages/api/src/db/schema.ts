@@ -2417,3 +2417,28 @@ export const perpetualReportConfigs = pgTable(
   },
   (table) => [uniqueIndex("perpetual_report_configs_funnel_uniq").on(table.funnelId)]
 );
+
+// Story 41.9 — relatórios perpétuos gerados. O HTML é um retrato do período:
+// regerar depois pode dar número diferente (a planilha muda), e o antigo
+// continua sendo o que foi conferido na época.
+export const perpetualReports = pgTable(
+  "perpetual_reports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => funnels.id, { onDelete: "cascade" }),
+    dataInicio: date("data_inicio").notNull(),
+    dataFim: date("data_fim").notNull(),
+    html: text("html").notNull(),
+    /** Métricas do momento — lista sem precisar reprocessar o HTML. */
+    metricas: jsonb("metricas").notNull().default({}).$type<Record<string, unknown>>(),
+    alertas: jsonb("alertas")
+      .notNull()
+      .default([])
+      .$type<{ codigo: string; mensagem: string }[]>(),
+    geradoPor: uuid("gerado_por").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("perpetual_reports_funnel_idx").on(table.funnelId, table.createdAt)]
+);
