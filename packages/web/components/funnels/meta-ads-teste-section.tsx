@@ -29,7 +29,7 @@ import {
   Tooltip,
   ReferenceLine,
 } from "recharts";
-import { FlaskConical, ImageIcon, Sparkles, LayoutTemplate, PieChart as PieChartIcon, ClipboardList, Activity, ArrowLeftRight, Banknote, Users } from "lucide-react";
+import { FlaskConical, ImageIcon, Sparkles, LayoutTemplate, PieChart as PieChartIcon, ClipboardList, Activity, ArrowLeftRight, Banknote, Users, Table2 } from "lucide-react";
 import { useTrafficOverview, useTrafficCampaigns, useCampaignDailyInsightsBulk } from "@/lib/hooks/use-traffic-analytics";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
@@ -61,6 +61,9 @@ import { SurveyQualificationSection } from "./survey-qualification-section";
 import { StageSalesSection } from "./stage-sales-section";
 import { GroupsDashboardSection } from "./groups-dashboard-section";
 import { CtrCpmChart, SaturationBadge, FunnelComparisonChart } from "./launch-dashboard";
+import { LeadsByUtmTable } from "./leads-by-utm-table";
+import { RefreshDataButton } from "./refresh-data-button";
+import { MetaFreshnessBadge } from "./meta-freshness-badge";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
 import type { Funnel, StageType } from "@loyola-x/shared";
 
@@ -371,8 +374,12 @@ export function MetaAdsTesteTab({
 
   return (
     <div className="space-y-3">
-      {/* seletor de período — funciona (refetch por days) */}
-      <div className="flex justify-end">
+      {/* header: refresh + freshness + seletor de período (refetch por days) */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <RefreshDataButton />
+          <MetaFreshnessBadge projectId={projectId} />
+        </div>
         <div className="inline-flex rounded-lg border border-border/50 p-0.5 text-xs">
           {[7, 30, 90].map((d) => (
             <button key={d} type="button" onClick={() => setDays(d)}
@@ -646,6 +653,14 @@ export function MetaAdsTesteTab({
                   <p className="text-[10px]" style={{ color: T.muted, fontFamily: "'JetBrains Mono',monospace" }}>
                     Clique na coluna Observação pra anotar o dia · clique direito num dia pra marcar virada de lote / fase (aparece como linha acima). Fat.=faturamento total · Invest.=spend c/ imposto · Lucro=Fat−Invest · Bumps=ingressos totais−únicos.
                   </p>
+                </div>
+              )}
+
+              {/* Leva 5c: Leads & vendas por UTM */}
+              {metrics.hasLinkedSheet && (
+                <div className="space-y-4">
+                  <GroupHeading icon={Table2} title="LEADS & VENDAS POR UTM" subtitle="Agrupado por source / medium / campaign / content / term" />
+                  <LeadsByUtmTable projectId={projectId} funnelId={funnel.id} stageId={stageId} days={days} />
                 </div>
               )}
 
