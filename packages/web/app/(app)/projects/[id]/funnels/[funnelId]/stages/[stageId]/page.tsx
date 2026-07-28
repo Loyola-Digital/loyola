@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail, BarChart3, Star, FlaskConical } from "lucide-react";
+import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail, BarChart3, Star, FlaskConical, FileBarChart2 } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -400,17 +400,6 @@ export default function StagePage() {
                 )}
               </div>
 
-              {/* Story 41.1 — config do gerador de Resumão/Comparativo */}
-              <LaunchReportConfigSection
-                projectId={params.id}
-                funnelId={params.funnelId}
-                stageId={params.stageId}
-                onOpenSpreadsheets={() => {
-                  setSettingsOpen(false);
-                  setActiveTab("spreadsheets");
-                }}
-              />
-
               <StageDeleteSection
                 projectId={params.id}
                 funnelId={params.funnelId}
@@ -489,6 +478,10 @@ export default function StagePage() {
           <TabsTrigger value="nps" className="gap-1.5">
             <Star className="h-3.5 w-3.5 text-yellow-500" />
             NPS
+          </TabsTrigger>
+          <TabsTrigger value="relatorios" className="gap-1.5">
+            <FileBarChart2 className="h-3.5 w-3.5 text-primary" />
+            Relatórios
           </TabsTrigger>
         </TabsList>
 
@@ -634,6 +627,16 @@ export default function StagePage() {
 
         <TabsContent value="nps" className="mt-6">
           <NpsStageTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
+        </TabsContent>
+
+        {/* Story 41.1 — config do gerador de Resumão/Comparativo */}
+        <TabsContent value="relatorios" className="mt-6">
+          <LaunchReportConfigSection
+            projectId={params.id}
+            funnelId={params.funnelId}
+            stageId={params.stageId}
+            onOpenSpreadsheets={() => setActiveTab("spreadsheets")}
+          />
         </TabsContent>
       </Tabs>
 

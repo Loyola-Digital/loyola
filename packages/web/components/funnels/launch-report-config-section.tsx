@@ -1,20 +1,20 @@
 "use client";
 
 /**
- * Story 41.1 — Bloco "Relatórios (Resumão / Comparativo)" no Sheet de
- * Configurações da Etapa.
+ * Story 41.1 — Aba "Relatórios" da etapa: config do gerador de Resumão/Comparativo.
  *
- * O Sheet é estreito (sm:max-w-md) e já denso, então o bloco é recolhível e
- * abre fechado. O que ele precisa comunicar antes de qualquer campo é UMA
- * coisa: se os botões de relatório estão liberados nesta etapa, e por que não.
+ * A primeira coisa que a tela precisa comunicar não é um campo, é um estado:
+ * se os botões de relatório estão liberados nesta etapa e, quando não estão,
+ * por quê e o que fazer. Só depois vêm as premissas.
  */
 
 import { useEffect, useState } from "react";
-import { ChevronDown, FileBarChart2, ShieldCheck, ShieldAlert, ExternalLink } from "lucide-react";
+import { FileBarChart2, ShieldCheck, ShieldAlert, ExternalLink, Info } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -22,7 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useStageSalesSpreadsheets } from "@/lib/hooks/use-stage-sales-spreadsheets";
 import {
   useLaunchReportConfig,
@@ -54,7 +53,7 @@ interface Props {
   projectId: string;
   funnelId: string;
   stageId: string;
-  /** Abre a aba de Planilhas — origem da classificação captação × order bump. */
+  /** Leva à aba de Planilhas — origem da classificação captação × order bump. */
   onOpenSpreadsheets?: () => void;
 }
 
@@ -64,12 +63,11 @@ export function LaunchReportConfigSection({
   stageId,
   onOpenSpreadsheets,
 }: Props) {
-  const [open, setOpen] = useState(false);
   const [confirmingValidation, setConfirmingValidation] = useState(false);
 
   const { data, isLoading } = useLaunchReportConfig(projectId, funnelId, stageId);
   const { data: sheets } = useStageSalesSpreadsheets(projectId, funnelId, stageId);
-  const { data: survey } = useLaunchReportSurveyQuestions(projectId, funnelId, stageId, open);
+  const { data: survey } = useLaunchReportSurveyQuestions(projectId, funnelId, stageId, true);
 
   const saveStage = useSaveLaunchReportConfig(projectId, funnelId, stageId);
   const validate = useValidateLaunchReportConfig(projectId, funnelId, stageId);
@@ -83,8 +81,7 @@ export function LaunchReportConfigSection({
   const [impostoStage, setImpostoStage] = useState("");
   const [campos, setCampos] = useState<Partial<Record<SurveyCanonicalField, string>>>({});
 
-  // Hidrata o formulário quando a config chega. Só depende de `data` — não
-  // sobrescreve o que o usuário está digitando a cada render.
+  // Hidrata o formulário quando a config chega do servidor.
   useEffect(() => {
     if (!data) return;
     if (data.stage) {
@@ -100,12 +97,10 @@ export function LaunchReportConfigSection({
     setCampos(data.expert.camposPesquisa ?? {});
   }, [data]);
 
-  const bloqueado = !!data?.bloqueio;
   const validado = data?.stage?.validado ?? false;
   const orderBumps = (sheets ?? []).flatMap((s) => s.orderBumpProducts ?? []);
 
-  // Mudar qualquer uma das três premissas invalida a conferência anterior — o
-  // backend reseta, e o aviso aqui evita que a pessoa descubra depois.
+  // Mudar qualquer uma das três premissas invalida a conferência anterior.
   const premissaMudou =
     !!data?.stage &&
     (data.stage.tipo !== tipo ||
@@ -166,295 +161,312 @@ export function LaunchReportConfigSection({
     });
   }
 
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-20 rounded-xl" />
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Skeleton className="h-72 rounded-xl" />
+          <Skeleton className="h-72 rounded-xl" />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="space-y-2">
-      <CollapsibleTrigger asChild>
-        <button
-          type="button"
-          className="flex w-full items-center justify-between rounded-md border border-border/50 px-3 py-2 text-left hover:bg-muted/50"
-        >
-          <span className="flex items-center gap-2 text-sm font-medium">
-            <FileBarChart2 className="h-4 w-4 text-primary" />
-            Relatórios (Resumão / Comparativo)
-          </span>
-          <span className="flex items-center gap-2">
-            {!isLoading && (
-              <span
-                className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                  bloqueado
-                    ? "bg-red-500/10 text-red-500 border border-red-500/30"
-                    : "bg-emerald-500/10 text-emerald-600 border border-emerald-500/30"
-                }`}
-              >
-                {bloqueado ? "Bloqueado" : "Liberado"}
-              </span>
-            )}
-            <ChevronDown
-              className={`h-4 w-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
-            />
-          </span>
-        </button>
-      </CollapsibleTrigger>
-
-      <CollapsibleContent className="space-y-4 rounded-md border border-border/40 p-3">
-        {/* Estado do gate — a primeira coisa que a pessoa precisa entender */}
-        {data?.bloqueio ? (
-          <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 space-y-1">
-            <p className="flex items-center gap-1.5 text-xs font-medium text-red-500">
-              <ShieldAlert className="h-3.5 w-3.5" />
-              Não validado — botões de relatório bloqueados
-            </p>
-            <p className="text-[11px] text-muted-foreground">{data.bloqueio.detalhe}</p>
-            <p className="text-[11px] text-muted-foreground">{data.bloqueio.acao}</p>
-          </div>
-        ) : (
-          data && (
-            <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3">
-              <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-600">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                {validado
-                  ? `Validado${
-                      data.stage?.validadoEm
-                        ? ` em ${new Date(data.stage.validadoEm).toLocaleDateString("pt-BR")}`
-                        : ""
-                    }${data.stage?.validadoPorNome ? ` por ${data.stage.validadoPorNome}` : ""}`
-                  : `Combinação de referência (${data.escopoValidado.tipo}/${data.escopoValidado.etapa}) — liberado`}
-              </p>
-            </div>
-          )
-        )}
-
-        {/* Premissas */}
-        <div className="space-y-2">
-          <Label className="text-xs">Tipo de lançamento</Label>
-          <Select value={tipo} onValueChange={(v) => setTipo(v as LaunchReportTipo)}>
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {LAUNCH_REPORT_TIPOS.map((t) => (
-                <SelectItem key={t.value} value={t.value} className="text-xs">
-                  {t.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2">
-          <Label className="text-xs">Etapa (prefixo da campanha)</Label>
-          <Select value={etapa} onValueChange={(v) => setEtapa(v as LaunchReportEtapa)}>
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {LAUNCH_REPORT_ETAPAS.map((e) => (
-                <SelectItem key={e.value} value={e.value} className="text-xs">
-                  {e.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2">
-          <Label className="text-xs">Entidade de captura</Label>
-          <Select value={entidade} onValueChange={(v) => setEntidade(v as LaunchReportEntidade)}>
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {LAUNCH_REPORT_ENTIDADES.map((e) => (
-                <SelectItem key={e.value} value={e.value} className="text-xs">
-                  {e.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {premissaMudou && (
-          <p className="rounded bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-600">
-            Mudar tipo/etapa/entidade reseta a validação — a conferência anterior deixa de valer.
-          </p>
-        )}
-
-        {/* Período */}
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1">
-            <Label className="text-xs">Início</Label>
-            <Input
-              type="date"
-              value={dataInicio}
-              onChange={(e) => setDataInicio(e.target.value)}
-              className="h-8 text-xs"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Fim</Label>
-            <Input
-              type="date"
-              value={dataFim}
-              onChange={(e) => setDataFim(e.target.value)}
-              className="h-8 text-xs"
-            />
-          </div>
-        </div>
-        <p className="text-[11px] text-muted-foreground">
-          Vazio = derivado automaticamente: início na 1ª conversão registrada, fim no último dia
-          com investimento. Evita contar o período com spend e sem conversão.
+    <div className="space-y-5">
+      <div>
+        <h3 className="flex items-center gap-2 text-sm font-semibold">
+          <FileBarChart2 className="h-4 w-4 text-primary" />
+          Relatórios — Resumão e Comparativo
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          Configuração que o gerador usa para calcular esta etapa. Enquanto a combinação não
+          estiver liberada, os botões de relatório ficam bloqueados.
         </p>
+      </div>
 
-        {/* Imposto */}
-        <div className="space-y-1">
-          <Label className="text-xs">Imposto sobre mídia (%)</Label>
-          <Input
-            inputMode="decimal"
-            placeholder="12,15"
-            value={impostoStage}
-            onChange={(e) => setImpostoStage(e.target.value)}
-            className="h-8 text-xs"
-          />
-          {data && (
-            <p className="text-[11px] text-muted-foreground">
-              Em uso: <strong>{(data.resolvido.impostoPct * 100).toFixed(2).replace(".", ",")}%</strong>{" "}
-              (
-              {data.resolvido.impostoOrigem === "stage"
-                ? "override desta etapa"
-                : data.resolvido.impostoOrigem === "project"
-                  ? "override do projeto"
-                  : "padrão do sistema"}
-              )
+      {/* Estado do gate — antes de qualquer campo */}
+      {data?.bloqueio ? (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 space-y-1">
+          <p className="flex items-center gap-2 text-sm font-medium text-red-500">
+            <ShieldAlert className="h-4 w-4" />
+            Não validado — botões de relatório bloqueados
+          </p>
+          <p className="text-xs text-muted-foreground">{data.bloqueio.detalhe}</p>
+          <p className="text-xs text-muted-foreground">{data.bloqueio.acao}</p>
+        </div>
+      ) : (
+        data && (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+            <p className="flex items-center gap-2 text-sm font-medium text-emerald-600">
+              <ShieldCheck className="h-4 w-4" />
+              {validado
+                ? `Validado${
+                    data.stage?.validadoEm
+                      ? ` em ${new Date(data.stage.validadoEm).toLocaleDateString("pt-BR")}`
+                      : ""
+                  }${data.stage?.validadoPorNome ? ` por ${data.stage.validadoPorNome}` : ""}`
+                : `Combinação de referência (${data.escopoValidado.tipo} / ${data.escopoValidado.etapa}) — liberado`}
+            </p>
+          </div>
+        )
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* ---- Premissas do lançamento ---- */}
+        <div className="space-y-4 rounded-xl border border-border/40 bg-card/40 p-4">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Premissas do lançamento
+          </h4>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Tipo</Label>
+              <Select value={tipo} onValueChange={(v) => setTipo(v as LaunchReportTipo)}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LAUNCH_REPORT_TIPOS.map((t) => (
+                    <SelectItem key={t.value} value={t.value} className="text-xs">
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs">Etapa (prefixo da campanha)</Label>
+              <Select value={etapa} onValueChange={(v) => setEtapa(v as LaunchReportEtapa)}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LAUNCH_REPORT_ETAPAS.map((e) => (
+                    <SelectItem key={e.value} value={e.value} className="text-xs">
+                      {e.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Entidade de captura</Label>
+            <Select value={entidade} onValueChange={(v) => setEntidade(v as LaunchReportEntidade)}>
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LAUNCH_REPORT_ENTIDADES.map((e) => (
+                  <SelectItem key={e.value} value={e.value} className="text-xs">
+                    {e.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {premissaMudou && (
+            <p className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-600">
+              Mudar tipo, etapa ou entidade reseta a validação — a conferência anterior deixa de
+              valer.
             </p>
           )}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Início do período</Label>
+              <Input
+                type="date"
+                value={dataInicio}
+                onChange={(e) => setDataInicio(e.target.value)}
+                className="h-9 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Fim do período</Label>
+              <Input
+                type="date"
+                value={dataFim}
+                onChange={(e) => setDataFim(e.target.value)}
+                className="h-9 text-xs"
+              />
+            </div>
+          </div>
+          <p className="flex gap-1.5 text-xs text-muted-foreground">
+            <Info className="mt-0.5 h-3 w-3 shrink-0" />
+            Vazio = derivado automaticamente: início na 1ª conversão registrada, fim no último dia
+            com investimento. Evita contar o período com spend e sem conversão.
+          </p>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Imposto sobre mídia (%)</Label>
+            <Input
+              inputMode="decimal"
+              placeholder="12,15"
+              value={impostoStage}
+              onChange={(e) => setImpostoStage(e.target.value)}
+              className="h-9 max-w-[160px] text-xs"
+            />
+            {data && (
+              <p className="text-xs text-muted-foreground">
+                Em uso:{" "}
+                <strong className="text-foreground">
+                  {(data.resolvido.impostoPct * 100).toFixed(2).replace(".", ",")}%
+                </strong>{" "}
+                (
+                {data.resolvido.impostoOrigem === "stage"
+                  ? "override desta etapa"
+                  : data.resolvido.impostoOrigem === "project"
+                    ? "override do projeto"
+                    : "padrão do sistema"}
+                )
+              </p>
+            )}
+          </div>
+
+          <Button size="sm" onClick={handleSaveStage} disabled={saveStage.isPending}>
+            {saveStage.isPending ? "Salvando..." : "Salvar config"}
+          </Button>
+
+          {/* Produtos — leitura; a fonte é o wizard de Planilhas */}
+          <div className="space-y-1.5 border-t border-border/30 pt-4">
+            <Label className="text-xs">Classificação de produtos</Label>
+            {orderBumps.length > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                <strong className="text-foreground">{orderBumps.length}</strong> produto(s)
+                marcados como order bump: {orderBumps.slice(0, 6).join(", ")}
+                {orderBumps.length > 6 ? `, +${orderBumps.length - 6}` : ""}. Todo produto não
+                listado conta como ingresso da captação.
+              </p>
+            ) : (
+              <p className="text-xs text-amber-600">
+                Nenhum order bump marcado — todo produto será contado como ingresso da captação.
+              </p>
+            )}
+            {onOpenSpreadsheets && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 px-2 text-xs"
+                onClick={onOpenSpreadsheets}
+              >
+                <ExternalLink className="h-3 w-3" />
+                Editar em Planilhas
+              </Button>
+            )}
+          </div>
         </div>
 
-        <Button size="sm" className="w-full" onClick={handleSaveStage} disabled={saveStage.isPending}>
-          {saveStage.isPending ? "Salvando..." : "Salvar config"}
-        </Button>
+        {/* ---- Pesquisa + validação ---- */}
+        <div className="space-y-4 rounded-xl border border-border/40 bg-card/40 p-4">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Campos da pesquisa (deste expert)
+          </h4>
 
-        {/* Produtos — leitura, fonte é o wizard de planilhas */}
-        <div className="space-y-1 border-t border-border/30 pt-3">
-          <Label className="text-xs">Classificação de produtos</Label>
-          {orderBumps.length > 0 ? (
-            <p className="text-[11px] text-muted-foreground">
-              <strong>{orderBumps.length}</strong> produto(s) marcados como order bump:{" "}
-              {orderBumps.slice(0, 4).join(", ")}
-              {orderBumps.length > 4 ? `, +${orderBumps.length - 4}` : ""}. Todo produto não
-              listado conta como ingresso da captação.
-            </p>
-          ) : (
-            <p className="text-[11px] text-amber-600">
-              Nenhum order bump marcado — todo produto será contado como ingresso da captação.
-            </p>
-          )}
-          {onOpenSpreadsheets && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1 px-2 text-[11px]"
-              onClick={onOpenSpreadsheets}
-            >
-              <ExternalLink className="h-3 w-3" />
-              Editar em Planilhas
-            </Button>
-          )}
-        </div>
-
-        {/* Mapa de campos da pesquisa (por expert) */}
-        <div className="space-y-2 border-t border-border/30 pt-3">
-          <Label className="text-xs">Campos da pesquisa (deste expert)</Label>
           {survey?.semPesquisa ? (
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Nenhuma pesquisa com respostas vinculada a esta etapa — o bloco de qualificação do
               Resumão fica de fora até existir uma.
             </p>
           ) : (
-            <div className="space-y-2">
-              {SURVEY_CANONICAL_FIELDS.map((f) => (
-                <div key={f.value} className="grid grid-cols-[90px_1fr] items-center gap-2">
-                  <span className="text-[11px] text-muted-foreground">
-                    {f.label}
-                    {f.required && <span className="text-red-500"> *</span>}
-                  </span>
-                  <Select
-                    value={campos[f.value] ?? "__none__"}
-                    onValueChange={(v) => {
-                      const next = { ...campos };
-                      if (v === "__none__") delete next[f.value];
-                      else next[f.value] = v;
-                      handleSaveCampos(next);
-                    }}
+            <>
+              <p className="text-xs text-muted-foreground">
+                Cada expert tem formulário próprio. Ligue o campo que o Resumão espera à pergunta
+                real deste formulário. Campo não mapeado é omitido — não é erro.
+              </p>
+              <div className="space-y-2">
+                {SURVEY_CANONICAL_FIELDS.map((f) => (
+                  <div
+                    key={f.value}
+                    className="grid grid-cols-[130px_1fr] items-center gap-3"
                   >
-                    <SelectTrigger className="h-7 text-[11px]">
-                      <SelectValue placeholder="não mapeado" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-[11px]">
-                        não mapeado
-                      </SelectItem>
-                      {(survey?.questions ?? []).map((q) => (
-                        <SelectItem key={q.key} value={q.key} className="text-[11px]">
-                          {q.label}
+                    <span className="text-xs text-muted-foreground">
+                      {f.label}
+                      {f.required && <span className="text-red-500"> *</span>}
+                    </span>
+                    <Select
+                      value={campos[f.value] ?? "__none__"}
+                      onValueChange={(v) => {
+                        const next = { ...campos };
+                        if (v === "__none__") delete next[f.value];
+                        else next[f.value] = v;
+                        handleSaveCampos(next);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="não mapeado" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__" className="text-xs">
+                          não mapeado
                         </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ))}
-              <p className="text-[11px] text-muted-foreground">
-                Campo não mapeado é omitido do Resumão — não é erro.
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Validação */}
-        <div className="space-y-2 border-t border-border/30 pt-3">
-          {!confirmingValidation ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full"
-              onClick={() => setConfirmingValidation(true)}
-              disabled={!data?.stage || validado}
-            >
-              {validado ? "Já validado" : "Marcar como validado"}
-            </Button>
-          ) : (
-            <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5">
-              <p className="text-[11px] font-medium text-amber-600">
-                Confirme que cada item foi feito — validar libera números para decisão:
-              </p>
-              <ul className="space-y-0.5">
-                {CHECKLIST_VALIDACAO.map((item) => (
-                  <li key={item} className="text-[11px] text-muted-foreground">
-                    • {item}
-                  </li>
+                        {(survey?.questions ?? []).map((q) => (
+                          <SelectItem key={q.key} value={q.key} className="text-xs">
+                            {q.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 ))}
-              </ul>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  className="h-7 flex-1 text-[11px]"
-                  onClick={handleValidate}
-                  disabled={validate.isPending}
-                >
-                  {validate.isPending ? "Validando..." : "Confirmo, validar"}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-[11px]"
-                  onClick={() => setConfirmingValidation(false)}
-                >
-                  Cancelar
-                </Button>
               </div>
-            </div>
+            </>
           )}
+
+          {/* Validação */}
+          <div className="space-y-2 border-t border-border/30 pt-4">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Validação da combinação
+            </h4>
+            {!confirmingValidation ? (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Marcar como validado afirma que os números desta etapa foram conferidos contra o
+                  painel. É o que libera os botões para combinações fora da referência.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfirmingValidation(true)}
+                  disabled={!data?.stage || validado}
+                >
+                  {validado ? "Já validado" : "Marcar como validado"}
+                </Button>
+              </>
+            ) : (
+              <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                <p className="text-xs font-medium text-amber-600">
+                  Confirme que cada item foi feito — validar libera números para decisão:
+                </p>
+                <ul className="space-y-1">
+                  {CHECKLIST_VALIDACAO.map((item) => (
+                    <li key={item} className="text-xs text-muted-foreground">
+                      • {item}
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex gap-2 pt-1">
+                  <Button size="sm" onClick={handleValidate} disabled={validate.isPending}>
+                    {validate.isPending ? "Validando..." : "Confirmo, validar"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setConfirmingValidation(false)}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </CollapsibleContent>
-    </Collapsible>
+      </div>
+    </div>
   );
 }
