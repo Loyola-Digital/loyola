@@ -20,6 +20,8 @@ function row(p: Partial<Ga4RawRow>): Ga4RawRow {
     conversions: 0,
     pageViews: 0,
     revenue: 0,
+    activeUsers: 0,
+    newUsers: 0,
     ...p,
   };
 }
