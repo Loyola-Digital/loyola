@@ -33,6 +33,8 @@ export interface Ga4StageDashboard {
   totals: {
     sessions: number;
     users: number;
+    activeUsers: number;
+    newUsers: number;
     engagedSessions: number;
     engagementRate: number;
     conversions: number;
@@ -42,6 +44,7 @@ export interface Ga4StageDashboard {
   byChannel: Array<{ channel: string; sessions: number; conversions: number }>;
   topSources: Array<{ sourceMedium: string; sessions: number; conversions: number }>;
   topCampaigns: Array<{ campaign: string; sessions: number; conversions: number; revenue: number }>;
+  byPage?: Array<{ page: string; sessions: number; activeUsers: number; newUsers: number }>;
   pageFilter: string | null;
   configured: boolean;
 }

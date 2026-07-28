@@ -15,7 +15,7 @@
  * comparação — reestilizados.
  */
 
-import { Fragment, useCallback, useMemo, useState, type ReactNode, type ComponentType } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode, type ComponentType } from "react";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -27,8 +27,9 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  ReferenceLine,
 } from "recharts";
-import { FlaskConical, ImageIcon, Sparkles, LayoutTemplate, PieChart as PieChartIcon, ClipboardList, Activity, ArrowLeftRight, Banknote, Users } from "lucide-react";
+import { FlaskConical, ImageIcon, Sparkles, LayoutTemplate, PieChart as PieChartIcon, ClipboardList, Activity, ArrowLeftRight, Banknote, Users, Table2 } from "lucide-react";
 import { useTrafficOverview, useTrafficCampaigns, useCampaignDailyInsightsBulk } from "@/lib/hooks/use-traffic-analytics";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
@@ -37,6 +38,9 @@ import { useStageHotColdBuyers } from "@/lib/hooks/use-stage-hot-cold-buyers";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
+import { useUpdateFunnel } from "@/lib/hooks/use-funnels";
+import { expandChartDataV2, calculateProjectionPercentage } from "@/lib/utils/lead-trend-calculations";
+import { useLeadsProjection } from "@/lib/hooks/use-leads-projection";
 import {
   useFunnelBatchTurns,
   useCreateFunnelBatchTurn,
@@ -57,6 +61,9 @@ import { SurveyQualificationSection } from "./survey-qualification-section";
 import { StageSalesSection } from "./stage-sales-section";
 import { GroupsDashboardSection } from "./groups-dashboard-section";
 import { CtrCpmChart, SaturationBadge, FunnelComparisonChart } from "./launch-dashboard";
+import { LeadsByUtmTable } from "./leads-by-utm-table";
+import { RefreshDataButton } from "./refresh-data-button";
+import { MetaFreshnessBadge } from "./meta-freshness-badge";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
 import type { Funnel, StageType } from "@loyola-x/shared";
 
@@ -101,6 +108,18 @@ function weekdayOf(dateStr: string): string {
 // dinheiro sem centavos (igual print: "R$ 40.103")
 const money0 = (v: number | null) =>
   v == null ? "—" : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+
+// estilos compartilhados dos gráficos (dark/mono)
+const MONO_TICK = { fontSize: 10, fill: "#a9b2c0", fontFamily: "'JetBrains Mono',monospace" };
+const TT_STYLE = { background: "#1c1c27", border: "1px solid rgba(255,255,255,.07)", borderRadius: 8, fontSize: 12, color: "#eef2f7" };
+const dmLabel = (d: string) => d.slice(8, 10) + "/" + d.slice(5, 7);
+function addDaysISO(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
 
 // Estilo da linha de marco (acima do dia): virada pra frente (verde), retorno
 // (âmbar) ou fase/separador (roxo). Detecta pelo texto do label do batch turn.
@@ -217,10 +236,27 @@ export function MetaAdsTesteTab({
       date: r.date,
       leads: leadsOf(r),
       cpl: r.cplG,
+      cplPago: r.cplPg,
+      cplGeral: r.cplG,
       spend: r.spend,
       meta: avgLeads,
     }));
-    return { leadsOf, avgLeads, avgCpl, daysAboveAvg, maxSpend, maxLeads, chart };
+    // acumulado por origem (curva de ingressos/leads acumulados)
+    let cumP = 0, cumO = 0, cumS = 0;
+    const cumulative = rows.map((r) => {
+      cumP += r.leadsPagos;
+      cumO += r.leadsOrg;
+      cumS += r.leadsSemTrack;
+      return {
+        label: r.date.slice(8, 10) + "/" + r.date.slice(5, 7),
+        date: r.date,
+        pago: cumP,
+        org: cumO,
+        semTrack: cumS,
+        total: cumP + cumO + cumS,
+      };
+    });
+    return { leadsOf, avgLeads, avgCpl, daysAboveAvg, maxSpend, maxLeads, chart, cumulative };
   }, [rows]);
 
   if (campaignIds.length === 0) {
@@ -338,8 +374,12 @@ export function MetaAdsTesteTab({
 
   return (
     <div className="space-y-3">
-      {/* seletor de período — funciona (refetch por days) */}
-      <div className="flex justify-end">
+      {/* header: refresh + freshness + seletor de período (refetch por days) */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <RefreshDataButton />
+          <MetaFreshnessBadge projectId={projectId} />
+        </div>
         <div className="inline-flex rounded-lg border border-border/50 p-0.5 text-xs">
           {[7, 30, 90].map((d) => (
             <button key={d} type="button" onClick={() => setDays(d)}
@@ -491,6 +531,61 @@ export function MetaAdsTesteTab({
                 </div>
               )}
 
+              {/* Leva 5a: CPL Pago×Geral + Ingressos Acumulados */}
+              {metrics.hasLinkedSheet && rows.length > 0 && (
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className="rounded-[12px] border p-[17px]" style={{ background: T.surface, borderColor: T.border }}>
+                    <p className="mat-ct mb-3 flex items-center text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>
+                      CPL {isPaid ? "único " : ""}— pago (ouro) vs geral (esmeralda) · barra = investimento
+                    </p>
+                    <ResponsiveContainer width="100%" height={230}>
+                      <ComposedChart data={derived.chart}>
+                        <CartesianGrid stroke={T.grid} vertical={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
+                        <YAxis yAxisId="cpl" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={40} />
+                        <YAxis yAxisId="inv" orientation="right" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={44} tickFormatter={(v) => `R$${Math.round(v)}`} />
+                        <Tooltip contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, color: T.text }} formatter={(value) => brl(Number(value))} />
+                        <Bar yAxisId="inv" dataKey="spend" name="Investimento" fill="rgba(245,158,11,.12)" radius={[3, 3, 0, 0]} />
+                        <Line yAxisId="cpl" dataKey="cplPago" name="CPL Pago" type="monotone" stroke={T.gold} strokeWidth={2} dot={false} connectNulls />
+                        <Line yAxisId="cpl" dataKey="cplGeral" name="CPL Geral" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} connectNulls />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div className="rounded-[12px] border p-[17px]" style={{ background: T.surface, borderColor: T.border }}>
+                    <p className="mat-ct mb-3 flex items-center text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>
+                      {isPaid ? "Ingressos" : "Leads"} acumulados — por origem (total ouro)
+                    </p>
+                    <ResponsiveContainer width="100%" height={230}>
+                      <ComposedChart data={derived.cumulative}>
+                        <defs>
+                          <linearGradient id="mat-cum" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={T.gold} stopOpacity={0.18} />
+                            <stop offset="100%" stopColor={T.gold} stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke={T.grid} vertical={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
+                        <YAxis tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={38} />
+                        <Tooltip contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, color: T.text }} formatter={(value) => int(Number(value))} />
+                        <Area dataKey="total" name="Total" type="monotone" stroke={T.gold} strokeWidth={2} fill="url(#mat-cum)" />
+                        <Line dataKey="pago" name="Pago" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} />
+                        <Line dataKey="org" name="Org" type="monotone" stroke={T.teal} strokeWidth={2} dot={false} />
+                        <Line dataKey="semTrack" name="s/ Track" type="monotone" stroke={T.amber} strokeWidth={2} dot={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {/* Leva 5b: Tendência + Meta · Projeção por Custo */}
+              {metrics.hasLinkedSheet && rows.length > 0 && (
+                <div className="space-y-4">
+                  <TesteTrendChart rows={rows} funnel={funnel} projectId={projectId} isPaid={isPaid} />
+                  <TesteCostChart rows={rows} funnel={funnel} projectId={projectId} isPaid={isPaid} />
+                </div>
+              )}
+
               {/* Controle Diário Completo */}
               {rows.length > 0 && (
                 <div className="space-y-2">
@@ -558,6 +653,14 @@ export function MetaAdsTesteTab({
                   <p className="text-[10px]" style={{ color: T.muted, fontFamily: "'JetBrains Mono',monospace" }}>
                     Clique na coluna Observação pra anotar o dia · clique direito num dia pra marcar virada de lote / fase (aparece como linha acima). Fat.=faturamento total · Invest.=spend c/ imposto · Lucro=Fat−Invest · Bumps=ingressos totais−únicos.
                   </p>
+                </div>
+              )}
+
+              {/* Leva 5c: Leads & vendas por UTM */}
+              {metrics.hasLinkedSheet && (
+                <div className="space-y-4">
+                  <GroupHeading icon={Table2} title="LEADS & VENDAS POR UTM" subtitle="Agrupado por source / medium / campaign / content / term" />
+                  <LeadsByUtmTable projectId={projectId} funnelId={funnel.id} stageId={stageId} days={days} />
                 </div>
               )}
 
@@ -815,5 +918,107 @@ function TesteLpSection({
         <LpPerformanceTable rows={lps} stageType={isPaid ? "paid" : "free"} isLoading={false} lpLinks={lpLinks} onSaveLpLink={handleSaveLpLink} />
       )}
     </SectionShell>
+  );
+}
+
+// Estilo de input dark reusado nos gráficos de projeção.
+const inputCls = "rounded border bg-transparent px-2 py-1 text-[11px]";
+const inputStyle = { borderColor: T.border, color: T.text, colorScheme: "dark" as const };
+
+// Leads: Tendência + Meta — reusa expandChartDataV2 (números idênticos), estilo TESTE.
+function TesteTrendChart({ rows, funnel, projectId, isPaid }: { rows: DailyRow[]; funnel: Funnel; projectId: string; isPaid: boolean }) {
+  const update = useUpdateFunnel(projectId, funnel.id);
+  const lastDate = rows.length ? rows[rows.length - 1].date : new Date().toISOString().slice(0, 10);
+  const [dataFinal, setDataFinal] = useState<string>(funnel.leadsGoalDataFinal || addDaysISO(lastDate, 30));
+  const [metaTotal, setMetaTotal] = useState<number>(funnel.leadsGoalMeta ?? 0);
+  const data = useMemo(
+    () => expandChartDataV2(rows, dataFinal, metaTotal, 5).map((d) => ({ ...d, label: dmLabel(d.date) })),
+    [rows, dataFinal, metaTotal],
+  );
+  const pct = useMemo(() => calculateProjectionPercentage(data), [data]);
+  const todayLabel = data.find((d) => d.isProjection)?.label ?? null;
+  const noun = isPaid ? "Ingressos" : "Leads";
+  const onData = (v: string) => { setDataFinal(v); if (v) update.mutate({ leadsGoalDataFinal: v }); };
+  const onMeta = (v: number) => { setMetaTotal(v); update.mutate({ leadsGoalMeta: v }); };
+
+  return (
+    <div className="rounded-[12px] border p-[17px] space-y-3" style={{ background: T.surface, borderColor: T.border }}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="mat-ct flex items-center text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>{noun}: tendência + meta — real (esmeralda) · projeção (ouro tracejado) · meta (vermelho)</p>
+        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: pct >= 100 ? "rgba(16,185,129,.15)" : "rgba(245,158,11,.15)", color: pct >= 100 ? T.emerald : T.amber, fontFamily: "'JetBrains Mono',monospace" }}>{pct.toFixed(0)}% da meta</span>
+      </div>
+      <div className="flex flex-wrap gap-3">
+        <label className="flex items-center gap-1.5 text-[10px]" style={{ color: T.muted }}>Data final
+          <input type="date" value={dataFinal} onChange={(e) => onData(e.target.value)} className={inputCls} style={inputStyle} />
+        </label>
+        <label className="flex items-center gap-1.5 text-[10px]" style={{ color: T.muted }}>Meta total
+          <input type="number" value={metaTotal || ""} onChange={(e) => onMeta(Number(e.target.value) || 0)} className={`w-24 ${inputCls}`} style={inputStyle} />
+        </label>
+      </div>
+      <ResponsiveContainer width="100%" height={250}>
+        <ComposedChart data={data}>
+          <CartesianGrid stroke={T.grid} vertical={false} />
+          <XAxis dataKey="label" tick={MONO_TICK} stroke="transparent" />
+          <YAxis tick={MONO_TICK} stroke="transparent" width={40} />
+          <Tooltip contentStyle={TT_STYLE} formatter={(v) => (v == null ? "—" : int(Number(v)))} />
+          <Bar dataKey="dailyReal" name="Real/dia" fill="rgba(255,255,255,.13)" radius={[2, 2, 0, 0]} />
+          <Bar dataKey="dailyProjected" name="Projeção/dia" fill="rgba(245,158,11,.32)" radius={[2, 2, 0, 0]} />
+          <Line dataKey="cumulativeReal" name="Acum. real" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} connectNulls />
+          <Line dataKey="cumulativeProjected" name="Acum. projeção" type="monotone" stroke={T.gold} strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls />
+          <Line dataKey="meta" name="Meta" type="monotone" stroke={T.red} strokeWidth={1.5} dot={false} />
+          {todayLabel && <ReferenceLine x={todayLabel} stroke={T.muted2} strokeDasharray="2 2" />}
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// Leads: Projeção por Custo — reusa o hook useLeadsProjection (números idênticos), estilo TESTE.
+function TesteCostChart({ rows, funnel, projectId, isPaid }: { rows: DailyRow[]; funnel: Funnel; projectId: string; isPaid: boolean }) {
+  const update = useUpdateFunnel(projectId, funnel.id);
+  const proj = useLeadsProjection(rows, funnel.leadsGoalDataFinal ?? undefined, funnel.leadsGoalMeta ?? undefined, funnel.leadsGoalGastoTotal ?? undefined);
+  // pré-preenche o gasto com a sugestão pra a projeção já aparecer.
+  useEffect(() => {
+    if (proj.gastoTotalProjetado === 0 && proj.gastoTotalSuggestion > 0) proj.setGastoTotalProjetado(proj.gastoTotalSuggestion);
+  }, [proj.gastoTotalSuggestion, proj.gastoTotalProjetado, proj]);
+  const data = useMemo(() => proj.chartData.map((d) => ({ ...d, label: dmLabel(d.date) })), [proj.chartData]);
+  const todayLabel = data.find((d) => d.isProjection)?.label ?? null;
+  const noun = isPaid ? "Ingressos" : "Leads";
+  const onData = (v: string) => { proj.setDataFinal(v); if (v) update.mutate({ leadsGoalDataFinal: v }); };
+  const onMeta = (v: number) => { proj.setMetaTotal(v); update.mutate({ leadsGoalMeta: v }); };
+
+  return (
+    <div className="rounded-[12px] border p-[17px] space-y-3" style={{ background: T.surface, borderColor: T.border }}>
+      <p className="mat-ct flex items-center text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>{noun}: projeção por custo — real (esmeralda) · projeção (ouro tracejado) · meta (vermelho) · CPL projetado (âmbar, dir.)</p>
+      <div className="flex flex-wrap gap-3">
+        <label className="flex items-center gap-1.5 text-[10px]" style={{ color: T.muted }}>Data final
+          <input type="date" value={proj.dataFinal} onChange={(e) => onData(e.target.value)} className={inputCls} style={inputStyle} />
+        </label>
+        <label className="flex items-center gap-1.5 text-[10px]" style={{ color: T.muted }}>Meta
+          <input type="number" value={proj.metaTotal || ""} onChange={(e) => onMeta(Number(e.target.value) || 0)} className={`w-20 ${inputCls}`} style={inputStyle} />
+        </label>
+        <label className="flex items-center gap-1.5 text-[10px]" style={{ color: T.muted }}>Gasto projetado (R$)
+          <input type="number" value={proj.gastoTotalProjetado || ""} placeholder={proj.gastoTotalSuggestion ? String(Math.round(proj.gastoTotalSuggestion)) : ""} onChange={(e) => proj.setGastoTotalProjetado(Number(e.target.value) || 0)} className={`w-28 ${inputCls}`} style={inputStyle} />
+        </label>
+      </div>
+      {proj.error ? (
+        <p className="py-8 text-center text-sm" style={{ color: T.muted }}>{proj.error}</p>
+      ) : (
+        <ResponsiveContainer width="100%" height={250}>
+          <ComposedChart data={data}>
+            <CartesianGrid stroke={T.grid} vertical={false} />
+            <XAxis dataKey="label" tick={MONO_TICK} stroke="transparent" />
+            <YAxis yAxisId="leads" tick={MONO_TICK} stroke="transparent" width={40} />
+            <YAxis yAxisId="cpl" orientation="right" tick={MONO_TICK} stroke="transparent" width={44} tickFormatter={(v) => `R$${Math.round(v)}`} />
+            <Tooltip contentStyle={TT_STYLE} formatter={(v, n) => [v == null ? "—" : String(n).includes("CPL") ? brl(Number(v)) : int(Number(v)), n]} />
+            <Line yAxisId="leads" dataKey="cumulativeReal" name="Acum. real" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} connectNulls />
+            <Line yAxisId="leads" dataKey="cumulativeProjected" name="Acum. projeção" type="monotone" stroke={T.gold} strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls />
+            <Line yAxisId="leads" dataKey="metaCumulative" name="Meta" type="monotone" stroke={T.red} strokeWidth={1.5} dot={false} />
+            <Line yAxisId="cpl" dataKey="cplProjected" name="CPL proj." type="monotone" stroke={T.amber} strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
+            {todayLabel && <ReferenceLine yAxisId="leads" x={todayLabel} stroke={T.muted2} strokeDasharray="2 2" />}
+          </ComposedChart>
+        </ResponsiveContainer>
+      )}
+    </div>
   );
 }

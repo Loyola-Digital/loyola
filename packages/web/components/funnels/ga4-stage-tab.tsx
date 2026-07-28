@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Loader2, BarChart3, Plug, Unlink, Save, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, BarChart3, Plug, Unlink, Save, RefreshCw, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -196,15 +196,15 @@ function Ga4Connected({
       <section className="rounded-xl border border-border/40 bg-card/60 p-4 space-y-2 max-w-xl">
         <Label htmlFor="ga4-page-filter" className="text-xs font-medium">Página desta etapa</Label>
         <p className="text-[11px] text-muted-foreground">
-          Trecho da URL (landing page) que identifica a página da etapa — ex.: <code>/inscricao</code>.
-          O GA4 filtra <code>landingPagePlusQueryString</code> que contém esse texto. Vazio = property inteira.
+          Um trecho que apareça na URL de TODAS as páginas da etapa — pode ser só um pedaço, ex.: <code>dg-pg04</code>.
+          Pega <strong>todas</strong> as páginas cuja URL <em>contém</em> esse texto (não precisa da <code>/</code> nem do caminho inteiro; ignora maiúsc./minúsc.). Vazio = property inteira.
         </p>
         <div className="flex gap-2">
           <Input
             id="ga4-page-filter"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="/minha-pagina"
+            placeholder="ex.: dg-pg04"
             onKeyDown={(e) => e.key === "Enter" && saveFilter()}
           />
           <Button size="sm" className="gap-1.5 shrink-0" onClick={saveFilter} disabled={updateStage.isPending || filter.trim() === savedFilter.trim()}>
@@ -239,9 +239,10 @@ function Ga4Connected({
             </div>
           ) : analytics.data ? (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                 <Metric label="Sessões" value={nf.format(analytics.data.totals.sessions)} />
-                <Metric label="Usuários" value={nf.format(analytics.data.totals.users)} />
+                <Metric label="Usuários ativos" value={nf.format(analytics.data.totals.activeUsers)} />
+                <Metric label="Novos usuários" value={nf.format(analytics.data.totals.newUsers)} />
                 <Metric label="Engajamento" value={pf.format(analytics.data.totals.engagementRate)} />
                 <Metric label="Conversões" value={nf.format(analytics.data.totals.conversions)} />
                 <Metric label="Páginas vistas" value={nf.format(analytics.data.totals.pageViews)} />
@@ -257,6 +258,11 @@ function Ga4Connected({
                   rows={analytics.data.topCampaigns.map((c) => ({ label: c.campaign, sessions: c.sessions, conversions: c.conversions }))}
                 />
               </div>
+
+              {/* Páginas que o filtro puxou — agrupadas por path base (antes do ?) */}
+              {analytics.data.byPage && analytics.data.byPage.length > 0 && (
+                <PagesBreakdown pages={analytics.data.byPage} />
+              )}
             </>
           ) : null}
         </div>
@@ -271,6 +277,82 @@ function Metric({ label, value }: { label: string; value: string }) {
       <p className="text-lg font-semibold">{value}</p>
       <p className="text-[11px] text-muted-foreground">{label}</p>
     </div>
+  );
+}
+
+interface PageRow { page: string; sessions: number; activeUsers: number; newUsers: number }
+interface PageGroup {
+  base: string;
+  sessions: number;
+  activeUsers: number;
+  newUsers: number;
+  variants: PageRow[];
+}
+
+/**
+ * Lista de páginas do GA4 agrupada pela PATH BASE (antes do "?"). Cada grupo soma
+ * as métricas das variações (com query string) e abre um dropdown pra ver o detalhe.
+ */
+function PagesBreakdown({ pages }: { pages: PageRow[] }) {
+  const [open, setOpen] = useState<string | null>(null);
+
+  const groups = useMemo<PageGroup[]>(() => {
+    const map = new Map<string, PageGroup>();
+    for (const p of pages) {
+      const base = (p.page.split("?")[0] || p.page).trim() || "(sem path)";
+      const g = map.get(base) ?? { base, sessions: 0, activeUsers: 0, newUsers: 0, variants: [] };
+      g.sessions += p.sessions;
+      g.activeUsers += p.activeUsers;
+      g.newUsers += p.newUsers;
+      g.variants.push(p);
+      map.set(base, g);
+    }
+    for (const g of map.values()) g.variants.sort((a, b) => b.sessions - a.sessions);
+    return [...map.values()].sort((a, b) => b.sessions - a.sessions);
+  }, [pages]);
+
+  return (
+    <section className="rounded-xl border border-border/40 bg-card/60 p-3 space-y-2">
+      <h4 className="text-xs font-semibold text-muted-foreground">
+        Páginas incluídas neste filtro ({groups.length}) — agrupadas por URL · clique pra ver as variações
+      </h4>
+      <div className="max-h-80 space-y-1 overflow-y-auto">
+        {groups.map((g) => {
+          const isOpen = open === g.base;
+          const hasVariants = g.variants.length > 1 || (g.variants[0] && g.variants[0].page !== g.base);
+          return (
+            <div key={g.base} className="rounded-md border border-border/30">
+              <button
+                type="button"
+                onClick={() => hasVariants && setOpen(isOpen ? null : g.base)}
+                className={`flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-xs ${hasVariants ? "cursor-pointer hover:bg-muted/40" : "cursor-default"}`}
+              >
+                <span className="flex min-w-0 items-center gap-1">
+                  <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""} ${hasVariants ? "" : "opacity-0"}`} />
+                  <span className="truncate font-mono" title={g.base}>{g.base}</span>
+                  {hasVariants && <span className="shrink-0 text-[10px] text-muted-foreground">({g.variants.length})</span>}
+                </span>
+                <span className="shrink-0 text-muted-foreground">
+                  {nf.format(g.sessions)} ses · {nf.format(g.activeUsers)} ativos · {nf.format(g.newUsers)} novos
+                </span>
+              </button>
+              {isOpen && hasVariants && (
+                <div className="space-y-0.5 border-t border-border/20 bg-muted/20 px-2 py-1.5">
+                  {g.variants.map((v, i) => (
+                    <div key={`${v.page}-${i}`} className="flex items-center justify-between gap-2 pl-5 text-[11px]">
+                      <span className="truncate font-mono text-muted-foreground" title={v.page}>{v.page.includes("?") ? "?" + v.page.split("?").slice(1).join("?") : v.page}</span>
+                      <span className="shrink-0 text-muted-foreground">
+                        {nf.format(v.sessions)} ses · {nf.format(v.activeUsers)} ativos · {nf.format(v.newUsers)} novos
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

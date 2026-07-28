@@ -11,6 +11,7 @@ import {
   getGa4AccessToken,
   listGa4Properties,
   runGa4Report,
+  runGa4PagesReport,
   aggregateGa4StageReport,
   ymdDaysAgo,
 } from "../services/ga4.js";
@@ -242,13 +243,18 @@ export default fp(async function ga4Routes(fastify) {
         const accessToken = await getGa4AccessToken(
           decryptGa4Secret(conn.refreshTokenEncrypted, conn.refreshTokenIv),
         );
-        const rows = await runGa4Report(accessToken, conn.propertyId, {
+        const reportArgs = {
           startDate: ymdDaysAgo(query.data.days),
           endDate: ymdDaysAgo(0),
           pageFilter: stage.ga4PageFilter,
-        });
+        };
+        const [rows, byPage] = await Promise.all([
+          runGa4Report(accessToken, conn.propertyId, reportArgs),
+          runGa4PagesReport(accessToken, conn.propertyId, reportArgs),
+        ]);
         const result = {
           ...aggregateGa4StageReport(rows),
+          byPage,
           pageFilter: stage.ga4PageFilter ?? null,
           configured: Boolean(stage.ga4PageFilter),
         };
