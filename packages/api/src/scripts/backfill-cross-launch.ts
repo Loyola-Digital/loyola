@@ -6,6 +6,7 @@ import { Pool } from "pg";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
+import * as schema from "../db/schema.js";
 import { syncCrossLaunch } from "../services/cross-launch-sync.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -13,7 +14,7 @@ dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 async function main() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  const db = drizzle(pool);
+  const db = drizzle(pool, { schema });
 
   const projectIds = process.argv.slice(2);
   const summary = await syncCrossLaunch(db, {
