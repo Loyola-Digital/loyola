@@ -239,9 +239,10 @@ function Ga4Connected({
             </div>
           ) : analytics.data ? (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                 <Metric label="Sessões" value={nf.format(analytics.data.totals.sessions)} />
-                <Metric label="Usuários" value={nf.format(analytics.data.totals.users)} />
+                <Metric label="Usuários ativos" value={nf.format(analytics.data.totals.activeUsers)} />
+                <Metric label="Novos usuários" value={nf.format(analytics.data.totals.newUsers)} />
                 <Metric label="Engajamento" value={pf.format(analytics.data.totals.engagementRate)} />
                 <Metric label="Conversões" value={nf.format(analytics.data.totals.conversions)} />
                 <Metric label="Páginas vistas" value={nf.format(analytics.data.totals.pageViews)} />
@@ -257,6 +258,25 @@ function Ga4Connected({
                   rows={analytics.data.topCampaigns.map((c) => ({ label: c.campaign, sessions: c.sessions, conversions: c.conversions }))}
                 />
               </div>
+
+              {/* Páginas que o filtro puxou — pra validar */}
+              {analytics.data.byPage && analytics.data.byPage.length > 0 && (
+                <section className="rounded-xl border border-border/40 bg-card/60 p-3 space-y-2">
+                  <h4 className="text-xs font-semibold text-muted-foreground">
+                    Páginas incluídas neste filtro ({analytics.data.byPage.length}) — confira se são as certas
+                  </h4>
+                  <div className="max-h-72 space-y-1 overflow-y-auto">
+                    {analytics.data.byPage.map((p, i) => (
+                      <div key={`${p.page}-${i}`} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="truncate font-mono" title={p.page}>{p.page}</span>
+                        <span className="shrink-0 text-muted-foreground">
+                          {nf.format(p.sessions)} ses · {nf.format(p.activeUsers)} ativos · {nf.format(p.newUsers)} novos
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
             </>
           ) : null}
         </div>

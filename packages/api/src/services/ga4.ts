@@ -157,6 +157,8 @@ const REPORT_METRICS = [
   "conversions",
   "screenPageViews",
   "purchaseRevenue",
+  "activeUsers",
+  "newUsers",
 ] as const;
 
 /** Linha crua já parseada do runReport. */
@@ -170,6 +172,8 @@ export interface Ga4RawRow {
   conversions: number;
   pageViews: number;
   revenue: number;
+  activeUsers: number;
+  newUsers: number;
 }
 
 interface RunReportResponse {
@@ -236,6 +240,74 @@ export async function runGa4Report(
       conversions: num(m[3]?.value),
       pageViews: num(m[4]?.value),
       revenue: num(m[5]?.value),
+      activeUsers: num(m[6]?.value),
+      newUsers: num(m[7]?.value),
+    };
+  });
+}
+
+// ============================================================
+// Data API — runReport por PÁGINA (landing page que casou com o filtro)
+// ============================================================
+
+const PAGE_METRICS = ["sessions", "activeUsers", "newUsers"] as const;
+
+/** Uma página (landing page) e suas métricas. */
+export interface Ga4PageRow {
+  page: string;
+  sessions: number;
+  activeUsers: number;
+  newUsers: number;
+}
+
+/**
+ * Lista as páginas (landingPagePlusQueryString) que casaram com o filtro da etapa,
+ * com sessões / usuários ativos / novos usuários. Ordenado por sessões desc.
+ * Serve pra VALIDAR quais páginas o filtro puxou.
+ */
+export async function runGa4PagesReport(
+  accessToken: string,
+  propertyId: string,
+  args: { startDate: string; endDate: string; pageFilter?: string | null },
+  limit = 100,
+): Promise<Ga4PageRow[]> {
+  const body: Record<string, unknown> = {
+    dateRanges: [{ startDate: args.startDate, endDate: args.endDate }],
+    dimensions: [{ name: "landingPagePlusQueryString" }],
+    metrics: PAGE_METRICS.map((name) => ({ name })),
+    orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+    limit,
+  };
+  if (args.pageFilter && args.pageFilter.trim()) {
+    body.dimensionFilter = {
+      filter: {
+        fieldName: "landingPagePlusQueryString",
+        stringFilter: { matchType: "CONTAINS", value: args.pageFilter.trim(), caseSensitive: false },
+      },
+    };
+  }
+
+  const res = await fetch(`${GA4_DATA_BASE}/properties/${propertyId}:runReport`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = ((await res.json()) as { error?: { message?: string } })?.error?.message ?? "";
+    } catch { /* corpo não-JSON */ }
+    throw new Error(`GA4 Data ${res.status}${detail ? `: ${detail}` : ""}`);
+  }
+
+  const data = (await res.json()) as RunReportResponse;
+  return (data.rows ?? []).map((r) => {
+    const m = r.metricValues ?? [];
+    return {
+      page: r.dimensionValues?.[0]?.value ?? "(unknown)",
+      sessions: num(m[0]?.value),
+      activeUsers: num(m[1]?.value),
+      newUsers: num(m[2]?.value),
     };
   });
 }
@@ -248,6 +320,8 @@ export interface Ga4StageDashboard {
   totals: {
     sessions: number;
     users: number;
+    activeUsers: number;
+    newUsers: number;
     engagedSessions: number;
     /** engagedSessions / sessions (0..1), ou 0 sem sessões. */
     engagementRate: number;
@@ -266,7 +340,7 @@ function topBy<T extends { sessions: number }>(map: Map<string, T>, n: number): 
 
 /** Agrega as linhas cruas em totais + quebras por canal/origem/campanha. */
 export function aggregateGa4StageReport(rows: Ga4RawRow[]): Ga4StageDashboard {
-  const totals = { sessions: 0, users: 0, engagedSessions: 0, conversions: 0, pageViews: 0, revenue: 0 };
+  const totals = { sessions: 0, users: 0, activeUsers: 0, newUsers: 0, engagedSessions: 0, conversions: 0, pageViews: 0, revenue: 0 };
   const byChannel = new Map<string, { channel: string; sessions: number; conversions: number }>();
   const bySource = new Map<string, { sourceMedium: string; sessions: number; conversions: number }>();
   const byCampaign = new Map<string, { campaign: string; sessions: number; conversions: number; revenue: number }>();
@@ -274,6 +348,8 @@ export function aggregateGa4StageReport(rows: Ga4RawRow[]): Ga4StageDashboard {
   for (const r of rows) {
     totals.sessions += r.sessions;
     totals.users += r.users;
+    totals.activeUsers += r.activeUsers;
+    totals.newUsers += r.newUsers;
     totals.engagedSessions += r.engagedSessions;
     totals.conversions += r.conversions;
     totals.pageViews += r.pageViews;
