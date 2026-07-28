@@ -2271,3 +2271,94 @@ export const debriefingComments = pgTable(
     ),
   ]
 );
+
+// ============================================================
+// LAUNCH REPORT CONFIGS (Story 41.1 — gerador de Resumão/Comparativo)
+// ============================================================
+// Config por ETAPA do gerador. O campo `validado` é o gate do §12 da spec:
+// a metodologia foi conferida casa a casa APENAS para pago/vendas-captacao;
+// qualquer outra combinação só gera relatório depois de conferência manual.
+// Nasce sempre `false` e é resetado quando tipo/etapa/entidade mudam.
+
+/** Tipo de lançamento — define quais seções do Resumão se aplicam. */
+export const LAUNCH_REPORT_TIPOS = ["pago", "gratuito", "perpetuo"] as const;
+export type LaunchReportTipo = (typeof LAUNCH_REPORT_TIPOS)[number];
+
+/** Prefixos de campanha do §2.2 da spec (classificação de etapa). */
+export const LAUNCH_REPORT_ETAPAS = [
+  "leads-captacao",
+  "vendas-captacao",
+  "vendas-principal",
+  "leads-downsell",
+  "vendas-downsell",
+] as const;
+export type LaunchReportEtapa = (typeof LAUNCH_REPORT_ETAPAS)[number];
+
+/** O que conta como conversão nesta etapa: transações ou cadastros. */
+export const LAUNCH_REPORT_ENTIDADES = ["vendas", "leads"] as const;
+export type LaunchReportEntidade = (typeof LAUNCH_REPORT_ENTIDADES)[number];
+
+export const launchReportConfigs = pgTable(
+  "launch_report_configs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    tipo: varchar("tipo", { length: 20 }).notNull().$type<LaunchReportTipo>(),
+    etapa: varchar("etapa", { length: 30 }).notNull().$type<LaunchReportEtapa>(),
+    entidadeCaptura: varchar("entidade_captura", { length: 10 })
+      .notNull()
+      .$type<LaunchReportEntidade>(),
+    /** Nulo = derivar no motor (§2.8): início = 1ª conversão, fim = último dia com spend. */
+    dataInicio: date("data_inicio"),
+    dataFim: date("data_fim"),
+    /** Override da alíquota do stage. Nulo = cai no override do projeto, depois no META_TAX_RATE. */
+    impostoPct: numeric("imposto_pct", { precision: 6, scale: 4 }),
+    /** Gate do §12. Default false — só o time marca true, após conferir contra o painel. */
+    validado: boolean("validado").notNull().default(false),
+    validadoEm: timestamp("validado_em", { withTimezone: true }),
+    validadoPor: uuid("validado_por").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("launch_report_configs_stage_uniq").on(table.stageId)]
+);
+
+// Config por PROJETO (= "expert" na spec). Cada expert tem pesquisa própria,
+// com perguntas diferentes — o mapa `camposPesquisa` liga o campo canônico que
+// o Resumão espera à chave da pergunta real daquele formulário (§12.4).
+
+/** Campos canônicos do bloco de qualificação (§4). `faixa` é o único obrigatório. */
+export const SURVEY_CANONICAL_FIELDS = [
+  "faixa",
+  "idade",
+  "sexo",
+  "estado_civil",
+  "escolaridade",
+  "renda",
+  "profissao",
+  "setor",
+  "funcionarios",
+  "religiao",
+] as const;
+export type SurveyCanonicalField = (typeof SURVEY_CANONICAL_FIELDS)[number];
+
+export const expertReportConfigs = pgTable(
+  "expert_report_configs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    impostoPct: numeric("imposto_pct", { precision: 6, scale: 4 }),
+    /** `{ campoCanônico: chaveDaPerguntaNoSurvey }` — chaves vindas de `SurveyPayload.questions`. */
+    camposPesquisa: jsonb("campos_pesquisa")
+      .notNull()
+      .default({})
+      .$type<Partial<Record<SurveyCanonicalField, string>>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("expert_report_configs_project_uniq").on(table.projectId)]
+);

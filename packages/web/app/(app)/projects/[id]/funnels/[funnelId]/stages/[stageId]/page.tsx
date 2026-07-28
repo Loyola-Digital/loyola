@@ -30,6 +30,7 @@ import { SwitchyFunnelSection } from "@/components/funnels/switchy-funnel-sectio
 import { LeadScoringTab } from "@/components/funnels/lead-scoring-tab";
 import { OrganicMediaTab } from "@/components/funnels/organic-media-tab";
 import { CplStageView } from "@/components/funnels/cpl-stage-view";
+import { LaunchReportConfigSection } from "@/components/funnels/launch-report-config-section";
 import { MauticStageTab } from "@/components/funnels/mautic-stage-tab";
 import { Ga4StageTab } from "@/components/funnels/ga4-stage-tab";
 import { NpsStageTab } from "@/components/funnels/nps-stage-tab";
@@ -48,6 +49,9 @@ import type { Funnel, FunnelCampaign, ManualSale } from "@loyola-x/shared";
 export default function StagePage() {
   const params = useParams<{ id: string; funnelId: string; stageId: string }>();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Story 41.1: Tabs passou a ser controlado pra permitir que a config de
+  // relatório leve o usuário direto ao wizard de Planilhas (order bumps).
+  const [activeTab, setActiveTab] = useState("meta-ads");
   const [stageName, setStageName] = useState("");
   // Vendas da captação paga (lançamento manual) — só usado quando stageType === "paid".
   const [manualSaleOpen, setManualSaleOpen] = useState(false);
@@ -396,6 +400,17 @@ export default function StagePage() {
                 )}
               </div>
 
+              {/* Story 41.1 — config do gerador de Resumão/Comparativo */}
+              <LaunchReportConfigSection
+                projectId={params.id}
+                funnelId={params.funnelId}
+                stageId={params.stageId}
+                onOpenSpreadsheets={() => {
+                  setSettingsOpen(false);
+                  setActiveTab("spreadsheets");
+                }}
+              />
+
               <StageDeleteSection
                 projectId={params.id}
                 funnelId={params.funnelId}
@@ -421,7 +436,7 @@ export default function StagePage() {
       />
 
       {/* Tabs */}
-      <Tabs defaultValue="meta-ads">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="meta-ads" className="gap-1.5">
             <TrendingUp className="h-3.5 w-3.5" />
