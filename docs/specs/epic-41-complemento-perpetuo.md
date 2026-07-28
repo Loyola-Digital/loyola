@@ -150,6 +150,82 @@ dezenas de instâncias para poucos criativos. **Sempre agregar por nome**, nunca
 ⚠️ **Normalizar acentos no matching.** A planilha traz `o-netão-te-ensina`, o Gerenciador pode
 vir sem acento.
 
+### C.3.6.1 Atribuir venda → campanha: usar assinatura, nunca substring do nome
+
+O `utm_term` vem como `{placement}_{campaign.name}|{adset}|{ad}`. Duas tentações que falham em
+produção:
+
+❌ **Substring do último segmento do nome.** `pps-a1-jul-26--venda--perpetuo--cold--estaticos` →
+`estaticos` → casa com `hot--estaticos` e `cold--estaticos`. Num funil real cada campanha recebeu
+o total do seu formato: as 4 campanhas somaram 484 vendas num funil de 246.
+
+❌ **Substring do nome completo.** Funciona quando o nome aparece literal no `utm_term`, mas
+quebra quando os tokens estão reordenados. Num funil real o Meta traz
+`[FZA1][FB/IG][LEADS][2025.08.25][COLD][ASC]` e o `utm_term` traz
+`..._[FB/IG][LEADS][2025.08.25][COLD][ASC][FZA1]|...` — o `[FZA1]` migra para o fim e o match
+nunca acontece. Resultado: 38 de 209 vendas atribuídas, silenciosamente.
+
+✅ **Assinatura discriminante.** Extrair de ambos os lados a tupla (público, formato) e casar por
+ela:
+
+```
+sig_campanha = (publico_de(campaign_name), formato_de(campaign_name))
+sig_venda    = (publico_de(utm_term),      formato_de(utm_term))
+venda ∈ campanha  ⟺  sig_venda == sig_campanha
+```
+
+Antes de usar, validar que as assinaturas são únicas entre as campanhas do funil. Se duas
+campanhas gerarem a mesma assinatura, a granularidade é insuficiente — abortar e pedir um
+discriminante extra.
+
+⚠️ Quando `tem_split_formato = falso`, forçar `formato = '—'` nos dois lados. Não inferir formato
+do `utm_term`: os nomes de criativo costumam conter a palavra "VIDEO"
+(ex: `106_VIDEO_QUASE-CONCLUIU`) e envenenam a leitura, criando assinatura que nenhuma campanha
+tem. Num funil real isso derrubou a atribuição de 205 para 174 vendas.
+
+> **Nota de implementação (2026-07-28, @dev + @po):** o **diagnóstico** desta seção está correto
+> e os dois anti-padrões são reais — mas a **solução por assinatura não se aplica ao Loyola X**,
+> porque aqui a atribuição nunca precisa passar por nome. No padrão Loyola as UTMs carregam
+> **IDs**: `utm_campaign` = Campaign ID (Story 29.16, confirmado em `lead-scoring.ts:879/901`),
+> `utm_medium` = adset ID e `utm_content` = ad ID (Story 29.13). O dashboard perpétuo já casa
+> `utm_campaign === campaignId` desde a 29.16. Os três funis da §C.10 têm essas três colunas
+> mapeadas na planilha. Atribuição por ID é exata: não sofre com colisão de sufixo nem com
+> reordenação de tokens, e dispensa a checagem de unicidade de assinatura.
+>
+> O que a seção deixa como regra permanente na implementação: **é proibido casar venda↔campanha
+> por substring de nome** — está registrado como anti-padrão na Story 41.8.
+>
+> ⚠️ **Consequência a validar:** a §C.10 conclui que no FZ-A1 "criativo/público indisponíveis"
+> porque o `utm_term` dele só traz Adset|Ad em 34 de 1468 linhas. Mas o FZ tem
+> `Tracking utm_medium` e `Tracking utm_content` mapeados — se trazem IDs, público e criativo do
+> FZ **estão disponíveis** no Loyola X e esse valor de conferência muda. Pendente de checagem
+> contra a planilha real.
+
+### C.3.6.2 Conferência de granularidade — obrigatória
+
+Toda dimensão micro precisa fechar com o total:
+
+```
+PARA CADA dimensão EM {público, formato, campanha, conjunto, criativo}:
+    ASSERTIR Σ vendas(dimensão) <= total_vendas
+
+Reconciliação exata da dimensão campanha:
+    Σ vendas(campanhas) − sobreposição + sem_atribuição == total_vendas
+
+onde:
+    sobreposição   = e-mails contados em mais de uma campanha (clicou em anúncios distintos)
+    sem_atribuição = e-mails cujo utm_term não permite identificar a campanha
+```
+
+Exibir `sem_atribuição` nas notas de dado sempre que for maior que zero — é a diferença entre o
+total e o que a tabela micro mostra.
+
+> **Nota de implementação (2026-07-28, @dev):** esta seção vale **integralmente**, e independe do
+> método de atribuição — sobreposição e não-atribuídos existem igual com match por ID. Como a
+> unidade contada é **e-mail distinto** (§C.3.2), somar vendas por campanha conta duas vezes quem
+> comprou depois de clicar em anúncios de campanhas diferentes. Incorporado à Story 41.8 como
+> invariante **P7** + alerta **W-P6**.
+
 ### C.3.7 Tendência
 
 ```

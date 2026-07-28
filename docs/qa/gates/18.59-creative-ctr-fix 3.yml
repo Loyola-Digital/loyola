@@ -1,0 +1,51 @@
+storyId: "18.59"
+title: "Fix CTR da tabela Desempenho de Criativos (×100 no modo compilado + cliques no link)"
+verdict: PASS
+reviewedBy: "@qa (Quinn)"
+date: "2026-07-16"
+commit: ad68c2e
+branch: fix/18.59-creative-ctr
+scope: "git show ad68c2e — 4 arquivos de código + story file (+183/-21)"
+checks:
+  - id: 1
+    name: Code review
+    result: PASS
+    evidence: "parseLinkClicks espelha o padrão de parseLandingPageViews (mesmo arquivo); ×100 aplicado nas 2 linhas do compilado com comentário explicando a unidade; tooltips seguem o padrão title da 18.55"
+  - id: 2
+    name: Testes
+    result: PASS
+    evidence: "Testes atualizados p/ percentual + 2 novos (CVR% e regressão do exemplo real 22/1647→1,34%); vitest ausente no web (TEST-001 herdado) — lógica exercitada via harness node --strip-types sobre a função real: CTR 1,34%, ponderado 4%, CVR 0,4%, CPC 2,5, ROAS 1,75, divisão por zero OK"
+  - id: 3
+    name: Acceptance criteria
+    result: PASS
+    evidence: "AC1 lógica validada (1,34% exato); AC2 compilado e individual ambos em percentual; AC3 clicks = link_click (consistente com LPs); AC4 zero campos/chamadas novas (actions já no fields de fetchAllAdInsights, inalterado); AC5 tooltips CTR/CPC/CPM adicionados nas 2 listas de colunas; AC6 sem regressão"
+  - id: 4
+    name: Regressões
+    result: PASS
+    evidence: "summary da rota (totalSpend/totalLeads/totalRevenue) não usa clicks; único consumidor de creatives[].clicks é a tabela de criativos; useLpPerformanceData consome o lpBreakdown (seção intocada, já usava inline_link_clicks); fetchAllAdInsights inalterado (lp-campaigns/lead-scoring não afetados); Faixas 18.47, Único/Total 18.55 e ordenação 18.57 intocados"
+  - id: 5
+    name: Performance
+    result: PASS
+    evidence: "Zero chamadas novas à Meta API (diretriz de rate limit); parseLinkClicks é O(n) sobre array pequeno já em memória"
+  - id: 6
+    name: Security
+    result: PASS
+    evidence: "Sem input de usuário novo; parseNumber reutilizado com sanitização existente; tooltips são strings estáticas"
+  - id: 7
+    name: Documentação
+    result: PASS
+    evidence: "Story com File List, Change Log e DoD 6/6; comentários no código referenciam a story e explicam a unidade percentual"
+gates:
+  tsc_api: green (exit 0)
+  tsc_web: green (exit 0)
+  next_build: green (exit 0)
+  meta_api_calls: zero novas
+issues:
+  - severity: low
+    category: requirements
+    description: "action link_click (usada nos criativos) e campo inline_link_clicks (usado na seção de LPs) podem divergir marginalmente por janela de atribuição da Meta; ambos representam cliques no link."
+    recommendation: "Na validação visual do usuário, se o CTR divergir alguns centésimos do Gerenciador, incluir inline_link_clicks no fields (1 campo a mais, sem chamada nova) e usar nos criativos."
+  - severity: low
+    category: tests
+    description: "TEST-001 (herdado): vitest não instalado no packages/web — testes novos não executam no CI local."
+    recommendation: "Débito de infra já registrado em stories anteriores."
