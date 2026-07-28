@@ -196,15 +196,15 @@ function Ga4Connected({
       <section className="rounded-xl border border-border/40 bg-card/60 p-4 space-y-2 max-w-xl">
         <Label htmlFor="ga4-page-filter" className="text-xs font-medium">Página desta etapa</Label>
         <p className="text-[11px] text-muted-foreground">
-          Trecho da URL (landing page) que identifica a página da etapa — ex.: <code>/inscricao</code>.
-          O GA4 filtra <code>landingPagePlusQueryString</code> que contém esse texto. Vazio = property inteira.
+          Um trecho que apareça na URL de TODAS as páginas da etapa — pode ser só um pedaço, ex.: <code>dg-pg04</code>.
+          Pega <strong>todas</strong> as páginas cuja URL <em>contém</em> esse texto (não precisa da <code>/</code> nem do caminho inteiro; ignora maiúsc./minúsc.). Vazio = property inteira.
         </p>
         <div className="flex gap-2">
           <Input
             id="ga4-page-filter"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="/minha-pagina"
+            placeholder="ex.: dg-pg04"
             onKeyDown={(e) => e.key === "Enter" && saveFilter()}
           />
           <Button size="sm" className="gap-1.5 shrink-0" onClick={saveFilter} disabled={updateStage.isPending || filter.trim() === savedFilter.trim()}>
