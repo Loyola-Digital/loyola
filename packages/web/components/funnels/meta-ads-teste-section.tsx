@@ -217,10 +217,27 @@ export function MetaAdsTesteTab({
       date: r.date,
       leads: leadsOf(r),
       cpl: r.cplG,
+      cplPago: r.cplPg,
+      cplGeral: r.cplG,
       spend: r.spend,
       meta: avgLeads,
     }));
-    return { leadsOf, avgLeads, avgCpl, daysAboveAvg, maxSpend, maxLeads, chart };
+    // acumulado por origem (curva de ingressos/leads acumulados)
+    let cumP = 0, cumO = 0, cumS = 0;
+    const cumulative = rows.map((r) => {
+      cumP += r.leadsPagos;
+      cumO += r.leadsOrg;
+      cumS += r.leadsSemTrack;
+      return {
+        label: r.date.slice(8, 10) + "/" + r.date.slice(5, 7),
+        date: r.date,
+        pago: cumP,
+        org: cumO,
+        semTrack: cumS,
+        total: cumP + cumO + cumS,
+      };
+    });
+    return { leadsOf, avgLeads, avgCpl, daysAboveAvg, maxSpend, maxLeads, chart, cumulative };
   }, [rows]);
 
   if (campaignIds.length === 0) {
@@ -488,6 +505,53 @@ export function MetaAdsTesteTab({
                       <Area dataKey="spend" type="monotone" stroke={T.gold} strokeWidth={2} fill="url(#mat-spend)" />
                     </ComposedChart>
                   </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Leva 5a: CPL Pago×Geral + Ingressos Acumulados */}
+              {metrics.hasLinkedSheet && rows.length > 0 && (
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className="rounded-[12px] border p-[17px]" style={{ background: T.surface, borderColor: T.border }}>
+                    <p className="mat-ct mb-3 flex items-center text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>
+                      CPL {isPaid ? "único " : ""}— pago (ouro) vs geral (esmeralda) · barra = investimento
+                    </p>
+                    <ResponsiveContainer width="100%" height={230}>
+                      <ComposedChart data={derived.chart}>
+                        <CartesianGrid stroke={T.grid} vertical={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
+                        <YAxis yAxisId="cpl" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={40} />
+                        <YAxis yAxisId="inv" orientation="right" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={44} tickFormatter={(v) => `R$${Math.round(v)}`} />
+                        <Tooltip contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, color: T.text }} formatter={(value) => brl(Number(value))} />
+                        <Bar yAxisId="inv" dataKey="spend" name="Investimento" fill="rgba(245,158,11,.12)" radius={[3, 3, 0, 0]} />
+                        <Line yAxisId="cpl" dataKey="cplPago" name="CPL Pago" type="monotone" stroke={T.gold} strokeWidth={2} dot={false} connectNulls />
+                        <Line yAxisId="cpl" dataKey="cplGeral" name="CPL Geral" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} connectNulls />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div className="rounded-[12px] border p-[17px]" style={{ background: T.surface, borderColor: T.border }}>
+                    <p className="mat-ct mb-3 flex items-center text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>
+                      {isPaid ? "Ingressos" : "Leads"} acumulados — por origem (total ouro)
+                    </p>
+                    <ResponsiveContainer width="100%" height={230}>
+                      <ComposedChart data={derived.cumulative}>
+                        <defs>
+                          <linearGradient id="mat-cum" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={T.gold} stopOpacity={0.18} />
+                            <stop offset="100%" stopColor={T.gold} stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke={T.grid} vertical={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
+                        <YAxis tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={38} />
+                        <Tooltip contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, color: T.text }} formatter={(value) => int(Number(value))} />
+                        <Area dataKey="total" name="Total" type="monotone" stroke={T.gold} strokeWidth={2} fill="url(#mat-cum)" />
+                        <Line dataKey="pago" name="Pago" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} />
+                        <Line dataKey="org" name="Org" type="monotone" stroke={T.teal} strokeWidth={2} dot={false} />
+                        <Line dataKey="semTrack" name="s/ Track" type="monotone" stroke={T.amber} strokeWidth={2} dot={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
               )}
 
