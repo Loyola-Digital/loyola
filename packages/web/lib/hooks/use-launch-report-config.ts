@@ -67,6 +67,8 @@ export interface LaunchReportConfigResponse {
   /** null = gerador liberado. Preenchido = motivo do bloqueio (§12.2). */
   bloqueio: { erro: string; detalhe: string; acao: string } | null;
   escopoValidado: { tipo: string; etapa: string };
+  /** §2.8 — período derivado do dado, usado para pré-preencher os campos vazios. */
+  sugestaoPeriodo: { dataInicio: string | null; dataFim: string | null };
 }
 
 export interface StageConfigInput {

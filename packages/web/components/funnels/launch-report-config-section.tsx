@@ -88,12 +88,17 @@ export function LaunchReportConfigSection({
       setTipo(data.stage.tipo);
       setEtapa(data.stage.etapa);
       setEntidade(data.stage.entidadeCaptura);
-      setDataInicio(data.stage.dataInicio ?? "");
-      setDataFim(data.stage.dataFim ?? "");
     }
-    if (data.resolvido.impostoOrigem === "stage") {
-      setImpostoStage(String(data.resolvido.impostoPct * 100));
-    }
+    // Período: valor salvo manda; sem ele, entra a sugestão derivada do dado
+    // (1ª conversão / último dia com investimento). Deixar em branco obrigava o
+    // usuário a ir garimpar as datas em outra tela.
+    setDataInicio(data.stage?.dataInicio ?? data.sugestaoPeriodo?.dataInicio ?? "");
+    setDataFim(data.stage?.dataFim ?? data.sugestaoPeriodo?.dataFim ?? "");
+    // Alíquota sempre visível — inclusive quando é a padrão. Campo vazio parecia
+    // "sem imposto", quando na verdade valia 12,15%.
+    setImpostoStage(
+      (data.resolvido.impostoPct * 100).toFixed(2).replace(/\.?0+$/, "").replace(".", ","),
+    );
     setCampos(data.expert.camposPesquisa ?? {});
   }, [data]);
 
@@ -138,7 +143,10 @@ export function LaunchReportConfigSection({
           );
           setConfirmingValidation(false);
         },
-        onError: () => toast.error("Não foi possível salvar a config"),
+        // A mensagem do servidor vai junto: "Não foi possível salvar" sozinho
+        // não diz se faltou campo, se o período está inválido ou se é permissão.
+        onError: (e: unknown) =>
+          toast.error(`Não foi possível salvar a config: ${(e as Error)?.message ?? "erro desconhecido"}`),
       },
     );
   }
@@ -147,7 +155,12 @@ export function LaunchReportConfigSection({
     setCampos(next);
     saveExpert.mutate(
       { camposPesquisa: next },
-      { onError: () => toast.error("Não foi possível salvar o mapa de campos") },
+      {
+        onError: (e: unknown) =>
+          toast.error(
+            `Não foi possível salvar o mapa de campos: ${(e as Error)?.message ?? "erro desconhecido"}`,
+          ),
+      },
     );
   }
 
@@ -299,12 +312,13 @@ export function LaunchReportConfigSection({
           </div>
           <p className="flex gap-1.5 text-xs text-muted-foreground">
             <Info className="mt-0.5 h-3 w-3 shrink-0" />
-            Vazio = derivado automaticamente: início na 1ª conversão registrada, fim no último dia
-            com investimento. Evita contar o período com spend e sem conversão.
+            Pré-preenchido com o período derivado do dado: início na 1ª conversão registrada, fim
+            no último dia com investimento. Ajuste se precisar — evita contar dias com spend e sem
+            conversão.
           </p>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">Imposto sobre mídia (%)</Label>
+            <Label className="text-xs">Imposto sobre mídia — Meta Ads 2026 (%)</Label>
             <Input
               inputMode="decimal"
               placeholder="12,15"

@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, gt, desc, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   launchReportConfigs,
@@ -18,6 +18,8 @@ import {
   funnelStages,
   funnels,
   users,
+  publicMetricsCache,
+  metaCampaignInsightsDaily,
   LAUNCH_REPORT_TIPOS,
   LAUNCH_REPORT_ETAPAS,
   LAUNCH_REPORT_ENTIDADES,
@@ -52,12 +54,81 @@ const stageConfigBodySchema = z.object({
 
 const expertConfigBodySchema = z.object({
   impostoPct: z.number().min(0).max(0.99).nullable().optional(),
+  // ⚠️ `partialRecord`, não `record`. No Zod 4, `z.record(z.enum([...]), v)` virou
+  // EXAUSTIVO: exige todas as chaves do enum. O mapa de campos é parcial por
+  // natureza (só `faixa` é obrigatório, §12.4), então mandar `{ faixa: "..." }`
+  // era rejeitado com "expected string, received undefined" para os 9 campos
+  // restantes — e a UI só mostrava "Não foi possível salvar o mapa de campos".
   camposPesquisa: z
-    .record(z.enum(SURVEY_CANONICAL_FIELDS), z.string().trim().min(1))
+    .partialRecord(z.enum(SURVEY_CANONICAL_FIELDS), z.string().trim().min(1))
     .optional(),
 });
 
 export default fp(async function launchReportConfigRoutes(fastify) {
+  /**
+   * Sugestão de período (§2.8), para a UI pré-preencher em vez de deixar em
+   * branco: início na 1ª conversão registrada, fim no último dia com
+   * investimento. A regra existe por um caso real — um funil teve R$ 1.130 de
+   * spend antes do primeiro lead, e contar esse período estragava o CPL.
+   *
+   * Barato de propósito: lê o agregado diário já cacheado (`sales-daily`) e os
+   * insights que já estão no banco. Não abre planilha nem chama a Meta.
+   */
+  async function sugerirPeriodo(
+    projectId: string,
+    stageId: string,
+  ): Promise<{ dataInicio: string | null; dataFim: string | null }> {
+    // Início: primeiro dia com conversão registrada.
+    let dataInicio: string | null = null;
+    const [cache] = await fastify.db
+      .select({ payload: publicMetricsCache.payload })
+      .from(publicMetricsCache)
+      .where(
+        and(
+          eq(publicMetricsCache.projectId, projectId),
+          eq(publicMetricsCache.scope, "sales-daily"),
+          eq(publicMetricsCache.key, stageId),
+        ),
+      )
+      .limit(1);
+
+    const byDay = (cache?.payload as { byDay?: { date: string; ingressos?: { total?: number } }[] })
+      ?.byDay;
+    if (Array.isArray(byDay)) {
+      const comConversao = byDay
+        .filter((d) => (d.ingressos?.total ?? 0) > 0 && d.date)
+        .map((d) => d.date)
+        .sort();
+      dataInicio = comConversao[0] ?? null;
+    }
+
+    // Fim: último dia com spend > 0 nas campanhas da etapa.
+    let dataFim: string | null = null;
+    const [stage] = await fastify.db
+      .select({ campaigns: funnelStages.campaigns })
+      .from(funnelStages)
+      .where(eq(funnelStages.id, stageId))
+      .limit(1);
+    const ids = (stage?.campaigns ?? []).map((c) => c.id);
+    if (ids.length > 0) {
+      const [ultimo] = await fastify.db
+        .select({ dateStart: metaCampaignInsightsDaily.dateStart })
+        .from(metaCampaignInsightsDaily)
+        .where(
+          and(
+            eq(metaCampaignInsightsDaily.projectId, projectId),
+            inArray(metaCampaignInsightsDaily.campaignId, ids),
+            gt(metaCampaignInsightsDaily.spend, "0"),
+          ),
+        )
+        .orderBy(desc(metaCampaignInsightsDaily.dateStart))
+        .limit(1);
+      dataFim = ultimo?.dateStart ?? null;
+    }
+
+    return { dataInicio, dataFim };
+  }
+
   /** Valida a cadeia project→funnel→stage. Guest nunca passa (config é interna). */
   async function resolveStage(projectId: string, funnelId: string, stageId: string) {
     const [stage] = await fastify.db
@@ -149,6 +220,8 @@ export default fp(async function launchReportConfigRoutes(fastify) {
       /** null = gerador liberado. Preenchido = motivo do bloqueio (§12.2). */
       bloqueio,
       escopoValidado: SCOPE_VALIDADO,
+      /** §2.8 — a UI pré-preenche o período com isto quando não há valor salvo. */
+      sugestaoPeriodo: await sugerirPeriodo(projectId, stageId),
     };
   });
 
