@@ -361,7 +361,16 @@ export function computePerpetualReport(input: PerpetualReportInput): PerpetualRe
     },
   };
 
-  assertInvariantes(report, input, receitaLiquida, vendas, alertas, seg.emailsPorDimensao);
+  assertInvariantes(
+    report,
+    input,
+    receitaLiquida,
+    vendas,
+    alertas,
+    seg.emailsPorDimensao,
+    seg.investimentoCruPorDimensao,
+    investimentoComImposto,
+  );
   return report;
 }
 
@@ -585,6 +594,15 @@ function buildSegmentos(
     criativos: unir(criativos),
   };
 
+  // Somas de investimento SEM arredondar. As invariantes P3/P4 comparam estas,
+  // não a soma das linhas exibidas: `toRows` arredonda cada linha para 2 casas,
+  // e somar arredondados acumula erro — num funil real isso disparou P3 por
+  // exatamente 1 centavo (12.191,98 vs 12.191,99) sem nada estar errado.
+  const investimentoCruPorDimensao: Record<string, number> = {
+    quenteFrio: [...quenteFrio.values()].reduce((s, b) => s + b.investimento, 0),
+    formato: [...formato.values()].reduce((s, b) => s + b.investimento, 0),
+  };
+
   const segmentos: PerpetualReport["segmentos"] = {
     quenteFrio: toRows(quenteFrio, investimentoTotal, rates),
     campanhas: toRows(campanhas, investimentoTotal, rates),
@@ -605,6 +623,7 @@ function buildSegmentos(
     sobreposicao,
     semAtribuicao,
     emailsPorDimensao,
+    investimentoCruPorDimensao,
   };
 }
 
@@ -700,6 +719,8 @@ function assertInvariantes(
   totalVendas: number,
   alertas: PerpetualReportAlerta[],
   emailsPorDimensao: Record<string, Set<string>>,
+  investimentoCruPorDimensao: Record<string, number>,
+  investimentoCruTotal: number,
 ): void {
   const { kpis, segmentos, reconciliacao } = report;
 
@@ -723,9 +744,9 @@ function assertInvariantes(
   // impediria o relatório de um funil cujo histórico tem campanha desvinculada.
   // O que NÃO pode é sumir em silêncio — e não some.
 
-  // P3 — Σ investimento dos segmentos de temperatura == total
-  const somaTemp = segmentos.quenteFrio.reduce((s, r) => s + r.investimento, 0);
-  if (Math.abs(somaTemp - kpis.investimentoComImposto) > TOL) {
+  // P3 — Σ investimento dos segmentos de temperatura == total (valores CRUS)
+  const somaTemp = investimentoCruPorDimensao.quenteFrio;
+  if (Math.abs(somaTemp - investimentoCruTotal) > TOL) {
     throw new InvarianteError(
       "P3",
       `soma do investimento por temperatura (${somaTemp.toFixed(2)}) difere do total (${kpis.investimentoComImposto.toFixed(2)})`,
@@ -735,8 +756,8 @@ function assertInvariantes(
 
   // P4 — Σ investimento por formato == total (só com split)
   if (segmentos.formato) {
-    const somaFmt = segmentos.formato.reduce((s, r) => s + r.investimento, 0);
-    if (Math.abs(somaFmt - kpis.investimentoComImposto) > TOL) {
+    const somaFmt = investimentoCruPorDimensao.formato;
+    if (Math.abs(somaFmt - investimentoCruTotal) > TOL) {
       throw new InvarianteError(
         "P4",
         `soma do investimento por formato (${somaFmt.toFixed(2)}) difere do total (${kpis.investimentoComImposto.toFixed(2)})`,

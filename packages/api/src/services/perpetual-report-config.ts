@@ -15,7 +15,13 @@
 import { eq } from "drizzle-orm";
 import { META_TAX_RATE } from "../utils/meta-tax.js";
 import { ReportScopeError } from "./launch-report-config.js";
-import { perpetualReportConfigs, funnels, projects } from "../db/schema.js";
+import {
+  perpetualReportConfigs,
+  funnels,
+  funnelStages,
+  projects,
+  metaAdsAccountProjects,
+} from "../db/schema.js";
 import type { Database } from "../db/client.js";
 
 export { ReportScopeError };
@@ -183,14 +189,44 @@ export async function loadPerpetualReportConfigRaw(
 
   if (!row) return null;
 
+  // ⚠️ As campanhas de um funil perpétuo NÃO vivem só em `funnels.campaigns`.
+  // A página da etapa monta `stageAsFunnel` sobrescrevendo `campaigns` com as do
+  // stage (`page.tsx:156-164`), e no banco a maioria dos perpétuos tem o vínculo
+  // no STAGE, não no funil (conferido em 2026-07-28: 3 de 4 funis com
+  // `funnels.campaigns` vazio e o stage preenchido). Ler só o funil devolveria
+  // zero campanhas — e o relatório sairia com investimento zero, calado.
+  // Por isso a fonte é a UNIÃO das duas, deduplicada por ID.
+  const stages = await db
+    .select({ campaigns: funnelStages.campaigns, metaAccountId: funnelStages.metaAccountId })
+    .from(funnelStages)
+    .where(eq(funnelStages.funnelId, funnelId));
+
+  const campanhasPorId = new Map<string, { id: string; name: string }>();
+  for (const c of row.campanhas ?? []) campanhasPorId.set(c.id, c);
+  for (const s of stages) {
+    for (const c of s.campaigns ?? []) if (!campanhasPorId.has(c.id)) campanhasPorId.set(c.id, c);
+  }
+
+  // Conta Meta: funil → stage → vínculo do projeto. Nos perpétuos reais os dois
+  // primeiros estão nulos e a conta vem de `meta_ads_account_projects`.
+  let metaAccountId = row.metaAccountId ?? stages.find((s) => s.metaAccountId)?.metaAccountId ?? null;
+  if (!metaAccountId) {
+    const [vinculo] = await db
+      .select({ accountId: metaAdsAccountProjects.accountId })
+      .from(metaAdsAccountProjects)
+      .where(eq(metaAdsAccountProjects.projectId, row.projectId))
+      .limit(1);
+    metaAccountId = vinculo?.accountId ?? null;
+  }
+
   const impostoOverride = toFiniteNumber(row.cfg.impostoPct);
   return {
     funnelId: row.cfg.funnelId,
     funnelName: row.funnelName,
     projectId: row.projectId,
     projectName: row.projectName,
-    metaAccountId: row.metaAccountId,
-    campanhas: row.campanhas ?? [],
+    metaAccountId,
+    campanhas: [...campanhasPorId.values()],
     prefixoCampanha: row.cfg.prefixoCampanha,
     produto: row.cfg.produto,
     produtosOrderBump: row.cfg.produtosOrderBump ?? [],

@@ -10,8 +10,13 @@
  * caminho de fan-out por criativo na API da Meta.
  */
 
-import { eq, and } from "drizzle-orm";
-import { funnelSpreadsheets, funnels, metaAdsAccounts } from "../db/schema.js";
+import { eq, and, inArray, gte, lte } from "drizzle-orm";
+import {
+  funnelSpreadsheets,
+  funnels,
+  metaAdsAccounts,
+  metaCampaignInsightsDaily,
+} from "../db/schema.js";
 import { readSheetData } from "./google-sheets.js";
 import { classifyRefundStatus, isRefundBucket } from "./sales-status.js";
 import { fetchCampaignDailyInsightsForIdsWithCache } from "./meta-insights-cache.js";
@@ -121,6 +126,20 @@ export async function loadPerpetualReport(
     config.campanhas,
     periodo,
   );
+
+  // 3b. Investimento zero com campanha vinculada e venda no período é sintoma,
+  // não resultado: foi assim que o bug do `campaign_id` ausente se manifestou —
+  // relatório com CAC 0, ROAS indefinido e margem inflada, sem reclamar de nada.
+  // Melhor recusar do que entregar número com cara de confiável (§C.8).
+  const investimentoTotal = campanhas.reduce((s, c) => s + c.spend, 0);
+  if (campanhas.length > 0 && investimentoTotal === 0 && vendas.length > 0) {
+    throw new PerpetualReportDataError(
+      `as ${campanhas.length} campanha(s) do funil não têm investimento no período ` +
+        `${periodo.inicio}..${periodo.fim}, mas há ${vendas.length} venda(s) — ` +
+        `o relatório sairia com CAC zero e margem inflada`,
+      "Abrir a aba Meta Ads no período para o cache de insights ser preenchido, e gerar de novo",
+    );
+  }
 
   // 4. Taxas — plataforma vem da planilha, ramo de reembolso vem da coluna status
   const rates = resolvePerpetualRates(config, sheet.platform ?? null, hasStatusCol);
@@ -261,7 +280,13 @@ async function loadCampanhaSpend(
   const token = await accessTokenFor(account.id);
   if (!token) return [];
 
-  const insights = await fetchCampaignDailyInsightsForIdsWithCache(
+  // Passo 1 — AQUECE o cache. Esta chamada faz o refetch do que estiver faltando
+  // ou velho e grava em `meta_campaign_insights_daily`. Não usamos o retorno dela
+  // para a quebra por campanha: o merge cache+fresh devolve `MetaDailyInsight[]`
+  // SEM `campaign_id` (conferido em 2026-07-28: 58 linhas, todas sem o campo).
+  // Confiar nesse retorno descartava tudo e o relatório saía com investimento
+  // zero — calado, que é o pior modo de errar.
+  await fetchCampaignDailyInsightsForIdsWithCache(
     db,
     projectId,
     account.metaAccountId,
@@ -272,27 +297,42 @@ async function loadCampanhaSpend(
     periodo.fim,
   );
 
+  // Passo 2 — lê a quebra POR CAMPANHA da tabela, que tem `campaign_id` na PK.
+  // É também o que o R-E2 do epic manda: ler do banco.
+  const linhas = await db
+    .select({
+      campaignId: metaCampaignInsightsDaily.campaignId,
+      dateStart: metaCampaignInsightsDaily.dateStart,
+      spend: metaCampaignInsightsDaily.spend,
+    })
+    .from(metaCampaignInsightsDaily)
+    .where(
+      and(
+        eq(metaCampaignInsightsDaily.projectId, projectId),
+        inArray(metaCampaignInsightsDaily.campaignId, campaignIds),
+        gte(metaCampaignInsightsDaily.dateStart, periodo.inicio),
+        lte(metaCampaignInsightsDaily.dateStart, periodo.fim),
+      ),
+    );
+
   const nomePorId = new Map(campanhasDoFunil.map((c) => [c.id, c.name]));
   const acc = new Map<string, CampaignSpendRow>();
 
-  for (const row of insights) {
-    const cid = (row as { campaign_id?: string }).campaign_id;
-    if (!cid) continue;
+  for (const row of linhas) {
     const spend = Number.parseFloat(row.spend ?? "0") || 0;
     // Gross-up de mídia por DIA: a alíquota só vale a partir de 2026-01-01, e um
     // período pode atravessar essa data.
-    const comImposto = applyMetaTax(spend, row.date_start);
+    const comImposto = applyMetaTax(spend, row.dateStart);
 
-    let entry = acc.get(cid);
+    let entry = acc.get(row.campaignId);
     if (!entry) {
       entry = {
-        campaignId: cid,
-        campaignName:
-          nomePorId.get(cid) ?? (row as { campaign_name?: string }).campaign_name ?? cid,
+        campaignId: row.campaignId,
+        campaignName: nomePorId.get(row.campaignId) ?? row.campaignId,
         spend: 0,
         spendComImposto: 0,
       };
-      acc.set(cid, entry);
+      acc.set(row.campaignId, entry);
     }
     entry.spend += spend;
     entry.spendComImposto += comImposto;
