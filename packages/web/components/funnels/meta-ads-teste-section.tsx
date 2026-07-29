@@ -28,6 +28,8 @@ import {
   CartesianGrid,
   Tooltip,
   ReferenceLine,
+  PieChart,
+  Pie,
 } from "recharts";
 import { FlaskConical, ImageIcon, Sparkles, LayoutTemplate, PieChart as PieChartIcon, ClipboardList, Activity, ArrowLeftRight, Banknote, Users, Table2 } from "lucide-react";
 import { useTrafficOverview, useTrafficCampaigns, useCampaignDailyInsightsBulk } from "@/lib/hooks/use-traffic-analytics";
@@ -54,9 +56,6 @@ import { overrideCplWithUniqueIngressos, type DailyRow } from "@/lib/utils/funne
 import { Skeleton } from "@/components/ui/skeleton";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { TopCreativesGallery } from "./top-creatives-gallery";
-import { ConversionFunnel } from "./conversion-funnel";
-import { HotColdSpendDonut } from "./hot-cold-spend-donut";
-import { HotColdCountDonut } from "./hot-cold-count-donut";
 import { SurveyQualificationSection } from "./survey-qualification-section";
 import { StageSalesSection } from "./stage-sales-section";
 import { GroupsDashboardSection } from "./groups-dashboard-section";
@@ -271,6 +270,16 @@ export function MetaAdsTesteTab({
   const loading = metrics.isLoading;
   const campaignIdSet = new Set(campaignIds);
   const funnelCampaigns = (campaignData?.campaigns ?? []).filter((c) => campaignIdSet.has(c.campaignId));
+  // Distribuição de investimento Hot/Cold/Outros (por nome da campanha).
+  const spendHotCold = funnelCampaigns.reduce(
+    (acc, c) => {
+      const n = c.campaignName.toLowerCase();
+      const cat = n.includes("hot") ? "hot" : n.includes("cold") ? "cold" : "outros";
+      acc[cat] += c.spend;
+      return acc;
+    },
+    { hot: 0, cold: 0, outros: 0 },
+  );
 
   // ---- KPIs (paridade com o dash) ----
   const sumOrigem = (v?: { pago: number; org: number; semTrack: number }) => (v ? v.pago + v.org + v.semTrack : 0);
@@ -693,17 +702,10 @@ export function MetaAdsTesteTab({
               <div className="space-y-4">
                 <GroupHeading icon={PieChartIcon} title="SEGMENTAÇÃO & FUNIL" subtitle="Distribuição de investimento, leads/compradores e conversão" />
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  {funnelCampaigns.length > 0 ? (
-                    <HotColdSpendDonut campaigns={funnelCampaigns} />
-                  ) : (
-                    <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-                      <h3 className="mb-4 text-sm font-semibold">Distribuição de Investimento</h3>
-                      <p className="py-8 text-center text-sm text-muted-foreground">Sem dados no período.</p>
-                    </div>
-                  )}
-                  <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-                    <h3 className="mb-4 text-sm font-semibold">Funil de Conversão</h3>
-                    <ConversionFunnel
+                  <TesteDonut title="Distribuição de investimento — Hot/Cold" hot={spendHotCold.hot} cold={spendHotCold.cold} outros={spendHotCold.outros} fmt={money0} />
+                  <div className="rounded-[12px] border p-[17px]" style={{ background: T.surface, borderColor: T.border }}>
+                    <p className="mat-ct mb-3 flex items-center text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>Funil de conversão</p>
+                    <TesteFunnel
                       impressions={overview?.totalImpressions ?? 0}
                       linkClicks={overview?.totalLinkClicks ?? null}
                       landingPageViews={overview?.totalLandingPageViews ?? null}
@@ -718,25 +720,19 @@ export function MetaAdsTesteTab({
                 {(metrics.hotColdLeads || metrics.hotColdBuyers) && (
                   <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                     {metrics.hotColdLeads ? (
-                      <HotColdCountDonut aggregate={metrics.hotColdLeads} title="Distribuição de Leads (Hot/Cold)" noun={{ singular: "lead", plural: "leads" }} />
+                      <TesteDonut title="Distribuição de leads — Hot/Cold" hot={metrics.hotColdLeads.hot} cold={metrics.hotColdLeads.cold} outros={metrics.hotColdLeads.outros} fmt={int} />
                     ) : (
-                      <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-                        <h3 className="mb-4 text-sm font-semibold">Distribuição de Leads (Hot/Cold)</h3>
-                        <p className="py-8 text-center text-sm text-muted-foreground">Mapeie a coluna <span className="font-mono">utm_term</span> na planilha de leads.</p>
-                      </div>
+                      <TestePanelMsg title="Distribuição de leads — Hot/Cold" msg="Mapeie a coluna utm_term na planilha de leads." />
                     )}
                     {isPaid && (() => {
                       const stageBuyers = stageHotColdBuyers?.hasMapping
-                        ? { hot: stageHotColdBuyers.hot, cold: stageHotColdBuyers.cold, outros: stageHotColdBuyers.outros, total: stageHotColdBuyers.total, items: stageHotColdBuyers.items }
+                        ? { hot: stageHotColdBuyers.hot, cold: stageHotColdBuyers.cold, outros: stageHotColdBuyers.outros }
                         : null;
                       const buyers = stageBuyers ?? metrics.hotColdBuyers;
                       return buyers ? (
-                        <HotColdCountDonut aggregate={buyers} title="Distribuição de Compradores (Hot/Cold)" noun={{ singular: "comprador", plural: "compradores" }} />
+                        <TesteDonut title="Distribuição de compradores — Hot/Cold" hot={buyers.hot} cold={buyers.cold} outros={buyers.outros} fmt={int} />
                       ) : (
-                        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-                          <h3 className="mb-4 text-sm font-semibold">Distribuição de Compradores (Hot/Cold)</h3>
-                          <p className="py-8 text-center text-sm text-muted-foreground">Mapeie a coluna <span className="font-mono">utm_term</span> na planilha de vendas.</p>
-                        </div>
+                        <TestePanelMsg title="Distribuição de compradores — Hot/Cold" msg="Mapeie a coluna utm_term na planilha de vendas." />
                       );
                     })()}
                   </div>
@@ -869,6 +865,120 @@ function GroupHeading({
       </div>
       <div className="h-px w-full" style={{ background: "linear-gradient(90deg, rgba(253,212,73,.35), transparent)" }} />
     </div>
+  );
+}
+
+// Donut Hot/Cold/Outros no estilo TESTE (recharts + cores Loyola).
+const DONUT_COLORS: Record<"hot" | "cold" | "outros", string> = { hot: "#fb923c", cold: "#38bdf8", outros: "#7b8494" };
+function TesteDonut({ title, hot, cold, outros, fmt }: { title: string; hot: number; cold: number; outros: number; fmt: (v: number) => string }) {
+  const rows = [
+    { key: "hot" as const, name: "Hot", value: hot },
+    { key: "cold" as const, name: "Cold", value: cold },
+    { key: "outros" as const, name: "Outros", value: outros },
+  ];
+  const total = hot + cold + outros;
+  const chartData = rows.filter((d) => d.value > 0);
+  return (
+    <div className="rounded-[12px] border p-[17px] space-y-3" style={{ background: T.surface, borderColor: T.border }}>
+      <p className="mat-ct flex items-center text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>{title}</p>
+      {total <= 0 ? (
+        <p className="py-8 text-center text-sm" style={{ color: T.muted }}>Sem dados no período.</p>
+      ) : (
+        <>
+          <div className="mx-auto aspect-square w-full max-w-[200px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="56%" outerRadius="86%" strokeWidth={0} paddingAngle={2}>
+                  {chartData.map((d) => <Cell key={d.key} fill={DONUT_COLORS[d.key]} />)}
+                </Pie>
+                <Tooltip contentStyle={TT_STYLE} formatter={(v, n) => [fmt(Number(v)), n]} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="space-y-1.5 text-[11px]" style={{ fontFamily: "'JetBrains Mono',monospace" }}>
+            {rows.map((d) => {
+              const pct = total > 0 ? (d.value / total) * 100 : 0;
+              return (
+                <div key={d.key} className="flex items-center gap-2">
+                  <span className="h-3 w-3 shrink-0 rounded-sm" style={{ background: DONUT_COLORS[d.key] }} />
+                  <span className="w-14 shrink-0" style={{ color: T.text }}>{d.name}</span>
+                  <span className="flex-1 tabular-nums" style={{ color: T.muted2 }}>{d.value > 0 ? fmt(d.value) : "—"}</span>
+                  <span className="w-12 shrink-0 text-right tabular-nums" style={{ color: T.muted2 }}>{pct > 0 ? `${pct.toFixed(0)}%` : "—"}</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function TestePanelMsg({ title, msg }: { title: string; msg: string }) {
+  return (
+    <div className="rounded-[12px] border p-[17px]" style={{ background: T.surface, borderColor: T.border }}>
+      <p className="mat-ct mb-3 flex items-center text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>{title}</p>
+      <p className="py-8 text-center text-sm" style={{ color: T.muted }}>{msg}</p>
+    </div>
+  );
+}
+
+// Funil de conversão trapezoidal no estilo TESTE (SVG, cores Loyola).
+const FUNNEL_COLORS = ["#fdd449", "#f59e0b", "#fb923c", "#10b981", "#0d9488", "#ef4444"];
+function TesteFunnel({
+  impressions,
+  linkClicks,
+  landingPageViews,
+  leads,
+  checkoutVisits,
+  sales,
+  leadsLabel,
+}: {
+  impressions: number;
+  linkClicks: number | null;
+  landingPageViews: number | null;
+  leads: number | null;
+  checkoutVisits?: number | null;
+  sales?: number | null;
+  leadsLabel?: string;
+}) {
+  const fmtN = (v: number) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(1)}K` : v.toLocaleString("pt-BR"));
+  const conv = (from: number, to: number) => (from === 0 ? "0%" : `${((to / from) * 100).toFixed(1)}%`);
+  const stages: { label: string; value: number }[] = [{ label: "Impressões", value: impressions }];
+  if (linkClicks != null && linkClicks > 0) stages.push({ label: "Cliques no Link", value: linkClicks });
+  if (landingPageViews != null && landingPageViews > 0) stages.push({ label: "Visualização da LP", value: landingPageViews });
+  if (leads != null && leads > 0) stages.push({ label: leadsLabel || "Leads", value: leads });
+  if (checkoutVisits != null && checkoutVisits > 0) stages.push({ label: "Visitas Checkout", value: checkoutVisits });
+  if (sales != null && sales > 0) stages.push({ label: "Vendas", value: sales });
+  if (stages.length === 0 || impressions === 0) {
+    return <p className="py-8 text-center text-sm" style={{ color: T.muted }}>Sem dados suficientes pra o funil.</p>;
+  }
+  const STAGE_H = 55, GAP = 22, TOTAL_W = 520, MIN_W = 160, MX = 10;
+  const SVG_W = TOTAL_W + MX * 2;
+  const maxV = stages[0].value;
+  const cx = MX + TOTAL_W / 2;
+  const svgH = stages.length * STAGE_H + Math.max(0, stages.length - 1) * GAP + 10;
+  const wFor = (v: number) => Math.max((v / maxV) * TOTAL_W, MIN_W);
+  return (
+    <svg viewBox={`0 0 ${SVG_W} ${svgH}`} className="w-full" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Funil de conversão" style={{ fontFamily: "'JetBrains Mono',monospace" }}>
+      {stages.map((s, i) => {
+        const topW = wFor(s.value);
+        const botW = i + 1 < stages.length ? wFor(stages[i + 1].value) : topW * 0.5;
+        const y = 5 + i * (STAGE_H + GAP);
+        const yB = y + STAGE_H;
+        const pts = [`${cx - topW / 2},${y}`, `${cx + topW / 2},${y}`, `${cx + botW / 2},${yB}`, `${cx - botW / 2},${yB}`].join(" ");
+        const prev = i > 0 ? stages[i - 1] : null;
+        const color = FUNNEL_COLORS[i % FUNNEL_COLORS.length];
+        return (
+          <g key={s.label}>
+            {prev && <text x={cx} y={y - GAP / 2 - 2} textAnchor="middle" dominantBaseline="central" fontSize={9} fill={T.muted}>↓ {conv(prev.value, s.value)} de conversão</text>}
+            <polygon points={pts} fill={color} fillOpacity={0.88} stroke={color} strokeWidth={1} />
+            <text x={cx} y={y + 18} textAnchor="middle" dominantBaseline="central" fontSize={10} fontWeight={600} fill="#0b0b12">{s.label}</text>
+            <text x={cx} y={y + STAGE_H - 22} textAnchor="middle" dominantBaseline="central" fontSize={14} fontWeight={700} fill="#0b0b12">{fmtN(s.value)}</text>
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 
