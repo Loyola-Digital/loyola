@@ -8,6 +8,7 @@ import { ptBR } from "date-fns/locale";
 import {
   AlertCircle,
   ArrowLeft,
+  ExternalLink,
   MessageSquare,
   MessageSquarePlus,
   MoreVertical,
@@ -180,6 +181,30 @@ export default function DebriefingDetailPage() {
     );
   }
 
+  // Fallback para docs multi-página: o iframe roda com sandbox="allow-scripts"
+  // SEM allow-same-origin (origem opaca), então HTMLs que navegam entre páginas
+  // via JS/localStorage/history quebram. Abrir numa aba nova dá ao doc uma
+  // origem real (blob:) onde todo o JS de navegação funciona. Usa o HTML
+  // original (sem o script-agente injetado do iframe).
+  function handleOpenExternal() {
+    if (!debriefing) return;
+    try {
+      const blob = new Blob([debriefing.html], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, "_blank", "noopener,noreferrer");
+      if (!win) {
+        URL.revokeObjectURL(url);
+        toast.error("Permita pop-ups para abrir o documento em nova aba.");
+        return;
+      }
+      // Revoga depois de carregar (a aba já tem o doc em memória). O atraso
+      // cobre navegações que recarregam a mesma URL logo de início.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      toast.error("Não foi possível abrir o documento em nova aba.");
+    }
+  }
+
   function handleDelete() {
     deleteDebriefing.mutate(params.id, {
       onSuccess: () => {
@@ -222,6 +247,17 @@ export default function DebriefingDetailPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          {!editMode && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleOpenExternal}
+              title="Abrir o HTML original em uma nova aba (útil para docs com várias páginas)"
+            >
+              <ExternalLink className="h-4 w-4 mr-2" />
+              Abrir em nova aba
+            </Button>
+          )}
           {!editMode && (
             <Button
               size="sm"
@@ -331,6 +367,20 @@ export default function DebriefingDetailPage() {
               focusedId={focusedCommentId}
               onFocusChange={setFocusedCommentId}
             />
+          )}
+          {!editMode && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Documento com várias páginas ou etapas não carregou aqui?{" "}
+              <button
+                type="button"
+                onClick={handleOpenExternal}
+                className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Abra em uma nova aba
+              </button>{" "}
+              para ver o HTML completo.
+            </p>
           )}
         </div>
 
