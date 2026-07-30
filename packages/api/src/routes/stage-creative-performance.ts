@@ -8,7 +8,7 @@
  */
 
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   funnels,
@@ -16,6 +16,7 @@ import {
   funnelSpreadsheets,
   stageSalesSpreadsheets,
   publicMetricsCache,
+  metaAdCreativesCache,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { fetchAllAdInsights, fetchCampaignInsights } from "../services/meta-ads.js";
@@ -98,6 +99,20 @@ interface CreativePerformanceResponse {
   // e 75% (videoMetrics.p75). O front deriva Hook/Hold/Body Conv. a partir deles.
   videoViews3s?: number;
   videoViews75?: number;
+  /**
+   * Link de prévia do criativo no Facebook (`/watch/?v=<video_id>`).
+   *
+   * Ausente quando o criativo não é vídeo (imagem/carrossel não têm essa URL)
+   * ou quando o `video_id` ainda não está no cache. Cobertura medida no dg-pg04
+   * em jul/2026: 298 de 412 ad_ids (72%).
+   *
+   * ⚠️ Um mesmo `ad_name` costuma ter vários `ad_id`, **cada um com um vídeo
+   * diferente** — no dg-pg04, `adv11--ia--pg04--cap-ads-claude` tem 4 vídeos
+   * distintos. Como a tabela agrupa por nome, o link aponta para o vídeo do
+   * `ad_id` de **maior investimento** do grupo: é o mais representativo do que
+   * o número da linha está medindo.
+   */
+  previewUrl?: string;
 }
 
 /**
@@ -660,6 +675,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           // Story 18.65: retenção de vídeo (3s do actions, 75% do videoMetrics)
           videoViews3s: number;
           videoViews75: number;
+          /** Spend por ad_id — define qual vídeo do grupo vira a prévia. */
+          spendByAdId: Map<string, number>;
         };
         const groupedByName = new Map<string, AdNameGroup>();
 
@@ -688,6 +705,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               landingPageViews: 0,
               videoViews3s: 0,
               videoViews75: 0,
+              spendByAdId: new Map(),
             };
             groupedByName.set(adName, group);
           }
@@ -700,7 +718,10 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           // de LPs. Zero chamadas novas à Meta API (AC4).
           const clicks = parseLinkClicks(ad.actions);
 
-          if (!isNaN(spend)) group.spend += spend;
+          if (!isNaN(spend)) {
+            group.spend += spend;
+            group.spendByAdId.set(adId, (group.spendByAdId.get(adId) ?? 0) + spend);
+          }
           if (!isNaN(impressions)) group.impressions += impressions;
           if (!isNaN(clicks)) group.clicks += clicks;
 
@@ -727,6 +748,30 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           funnel.projectId,
           allAdIds,
         );
+
+        // video_id por ad_id, do cache de criativos (meta_ad_creatives_cache).
+        // Mesma regra do status: NUNCA chama a Meta no request do dashboard —
+        // o cache é mantido pelos jobs de sync. Sem cache, a linha simplesmente
+        // não ganha link.
+        const videoIdByAdId = new Map<string, string>();
+        if (allAdIds.length > 0) {
+          const linhas = await fastify.db
+            .select({
+              adId: metaAdCreativesCache.adId,
+              creative: metaAdCreativesCache.creative,
+            })
+            .from(metaAdCreativesCache)
+            .where(
+              and(
+                eq(metaAdCreativesCache.projectId, funnel.projectId),
+                inArray(metaAdCreativesCache.adId, Array.from(new Set(allAdIds))),
+              ),
+            );
+          for (const l of linhas) {
+            const v = l.creative?.videoId;
+            if (v) videoIdByAdId.set(l.adId, v);
+          }
+        }
 
         // 7. Monta resposta — uma linha por ad_name.
         // O filtro de campanha ja foi aplicado no fetchAllAdInsights (Meta API
@@ -799,6 +844,22 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
                 )
               : [];
 
+          // Prévia: o vídeo do ad_id de MAIOR investimento do grupo. Um mesmo
+          // ad_name tem vários ad_ids com vídeos diferentes, e o de maior spend
+          // é o que mais responde pelos números da linha. Empate ou grupo sem
+          // vídeo nenhum → sem link, e o nome fica texto puro.
+          let previewUrl: string | undefined;
+          let melhorSpend = -1;
+          for (const id of group.adIds) {
+            const v = videoIdByAdId.get(id);
+            if (!v) continue;
+            const sp = group.spendByAdId.get(id) ?? 0;
+            if (sp > melhorSpend) {
+              melhorSpend = sp;
+              previewUrl = `https://www.facebook.com/watch/?v=${v}`;
+            }
+          }
+
           // adId representativo = primeiro adId do grupo (uso pra link Ads Library)
           creatives.push({
             adId: group.adIds[0],
@@ -814,6 +875,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             // Story 18.65: retenção de vídeo (crus) p/ Hook/Hold/Body no front
             videoViews3s: group.videoViews3s,
             videoViews75: group.videoViews75,
+            ...(previewUrl ? { previewUrl } : {}),
             // Story 18.61: status agregado (OR) + adsets ativos (aditivo)
             status,
             ...(activeAdsets.length > 0 ? { activeAdsets } : {}),
