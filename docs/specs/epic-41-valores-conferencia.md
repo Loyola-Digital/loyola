@@ -218,6 +218,50 @@ contra a §10 precisa usar 11/05 para comparar maçã com maçã.
 - **Taxa de resposta da pesquisa: 63,3%** (890 compradores responderam, de 1.410
   ingressos únicos). Abaixo de 75%, então dispara o alerta **W5** corretamente.
 
+## Guardas da 41.3 contra o dado real — 2026-07-30
+
+`validateLaunchReport` rodou sobre a saída real do PG02. **Nada bloqueou.**
+
+| Inv. | Resultado com dado real |
+|---|---|
+| A1 | ✅ 73.453,36 + 53.163,02 = 126.616,38 — diferença 0,00 |
+| A2 | ✅ 767 + 611 + 32 = 1.410 |
+| A3 | ✅ Σ por origem = total, diferença 0,00 |
+| A4 | ✅ 90.388,74 + 143.184,20 = 233.572,94 |
+| A5 | ✅ 1.410 e-mails distintos + 0 avulsos = 1.410 |
+| A6 | ⏭️ `skipped` — sem destaques (Story 41.4) e sem ad-level no período |
+| A7 | ✅ 422 + 315 = 737 ≤ 767 pagos |
+| A8 | ✅ 4 produtos, cada um em uma categoria; Σ vendas = 2.222 |
+| **A9** | ✅ **(1000/52,81) × 1,8381% × 1,7403% × 160,16 = 0,9702 = ROAS pago — diferença 0,000000** |
+
+**Alertas:** 1 — W5 (taxa de resposta 63,2%, abaixo de 75%).
+
+**Conferência externa** contra o oficial da §10 (R$ 126.566,14): **`passed`**, delta
+de **0,040%** — abaixo do limiar de alerta (0,05%), então passa em silêncio. O
+drift de reprocessamento da Meta é ainda menor do que se supunha.
+
+### Nota de implementação sobre o A9
+
+O A9 usa os valores **do catálogo** (`midia.cpm`, `midia.ctr`,
+`conversao.cliqueVenda`, `ticket.pago`, `roas.pago`), **não** recalcula tudo dos
+crus. Recalcular tornaria o invariante uma tautologia:
+
+```
+(1000/((INV/impr)×1000)) × (cliques/impr) × (pagos/cliques) × (fat/pagos)
+  = fat/INV = roas_pago      ← verdadeiro para QUALQUER entrada
+```
+
+O que o A9 existe para pegar é divergência entre os fatores que o relatório
+**exibe** e o ROAS que ele **afirma** — o caso da spec de CTR com `link_click` e
+conversão com `clicks` totais. "A partir dos crus" da story se refere a não usar
+percentuais já arredondados para exibição.
+
+### Observação: 30 compradores pagos sem temperatura
+
+A7 passa (737 ≤ 767), mas a folga de 30 significa que 30 compradores pagos não
+têm hot/cold no `utm_term`. É legítimo pelo invariante — vale olhar se vira
+volume relevante nos rankings da 41.4.
+
 ## Change Log
 
 | Data | Autor | Mudança |

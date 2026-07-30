@@ -161,6 +161,10 @@ export interface LaunchReportMetrics {
     pagos: number;
     pagoQuente: number;
     pagoFrio: number;
+    /** E-mails distintos com produto de captação — lado direito do A5. */
+    emailsDistintos: number;
+    /** Linhas de captação sem e-mail, contadas avulsas (§2.9). */
+    avulsosSemEmail: number;
   };
 
   faturamento: {
@@ -233,6 +237,11 @@ export interface LaunchReportMetrics {
   linhasConvertidas: number;
   /** Ads com spend < 20 e impressões > 1.000 — insumo do W3. Preenchido na 41.4. */
   adsComSpendSuspeito: { adName: string; spend: number; impressoes: number }[];
+  /**
+   * % de vendas pagas sem `ad_name` resolvido — insumo do W6. `undefined` até a
+   * Story 41.4, e o alerta simplesmente não é avaliado enquanto for.
+   */
+  pctVendasPagasSemAdName?: number;
   /** Preenchido pela 41.4. `null` mantém o invariante A6 como `skipped`. */
   destaques: unknown | null;
 }
@@ -727,6 +736,8 @@ export function computeLaunchReportMetrics(
       pagos: ingressosPagos,
       pagoQuente: ingressosPagoQuente,
       pagoFrio: ingressosPagoFrio,
+      emailsDistintos: unicosComEmail.length,
+      avulsosSemEmail: avulsos.length,
     },
 
     faturamento: {
