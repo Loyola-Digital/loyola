@@ -131,17 +131,30 @@ Fatores identificados:
 `spend > 0` no período, não campanhas vinculadas ao stage. Se confirmado, a
 contagem exibida no cabeçalho do Resumão deve seguir esse critério.
 
-### 4. Período do PG02 divergente entre config e spec
+### 4. Período do PG02 — resolvido: vale **09/05**
 
-`launch_report_configs` do stage `8fbd8031` traz **17/04 → 09/05**.
-A §10 e as stories 41.5/41.6 dizem **17/04 → 11/05**. Dois dias de diferença
-mudam faturamento, ingressos e ROAS. **A config precisa ser corrigida para 11/05
-antes de qualquer conferência.**
+`launch_report_configs` do stage `8fbd8031` traz **17/04 → 09/05**; o cabeçalho
+da §10 e as stories 41.5/41.6 dizem **17/04 → 11/05**.
+
+**Decisão do dono do produto (2026-07-30): vale 09/05.** A config em produção
+está correta; o `11/05` da §10 é erro de documentação.
+
+⚠️ **Implicação para a conferência:** se os valores da §10 foram medidos com
+11/05, eles só vão bater com o período 09/05 caso **não haja spend nem venda em
+10 e 11/05**. Isso é verificável e a AC1 da 41.2 já deriva o fim do período como
+"maior data com `spend > 0`" — se a derivação cair em 09/05, os dois dias são
+inócuos e a §10 permanece válida como oráculo. Se houver atividade nesses dias,
+a divergência é de período, **não bug do motor** — registrar e reconciliar antes
+de acusar a implementação.
 
 ### 5. PG04 não tem config
 
 Stage `1744c927` não tem linha em `launch_report_configs` → o gate da 41.1
 devolve 422. Precisa ser criada e validada pela UI (ato humano por design).
+
+Ao criar, corrigir também `columnMapping.valorBruto` de `"Valor oferta"` para
+`"Preço"`. O motor já se protege disso (`resolverColunaPreco`), mas o dashboard
+da etapa **não passa pelo motor** e continua lendo o mapping direto.
 
 ---
 
