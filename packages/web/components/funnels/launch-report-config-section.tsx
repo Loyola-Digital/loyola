@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useStageSalesSpreadsheets } from "@/lib/hooks/use-stage-sales-spreadsheets";
+import { LaunchReportButton } from "@/components/funnels/launch-report-button";
 import {
   useLaunchReportConfig,
   useLaunchReportSurveyQuestions,
@@ -480,6 +481,14 @@ export function LaunchReportConfigSection({
             )}
           </div>
         </div>
+      </div>
+
+      {/* Story 41.5 — o gerador mora na MESMA aba da config, e não no topo do
+          dashboard como a AC7 previa: a 41.1 moveu a config para aba própria, e
+          separar os dois faria o usuário validar num lugar e gerar em outro. É
+          também o padrão que o perpétuo (41.9) já segue. */}
+      <div className="border-t border-border/60 pt-6">
+        <LaunchReportButton projectId={projectId} funnelId={funnelId} stageId={stageId} />
       </div>
     </div>
   );

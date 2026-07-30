@@ -183,30 +183,34 @@ ${ob.map(linha).join("")}${ob.length ? subtotal("order bump", ob) : ""}</tbody>
 
 /** Seção 2 — ROAS por origem, 5 linhas com sinal e memória de cálculo. */
 function secaoRoas(m: LaunchReportMetrics): string {
-  const linhas: [string, { valor: number; memoria: string }][] = [
+  // A ordem é a do §4 e o orgânico fica NO MEIO, entre Pago Total e Total —
+  // não no fim. `null` marca a linha sem ROAS calculável.
+  const linhas: [string, { valor: number; memoria: string } | null][] = [
     ["🔥 Pago Quente", m.roas.pagoQuente],
     ["❄️ Pago Frio", m.roas.pagoFrio],
     ["🟢 Pago Total", m.roas.pago],
-    ["🟡 Orgânico", { valor: 0, memoria: "" }],
+    ["🟡 Orgânico", null],
     ["⚪ Total", m.roas.total],
   ];
-  const corpo = linhas
-    .filter(([nome]) => nome !== "🟡 Orgânico")
-    .map(([nome, r]) =>
-      `<tr><td>${escaparHtml(nome)}</td><td>${numeroBr(r.valor, 2)}</td>` +
-      `<td>${sinalRoas(r.valor)}</td><td class="mem">${escaparHtml(r.memoria)}</td></tr>`)
-    .join("");
 
   // O orgânico não tem denominador de mídia — exibir "ROAS orgânico" seria
   // inventar uma razão sem investimento. Mostramos o faturamento e explicamos.
-  const organico = `<tr><td>🟡 Orgânico</td><td>—</td><td></td>` +
-    `<td class="mem">${escaparHtml(
-      `faturamento de ${moedaBr(m.faturamento.organico)} sem investimento de mídia associado — ` +
-      `não há denominador para ROAS`)}</td></tr>`;
+  const memoriaOrganico =
+    `faturamento de ${moedaBr(m.faturamento.organico)} sem investimento de mídia associado — ` +
+    `não há denominador para ROAS`;
+
+  const corpo = linhas
+    .map(([nome, r]) =>
+      r === null
+        ? `<tr><td>${escaparHtml(nome)}</td><td>—</td><td></td>` +
+          `<td class="mem">${escaparHtml(memoriaOrganico)}</td></tr>`
+        : `<tr><td>${escaparHtml(nome)}</td><td>${numeroBr(r.valor, 2)}</td>` +
+          `<td>${sinalRoas(r.valor)}</td><td class="mem">${escaparHtml(r.memoria)}</td></tr>`)
+    .join("");
 
   return `<div class="tw"><table>
 <thead><tr><th>Origem</th><th>ROAS</th><th></th><th>Memória de cálculo</th></tr></thead>
-<tbody>${corpo}${organico}</tbody></table></div>`;
+<tbody>${corpo}</tbody></table></div>`;
 }
 
 /** Seção 3 — tendência. Sem série diária, degrada para leitura textual (§AC RN). */

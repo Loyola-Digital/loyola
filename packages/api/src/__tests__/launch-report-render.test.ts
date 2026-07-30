@@ -93,6 +93,22 @@ describe("AC3 — as seções do §4, na ordem", () => {
       expect(html).toContain(l);
     }
   });
+
+  it("o Orgânico fica ENTRE Pago Total e Total, não no fim", () => {
+    // Bug pego em revisão: o orgânico era filtrado do array e anexado depois,
+    // caindo abaixo do Total e quebrando a ordem do §4.
+    const tabela = html.slice(html.indexOf("2. ROAS por origem"), html.indexOf("3. Tendência"));
+    const iPagoTotal = tabela.indexOf("Pago Total");
+    const iOrganico = tabela.indexOf("Orgânico");
+    const iTotal = tabela.indexOf("⚪ Total");
+    expect(iOrganico).toBeGreaterThan(iPagoTotal);
+    expect(iTotal).toBeGreaterThan(iOrganico);
+  });
+
+  it("o Orgânico não inventa um ROAS — mostra travessão e explica", () => {
+    const tabela = html.slice(html.indexOf("2. ROAS por origem"), html.indexOf("3. Tendência"));
+    expect(tabela).toContain("não há denominador para ROAS");
+  });
 });
 
 describe("AC4 — zero literal narrativo (§6)", () => {
