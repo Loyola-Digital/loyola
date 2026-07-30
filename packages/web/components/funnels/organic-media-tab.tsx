@@ -327,14 +327,34 @@ function YouTubeMetricsLine({ metrics }: { metrics: YouTubeOrganicMetrics }) {
 }
 
 function InstagramMetricsLine({ metrics }: { metrics: InstagramOrganicMetrics }) {
+  const isVideo = metrics.avgWatchTimeMs != null || metrics.views != null;
+  const reachOk = metrics.reach != null && metrics.reach > 0;
   return (
     <div className="space-y-0.5">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
         <span title="Reach (alcance único)">👁 {fmtNumber(metrics.reach)}</span>
+        {metrics.views != null && <span title="Plays (reproduções)">▶ {fmtNumber(metrics.views)}</span>}
         <span title="Curtidas">❤ {fmtNumber(metrics.likeCount)}</span>
         <span title="Comentários">💬 {fmtNumber(metrics.commentCount)}</span>
         <span title="Saves">🔖 {fmtNumber(metrics.saved)}</span>
+        {metrics.shares != null && <span title="Compartilhamentos">↗ {fmtNumber(metrics.shares)}</span>}
       </div>
+      {isVideo && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+          {metrics.avgWatchTimeMs != null && (
+            <span title="Tempo médio assistido — retenção (quanto o vídeo prende em média)">⏱ {(metrics.avgWatchTimeMs / 1000).toFixed(1)}s média</span>
+          )}
+          {metrics.views != null && reachOk && (
+            <span title="Replay = Plays ÷ Reach (>100% = pessoas revendo)">🔁 {pctOf(metrics.views, metrics.reach)}</span>
+          )}
+          {metrics.saved != null && reachOk && (
+            <span title="Save rate = Saves ÷ Reach (sinal de conteúdo valioso)">🔖 {pctOf(metrics.saved, metrics.reach)}</span>
+          )}
+          {metrics.shares != null && reachOk && (
+            <span title="Share rate = Shares ÷ Reach (alcance viral)">↗ {pctOf(metrics.shares, metrics.reach)}</span>
+          )}
+        </div>
+      )}
       <div
         className={`text-[10px] font-medium ${instagramEngagementColor(metrics.engagementRate)}`}
         title={buildInstagramEngagementTooltip(metrics)}
@@ -343,6 +363,11 @@ function InstagramMetricsLine({ metrics }: { metrics: InstagramOrganicMetrics })
       </div>
     </div>
   );
+}
+
+function pctOf(part: number, whole: number | null): string {
+  if (!whole) return "—";
+  return `${((part / whole) * 100).toFixed(0)}%`;
 }
 
 function fmtEngagement(rate: number | null | undefined): string {

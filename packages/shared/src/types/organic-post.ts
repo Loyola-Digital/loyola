@@ -26,6 +26,11 @@ export interface InstagramOrganicMetrics {
   saved: number | null;
   /** (likes + comments + saves) / reach × 100, ou null se reach indisponível */
   engagementRate: number | null;
+  /** Qualidade de vídeo (Reels): plays (v25 "views"), shares e tempo médio
+   * assistido (ig_reels_avg_watch_time, em ms). null p/ imagem ou sem dado. */
+  views: number | null;
+  shares: number | null;
+  avgWatchTimeMs: number | null;
 }
 
 export type OrganicPostMetrics = YouTubeOrganicMetrics | InstagramOrganicMetrics;
