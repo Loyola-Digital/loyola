@@ -452,7 +452,6 @@ export function MetaAdsTesteTab({
   }
 
   const consistencyPct = rows.length > 0 ? Math.round((derived.daysAboveAvg / rows.length) * 100) : 0;
-  const dense = rows.length > 31; // muitos dias → esconde labels de ponto pra não poluir
   const today = new Date().toISOString().slice(0, 10);
 
   // Clique direito num dia: marca / edita (vazio remove) a virada de lote.
@@ -609,7 +608,7 @@ export function MetaAdsTesteTab({
                         <Bar dataKey="meta" fill="rgba(253,212,73,.13)" stroke="rgba(253,212,73,.4)" strokeWidth={1} radius={[3, 3, 0, 0]} />
                         <Bar dataKey="leads" radius={[3, 3, 0, 0]}>
                           {derived.chart.map((r) => <Cell key={r.date} fill={r.leads >= derived.avgLeads ? "rgba(16,185,129,.55)" : "rgba(239,68,68,.5)"} />)}
-                          {!dense && <LabelList content={ptLabelFn(int)} />}
+                          <LabelList content={ptLabelFn(int)} />
                         </Bar>
                       </ComposedChart>
                     </ResponsiveContainer>
@@ -630,7 +629,7 @@ export function MetaAdsTesteTab({
                             return <circle key={p.index} cx={p.cx} cy={p.cy} r={3} fill={above ? T.red : T.amber} stroke="none" />;
                           }}
                         >
-                          {!dense && <LabelList content={ptLabelFn(brl)} />}
+                          <LabelList content={ptLabelFn(brl)} />
                         </Line>
                       </ComposedChart>
                     </ResponsiveContainer>
@@ -654,7 +653,7 @@ export function MetaAdsTesteTab({
                       <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
                       <YAxis tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={44} tickFormatter={(v) => `R$${Math.round(v)}`} />
                       <Tooltip content={<HeroTip isPaid={isPaid} />} />
-                      <Area dataKey="spend" type="monotone" stroke={T.gold} strokeWidth={2} fill="url(#mat-spend)">{!dense && <LabelList content={ptLabelFn(brl)} />}</Area>
+                      <Area dataKey="spend" type="monotone" stroke={T.gold} strokeWidth={2} fill="url(#mat-spend)"><LabelList content={ptLabelFn(brl)} /></Area>
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
@@ -675,8 +674,8 @@ export function MetaAdsTesteTab({
                         <YAxis yAxisId="inv" orientation="right" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={44} tickFormatter={(v) => `R$${Math.round(v)}`} />
                         <Tooltip content={<CplCompTip />} />
                         <Bar yAxisId="inv" dataKey="spend" name="Investimento" fill="rgba(245,158,11,.12)" radius={[3, 3, 0, 0]} />
-                        <Line yAxisId="cpl" dataKey="cplPago" name="CPL Pago" type="monotone" stroke={T.gold} strokeWidth={2} dot={false} connectNulls>{!dense && <LabelList content={ptLabelFn(brl)} />}</Line>
-                        <Line yAxisId="cpl" dataKey="cplGeral" name="CPL Geral" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} connectNulls />
+                        <Line yAxisId="cpl" dataKey="cplPago" name="CPL Pago" type="monotone" stroke={T.gold} strokeWidth={2} dot={{ r: 2.5, fill: T.gold, strokeWidth: 0 }} connectNulls><LabelList content={ptLabelFn(brl)} /></Line>
+                        <Line yAxisId="cpl" dataKey="cplGeral" name="CPL Geral" type="monotone" stroke={T.emerald} strokeWidth={2} dot={{ r: 2.5, fill: T.emerald, strokeWidth: 0 }} connectNulls><LabelList content={ptLabelFn(brl)} /></Line>
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -697,10 +696,10 @@ export function MetaAdsTesteTab({
                         <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
                         <YAxis tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={38} />
                         <Tooltip content={<AcumTip isPaid={isPaid} />} />
-                        <Area dataKey="total" name="Total" type="monotone" stroke={T.gold} strokeWidth={2} fill="url(#mat-cum)">{!dense && <LabelList content={ptLabelFn(int)} />}</Area>
-                        <Line dataKey="pago" name="Pago" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} />
-                        <Line dataKey="org" name="Org" type="monotone" stroke={T.teal} strokeWidth={2} dot={false} />
-                        <Line dataKey="semTrack" name="s/ Track" type="monotone" stroke={T.amber} strokeWidth={2} dot={false} />
+                        <Area dataKey="total" name="Total" type="monotone" stroke={T.gold} strokeWidth={2} fill="url(#mat-cum)" dot={{ r: 2.5, fill: T.gold, strokeWidth: 0 }}><LabelList content={ptLabelFn(int)} /></Area>
+                        <Line dataKey="pago" name="Pago" type="monotone" stroke={T.emerald} strokeWidth={2} dot={{ r: 2, fill: T.emerald, strokeWidth: 0 }} />
+                        <Line dataKey="org" name="Org" type="monotone" stroke={T.teal} strokeWidth={2} dot={{ r: 2, fill: T.teal, strokeWidth: 0 }} />
+                        <Line dataKey="semTrack" name="s/ Track" type="monotone" stroke={T.amber} strokeWidth={2} dot={{ r: 2, fill: T.amber, strokeWidth: 0 }} />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -1167,7 +1166,6 @@ function TesteTrendChart({ rows, funnel, projectId, isPaid }: { rows: DailyRow[]
   );
   const pct = useMemo(() => calculateProjectionPercentage(data), [data]);
   const todayLabel = data.find((d) => d.isProjection)?.label ?? null;
-  const dense = data.length > 31;
   const noun = isPaid ? "Ingressos" : "Leads";
   const onData = (v: string) => { setDataFinal(v); if (v) update.mutate({ leadsGoalDataFinal: v }); };
   const onMeta = (v: number) => { setMetaTotal(v); update.mutate({ leadsGoalMeta: v }); };
@@ -1192,10 +1190,10 @@ function TesteTrendChart({ rows, funnel, projectId, isPaid }: { rows: DailyRow[]
           <XAxis dataKey="label" tick={MONO_TICK} stroke="transparent" />
           <YAxis tick={MONO_TICK} stroke="transparent" width={40} />
           <Tooltip content={<TrendTip />} />
-          <Bar dataKey="dailyReal" name="Real/dia" fill="rgba(255,255,255,.13)" radius={[2, 2, 0, 0]}>{!dense && <LabelList content={ptLabelFn(int)} />}</Bar>
-          <Bar dataKey="dailyProjected" name="Projeção/dia" fill="rgba(245,158,11,.32)" radius={[2, 2, 0, 0]}>{!dense && <LabelList content={ptLabelFn(int)} />}</Bar>
-          <Line dataKey="cumulativeReal" name="Acum. real" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} connectNulls />
-          <Line dataKey="cumulativeProjected" name="Acum. projeção" type="monotone" stroke={T.gold} strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls />
+          <Bar dataKey="dailyReal" name="Real/dia" fill="rgba(255,255,255,.13)" radius={[2, 2, 0, 0]}><LabelList content={ptLabelFn(int)} /></Bar>
+          <Bar dataKey="dailyProjected" name="Projeção/dia" fill="rgba(245,158,11,.32)" radius={[2, 2, 0, 0]}><LabelList content={ptLabelFn(int)} /></Bar>
+          <Line dataKey="cumulativeReal" name="Acum. real" type="monotone" stroke={T.emerald} strokeWidth={2} dot={{ r: 2.5, fill: T.emerald, strokeWidth: 0 }} connectNulls><LabelList content={ptLabelFn(int)} /></Line>
+          <Line dataKey="cumulativeProjected" name="Acum. projeção" type="monotone" stroke={T.gold} strokeWidth={2} strokeDasharray="5 3" dot={{ r: 2.5, fill: T.gold, strokeWidth: 0 }} connectNulls><LabelList content={ptLabelFn(int)} /></Line>
           <Line dataKey="meta" name="Meta" type="monotone" stroke={T.red} strokeWidth={1.5} dot={false} />
           {todayLabel && <ReferenceLine x={todayLabel} stroke={T.muted2} strokeDasharray="2 2" />}
         </ComposedChart>
@@ -1214,7 +1212,6 @@ function TesteCostChart({ rows, funnel, projectId, isPaid }: { rows: DailyRow[];
   }, [proj.gastoTotalSuggestion, proj.gastoTotalProjetado, proj]);
   const data = useMemo(() => proj.chartData.map((d) => ({ ...d, label: dmLabel(d.date) })), [proj.chartData]);
   const todayLabel = data.find((d) => d.isProjection)?.label ?? null;
-  const dense = data.length > 31;
   const noun = isPaid ? "Ingressos" : "Leads";
   const onData = (v: string) => { proj.setDataFinal(v); if (v) update.mutate({ leadsGoalDataFinal: v }); };
   const onMeta = (v: number) => { proj.setMetaTotal(v); update.mutate({ leadsGoalMeta: v }); };
@@ -1243,8 +1240,8 @@ function TesteCostChart({ rows, funnel, projectId, isPaid }: { rows: DailyRow[];
             <YAxis yAxisId="leads" tick={MONO_TICK} stroke="transparent" width={40} />
             <YAxis yAxisId="cpl" orientation="right" tick={MONO_TICK} stroke="transparent" width={44} tickFormatter={(v) => `R$${Math.round(v)}`} />
             <Tooltip content={<CostTip />} />
-            <Line yAxisId="leads" dataKey="cumulativeReal" name="Acum. real" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} connectNulls>{!dense && <LabelList content={ptLabelFn(int)} />}</Line>
-            <Line yAxisId="leads" dataKey="cumulativeProjected" name="Acum. projeção" type="monotone" stroke={T.gold} strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls />
+            <Line yAxisId="leads" dataKey="cumulativeReal" name="Acum. real" type="monotone" stroke={T.emerald} strokeWidth={2} dot={{ r: 2.5, fill: T.emerald, strokeWidth: 0 }} connectNulls><LabelList content={ptLabelFn(int)} /></Line>
+            <Line yAxisId="leads" dataKey="cumulativeProjected" name="Acum. projeção" type="monotone" stroke={T.gold} strokeWidth={2} strokeDasharray="5 3" dot={{ r: 2.5, fill: T.gold, strokeWidth: 0 }} connectNulls><LabelList content={ptLabelFn(int)} /></Line>
             <Line yAxisId="leads" dataKey="metaCumulative" name="Meta" type="monotone" stroke={T.red} strokeWidth={1.5} dot={false} />
             <Line yAxisId="cpl" dataKey="cplProjected" name="CPL proj." type="monotone" stroke={T.amber} strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
             {todayLabel && <ReferenceLine yAxisId="leads" x={todayLabel} stroke={T.muted2} strokeDasharray="2 2" />}
