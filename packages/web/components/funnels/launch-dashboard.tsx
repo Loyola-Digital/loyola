@@ -1239,7 +1239,9 @@ export function FunnelComparisonChart({
           />
           <Tooltip
             formatter={(value) => fmtCompMetric(Number(value), meta.kind)}
-            contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", fontSize: 12 }}
+            contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, color: "var(--color-popover-foreground)" }}
+            labelStyle={{ color: "var(--color-popover-foreground)" }}
+            itemStyle={{ color: "var(--color-popover-foreground)" }}
           />
           <Legend wrapperStyle={{ color: "#fff" }} />
           <Line
