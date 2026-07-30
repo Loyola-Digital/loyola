@@ -419,3 +419,63 @@ describe("render do Comparativo", () => {
     expect(Buffer.byteLength(html, "utf8")).toBeLessThan(5 * 1024 * 1024);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Convenção dos lados: A = anterior, B = atual
+// ---------------------------------------------------------------------------
+
+describe("direção da comparação — anterior (A) → atual (B)", () => {
+  /**
+   * A UI seleciona o lançamento **anterior** e ele entra como A; a etapa em que
+   * o usuário está é o B. A decomposição responde "como chegamos até aqui" —
+   * mesma direção da §10, onde é PG02 (abril) → PG04 (julho).
+   *
+   * Se alguém inverter isso, os ratios viram o recíproco e o relatório passa a
+   * dizer que ajudou o que puxou pra baixo. Este teste é a trava.
+   */
+  it("com o antigo como A, o CPM que subiu aparece como tendo puxado pra baixo", () => {
+    // PG02 (antigo, CPM 52,93) → PG04 (atual, CPM 77,43): o CPM piorou.
+    const certo = decompor(PG02, PG04);
+    expect(certo.fatores.find((f) => f.chave === "cpm")!.direcao).toBe("puxou pra baixo");
+  });
+
+  it("invertendo, o mesmo CPM apareceria como tendo AJUDADO — o erro que a convenção evita", () => {
+    const errado = decompor(PG04, PG02);
+    expect(errado.fatores.find((f) => f.chave === "cpm")!.direcao).toBe("ajudou");
+  });
+
+  it("na direção certa, o ROAS caiu; na invertida, subiria", () => {
+    expect(decompor(PG02, PG04).roasB).toBeLessThan(decompor(PG02, PG04).roasA);
+    expect(decompor(PG04, PG02).roasB).toBeGreaterThan(decompor(PG04, PG02).roasA);
+  });
+
+  it("o PESO é invariante à inversão — quem inverte é a direção e o efeito", () => {
+    // Propriedade descoberta ao escrever este teste, e que não é óbvia:
+    //   peso = ln(r) / Σ ln(r)
+    //   invertendo: ln(1/r) / Σ ln(1/r) = (−ln r) / (−Σ ln r) = ln r / Σ ln r
+    // Numerador e denominador trocam de sinal JUNTOS, então o peso não muda.
+    // Faz sentido: o peso mede *quanto* o fator explica do movimento, e isso é
+    // simétrico. O que diz se ele ajudou ou atrapalhou é a `direcao`.
+    //
+    // Consequência prática: ler o peso sem a direção não informa nada sobre o
+    // sentido — é exatamente por isso que a direção é campo próprio e tem coluna
+    // própria na tabela.
+    const certo = decompor(PG02, PG04);
+    const invertido = decompor(PG04, PG02);
+    for (const f of certo.fatores) {
+      const inv = invertido.fatores.find((x) => x.chave === f.chave)!;
+      expect(inv.peso).toBeCloseTo(f.peso, 6);
+      // Já o efeito e a direção invertem.
+      expect(Math.sign(inv.efeito)).toBe(-Math.sign(f.efeito));
+      expect(inv.direcao).not.toBe(f.direcao);
+    }
+  });
+
+  it("os valores da §10 saem na direção anterior → atual", () => {
+    const certo = decompor(PG02, PG04);
+    const ticket = certo.fatores.find((f) => f.chave === "ticket")!;
+    expect(ticket.peso).toBeCloseTo(77, 0);
+    expect(ticket.efeito).toBeCloseTo(-45, 1);
+    expect(ticket.direcao).toBe("puxou pra baixo");
+  });
+});

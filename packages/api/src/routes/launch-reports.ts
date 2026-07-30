@@ -280,6 +280,11 @@ export default fp(async function launchReportsRoutes(fastify) {
  *
  * Regra explícita da spec: violação em **qualquer** lado **aborta os dois**. Um
  * comparativo com um lado inconsistente é pior que nenhum — parece confiável.
+ *
+ * ⚠️ **Convenção dos lados:** `a` é o lançamento **anterior** (ponto de partida)
+ * e `b` é o **atual** (destino). A decomposição responde "como chegamos até
+ * aqui", que é a direção da §10 (PG02 abril → PG04 julho). O resultado é
+ * persistido no histórico de **B**, a etapa de onde a geração partiu.
  */
 export const comparativoRoutes = fp(async function comparativoRoutes(fastify) {
   const ladoSchema = z.object({
@@ -396,17 +401,21 @@ export const comparativoRoutes = fp(async function comparativoRoutes(fastify) {
     const title =
       `Comparativo ${infoA.projectName} ${infoA.stageName} × ${infoB.projectName} ${infoB.stageName}`;
 
-    // Persiste no MESMO histórico da etapa A, com kind = "comparativo".
+    // Persiste no histórico do lado **B**, não do A.
+    //
+    // B é o lançamento sob análise — o destino da comparação, e a etapa de onde
+    // o usuário disparou a geração. A é o ponto de partida (o lançamento
+    // anterior), e guardar o comparativo lá o esconderia de quem o pediu.
     const [saved] = await fastify.db
       .insert(launchReports)
       .values({
         projectId: params.data.projectId,
-        funnelId: body.data.a.funnelId,
-        stageId: body.data.a.stageId,
+        funnelId: body.data.b.funnelId,
+        stageId: body.data.b.stageId,
         kind: "comparativo",
         title: title.slice(0, 255),
-        dataInicio: ma.periodo.inicio,
-        dataFim: ma.periodo.fim,
+        dataInicio: mb.periodo.inicio,
+        dataFim: mb.periodo.fim,
         html,
         // As duas referências vivem em `metricas` — é o que dispensa colunas b_*.
         metricas: {

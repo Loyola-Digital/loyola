@@ -1,18 +1,24 @@
 "use client";
 
 /**
- * Story 41.6 — botão "Gerar Comparativo" + diálogo de seleção do lado B (§AC7).
+ * Story 41.6 — botão "Gerar Comparativo" + seleção do lançamento anterior (§AC7).
  *
- * O lado A é sempre a etapa em que o usuário está; o diálogo escolhe o B
- * (projeto → funil → etapa, com período opcional).
+ * ⚠️ **A etapa atual é o lado B, não o A.** A decomposição responde "como
+ * chegamos até aqui", então ela vai do lançamento **anterior** (A, ponto de
+ * partida) para o **atual** (B, destino) — que é a mesma direção da §10, onde a
+ * decomposição é PG02 (abril) → PG04 (julho).
+ *
+ * Inverter isso não seria só um rótulo trocado: os ratios virariam o recíproco,
+ * os pesos mudariam de sinal e o relatório diria que ajudou o que puxou pra
+ * baixo. Por isso o seletor pede o **lançamento anterior** e ele entra como A.
  *
  * Decisões de tela:
  *
- * 1. O erro 422 **identifica qual lado** falhou e fica na tela. Violação em um
- *    lado aborta os dois (§9.2), então o usuário precisa saber onde mexer.
- * 2. O botão não é desabilitado pelo gate do lado A — o gate roda no servidor
- *    para os dois lados, e desabilitar aqui esconderia que o problema pode estar
- *    no B.
+ * 1. O erro 422 identifica o lado, e a tela traduz `a` e `b` para "lançamento
+ *    anterior" e "lançamento atual" — "lado A" não diz nada para quem olha.
+ * 2. O botão não é desabilitado pelo gate da etapa atual — o gate roda no
+ *    servidor para os dois lados, e desabilitar aqui esconderia que o problema
+ *    pode estar no lançamento anterior.
  * 3. Não há seletor de projeto: comparar entre projetos é possível pela API, mas
  *    a lista de etapas de outro expert não ajuda quem está olhando este.
  */
@@ -40,43 +46,48 @@ interface Props {
 }
 
 const PASSOS = [
-  "Carregando o lançamento A…",
-  "Carregando o lançamento B…",
+  "Carregando o lançamento anterior…",
+  "Carregando o lançamento atual…",
   "Validando invariantes dos dois lados…",
   "Decompondo o ROAS…",
 ];
 
+/** `a`/`b` não dizem nada na tela — o usuário pensa em anterior e atual. */
+const NOME_DO_LADO: Record<string, string> = { a: "lançamento anterior", b: "lançamento atual" };
+
 export function LaunchComparativoButton({ projectId, funnelId, stageId }: Props) {
   const gerar = useGenerateComparativo(projectId);
 
-  const [bFunnelId, setBFunnelId] = useState<string>("");
-  const [bStageId, setBStageId] = useState<string>("");
-  const [bInicio, setBInicio] = useState("");
-  const [bFim, setBFim] = useState("");
+  const [antFunnelId, setAntFunnelId] = useState<string>("");
+  const [antStageId, setAntStageId] = useState<string>("");
+  const [antInicio, setAntInicio] = useState("");
+  const [antFim, setAntFim] = useState("");
   const [erro, setErro] = useState<ComparativoErro | null>(null);
   const [html, setHtml] = useState<string | null>(null);
 
   const { data: funis } = useFunnels(projectId);
-  const { data: etapasB } = useFunnelStages(projectId, bFunnelId || null);
+  const { data: etapasAnterior } = useFunnelStages(projectId, antFunnelId || null);
 
-  // O próprio lançamento não pode ser o lado B — comparar A com A não diz nada.
-  const etapasDisponiveis = (etapasB ?? []).filter((e) => e.id !== stageId);
+  // A própria etapa não pode ser o lançamento anterior — comparar com si mesma
+  // daria ratios 1 e uma decomposição sem informação.
+  const etapasDisponiveis = (etapasAnterior ?? []).filter((e) => e.id !== stageId);
 
   function handleGerar() {
     setErro(null);
-    if (!bFunnelId || !bStageId) {
-      toast.error("Escolha o funil e a etapa do segundo lançamento");
+    if (!antFunnelId || !antStageId) {
+      toast.error("Escolha o funil e a etapa do lançamento anterior");
       return;
     }
     gerar.mutate(
       {
-        a: { funnelId, stageId },
-        b: {
-          funnelId: bFunnelId,
-          stageId: bStageId,
-          dataInicio: bInicio || null,
-          dataFim: bFim || null,
+        // A = anterior (de onde viemos), B = atual (onde estamos).
+        a: {
+          funnelId: antFunnelId,
+          stageId: antStageId,
+          dataInicio: antInicio || null,
+          dataFim: antFim || null,
         },
+        b: { funnelId, stageId },
       },
       {
         onSuccess: (res) => {
@@ -98,14 +109,15 @@ export function LaunchComparativoButton({ projectId, funnelId, stageId }: Props)
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
+  const ondeFalhou = erro?.lado ? ` no ${NOME_DO_LADO[erro.lado] ?? erro.lado}` : "";
   const tituloErro =
     erro?.erro === "INVARIANTE_VIOLADO"
-      ? `Os números não fecham no lado ${erro.lado?.toUpperCase() ?? "?"} (${erro.codigo})`
+      ? `Os números não fecham${ondeFalhou} (${erro.codigo})`
       : erro?.erro === "DADO_INDISPONIVEL"
-        ? `Falta dado no lado ${erro?.lado?.toUpperCase() ?? "?"}`
+        ? `Falta dado${ondeFalhou}`
         : erro?.erro === "CONFERENCIA_EXTERNA"
-          ? `Investimento diverge do oficial no lado ${erro?.lado?.toUpperCase() ?? "?"}`
-          : `Combinação não validada no lado ${erro?.lado?.toUpperCase() ?? "?"}`;
+          ? `Investimento diverge do oficial${ondeFalhou}`
+          : `Combinação não validada${ondeFalhou}`;
 
   return (
     <div className="space-y-4">
@@ -115,20 +127,21 @@ export function LaunchComparativoButton({ projectId, funnelId, stageId }: Props)
           Comparativo com outro lançamento
         </h3>
         <p className="text-xs text-muted-foreground">
-          Decompõe a diferença de ROAS em CPM, CTR, conversão e ticket — mostrando quanto de
-          cada fator explica a variação, e simulando cenários com a mídia trocada entre os dois.
+          Compara <strong>este lançamento</strong> com um anterior e decompõe a diferença de ROAS
+          em CPM, CTR, conversão e ticket — mostrando quanto de cada fator explica a variação, e
+          simulando cenários com a mídia trocada entre os dois.
         </p>
       </div>
 
       <div className="space-y-3 rounded-xl border border-border/60 p-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
-            <Label className="text-xs">Funil do segundo lançamento</Label>
+            <Label className="text-xs">Funil do lançamento anterior</Label>
             <Select
-              value={bFunnelId}
+              value={antFunnelId}
               onValueChange={(v) => {
-                setBFunnelId(v);
-                setBStageId("");
+                setAntFunnelId(v);
+                setAntStageId("");
               }}
             >
               <SelectTrigger>
@@ -144,10 +157,12 @@ export function LaunchComparativoButton({ projectId, funnelId, stageId }: Props)
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Etapa</Label>
-            <Select value={bStageId} onValueChange={setBStageId} disabled={!bFunnelId}>
+            <Label className="text-xs">Etapa do lançamento anterior</Label>
+            <Select value={antStageId} onValueChange={setAntStageId} disabled={!antFunnelId}>
               <SelectTrigger>
-                <SelectValue placeholder={bFunnelId ? "Escolher etapa" : "Escolha o funil antes"} />
+                <SelectValue
+                  placeholder={antFunnelId ? "Escolher etapa" : "Escolha o funil antes"}
+                />
               </SelectTrigger>
               <SelectContent>
                 {etapasDisponiveis.map((e) => (
@@ -159,17 +174,19 @@ export function LaunchComparativoButton({ projectId, funnelId, stageId }: Props)
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Início do B (opcional)</Label>
-            <Input type="date" value={bInicio} onChange={(e) => setBInicio(e.target.value)} />
+            <Label className="text-xs">Início do anterior (opcional)</Label>
+            <Input type="date" value={antInicio} onChange={(e) => setAntInicio(e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Fim do B (opcional)</Label>
-            <Input type="date" value={bFim} onChange={(e) => setBFim(e.target.value)} />
+            <Label className="text-xs">Fim do anterior (opcional)</Label>
+            <Input type="date" value={antFim} onChange={(e) => setAntFim(e.target.value)} />
           </div>
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Os dois lados passam pelo gate e pelos invariantes. Violação em qualquer um aborta a
-          geração inteira — um comparativo com um lado inconsistente parece confiável e não é.
+          A leitura vai do lançamento anterior para <strong>este</strong>: o relatório responde o
+          que mudou até aqui. Os dois lados passam pelo gate e pelos invariantes, e violação em
+          qualquer um aborta a geração inteira — um comparativo com um lado inconsistente parece
+          confiável e não é.
         </p>
 
         <Button size="sm" onClick={handleGerar} disabled={gerar.isPending}>
