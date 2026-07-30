@@ -158,6 +158,66 @@ da etapa **não passa pelo motor** e continua lendo o mapping direto.
 
 ---
 
+## Resultado da conferência real — 2026-07-30 (Story 41.2)
+
+O motor (`launch-report-loader` + `launch-report-engine`) rodou contra o banco de
+produção no stage `8fbd8031` (DG-PG02 · Captação Paga), em modo somente leitura
+(sem chamada à Meta — só o cache já gravado).
+
+### Com o período da §10 (17/04 → 11/05): bate ao centavo
+
+| Métrica | §10 | Motor | |
+|---|---|---|---|
+| ingressos únicos | 1.410 | 1.410 | ✅ |
+| vendas totais | 2.222 (1.597 + 625) | 2.222 (1.597 + 625) | ✅ |
+| faturamento total | 233.572,94 | **233.572,94** | ✅ |
+| — captação | 90.388,74 | **90.388,74** | ✅ |
+| — order bump | 143.184,20 | **143.184,20** | ✅ |
+| — sem track | 6.355,27 (32 ing) | **6.355,27 (32 ing)** | ✅ |
+| INV quente | 73.453,36 | **73.453,36** | ✅ |
+| CTR | 1,84% | 1,84% | ✅ |
+| campanhas | 33 | 33 com investimento (34 vinculadas) | ✅ |
+| pago / orgânico | 766 / 612 | 767 / 611 | Δ 1 comprador (R$ 750,70) |
+| investimento c/ imposto | 126.566,14 | 126.616,38 | +0,04% |
+
+**Hipótese da §3 confirmada:** "campanhas" na §10 significa campanhas **com
+investimento no período**, não campanhas vinculadas ao stage.
+
+### As duas diferenças que sobraram
+
+1. **Investimento +0,04% (R$ 50,24).** Drift de reprocessamento da Meta — dentro
+   do limiar de alerta da §8.3 (0,05%) e muito abaixo do de bloqueio (0,5%).
+   Impressões seguem o mesmo padrão (+0,27%).
+2. **1 comprador (R$ 750,70) classificado como Pago em vez de Orgânico.** É 1 em
+   1.410 (0,07%). Todo o resto da atribuição bate ao centavo, inclusive o balde
+   "Sem Track". Não investigado a fundo; registrar se reaparecer.
+
+### ⚠️ Consequência da decisão de usar 09/05
+
+Com `data_fim = 09/05` (a config em produção, confirmada pelo dono do produto), o
+relatório **não** reproduz a §10 — e agora sabemos exatamente por quê:
+
+| | 09/05 | 11/05 (§10) | Diferença |
+|---|---|---|---|
+| vendas de captação | 1.564 | 1.597 | **33 vendas** |
+| faturamento | 230.305,94 | 233.572,94 | **R$ 3.267,00** |
+| ingressos únicos | 1.407 | 1.410 | 3 |
+
+Houve atividade real em 10 e 11/05. A escolha de 09/05 é uma definição de
+negócio legítima, mas exclui essas 33 vendas — e qualquer conferência futura
+contra a §10 precisa usar 11/05 para comparar maçã com maçã.
+
+### Achados de infraestrutura
+
+- **`meta_ad_insights_daily` está vazia no período do PG02** (0 linhas). A
+  reconciliação campaign × ad (§2.3b) é pulada por falta de ad-level — o que é o
+  comportamento correto, mas significa que o alerta **W1 nunca dispara** e o
+  invariante **A6 fica `skipped`** para este lançamento. As "2 campanhas com
+  valor corrompido" que a §10 menciona já foram reprocessadas pela Meta: hoje
+  nenhuma campanha tem `spend < 100` com `impressões > 1.000`.
+- **Taxa de resposta da pesquisa: 63,3%** (890 compradores responderam, de 1.410
+  ingressos únicos). Abaixo de 75%, então dispara o alerta **W5** corretamente.
+
 ## Change Log
 
 | Data | Autor | Mudança |

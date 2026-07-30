@@ -595,6 +595,51 @@ describe("atribuição propagada (§2.9)", () => {
   });
 });
 
+describe("taxa de resposta da pesquisa", () => {
+  const campanhas = [
+    campanha({ campaignName: "x--vendas-captacao--hot", spendBruto: 1000, spendComImposto: 1000 }),
+  ];
+  const vendas: VendaInput[] = ["a", "b", "c", "d"].map((n) => ({
+    email: `${n}@x.com`, txId: n, produto: "Imersão", valorBrl: 100, dia: "2026-04-20",
+    utmSource: "meta", utmTerm: "x--hot|a|ad", utmContent: null, isOrderBump: false,
+  }));
+
+  it("conta só COMPRADORES que responderam, não respostas totais", () => {
+    // A pesquisa tem 9 respondentes, mas só 2 deles compraram. Usar o total
+    // daria 225% — foi exatamente o que aconteceu no PG02 (118,6%) antes do fix.
+    const emailsRespondentes = new Set([
+      "a@x.com", "b@x.com",
+      ...Array.from({ length: 7 }, (_, i) => `lead${i}@x.com`),
+    ]);
+    const m = computeLaunchReportMetrics({
+      ...INPUT_BASE, impostoJaAplicado: true, campanhas, vendas,
+      pesquisa: { emailsRespondentes, respostasTotais: 9 },
+    });
+    expect(m.pesquisa.respondentes).toBe(2);
+    expect(m.pesquisa.taxaResposta.valor).toBeCloseTo(50, 2);
+  });
+
+  it("a taxa nunca passa de 100%", () => {
+    const emailsRespondentes = new Set(
+      Array.from({ length: 500 }, (_, i) => `lead${i}@x.com`).concat(vendas.map((v) => v.email!)),
+    );
+    const m = computeLaunchReportMetrics({
+      ...INPUT_BASE, impostoJaAplicado: true, campanhas, vendas,
+      pesquisa: { emailsRespondentes, respostasTotais: 504 },
+    });
+    expect(m.pesquisa.taxaResposta.valor).toBeLessThanOrEqual(100);
+    expect(m.pesquisa.taxaResposta.valor).toBeCloseTo(100, 2);
+  });
+
+  it("sem pesquisa vinculada → 0, não NaN", () => {
+    const m = computeLaunchReportMetrics({
+      ...INPUT_BASE, impostoJaAplicado: true, campanhas, vendas,
+    });
+    expect(m.pesquisa.taxaResposta.valor).toBe(0);
+    expect(m.pesquisa.respondentes).toBe(0);
+  });
+});
+
 describe("guardas de divisão por zero", () => {
   it("etapa sem investimento e sem venda não explode nem devolve NaN", () => {
     const m = computeLaunchReportMetrics({

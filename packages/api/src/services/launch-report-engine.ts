@@ -71,8 +71,18 @@ export interface VendaInput {
 }
 
 export interface PesquisaInput {
-  /** Compradores que responderam a pesquisa. */
-  respondentes: number;
+  /**
+   * E-mails (lowercase) que responderam a pesquisa da etapa.
+   *
+   * A taxa de resposta do §3 é **compradores que responderam ÷ ingressos
+   * únicos** — por isso o motor precisa do conjunto, não de uma contagem.
+   * Usar o total de respostas daria taxa acima de 100%: a pesquisa é respondida
+   * por todo lead inscrito, não só por quem comprou (conferido no PG02:
+   * 1.669 respostas para 1.407 ingressos únicos = 118,6%).
+   */
+  emailsRespondentes?: ReadonlySet<string>;
+  /** Total de linhas da pesquisa — informativo, nunca denominador. */
+  respostasTotais?: number;
   /** Blocos de qualificação já agregados por `computeSurveyForStage`. */
   blocos?: unknown;
 }
@@ -659,11 +669,16 @@ export function computeLaunchReportMetrics(
     100,
   );
 
-  const respondentes = pesquisa?.respondentes ?? 0;
+  // Compradores que responderam: interseção entre os e-mails dos ingressos
+  // únicos e os respondentes. Nunca pode passar de `ingressosUnicos`.
+  const emailsRespondentes = pesquisa?.emailsRespondentes;
+  const respondentes = emailsRespondentes
+    ? unicos.filter((u) => u.email && emailsRespondentes.has(u.email)).length
+    : 0;
   const taxaResposta = comMemoria(
     respondentes,
     ingressosUnicos,
-    `${inteiroBr(respondentes)} respondentes ÷ ${inteiroBr(ingressosUnicos)} ingressos únicos × 100 = ${br(div(respondentes, ingressosUnicos) * 100)}%`,
+    `${inteiroBr(respondentes)} compradores que responderam ÷ ${inteiroBr(ingressosUnicos)} ingressos únicos × 100 = ${br(div(respondentes, ingressosUnicos) * 100)}%`,
     100,
   );
 
