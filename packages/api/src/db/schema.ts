@@ -2442,3 +2442,38 @@ export const perpetualReports = pgTable(
   },
   (table) => [index("perpetual_reports_funnel_idx").on(table.funnelId, table.createdAt)]
 );
+
+// ============================================================
+// LAUNCH REPORTS (Story 41.5 — Resumão e Comparativo de lançamento)
+// ============================================================
+// Tabela própria em vez de reusar `sprint_reports`: aquela não tem vínculo com
+// projeto/funil/etapa/período e é alimentada por API key externa. Cada geração
+// é uma linha NOVA — regenerar não sobrescreve, e é isso que dá auditabilidade.
+
+export const launchReports = pgTable(
+  "launch_reports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** Nulo no Comparativo entre funis diferentes — as duas refs vão em `metricas`. */
+    funnelId: uuid("funnel_id").references(() => funnels.id, { onDelete: "set null" }),
+    stageId: uuid("stage_id").references(() => funnelStages.id, { onDelete: "set null" }),
+    /** `resumao` | `comparativo` */
+    kind: varchar("kind", { length: 20 }).notNull().default("resumao"),
+    title: varchar("title", { length: 255 }).notNull(),
+    dataInicio: date("data_inicio"),
+    dataFim: date("data_fim"),
+    /** HTML autocontido. Teto de 5MB aplicado na rota. */
+    html: text("html").notNull(),
+    metricas: jsonb("metricas").$type<Record<string, unknown>>(),
+    alertas: jsonb("alertas").$type<{ codigo: string; mensagem: string }[]>(),
+    geradoPor: uuid("gerado_por").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("launch_reports_stage_idx").on(table.stageId, table.createdAt),
+    index("launch_reports_project_idx").on(table.projectId, table.createdAt),
+  ]
+);
