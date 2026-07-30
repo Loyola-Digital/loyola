@@ -701,10 +701,31 @@ export function MetaAdsTesteTab({
               {/* ---- Leva 3: Segmentação (Hot/Cold + Funil) + Pesquisa ---- */}
               <div className="space-y-4">
                 <GroupHeading icon={PieChartIcon} title="SEGMENTAÇÃO & FUNIL" subtitle="Distribuição de investimento, leads/compradores e conversão" />
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <TesteDonut title="Distribuição de investimento — Hot/Cold" hot={spendHotCold.hot} cold={spendHotCold.cold} outros={spendHotCold.outros} fmt={money0} />
-                  <div className="rounded-[12px] border p-[17px]" style={{ background: T.surface, borderColor: T.border }}>
-                    <p className="mat-ct mb-3 flex items-center text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>Funil de conversão</p>
+                {/* 3 donuts lado a lado (mesma altura) */}
+                <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  <TesteDonut title="Investimento — Hot/Cold" hot={spendHotCold.hot} cold={spendHotCold.cold} outros={spendHotCold.outros} fmt={money0} />
+                  {metrics.hotColdLeads ? (
+                    <TesteDonut title="Leads — Hot/Cold" hot={metrics.hotColdLeads.hot} cold={metrics.hotColdLeads.cold} outros={metrics.hotColdLeads.outros} fmt={int} />
+                  ) : (
+                    <TestePanelMsg title="Leads — Hot/Cold" msg="Mapeie a coluna utm_term na planilha de leads." />
+                  )}
+                  {isPaid && (() => {
+                    const stageBuyers = stageHotColdBuyers?.hasMapping
+                      ? { hot: stageHotColdBuyers.hot, cold: stageHotColdBuyers.cold, outros: stageHotColdBuyers.outros }
+                      : null;
+                    const buyers = stageBuyers ?? metrics.hotColdBuyers;
+                    return buyers ? (
+                      <TesteDonut title="Compradores — Hot/Cold" hot={buyers.hot} cold={buyers.cold} outros={buyers.outros} fmt={int} />
+                    ) : (
+                      <TestePanelMsg title="Compradores — Hot/Cold" msg="Mapeie a coluna utm_term na planilha de vendas." />
+                    );
+                  })()}
+                </div>
+
+                {/* Funil em largura total */}
+                <div className="rounded-[12px] border p-[17px]" style={{ background: T.surface, borderColor: T.border }}>
+                  <p className="mat-ct mb-3 flex items-center text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>Funil de conversão</p>
+                  <div className="mx-auto max-w-2xl">
                     <TesteFunnel
                       impressions={overview?.totalImpressions ?? 0}
                       linkClicks={overview?.totalLinkClicks ?? null}
@@ -716,27 +737,6 @@ export function MetaAdsTesteTab({
                     />
                   </div>
                 </div>
-
-                {(metrics.hotColdLeads || metrics.hotColdBuyers) && (
-                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    {metrics.hotColdLeads ? (
-                      <TesteDonut title="Distribuição de leads — Hot/Cold" hot={metrics.hotColdLeads.hot} cold={metrics.hotColdLeads.cold} outros={metrics.hotColdLeads.outros} fmt={int} />
-                    ) : (
-                      <TestePanelMsg title="Distribuição de leads — Hot/Cold" msg="Mapeie a coluna utm_term na planilha de leads." />
-                    )}
-                    {isPaid && (() => {
-                      const stageBuyers = stageHotColdBuyers?.hasMapping
-                        ? { hot: stageHotColdBuyers.hot, cold: stageHotColdBuyers.cold, outros: stageHotColdBuyers.outros }
-                        : null;
-                      const buyers = stageBuyers ?? metrics.hotColdBuyers;
-                      return buyers ? (
-                        <TesteDonut title="Distribuição de compradores — Hot/Cold" hot={buyers.hot} cold={buyers.cold} outros={buyers.outros} fmt={int} />
-                      ) : (
-                        <TestePanelMsg title="Distribuição de compradores — Hot/Cold" msg="Mapeie a coluna utm_term na planilha de vendas." />
-                      );
-                    })()}
-                  </div>
-                )}
               </div>
 
               <div className="space-y-4">
@@ -885,10 +885,10 @@ function TesteDonut({ title, hot, cold, outros, fmt }: { title: string; hot: num
         <p className="py-8 text-center text-sm" style={{ color: T.muted }}>Sem dados no período.</p>
       ) : (
         <>
-          <div className="mx-auto aspect-square w-full max-w-[200px]">
+          <div className="mx-auto aspect-square w-full max-w-[240px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="56%" outerRadius="86%" strokeWidth={0} paddingAngle={2}>
+                <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="58%" outerRadius="90%" strokeWidth={0} paddingAngle={2}>
                   {chartData.map((d) => <Cell key={d.key} fill={DONUT_COLORS[d.key]} />)}
                 </Pie>
                 <Tooltip contentStyle={TT_STYLE} formatter={(v, n) => [fmt(Number(v)), n]} />
