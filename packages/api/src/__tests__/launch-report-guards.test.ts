@@ -10,6 +10,11 @@ import {
   type CodigoInvariante,
 } from "../services/launch-report-guards";
 import type { LaunchReportMetrics } from "../services/launch-report-engine";
+import type {
+  AdHighlights,
+  DestaquesPorAnuncio,
+  NomeVisao,
+} from "../services/launch-report-ads";
 
 /**
  * Story 41.3 — AC5 pede ao menos um caso positivo e um negativo por invariante.
@@ -95,6 +100,25 @@ function metrica(): LaunchReportMetrics {
     adsComSpendSuspeito: [],
     destaques: null,
   };
+}
+
+/** Uma visão de destaques com os campos mínimos que o A6 lê. */
+function visao(nome: NomeVisao, invVisao: number, somaSpendAjustado: number): AdHighlights {
+  return {
+    visao: nome,
+    invVisao,
+    fator: invVisao === 0 ? 0 : somaSpendAjustado / invVisao,
+    somaSpendAjustado,
+    motivoSkip: null,
+    maiorEscala: null,
+    maiorCtr: [], menorCpc: [], menorCpm: [], menorCpv: [],
+    maiorRoas: [], maiorPctA: [], maiorPctAB: [],
+    zerados: 0, totalAds: 0, escalaveis: 0, tabela: [],
+  };
+}
+
+function destaques(visoes: AdHighlights[]): DestaquesPorAnuncio {
+  return { visoes, pctVendasPagasSemAdName: 0, adsComSpendSuspeito: [] };
 }
 
 /** Status de um invariante no resultado. */
@@ -217,27 +241,44 @@ describe("A6 — reescala de spend dos ads", () => {
     const r = status(metrica(), "A6");
     expect(r.status).toBe("skipped");
     expect(r.status).not.toBe("passed");
-    expect(r.detalhe).toContain("41.4");
+    expect(r.detalhe).toContain("ad-level");
   });
 
   it("positivo quando as visões fecham (tol. R$ 1,00)", () => {
     const m = metrica();
-    m.destaques = {
-      visoes: [
-        { nome: "Quente", invVisao: 600, somaSpendAjustado: 600 },
-        { nome: "Frio", invVisao: 400, somaSpendAjustado: 400.5 },
-      ],
-    };
+    m.destaques = destaques([
+      visao("Quente", 600, 600),
+      visao("Frio", 400, 400.5), // dentro da tolerância de R$ 1,00
+    ]);
     expect(status(m, "A6").status).toBe("passed");
   });
 
   it("negativo: reescala usou o INV errado", () => {
     const m = metrica();
-    m.destaques = { visoes: [{ nome: "Quente", invVisao: 600, somaSpendAjustado: 1000 }] };
+    m.destaques = destaques([visao("Quente", 600, 1000)]);
     const r = status(m, "A6");
     expect(r.status).toBe("failed");
     expect(r.detalhe).toContain("Quente");
     expect(r.acao).toContain("INV_visao");
+  });
+
+  it("visão sem ad-level é pulada, sem derrubar as outras", () => {
+    const m = metrica();
+    m.destaques = destaques([
+      visao("Quente", 600, 600),
+      { ...visao("Frio", 400, 0), fator: 0, motivoSkip: "visão Frio sem ad-level no período" },
+    ]);
+    const r = status(m, "A6");
+    expect(r.status).toBe("passed");
+    expect(r.detalhe).toContain("1 sem ad-level");
+  });
+
+  it("todas as visões sem ad-level → skipped, nunca failed", () => {
+    const m = metrica();
+    m.destaques = destaques([
+      { ...visao("Quente", 600, 0), fator: 0, motivoSkip: "sem ad-level" },
+    ]);
+    expect(status(m, "A6").status).toBe("skipped");
   });
 });
 

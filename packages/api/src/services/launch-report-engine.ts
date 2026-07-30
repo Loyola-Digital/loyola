@@ -29,6 +29,13 @@ import {
   type Publico,
 } from "./launch-report-normalize.js";
 import { applyMetaTax } from "../utils/meta-tax.js";
+import {
+  aggregateAdHighlights,
+  type AdInput,
+  type CompradorInput,
+  type DestaquesPorAnuncio,
+  type FaixaPorAd,
+} from "./launch-report-ads.js";
 
 // ---------------------------------------------------------------------------
 // Entradas
@@ -68,6 +75,12 @@ export interface VendaInput {
   utmContent: string | null;
   /** Classificado a partir de `stageSalesSpreadsheets.orderBumpProducts`. */
   isOrderBump: boolean;
+  /**
+   * `ad_name` resolvido pelo loader (via cache de nomes da Meta a partir do
+   * `utm_content`, com fallback para o último segmento do `utm_term`).
+   * `null` = não resolvido; alimenta o alerta W6.
+   */
+  adName?: string | null;
 }
 
 export interface PesquisaInput {
@@ -101,6 +114,14 @@ export interface ComputeLaunchReportInput {
   linhasConvertidas?: number;
   /** `columnMapping.valorBruto` divergiu e o motor preferiu a coluna de preço. */
   mappingPrecoDivergente?: { colunaDoMapping: string; colunaUsada: string } | null;
+  /**
+   * Ad-level do período. Ausente ou vazio → `destaques` fica `null` e o
+   * invariante A6 permanece `skipped` (é o caso do PG02, cujo ad-level não
+   * existe no cache da Meta).
+   */
+  ads?: readonly AdInput[];
+  /** Qualificação por criativo, de `byAdId` de `computeSurveyForStage`. */
+  faixas?: readonly FaixaPorAd[];
 }
 
 // ---------------------------------------------------------------------------
@@ -242,8 +263,8 @@ export interface LaunchReportMetrics {
    * Story 41.4, e o alerta simplesmente não é avaliado enquanto for.
    */
   pctVendasPagasSemAdName?: number;
-  /** Preenchido pela 41.4. `null` mantém o invariante A6 como `skipped`. */
-  destaques: unknown | null;
+  /** Destaques por anúncio (41.4). `null` mantém o invariante A6 como `skipped`. */
+  destaques: DestaquesPorAnuncio | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -413,6 +434,8 @@ export function computeLaunchReportMetrics(
      * definidores dela.
      */
     veioDeCaptacao: boolean;
+    /** `ad_name` da compra que definiu a atribuição. Alimenta a 41.4 e o W6. */
+    adName: string | null;
   }
 
   const compradores = new Map<string, Comprador>();
@@ -432,6 +455,7 @@ export function computeLaunchReportMetrics(
           ultimoDia: v.dia,
           temCaptacao: true,
           veioDeCaptacao: true,
+          adName: v.adName ?? null,
         });
       }
       continue;
@@ -446,6 +470,7 @@ export function computeLaunchReportMetrics(
         ultimoDia: v.dia,
         temCaptacao: !v.isOrderBump,
         veioDeCaptacao: !v.isOrderBump,
+        adName: v.adName ?? null,
       });
       continue;
     }
@@ -464,6 +489,7 @@ export function computeLaunchReportMetrics(
       atual.ultimoDia = v.dia;
       atual.origem = origem;
       atual.publico = publico;
+      atual.adName = v.adName ?? null;
       if (ehCaptacao) atual.veioDeCaptacao = true;
     }
   }
@@ -691,6 +717,37 @@ export function computeLaunchReportMetrics(
     100,
   );
 
+  // === §7.2 — destaques por anúncio (41.4) ================================
+  // O faturamento de cada comprador é a soma de TODAS as linhas do e-mail
+  // (captação + order bumps). Montar assim, e não somando linha a linha por
+  // `ad_name`, é o que preserva os order bumps — eles não carregam o
+  // `utm_content` do criativo.
+  let destaques: DestaquesPorAnuncio | null = null;
+  if (input.ads && input.ads.length > 0) {
+    const fatPorEmail = new Map<string, number>();
+    for (const v of vendas) {
+      if (!v.email) continue;
+      fatPorEmail.set(v.email, (fatPorEmail.get(v.email) ?? 0) + v.valorBrl);
+    }
+
+    const paraDestaques: CompradorInput[] = unicosComEmail.map((c) => ({
+      email: c.email,
+      origem: c.origem,
+      publico: c.publico,
+      adName: c.adName,
+      faturamento: fatPorEmail.get(c.email) ?? 0,
+    }));
+
+    destaques = aggregateAdHighlights({
+      ads: input.ads,
+      compradores: paraDestaques,
+      faixas: input.faixas,
+      invQuente,
+      invFrio,
+      invTotal: invComImposto,
+    });
+  }
+
   const produtos = [...produtosAgg.values()]
     .map((p) => ({
       nome: p.nome,
@@ -770,8 +827,9 @@ export function computeLaunchReportMetrics(
     pendencias,
     precoDistintoPorProduto: input.precoDistintoPorProduto ?? {},
     linhasConvertidas: input.linhasConvertidas ?? 0,
-    adsComSpendSuspeito: [],
-    destaques: null,
+    adsComSpendSuspeito: destaques?.adsComSpendSuspeito ?? [],
+    pctVendasPagasSemAdName: destaques?.pctVendasPagasSemAdName,
+    destaques,
   };
 }
 

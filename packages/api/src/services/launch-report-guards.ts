@@ -334,30 +334,38 @@ function checarA5(m: LaunchReportMetrics): ResultadoInvariante {
  * invariante não rodou.
  */
 function checarA6(m: LaunchReportMetrics): ResultadoInvariante {
-  const d = m.destaques as
-    | { visoes?: { nome: string; invVisao: number; somaSpendAjustado: number }[] }
-    | null;
-  if (!d?.visoes?.length) {
+  const visoes = m.destaques?.visoes;
+  if (!visoes?.length) {
     return pulado(
       "A6",
-      "sem destaques por anúncio na saída — a reescala de spend chega na Story 41.4 " +
-        "(e o ad-level precisa existir no período)",
+      "sem destaques por anúncio na saída — o ad-level precisa existir no período " +
+        "(no DG ele começa em 2026-05-20, então o PG02 nunca terá)",
     );
   }
-  for (const v of d.visoes) {
+
+  // Visão sem ad-level tem fator 0 e não é avaliável — pular ela, não a todas.
+  const avaliaveis = visoes.filter((v) => v.motivoSkip === null);
+  if (avaliaveis.length === 0) {
+    return pulado("A6", visoes.map((v) => v.motivoSkip).filter(Boolean).join("; "));
+  }
+
+  for (const v of avaliaveis) {
     if (!dentro(v.somaSpendAjustado, v.invVisao, TOLERANCIAS.A6)) {
       return falhou(
         "A6",
-        `visão ${v.nome}: Σ spend ajustado (${brl(v.somaSpendAjustado)}) vs INV da visão ` +
+        `visão ${v.visao}: Σ spend ajustado (${brl(v.somaSpendAjustado)}) vs INV da visão ` +
           `(${brl(v.invVisao)}) — diferença de ${brl(Math.abs(v.somaSpendAjustado - v.invVisao))}`,
         "A reescala do §3.8 usou o INV errado. O fator é `INV_visao / Σ spend_bruto(ads da visão)` " +
           "— conferir se não está usando o INV total no lugar do da visão",
       );
     }
   }
+
+  const puladas = visoes.length - avaliaveis.length;
   return ok(
     "A6",
-    `${d.visoes.length} visão(ões) com Σ spend ajustado fechando com o INV (tol. R$ 1,00)`,
+    `${avaliaveis.length} visão(ões) com Σ spend ajustado fechando com o INV (tol. R$ 1,00)` +
+      (puladas > 0 ? `; ${puladas} sem ad-level` : ""),
   );
 }
 

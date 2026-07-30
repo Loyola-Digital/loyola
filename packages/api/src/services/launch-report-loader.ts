@@ -33,6 +33,8 @@ import { applyMetaTax } from "../utils/meta-tax.js";
 import { businessYesterday, saleDayKey } from "../utils/sale-date.js";
 import { loadReportConfig, type LaunchReportConfig } from "./launch-report-config.js";
 import { resolverColunaPreco, valorBrl, type LinhaVendaValor } from "./launch-report-sales-value.js";
+import { adNameDoTerm } from "./launch-report-normalize.js";
+import type { AdInput, FaixaPorAd } from "./launch-report-ads.js";
 import {
   computeLaunchReportMetrics,
   type CampanhaInput,
@@ -133,6 +135,26 @@ export async function loadLaunchReport(
     periodo,
   });
 
+  // 6b. Ad-level para os destaques da 41.4. Ausente = `destaques` fica null e o
+  //     A6 segue `skipped` — é o caso do PG02, cujo ad-level nunca foi gravado.
+  const ads = await carregarAds(db, {
+    projectId: config.projectId,
+    campanhaIds: campanhasDoStage.map((c) => c.id),
+    nomePorCampanha: new Map(campanhasDoStage.map((c) => [c.id, c.name])),
+    periodo,
+  });
+
+  // Resolve o `ad_name` de cada venda paga pelo `utm_content` (ad id), com
+  // fallback para o último segmento do `utm_term`. É o padrão consolidado na
+  // Story 18.65: agregar por NOME, não exigir coluna literal na planilha.
+  const nomePorAdId = new Map<string, string>();
+  for (const a of ads) {
+    if (a.adName) nomePorAdId.set(a.adId, a.adName);
+  }
+  for (const v of vendas) {
+    v.adName = nomePorAdId.get((v.utmContent ?? "").trim()) ?? adNameDoTerm(v.utmTerm);
+  }
+
   // 7. Pesquisa — blocos agregados + os e-mails que responderam (o denominador
   //    da taxa de resposta é comprador que respondeu, não resposta total).
   const survey = await computeSurveyForStage(db, params.stageId).catch(() => null);
@@ -154,6 +176,8 @@ export async function loadLaunchReport(
     precoDistintoPorProduto: resultadoValor.precoDistintoPorProduto,
     linhasConvertidas: resultadoValor.linhasConvertidas,
     mappingPrecoDivergente,
+    ads,
+    faixas: extrairFaixas(survey, nomePorAdId),
   });
 }
 
@@ -537,6 +561,133 @@ async function carregarMidia(
   }
 
   return [...acc.values()];
+}
+
+// ---------------------------------------------------------------------------
+// Ad-level (Story 41.4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Ad-level do período, agregado por `ad_id`.
+ *
+ * ⚠️ Cobertura é irregular por projeto: no DG a tabela só tem dados a partir de
+ * **2026-05-20**, então lançamentos anteriores (como o PG02, que rodou até
+ * 09/05) devolvem lista vazia. Isso não é erro — a Meta não retém ad-level
+ * indefinidamente e não há backfill. Sem ad-level, `destaques` fica `null` e o
+ * invariante A6 permanece `skipped`.
+ *
+ * Leitura direta da tabela, sem fan-out novo na Meta (R-E2).
+ */
+async function carregarAds(
+  db: Database,
+  args: {
+    projectId: string;
+    campanhaIds: readonly string[];
+    nomePorCampanha: Map<string, string>;
+    periodo: { inicio: string; fim: string };
+  },
+): Promise<AdInput[]> {
+  const { projectId, campanhaIds, nomePorCampanha, periodo } = args;
+  if (campanhaIds.length === 0) return [];
+
+  const linhas = await db
+    .select({
+      adId: metaAdInsightsDaily.adId,
+      adName: metaAdInsightsDaily.adName,
+      campaignId: metaAdInsightsDaily.campaignId,
+      campaignName: metaAdInsightsDaily.campaignName,
+      spend: metaAdInsightsDaily.spend,
+      impressions: metaAdInsightsDaily.impressions,
+      clicks: metaAdInsightsDaily.clicks,
+    })
+    .from(metaAdInsightsDaily)
+    .where(
+      and(
+        eq(metaAdInsightsDaily.projectId, projectId),
+        inArray(metaAdInsightsDaily.campaignId, [...campanhaIds]),
+        gte(metaAdInsightsDaily.dateStart, periodo.inicio),
+        lte(metaAdInsightsDaily.dateStart, periodo.fim),
+      ),
+    );
+
+  const acc = new Map<string, AdInput>();
+  for (const l of linhas) {
+    const e = acc.get(l.adId);
+    const spend = Number.parseFloat(l.spend ?? "0") || 0;
+    const impressoes = Number.parseFloat(l.impressions ?? "0") || 0;
+    const cliques = Number.parseFloat(l.clicks ?? "0") || 0;
+    if (e) {
+      e.spendBruto += spend;
+      e.impressoes += impressoes;
+      e.cliques += cliques;
+    } else {
+      acc.set(l.adId, {
+        adId: l.adId,
+        adName: l.adName,
+        campaignId: l.campaignId ?? "",
+        // O nome vinculado à etapa vence o desnormalizado na linha de insight:
+        // é ele que carrega a convenção de hot/cold que classifica a visão.
+        campaignName:
+          (l.campaignId ? nomePorCampanha.get(l.campaignId) : null) ?? l.campaignName ?? "",
+        spendBruto: spend,
+        impressoes,
+        cliques,
+      });
+    }
+  }
+  return [...acc.values()];
+}
+
+/**
+ * Faixa por criativo a partir do `byAdId` de `computeSurveyForStage`, agregada
+ * por **nome** do anúncio (coerente com o resto do agrupamento).
+ *
+ * ⚠️ `byAdId` traz **só ad ids reais**. Rótulos agregados de `utm_content`
+ * (`org`, `link_in_bio`) e macros não resolvidas (`{{ad.id}}`) ficam de fora e
+ * **não inflam o denominador** — é o que a AC5 da 41.4 exige.
+ */
+function extrairFaixas(survey: unknown, nomePorAdId: Map<string, string>): FaixaPorAd[] {
+  if (!survey || typeof survey !== "object") return [];
+  const byAdId = (survey as { byAdId?: Record<string, unknown> }).byAdId;
+  if (!byAdId) return [];
+
+  const porNome = new Map<string, { match: number; a: number; ab: number }>();
+
+  for (const [adId, dados] of Object.entries(byAdId)) {
+    const nome = nomePorAdId.get(adId);
+    if (!nome) continue; // ad id sem nome resolvido não entra
+
+    const faixa = (dados as { faixa?: { label: string; count: number }[] } | null)?.faixa;
+    if (!Array.isArray(faixa)) continue;
+
+    let total = 0;
+    let a = 0;
+    let ab = 0;
+    for (const item of faixa) {
+      const n = item?.count ?? 0;
+      total += n;
+      const label = (item?.label ?? "").trim().toUpperCase();
+      if (label.startsWith("A")) a += n;
+      if (label.startsWith("A") || label.startsWith("B")) ab += n;
+    }
+    if (total === 0) continue;
+
+    const e = porNome.get(nome);
+    if (e) {
+      e.match += total;
+      e.a += a;
+      e.ab += ab;
+    } else {
+      porNome.set(nome, { match: total, a, ab });
+    }
+  }
+
+  return [...porNome.entries()].map(([adName, v]) => ({
+    adName,
+    match: v.match,
+    pctA: v.match === 0 ? 0 : (v.a / v.match) * 100,
+    pctAB: v.match === 0 ? 0 : (v.ab / v.match) * 100,
+  }));
 }
 
 // ---------------------------------------------------------------------------
