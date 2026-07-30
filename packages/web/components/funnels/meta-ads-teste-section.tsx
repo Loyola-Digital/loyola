@@ -15,7 +15,7 @@
  * comparação — reestilizados.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode, type ComponentType } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode, type ReactElement, type ComponentType } from "react";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -30,6 +30,7 @@ import {
   ReferenceLine,
   PieChart,
   Pie,
+  LabelList,
 } from "recharts";
 import { FlaskConical, ImageIcon, Sparkles, LayoutTemplate, PieChart as PieChartIcon, ClipboardList, Activity, ArrowLeftRight, Banknote, Users, Table2 } from "lucide-react";
 import { useTrafficOverview, useTrafficCampaigns, useCampaignDailyInsightsBulk } from "@/lib/hooks/use-traffic-analytics";
@@ -130,6 +131,103 @@ function addDaysISO(iso: string, days: number): string {
   const dt = new Date(y, m - 1, d);
   dt.setDate(dt.getDate() + days);
   return dt.toISOString().slice(0, 10);
+}
+
+// ---- Tooltips ricos (estilo TESTE) + label de valor nos pontos ----
+const tnum = (v: unknown) => (typeof v === "number" ? v : Number(v) || 0);
+// render function de label de valor acima do ponto/barra (via <LabelList content>).
+// Só é montado quando !dense (poucos dias), pra não poluir.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function ptLabelFn(fmt: (v: number) => string): (props: any) => ReactElement {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (props: any) => {
+    const { x, y, value } = props ?? {};
+    const n = Number(value);
+    if (x == null || y == null || !n) return <g />;
+    return <text x={x} y={y - 8} textAnchor="middle" fontSize={9} fill={T.muted2} fontFamily="'JetBrains Mono',monospace">{fmt(n)}</text>;
+  };
+}
+
+function TipShell({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 10px", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, minWidth: 160 }}>
+      <div style={{ color: T.text, fontWeight: 700, marginBottom: 4 }}>{title}</div>
+      <div className="space-y-0.5">{children}</div>
+    </div>
+  );
+}
+function TipRow({ l, v, c }: { l: string; v: string; c?: string }) {
+  return <div className="flex justify-between gap-4" style={{ color: c ?? T.muted2 }}><span>{l}</span><span style={{ fontWeight: 600 }}>{v}</span></div>;
+}
+// leads/CPL/investimento por dia (hero) — usa o item de derived.chart.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function HeroTip({ active, payload, isPaid }: any) {
+  const d = payload?.[0]?.payload;
+  if (!active || !d) return null;
+  return (
+    <TipShell title={String(d.label)}>
+      <TipRow l={isPaid ? "Ingressos" : "Leads"} v={int(tnum(d.leads))} c={T.emerald} />
+      <TipRow l="CPL" v={d.cpl == null ? "—" : brl(tnum(d.cpl))} />
+      <TipRow l="Investimento" v={brl(tnum(d.spend))} c={T.gold} />
+    </TipShell>
+  );
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function CplCompTip({ active, payload }: any) {
+  const d = payload?.[0]?.payload;
+  if (!active || !d) return null;
+  return (
+    <TipShell title={String(d.label)}>
+      <TipRow l="Investimento" v={brl(tnum(d.spend))} c={T.gold} />
+      <TipRow l="CPL Pago" v={d.cplPago == null ? "—" : brl(tnum(d.cplPago))} c={T.gold} />
+      <TipRow l="CPL Geral" v={d.cplGeral == null ? "—" : brl(tnum(d.cplGeral))} c={T.emerald} />
+    </TipShell>
+  );
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function AcumTip({ active, payload, isPaid }: any) {
+  const d = payload?.[0]?.payload;
+  if (!active || !d) return null;
+  const t = isPaid ? "Ingressos" : "Leads";
+  return (
+    <TipShell title={String(d.label)}>
+      <TipRow l={`${t} total`} v={int(tnum(d.total))} c={T.gold} />
+      <TipRow l="Pago" v={int(tnum(d.pago))} c={T.emerald} />
+      <TipRow l="Org" v={int(tnum(d.org))} c={T.teal} />
+      <TipRow l="s/ Track" v={int(tnum(d.semTrack))} c={T.amber} />
+    </TipShell>
+  );
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function TrendTip({ active, payload }: any) {
+  const d = payload?.[0]?.payload;
+  if (!active || !d) return null;
+  const proj = Boolean(d.isProjection);
+  return (
+    <TipShell title={String(d.label)}>
+      <TipRow l={proj ? "🔮 Projetado" : "✓ Real"} v="" c={proj ? T.amber : T.emerald} />
+      <TipRow l="Acumulado" v={int(tnum(d.cumulative))} />
+      <TipRow l="Por dia" v={int(tnum(proj ? d.dailyProjected : d.dailyReal))} />
+      {proj && d.bandUpper != null ? <TipRow l="Banda" v={`±${int(tnum(d.bandUpper) - tnum(d.cumulative))}`} /> : null}
+      <TipRow l="Meta" v={int(tnum(d.meta))} c={T.red} />
+    </TipShell>
+  );
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function CostTip({ active, payload }: any) {
+  const d = payload?.[0]?.payload;
+  if (!active || !d) return null;
+  const proj = Boolean(d.isProjection);
+  return (
+    <TipShell title={String(d.label)}>
+      <TipRow l={proj ? "🔮 Projetado" : "✓ Real"} v="" c={proj ? T.amber : T.emerald} />
+      <TipRow l="Pagos/dia" v={int(tnum(proj ? d.dailyProjectedPaid : d.dailyRealPaid))} />
+      <TipRow l="Org/dia" v={int(tnum(proj ? d.dailyProjectedOrg : d.dailyRealOrg))} />
+      <TipRow l="Acumulado" v={int(tnum(d.cumulative))} />
+      {d.cplProjected != null ? <TipRow l="CPL proj." v={brl(tnum(d.cplProjected))} c={T.amber} /> : null}
+      <TipRow l="Meta" v={int(tnum(d.metaCumulative))} c={T.red} />
+    </TipShell>
+  );
 }
 
 // Estilo da linha de marco (acima do dia): virada pra frente (verde), retorno
@@ -354,6 +452,7 @@ export function MetaAdsTesteTab({
   }
 
   const consistencyPct = rows.length > 0 ? Math.round((derived.daysAboveAvg / rows.length) * 100) : 0;
+  const dense = rows.length > 31; // muitos dias → esconde labels de ponto pra não poluir
   const today = new Date().toISOString().slice(0, 10);
 
   // Clique direito num dia: marca / edita (vazio remove) a virada de lote.
@@ -506,10 +605,11 @@ export function MetaAdsTesteTab({
                         <CartesianGrid stroke={T.grid} vertical={false} />
                         <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
                         <YAxis tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={34} />
-                        <Tooltip contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, color: T.text }} formatter={(value, name) => [int(Number(value)), name === "meta" ? "Média" : isPaid ? "Ingressos" : "Leads"]} />
+                        <Tooltip content={<HeroTip isPaid={isPaid} />} />
                         <Bar dataKey="meta" fill="rgba(253,212,73,.13)" stroke="rgba(253,212,73,.4)" strokeWidth={1} radius={[3, 3, 0, 0]} />
                         <Bar dataKey="leads" radius={[3, 3, 0, 0]}>
                           {derived.chart.map((r) => <Cell key={r.date} fill={r.leads >= derived.avgLeads ? "rgba(16,185,129,.55)" : "rgba(239,68,68,.5)"} />)}
+                          {!dense && <LabelList content={ptLabelFn(int)} />}
                         </Bar>
                       </ComposedChart>
                     </ResponsiveContainer>
@@ -522,14 +622,16 @@ export function MetaAdsTesteTab({
                         <CartesianGrid stroke={T.grid} vertical={false} />
                         <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
                         <YAxis tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={40} />
-                        <Tooltip contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, color: T.text }} formatter={(value) => [brl(Number(value)), "CPL"]} />
+                        <Tooltip content={<HeroTip isPaid={isPaid} />} />
                         <Area dataKey="cpl" stroke="none" fill="rgba(245,158,11,.08)" connectNulls />
                         <Line dataKey="cpl" type="monotone" stroke={T.amber} strokeWidth={2} connectNulls
                           dot={(p: { cx?: number; cy?: number; payload?: { cpl?: number | null }; index?: number }) => {
                             const above = derived.avgCpl != null && p.payload?.cpl != null && p.payload.cpl > derived.avgCpl;
                             return <circle key={p.index} cx={p.cx} cy={p.cy} r={3} fill={above ? T.red : T.amber} stroke="none" />;
                           }}
-                        />
+                        >
+                          {!dense && <LabelList content={ptLabelFn(brl)} />}
+                        </Line>
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -551,8 +653,8 @@ export function MetaAdsTesteTab({
                       <CartesianGrid stroke={T.grid} vertical={false} />
                       <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
                       <YAxis tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={44} tickFormatter={(v) => `R$${Math.round(v)}`} />
-                      <Tooltip contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, color: T.text }} formatter={(value) => [brl(Number(value)), "Investimento"]} />
-                      <Area dataKey="spend" type="monotone" stroke={T.gold} strokeWidth={2} fill="url(#mat-spend)" />
+                      <Tooltip content={<HeroTip isPaid={isPaid} />} />
+                      <Area dataKey="spend" type="monotone" stroke={T.gold} strokeWidth={2} fill="url(#mat-spend)">{!dense && <LabelList content={ptLabelFn(brl)} />}</Area>
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
@@ -571,9 +673,9 @@ export function MetaAdsTesteTab({
                         <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
                         <YAxis yAxisId="cpl" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={40} />
                         <YAxis yAxisId="inv" orientation="right" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={44} tickFormatter={(v) => `R$${Math.round(v)}`} />
-                        <Tooltip contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, color: T.text }} formatter={(value) => brl(Number(value))} />
+                        <Tooltip content={<CplCompTip />} />
                         <Bar yAxisId="inv" dataKey="spend" name="Investimento" fill="rgba(245,158,11,.12)" radius={[3, 3, 0, 0]} />
-                        <Line yAxisId="cpl" dataKey="cplPago" name="CPL Pago" type="monotone" stroke={T.gold} strokeWidth={2} dot={false} connectNulls />
+                        <Line yAxisId="cpl" dataKey="cplPago" name="CPL Pago" type="monotone" stroke={T.gold} strokeWidth={2} dot={false} connectNulls>{!dense && <LabelList content={ptLabelFn(brl)} />}</Line>
                         <Line yAxisId="cpl" dataKey="cplGeral" name="CPL Geral" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} connectNulls />
                       </ComposedChart>
                     </ResponsiveContainer>
@@ -594,8 +696,8 @@ export function MetaAdsTesteTab({
                         <CartesianGrid stroke={T.grid} vertical={false} />
                         <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
                         <YAxis tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={38} />
-                        <Tooltip contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, color: T.text }} formatter={(value) => int(Number(value))} />
-                        <Area dataKey="total" name="Total" type="monotone" stroke={T.gold} strokeWidth={2} fill="url(#mat-cum)" />
+                        <Tooltip content={<AcumTip isPaid={isPaid} />} />
+                        <Area dataKey="total" name="Total" type="monotone" stroke={T.gold} strokeWidth={2} fill="url(#mat-cum)">{!dense && <LabelList content={ptLabelFn(int)} />}</Area>
                         <Line dataKey="pago" name="Pago" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} />
                         <Line dataKey="org" name="Org" type="monotone" stroke={T.teal} strokeWidth={2} dot={false} />
                         <Line dataKey="semTrack" name="s/ Track" type="monotone" stroke={T.amber} strokeWidth={2} dot={false} />
@@ -1065,6 +1167,7 @@ function TesteTrendChart({ rows, funnel, projectId, isPaid }: { rows: DailyRow[]
   );
   const pct = useMemo(() => calculateProjectionPercentage(data), [data]);
   const todayLabel = data.find((d) => d.isProjection)?.label ?? null;
+  const dense = data.length > 31;
   const noun = isPaid ? "Ingressos" : "Leads";
   const onData = (v: string) => { setDataFinal(v); if (v) update.mutate({ leadsGoalDataFinal: v }); };
   const onMeta = (v: number) => { setMetaTotal(v); update.mutate({ leadsGoalMeta: v }); };
@@ -1088,9 +1191,9 @@ function TesteTrendChart({ rows, funnel, projectId, isPaid }: { rows: DailyRow[]
           <CartesianGrid stroke={T.grid} vertical={false} />
           <XAxis dataKey="label" tick={MONO_TICK} stroke="transparent" />
           <YAxis tick={MONO_TICK} stroke="transparent" width={40} />
-          <Tooltip contentStyle={TT_STYLE} formatter={(v) => (v == null ? "—" : int(Number(v)))} />
-          <Bar dataKey="dailyReal" name="Real/dia" fill="rgba(255,255,255,.13)" radius={[2, 2, 0, 0]} />
-          <Bar dataKey="dailyProjected" name="Projeção/dia" fill="rgba(245,158,11,.32)" radius={[2, 2, 0, 0]} />
+          <Tooltip content={<TrendTip />} />
+          <Bar dataKey="dailyReal" name="Real/dia" fill="rgba(255,255,255,.13)" radius={[2, 2, 0, 0]}>{!dense && <LabelList content={ptLabelFn(int)} />}</Bar>
+          <Bar dataKey="dailyProjected" name="Projeção/dia" fill="rgba(245,158,11,.32)" radius={[2, 2, 0, 0]}>{!dense && <LabelList content={ptLabelFn(int)} />}</Bar>
           <Line dataKey="cumulativeReal" name="Acum. real" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} connectNulls />
           <Line dataKey="cumulativeProjected" name="Acum. projeção" type="monotone" stroke={T.gold} strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls />
           <Line dataKey="meta" name="Meta" type="monotone" stroke={T.red} strokeWidth={1.5} dot={false} />
@@ -1111,6 +1214,7 @@ function TesteCostChart({ rows, funnel, projectId, isPaid }: { rows: DailyRow[];
   }, [proj.gastoTotalSuggestion, proj.gastoTotalProjetado, proj]);
   const data = useMemo(() => proj.chartData.map((d) => ({ ...d, label: dmLabel(d.date) })), [proj.chartData]);
   const todayLabel = data.find((d) => d.isProjection)?.label ?? null;
+  const dense = data.length > 31;
   const noun = isPaid ? "Ingressos" : "Leads";
   const onData = (v: string) => { proj.setDataFinal(v); if (v) update.mutate({ leadsGoalDataFinal: v }); };
   const onMeta = (v: number) => { proj.setMetaTotal(v); update.mutate({ leadsGoalMeta: v }); };
@@ -1138,8 +1242,8 @@ function TesteCostChart({ rows, funnel, projectId, isPaid }: { rows: DailyRow[];
             <XAxis dataKey="label" tick={MONO_TICK} stroke="transparent" />
             <YAxis yAxisId="leads" tick={MONO_TICK} stroke="transparent" width={40} />
             <YAxis yAxisId="cpl" orientation="right" tick={MONO_TICK} stroke="transparent" width={44} tickFormatter={(v) => `R$${Math.round(v)}`} />
-            <Tooltip contentStyle={TT_STYLE} formatter={(v, n) => [v == null ? "—" : String(n).includes("CPL") ? brl(Number(v)) : int(Number(v)), n]} />
-            <Line yAxisId="leads" dataKey="cumulativeReal" name="Acum. real" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} connectNulls />
+            <Tooltip content={<CostTip />} />
+            <Line yAxisId="leads" dataKey="cumulativeReal" name="Acum. real" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} connectNulls>{!dense && <LabelList content={ptLabelFn(int)} />}</Line>
             <Line yAxisId="leads" dataKey="cumulativeProjected" name="Acum. projeção" type="monotone" stroke={T.gold} strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls />
             <Line yAxisId="leads" dataKey="metaCumulative" name="Meta" type="monotone" stroke={T.red} strokeWidth={1.5} dot={false} />
             <Line yAxisId="cpl" dataKey="cplProjected" name="CPL proj." type="monotone" stroke={T.amber} strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
