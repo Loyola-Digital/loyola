@@ -57,6 +57,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { SurveyQualificationSection } from "./survey-qualification-section";
+import { MetricTooltip } from "@/components/metrics/metric-tooltip";
+import {
+  buildFunnelSpendFormula,
+  buildFunnelLeadsFormula,
+  buildFunnelCplFormula,
+  buildFunnelConnectRateFormula,
+  buildFunnelCtrFormula,
+  buildFunnelCpcFormula,
+  buildFunnelCpmFormula,
+  buildFunnelSurveyFormula,
+} from "@/lib/formulas/funnels";
+import type { MetricFormula } from "@/lib/types/metric-formula";
 import { StageSalesSection } from "./stage-sales-section";
 import { GroupsDashboardSection } from "./groups-dashboard-section";
 import { CtrCpmChart, SaturationBadge, FunnelComparisonChart } from "./launch-dashboard";
@@ -135,6 +147,7 @@ interface Kpi {
   s?: string;
   g: string;
   fill: number;
+  formula?: MetricFormula;
 }
 
 export function MetaAdsTesteTab({
@@ -296,8 +309,9 @@ export function MetaAdsTesteTab({
       ? Math.min((survey.matchedResponses / metrics.totalLeads) * 100, 100)
       : null;
 
+  const f = { days, funnelType: "launch" as const, funnelName: funnel.name };
   const kpis: Kpi[] = [];
-  kpis.push({ l: "Investimento", v: brl(metrics.spend), s: `${rows.length} dias`, g: G.goldAmber, fill: 100 });
+  kpis.push({ l: "Investimento", v: brl(metrics.spend), s: `${rows.length} dias`, g: G.goldAmber, fill: 100, formula: buildFunnelSpendFormula(metrics.spend, f) });
   if (showFaturamento) {
     kpis.push({ l: "Faturamento Total", v: brl(faturamentoTotalCard), s: `único ${brl(faturamentoUnicoCard)}`, g: G.emeraldTeal, fill: 100 });
   }
@@ -307,6 +321,7 @@ export function MetaAdsTesteTab({
     s: metrics.hasLinkedSheet ? `pg ${int(metrics.leadsPagos)} · org ${int(metrics.leadsOrg)} · s/t ${int(metrics.leadsSemTrack)}` : "vincule planilha",
     g: G.goldOrange,
     fill: 100,
+    formula: metrics.hasLinkedSheet ? buildFunnelLeadsFormula(metrics.totalLeads, f, { pagos: metrics.leadsPagos, org: metrics.leadsOrg, semTrack: metrics.leadsSemTrack }) : undefined,
   });
   if (isPaid && metrics.totalVendas !== null) {
     kpis.push({
@@ -325,16 +340,17 @@ export function MetaAdsTesteTab({
     s: metrics.hasLinkedSheet ? `${isPaid ? "geral único" : "geral"} ${brl(cplGeralVal)}` : "vincule planilha",
     g: G.amberRed,
     fill: 60,
+    formula: metrics.hasLinkedSheet && !isPaid ? buildFunnelCplFormula(metrics.spend, metrics.leadsPagos, f, "pago") : undefined,
   });
-  kpis.push({ l: "Connect Rate", v: pct(metrics.connectRate), s: "LP views ÷ cliques", g: G.goldAmber, fill: Math.min(100, metrics.connectRate ?? 0) });
-  kpis.push({ l: "CTR (link)", v: pct(metrics.ctr), s: overview ? `${int(overview.totalLinkClicks)} cliques` : undefined, g: G.goldOrange, fill: Math.min(100, (metrics.ctr ?? 0) * 25) });
-  kpis.push({ l: "CPC (link)", v: brl(metrics.cpc), s: "spend ÷ cliques", g: G.amberOrange, fill: 55 });
-  kpis.push({ l: "CPM", v: brl(metrics.cpm), s: overview ? `${int(overview.totalImpressions)} impr.` : undefined, g: G.amberRed, fill: 45 });
+  kpis.push({ l: "Connect Rate", v: pct(metrics.connectRate), s: "LP views ÷ cliques", g: G.goldAmber, fill: Math.min(100, metrics.connectRate ?? 0), formula: buildFunnelConnectRateFormula(metrics.connectRate, f) });
+  kpis.push({ l: "CTR (link)", v: pct(metrics.ctr), s: overview ? `${int(overview.totalLinkClicks)} cliques` : undefined, g: G.goldOrange, fill: Math.min(100, (metrics.ctr ?? 0) * 25), formula: buildFunnelCtrFormula(metrics.ctr, f) });
+  kpis.push({ l: "CPC (link)", v: brl(metrics.cpc), s: "spend ÷ cliques", g: G.amberOrange, fill: 55, formula: buildFunnelCpcFormula(metrics.cpc, f) });
+  kpis.push({ l: "CPM", v: brl(metrics.cpm), s: overview ? `${int(overview.totalImpressions)} impr.` : undefined, g: G.amberRed, fill: 45, formula: buildFunnelCpmFormula(metrics.cpm, f) });
   if (isPaid && metrics.checkoutConversionRate !== null) {
     kpis.push({ l: "Taxa Checkout", v: pct(metrics.checkoutConversionRate), s: metrics.vendasPago != null && metrics.checkoutVisits ? `${int(metrics.vendasPago)} ÷ ${int(metrics.checkoutVisits)}` : undefined, g: G.emeraldTeal, fill: Math.min(100, metrics.checkoutConversionRate) });
   }
   if (surveyResponseRate !== null && survey) {
-    kpis.push({ l: "Pesquisa", v: `${surveyResponseRate.toFixed(1)}%`, s: `${int(survey.matchedResponses)} match · ${int(survey.unmatchedResponses)} s/ match`, g: G.goldAmber, fill: Math.min(100, surveyResponseRate) });
+    kpis.push({ l: "Pesquisa", v: `${surveyResponseRate.toFixed(1)}%`, s: `${int(survey.matchedResponses)} match · ${int(survey.unmatchedResponses)} s/ match`, g: G.goldAmber, fill: Math.min(100, surveyResponseRate), formula: buildFunnelSurveyFormula(survey.matchedResponses, metrics.totalLeads) });
   }
 
   const consistencyPct = rows.length > 0 ? Math.round((derived.daysAboveAvg / rows.length) * 100) : 0;
@@ -450,16 +466,18 @@ export function MetaAdsTesteTab({
               {/* KPIs */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
                 {kpis.map((k) => (
-                  <div key={k.l} className="mat-kpi">
-                    <div className="absolute inset-x-0 top-0 h-[2px] rounded-t-[12px]" style={{ background: k.g }} />
-                    <div className="mat-kpi-glow" style={{ background: k.g }} />
-                    <p className="text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>{k.l}</p>
-                    <p className="mt-1 font-extrabold" style={{ fontSize: "clamp(17px,2.1vw,26px)" }}>{k.v}</p>
-                    {k.s && <p className="mt-0.5 text-[10px]" style={{ color: T.muted2 }}>{k.s}</p>}
-                    <div className="mt-2 h-[3px] rounded-full" style={{ background: "rgba(255,255,255,.06)" }}>
-                      <div className="mat-bf" style={{ background: k.g, width: `${Math.max(4, Math.min(100, k.fill))}%` }} />
+                  <MetricTooltip key={k.l} label={k.l} value={k.v} formula={k.formula}>
+                    <div className={`mat-kpi ${k.formula ? "cursor-help" : ""}`}>
+                      <div className="absolute inset-x-0 top-0 h-[2px] rounded-t-[12px]" style={{ background: k.g }} />
+                      <div className="mat-kpi-glow" style={{ background: k.g }} />
+                      <p className="text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>{k.l}</p>
+                      <p className="mt-1 font-extrabold" style={{ fontSize: "clamp(17px,2.1vw,26px)", textDecoration: k.formula ? "underline dotted" : undefined, textUnderlineOffset: 4, textDecorationColor: "rgba(255,255,255,.25)" }}>{k.v}</p>
+                      {k.s && <p className="mt-0.5 text-[10px]" style={{ color: T.muted2 }}>{k.s}</p>}
+                      <div className="mt-2 h-[3px] rounded-full" style={{ background: "rgba(255,255,255,.06)" }}>
+                        <div className="mat-bf" style={{ background: k.g, width: `${Math.max(4, Math.min(100, k.fill))}%` }} />
+                      </div>
                     </div>
-                  </div>
+                  </MetricTooltip>
                 ))}
               </div>
 
