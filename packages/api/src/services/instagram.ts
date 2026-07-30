@@ -60,6 +60,11 @@ interface InstagramMedia {
   reach?: number | null;
   saved?: number | null;
   engagement_rate?: number | null;
+  // Qualidade de vídeo (reels): plays (v25 "views"), shares e tempo médio
+  // assistido (ig_reels_avg_watch_time, ms). null p/ imagem ou sem dado.
+  views?: number | null;
+  shares?: number | null;
+  avg_watch_time_ms?: number | null;
 }
 
 interface MediaListResponse {
@@ -448,6 +453,9 @@ export default fp(async function instagramServicePlugin(fastify) {
         const entries = await getMediaInsights(post.id, accountId, post.media_type);
         const reach = pickInsightValue(entries, "reach");
         const saved = pickInsightValue(entries, "saved");
+        const views = pickInsightValue(entries, "views");
+        const shares = pickInsightValue(entries, "shares");
+        const avgWatch = pickInsightValue(entries, "ig_reels_avg_watch_time");
         const likes = post.like_count ?? 0;
         const comments = post.comments_count ?? 0;
         let engagementRate: number | null = null;
@@ -459,6 +467,9 @@ export default fp(async function instagramServicePlugin(fastify) {
           reach,
           saved,
           engagement_rate: engagementRate,
+          views,
+          shares,
+          avg_watch_time_ms: avgWatch,
         } satisfies InstagramMedia;
       }),
     );
@@ -466,7 +477,7 @@ export default fp(async function instagramServicePlugin(fastify) {
     const data: InstagramMedia[] = enriched.map((r, i) =>
       r.status === "fulfilled"
         ? r.value
-        : { ...result.data[i], reach: null, saved: null, engagement_rate: null },
+        : { ...result.data[i], reach: null, saved: null, engagement_rate: null, views: null, shares: null, avg_watch_time_ms: null },
     );
 
     return {
@@ -728,13 +739,40 @@ export default fp(async function instagramServicePlugin(fastify) {
       token,
     );
 
-    // Filter to only VIDEO/REEL types
-    const reels = {
-      data: result.data.filter(
-        (m) => m.media_type === "VIDEO" || m.media_type === "REEL",
-      ),
-      nextCursor: result.paging?.cursors?.after,
-    };
+    // Só VIDEO/REEL — e enriquece cada um com insights (reach/views/shares/
+    // saves/tempo médio assistido) pra mostrar qualidade de vídeo no dashboard.
+    const onlyReels = result.data.filter((m) => m.media_type === "VIDEO" || m.media_type === "REEL");
+    const enriched = await Promise.allSettled(
+      onlyReels.map(async (post) => {
+        const entries = await getMediaInsights(post.id, accountId, post.media_type);
+        const reach = pickInsightValue(entries, "reach");
+        const saved = pickInsightValue(entries, "saved");
+        const views = pickInsightValue(entries, "views");
+        const shares = pickInsightValue(entries, "shares");
+        const avgWatch = pickInsightValue(entries, "ig_reels_avg_watch_time");
+        const likes = post.like_count ?? 0;
+        const comments = post.comments_count ?? 0;
+        let engagementRate: number | null = null;
+        if (reach != null && reach > 0) {
+          engagementRate = ((likes + comments + (saved ?? 0)) / reach) * 100;
+        }
+        return {
+          ...post,
+          reach,
+          saved,
+          engagement_rate: engagementRate,
+          views,
+          shares,
+          avg_watch_time_ms: avgWatch,
+        } satisfies InstagramMedia;
+      }),
+    );
+    const data: InstagramMedia[] = enriched.map((r, i) =>
+      r.status === "fulfilled"
+        ? r.value
+        : { ...onlyReels[i], reach: null, saved: null, engagement_rate: null, views: null, shares: null, avg_watch_time_ms: null },
+    );
+    const reels = { data, nextCursor: result.paging?.cursors?.after };
 
     await setCachedMetric(accountId, "reels", reels, CACHE_TTL.reels);
     return reels;

@@ -14,6 +14,9 @@ interface ReelsSectionProps {
   isRefreshing?: boolean;
 }
 
+const fmtN = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString("pt-BR"));
+const pctOf = (part: number, whole: number) => (whole ? `${((part / whole) * 100).toFixed(0)}%` : "—");
+
 export function ReelsSection({ data, isLoading, onRefresh, isRefreshing }: ReelsSectionProps) {
   return (
     <Card>
@@ -49,18 +52,33 @@ export function ReelsSection({ data, isLoading, onRefresh, isRefreshing }: Reels
                       </div>
                     )}
                   </div>
-                  <div className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
+                  <div className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
                     <p className="truncate">{reel.caption ?? "—"}</p>
-                    <div className="flex items-center gap-2">
-                      {reel.like_count !== undefined && (
-                        <span className="flex items-center gap-0.5">
-                          <Heart className="h-3 w-3" />{reel.like_count.toLocaleString("pt-BR")}
-                        </span>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      {reel.reach != null && <span title="Reach (alcance único)">👁 {fmtN(reel.reach)}</span>}
+                      {reel.views != null && <span title="Plays (reproduções)">▶ {fmtN(reel.views)}</span>}
+                      <span className="flex items-center gap-0.5" title="Curtidas"><Heart className="h-3 w-3" />{fmtN(reel.like_count)}</span>
+                      {reel.comments_count != null && <span title="Comentários">💬 {fmtN(reel.comments_count)}</span>}
+                      {reel.saved != null && <span title="Saves">🔖 {fmtN(reel.saved)}</span>}
+                      {reel.shares != null && (
+                        <span className="flex items-center gap-0.5" title="Compartilhamentos"><Share2 className="h-3 w-3" />{fmtN(reel.shares)}</span>
                       )}
-                      {reel.comments_count !== undefined && (
-                        <span className="flex items-center gap-0.5">
-                          <Share2 className="h-3 w-3" />{reel.comments_count}
-                        </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      {reel.avg_watch_time_ms != null && (
+                        <span title="Retenção — tempo médio assistido">⏱ {(reel.avg_watch_time_ms / 1000).toFixed(1)}s</span>
+                      )}
+                      {reel.views != null && reel.reach != null && reel.reach > 0 && (
+                        <span title="Replay = Plays ÷ Reach (>100% = revendo)">🔁 {pctOf(reel.views, reel.reach)}</span>
+                      )}
+                      {reel.saved != null && reel.reach != null && reel.reach > 0 && (
+                        <span title="Save rate = Saves ÷ Reach">🔖 {pctOf(reel.saved, reel.reach)}</span>
+                      )}
+                      {reel.shares != null && reel.reach != null && reel.reach > 0 && (
+                        <span title="Share rate = Shares ÷ Reach">↗ {pctOf(reel.shares, reel.reach)}</span>
+                      )}
+                      {reel.engagement_rate != null && (
+                        <span title="Engajamento (likes+comentários+saves ÷ reach)">⚡ {reel.engagement_rate.toFixed(1)}%</span>
                       )}
                     </div>
                     <p>{format(parseISO(reel.timestamp), "dd/MM/yy")}</p>

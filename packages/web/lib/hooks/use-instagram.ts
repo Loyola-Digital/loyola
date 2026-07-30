@@ -31,6 +31,10 @@ export interface InstagramMedia {
   saved?: number | null;
   /** (likes + comments + saves) / reach × 100, ou null se reach indisponível */
   engagement_rate?: number | null;
+  /** Qualidade de vídeo (reels): plays (views), shares e tempo médio assistido (ms). */
+  views?: number | null;
+  shares?: number | null;
+  avg_watch_time_ms?: number | null;
 }
 
 export interface InsightValue {
