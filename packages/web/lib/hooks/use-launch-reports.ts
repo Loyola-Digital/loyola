@@ -137,3 +137,33 @@ export function useDeleteLaunchReport(projectId: string, funnelId: string, stage
     },
   });
 }
+
+// Story 41.6 — Comparativo entre dois lançamentos (§9.2).
+
+export interface ComparativoLado {
+  funnelId: string;
+  stageId: string;
+  dataInicio?: string | null;
+  dataFim?: string | null;
+}
+
+/** O erro do comparativo carrega `lado` — o usuário precisa saber qual corrigir. */
+export interface ComparativoErro extends LaunchReportErro {
+  lado?: "a" | "b";
+}
+
+export function useGenerateComparativo(projectId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { a: ComparativoLado; b: ComparativoLado }) =>
+      apiClient<LaunchReportResult>(`/api/projects/${projectId}/reports/comparativo`, {
+        method: "POST",
+        body: JSON.stringify({ ...input, formato: "html" }),
+      }),
+    onSuccess: () => {
+      // O comparativo entra no histórico da etapa A.
+      qc.invalidateQueries({ queryKey: ["launch-reports"] });
+    },
+  });
+}

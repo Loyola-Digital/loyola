@@ -20,9 +20,14 @@
 import type { LaunchReportMetrics } from "./launch-report-engine.js";
 import type { AdHighlights, AdRow } from "./launch-report-ads.js";
 import type { LaunchReportGuardResult } from "./launch-report-guards.js";
+import type {
+  ComparativoResultado,
+  DeltaMetrica,
+  FormatoMetrica,
+} from "./launch-report-compare.js";
 import {
   moedaBr, inteiroBr, pctBr, numeroBr, dataBr, diaMesBr,
-  sinalRoas, escaparHtml, escaparJson, verboDirecao, pctComSinal, variacaoPct,
+  sinalRoas, escaparHtml, escaparJson, verboDirecao, pctComSinal, variacaoPct, seta,
 } from "./launch-report-narrative.js";
 
 export interface RenderResumaoInput {
@@ -447,6 +452,230 @@ ${orderBump}
 ${secaoAnuncios(m)}
 
 ${memorial(input)}
+</div>
+<script>${JS_SUBABAS}</script>`;
+}
+
+// ---------------------------------------------------------------------------
+// Story 41.6 — Comparativo (§5)
+// ---------------------------------------------------------------------------
+
+export interface RenderComparativoInput {
+  a: { metricas: LaunchReportMetrics; projeto: string; etapa: string };
+  b: { metricas: LaunchReportMetrics; projeto: string; etapa: string };
+  comparativo: ComparativoResultado;
+  guardasA: LaunchReportGuardResult;
+  guardasB: LaunchReportGuardResult;
+}
+
+/** Formata pelo metadado da métrica — cor e seta saem da mesma tabela. */
+function valorPorFormato(v: number, formato: FormatoMetrica): string {
+  switch (formato) {
+    case "moeda": return moedaBr(v);
+    case "pct": return pctBr(v, 2);
+    case "inteiro": return inteiroBr(v);
+    default: return numeroBr(v, 2);
+  }
+}
+
+/** Uma linha de comparação com valor A, valor B, delta, seta e cor. */
+function linhaDelta(d: DeltaMetrica): string {
+  const classe = d.avaliacao === "melhorou" ? "g-ok" : d.avaliacao === "piorou" ? "g-ruim" : "g-neutro";
+  const s = seta(d.a, d.b);
+  return `<tr><td>${escaparHtml(d.label)}</td>` +
+    `<td>${escaparHtml(valorPorFormato(d.a, d.formato))}</td>` +
+    `<td>${escaparHtml(valorPorFormato(d.b, d.formato))}</td>` +
+    `<td class="${classe}">${s} ${escaparHtml(pctComSinal(d.deltaPct))}</td></tr>`;
+}
+
+function tabelasPorSecao(deltas: DeltaMetrica[]): string {
+  const secoes = [...new Set(deltas.map((d) => d.secao))];
+  return secoes
+    .map((secao) => {
+      const linhas = deltas.filter((d) => d.secao === secao).map(linhaDelta).join("");
+      return `<h3>${escaparHtml(secao)}</h3><div class="tw"><table>
+<thead><tr><th>Métrica</th><th>A</th><th>B</th><th>Variação</th></tr></thead>
+<tbody>${linhas}</tbody></table></div>`;
+    })
+    .join("");
+}
+
+/** Leitura rápida — inteiramente derivada do dado (§6). */
+function leituraRapida(c: ComparativoResultado): string {
+  const { decomposicao: d } = c;
+  if (!d.valida) {
+    return `<div class="warn">${escaparHtml(
+      `A leitura comparativa depende da decomposição, que não pôde ser calculada. ${d.motivoInvalida ?? ""}`,
+    )}</div>`;
+  }
+
+  // Ordena por peso: o que mais explica o movimento vem primeiro.
+  const porPeso = [...d.fatores].sort((x, y) => Math.abs(y.peso) - Math.abs(x.peso));
+  const principal = porPeso[0]!;
+  const ajudaram = d.fatores.filter((f) => f.direcao === "ajudou");
+  const puxaram = d.fatores.filter((f) => f.direcao === "puxou pra baixo");
+
+  const verbo = verboDirecao(d.roasA, d.roasB);
+  const listar = (fs: typeof d.fatores) =>
+    fs.map((f) => `${f.label} (${pctComSinal(f.efeito)})`).join(", ");
+
+  const frases: string[] = [
+    `O ROAS pago ${verbo} de ${numeroBr(d.roasA, 4)} para ${numeroBr(d.roasB, 4)} ` +
+    `(${pctComSinal((d.roasB / d.roasA - 1) * 100)}).`,
+    `O fator de maior peso foi ${principal.label}, que ${principal.direcao} ` +
+    `(peso ${pctComSinal(principal.peso, 0)}).`,
+  ];
+  if (puxaram.length > 0) frases.push(`Puxaram para baixo: ${listar(puxaram)}.`);
+  if (ajudaram.length > 0) frases.push(`Ajudaram: ${listar(ajudaram)}.`);
+
+  return `<div class="ins">${escaparHtml(frases.join(" "))}</div>`;
+}
+
+function tabelaDecomposicao(c: ComparativoResultado): string {
+  const d = c.decomposicao;
+  if (!d.valida) {
+    return `<div class="warn">${escaparHtml(
+      `Decomposição não exibida. ${d.motivoInvalida ?? ""}`,
+    )}</div>`;
+  }
+  // A direção tem COLUNA PRÓPRIA (§5) — não se deduz da cor.
+  const linhas = d.fatores
+    .map((f) => {
+      const classe = f.direcao === "ajudou" ? "g-ok" : f.direcao === "puxou pra baixo" ? "g-ruim" : "g-neutro";
+      return `<tr><td>${escaparHtml(f.label)}</td><td>${numeroBr(f.ratio, 3)}</td>` +
+        `<td>${escaparHtml(pctComSinal(f.efeito))}</td>` +
+        `<td>${escaparHtml(pctComSinal(f.peso, 0))}</td>` +
+        `<td class="${classe}">${escaparHtml(f.direcao)}</td></tr>`;
+    })
+    .join("");
+
+  return `<div class="tw"><table>
+<thead><tr><th>Fator</th><th>Ratio</th><th>Efeito</th><th>Peso</th><th>Direção</th></tr></thead>
+<tbody>${linhas}</tbody>
+<tfoot><tr><td>Produto dos fatores</td><td>${numeroBr(d.produto, 4)}</td><td colspan="3">
+${escaparHtml(
+    `${numeroBr(d.roasA, 4)} × ${numeroBr(d.produto, 4)} = ${numeroBr(d.roasReconstruido, 4)} ` +
+    `= ROAS pago de B`)}</td></tr></tfoot></table></div>
+<div class="note">${escaparHtml(
+    "Peso negativo significa que o fator ajudou — o sinal é direção relativa ao movimento total, " +
+    "não magnitude.")}</div>`;
+}
+
+function tabelaCenarios(c: ComparativoResultado): string {
+  const cols = c.cenarios
+    .map((cen) => `<th>${escaparHtml(cen.titulo)}</th>`)
+    .join("");
+  const linha = (label: string, fmt: (x: (typeof c.cenarios)[number]) => string) =>
+    `<tr><td>${escaparHtml(label)}</td>` +
+    c.cenarios.map((cen) => `<td>${escaparHtml(fmt(cen))}</td>`).join("") +
+    `</tr>`;
+
+  return `<div class="tw"><table>
+<thead><tr><th>Métrica</th>${cols}</tr></thead><tbody>
+${linha("Impressões", (x) => inteiroBr(x.impressoes))}
+${linha("Cliques", (x) => inteiroBr(x.cliques))}
+${linha("Vendas", (x) => inteiroBr(x.vendas))}
+${linha("CPV", (x) => moedaBr(x.cpv))}
+${linha("Faturamento pago", (x) => moedaBr(x.faturamentoPago))}
+${linha("Faturamento total", (x) => moedaBr(x.faturamentoTotal))}
+${linha("ROAS pago", (x) => numeroBr(x.roasPago, 4))}
+${linha("ROAS total", (x) => numeroBr(x.roasTotal, 4))}
+</tbody></table></div>
+<div class="proj">${escaparHtml(
+    `Se B igualasse o ticket de A, o ROAS pago iria para ${numeroBr(c.recuperacoes.seIgualarTicket, 4)}. ` +
+    `Igualando ticket e CPM, ${numeroBr(c.recuperacoes.seIgualarAmbos, 4)}.`)}</div>`;
+}
+
+/** Produtos dos dois lançamentos, lado a lado (§5). */
+function produtosLadoALado(input: RenderComparativoInput): string {
+  const coluna = (m: LaunchReportMetrics, titulo: string) => {
+    const linhas = m.produtos
+      .map((p) => {
+        const badge = p.categoria === "order_bump"
+          ? `<span class="badge ob">OB</span>`
+          : `<span class="badge cap">Cap</span>`;
+        return `<tr><td>${escaparHtml(p.nome)}</td><td>${badge}</td>` +
+          `<td>${inteiroBr(p.vendas)}</td><td>${moedaBr(p.faturamento)}</td></tr>`;
+      })
+      .join("");
+    return `<div class="qb"><div class="kl">${escaparHtml(titulo)}</div>
+<div class="tw"><table><thead><tr><th>Produto</th><th></th><th>Vendas</th><th>Faturamento</th>
+</tr></thead><tbody>${linhas}</tbody></table></div></div>`;
+  };
+  return `<div class="qg">
+${coluna(input.a.metricas, `A — ${input.a.projeto} ${input.a.etapa}`)}
+${coluna(input.b.metricas, `B — ${input.b.projeto} ${input.b.etapa}`)}
+</div>`;
+}
+
+export function renderComparativo(input: RenderComparativoInput): string {
+  const { a, b, comparativo } = input;
+  const ma = a.metricas;
+  const mb = b.metricas;
+
+  const titulo =
+    `Comparativo ${a.projeto} ${a.etapa} × ${b.projeto} ${b.etapa}`;
+  const periodos =
+    `A: ${dataBr(ma.periodo.inicio)} a ${dataBr(ma.periodo.fim)} (${inteiroBr(ma.periodo.dias)} dias) · ` +
+    `B: ${dataBr(mb.periodo.inicio)} a ${dataBr(mb.periodo.fim)} (${inteiroBr(mb.periodo.dias)} dias)`;
+
+  // 8 KPIs pareados `A → B` com delta.
+  const chavesKpi = [
+    "investimento", "ingressosUnicos", "faturamentoTotal", "roasTotal",
+    "roasPago", "cpvPago", "ticketPago", "ctr",
+  ];
+  const porChave = new Map(comparativo.deltas.map((d) => [d.chave, d]));
+  const kpis = chavesKpi
+    .map((c) => {
+      const d = porChave.get(c);
+      if (!d) return "";
+      const classe = d.avaliacao === "melhorou" ? "g-ok" : d.avaliacao === "piorou" ? "g-ruim" : "g-neutro";
+      return `<div class="k"><div class="kl">${escaparHtml(d.label)}</div>
+<div class="kv">${escaparHtml(valorPorFormato(d.a, d.formato))} → ${escaparHtml(valorPorFormato(d.b, d.formato))}</div>
+<div class="km ${classe}">${seta(d.a, d.b)} ${escaparHtml(pctComSinal(d.deltaPct))}</div></div>`;
+    })
+    .join("");
+
+  const alertas = [
+    ...input.guardasA.alertas.map((x) => ({ ...x, lado: "A" })),
+    ...input.guardasB.alertas.map((x) => ({ ...x, lado: "B" })),
+  ];
+  const banner = alertas.length === 0
+    ? `<div class="ok">Nenhuma sinalização de qualidade de dado nos dois lançamentos.</div>`
+    : `<div class="warn"><strong>${inteiroBr(alertas.length)} ${
+        alertas.length === 1 ? "sinalização" : "sinalizações"}</strong><ul style="margin:6px 0 0;padding-left:18px">${
+        alertas.map((x) => `<li><strong>${escaparHtml(x.lado)} · ${escaparHtml(x.codigo)}</strong> — ${escaparHtml(x.mensagem)}</li>`).join("")
+      }</ul></div>`;
+
+  return `<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escaparHtml(titulo)}</title>
+<style>${CSS_RELATORIO}</style>
+<div class="wrap">
+<h1>${escaparHtml(titulo)}</h1>
+<div class="sub">${escaparHtml(periodos)}</div>
+<div class="note">${escaparHtml(
+    "Os valores são absolutos, não normalizados por duração — é comparação de lançamentos, " +
+    "não de taxa diária. As durações estão no cabeçalho.")}</div>
+
+${banner}
+
+<h2>Visão geral</h2>
+<div class="kg">${kpis}</div>
+
+<h2>Leitura rápida</h2>
+${leituraRapida(comparativo)}
+
+<h2>Classificação de produtos</h2>
+${produtosLadoALado(input)}
+
+<h2>Comparação por seção</h2>
+${tabelasPorSecao(comparativo.deltas)}
+
+<h2>Cenários hipotéticos</h2>
+${tabelaCenarios(comparativo)}
+
+<h2>Decomposição do ROAS pago</h2>
+${tabelaDecomposicao(comparativo)}
 </div>
 <script>${JS_SUBABAS}</script>`;
 }

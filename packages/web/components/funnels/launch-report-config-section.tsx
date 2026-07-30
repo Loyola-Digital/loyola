@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { useStageSalesSpreadsheets } from "@/lib/hooks/use-stage-sales-spreadsheets";
 import { LaunchReportButton } from "@/components/funnels/launch-report-button";
+import { LaunchComparativoButton } from "@/components/funnels/launch-comparativo-button";
 import {
   useLaunchReportConfig,
   useLaunchReportSurveyQuestions,
@@ -489,6 +490,12 @@ export function LaunchReportConfigSection({
           também o padrão que o perpétuo (41.9) já segue. */}
       <div className="border-t border-border/60 pt-6">
         <LaunchReportButton projectId={projectId} funnelId={funnelId} stageId={stageId} />
+      </div>
+
+      {/* Story 41.6 — o Comparativo depende do Resumão (mesmo motor, mesmas
+          guardas), então vem depois dele na mesma aba. */}
+      <div className="border-t border-border/60 pt-6">
+        <LaunchComparativoButton projectId={projectId} funnelId={funnelId} stageId={stageId} />
       </div>
     </div>
   );

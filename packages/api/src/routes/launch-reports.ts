@@ -38,7 +38,10 @@ import {
   ConferenciaExternaError,
   InvarianteVioladoError,
 } from "../services/launch-report-guards.js";
-import { renderResumao } from "../services/launch-report-render.js";
+import { renderResumao, renderComparativo } from "../services/launch-report-render.js";
+import { compararLancamentos } from "../services/launch-report-compare.js";
+import type { LaunchReportMetrics } from "../services/launch-report-engine.js";
+import type { LaunchReportGuardResult } from "../services/launch-report-guards.js";
 
 /** Mesmo teto de `sprint_reports` (R-E4 do epic). */
 const MAX_HTML_BYTES = 5 * 1024 * 1024;
@@ -266,5 +269,172 @@ export default fp(async function launchReportsRoutes(fastify) {
       .returning({ id: launchReports.id });
     if (deleted.length === 0) return reply.code(404).send({ error: "Relatório não encontrado" });
     return { ok: true };
+  });
+});
+
+/**
+ * Story 41.6 — POST /api/projects/:projectId/reports/comparativo (§9.2).
+ *
+ * Plugin separado porque a rota é **por projeto**, não por etapa: os dois lados
+ * podem estar em funis diferentes.
+ *
+ * Regra explícita da spec: violação em **qualquer** lado **aborta os dois**. Um
+ * comparativo com um lado inconsistente é pior que nenhum — parece confiável.
+ */
+export const comparativoRoutes = fp(async function comparativoRoutes(fastify) {
+  const ladoSchema = z.object({
+    funnelId: z.string().uuid(),
+    stageId: z.string().uuid(),
+    dataInicio: isoDate.nullable().optional(),
+    dataFim: isoDate.nullable().optional(),
+  });
+  const compBody = z.object({
+    a: ladoSchema,
+    b: ladoSchema,
+    formato: z.enum(["html", "json"]).optional(),
+  });
+
+  async function accessTokenFor(accountRowId: string): Promise<string | null> {
+    const [acc] = await fastify.db
+      .select({
+        enc: metaAdsAccounts.accessTokenEncrypted,
+        iv: metaAdsAccounts.accessTokenIv,
+      })
+      .from(metaAdsAccounts)
+      .where(eq(metaAdsAccounts.id, accountRowId))
+      .limit(1);
+    if (!acc) return null;
+    try {
+      return decryptAccountToken(acc.enc, acc.iv);
+    } catch {
+      return null;
+    }
+  }
+
+  fastify.post("/api/projects/:projectId/reports/comparativo", async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const params = z.object({ projectId: z.string().uuid() }).safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const body = compBody.safeParse(request.body ?? {});
+    if (!body.success) {
+      return reply.code(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+    }
+
+    async function resolveLado(lado: z.infer<typeof ladoSchema>) {
+      const [row] = await fastify.db
+        .select({
+          stageName: funnelStages.name,
+          projectName: projects.name,
+        })
+        .from(funnelStages)
+        .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+        .innerJoin(projects, eq(projects.id, funnels.projectId))
+        .where(
+          and(eq(funnelStages.id, lado.stageId), eq(funnelStages.funnelId, lado.funnelId)),
+        )
+        .limit(1);
+      return row ?? null;
+    }
+
+    const infoA = await resolveLado(body.data.a);
+    const infoB = await resolveLado(body.data.b);
+    if (!infoA) return reply.code(404).send({ error: "Etapa do lado A não encontrada", lado: "a" });
+    if (!infoB) return reply.code(404).send({ error: "Etapa do lado B não encontrada", lado: "b" });
+
+    // Gate + carga dos DOIS lados. O 422 identifica qual lado falhou.
+    const carregado: LaunchReportMetrics[] = [];
+    for (const [lado, cfg] of [["a", body.data.a], ["b", body.data.b]] as const) {
+      try {
+        carregado.push(
+          await loadLaunchReport(fastify.db, accessTokenFor, {
+            stageId: cfg.stageId,
+            dataInicio: cfg.dataInicio ?? null,
+            dataFim: cfg.dataFim ?? null,
+          }),
+        );
+      } catch (err) {
+        if (err instanceof ReportScopeError) {
+          return reply.code(422).send({ ...err.toResponse(), lado });
+        }
+        if (err instanceof LaunchReportDataError) {
+          return reply.code(422).send({ ...err.toResponse(), lado });
+        }
+        throw err;
+      }
+    }
+    const [ma, mb] = carregado as [LaunchReportMetrics, LaunchReportMetrics];
+
+    // Guardas nos dois — violação em qualquer um aborta ambos (§9.2).
+    const guardas: LaunchReportGuardResult[] = [];
+    for (const [lado, m] of [["a", ma], ["b", mb]] as const) {
+      try {
+        guardas.push(assertLaunchReport(m));
+      } catch (err) {
+        if (err instanceof InvarianteVioladoError) {
+          return reply.code(422).send({ ...err.toResponse(), lado });
+        }
+        if (err instanceof ConferenciaExternaError) {
+          return reply.code(422).send({ ...err.toResponse(), lado });
+        }
+        throw err;
+      }
+    }
+    const [ga, gb] = guardas as [LaunchReportGuardResult, LaunchReportGuardResult];
+
+    const comparativo = compararLancamentos(ma, mb);
+    const html = renderComparativo({
+      a: { metricas: ma, projeto: infoA.projectName, etapa: infoA.stageName },
+      b: { metricas: mb, projeto: infoB.projectName, etapa: infoB.stageName },
+      comparativo,
+      guardasA: ga,
+      guardasB: gb,
+    });
+    if (Buffer.byteLength(html, "utf8") > MAX_HTML_BYTES) {
+      return reply.code(413).send({ error: "HTML acima de 5MB", code: "PAYLOAD_TOO_LARGE" });
+    }
+
+    const title =
+      `Comparativo ${infoA.projectName} ${infoA.stageName} × ${infoB.projectName} ${infoB.stageName}`;
+
+    // Persiste no MESMO histórico da etapa A, com kind = "comparativo".
+    const [saved] = await fastify.db
+      .insert(launchReports)
+      .values({
+        projectId: params.data.projectId,
+        funnelId: body.data.a.funnelId,
+        stageId: body.data.a.stageId,
+        kind: "comparativo",
+        title: title.slice(0, 255),
+        dataInicio: ma.periodo.inicio,
+        dataFim: ma.periodo.fim,
+        html,
+        // As duas referências vivem em `metricas` — é o que dispensa colunas b_*.
+        metricas: {
+          a: { ...body.data.a, periodo: ma.periodo, metricas: ma },
+          b: { ...body.data.b, periodo: mb.periodo, metricas: mb },
+          deltas: comparativo.deltas,
+          decomposicao: comparativo.decomposicao,
+          cenarios: comparativo.cenarios,
+          recuperacoes: comparativo.recuperacoes,
+        } as unknown as Record<string, unknown>,
+        alertas: [...ga.alertas, ...gb.alertas],
+        geradoPor: request.userId ?? null,
+      })
+      .returning({ id: launchReports.id, createdAt: launchReports.createdAt });
+
+    return {
+      id: saved!.id,
+      createdAt: saved!.createdAt,
+      ...(body.data.formato === "json" ? {} : { html }),
+      metricas: {
+        a: ma,
+        b: mb,
+        deltas: comparativo.deltas,
+        decomposicao: comparativo.decomposicao,
+        cenarios: comparativo.cenarios,
+        recuperacoes: comparativo.recuperacoes,
+      },
+      alertas: { a: ga.alertas, b: gb.alertas },
+    };
   });
 });
