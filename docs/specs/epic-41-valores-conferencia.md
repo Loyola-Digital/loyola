@@ -262,6 +262,51 @@ A7 passa (737 ≤ 767), mas a folga de 30 significa que 30 compradores pagos nã
 têm hot/cold no `utm_term`. É legítimo pelo invariante — vale olhar se vira
 volume relevante nos rankings da 41.4.
 
+## Cobertura de ad-level — decisivo para a Story 41.4 (2026-07-30)
+
+A 41.4 (destaques por anúncio) depende inteiramente de `meta_ad_insights_daily`.
+Levantamento da cobertura real:
+
+| Projeto | Linhas | Período disponível |
+|---|---|---|
+| BBE | 3.758 | 13/03 → 30/07 |
+| FZ & MFB | 3.753 | 13/03 → 30/07 |
+| **DG & CPDF** | 2.522 | **20/05** → 30/07 |
+| PP | 971 | 09/07 → 30/07 |
+
+### O PG02 não serve para validar a 41.4
+
+O ad-level do projeto DG começa em **20/05**; o PG02 rodou **17/04 → 09/05**.
+Zero linhas, e **não há backfill possível** — a Meta não retém ad-level
+indefinidamente. Consequência permanente para esse lançamento:
+
+- a reconciliação campaign × ad (§2.3b) é sempre pulada
+- o alerta **W1** nunca dispara
+- o invariante **A6** fica `skipped` para sempre
+
+### O PG04 serve perfeitamente
+
+| | |
+|---|---|
+| cobertura ad-level em 09/07–27/07 | **100,0%** — diferença R$ 0,00 em todos os 18 dias |
+| fator de reescala esperado | **1,0000** |
+| campanhas com ad-level | **33** de 46 vinculadas (o mesmo 33 da §10) |
+| ads distintos | 412 |
+| `ad_name` preenchido | 2.522 de 2.522 (148 nomes distintos) |
+
+Fator 1,0 confirma a decisão de escopo da 41.4 de **reescalar sempre**, não
+condicionalmente: com reescala condicional, o A6 passaria por sorte aqui.
+
+### ⚠️ Divergência de investimento no PG04
+
+O campaign-level soma **R$ 38.771,97** em 09/07–27/07; a §10 diz **R$ 38.040,25**
+— **+1,92%**, acima do limiar de bloqueio da conferência externa (0,5%) e muito
+acima do drift do PG02 (0,04%).
+
+**Não há spend em 09/07** nem no campaign-level nem no ad-level, embora a §10
+comece nesse dia. Conferir se o período real do PG04 é **10/07 → 27/07** antes de
+tratar a diferença como bug.
+
 ## Change Log
 
 | Data | Autor | Mudança |
