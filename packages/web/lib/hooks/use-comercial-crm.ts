@@ -42,9 +42,13 @@ export interface CrmColumn {
   isTerminal: boolean;
 }
 
+export type ComercialSource = "buyers" | "survey";
+
 export interface CrmBoard {
   configured: boolean;
   sourceStageIds: string[];
+  /** Fonte dos cards: quem comprou ou quem respondeu a pesquisa. */
+  comercialSource: ComercialSource;
   columns: CrmColumn[];
   cards: CrmCard[];
 }
@@ -84,10 +88,10 @@ export function useSaveCrmConfig(projectId: string, funnelId: string, stageId: s
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (sourceStageIds: string[]) =>
+    mutationFn: (cfg: { sourceStageIds: string[]; comercialSource: ComercialSource }) =>
       apiClient<{ ok: boolean }>(`${basePath(projectId, funnelId, stageId)}/config`, {
         method: "PUT",
-        body: JSON.stringify({ sourceStageIds }),
+        body: JSON.stringify(cfg),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: boardKey(projectId, funnelId, stageId) }),
   });
