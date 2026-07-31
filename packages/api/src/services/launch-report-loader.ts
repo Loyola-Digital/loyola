@@ -95,7 +95,11 @@ export async function loadLaunchReport(
 
   // 3. Vendas da planilha (sem recorte de período ainda — o §2.8 precisa da
   //    menor data de venda para derivar o início).
-  const { linhas: vendasBrutas, mappingPrecoDivergente } = await carregarVendas(db, params.stageId);
+  const { linhas: vendasBrutas, mappingPrecoDivergente } = await carregarVendas(
+    db,
+    params.stageId,
+    config.tipo,
+  );
 
   // 4. Período (§2.8)
   const periodo = await resolverPeriodo(db, {
@@ -212,12 +216,32 @@ function parseNumberBr(val: string | undefined): number {
 async function carregarVendas(
   db: Database,
   stageId: string,
+  tipo: string,
 ): Promise<{
   linhas: LinhaCrua[];
   mappingPrecoDivergente: { colunaDoMapping: string; colunaUsada: string } | null;
 }> {
   const { sheets } = await resolveSalesSheetsForStage(db, stageId);
   if (sheets.length === 0) {
+    // Etapa gratuita costuma não ter planilha de VENDAS por natureza — ela capta
+    // lead, não ingresso. E o Resumão inteiro é construído sobre venda
+    // (ingressos únicos, faturamento, ROAS, ticket, order bump), então aqui não
+    // é "falta conectar": é o relatório não se aplicar à etapa.
+    //
+    // O gate do §12 já sinaliza isso, mas ele é furável marcando `validado`
+    // manualmente — e quem marcou merece um erro que diga o porquê, não um
+    // "conecte a planilha" que mandaria procurar algo que não existe.
+    if (tipo === "gratuito") {
+      throw new LaunchReportDataError(
+        "esta é uma etapa de captação GRATUITA e não tem planilha de vendas — o Resumão " +
+          "é construído sobre venda (ingressos únicos, faturamento, ROAS, ticket e order " +
+          "bump), métricas que não existem numa captação sem cobrança",
+        "O Resumão foi validado apenas para captação PAGA (§12 da spec). Para a etapa " +
+          "gratuita, use o dashboard da etapa; se o relatório precisa cobrir o gratuito, " +
+          "isso é escopo novo — a spec marca §12.3 como pendente porque o Connect Rate " +
+          "ainda não tem fonte no dado",
+      );
+    }
     throw new LaunchReportDataError(
       "etapa sem planilha de vendas conectada",
       "Conectar a planilha de vendas da etapa antes de gerar o Resumão",

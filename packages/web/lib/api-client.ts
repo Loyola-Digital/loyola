@@ -23,16 +23,29 @@ export function createApiFetcher(getToken: () => Promise<string | null>) {
     if (!response.ok) {
       let message = `API error: ${response.status}`;
       let code: string | undefined;
+      let body: unknown;
       try {
-        const body = await response.json() as { error?: string; message?: string; code?: string };
-        message = body.error ?? body.message ?? message;
-        code = body.code;
+        body = await response.json();
+        const b = body as { error?: string; message?: string; code?: string; detalhe?: string };
+        // `detalhe` entra na lista porque as rotas de relatório (Epic 41) usam o
+        // formato do §9.1 (`{ erro, codigo, detalhe, acao }`), sem `error` nem
+        // `message` — sem isso a mensagem ficava só "API error: 422".
+        message = b.error ?? b.message ?? b.detalhe ?? message;
+        code = b.code;
       } catch {
         // non-JSON error body
       }
-      const err = new Error(message) as Error & { status: number; code?: string };
+      const err = new Error(message) as Error & {
+        status: number;
+        code?: string;
+        body?: unknown;
+      };
       err.status = response.status;
       err.code = code;
+      // O corpo inteiro fica acessível: erros estruturados (422 com `acao`, por
+      // exemplo) precisam chegar à tela, e antes disso eles eram descartados
+      // aqui — o consumidor via só a mensagem e caía no erro genérico.
+      err.body = body;
       throw err;
     }
 
