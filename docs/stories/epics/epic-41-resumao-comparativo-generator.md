@@ -67,10 +67,29 @@ Qualquer outra combinação (Gratuito/FZ, Perpétuo/BBE, `vendas-principal`, dow
 ## 🚧 Fora do escopo do epic
 
 - ~~Perpétuo~~ — **entrou** em 2026-07-28 via complemento §C (stories 41.7–41.9).
-- Gratuito (§12.3 — 🟡 PARCIAL; o `Connect Rate` não tem fonte no dado e precisa ser definido antes).
+- Gratuito (§12.3) — **segue fora do escopo por decisão de 2026-07-31**, mas o bloqueio conceitual foi resolvido: ver "Connect Rate" abaixo.
 - Etapas `vendas-principal` / downsell (§12.6 — a atribuição de origem pode vir de etapa anterior; regra indefinida).
 - Substituir a aba Sprint / `sprint_reports` (segue existindo para os relatórios de IA da gestora).
 - Reescrever a metodologia já implementada (imposto, únicos, hot/cold, Faixa).
+
+## 🔓 Connect Rate — definido em 2026-07-31
+
+A §12.3 deixava o Gratuito pendente porque o **Connect Rate não tinha fonte no
+dado**. O dono do produto definiu:
+
+```
+Connect Rate = Visualização da LP ÷ Link click     (ambos da Meta Ads)
+```
+
+**A fonte já existe no código** — `routes/stage-creative-performance.ts` tem
+`parseLandingPageViews(ad.actions)` e `parseLinkClicks(ad.actions)`, ambos
+lendo o `actions` do insight que já é buscado. Nenhuma chamada nova à Meta.
+
+⚠️ **Não implementado.** A decisão de 2026-07-31 foi terminar o escopo pago
+antes de abrir o gratuito. Isto fica registrado para quando a story existir — o
+que falta agora é só decidir o resto do catálogo do Gratuito (que métricas de
+venda são substituídas por quê, já que não há faturamento), não mais a fonte do
+Connect Rate.
 
 ## 📌 Riscos de epic
 
@@ -85,6 +104,7 @@ Qualquer outra combinação (Gratuito/FZ, Perpétuo/BBE, `vendas-principal`, dow
 
 | Data | Autor | Mudança |
 |------|-------|---------|
+| 2026-07-31 | @dev (Dex) | **Connect Rate definido** pelo dono do produto: `Visualização da LP ÷ Link click`, ambos da Meta Ads — a fonte já existe no código (`parseLandingPageViews` / `parseLinkClicks`). Destrava conceitualmente o §12.3, mas o Gratuito **segue fora do escopo por decisão**: terminar o pago primeiro. |
 | 2026-07-31 | @dev (Dex) | **41.2–41.6 implementadas** e conferidas contra a §10 (versionada em `docs/specs/epic-41-valores-conferencia.md`): faturamento do PG02 bate ao centavo, A9 fecha com diferença 0,000000, A6 fecha com 0,0000 no PG04 e a decomposição PG02→PG04 reproduz os quatro fatores da spec. O epic inteiro passa a **InReview**. Handoff: `epic-41-HANDOFF-2026-07-31.md`. Risco **R-E1 mitigado** — os números batem. Achado que afeta o epic: `meta_ad_insights_daily` do DG começa em 2026-05-20, então o PG02 nunca terá ad-level e o A6 fica `skipped` para ele em definitivo. |
 | 2026-07-28 | @sm (River) | **Complemento §C incorporado** (`docs/specs/epic-41-complemento-perpetuo.md`). Perpétuo saiu de "fora do escopo" e virou 3 stories (41.7–41.9), em trilha paralela à 41.2–41.6. **3 decisões do usuário:** (1) **taxas** — a spec fixa 83,01% de receita líquida, mas o código (29.7/29.8) já tem dois ramos: 83,01% com coluna de status na planilha (`reembolsoReal`), 79,01% sem ela, e Hotmart a 26%. Mantidos os dois ramos, com as taxas expostas na config; os 3 funis da §C.10 caem no ramo de 83,01% — conferido: 14.495,61 × 0,8301 − 4.209,17 = R$ 7.823,64 vs 7.823,63 da spec. (2) **formato** — relatório HTML persistido (contrato §C.8), não dashboard novo. (3) **fatiamento** — 3 stories. Riscos R-E5 (duplicação do Epic 29) e R-E6 (fuso horário) adicionados. |
 | 2026-07-27 | @sm (River) | Epic criado a partir da spec técnica. Decisão-chave: as 4 views do §1 mapeiam para serviços já existentes (survey-aggregation, lead-origin-sync, stage-sales-data, public-meta/sales-rows) — o epic entrega a camada de relatório, não a metodologia. Decisões de UI confirmadas com o usuário: botões **na etapa do funil**, HTML **persistido** (padrão `sprint_reports`), entrega em **6 stories fatiadas**. |
