@@ -7,7 +7,7 @@
 **Complemento:** `docs/specs/epic-41-complemento-perpetuo.md` (2026-07-28) — spec do **botão 3** (Perpétuo), que resolve a pendência da §12.5 e adiciona as stories 41.7–41.9.
 
 **Criado:** 2026-07-27 (@sm — River)
-**Status:** Draft (9 stories — 41.1 InReview)
+**Status:** InReview (9 stories implementadas — aguardando QA gate e push)
 
 ---
 
@@ -85,5 +85,6 @@ Qualquer outra combinação (Gratuito/FZ, Perpétuo/BBE, `vendas-principal`, dow
 
 | Data | Autor | Mudança |
 |------|-------|---------|
+| 2026-07-31 | @dev (Dex) | **41.2–41.6 implementadas** e conferidas contra a §10 (versionada em `docs/specs/epic-41-valores-conferencia.md`): faturamento do PG02 bate ao centavo, A9 fecha com diferença 0,000000, A6 fecha com 0,0000 no PG04 e a decomposição PG02→PG04 reproduz os quatro fatores da spec. O epic inteiro passa a **InReview**. Handoff: `epic-41-HANDOFF-2026-07-31.md`. Risco **R-E1 mitigado** — os números batem. Achado que afeta o epic: `meta_ad_insights_daily` do DG começa em 2026-05-20, então o PG02 nunca terá ad-level e o A6 fica `skipped` para ele em definitivo. |
 | 2026-07-28 | @sm (River) | **Complemento §C incorporado** (`docs/specs/epic-41-complemento-perpetuo.md`). Perpétuo saiu de "fora do escopo" e virou 3 stories (41.7–41.9), em trilha paralela à 41.2–41.6. **3 decisões do usuário:** (1) **taxas** — a spec fixa 83,01% de receita líquida, mas o código (29.7/29.8) já tem dois ramos: 83,01% com coluna de status na planilha (`reembolsoReal`), 79,01% sem ela, e Hotmart a 26%. Mantidos os dois ramos, com as taxas expostas na config; os 3 funis da §C.10 caem no ramo de 83,01% — conferido: 14.495,61 × 0,8301 − 4.209,17 = R$ 7.823,64 vs 7.823,63 da spec. (2) **formato** — relatório HTML persistido (contrato §C.8), não dashboard novo. (3) **fatiamento** — 3 stories. Riscos R-E5 (duplicação do Epic 29) e R-E6 (fuso horário) adicionados. |
 | 2026-07-27 | @sm (River) | Epic criado a partir da spec técnica. Decisão-chave: as 4 views do §1 mapeiam para serviços já existentes (survey-aggregation, lead-origin-sync, stage-sales-data, public-meta/sales-rows) — o epic entrega a camada de relatório, não a metodologia. Decisões de UI confirmadas com o usuário: botões **na etapa do funil**, HTML **persistido** (padrão `sprint_reports`), entrega em **6 stories fatiadas**. |
