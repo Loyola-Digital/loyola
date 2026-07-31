@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail, BarChart3, Star } from "lucide-react";
+import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail, BarChart3, Star, FlaskConical } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -161,10 +161,6 @@ export default function StagePage() {
 
   const metaCount = stage.campaigns.length;
   const ytCount = stage.googleAdsCampaigns.length;
-  // Onde há o dashboard "TESTE" (etapa paga de lançamento) ele VIRA o Meta Ads
-  // principal e o Meta Ads antigo fica desativado (código mantido, só não
-  // renderiza). Nas demais etapas, o Meta Ads antigo continua sendo usado.
-  const usarTeste = funnelType === "launch" && (stage.stageType as string) === "paid";
 
   async function handleSaveName() {
     if (!stageName.trim() || stageName.trim() === stage!.name) return;
@@ -425,25 +421,19 @@ export default function StagePage() {
       />
 
       {/* Tabs */}
-      <Tabs defaultValue={usarTeste ? "meta-ads-teste" : "meta-ads"}>
+      <Tabs defaultValue="meta-ads">
         <TabsList>
-          {/* Meta Ads antigo — desativado onde o TESTE assume (paga de lançamento). */}
-          {!usarTeste && (
-            <TabsTrigger value="meta-ads" className="gap-1.5">
-              <TrendingUp className="h-3.5 w-3.5" />
-              Meta Ads
-              {metaCount > 0 && (
-                <span className="ml-1 text-[10px] bg-muted rounded-full px-1.5 py-0.5">{metaCount}</span>
-              )}
-            </TabsTrigger>
-          )}
-          {usarTeste && (
+          <TabsTrigger value="meta-ads" className="gap-1.5">
+            <TrendingUp className="h-3.5 w-3.5" />
+            Meta Ads
+            {metaCount > 0 && (
+              <span className="ml-1 text-[10px] bg-muted rounded-full px-1.5 py-0.5">{metaCount}</span>
+            )}
+          </TabsTrigger>
+          {funnelType === "launch" && (stage.stageType as string) === "paid" && (
             <TabsTrigger value="meta-ads-teste" className="gap-1.5">
-              <TrendingUp className="h-3.5 w-3.5" />
-              Meta Ads
-              {metaCount > 0 && (
-                <span className="ml-1 text-[10px] bg-muted rounded-full px-1.5 py-0.5">{metaCount}</span>
-              )}
+              <FlaskConical className="h-3.5 w-3.5 text-cyan-400" />
+              Meta Ads TESTE
             </TabsTrigger>
           )}
           <TabsTrigger value="youtube-ads" className="gap-1.5">
@@ -487,40 +477,37 @@ export default function StagePage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Meta Ads antigo — desativado onde o TESTE assume (código mantido). */}
-        {!usarTeste && (
-          <TabsContent value="meta-ads" className="mt-6">
-            {funnelType === "launch" ? (
-              <LaunchDashboard
-                funnel={stageAsFunnel}
-                projectId={params.id}
-                stageId={params.stageId}
-                stageType={stage.stageType}
-                onCampaignsChange={(campaigns) => {
-                  updateStage.mutate(
-                    { campaigns },
-                    { onSuccess: () => toast.success("Campanhas atualizadas") }
-                  );
-                }}
-              />
-            ) : (
-              <PerpetualDashboard
-                funnel={stageAsFunnel}
-                projectId={params.id}
-                stageId={params.stageId}
-                stageType={stage.stageType}
-                onCampaignsChange={(campaigns) => {
-                  updateStage.mutate(
-                    { campaigns },
-                    { onSuccess: () => toast.success("Campanhas atualizadas") }
-                  );
-                }}
-              />
-            )}
-          </TabsContent>
-        )}
+        <TabsContent value="meta-ads" className="mt-6">
+          {funnelType === "launch" ? (
+            <LaunchDashboard
+              funnel={stageAsFunnel}
+              projectId={params.id}
+              stageId={params.stageId}
+              stageType={stage.stageType}
+              onCampaignsChange={(campaigns) => {
+                updateStage.mutate(
+                  { campaigns },
+                  { onSuccess: () => toast.success("Campanhas atualizadas") }
+                );
+              }}
+            />
+          ) : (
+            <PerpetualDashboard
+              funnel={stageAsFunnel}
+              projectId={params.id}
+              stageId={params.stageId}
+              stageType={stage.stageType}
+              onCampaignsChange={(campaigns) => {
+                updateStage.mutate(
+                  { campaigns },
+                  { onSuccess: () => toast.success("Campanhas atualizadas") }
+                );
+              }}
+            />
+          )}
+        </TabsContent>
 
-        {usarTeste && (
+        {funnelType === "launch" && (stage.stageType as string) === "paid" && (
           <TabsContent value="meta-ads-teste" className="mt-6">
             <MetaAdsTesteTab
               funnel={stageAsFunnel}
