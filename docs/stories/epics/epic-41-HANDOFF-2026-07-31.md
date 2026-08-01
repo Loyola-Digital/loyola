@@ -101,49 +101,58 @@ como known-failing.
 
 ## 4. O que falta validar (não bloqueia o push)
 
-### 4.1 Config do PG04 — a única pendência de dado
+### 4.1 ✅ Config do PG04 criada — validação ponta a ponta CONCLUÍDA
 
-O stage `1744c927` (dg-pg04 · Captação Paga) **não tem linha em
-`launch_report_configs`**, então o gate devolve 422.
+A config foi criada em 2026-07-31 e o Resumão rodou fim a fim. Com o período da
+§10 (09/07 → 27/07):
 
-Levantamento de prontidão feito em 2026-07-31 — **tudo o mais já está pronto**:
+| Métrica | Motor | §10 | |
+|---|---|---|---|
+| campanhas | 33 | 33 | ✅ |
+| order bump (vendas) | 180 | 180 | ✅ |
+| CTR | 1,98% | 1,98% | ✅ |
+| **faturamento total** | 70.290,70 | 69.951,86 | **+0,48%** |
+| investimento c/ imposto | 44.134,29 | 43.301,37 | +1,92% |
 
-| | |
-|---|---|
-| planilha de vendas mapeada | ✅ e-mail, data, valor, produto, 4 UTMs, status |
-| order bumps marcados | ✅ 7 |
-| coluna "Preço" | ✅ existe |
-| pesquisa vinculada | ✅ com Faixa, `utm_content`, `utm_term` |
-| campanhas | ✅ 46 |
-| investimento em cache | ✅ 21 dias (10/07 a 30/07) |
-| conta Meta no stage | ❌ **não vinculada** — não bloqueia (lê o cache), mas o cache não se atualiza |
+**Os 9 invariantes passam**, e o **A6 rodou de verdade pela primeira vez** (o
+PG02 não tem ad-level): 3 visões fechando com diferença **0,0000**. O A9 fecha
+com **0,000000**. A **Story 41.4 está validada ponta a ponta** — 59/51/65
+anúncios por visão, rankings de ROAS e Faixa A populados, `W6 = 0,0%`.
 
-**Basta criar a config.** O gate libera automaticamente para `pago` +
-`vendas-captacao` (`assertReportScope` passa pela combinação) — **não precisa
-marcar "validado"**.
+⚠️ **A config ficou com fim em 30/07**, não 27/07. Com 30/07 o relatório fica
+~30% acima da §10 (3 dias a mais de venda e investimento). Correto se o
+lançamento rodou até lá; **não comparável com a spec**. Para conferir contra a
+§10, usar 27/07.
 
-| Campo | Valor |
-|---|---|
-| Tipo | `pago` |
-| Etapa | `vendas-captacao` |
-| Entidade de captura | `vendas` |
-| Início | `2026-07-10` (a §10 diz 09/07, mas **não há investimento nesse dia**) |
-| Fim | `2026-07-27` |
-| Imposto | herdar (12,15%) |
+⚠️ **Conta Meta não vinculada ao stage** (`metaAccountId` nulo). Não bloqueia — o
+motor lê o cache do banco —, mas o cache **não se atualiza** antes de gerar.
+Vale vincular para os próximos lançamentos.
 
-### 4.2 Moeda estrangeira vai rodar pela primeira vez
+### 4.2 A detecção de moeda estrangeira continua sem execução real
 
-A planilha do PG04 tem coluna **"Moeda"** com **48 linhas não-BRL**
-(USD 21, EUR 20, CAD 2, DOP 1, GBP 1, AED 1, MXN 1, CLP 1). É o **único lugar do
-projeto** onde a detecção do §2.4 liga de verdade — no PG02 não há coluna de
-moeda. Ao gerar o Resumão do PG04, conferir o alerta **W7** ("N linhas
-convertidas"): é a primeira execução real desse código.
+A planilha do PG04 tem coluna "Moeda" com 48 linhas não-BRL, mas tem **três
+colunas de valor**, e o mapping aponta para a certa:
 
-### 4.3 Ponta a ponta da 41.4
+| Índice | Coluna | Conteúdo |
+|---|---|---|
+| 9 | `Valor oferta` | valor na moeda original |
+| 12 | `Preço` | valor na moeda original |
+| **29** | **`valor`** | **preço já convertido para BRL** |
 
-Os rankings por criativo, a Faixa por anúncio e o ROAS por anúncio só têm dado no
-PG04. A agregação foi validada por fora do gate (A6 = 0,0000), mas o **fluxo
-completo pela tela** depende da config da §4.1.
+```
+EUR   Valor oferta=47,85   Preço=47,85   →   valor=226,90
+USD   Valor oferta=5,90    Preço=5,90    →   valor=29,90
+```
+
+Por isso `W7 = 0` — e **está correto**: a planilha resolve a moeda na origem.
+
+**Consequência:** o código de conversão do §2.4 nunca converteu uma linha em
+produção (no PG02 não há coluna de moeda; no PG04 a planilha já entrega BRL).
+Está coberto por fixture, mas não validado com dado real.
+
+### 4.3 O que ainda não foi exercitado
+
+- **Comparativo com dois lançamentos reais.** Agora é possível (PG02 e PG04 têm config), mas não foi executado pela tela desde a criação da config do PG04.
 
 ---
 
@@ -254,4 +263,6 @@ Nenhuma. As 9 stories estão implementadas. O que resta é **QA gate** (@qa) e
 
 | Data | Autor | Mudança |
 |------|-------|---------|
+| 2026-07-31 | @dev (Dex) | **Config do PG04 criada** — validação ponta a ponta concluída. Faturamento a +0,48% da §10, os 9 invariantes passam, A6 fecha com 0,0000 nas 3 visões (primeira execução real), Story 41.4 validada. Descoberto que a planilha do PG04 tem 3 colunas de valor e o mapping aponta para `valor`, que já vem em BRL — por isso W7 = 0, corretamente. |
+| 2026-07-31 | @dev (Dex) | Fix: erro estruturado do backend não chegava na tela (`api-client` descartava o corpo). Afetava também o botão do perpétuo. Mensagem específica quando a etapa é gratuita. |
 | 2026-07-31 | @dev (Dex) | Handoff consolidado da sessão: 41.2–41.6 implementadas e conferidas, fix da pesquisa, link de prévia no criativo, inversão da direção do Comparativo. Substitui o handoff de 29/07. |

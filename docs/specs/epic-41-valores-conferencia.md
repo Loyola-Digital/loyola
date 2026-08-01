@@ -307,6 +307,78 @@ acima do drift do PG02 (0,04%).
 comece nesse dia. Conferir se o período real do PG04 é **10/07 → 27/07** antes de
 tratar a diferença como bug.
 
+## Conferência do PG04 — 2026-07-31 (config criada)
+
+Com a config do stage `1744c927` criada, o Resumão rodou ponta a ponta. Números
+com o período da §10 (09/07 → 27/07):
+
+| Métrica | Motor | §10 | |
+|---|---|---|---|
+| campanhas com investimento | 33 | 33 | ✅ |
+| order bump (vendas) | 180 | 180 | ✅ |
+| CTR | 1,98% | 1,98% | ✅ |
+| **faturamento total** | 70.290,70 | 69.951,86 | **+0,48%** |
+| investimento c/ imposto | 44.134,29 | 43.301,37 | +1,92% |
+| ingressos únicos | 751 | 732 | +2,60% |
+| ingressos pagos | 221 | 220 | +0,45% |
+| faturamento captação | 33.681,90 | 31.947,97 | +5,43% |
+| faturamento order bump | 36.608,80 | 38.003,89 | −3,67% |
+
+**Os 9 invariantes passam** — e aqui o **A6 rodou de verdade** pela primeira vez
+(o PG02 não tem ad-level):
+
+```
+A6   3 visões com Σ spend ajustado fechando com o INV (tol. R$ 1,00) — dif 0,0000
+A9   (1000/77,67) × 1,9820% × 1,9629% × 84,62 = ROAS pago — dif 0,000000
+```
+
+**Story 41.4 validada ponta a ponta:** 59 / 51 / 65 anúncios nas visões
+Quente / Frio / Total, fator de reescala 1,1383 nas três, rankings de ROAS e de
+Faixa A populados, `W6 = 0,0%` (toda venda paga com `ad_name` resolvido).
+
+**Alerta:** 1 — W5 (taxa de resposta 49,4%).
+
+### A classificação de produtos bate exatamente com a §10
+
+| Categoria | Produto |
+|---|---|
+| Captação | Imersão Super Funcionário com Claude |
+| Captação | Combo 3 em 1: Gravação da Imersão + Claude para Negócios |
+| Order bump | os outros 7 |
+
+A divisão captação/OB diverge ±5% em **valor** apesar de a contagem de order
+bumps bater exata (180). Os dois erros se compensam e o total fica em +0,48% —
+provável diferença de qual coluna de valor a §10 usou (ver abaixo).
+
+### ⚠️ A planilha do PG04 tem TRÊS colunas de valor
+
+| Índice | Coluna | Conteúdo |
+|---|---|---|
+| 9 | `Valor oferta` | valor **na moeda original** |
+| 12 | `Preço` | valor **na moeda original** |
+| **29** | **`valor`** | **preço já convertido para BRL** |
+
+```
+EUR   Valor oferta=47,85   Preço=47,85   →   valor=226,90
+USD   Valor oferta=5,90    Preço=5,90    →   valor=29,90
+```
+
+O `columnMapping.valorBruto` aponta para **`valor`**, que é a coluna certa. Por
+isso `linhasConvertidas = 0` (W7 não dispara) e **está correto**: a planilha já
+resolve a moeda na origem, não há o que converter.
+
+⚠️ **Consequência:** a detecção de moeda estrangeira do §2.4 continua **sem
+execução real** em lugar nenhum do projeto — no PG02 não há coluna de moeda e no
+PG04 a planilha já entrega BRL. O código está coberto por fixture, mas nunca
+converteu uma linha em produção.
+
+### Período da config
+
+A config foi criada com fim em **30/07**, não 27/07. Com 30/07 o relatório fica
+~30% acima da §10 (3 dias a mais de venda e investimento) — o que é correto se o
+lançamento rodou até lá, mas **não é comparável com a spec**. Para conferir
+contra a §10, usar 27/07.
+
 ## Change Log
 
 | Data | Autor | Mudança |
