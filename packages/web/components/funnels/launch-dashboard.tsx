@@ -261,8 +261,24 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   const compCpm = compTotals && compTotals.impressions > 0
     ? (compTotals.spend / compTotals.impressions) * 1000
     : null;
-  const surveyResponseRate = survey && survey.matchedResponses > 0 && metrics.totalLeads > 0
-    ? Math.min((survey.matchedResponses / metrics.totalLeads) * 100, 100)
+  // Na Captação Paga a pesquisa é respondida por quem COMPROU o ingresso, não
+  // pelo lead de popup — o denominador da taxa de resposta são os ingressos
+  // únicos (e-mails distintos que compraram, order bumps fora). Mesma virada de
+  // base que a Story 18.52 fez no CPL/Tx Conv. Na Gratuita segue por leads, e aí
+  // o numerador continua sendo o match respostas↔planilha de leads.
+  const isPaidCapture = stageType === "paid";
+  const compradoresUnicos = useMemo(
+    () =>
+      Object.values(salesData?.ingressosUnicosByDay ?? {}).reduce(
+        (s, v) => s + v.pago + v.org + v.semTrack,
+        0,
+      ),
+    [salesData],
+  );
+  const surveyDenominator = isPaidCapture ? compradoresUnicos : metrics.totalLeads;
+  const surveyNumerator = isPaidCapture ? survey.totalResponses : survey.matchedResponses;
+  const surveyResponseRate = surveyNumerator > 0 && surveyDenominator > 0
+    ? Math.min((surveyNumerator / surveyDenominator) * 100, 100)
     : null;
 
   // Filter campaign table to only funnel campaigns
@@ -375,7 +391,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           const showIngressos = showFaturamento;
           // Story 18.52 AC2/AC3: na Paga o CPL usa ingressos únicos (paidTotals já
           // recalculado) e os rótulos viram "CPL Pago Único" / "CPL Geral Único".
-          const isPaidCapture = stageType === "paid";
+          // `isPaidCapture` vem do escopo do componente (usado também na pesquisa).
           const cplPagoVal = isPaidCapture ? paidTotals.cplPg : metrics.cplPago;
           const cplGeralVal = isPaidCapture ? paidTotals.cplG : metrics.cplGeral;
           const cplPagoLabel = isPaidCapture ? "CPL Pago Único" : "CPL Pago";
@@ -543,7 +559,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                 <MetricTooltip
                   label="Pesquisa"
                   value={`${surveyResponseRate.toFixed(1)}%`}
-                  formula={buildFunnelSurveyFormula(survey.matchedResponses, metrics.totalLeads)}
+                  formula={buildFunnelSurveyFormula(surveyNumerator, surveyDenominator, isPaidCapture ? "compradores" : "leads")}
                 >
                   <div className={`rounded-xl border p-3 hover:border-border/50 transition-colors cursor-help ${surveyResponseRate >= 30 ? "border-emerald-500/30 bg-emerald-500/5" : surveyResponseRate >= 10 ? "border-amber-500/30 bg-amber-500/5" : "border-red-500/30 bg-red-500/5"}`}>
                     <div className="flex items-center justify-between mb-1.5">
@@ -551,8 +567,17 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                       <ClipboardList className="h-3.5 w-3.5 text-muted-foreground/50" />
                     </div>
                     <p className="text-xl font-bold tracking-tight underline decoration-dotted decoration-muted-foreground/40 underline-offset-4">{surveyResponseRate.toFixed(1)}%</p>
-                    <p className="text-[9px] text-muted-foreground">{metrics.totalLeads} leads no total</p>
-                    <p className="text-[9px] text-muted-foreground">{survey.matchedResponses} com match · {survey.unmatchedResponses} sem match</p>
+                    {isPaidCapture ? (
+                      <>
+                        <p className="text-[9px] text-muted-foreground">{fmtNumber(compradoresUnicos)} compradores únicos</p>
+                        <p className="text-[9px] text-muted-foreground">{fmtNumber(survey.totalResponses)} respostas da pesquisa</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-[9px] text-muted-foreground">{metrics.totalLeads} leads no total</p>
+                        <p className="text-[9px] text-muted-foreground">{survey.matchedResponses} com match · {survey.unmatchedResponses} sem match</p>
+                      </>
+                    )}
                   </div>
                 </MetricTooltip>
               )}
