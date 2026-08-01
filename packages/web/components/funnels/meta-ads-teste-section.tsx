@@ -402,9 +402,13 @@ export function MetaAdsTesteTab({
   const ingressosTotaisCard = sumAllOrigem(salesData?.ingressosTotaisByDay);
   const faturamentoTotalCard = sumAllNum(salesData?.faturamentoTotalByDay);
   const faturamentoUnicoCard = sumAllNum(salesData?.faturamentoUnicoByDay);
+  // Na Captação Paga a pesquisa vai pra quem COMPROU o ingresso — denominador é
+  // ingressos únicos, não "Leads Popup". Paridade com o dash (launch-dashboard).
+  const surveyDenominator = isPaid ? ingressosUnicosCard : metrics.totalLeads;
+  const surveyNumerator = isPaid ? survey.totalResponses : survey.matchedResponses;
   const surveyResponseRate =
-    survey && survey.matchedResponses > 0 && metrics.totalLeads > 0
-      ? Math.min((survey.matchedResponses / metrics.totalLeads) * 100, 100)
+    surveyNumerator > 0 && surveyDenominator > 0
+      ? Math.min((surveyNumerator / surveyDenominator) * 100, 100)
       : null;
 
   const f = { days, funnelType: "launch" as const, funnelName: funnel.name };
@@ -448,7 +452,16 @@ export function MetaAdsTesteTab({
     kpis.push({ l: "Taxa Checkout", v: pct(metrics.checkoutConversionRate), s: metrics.vendasPago != null && metrics.checkoutVisits ? `${int(metrics.vendasPago)} ÷ ${int(metrics.checkoutVisits)}` : undefined, g: G.emeraldTeal, fill: Math.min(100, metrics.checkoutConversionRate) });
   }
   if (surveyResponseRate !== null && survey) {
-    kpis.push({ l: "Pesquisa", v: `${surveyResponseRate.toFixed(1)}%`, s: `${int(survey.matchedResponses)} match · ${int(survey.unmatchedResponses)} s/ match`, g: G.goldAmber, fill: Math.min(100, surveyResponseRate), formula: buildFunnelSurveyFormula(survey.matchedResponses, metrics.totalLeads) });
+    kpis.push({
+      l: "Pesquisa",
+      v: `${surveyResponseRate.toFixed(1)}%`,
+      s: isPaid
+        ? `${int(survey.totalResponses)} respostas ÷ ${int(ingressosUnicosCard)} compradores`
+        : `${int(survey.matchedResponses)} match · ${int(survey.unmatchedResponses)} s/ match`,
+      g: G.goldAmber,
+      fill: Math.min(100, surveyResponseRate),
+      formula: buildFunnelSurveyFormula(surveyNumerator, surveyDenominator, isPaid ? "compradores" : "leads"),
+    });
   }
 
   const consistencyPct = rows.length > 0 ? Math.round((derived.daysAboveAvg / rows.length) * 100) : 0;

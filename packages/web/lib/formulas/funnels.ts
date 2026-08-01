@@ -171,10 +171,35 @@ export function buildFunnelRateFormula(label: string, sublabel: string, value: n
 // Survey card (launch)
 // ============================================================
 
-export function buildFunnelSurveyFormula(totalResponses: number, totalLeads: number | null | undefined): MetricFormula | undefined {
-  if (totalLeads == null || totalLeads <= 0) return undefined;
-  const rate = (totalResponses / totalLeads) * 100;
-  return { expression: "Respostas da pesquisa ÷ Total de leads × 100", values: [{ label: "Respostas", value: totalResponses, source: "Google Sheets · pesquisa vinculada" }, { label: "Total de leads", value: totalLeads, source: "Planilha vinculada · contagem das linhas categorizadas" }], result: `${nf.format(totalResponses)} ÷ ${nf.format(totalLeads)} × 100 = ${rate.toFixed(1)}%` };
+/**
+ * Base do denominador da taxa de resposta da pesquisa.
+ * - `leads`: Captação Gratuita — a pesquisa é respondida por quem virou lead.
+ * - `compradores`: Captação Paga — a pesquisa vai pra quem COMPROU o ingresso,
+ *   então o denominador são os ingressos únicos (e-mails distintos), não os
+ *   leads de popup. Mesma lógica que a Story 18.52 aplicou ao CPL/Tx Conv.
+ */
+export type SurveyDenominatorBase = "leads" | "compradores";
+
+export function buildFunnelSurveyFormula(
+  totalResponses: number,
+  denominator: number | null | undefined,
+  base: SurveyDenominatorBase = "leads",
+): MetricFormula | undefined {
+  if (denominator == null || denominator <= 0) return undefined;
+  const rate = (totalResponses / denominator) * 100;
+  const isBuyers = base === "compradores";
+  const denomLabel = isBuyers ? "Compradores únicos" : "Total de leads";
+  const denomSource = isBuyers
+    ? "Planilha de captação · e-mails distintos que compraram (order bumps não contam)"
+    : "Planilha vinculada · contagem das linhas categorizadas";
+  return {
+    expression: `Respostas da pesquisa ÷ ${denomLabel} × 100`,
+    values: [
+      { label: "Respostas", value: totalResponses, source: "Google Sheets · pesquisa vinculada" },
+      { label: denomLabel, value: denominator, source: denomSource },
+    ],
+    result: `${nf.format(totalResponses)} ÷ ${nf.format(denominator)} × 100 = ${rate.toFixed(1)}%`,
+  };
 }
 
 // ============================================================
