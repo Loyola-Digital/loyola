@@ -49,6 +49,12 @@ export interface CrmBoard {
   sourceStageIds: string[];
   /** Fonte dos cards: quem comprou ou quem respondeu a pesquisa. */
   comercialSource: ComercialSource;
+  /**
+   * Nº de pesquisas mapeadas direto NA etapa Comercial (planilha avulsa — a que
+   * não vive em nenhuma etapa anterior). Quando > 0 no modo "survey", o board
+   * fica configurado e o sync roda mesmo sem etapas-fonte.
+   */
+  ownSurveys: number;
   columns: CrmColumn[];
   cards: CrmCard[];
 }

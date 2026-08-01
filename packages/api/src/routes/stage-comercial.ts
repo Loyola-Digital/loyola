@@ -409,32 +409,61 @@ export default fp(async function stageComercialRoutes(fastify) {
   }
 
   /**
-   * Respondentes da PESQUISA das etapas-fonte: itera TODAS as linhas das
-   * planilhas de `funnel_surveys` (mesma leitura do enrich por-card, mas em lote)
-   * e produz um "Buyer-like" por respondente (sem compras). Email obrigatório
-   * (unique stage+email); sem email não vira card. Mesmo shape do collectBuyers
-   * pra o sync materializar igual.
+   * Pesquisas que alimentam esta etapa Comercial. Três origens, na mesma busca:
+   *
+   * 1. as vinculadas às ETAPAS-FONTE configuradas;
+   * 2. as de nível FUNIL (`stage_id` NULL — legado);
+   * 3. as vinculadas à PRÓPRIA etapa Comercial — a "planilha avulsa": pesquisa
+   *    que não vive em nenhuma etapa anterior e é mapeada direto aqui.
+   *
+   * Sem (3) o comercial só conseguia consumir pesquisa que já estivesse
+   * pendurada em outra etapa do funil.
    */
-  async function collectRespondents(sourceStageIds: string[]): Promise<{ buyers: Map<string, Buyer>; skippedNoEmail: number }> {
-    const buyers = new Map<string, Buyer>();
-    let skippedNoEmail = 0;
-    if (sourceStageIds.length === 0) return { buyers, skippedNoEmail };
-
-    const sourceStages = await fastify.db
+  async function loadSurveysForStage(ownStageId: string, sourceStageIds: string[]) {
+    const stageIds = [...new Set([ownStageId, ...sourceStageIds])];
+    const stages = await fastify.db
       .select({ id: funnelStages.id, funnelId: funnelStages.funnelId })
       .from(funnelStages)
-      .where(inArray(funnelStages.id, sourceStageIds));
-    const funnelIds = [...new Set(sourceStages.map((s) => s.funnelId))];
+      .where(inArray(funnelStages.id, stageIds));
+    const funnelIds = [...new Set(stages.map((s) => s.funnelId))];
+    if (funnelIds.length === 0) return { surveys: [], funnelIds };
 
     const surveys = await fastify.db
       .select()
       .from(funnelSurveys)
       .where(
         or(
-          inArray(funnelSurveys.stageId, sourceStageIds),
+          inArray(funnelSurveys.stageId, stageIds),
           and(inArray(funnelSurveys.funnelId, funnelIds), isNull(funnelSurveys.stageId)),
         ),
       );
+    return { surveys, funnelIds };
+  }
+
+  /** Quantas pesquisas estão mapeadas direto NA etapa Comercial (planilha avulsa). */
+  async function countOwnSurveys(stageId: string): Promise<number> {
+    const rows = await fastify.db
+      .select({ id: funnelSurveys.id })
+      .from(funnelSurveys)
+      .where(eq(funnelSurveys.stageId, stageId));
+    return rows.length;
+  }
+
+  /**
+   * Respondentes da PESQUISA: itera TODAS as linhas das planilhas de
+   * `funnel_surveys` relevantes (mesma leitura do enrich por-card, mas em lote)
+   * e produz um "Buyer-like" por respondente (sem compras). Email obrigatório
+   * (unique stage+email); sem email não vira card. Mesmo shape do collectBuyers
+   * pra o sync materializar igual.
+   *
+   * Inclui a planilha avulsa da própria etapa — por isso funciona mesmo com
+   * `sourceStageIds` vazio.
+   */
+  async function collectRespondents(ownStageId: string, sourceStageIds: string[]): Promise<{ buyers: Map<string, Buyer>; skippedNoEmail: number }> {
+    const buyers = new Map<string, Buyer>();
+    let skippedNoEmail = 0;
+
+    const { surveys } = await loadSurveysForStage(ownStageId, sourceStageIds);
 
     for (const survey of surveys) {
       const mapping = (survey.columnMapping ?? {}) as { email?: string; phone?: string };
@@ -506,10 +535,15 @@ export default fp(async function stageComercialRoutes(fastify) {
       .where(eq(stageCrmCards.stageId, params.data.stageId))
       .orderBy(asc(stageCrmCards.sortOrder), desc(stageCrmCards.totalValue));
 
+    // Planilha avulsa mapeada na própria etapa também conta como "configurado" —
+    // sem isso o board ficava na tela de setup mesmo com a pesquisa vinculada.
+    const ownSurveys = await countOwnSurveys(params.data.stageId);
+
     return {
-      configured: Boolean(config && (config.sourceStageIds?.length ?? 0) > 0),
+      configured: Boolean(config && ((config.sourceStageIds?.length ?? 0) > 0 || ownSurveys > 0)),
       sourceStageIds: config?.sourceStageIds ?? [],
       comercialSource: config?.comercialSource ?? "buyers",
+      ownSurveys,
       columns: columns.map((c) => ({
         id: c.id,
         name: c.name,
@@ -590,7 +624,12 @@ export default fp(async function stageComercialRoutes(fastify) {
         .where(eq(stageComercialConfig.stageId, params.data.stageId))
         .limit(1);
       const sourceStageIds = config?.sourceStageIds ?? [];
-      if (sourceStageIds.length === 0) {
+      const source = config?.comercialSource ?? "buyers";
+      // Modo "survey" roda também sem etapas-fonte, desde que haja planilha
+      // avulsa mapeada na própria etapa. Modo "buyers" ainda depende das etapas
+      // (é de lá que vêm as planilhas de venda e as vendas manuais).
+      const ownSurveys = source === "survey" ? await countOwnSurveys(params.data.stageId) : 0;
+      if (sourceStageIds.length === 0 && ownSurveys === 0) {
         return { configured: false, created: 0, updated: 0, skippedNoEmail: 0 };
       }
 
@@ -604,10 +643,9 @@ export default fp(async function stageComercialRoutes(fastify) {
       }
       const firstColumn = columns[0];
 
-      const source = config?.comercialSource ?? "buyers";
       const { buyers, skippedNoEmail } =
         source === "survey"
-          ? await collectRespondents(sourceStageIds)
+          ? await collectRespondents(params.data.stageId, sourceStageIds)
           : await collectBuyers(params.data.funnelId, sourceStageIds);
 
       const existingCards = await fastify.db
@@ -867,24 +905,11 @@ export default fp(async function stageComercialRoutes(fastify) {
       .where(eq(stageComercialConfig.stageId, params.data.stageId))
       .limit(1);
     const sourceStageIds = config?.sourceStageIds ?? [];
-    if (sourceStageIds.length === 0) return { matched: false, answers: [] };
 
-    // Surveys das etapas-fonte + as de nível FUNIL (stage_id NULL — legado).
-    const sourceStages = await fastify.db
-      .select({ id: funnelStages.id, funnelId: funnelStages.funnelId })
-      .from(funnelStages)
-      .where(inArray(funnelStages.id, sourceStageIds));
-    const funnelIds = [...new Set(sourceStages.map((s) => s.funnelId))];
-
-    const surveys = await fastify.db
-      .select()
-      .from(funnelSurveys)
-      .where(
-        or(
-          inArray(funnelSurveys.stageId, sourceStageIds),
-          and(inArray(funnelSurveys.funnelId, funnelIds), isNull(funnelSurveys.stageId)),
-        ),
-      );
+    // Etapas-fonte + nível FUNIL (stage_id NULL — legado) + planilha avulsa da
+    // própria etapa. Sem etapa-fonte alguma ainda pode haver a avulsa, então não
+    // dá pra sair cedo aqui.
+    const { surveys, funnelIds } = await loadSurveysForStage(params.data.stageId, sourceStageIds);
 
     const targetEmail = normalizeEmail(card.customerEmail);
     const targetPhone = phoneTail8(card.customerPhone);
