@@ -8,7 +8,7 @@ import {
   projectMembers,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
-import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
+import { classifyRefundStatus, isRefundBucket, isRevenueBucket } from "../services/sales-status.js";
 import { computeUpsellCrossSell, type HtPurchase } from "../services/upsell-crosssell.js";
 
 // ============================================================
@@ -156,7 +156,10 @@ export default fp(async function perpetualUpsellDataRoutes(fastify) {
           for (const row of rows) {
             const email = (row[emailI] ?? "").trim().toLowerCase();
             if (!email) continue;
-            if (hasStatus && isRefundBucket(classifyRefundStatus(row[statusI], true))) continue;
+            // Story 29.26: só comprador PAGO entra na base do perpétuo. Antes,
+            // uma compra recusada criava comprador e virava denominador da
+            // taxa de ascensão ao high ticket.
+            if (hasStatus && !isRevenueBucket(classifyRefundStatus(row[statusI], true))) continue;
             perpetualEmails.add(email);
             const dt = dataI !== -1 ? parseDate(row[dataI]) : null;
             if (dt) {
@@ -210,8 +213,9 @@ export default fp(async function perpetualUpsellDataRoutes(fastify) {
           for (const row of rows) {
             const email = (row[emailI] ?? "").trim().toLowerCase();
             if (!email) continue;
-            // Exclui a própria linha de reembolso.
-            if (hasStatus && isRefundBucket(classifyRefundStatus(row[statusI], true))) continue;
+            // Exclui a própria linha de reembolso e, desde a Story 29.26,
+            // qualquer status não-pago (recusada/pendente não é upsell).
+            if (hasStatus && !isRevenueBucket(classifyRefundStatus(row[statusI], true))) continue;
             const txId = txI !== -1 ? (row[txI] ?? "").trim() : "";
             // Compra reembolsada (id na lista) não conta como upsell.
             if (txId && refundedTxIds.has(txId)) continue;

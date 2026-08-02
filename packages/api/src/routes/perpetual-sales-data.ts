@@ -8,7 +8,7 @@ import {
   projectMembers,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
-import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
+import { classifyRefundStatus, isRefundBucket, isRevenueBucket } from "../services/sales-status.js";
 
 // ============================================================
 // Epic 29 Story 29.3 — agregação de vendas do perpétuo
@@ -279,15 +279,24 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
 
         const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
 
+        const bucket = classifyRefundStatus(status, hasStatusCol);
+
         // Reembolso/chargeback: conta cada linha (sem dedup). Nunca entra na dedup
         // de vendas — senão a compra e o reembolso do mesmo id colapsariam num só.
-        if (isRefundBucket(classifyRefundStatus(status, hasStatusCol))) {
+        // Precisa vir ANTES do filtro de receita: tem efeito colateral (alimenta
+        // reembolsoBruto e refundedTxIds) que se perderia num descarte genérico.
+        if (isRefundBucket(bucket)) {
           reembolsoBruto += bruto;
           reembolsoLiquido += liquido;
           vendasReembolsadas += 1;
           if (txId) refundedTxIds.add(txId);
           continue;
         }
+
+        // Story 29.26: recusada/pendente/aguardando pagamento não é receita.
+        // Sai antes da dedup — não conta em vendas, faturamento, ticket médio
+        // nem em nenhum corte por UTM.
+        if (!isRevenueBucket(bucket)) continue;
 
         const dedupKey = txId ? `tx|${txId}` : `email|${email}`;
 
@@ -476,8 +485,10 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
 
         // Reembolso/chargeback não entram na série de receita no tempo — nem a
         // linha refunded, nem a compra "paid" pareada (mesmo id).
+        // Story 29.26: recusada/pendente também sai — a série diária conta as
+        // MESMAS linhas que o agregado, senão o gráfico contradiz os cards.
         if (hasStatusCol) {
-          if (isRefundBucket(classifyRefundStatus(row[statusIdx], hasStatusCol))) continue;
+          if (!isRevenueBucket(classifyRefundStatus(row[statusIdx], hasStatusCol))) continue;
           if (txIdx !== -1) {
             const txId = (row[txIdx] ?? "").trim();
             if (txId && refundedTxIds.has(txId)) continue;
