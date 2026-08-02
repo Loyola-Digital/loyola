@@ -100,6 +100,7 @@ import {
   aggregateSeriesByGranularity,
   type ChartGranularity,
 } from "@/lib/utils/chart-granularity";
+import { deriveDetailMetrics } from "@/lib/utils/perpetual-detail-metrics";
 
 interface PerpetualDashboardProps {
   funnel: Funnel;
@@ -863,8 +864,21 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     });
   }, [dailyData, usingSpreadsheet, salesDataDaily, salesData]);
 
-  // Story 29.9: agregados com tax aplicado — sobrescreve totalSpend do overview
-  // (que vem sem tax do Meta). Total tax exposto pra tooltip do KPI Investimento.
+  // Story 29.9: agregados com tax aplicado, derivados de `campaign-daily`.
+  //
+  // Story 29.27 — ATENÇÃO ao mexer aqui. O backend NÃO é uniforme quanto ao
+  // imposto de 12,15%:
+  //   • `campaign-daily` (fonte deste bloco) devolve spend BRUTO, sem imposto —
+  //     é o único endpoint assim, e por isso o gross-up é aplicado aqui.
+  //   • `campaigns`, `all-adsets`, `all-ads` e `overview` já vêm COM imposto
+  //     aplicado por `applyMetaTax` (services/traffic-analytics.ts).
+  //
+  // Os KPI cards usam `totalSpendComTax` por SUBSTITUIÇÃO (descartam o valor do
+  // overview e usam este). Correto — o imposto entra uma única vez.
+  //
+  // O que NÃO se pode fazer: multiplicar o spend de uma entidade (campanha/
+  // adset/ad) por este total. Esse spend já é tributado, e o produto tributaria
+  // de novo. Foi exatamente o bug corrigido na 29.27 no `detailRows`.
   const spendAggregates = useMemo(() => {
     let totalSpendBruto = 0;
     let totalTax = 0;
@@ -1093,13 +1107,16 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // Story 29.19: normaliza nomes (tira " — Cópia") e agrupa a cópia no nome base.
   // Merge (>1 membro) soma métricas e re-deriva taxas; membro único fica intacto.
   const detailRows = useMemo<DetailRow[]>(() => {
-    // Story 29.24: multiplicador de imposto do período. Aplica 12,15% ao spend de
-    // cada linha de forma que Σlinhas = card agregado (que usa effectiveSpend c/
-    // imposto). ~1.1215 quando todo o range é pós-vigência (2026-01-01);
-    // proporcional se o range cruza a data. Fonte única: spendAggregates.
-    const taxMultiplier = spendAggregates.totalSpendBruto > 0
-      ? spendAggregates.totalSpendComTax / spendAggregates.totalSpendBruto
-      : 1;
+    // Story 29.27: o `taxMultiplier` da 29.24 foi REMOVIDO daqui.
+    //
+    // A intenção da 29.24 (fazer Σlinhas bater com o card) estava certa; a
+    // premissa não: ela assumia que `base.spend` vinha sem imposto. Mas as
+    // linhas desta tabela vêm de `campaigns`/`all-adsets`/`all-ads`, e esses
+    // três endpoints já aplicam `applyMetaTax` no backend. Multiplicar de novo
+    // produzia spend × 1,1215², inflando Invest./CAC/CPC/CPM e deprimindo
+    // ROAS/Margem — a tabela contradizia os cards do mesmo período.
+    //
+    // Agora `base.spend` é usado como vem: tributado uma única vez.
     const groups = new Map<string, CampaignAnalytics[]>();
     for (const row of tableData) {
       const name = normalizeCampaignName(row.campaignName);
@@ -1131,28 +1148,12 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           costPerSale: sales > 0 ? spend / sales : null,
         };
       }
-      const grossRevenue = base.revenue ?? 0;
-      const sales = base.sales ?? 0;
-      // Story 29.24: aplica o imposto ao spend da linha e RE-DERIVA todas as
-      // métricas de custo (Invest./ROAS/CAC/Margem/CPC/CPM) sobre a MESMA base
-      // do card agregado. ROAS mantém numerador BRUTO (29.20); só o denominador
-      // ganha imposto. Margem segue líquida − investimento c/ imposto.
-      const spendComTax = base.spend * taxMultiplier;
-      const netRevenue = grossRevenue * (1 - detailFeeRate);
-      const margin = netRevenue - spendComTax;
-      const costClicks = base.linkClicks && base.linkClicks > 0 ? base.linkClicks : base.clicks;
-      return {
-        ...base,
-        spend: spendComTax,
-        cpc: costClicks > 0 ? spendComTax / costClicks : 0,
-        cpm: base.impressions > 0 ? (spendComTax / base.impressions) * 1000 : 0,
-        roas: spendComTax > 0 ? grossRevenue / spendComTax : null,
-        costPerSale: sales > 0 ? spendComTax / sales : null,
-        marginPct: grossRevenue > 0 ? (margin / grossRevenue) * 100 : null,
-        marginPerSale: sales > 0 ? margin / sales : null,
-      };
+      // Story 29.27: `spend` já vem tributado do backend (applyMetaTax por
+      // entidade). Todas as métricas de custo derivam DESTE mesmo valor —
+      // a regra vive em `deriveDetailMetrics`, com teste de guarda.
+      return { ...base, ...deriveDetailMetrics(base, detailFeeRate) };
     });
-  }, [tableData, detailFeeRate, spendAggregates]);
+  }, [tableData, detailFeeRate]);
 
   const sortedRows = useMemo<DetailRow[]>(() => {
     if (!sortCol) return detailRows;
