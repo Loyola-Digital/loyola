@@ -28,6 +28,10 @@ export interface DetailMetricsInput {
   /** Faturamento BRUTO atribuído (planilha). */
   revenue?: number | null;
   sales?: number | null;
+  /** Story 29.29: reproduções de 3s (Meta `actions[].video_view`), só nível ad. */
+  videoViews3s?: number | null;
+  /** Story 29.29: retenção a 75% (`video_p75_watched_actions`), só nível ad. */
+  videoViews75?: number | null;
 }
 
 export interface DetailMetricsOutput {
@@ -41,6 +45,14 @@ export interface DetailMetricsOutput {
   /** Margem % sobre o faturamento bruto. */
   marginPct: number | null;
   marginPerSale: number | null;
+  /**
+   * Story 29.29 — funil do criativo em vídeo. `null` quando o denominador é
+   * zero (anúncio de imagem, vídeo sem retenção, ou entidade que não é ad):
+   * a UI mostra "—", nunca 0%.
+   */
+  hookRate: number | null;
+  holdRate: number | null;
+  bodyConversion: number | null;
 }
 
 /**
@@ -60,6 +72,14 @@ export function deriveDetailMetrics(
   const margin = netRevenue - spend;
   const costClicks = base.linkClicks && base.linkClicks > 0 ? base.linkClicks : base.clicks;
 
+  // Story 29.29 — funil do criativo. Cada etapa usa a anterior como base, então
+  // as três respondem perguntas encadeadas:
+  //   Hook  — dos que VIRAM o anúncio, quantos assistiram os primeiros segundos
+  //   Hold  — dos que passaram pelo gancho, quantos seguiram até 75% do vídeo
+  //   Body  — dos que viram o corpo (75%+), quantos converteram
+  const v3s = base.videoViews3s ?? 0;
+  const v75 = base.videoViews75 ?? 0;
+
   return {
     spend,
     cpc: costClicks > 0 ? spend / costClicks : 0,
@@ -68,5 +88,8 @@ export function deriveDetailMetrics(
     costPerSale: sales > 0 ? spend / sales : null,
     marginPct: grossRevenue > 0 ? (margin / grossRevenue) * 100 : null,
     marginPerSale: sales > 0 ? margin / sales : null,
+    hookRate: base.impressions > 0 && v3s > 0 ? (v3s / base.impressions) * 100 : null,
+    holdRate: v3s > 0 && v75 > 0 ? (v75 / v3s) * 100 : null,
+    bodyConversion: v75 > 0 ? (sales / v75) * 100 : null,
   };
 }
