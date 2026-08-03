@@ -28,6 +28,23 @@ export function isRefundBucket(bucket: SalesStatusBucket): boolean {
   return bucket === "refunded" || bucket === "chargeback";
 }
 
+/**
+ * Story 29.26: "esta linha vira receita?" — pergunta DIFERENTE de
+ * `isRefundBucket`, que responde "esta linha é um reembolso?".
+ *
+ * Só venda paga entra em faturamento, contagem de vendas, ticket médio e nos
+ * cortes por UTM. Recusada, pendente e aguardando pagamento (bucket "other")
+ * NÃO são reembolso — mas também não são receita, e por isso ficavam de fora
+ * de qualquer filtro até esta story existir.
+ *
+ * Os dois helpers coexistem e não se substituem: o bloco de reembolso precisa
+ * distinguir "reembolsado" de "recusado" (senão uma venda recusada apareceria
+ * no card de Reembolsos), e o bloco de receita precisa descartar os dois.
+ */
+export function isRevenueBucket(bucket: SalesStatusBucket): boolean {
+  return bucket === "paid";
+}
+
 // Normaliza: minúsculo, sem acento, separadores → espaço único.
 function normalizeStatus(raw: string): string {
   return raw
