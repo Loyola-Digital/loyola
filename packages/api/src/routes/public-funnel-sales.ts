@@ -1,18 +1,23 @@
 /**
- * Vendas agregadas de um FUNIL inteiro.
+ * Consultas ENXUTAS de venda: um FUNIL inteiro ou UMA etapa.
  *
- * Os endpoints de venda existentes são todos por ETAPA (`sales-daily`,
- * `sales-rows`). Para responder "quantas vendas teve no funil X" o consumidor
- * tinha que listar as etapas, chamar sales-daily em cada uma e somar na mão.
- * Aqui a soma é feita server-side, em cima do MESMO cache pré-computado — sem
- * ler Google Sheets, sem sync novo.
+ * Duas queixas do consumo real resolvidas aqui:
  *
- * ARMADILHA que este endpoint resolve: a planilha de vendas do PERPÉTUO vive no
- * FUNIL (`funnel_spreadsheets` type='perpetual_sales', stage_id NULL) e é
- * herdada por TODA etapa free/paid (ver `resolveSalesSheetsForStage`). Somar os
- * caches das etapas cegamente contaria as mesmas transações N vezes. Por isso
- * cada planilha física só entra uma vez, atribuída à primeira etapa (sortOrder)
- * que a usa.
+ * 1. **Atrito de ID.** O `sales-daily` legado exige `projectId` + `stageId`, mas
+ *    quem está olhando o app só tem o stageId à mão — e precisava de 2 chamadas
+ *    de discovery só pra descobrir o projectId. As rotas daqui pedem só o ID do
+ *    recurso e resolvem o resto server-side.
+ * 2. **Payload gigante.** O cache traz 7 blocos de quebra (byDay, porOrigem,
+ *    porCanal, porProduto, porPlataforma, porProdutoPlataforma,
+ *    porOrigemTemperatura). Quem só quer "quantas vendas" recebia tudo. Aqui o
+ *    default é o RESUMO e os blocos entram sob demanda via `?include=`.
+ *
+ * ARMADILHA que o endpoint de funil resolve: a planilha de vendas do PERPÉTUO
+ * vive no FUNIL (`funnel_spreadsheets` type='perpetual_sales', stage_id NULL) e
+ * é herdada por TODA etapa free/paid (ver `resolveSalesSheetsForStage`). Somar
+ * os caches das etapas cegamente contaria as mesmas transações N vezes. Por
+ * isso cada planilha física só entra uma vez, atribuída à primeira etapa
+ * (sortOrder) que a usa.
  */
 
 import { z } from "zod";
@@ -28,6 +33,42 @@ import {
 } from "../services/sales-daily-sync.js";
 
 const funnelIdParamSchema = z.object({ funnelId: z.string().uuid() });
+const stageIdParamSchema = z.object({ stageId: z.string().uuid() });
+
+/** Blocos pesados — só saem quando pedidos em `?include=`. */
+const INCLUDABLE = [
+  "byDay",
+  "porOrigem",
+  "porCanal",
+  "porProduto",
+  "porPlataforma",
+  "porProdutoPlataforma",
+  "porOrigemTemperatura",
+  "byStage",
+] as const;
+type Includable = (typeof INCLUDABLE)[number];
+
+const querySchema = z.object({
+  /** CSV dos blocos desejados, ou "all". Vazio/ausente = só o resumo. */
+  include: z.string().optional(),
+});
+
+/**
+ * Parseia `?include=`. Retorna um Set — nomes desconhecidos são ignorados em
+ * silêncio de propósito: é query string escrita à mão, e derrubar a chamada
+ * inteira por um typo num bloco opcional seria pior que devolver o resumo.
+ */
+function parseInclude(raw: string | undefined): Set<Includable> {
+  if (!raw) return new Set();
+  const parts = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (parts.some((p) => p.toLowerCase() === "all")) return new Set(INCLUDABLE);
+  const wanted = new Set<Includable>();
+  for (const p of parts) {
+    const hit = INCLUDABLE.find((k) => k.toLowerCase() === p.toLowerCase());
+    if (hit) wanted.add(hit);
+  }
+  return wanted;
+}
 
 type Bucket = { vendas: number; bruto: number; liquido: number };
 
@@ -51,8 +92,94 @@ function bucketsToArray(map: Map<string, Bucket>, keyName: string) {
 }
 
 export default fp(async function publicFunnelSalesRoutes(fastify) {
+  // ---- GET /api/public/v1/stages/:stageId/sales ----
+  // Vendas de UMA etapa, só com o stageId e só o resumo por padrão.
+  // Equivale ao sales-daily legado, sem exigir projectId e sem despejar os 7
+  // blocos de quebra. `?include=byDay,porProduto` (ou `all`) traz o resto.
+  fastify.get<{ Params: z.infer<typeof stageIdParamSchema>; Querystring: z.infer<typeof querySchema> }>(
+    "/api/public/v1/stages/:stageId/sales",
+    { preHandler: requireScope(PUBLIC_READ_SCOPE) },
+    async (request, reply) => {
+      const parsed = stageIdParamSchema.safeParse(request.params);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "stageId inválido", code: "BAD_REQUEST" });
+      }
+      const { stageId } = parsed.data;
+      const include = parseInclude(querySchema.safeParse(request.query).data?.include);
+
+      // projectId/funnelId resolvidos aqui — é o atrito que o consumidor tinha.
+      const [stage] = await fastify.db
+        .select({
+          id: funnelStages.id,
+          name: funnelStages.name,
+          stageType: funnelStages.stageType,
+          funnelId: funnelStages.funnelId,
+          funnelName: funnels.name,
+          projectId: funnels.projectId,
+        })
+        .from(funnelStages)
+        .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+        .where(eq(funnelStages.id, stageId))
+        .limit(1);
+      if (!stage) {
+        return reply.code(404).send({ error: "Etapa não encontrada", code: "NOT_FOUND" });
+      }
+
+      const [row] = await fastify.db
+        .select({ payload: publicMetricsCache.payload, computedAt: publicMetricsCache.computedAt })
+        .from(publicMetricsCache)
+        .where(
+          and(
+            eq(publicMetricsCache.projectId, stage.projectId),
+            eq(publicMetricsCache.scope, SALES_DAILY_SCOPE),
+            eq(publicMetricsCache.key, stageId),
+          ),
+        )
+        .limit(1);
+
+      const base = {
+        stageId,
+        stageName: stage.name,
+        stageType: stage.stageType,
+        funnelId: stage.funnelId,
+        funnelName: stage.funnelName,
+        projectId: stage.projectId,
+      };
+
+      if (!row) {
+        return {
+          ...base,
+          semDados: true,
+          message: "Sem dados de vendas em cache (etapa sem planilha de venda ou sync ainda não rodou).",
+        };
+      }
+
+      const p = row.payload as SalesDailyPayload;
+      const out: Record<string, unknown> = {
+        ...base,
+        computedAt: row.computedAt,
+        range: p.range,
+        totalVendas: p.totalVendas,
+        faturamentoBruto: p.faturamentoBruto,
+        faturamentoLiquido: p.faturamentoLiquido,
+        // Leves e necessários pra interpretar o número: de quais planilhas veio
+        // e quantas vendas manuais entraram. Ficam sempre.
+        subtypesConsidered: p.subtypesConsidered,
+        manualSalesIncluded: p.manualSalesIncluded,
+      };
+      if (include.has("byDay")) out.byDay = p.byDay;
+      if (include.has("porOrigem")) out.porOrigem = p.porOrigem;
+      if (include.has("porCanal")) out.porCanal = p.porCanal;
+      if (include.has("porProduto")) out.porProduto = p.porProduto;
+      if (include.has("porPlataforma")) out.porPlataforma = p.porPlataforma;
+      if (include.has("porProdutoPlataforma")) out.porProdutoPlataforma = p.porProdutoPlataforma;
+      if (include.has("porOrigemTemperatura")) out.porOrigemTemperatura = p.porOrigemTemperatura;
+      return out;
+    },
+  );
+
   // ---- GET /api/public/v1/funnels/:funnelId/sales ----
-  fastify.get<{ Params: z.infer<typeof funnelIdParamSchema> }>(
+  fastify.get<{ Params: z.infer<typeof funnelIdParamSchema>; Querystring: z.infer<typeof querySchema> }>(
     "/api/public/v1/funnels/:funnelId/sales",
     { preHandler: requireScope(PUBLIC_READ_SCOPE) },
     async (request, reply) => {
@@ -61,6 +188,7 @@ export default fp(async function publicFunnelSalesRoutes(fastify) {
         return reply.code(400).send({ error: "funnelId inválido", code: "BAD_REQUEST" });
       }
       const { funnelId } = parsed.data;
+      const include = parseInclude(querySchema.safeParse(request.query).data?.include);
 
       const [funnel] = await fastify.db
         .select({ id: funnels.id, projectId: funnels.projectId, name: funnels.name, type: funnels.type })
@@ -230,7 +358,7 @@ export default fp(async function publicFunnelSalesRoutes(fastify) {
         };
       }
 
-      return {
+      const out: Record<string, unknown> = {
         funnelId,
         projectId: funnel.projectId,
         funnelName: funnel.name,
@@ -244,21 +372,26 @@ export default fp(async function publicFunnelSalesRoutes(fastify) {
         faturamentoLiquido: round2(totalLiquido),
         stagesContabilizadas: contabilizadas,
         stagesTotal: stages.length,
-        avisos,
-        byDay: [...byDay.entries()]
+      };
+      // `avisos` só aparece quando há o que avisar — num resumo enxuto, chave
+      // vazia é ruído. Quando existe, é importante e vem sempre.
+      if (avisos.length > 0) out.avisos = avisos;
+      if (include.has("byDay")) {
+        out.byDay = [...byDay.entries()]
           .sort((a, b) => (a[0] < b[0] ? -1 : 1))
           .map(([date, e]) => ({
             date,
             faturamentoBruto: round2(e.bruto),
             faturamentoLiquido: round2(e.liquido),
             ingressos: { pago: e.pago, org: e.org, semTrack: e.semTrack, total: e.pago + e.org + e.semTrack },
-          })),
-        porOrigem: bucketsToArray(porOrigem, "origem"),
-        porCanal: bucketsToArray(porCanal, "canal"),
-        porProduto: bucketsToArray(porProduto, "produto").slice(0, 30),
-        porPlataforma: bucketsToArray(porPlataforma, "plataforma"),
-        byStage,
-      };
+          }));
+      }
+      if (include.has("porOrigem")) out.porOrigem = bucketsToArray(porOrigem, "origem");
+      if (include.has("porCanal")) out.porCanal = bucketsToArray(porCanal, "canal");
+      if (include.has("porProduto")) out.porProduto = bucketsToArray(porProduto, "produto").slice(0, 30);
+      if (include.has("porPlataforma")) out.porPlataforma = bucketsToArray(porPlataforma, "plataforma");
+      if (include.has("byStage")) out.byStage = byStage;
+      return out;
     },
   );
 });
