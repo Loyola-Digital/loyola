@@ -11,11 +11,9 @@
  */
 
 import { useState } from "react";
-import { AlertCircle, Radar, Search, Trash2, Clock, CheckCircle2, XCircle, Loader2, ExternalLink } from "lucide-react";
+import { AlertCircle, Radar, Trash2, Clock, CheckCircle2, XCircle, Loader2, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
@@ -36,6 +34,7 @@ import {
   type ScanStatus,
 } from "@/lib/hooks/use-instagram-scans";
 import { ScanReport } from "@/components/spy-conteudo/scan-report";
+import { ScanComposer } from "@/components/spy-conteudo/scan-composer";
 
 function fmtInt(n: number | null | undefined): string {
   if (n == null) return "—";
@@ -94,6 +93,12 @@ function ScanCard({
               </span>
             )}
           </div>
+          {/* A pergunta distingue dois scans do mesmo perfil na lista. */}
+          {scan.focus && (
+            <p className="mt-1 line-clamp-2 text-[10px] italic text-muted-foreground/90">
+              “{scan.focus}”
+            </p>
+          )}
           <p className="mt-1 text-[10px] text-muted-foreground">
             {fmtWhen(scan.createdAt)}
             {scan.requestedByName ? ` · ${scan.requestedByName}` : ""}
@@ -122,8 +127,6 @@ export default function SpyConteudoPage() {
   const createScan = useCreateInstagramScan();
   const deleteScan = useDeleteInstagramScan();
 
-  const [username, setUsername] = useState("");
-  const [limit, setLimit] = useState(120);
   const [openId, setOpenId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
@@ -142,18 +145,22 @@ export default function SpyConteudoPage() {
 
   const scans = data?.scans ?? [];
 
-  async function handleScan(force = false) {
-    const value = username.trim();
+  async function handleScan(input: { username: string; focus?: string; force?: boolean }) {
+    const value = input.username.trim();
     if (!value) return;
     try {
-      const result = await createScan.mutateAsync({ username: value, limit, force });
+      const result = await createScan.mutateAsync({
+        username: value,
+        focus: input.focus,
+        force: input.force,
+      });
       if (result.reused) {
-        // Scan recente do mesmo perfil: abre o existente em vez de gastar
-        // crédito de novo. O usuário ainda pode forçar.
+        // Já existe scan recente do MESMO perfil com a MESMA pergunta: abre o
+        // existente em vez de gastar crédito de novo. Dá pra forçar.
         toast.info(result.message ?? "Scan recente reaproveitado.", {
           action: {
             label: "Forçar novo",
-            onClick: () => void handleScan(true),
+            onClick: () => void handleScan({ ...input, force: true }),
           },
         });
         setOpenId(result.id);
@@ -163,11 +170,12 @@ export default function SpyConteudoPage() {
             result.queuePosition ? ` (${result.queuePosition} na frente)` : ""
           }. Leva alguns minutos — pode sair da página.`,
         );
-        setUsername("");
         setOpenId(result.id);
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao iniciar o scan");
+      // Propaga pro composer voltar ao passo da pergunta em vez de resetar.
+      throw e;
     }
   }
 
@@ -184,41 +192,7 @@ export default function SpyConteudoPage() {
         </p>
       </div>
 
-      {/* Disparar scan */}
-      <div className="rounded-xl border border-border/40 p-4 space-y-3">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex-1 min-w-[220px] space-y-1.5">
-            <Label htmlFor="spy-username">Perfil</Label>
-            <Input
-              id="spy-username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="@perfil ou link do Instagram"
-              onKeyDown={(e) => e.key === "Enter" && !createScan.isPending && handleScan()}
-            />
-          </div>
-          <div className="w-[130px] space-y-1.5">
-            <Label htmlFor="spy-limit">Publicações</Label>
-            <Input
-              id="spy-limit"
-              type="number"
-              min={10}
-              max={300}
-              value={limit}
-              onChange={(e) => setLimit(Number(e.target.value) || 120)}
-            />
-          </div>
-          <Button onClick={() => handleScan()} disabled={!username.trim() || createScan.isPending} className="gap-1.5">
-            <Search className="h-3.5 w-3.5" />
-            {createScan.isPending ? "Enfileirando..." : "Escanear"}
-          </Button>
-        </div>
-        <p className="text-[11px] text-muted-foreground">
-          O scan roda no servidor e leva alguns minutos — você pode fechar a página e voltar depois.
-          Cada scan consome crédito de coleta e de análise, então um perfil escaneado nas últimas 12h
-          é reaproveitado em vez de refeito.
-        </p>
-      </div>
+      <ScanComposer onSubmit={handleScan} pending={createScan.isPending} />
 
       {/* Lista + detalhe */}
       <div className="grid gap-4 lg:grid-cols-[300px_1fr]">

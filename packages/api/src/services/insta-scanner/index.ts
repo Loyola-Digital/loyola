@@ -109,6 +109,7 @@ export async function runScan(
       profile: scraped.profile,
       metrics,
       posts: scraped.posts,
+      focus: scan.focus,
       model: config.model,
       effort: config.effort,
       onProgress: (m) => log(`[spy] @${scan.username}: ${m}`),

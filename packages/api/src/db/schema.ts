@@ -2519,6 +2519,8 @@ export const instagramScans = pgTable(
       .$type<{ limit: number; since: string | null; tzOffset: number }>()
       .notNull()
       .default({ limit: 120, since: null, tzOffset: -3 }),
+    /** Pergunta específica da pessoa sobre o perfil. null = análise padrão. */
+    focus: text("focus"),
     profile: jsonb("profile").$type<Record<string, unknown>>(),
     metrics: jsonb("metrics").$type<Record<string, unknown>>(),
     analysis: jsonb("analysis").$type<Record<string, unknown>>(),

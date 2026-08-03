@@ -21,6 +21,8 @@ const createSchema = z.object({
   limit: z.coerce.number().int().min(10).max(300).optional(),
   since: z.string().trim().max(20).optional(),
   tzOffset: z.coerce.number().int().min(-12).max(14).optional(),
+  /** Pergunta específica sobre o perfil. Vazio = diagnóstico padrão. */
+  focus: z.string().trim().max(2000).optional(),
   /** Ignora o scan recente e força um novo (gasta crédito de novo). */
   force: z.boolean().optional(),
 });
@@ -33,6 +35,7 @@ const listColumns = {
   username: instagramScans.username,
   status: instagramScans.status,
   params: instagramScans.params,
+  focus: instagramScans.focus,
   profile: instagramScans.profile,
   usage: instagramScans.usage,
   error: instagramScans.error,
@@ -122,14 +125,23 @@ export default fp(async function instagramScansRoutes(fastify) {
     if (!body.data.force) {
       const reuseSince = new Date(Date.now() - REUSE_WINDOW_HOURS * 60 * 60 * 1000);
       const [recent] = await fastify.db
-        .select({ id: instagramScans.id, status: instagramScans.status })
+        .select({
+          id: instagramScans.id,
+          status: instagramScans.status,
+          focus: instagramScans.focus,
+        })
         .from(instagramScans)
         .where(
           and(eq(instagramScans.username, username), gte(instagramScans.createdAt, reuseSince)),
         )
         .orderBy(desc(instagramScans.createdAt))
         .limit(1);
-      if (recent && recent.status !== "failed") {
+      // Só reaproveita quando a PERGUNTA é a mesma: um scan padrão não responde
+      // a uma pergunta específica, e a resposta de outra pergunta não serve.
+      // A coleta seria reusável, a análise não — e é ela que muda com o foco.
+      const mesmaPergunta =
+        (recent?.focus?.trim() || null) === (body.data.focus?.trim() || null);
+      if (recent && recent.status !== "failed" && mesmaPergunta) {
         return reply.code(200).send({
           id: recent.id,
           username,
@@ -149,6 +161,7 @@ export default fp(async function instagramScansRoutes(fastify) {
           since: body.data.since || null,
           tzOffset: body.data.tzOffset ?? -3,
         },
+        focus: body.data.focus?.trim() || null,
         requestedBy: request.userId,
       })
       .returning({ id: instagramScans.id, username: instagramScans.username });
