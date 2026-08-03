@@ -1,0 +1,42 @@
+schema: 1
+story: '29.32'
+gate: CONCERNS
+status_reason: 'Implementação correta e gates verdes; os dois achados low foram corrigidos antes do merge. Segue CONCERNS apenas porque a AC2b — o requisito que o usuário fez questão de enfatizar — depende de conferência visual, e é o erro que não aparece sem testar.'
+reviewer: 'Quinn'
+updated: '2026-08-03T15:23:47Z'
+
+evidence:
+  typecheck: 'tsc web exit 0'
+  lint: 'lint web exit 0'
+  build: 'next build exit 0'
+  ac2b_logic: 'sortedRows (useMemo sobre rows completo) é fatiado pelo slice da paginação em :273 — ordenação precede o recorte, como a AC exige. Chave de ordenação é dateIso (ISO YYYY-MM-DD), não o date MM-DD que seria ambíguo na virada de ano.'
+  ac6_axes: 'yAxisId presente nos 4 elementos de cada gráfico — os dois YAxis, o Area e o Line. Omitir um faria a série sumir sem erro.'
+  ac8_zero_guard: 'CAC e marginPct resolvem para null quando o denominador é 0; connectNulls={false} transforma o dia sem dado em lacuna, não em continuidade interpolada.'
+  ac9_no_regression: 'Nenhuma linha dos gráficos Margem no Tempo e Investimento no Tempo foi removida no diff; granularidade Diário/Semanal/Mensal intacta.'
+  ac7_window: 'dailyChartData vem de allDates com .sort() sobre ISO — ordem crescente garantida na origem, então slice(-7) pega de fato os 7 dias mais recentes.'
+  hook_removal: 'useSurveyAggregation removido apenas deste dashboard; o arquivo do hook foi preservado e segue servindo 6 outros consumidores (launch-dashboard, top-creatives-gallery, survey-qualification-section, meta-ads-teste-section, use-crossed-funnel-metrics, use-organic-leads-by-day).'
+
+top_issues:
+  - id: 'TEST-001'
+    severity: medium
+    finding: 'A AC2b (ordenação contínua entre páginas) não tem teste automatizado. É a lógica de maior risco silencioso da story — ordenar depois do slice produziria uma tela que parece correta até alguém virar a página. Causa raiz: o pacote web NÃO tem runner de teste configurado (sem vitest.config, sem script test no package.json do web nem no root), então os arquivos .test.tsx existentes são órfãos de infraestrutura. Débito PRÉ-EXISTENTE do projeto, não introduzido por esta story.'
+    suggested_action: 'Validar na tela com um período de mais de 16 dias (mais de uma página) antes de considerar a story encerrada. Em paralelo, avaliar configurar o runner do web como débito separado — hoje há 5 arquivos de teste que ninguém executa.'
+  - id: 'MNT-001'
+    severity: low
+    status: RESOLVIDO
+    finding: 'Os 3 gráficos novos renderizavam `null` quando não havia dado, enquanto todos os outros gráficos do mesmo arquivo usam <EmptyState />. A tela sumia sem explicar por quê.'
+    suggested_action: 'Trocar o `: null` por `: <EmptyState />` para alinhar com o padrão do arquivo.'
+    resolution: 'Corrigido em 2026-08-03 a pedido do usuário, antes do merge. Gates revalidados (tsc, lint, build).'
+  - id: 'MNT-002'
+    severity: low
+    status: RESOLVIDO
+    finding: 'totalPages derivava de rows.length enquanto pageRows fatia sortedRows. Era equivalente porque sortedRows é uma cópia ordenada de mesma cardinalidade, mas se a ordenação passasse a filtrar, a paginação calcularia páginas que não existem.'
+    suggested_action: 'Derivar totalPages de sortedRows.length, para as duas pontas lerem a mesma coleção.'
+    resolution: 'Corrigido em 2026-08-03 a pedido do usuário, antes do merge. As duas pontas agora leem `sortedRows`.'
+
+validation_pending:
+  - 'AC2b na tela com período > 16 dias — o cenário exato do risco'
+  - 'AC6: legibilidade dos 3 gráficos lado a lado (altura 220px com legenda) só se julga renderizado'
+  - 'Depende do deploy do web'
+
+waiver: { active: false }

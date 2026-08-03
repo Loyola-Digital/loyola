@@ -14,9 +14,11 @@ import {
   CheckCircle2,
   Undo2,
   TrendingUp,
-  ClipboardList,
   ChevronLeft,
   ChevronRight,
+  ArrowUp,
+  ArrowDown,
+  Receipt,
 } from "lucide-react";
 import {
   LineChart,
@@ -31,6 +33,10 @@ import {
   Bar,
   Cell,
   LabelList,
+  // Story 29.32: os 3 gráficos de linha×área precisam de eixo duplo.
+  ComposedChart,
+  Area,
+  Legend,
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -75,7 +81,6 @@ import { PerpetualUpsellSection } from "./perpetual-upsell-section";
 import { PerpetualUpsellWizardDialog } from "./perpetual-upsell-wizard-dialog";
 import { usePerpetualUpsellSpreadsheet } from "@/lib/hooks/use-perpetual-upsell";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
-import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -226,6 +231,22 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
     setPageIndex(0);
   }, [rows]);
 
+  // Story 29.32: ordenação por dia. Padrão "desc" = dia mais recente primeiro —
+  // quem opera abre o painel para ver ontem, não o primeiro dia do período.
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  // Story 29.32 (AC2b): a ordenação vale para o CONJUNTO INTEIRO; a paginação
+  // só fatia a visualização depois. Ordenar após o slice deixaria cada página
+  // ordenada isoladamente — erro silencioso, visível só ao virar de página.
+  // `dateIso` é a chave confiável: `date` é só "MM-DD" e é ambíguo na virada de ano.
+  const sortedRows = useMemo(() => {
+    const copy = [...rows];
+    copy.sort((a, b) =>
+      sortDir === "asc" ? a.dateIso.localeCompare(b.dateIso) : b.dateIso.localeCompare(a.dateIso),
+    );
+    return copy;
+  }, [rows, sortDir]);
+
   // Story 29.25: totais do PERÍODO INTEIRO (não da página) — aditivas somam;
   // derivadas recalculadas pelos totais na renderização do rodapé (AC2).
   const totals = useMemo(() => {
@@ -245,10 +266,15 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
 
   if (rows.length === 0) return null;
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / PERPETUAL_DAILY_PAGE_SIZE));
+  // Story 29.32: paginação e fatiamento leem a MESMA coleção (`sortedRows`).
+  // Hoje `rows.length === sortedRows.length`, mas derivar as duas pontas da
+  // mesma fonte evita que uma futura ordenação que também filtre calcule
+  // páginas que não existem.
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / PERPETUAL_DAILY_PAGE_SIZE));
   const safePage = Math.min(pageIndex, totalPages - 1);
   const pageStart = safePage * PERPETUAL_DAILY_PAGE_SIZE;
-  const pageRows = rows.slice(pageStart, pageStart + PERPETUAL_DAILY_PAGE_SIZE);
+  // Story 29.32: fatia o conjunto JÁ ORDENADO — nunca `rows` cru.
+  const pageRows = sortedRows.slice(pageStart, pageStart + PERPETUAL_DAILY_PAGE_SIZE);
 
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
@@ -262,7 +288,31 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
-              <TableHead className="text-xs font-semibold">Dia</TableHead>
+              {/* Story 29.32: ordenação por dia. Alterna asc/desc e volta pra
+                  página 0 — mesmo reset que já acontece quando `rows` muda. */}
+              <TableHead className="text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+                    setPageIndex(0);
+                  }}
+                  className="inline-flex items-center gap-1 font-semibold hover:text-foreground transition-colors"
+                  title={
+                    sortDir === "desc"
+                      ? "Mais recente primeiro — clique para inverter"
+                      : "Mais antigo primeiro — clique para inverter"
+                  }
+                  aria-label={`Ordenar por dia: ${sortDir === "desc" ? "decrescente" : "crescente"}`}
+                >
+                  Dia
+                  {sortDir === "desc" ? (
+                    <ArrowDown className="h-3 w-3" />
+                  ) : (
+                    <ArrowUp className="h-3 w-3" />
+                  )}
+                </button>
+              </TableHead>
               {PERPETUAL_DAILY_COLUMNS.map((c) => (
                 <TableHead
                   key={c.label}
@@ -677,8 +727,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
   };
-  // Taxa de resposta da pesquisa = respostas da pesquisa conectada ÷ vendas.
-  const surveyAgg = useSurveyAggregation(projectId, funnel.id, stageId);
+  // Story 29.32: `useSurveyAggregation` saiu junto com o card "Resposta
+  // Pesquisa" — era seu único consumidor neste dashboard, e mantê-lo faria
+  // requisições de pesquisa a cada render sem nada para exibir.
   const { data: perpetualSpreadsheet } = usePerpetualSpreadsheet(projectId, funnel.id);
   const { data: upsellSpreadsheet } = usePerpetualUpsellSpreadsheet(projectId, funnel.id);
   const { data: salesData } = usePerpetualSalesData(
@@ -863,6 +914,37 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       };
     });
   }, [dailyData, usingSpreadsheet, salesDataDaily, salesData]);
+
+  // Story 29.32 (AC7/AC8): série dos 3 gráficos de linha×área.
+  //
+  // Sai de `dailyChartData`, NÃO de `timeSeries` — este último já vem agregado
+  // por granularidade (Diário/Semanal/Mensal), e a janela pedida é de 7 DIAS.
+  // Com granularidade Semanal, usar o agregado faria "7 pontos" virar 7 semanas.
+  //
+  // A janela são os últimos 7 dias DENTRO do período filtrado (decisão do
+  // usuário) — não uma janela fixa a partir de hoje. Período com menos de 7
+  // dias mostra o que houver; nada é preenchido com zero.
+  //
+  // CAC e Margem % não existem por dia no payload: são derivados aqui, com a
+  // mesma guarda de denominador zero da tabela (`null` → o recharts não desenha
+  // o ponto, em vez de plotar NaN/Infinity no eixo).
+  const last7Days = useMemo(() => {
+    const janela = dailyChartData.slice(-7);
+    return janela.map((d) => {
+      const cac = d.salesCount > 0 ? d.spend / d.salesCount : null;
+      const marginPct = d.revenue > 0 ? (d.margin / d.revenue) * 100 : null;
+      return {
+        date: d.date,
+        dateIso: d.dateIso,
+        spend: d.spend,
+        revenue: d.revenue,
+        margin: d.margin,
+        sales: d.salesCount,
+        cac,
+        marginPct,
+      };
+    });
+  }, [dailyChartData]);
 
   // Story 29.9: agregados com tax aplicado, derivados de `campaign-daily`.
   //
@@ -1325,9 +1407,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       {/* ================================================================ */}
       {/* KPIs PRINCIPAIS                                                  */}
       {/* ================================================================ */}
+      {/* Story 29.32: 8 skeletons em duas linhas de 4, espelhando a grade real. */}
       {overviewLoading ? (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-7">
-          {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : effectiveMetrics ? (
         (() => {
@@ -1347,10 +1430,35 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           const cacAcimaDoTicket =
             m.cac != null && ticketMedio != null && ticketMedio > 0 && m.cac > ticketMedio;
           return (
-            <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-7">
-              <MetricTooltip label="ROAS" value={fmtRoas(m.roas)} formula={buildFunnelRoasFormula(m.roas, f)}>
-                <KpiCard icon={Target} label="ROAS" value={fmtRoas(m.roas)} target={2} actual={m.roas} hintTooltip fromSheet={fromSheet} />
+            // Story 29.32: 8 cards em DUAS linhas de quatro — resultado em cima
+            // (Faturamento Bruto, Vendas, Ticket Médio, Investimento), eficiência
+            // embaixo (CAC, ROAS, Margem, Margem %). Antes eram 7 colunas, o que
+            // misturava as duas leituras em ordem arbitrária.
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+              {/* ---------- Linha 1 — resultado ---------- */}
+              {/* Story 29.25 → 29.28: "Receita" → "Faturamento" → "Faturamento Bruto". */}
+              <MetricTooltip label="Faturamento Bruto" value={fmtCurrency(m.totalRevenue)} formula={buildFunnelRevenueFormula(m.totalRevenue, f)}>
+                <KpiCard icon={DollarSign} label="Faturamento Bruto" value={fmtCurrency(m.totalRevenue)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
               </MetricTooltip>
+              <MetricTooltip label="Vendas" value={fmtNumber(m.totalSales)} formula={buildFunnelSalesCountFormula(m.totalSales, f)}>
+                <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(m.totalSales)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
+              </MetricTooltip>
+              {/* Story 29.32: Ticket Médio ganha card. O valor JÁ existia na tela
+                  desde a 29.28 (`ticketMedio`, do backend) — só era usado para
+                  decidir o vermelho do CAC. Não recalcular a partir de
+                  Faturamento ÷ Vendas: a base é `salesData.ticketMedioBruto`. */}
+              <KpiCard
+                icon={Receipt}
+                label="Ticket Médio"
+                value={ticketMedio != null ? fmtCurrency(ticketMedio) : "—"}
+                fromSheet={fromSheet}
+                title={
+                  ticketMedio != null
+                    ? `Faturamento Bruto ÷ Vendas — ${fmtCurrency(m.totalRevenue)} ÷ ${fmtNumber(m.totalSales)}`
+                    : undefined
+                }
+                warning={noSalesSource ? "Conectar fonte de vendas" : undefined}
+              />
               <InvestmentBreakdownTooltip
                 spendBruto={spendAggregates.totalSpendBruto}
                 spendTax={spendAggregates.totalTax}
@@ -1365,13 +1473,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                   } : undefined}
                 />
               </InvestmentBreakdownTooltip>
-              <MetricTooltip label="Vendas" value={fmtNumber(m.totalSales)} formula={buildFunnelSalesCountFormula(m.totalSales, f)}>
-                <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(m.totalSales)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
-              </MetricTooltip>
-              {/* Story 29.25 → 29.28: "Receita" → "Faturamento" → "Faturamento Bruto". */}
-              <MetricTooltip label="Faturamento Bruto" value={fmtCurrency(m.totalRevenue)} formula={buildFunnelRevenueFormula(m.totalRevenue, f)}>
-                <KpiCard icon={DollarSign} label="Faturamento Bruto" value={fmtCurrency(m.totalRevenue)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
-              </MetricTooltip>
+
+              {/* ---------- Linha 2 — eficiência ---------- */}
               <MetricTooltip label="CAC" value={fmtCurrency(m.cac)} formula={buildFunnelCacFormula(m.cac, f)}>
                 <KpiCard
                   icon={DollarSign}
@@ -1380,14 +1483,18 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                   hintTooltip
                   fromSheet={fromSheet}
                   alert={cacAcimaDoTicket}
-                  // Sem card de Ticket Médio na tela, o vermelho ficaria sem
-                  // referência — o warning diz contra o que o CAC foi comparado.
+                  // Story 29.28 → 29.32: o Ticket Médio agora tem card próprio ao
+                  // lado, mas o warning fica: diz o valor exato da comparação sem
+                  // obrigar o olho a cruzar as duas linhas da grade.
                   warning={
                     cacAcimaDoTicket
                       ? `Acima do Ticket Médio (${fmtCurrency(ticketMedio)})`
                       : undefined
                   }
                 />
+              </MetricTooltip>
+              <MetricTooltip label="ROAS" value={fmtRoas(m.roas)} formula={buildFunnelRoasFormula(m.roas, f)}>
+                <KpiCard icon={Target} label="ROAS" value={fmtRoas(m.roas)} target={2} actual={m.roas} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
               <MarginBreakdownTooltip
                 receitaBruta={m.totalRevenue}
@@ -1403,20 +1510,144 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
               <MetricTooltip label="Margem de Contribuição %" value={fmtPercent(m.marginPercent)} formula={buildFunnelMarginPercentFormula(m.marginPercent, f)}>
                 <KpiCard icon={BarChart3} label="Margem de Contribuição %" value={fmtPercent(m.marginPercent)} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
-              {/* Resposta da pesquisa ÷ vendas — só quando há pesquisa conectada com respostas */}
-              {surveyAgg.totalResponses > 0 && (
-                <KpiCard
-                  icon={ClipboardList}
-                  label="Resposta Pesquisa"
-                  value={m.totalSales > 0 ? fmtPercent((surveyAgg.totalResponses / m.totalSales) * 100) : "—"}
-                  title={`${surveyAgg.totalResponses} resposta${surveyAgg.totalResponses !== 1 ? "s" : ""} ÷ ${m.totalSales} venda${m.totalSales !== 1 ? "s" : ""}`}
-                  warning={m.totalSales === 0 ? "Sem vendas no período" : undefined}
-                />
-              )}
+              {/* Story 29.32: card "Resposta Pesquisa" removido a pedido do gestor.
+                  `surveyAgg` continua alimentando o resto da tela — não desmontar. */}
             </div>
           );
         })()
       ) : <EmptyState />}
+
+      {/* ================================================================ */}
+      {/* Story 29.32 — TRÊS GRÁFICOS DE LINHA×ÁREA (últimos 7 dias)       */}
+      {/*                                                                  */}
+      {/* Cada um cruza VOLUME (área, eixo esquerdo) com EFICIÊNCIA (linha, */}
+      {/* eixo direito) — investimento subindo com CAC subindo junto é o   */}
+      {/* tipo de coisa que só aparece quando as duas séries dividem o     */}
+      {/* mesmo eixo X. Escalas independentes: `yAxisId` em TODO elemento. */}
+      {/* Janela = últimos 7 dias DENTRO do período filtrado (`last7Days`).*/}
+      {/* ================================================================ */}
+      {dailyLoading ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-56 rounded-xl" />)}
+        </div>
+      ) : last7Days.length > 0 ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {[
+            {
+              key: "invest-cac",
+              titulo: "Investimento × CAC",
+              sub: "Gasto em mídia (área) e custo por aquisição (linha)",
+              areaKey: "spend",
+              areaNome: "Investimento",
+              areaCor: "hsl(217 91% 60%)",
+              lineKey: "cac",
+              lineNome: "CAC",
+              lineCor: "hsl(38 92% 50%)",
+              fmtArea: (v: number) => fmtCurrencyCompact(v),
+              fmtLine: (v: number) => fmtCurrencyCompact(v),
+            },
+            {
+              key: "fat-vendas",
+              titulo: "Faturamento × Vendas",
+              sub: "Receita (área) e quantidade de vendas (linha)",
+              areaKey: "revenue",
+              areaNome: "Faturamento",
+              areaCor: "hsl(150 60% 45%)",
+              lineKey: "sales",
+              lineNome: "Vendas",
+              lineCor: "hsl(280 65% 60%)",
+              fmtArea: (v: number) => fmtCurrencyCompact(v),
+              fmtLine: (v: number) => fmtNumber(v),
+            },
+            {
+              key: "margem-pct",
+              titulo: "Margem × Margem %",
+              sub: "Margem absoluta (área) e percentual (linha)",
+              areaKey: "margin",
+              areaNome: "Margem",
+              areaCor: "hsl(190 70% 50%)",
+              lineKey: "marginPct",
+              lineNome: "Margem %",
+              lineCor: "hsl(38 92% 50%)",
+              fmtArea: (v: number) => fmtCurrencyCompact(v),
+              fmtLine: (v: number) => `${v.toFixed(0)}%`,
+            },
+          ].map((g) => (
+            <div key={g.key} className="rounded-xl border border-border/30 bg-card/60 p-5">
+              <h3 className="text-sm font-semibold mb-1">{g.titulo}</h3>
+              <p className="text-[11px] text-muted-foreground mb-3">
+                {g.sub} · últimos {last7Days.length} {last7Days.length === 1 ? "dia" : "dias"} do período
+              </p>
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart data={last7Days} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10, fill: "#fff" }}
+                    stroke="var(--color-muted-foreground)"
+                  />
+                  {/* Eixo esquerdo = área (volume). Eixo direito = linha (eficiência). */}
+                  <YAxis
+                    yAxisId="left"
+                    tick={{ fontSize: 10, fill: "#fff" }}
+                    stroke="var(--color-muted-foreground)"
+                    tickFormatter={(v) => g.fmtArea(v)}
+                  />
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    tick={{ fontSize: 10, fill: "#fff" }}
+                    stroke="var(--color-muted-foreground)"
+                    tickFormatter={(v) => g.fmtLine(v)}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--color-card)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                    formatter={(value, name) => {
+                      // `value` pode vir undefined/null nos dias em que a série
+                      // derivada não tem valor (CAC sem venda, Margem % sem receita).
+                      const n = typeof value === "number" ? value : null;
+                      if (n === null) return ["—", String(name)];
+                      return [name === g.lineNome ? g.fmtLine(n) : g.fmtArea(n), String(name)];
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Area
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey={g.areaKey}
+                    name={g.areaNome}
+                    stroke={g.areaCor}
+                    fill={g.areaCor}
+                    fillOpacity={0.18}
+                    strokeWidth={2}
+                  />
+                  {/* `connectNulls={false}`: dia sem venda (CAC null) ou sem receita
+                      (Margem % null) fica com lacuna — não inventa continuidade. */}
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey={g.lineKey}
+                    name={g.lineNome}
+                    stroke={g.lineCor}
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                    connectNulls={false}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          ))}
+        </div>
+      ) : (
+        /* Story 29.32: mesmo padrão dos outros gráficos do arquivo — sem dado,
+           mostra o EmptyState em vez de a seção sumir sem explicação. */
+        <EmptyState />
+      )}
 
       {/* ================================================================ */}
       {/* REEMBOLSOS — status refunded/chargeback já descontados do Faturamento Bruto */}
