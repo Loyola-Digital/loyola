@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FileSpreadsheet, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,12 @@ const PERPETUAL_MAPPING_FIELDS: Array<{
   { key: "dataVenda", label: "Data da Venda" },
   { key: "formaPagamento", label: "Forma de Pagamento" },
   { key: "status", label: "Status do Pagamento (reembolso/chargeback)" },
+  // Story 29.31: nome do produto de cada venda. Pré-requisito da 29.30
+  // (classificar Principal / Order Bump / Upsell / Downsell). O rótulo diz para
+  // que serve — sem isso ninguém mapeia um campo opcional a mais.
+  // Chave `productName` (não `produto`): é o slot canônico do
+  // `SaleColumnMapping`, fixado pela Story 19.10.
+  { key: "productName", label: "Produto (para classificar Order Bump / Upsell)" },
   { key: "utm_source", label: "UTM Source (Origem)" },
   { key: "utm_medium", label: "UTM Medium" },
   { key: "utm_campaign", label: "UTM Campaign" },
@@ -97,9 +103,41 @@ export function PerpetualSpreadsheetWizardDialog({
     : spreadsheets;
 
   const rawHeaders = sheetData?.headers ?? [];
-  const columns = Array.from(
-    new Set(rawHeaders.map((h, i) => (h && h.trim().length > 0 ? h : `Coluna ${i + 1}`))),
-  );
+  /** Nome exibido de cada coluna — cabeçalho vazio vira "Coluna N". */
+  const displayName = (h: string | undefined, i: number) =>
+    h && h.trim().length > 0 ? h : `Coluna ${i + 1}`;
+  const columns = Array.from(new Set(rawHeaders.map(displayName)));
+
+  // Story 29.31: prévia dos produtos distintos da coluna mapeada.
+  //
+  // Usa as `rows` que `useSheetData` JÁ retorna — o wizard consumia só os
+  // headers. Zero request novo, nem ao backend nem ao Google Sheets.
+  //
+  // Serve a dois propósitos: valida na hora que a coluna certa foi escolhida
+  // (coluna errada mostra valores sem sentido ou dezenas de distintos), e já
+  // responde a pergunta que a 29.30 vai fazer — quais produtos este funil vende.
+  const productPreview = useMemo(() => {
+    const selected = mapping.productName;
+    if (!selected) return null;
+    const idx = rawHeaders.findIndex((h, i) => displayName(h, i) === selected);
+    if (idx === -1) return null;
+
+    // Agrupa por trim().toLowerCase() — a MESMA regra de match que a 29.30 vai
+    // usar (padrão de `orderBumpProducts`, 18.51a). Assim o que o usuário vê
+    // aqui é exatamente o que ele vai classificar depois. Exibe a primeira
+    // grafia encontrada.
+    const byKey = new Map<string, { nome: string; count: number }>();
+    for (const row of sheetData?.rows ?? []) {
+      const raw = (row[idx] ?? "").trim();
+      if (!raw) continue;
+      const key = raw.toLowerCase();
+      const e = byKey.get(key);
+      if (e) e.count += 1;
+      else byKey.set(key, { nome: raw, count: 1 });
+    }
+    const all = Array.from(byKey.values()).sort((a, b) => b.count - a.count);
+    return { top: all.slice(0, 15), total: all.length };
+  }, [mapping.productName, rawHeaders, sheetData?.rows]);
 
   const step: Step = !selectedSpreadsheet ? "spreadsheet" : !selectedSheet ? "sheet" : "mapping";
   const canSave = !!(mapping.email && mapping.email.length > 0);
@@ -357,6 +395,43 @@ export function PerpetualSpreadsheetWizardDialog({
                       </Select>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Story 29.31: prévia dos produtos da coluna mapeada. Só aparece
+                  com a coluna escolhida (AC5) — sem ela o wizard fica idêntico
+                  ao que era. */}
+              {productPreview && (
+                <div className="rounded-lg border border-border/40 bg-muted/20 p-3 space-y-2">
+                  <div>
+                    <Label className="text-xs font-medium">
+                      Produtos encontrados na planilha
+                    </Label>
+                    <p className="text-[10px] text-muted-foreground">
+                      {productPreview.total === 0
+                        ? "Nenhum valor preenchido nessa coluna — confira se escolheu a coluna certa."
+                        : `${productPreview.total} produto${productPreview.total !== 1 ? "s" : ""} distinto${productPreview.total !== 1 ? "s" : ""}. Na etapa de classificação você marca quais são Order Bump, Upsell ou Downsell.`}
+                    </p>
+                  </div>
+                  {productPreview.total > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {productPreview.top.map((p) => (
+                        <span
+                          key={p.nome}
+                          className="inline-flex items-center gap-1 rounded border border-border/40 bg-background/60 px-1.5 py-0.5 text-[10px]"
+                          title={`${p.count} linha${p.count !== 1 ? "s" : ""} com este produto`}
+                        >
+                          <span className="max-w-[220px] truncate">{p.nome}</span>
+                          <span className="tabular-nums text-muted-foreground">{p.count}</span>
+                        </span>
+                      ))}
+                      {productPreview.total > productPreview.top.length && (
+                        <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          +{productPreview.total - productPreview.top.length} outros
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </>

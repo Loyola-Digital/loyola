@@ -1063,6 +1063,15 @@ export const funnelSpreadsheets = pgTable(
         valorBruto?: string;
         valorLiquido?: string;
         formaPagamento?: string;
+        /**
+         * Story 29.31: nome do produto de cada venda — pré-requisito da 29.30
+         * (classificar Principal / Order Bump / Upsell / Downsell).
+         *
+         * Mesmo nome usado por `stageSalesSpreadsheets.columnMapping` (:739) e
+         * por `SaleColumnMapping` no shared. Este tipo era o único dos três sem
+         * o campo; a story fecha a divergência.
+         */
+        productName?: string;
         /** Story 18.17: faixa de lead scoring (A/B/C/D) */
         faixa?: string;
         utm_source?: string;
