@@ -61,6 +61,7 @@ import perpetualReportConfigRoutes from "./routes/perpetual-report-config.js";
 import perpetualReportRoutes from "./routes/perpetual-report.js";
 import launchReportsRoutes, { comparativoRoutes } from "./routes/launch-reports.js";
 import publicSalesRowsRoutes from "./routes/public-sales-rows.js";
+import publicFunnelSalesRoutes from "./routes/public-funnel-sales.js";
 import publicCrossLaunchRoutes from "./routes/public-cross-launch.js";
 import perpetualSpreadsheetsRoutes from "./routes/perpetual-spreadsheets.js";
 import perpetualSalesDataRoutes from "./routes/perpetual-sales-data.js";
@@ -175,6 +176,7 @@ export async function buildServer() {
   await app.register(launchReportsRoutes);
   await app.register(comparativoRoutes);
   await app.register(publicSalesRowsRoutes);
+  await app.register(publicFunnelSalesRoutes);
   await app.register(publicCrossLaunchRoutes);
   await app.register(perpetualSpreadsheetsRoutes);
   await app.register(perpetualSalesDataRoutes);

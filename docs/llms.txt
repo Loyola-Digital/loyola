@@ -99,6 +99,13 @@ Resposta: `{ projectId, stageId, computedAt, range, totalVendas, faturamentoBrut
 Resposta: `{ projectId, stageId, stageName, sheetSources:[{subtype,sheetName,rows}], totalRows, rows:[{ txId, emailHash, produto, plataforma, valorBruto, valorLiquido, dataVendaRaw, dataVenda, statusBucket, utmSource, utmMedium, utmCampaign, utmContent, utmTerm, origem, canal, temperatura, leadMatch, leadUtmSource, leadUtmTerm, leadCreatedAt }] }`.
 Regras de leitura: (1) **SEM dedup** — a chave do dashboard é `txId+produto`; (2) reembolso/chargeback INCLUÍDOS (`statusBucket` diz — filtre); (3) `dataVendaRaw` é a célula CRUA (n8n grava UTC "...Z"; Meta é BRT — o corte de fuso é seu); (4) TMB sai filtrando `plataforma !== "tmb"`; (5) coorte D+x = `dataVenda − leadCreatedAt` quando `leadMatch:true`.
 
+### GET /api/public/v1/funnels/{funnelId}/sales
+**VENDAS DO FUNIL INTEIRO** — soma as etapas server-side em cima do MESMO cache do `sales-daily`. Responde "quantas vendas / quanto faturou o funil X" numa chamada, sem iterar etapa por etapa. Zero PII.
+Resposta: `{ funnelId, projectId, funnelName, funnelType, computedAt, range:{from,to}, totalVendas, faturamentoBruto, faturamentoLiquido, stagesContabilizadas, stagesTotal, avisos:[..], byDay:[{date,faturamentoBruto,faturamentoLiquido,ingressos:{pago,org,semTrack,total}}], porOrigem, porCanal, porProduto (top 30), porPlataforma, byStage:[{stageId,stageName,stageType,totalVendas,faturamentoBruto,faturamentoLiquido,semDados,contabilizado,motivo?}] }` — ou `{ semDados:true }` quando nenhuma etapa tem cache.
+**NÃO some as etapas na mão.** No funil PERPÉTUO a planilha de vendas é do FUNIL (`perpetual_sales`, stage_id NULL) e é herdada por TODA etapa free/paid — somar os `sales-daily` das etapas conta as MESMAS transações N vezes. Aqui cada planilha física entra uma vez só, atribuída à primeira etapa (por sortOrder) que a usa; as demais aparecem em `byStage` com `contabilizado:false` e o `motivo`.
+`avisos` é não-vazio quando uma etapa mistura fonte própria + fonte já contada — nesse caso o cache agregado não permite separar, o total pode estar inflado e o aviso diz qual etapa.
+`computedAt` é o da etapa MAIS ANTIGA somada — o agregado só é tão fresco quanto sua parte mais velha.
+
 ### GET /api/public/v1/projects/{projectId}/cross-launch
 **CROSS-LAUNCH (Story 39.I4)** — recompra entre funis do projeto, match server-side por sha256 de e-mail (zero PII). Pré-computado (cache diário).
 Resposta: `{ projectId, computedAt, funnels:[{funnelId,name,type,buyers,faturamentoBruto}], totalUniqueBuyers, multiFunnelBuyers, overlaps:[{funnelA,funnelB,sharedBuyers,aThenB,bThenA}] }`. `aThenB` = compradores em comum cuja 1ª compra em A veio ANTES da 1ª em B (recompra direcional). `semDados:true` = sync pendente.
@@ -157,3 +164,4 @@ Tools (mapeiam 1:1 nos endpoints):
 - `get_stage_leads_summary(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/leads-summary
 - `get_stage_survey(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/survey
 - `get_stage_sales_daily(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/sales-daily
+- `get_funnel_sales(funnelId)` → GET /api/public/v1/funnels/{funnelId}/sales (vendas do FUNIL inteiro — agrega as etapas server-side, sem duplicar a planilha do perpétuo)
