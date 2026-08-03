@@ -363,8 +363,18 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
             `Sync: ${r.created} novo${r.created !== 1 ? "s" : ""}, ${r.updated} atualizado${r.updated !== 1 ? "s" : ""}` +
               (r.skippedNoEmail > 0 ? ` (${r.skippedNoEmail} sem email ficaram fora)` : ""),
           );
+        } else if ((r.totalBuyers ?? 0) === 0) {
+          // Zero na ORIGEM (não "zero novos") — quase sempre é fonte/coluna de
+          // e-mail errada. Sem distinguir isso, o "nenhum novo" mentia.
+          toast.warning(
+            sourceKindDraft === "survey"
+              ? r.skippedNoEmail > 0
+                ? `Pesquisa lida, mas ${r.skippedNoEmail} linha(s) estão sem e-mail — só respondente com e-mail vira card.`
+                : "Nenhum respondente encontrado. Confira em Mapear se a coluna de e-mail está apontada."
+              : `Nenhum comprador nas etapas-fonte${r.skippedNoEmail > 0 ? ` (${r.skippedNoEmail} sem email)` : ""}.`,
+          );
         } else {
-          toast.info(`Nenhum comprador novo${r.skippedNoEmail > 0 ? ` (${r.skippedNoEmail} sem email fora)` : ""}`);
+          toast.info(`Nenhum registro novo${r.skippedNoEmail > 0 ? ` (${r.skippedNoEmail} sem email fora)` : ""}`);
         }
       },
       onError: (e) => toast.error(e instanceof Error ? e.message : "Erro no sync"),
@@ -381,6 +391,9 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
     try {
       await saveConfig.mutateAsync({ sourceStageIds: sourceDraft, comercialSource: sourceKindDraft });
       toast.success("Configuração salva");
+      // Salvar sem sincronizar deixava o kanban vazio até o usuário achar o
+      // botão Sync — o auto-sync só dispara 1x no mount da view.
+      handleManualSync();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao salvar");
     }
@@ -489,9 +502,15 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                   </div>
                   <p className="text-[11px] text-muted-foreground">
                     {sourceKindDraft === "survey"
-                      ? "Quem respondeu a pesquisa dessas etapas (planilha de pesquisa) vira card no kanban."
+                      ? "Quem respondeu a pesquisa (etapas-fonte e/ou planilha própria) vira card no kanban."
                       : "Quem comprou nessas etapas (planilhas de venda + vendas manuais) vira card no kanban."}
                   </p>
+                  {sourceKindDraft !== boardSourceKind && (
+                    <p className="text-[11px] text-amber-500">
+                      Fonte ativa hoje: <strong>{boardSourceKind === "survey" ? "Respondentes da pesquisa" : "Compradores"}</strong>.
+                      Clique em <strong>Salvar configuração</strong> no fim deste painel pra aplicar a troca.
+                    </p>
+                  )}
                 </div>
 
                 {/* Etapas-fonte */}
@@ -527,9 +546,6 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                       })
                     )}
                   </div>
-                  <Button size="sm" onClick={handleSaveConfig} disabled={saveConfig.isPending}>
-                    {saveConfig.isPending ? "Salvando..." : "Salvar configuração"}
-                  </Button>
                 </div>
 
                 {/* Planilha própria — pesquisa que não vive em nenhuma etapa
@@ -562,6 +578,19 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                     stageId={stage.id}
                     surveyType="paid"
                   />
+                </div>
+
+                {/* Salvar — fecha o bloco de fontes (tipo + etapas + planilha).
+                    Ficava no meio do painel, antes da planilha própria, e passava
+                    despercebido; a troca de fonte só persiste por aqui. */}
+                <div className="space-y-1.5 rounded-md border border-border/40 p-3">
+                  <Button size="sm" onClick={handleSaveConfig} disabled={saveConfig.isPending}>
+                    {saveConfig.isPending ? "Salvando..." : "Salvar configuração"}
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground">
+                    Salva a fonte dos cards e as etapas-fonte, e roda o sync em seguida.
+                    Vincular/mapear planilha acima já grava na hora.
+                  </p>
                 </div>
 
                 {/* Colunas do kanban */}
