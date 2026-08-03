@@ -2101,7 +2101,9 @@ export const stageCrmCards = pgTable(
     columnId: uuid("column_id")
       .notNull()
       .references(() => stageCrmColumns.id, { onDelete: "restrict" }),
-    customerEmail: varchar("customer_email", { length: 255 }).notNull(),
+    /** Nullable desde a 0087: lead lançado à mão pode não ter e-mail (igual
+     * `manual_sales`). Card importado sempre tem — é a chave do dedup. */
+    customerEmail: varchar("customer_email", { length: 255 }),
     customerName: varchar("customer_name", { length: 255 }),
     customerPhone: varchar("customer_phone", { length: 50 }),
     /** Compras do comprador: [{produto, valor, dataVenda, fonte}]. */
@@ -2128,7 +2130,12 @@ export const stageCrmCards = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uq_crm_cards_stage_email").on(table.stageId, table.customerEmail),
+    // Parcial (0087): unicidade vale só pra quem TEM e-mail — assim o sync
+    // segue fazendo merge em vez de duplicar, e N cards manuais sem e-mail
+    // coexistem (NULL não colide em índice parcial).
+    uniqueIndex("uq_crm_cards_stage_email")
+      .on(table.stageId, table.customerEmail)
+      .where(sql`${table.customerEmail} IS NOT NULL`),
     index("idx_crm_cards_stage_column_sort").on(table.stageId, table.columnId, table.sortOrder),
   ]
 );
