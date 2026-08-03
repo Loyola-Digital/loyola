@@ -1,7 +1,7 @@
 schema: 1
 story: '29.32'
 gate: CONCERNS
-status_reason: 'Implementação correta e gates verdes, mas a AC2b — o requisito que o usuário fez questão de enfatizar — não tem verificação automatizada nem visual, e é justamente o erro que não aparece sem testar.'
+status_reason: 'Implementação correta e gates verdes; os dois achados low foram corrigidos antes do merge. Segue CONCERNS apenas porque a AC2b — o requisito que o usuário fez questão de enfatizar — depende de conferência visual, e é o erro que não aparece sem testar.'
 reviewer: 'Quinn'
 updated: '2026-08-03T15:23:47Z'
 
@@ -23,12 +23,16 @@ top_issues:
     suggested_action: 'Validar na tela com um período de mais de 16 dias (mais de uma página) antes de considerar a story encerrada. Em paralelo, avaliar configurar o runner do web como débito separado — hoje há 5 arquivos de teste que ninguém executa.'
   - id: 'MNT-001'
     severity: low
-    finding: 'Os 3 gráficos novos renderizam `null` quando não há dado, enquanto todos os outros gráficos do mesmo arquivo usam <EmptyState />. A tela some sem explicar por quê.'
+    status: RESOLVIDO
+    finding: 'Os 3 gráficos novos renderizavam `null` quando não havia dado, enquanto todos os outros gráficos do mesmo arquivo usam <EmptyState />. A tela sumia sem explicar por quê.'
     suggested_action: 'Trocar o `: null` por `: <EmptyState />` para alinhar com o padrão do arquivo.'
+    resolution: 'Corrigido em 2026-08-03 a pedido do usuário, antes do merge. Gates revalidados (tsc, lint, build).'
   - id: 'MNT-002'
     severity: low
-    finding: 'totalPages deriva de rows.length enquanto pageRows fatia sortedRows. Hoje é equivalente porque sortedRows é uma cópia ordenada de mesma cardinalidade, mas se algum dia a ordenação passar a filtrar, a paginação calcularia páginas que não existem.'
+    status: RESOLVIDO
+    finding: 'totalPages derivava de rows.length enquanto pageRows fatia sortedRows. Era equivalente porque sortedRows é uma cópia ordenada de mesma cardinalidade, mas se a ordenação passasse a filtrar, a paginação calcularia páginas que não existem.'
     suggested_action: 'Derivar totalPages de sortedRows.length, para as duas pontas lerem a mesma coleção.'
+    resolution: 'Corrigido em 2026-08-03 a pedido do usuário, antes do merge. As duas pontas agora leem `sortedRows`.'
 
 validation_pending:
   - 'AC2b na tela com período > 16 dias — o cenário exato do risco'

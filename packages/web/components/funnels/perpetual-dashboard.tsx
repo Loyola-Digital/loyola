@@ -266,7 +266,11 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
 
   if (rows.length === 0) return null;
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / PERPETUAL_DAILY_PAGE_SIZE));
+  // Story 29.32: paginação e fatiamento leem a MESMA coleção (`sortedRows`).
+  // Hoje `rows.length === sortedRows.length`, mas derivar as duas pontas da
+  // mesma fonte evita que uma futura ordenação que também filtre calcule
+  // páginas que não existem.
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / PERPETUAL_DAILY_PAGE_SIZE));
   const safePage = Math.min(pageIndex, totalPages - 1);
   const pageStart = safePage * PERPETUAL_DAILY_PAGE_SIZE;
   // Story 29.32: fatia o conjunto JÁ ORDENADO — nunca `rows` cru.
@@ -1639,7 +1643,11 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             </div>
           ))}
         </div>
-      ) : null}
+      ) : (
+        /* Story 29.32: mesmo padrão dos outros gráficos do arquivo — sem dado,
+           mostra o EmptyState em vez de a seção sumir sem explicação. */
+        <EmptyState />
+      )}
 
       {/* ================================================================ */}
       {/* REEMBOLSOS — status refunded/chargeback já descontados do Faturamento Bruto */}
