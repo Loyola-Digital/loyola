@@ -454,7 +454,14 @@ function overlaySpreadsheetMetrics(
 }
 
 // Story 29.19: linha do Detalhamento (CampaignAnalytics + margens derivadas).
-type DetailRow = CampaignAnalytics & { marginPct: number | null; marginPerSale: number | null };
+type DetailRow = CampaignAnalytics & {
+  marginPct: number | null;
+  marginPerSale: number | null;
+  // Story 29.29: funil do criativo em vídeo (só preenchido no modo Por Criativo).
+  hookRate: number | null;
+  holdRate: number | null;
+  bodyConversion: number | null;
+};
 
 // Linha sintética do Detalhamento quando só há planilha (sem campanha Meta):
 // métricas de mídia zeradas; vendas/receita vêm da planilha.
@@ -471,10 +478,26 @@ function sheetOnlyRow(id: string, name: string, vendas: number, bruto: number): 
 
 // Story 29.19: remove o sufixo " — Cópia" (Meta duplica campanhas assim) do fim
 // do nome, pra normalizar e agrupar a cópia no nome base. Cobre —/–/- e número.
-const COPIA_SUFFIX_RE = /(\s*[—–-]\s*c[oó]pia(\s*\d+)?)+\s*$/i;
+// Story 29.29: cobre também o inglês (" - Copy", " - Copy 2") — a conta pode
+// estar em qualquer idioma, e o usuário pediu as duas formas.
+// Só no FIM do nome: "Copy of Criativo X" (prefixo) NÃO é agrupado.
+const COPIA_SUFFIX_RE = /(\s*[—–-]\s*(c[oó]pia|copy)(\s*\d+)?)+\s*$/i;
 function normalizeCampaignName(name: string): string {
   const cleaned = name.replace(COPIA_SUFFIX_RE, "").trim();
   return cleaned.length > 0 ? cleaned : name;
+}
+
+// Story 29.29: taxa do funil de vídeo. `null` = denominador zero (anúncio de
+// imagem, ou entidade sem dado de vídeo) → "—", nunca 0%, que seria enganoso.
+function fmtRateOrDash(v: number | null | undefined): string {
+  return v == null ? "—" : `${v.toFixed(2)}%`;
+}
+
+// Story 29.29: verde ao bater a meta — mesmo tratamento da tabela de Criativos
+// da Captação (`stage-creative-performance-table.tsx`), para que a mesma métrica
+// se leia igual nas duas telas. Só Hook e Hold têm meta; ver nota no Body Conv.
+function rateGoalClass(v: number | null | undefined, goal: number): string {
+  return v != null && v >= goal ? "text-green-600 dark:text-green-400 font-semibold" : "";
 }
 
 // Story 29.19: cores condicionais das colunas do Detalhamento.
@@ -1186,6 +1209,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
 
   // Story 29.20 (Danilo): fee rate da plataforma pra Margem LÍQUIDA por linha.
   const detailFeeRate = usingSpreadsheet && salesData ? salesData.feeRate : 0;
+  // Story 29.29: Hook/Hold/Body só existem a nível de ANÚNCIO — campanha e
+  // adset agregam criativos diferentes, e a média não significaria nada.
+  const showVideoCols = tableFilter === "ad";
   // Story 29.19: normaliza nomes (tira " — Cópia") e agrupa a cópia no nome base.
   // Merge (>1 membro) soma métricas e re-deriva taxas; membro único fica intacto.
   const detailRows = useMemo<DetailRow[]>(() => {
@@ -1217,10 +1243,17 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         const linkClicks = members.reduce((s, m) => s + (m.linkClicks ?? 0), 0);
         const revenue = members.reduce((s, m) => s + (m.revenue ?? 0), 0);
         const sales = members.reduce((s, m) => s + (m.sales ?? 0), 0);
+        // Story 29.29: métricas de vídeo são ADITIVAS entre os membros (um Ad
+        // Name pode ter N ad_ids, incluindo as cópias). Hook/Hold/Body são
+        // re-derivadas destes somatórios em `deriveDetailMetrics` — nunca média
+        // das taxas individuais, que daria número errado silenciosamente.
+        const videoViews3s = members.reduce((s, m) => s + (m.videoViews3s ?? 0), 0);
+        const videoViews75 = members.reduce((s, m) => s + (m.videoViews75 ?? 0), 0);
         base = {
           ...members[0],
           campaignName: name,
           spend, impressions, clicks, revenue, sales,
+          videoViews3s, videoViews75,
           linkClicks: linkClicks > 0 ? linkClicks : null,
           // Story 29.20 (M2): CTR/CPC de LINK clicks (fallback total) — igual buildAnalyticsRow.
           ctr: linkClicks > 0 && impressions > 0 ? (linkClicks / impressions) * 100 : (impressions > 0 ? (clicks / impressions) * 100 : 0),
@@ -1252,6 +1285,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         case "ctr": return num(r.ctr);
         case "cpc": return num(r.cpc);
         case "cpm": return num(r.cpm);
+        // Story 29.29: "—" (null) vai para o fim na ordem descendente, via `num`.
+        case "hookRate": return num(r.hookRate);
+        case "holdRate": return num(r.holdRate);
+        case "bodyConversion": return num(r.bodyConversion);
         default: return 0;
       }
     };
@@ -1816,11 +1853,21 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                 <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("ctr")}>CTR (link){sortArrow("ctr")}</th>
                 <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cpc")}>CPC (link){sortArrow("cpc")}</th>
                 <th className="text-right pl-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cpm")}>CPM{sortArrow("cpm")}</th>
+                {/* Story 29.29: funil do criativo em vídeo — só faz sentido a
+                    nível de anúncio, então as colunas SOMEM nos outros modos
+                    (não viram "—"). Campanha e adset não têm criativo único. */}
+                {showVideoCols && (
+                  <>
+                    <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("hookRate")} title="Visualizações 3s ÷ Impressões × 100 — dos que viram o anúncio, quantos assistiram os primeiros segundos (verde ≥ 25%)">Hook{sortArrow("hookRate")}</th>
+                    <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("holdRate")} title="Visualizações 75% ÷ Visualizações 3s × 100 — dos que passaram pelo gancho, quantos seguiram até 75% do vídeo (verde ≥ 13%)">Hold{sortArrow("holdRate")}</th>
+                    <th className="text-right pl-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("bodyConversion")} title="Vendas ÷ Visualizações 75% × 100 — dos que viram o corpo do vídeo, quantos compraram. Sem meta de cor: o benchmark de 3,7% da Captação é sobre LEADS, não vendas">Body Conv.{sortArrow("bodyConversion")}</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
               {sortedRows.length === 0 ? (
-                <tr><td colSpan={11} className="py-6 text-center text-muted-foreground">Sem dados</td></tr>
+                <tr><td colSpan={showVideoCols ? 14 : 11} className="py-6 text-center text-muted-foreground">Sem dados</td></tr>
               ) : sortedRows.map((row) => {
                 const f = { days, funnelType: "perpetual" as const, funnelName: funnel?.name };
                 const marginPct = row.marginPct;
@@ -1858,11 +1905,23 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                   ["cpc", "CPC", fmtCurrency(row.cpc), enrichFormulaForEntity(buildFunnelCpcFormula(row.cpc, f), path), "text-right px-2 tabular-nums"],
                   ["cpm", "CPM", fmtCurrency(row.cpm), enrichFormulaForEntity(buildFunnelCpmFormula(row.cpm, f), path), "text-right pl-2 tabular-nums"],
                 ];
+                // Story 29.29: Hook/Hold reusam as metas já validadas na
+                // Captação (18.65). Body Conv. sai SEM meta de propósito — o
+                // 3,7% de lá é sobre LEADS ÷ p75; aqui o numerador é VENDAS, que
+                // convertem em ordem de grandeza menor. Pintar com aquele
+                // benchmark marcaria criativo bom como ruim.
                 return (
                   <tr key={row.campaignName} className="border-b border-border/10 hover:bg-muted/5">
                     <td className="py-2 pr-3"><StatusBadge status={tableFilter === "campaign" ? campaignStatusById.get(row.campaignId) : undefined} /></td>
                     <td className="py-2 pr-3 font-medium truncate" style={{ maxWidth: dimWidth, width: dimWidth }}>{row.campaignName}</td>
                     {cells.map(([col, label, value, formula, cls]) => renderCell(col, label, value, formula, cls))}
+                    {showVideoCols && (
+                      <>
+                        <td className={`text-right px-2 tabular-nums ${rateGoalClass(row.hookRate, 25)}`}>{fmtRateOrDash(row.hookRate)}</td>
+                        <td className={`text-right px-2 tabular-nums ${rateGoalClass(row.holdRate, 13)}`}>{fmtRateOrDash(row.holdRate)}</td>
+                        <td className="text-right pl-2 tabular-nums">{fmtRateOrDash(row.bodyConversion)}</td>
+                      </>
+                    )}
                   </tr>
                 );
               })}

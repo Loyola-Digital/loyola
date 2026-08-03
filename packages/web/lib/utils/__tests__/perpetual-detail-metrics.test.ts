@@ -102,3 +102,84 @@ describe("deriveDetailMetrics — Story 29.27 (guarda contra dupla tributação)
     expect(r.marginPerSale).toBeCloseTo((FATURAMENTO - SPEND_CORRETO) / VENDAS, 6);
   });
 });
+
+// ============================================================
+// Story 29.29 — funil do criativo em vídeo
+// ============================================================
+
+describe("deriveDetailMetrics — Hook / Hold / Body Conversion (Story 29.29)", () => {
+  const video: DetailMetricsInput = {
+    ...base,
+    impressions: 100_000,
+    videoViews3s: 30_000, // Hook = 30%
+    videoViews75: 6_000, // Hold = 20%
+    sales: 120, // Body = 2%
+  };
+
+  it("as três fórmulas encadeiam as etapas do funil", () => {
+    const r = deriveDetailMetrics(video, FEE_KIWIFY);
+    expect(r.hookRate).toBeCloseTo(30, 6); // 30.000 ÷ 100.000
+    expect(r.holdRate).toBeCloseTo(20, 6); //  6.000 ÷  30.000
+    expect(r.bodyConversion).toBeCloseTo(2, 6); //    120 ÷   6.000
+  });
+
+  it("Hold parte de quem passou pelo gancho, não das impressões", () => {
+    const r = deriveDetailMetrics(video, FEE_KIWIFY);
+    expect(r.holdRate).not.toBeCloseTo((6_000 / 100_000) * 100, 4);
+  });
+
+  it("anúncio de imagem (sem vídeo) → '—' nas três, nunca 0%", () => {
+    const r = deriveDetailMetrics({ ...base, videoViews3s: 0, videoViews75: 0 }, FEE_KIWIFY);
+    expect(r.hookRate).toBeNull();
+    expect(r.holdRate).toBeNull();
+    expect(r.bodyConversion).toBeNull();
+  });
+
+  it("campos ausentes (campanha/adset, que não recebem vídeo) → null", () => {
+    const r = deriveDetailMetrics(base, FEE_KIWIFY);
+    expect(r.hookRate).toBeNull();
+    expect(r.holdRate).toBeNull();
+    expect(r.bodyConversion).toBeNull();
+  });
+
+  it("vídeo assistido mas sem venda: Body = 0%, não null", () => {
+    const r = deriveDetailMetrics({ ...video, sales: 0 }, FEE_KIWIFY);
+    expect(r.bodyConversion).toBe(0);
+    expect(r.holdRate).toBeCloseTo(20, 6); // as outras seguem válidas
+  });
+
+  it("vídeo sem retenção a 75%: Hold e Body são '—', Hook sobrevive", () => {
+    const r = deriveDetailMetrics({ ...video, videoViews75: 0 }, FEE_KIWIFY);
+    expect(r.hookRate).toBeCloseTo(30, 6);
+    expect(r.holdRate).toBeNull();
+    expect(r.bodyConversion).toBeNull();
+  });
+
+  it("AGREGAÇÃO por Ad Name: taxas re-derivadas dos somatórios, não média de médias", () => {
+    // Dois ad_ids do mesmo Ad Name, com performances bem diferentes.
+    const a = { impressions: 90_000, videoViews3s: 9_000, videoViews75: 900, sales: 9 }; // Hook 10%
+    const b = { impressions: 10_000, videoViews3s: 5_000, videoViews75: 2_500, sales: 91 }; // Hook 50%
+
+    const somado = deriveDetailMetrics(
+      {
+        ...base,
+        impressions: a.impressions + b.impressions,
+        videoViews3s: a.videoViews3s + b.videoViews3s,
+        videoViews75: a.videoViews75 + b.videoViews75,
+        sales: a.sales + b.sales,
+      },
+      FEE_KIWIFY,
+    );
+
+    // Correto: 14.000 ÷ 100.000 = 14%
+    expect(somado.hookRate).toBeCloseTo(14, 6);
+    // Média das taxas individuais daria 30% — mais que o dobro do real.
+    const mediaDeMedias = (10 + 50) / 2;
+    expect(somado.hookRate).not.toBeCloseTo(mediaDeMedias, 1);
+
+    // Hold correto: 3.400 ÷ 14.000 ≈ 24,29%
+    expect(somado.holdRate).toBeCloseTo((3_400 / 14_000) * 100, 6);
+    // Body correto: 100 ÷ 3.400 ≈ 2,94%
+    expect(somado.bodyConversion).toBeCloseTo((100 / 3_400) * 100, 6);
+  });
+});

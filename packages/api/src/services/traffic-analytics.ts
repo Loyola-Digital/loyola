@@ -124,6 +124,16 @@ export interface CampaignAnalytics {
   costPerSale: number | null;
   roas: number | null;
   conversionRate: number | null;
+  /**
+   * Story 29.29: métricas de vídeo por anúncio, base de Hook/Hold/Body
+   * Conversion no Detalhamento do Perpétuo.
+   *
+   * Opcionais de propósito — só `getAllAdsForProject` (nível ad) as preenche.
+   * Campanha e adset seguem sem elas, e nenhuma tela que consome este tipo
+   * precisa mudar.
+   */
+  videoViews3s?: number;
+  videoViews75?: number;
 }
 
 export interface OverviewAnalytics {
@@ -222,6 +232,22 @@ function parseLeads(campaign: MetaCampaignInsight): number {
 
 function parseLeadsFromActions(actions?: { action_type: string; value: string }[]): number {
   return parseActionCount(actions, "lead");
+}
+
+/**
+ * Story 29.29: "Reproduções de vídeo de 3 segundos" — base do Hook Rate.
+ *
+ * A Meta expõe isso como `actions[].video_view`; é o mesmo número que o
+ * Gerenciador de Anúncios mostra como 3-second video plays. Já vem no `actions`
+ * que `fetchAllAdInsights` busca — nenhum field novo, nenhuma chamada extra.
+ *
+ * Precedente: Story 18.65 (`routes/stage-creative-performance.ts`), onde o Hook
+ * Rate da Captação foi validado contra o Gerenciador com este mesmo campo.
+ * Espelhado aqui em vez de importado porque aquele helper vive numa rota — um
+ * service não deve depender de uma.
+ */
+function parseVideo3sViews(actions?: { action_type: string; value: string }[]): number {
+  return parseActionCount(actions, "video_view");
 }
 
 /** Parse purchase count from actions — checks multiple Meta action types */
@@ -801,7 +827,11 @@ export async function getAllAdsForProject(
   const filtered = idSet ? allAds.filter((a) => idSet.has(a.campaign_id)) : allAds;
 
   // Aggregate by ad NAME (same creative across adsets/campaigns)
-  const adMap = new Map<string, { id: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number; leads: number; linkClicks: number; lpViews: number; purchases: number; revenue: number }>();
+  // Story 29.29: `videoViews3s`/`videoViews75` acumulam junto — um Ad Name pode
+  // ter N ad_ids, e as métricas de vídeo dos N somam sob o mesmo nome, igual ao
+  // resto. As TAXAS (Hook/Hold/Body) são derivadas depois, no frontend, a partir
+  // destes somatórios — nunca média das taxas por id.
+  const adMap = new Map<string, { id: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number; leads: number; linkClicks: number; lpViews: number; purchases: number; revenue: number; videoViews3s: number; videoViews75: number }>();
   for (const a of filtered) {
     const key = a.ad_name.trim();
     const leads = parseLeadsFromActions(a.actions);
@@ -809,6 +839,10 @@ export async function getAllAdsForProject(
     const lpv = parseActionCount(a.actions, "landing_page_view");
     const purchases = parsePurchases(a.actions);
     const revenue = parsePurchaseRevenue(a.action_values);
+    const v3s = parseVideo3sViews(a.actions);
+    // `extractVideoMetrics` devolve null quando todos os percentis são 0
+    // (anúncio de imagem) — o `?? 0` evita NaN vazando para a UI.
+    const v75 = a.videoMetrics?.p75 ?? 0;
     const existing = adMap.get(key);
     if (existing) {
       existing.spend += applyMetaTax(parseFloat(a.spend || "0"), a.date_start); // imposto Meta 12,15% (2026+)
@@ -820,6 +854,8 @@ export async function getAllAdsForProject(
       existing.lpViews += lpv;
       existing.purchases += purchases;
       existing.revenue += revenue;
+      existing.videoViews3s += v3s;
+      existing.videoViews75 += v75;
     } else {
       adMap.set(key, {
         id: a.ad_id,
@@ -829,6 +865,7 @@ export async function getAllAdsForProject(
         clicks: parseFloat(a.clicks || "0"),
         reach: parseFloat(a.reach || "0"),
         leads, linkClicks: lc, lpViews: lpv, purchases, revenue,
+        videoViews3s: v3s, videoViews75: v75,
       });
     }
   }
@@ -836,7 +873,12 @@ export async function getAllAdsForProject(
   const ads = Array.from(adMap.entries()).map(([name, a]) => {
     const saleData = a.purchases > 0 ? { count: a.purchases, revenue: a.revenue } : null;
     const row = buildAnalyticsRow(a.id, name, a.spend, a.impressions, a.clicks, a.leads > 0 ? a.leads : null, null, saleData, a.reach, a.linkClicks > 0 ? a.linkClicks : null, a.lpViews > 0 ? a.lpViews : null);
-    return { ...row, parentCampaignName: a.campaignName };
+    return {
+      ...row,
+      parentCampaignName: a.campaignName,
+      videoViews3s: a.videoViews3s,
+      videoViews75: a.videoViews75,
+    };
   });
 
   const result: AllAdsResult = { ads };

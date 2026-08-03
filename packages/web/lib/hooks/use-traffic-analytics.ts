@@ -31,6 +31,12 @@ export interface CampaignAnalytics {
   costPerSale: number | null;
   roas: number | null;
   conversionRate: number | null;
+  /**
+   * Story 29.29: métricas de vídeo — só vêm no nível de anúncio (`/all-ads`),
+   * somadas por Ad Name. Base de Hook/Hold/Body Conversion.
+   */
+  videoViews3s?: number;
+  videoViews75?: number;
 }
 
 export interface OverviewAnalytics {
