@@ -1,0 +1,23 @@
+schema: 1
+story: '41.6'
+gate: CONCERNS
+status_reason: 'A decomposição bate com a §10 nos quatro fatores, mas o Comparativo não foi executado pela tela com dois lançamentos reais desde que a config do PG04 passou a existir.'
+reviewer: 'Quinn'
+updated: '2026-08-03T12:37:02Z'
+
+evidence:
+  tests: 'launch-report-compare.test.ts verde, incluindo a propriedade de invariância à inversão de A/B'
+  math: 'peso da decomposição é invariante à inversão — ln(1/r)/Σln(1/r) = ln(r)/Σln(r), porque numerador e denominador trocam de sinal juntos; quem inverte é o efeito e a direção'
+  bug_caught: 'Direção do Comparativo estava invertida; corrigida após teste na tela (commit 165cf54)'
+
+top_issues:
+  - id: 'TEST-003'
+    severity: medium
+    finding: 'O Comparativo com dois lançamentos reais (PG02 → PG04) não foi rodado pela interface desde a criação da config do PG04 em 31/07. A decomposição foi conferida, o fluxo completo pela tela não.'
+    suggested_action: 'Executar pela tela após o deploy, antes de considerar a story encerrada.'
+  - id: 'DOC-006'
+    severity: low
+    finding: 'Os 10 checkboxes do Definition of Done seguem desmarcados apesar de File List e Change Log completos.'
+    suggested_action: 'Marcar o DoD.'
+
+waiver: { active: false }

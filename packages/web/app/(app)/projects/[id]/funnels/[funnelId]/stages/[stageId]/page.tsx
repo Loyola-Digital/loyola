@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail, BarChart3, Star, FlaskConical } from "lucide-react";
+import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail, BarChart3, Star, FlaskConical, FileBarChart2 } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,6 +30,8 @@ import { SwitchyFunnelSection } from "@/components/funnels/switchy-funnel-sectio
 import { LeadScoringTab } from "@/components/funnels/lead-scoring-tab";
 import { OrganicMediaTab } from "@/components/funnels/organic-media-tab";
 import { CplStageView } from "@/components/funnels/cpl-stage-view";
+import { LaunchReportConfigSection } from "@/components/funnels/launch-report-config-section";
+import { PerpetualReportConfigSection } from "@/components/funnels/perpetual-report-config-section";
 import { MauticStageTab } from "@/components/funnels/mautic-stage-tab";
 import { Ga4StageTab } from "@/components/funnels/ga4-stage-tab";
 import { NpsStageTab } from "@/components/funnels/nps-stage-tab";
@@ -48,6 +50,9 @@ import type { Funnel, FunnelCampaign, ManualSale } from "@loyola-x/shared";
 export default function StagePage() {
   const params = useParams<{ id: string; funnelId: string; stageId: string }>();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Story 41.1: Tabs passou a ser controlado pra permitir que a config de
+  // relatório leve o usuário direto ao wizard de Planilhas (order bumps).
+  const [activeTab, setActiveTab] = useState("meta-ads");
   const [stageName, setStageName] = useState("");
   // Vendas da captação paga (lançamento manual) — só usado quando stageType === "paid".
   const [manualSaleOpen, setManualSaleOpen] = useState(false);
@@ -439,7 +444,7 @@ export default function StagePage() {
       />
 
       {/* Tabs */}
-      <Tabs defaultValue="meta-ads">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="meta-ads" className="gap-1.5">
             <TrendingUp className="h-3.5 w-3.5" />
@@ -493,6 +498,10 @@ export default function StagePage() {
             <Star className="h-3.5 w-3.5 text-yellow-500" />
             NPS
           </TabsTrigger>
+          <TabsTrigger value="relatorios" className="gap-1.5">
+            <FileBarChart2 className="h-3.5 w-3.5 text-primary" />
+            Relatórios
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="meta-ads" className="mt-6">
@@ -522,6 +531,29 @@ export default function StagePage() {
                 );
               }}
             />
+          )}
+
+          {/* Vendas da captação: lançamento de venda manual + tabela unificada.
+              Vive DENTRO da aba Meta Ads — antes ficava fora do <Tabs> e por
+              isso aparecia embaixo de todas as abas (NPS, GA4, Planilhas...).
+              Etapas "paid" (Captação Paga) e "free" (Gratuita). */}
+          {(stage.stageType === "paid" || stage.stageType === "free") && (
+            <div className="mt-2">
+              <div className="mb-2 flex justify-end">
+                <DayRangePicker days={paidSalesDays} onDaysChange={setPaidSalesDays} />
+              </div>
+              <ManualPixSalesSection
+                projectId={params.id}
+                funnelId={params.funnelId}
+                stageId={params.stageId}
+                days={paidSalesDays}
+                onLaunchClick={() => setManualSaleOpen(true)}
+                onEditSale={(sale) => {
+                  setEditingSale(sale);
+                  setManualSaleOpen(true);
+                }}
+              />
+            </div>
           )}
         </TabsContent>
 
@@ -638,38 +670,42 @@ export default function StagePage() {
         <TabsContent value="nps" className="mt-6">
           <NpsStageTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
         </TabsContent>
+
+        {/* Story 41.1 — config do gerador de Resumão/Comparativo */}
+        <TabsContent value="relatorios" className="mt-6">
+          {/* Story 41.7: perpétuo tem config própria (por funil, sem etapas) —
+              o botão 3 é um relatório diferente do Resumão/Comparativo. */}
+          {funnelType === "perpetual" ? (
+            <PerpetualReportConfigSection
+              projectId={params.id}
+              funnelId={params.funnelId}
+            />
+          ) : (
+            <LaunchReportConfigSection
+              projectId={params.id}
+              funnelId={params.funnelId}
+              stageId={params.stageId}
+              onOpenSpreadsheets={() => setActiveTab("spreadsheets")}
+            />
+          )}
+        </TabsContent>
       </Tabs>
 
-      {/* Vendas da captação: lançamento de venda manual + tabela unificada,
-          no fim da view. Etapas "paid" (Captação Paga) e "free" (Gratuita). */}
+      {/* Dialog de venda manual fica FORA do <Tabs>: é overlay controlado por
+          estado, não conteúdo de aba — desmontá-lo na troca de aba fecharia o
+          formulário no meio do preenchimento. */}
       {(stage.stageType === "paid" || stage.stageType === "free") && (
-        <div className="mt-2">
-          <div className="mb-2 flex justify-end">
-            <DayRangePicker days={paidSalesDays} onDaysChange={setPaidSalesDays} />
-          </div>
-          <ManualPixSalesSection
-            projectId={params.id}
-            funnelId={params.funnelId}
-            stageId={params.stageId}
-            days={paidSalesDays}
-            onLaunchClick={() => setManualSaleOpen(true)}
-            onEditSale={(sale) => {
-              setEditingSale(sale);
-              setManualSaleOpen(true);
-            }}
-          />
-          <ManualSaleDialog
-            projectId={params.id}
-            funnelId={params.funnelId}
-            stageId={params.stageId}
-            open={manualSaleOpen}
-            onOpenChange={(open) => {
-              setManualSaleOpen(open);
-              if (!open) setEditingSale(null);
-            }}
-            editingSale={editingSale}
-          />
-        </div>
+        <ManualSaleDialog
+          projectId={params.id}
+          funnelId={params.funnelId}
+          stageId={params.stageId}
+          open={manualSaleOpen}
+          onOpenChange={(open) => {
+            setManualSaleOpen(open);
+            if (!open) setEditingSale(null);
+          }}
+          editingSale={editingSale}
+        />
       )}
     </div>
   );

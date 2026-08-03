@@ -9,6 +9,8 @@ import {
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { classifyRefundStatus, isRefundBucket, isRevenueBucket } from "../services/sales-status.js";
+import { saleDayKey, businessToday, shiftDayKey } from "../utils/sale-date.js";
+import { PLATFORM_RATE_BREAKDOWN } from "../services/perpetual-report-config.js";
 
 // ============================================================
 // Epic 29 Story 29.3 — agregação de vendas do perpétuo
@@ -61,17 +63,28 @@ function parseDate(val: string | undefined): Date | null {
   return isNaN(dt.getTime()) ? null : dt;
 }
 
-// Story 29.7: fee rates por plataforma (Kiwify=20.99% / Hotmart=26% / Other=0%)
-const PLATFORM_FEE_RATES: Record<string, number> = {
-  kiwify: 0.2099,
-  hotmart: 0.26,
-  other: 0,
-};
+// Story 29.7: fee rates por plataforma (Kiwify=20.99% / Hotmart=26% / Other=0%).
+//
+// Story 41.8 (AC9): as taxas passaram a sair de UMA fonte —
+// `PLATFORM_RATE_BREAKDOWN` em `services/perpetual-report-config.ts`, que é a
+// mesma que o relatório perpétuo usa. Antes a composição vivia duplicada aqui
+// (só a soma) e no `perpetual-dashboard.tsx` (só o detalhe), e nada garantia que
+// as duas contassem a mesma coisa. O valor efetivo NÃO mudou: os testes
+// comparam contra 20,99% / 26% / 0.
+const PLATFORM_FEE_RATES: Record<string, number> = Object.fromEntries(
+  Object.entries(PLATFORM_RATE_BREAKDOWN).map(([plat, b]) => [
+    plat,
+    roundRate(b.plataforma + b.imposto + b.outros + b.reembolso),
+  ]),
+);
 
-// Componente de reembolso ESTIMADO embutido nas taxas acima (Kiwify/Hotmart).
-// Quando a planilha tem coluna de status, o reembolso é medido de verdade e já
-// sai do bruto — então removemos esta estimativa pra não descontar em dobro.
-const REFUND_FEE_ESTIMATE = 0.04;
+/** Componente de reembolso ESTIMADO embutido nas taxas acima (Kiwify/Hotmart). */
+const REFUND_FEE_ESTIMATE = PLATFORM_RATE_BREAKDOWN.kiwify.reembolso;
+
+/** Soma de frações produz 0.20990000000000003 — o arredondamento evita ruído. */
+function roundRate(n: number): number {
+  return Math.round(n * 10_000) / 10_000;
+}
 
 /**
  * Fee efetivo da plataforma. Se a planilha traz status real de reembolso
@@ -81,7 +94,7 @@ const REFUND_FEE_ESTIMATE = 0.04;
 function effectivePlatformFeeRate(platform: string | null, hasStatusCol: boolean): number {
   if (!platform) return 0;
   const rate = PLATFORM_FEE_RATES[platform] ?? 0;
-  if (hasStatusCol && rate > 0) return Math.max(0, rate - REFUND_FEE_ESTIMATE);
+  if (hasStatusCol && rate > 0) return roundRate(Math.max(0, rate - REFUND_FEE_ESTIMATE));
   return rate;
 }
 
@@ -454,15 +467,17 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         }
       }
 
-      // Fix 1 (29.8): suporta startDate/endDate ou days retroativos
-      let cutoffStart: Date | null = null;
-      let cutoffEnd: Date | null = null;
+      // Fix 1 (29.8): suporta startDate/endDate ou days retroativos.
+      // Story 41.7 (§C.7): o corte passou a ser por DIA CIVIL de São Paulo, em
+      // vez de comparação de instantes no fuso do processo. Comparar strings
+      // `YYYY-MM-DD` é determinístico e não depende de onde a API roda.
+      let cutoffStartDay: string | null = null;
+      let cutoffEndDay: string | null = null;
       if (query.data.startDate && query.data.endDate) {
-        cutoffStart = new Date(query.data.startDate + "T00:00:00");
-        cutoffEnd = new Date(query.data.endDate + "T23:59:59");
+        cutoffStartDay = query.data.startDate;
+        cutoffEndDay = query.data.endDate;
       } else if (query.data.days) {
-        cutoffStart = new Date();
-        cutoffStart.setDate(cutoffStart.getDate() - query.data.days);
+        cutoffStartDay = shiftDayKey(businessToday(), -query.data.days);
       }
 
       const byDay: Record<string, number> = {};
@@ -473,10 +488,10 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       let counted = 0;
 
       for (const row of rows) {
-        const rowDate = parseDate(row[dataIdx]);
-        if (!rowDate) continue;
-        if (cutoffStart && rowDate < cutoffStart) continue;
-        if (cutoffEnd && rowDate > cutoffEnd) continue;
+        const rowDay = saleDayKey(row[dataIdx]);
+        if (!rowDay) continue;
+        if (cutoffStartDay && rowDay < cutoffStartDay) continue;
+        if (cutoffEndDay && rowDay > cutoffEndDay) continue;
 
         if (emailIdx !== -1) {
           const email = (row[emailIdx] ?? "").trim();
@@ -498,12 +513,10 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         const bruto = parseNumber(row[brutoIdx] ?? "");
         if (bruto <= 0) continue;
 
-        const y = rowDate.getFullYear();
-        const m = String(rowDate.getMonth() + 1).padStart(2, "0");
-        const d = String(rowDate.getDate()).padStart(2, "0");
-        const key = `${y}-${m}-${d}`;
-        byDay[key] = (byDay[key] ?? 0) + bruto;
-        salesByDay[key] = (salesByDay[key] ?? 0) + 1;
+        // Story 41.7 (§C.7): `rowDay` já é o dia civil de São Paulo. Antes daqui
+        // saía `getFullYear/getMonth/getDate`, que usava o fuso do processo.
+        byDay[rowDay] = (byDay[rowDay] ?? 0) + bruto;
+        salesByDay[rowDay] = (salesByDay[rowDay] ?? 0) + 1;
         counted++;
       }
 

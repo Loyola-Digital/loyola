@@ -15,7 +15,8 @@ export interface CrmProduct {
 export interface CrmCard {
   id: string;
   columnId: string;
-  customerEmail: string;
+  /** null em lead lançado à mão sem e-mail — card importado sempre tem. */
+  customerEmail: string | null;
   customerName: string | null;
   customerPhone: string | null;
   products: CrmProduct[];
@@ -171,6 +172,27 @@ export function useReorderCrmColumns(projectId: string, funnelId: string, stageI
   });
 }
 
+/** Lead lançado à mão — entra no kanban sem passar por planilha/sync. */
+export function useCreateCrmCard(projectId: string, funnelId: string, stageId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      customerName: string;
+      customerEmail?: string;
+      customerPhone?: string;
+      assigneeName?: string;
+      notes?: string;
+      columnId?: string;
+    }) =>
+      apiClient<CrmCard>(`${basePath(projectId, funnelId, stageId)}/cards`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: boardKey(projectId, funnelId, stageId) }),
+  });
+}
+
 export function useUpdateCrmCard(projectId: string, funnelId: string, stageId: string) {
   const apiClient = useApiClient();
   const qc = useQueryClient();
@@ -187,6 +209,8 @@ export function useUpdateCrmCard(projectId: string, funnelId: string, stageId: s
         assigneeName?: string | null;
         callStatus?: "atendeu" | "nao_atendeu" | null;
         callCount?: number;
+        customerName?: string | null;
+        customerPhone?: string | null;
       };
     }) =>
       apiClient<CrmCard>(`${basePath(projectId, funnelId, stageId)}/cards/${cardId}`, {

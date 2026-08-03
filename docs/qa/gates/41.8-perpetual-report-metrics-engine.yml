@@ -1,0 +1,19 @@
+schema: 1
+story: '41.8'
+gate: CONCERNS
+status_reason: 'Motor puro implementado e coberto por testes, validado pelo @po com GO 10/10, mas a conferência contra planilha ao vivo segue pendente por dependência de credencial/deploy.'
+reviewer: 'Quinn'
+updated: '2026-08-03T12:37:02Z'
+
+evidence:
+  tests: 'perpetual-report-metrics.test.ts + perpetual-report-readings.test.ts verdes'
+  po_validation: '@po (Pax) — GO 10/10 em 2026-07-28'
+  architecture: 'motor puro separado do loader — mesmo padrão adotado depois pela 41.2'
+
+top_issues:
+  - id: 'TEST-004'
+    severity: medium
+    finding: 'A conferência contra planilha ao vivo não foi executada — depende de credencial do Google ou do deploy. O DoD declara isso explicitamente.'
+    suggested_action: 'Conferir após o deploy da API, antes de tratar os números do perpétuo como auditados.'
+
+waiver: { active: false }

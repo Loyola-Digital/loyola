@@ -40,6 +40,13 @@ export interface CreativePerformanceData {
   // Story 18.65: retenção de vídeo (crus) — Hook/Hold/Body Conv. derivam no front.
   videoViews3s?: number;
   videoViews75?: number;
+  /**
+   * Prévia do criativo no Facebook. Ausente para imagem/carrossel e quando o
+   * video_id não está no cache. Aponta para o vídeo do ad_id de maior
+   * investimento do grupo — um mesmo ad_name tem vários ad_ids, cada um com um
+   * vídeo diferente.
+   */
+  previewUrl?: string;
 }
 
 // Story 18.46: corte por LP × temperatura (para a tabela de Testes de LPs)

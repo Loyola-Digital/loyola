@@ -1,0 +1,23 @@
+schema: 1
+story: '41.3'
+gate: PASS
+status_reason: 'Os 9 invariantes rodam contra dado real e fecham; o A9 foi corrigido de tautologia para checagem efetiva durante a implementação.'
+reviewer: 'Quinn'
+updated: '2026-08-03T12:37:02Z'
+
+evidence:
+  tests: 'launch-report-guards.test.ts verde (positivo + negativo por invariante)'
+  real_data: 'PG02: 8 invariantes passam, A6 skipped por ausência de ad-level; A9 fecha com 0,000000'
+  bug_caught: 'A9 calculado dos crus era tautologia matemática — (1000/CPM)×CTR×conv×ticket sempre resulta em fat/INV. Passou a usar os valores do catálogo.'
+
+top_issues:
+  - id: 'DOC-003'
+    severity: low
+    finding: 'Os 7 checkboxes do Definition of Done seguem desmarcados apesar de File List e Change Log completos.'
+    suggested_action: 'Marcar o DoD.'
+  - id: 'REL-001'
+    severity: low
+    finding: 'O A6 fica permanentemente skipped no PG02 — meta_ad_insights_daily do projeto DG só começa em 2026-05-20 e o PG02 encerrou em 09/05. Não há backfill possível.'
+    suggested_action: 'Nenhuma ação — limitação de retenção da Meta, já documentada.'
+
+waiver: { active: false }

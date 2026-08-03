@@ -296,6 +296,7 @@ export function StageCreativePerformanceTable({
           // Story 18.65: retenção de vídeo (crus) → Hook/Hold/Body no calculator
           videoViews3s: creative.videoViews3s,
           videoViews75: creative.videoViews75,
+          previewUrl: creative.previewUrl,
           // Story 18.55: só na Paga — repassar Único/Total muda CPL (÷ Ing.
           // Únicos) e ROAS (Fat. Total ÷ Invest) dentro do calculator. Nas
           // demais etapas os campos ficam de fora e nada muda (AC8).
@@ -624,7 +625,19 @@ export function StageCreativePerformanceTable({
                           )}
                         </>
                       )}
-                      {row.adName}
+                      {"previewUrl" in row && typeof row.previewUrl === "string" ? (
+                        <a
+                          href={row.previewUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline decoration-dotted underline-offset-2 hover:text-primary"
+                          title={`Ver prévia de "${row.adName}" no Facebook`}
+                        >
+                          {row.adName}
+                        </a>
+                      ) : (
+                        row.adName
+                      )}
                     </span>
                   </TableCell>
                   {visibleColumns.map((col) => (

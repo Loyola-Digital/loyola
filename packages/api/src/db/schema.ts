@@ -2101,7 +2101,9 @@ export const stageCrmCards = pgTable(
     columnId: uuid("column_id")
       .notNull()
       .references(() => stageCrmColumns.id, { onDelete: "restrict" }),
-    customerEmail: varchar("customer_email", { length: 255 }).notNull(),
+    /** Nullable desde a 0087: lead lançado à mão pode não ter e-mail (igual
+     * `manual_sales`). Card importado sempre tem — é a chave do dedup. */
+    customerEmail: varchar("customer_email", { length: 255 }),
     customerName: varchar("customer_name", { length: 255 }),
     customerPhone: varchar("customer_phone", { length: 50 }),
     /** Compras do comprador: [{produto, valor, dataVenda, fonte}]. */
@@ -2128,7 +2130,12 @@ export const stageCrmCards = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uq_crm_cards_stage_email").on(table.stageId, table.customerEmail),
+    // Parcial (0087): unicidade vale só pra quem TEM e-mail — assim o sync
+    // segue fazendo merge em vez de duplicar, e N cards manuais sem e-mail
+    // coexistem (NULL não colide em índice parcial).
+    uniqueIndex("uq_crm_cards_stage_email")
+      .on(table.stageId, table.customerEmail)
+      .where(sql`${table.customerEmail} IS NOT NULL`),
     index("idx_crm_cards_stage_column_sort").on(table.stageId, table.columnId, table.sortOrder),
   ]
 );
@@ -2271,5 +2278,211 @@ export const debriefingComments = pgTable(
       table.debriefingId,
       table.createdAt
     ),
+  ]
+);
+
+// ============================================================
+// LAUNCH REPORT CONFIGS (Story 41.1 — gerador de Resumão/Comparativo)
+// ============================================================
+// Config por ETAPA do gerador. O campo `validado` é o gate do §12 da spec:
+// a metodologia foi conferida casa a casa APENAS para pago/vendas-captacao;
+// qualquer outra combinação só gera relatório depois de conferência manual.
+// Nasce sempre `false` e é resetado quando tipo/etapa/entidade mudam.
+
+/** Tipo de lançamento — define quais seções do Resumão se aplicam. */
+export const LAUNCH_REPORT_TIPOS = ["pago", "gratuito", "perpetuo"] as const;
+export type LaunchReportTipo = (typeof LAUNCH_REPORT_TIPOS)[number];
+
+/** Prefixos de campanha do §2.2 da spec (classificação de etapa). */
+export const LAUNCH_REPORT_ETAPAS = [
+  "leads-captacao",
+  "vendas-captacao",
+  "vendas-principal",
+  "leads-downsell",
+  "vendas-downsell",
+] as const;
+export type LaunchReportEtapa = (typeof LAUNCH_REPORT_ETAPAS)[number];
+
+/** O que conta como conversão nesta etapa: transações ou cadastros. */
+export const LAUNCH_REPORT_ENTIDADES = ["vendas", "leads"] as const;
+export type LaunchReportEntidade = (typeof LAUNCH_REPORT_ENTIDADES)[number];
+
+export const launchReportConfigs = pgTable(
+  "launch_report_configs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    tipo: varchar("tipo", { length: 20 }).notNull().$type<LaunchReportTipo>(),
+    etapa: varchar("etapa", { length: 30 }).notNull().$type<LaunchReportEtapa>(),
+    entidadeCaptura: varchar("entidade_captura", { length: 10 })
+      .notNull()
+      .$type<LaunchReportEntidade>(),
+    /** Nulo = derivar no motor (§2.8): início = 1ª conversão, fim = último dia com spend. */
+    dataInicio: date("data_inicio"),
+    dataFim: date("data_fim"),
+    /** Override da alíquota do stage. Nulo = cai no override do projeto, depois no META_TAX_RATE. */
+    impostoPct: numeric("imposto_pct", { precision: 6, scale: 4 }),
+    /** Gate do §12. Default false — só o time marca true, após conferir contra o painel. */
+    validado: boolean("validado").notNull().default(false),
+    validadoEm: timestamp("validado_em", { withTimezone: true }),
+    validadoPor: uuid("validado_por").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("launch_report_configs_stage_uniq").on(table.stageId)]
+);
+
+// Config por PROJETO (= "expert" na spec). Cada expert tem pesquisa própria,
+// com perguntas diferentes — o mapa `camposPesquisa` liga o campo canônico que
+// o Resumão espera à chave da pergunta real daquele formulário (§12.4).
+
+/** Campos canônicos do bloco de qualificação (§4). `faixa` é o único obrigatório. */
+export const SURVEY_CANONICAL_FIELDS = [
+  "faixa",
+  "idade",
+  "sexo",
+  "estado_civil",
+  "escolaridade",
+  "renda",
+  "profissao",
+  "setor",
+  "funcionarios",
+  "religiao",
+] as const;
+export type SurveyCanonicalField = (typeof SURVEY_CANONICAL_FIELDS)[number];
+
+export const expertReportConfigs = pgTable(
+  "expert_report_configs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    impostoPct: numeric("imposto_pct", { precision: 6, scale: 4 }),
+    /** `{ campoCanônico: chaveDaPerguntaNoSurvey }` — chaves vindas de `SurveyPayload.questions`. */
+    camposPesquisa: jsonb("campos_pesquisa")
+      .notNull()
+      .default({})
+      .$type<Partial<Record<SurveyCanonicalField, string>>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("expert_report_configs_project_uniq").on(table.projectId)]
+);
+
+// ============================================================
+// Story 41.7 — Config do relatório de funil PERPÉTUO (botão 3, complemento §C.2)
+// ============================================================
+// 1 linha por FUNIL. Perpétuo não tem etapas (Story 29.6), então nada disso
+// cabia em `launchReportConfigs`, que é UNIQUE por stage.
+//
+// Deliberadamente AUSENTES (já existem no funil — correções @po 2026-07-28):
+//   ad_account_id → `funnels.metaAccountId`
+//   expert        → `funnels.projectId`
+//   campanhas     → `funnels.campaigns` (vínculo por ID via picker)
+
+export const perpetualReportConfigs = pgTable(
+  "perpetual_report_configs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => funnels.id, { onDelete: "cascade" }),
+    /**
+     * Auxiliar de DESCOBERTA, não fonte das campanhas: serve para apontar
+     * campanha da conta que casa com o prefixo e ainda não foi vinculada ao
+     * funil — o sinal de "coleta incompleta" do §C.3.1. A fonte de verdade é
+     * `funnels.campaigns`.
+     */
+    prefixoCampanha: varchar("prefixo_campanha", { length: 120 }),
+    produto: varchar("produto", { length: 255 }),
+    /** Nomes de produto que são order bump. Contam no faturamento, não criam comprador (§C.3.2). */
+    produtosOrderBump: jsonb("produtos_order_bump")
+      .notNull()
+      .default([])
+      .$type<string[]>(),
+    /** Override do gross-up de mídia. Nulo = META_TAX_RATE. */
+    impostoPct: numeric("imposto_pct", { precision: 6, scale: 4 }),
+    /** Overrides das taxas da §C.3.4. Nulo = default da plataforma (kiwify/hotmart). */
+    taxaPlataformaPct: numeric("taxa_plataforma_pct", { precision: 6, scale: 4 }),
+    taxaImpostoPct: numeric("taxa_imposto_pct", { precision: 6, scale: 4 }),
+    taxaOutrosPct: numeric("taxa_outros_pct", { precision: 6, scale: 4 }),
+    /** Se os nomes de campanha trazem `videos`/`estaticos` (§C.9). False = seção some, não zera. */
+    temSplitFormato: boolean("tem_split_formato").notNull().default(false),
+    /** `utm_source` que contam como pago. Fora disso é orgânico e fica fora de CAC/ROAS/margem. */
+    origensPagas: jsonb("origens_pagas")
+      .notNull()
+      .default(["meta"])
+      .$type<string[]>(),
+    inicioTrafego: date("inicio_trafego"),
+    /** Gate do §C.8. Default false — só o time marca true, após o checklist §C.11. */
+    validado: boolean("validado").notNull().default(false),
+    validadoEm: timestamp("validado_em", { withTimezone: true }),
+    validadoPor: uuid("validado_por").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("perpetual_report_configs_funnel_uniq").on(table.funnelId)]
+);
+
+// Story 41.9 — relatórios perpétuos gerados. O HTML é um retrato do período:
+// regerar depois pode dar número diferente (a planilha muda), e o antigo
+// continua sendo o que foi conferido na época.
+export const perpetualReports = pgTable(
+  "perpetual_reports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => funnels.id, { onDelete: "cascade" }),
+    dataInicio: date("data_inicio").notNull(),
+    dataFim: date("data_fim").notNull(),
+    html: text("html").notNull(),
+    /** Métricas do momento — lista sem precisar reprocessar o HTML. */
+    metricas: jsonb("metricas").notNull().default({}).$type<Record<string, unknown>>(),
+    alertas: jsonb("alertas")
+      .notNull()
+      .default([])
+      .$type<{ codigo: string; mensagem: string }[]>(),
+    geradoPor: uuid("gerado_por").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("perpetual_reports_funnel_idx").on(table.funnelId, table.createdAt)]
+);
+
+// ============================================================
+// LAUNCH REPORTS (Story 41.5 — Resumão e Comparativo de lançamento)
+// ============================================================
+// Tabela própria em vez de reusar `sprint_reports`: aquela não tem vínculo com
+// projeto/funil/etapa/período e é alimentada por API key externa. Cada geração
+// é uma linha NOVA — regenerar não sobrescreve, e é isso que dá auditabilidade.
+
+export const launchReports = pgTable(
+  "launch_reports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** Nulo no Comparativo entre funis diferentes — as duas refs vão em `metricas`. */
+    funnelId: uuid("funnel_id").references(() => funnels.id, { onDelete: "set null" }),
+    stageId: uuid("stage_id").references(() => funnelStages.id, { onDelete: "set null" }),
+    /** `resumao` | `comparativo` */
+    kind: varchar("kind", { length: 20 }).notNull().default("resumao"),
+    title: varchar("title", { length: 255 }).notNull(),
+    dataInicio: date("data_inicio"),
+    dataFim: date("data_fim"),
+    /** HTML autocontido. Teto de 5MB aplicado na rota. */
+    html: text("html").notNull(),
+    metricas: jsonb("metricas").$type<Record<string, unknown>>(),
+    alertas: jsonb("alertas").$type<{ codigo: string; mensagem: string }[]>(),
+    geradoPor: uuid("gerado_por").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("launch_reports_stage_idx").on(table.stageId, table.createdAt),
+    index("launch_reports_project_idx").on(table.projectId, table.createdAt),
   ]
 );

@@ -14,9 +14,11 @@ import {
   CheckCircle2,
   Undo2,
   TrendingUp,
-  ClipboardList,
   ChevronLeft,
   ChevronRight,
+  ArrowUp,
+  ArrowDown,
+  Receipt,
 } from "lucide-react";
 import {
   LineChart,
@@ -31,6 +33,10 @@ import {
   Bar,
   Cell,
   LabelList,
+  // Story 29.32: os 3 gráficos de linha×área precisam de eixo duplo.
+  ComposedChart,
+  Area,
+  Legend,
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -75,7 +81,6 @@ import { PerpetualUpsellSection } from "./perpetual-upsell-section";
 import { PerpetualUpsellWizardDialog } from "./perpetual-upsell-wizard-dialog";
 import { usePerpetualUpsellSpreadsheet } from "@/lib/hooks/use-perpetual-upsell";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
-import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -100,6 +105,7 @@ import {
   aggregateSeriesByGranularity,
   type ChartGranularity,
 } from "@/lib/utils/chart-granularity";
+import { deriveDetailMetrics } from "@/lib/utils/perpetual-detail-metrics";
 
 interface PerpetualDashboardProps {
   funnel: Funnel;
@@ -196,12 +202,12 @@ interface PerpetualDailyRow {
 // (tooltip no header, mesmo padrão das tabelas de LPs/Criativos — 18.58/18.60).
 const PERPETUAL_DAILY_COLUMNS: Array<{ label: string; title: string }> = [
   { label: "Investimento", title: "Gasto Meta do dia + imposto de 12,15% (a partir de 2026-01-01)" },
-  { label: "Faturamento", title: "Receita bruta do dia (planilha; fallback pixel Meta)" },
+  { label: "Faturamento Bruto", title: "Faturamento bruto do dia (planilha; fallback pixel Meta)" },
   { label: "Vendas", title: "Contagem de vendas do dia (planilha; fallback pixel Meta)" },
   { label: "CPV", title: "Investimento ÷ Vendas" },
-  { label: "ROAS", title: "Faturamento ÷ Investimento" },
-  { label: "Margem de Contribuição", title: "Receita líquida (após fees) − Investimento c/ imposto" },
-  { label: "Ticket Médio", title: "Faturamento ÷ Vendas" },
+  { label: "ROAS", title: "Faturamento Bruto ÷ Investimento" },
+  { label: "Margem de Contribuição", title: "Faturamento Líquido (após fees) − Investimento c/ imposto" },
+  { label: "Ticket Médio", title: "Faturamento Bruto ÷ Vendas" },
   { label: "Tx Conv.", title: "Vendas ÷ Cliques no link × 100" },
   { label: "Cliques", title: "Cliques no link (link_click da Meta)" },
   { label: "Impressões", title: "Impressões da Meta" },
@@ -225,6 +231,22 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
     setPageIndex(0);
   }, [rows]);
 
+  // Story 29.32: ordenação por dia. Padrão "desc" = dia mais recente primeiro —
+  // quem opera abre o painel para ver ontem, não o primeiro dia do período.
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  // Story 29.32 (AC2b): a ordenação vale para o CONJUNTO INTEIRO; a paginação
+  // só fatia a visualização depois. Ordenar após o slice deixaria cada página
+  // ordenada isoladamente — erro silencioso, visível só ao virar de página.
+  // `dateIso` é a chave confiável: `date` é só "MM-DD" e é ambíguo na virada de ano.
+  const sortedRows = useMemo(() => {
+    const copy = [...rows];
+    copy.sort((a, b) =>
+      sortDir === "asc" ? a.dateIso.localeCompare(b.dateIso) : b.dateIso.localeCompare(a.dateIso),
+    );
+    return copy;
+  }, [rows, sortDir]);
+
   // Story 29.25: totais do PERÍODO INTEIRO (não da página) — aditivas somam;
   // derivadas recalculadas pelos totais na renderização do rodapé (AC2).
   const totals = useMemo(() => {
@@ -244,10 +266,15 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
 
   if (rows.length === 0) return null;
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / PERPETUAL_DAILY_PAGE_SIZE));
+  // Story 29.32: paginação e fatiamento leem a MESMA coleção (`sortedRows`).
+  // Hoje `rows.length === sortedRows.length`, mas derivar as duas pontas da
+  // mesma fonte evita que uma futura ordenação que também filtre calcule
+  // páginas que não existem.
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / PERPETUAL_DAILY_PAGE_SIZE));
   const safePage = Math.min(pageIndex, totalPages - 1);
   const pageStart = safePage * PERPETUAL_DAILY_PAGE_SIZE;
-  const pageRows = rows.slice(pageStart, pageStart + PERPETUAL_DAILY_PAGE_SIZE);
+  // Story 29.32: fatia o conjunto JÁ ORDENADO — nunca `rows` cru.
+  const pageRows = sortedRows.slice(pageStart, pageStart + PERPETUAL_DAILY_PAGE_SIZE);
 
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
@@ -261,7 +288,31 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
-              <TableHead className="text-xs font-semibold">Dia</TableHead>
+              {/* Story 29.32: ordenação por dia. Alterna asc/desc e volta pra
+                  página 0 — mesmo reset que já acontece quando `rows` muda. */}
+              <TableHead className="text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+                    setPageIndex(0);
+                  }}
+                  className="inline-flex items-center gap-1 font-semibold hover:text-foreground transition-colors"
+                  title={
+                    sortDir === "desc"
+                      ? "Mais recente primeiro — clique para inverter"
+                      : "Mais antigo primeiro — clique para inverter"
+                  }
+                  aria-label={`Ordenar por dia: ${sortDir === "desc" ? "decrescente" : "crescente"}`}
+                >
+                  Dia
+                  {sortDir === "desc" ? (
+                    <ArrowDown className="h-3 w-3" />
+                  ) : (
+                    <ArrowUp className="h-3 w-3" />
+                  )}
+                </button>
+              </TableHead>
               {PERPETUAL_DAILY_COLUMNS.map((c) => (
                 <TableHead
                   key={c.label}
@@ -548,7 +599,7 @@ function MarginTimeTooltip({
       </div>
       <div className="space-y-1">
         <div className="flex justify-between gap-4">
-          <span className="text-muted-foreground">Receita Bruta</span>
+          <span className="text-muted-foreground">Faturamento Bruto</span>
           <span className="tabular-nums font-medium">{fmtCurrency(bruto)}</span>
         </div>
         {breakdown && bruto > 0 && (
@@ -563,7 +614,7 @@ function MarginTimeTooltip({
               </div>
             ))}
             <div className="flex justify-between gap-4 pt-1 border-t border-border/20">
-              <span className="font-medium">= Receita Líquida</span>
+              <span className="font-medium">= Faturamento Líquido</span>
               <span className="tabular-nums font-medium">{fmtCurrency(receitaLiquida)}</span>
             </div>
           </>
@@ -676,8 +727,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
   };
-  // Taxa de resposta da pesquisa = respostas da pesquisa conectada ÷ vendas.
-  const surveyAgg = useSurveyAggregation(projectId, funnel.id, stageId);
+  // Story 29.32: `useSurveyAggregation` saiu junto com o card "Resposta
+  // Pesquisa" — era seu único consumidor neste dashboard, e mantê-lo faria
+  // requisições de pesquisa a cada render sem nada para exibir.
   const { data: perpetualSpreadsheet } = usePerpetualSpreadsheet(projectId, funnel.id);
   const { data: upsellSpreadsheet } = usePerpetualUpsellSpreadsheet(projectId, funnel.id);
   const { data: salesData } = usePerpetualSalesData(
@@ -836,7 +888,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         ? "Planilha · faturamento bruto por dia"
         : usingSpreadsheet
           ? "Meta Ads · action_values.purchase (fallback: planilha sem dataVenda)"
-          : "Sem fonte de vendas conectada · Receita = 0";
+          : "Sem fonte de vendas conectada · Faturamento Bruto = 0";
       const spendSource = taxAmount > 0
         ? `Meta Ads spend + 12.15% imposto (a partir de ${META_TAX_EFFECTIVE_DATE})`
         : "Meta Ads API · spend (time series)";
@@ -856,15 +908,59 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         salesCount,
         formulasByKey: {
           spend: buildFunnelDailyFormula("Investimento", spendSource, spendComTax, true, dateLabel),
-          revenue: buildFunnelDailyFormula("Receita", revenueSource, revenueBruto, true, dateLabel),
+          revenue: buildFunnelDailyFormula("Faturamento Bruto", revenueSource, revenueBruto, true, dateLabel),
           margin: buildFunnelDailyFormula("Margem (Líquida − Spend c/ tax)", "Derivado · (revenue × (1−feeRate)) − (spend × 1.1215)", margin, true, dateLabel),
         },
       };
     });
   }, [dailyData, usingSpreadsheet, salesDataDaily, salesData]);
 
-  // Story 29.9: agregados com tax aplicado — sobrescreve totalSpend do overview
-  // (que vem sem tax do Meta). Total tax exposto pra tooltip do KPI Investimento.
+  // Story 29.32 (AC7/AC8): série dos 3 gráficos de linha×área.
+  //
+  // Sai de `dailyChartData`, NÃO de `timeSeries` — este último já vem agregado
+  // por granularidade (Diário/Semanal/Mensal), e a janela pedida é de 7 DIAS.
+  // Com granularidade Semanal, usar o agregado faria "7 pontos" virar 7 semanas.
+  //
+  // A janela são os últimos 7 dias DENTRO do período filtrado (decisão do
+  // usuário) — não uma janela fixa a partir de hoje. Período com menos de 7
+  // dias mostra o que houver; nada é preenchido com zero.
+  //
+  // CAC e Margem % não existem por dia no payload: são derivados aqui, com a
+  // mesma guarda de denominador zero da tabela (`null` → o recharts não desenha
+  // o ponto, em vez de plotar NaN/Infinity no eixo).
+  const last7Days = useMemo(() => {
+    const janela = dailyChartData.slice(-7);
+    return janela.map((d) => {
+      const cac = d.salesCount > 0 ? d.spend / d.salesCount : null;
+      const marginPct = d.revenue > 0 ? (d.margin / d.revenue) * 100 : null;
+      return {
+        date: d.date,
+        dateIso: d.dateIso,
+        spend: d.spend,
+        revenue: d.revenue,
+        margin: d.margin,
+        sales: d.salesCount,
+        cac,
+        marginPct,
+      };
+    });
+  }, [dailyChartData]);
+
+  // Story 29.9: agregados com tax aplicado, derivados de `campaign-daily`.
+  //
+  // Story 29.27 — ATENÇÃO ao mexer aqui. O backend NÃO é uniforme quanto ao
+  // imposto de 12,15%:
+  //   • `campaign-daily` (fonte deste bloco) devolve spend BRUTO, sem imposto —
+  //     é o único endpoint assim, e por isso o gross-up é aplicado aqui.
+  //   • `campaigns`, `all-adsets`, `all-ads` e `overview` já vêm COM imposto
+  //     aplicado por `applyMetaTax` (services/traffic-analytics.ts).
+  //
+  // Os KPI cards usam `totalSpendComTax` por SUBSTITUIÇÃO (descartam o valor do
+  // overview e usam este). Correto — o imposto entra uma única vez.
+  //
+  // O que NÃO se pode fazer: multiplicar o spend de uma entidade (campanha/
+  // adset/ad) por este total. Esse spend já é tributado, e o produto tributaria
+  // de novo. Foi exatamente o bug corrigido na 29.27 no `detailRows`.
   const spendAggregates = useMemo(() => {
     let totalSpendBruto = 0;
     let totalTax = 0;
@@ -1093,13 +1189,16 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // Story 29.19: normaliza nomes (tira " — Cópia") e agrupa a cópia no nome base.
   // Merge (>1 membro) soma métricas e re-deriva taxas; membro único fica intacto.
   const detailRows = useMemo<DetailRow[]>(() => {
-    // Story 29.24: multiplicador de imposto do período. Aplica 12,15% ao spend de
-    // cada linha de forma que Σlinhas = card agregado (que usa effectiveSpend c/
-    // imposto). ~1.1215 quando todo o range é pós-vigência (2026-01-01);
-    // proporcional se o range cruza a data. Fonte única: spendAggregates.
-    const taxMultiplier = spendAggregates.totalSpendBruto > 0
-      ? spendAggregates.totalSpendComTax / spendAggregates.totalSpendBruto
-      : 1;
+    // Story 29.27: o `taxMultiplier` da 29.24 foi REMOVIDO daqui.
+    //
+    // A intenção da 29.24 (fazer Σlinhas bater com o card) estava certa; a
+    // premissa não: ela assumia que `base.spend` vinha sem imposto. Mas as
+    // linhas desta tabela vêm de `campaigns`/`all-adsets`/`all-ads`, e esses
+    // três endpoints já aplicam `applyMetaTax` no backend. Multiplicar de novo
+    // produzia spend × 1,1215², inflando Invest./CAC/CPC/CPM e deprimindo
+    // ROAS/Margem — a tabela contradizia os cards do mesmo período.
+    //
+    // Agora `base.spend` é usado como vem: tributado uma única vez.
     const groups = new Map<string, CampaignAnalytics[]>();
     for (const row of tableData) {
       const name = normalizeCampaignName(row.campaignName);
@@ -1131,28 +1230,12 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           costPerSale: sales > 0 ? spend / sales : null,
         };
       }
-      const grossRevenue = base.revenue ?? 0;
-      const sales = base.sales ?? 0;
-      // Story 29.24: aplica o imposto ao spend da linha e RE-DERIVA todas as
-      // métricas de custo (Invest./ROAS/CAC/Margem/CPC/CPM) sobre a MESMA base
-      // do card agregado. ROAS mantém numerador BRUTO (29.20); só o denominador
-      // ganha imposto. Margem segue líquida − investimento c/ imposto.
-      const spendComTax = base.spend * taxMultiplier;
-      const netRevenue = grossRevenue * (1 - detailFeeRate);
-      const margin = netRevenue - spendComTax;
-      const costClicks = base.linkClicks && base.linkClicks > 0 ? base.linkClicks : base.clicks;
-      return {
-        ...base,
-        spend: spendComTax,
-        cpc: costClicks > 0 ? spendComTax / costClicks : 0,
-        cpm: base.impressions > 0 ? (spendComTax / base.impressions) * 1000 : 0,
-        roas: spendComTax > 0 ? grossRevenue / spendComTax : null,
-        costPerSale: sales > 0 ? spendComTax / sales : null,
-        marginPct: grossRevenue > 0 ? (margin / grossRevenue) * 100 : null,
-        marginPerSale: sales > 0 ? margin / sales : null,
-      };
+      // Story 29.27: `spend` já vem tributado do backend (applyMetaTax por
+      // entidade). Todas as métricas de custo derivam DESTE mesmo valor —
+      // a regra vive em `deriveDetailMetrics`, com teste de guarda.
+      return { ...base, ...deriveDetailMetrics(base, detailFeeRate) };
     });
-  }, [tableData, detailFeeRate, spendAggregates]);
+  }, [tableData, detailFeeRate]);
 
   const sortedRows = useMemo<DetailRow[]>(() => {
     if (!sortCol) return detailRows;
@@ -1324,9 +1407,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       {/* ================================================================ */}
       {/* KPIs PRINCIPAIS                                                  */}
       {/* ================================================================ */}
+      {/* Story 29.32: 8 skeletons em duas linhas de 4, espelhando a grade real. */}
       {overviewLoading ? (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-7">
-          {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : effectiveMetrics ? (
         (() => {
@@ -1336,11 +1420,45 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           const fromSheet = usingSpreadsheet;
           // Story 29.10: sem planilha = sem fonte de vendas → aviso nos cards de venda
           const noSalesSource = !usingSpreadsheet;
+          // Story 29.28: CAC acima do Ticket Médio = prejuízo por venda — o card
+          // fica vermelho. Ticket vem do backend (`ticketMedioBruto`), a mesma
+          // base do card de Faturamento Bruto; não recalcular aqui.
+          // Comparação estrita: empate não alarma. Sem planilha, sem venda ou
+          // sem CAC → neutro (falta de dado não é alerta).
+          const ticketMedio =
+            usingSpreadsheet && salesData && m.totalSales > 0 ? salesData.ticketMedioBruto : null;
+          const cacAcimaDoTicket =
+            m.cac != null && ticketMedio != null && ticketMedio > 0 && m.cac > ticketMedio;
           return (
-            <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-7">
-              <MetricTooltip label="ROAS" value={fmtRoas(m.roas)} formula={buildFunnelRoasFormula(m.roas, f)}>
-                <KpiCard icon={Target} label="ROAS" value={fmtRoas(m.roas)} target={2} actual={m.roas} hintTooltip fromSheet={fromSheet} />
+            // Story 29.32: 8 cards em DUAS linhas de quatro — resultado em cima
+            // (Faturamento Bruto, Vendas, Ticket Médio, Investimento), eficiência
+            // embaixo (CAC, ROAS, Margem, Margem %). Antes eram 7 colunas, o que
+            // misturava as duas leituras em ordem arbitrária.
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+              {/* ---------- Linha 1 — resultado ---------- */}
+              {/* Story 29.25 → 29.28: "Receita" → "Faturamento" → "Faturamento Bruto". */}
+              <MetricTooltip label="Faturamento Bruto" value={fmtCurrency(m.totalRevenue)} formula={buildFunnelRevenueFormula(m.totalRevenue, f)}>
+                <KpiCard icon={DollarSign} label="Faturamento Bruto" value={fmtCurrency(m.totalRevenue)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
               </MetricTooltip>
+              <MetricTooltip label="Vendas" value={fmtNumber(m.totalSales)} formula={buildFunnelSalesCountFormula(m.totalSales, f)}>
+                <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(m.totalSales)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
+              </MetricTooltip>
+              {/* Story 29.32: Ticket Médio ganha card. O valor JÁ existia na tela
+                  desde a 29.28 (`ticketMedio`, do backend) — só era usado para
+                  decidir o vermelho do CAC. Não recalcular a partir de
+                  Faturamento ÷ Vendas: a base é `salesData.ticketMedioBruto`. */}
+              <KpiCard
+                icon={Receipt}
+                label="Ticket Médio"
+                value={ticketMedio != null ? fmtCurrency(ticketMedio) : "—"}
+                fromSheet={fromSheet}
+                title={
+                  ticketMedio != null
+                    ? `Faturamento Bruto ÷ Vendas — ${fmtCurrency(m.totalRevenue)} ÷ ${fmtNumber(m.totalSales)}`
+                    : undefined
+                }
+                warning={noSalesSource ? "Conectar fonte de vendas" : undefined}
+              />
               <InvestmentBreakdownTooltip
                 spendBruto={spendAggregates.totalSpendBruto}
                 spendTax={spendAggregates.totalTax}
@@ -1355,15 +1473,28 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                   } : undefined}
                 />
               </InvestmentBreakdownTooltip>
-              <MetricTooltip label="Vendas" value={fmtNumber(m.totalSales)} formula={buildFunnelSalesCountFormula(m.totalSales, f)}>
-                <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(m.totalSales)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
-              </MetricTooltip>
-              {/* Story 29.25: "Receita" → "Faturamento" (só o rótulo muda). */}
-              <MetricTooltip label="Faturamento" value={fmtCurrency(m.totalRevenue)} formula={buildFunnelRevenueFormula(m.totalRevenue, f)}>
-                <KpiCard icon={DollarSign} label="Faturamento" value={fmtCurrency(m.totalRevenue)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
-              </MetricTooltip>
+
+              {/* ---------- Linha 2 — eficiência ---------- */}
               <MetricTooltip label="CAC" value={fmtCurrency(m.cac)} formula={buildFunnelCacFormula(m.cac, f)}>
-                <KpiCard icon={DollarSign} label="CAC" value={fmtCurrency(m.cac)} hintTooltip fromSheet={fromSheet} />
+                <KpiCard
+                  icon={DollarSign}
+                  label="CAC"
+                  value={fmtCurrency(m.cac)}
+                  hintTooltip
+                  fromSheet={fromSheet}
+                  alert={cacAcimaDoTicket}
+                  // Story 29.28 → 29.32: o Ticket Médio agora tem card próprio ao
+                  // lado, mas o warning fica: diz o valor exato da comparação sem
+                  // obrigar o olho a cruzar as duas linhas da grade.
+                  warning={
+                    cacAcimaDoTicket
+                      ? `Acima do Ticket Médio (${fmtCurrency(ticketMedio)})`
+                      : undefined
+                  }
+                />
+              </MetricTooltip>
+              <MetricTooltip label="ROAS" value={fmtRoas(m.roas)} formula={buildFunnelRoasFormula(m.roas, f)}>
+                <KpiCard icon={Target} label="ROAS" value={fmtRoas(m.roas)} target={2} actual={m.roas} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
               <MarginBreakdownTooltip
                 receitaBruta={m.totalRevenue}
@@ -1379,23 +1510,147 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
               <MetricTooltip label="Margem de Contribuição %" value={fmtPercent(m.marginPercent)} formula={buildFunnelMarginPercentFormula(m.marginPercent, f)}>
                 <KpiCard icon={BarChart3} label="Margem de Contribuição %" value={fmtPercent(m.marginPercent)} hintTooltip fromSheet={fromSheet} />
               </MetricTooltip>
-              {/* Resposta da pesquisa ÷ vendas — só quando há pesquisa conectada com respostas */}
-              {surveyAgg.totalResponses > 0 && (
-                <KpiCard
-                  icon={ClipboardList}
-                  label="Resposta Pesquisa"
-                  value={m.totalSales > 0 ? fmtPercent((surveyAgg.totalResponses / m.totalSales) * 100) : "—"}
-                  title={`${surveyAgg.totalResponses} resposta${surveyAgg.totalResponses !== 1 ? "s" : ""} ÷ ${m.totalSales} venda${m.totalSales !== 1 ? "s" : ""}`}
-                  warning={m.totalSales === 0 ? "Sem vendas no período" : undefined}
-                />
-              )}
+              {/* Story 29.32: card "Resposta Pesquisa" removido a pedido do gestor.
+                  `surveyAgg` continua alimentando o resto da tela — não desmontar. */}
             </div>
           );
         })()
       ) : <EmptyState />}
 
       {/* ================================================================ */}
-      {/* REEMBOLSOS — status refunded/chargeback já descontados da Receita */}
+      {/* Story 29.32 — TRÊS GRÁFICOS DE LINHA×ÁREA (últimos 7 dias)       */}
+      {/*                                                                  */}
+      {/* Cada um cruza VOLUME (área, eixo esquerdo) com EFICIÊNCIA (linha, */}
+      {/* eixo direito) — investimento subindo com CAC subindo junto é o   */}
+      {/* tipo de coisa que só aparece quando as duas séries dividem o     */}
+      {/* mesmo eixo X. Escalas independentes: `yAxisId` em TODO elemento. */}
+      {/* Janela = últimos 7 dias DENTRO do período filtrado (`last7Days`).*/}
+      {/* ================================================================ */}
+      {dailyLoading ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-56 rounded-xl" />)}
+        </div>
+      ) : last7Days.length > 0 ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {[
+            {
+              key: "invest-cac",
+              titulo: "Investimento × CAC",
+              sub: "Gasto em mídia (área) e custo por aquisição (linha)",
+              areaKey: "spend",
+              areaNome: "Investimento",
+              areaCor: "hsl(217 91% 60%)",
+              lineKey: "cac",
+              lineNome: "CAC",
+              lineCor: "hsl(38 92% 50%)",
+              fmtArea: (v: number) => fmtCurrencyCompact(v),
+              fmtLine: (v: number) => fmtCurrencyCompact(v),
+            },
+            {
+              key: "fat-vendas",
+              titulo: "Faturamento × Vendas",
+              sub: "Receita (área) e quantidade de vendas (linha)",
+              areaKey: "revenue",
+              areaNome: "Faturamento",
+              areaCor: "hsl(150 60% 45%)",
+              lineKey: "sales",
+              lineNome: "Vendas",
+              lineCor: "hsl(280 65% 60%)",
+              fmtArea: (v: number) => fmtCurrencyCompact(v),
+              fmtLine: (v: number) => fmtNumber(v),
+            },
+            {
+              key: "margem-pct",
+              titulo: "Margem × Margem %",
+              sub: "Margem absoluta (área) e percentual (linha)",
+              areaKey: "margin",
+              areaNome: "Margem",
+              areaCor: "hsl(190 70% 50%)",
+              lineKey: "marginPct",
+              lineNome: "Margem %",
+              lineCor: "hsl(38 92% 50%)",
+              fmtArea: (v: number) => fmtCurrencyCompact(v),
+              fmtLine: (v: number) => `${v.toFixed(0)}%`,
+            },
+          ].map((g) => (
+            <div key={g.key} className="rounded-xl border border-border/30 bg-card/60 p-5">
+              <h3 className="text-sm font-semibold mb-1">{g.titulo}</h3>
+              <p className="text-[11px] text-muted-foreground mb-3">
+                {g.sub} · últimos {last7Days.length} {last7Days.length === 1 ? "dia" : "dias"} do período
+              </p>
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart data={last7Days} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10, fill: "#fff" }}
+                    stroke="var(--color-muted-foreground)"
+                  />
+                  {/* Eixo esquerdo = área (volume). Eixo direito = linha (eficiência). */}
+                  <YAxis
+                    yAxisId="left"
+                    tick={{ fontSize: 10, fill: "#fff" }}
+                    stroke="var(--color-muted-foreground)"
+                    tickFormatter={(v) => g.fmtArea(v)}
+                  />
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    tick={{ fontSize: 10, fill: "#fff" }}
+                    stroke="var(--color-muted-foreground)"
+                    tickFormatter={(v) => g.fmtLine(v)}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--color-card)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                    formatter={(value, name) => {
+                      // `value` pode vir undefined/null nos dias em que a série
+                      // derivada não tem valor (CAC sem venda, Margem % sem receita).
+                      const n = typeof value === "number" ? value : null;
+                      if (n === null) return ["—", String(name)];
+                      return [name === g.lineNome ? g.fmtLine(n) : g.fmtArea(n), String(name)];
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Area
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey={g.areaKey}
+                    name={g.areaNome}
+                    stroke={g.areaCor}
+                    fill={g.areaCor}
+                    fillOpacity={0.18}
+                    strokeWidth={2}
+                  />
+                  {/* `connectNulls={false}`: dia sem venda (CAC null) ou sem receita
+                      (Margem % null) fica com lacuna — não inventa continuidade. */}
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey={g.lineKey}
+                    name={g.lineNome}
+                    stroke={g.lineCor}
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                    connectNulls={false}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          ))}
+        </div>
+      ) : (
+        /* Story 29.32: mesmo padrão dos outros gráficos do arquivo — sem dado,
+           mostra o EmptyState em vez de a seção sumir sem explicação. */
+        <EmptyState />
+      )}
+
+      {/* ================================================================ */}
+      {/* REEMBOLSOS — status refunded/chargeback já descontados do Faturamento Bruto */}
       {/* ================================================================ */}
       {usingSpreadsheet && salesData && salesData.reembolsoBruto > 0 && (
         <div className="flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
@@ -1407,7 +1662,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
               Reembolsos {fmtCurrency(salesData.reembolsoBruto)}
             </div>
             <div className="text-xs text-muted-foreground">
-              {fmtNumber(salesData.vendasReembolsadas)} venda(s) com status reembolsado/chargeback — já descontado(s) da Receita e das Vendas.
+              {fmtNumber(salesData.vendasReembolsadas)} venda(s) com status reembolsado/chargeback — já descontado(s) do Faturamento Bruto e das Vendas.
             </div>
           </div>
         </div>
@@ -1553,7 +1808,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                   />
                 </th>
                 <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("spend")}>Invest.{sortArrow("spend")}</th>
-                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("revenue")}>Receita{sortArrow("revenue")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("revenue")}>Faturamento Bruto{sortArrow("revenue")}</th>
                 <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cac")}>CAC{sortArrow("cac")}</th>
                 <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("roas")}>ROAS{sortArrow("roas")}</th>
                 <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("marginPct")}>Margem %{sortArrow("marginPct")}</th>
@@ -1594,7 +1849,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                 };
                 const cells: Array<[string, string, string, ReturnType<typeof enrichFormulaForEntity>, string]> = [
                   ["spend", "Investimento", fmtCurrency(row.spend), enrichFormulaForEntity(buildFunnelSpendFormula(row.spend, f), path), "text-right px-2 tabular-nums"],
-                  ["revenue", "Receita", fmtCurrency(row.revenue), enrichFormulaForEntity(buildFunnelRevenueFormula(row.revenue, f), path), "text-right px-2 tabular-nums"],
+                  ["revenue", "Faturamento Bruto", fmtCurrency(row.revenue), enrichFormulaForEntity(buildFunnelRevenueFormula(row.revenue, f), path), "text-right px-2 tabular-nums"],
                   ["cac", "CAC", fmtCurrency(row.costPerSale), enrichFormulaForEntity(buildFunnelCacFormula(row.costPerSale ?? null, f), path), "text-right px-2 tabular-nums"],
                   ["roas", "ROAS", fmtRoas(row.roas), enrichFormulaForEntity(buildFunnelRoasFormula(row.roas ?? null, f), path), `text-right px-2 tabular-nums font-medium ${roasColorClass(row.roas)}`],
                   ["marginPct", "Margem %", fmtPercent(marginPct), enrichFormulaForEntity(buildFunnelMarginPercentFormula(marginPct, f), path), `text-right px-2 tabular-nums font-medium ${marginColorClass(marginPct)}`],
@@ -1625,19 +1880,19 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         {usingSpreadsheet ? (
           <>
             <HBarChart
-              title="Receita por Canal (utm_source)"
+              title="Faturamento Bruto por Canal (utm_source)"
               data={revenueByCanal}
               funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
               entityType="campaign"
             />
             <HBarChart
-              title="Receita por Público (utm_medium)"
+              title="Faturamento Bruto por Público (utm_medium)"
               data={revenueByPublico}
               funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
               entityType="adset"
             />
             <HBarChart
-              title="Receita por Criativo (utm_content)"
+              title="Faturamento Bruto por Criativo (utm_content)"
               data={revenueByCriativo}
               funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
               entityType="ad"
@@ -1646,19 +1901,19 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         ) : (
           <>
             <HBarChart
-              title="Receita por Canal"
+              title="Faturamento Bruto por Canal"
               data={revenueByCampaign}
               funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
               entityType="campaign"
             />
             <HBarChart
-              title="Receita por Publico"
+              title="Faturamento Bruto por Publico"
               data={revenueByAudience}
               funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
               entityType="adset"
             />
             <HBarChart
-              title="Receita por Criativo"
+              title="Faturamento Bruto por Criativo"
               data={revenueByCreative}
               funnelContext={{ days, funnelType: "perpetual", funnelName: funnel?.name }}
               entityType="ad"
@@ -1788,7 +2043,7 @@ function MarginBreakdownTooltip({
           </div>
           <div className="space-y-1">
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Receita Bruta</span>
+              <span className="text-muted-foreground">Faturamento Bruto</span>
               <span className="tabular-nums font-medium">{fmtCurrency(bruto)}</span>
             </div>
 
@@ -1818,7 +2073,7 @@ function MarginBreakdownTooltip({
                   );
                 })}
                 <div className="flex justify-between gap-4 pt-1.5 border-t border-border/20">
-                  <span className="font-medium">Receita Líquida</span>
+                  <span className="font-medium">Faturamento Líquido</span>
                   <span className="tabular-nums font-medium">{fmtCurrency(receitaLiquida)}</span>
                 </div>
               </>
@@ -1908,8 +2163,19 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
   warning?: string;
   /** Story 29.15: colore o card por sinal do valor (verde > 0, vermelho ≤ 0). Ex: Margem. */
   signValue?: number | null;
+  /**
+   * Story 29.28: alerta explícito — pinta o card de vermelho quando uma condição
+   * de negócio é violada (ex: CAC acima do Ticket Médio = prejuízo por venda).
+   *
+   * Vence QUALQUER outro estado visual. É deliberado: se o alerta dispara, o
+   * usuário precisa ver vermelho, mesmo que outra regra pintaria de verde.
+   *
+   * Não usar `signValue={-1}` para esse efeito — funcionaria por acidente e
+   * mentiria sobre o significado do valor.
+   */
+  alert?: boolean;
 } & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
-  { icon: Icon, label, value, target, actual, hintTooltip, comparison, fromSheet, warning, signValue, className, ...rest },
+  { icon: Icon, label, value, target, actual, hintTooltip, comparison, fromSheet, warning, signValue, alert, className, ...rest },
   ref,
 ) {
   const isRoas = target !== undefined;
@@ -1924,7 +2190,8 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
       ref={ref}
       {...rest}
       className={`relative rounded-xl border p-3 hover:border-border/50 transition-colors ${hintTooltip ? "cursor-help" : ""} ${
-        signPos ? "border-emerald-500/30 bg-emerald-500/5"
+        alert ? "border-red-500/30 bg-red-500/5"
+          : signPos ? "border-emerald-500/30 bg-emerald-500/5"
           : signNeg ? "border-red-500/30 bg-red-500/5"
           : roasOk ? "border-emerald-500/30 bg-emerald-500/5"
           : roasBad ? "border-red-500/30 bg-red-500/5"
@@ -1938,7 +2205,7 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
       </div>
-      <p className={`text-xl font-bold tracking-tight ${signPos ? "text-emerald-400" : signNeg ? "text-red-400" : ""} ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
+      <p className={`text-xl font-bold tracking-tight ${alert ? "text-red-400" : signPos ? "text-emerald-400" : signNeg ? "text-red-400" : ""} ${hintTooltip ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""}`}>{value}</p>
       {warning && (
         <p className="mt-1 flex items-center gap-1 text-[10px] font-medium leading-tight text-amber-500/90">
           <span aria-hidden>⚠️</span> {warning}

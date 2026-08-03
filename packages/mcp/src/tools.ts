@@ -256,6 +256,49 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
       )
   );
 
+  const INCLUDE_DESC =
+    "Blocos extras, CSV: byDay, porOrigem, porCanal, porProduto, porPlataforma, porProdutoPlataforma, porOrigemTemperatura (e byStage, só no funil). Ou \"all\". Omita para receber SÓ o resumo — peça apenas o que for usar.";
+
+  server.registerTool(
+    "get_stage_sales",
+    {
+      title: "Vendas de UMA etapa (resumo enxuto)",
+      description:
+        "Vendas de uma etapa a partir SÓ do stageId — não precisa do projectId nem de chamar discovery antes. Por padrão devolve só o resumo: totalVendas, faturamentoBruto/Liquido, range, subtypesConsidered (de quais planilhas veio) e manualSalesIncluded, mais o nome/tipo da etapa e o funil a que pertence. Use `include` para trazer as quebras pesadas sob demanda. Prefira esta tool a get_stage_sales_daily — mesma fonte (o mesmo cache), muito menos payload. Zero PII. `semDados:true` = etapa sem planilha de venda ou sync ainda não rodou. Para ROAS combine com o investimento de get_stage_daily; para linha a linha use get_stage_sales_rows.",
+      inputSchema: {
+        stageId: z.string().uuid().describe("ID da etapa (de list_stages)."),
+        include: z.string().optional().describe(INCLUDE_DESC),
+      },
+    },
+    async ({ stageId, include }) =>
+      run(() =>
+        client.get(
+          `/api/public/v1/stages/${encodeURIComponent(stageId)}/sales` +
+            (include ? `?include=${encodeURIComponent(include)}` : "")
+        )
+      )
+  );
+
+  server.registerTool(
+    "get_funnel_sales",
+    {
+      title: "Vendas do FUNIL inteiro (agregado das etapas)",
+      description:
+        "Vendas somadas de TODAS as etapas de um funil — responde direto \"quantas vendas e quanto faturou o funil X\" sem iterar etapa por etapa. Por padrão só o resumo: totalVendas, faturamentoBruto/Liquido, range, stagesContabilizadas/stagesTotal (se forem diferentes, alguma etapa ficou fora — peça include=byStage pra ver qual e por quê). Use `include` para as quebras. Zero PII. Uma mesma planilha física só conta UMA vez: no perpétuo a planilha de vendas é do FUNIL e é herdada por toda etapa free/paid, então somar as etapas na mão dobra o faturamento — aqui já vem tratado, e `avisos` (quando presente) sinaliza ambiguidade restante. `computedAt` é o da etapa MAIS ANTIGA (frescura real do total). Para ROAS combine com o investimento do get_daily.",
+      inputSchema: {
+        funnelId: z.string().uuid().describe("ID do funil (de list_funnels)."),
+        include: z.string().optional().describe(INCLUDE_DESC),
+      },
+    },
+    async ({ funnelId, include }) =>
+      run(() =>
+        client.get(
+          `/api/public/v1/funnels/${encodeURIComponent(funnelId)}/sales` +
+            (include ? `?include=${encodeURIComponent(include)}` : "")
+        )
+      )
+  );
+
   // ---- Row-level de vendas (39.I3 — Inácio) ----
   server.registerTool(
     "get_stage_sales_rows",

@@ -27,6 +27,12 @@ export interface CreativeMetrics {
   // Story 18.65: retenção de vídeo (crus) — Hook/Hold/Body Conv. derivam daqui.
   videoViews3s?: number;
   videoViews75?: number;
+  /**
+   * Prévia do criativo no Facebook (`/watch/?v=<video_id>`). Ausente para
+   * imagem/carrossel e quando o video_id não está no cache — nesse caso o nome
+   * na tabela fica texto puro, sem link morto.
+   */
+  previewUrl?: string;
 }
 
 export interface CalculatedMetrics {
@@ -59,6 +65,8 @@ export interface CalculatedMetrics {
   bodyConv: number; // leads ÷ 75% × 100 (Conversão do Corpo)
   videoViews3s: number;
   videoViews75: number;
+  /** Prévia do criativo no Facebook. Ausente para imagem/carrossel. */
+  previewUrl?: string;
 }
 
 /**
@@ -204,6 +212,8 @@ export function calculateCreativeMetrics(
     bodyConv: calculateBodyConv(creative.leads, creative.videoViews75 ?? 0),
     videoViews3s: creative.videoViews3s ?? 0,
     videoViews75: creative.videoViews75 ?? 0,
+    // Aditivo — não afeta métrica nenhuma, só habilita o link no nome.
+    previewUrl: creative.previewUrl,
     ...(isPaidMode
       ? {
           ingressosUnicos: creative.ingressosUnicos,

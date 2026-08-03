@@ -1,0 +1,23 @@
+schema: 1
+story: '41.9'
+gate: CONCERNS
+status_reason: 'Render e botão implementados com o mesmo padrão de segurança da 41.5 e validados pelo @po com GO 10/10, mas a validação visual do HTML depende do deploy.'
+reviewer: 'Quinn'
+updated: '2026-08-03T12:37:02Z'
+
+evidence:
+  tests: 'perpetual-report-html.test.ts verde'
+  po_validation: '@po (Pax) — GO 10/10 em 2026-07-28'
+  limits: 'MAX_HTML_BYTES = 5MB, mesmo padrão de sprint_reports'
+
+top_issues:
+  - id: 'TEST-005'
+    severity: medium
+    finding: 'A validação visual do HTML no app não foi feita — depende do deploy da API e do web. O DoD declara isso explicitamente.'
+    suggested_action: 'Abrir o relatório pela tela após o deploy.'
+  - id: 'REL-003'
+    severity: medium
+    finding: 'A API do Railway já estava defasada antes desta branch (boot trava no scan do mind-registry). Sem o deploy, nada do Epic 41 existe no ambiente de produção.'
+    suggested_action: 'Deploy da API é pré-requisito de qualquer validação visual — coordenar com o Lucas.'
+
+waiver: { active: false }

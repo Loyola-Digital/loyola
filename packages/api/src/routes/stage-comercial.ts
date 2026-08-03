@@ -652,7 +652,13 @@ export default fp(async function stageComercialRoutes(fastify) {
         .select()
         .from(stageCrmCards)
         .where(eq(stageCrmCards.stageId, params.data.stageId));
-      const byEmail = new Map(existingCards.map((c) => [c.customerEmail, c]));
+      // Cards manuais sem e-mail ficam fora do índice de merge — não têm chave
+      // pra casar com ninguém da origem, e o sync nunca deve tocá-los.
+      const byEmail = new Map(
+        existingCards
+          .filter((c): c is typeof c & { customerEmail: string } => !!c.customerEmail)
+          .map((c) => [c.customerEmail, c]),
+      );
       let maxSortInFirst = existingCards
         .filter((c) => c.columnId === firstColumn.id)
         .reduce((mx, c) => Math.max(mx, c.sortOrder), -1);
@@ -815,6 +821,86 @@ export default fp(async function stageComercialRoutes(fastify) {
   });
 
   // ---- Cards ----
+
+  /**
+   * POST /cards — lead lançado à mão (indicação, DM, lista fria): entra no
+   * kanban sem passar por planilha nem sync.
+   *
+   * Só o nome é obrigatório. Com e-mail, o card passa a participar do dedup do
+   * sync (se a pessoa depois aparecer na origem, faz merge em vez de duplicar)
+   * e do match de respostas da pesquisa. Sem e-mail, fica fora dos dois — é o
+   * trade-off de aceitar quem só deixou telefone.
+   */
+  const createCardSchema = z.object({
+    customerName: z.string().trim().min(1).max(255),
+    customerEmail: z.string().trim().max(255).optional(),
+    customerPhone: z.string().trim().max(50).optional(),
+    assigneeName: z.string().trim().max(255).optional(),
+    notes: z.string().max(5000).optional(),
+    columnId: z.string().uuid().optional(),
+  });
+  fastify.post(`${base}/cards`, async (request, reply) => {
+    const params = stageParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const body = createCardSchema.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados inválidos" });
+    const stage = await getStageContext(
+      params.data.projectId, params.data.funnelId, params.data.stageId,
+      request.userId, request.userRole,
+    );
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+    const columns = await fastify.db
+      .select()
+      .from(stageCrmColumns)
+      .where(eq(stageCrmColumns.stageId, params.data.stageId))
+      .orderBy(asc(stageCrmColumns.sortOrder));
+    if (columns.length === 0) {
+      return reply.code(409).send({ error: "Kanban sem colunas — salve a configuração primeiro" });
+    }
+    // Coluna escolhida (drawer aberto numa coluna) ou a primeira do fluxo.
+    const target = body.data.columnId
+      ? columns.find((c) => c.id === body.data.columnId)
+      : columns[0];
+    if (!target) return reply.code(400).send({ error: "Coluna inválida" });
+
+    const email = normalizeEmail(body.data.customerEmail) || null;
+    if (email) {
+      const [dup] = await fastify.db
+        .select({ id: stageCrmCards.id })
+        .from(stageCrmCards)
+        .where(and(eq(stageCrmCards.stageId, params.data.stageId), eq(stageCrmCards.customerEmail, email)))
+        .limit(1);
+      if (dup) return reply.code(409).send({ error: "Já existe um card com esse e-mail nesta etapa" });
+    }
+
+    const siblings = await fastify.db
+      .select({ sortOrder: stageCrmCards.sortOrder })
+      .from(stageCrmCards)
+      .where(and(eq(stageCrmCards.stageId, params.data.stageId), eq(stageCrmCards.columnId, target.id)));
+    const nextSort = siblings.reduce((mx, c) => Math.max(mx, c.sortOrder), -1) + 1;
+
+    const now = new Date();
+    const [createdCard] = await fastify.db
+      .insert(stageCrmCards)
+      .values({
+        stageId: params.data.stageId,
+        columnId: target.id,
+        customerEmail: email,
+        customerName: body.data.customerName,
+        customerPhone: body.data.customerPhone || null,
+        assigneeName: body.data.assigneeName || null,
+        notes: body.data.notes || null,
+        products: [],
+        totalValue: "0",
+        sortOrder: nextSort,
+        // Card manual nasce de uma ação da pessoa — conta como atividade.
+        lastActivityAt: now,
+      })
+      .returning();
+    return reply.code(201).send(shapeCard(createdCard));
+  });
+
   const cardParamsSchema = stageParamsSchema.extend({ cardId: z.string().uuid() });
   const cardPatchSchema = z.object({
     columnId: z.string().uuid().optional(),
@@ -823,6 +909,11 @@ export default fp(async function stageComercialRoutes(fastify) {
     assigneeName: z.string().max(255).nullable().optional(),
     callStatus: z.enum(["atendeu", "nao_atendeu"]).nullable().optional(),
     callCount: z.number().int().min(0).max(999).optional(),
+    // Contato editável: lead manual entra digitado e erra; e o importado às
+    // vezes vem sem telefone. Sync nunca sobrescreve nome/telefone já
+    // preenchidos, então a correção aqui é estável.
+    customerName: z.string().trim().max(255).nullable().optional(),
+    customerPhone: z.string().trim().max(50).nullable().optional(),
   });
   fastify.patch(`${base}/cards/:cardId`, async (request, reply) => {
     const params = cardParamsSchema.safeParse(request.params);
@@ -855,6 +946,8 @@ export default fp(async function stageComercialRoutes(fastify) {
     if (body.data.assigneeName !== undefined) updates.assigneeName = body.data.assigneeName?.trim() || null;
     if (body.data.callStatus !== undefined) updates.callStatus = body.data.callStatus ?? null;
     if (body.data.callCount !== undefined) updates.callCount = body.data.callCount;
+    if (body.data.customerName !== undefined) updates.customerName = body.data.customerName?.trim() || null;
+    if (body.data.customerPhone !== undefined) updates.customerPhone = body.data.customerPhone?.trim() || null;
 
     const [updatedCard] = await fastify.db
       .update(stageCrmCards)
