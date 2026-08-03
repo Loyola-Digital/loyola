@@ -47,6 +47,17 @@ const envSchema = z.object({
   // requisição (default 120s). O job noturno vira só aquecimento — quem consulta
   // nunca recebe número velho. Subir se a cota do Sheets apertar.
   SALES_PUBLIC_MAX_AGE_SEC: z.coerce.number().int().min(0).max(86400).optional(),
+  // Spy de Conteúdo (área Global): scan de perfil do Instagram via Apify +
+  // análise Claude. Sem APIFY_TOKEN o worker não sobe e a rota recusa o scan.
+  APIFY_TOKEN: z.string().optional(),
+  APIFY_ACTOR: z.string().optional(),
+  INSTA_SCAN_WORKER_ENABLED: z.enum(["true", "false"]).optional(),
+  /** Scans simultâneos. Cada um custa 2 runs Apify + ~70k tokens — subir com cuidado. */
+  INSTA_SCAN_CONCURRENCY: z.coerce.number().int().min(1).max(8).optional(),
+  INSTA_SCAN_MODEL: z.string().optional(),
+  INSTA_SCAN_EFFORT: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+  /** Teto de scans por usuário por dia — trava de custo. */
+  INSTA_SCAN_DAILY_LIMIT: z.coerce.number().int().min(1).max(500).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

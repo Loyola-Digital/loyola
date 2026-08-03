@@ -2495,3 +2495,48 @@ export const launchReports = pgTable(
     index("launch_reports_project_idx").on(table.projectId, table.createdAt),
   ]
 );
+
+// ============================================================
+// INSTAGRAM SCANNER (área Global) — fila + resultado
+// ============================================================
+// Scan de um perfil de terceiro via Apify + análise Claude. Leva ~5min, então a
+// rota só enfileira e um worker in-process consome — a pessoa não espera na
+// página. Guarda o JSON estruturado (não HTML): o front renderiza em React e o
+// JSON permite comparar perfis depois sem re-scrapar (cada scan custa crédito).
+
+export const instagramScans = pgTable(
+  "instagram_scans",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    username: varchar("username", { length: 30 }).notNull(),
+    /** queued | running | done | failed */
+    status: varchar("status", { length: 12 })
+      .$type<"queued" | "running" | "done" | "failed">()
+      .notNull()
+      .default("queued"),
+    /** Parâmetros do scan — o worker não depende do request original. */
+    params: jsonb("params")
+      .$type<{ limit: number; since: string | null; tzOffset: number }>()
+      .notNull()
+      .default({ limit: 120, since: null, tzOffset: -3 }),
+    profile: jsonb("profile").$type<Record<string, unknown>>(),
+    metrics: jsonb("metrics").$type<Record<string, unknown>>(),
+    analysis: jsonb("analysis").$type<Record<string, unknown>>(),
+    /** Tokens + modelo — visibilidade de custo por scan. */
+    usage: jsonb("usage").$type<{ model: string; inputTokens: number; outputTokens: number }>(),
+    error: text("error"),
+    requestedBy: uuid("requested_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    /** Lease do worker — permite re-claim de job órfão sem travar a fila. */
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_insta_scans_queue").on(table.status, table.createdAt),
+    index("idx_insta_scans_username").on(table.username, table.createdAt),
+  ]
+);

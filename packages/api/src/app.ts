@@ -90,7 +90,9 @@ import debriefingsRoutes from "./routes/debriefings.js";
 import campaignLogRoutes from "./routes/campaign-log.js";
 import eventPaymentAlertsRoutes from "./routes/event-payment-alerts.js";
 import stageComercialRoutes from "./routes/stage-comercial.js";
+import instagramScansRoutes from "./routes/instagram-scans.js";
 import paymentAlertsSchedulerPlugin from "./plugins/payment-alerts-scheduler.js";
+import instaScanWorkerPlugin from "./plugins/insta-scan-worker.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -134,6 +136,8 @@ export async function buildServer() {
   // Refresh diário da performance Meta no cache (Story 36.4)
   await app.register(metaPerfSchedulerPlugin);
   await app.register(paymentAlertsSchedulerPlugin);
+  // Spy de Conteúdo: consome a fila de scans do Instagram em background.
+  await app.register(instaScanWorkerPlugin);
 
   // 6. Routes (last — consume services)
   await app.register(healthRoutes);
@@ -205,6 +209,7 @@ export async function buildServer() {
   await app.register(campaignLogRoutes);
   await app.register(eventPaymentAlertsRoutes);
   await app.register(stageComercialRoutes);
+  await app.register(instagramScansRoutes);
 
   return app;
 }
