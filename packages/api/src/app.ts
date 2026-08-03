@@ -91,6 +91,7 @@ import campaignLogRoutes from "./routes/campaign-log.js";
 import eventPaymentAlertsRoutes from "./routes/event-payment-alerts.js";
 import stageComercialRoutes from "./routes/stage-comercial.js";
 import instagramScansRoutes from "./routes/instagram-scans.js";
+import swipeFilesRoutes from "./routes/swipe-files.js";
 import paymentAlertsSchedulerPlugin from "./plugins/payment-alerts-scheduler.js";
 import instaScanWorkerPlugin from "./plugins/insta-scan-worker.js";
 
@@ -210,6 +211,7 @@ export async function buildServer() {
   await app.register(eventPaymentAlertsRoutes);
   await app.register(stageComercialRoutes);
   await app.register(instagramScansRoutes);
+  await app.register(swipeFilesRoutes);
 
   return app;
 }
