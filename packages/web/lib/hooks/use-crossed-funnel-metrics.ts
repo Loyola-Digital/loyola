@@ -67,6 +67,12 @@ export interface CrossedFunnelMetrics {
   /**
    * Taxa de Resposta = (Respostas Pesquisa / Leads Totais Dedup) × 100
    * Capped a 100%. Null se sem surveys vinculadas.
+   *
+   * ATENÇÃO — base de LEADS: só vale para a Captação Gratuita. Na Captação Paga
+   * a pesquisa é respondida pelo COMPRADOR do ingresso, então o denominador
+   * correto são os ingressos únicos (`StageSalesData.ingressosUnicosByDay`) —
+   * os dashboards calculam isso por conta própria (`launch-dashboard.tsx`,
+   * `meta-ads-teste-section.tsx`). Não consuma este campo numa etapa "paid".
    */
   surveyResponseRate: number | null;
 

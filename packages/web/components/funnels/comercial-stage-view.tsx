@@ -60,6 +60,7 @@ import {
   type CrmCard,
   type CrmColumn,
 } from "@/lib/hooks/use-comercial-crm";
+import { SurveyFunnelTab } from "./survey-funnel-tab";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
 import type { FunnelStage } from "@loyola-x/shared";
@@ -251,12 +252,17 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
 
   // Config draft
   const [sourceDraft, setSourceDraft] = useState<string[]>([]);
+  const [sourceKindDraft, setSourceKindDraft] = useState<"buyers" | "survey">("buyers");
   const [newColumnName, setNewColumnName] = useState("");
   const sourceIdsKey = board?.sourceStageIds?.join(",") ?? "";
+  const boardSourceKind = board?.comercialSource ?? "buyers";
   useEffect(() => {
     if (board) setSourceDraft(sourceIdsKey ? sourceIdsKey.split(",") : []);
     // board é intencionalmente lido só quando as fontes mudam
   }, [sourceIdsKey]); // board fora das deps de propósito
+  useEffect(() => {
+    setSourceKindDraft(boardSourceKind);
+  }, [boardSourceKind]);
 
   // Drawer do card
   const [openCard, setOpenCard] = useState<CrmCard | null>(null);
@@ -351,7 +357,7 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
     syncMutate(undefined, {
       onSuccess: (r) => {
         if (!r.configured) {
-          toast.info("Configure as etapas-fonte primeiro (Configurar)");
+          toast.info("Configure as etapas-fonte ou vincule uma planilha própria (Configurar)");
         } else if (r.created > 0 || r.updated > 0) {
           toast.success(
             `Sync: ${r.created} novo${r.created !== 1 ? "s" : ""}, ${r.updated} atualizado${r.updated !== 1 ? "s" : ""}` +
@@ -373,8 +379,8 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
 
   async function handleSaveConfig() {
     try {
-      await saveConfig.mutateAsync(sourceDraft);
-      toast.success("Etapas-fonte salvas");
+      await saveConfig.mutateAsync({ sourceStageIds: sourceDraft, comercialSource: sourceKindDraft });
+      toast.success("Configuração salva");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao salvar");
     }
@@ -463,11 +469,38 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                   </div>
                 </div>
 
+                {/* Fonte dos cards */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Fonte dos cards</Label>
+                  <div className="inline-flex rounded-md border border-border/50 p-0.5 text-xs">
+                    {([
+                      { k: "buyers", label: "Compradores" },
+                      { k: "survey", label: "Respondentes da pesquisa" },
+                    ] as const).map((opt) => (
+                      <button
+                        key={opt.k}
+                        type="button"
+                        onClick={() => setSourceKindDraft(opt.k)}
+                        className={`rounded px-3 py-1 transition-colors ${sourceKindDraft === opt.k ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    {sourceKindDraft === "survey"
+                      ? "Quem respondeu a pesquisa dessas etapas (planilha de pesquisa) vira card no kanban."
+                      : "Quem comprou nessas etapas (planilhas de venda + vendas manuais) vira card no kanban."}
+                  </p>
+                </div>
+
                 {/* Etapas-fonte */}
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium">Etapas-fonte (de onde puxar compradores)</Label>
+                  <Label className="text-sm font-medium">Etapas-fonte</Label>
                   <p className="text-[11px] text-muted-foreground">
-                    Quem comprou nessas etapas (planilhas de venda + vendas manuais) vira card no kanban.
+                    {sourceKindDraft === "survey"
+                      ? "De quais etapas puxar os respondentes da pesquisa. Opcional se você mapear uma planilha própria abaixo."
+                      : "De quais etapas puxar os compradores."}
                   </p>
                   <div className="space-y-1 rounded-md border border-border/40 p-1 max-h-52 overflow-y-auto">
                     {otherStages.length === 0 ? (
@@ -495,8 +528,40 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                     )}
                   </div>
                   <Button size="sm" onClick={handleSaveConfig} disabled={saveConfig.isPending}>
-                    {saveConfig.isPending ? "Salvando..." : "Salvar etapas-fonte"}
+                    {saveConfig.isPending ? "Salvando..." : "Salvar configuração"}
                   </Button>
+                </div>
+
+                {/* Planilha própria — pesquisa que não vive em nenhuma etapa
+                    anterior, mapeada direto aqui. Reusa a mesma UI da aba
+                    Pesquisas (picker do Sheets + mapeamento de colunas). */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Planilha própria (pesquisa)</Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Vincule aqui uma pesquisa que não está em nenhuma etapa anterior. Depois de
+                    vincular, use <strong>Mapear</strong> pra apontar as colunas de e-mail e telefone.
+                  </p>
+                  <ul className="text-[11px] text-muted-foreground list-disc pl-4 space-y-0.5">
+                    <li>
+                      Com fonte <strong>Respondentes da pesquisa</strong>: cada respondente com e-mail
+                      vira card — não precisa de etapa-fonte nenhuma.
+                    </li>
+                    <li>
+                      Com fonte <strong>Compradores</strong>: não gera card, mas as respostas aparecem
+                      ao abrir o card de quem respondeu.
+                    </li>
+                  </ul>
+                  {board && board.ownSurveys === 0 && sourceKindDraft === "survey" && sourceDraft.length === 0 && (
+                    <p className="text-[11px] text-amber-500">
+                      Sem etapa-fonte e sem planilha própria não há de onde puxar cards.
+                    </p>
+                  )}
+                  <SurveyFunnelTab
+                    projectId={projectId}
+                    funnelId={funnelId}
+                    stageId={stage.id}
+                    surveyType="paid"
+                  />
                 </div>
 
                 {/* Colunas do kanban */}
@@ -613,10 +678,12 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
           <Handshake className="h-8 w-8 mx-auto text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
             Selecione as <strong>etapas-fonte</strong> em Configurar — quem comprou nelas vira card aqui.
+            <br />
+            Ou vincule uma <strong>planilha própria</strong> de pesquisa, se ela não estiver em nenhuma etapa anterior.
           </p>
           <Button variant="outline" size="sm" onClick={() => { setStageName(stage.name); setSettingsOpen(true); }}>
             <Settings2 className="h-3.5 w-3.5 mr-1.5" />
-            Configurar etapas-fonte
+            Configurar fontes
           </Button>
         </div>
       ) : (

@@ -2062,8 +2062,10 @@ export const stageComercialConfig = pgTable("stage_comercial_config", {
     .notNull()
     .unique()
     .references(() => funnelStages.id, { onDelete: "cascade" }),
-  /** Etapas do funil de onde puxar os compradores. */
+  /** Etapas do funil de onde puxar os compradores/respondentes. */
   sourceStageIds: jsonb("source_stage_ids").$type<string[]>().notNull().default([]),
+  /** Fonte dos cards: "buyers" (quem comprou) ou "survey" (quem respondeu a pesquisa). */
+  comercialSource: varchar("comercial_source", { length: 20 }).$type<"buyers" | "survey">().notNull().default("buyers"),
   createdBy: uuid("created_by")
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),

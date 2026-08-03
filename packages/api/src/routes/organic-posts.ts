@@ -187,35 +187,45 @@ async function fetchInstagramMedia(
 interface InstagramInsightsValue { value?: number }
 interface InstagramInsightsEntry { name: string; values?: InstagramInsightsValue[] }
 
+type IgInsights = {
+  reach: number | null;
+  impressions: number | null;
+  saved: number | null;
+  views: number | null;
+  shares: number | null;
+  avgWatchTimeMs: number | null;
+};
+
 async function fetchInstagramMediaInsights(
   accessToken: string,
   mediaId: string,
   mediaType: string | undefined,
-): Promise<{ reach: number | null; impressions: number | null; saved: number | null }> {
-  // Insights metrics differ by media type.
-  // Use a conservative set that works for IMAGE/CAROUSEL/VIDEO/REELS.
-  const metrics = mediaType === "VIDEO" || mediaType === "REELS" ? "reach,saved" : "reach,impressions,saved";
+): Promise<IgInsights> {
+  const isVideo = mediaType === "VIDEO" || mediaType === "REELS";
+  // Vídeo/Reels expõem views (plays), shares e tempo médio assistido; imagem não.
+  const metrics = isVideo ? "reach,saved,views,shares,ig_reels_avg_watch_time" : "reach,impressions,saved";
+  const empty: IgInsights = { reach: null, impressions: null, saved: null, views: null, shares: null, avgWatchTimeMs: null };
   try {
     const res = await fetch(
       `https://graph.instagram.com/v25.0/${mediaId}/insights?metric=${metrics}&access_token=${accessToken}`,
     );
-    if (!res.ok) return { reach: null, impressions: null, saved: null };
+    if (!res.ok) return empty;
     const data = (await res.json()) as { data?: InstagramInsightsEntry[]; error?: unknown };
-    if (!data.data) return { reach: null, impressions: null, saved: null };
-    const out: { reach: number | null; impressions: number | null; saved: number | null } = {
-      reach: null,
-      impressions: null,
-      saved: null,
-    };
+    if (!data.data) return empty;
+    const out: IgInsights = { ...empty };
     for (const e of data.data) {
       const v = e.values?.[0]?.value ?? null;
-      if (e.name === "reach") out.reach = typeof v === "number" ? v : null;
-      else if (e.name === "impressions") out.impressions = typeof v === "number" ? v : null;
-      else if (e.name === "saved") out.saved = typeof v === "number" ? v : null;
+      const n = typeof v === "number" ? v : null;
+      if (e.name === "reach") out.reach = n;
+      else if (e.name === "impressions") out.impressions = n;
+      else if (e.name === "saved") out.saved = n;
+      else if (e.name === "views") out.views = n;
+      else if (e.name === "shares") out.shares = n;
+      else if (e.name === "ig_reels_avg_watch_time") out.avgWatchTimeMs = n;
     }
     return out;
   } catch {
-    return { reach: null, impressions: null, saved: null };
+    return empty;
   }
 }
 
@@ -227,13 +237,16 @@ function buildInstagramMetricsZero(): InstagramOrganicMetrics {
     commentCount: null,
     saved: null,
     engagementRate: null,
+    views: null,
+    shares: null,
+    avgWatchTimeMs: null,
   };
 }
 
 function buildInstagramHydration(
   externalId: string,
   media: InstagramMediaFields | null,
-  insights: { reach: number | null; impressions: number | null; saved: number | null } | null,
+  insights: IgInsights | null,
 ): OrganicPostHydration {
   if (!media) {
     return {
@@ -268,6 +281,9 @@ function buildInstagramHydration(
       commentCount: comments,
       saved,
       engagementRate,
+      views: insights?.views ?? null,
+      shares: insights?.shares ?? null,
+      avgWatchTimeMs: insights?.avgWatchTimeMs ?? null,
     },
   };
 }

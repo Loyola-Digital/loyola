@@ -42,9 +42,19 @@ export interface CrmColumn {
   isTerminal: boolean;
 }
 
+export type ComercialSource = "buyers" | "survey";
+
 export interface CrmBoard {
   configured: boolean;
   sourceStageIds: string[];
+  /** Fonte dos cards: quem comprou ou quem respondeu a pesquisa. */
+  comercialSource: ComercialSource;
+  /**
+   * Nº de pesquisas mapeadas direto NA etapa Comercial (planilha avulsa — a que
+   * não vive em nenhuma etapa anterior). Quando > 0 no modo "survey", o board
+   * fica configurado e o sync roda mesmo sem etapas-fonte.
+   */
+  ownSurveys: number;
   columns: CrmColumn[];
   cards: CrmCard[];
 }
@@ -84,10 +94,10 @@ export function useSaveCrmConfig(projectId: string, funnelId: string, stageId: s
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (sourceStageIds: string[]) =>
+    mutationFn: (cfg: { sourceStageIds: string[]; comercialSource: ComercialSource }) =>
       apiClient<{ ok: boolean }>(`${basePath(projectId, funnelId, stageId)}/config`, {
         method: "PUT",
-        body: JSON.stringify({ sourceStageIds }),
+        body: JSON.stringify(cfg),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: boardKey(projectId, funnelId, stageId) }),
   });

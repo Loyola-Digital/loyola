@@ -339,6 +339,24 @@ export default function StagePage() {
                     <span className="font-medium">Debriefing</span>
                     <span className="text-xs text-muted-foreground">Docs HTML + comentários</span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateStage.mutate(
+                        { stageType: "comercial" },
+                        { onSuccess: () => toast.success("Tipo alterado para Comercial") }
+                      );
+                    }}
+                    className={cn(
+                      "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                      (stage.stageType as string) === "comercial"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border hover:bg-muted"
+                    )}
+                  >
+                    <span className="font-medium">Comercial</span>
+                    <span className="text-xs text-muted-foreground">CRM kanban de compradores</span>
+                  </button>
                 </div>
               </div>
 

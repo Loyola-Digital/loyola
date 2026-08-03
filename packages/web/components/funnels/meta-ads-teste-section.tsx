@@ -15,7 +15,7 @@
  * comparação — reestilizados.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode, type ComponentType } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode, type ReactElement, type ComponentType } from "react";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -28,6 +28,9 @@ import {
   CartesianGrid,
   Tooltip,
   ReferenceLine,
+  PieChart,
+  Pie,
+  LabelList,
 } from "recharts";
 import { FlaskConical, ImageIcon, Sparkles, LayoutTemplate, PieChart as PieChartIcon, ClipboardList, Activity, ArrowLeftRight, Banknote, Users, Table2 } from "lucide-react";
 import { useTrafficOverview, useTrafficCampaigns, useCampaignDailyInsightsBulk } from "@/lib/hooks/use-traffic-analytics";
@@ -54,10 +57,19 @@ import { overrideCplWithUniqueIngressos, type DailyRow } from "@/lib/utils/funne
 import { Skeleton } from "@/components/ui/skeleton";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { TopCreativesGallery } from "./top-creatives-gallery";
-import { ConversionFunnel } from "./conversion-funnel";
-import { HotColdSpendDonut } from "./hot-cold-spend-donut";
-import { HotColdCountDonut } from "./hot-cold-count-donut";
 import { SurveyQualificationSection } from "./survey-qualification-section";
+import { MetricTooltip } from "@/components/metrics/metric-tooltip";
+import {
+  buildFunnelSpendFormula,
+  buildFunnelLeadsFormula,
+  buildFunnelCplFormula,
+  buildFunnelConnectRateFormula,
+  buildFunnelCtrFormula,
+  buildFunnelCpcFormula,
+  buildFunnelCpmFormula,
+  buildFunnelSurveyFormula,
+} from "@/lib/formulas/funnels";
+import type { MetricFormula } from "@/lib/types/metric-formula";
 import { StageSalesSection } from "./stage-sales-section";
 import { GroupsDashboardSection } from "./groups-dashboard-section";
 import { CtrCpmChart, SaturationBadge, FunnelComparisonChart } from "./launch-dashboard";
@@ -121,6 +133,103 @@ function addDaysISO(iso: string, days: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
+// ---- Tooltips ricos (estilo TESTE) + label de valor nos pontos ----
+const tnum = (v: unknown) => (typeof v === "number" ? v : Number(v) || 0);
+// render function de label de valor acima do ponto/barra (via <LabelList content>).
+// Só é montado quando !dense (poucos dias), pra não poluir.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function ptLabelFn(fmt: (v: number) => string): (props: any) => ReactElement {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (props: any) => {
+    const { x, y, value } = props ?? {};
+    const n = Number(value);
+    if (x == null || y == null || !n) return <g />;
+    return <text x={x} y={y - 8} textAnchor="middle" fontSize={9} fill={T.muted2} fontFamily="'JetBrains Mono',monospace">{fmt(n)}</text>;
+  };
+}
+
+function TipShell({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 10px", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, minWidth: 160 }}>
+      <div style={{ color: T.text, fontWeight: 700, marginBottom: 4 }}>{title}</div>
+      <div className="space-y-0.5">{children}</div>
+    </div>
+  );
+}
+function TipRow({ l, v, c }: { l: string; v: string; c?: string }) {
+  return <div className="flex justify-between gap-4" style={{ color: c ?? T.muted2 }}><span>{l}</span><span style={{ fontWeight: 600 }}>{v}</span></div>;
+}
+// leads/CPL/investimento por dia (hero) — usa o item de derived.chart.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function HeroTip({ active, payload, isPaid }: any) {
+  const d = payload?.[0]?.payload;
+  if (!active || !d) return null;
+  return (
+    <TipShell title={String(d.label)}>
+      <TipRow l={isPaid ? "Ingressos" : "Leads"} v={int(tnum(d.leads))} c={T.emerald} />
+      <TipRow l="CPL" v={d.cpl == null ? "—" : brl(tnum(d.cpl))} />
+      <TipRow l="Investimento" v={brl(tnum(d.spend))} c={T.gold} />
+    </TipShell>
+  );
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function CplCompTip({ active, payload }: any) {
+  const d = payload?.[0]?.payload;
+  if (!active || !d) return null;
+  return (
+    <TipShell title={String(d.label)}>
+      <TipRow l="Investimento" v={brl(tnum(d.spend))} c={T.gold} />
+      <TipRow l="CPL Pago" v={d.cplPago == null ? "—" : brl(tnum(d.cplPago))} c={T.gold} />
+      <TipRow l="CPL Geral" v={d.cplGeral == null ? "—" : brl(tnum(d.cplGeral))} c={T.emerald} />
+    </TipShell>
+  );
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function AcumTip({ active, payload, isPaid }: any) {
+  const d = payload?.[0]?.payload;
+  if (!active || !d) return null;
+  const t = isPaid ? "Ingressos" : "Leads";
+  return (
+    <TipShell title={String(d.label)}>
+      <TipRow l={`${t} total`} v={int(tnum(d.total))} c={T.gold} />
+      <TipRow l="Pago" v={int(tnum(d.pago))} c={T.emerald} />
+      <TipRow l="Org" v={int(tnum(d.org))} c={T.teal} />
+      <TipRow l="s/ Track" v={int(tnum(d.semTrack))} c={T.amber} />
+    </TipShell>
+  );
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function TrendTip({ active, payload }: any) {
+  const d = payload?.[0]?.payload;
+  if (!active || !d) return null;
+  const proj = Boolean(d.isProjection);
+  return (
+    <TipShell title={String(d.label)}>
+      <TipRow l={proj ? "🔮 Projetado" : "✓ Real"} v="" c={proj ? T.amber : T.emerald} />
+      <TipRow l="Acumulado" v={int(tnum(d.cumulative))} />
+      <TipRow l="Por dia" v={int(tnum(proj ? d.dailyProjected : d.dailyReal))} />
+      {proj && d.bandUpper != null ? <TipRow l="Banda" v={`±${int(tnum(d.bandUpper) - tnum(d.cumulative))}`} /> : null}
+      <TipRow l="Meta" v={int(tnum(d.meta))} c={T.red} />
+    </TipShell>
+  );
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function CostTip({ active, payload }: any) {
+  const d = payload?.[0]?.payload;
+  if (!active || !d) return null;
+  const proj = Boolean(d.isProjection);
+  return (
+    <TipShell title={String(d.label)}>
+      <TipRow l={proj ? "🔮 Projetado" : "✓ Real"} v="" c={proj ? T.amber : T.emerald} />
+      <TipRow l="Pagos/dia" v={int(tnum(proj ? d.dailyProjectedPaid : d.dailyRealPaid))} />
+      <TipRow l="Org/dia" v={int(tnum(proj ? d.dailyProjectedOrg : d.dailyRealOrg))} />
+      <TipRow l="Acumulado" v={int(tnum(d.cumulative))} />
+      {d.cplProjected != null ? <TipRow l="CPL proj." v={brl(tnum(d.cplProjected))} c={T.amber} /> : null}
+      <TipRow l="Meta" v={int(tnum(d.metaCumulative))} c={T.red} />
+    </TipShell>
+  );
+}
+
 // Estilo da linha de marco (acima do dia): virada pra frente (verde), retorno
 // (âmbar) ou fase/separador (roxo). Detecta pelo texto do label do batch turn.
 function turnStyle(label: string): { color: string; bg: string; prefix: string } {
@@ -136,6 +245,7 @@ interface Kpi {
   s?: string;
   g: string;
   fill: number;
+  formula?: MetricFormula;
 }
 
 export function MetaAdsTesteTab({
@@ -271,6 +381,16 @@ export function MetaAdsTesteTab({
   const loading = metrics.isLoading;
   const campaignIdSet = new Set(campaignIds);
   const funnelCampaigns = (campaignData?.campaigns ?? []).filter((c) => campaignIdSet.has(c.campaignId));
+  // Distribuição de investimento Hot/Cold/Outros (por nome da campanha).
+  const spendHotCold = funnelCampaigns.reduce(
+    (acc, c) => {
+      const n = c.campaignName.toLowerCase();
+      const cat = n.includes("hot") ? "hot" : n.includes("cold") ? "cold" : "outros";
+      acc[cat] += c.spend;
+      return acc;
+    },
+    { hot: 0, cold: 0, outros: 0 },
+  );
 
   // ---- KPIs (paridade com o dash) ----
   const sumOrigem = (v?: { pago: number; org: number; semTrack: number }) => (v ? v.pago + v.org + v.semTrack : 0);
@@ -282,13 +402,18 @@ export function MetaAdsTesteTab({
   const ingressosTotaisCard = sumAllOrigem(salesData?.ingressosTotaisByDay);
   const faturamentoTotalCard = sumAllNum(salesData?.faturamentoTotalByDay);
   const faturamentoUnicoCard = sumAllNum(salesData?.faturamentoUnicoByDay);
+  // Na Captação Paga a pesquisa vai pra quem COMPROU o ingresso — denominador é
+  // ingressos únicos, não "Leads Popup". Paridade com o dash (launch-dashboard).
+  const surveyDenominator = isPaid ? ingressosUnicosCard : metrics.totalLeads;
+  const surveyNumerator = isPaid ? survey.totalResponses : survey.matchedResponses;
   const surveyResponseRate =
-    survey && survey.matchedResponses > 0 && metrics.totalLeads > 0
-      ? Math.min((survey.matchedResponses / metrics.totalLeads) * 100, 100)
+    surveyNumerator > 0 && surveyDenominator > 0
+      ? Math.min((surveyNumerator / surveyDenominator) * 100, 100)
       : null;
 
+  const f = { days, funnelType: "launch" as const, funnelName: funnel.name };
   const kpis: Kpi[] = [];
-  kpis.push({ l: "Investimento", v: brl(metrics.spend), s: `${rows.length} dias`, g: G.goldAmber, fill: 100 });
+  kpis.push({ l: "Investimento", v: brl(metrics.spend), s: `${rows.length} dias`, g: G.goldAmber, fill: 100, formula: buildFunnelSpendFormula(metrics.spend, f) });
   if (showFaturamento) {
     kpis.push({ l: "Faturamento Total", v: brl(faturamentoTotalCard), s: `único ${brl(faturamentoUnicoCard)}`, g: G.emeraldTeal, fill: 100 });
   }
@@ -298,6 +423,7 @@ export function MetaAdsTesteTab({
     s: metrics.hasLinkedSheet ? `pg ${int(metrics.leadsPagos)} · org ${int(metrics.leadsOrg)} · s/t ${int(metrics.leadsSemTrack)}` : "vincule planilha",
     g: G.goldOrange,
     fill: 100,
+    formula: metrics.hasLinkedSheet ? buildFunnelLeadsFormula(metrics.totalLeads, f, { pagos: metrics.leadsPagos, org: metrics.leadsOrg, semTrack: metrics.leadsSemTrack }) : undefined,
   });
   if (isPaid && metrics.totalVendas !== null) {
     kpis.push({
@@ -316,16 +442,26 @@ export function MetaAdsTesteTab({
     s: metrics.hasLinkedSheet ? `${isPaid ? "geral único" : "geral"} ${brl(cplGeralVal)}` : "vincule planilha",
     g: G.amberRed,
     fill: 60,
+    formula: metrics.hasLinkedSheet && !isPaid ? buildFunnelCplFormula(metrics.spend, metrics.leadsPagos, f, "pago") : undefined,
   });
-  kpis.push({ l: "Connect Rate", v: pct(metrics.connectRate), s: "LP views ÷ cliques", g: G.goldAmber, fill: Math.min(100, metrics.connectRate ?? 0) });
-  kpis.push({ l: "CTR (link)", v: pct(metrics.ctr), s: overview ? `${int(overview.totalLinkClicks)} cliques` : undefined, g: G.goldOrange, fill: Math.min(100, (metrics.ctr ?? 0) * 25) });
-  kpis.push({ l: "CPC (link)", v: brl(metrics.cpc), s: "spend ÷ cliques", g: G.amberOrange, fill: 55 });
-  kpis.push({ l: "CPM", v: brl(metrics.cpm), s: overview ? `${int(overview.totalImpressions)} impr.` : undefined, g: G.amberRed, fill: 45 });
+  kpis.push({ l: "Connect Rate", v: pct(metrics.connectRate), s: "LP views ÷ cliques", g: G.goldAmber, fill: Math.min(100, metrics.connectRate ?? 0), formula: buildFunnelConnectRateFormula(metrics.connectRate, f) });
+  kpis.push({ l: "CTR (link)", v: pct(metrics.ctr), s: overview ? `${int(overview.totalLinkClicks)} cliques` : undefined, g: G.goldOrange, fill: Math.min(100, (metrics.ctr ?? 0) * 25), formula: buildFunnelCtrFormula(metrics.ctr, f) });
+  kpis.push({ l: "CPC (link)", v: brl(metrics.cpc), s: "spend ÷ cliques", g: G.amberOrange, fill: 55, formula: buildFunnelCpcFormula(metrics.cpc, f) });
+  kpis.push({ l: "CPM", v: brl(metrics.cpm), s: overview ? `${int(overview.totalImpressions)} impr.` : undefined, g: G.amberRed, fill: 45, formula: buildFunnelCpmFormula(metrics.cpm, f) });
   if (isPaid && metrics.checkoutConversionRate !== null) {
     kpis.push({ l: "Taxa Checkout", v: pct(metrics.checkoutConversionRate), s: metrics.vendasPago != null && metrics.checkoutVisits ? `${int(metrics.vendasPago)} ÷ ${int(metrics.checkoutVisits)}` : undefined, g: G.emeraldTeal, fill: Math.min(100, metrics.checkoutConversionRate) });
   }
   if (surveyResponseRate !== null && survey) {
-    kpis.push({ l: "Pesquisa", v: `${surveyResponseRate.toFixed(1)}%`, s: `${int(survey.matchedResponses)} match · ${int(survey.unmatchedResponses)} s/ match`, g: G.goldAmber, fill: Math.min(100, surveyResponseRate) });
+    kpis.push({
+      l: "Pesquisa",
+      v: `${surveyResponseRate.toFixed(1)}%`,
+      s: isPaid
+        ? `${int(survey.totalResponses)} respostas ÷ ${int(ingressosUnicosCard)} compradores`
+        : `${int(survey.matchedResponses)} match · ${int(survey.unmatchedResponses)} s/ match`,
+      g: G.goldAmber,
+      fill: Math.min(100, surveyResponseRate),
+      formula: buildFunnelSurveyFormula(surveyNumerator, surveyDenominator, isPaid ? "compradores" : "leads"),
+    });
   }
 
   const consistencyPct = rows.length > 0 ? Math.round((derived.daysAboveAvg / rows.length) * 100) : 0;
@@ -441,16 +577,18 @@ export function MetaAdsTesteTab({
               {/* KPIs */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
                 {kpis.map((k) => (
-                  <div key={k.l} className="mat-kpi">
-                    <div className="absolute inset-x-0 top-0 h-[2px] rounded-t-[12px]" style={{ background: k.g }} />
-                    <div className="mat-kpi-glow" style={{ background: k.g }} />
-                    <p className="text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>{k.l}</p>
-                    <p className="mt-1 font-extrabold" style={{ fontSize: "clamp(17px,2.1vw,26px)" }}>{k.v}</p>
-                    {k.s && <p className="mt-0.5 text-[10px]" style={{ color: T.muted2 }}>{k.s}</p>}
-                    <div className="mt-2 h-[3px] rounded-full" style={{ background: "rgba(255,255,255,.06)" }}>
-                      <div className="mat-bf" style={{ background: k.g, width: `${Math.max(4, Math.min(100, k.fill))}%` }} />
+                  <MetricTooltip key={k.l} label={k.l} value={k.v} formula={k.formula}>
+                    <div className={`mat-kpi ${k.formula ? "cursor-help" : ""}`}>
+                      <div className="absolute inset-x-0 top-0 h-[2px] rounded-t-[12px]" style={{ background: k.g }} />
+                      <div className="mat-kpi-glow" style={{ background: k.g }} />
+                      <p className="text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>{k.l}</p>
+                      <p className="mt-1 font-extrabold" style={{ fontSize: "clamp(17px,2.1vw,26px)", textDecoration: k.formula ? "underline dotted" : undefined, textUnderlineOffset: 4, textDecorationColor: "rgba(255,255,255,.25)" }}>{k.v}</p>
+                      {k.s && <p className="mt-0.5 text-[10px]" style={{ color: T.muted2 }}>{k.s}</p>}
+                      <div className="mt-2 h-[3px] rounded-full" style={{ background: "rgba(255,255,255,.06)" }}>
+                        <div className="mat-bf" style={{ background: k.g, width: `${Math.max(4, Math.min(100, k.fill))}%` }} />
+                      </div>
                     </div>
-                  </div>
+                  </MetricTooltip>
                 ))}
               </div>
 
@@ -479,10 +617,11 @@ export function MetaAdsTesteTab({
                         <CartesianGrid stroke={T.grid} vertical={false} />
                         <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
                         <YAxis tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={34} />
-                        <Tooltip contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, color: T.text }} formatter={(value, name) => [int(Number(value)), name === "meta" ? "Média" : isPaid ? "Ingressos" : "Leads"]} />
+                        <Tooltip content={<HeroTip isPaid={isPaid} />} />
                         <Bar dataKey="meta" fill="rgba(253,212,73,.13)" stroke="rgba(253,212,73,.4)" strokeWidth={1} radius={[3, 3, 0, 0]} />
                         <Bar dataKey="leads" radius={[3, 3, 0, 0]}>
                           {derived.chart.map((r) => <Cell key={r.date} fill={r.leads >= derived.avgLeads ? "rgba(16,185,129,.55)" : "rgba(239,68,68,.5)"} />)}
+                          <LabelList content={ptLabelFn(int)} />
                         </Bar>
                       </ComposedChart>
                     </ResponsiveContainer>
@@ -495,14 +634,16 @@ export function MetaAdsTesteTab({
                         <CartesianGrid stroke={T.grid} vertical={false} />
                         <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
                         <YAxis tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={40} />
-                        <Tooltip contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, color: T.text }} formatter={(value) => [brl(Number(value)), "CPL"]} />
+                        <Tooltip content={<HeroTip isPaid={isPaid} />} />
                         <Area dataKey="cpl" stroke="none" fill="rgba(245,158,11,.08)" connectNulls />
                         <Line dataKey="cpl" type="monotone" stroke={T.amber} strokeWidth={2} connectNulls
                           dot={(p: { cx?: number; cy?: number; payload?: { cpl?: number | null }; index?: number }) => {
                             const above = derived.avgCpl != null && p.payload?.cpl != null && p.payload.cpl > derived.avgCpl;
                             return <circle key={p.index} cx={p.cx} cy={p.cy} r={3} fill={above ? T.red : T.amber} stroke="none" />;
                           }}
-                        />
+                        >
+                          <LabelList content={ptLabelFn(brl)} />
+                        </Line>
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -524,8 +665,8 @@ export function MetaAdsTesteTab({
                       <CartesianGrid stroke={T.grid} vertical={false} />
                       <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
                       <YAxis tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={44} tickFormatter={(v) => `R$${Math.round(v)}`} />
-                      <Tooltip contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, color: T.text }} formatter={(value) => [brl(Number(value)), "Investimento"]} />
-                      <Area dataKey="spend" type="monotone" stroke={T.gold} strokeWidth={2} fill="url(#mat-spend)" />
+                      <Tooltip content={<HeroTip isPaid={isPaid} />} />
+                      <Area dataKey="spend" type="monotone" stroke={T.gold} strokeWidth={2} fill="url(#mat-spend)"><LabelList content={ptLabelFn(brl)} /></Area>
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
@@ -544,10 +685,10 @@ export function MetaAdsTesteTab({
                         <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
                         <YAxis yAxisId="cpl" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={40} />
                         <YAxis yAxisId="inv" orientation="right" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={44} tickFormatter={(v) => `R$${Math.round(v)}`} />
-                        <Tooltip contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, color: T.text }} formatter={(value) => brl(Number(value))} />
+                        <Tooltip content={<CplCompTip />} />
                         <Bar yAxisId="inv" dataKey="spend" name="Investimento" fill="rgba(245,158,11,.12)" radius={[3, 3, 0, 0]} />
-                        <Line yAxisId="cpl" dataKey="cplPago" name="CPL Pago" type="monotone" stroke={T.gold} strokeWidth={2} dot={false} connectNulls />
-                        <Line yAxisId="cpl" dataKey="cplGeral" name="CPL Geral" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} connectNulls />
+                        <Line yAxisId="cpl" dataKey="cplPago" name="CPL Pago" type="monotone" stroke={T.gold} strokeWidth={2} dot={{ r: 2.5, fill: T.gold, strokeWidth: 0 }} connectNulls><LabelList content={ptLabelFn(brl)} /></Line>
+                        <Line yAxisId="cpl" dataKey="cplGeral" name="CPL Geral" type="monotone" stroke={T.emerald} strokeWidth={2} dot={{ r: 2.5, fill: T.emerald, strokeWidth: 0 }} connectNulls><LabelList content={ptLabelFn(brl)} /></Line>
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -567,11 +708,11 @@ export function MetaAdsTesteTab({
                         <CartesianGrid stroke={T.grid} vertical={false} />
                         <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" />
                         <YAxis tick={{ fontSize: 10, fill: T.muted2, fontFamily: "'JetBrains Mono',monospace" }} stroke="transparent" width={38} />
-                        <Tooltip contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, color: T.text }} formatter={(value) => int(Number(value))} />
-                        <Area dataKey="total" name="Total" type="monotone" stroke={T.gold} strokeWidth={2} fill="url(#mat-cum)" />
-                        <Line dataKey="pago" name="Pago" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} />
-                        <Line dataKey="org" name="Org" type="monotone" stroke={T.teal} strokeWidth={2} dot={false} />
-                        <Line dataKey="semTrack" name="s/ Track" type="monotone" stroke={T.amber} strokeWidth={2} dot={false} />
+                        <Tooltip content={<AcumTip isPaid={isPaid} />} />
+                        <Area dataKey="total" name="Total" type="monotone" stroke={T.gold} strokeWidth={2} fill="url(#mat-cum)" dot={{ r: 2.5, fill: T.gold, strokeWidth: 0 }}><LabelList content={ptLabelFn(int)} /></Area>
+                        <Line dataKey="pago" name="Pago" type="monotone" stroke={T.emerald} strokeWidth={2} dot={{ r: 2, fill: T.emerald, strokeWidth: 0 }} />
+                        <Line dataKey="org" name="Org" type="monotone" stroke={T.teal} strokeWidth={2} dot={{ r: 2, fill: T.teal, strokeWidth: 0 }} />
+                        <Line dataKey="semTrack" name="s/ Track" type="monotone" stroke={T.amber} strokeWidth={2} dot={{ r: 2, fill: T.amber, strokeWidth: 0 }} />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -692,18 +833,32 @@ export function MetaAdsTesteTab({
               {/* ---- Leva 3: Segmentação (Hot/Cold + Funil) + Pesquisa ---- */}
               <div className="space-y-4">
                 <GroupHeading icon={PieChartIcon} title="SEGMENTAÇÃO & FUNIL" subtitle="Distribuição de investimento, leads/compradores e conversão" />
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  {funnelCampaigns.length > 0 ? (
-                    <HotColdSpendDonut campaigns={funnelCampaigns} />
+                {/* 3 donuts lado a lado (mesma altura) */}
+                <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  <TesteDonut title="Investimento — Hot/Cold" hot={spendHotCold.hot} cold={spendHotCold.cold} outros={spendHotCold.outros} fmt={money0} />
+                  {metrics.hotColdLeads ? (
+                    <TesteDonut title="Leads — Hot/Cold" hot={metrics.hotColdLeads.hot} cold={metrics.hotColdLeads.cold} outros={metrics.hotColdLeads.outros} fmt={int} />
                   ) : (
-                    <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-                      <h3 className="mb-4 text-sm font-semibold">Distribuição de Investimento</h3>
-                      <p className="py-8 text-center text-sm text-muted-foreground">Sem dados no período.</p>
-                    </div>
+                    <TestePanelMsg title="Leads — Hot/Cold" msg="Mapeie a coluna utm_term na planilha de leads." />
                   )}
-                  <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-                    <h3 className="mb-4 text-sm font-semibold">Funil de Conversão</h3>
-                    <ConversionFunnel
+                  {isPaid && (() => {
+                    const stageBuyers = stageHotColdBuyers?.hasMapping
+                      ? { hot: stageHotColdBuyers.hot, cold: stageHotColdBuyers.cold, outros: stageHotColdBuyers.outros }
+                      : null;
+                    const buyers = stageBuyers ?? metrics.hotColdBuyers;
+                    return buyers ? (
+                      <TesteDonut title="Compradores — Hot/Cold" hot={buyers.hot} cold={buyers.cold} outros={buyers.outros} fmt={int} />
+                    ) : (
+                      <TestePanelMsg title="Compradores — Hot/Cold" msg="Mapeie a coluna utm_term na planilha de vendas." />
+                    );
+                  })()}
+                </div>
+
+                {/* Funil em largura total */}
+                <div className="rounded-[12px] border p-[17px]" style={{ background: T.surface, borderColor: T.border }}>
+                  <p className="mat-ct mb-3 flex items-center text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>Funil de conversão</p>
+                  <div className="mx-auto max-w-2xl">
+                    <TesteFunnel
                       impressions={overview?.totalImpressions ?? 0}
                       linkClicks={overview?.totalLinkClicks ?? null}
                       landingPageViews={overview?.totalLandingPageViews ?? null}
@@ -714,33 +869,6 @@ export function MetaAdsTesteTab({
                     />
                   </div>
                 </div>
-
-                {(metrics.hotColdLeads || metrics.hotColdBuyers) && (
-                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    {metrics.hotColdLeads ? (
-                      <HotColdCountDonut aggregate={metrics.hotColdLeads} title="Distribuição de Leads (Hot/Cold)" noun={{ singular: "lead", plural: "leads" }} />
-                    ) : (
-                      <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-                        <h3 className="mb-4 text-sm font-semibold">Distribuição de Leads (Hot/Cold)</h3>
-                        <p className="py-8 text-center text-sm text-muted-foreground">Mapeie a coluna <span className="font-mono">utm_term</span> na planilha de leads.</p>
-                      </div>
-                    )}
-                    {isPaid && (() => {
-                      const stageBuyers = stageHotColdBuyers?.hasMapping
-                        ? { hot: stageHotColdBuyers.hot, cold: stageHotColdBuyers.cold, outros: stageHotColdBuyers.outros, total: stageHotColdBuyers.total, items: stageHotColdBuyers.items }
-                        : null;
-                      const buyers = stageBuyers ?? metrics.hotColdBuyers;
-                      return buyers ? (
-                        <HotColdCountDonut aggregate={buyers} title="Distribuição de Compradores (Hot/Cold)" noun={{ singular: "comprador", plural: "compradores" }} />
-                      ) : (
-                        <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-                          <h3 className="mb-4 text-sm font-semibold">Distribuição de Compradores (Hot/Cold)</h3>
-                          <p className="py-8 text-center text-sm text-muted-foreground">Mapeie a coluna <span className="font-mono">utm_term</span> na planilha de vendas.</p>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
               </div>
 
               <div className="space-y-4">
@@ -872,6 +1000,120 @@ function GroupHeading({
   );
 }
 
+// Donut Hot/Cold/Outros no estilo TESTE (recharts + cores Loyola).
+const DONUT_COLORS: Record<"hot" | "cold" | "outros", string> = { hot: "#fb923c", cold: "#38bdf8", outros: "#7b8494" };
+function TesteDonut({ title, hot, cold, outros, fmt }: { title: string; hot: number; cold: number; outros: number; fmt: (v: number) => string }) {
+  const rows = [
+    { key: "hot" as const, name: "Hot", value: hot },
+    { key: "cold" as const, name: "Cold", value: cold },
+    { key: "outros" as const, name: "Outros", value: outros },
+  ];
+  const total = hot + cold + outros;
+  const chartData = rows.filter((d) => d.value > 0);
+  return (
+    <div className="rounded-[12px] border p-[17px] space-y-3" style={{ background: T.surface, borderColor: T.border }}>
+      <p className="mat-ct flex items-center text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>{title}</p>
+      {total <= 0 ? (
+        <p className="py-8 text-center text-sm" style={{ color: T.muted }}>Sem dados no período.</p>
+      ) : (
+        <>
+          <div className="mx-auto aspect-square w-full max-w-[240px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="58%" outerRadius="90%" strokeWidth={0} paddingAngle={2}>
+                  {chartData.map((d) => <Cell key={d.key} fill={DONUT_COLORS[d.key]} />)}
+                </Pie>
+                <Tooltip contentStyle={TT_STYLE} formatter={(v, n) => [fmt(Number(v)), n]} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="space-y-1.5 text-[11px]" style={{ fontFamily: "'JetBrains Mono',monospace" }}>
+            {rows.map((d) => {
+              const pct = total > 0 ? (d.value / total) * 100 : 0;
+              return (
+                <div key={d.key} className="flex items-center gap-2">
+                  <span className="h-3 w-3 shrink-0 rounded-sm" style={{ background: DONUT_COLORS[d.key] }} />
+                  <span className="w-14 shrink-0" style={{ color: T.text }}>{d.name}</span>
+                  <span className="flex-1 tabular-nums" style={{ color: T.muted2 }}>{d.value > 0 ? fmt(d.value) : "—"}</span>
+                  <span className="w-12 shrink-0 text-right tabular-nums" style={{ color: T.muted2 }}>{pct > 0 ? `${pct.toFixed(0)}%` : "—"}</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function TestePanelMsg({ title, msg }: { title: string; msg: string }) {
+  return (
+    <div className="rounded-[12px] border p-[17px]" style={{ background: T.surface, borderColor: T.border }}>
+      <p className="mat-ct mb-3 flex items-center text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>{title}</p>
+      <p className="py-8 text-center text-sm" style={{ color: T.muted }}>{msg}</p>
+    </div>
+  );
+}
+
+// Funil de conversão trapezoidal no estilo TESTE (SVG, cores Loyola).
+const FUNNEL_COLORS = ["#fdd449", "#f59e0b", "#fb923c", "#10b981", "#0d9488", "#ef4444"];
+function TesteFunnel({
+  impressions,
+  linkClicks,
+  landingPageViews,
+  leads,
+  checkoutVisits,
+  sales,
+  leadsLabel,
+}: {
+  impressions: number;
+  linkClicks: number | null;
+  landingPageViews: number | null;
+  leads: number | null;
+  checkoutVisits?: number | null;
+  sales?: number | null;
+  leadsLabel?: string;
+}) {
+  const fmtN = (v: number) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(1)}K` : v.toLocaleString("pt-BR"));
+  const conv = (from: number, to: number) => (from === 0 ? "0%" : `${((to / from) * 100).toFixed(1)}%`);
+  const stages: { label: string; value: number }[] = [{ label: "Impressões", value: impressions }];
+  if (linkClicks != null && linkClicks > 0) stages.push({ label: "Cliques no Link", value: linkClicks });
+  if (landingPageViews != null && landingPageViews > 0) stages.push({ label: "Visualização da LP", value: landingPageViews });
+  if (leads != null && leads > 0) stages.push({ label: leadsLabel || "Leads", value: leads });
+  if (checkoutVisits != null && checkoutVisits > 0) stages.push({ label: "Visitas Checkout", value: checkoutVisits });
+  if (sales != null && sales > 0) stages.push({ label: "Vendas", value: sales });
+  if (stages.length === 0 || impressions === 0) {
+    return <p className="py-8 text-center text-sm" style={{ color: T.muted }}>Sem dados suficientes pra o funil.</p>;
+  }
+  const STAGE_H = 55, GAP = 22, TOTAL_W = 520, MIN_W = 160, MX = 10;
+  const SVG_W = TOTAL_W + MX * 2;
+  const maxV = stages[0].value;
+  const cx = MX + TOTAL_W / 2;
+  const svgH = stages.length * STAGE_H + Math.max(0, stages.length - 1) * GAP + 10;
+  const wFor = (v: number) => Math.max((v / maxV) * TOTAL_W, MIN_W);
+  return (
+    <svg viewBox={`0 0 ${SVG_W} ${svgH}`} className="w-full" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Funil de conversão" style={{ fontFamily: "'JetBrains Mono',monospace" }}>
+      {stages.map((s, i) => {
+        const topW = wFor(s.value);
+        const botW = i + 1 < stages.length ? wFor(stages[i + 1].value) : topW * 0.5;
+        const y = 5 + i * (STAGE_H + GAP);
+        const yB = y + STAGE_H;
+        const pts = [`${cx - topW / 2},${y}`, `${cx + topW / 2},${y}`, `${cx + botW / 2},${yB}`, `${cx - botW / 2},${yB}`].join(" ");
+        const prev = i > 0 ? stages[i - 1] : null;
+        const color = FUNNEL_COLORS[i % FUNNEL_COLORS.length];
+        return (
+          <g key={s.label}>
+            {prev && <text x={cx} y={y - GAP / 2 - 2} textAnchor="middle" dominantBaseline="central" fontSize={9} fill={T.muted}>↓ {conv(prev.value, s.value)} de conversão</text>}
+            <polygon points={pts} fill={color} fillOpacity={0.88} stroke={color} strokeWidth={1} />
+            <text x={cx} y={y + 18} textAnchor="middle" dominantBaseline="central" fontSize={10} fontWeight={600} fill="#0b0b12">{s.label}</text>
+            <text x={cx} y={y + STAGE_H - 22} textAnchor="middle" dominantBaseline="central" fontSize={14} fontWeight={700} fill="#0b0b12">{fmtN(s.value)}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 // Testes de LPs — replica a seção do LaunchDashboard (mesmos hooks/tabela) com header estilizado.
 function TesteLpSection({
   projectId,
@@ -960,11 +1202,11 @@ function TesteTrendChart({ rows, funnel, projectId, isPaid }: { rows: DailyRow[]
           <CartesianGrid stroke={T.grid} vertical={false} />
           <XAxis dataKey="label" tick={MONO_TICK} stroke="transparent" />
           <YAxis tick={MONO_TICK} stroke="transparent" width={40} />
-          <Tooltip contentStyle={TT_STYLE} formatter={(v) => (v == null ? "—" : int(Number(v)))} />
-          <Bar dataKey="dailyReal" name="Real/dia" fill="rgba(255,255,255,.13)" radius={[2, 2, 0, 0]} />
-          <Bar dataKey="dailyProjected" name="Projeção/dia" fill="rgba(245,158,11,.32)" radius={[2, 2, 0, 0]} />
-          <Line dataKey="cumulativeReal" name="Acum. real" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} connectNulls />
-          <Line dataKey="cumulativeProjected" name="Acum. projeção" type="monotone" stroke={T.gold} strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls />
+          <Tooltip content={<TrendTip />} />
+          <Bar dataKey="dailyReal" name="Real/dia" fill="rgba(255,255,255,.13)" radius={[2, 2, 0, 0]}><LabelList content={ptLabelFn(int)} /></Bar>
+          <Bar dataKey="dailyProjected" name="Projeção/dia" fill="rgba(245,158,11,.32)" radius={[2, 2, 0, 0]}><LabelList content={ptLabelFn(int)} /></Bar>
+          <Line dataKey="cumulativeReal" name="Acum. real" type="monotone" stroke={T.emerald} strokeWidth={2} dot={{ r: 2.5, fill: T.emerald, strokeWidth: 0 }} connectNulls><LabelList content={ptLabelFn(int)} /></Line>
+          <Line dataKey="cumulativeProjected" name="Acum. projeção" type="monotone" stroke={T.gold} strokeWidth={2} strokeDasharray="5 3" dot={{ r: 2.5, fill: T.gold, strokeWidth: 0 }} connectNulls><LabelList content={ptLabelFn(int)} /></Line>
           <Line dataKey="meta" name="Meta" type="monotone" stroke={T.red} strokeWidth={1.5} dot={false} />
           {todayLabel && <ReferenceLine x={todayLabel} stroke={T.muted2} strokeDasharray="2 2" />}
         </ComposedChart>
@@ -1010,9 +1252,9 @@ function TesteCostChart({ rows, funnel, projectId, isPaid }: { rows: DailyRow[];
             <XAxis dataKey="label" tick={MONO_TICK} stroke="transparent" />
             <YAxis yAxisId="leads" tick={MONO_TICK} stroke="transparent" width={40} />
             <YAxis yAxisId="cpl" orientation="right" tick={MONO_TICK} stroke="transparent" width={44} tickFormatter={(v) => `R$${Math.round(v)}`} />
-            <Tooltip contentStyle={TT_STYLE} formatter={(v, n) => [v == null ? "—" : String(n).includes("CPL") ? brl(Number(v)) : int(Number(v)), n]} />
-            <Line yAxisId="leads" dataKey="cumulativeReal" name="Acum. real" type="monotone" stroke={T.emerald} strokeWidth={2} dot={false} connectNulls />
-            <Line yAxisId="leads" dataKey="cumulativeProjected" name="Acum. projeção" type="monotone" stroke={T.gold} strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls />
+            <Tooltip content={<CostTip />} />
+            <Line yAxisId="leads" dataKey="cumulativeReal" name="Acum. real" type="monotone" stroke={T.emerald} strokeWidth={2} dot={{ r: 2.5, fill: T.emerald, strokeWidth: 0 }} connectNulls><LabelList content={ptLabelFn(int)} /></Line>
+            <Line yAxisId="leads" dataKey="cumulativeProjected" name="Acum. projeção" type="monotone" stroke={T.gold} strokeWidth={2} strokeDasharray="5 3" dot={{ r: 2.5, fill: T.gold, strokeWidth: 0 }} connectNulls><LabelList content={ptLabelFn(int)} /></Line>
             <Line yAxisId="leads" dataKey="metaCumulative" name="Meta" type="monotone" stroke={T.red} strokeWidth={1.5} dot={false} />
             <Line yAxisId="cpl" dataKey="cplProjected" name="CPL proj." type="monotone" stroke={T.amber} strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
             {todayLabel && <ReferenceLine yAxisId="leads" x={todayLabel} stroke={T.muted2} strokeDasharray="2 2" />}
