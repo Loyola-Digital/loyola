@@ -2542,3 +2542,61 @@ export const instagramScans = pgTable(
     index("idx_insta_scans_username").on(table.username, table.createdAt),
   ]
 );
+
+// ============================================================
+// SWIPE FILES (área Global) — biblioteca de referências de anúncios
+// ============================================================
+// O time sobe imagem/vídeo/print OU cola um link (post, Biblioteca de Anúncios
+// do Meta, LP) e o sistema busca o preview. Acervo COMPARTILHADO: referência boa
+// serve pra qualquer cliente, então não é escopada por projeto — o recorte vem
+// dos filtros. O binário vive no bucket (o disco do container é efêmero); aqui
+// fica só a URL + a chave, pra conseguir apagar o objeto depois.
+
+export const swipeFiles = pgTable(
+  "swipe_files",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    title: varchar("title", { length: 200 }).notNull(),
+    notes: text("notes"),
+    /** image | video | link — define o que renderizar no card e no lightbox. */
+    assetKind: varchar("asset_kind", { length: 10 })
+      .$type<"image" | "video" | "link">()
+      .notNull(),
+
+    fileUrl: text("file_url"),
+    /** Caminho no bucket. Guardado separado da URL pra permitir o delete. */
+    fileKey: text("file_key"),
+    fileMime: varchar("file_mime", { length: 100 }),
+    fileSizeBytes: integer("file_size_bytes"),
+    /** Dimensões: o card reserva a proporção e o grid não salta ao carregar. */
+    width: integer("width"),
+    height: integer("height"),
+
+    /** Vale pros três tipos — um upload também aponta pro anúncio original. */
+    sourceUrl: text("source_url"),
+
+    ogTitle: text("og_title"),
+    ogDescription: text("og_description"),
+    ogImage: text("og_image"),
+    ogSiteName: varchar("og_site_name", { length: 120 }),
+    ogFetchedAt: timestamp("og_fetched_at", { withTimezone: true }),
+
+    brand: varchar("brand", { length: 120 }),
+    niche: varchar("niche", { length: 120 }),
+    platform: varchar("platform", { length: 40 }),
+    format: varchar("format", { length: 40 }),
+    tags: jsonb("tags").$type<string[]>().notNull().default([]),
+
+    isFavorite: boolean("is_favorite").notNull().default(false),
+
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_swipe_files_created").on(table.createdAt),
+    index("idx_swipe_files_facets").on(table.platform, table.format, table.niche),
+  ]
+);
