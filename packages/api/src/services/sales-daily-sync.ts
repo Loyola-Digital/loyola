@@ -427,6 +427,96 @@ export async function upsertSalesDailyCache(db: Database, projectId: string, sta
     });
 }
 
+// ============================================================
+// Leitura fresca para a API pública
+// ============================================================
+
+/** Idade máxima do cache antes de recalcular na requisição. */
+const DEFAULT_MAX_AGE_MS = 120_000;
+
+/**
+ * Single-flight por etapa: N requisições simultâneas na mesma etapa compartilham
+ * UM recompute em vez de cada uma ler a planilha. Junto com o cache de 30s do
+ * `readSheetData`, segura rajada sem estourar a cota do Sheets.
+ */
+const inFlight = new Map<string, Promise<{ payload: SalesDailyPayload; computedAt: Date } | null>>();
+
+export interface FreshSalesResult {
+  payload: SalesDailyPayload | null;
+  computedAt: Date | null;
+  /** "cache" = servido do banco; "live" = recalculado agora e persistido. */
+  source: "cache" | "live";
+}
+
+/**
+ * Vendas de uma etapa GARANTIDAMENTE frescas.
+ *
+ * O cache do job noturno sozinho não serve pra API: planilha vinculada depois da
+ * última execução devolvia `semDados`, e venda do dia só aparecia no dia
+ * seguinte. Aqui o cache é aproveitado enquanto está novo e recalculado ao vivo
+ * (persistindo o resultado) quando está velho ou não existe.
+ *
+ * `maxAgeMs: 0` força o recompute — mas ainda passa pelo single-flight.
+ */
+export async function getFreshSalesDaily(
+  db: Database,
+  projectId: string,
+  stageId: string,
+  opts: { maxAgeMs?: number } = {},
+): Promise<FreshSalesResult> {
+  const maxAgeMs = opts.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
+
+  const [cached] = await db
+    .select({ payload: publicMetricsCache.payload, computedAt: publicMetricsCache.computedAt })
+    .from(publicMetricsCache)
+    .where(
+      and(
+        eq(publicMetricsCache.projectId, projectId),
+        eq(publicMetricsCache.scope, SALES_DAILY_SCOPE),
+        eq(publicMetricsCache.key, stageId),
+      ),
+    )
+    .limit(1);
+
+  if (cached && Date.now() - cached.computedAt.getTime() <= maxAgeMs) {
+    return {
+      payload: cached.payload as SalesDailyPayload,
+      computedAt: cached.computedAt,
+      source: "cache",
+    };
+  }
+
+  let task = inFlight.get(stageId);
+  if (!task) {
+    task = (async () => {
+      const payload = await computeSalesDailyForStage(db, stageId);
+      if (!payload) return null;
+      const computedAt = new Date();
+      await upsertSalesDailyCache(db, projectId, stageId, payload);
+      return { payload, computedAt };
+    })().finally(() => inFlight.delete(stageId));
+    inFlight.set(stageId, task);
+  }
+
+  try {
+    const fresh = await task;
+    if (fresh) return { payload: fresh.payload, computedAt: fresh.computedAt, source: "live" };
+    // Sem fonte de venda alguma (nem planilha, nem manual).
+    return { payload: null, computedAt: null, source: "live" };
+  } catch {
+    // Sheets fora do ar / erro de leitura: cache velho é melhor que erro 500 —
+    // o `computedAt` que vai na resposta denuncia a idade.
+    if (cached) {
+      return {
+        payload: cached.payload as SalesDailyPayload,
+        computedAt: cached.computedAt,
+        source: "cache",
+      };
+    }
+    throw new Error("Não foi possível calcular as vendas desta etapa (falha ao ler a planilha).");
+  }
+}
+
 export interface SalesDailySyncSummary {
   stagesProcessed: number;
   stagesSkipped: number;

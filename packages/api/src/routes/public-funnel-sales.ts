@@ -23,11 +23,11 @@
 import { z } from "zod";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { funnels, funnelStages, publicMetricsCache } from "../db/schema.js";
+import { funnels, funnelStages } from "../db/schema.js";
 import { requireScope } from "../middleware/api-key-auth.js";
 import { PUBLIC_READ_SCOPE } from "./public-discovery.js";
 import {
-  SALES_DAILY_SCOPE,
+  getFreshSalesDaily,
   resolveSalesSheetsForStage,
   type SalesDailyPayload,
 } from "../services/sales-daily-sync.js";
@@ -51,7 +51,15 @@ type Includable = (typeof INCLUDABLE)[number];
 const querySchema = z.object({
   /** CSV dos blocos desejados, ou "all". Vazio/ausente = só o resumo. */
   include: z.string().optional(),
+  /** `fresh=1` força recálculo ao vivo, ignorando a idade do cache. */
+  fresh: z.string().optional(),
 });
+
+/** `?fresh=1` → maxAge 0 (recalcula sempre). Senão, o default do serviço. */
+function maxAgeFrom(fresh: string | undefined, configured: number | undefined): number | undefined {
+  if (fresh === "1" || fresh === "true") return 0;
+  return configured != null ? configured * 1000 : undefined;
+}
 
 /**
  * Parseia `?include=`. Retorna um Set — nomes desconhecidos são ignorados em
@@ -105,7 +113,9 @@ export default fp(async function publicFunnelSalesRoutes(fastify) {
         return reply.code(400).send({ error: "stageId inválido", code: "BAD_REQUEST" });
       }
       const { stageId } = parsed.data;
-      const include = parseInclude(querySchema.safeParse(request.query).data?.include);
+      const q = querySchema.safeParse(request.query).data;
+      const include = parseInclude(q?.include);
+      const maxAgeMs = maxAgeFrom(q?.fresh, fastify.config.SALES_PUBLIC_MAX_AGE_SEC);
 
       // projectId/funnelId resolvidos aqui — é o atrito que o consumidor tinha.
       const [stage] = await fastify.db
@@ -125,17 +135,17 @@ export default fp(async function publicFunnelSalesRoutes(fastify) {
         return reply.code(404).send({ error: "Etapa não encontrada", code: "NOT_FOUND" });
       }
 
-      const [row] = await fastify.db
-        .select({ payload: publicMetricsCache.payload, computedAt: publicMetricsCache.computedAt })
-        .from(publicMetricsCache)
-        .where(
-          and(
-            eq(publicMetricsCache.projectId, stage.projectId),
-            eq(publicMetricsCache.scope, SALES_DAILY_SCOPE),
-            eq(publicMetricsCache.key, stageId),
-          ),
-        )
-        .limit(1);
+      // Recalcula ao vivo quando o cache está velho/ausente — a API nunca
+      // devolve venda desatualizada por causa da cadência do job.
+      let fresh: Awaited<ReturnType<typeof getFreshSalesDaily>>;
+      try {
+        fresh = await getFreshSalesDaily(fastify.db, stage.projectId, stageId, { maxAgeMs });
+      } catch (err) {
+        return reply.code(502).send({
+          error: err instanceof Error ? err.message : "Falha ao calcular vendas",
+          code: "SALES_COMPUTE_FAILED",
+        });
+      }
 
       const base = {
         stageId,
@@ -146,18 +156,19 @@ export default fp(async function publicFunnelSalesRoutes(fastify) {
         projectId: stage.projectId,
       };
 
-      if (!row) {
+      if (!fresh.payload) {
         return {
           ...base,
           semDados: true,
-          message: "Sem dados de vendas em cache (etapa sem planilha de venda ou sync ainda não rodou).",
+          message: "Etapa sem nenhuma fonte de vendas (nenhuma planilha de venda vinculada e nenhuma venda manual).",
         };
       }
 
-      const p = row.payload as SalesDailyPayload;
+      const p = fresh.payload;
       const out: Record<string, unknown> = {
         ...base,
-        computedAt: row.computedAt,
+        computedAt: fresh.computedAt,
+        dataSource: fresh.source,
         range: p.range,
         totalVendas: p.totalVendas,
         faturamentoBruto: p.faturamentoBruto,
@@ -188,7 +199,9 @@ export default fp(async function publicFunnelSalesRoutes(fastify) {
         return reply.code(400).send({ error: "funnelId inválido", code: "BAD_REQUEST" });
       }
       const { funnelId } = parsed.data;
-      const include = parseInclude(querySchema.safeParse(request.query).data?.include);
+      const q = querySchema.safeParse(request.query).data;
+      const include = parseInclude(q?.include);
+      const maxAgeMs = maxAgeFrom(q?.fresh, fastify.config.SALES_PUBLIC_MAX_AGE_SEC);
 
       const [funnel] = await fastify.db
         .select({ id: funnels.id, projectId: funnels.projectId, name: funnels.name, type: funnels.type })
@@ -221,25 +234,22 @@ export default fp(async function publicFunnelSalesRoutes(fastify) {
         };
       }
 
-      // Cache de vendas de todas as etapas, numa query só.
-      const cacheRows = await fastify.db
-        .select({
-          key: publicMetricsCache.key,
-          payload: publicMetricsCache.payload,
-          computedAt: publicMetricsCache.computedAt,
-        })
-        .from(publicMetricsCache)
-        .where(
-          and(
-            eq(publicMetricsCache.projectId, funnel.projectId),
-            eq(publicMetricsCache.scope, SALES_DAILY_SCOPE),
-            inArray(
-              publicMetricsCache.key,
-              stages.map((s) => s.id),
-            ),
-          ),
-        );
-      const cacheByStage = new Map(cacheRows.map((r) => [r.key, r]));
+      // Vendas frescas de cada etapa (recalcula ao vivo o que estiver velho).
+      // Sequencial de propósito: o `readSheetData` tem cache de 30s por planilha
+      // e etapas do mesmo funil costumam repetir a fonte — em paralelo a rajada
+      // sairia antes do primeiro resultado povoar esse cache.
+      const cacheByStage = new Map<string, { payload: SalesDailyPayload; computedAt: Date | null }>();
+      const falhas: string[] = [];
+      for (const s of stages) {
+        try {
+          const fresh = await getFreshSalesDaily(fastify.db, funnel.projectId, s.id, { maxAgeMs });
+          if (fresh.payload) cacheByStage.set(s.id, { payload: fresh.payload, computedAt: fresh.computedAt });
+        } catch {
+          // Etapa que falhou fica fora do total e é reportada em `avisos` —
+          // melhor um total explicitamente incompleto que a chamada inteira 502.
+          falhas.push(s.name);
+        }
+      }
 
       // Dedup de FONTE: uma planilha física (spreadsheetId|sheetName) só pode
       // ser contada uma vez no funil. Só consulta o banco — não lê Sheets.
@@ -260,6 +270,11 @@ export default fp(async function publicFunnelSalesRoutes(fastify) {
 
       const byStage: Record<string, unknown>[] = [];
       const avisos: string[] = [];
+      if (falhas.length > 0) {
+        avisos.push(
+          `Falha ao ler a planilha de ${falhas.length} etapa(s) (${falhas.join(", ")}) — ficaram FORA do total.`,
+        );
+      }
 
       for (const stage of stages) {
         const cached = cacheByStage.get(stage.id);
@@ -270,12 +285,14 @@ export default fp(async function publicFunnelSalesRoutes(fastify) {
             stageType: stage.stageType,
             semDados: true,
             contabilizado: false,
-            motivo: "Sem cache de vendas (etapa sem planilha de venda ou sync ainda não rodou).",
+            motivo: falhas.includes(stage.name)
+              ? "Falha ao ler a planilha de vendas desta etapa."
+              : "Etapa sem fonte de vendas (nenhuma planilha de venda vinculada e nenhuma venda manual).",
           });
           continue;
         }
 
-        const payload = cached.payload as SalesDailyPayload;
+        const payload = cached.payload;
         const { sheets } = await resolveSalesSheetsForStage(fastify.db, stage.id);
         const sheetKeys = sheets.map((s) => `${s.spreadsheetId}|${s.sheetName}`);
         const novas = sheetKeys.filter((k) => !seenSheets.has(k));
@@ -315,7 +332,9 @@ export default fp(async function publicFunnelSalesRoutes(fastify) {
 
         if (payload.range?.from && (!minDate || payload.range.from < minDate)) minDate = payload.range.from;
         if (payload.range?.to && (!maxDate || payload.range.to > maxDate)) maxDate = payload.range.to;
-        if (!oldestComputedAt || cached.computedAt < oldestComputedAt) oldestComputedAt = cached.computedAt;
+        if (cached.computedAt && (!oldestComputedAt || cached.computedAt < oldestComputedAt)) {
+          oldestComputedAt = cached.computedAt;
+        }
 
         for (const d of payload.byDay ?? []) {
           const e = byDay.get(d.date) ?? { bruto: 0, liquido: 0, pago: 0, org: 0, semTrack: 0 };

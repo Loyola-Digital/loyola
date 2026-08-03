@@ -43,6 +43,10 @@ const envSchema = z.object({
   // PAYMENT_ALERT_ENABLED=false desliga (sempre desligado em NODE_ENV=test).
   PAYMENT_ALERT_HOUR: z.coerce.number().int().min(0).max(23).optional(),
   PAYMENT_ALERT_ENABLED: z.enum(["true", "false"]).optional(),
+  // API pública de vendas: idade máxima do cache antes de recalcular AO VIVO na
+  // requisição (default 120s). O job noturno vira só aquecimento — quem consulta
+  // nunca recebe número velho. Subir se a cota do Sheets apertar.
+  SALES_PUBLIC_MAX_AGE_SEC: z.coerce.number().int().min(0).max(86400).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
