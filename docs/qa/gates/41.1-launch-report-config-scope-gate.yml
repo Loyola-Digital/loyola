@@ -1,0 +1,23 @@
+schema: 1
+story: '41.1'
+gate: CONCERNS
+status_reason: 'Gate de escopo arquiteturalmente sólido e coberto por testes, mas o DoD declara validação visual pendente enquanto o handoff a dá por feita.'
+reviewer: 'Quinn'
+updated: '2026-08-03T12:37:02Z'
+
+evidence:
+  tests: 'launch-report-config.test.ts verde na trilha de 418 testes'
+  architecture: 'assertReportScope chamado dentro de loadReportConfig (launch-report-config.ts:183); loadReportConfigRaw usado apenas na rota GET da UI (routes/launch-report-config.ts:167) — nenhum caminho obtém config liberada sem passar pelo gate'
+  typecheck: 'tsc API + web verdes'
+
+top_issues:
+  - id: 'DOC-001'
+    severity: low
+    finding: 'O DoD marca "Validação visual no app — pendente usuário/deploy" como não feito, mas o handoff de 31/07 registra a story como "validada na tela". As duas fontes se contradizem.'
+    suggested_action: 'Confirmar na tela após o deploy e marcar o checkbox, ou corrigir o handoff.'
+  - id: 'MNT-001'
+    severity: low
+    finding: 'CodeRabbit não executado — o CLI roda em WSL e o ambiente de desenvolvimento é macOS.'
+    suggested_action: 'Rodar via CI ou aceitar como limitação de ambiente, documentada.'
+
+waiver: { active: false }

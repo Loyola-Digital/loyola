@@ -28,6 +28,8 @@ const SURVEY_QUESTION_MAP: Record<string, { matchers: string[]; label: string }>
 const UTM_CONTENT_MATCHERS = ["utm_content"];
 const UTM_SOURCE_MATCHERS = ["utm_source", "utm source", "s=", "source"];
 const UTM_TERM_MATCHERS = ["utm_term", "utm term", "t=", "termo"];
+/** Só para descartar linha em branco — o e-mail não é agregado. */
+const EMAIL_MATCHERS = ["e-mail", "email"];
 
 // Resumão v4 #2: classificação em 5 blocos (Pago Quente/Frio/Total, Orgânico,
 // Total) pela regra do CLAUDE.md do gestor. Fontes pagas incluem as variantes
@@ -109,6 +111,8 @@ interface ColumnIndexes {
   utmContent: number;
   utmSource: number;
   utmTerm: number;
+  /** -1 quando a planilha não tem coluna de e-mail identificável. */
+  email: number;
 }
 function resolveColumnIndexes(headers: string[], mapping: Mapping): { indexes: ColumnIndexes; usedFallback: boolean } {
   const questions = new Map<string, number>();
@@ -153,7 +157,15 @@ function resolveColumnIndexes(headers: string[], mapping: Mapping): { indexes: C
   const utmSource = mapping?.utm_source ? findHeaderIndexByName(headers, mapping.utm_source) : findHeaderIndex(headers, UTM_SOURCE_MATCHERS);
   // utm_term não existe no columnMapping — detecção só por matcher.
   const utmTerm = findHeaderIndex(headers, UTM_TERM_MATCHERS);
-  return { indexes: { questions, questionLabels, utmContent, utmSource, utmTerm }, usedFallback };
+  // E-mail: usado só para descartar linha vazia (ver o loop de agregação).
+  // Nem toda planilha mapeia — quando não mapeia, cai no matcher de header.
+  const email = mapping?.email
+    ? findHeaderIndexByName(headers, mapping.email)
+    : findHeaderIndex(headers, EMAIL_MATCHERS);
+  return {
+    indexes: { questions, questionLabels, utmContent, utmSource, utmTerm, email },
+    usedFallback,
+  };
 }
 
 type Origin = "total" | "pago" | "organico";
@@ -183,6 +195,24 @@ function finalize(bucket: Map<string, { rawValues: string[]; count: number }>, d
   const restCount = rest.reduce((s, e) => s + e.count, 0);
   top.push({ label: `Outros (${rest.length})`, count: restCount, pct: denom > 0 ? (restCount / denom) * 100 : 0 });
   return top;
+}
+
+/**
+ * Uma linha da planilha de pesquisa representa um respondente de verdade?
+ *
+ * Planilha de formulário costuma vir com um bloco de linhas em branco no fim —
+ * o Google Sheets devolve o range inteiro, não só o preenchido. Contá-las como
+ * respondente inflava o denominador de TODAS as perguntas e da taxa de resposta.
+ * Conferido em jul/2026: a pesquisa do dg-pg04 tinha 1.717 linhas, das quais
+ * **1.101 completamente vazias** (o dg-pg02, nenhuma).
+ *
+ * @param emailIdx -1 quando a planilha não tem coluna de e-mail identificável.
+ * Nesse caso descarta só a linha inteiramente em branco — nunca presumir que a
+ * planilha tem e-mail e zerar a pesquisa inteira.
+ */
+export function linhaTemRespondente(row: string[], emailIdx: number): boolean {
+  if (emailIdx >= 0) return (row[emailIdx] ?? "").trim() !== "";
+  return row.some((c) => (c ?? "").trim() !== "");
 }
 
 export async function computeSurveyForStage(db: Database, stageId: string): Promise<SurveyPayload | null> {
@@ -230,8 +260,18 @@ export async function computeSurveyForStage(db: Database, stageId: string): Prom
     if (usedFallback) usingFallback = true;
     for (const [key, label] of indexes.questionLabels) if (!questionsMeta.has(key)) questionsMeta.set(key, label);
 
-    totalResponses += sheet.rows.length;
-    for (const row of sheet.rows) {
+    // Planilha de formulário costuma vir com um bloco de linhas em branco no
+    // fim (o Google Sheets devolve o range inteiro, não só o preenchido).
+    // Contá-las como respondente inflava o denominador de TODAS as perguntas e
+    // da taxa de resposta — conferido em jul/2026: a pesquisa do dg-pg04 tinha
+    // 1.717 linhas, das quais 1.101 completamente vazias.
+    //
+    // Critério: com coluna de e-mail, linha sem e-mail não é respondente. Sem
+    // coluna de e-mail, descarta só a linha inteiramente em branco — nunca
+    // presumir que a planilha tem e-mail.
+    const linhasValidas = sheet.rows.filter((r) => linhaTemRespondente(r, indexes.email));
+    totalResponses += linhasValidas.length;
+    for (const row of linhasValidas) {
       const origin = classifyOrigin(indexes.utmSource >= 0 ? row[indexes.utmSource] : "");
       denom.total += 1;
       denom[origin] += 1;
