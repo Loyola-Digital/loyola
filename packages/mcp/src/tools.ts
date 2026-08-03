@@ -256,6 +256,20 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
       )
   );
 
+  server.registerTool(
+    "get_funnel_sales",
+    {
+      title: "Vendas do FUNIL inteiro (agregado das etapas)",
+      description:
+        "Vendas somadas de TODAS as etapas de um funil — responde direto \"quantas vendas e quanto faturou o funil X\" sem precisar iterar etapa por etapa. Retorna totalVendas, faturamentoBruto/Liquido, range de datas, byDay (× origem Pago/Orgânico/Sem Track), porOrigem, porCanal, porProduto (top 30), porPlataforma (subtype — exclua tmb pra tirar TMB) e byStage (quebra por etapa, com `contabilizado` e o motivo quando fica fora). Zero PII. Uma mesma planilha física só conta UMA vez: no perpétuo a planilha de vendas é do FUNIL e é herdada por toda etapa free/paid, então somar as etapas na mão dobra o faturamento — aqui isso já vem tratado, e `avisos` sinaliza quando sobra ambiguidade. `computedAt` é o da etapa MAIS ANTIGA (frescura real do total). Para ROAS combine com o investimento do get_daily. Use get_stage_sales_daily quando quiser UMA etapa, e get_stage_sales_rows para linha a linha.",
+      inputSchema: {
+        funnelId: z.string().uuid().describe("ID do funil (de list_funnels)."),
+      },
+    },
+    async ({ funnelId }) =>
+      run(() => client.get(`/api/public/v1/funnels/${encodeURIComponent(funnelId)}/sales`))
+  );
+
   // ---- Row-level de vendas (39.I3 — Inácio) ----
   server.registerTool(
     "get_stage_sales_rows",
