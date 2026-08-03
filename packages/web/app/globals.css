@@ -151,3 +151,41 @@
     background: hsl(47 98% 54% / 0.5);
   }
 }
+
+/* ============================================================
+   Data-viz tokens (Spy de Conteúdo)
+   ============================================================
+   Paleta validada contra as superfícies REAIS do app (card #ffffff claro /
+   #1a1a1a escuro) com o validador do método de dataviz: banda de luminosidade,
+   piso de croma, separação sob daltonismo (ΔE ≥ 8) e contraste.
+
+   O dourado da marca fica no chrome (botões, estados ativos) e NÃO vira cor de
+   dado: em #ffffff ele não chega a 3:1, e cor de série precisa se sustentar
+   sozinha. Identidade de marca e codificação de dado são canais diferentes.
+
+   Os passos do escuro são escolhidos para a superfície escura — não é o claro
+   com filtro. */
+.spy-viz {
+  --viz-series-1: #2a78d6;  /* azul — série única / slot 1 */
+  --viz-series-2: #eb6834;  /* laranja */
+  --viz-series-3: #1baf7a;  /* aqua (2.82:1 → exige rótulo visível ou tabela) */
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+  /* Rampa ordinal (categorias ORDENADAS: faixas de tamanho de legenda).
+     Nunca usar em categoria nominal — seria dupla codificação do valor. */
+  --viz-ord-1: #86b6ef;
+  --viz-ord-2: #5598e7;
+  --viz-ord-3: #2a78d6;
+  --viz-ord-4: #184f95;
+}
+.dark .spy-viz {
+  --viz-series-1: #3987e5;
+  --viz-series-2: #d95926;
+  --viz-series-3: #199e70;
+  --viz-grid: #2c2c2a;
+  --viz-axis: #383835;
+  --viz-ord-1: #184f95;
+  --viz-ord-2: #256abf;
+  --viz-ord-3: #3987e5;
+  --viz-ord-4: #86b6ef;
+}
