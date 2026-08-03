@@ -34,6 +34,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import {
   AlertDialog,
@@ -54,6 +62,7 @@ import {
   useUpdateCrmColumn,
   useDeleteCrmColumn,
   useReorderCrmColumns,
+  useCreateCrmCard,
   useUpdateCrmCard,
   useDeleteCrmCard,
   useCrmCardSurvey,
@@ -143,7 +152,7 @@ function KanbanCard({ card, onOpen }: { card: CrmCard; onOpen: (c: CrmCard) => v
         </button>
         <button type="button" onClick={() => onOpen(card)} className="min-w-0 flex-1 text-left">
           <p className="truncate text-sm font-medium hover:underline">
-            {card.customerName || card.customerEmail}
+            {card.customerName || card.customerEmail || "(sem nome)"}
           </p>
           <div className="mt-1 flex items-center gap-1.5 flex-wrap">
             {card.temperature && <TemperatureBadge temperature={card.temperature} />}
@@ -247,8 +256,17 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
   const updateColumn = useUpdateCrmColumn(projectId, funnelId, stage.id);
   const deleteColumn = useDeleteCrmColumn(projectId, funnelId, stage.id);
   const reorderColumns = useReorderCrmColumns(projectId, funnelId, stage.id);
+  const createCard = useCreateCrmCard(projectId, funnelId, stage.id);
   const updateCard = useUpdateCrmCard(projectId, funnelId, stage.id);
   const deleteCard = useDeleteCrmCard(projectId, funnelId, stage.id);
+
+  // Lead manual (indicação, DM, lista fria) — entra sem passar por planilha.
+  const [newLeadOpen, setNewLeadOpen] = useState(false);
+  const [leadName, setLeadName] = useState("");
+  const [leadEmail, setLeadEmail] = useState("");
+  const [leadPhone, setLeadPhone] = useState("");
+  const [leadAssignee, setLeadAssignee] = useState("");
+  const [leadNotes, setLeadNotes] = useState("");
 
   // Config draft
   const [sourceDraft, setSourceDraft] = useState<string[]>([]);
@@ -387,6 +405,29 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
     toast.success("Nome atualizado");
   }
 
+  async function handleCreateLead() {
+    const name = leadName.trim();
+    if (!name) return;
+    try {
+      await createCard.mutateAsync({
+        customerName: name,
+        customerEmail: leadEmail.trim() || undefined,
+        customerPhone: leadPhone.trim() || undefined,
+        assigneeName: leadAssignee.trim() || undefined,
+        notes: leadNotes.trim() || undefined,
+      });
+      toast.success(`${name} entrou na primeira coluna`);
+      setNewLeadOpen(false);
+      setLeadName("");
+      setLeadEmail("");
+      setLeadPhone("");
+      setLeadAssignee("");
+      setLeadNotes("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao criar lead");
+    }
+  }
+
   async function handleSaveConfig() {
     try {
       await saveConfig.mutateAsync({ sourceStageIds: sourceDraft, comercialSource: sourceKindDraft });
@@ -440,6 +481,21 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
 
         <div className="flex items-center gap-2">
           <CampaignLogButton projectId={projectId} funnelId={funnelId} />
+          <Button
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setNewLeadOpen(true)}
+            // Sem coluna não há onde pôr o card — o POST devolveria 409.
+            disabled={columns.length === 0}
+            title={
+              columns.length === 0
+                ? "Salve a configuração primeiro — o kanban ainda não tem colunas"
+                : "Lançar um lead à mão (indicação, DM, lista fria)"
+            }
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Novo lead
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -695,6 +751,83 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
         </div>
       </div>
 
+      {/* Novo lead manual */}
+      <Dialog open={newLeadOpen} onOpenChange={setNewLeadOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Novo lead</DialogTitle>
+            <DialogDescription>
+              Entra direto na primeira coluna do kanban, sem passar por planilha nem sync.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="lead-name">Nome *</Label>
+              <Input
+                id="lead-name"
+                value={leadName}
+                onChange={(e) => setLeadName(e.target.value)}
+                placeholder="Nome do lead"
+                onKeyDown={(e) => e.key === "Enter" && handleCreateLead()}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="lead-email">E-mail</Label>
+                <Input
+                  id="lead-email"
+                  type="email"
+                  value={leadEmail}
+                  onChange={(e) => setLeadEmail(e.target.value)}
+                  placeholder="opcional"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="lead-phone">Telefone</Label>
+                <Input
+                  id="lead-phone"
+                  value={leadPhone}
+                  onChange={(e) => setLeadPhone(e.target.value)}
+                  placeholder="opcional"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Com e-mail, o lead cruza com as respostas da pesquisa e o sync faz merge se ele
+              aparecer na planilha depois — em vez de criar um card duplicado. Sem e-mail, fica
+              fora dos dois.
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="lead-assignee">Responsável</Label>
+              <Input
+                id="lead-assignee"
+                value={leadAssignee}
+                onChange={(e) => setLeadAssignee(e.target.value)}
+                placeholder="opcional"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="lead-notes">Observações</Label>
+              <Textarea
+                id="lead-notes"
+                value={leadNotes}
+                onChange={(e) => setLeadNotes(e.target.value)}
+                placeholder="opcional — de onde veio, o que combinou..."
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setNewLeadOpen(false)}>
+              Cancelar
+            </Button>
+            <Button size="sm" onClick={handleCreateLead} disabled={!leadName.trim() || createCard.isPending}>
+              {createCard.isPending ? "Criando..." : "Criar lead"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Board */}
       {isLoading ? (
         <div className="flex gap-3">
@@ -730,7 +863,7 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
           <DragOverlay>
             {dragging ? (
               <div className="w-[248px] rounded-lg border border-cyan-500/60 bg-card p-2.5 shadow-lg">
-                <p className="truncate text-sm font-medium">{dragging.customerName || dragging.customerEmail}</p>
+                <p className="truncate text-sm font-medium">{dragging.customerName || dragging.customerEmail || "(sem nome)"}</p>
                 <p className="text-[11px] font-semibold text-emerald-500">{fmtBRL(dragging.totalValue)}</p>
               </div>
             ) : null}
@@ -745,7 +878,7 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
             <>
               <SheetHeader className="pb-0">
                 <SheetTitle className="flex items-center gap-2 min-w-0">
-                  <span className="truncate text-base">{openCard.customerName || openCard.customerEmail}</span>
+                  <span className="truncate text-base">{openCard.customerName || openCard.customerEmail || "(sem nome)"}</span>
                   {openCard.temperature && <TemperatureBadge temperature={openCard.temperature} />}
                 </SheetTitle>
                 {openCard.lastActivityAt && (
@@ -757,7 +890,13 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
               <div className="px-4 pb-6 space-y-6">
                 <div className="space-y-1 text-sm">
                   <p className="text-muted-foreground text-xs uppercase tracking-wide font-semibold">Contato</p>
-                  <p className="break-all">{openCard.customerEmail}</p>
+                  {openCard.customerEmail ? (
+                    <p className="break-all">{openCard.customerEmail}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Sem e-mail — fica fora do cruzamento com pesquisa e do merge do sync.
+                    </p>
+                  )}
                   {openCard.customerPhone && <p className="tabular-nums">{openCard.customerPhone}</p>}
                 </div>
 
