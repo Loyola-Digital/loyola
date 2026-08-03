@@ -456,7 +456,6 @@ function checarA9(m: LaunchReportMetrics): ResultadoInvariante {
   const inv = m.investimento.comImposto;
   const { impressoes, cliques } = m.midia;
   const pagos = m.ingressos.pagos;
-  const fatPago = m.faturamento.pago;
 
   if (inv === 0 || impressoes === 0 || cliques === 0 || pagos === 0) {
     return pulado(

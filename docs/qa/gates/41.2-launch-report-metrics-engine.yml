@@ -1,0 +1,23 @@
+schema: 1
+story: '41.2'
+gate: PASS
+status_reason: 'Motor conferido ao centavo contra a §10 no PG02 com dado real de produção; 2 bugs de atribuição e float pegos por teste antes do commit.'
+reviewer: 'Quinn'
+updated: '2026-08-03T12:37:02Z'
+
+evidence:
+  tests: 'launch-report-normalize (24) + launch-report-sales-value (30) + launch-report-engine (44), todos verdes'
+  conference: 'Faturamento, captação, order bump, ingressos únicos e Sem Track batem ao centavo no PG02; no PG04 faturamento a +0,48% da §10'
+  risk_r1: 'Dupla aplicação de imposto evitada — o motor lê o spend antes do gross-up'
+
+top_issues:
+  - id: 'DOC-002'
+    severity: low
+    finding: 'Os 9 checkboxes do Definition of Done seguem desmarcados, embora File List (8 arquivos ✅) e Change Log estejam completos e a conferência esteja registrada.'
+    suggested_action: 'Marcar o DoD — é rastreabilidade, não execução.'
+  - id: 'TEST-002'
+    severity: low
+    finding: 'O caminho de conversão de moeda estrangeira (§2.4) nunca converteu uma linha em produção: no PG02 não há coluna de moeda e no PG04 a planilha já entrega BRL. Coberto por fixture apenas.'
+    suggested_action: 'Exercitar quando surgir um lançamento com moeda não resolvida na origem.'
+
+waiver: { active: false }

@@ -1,0 +1,19 @@
+schema: 1
+story: '41.4'
+gate: PASS
+status_reason: 'Validada ponta a ponta no PG04 — o A6 rodou de verdade pela primeira vez e fecha com 0,0000 nas três visões.'
+reviewer: 'Quinn'
+updated: '2026-08-03T12:37:02Z'
+
+evidence:
+  tests: 'launch-report-ads.test.ts verde'
+  real_data: 'PG04: 59/51/65 anúncios por visão, A6 = 0,0000 nas 3 visões, rankings de ROAS e Faixa A populados, W6 = 0,0%'
+  meta_api: 'Zero fan-out novo — o previewUrl veio de meta_ad_creatives_cache (1.032 criativos do DG, 672 com vídeo), sem chamada nova à Meta'
+
+top_issues:
+  - id: 'DOC-004'
+    severity: low
+    finding: 'Os 9 checkboxes do Definition of Done seguem desmarcados apesar de File List e Change Log completos.'
+    suggested_action: 'Marcar o DoD.'
+
+waiver: { active: false }

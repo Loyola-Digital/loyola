@@ -13,7 +13,6 @@
 import { eq, and, inArray, gte, lte } from "drizzle-orm";
 import {
   funnelSpreadsheets,
-  funnels,
   metaAdsAccounts,
   metaCampaignInsightsDaily,
 } from "../db/schema.js";

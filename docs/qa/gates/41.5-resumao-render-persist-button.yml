@@ -1,0 +1,26 @@
+schema: 1
+story: '41.5'
+gate: PASS
+status_reason: 'Render, persistência e botão validados na tela; decisões de segurança do iframe e do escape de HTML conferidas no código.'
+reviewer: 'Quinn'
+updated: '2026-08-03T12:37:02Z'
+
+evidence:
+  tests: 'launch-report-render.test.ts + launch-report-narrative.test.ts verdes'
+  security_sandbox: 'iframe com sandbox="allow-scripts" e SEM allow-same-origin (launch-report-button.tsx:302) — juntas as flags anulariam o sandbox; "nova aba" usa Blob + revokeObjectURL, não document.write'
+  security_xss: 'escaparHtml e escaparJson implementados (launch-report-narrative.ts:185/190); escaparJson neutraliza < e > para \\u003c/\\u003e'
+  security_authz: 'guest → 403 nas 5 rotas de launch-reports.ts'
+  limits: 'MAX_HTML_BYTES = 5MB com 413 PAYLOAD_TOO_LARGE (launch-reports.ts:47,160,397)'
+  real_data: 'PG02: 11,9 KB, 9 seções na ordem, zero literal narrativo'
+
+top_issues:
+  - id: 'DOC-005'
+    severity: low
+    finding: 'Os 10 checkboxes do Definition of Done seguem desmarcados apesar de File List e Change Log completos.'
+    suggested_action: 'Marcar o DoD.'
+  - id: 'ARCH-001'
+    severity: low
+    finding: 'O botão ficou na aba Relatórios, não no topo do launch-dashboard como a AC7 previa — divergência deliberada, para não separar onde se valida de onde se gera.'
+    suggested_action: 'Nenhuma — decisão registrada no código e no handoff; é o padrão que o perpétuo (41.9) já segue.'
+
+waiver: { active: false }

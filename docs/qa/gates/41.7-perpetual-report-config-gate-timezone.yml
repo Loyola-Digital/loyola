@@ -1,0 +1,19 @@
+schema: 1
+story: '41.7'
+gate: CONCERNS
+status_reason: 'Config, gate e fix de fuso implementados e validados pelo @po com GO 10/10, mas o fix altera valores históricos já acompanhados no dashboard perpétuo.'
+reviewer: 'Quinn'
+updated: '2026-08-03T12:37:02Z'
+
+evidence:
+  tests: 'perpetual-report-config.test.ts verde'
+  po_validation: '@po (Pax) — GO 10/10 em 2026-07-28, com checagem anti-alucinação do Art. IV'
+  dod: 'único DoD da trilha com 100% dos checkboxes marcados'
+
+top_issues:
+  - id: 'REL-002'
+    severity: medium
+    finding: 'O fix de fuso horário muda os valores exibidos em alguns dias do dashboard perpétuo. É correção, não regressão — mas quem acompanha esses números vai notar a mudança após o deploy.'
+    suggested_action: 'Avisar quem acompanha o painel antes do deploy, para não virar pergunta depois.'
+
+waiver: { active: false }
