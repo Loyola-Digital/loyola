@@ -277,10 +277,28 @@ function MetricsView({ metrics }: { metrics: ScanMetrics }) {
   );
 }
 
-function AnalysisView({ analysis }: { analysis: NonNullable<ScanDetail["analysis"]> }) {
+function AnalysisView({
+  analysis,
+  focus,
+}: {
+  analysis: NonNullable<ScanDetail["analysis"]>;
+  focus: string | null;
+}) {
   const { nicho, publico_alvo, estrategia } = analysis;
   return (
     <div className="space-y-6">
+      {/* A pergunta que a pessoa fez vem primeiro — é o que ela veio buscar.
+          O diagnóstico completo continua logo abaixo. */}
+      {focus && analysis.resposta_ao_foco && (
+        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+          <p className="mb-1.5 flex items-start gap-1.5 text-xs font-medium text-primary">
+            <MessageCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {focus}
+          </p>
+          <p className="whitespace-pre-line text-sm leading-relaxed">{analysis.resposta_ao_foco}</p>
+        </div>
+      )}
+
       <Section title="Resumo executivo">
         <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
           {analysis.resumo_executivo}
@@ -505,8 +523,8 @@ export function ScanReport({ scanId }: { scanId: string }) {
         </p>
       )}
 
+      {scan.analysis && <AnalysisView analysis={scan.analysis} focus={scan.focus} />}
       {scan.metrics && <MetricsView metrics={scan.metrics} />}
-      {scan.analysis && <AnalysisView analysis={scan.analysis} />}
 
       {scan.usage && (
         <p className="text-[10px] text-muted-foreground">

@@ -32,6 +32,7 @@ const ANALYSIS_SCHEMA = {
     "pontos_fortes",
     "oportunidades",
     "playbook",
+    "resposta_ao_foco",
   ],
   properties: {
     resumo_executivo: {
@@ -161,6 +162,11 @@ const ANALYSIS_SCHEMA = {
         },
       },
     },
+    resposta_ao_foco: {
+      type: ["string", "null"],
+      description:
+        "Quando o usuário fez uma pergunta específica sobre o perfil, a resposta direta a ela, ancorada nos dados. null quando não houve pergunta.",
+    },
   },
 } as const;
 
@@ -200,7 +206,12 @@ function compactPosts(posts: ScanPost[], mediaEngajamento: number) {
   });
 }
 
-function buildUserPrompt(profile: ScanProfile, metrics: ScanMetrics, posts: ScanPost[]): string {
+function buildUserPrompt(
+  profile: ScanProfile,
+  metrics: ScanMetrics,
+  posts: ScanPost[],
+  focus?: string | null,
+): string {
   const payload = {
     PERFIL: {
       username: profile.username,
@@ -231,9 +242,23 @@ function buildUserPrompt(profile: ScanProfile, metrics: ScanMetrics, posts: Scan
     PUBLICACOES: compactPosts(posts, metrics.engajamento.media),
   };
 
+  // Pergunta específica do usuário: responde ela em primeiro plano, mas o resto
+  // do diagnóstico continua saindo completo — o schema exige todos os campos.
+  const focoBloco = focus?.trim()
+    ? `
+
+<pergunta_do_usuario>
+${focus.trim()}
+</pergunta_do_usuario>
+
+Essa é a pergunta que a pessoa quer responder sobre este perfil. Responda-a em "resposta_ao_foco" de forma direta e ancorada nos dados (cite números, legendas ou URLs), em 2 a 5 parágrafos. Se os dados disponíveis não permitirem responder com segurança, diga isso explicitamente em vez de especular. Além disso, enviese o restante do diagnóstico para o que for relevante a essa pergunta — sem deixar de preencher todos os campos.`
+    : `
+
+Não houve pergunta específica: faça o diagnóstico padrão completo e devolva "resposta_ao_foco" como null.`;
+
   return `Analise o perfil abaixo e devolva o diagnóstico no formato JSON definido.
 
-Sobre "insights_conteudo": priorize os Reels e os posts com maior engajamento, mas cubra também os pilares menos óbvios. Gere entre 12 e 25 itens (ou todos os posts, se houver menos que isso).
+Sobre "insights_conteudo": priorize os Reels e os posts com maior engajamento, mas cubra também os pilares menos óbvios. Gere entre 12 e 25 itens (ou todos os posts, se houver menos que isso).${focoBloco}
 
 <dados>
 ${JSON.stringify(payload, null, 1)}
@@ -245,6 +270,8 @@ export async function analyzeProfile(input: {
   profile: ScanProfile;
   metrics: ScanMetrics;
   posts: ScanPost[];
+  /** Pergunta específica do usuário. Vazio/null = diagnóstico padrão. */
+  focus?: string | null;
   model?: string;
   effort?: string;
   onProgress?: (msg: string) => void;
@@ -254,6 +281,7 @@ export async function analyzeProfile(input: {
     profile,
     metrics,
     posts,
+    focus = null,
     model = DEFAULT_MODEL,
     effort = DEFAULT_EFFORT,
     onProgress = () => {},
@@ -278,7 +306,7 @@ export async function analyzeProfile(input: {
     // modelo alternativo dentro da mesma chamada.
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
-    messages: [{ role: "user", content: buildUserPrompt(profile, metrics, posts) }],
+    messages: [{ role: "user", content: buildUserPrompt(profile, metrics, posts, focus) }],
   });
   const message = await stream.finalMessage();
 

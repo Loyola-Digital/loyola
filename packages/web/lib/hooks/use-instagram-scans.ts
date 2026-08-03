@@ -33,6 +33,8 @@ export interface ScanListItem {
   username: string;
   status: ScanStatus;
   params: { limit: number; since: string | null; tzOffset: number };
+  /** Pergunta específica feita no composer. null = análise padrão. */
+  focus: string | null;
   profile: ScanProfile | null;
   usage: { model: string; inputTokens: number; outputTokens: number } | null;
   error: string | null;
@@ -123,6 +125,8 @@ export interface ScanAnalysis {
   pontos_fortes: string[];
   oportunidades: string[];
   playbook: { titulo: string; como_aplicar: string }[];
+  /** Resposta à pergunta do usuário. null quando foi análise padrão. */
+  resposta_ao_foco: string | null;
 }
 
 export interface ScanDetail extends ScanListItem {
@@ -173,6 +177,7 @@ export function useCreateInstagramScan() {
   return useMutation({
     mutationFn: (input: {
       username: string;
+      focus?: string;
       limit?: number;
       since?: string;
       tzOffset?: number;

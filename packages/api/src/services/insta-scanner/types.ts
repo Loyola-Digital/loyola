@@ -133,6 +133,8 @@ export interface ScanAnalysis {
   pontos_fortes: string[];
   oportunidades: string[];
   playbook: { titulo: string; como_aplicar: string }[];
+  /** Resposta à pergunta específica do usuário. null = análise padrão. */
+  resposta_ao_foco: string | null;
 }
 
 export interface ScanUsage {
