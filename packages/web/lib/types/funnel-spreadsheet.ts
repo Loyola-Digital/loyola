@@ -3,7 +3,10 @@
  * Mirrors the backend schema in packages/api/src/db/schema.ts (funnelSpreadsheets).
  */
 
-export type FunnelSpreadsheetType = "leads" | "sales" | "custom";
+// "applications" = formulário de aplicação do comercial que roda depois do
+// lançamento pago. Tipo próprio porque o gráfico de volume diário localiza a
+// planilha pelo tipo, no funil atual e no de comparação.
+export type FunnelSpreadsheetType = "leads" | "sales" | "custom" | "applications";
 
 export interface ColumnMapping {
   name?: string;
