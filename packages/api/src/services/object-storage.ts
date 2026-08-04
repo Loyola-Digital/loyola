@@ -18,14 +18,23 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { randomUUID } from "node:crypto";
 
 export interface StorageConfig {
-  accountId?: string;
+  /** Endpoint S3 do provedor. Ver STORAGE_ENDPOINT no env pros formatos. */
+  endpoint?: string;
   accessKeyId?: string;
   secretAccessKey?: string;
   bucket?: string;
-  /** Domínio público do bucket (r2.dev ou domínio próprio), sem barra final. */
+  /** Base pública do bucket, sem barra final — é o que vai pro banco. */
   publicUrl?: string;
-  /** Endpoint completo — só pra S3 puro/MinIO; no R2 é derivado do accountId. */
-  endpoint?: string;
+  /**
+   * Região. O R2 ignora e aceita "auto"; Supabase e S3 exigem a real
+   * (`sa-east-1`, `us-east-1`...) e recusam a assinatura se não bater.
+   */
+  region?: string;
+  /**
+   * Path-style (`endpoint/bucket/key`) em vez de virtual-hosted
+   * (`bucket.endpoint/key`). Supabase e MinIO precisam; R2 e S3 não.
+   */
+  forcePathStyle?: boolean;
 }
 
 /** Tipos aceitos. Lista fechada: o que entra aqui é servido publicamente. */
@@ -44,7 +53,7 @@ const ALLOWED_MIME = new Set([
 export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 export function isStorageConfigured(cfg: StorageConfig): boolean {
-  return Boolean(cfg.accessKeyId && cfg.secretAccessKey && cfg.bucket && (cfg.accountId || cfg.endpoint));
+  return Boolean(cfg.accessKeyId && cfg.secretAccessKey && cfg.bucket && cfg.endpoint && cfg.publicUrl);
 }
 
 export function isAllowedMime(mime: string): boolean {
@@ -52,11 +61,12 @@ export function isAllowedMime(mime: string): boolean {
 }
 
 function client(cfg: StorageConfig): S3Client {
-  const endpoint = cfg.endpoint || `https://${cfg.accountId}.r2.cloudflarestorage.com`;
   return new S3Client({
-    // R2 ignora região, mas o SDK exige uma.
-    region: "auto",
-    endpoint,
+    endpoint: cfg.endpoint,
+    // "auto" serve pro R2; Supabase/S3 precisam da região real, senão a
+    // assinatura não confere e o PUT volta 403.
+    region: cfg.region || "auto",
+    forcePathStyle: cfg.forcePathStyle ?? false,
     credentials: {
       accessKeyId: cfg.accessKeyId as string,
       secretAccessKey: cfg.secretAccessKey as string,

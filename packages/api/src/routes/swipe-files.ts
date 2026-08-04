@@ -91,12 +91,13 @@ export default fp(async function swipeFilesRoutes(fastify) {
   const base = "/api/swipe-files";
 
   const storage = (): StorageConfig => ({
-    accountId: fastify.config.R2_ACCOUNT_ID,
-    accessKeyId: fastify.config.R2_ACCESS_KEY_ID,
-    secretAccessKey: fastify.config.R2_SECRET_ACCESS_KEY,
-    bucket: fastify.config.R2_BUCKET,
-    publicUrl: fastify.config.R2_PUBLIC_URL,
-    endpoint: fastify.config.R2_ENDPOINT,
+    endpoint: fastify.config.STORAGE_ENDPOINT,
+    accessKeyId: fastify.config.STORAGE_ACCESS_KEY_ID,
+    secretAccessKey: fastify.config.STORAGE_SECRET_ACCESS_KEY,
+    bucket: fastify.config.STORAGE_BUCKET,
+    publicUrl: fastify.config.STORAGE_PUBLIC_URL,
+    region: fastify.config.STORAGE_REGION,
+    forcePathStyle: fastify.config.STORAGE_FORCE_PATH_STYLE === "true",
   });
 
   function denyGuest(request: { userRole?: string }): boolean {
