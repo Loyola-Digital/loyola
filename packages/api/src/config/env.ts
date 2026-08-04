@@ -58,17 +58,24 @@ const envSchema = z.object({
   INSTA_SCAN_EFFORT: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
   /** Teto de scans por usuário por dia — trava de custo. */
   INSTA_SCAN_DAILY_LIMIT: z.coerce.number().int().min(1).max(500).optional(),
-  // Swipe Files: bucket S3-compatível (Cloudflare R2) pros arquivos que o time
-  // sobe. Sem isso a biblioteca ainda aceita LINK, mas recusa upload — o disco
-  // do container é efêmero, então não há fallback local.
-  R2_ACCOUNT_ID: z.string().optional(),
-  R2_ACCESS_KEY_ID: z.string().optional(),
-  R2_SECRET_ACCESS_KEY: z.string().optional(),
-  R2_BUCKET: z.string().optional(),
-  /** Domínio público do bucket (r2.dev ou domínio próprio). */
-  R2_PUBLIC_URL: z.string().optional(),
-  /** Só pra S3 puro/MinIO — no R2 o endpoint sai do account id. */
-  R2_ENDPOINT: z.string().optional(),
+  // Swipe Files: bucket S3-compatível pros arquivos que o time sobe. Sem isso a
+  // biblioteca ainda aceita LINK, mas recusa upload — o disco do container é
+  // efêmero, então não há fallback local.
+  //
+  // Serve qualquer provedor que fale S3. Formatos do endpoint:
+  //   Supabase   https://<projeto>.supabase.co/storage/v1/s3
+  //   R2         https://<account-id>.r2.cloudflarestorage.com
+  //   MinIO      https://s3.seu-dominio.com
+  STORAGE_ENDPOINT: z.string().optional(),
+  STORAGE_ACCESS_KEY_ID: z.string().optional(),
+  STORAGE_SECRET_ACCESS_KEY: z.string().optional(),
+  STORAGE_BUCKET: z.string().optional(),
+  /** Base pública do bucket — o app concatena `/<chave>` nela. */
+  STORAGE_PUBLIC_URL: z.string().optional(),
+  /** Região real (Supabase/S3). O R2 aceita o default "auto". */
+  STORAGE_REGION: z.string().optional(),
+  /** "true" pra Supabase e MinIO; R2 e S3 dispensam. */
+  STORAGE_FORCE_PATH_STYLE: z.enum(["true", "false"]).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
