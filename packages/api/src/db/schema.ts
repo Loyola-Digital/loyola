@@ -1030,6 +1030,10 @@ export const funnelSpreadsheetTypeEnum = pgEnum("funnel_spreadsheet_type", [
   // Story 29.22: planilha de upsell high ticket conectada ao funil perpétuo,
   // usada para o cruzamento de cross-sell (quem comprou o perpétuo e depois o HT).
   "perpetual_upsell",
+  // Aplicações do comercial que roda depois do lançamento pago. Tipo próprio (e
+  // não "custom") porque o gráfico de volume diário precisa achar essa planilha
+  // pelo tipo, tanto no lançamento atual quanto no de comparação.
+  "applications",
 ]);
 
 export const funnelSpreadsheets = pgTable(

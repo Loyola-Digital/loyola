@@ -43,7 +43,7 @@ const columnMappingSchema = z
 const createSpreadsheetSchema = z.object({
   stageId: z.string().uuid().optional(),
   label: z.string().min(1).max(255),
-  type: z.enum(["leads", "sales", "custom"]),
+  type: z.enum(["leads", "sales", "custom", "applications"]),
   spreadsheetId: z.string().min(1),
   spreadsheetName: z.string().min(1),
   sheetName: z.string().min(1),
@@ -53,7 +53,7 @@ const createSpreadsheetSchema = z.object({
 const updateSpreadsheetSchema = z.object({
   stageId: z.string().uuid().nullable().optional(),
   label: z.string().min(1).max(255).optional(),
-  type: z.enum(["leads", "sales", "custom"]).optional(),
+  type: z.enum(["leads", "sales", "custom", "applications"]).optional(),
   spreadsheetId: z.string().min(1).optional(),
   spreadsheetName: z.string().min(1).optional(),
   sheetName: z.string().min(1).optional(),

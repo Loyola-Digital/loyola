@@ -274,6 +274,7 @@ export function FunnelSpreadsheetWizardDialog({
                       <SelectItem value="leads">Leads</SelectItem>
                       <SelectItem value="sales">Vendas</SelectItem>
                       <SelectItem value="custom">Custom</SelectItem>
+                      <SelectItem value="applications">Aplicação (comercial)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -341,6 +342,7 @@ export function FunnelSpreadsheetWizardDialog({
                       <SelectItem value="leads">Leads</SelectItem>
                       <SelectItem value="sales">Vendas</SelectItem>
                       <SelectItem value="custom">Custom</SelectItem>
+                      <SelectItem value="applications">Aplicação (comercial)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
