@@ -173,9 +173,32 @@ export interface VturbQuota {
 // ============================================================
 
 export interface VturbRange {
+  /** YYYY-MM-DD. A conversão para o formato que a API exige é feita aqui. */
   startDate: string;
   endDate: string;
   timezone?: string;
+}
+
+/**
+ * A API exige datetime com hora/minuto/segundo e aceita UM formato só:
+ * "YYYY-MM-DD HH:MM:SS" (espaço, sem zona). Testado contra a API real:
+ *
+ *   "2026-07-01"                      -> 400
+ *   "2026-07-01T00:00:00"             -> 400
+ *   "2026-07-01T00:00:00.000+00:00"   -> 400   <- a doc lista como exemplo válido
+ *   "2026-07-01 00:00:00"             -> 200
+ *   "2026-07-01 00:00:00 UTC"         -> 200
+ *
+ * Ficamos sem o sufixo UTC de propósito: mandamos `timezone` no corpo, e é ele
+ * que deve interpretar o horário — fixar UTC deslocaria o dia do cliente.
+ */
+function inicioDoDia(data: string): string {
+  return `${data} 00:00:00`;
+}
+
+/** Fim inclusivo: quem escolhe "até 05/08" espera o dia 05 inteiro. */
+function fimDoDia(data: string): string {
+  return `${data} 23:59:59`;
 }
 
 export async function listPlayers(
@@ -197,8 +220,8 @@ export async function sessionStats(
 ): Promise<VturbSessionStats> {
   return request<VturbSessionStats>(token, "POST", "/sessions/stats", {
     player_id: input.playerId,
-    start_date: input.startDate,
-    end_date: input.endDate,
+    start_date: inicioDoDia(input.startDate),
+    end_date: fimDoDia(input.endDate),
     timezone: input.timezone,
     // Sem video_duration a API não calcula engagement_rate; sem pitch_time não
     // calcula over_pitch_rate. Ambos vêm do vínculo.
@@ -213,8 +236,8 @@ export async function sessionStatsByDay(
 ): Promise<VturbStatsByDay> {
   return request<VturbStatsByDay>(token, "POST", "/sessions/stats_by_day", {
     player_id: input.playerId,
-    start_date: input.startDate,
-    end_date: input.endDate,
+    start_date: inicioDoDia(input.startDate),
+    end_date: fimDoDia(input.endDate),
     timezone: input.timezone,
     video_duration: input.videoDuration ?? undefined,
     pitch_time: input.pitchTime ?? undefined,
@@ -228,8 +251,8 @@ export async function userEngagement(
   return request<VturbEngagement>(token, "POST", "/times/user_engagement", {
     player_id: input.playerId,
     video_duration: input.videoDuration,
-    start_date: input.startDate,
-    end_date: input.endDate,
+    start_date: inicioDoDia(input.startDate),
+    end_date: fimDoDia(input.endDate),
     timezone: input.timezone,
   });
 }
@@ -240,8 +263,8 @@ export async function clicksTimed(
 ): Promise<VturbClicksTimed> {
   return request<VturbClicksTimed>(token, "POST", "/clicks/total_by_company_timed", {
     player_id: input.playerId,
-    start_date: input.startDate,
-    end_date: input.endDate,
+    start_date: inicioDoDia(input.startDate),
+    end_date: fimDoDia(input.endDate),
     timezone: input.timezone,
   });
 }
