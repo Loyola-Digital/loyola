@@ -6,7 +6,7 @@ verdict: CONCERNS
 reviewedBy: "@qa (Quinn)"
 reviewedAt: "2026-08-05"
 branch: "feat/29.38-perpetual-mvp-unblock"
-commits: ["a2f2f8c", "cd3d567", "c769d37"]
+commits: ["a2f2f8c", "cd3d567", "c769d37", "ffe59d3"]
 
 checks:
   code_review:
@@ -110,6 +110,13 @@ issues:
     severity: medium
     category: correctness
     blocking: true
+    status: RESOLVIDO
+    resolution: >-
+      Corrigido em `ffe59d3`. `fracaoParaPP`/`ppParaFracao` em
+      `lib/utils/percent.ts`, aplicados aos dois campos. A medição que apontou o
+      defeito foi repetida com a correção: **0 de 2000** (era 537). 15 testes
+      novos, sendo o principal uma varredura de 2000 taxas — os valores redondos
+      que se testa por instinto passavam mesmo com a implementação ingênua.
     description: >-
       LIXO DE PONTO FLUTUANTE NOS CAMPOS PERCENTUAIS.
 
@@ -153,6 +160,8 @@ issues:
     severity: low
     category: correctness
     blocking: false
+    status: RESOLVIDO
+    resolution: "Corrigido em `ffe59d3`. `apiErrorMessage` recebe a operação; o banner de carga informa 'ao carregar'."
     description: >-
       MENSAGEM DE ERRO FORA DE CONTEXTO NA LEITURA.
 
@@ -172,6 +181,8 @@ issues:
     severity: low
     category: maintainability
     blocking: false
+    status: RESOLVIDO
+    resolution: "Corrigido em `ffe59d3` — `genérica` → `isGeneric`."
     description: >-
       Identificador com acento em `api-error.ts:35` (`const genérica`). É válido
       em TypeScript e o build passa, mas destoa do resto do código e complica
