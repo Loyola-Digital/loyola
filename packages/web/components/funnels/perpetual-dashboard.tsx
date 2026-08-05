@@ -63,7 +63,9 @@ import {
   useCampaignDailyInsightsBulk,
   useAllAdSets,
   useAllAds,
+  useAdCreatives,
   type CampaignAnalytics,
+  type MetaAdCreative,
 } from "@/lib/hooks/use-traffic-analytics";
 import { CampaignSelector } from "./campaign-selector";
 import { TopCreativesGallery } from "./top-creatives-gallery";
@@ -97,7 +99,6 @@ import {
   buildFunnelDailyFormula,
   buildFunnelCtrFormula,
   buildFunnelCpcFormula,
-  buildFunnelCpmFormula,
   enrichFormulaForEntity,
   type EntityPath,
 } from "@/lib/formulas/funnels";
@@ -450,12 +451,20 @@ function overlaySpreadsheetMetrics(
 
 // Story 29.19: linha do Detalhamento (CampaignAnalytics + margens derivadas).
 type DetailRow = CampaignAnalytics & {
+  /** Story 29.34: margem absoluta — mesma origem de `marginPct`, nunca divergem. */
+  margin: number;
   marginPct: number | null;
   marginPerSale: number | null;
   // Story 29.29: funil do criativo em vídeo (só preenchido no modo Por Criativo).
   hookRate: number | null;
   holdRate: number | null;
   bodyConversion: number | null;
+  /**
+   * Story 29.34 (AC8): ad_id do membro de MAIOR investimento do grupo. É dele
+   * que saem Tipo e Link, porque a linha pode agregar N ad_ids e o critério
+   * precisa ser determinístico — não a ordem de chegada da API.
+   */
+  representativeAdId: string;
 };
 
 // Linha sintética do Detalhamento quando só há planilha (sem campanha Meta):
@@ -486,6 +495,19 @@ function normalizeCampaignName(name: string): string {
 // imagem, ou entidade sem dado de vídeo) → "—", nunca 0%, que seria enganoso.
 function fmtRateOrDash(v: number | null | undefined): string {
   return v == null ? "—" : `${v.toFixed(2)}%`;
+}
+
+/**
+ * Story 29.34 (AC5): tipo do criativo, binário como pedido.
+ *
+ * A Meta expõe `object_type` com vários valores (VIDEO, SHARE, PHOTO...). Só
+ * VIDEO é vídeo; o resto é estático. Criativo ainda não resolvido pelo lote —
+ * ou anúncio sem esse campo — sai "—", nunca um palpite: sem `object_type` não
+ * dá para afirmar o tipo, e "Estático" por omissão seria inventar.
+ */
+function creativeTypeLabel(creative: MetaAdCreative | undefined): string {
+  if (!creative || !creative.objectType) return "—";
+  return creative.objectType === "VIDEO" ? "Vídeo" : "Estático";
 }
 
 // Story 29.29: verde ao bater a meta — mesmo tratamento da tabela de Criativos
@@ -1234,6 +1256,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       groups.set(name, arr);
     }
     return Array.from(groups.entries()).map(([name, members]) => {
+      // Story 29.34 (AC8): Tipo e Link são atributos de UM anúncio, mas a linha
+      // pode agregar N ad_ids (as cópias). Qual criativo representa o grupo?
+      // O de MAIOR INVESTIMENTO — é o que respondeu pela maior parte do
+      // resultado da linha. Pegar `members[0]` seria a ordem de chegada do
+      // Map, isto é, arbitrária: a mesma linha mostraria criativos diferentes
+      // conforme a ordem em que a API devolvesse os anúncios.
+      const topSpender = members.reduce((best, m) => (m.spend > best.spend ? m : best), members[0]);
       let base: CampaignAnalytics;
       if (members.length === 1) {
         base = { ...members[0], campaignName: name };
@@ -1267,9 +1296,33 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       // Story 29.27: `spend` já vem tributado do backend (applyMetaTax por
       // entidade). Todas as métricas de custo derivam DESTE mesmo valor —
       // a regra vive em `deriveDetailMetrics`, com teste de guarda.
-      return { ...base, ...deriveDetailMetrics(base, detailFeeRate) };
+      return {
+        ...base,
+        ...deriveDetailMetrics(base, detailFeeRate),
+        representativeAdId: topSpender.campaignId,
+      };
     });
   }, [tableData, detailFeeRate]);
+
+  // Story 29.34 (AC11): Tipo e Link vêm de UM request em lote, nunca de um por
+  // criativo. `useAdCreatives` recebe a lista inteira de ad_ids e resolve com
+  // `?adIds=a,b,c`; o React Query cacheia por 30min sob a mesma queryKey.
+  //
+  // O rate limit da Meta já derrubou a integração em 2026-07-16 — a regra do
+  // projeto é: ler do cache, e se faltar, buscar EM LOTE. Um request por linha
+  // nesta tabela seria dezenas de chamadas a cada troca de período.
+  //
+  // `enabled` só dispara no modo Criativo: campanha e adset não têm criativo.
+  const creativeAdIds = useMemo(
+    () => (tableFilter === "ad" ? detailRows.map((r) => r.representativeAdId).filter(Boolean) : []),
+    [tableFilter, detailRows],
+  );
+  const { data: creativesData } = useAdCreatives(projectId, creativeAdIds);
+  const creativeByAdId = useMemo(() => {
+    const m = new Map<string, MetaAdCreative>();
+    for (const c of creativesData?.creatives ?? []) m.set(c.adId, c);
+    return m;
+  }, [creativesData]);
 
   const sortedRows = useMemo<DetailRow[]>(() => {
     if (!sortCol) return detailRows;
@@ -1281,11 +1334,15 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         case "revenue": return num(r.revenue);
         case "cac": return num(r.costPerSale);
         case "roas": return num(r.roas);
+        // Story 29.34: `sortCol` é `string`, então uma coluna sem case aqui
+        // compila e simplesmente NÃO ordena — falha silenciosa. Toda coluna
+        // ordenável do header precisa aparecer nesta lista.
+        case "margin": return num(r.margin);
         case "marginPct": return num(r.marginPct);
-        case "marginPerSale": return num(r.marginPerSale);
+        case "sales": return num(r.sales);
+        case "conversionRate": return num(r.conversionRate);
         case "ctr": return num(r.ctr);
         case "cpc": return num(r.cpc);
-        case "cpm": return num(r.cpm);
         // Story 29.29: "—" (null) vai para o fim na ordem descendente, via `num`.
         case "hookRate": return num(r.hookRate);
         case "holdRate": return num(r.holdRate);
@@ -1845,15 +1902,26 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                     title="Arraste para ajustar a largura da coluna"
                   />
                 </th>
-                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("spend")}>Invest.{sortArrow("spend")}</th>
+                {/* Story 29.34: Tipo e Link só existem a nível de ANÚNCIO —
+                    somem nas outras dimensões em vez de virar "—", mesmo
+                    tratamento que a 29.29 deu a Hook/Hold/Body. Não são
+                    ordenáveis: uma é categoria binária, a outra é URL. */}
+                {showVideoCols && (
+                  <>
+                    <th className="text-left px-2 select-none" title="VIDEO no objectType da Meta → Vídeo; qualquer outro valor → Estático; ausente → —">Tipo</th>
+                    <th className="text-left px-2 select-none" title="Link do anúncio na Meta (link_url; fallback permalink)">Link</th>
+                  </>
+                )}
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("spend")}>Investimento{sortArrow("spend")}</th>
                 <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("revenue")}>Faturamento Bruto{sortArrow("revenue")}</th>
-                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cac")}>CAC{sortArrow("cac")}</th>
-                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("roas")}>ROAS{sortArrow("roas")}</th>
-                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("marginPct")}>Margem %{sortArrow("marginPct")}</th>
-                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("marginPerSale")}>Margem/Venda{sortArrow("marginPerSale")}</th>
-                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("ctr")}>CTR (link){sortArrow("ctr")}</th>
-                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cpc")}>CPC (link){sortArrow("cpc")}</th>
-                <th className="text-right pl-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cpm")}>CPM{sortArrow("cpm")}</th>
+                {/* Story 29.34: Margem absoluta ao lado da percentual — a linha
+                    com margem alta por venda e volume baixo se lê melhor do que
+                    é quando só existe Margem/Venda. */}
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("margin")} title="Faturamento Líquido (após fees da plataforma) − Investimento c/ imposto">Margem{sortArrow("margin")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("marginPct")} title="Margem ÷ Faturamento Bruto × 100">Margem %{sortArrow("marginPct")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("sales")} title="Vendas de status pago (refused e waiting_payment não entram)">Vendas{sortArrow("sales")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cac")} title="Investimento ÷ Vendas">CAC{sortArrow("cac")}</th>
+                <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("roas")} title="Faturamento Bruto ÷ Investimento">ROAS{sortArrow("roas")}</th>
                 {/* Story 29.29: funil do criativo em vídeo — só faz sentido a
                     nível de anúncio, então as colunas SOMEM nos outros modos
                     (não viram "—"). Campanha e adset não têm criativo único. */}
@@ -1861,18 +1929,25 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                   <>
                     <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("hookRate")} title="Visualizações 3s ÷ Impressões × 100 — dos que viram o anúncio, quantos assistiram os primeiros segundos (verde ≥ 25%)">Hook{sortArrow("hookRate")}</th>
                     <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("holdRate")} title="Visualizações 75% ÷ Visualizações 3s × 100 — dos que passaram pelo gancho, quantos seguiram até 75% do vídeo (verde ≥ 13%)">Hold{sortArrow("holdRate")}</th>
-                    <th className="text-right pl-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("bodyConversion")} title="Vendas ÷ Visualizações 75% × 100 — dos que viram o corpo do vídeo, quantos compraram. Sem meta de cor: o benchmark de 3,7% da Captação é sobre LEADS, não vendas">Body Conv.{sortArrow("bodyConversion")}</th>
+                    <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("bodyConversion")} title="Vendas ÷ Visualizações 75% × 100 — dos que viram o corpo do vídeo, quantos compraram. Sem meta de cor: o benchmark de 3,7% da Captação é sobre LEADS, não vendas">Body Conv.{sortArrow("bodyConversion")}</th>
+                    {/* Story 29.34: CTR e CPC ficam SÓ no criativo. Em campanha
+                        e público eles agregam anúncios diferentes e não
+                        discriminam nada — é no criativo que separam o que
+                        prende atenção do que não prende. */}
+                    <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("ctr")} title="Cliques no link ÷ Impressões × 100">CTR (link){sortArrow("ctr")}</th>
+                    <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cpc")} title="Investimento ÷ Cliques no link">CPC (link){sortArrow("cpc")}</th>
+                    <th className="text-right pl-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("conversionRate")} title="Vendas ÷ Cliques no link × 100">Tx Conversão{sortArrow("conversionRate")}</th>
                   </>
                 )}
               </tr>
             </thead>
             <tbody>
               {sortedRows.length === 0 ? (
-                <tr><td colSpan={showVideoCols ? 14 : 11} className="py-6 text-center text-muted-foreground">Sem dados</td></tr>
+                /* Story 29.34: 9 colunas em campanha/público, 17 no criativo. */
+                <tr><td colSpan={showVideoCols ? 17 : 9} className="py-6 text-center text-muted-foreground">Sem dados</td></tr>
               ) : sortedRows.map((row) => {
                 const f = { days, funnelType: "perpetual" as const, funnelName: funnel?.name };
                 const marginPct = row.marginPct;
-                const marginPerSale = row.marginPerSale;
                 const path: EntityPath =
                   tableFilter === "campaign" ? { campaign: row.campaignName }
                   : tableFilter === "adset" ? { adset: row.campaignName }
@@ -1895,16 +1970,18 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                     </td>
                   );
                 };
+                // Story 29.34: ordem comum às três dimensões. Tipo/Link entram
+                // ANTES (só no criativo) e CTR/CPC/Tx Conv. entram DEPOIS (só
+                // no criativo) — fora deste array, para não virar "—" onde a
+                // coluna não deve existir.
                 const cells: Array<[string, string, string, ReturnType<typeof enrichFormulaForEntity>, string]> = [
                   ["spend", "Investimento", fmtCurrency(row.spend), enrichFormulaForEntity(buildFunnelSpendFormula(row.spend, f), path), "text-right px-2 tabular-nums"],
                   ["revenue", "Faturamento Bruto", fmtCurrency(row.revenue), enrichFormulaForEntity(buildFunnelRevenueFormula(row.revenue, f), path), "text-right px-2 tabular-nums"],
+                  ["margin", "Margem", fmtCurrency(row.margin), enrichFormulaForEntity(buildFunnelMarginFormula(row.margin, f), path), `text-right px-2 tabular-nums font-medium ${marginColorClass(row.margin)}`],
+                  ["marginPct", "Margem %", fmtPercent(marginPct), enrichFormulaForEntity(buildFunnelMarginPercentFormula(marginPct, f), path), `text-right px-2 tabular-nums font-medium ${marginColorClass(marginPct)}`],
+                  ["sales", "Vendas", fmtNumber(row.sales ?? 0), undefined, "text-right px-2 tabular-nums"],
                   ["cac", "CAC", fmtCurrency(row.costPerSale), enrichFormulaForEntity(buildFunnelCacFormula(row.costPerSale ?? null, f), path), "text-right px-2 tabular-nums"],
                   ["roas", "ROAS", fmtRoas(row.roas), enrichFormulaForEntity(buildFunnelRoasFormula(row.roas ?? null, f), path), `text-right px-2 tabular-nums font-medium ${roasColorClass(row.roas)}`],
-                  ["marginPct", "Margem %", fmtPercent(marginPct), enrichFormulaForEntity(buildFunnelMarginPercentFormula(marginPct, f), path), `text-right px-2 tabular-nums font-medium ${marginColorClass(marginPct)}`],
-                  ["marginPerSale", "Margem/Venda", fmtCurrency(marginPerSale), enrichFormulaForEntity(buildFunnelMarginFormula(marginPerSale, f), path), `text-right px-2 tabular-nums font-medium ${marginColorClass(marginPerSale)}`],
-                  ["ctr", "CTR", fmtPercent(row.ctr), enrichFormulaForEntity(buildFunnelCtrFormula(row.ctr, f), path), "text-right px-2 tabular-nums"],
-                  ["cpc", "CPC", fmtCurrency(row.cpc), enrichFormulaForEntity(buildFunnelCpcFormula(row.cpc, f), path), "text-right px-2 tabular-nums"],
-                  ["cpm", "CPM", fmtCurrency(row.cpm), enrichFormulaForEntity(buildFunnelCpmFormula(row.cpm, f), path), "text-right pl-2 tabular-nums"],
                 ];
                 // Story 29.29: Hook/Hold reusam as metas já validadas na
                 // Captação (18.65). Body Conv. sai SEM meta de propósito — o
@@ -1915,12 +1992,41 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                   <tr key={row.campaignName} className="border-b border-border/10 hover:bg-muted/5">
                     <td className="py-2 pr-3"><StatusBadge status={tableFilter === "campaign" ? campaignStatusById.get(row.campaignId) : undefined} /></td>
                     <td className="py-2 pr-3 font-medium truncate" style={{ maxWidth: dimWidth, width: dimWidth }}>{row.campaignName}</td>
+                    {/* Story 29.34 (AC5/AC6): Tipo e Link do criativo de maior
+                        investimento do grupo. Criativo ainda não resolvido pelo
+                        lote, ou sem URL, cai em "—" — nunca href vazio. */}
+                    {showVideoCols && (
+                      <>
+                        <td className="px-2 whitespace-nowrap">{creativeTypeLabel(creativeByAdId.get(row.representativeAdId))}</td>
+                        <td className="px-2">
+                          {creativeByAdId.get(row.representativeAdId)?.linkUrl ? (
+                            <a
+                              href={creativeByAdId.get(row.representativeAdId)!.linkUrl!}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline"
+                              title={creativeByAdId.get(row.representativeAdId)!.linkUrl!}
+                            >
+                              abrir
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                      </>
+                    )}
                     {cells.map(([col, label, value, formula, cls]) => renderCell(col, label, value, formula, cls))}
                     {showVideoCols && (
                       <>
                         <td className={`text-right px-2 tabular-nums ${rateGoalClass(row.hookRate, 25)}`}>{fmtRateOrDash(row.hookRate)}</td>
                         <td className={`text-right px-2 tabular-nums ${rateGoalClass(row.holdRate, 13)}`}>{fmtRateOrDash(row.holdRate)}</td>
-                        <td className="text-right pl-2 tabular-nums">{fmtRateOrDash(row.bodyConversion)}</td>
+                        <td className="text-right px-2 tabular-nums">{fmtRateOrDash(row.bodyConversion)}</td>
+                        {/* Story 29.34: CTR e CPC mantêm o memorial que já
+                            tinham — passam por `renderCell` para não perder o
+                            tooltip de fórmula ao mudarem de posição. */}
+                        {renderCell("ctr", "CTR", fmtPercent(row.ctr), enrichFormulaForEntity(buildFunnelCtrFormula(row.ctr, f), path), "text-right px-2 tabular-nums")}
+                        {renderCell("cpc", "CPC", fmtCurrency(row.cpc), enrichFormulaForEntity(buildFunnelCpcFormula(row.cpc, f), path), "text-right px-2 tabular-nums")}
+                        <td className="text-right pl-2 tabular-nums">{fmtRateOrDash(row.conversionRate)}</td>
                       </>
                     )}
                   </tr>
