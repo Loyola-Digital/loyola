@@ -1,0 +1,223 @@
+storyIds: ["29.38", "29.39"]
+storyTitles:
+  - "Perpétuo — destravar a aba Análise MVP (migrations + upsert que apaga config)"
+  - "Perpétuo — gateway como percentual do faturamento"
+verdict: CONCERNS
+reviewedBy: "@qa (Quinn)"
+reviewedAt: "2026-08-05"
+branch: "feat/29.38-perpetual-mvp-unblock"
+commits: ["a2f2f8c", "cd3d567", "c769d37"]
+
+checks:
+  code_review:
+    status: PASS
+    note: >-
+      A decisão central foi acertada: extrair `mergeConfigValues` do handler.
+      A regra é de domínio, não de transporte, e tê-la enterrada dentro do
+      `fastify.put` é exatamente o que a tornou invisível para dois gates
+      anteriores — inclusive os meus. Agora ela tem nome, assinatura e teste.
+
+      O `keep` restaura a distinção `undefined` vs `null` que o `??` destruía, e
+      o uso de `??` (não `||`) está correto: `false`, `0` e `[]` sobrevivem. Isto
+      não é detalhe — `temSplitFormato: false` com `||` viraria o default.
+
+      Verifiquei a hipótese de que `previous ?? fallback` pudesse alterar dado
+      quando o banco tem `null` numa coluna com fallback não-nulo. Não procede:
+      `produtosOrderBump`, `temSplitFormato` e `origensPagas` são `.notNull()`
+      no schema, então `previous` nunca é nulo nesses três.
+
+  unit_tests:
+    status: PASS
+    note: >-
+      7 testes de regressão, e — o que importa mais — o autor os validou por
+      MUTAÇÃO: reintroduzindo o bug, 4 dos 7 falham. É a diferença entre um
+      teste que passa e um teste que protege.
+
+      Rodei 5 sondas adicionais não cobertas por ele: PUT `{}` totalmente vazio,
+      limpeza explícita de `manualRates` com `{}`, string vazia em prefixo,
+      `origensPagas: []` explícito e INSERT com corpo vazio. Todas passam.
+
+      Paridade da 29.39 reancorada RODANDO o `cac_engine.py`, não derivando à
+      mão — que era exatamente o que o AC4 exigia e o caminho fácil teria sido
+      pular. O teste que prova escala com o ticket é a melhor peça do conjunto:
+      se alguém voltar a tratar o campo como absoluto, ele quebra.
+
+  acceptance_criteria:
+    status: CONCERNS
+    note: >-
+      29.38 — AC1, AC3, AC4, AC5, AC6, AC8 atendidos. AC2 e AC7 abertos por
+      dependência de terceiros (@data-engineer e @devops), não por omissão.
+      29.39 — AC1 atendido COM DEFEITO (ver QA-01), AC2–AC5 atendidos, AC6
+      aberto pela mesma dependência.
+
+  no_regressions:
+    status: PASS
+    note: >-
+      tsc limpo nos 3 pacotes, `next build` limpo, ESLint sem warnings nos
+      arquivos novos, 158 testes web passando.
+
+      As 7 falhas da API são pré-existentes e isso foi PROVADO, não afirmado: o
+      diff do `schema.ts` toca unicamente a coluna do gateway, e as permissões
+      `traffic`/`youtubeAds` que quebram o `schema.test.ts` vieram do commit
+      `678bd75`, de outro autor. Confirmei o diff eu mesmo.
+
+  performance:
+    status: PASS
+    note: >-
+      `mergeConfigValues` é O(1) sobre ~15 campos. O banner de erro é render
+      condicional. Nenhuma query nova.
+
+  security:
+    status: PASS
+    note: >-
+      Superfície inalterada: guest segue bloqueado, `resolveFunnel` segue
+      validando a cadeia project→funnel, Drizzle parametriza. O `logApiError`
+      escreve no console do navegador — o corpo de erro desta rota não carrega
+      segredo.
+
+      Pendência PRÉ-EXISTENTE, fora do escopo destas stories: a rota não
+      verifica se o usuário pertence ao projeto (herdado da 41.7).
+
+  documentation:
+    status: PASS
+    note: >-
+      Os comentários explicam POR QUE, não O QUE — e o do `mergeConfigValues`
+      narra o defeito inteiro, incluindo por que ele ficou invisível. Daqui a
+      seis meses isso vale mais que o código.
+
+      A nota acrescentada às 29.35/29.36/29.37 corrige o registro histórico:
+      elas constavam com validação visual "pendente", o que sugeria falta de
+      agenda quando na verdade era impossibilidade.
+
+acceptance_criteria_evidence:
+  "29.38-AC1": "PASS — 0095/0096/0097 via `git mv` (histórico preservado), `0092_vturb` intacta, nenhuma auto-referência de número nos cabeçalhos."
+  "29.38-AC2": "ABERTO — @data-engineer. Não é falha do @dev."
+  "29.38-AC3": "PASS — `mergeConfigValues` cobre os 15 campos. Verificado por mutação e por 5 sondas minhas."
+  "29.38-AC4": "PASS — `premissaMudou` não dispara em PUT parcial; testado nas duas formas de salvamento da aba."
+  "29.38-AC5": "PASS com ressalva — zero `catch {}` nos 3 componentes; ver QA-02 sobre o texto."
+  "29.38-AC6": "PASS — 7 testes, os 5 cenários do AC mais 2 de borda (`false`/`[]` e zero)."
+  "29.38-AC7": "ABERTO — depende de AC2 + deploy."
+  "29.38-AC8": "PASS — as três stories anteriores anotadas com o motivo real."
+  "29.39-AC1": "CONCERNS — o campo é percentual e converte na borda, mas a hidratação exibe lixo de ponto flutuante. Ver QA-01."
+  "29.39-AC2": "PASS — `gateway_pct_var numeric(6,5)` nasceu na 0095; nenhuma migration desfeita."
+  "29.39-AC3": "PASS — duas linhas separadas no memorial; `assertRate` nas duas frações; ROUND-01 preservado."
+  "29.39-AC4": "PASS — engine executado, não estimado: 2,5% → R$194,30 (exato 194,295; limiar 252,58). Fixture com 1/450 mantém a âncora original em R$204,55."
+  "29.39-AC5": "PASS — as 3 ocorrências restantes de `gatewayFixo` são comentários que documentam a mudança, que o próprio AC5 pede."
+  "29.39-AC6": "ABERTO — depende do deploy."
+
+issues:
+  - id: QA-01
+    severity: medium
+    category: correctness
+    blocking: true
+    description: >-
+      LIXO DE PONTO FLUTUANTE NOS CAMPOS PERCENTUAIS.
+
+      `perpetual-mvp-analysis.tsx:109` e `:111` hidratam os campos editáveis com
+      `String(fração * 100)`, sem arredondar. Em JavaScript isso produz:
+
+        0.07   × 100 = 7.000000000000001
+        0.0399 × 100 = 3.9900000000000007
+        0.035  × 100 = 3.5000000000000004
+        0.0199 × 100 = 1.9900000000000002
+
+      Medi o alcance percorrendo o caminho REAL — pontos percentuais → fração →
+      `numeric(6,5)` do banco → leitura → × 100 → tela. De 2000 taxas entre
+      0,01% e 20,00%, **537 (27%) exibem lixo**. Entre elas 7% e 3,99%, que são
+      valores correntes de gateway.
+
+      O erro numérico é de 1e-16 e não corrompe cálculo. O problema é de
+      confiança: um gestor que abre a tela e vê `7.000000000000001` conclui que
+      o sistema está quebrado — e o valor volta a ser gravado assim no save
+      seguinte.
+
+      Atinge DOIS campos:
+        - `gatewayPctVar` (:111) — introduzido pela 29.39;
+        - `margemDesejadaPct` (:109) — vem da 29.35, mas NUNCA foi visto porque
+          a aba nunca funcionou. Vai estrear com o defeito no primeiro deploy.
+
+      Agravante: o padrão correto já existe no MESMO arquivo — as linhas 380 e
+      381 usam `.toFixed(2)` para os campos herdados. Não foi aplicado aos
+      editáveis. Isso é descuido, não decisão de design.
+    recommendation: >-
+      Um helper na borda, aplicado aos dois campos. `.toFixed(4)` cobre a
+      precisão de `numeric(6,5)` em pontos percentuais, e o `Number(...)` remove
+      os zeros à direita para não exibir "2,5000":
+
+        const fracaoParaPP = (f: number) => String(Number((f * 100).toFixed(4)));
+
+      Corrigir os dois na mesma passada — deixar a margem para depois seria
+      entregar o defeito conscientemente.
+
+  - id: QA-02
+    severity: low
+    category: correctness
+    blocking: false
+    description: >-
+      MENSAGEM DE ERRO FORA DE CONTEXTO NA LEITURA.
+
+      `apiErrorMessage` devolve, para 500, "Erro no servidor **ao salvar**...".
+      A função é usada tanto nos três `catch` de gravação quanto no banner de
+      falha de CARGA (`:271`). Se o GET falhar com 500 — precisamente o cenário
+      de migration pendente que originou esta story — o banner de leitura vai
+      dizer que houve erro ao salvar.
+
+      Não induz a ação errada, mas é o tipo de imprecisão que faz o usuário
+      descrever o problema errado quando abre um chamado.
+    recommendation: >-
+      Neutralizar o texto ("Erro no servidor") ou aceitar um parâmetro de
+      operação. A dica sobre migration pendente é útil e deve ficar.
+
+  - id: QA-03
+    severity: low
+    category: maintainability
+    blocking: false
+    description: >-
+      Identificador com acento em `api-error.ts:35` (`const genérica`). É válido
+      em TypeScript e o build passa, mas destoa do resto do código e complica
+      grep para quem procurar por `generic`.
+    recommendation: "Renomear na próxima vez que o arquivo for tocado. Não vale um commit próprio."
+
+  - id: QA-04
+    severity: medium
+    category: process
+    blocking: false
+    description: >-
+      DUAS STORIES NUM PR. A 29.38 e a 29.39 vão juntas, e a justificativa do
+      @dev procede: separadas produziriam um deploy intermediário gravando
+      fração num campo rotulado "R$". Os commits estão separados por story, o
+      que preserva a rastreabilidade.
+
+      Registro para que a decisão fique explícita no histórico e não seja lida
+      como descuido de escopo.
+    recommendation: "Nenhuma ação. Decisão correta, apenas documentada."
+
+waived: []
+
+blocked_by_dependency:
+  - "29.38-AC2 — @data-engineer aplica 0095/0096/0097 em produção"
+  - "29.38-AC7 — validação end-to-end, depende de AC2 + deploy da API (@devops)"
+  - "29.39-AC6 — validação na aplicação, mesma dependência"
+
+notes: >-
+  CONCERNS, com QA-01 marcado blocking.
+
+  O trabalho de engenharia aqui está acima da média da sequência: a extração da
+  função, a validação por mutação e a reancoragem executando o engine de
+  referência são três decisões que o caminho fácil teria dispensado. A prova de
+  que as falhas da API são pré-existentes foi feita com diff, não com alegação —
+  e isso importa depois de uma auditoria que apontou justamente inferência
+  passando por verificação.
+
+  QA-01 não desmerece isso, mas precisa ser corrigido antes do merge: são duas
+  linhas, e o defeito estreia visível para o usuário no primeiro deploy em que
+  a aba finalmente funcionar. Entregar o destravamento da aba junto com um campo
+  que exibe `7.000000000000001` desperdiçaria a primeira impressão que esta
+  entrega existe para consertar.
+
+  Nota pessoal de processo: o defeito que a 29.38 corrige passou por dois gates
+  meus. Nos dois, li o comentário do autor que dizia "preserva o que já existe
+  quando o PUT não manda o campo" e verifiquei que os quatro campos citados
+  estavam protegidos — sem perguntar quantos campos existiam ao todo. A lição é
+  que revisar a afirmação do autor não é o mesmo que revisar o código, e o
+  padrão repetido quinze vezes é onde essa diferença se esconde.
