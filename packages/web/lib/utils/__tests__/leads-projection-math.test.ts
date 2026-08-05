@@ -56,7 +56,12 @@ describe("calculateAccumulatedCPL", () => {
     const result = calculateAccumulatedCPL(data);
 
     expect(result[0]).toBeNull();
-    expect(result[1]).toBeCloseTo(10);
+    // Story 29.35: a expectativa era 10 e o código devolve 20 — o CÓDIGO está
+    // certo. A métrica é ACUMULADA: no dia 2 o gasto somado é 100+100 e os
+    // leads somados são 0+10, logo 200÷10 = 20. O 10 seria o CPL do dia,
+    // outra métrica. O teste foi escrito quando o pacote não tinha runner e
+    // nunca chegou a rodar.
+    expect(result[1]).toBeCloseTo(20);
   });
 });
 

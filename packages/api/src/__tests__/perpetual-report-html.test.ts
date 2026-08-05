@@ -13,7 +13,8 @@ function cfg(over: Partial<PerpetualReportConfig> = {}): PerpetualReportConfig {
     produtosOrderBump: [], temSplitFormato: false, origensPagas: ["meta"],
     inicioTrafego: null, validado: true, validadoEm: null, validadoPor: null,
     impostoPct: 0.1215, impostoOrigem: "default",
-    taxaPlataformaPct: null, taxaImpostoPct: null, taxaOutrosPct: null, ...over,
+    taxaPlataformaPct: null, taxaImpostoPct: null, taxaOutrosPct: null,
+    margemDesejadaPct: null, cmv: null, gatewayFixo: null, ...over,
   };
 }
 

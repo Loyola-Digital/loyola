@@ -6,7 +6,9 @@
     "build": "next build",
     "dev": "next dev --port 3000",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.0.4",
@@ -50,6 +52,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint-config-next": "^15",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.0"
   }
 }

@@ -41,6 +41,12 @@ const configBodySchema = z.object({
   taxaPlataformaPct: rate,
   taxaImpostoPct: rate,
   taxaOutrosPct: rate,
+  // Story 29.35 — inputs do CAC alvo. `margemDesejadaPct` usa o mesmo
+  // validador `rate` das demais taxas: fração, nunca pontos percentuais (U-01).
+  margemDesejadaPct: rate,
+  /** Valores em reais, não frações — por isso não usam `rate`. */
+  cmv: z.number().min(0).nullable().optional(),
+  gatewayFixo: z.number().min(0).nullable().optional(),
 });
 
 export default fp(async function perpetualReportConfigRoutes(fastify) {
@@ -118,6 +124,10 @@ export default fp(async function perpetualReportConfigRoutes(fastify) {
             taxaPlataformaPct: cfg.taxaPlataformaPct,
             taxaImpostoPct: cfg.taxaImpostoPct,
             taxaOutrosPct: cfg.taxaOutrosPct,
+            // Story 29.35 — inputs do CAC alvo.
+            margemDesejadaPct: cfg.margemDesejadaPct,
+            cmv: cfg.cmv,
+            gatewayFixo: cfg.gatewayFixo,
             validado: cfg.validado,
             validadoEm: cfg.validadoEm,
             validadoPor: cfg.validadoPor,
@@ -181,6 +191,12 @@ export default fp(async function perpetualReportConfigRoutes(fastify) {
         numericChanged(d.taxaImpostoPct, existing.taxaImpostoPct) ||
         numericChanged(d.taxaOutrosPct, existing.taxaOutrosPct) ||
         numericChanged(d.impostoPct, existing.impostoPct));
+    // Story 29.35: `margemDesejadaPct`, `cmv` e `gatewayFixo` NÃO entram aqui,
+    // de propósito. `validado` afirma que as premissas do RELATÓRIO foram
+    // conferidas — faturamento, investimento, taxas de plataforma. Os três
+    // campos novos não alteram nenhum número do relatório: alimentam só o CAC
+    // alvo, que é leitura à parte. Resetar a validação por causa deles
+    // invalidaria uma conferência que continua verdadeira.
 
     const values = {
       funnelId,
@@ -194,6 +210,10 @@ export default fp(async function perpetualReportConfigRoutes(fastify) {
       taxaPlataformaPct: asNumeric(d.taxaPlataformaPct),
       taxaImpostoPct: asNumeric(d.taxaImpostoPct),
       taxaOutrosPct: asNumeric(d.taxaOutrosPct),
+      // Story 29.35 — inputs do CAC alvo.
+      margemDesejadaPct: asNumeric(d.margemDesejadaPct),
+      cmv: asNumeric(d.cmv),
+      gatewayFixo: asNumeric(d.gatewayFixo),
       updatedAt: new Date(),
     };
 
