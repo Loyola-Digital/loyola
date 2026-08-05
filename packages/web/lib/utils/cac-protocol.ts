@@ -42,7 +42,20 @@ export interface TargetCacInputs {
   imposto: number | null;
   gatewayPct: number | null;
   /** Parcela fixa do gateway, em reais. */
-  gatewayFixo: number | null;
+  /**
+   * Story 29.39 — taxa do gateway de PAGAMENTO, como fração do ticket.
+   *
+   * Era `gatewayFixo` (R$/transação) até a 29.39. O protocolo modela a parcela
+   * fixa porque ela existe no mercado; o gateway desta operação não a tem — o
+   * custo inteiro varia com o faturamento.
+   *
+   * Isto NÃO é desvio do LOYOLA-X-CAC-PROTOCOL: o modelo M-DECK já prevê um
+   * componente percentual (`gatewayPct`), e aqui há uma segunda fonte percentual,
+   * de origem distinta. As duas seguem rastreáveis separadamente no memorial —
+   * que é o que o protocolo exige. Quem comparar código e YAML vai ver
+   * `gateway_fixo` lá e não aqui: a razão é esta, e não esquecimento.
+   */
+  gatewayPctVar: number | null;
   cmv: number | null;
   /**
    * Provisões de reembolso/chargeback. No Loyola X ficam em 0 porque essas
@@ -147,8 +160,8 @@ export function targetCacDeck(input: TargetCacInputs): TargetCacResult {
     ["ticket médio", input.ticket],
     ["margem desejada", input.margemDesejada],
     ["imposto", input.imposto],
-    ["gateway %", input.gatewayPct],
-    ["gateway fixo", input.gatewayFixo],
+    ["gateway da plataforma %", input.gatewayPct],
+    ["gateway de pagamento %", input.gatewayPctVar],
     ["CMV", input.cmv],
   ];
   const missing = required.filter(([, v]) => v == null).map(([name]) => name);
@@ -176,11 +189,16 @@ export function targetCacDeck(input: TargetCacInputs): TargetCacResult {
   }
   assertRate(input.margemDesejada as number, "margem desejada");
   assertRate(input.imposto as number, "imposto");
-  assertRate(input.gatewayPct as number, "gateway %");
+  assertRate(input.gatewayPct as number, "gateway da plataforma %");
+  assertRate(input.gatewayPctVar as number, "gateway de pagamento %");
 
   const margem = ticket * (input.margemDesejada as number);
   const imposto = ticket * (input.imposto as number);
-  const gateway = ticket * (input.gatewayPct as number) + (input.gatewayFixo as number);
+  // Duas deduções distintas sobre o mesmo ticket: a taxa da plataforma de vendas
+  // e a do gateway de pagamento. Somá-las numa linha só daria o mesmo total e
+  // esconderia qual delas mudou — e o memorial existe justamente para isso.
+  const gatewayPlataforma = ticket * (input.gatewayPct as number);
+  const gatewayPagamento = ticket * (input.gatewayPctVar as number);
   const cmv = input.cmv as number;
   const reembolsoBrl = ticket * reembolso;
   const chargebackBrl = ticket * chargeback;
@@ -189,7 +207,8 @@ export function targetCacDeck(input: TargetCacInputs): TargetCacResult {
     { label: "Ticket médio", value: ticket },
     { label: "− Margem desejada", value: -margem },
     { label: "− Imposto", value: -imposto },
-    { label: "− Gateway", value: -gateway },
+    { label: "− Gateway plataforma", value: -gatewayPlataforma },
+    { label: "− Gateway pagamento", value: -gatewayPagamento },
     { label: "− CMV", value: -cmv },
   ];
   if (reembolsoBrl > 0) lines.push({ label: "− Reembolso", value: -reembolsoBrl });
@@ -205,7 +224,7 @@ export function targetCacDeck(input: TargetCacInputs): TargetCacResult {
     lines,
     missing: [],
     expression:
-      `${ticket} − ${margem} − ${imposto} − ${gateway} − ${cmv}` +
+      `${ticket} − ${margem} − ${imposto} − ${gatewayPlataforma} − ${gatewayPagamento} − ${cmv}` +
       (reembolsoBrl > 0 ? ` − ${reembolsoBrl}` : "") +
       (chargebackBrl > 0 ? ` − ${chargebackBrl}` : "") +
       ` = ${roundMoney(exact)}`,
