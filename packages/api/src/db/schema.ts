@@ -2604,3 +2604,60 @@ export const swipeFiles = pgTable(
     index("idx_swipe_files_facets").on(table.platform, table.format, table.niche),
   ]
 );
+
+// ============================================================
+// VTURB ANALYTICS (VSL)
+// ============================================================
+// Token por PROJETO — uma conta VTurb serve todos os funis do cliente.
+// O vínculo player↔etapa guarda `duration` e `pitchTime` porque a API do VTurb
+// EXIGE os dois como parâmetro na maioria dos endpoints de stats; vêm de
+// /players/list e ficam cacheados aqui pra não listar tudo a cada consulta.
+
+export const vturbConnections = pgTable(
+  "vturb_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .unique()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    apiTokenEncrypted: text("api_token_encrypted").notNull(),
+    apiTokenIv: text("api_token_iv").notNull(),
+    /** O VTurb assume UTC quando omitido — o corte de dia sairia errado no BR. */
+    timezone: varchar("timezone", { length: 60 }).notNull().default("America/Sao_Paulo"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_vturb_connections_project").on(table.projectId)]
+);
+
+export const vturbPlayers = pgTable(
+  "vturb_players",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    /** UUID do player no VTurb. */
+    playerId: varchar("player_id", { length: 64 }).notNull(),
+    playerName: text("player_name").notNull(),
+    /** Segundos. Obrigatórios nos endpoints de stats do VTurb. */
+    duration: integer("duration"),
+    pitchTime: integer("pitch_time"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_vturb_players_stage_player").on(table.stageId, table.playerId),
+    index("idx_vturb_players_stage").on(table.stageId),
+  ]
+);
