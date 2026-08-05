@@ -47,6 +47,26 @@ const configBodySchema = z.object({
   /** Valores em reais, não frações — por isso não usam `rate`. */
   cmv: z.number().min(0).nullable().optional(),
   gatewayFixo: z.number().min(0).nullable().optional(),
+  // Story 29.36 — cadeia de conversão.
+  funnelArchitecture: z.string().trim().max(40).nullable().optional(),
+  chainDefectReading: z.string().trim().max(120).nullable().optional(),
+  /**
+   * Taxas digitadas. A janela é OBRIGATÓRIA em cada entrada: sem ela não dá
+   * para verificar homogeneidade (AGG-01), e uma taxa velha multiplicada por
+   * uma nova produz número plausível e sem significado.
+   */
+  manualRates: z
+    .record(
+      z.string(),
+      z.object({
+        value: z.number().gt(0).max(1),
+        source: z.string().trim().min(1).max(200),
+        windowStart: isoDate,
+        windowEnd: isoDate,
+        measuredAt: z.string(),
+      }),
+    )
+    .optional(),
 });
 
 export default fp(async function perpetualReportConfigRoutes(fastify) {
@@ -128,6 +148,10 @@ export default fp(async function perpetualReportConfigRoutes(fastify) {
             margemDesejadaPct: cfg.margemDesejadaPct,
             cmv: cfg.cmv,
             gatewayFixo: cfg.gatewayFixo,
+            // Story 29.36 — cadeia.
+            funnelArchitecture: cfg.funnelArchitecture,
+            chainDefectReading: cfg.chainDefectReading,
+            manualRates: cfg.manualRates,
             validado: cfg.validado,
             validadoEm: cfg.validadoEm,
             validadoPor: cfg.validadoPor,
@@ -214,6 +238,11 @@ export default fp(async function perpetualReportConfigRoutes(fastify) {
       margemDesejadaPct: asNumeric(d.margemDesejadaPct),
       cmv: asNumeric(d.cmv),
       gatewayFixo: asNumeric(d.gatewayFixo),
+      // Story 29.36 — preserva o que já existe quando o PUT não manda o campo:
+      // a aba MVP salva só o que ela edita, e um `?? {}` apagaria as taxas.
+      funnelArchitecture: d.funnelArchitecture !== undefined ? d.funnelArchitecture : (existing?.funnelArchitecture ?? null),
+      chainDefectReading: d.chainDefectReading !== undefined ? d.chainDefectReading : (existing?.chainDefectReading ?? null),
+      manualRates: d.manualRates !== undefined ? d.manualRates : (existing?.manualRates ?? {}),
       updatedAt: new Date(),
     };
 

@@ -48,6 +48,7 @@ function makeConfig(over: Partial<PerpetualReportConfig> = {}): PerpetualReportC
     taxaOutrosPct: null,
     // Story 29.35: inputs do CAC alvo — não preenchidos nestes fixtures.
     margemDesejadaPct: null, cmv: null, gatewayFixo: null,
+    funnelArchitecture: null, chainDefectReading: null, manualRates: {},
     ...over,
   };
 }

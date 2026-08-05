@@ -58,6 +58,10 @@ export interface PerpetualReportConfig {
   cmv: number | null;
   /** Parcela fixa do gateway, em R$/transação. */
   gatewayFixo: number | null;
+  /** Story 29.36 — arquitetura declarada e taxas digitadas. */
+  funnelArchitecture: string | null;
+  chainDefectReading: string | null;
+  manualRates: Record<string, { value: number; source: string; windowStart: string; windowEnd: string; measuredAt: string }>;
   /** Gross-up de mídia já resolvido (override do funil → META_TAX_RATE). */
   impostoPct: number;
   impostoOrigem: RateOrigem;
@@ -260,6 +264,9 @@ export async function loadPerpetualReportConfigRaw(
     margemDesejadaPct: toFiniteNumber(row.cfg.margemDesejadaPct),
     cmv: toFiniteNumber(row.cfg.cmv),
     gatewayFixo: toFiniteNumber(row.cfg.gatewayFixo),
+    funnelArchitecture: row.cfg.funnelArchitecture,
+    chainDefectReading: row.cfg.chainDefectReading,
+    manualRates: row.cfg.manualRates ?? {},
   };
 }
 
