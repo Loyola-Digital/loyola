@@ -16,27 +16,41 @@
 
 type ApiError = Error & { status?: number; code?: string; body?: unknown };
 
+/** Operação que falhou. Muda só o texto; a classificação por status é a mesma. */
+type Operacao = "salvar" | "carregar";
+
 /**
  * Mensagem para o usuário. `fallback` cobre o caso de não haver nada melhor —
  * erro de rede, por exemplo, onde não há resposta para inspecionar.
+ *
+ * `operacao` existe porque a mesma função serve gravação e leitura (QA-02): sem
+ * ela, uma falha ao CARREGAR a config exibia "erro ao salvar", e quem abrisse um
+ * chamado descreveria a operação errada.
  */
-export function apiErrorMessage(err: unknown, fallback: string): string {
+export function apiErrorMessage(
+  err: unknown,
+  fallback: string,
+  operacao: Operacao = "salvar",
+): string {
   const e = err as ApiError;
   const status = typeof e?.status === "number" ? e.status : null;
 
   // Causas conhecidas ganham texto acionável: dizer "erro 500" a um gestor de
   // tráfego não o ajuda a decidir o que fazer em seguida.
-  if (status === 403) return "Sem permissão para alterar esta configuração.";
+  if (status === 403) return "Sem permissão para acessar esta configuração.";
   if (status === 404) return "Funil não encontrado — recarregue a página.";
   if (status === 500) {
-    return "Erro no servidor ao salvar. Se acabou de sair um deploy, a API pode estar com migration pendente — avise o time.";
+    return (
+      `Erro no servidor ao ${operacao}. Se acabou de sair um deploy, a API pode ` +
+      "estar com migration pendente — avise o time."
+    );
   }
 
   const msg = typeof e?.message === "string" ? e.message.trim() : "";
   // "API error: 422" é o texto que o fetcher usa quando não achou nada melhor no
   // corpo. Repassá-lo ao usuário seria trocar uma frase vaga por outra.
-  const genérica = /^API error: \d+$/.test(msg);
-  if (msg && !genérica) return status ? `${msg} (${status})` : msg;
+  const isGeneric = /^API error: \d+$/.test(msg);
+  if (msg && !isGeneric) return status ? `${msg} (${status})` : msg;
 
   return status ? `${fallback} (erro ${status})` : fallback;
 }

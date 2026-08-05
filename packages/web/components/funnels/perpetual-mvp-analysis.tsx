@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { apiErrorMessage, logApiError } from "@/lib/utils/api-error";
+import { fracaoParaPP, ppParaFracao } from "@/lib/utils/percent";
 import { usePerpetualSalesData } from "@/lib/hooks/use-perpetual-sales-data";
 import { useTrafficOverview } from "@/lib/hooks/use-traffic-analytics";
 import {
@@ -106,9 +107,9 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
     if (!cfg) return;
     // O banco guarda fração; a tela fala em pontos percentuais. A conversão
     // acontece AQUI, na borda — dentro da fórmula só circula decimal (U-01).
-    setMargemPct(cfg.margemDesejadaPct != null ? String(cfg.margemDesejadaPct * 100) : "");
+    setMargemPct(cfg.margemDesejadaPct != null ? fracaoParaPP(cfg.margemDesejadaPct) : "");
     setCmv(cfg.cmv != null ? String(cfg.cmv) : "");
-    setGatewayPagtoPct(cfg.gatewayPctVar != null ? String(cfg.gatewayPctVar * 100) : "");
+    setGatewayPagtoPct(cfg.gatewayPctVar != null ? fracaoParaPP(cfg.gatewayPctVar) : "");
   }, [cfg]);
 
   const parseOrNull = (s: string): number | null => {
@@ -241,9 +242,9 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
     }
     try {
       await saveConfig.mutateAsync({
-        margemDesejadaPct: m == null ? null : m / 100,
+        margemDesejadaPct: m == null ? null : ppParaFracao(m),
         cmv: parseOrNull(cmv),
-        gatewayPctVar: g == null ? null : g / 100,
+        gatewayPctVar: g == null ? null : ppParaFracao(g),
       });
       toast.success("Premissas do CAC alvo salvas");
     } catch (err) {
@@ -268,7 +269,7 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
                 Não foi possível carregar a configuração deste funil
               </p>
               <p className="mt-1 text-muted-foreground">
-                {apiErrorMessage(configError, "Erro desconhecido ao consultar a API.")}
+                {apiErrorMessage(configError, "Erro desconhecido ao consultar a API.", "carregar")}
               </p>
               <p className="mt-1 text-muted-foreground">
                 Os números abaixo podem estar incompletos. Salvar agora pode falhar.
