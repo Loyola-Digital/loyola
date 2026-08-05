@@ -1,0 +1,107 @@
+storyId: "29.33"
+storyTitle: "Perpétuo — reformulação das colunas do Quadro de Dados Diários (aba Meta Ads)"
+verdict: CONCERNS
+reviewedBy: "@qa (Quinn)"
+reviewedAt: "2026-08-04"
+branch: "feat/29.33-perpetual-daily-columns"
+commit: "0fbb67d"
+pr: 464
+
+checks:
+  code_review:
+    status: PASS
+    note: >-
+      Segue o padrão do arquivo. Comentários explicam o PORQUÊ, não o QUÊ.
+      `marginTone`/`totalsMarginTone` extraídos eliminam a repetição do ternário
+      de cor. Destaque: o comentário de acoplamento no topo de
+      PERPETUAL_DAILY_COLUMNS documenta que header itera o array enquanto corpo
+      e rodapé são posicionais — é o artefato mais valioso do diff, porque
+      previne para o próximo editor exatamente o bug que quase aconteceu aqui.
+  unit_tests:
+    status: CONCERNS
+    note: >-
+      Nenhum teste adicionado. `packages/web` não tem runner configurado — há 5
+      arquivos .test.tsx órfãos no pacote. Limitação estrutural conhecida, não
+      negligência: o @po já decidiu instalar vitest na 29.35. Ver issue QA-01.
+  acceptance_criteria:
+    status: PASS
+    note: "9 de 9 atendidos — evidência por AC abaixo."
+  no_regressions:
+    status: PASS
+    note: >-
+      tsc --noEmit e next build limpos. Preview validada pelo solicitante.
+      Diff restrito à tabela (:200-390) e ao memorial (:930). Verificado que
+      `dailyChartData` tem 5 consumidores além da tabela (gráficos da 29.32
+      usam impressions/linkClicks): o dev removeu os acumuladores apenas do
+      `totals` LOCAL, preservando o tipo e a construção. Remoção mais ampla
+      teria quebrado os gráficos.
+  performance:
+    status: PASS
+    note: >-
+      8 células por linha em vez de 15; `totals` reduz 4 campos em vez de 7.
+      `marginTone` é recalculado por linha dentro do map — custo desprezível
+      (ternário sobre número), não justifica memoização.
+  security:
+    status: PASS
+    note: >-
+      Sem superfície nova: nenhuma entrada de usuário, nenhuma query, nenhum
+      dangerouslySetInnerHTML. Toda saída passa por fmtCurrency/fmtPercent/
+      fmtNumber/fmtRoas.
+  documentation:
+    status: PASS
+    note: "Story, comentários de código e corpo da PR atualizados e coerentes entre si."
+
+acceptance_criteria_evidence:
+  AC1: "PASS — array 7 entradas + 'Dia' hardcoded = 8; body 8 <TableCell>; footer 8. Alinhados."
+  AC2: "PASS — label 'Margem'; title mantém 'Faturamento Líquido (após fees da plataforma) − Investimento c/ imposto', preservando o escopo que distingue esta margem da margem econômica completa."
+  AC3: "PASS — `r.revenue > 0 ? (r.margin / r.revenue) * 100 : null`; fmtPercent(:161) retorna '—' para null e toFixed(2)+'%' caso contrário."
+  AC4: "PASS — rename puro verificado no diff: `const cpv = div(r.spend, r.salesCount)` → `const cac = div(r.spend, r.salesCount)`. Expressão idêntica."
+  AC4b: "PASS — grep '1\\.1215' em packages/web/{components,lib,app} e packages/api/src retorna zero. Memorial agora descreve gross-up."
+  AC5: "PASS — header itera com title={c.title}; 'Margem %' tem title novo coerente com D3."
+  AC6: "PASS — não tocado. `sortedRows` (:245) continua ordenando o conjunto inteiro antes do slice (:280)."
+  AC7: "PASS — rodapé re-deriva dos somatórios: div(totals.spend, totals.salesCount), div(totals.revenue, totals.spend), (totals.margin/totals.revenue). Nenhuma média de médias."
+  AC8: "PASS — diff restrito à tabela e ao memorial; cards, gráficos, Detalhamento e seletor de período intactos."
+
+issues:
+  - id: QA-01
+    severity: medium
+    category: tests
+    description: >-
+      A mudança reorganiza TRÊS listas posicionais acopladas (array de colunas,
+      células do corpo, células do rodapé) cujo desalinhamento não produz erro
+      de tipo nem de runtime — só valor sob o título errado. Hoje esse
+      acoplamento é protegido por um comentário e por revisão humana. Um teste
+      que afirmasse `PERPETUAL_DAILY_COLUMNS.length + 1 === células do corpo ===
+      células do rodapé` travaria a regressão permanentemente.
+    recommendation: >-
+      Ao instalar vitest na 29.35 (decisão do @po), incluir este teste de
+      alinhamento como primeiro caso. Custo baixo, cobre o modo de falha mais
+      caro deste componente.
+    blocking: false
+
+  - id: QA-02
+    severity: low
+    category: code
+    description: >-
+      `totalsMarginTone` é declarado antes do early return `if (rows.length === 0)
+      return null`, na zona dos hooks/memos, enquanto as demais derivações do
+      componente (totalPages, safePage, pageStart, pageRows) vivem depois dele.
+      Não é violação de Rules of Hooks — é const derivada, não hook — mas quebra
+      a organização interna do componente.
+    recommendation: >-
+      Mover para junto de totalPages/safePage. Não bloqueia; pode entrar como
+      limpeza na 29.34, que toca o mesmo arquivo.
+    blocking: false
+
+waived: []
+
+notes: >-
+  Verdict CONCERNS, não PASS, por causa de QA-01: o check de testes não pode
+  ser marcado OK quando não existe cobertura alguma sobre o ponto mais frágil
+  da mudança. Nenhum dos dois issues bloqueia o merge — ambos são follow-up.
+
+  Registro do que a implementação fez de melhor: o dev encontrou no pré-voo que
+  o rodapé NÃO iterava o array de colunas (a story previa a possibilidade, mas
+  não a confirmara) e tratou as três listas como uma edição atômica. Sem isso, o
+  PR teria passado em tsc, em next build e neste gate, e quebrado só no olho de
+  quem abrisse o dashboard.
