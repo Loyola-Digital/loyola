@@ -1,0 +1,168 @@
+"use client";
+
+/**
+ * VTurb Analytics — hooks.
+ *
+ * O `overview` traz números, série diária, curva de retenção e cliques numa
+ * chamada só. O agrupamento é no servidor de propósito: o VTurb limita
+ * requisições por minuto (60 no plano Basic) e quatro chamadas por aba aberta
+ * queimariam a cota do cliente.
+ */
+
+import { useApiClient } from "@/lib/hooks/use-api-client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+export interface VturbPlayer {
+  id: string;
+  name: string;
+  pitch_time: number | null;
+  duration: number | null;
+  created_at: string;
+}
+
+/** Player já vinculado a uma etapa (registro nosso, não do VTurb). */
+export interface VturbLink {
+  id: string;
+  playerId: string;
+  playerName: string;
+  duration: number | null;
+  pitchTime: number | null;
+}
+
+export interface VturbStats {
+  total_viewed: number;
+  total_viewed_device_uniq: number;
+  total_started: number;
+  total_started_device_uniq: number;
+  total_finished: number;
+  engagement_rate: number;
+  total_clicked: number;
+  total_over_pitch: number;
+  total_under_pitch: number;
+  over_pitch_rate: number;
+  total_conversions: number;
+  overall_conversion_rate: number;
+  total_amount_brl: number;
+  total_amount_usd: number;
+  play_rate: number;
+}
+
+export interface VturbOverview {
+  player: {
+    id: string;
+    playerId: string;
+    name: string;
+    duration: number | null;
+    pitchTime: number | null;
+  };
+  range: { startDate: string; endDate: string; timezone: string };
+  stats: VturbStats;
+  byDay: (VturbStats & { date_key: string })[];
+  /** null quando a VSL não tem duração cadastrada (a API exige pra calcular). */
+  engagement: {
+    average_watched_time: number;
+    engagement_rate: number;
+    grouped_timed: { timed: number; total_users: number }[];
+  } | null;
+  clicks: { timed: number; total_users: number }[];
+}
+
+export function useVturbConnection(projectId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["vturb-connection", projectId],
+    queryFn: () =>
+      apiClient<{ connected: boolean; timezone: string | null; connectedAt: string | null }>(
+        `/api/projects/${projectId}/vturb/connection`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+export function useSaveVturbConnection(projectId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { apiToken: string; timezone?: string }) =>
+      apiClient<{ ok: boolean }>(`/api/projects/${projectId}/vturb/connection`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["vturb-connection", projectId] }),
+  });
+}
+
+/** VSLs da conta VTurb — só busca quando o picker abre (custa cota). */
+export function useVturbPlayers(projectId: string | null, enabled: boolean) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["vturb-players", projectId],
+    queryFn: () => apiClient<{ players: VturbPlayer[] }>(`/api/projects/${projectId}/vturb/players`),
+    enabled: !!projectId && enabled,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useVturbStagePlayers(projectId: string | null, stageId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["vturb-stage-players", projectId, stageId],
+    queryFn: () =>
+      apiClient<{ players: VturbLink[] }>(
+        `/api/projects/${projectId}/stages/${stageId}/vturb/players`,
+      ),
+    enabled: !!projectId && !!stageId,
+  });
+}
+
+export function useLinkVturbPlayer(projectId: string, stageId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      playerId: string;
+      playerName: string;
+      duration?: number;
+      pitchTime?: number;
+    }) =>
+      apiClient<{ id: string }>(`/api/projects/${projectId}/stages/${stageId}/vturb/players`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["vturb-stage-players", projectId, stageId] }),
+  });
+}
+
+export function useUnlinkVturbPlayer(projectId: string, stageId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient<{ ok: boolean }>(
+        `/api/projects/${projectId}/stages/${stageId}/vturb/players/${id}`,
+        { method: "DELETE" },
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["vturb-stage-players", projectId, stageId] }),
+  });
+}
+
+export function useVturbOverview(
+  projectId: string | null,
+  stageId: string | null,
+  linkId: string | null,
+  range: { startDate: string; endDate: string },
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["vturb-overview", projectId, stageId, linkId, range.startDate, range.endDate],
+    queryFn: () =>
+      apiClient<VturbOverview>(
+        `/api/projects/${projectId}/stages/${stageId}/vturb/players/${linkId}/overview` +
+          `?startDate=${range.startDate}&endDate=${range.endDate}`,
+      ),
+    enabled: !!projectId && !!stageId && !!linkId,
+    staleTime: 2 * 60 * 1000,
+    // Segura o render anterior ao trocar de período — sem piscar skeleton.
+    placeholderData: (prev) => prev,
+  });
+}
