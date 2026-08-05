@@ -31,6 +31,13 @@ export interface PerpetualReportConfig {
   taxaPlataformaPct: number | null;
   taxaImpostoPct: number | null;
   taxaOutrosPct: number | null;
+  /**
+   * Story 29.35 — inputs do CAC alvo. `null` = não preenchido, e o cálculo
+   * devolve indisponível com o campo nomeado em vez de assumir um valor.
+   */
+  margemDesejadaPct: number | null;
+  cmv: number | null;
+  gatewayFixo: number | null;
   validado: boolean;
   validadoEm: string | null;
   validadoPor: string | null;
@@ -62,6 +69,10 @@ export interface PerpetualConfigInput {
   taxaPlataformaPct?: number | null;
   taxaImpostoPct?: number | null;
   taxaOutrosPct?: number | null;
+  /** Story 29.35 — inputs do CAC alvo. */
+  margemDesejadaPct?: number | null;
+  cmv?: number | null;
+  gatewayFixo?: number | null;
 }
 
 function basePath(projectId: string, funnelId: string): string {

@@ -2422,6 +2422,18 @@ export const perpetualReportConfigs = pgTable(
     taxaPlataformaPct: numeric("taxa_plataforma_pct", { precision: 6, scale: 4 }),
     taxaImpostoPct: numeric("taxa_imposto_pct", { precision: 6, scale: 4 }),
     taxaOutrosPct: numeric("taxa_outros_pct", { precision: 6, scale: 4 }),
+    /**
+     * Story 29.35 — inputs do CAC alvo (teto de mídia por cliente).
+     *
+     * `margemDesejadaPct` é sobre o ticket BRUTO e precisa embutir equipe,
+     * ferramentas e comissão: nenhum dos três aparece em outra linha da conta,
+     * então a margem realizada sai abaixo da planejada se ficarem de fora.
+     */
+    margemDesejadaPct: numeric("margem_desejada_pct", { precision: 6, scale: 4 }),
+    /** CMV por unidade (frete e embalagem inclusos). Tipicamente 0 em digital. */
+    cmv: numeric("cmv", { precision: 12, scale: 2 }),
+    /** Parcela FIXA do gateway, em R$/transação. O % vive em `taxaPlataformaPct`. */
+    gatewayFixo: numeric("gateway_fixo", { precision: 12, scale: 2 }),
     /** Se os nomes de campanha trazem `videos`/`estaticos` (§C.9). False = seção some, não zera. */
     temSplitFormato: boolean("tem_split_formato").notNull().default(false),
     /** `utm_source` que contam como pago. Fora disso é orgânico e fica fora de CAC/ROAS/margem. */
