@@ -5,8 +5,9 @@ storyTitles:
 verdict: CONCERNS
 reviewedBy: "@qa (Quinn)"
 reviewedAt: "2026-08-05"
+rereviewedAt: "2026-08-05 (2ª passada, após correções)"
 branch: "feat/29.38-perpetual-mvp-unblock"
-commits: ["a2f2f8c", "cd3d567", "c769d37", "ffe59d3"]
+commits: ["a2f2f8c", "cd3d567", "c769d37", "ffe59d3", "f1cc6ca"]
 
 checks:
   code_review:
@@ -203,12 +204,100 @@ issues:
       como descuido de escopo.
     recommendation: "Nenhuma ação. Decisão correta, apenas documentada."
 
+  - id: QA-05
+    severity: medium
+    category: correctness
+    blocking: true
+    description: >-
+      O FORMULÁRIO ACEITA UM GATEWAY QUE O MOTOR REJEITA.
+
+      `perpetual-mvp-analysis.tsx:239` valida `g < 0 || g > 99` — permite **zero**.
+      Mas `assertRate` rejeita zero (U-01), então:
+
+        1. usuário digita `0` em Gateway (%) — leitura legítima: "não pago taxa
+           variável de gateway";
+        2. o formulário aceita e salva;
+        3. a análise inteira aborta com
+           `U-01: gateway de pagamento % = 0 fora de (0, 1]. Provável valor em
+           pontos percentuais — dividir por 100.`
+
+      A mensagem acusa erro de unidade quando o usuário digitou zero de propósito.
+      Ele vai dividir por 100, digitar 0 de novo, e ver o mesmo erro.
+
+      É assimetria introduzida por esta story: a margem, no mesmo formulário,
+      valida `m <= 0` e bloqueia zero com mensagem no campo. O gateway não.
+
+      Confirmei contra o `cac_engine.py`: o engine também aborta com
+      `gateway_pct = 0`, então o PORT está fiel à referência. O defeito é do
+      formulário, que deixa passar o que o motor recusa.
+    recommendation: >-
+      Correção mínima e segura: alinhar com a margem (`g <= 0`) e dizer no toast
+      que, não havendo taxa, o campo deve ficar VAZIO — vazio significa "não
+      informado" e produz análise parcial explícita, que é honesto.
+
+      A alternativa melhor exige decisão do @po: tratar zero como legítimo para
+      CUSTOS, distinguindo-os de taxas de conversão. A justificativa de U-01 no
+      YAML do protocolo (linha 227) é explicitamente sobre conversão — *"taxa
+      zero torna o CAC infinito e quase sempre significa etapa não medida"* — e
+      nada disso vale para um custo. Mas divergir do protocolo é decisão de
+      produto, não de implementação.
+
+  - id: QA-06
+    severity: low
+    category: correctness
+    blocking: false
+    description: >-
+      DIVERGÊNCIA PORT × ENGINE NÃO DOCUMENTADA, NO CMV.
+
+      O cabeçalho do `cac-protocol.ts` declara: *"onde divergir do engine, o
+      engine vence"*. Testei os dois com `cmv = 0`:
+
+        engine (`cac_engine.py`) → ABORTA por U-02 (`valor monetário = 0 não é > 0`)
+        port   (`cac-protocol.ts`) → ACEITA, devolve CAC = 294,80
+
+      O port não aplica U-02 ao CMV. Na prática isso é BOM: a própria migration
+      `0095` descreve o CMV como *"tipicamente 0 em produto digital"*, que é o
+      caso deste projeto. Se o port seguisse o engine à risca, o cenário mais
+      comum abortaria.
+
+      O problema é que a divergência não está declarada em lugar nenhum, e o
+      contrato do módulo diz o oposto. Pré-existente da 29.35, não desta story —
+      registro aqui porque só apareceu ao investigar o QA-05.
+    recommendation: >-
+      Documentar a divergência no cabeçalho do módulo como decisão consciente, ou
+      revisar o contrato de autoridade. O comportamento atual não deve mudar.
+
 waived: []
 
 blocked_by_dependency:
   - "29.38-AC2 — @data-engineer aplica 0095/0096/0097 em produção"
   - "29.38-AC7 — validação end-to-end, depende de AC2 + deploy da API (@devops)"
   - "29.39-AC6 — validação na aplicação, mesma dependência"
+
+rereview_notes: >-
+  2ª PASSADA (após `ffe59d3`). Veredicto mantido em CONCERNS, agora por QA-05.
+
+  QA-01, QA-02 e QA-03 estão RESOLVIDOS e verifiquei cada um por conta própria,
+  não pelo relato. Repeti a medição que apontou o QA-01 — 0 de 2000, era 537 — e
+  sondei extremos que o autor não cobriu (0,01% · 99,99% · 12,345% · soma com
+  erro binário acumulado). Todos limpos.
+
+  A forma da correção merece registro: o helper foi centralizado em vez de
+  corrigido inline nas duas linhas, e o teste principal é uma VARREDURA de 2000
+  taxas. Isso importa porque os valores que se escolhe por instinto — 2,5 · 5 ·
+  15 — passavam mesmo com a implementação ingênua. Foi assim que o defeito
+  entrou, e um punhado de casos escolhidos à mão o deixaria entrar de novo.
+
+  QA-05 é novo e bloqueia: o formulário aceita gateway zero e o motor o rejeita,
+  com uma mensagem que acusa erro de unidade quando o usuário digitou zero de
+  propósito. Confirmei contra o engine de referência que o port está fiel — o
+  defeito é da validação do formulário, e é assimetria com a margem, que no
+  mesmo formulário bloqueia zero corretamente.
+
+  QA-06 apareceu ao investigar o QA-05 e não bloqueia: o port aceita `cmv = 0`
+  enquanto o engine aborta. O comportamento do port é o correto para o negócio
+  (produto digital), mas contradiz o contrato de autoridade declarado no próprio
+  cabeçalho do módulo. É dívida de documentação, herdada da 29.35.
 
 notes: >-
   CONCERNS, com QA-01 marcado blocking.
