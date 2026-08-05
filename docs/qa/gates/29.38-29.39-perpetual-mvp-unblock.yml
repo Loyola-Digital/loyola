@@ -7,7 +7,7 @@ reviewedBy: "@qa (Quinn)"
 reviewedAt: "2026-08-05"
 rereviewedAt: "2026-08-05 (2ª passada, após correções)"
 branch: "feat/29.38-perpetual-mvp-unblock"
-commits: ["a2f2f8c", "cd3d567", "c769d37", "ffe59d3", "f1cc6ca"]
+commits: ["a2f2f8c", "cd3d567", "c769d37", "ffe59d3", "f1cc6ca", "7952dc7"]
 
 checks:
   code_review:
@@ -208,6 +208,20 @@ issues:
     severity: medium
     category: correctness
     blocking: true
+    status: RESOLVIDO
+    resolution: >-
+      Corrigido em `7952dc7`, pela via de fundo e não pela mínima. O dono do
+      produto confirmou em 2026-08-05 que **o CMV é zero em todos os casos**
+      (produto digital), o que estabeleceu que zero em custo é configuração
+      real, não erro de preenchimento.
+
+      `assertCostRate` aceita [0, 1] e é aplicada a imposto e aos dois gateways.
+      `assertRate` segue em (0, 1] e continua valendo na cadeia de conversão,
+      que é onde zero de fato significa "etapa não medida". A margem também
+      segue estrita.
+
+      Cenário real conferido ponta a ponta: CMV 0 + gateway variável 0 →
+      CAC alvo R$ 305,37, status DERIVED, linhas zeradas presentes no memorial.
     description: >-
       O FORMULÁRIO ACEITA UM GATEWAY QUE O MOTOR REJEITA.
 
@@ -246,6 +260,12 @@ issues:
     severity: low
     category: correctness
     blocking: false
+    status: RESOLVIDO
+    resolution: >-
+      Corrigido em `7952dc7`. A divergência passou de acidental a DECLARADA: o
+      cabeçalho do módulo agora diz que existe exatamente uma, nomeia onde
+      (`assertCostRate`), e afirma que qualquer outra é defeito e não decisão.
+      O comportamento não mudou — o que mudou é que agora está escrito.
     description: >-
       DIVERGÊNCIA PORT × ENGINE NÃO DOCUMENTADA, NO CMV.
 
