@@ -428,6 +428,9 @@ export default fp(async function stageComercialRoutes(fastify) {
     const funnelIds = [...new Set(stages.map((s) => s.funnelId))];
     if (funnelIds.length === 0) return { surveys: [], funnelIds };
 
+    // Ordem estável: com N planilhas vinculadas o card mostra as respostas de
+    // todas, e sem ORDER BY a sequência vinha do plano do Postgres — mudava
+    // sozinha entre requests.
     const surveys = await fastify.db
       .select()
       .from(funnelSurveys)
@@ -436,7 +439,8 @@ export default fp(async function stageComercialRoutes(fastify) {
           inArray(funnelSurveys.stageId, stageIds),
           and(inArray(funnelSurveys.funnelId, funnelIds), isNull(funnelSurveys.stageId)),
         ),
-      );
+      )
+      .orderBy(asc(funnelSurveys.createdAt), asc(funnelSurveys.id));
     return { surveys, funnelIds };
   }
 
@@ -1007,6 +1011,17 @@ export default fp(async function stageComercialRoutes(fastify) {
     const targetEmail = normalizeEmail(card.customerEmail);
     const targetPhone = phoneTail8(card.customerPhone);
 
+    // Uma etapa pode ter N planilhas vinculadas e a mesma pessoa responder mais
+    // de uma. Acumulamos TODAS as que casarem — parar na primeira escondia as
+    // respostas das demais sem avisar ninguém.
+    const sources: {
+      surveyId: string;
+      spreadsheetName: string;
+      sheetName: string;
+      matchedBy: "email" | "phone";
+      answers: { label: string; answer: string }[];
+    }[] = [];
+
     for (const survey of surveys) {
       const mapping = (survey.columnMapping ?? {}) as {
         email?: string;
@@ -1066,7 +1081,29 @@ export default fp(async function stageComercialRoutes(fastify) {
         }
       }
 
-      return { matched: true, matchedBy: emailIdx >= 0 && targetEmail && normalizeEmail(row[emailIdx]) === targetEmail ? "email" : "phone", answers };
+      if (answers.length > 0) {
+        sources.push({
+          surveyId: survey.id,
+          spreadsheetName: survey.spreadsheetName,
+          sheetName: survey.sheetName,
+          matchedBy:
+            emailIdx >= 0 && targetEmail && normalizeEmail(row[emailIdx]) === targetEmail
+              ? "email"
+              : "phone",
+          answers,
+        });
+      }
+    }
+
+    if (sources.length > 0) {
+      // `answers` continua achatado para quem já consome o formato antigo; a
+      // atribuição por planilha vive em `sources`.
+      return {
+        matched: true,
+        matchedBy: sources[0].matchedBy,
+        answers: sources.flatMap((s) => s.answers),
+        sources,
+      };
     }
 
     // Fallback (caso real do perpétuo): a pesquisa não está em funnel_surveys —
@@ -1115,13 +1152,24 @@ export default fp(async function stageComercialRoutes(fastify) {
       });
       if (answers.length === 0) continue;
 
+      const matchedBy =
+        emailIdx >= 0 && targetEmail && normalizeEmail(row[emailIdx]) === targetEmail ? "email" : "phone";
       return {
         matched: true,
-        matchedBy: emailIdx >= 0 && targetEmail && normalizeEmail(row[emailIdx]) === targetEmail ? "email" : "phone",
+        matchedBy,
         answers,
+        sources: [
+          {
+            surveyId: sheet.id,
+            spreadsheetName: sheet.spreadsheetName,
+            sheetName: sheet.sheetName,
+            matchedBy,
+            answers,
+          },
+        ],
       };
     }
 
-    return { matched: false, answers: [] };
+    return { matched: false, answers: [], sources: [] };
   });
 });

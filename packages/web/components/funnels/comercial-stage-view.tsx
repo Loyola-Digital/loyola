@@ -375,7 +375,7 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
     syncMutate(undefined, {
       onSuccess: (r) => {
         if (!r.configured) {
-          toast.info("Configure as etapas-fonte ou vincule uma planilha própria (Configurar)");
+          toast.info("Configure as etapas-fonte ou vincule planilhas próprias (Configurar)");
         } else if (r.created > 0 || r.updated > 0) {
           toast.success(
             `Sync: ${r.created} novo${r.created !== 1 ? "s" : ""}, ${r.updated} atualizado${r.updated !== 1 ? "s" : ""}` +
@@ -558,7 +558,7 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                   </div>
                   <p className="text-[11px] text-muted-foreground">
                     {sourceKindDraft === "survey"
-                      ? "Quem respondeu a pesquisa (etapas-fonte e/ou planilha própria) vira card no kanban."
+                      ? "Quem respondeu a pesquisa (etapas-fonte e/ou planilhas próprias) vira card no kanban."
                       : "Quem comprou nessas etapas (planilhas de venda + vendas manuais) vira card no kanban."}
                   </p>
                   {sourceKindDraft !== boardSourceKind && (
@@ -574,7 +574,7 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                   <Label className="text-sm font-medium">Etapas-fonte</Label>
                   <p className="text-[11px] text-muted-foreground">
                     {sourceKindDraft === "survey"
-                      ? "De quais etapas puxar os respondentes da pesquisa. Opcional se você mapear uma planilha própria abaixo."
+                      ? "De quais etapas puxar os respondentes da pesquisa. Opcional se você mapear planilhas próprias abaixo."
                       : "De quais etapas puxar os compradores."}
                   </p>
                   <div className="space-y-1 rounded-md border border-border/40 p-1 max-h-52 overflow-y-auto">
@@ -604,14 +604,16 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                   </div>
                 </div>
 
-                {/* Planilha própria — pesquisa que não vive em nenhuma etapa
-                    anterior, mapeada direto aqui. Reusa a mesma UI da aba
+                {/* Planilhas próprias — pesquisas que não vivem em nenhuma etapa
+                    anterior, mapeadas direto aqui. Reusa a mesma UI da aba
                     Pesquisas (picker do Sheets + mapeamento de colunas). */}
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium">Planilha própria (pesquisa)</Label>
+                  <Label className="text-sm font-medium">Planilhas próprias (pesquisa)</Label>
                   <p className="text-[11px] text-muted-foreground">
-                    Vincule aqui uma pesquisa que não está em nenhuma etapa anterior. Depois de
-                    vincular, use <strong>Mapear</strong> pra apontar as colunas de e-mail e telefone.
+                    Vincule aqui pesquisas que não estão em nenhuma etapa anterior — pode vincular
+                    quantas quiser, os respondentes das várias planilhas se juntam no mesmo kanban.
+                    Depois de vincular, use <strong>Mapear</strong> pra apontar as colunas de e-mail
+                    e telefone.
                   </p>
                   <ul className="text-[11px] text-muted-foreground list-disc pl-4 space-y-0.5">
                     <li>
@@ -625,7 +627,7 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                   </ul>
                   {board && board.ownSurveys === 0 && sourceKindDraft === "survey" && sourceDraft.length === 0 && (
                     <p className="text-[11px] text-amber-500">
-                      Sem etapa-fonte e sem planilha própria não há de onde puxar cards.
+                      Sem etapa-fonte e sem nenhuma planilha própria não há de onde puxar cards.
                     </p>
                   )}
                   <SurveyFunnelTab
@@ -841,7 +843,7 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
           <p className="text-sm text-muted-foreground">
             Selecione as <strong>etapas-fonte</strong> em Configurar — quem comprou nelas vira card aqui.
             <br />
-            Ou vincule uma <strong>planilha própria</strong> de pesquisa, se ela não estiver em nenhuma etapa anterior.
+            Ou vincule <strong>planilhas próprias</strong> de pesquisa (quantas quiser), se elas não estiverem em nenhuma etapa anterior.
           </p>
           <Button variant="outline" size="sm" onClick={() => { setStageName(stage.name); setSettingsOpen(true); }}>
             <Settings2 className="h-3.5 w-3.5 mr-1.5" />
@@ -924,34 +926,63 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                   {surveyLoading ? (
                     <Skeleton className="h-16" />
                   ) : survey?.matched ? (
-                    <div className="space-y-2">
-                      <div className="rounded-lg border border-border/40 divide-y divide-border/40 overflow-hidden">
-                        {survey.answers.map((a, i) => {
-                          const pretty = prettyAnswer(a.answer);
-                          return (
-                            <div key={i} className="px-3 py-2.5">
-                              <p className="text-[11px] leading-snug text-muted-foreground mb-1">{a.label}</p>
-                              {pretty.bool ? (
-                                <span
-                                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                                    pretty.bool === "sim"
-                                      ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                                      : "bg-muted text-muted-foreground"
-                                  }`}
-                                >
-                                  {pretty.text}
-                                </span>
-                              ) : (
-                                <p className="text-sm leading-snug">{pretty.text}</p>
+                    (() => {
+                      // Com N planilhas vinculadas a mesma pessoa pode ter
+                      // respondido mais de uma. Cabeçalho por planilha só
+                      // aparece quando há mais de uma — com uma só, seria ruído.
+                      const groups =
+                        survey.sources && survey.sources.length > 0
+                          ? survey.sources
+                          : [
+                              {
+                                surveyId: "legacy",
+                                spreadsheetName: "",
+                                sheetName: "",
+                                matchedBy: survey.matchedBy ?? "email",
+                                answers: survey.answers,
+                              },
+                            ];
+                      const multi = groups.length > 1;
+                      return (
+                        <div className="space-y-3">
+                          {groups.map((g) => (
+                            <div key={g.surveyId} className="space-y-1.5">
+                              {multi && (
+                                <p className="text-[11px] font-medium text-muted-foreground truncate">
+                                  {g.sheetName || g.spreadsheetName}
+                                </p>
                               )}
+                              <div className="rounded-lg border border-border/40 divide-y divide-border/40 overflow-hidden">
+                                {g.answers.map((a, i) => {
+                                  const pretty = prettyAnswer(a.answer);
+                                  return (
+                                    <div key={i} className="px-3 py-2.5">
+                                      <p className="text-[11px] leading-snug text-muted-foreground mb-1">{a.label}</p>
+                                      {pretty.bool ? (
+                                        <span
+                                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                                            pretty.bool === "sim"
+                                              ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                                              : "bg-muted text-muted-foreground"
+                                          }`}
+                                        >
+                                          {pretty.text}
+                                        </span>
+                                      ) : (
+                                        <p className="text-sm leading-snug">{pretty.text}</p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">
+                                match por {g.matchedBy === "phone" ? "telefone" : "email"}
+                              </p>
                             </div>
-                          );
-                        })}
-                      </div>
-                      <p className="text-[10px] text-muted-foreground">
-                        match por {survey.matchedBy === "phone" ? "telefone" : "email"}
-                      </p>
-                    </div>
+                          ))}
+                        </div>
+                      );
+                    })()
                   ) : (
                     <p className="text-sm text-muted-foreground italic">Sem pesquisa respondida.</p>
                   )}
