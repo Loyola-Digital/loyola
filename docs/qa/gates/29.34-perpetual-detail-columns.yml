@@ -1,0 +1,180 @@
+storyId: "29.34"
+storyTitle: "Perpétuo — reformulação das colunas do Detalhamento (aba Meta Ads)"
+verdict: CONCERNS
+reviewedBy: "@qa (Quinn)"
+reviewedAt: "2026-08-04"
+reReviewedAt: "2026-08-04"
+branch: "feat/29.34-perpetual-detail-columns"
+commit: "a2a9065"
+fixCommit: "46dc774"
+
+checks:
+  code_review:
+    status: PASS
+    note: >-
+      Boas decisões estruturais. `margin` exposta em deriveDetailMetrics em vez
+      de recalculada na tela — Margem e Margem % passam a ser a mesma variável e
+      não podem divergir (verificado: linha 72 calcula, 89 deriva). Tipo/Link
+      somem fora do modo criativo em vez de virar "—", coerente com o que a
+      29.29 fez com Hook/Hold/Body. `creativeTypeLabel` retorna "—" com
+      objectType ausente em vez de assumir "Estático" — recusa de inventar,
+      correta. Comentários registram o PORQUÊ, não o QUÊ.
+  unit_tests:
+    status: CONCERNS
+    note: >-
+      Nenhum teste. `packages/web` segue sem runner — tentei executar
+      perpetual-detail-metrics.test.ts com node --experimental-strip-types e
+      falhou por module type. É o mesmo QA-01 aberto na 29.33, agora sobre uma
+      story que mexe em margem e agrupamento. Ver QA-05.
+  acceptance_criteria:
+    status: PASS
+    note: "11 de 11 atendidos. AC5/AC6 tinham ressalva material por QA-03; resolvida em 46dc774 — a UI agora declara o corte."
+  no_regressions:
+    status: PASS
+    note: >-
+      tsc --noEmit e next build limpos (build inclui lint). Verificado que o
+      imposto NÃO é reaplicado: applyMetaTax na :900 pertence ao Quadro Diário;
+      o Detalhamento usa base.spend já tributado pelo backend, conforme a
+      correção da 29.27. CTR e CPC preservam o memorial de fórmula ao mudarem de
+      posição — o dev restaurou após o lint acusar os imports órfãos.
+  performance:
+    status: PASS
+    note: >-
+      Lote único, cache 30min, e desde 46dc774 o frontend envia só o que cabe —
+      a URL deixou de crescer com o número de linhas. QA-04 resolvido.
+  security:
+    status: PASS
+    note: >-
+      Coluna Link usa target="_blank" com rel="noopener noreferrer" (AC6). href
+      só é renderizado quando a URL existe — sem href vazio. Rota ad-creatives
+      valida projectId e checa guestCanAccessTraffic antes de responder.
+  documentation:
+    status: PASS
+    note: "Story, comentários e mensagem de commit coerentes entre si."
+
+acceptance_criteria_evidence:
+  AC1: "PASS — Detalhamento segue na aba Meta Ads, mesmo seletor, nenhuma cópia criada."
+  AC2: "PASS — com showVideoCols=false somem Tipo, Link, Hook, Hold, Body, CTR, CPC e Tx Conversão: 17 − 8 = 9 colunas."
+  AC3: "PASS — verificado no fonte: `margin` calculada uma vez (:72) e `marginPct` derivada dela (:89). Não é possível divergirem."
+  AC4: "PASS — 17 headers na ordem exata do AC, conferidos um a um."
+  AC5: "PASS na letra, RESSALVA — ver QA-03. `creativeTypeLabel` trata VIDEO/outro/ausente corretamente, mas a causa mais provável de 'ausente' hoje é truncamento, não falta de dado na Meta."
+  AC6: "PASS na letra, mesma ressalva de QA-03. rel/target corretos; sem href vazio."
+  AC7: "PASS — verificação cruzada header × switch: zero colunas ordenáveis sem case e zero cases órfãos. Margem, Vendas e Tx Conversão ganharam case; CPM e Margem/Venda foram removidos."
+  AC8: "PASS — `topSpender` via reduce por maior spend. Corrige defeito real: o código anterior usava members[0], que é a ordem de chegada do Map."
+  AC9: "PASS — nenhuma reaplicação de imposto no Detalhamento; base.spend chega tributado do backend."
+  AC10: "PASS por herança — perpetual-sales-data.ts aplica isRevenueBucket. A story não alterou este caminho; não verifiquei end-to-end (seria teste de integração)."
+  AC11: "PASS com ressalva — batch confirmado nas duas pontas: useAdCreatives envia ?adIds=a,b,c e o backend chama a Meta com ?ids=. Um request por lote, cache 30min, enabled só no modo criativo. Ressalva em QA-03."
+
+issues:
+  - id: QA-03
+    status: RESOLVIDO em 46dc774
+    severity: high
+    category: correctness
+    description: >-
+      TRUNCAMENTO SILENCIOSO. A rota /ad-creatives faz
+      `adIds.split(",").filter(Boolean).slice(0, 50)` — descarta tudo além do
+      50º ad_id, sem avisar o chamador. O frontend envia a lista inteira e não
+      sabe que foi cortada.
+
+      Consequência: num Detalhamento "Por Criativo" com mais de 50 linhas — comum
+      numa conta ativa — os criativos além do 50º exibem "—" em Tipo e Link. O
+      gestor lê isso como "a Meta não tem esse dado", quando o real é "pedimos
+      só os 50 primeiros". Os ACs 5 e 6 passam na letra, porque ambos
+      especificam "—" para dado ausente; o que eles não previram é que a ausência
+      seria fabricada por nós.
+
+      A limitação é PRÉ-EXISTENTE do endpoint (Story 8.1), não introduzida aqui.
+      Mas a 29.34 é o primeiro consumidor que a expõe numa tabela de N linhas —
+      antes disso o limite não incomodava ninguém.
+    recommendation: >-
+      Mínimo antes do merge: tornar o corte VISÍVEL. O backend devolve quantos
+      recebeu e quantos processou; a tabela exibe algo como "Tipo/Link
+      resolvidos para os 50 criativos de maior investimento". Como as linhas já
+      são ordenáveis por investimento, cortar pelos 50 maiores é defensável — o
+      que não é defensável é cortar sem dizer.
+
+      Alternativa maior (fora desta story): paginar o lote em chunks de 50 no
+      backend, respeitando o rate limit.
+    blocking: false
+
+  - id: QA-04
+    status: RESOLVIDO em 46dc774
+    severity: medium
+    category: efficiency
+    description: >-
+      O frontend envia todos os ad_ids na query string, sem limite. Com 200
+      criativos a URL passa de ~3.400 caracteres. O backend corta em 50 DEPOIS
+      de receber, então o excedente trafega para ser descartado — e proxies com
+      limite de 2.048 caracteres na URL podem truncar no meio de um id,
+      produzindo um id inválido no fim da lista.
+    recommendation: >-
+      Limitar no frontend antes de montar a query, alinhado ao que o backend
+      aceita. Resolve junto com QA-03 se o corte passar a ser explícito.
+    blocking: false
+
+  - id: QA-06
+    status: ABERTO
+    severity: low
+    category: robustness
+    description: >-
+      Em `creativeAdIds`, o `.filter(Boolean)` roda DEPOIS do `.slice(0, 50)`.
+      Se alguma das 50 linhas de maior investimento tiver `representativeAdId`
+      vazio, ela é descartada e o lote sai com menos de 50 — capacidade
+      desperdiçada, e um criativo que caberia fica sem Tipo/Link.
+    recommendation: >-
+      Filtrar antes de fatiar. Na prática `representativeAdId` vem de
+      `topSpender.campaignId`, sempre preenchido em dados da Meta, então o caso
+      é raro. Nit de robustez, não defeito observável hoje.
+    blocking: false
+
+  - id: QA-05
+    severity: medium
+    category: tests
+    description: >-
+      Segunda story consecutiva mexendo em margem e agrupamento sem teste
+      executável. Especificamente sem cobertura: (a) `margin` e `marginPct`
+      derivando da mesma variável; (b) `topSpender` escolhendo o maior
+      investimento e não members[0]; (c) alinhamento header × switch de
+      ordenação. Os três são verificáveis em teste puro, sem DOM.
+    recommendation: >-
+      Reforça QA-01 da 29.33. Ao instalar vitest na 29.35, cobrir estes três
+      casos além do alinhamento de colunas.
+    blocking: false
+
+waived: []
+
+notes: >-
+  CONCERNS, não PASS, por QA-03: a feature entrega dado incompleto sem sinalizar,
+  e o modo de falha é o pior tipo — silencioso e indistinguível de dado ausente
+  legítimo.
+
+  Não é FAIL porque nada quebra, a degradação é graciosa, o limite é herdado do
+  endpoint e a correção mínima (tornar o corte visível) é pequena e não exige
+  rediscutir a implementação. Mas deve entrar ANTES do merge: o custo de
+  descobrir isso em produção é um gestor concluindo que metade dos criativos não
+  tem link.
+
+  Registro do que a implementação fez de melhor: expor `margin` em
+  deriveDetailMetrics em vez de recalcular na tela. Isso torna a divergência
+  entre Margem e Margem % estruturalmente impossível, em vez de depender de
+  quem escreve a próxima tela lembrar da regra.
+
+reReview:
+  at: "2026-08-04"
+  fixCommit: "46dc774"
+  verdictChange: "CONCERNS → CONCERNS (bloqueadores práticos resolvidos; QA-05 mantém o check de testes fora de OK)"
+  verified:
+    - "QA-03 RESOLVIDO — backend devolve `requested`/`limit` (campos aditivos, não quebram consumidor antigo); a UI exibe aviso âmbar quando há corte, dizendo quantas linhas mostram '—' por limite e não por falta de dado."
+    - "QA-04 RESOLVIDO — frontend passou a enviar só o que cabe, eliminando o tráfego descartado e o risco de proxy cortar id no meio."
+    - "Melhoria além do pedido: manda os 50 de MAIOR INVESTIMENTO, não os 50 primeiros. Eu havia sugerido como alternativa; o dev implementou. Faz o corte cair sobre quem menos pesa no resultado."
+    - "`[...detailRows]` antes do `.sort()` — cópia defensiva; `.sort()` muta o array e detailRows é memo compartilhado. Correto."
+    - "`CREATIVE_BATCH_LIMIT` no escopo do módulo, não dentro do componente — não vira dependência instável de useMemo."
+    - "Contagem do aviso está correta: `detailRows.length - LIMIT` são exatamente as omitidas POR LIMITE. Linhas que enviamos mas a Meta não resolveu também exibem '—', e essas não entram na conta — coerente com o texto, que fala só do corte."
+    - "tsc web + api limpos; next build limpo."
+  newIssues:
+    - "QA-06 (low) — `.filter(Boolean)` depois do `.slice()`; ver acima. Não bloqueia."
+  note: >-
+    O fix ataca a causa, não o sintoma: em vez de esconder o '—', explica de
+    onde ele vem. O limite de 50 continua protegendo o rate limit — que é o
+    motivo de ele existir.
+

@@ -1,0 +1,99 @@
+storyId: "29.36"
+storyTitle: "Perpétuo — cadeia de conversão por arquitetura e entrada manual de taxas"
+verdict: CONCERNS
+reviewedBy: "@qa (Quinn)"
+reviewedAt: "2026-08-05"
+firstVerdict: FAIL
+reReviewedAt: "2026-08-05"
+branch: "feat/29.36-perpetual-funnel-chain"
+commit: "638413d"
+fixCommit: "73cb866"
+
+checks:
+  code_review:
+    status: PASS
+    note: >-
+      Os 7 templates codificam a semântica das bases (`numerator`/`denominator`
+      por etapa), que é o que torna CHAIN-01 verificável em vez de convenção.
+      `sales_page` carrega o `chainDefect` do protocolo e a UI exige a leitura
+      ANTES de calcular. O `PUT` preserva campos ausentes do body em vez de
+      sobrescrever com `{}` — sem isso, salvar a margem apagaria as taxas.
+  unit_tests:
+    status: PASS
+    note: >-
+      153 testes. Destaque para o que prova por que GR-01.d existe: assumir 100%
+      numa etapa não medida deixa o CAC 5× melhor, e o teste compara os dois
+      números lado a lado.
+  acceptance_criteria:
+    status: PASS
+    note: "10 de 10 — após a correção do blocker."
+  no_regressions:
+    status: PASS
+    note: "tsc web+api limpos, build limpo. Nenhuma tela existente alterada."
+  performance:
+    status: PASS
+    note: "Cálculo puro em memória; nenhuma requisição nova."
+  security:
+    status: PASS
+    note: >-
+      Schema zod do `manualRates` exige `value` em (0,1], `source` não vazio e
+      janela em formato ISO — o backend rejeita taxa em pontos percentuais antes
+      de gravar, não só na tela.
+  documentation:
+    status: PASS
+    note: "A migration documenta por que JSONB e não tabela; os comentários explicam decisões."
+
+issues:
+  - id: QA-09
+    status: RESOLVIDO em 73cb866
+    severity: critical
+    category: correctness
+    description: >-
+      BLOCKER — o CAC decomposto NUNCA calculava. `connect_rate` ficava sem
+      valor e sem campo para digitar: o template a marcava como "analytics", o
+      sistema não fornecia o número, e o campo de edição só aparecia para
+      `source === "manual"`. Como GR-01.d derruba o cálculo quando falta uma
+      etapa, e connect_rate está em todas as 7 arquiteturas (regra R2 — nunca
+      sai da cadeia), a funcionalidade principal da story não entregava nada.
+
+      A investigação do dev mostrou que era MAIOR: seis etapas marcadas
+      "analytics" (connect_rate, conv_lead, opt_in, presell_conv, registration,
+      vsl_connect) e o sistema fornece zero. Corrigir só connect_rate teria
+      deixado 4 das 7 arquiteturas quebradas — e o gate teria passado.
+    resolution: >-
+      Editabilidade passou a derivar do que o sistema FORNECE, não do `source`
+      declarado. Auto-corretivo: quando a integração existir, o campo some
+      sozinho. Verificado que o fix cobre os dois pontos de decisão (linha 103,
+      montagem da cadeia; linha 285, botão de edição) e que `source` segue
+      documentando a fonte ideal na coluna Origem.
+    blocking: true
+
+  - id: QA-10
+    severity: low
+    category: tests
+    description: >-
+      O `SYSTEM_PROVIDES` do teste de regressão é uma constante duplicada do que
+      `measuredRates` faz no componente. Se a tela passar a fornecer uma etapa
+      nova e ninguém atualizar a constante, o teste segue verde testando um
+      mundo que não existe mais.
+    recommendation: >-
+      Exportar a lista de chaves que o sistema fornece de um único lugar e
+      importá-la nos dois. Baixo risco hoje (uma chave só), mas o acoplamento
+      por cópia envelhece mal.
+    blocking: false
+
+notes: >-
+  Primeiro FAIL desta sequência de stories, e o único achado até aqui que
+  impedia a feature de funcionar — os anteriores eram degradação graciosa ou
+  dívida técnica.
+
+  Duas coisas valem registro. A primeira: o defeito não era detectável por
+  typecheck nem por build, porque tipo e comportamento estavam ambos corretos —
+  o que divergia era a INTENÇÃO declarada num comentário ("fica como manual") e
+  o que o template dizia. Só leitura cruzada de três arquivos pegava.
+
+  A segunda: o dev não se limitou a corrigir o que eu apontei. Foi verificar
+  quantas outras etapas tinham o mesmo problema, achou seis, e trocou a
+  abordagem em vez de remendar a chave que eu citei. Se tivesse corrigido
+  apenas `connect_rate`, o gate teria passado e quatro arquiteturas
+  continuariam inertes em produção.

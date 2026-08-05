@@ -45,6 +45,25 @@ export interface PerpetualReportConfig {
   validado: boolean;
   validadoEm: Date | null;
   validadoPor: string | null;
+  /**
+   * Story 29.35 — inputs do CAC alvo (`reverse_calculation` do protocolo).
+   *
+   * `null` significa NÃO PREENCHIDO, e o CAC alvo sai como indisponível com o
+   * campo nomeado. Não existe default: um valor plausível aqui produziria um
+   * teto de mídia inventado, que é o erro mais caro que este cálculo pode
+   * cometer (GR-01.a).
+   */
+  margemDesejadaPct: number | null;
+  /** CMV por unidade, em reais. */
+  cmv: number | null;
+  /** Parcela fixa do gateway, em R$/transação. */
+  gatewayFixo: number | null;
+  /** Story 29.36 — arquitetura declarada e taxas digitadas. */
+  funnelArchitecture: string | null;
+  chainDefectReading: string | null;
+  manualRates: Record<string, { value: number; source: string; windowStart: string; windowEnd: string; measuredAt: string }>;
+  /** Story 29.37 — tetos com procedência. */
+  ceilings: Record<string, { value: number; source: string; note?: string }>;
   /** Gross-up de mídia já resolvido (override do funil → META_TAX_RATE). */
   impostoPct: number;
   impostoOrigem: RateOrigem;
@@ -241,6 +260,16 @@ export async function loadPerpetualReportConfigRaw(
     taxaPlataformaPct: toFiniteNumber(row.cfg.taxaPlataformaPct),
     taxaImpostoPct: toFiniteNumber(row.cfg.taxaImpostoPct),
     taxaOutrosPct: toFiniteNumber(row.cfg.taxaOutrosPct),
+    // Story 29.35 — inputs do CAC alvo. `toFiniteNumber` devolve null quando
+    // a coluna está vazia, e é assim que o cálculo sabe que falta dado em vez
+    // de assumir zero (que seria um teto de mídia inventado).
+    margemDesejadaPct: toFiniteNumber(row.cfg.margemDesejadaPct),
+    cmv: toFiniteNumber(row.cfg.cmv),
+    gatewayFixo: toFiniteNumber(row.cfg.gatewayFixo),
+    funnelArchitecture: row.cfg.funnelArchitecture,
+    chainDefectReading: row.cfg.chainDefectReading,
+    manualRates: row.cfg.manualRates ?? {},
+    ceilings: row.cfg.ceilings ?? {},
   };
 }
 

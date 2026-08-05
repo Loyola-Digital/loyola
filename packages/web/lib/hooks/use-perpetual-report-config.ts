@@ -31,6 +31,22 @@ export interface PerpetualReportConfig {
   taxaPlataformaPct: number | null;
   taxaImpostoPct: number | null;
   taxaOutrosPct: number | null;
+  /**
+   * Story 29.35 — inputs do CAC alvo. `null` = não preenchido, e o cálculo
+   * devolve indisponível com o campo nomeado em vez de assumir um valor.
+   */
+  margemDesejadaPct: number | null;
+  cmv: number | null;
+  gatewayFixo: number | null;
+  /** Story 29.36 — arquitetura declarada e taxas digitadas com proveniência. */
+  funnelArchitecture: string | null;
+  chainDefectReading: string | null;
+  manualRates: Record<
+    string,
+    { value: number; source: string; windowStart: string; windowEnd: string; measuredAt: string }
+  >;
+  /** Story 29.37 — tetos com procedência. */
+  ceilings: Record<string, { value: number; source: string; note?: string }>;
   validado: boolean;
   validadoEm: string | null;
   validadoPor: string | null;
@@ -62,6 +78,19 @@ export interface PerpetualConfigInput {
   taxaPlataformaPct?: number | null;
   taxaImpostoPct?: number | null;
   taxaOutrosPct?: number | null;
+  /** Story 29.35 — inputs do CAC alvo. */
+  margemDesejadaPct?: number | null;
+  cmv?: number | null;
+  gatewayFixo?: number | null;
+  /** Story 29.36 — cadeia. */
+  funnelArchitecture?: string | null;
+  chainDefectReading?: string | null;
+  manualRates?: Record<
+    string,
+    { value: number; source: string; windowStart: string; windowEnd: string; measuredAt: string }
+  >;
+  /** Story 29.37 — tetos. */
+  ceilings?: Record<string, { value: number; source: string; note?: string }>;
 }
 
 function basePath(projectId: string, funnelId: string): string {

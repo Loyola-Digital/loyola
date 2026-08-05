@@ -1,0 +1,133 @@
+storyId: "29.35"
+storyTitle: "Perpétuo — aba Análise MVP e CAC alvo"
+verdict: CONCERNS
+reviewedBy: "@qa (Quinn)"
+reviewedAt: "2026-08-05"
+branch: "feat/29.35-perpetual-mvp-target-cac"
+commit: "c2a805f"
+
+checks:
+  code_review:
+    status: PASS
+    note: >-
+      Melhor código das três stories. As guardas do protocolo ABORTAM em vez de
+      degradar, e o componente trata `ProtocolViolation` mostrando o motivo na
+      tela — não engole a exceção nem exibe número plausível. Investimento vem
+      de `useTrafficOverview` e ticket de `ticketMedioBruto` em vez de
+      reagregados localmente: decisão deliberada para não repetir o bug de dupla
+      contagem do bulk diário. Conversão %→fração acontece na borda (formulário),
+      nunca dentro da fórmula.
+  unit_tests:
+    status: PASS
+    note: >-
+      Primeira vez em três stories que este check passa. 108 testes, 7 arquivos.
+      18 casos novos cobrindo paridade com o engine, guardas GR-01/RC-01/U-01/
+      ROUND-01 e os vereditos de gap. Resolve QA-01 (29.33) e boa parte de
+      QA-05 (29.34).
+  acceptance_criteria:
+    status: PASS
+    note: "9 de 9 atendidos — evidência abaixo."
+  no_regressions:
+    status: PASS
+    note: >-
+      tsc web + api limpos, next build limpo. As 6 falhas de teste da API são
+      PRÉ-EXISTENTES — provado por comparação: 6 arquivos falham na main limpa
+      (via git stash) e os mesmos 6 falham com as mudanças. Os 3 arquivos de
+      fixture que a story tocou passam.
+  performance:
+    status: PASS
+    note: >-
+      Dois hooks novos por render da aba (`useTrafficOverview` e
+      `usePerpetualReportConfig`), ambos com staleTime e queryKey estável. Aba
+      só monta quando `funnelType === "perpetual"`, então zero custo em
+      lançamento.
+  security:
+    status: PASS
+    note: >-
+      Sem superfície nova. A rota PUT reusada já valida role (`guest` recebe
+      403) e o schema zod agora cobre os três campos: `rate` para a margem
+      (fração, rejeita pontos percentuais) e `min(0)` para os valores em reais.
+  documentation:
+    status: PASS
+    note: >-
+      Comentários explicam decisões, não mecânica. A migration documenta o que
+      NÃO está nela e por quê. `vitest.config.ts` registra a exclusão dos
+      `.test.tsx` como decisão deliberada — sem isso pareceria descuido daqui a
+      três meses.
+
+acceptance_criteria_evidence:
+  AC1: "PASS — TabsTrigger 'Análise MVP' logo após Meta Ads, gated por funnelType === 'perpetual'. TabsContent também é condicional, então o componente nem monta em lançamento."
+  AC2: "PASS — nenhuma aba existente alterada; a nova é aditiva."
+  AC3: "PASS — coberto por teste: R$ 204,55 com os inputs do protocolo, memorial linha a linha renderizado, aviso D7 presente, input ausente devolve null com o campo nomeado."
+  AC4: "PASS — RC-01 testado nas duas direções: aborta com NET_OF_REFUNDS + provisão > 0, e aceita com provisões zeradas (R$ 245,05)."
+  AC5: "PASS — realizado, alvo e limiar exibidos lado a lado; o texto declara que ambos estão em base caixa e que não há linha de imposto de mídia no alvo (MTAX-04)."
+  AC6: "PASS — `StatusTag` renderiza o rótulo de derivação; o motor devolve `status` em toda saída."
+  AC7: "PASS — as 4 seções da fatia presentes (02, 05, 06, 11), com a 02 marcando a análise como PARCIAL no topo quando há input faltando."
+  AC8: "PASS — 18 casos de teste, incluindo os valores de referência do engine e a prova da divergência de arredondamento."
+  AC9: "PASS — formulário com os 3 campos, `saveConfig.mutateAsync`, persistência em perpetual_report_configs, e os herdados (imposto, gateway %) exibidos em leitura para não criar duas fontes editáveis do mesmo campo."
+
+issues:
+  - id: QA-07
+    severity: medium
+    category: correctness
+    description: >-
+      PERÍODO DESSINCRONIZADO ENTRE ABAS. A aba Análise MVP recebe
+      `days={paidSalesDays}` — um estado da PÁGINA, default 90, cujo seletor
+      vive dentro da aba Meta Ads, na seção de vendas manuais. Já o
+      `PerpetualDashboard` tem estado PRÓPRIO (`const [days, setDays] =
+      useState(90)` na :742) com seu próprio DayRangePicker e suporte a
+      customRange.
+
+      Três consequências:
+        1. a aba MVP não tem seletor de período — o usuário não pode mudá-lo;
+        2. mudar o período no dashboard NÃO reflete na MVP;
+        3. o CAC realizado da MVP pode ser de 90 dias enquanto a aba Meta Ads
+           mostra 7 — dois valores para a mesma métrica em abas vizinhas.
+
+      Não é violação técnica (cada aba é coerente internamente), mas contraria o
+      espírito de AGG-01/ST-07 do protocolo, que exige janela homogênea para que
+      números sejam comparáveis. E é o tipo de divergência que o usuário
+      atribui a bug de cálculo, não a período diferente.
+
+      `customRange` é prop opcional do componente e a página nunca a passa —
+      sintoma do mesmo problema.
+    recommendation: >-
+      Mínimo: DayRangePicker próprio na aba MVP, para o período ser explícito e
+      controlável. Melhor: elevar o estado de período para a página e compartilhar
+      com o PerpetualDashboard — mas isso mexe em componente fora do escopo desta
+      story e merece decisão à parte.
+    blocking: false
+
+  - id: QA-08
+    severity: low
+    category: tests
+    description: >-
+      Os 4 arquivos `.test.tsx` de componente seguem fora do runner. A decisão
+      está documentada no vitest.config.ts e é defensável para esta story, mas
+      permanece como dívida: são testes escritos que nunca rodaram, e quanto mais
+      tempo passa, mais provável que tenham apodrecido junto com os componentes.
+    recommendation: >-
+      Story própria para ligar jsdom + testing-library e sanear os 4. Estimar
+      considerando que podem falhar de saída, como falharam 2 dos 6 de lib/utils.
+    blocking: false
+
+resolved_from_previous:
+  - "QA-01 (29.33) — alinhamento de colunas sem teste: o runner existe agora; o caso específico de alinhamento ainda não foi escrito, mas deixou de ser impossível."
+  - "QA-05 (29.34) — margin/marginPct e topSpender sem cobertura: idem; a infra está pronta."
+  - "QA-06 (29.34) — `.filter` depois do `.slice`: NÃO tocado nesta story, segue aberto."
+
+waived: []
+
+notes: >-
+  CONCERNS por QA-07. Nenhum dos dois issues bloqueia merge, mas o período
+  dessincronizado é o tipo de coisa que gera chamado de suporte — o usuário vê
+  dois CAC diferentes em abas vizinhas e conclui que o sistema está errado,
+  quando o sistema está certo e as janelas é que diferem.
+
+  Registro do que a implementação fez de melhor: o teste de paridade pegou um
+  bug do próprio autor. O port derivava o limiar de kill/continue do valor
+  ARREDONDADO em vez do exato — violando ROUND-01, que o mesmo autor havia
+  documentado no cabeçalho do módulo três funções acima. É exatamente para isso
+  que existe teste de paridade contra implementação de referência, e é a
+  primeira vez nesta sequência de stories que um defeito foi pego por teste em
+  vez de revisão manual.

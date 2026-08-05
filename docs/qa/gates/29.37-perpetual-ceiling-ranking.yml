@@ -1,0 +1,94 @@
+storyId: "29.37"
+storyTitle: "Perpétuo — método do teto, ranking de prioridades e ação recomendada"
+verdict: CONCERNS
+reviewedBy: "@qa (Quinn)"
+reviewedAt: "2026-08-05"
+branch: "feat/29.37-perpetual-ceiling-ranking"
+commit: "1244c9e"
+dependsOn: "29.36 — o ranking opera sobre a cadeia; o gate só rodou após o blocker QA-09 ser corrigido"
+
+checks:
+  code_review:
+    status: PASS
+    note: >-
+      O ranking recebe as taxas da cadeia por callback em vez de remontá-las —
+      duas montagens da mesma cadeia divergiriam. `Z_TABLE` é tabelada e nível
+      fora dela ABORTA, em vez de aproximar o quantil: um z inventado muda quem
+      empata com quem, ou seja, muda a ordem sem ninguém perceber. A coluna do
+      deck aparece na tabela mas nunca ordena, e o texto explica por quê.
+  unit_tests:
+    status: PASS
+    note: >-
+      Todos os valores de referência do engine reproduzidos: as 7 quedas reais,
+      fator composto 0,12047 (−87,95%), CAC no teto R$ 41,83, e o intervalo do
+      Cloudflare 19,35%–27,84%. Dois testes merecem destaque — o contraexemplo
+      de D2, que prova a inversão de ordem, e o que afirma que a soma das quedas
+      passa de 100%, tornando o efeito multiplicativo uma necessidade
+      aritmética e não uma escolha.
+  acceptance_criteria:
+    status: PASS
+    note: "9 de 9."
+  no_regressions:
+    status: PASS
+    note: "tsc web+api limpos, build limpo."
+  performance:
+    status: PASS
+    note: >-
+      Wilson é O(1) por variável, calculado em memória. O agrupamento por
+      sobreposição de IC é single-linkage sobre ≤ 8 linhas — irrelevante.
+  security:
+    status: PASS
+    note: >-
+      `ceilings.source` é `z.enum` com os 4 valores que CEIL-01 autoriza: o
+      backend rejeita procedência inventada, não só a tela.
+  documentation:
+    status: PASS
+    note: >-
+      A migration explica por que estimativa e extrapolação não são fontes
+      aceitas. O `diagnostic-tree.ts` registra o racional de cada ação, incluindo
+      por que connect_rate precisa das DUAS partes do Cloudflare.
+
+issues:
+  - id: QA-11
+    severity: medium
+    category: correctness
+    description: >-
+      A story NASCE DEGRADADA e isso está correto — mas por um motivo que vale
+      registrar antes que alguém tente "consertar". O ranking passa
+      `successes: null, trials: null` para toda linha, porque a entrada manual
+      da 29.36 fornece a TAXA e não a CONTAGEM. Sem volume não há intervalo de
+      Wilson, então `STATISTICAL` degrada para `LEXICOGRAPHIC` em 100% dos casos
+      reais de hoje.
+
+      O risco não é a degradação: é alguém no futuro "resolver" isso estimando
+      volume a partir das taxas, que é exatamente o que GR-01 proíbe. O
+      protocolo prefere declarar a degradação a inventar o denominador.
+    recommendation: >-
+      Quando a instrumentação de VTurb chegar, ela deve trazer CONTAGENS, não
+      só taxas — é o que devolve o modo estatístico. Até lá, a declaração no
+      topo da seção é o comportamento correto.
+    blocking: false
+
+  - id: QA-12
+    severity: low
+    category: code
+    description: >-
+      `chainPosition` é derivado de `rates.indexOf(r) + 1` dentro de um `map`
+      sobre o mesmo array — O(n²) e, mais relevante, frágil: se a cadeia
+      passar a ter duas etapas com o mesmo objeto, `indexOf` devolve a primeira.
+      Com ≤ 8 etapas o custo é irrelevante, mas o índice do `map` já está
+      disponível.
+    recommendation: "Usar o índice do próprio `map`."
+    blocking: false
+
+notes: >-
+  CONCERNS por QA-11, que não é defeito e sim uma propriedade da story que
+  precisa estar documentada: o modo estatístico existe, está testado, e não vai
+  rodar até haver contagens. Aprovar sem registrar isso deixaria a próxima
+  pessoa achando que o Wilson está quebrado.
+
+  O que esta story faz de melhor é recusar-se a ser útil quando não pode ser
+  honesta: teto sem procedência não entra no ranking, nível de confiança não
+  tabelado aborta, e a degradação aparece no topo da seção em vez de num
+  rodapé. É o oposto do modo de falha que derrubou a 29.36 — lá o silêncio
+  escondia o problema; aqui o barulho é a feature.

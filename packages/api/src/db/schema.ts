@@ -2422,6 +2422,39 @@ export const perpetualReportConfigs = pgTable(
     taxaPlataformaPct: numeric("taxa_plataforma_pct", { precision: 6, scale: 4 }),
     taxaImpostoPct: numeric("taxa_imposto_pct", { precision: 6, scale: 4 }),
     taxaOutrosPct: numeric("taxa_outros_pct", { precision: 6, scale: 4 }),
+    /**
+     * Story 29.35 — inputs do CAC alvo (teto de mídia por cliente).
+     *
+     * `margemDesejadaPct` é sobre o ticket BRUTO e precisa embutir equipe,
+     * ferramentas e comissão: nenhum dos três aparece em outra linha da conta,
+     * então a margem realizada sai abaixo da planejada se ficarem de fora.
+     */
+    margemDesejadaPct: numeric("margem_desejada_pct", { precision: 6, scale: 4 }),
+    /** CMV por unidade (frete e embalagem inclusos). Tipicamente 0 em digital. */
+    cmv: numeric("cmv", { precision: 12, scale: 2 }),
+    /** Parcela FIXA do gateway, em R$/transação. O % vive em `taxaPlataformaPct`. */
+    gatewayFixo: numeric("gateway_fixo", { precision: 12, scale: 2 }),
+    /**
+     * Story 29.36 — taxas digitadas por etapa, com proveniência.
+     * A janela de medição vem junto do valor: cadeia que mistura janelas não
+     * tem significado, e o protocolo manda abortar (AGG-01/ST-07).
+     */
+    manualRates: jsonb("manual_rates")
+      .$type<Record<string, { value: number; source: string; windowStart: string; windowEnd: string; measuredAt: string }>>()
+      .notNull()
+      .default({}),
+    /** Qual dos 7 templates descreve o funil. NULL = cadeia não calculada. */
+    funnelArchitecture: varchar("funnel_architecture", { length: 40 }),
+    /** Só para `sales_page`, que tem defeito de cadeia declarado no protocolo. */
+    chainDefectReading: varchar("chain_defect_reading", { length: 120 }),
+    /**
+     * Story 29.37 — teto por variável, com procedência. Sem `source` a
+     * variável não entra no ranking (CEIL-01).
+     */
+    ceilings: jsonb("ceilings")
+      .$type<Record<string, { value: number; source: string; note?: string }>>()
+      .notNull()
+      .default({}),
     /** Se os nomes de campanha trazem `videos`/`estaticos` (§C.9). False = seção some, não zera. */
     temSplitFormato: boolean("tem_split_formato").notNull().default(false),
     /** `utm_source` que contam como pago. Fora disso é orgânico e fica fora de CAC/ROAS/margem. */

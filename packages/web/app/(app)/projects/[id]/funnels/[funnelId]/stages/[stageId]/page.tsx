@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail, BarChart3, Star, FlaskConical, FileBarChart2, Video } from "lucide-react";
+import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail, BarChart3, Star, FlaskConical, FileBarChart2, Video, Target } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { LaunchDashboard } from "@/components/funnels/launch-dashboard";
 import { MetaAdsTesteTab } from "@/components/funnels/meta-ads-teste-section";
 import { PerpetualDashboard } from "@/components/funnels/perpetual-dashboard";
+import { PerpetualMvpAnalysis } from "@/components/funnels/perpetual-mvp-analysis";
 import { YouTubeFunnelSection } from "@/components/funnels/youtube-funnel-section";
 import { SurveyFunnelTab } from "@/components/funnels/survey-funnel-tab";
 import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-tab";
@@ -454,6 +455,15 @@ export default function StagePage() {
               <span className="ml-1 text-[10px] bg-muted rounded-full px-1.5 py-0.5">{metaCount}</span>
             )}
           </TabsTrigger>
+          {/* Story 29.35: aba do protocolo de CAC. Imediatamente à direita de
+              Meta Ads e só no perpétuo — funil de lançamento tem outro
+              dashboard e outra matemática. */}
+          {funnelType === "perpetual" && (
+            <TabsTrigger value="analise-mvp" className="gap-1.5">
+              <Target className="h-3.5 w-3.5 text-primary" />
+              Análise MVP
+            </TabsTrigger>
+          )}
           {funnelType === "launch" && (stage.stageType as string) === "paid" && (
             <TabsTrigger value="meta-ads-teste" className="gap-1.5">
               <FlaskConical className="h-3.5 w-3.5 text-cyan-400" />
@@ -569,6 +579,18 @@ export default function StagePage() {
               projectId={params.id}
               stageId={params.stageId}
               stageType={stage.stageType}
+            />
+          </TabsContent>
+        )}
+
+        {/* Story 29.35: só monta no perpétuo — o componente consome hooks de
+            config e vendas que não existem no funil de lançamento. */}
+        {funnelType === "perpetual" && (
+          <TabsContent value="analise-mvp" className="mt-6">
+            <PerpetualMvpAnalysis
+              funnel={stageAsFunnel}
+              projectId={params.id}
+              days={paidSalesDays}
             />
           </TabsContent>
         )}
