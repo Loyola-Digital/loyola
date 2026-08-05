@@ -292,6 +292,19 @@ issues:
     severity: low
     category: correctness
     blocking: false
+    status: RESOLVIDO
+    resolution: >-
+      Corrigido em `032abd9`, na ORIGEM em vez do formatador — divergindo da
+      recomendação do @qa, com justificativa registrada no código: `-0` é
+      artefato da negação e não informação, e mantê-lo até a formatação faria
+      qualquer consumidor futuro de `lines` (export CSV/PDF) herdar o problema.
+      A normalização não altera aritmética, e há teste travando que a soma das
+      linhas continua igual ao CAC alvo.
+
+      Aplicado a TODAS as deduções, não só às duas visíveis hoje: imposto e
+      gateway da plataforma também podem ser zero legitimamente.
+
+      Memorial conferido: linhas limpas, CAC alvo segue R$ 305,37.
     description: >-
       "MENOS ZERO REAIS" NO MEMORIAL.
 
