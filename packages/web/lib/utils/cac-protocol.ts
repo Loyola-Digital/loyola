@@ -266,16 +266,35 @@ export function targetCacDeck(input: TargetCacInputs): TargetCacResult {
   const reembolsoBrl = ticket * reembolso;
   const chargebackBrl = ticket * chargeback;
 
+  /**
+   * Nega para o memorial, normalizando o zero negativo (QA-07).
+   *
+   * `-0` é o que o IEEE 754 devolve ao negar zero, e desde que custo zero passou
+   * a ser aceito (QA-05) isso deixou de ser hipótese: o CMV é zero em TODOS os
+   * produtos deste projeto, então toda leitura de CAC alvo produzia ao menos uma
+   * linha assim. Formatado em BRL, `-0` vira `-R$ 0,00` — "menos zero reais",
+   * ao lado de um rótulo que já carrega o sinal de dedução.
+   *
+   * Normalizar aqui, e não no formatador, por duas razões:
+   *   1. `-0` é artefato da negação, não informação — quem consome `lines` não
+   *      deveria precisar saber disso. Um export para CSV ou PDF amanhã herdaria
+   *      o problema se ele ficasse guardado até a formatação;
+   *   2. não altera aritmética alguma: `-0` e `0` somam idêntico, e a soma das
+   *      linhas é justamente como o CAC alvo é calculado três linhas abaixo.
+   *      A única diferença observável entre os dois é a exibição.
+   */
+  const deducao = (v: number): number => (v === 0 ? 0 : -v);
+
   const lines: TargetCacLine[] = [
     { label: "Ticket médio", value: ticket },
-    { label: "− Margem desejada", value: -margem },
-    { label: "− Imposto", value: -imposto },
-    { label: "− Gateway plataforma", value: -gatewayPlataforma },
-    { label: "− Gateway pagamento", value: -gatewayPagamento },
-    { label: "− CMV", value: -cmv },
+    { label: "− Margem desejada", value: deducao(margem) },
+    { label: "− Imposto", value: deducao(imposto) },
+    { label: "− Gateway plataforma", value: deducao(gatewayPlataforma) },
+    { label: "− Gateway pagamento", value: deducao(gatewayPagamento) },
+    { label: "− CMV", value: deducao(cmv) },
   ];
-  if (reembolsoBrl > 0) lines.push({ label: "− Reembolso", value: -reembolsoBrl });
-  if (chargebackBrl > 0) lines.push({ label: "− Chargeback", value: -chargebackBrl });
+  if (reembolsoBrl > 0) lines.push({ label: "− Reembolso", value: deducao(reembolsoBrl) });
+  if (chargebackBrl > 0) lines.push({ label: "− Chargeback", value: deducao(chargebackBrl) });
 
   // Soma dos termos exatos; o arredondamento acontece uma única vez, no fim.
   const exact = lines.reduce((acc, l) => acc + l.value, 0);

@@ -147,7 +147,11 @@ describe("QA-05/QA-06 — zero é configuração real em CUSTO, não erro", () =
     expect(r.status).toBe("DERIVED");
     // A linha continua no memorial, valendo zero: some-la esconderia que a
     // dedução foi considerada e deu zero.
-    expect(r.lines.find((l) => l.label === "− Gateway pagamento")?.value).toBe(-0);
+    const linha = r.lines.find((l) => l.label === "− Gateway pagamento")!;
+    expect(linha.value).toBe(0);
+    // QA-07: zero POSITIVO. `toBe` usa Object.is, então isto reprova `-0`, que
+    // é o que o formatador BRL transformava em "-R$ 0,00".
+    expect(Object.is(linha.value, -0)).toBe(false);
   });
 
   it("imposto zero (isenção) é aceito", () => {
@@ -171,6 +175,35 @@ describe("QA-05/QA-06 — zero é configuração real em CUSTO, não erro", () =
     expect(() => assertCostRate(2.5, "gateway")).toThrow(/pontos percentuais/);
     expect(assertCostRate(0, "gateway")).toBe(0);
     expect(assertCostRate(1, "gateway")).toBe(1);
+  });
+});
+
+describe("QA-07 — nenhuma linha do memorial carrega zero negativo", () => {
+  it("todas as deduções zeradas saem como zero POSITIVO", () => {
+    const r = targetCacDeck({
+      ...PROTOCOL_INPUTS,
+      imposto: 0,
+      gatewayPct: 0,
+      gatewayPctVar: 0,
+      cmv: 0,
+    });
+    const negativos = r.lines.filter((l) => Object.is(l.value, -0)).map((l) => l.label);
+    expect(negativos).toEqual([]);
+  });
+
+  it("normalizar o zero NÃO altera o CAC alvo", () => {
+    // A soma das linhas é como o valor é calculado. Se `-0` virasse `0` e o
+    // total mudasse, a correção teria efeito colateral aritmético — não tem,
+    // e este teste é o que garante isso.
+    const r = targetCacDeck({ ...PROTOCOL_INPUTS, cmv: 0, gatewayPctVar: 0 });
+    const soma = r.lines.reduce((a, l) => a + l.value, 0);
+    expect(roundMoney(soma)).toBe(r.value);
+  });
+
+  it("deduções não-zeradas seguem negativas", () => {
+    const r = targetCacDeck(PROTOCOL_INPUTS);
+    expect(r.lines.find((l) => l.label === "− Margem desejada")!.value).toBeLessThan(0);
+    expect(r.lines.find((l) => l.label === "− CMV")!.value).toBeLessThan(0);
   });
 });
 
