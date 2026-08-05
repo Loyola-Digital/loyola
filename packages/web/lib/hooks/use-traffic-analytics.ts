@@ -380,6 +380,14 @@ export function usePlacementBreakdown(projectId: string | null, days: number = 3
 
 export interface AdCreativesResponse {
   creatives: MetaAdCreative[];
+  /**
+   * Story 29.34: quantos ad_ids o backend RECEBEU e qual o teto por request.
+   * `requested > limit` significa que houve corte — sem isso, a UI não
+   * distingue "a Meta não tem esse criativo" de "nós não perguntamos por ele".
+   * Opcionais: response antigo (sem os campos) continua válido.
+   */
+  requested?: number;
+  limit?: number;
 }
 
 export function useAdCreatives(

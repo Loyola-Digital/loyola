@@ -42,6 +42,16 @@ export interface DetailMetricsOutput {
   roas: number | null;
   /** CAC — custo por venda. */
   costPerSale: number | null;
+  /**
+   * Story 29.34 — Margem ABSOLUTA da linha: receita líquida (após fees da
+   * plataforma) menos investimento já tributado. Mesma definição da 29.20,
+   * usada no card e no gráfico.
+   *
+   * Sai daqui, e não de um cálculo paralelo na tela, para que Margem e
+   * Margem % NUNCA divirjam: as duas são a mesma variável, uma delas dividida
+   * pelo faturamento bruto.
+   */
+  margin: number;
   /** Margem % sobre o faturamento bruto. */
   marginPct: number | null;
   marginPerSale: number | null;
@@ -86,6 +96,7 @@ export function deriveDetailMetrics(
     cpm: base.impressions > 0 ? (spend / base.impressions) * 1000 : 0,
     roas: spend > 0 ? grossRevenue / spend : null,
     costPerSale: sales > 0 ? spend / sales : null,
+    margin,
     marginPct: grossRevenue > 0 ? (margin / grossRevenue) * 100 : null,
     marginPerSale: sales > 0 ? margin / sales : null,
     hookRate: base.impressions > 0 && v3s > 0 ? (v3s / base.impressions) * 100 : null,
