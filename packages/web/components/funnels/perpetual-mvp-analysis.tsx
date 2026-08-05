@@ -235,15 +235,26 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
     // Story 29.39 — gateway em pontos percentuais na tela, fração no resto do
     // sistema. A conversão fica AQUI, na borda: dentro da fórmula só circula
     // decimal (U-01), e o backend rejeita ponto percentual pelo validador `rate`.
+    //
+    // Zero é ACEITO de propósito (QA-05): quem não paga taxa variável de
+    // gateway informa 0, e isso é diferente de deixar vazio — vazio significa
+    // "não informei" e produz análise parcial. Ver `assertCostRate`.
     const g = parseOrNull(gatewayPagtoPct);
     if (g != null && (g < 0 || g > 99)) {
       toast.error("Gateway deve ficar entre 0 e 99%.");
       return;
     }
+    // CMV zero é o caso PADRÃO aqui (produto digital). A validação existe só
+    // para barrar negativo, que não tem leitura possível.
+    const c = parseOrNull(cmv);
+    if (c != null && c < 0) {
+      toast.error("CMV não pode ser negativo.");
+      return;
+    }
     try {
       await saveConfig.mutateAsync({
         margemDesejadaPct: m == null ? null : ppParaFracao(m),
-        cmv: parseOrNull(cmv),
+        cmv: c,
         gatewayPctVar: g == null ? null : ppParaFracao(g),
       });
       toast.success("Premissas do CAC alvo salvas");
@@ -349,6 +360,9 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
                   placeholder="ex: 0"
                   className="h-8 text-xs"
                 />
+                <p className="text-[11px] text-muted-foreground">
+                  Zero em produto digital — informe 0 em vez de deixar vazio.
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="mvp-gwpct" className="text-xs">

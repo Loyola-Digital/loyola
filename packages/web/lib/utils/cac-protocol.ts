@@ -4,7 +4,11 @@
  * Contrato de autoridade, definido pelo próprio protocolo:
  *   - o YAML manda na SEMÂNTICA (o que cada variável significa);
  *   - `cac_engine.py` manda na ARITMÉTICA (ordem de operações, arredondamento).
- * Este arquivo implementa a segunda; onde divergir do engine, o engine vence.
+ * Este arquivo implementa a segunda; onde divergir do engine, o engine vence —
+ * SALVO divergência declarada, e há exatamente uma, em `assertCostRate`: custo
+ * zero (gateway sem taxa, CMV de produto digital) é aceito aqui e abortado lá.
+ * O motivo está documentado na própria função. Qualquer outra divergência é
+ * defeito deste arquivo, não decisão.
  *
  * Por que TypeScript e não rodar o Python: Railway e Vercel executam Node. O
  * engine é especificação executável, não dependência de runtime.
@@ -37,11 +41,15 @@ export interface TargetCacInputs {
   /** Ticket médio. Derivado de faturamento bruto ÷ vendas — inclui order bumps. */
   ticket: number | null;
   ticketBasis: TicketBasis;
-  /** Decimais em (0, 1]. Percentual é coisa de tela, não de fórmula (U-01). */
+  /**
+   * Decimais, nunca pontos percentuais — percentual é coisa de tela (U-01).
+   *
+   * A margem vive em (0, 1]: zero aborta. Os CUSTOS abaixo vivem em [0, 1],
+   * com zero permitido — ver `assertCostRate` para o porquê da diferença.
+   */
   margemDesejada: number | null;
   imposto: number | null;
   gatewayPct: number | null;
-  /** Parcela fixa do gateway, em reais. */
   /**
    * Story 29.39 — taxa do gateway de PAGAMENTO, como fração do ticket.
    *
@@ -134,6 +142,58 @@ export function assertRate(value: number, name: string): number {
 }
 
 /**
+ * U-01 aplicado a CUSTO: intervalo [0, 1], com o zero permitido.
+ *
+ * ## Por que existe uma segunda guarda
+ *
+ * A justificativa de U-01 no YAML do protocolo (linha 227) é sobre CONVERSÃO:
+ *
+ *   "taxa zero torna o CAC infinito e quase sempre significa etapa não medida,
+ *    não etapa com conversão nula real"
+ *
+ * Ambas as razões falham para um custo. Um gateway de 0% não torna o CAC
+ * infinito — é uma dedução a menos. E zero não indica ausência de medição:
+ * indica que a taxa não é cobrada, o que é fato comum.
+ *
+ * O caso decisivo veio da operação: **o CMV é zero em todos os produtos deste
+ * projeto** (produto digital, sem custo unitário). O port já aceitava `cmv = 0`
+ * enquanto o `cac_engine.py` aborta por U-02 — divergência que o @qa encontrou
+ * (QA-06) e que se revelou correta. Esta função apenas estende ao gateway a
+ * mesma leitura, agora explícita em vez de acidental.
+ *
+ * ## Divergência declarada em relação ao engine
+ *
+ * O cabeçalho deste módulo diz que, onde houver divergência, o engine vence.
+ * Aqui há divergência DELIBERADA e esta é a declaração dela:
+ *
+ *   `cac_engine.py`  → aborta com gateway 0% (U-01) e com CMV R$0 (U-02)
+ *   `cac-protocol.ts` → aceita ambos, porque são configurações reais aqui
+ *
+ * A regra do engine continua valendo onde foi desenhada para valer: taxas de
+ * conversão da cadeia seguem usando `assertRate`, e zero segue abortando lá —
+ * é exatamente onde zero significa "ninguém mediu".
+ *
+ * ## O que continua bloqueado
+ *
+ * A MARGEM segue em `assertRate`. Margem zero é decisão estratégica de peso
+ * (vender no empate) e, muito mais provavelmente, campo preenchido errado.
+ * Deixá-la passar em silêncio produziria um CAC alvo alto e convidativo,
+ * derivado de uma premissa que ninguém tomou de propósito.
+ */
+export function assertCostRate(value: number, name: string): number {
+  if (!Number.isFinite(value)) {
+    throw new ProtocolViolation("U-01", `${name} não é um número finito.`);
+  }
+  if (value < 0 || value > 1) {
+    throw new ProtocolViolation(
+      "U-01",
+      `${name} = ${value} fora de [0, 1]. Provável valor em pontos percentuais — dividir por 100.`,
+    );
+  }
+  return value;
+}
+
+/**
  * ROUND-01 — arredondar SOMENTE no valor final.
  *
  * A fonte reporta R$ 204,54 porque arredonda o gateway (32,455 → 32,46) antes
@@ -187,10 +247,13 @@ export function targetCacDeck(input: TargetCacInputs): TargetCacResult {
   if (!(ticket > 0)) {
     throw new ProtocolViolation("U-02", `ticket médio = ${ticket} não é > 0.`);
   }
+  // Margem: estrita. Zero aqui é decisão de peso ou, muito mais provavelmente,
+  // erro de preenchimento — ver o comentário de `assertCostRate`.
   assertRate(input.margemDesejada as number, "margem desejada");
-  assertRate(input.imposto as number, "imposto");
-  assertRate(input.gatewayPct as number, "gateway da plataforma %");
-  assertRate(input.gatewayPctVar as number, "gateway de pagamento %");
+  // Custos: zero é configuração real (isenção fiscal, gateway sem taxa).
+  assertCostRate(input.imposto as number, "imposto");
+  assertCostRate(input.gatewayPct as number, "gateway da plataforma %");
+  assertCostRate(input.gatewayPctVar as number, "gateway de pagamento %");
 
   const margem = ticket * (input.margemDesejada as number);
   const imposto = ticket * (input.imposto as number);

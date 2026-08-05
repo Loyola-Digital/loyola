@@ -4,6 +4,7 @@ import {
   killContinueThreshold,
   compareToTarget,
   assertRate,
+  assertCostRate,
   roundMoney,
   ProtocolViolation,
   SCOPE_WARNING_D7,
@@ -127,6 +128,49 @@ describe("Story 29.39 — gateway como fração do faturamento", () => {
     expect(() => targetCacDeck({ ...PROTOCOL_INPUTS, gatewayPctVar: 2.5 })).toThrow(
       ProtocolViolation,
     );
+  });
+});
+
+describe("QA-05/QA-06 — zero é configuração real em CUSTO, não erro", () => {
+  it("CMV zero é o caso REAL desta operação, não uma borda", () => {
+    // Confirmado pelo dono do produto em 2026-08-05: "CMV zero em todos os
+    // nossos casos". Produto digital não tem custo unitário. Se este teste
+    // falhar, o cenário PADRÃO do projeto parou de calcular.
+    const r = targetCacDeck({ ...PROTOCOL_INPUTS, cmv: 0 });
+    expect(r.status).toBe("DERIVED");
+    expect(r.value).not.toBeNull();
+    expect(r.missing).toHaveLength(0);
+  });
+
+  it("gateway de pagamento 0% é aceito — não se paga taxa que não existe", () => {
+    const r = targetCacDeck({ ...PROTOCOL_INPUTS, gatewayPctVar: 0 });
+    expect(r.status).toBe("DERIVED");
+    // A linha continua no memorial, valendo zero: some-la esconderia que a
+    // dedução foi considerada e deu zero.
+    expect(r.lines.find((l) => l.label === "− Gateway pagamento")?.value).toBe(-0);
+  });
+
+  it("imposto zero (isenção) é aceito", () => {
+    expect(targetCacDeck({ ...PROTOCOL_INPUTS, imposto: 0 }).status).toBe("DERIVED");
+  });
+
+  it("MARGEM zero continua abortando — ali zero é erro de preenchimento", () => {
+    expect(() => targetCacDeck({ ...PROTOCOL_INPUTS, margemDesejada: 0 })).toThrow(
+      ProtocolViolation,
+    );
+  });
+
+  it("a cadeia de CONVERSÃO segue estrita: zero lá é etapa não medida", () => {
+    // É a razão original de U-01 e não muda. Se este teste falhar, alguém
+    // estendeu `assertCostRate` para além de custo.
+    expect(() => assertRate(0, "play rate")).toThrow(ProtocolViolation);
+  });
+
+  it("assertCostRate ainda rejeita negativo e ponto percentual", () => {
+    expect(() => assertCostRate(-0.01, "gateway")).toThrow(/fora de \[0, 1\]/);
+    expect(() => assertCostRate(2.5, "gateway")).toThrow(/pontos percentuais/);
+    expect(assertCostRate(0, "gateway")).toBe(0);
+    expect(assertCostRate(1, "gateway")).toBe(1);
   });
 });
 
