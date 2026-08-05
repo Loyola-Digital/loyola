@@ -3,9 +3,10 @@ storyTitles:
   - "Perpétuo — destravar a aba Análise MVP (migrations + upsert que apaga config)"
   - "Perpétuo — gateway como percentual do faturamento"
 verdict: CONCERNS
+verdictFinal: CONCERNS — nenhum blocking aberto; QA-07 (low) recomendado antes do merge
 reviewedBy: "@qa (Quinn)"
 reviewedAt: "2026-08-05"
-rereviewedAt: "2026-08-05 (2ª passada, após correções)"
+rereviewedAt: "2026-08-05 (3ª passada — QA-05/06 resolvidos, QA-07 novo)"
 branch: "feat/29.38-perpetual-mvp-unblock"
 commits: ["a2f2f8c", "cd3d567", "c769d37", "ffe59d3", "f1cc6ca", "7952dc7"]
 
@@ -287,6 +288,39 @@ issues:
       Documentar a divergência no cabeçalho do módulo como decisão consciente, ou
       revisar o contrato de autoridade. O comportamento atual não deve mudar.
 
+  - id: QA-07
+    severity: low
+    category: correctness
+    blocking: false
+    description: >-
+      "MENOS ZERO REAIS" NO MEMORIAL.
+
+      Com custo zero agora aceito, `-cmv` e `-gatewayPagamento` produzem `-0`
+      (zero negativo do IEEE 754). O `fmtBRL` do componente formata isso como:
+
+        − Gateway pagamento     -R$ 0,00
+        − CMV                   -R$ 0,00
+
+      Confirmei renderizando o memorial do cenário real com o mesmo `fmtBRL` do
+      componente. O rótulo já traz o sinal de dedução, então a linha exibe dois
+      negativos e um valor nulo — "menos zero reais".
+
+      Severidade baixa: o número está certo e é interpretável. Mas a FREQUÊNCIA
+      é 100%, não é borda — o dono do produto confirmou que o CMV é zero em
+      todos os casos, então toda leitura de CAC alvo deste projeto vai exibir
+      pelo menos uma linha assim.
+
+      É a mesma família do QA-01: valor correto, exibição que faz duvidar. A
+      diferença é a magnitude do estranhamento — `-R$ 0,00` se entende, mas
+      parece descuido.
+    recommendation: >-
+      Normalizar em `fmtBRL`, que é onde formatação é responsabilidade:
+
+        const n = Object.is(v, -0) ? 0 : v;
+
+      Não mexer no cálculo: `-0` é aritmeticamente correto e some-lo da linha
+      esconderia que a dedução foi considerada.
+
 waived: []
 
 blocked_by_dependency:
@@ -294,8 +328,36 @@ blocked_by_dependency:
   - "29.38-AC7 — validação end-to-end, depende de AC2 + deploy da API (@devops)"
   - "29.39-AC6 — validação na aplicação, mesma dependência"
 
-rereview_notes: >-
-  2ª PASSADA (após `ffe59d3`). Veredicto mantido em CONCERNS, agora por QA-05.
+final_notes: >-
+  3ª PASSADA (após `7952dc7`). **Veredicto final: CONCERNS.** Nenhum issue
+  bloqueante permanece aberto.
+
+  QA-05 e QA-06 estão resolvidos, e a correção foi melhor do que a que eu havia
+  recomendado. Eu ofereci a saída mínima — bloquear zero no formulário — e ela
+  teria funcionado, mas ao custo de obrigar quem não tem taxa de gateway a
+  deixar o campo vazio, transformando um fato ("é zero") em ausência de dado
+  ("não informei"). A informação do dono do produto sobre o CMV expôs que o
+  problema era mais fundo: o motor aplicava a `custo` uma regra escrita para
+  `taxa de conversão`.
+
+  Verifiquei que a separação das guardas não vazou, que era o risco real desta
+  correção: `assertRate` segue na cadeia de conversão (`:518`) e na margem
+  (`:252`); `assertCostRate` só nos três custos. Zero segue abortando onde
+  significa "etapa não medida" — que é a razão de U-01 existir.
+
+  Segui o caminho do zero por todo o pipeline, porque zero é o valor que mais se
+  confunde com ausente: `toFiniteNumber` (`0` sobrevive), zod `min(0)`, o
+  `!= null` da hidratação, `parseOrNull("0")`, e o `v == null` do `required` em
+  `targetCacDeck`. Nenhum ponto trata zero como ausência.
+
+  QA-07 é o que sobrou, e não bloqueia: `-R$ 0,00` no memorial. Cosmético, mas
+  com frequência de 100% — recomendo corrigir junto, é uma linha no `fmtBRL`, e
+  seria estranho entregar a correção do lixo binário (QA-01) e deixar "menos
+  zero reais" na mesma tela.
+
+  ---
+
+  2ª PASSADA (após `ffe59d3`). Veredicto mantido em CONCERNS, à época por QA-05.
 
   QA-01, QA-02 e QA-03 estão RESOLVIDOS e verifiquei cada um por conta própria,
   não pelo relato. Repeti a medição que apontou o QA-01 — 0 de 2000, era 537 — e
