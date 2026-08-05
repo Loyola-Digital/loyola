@@ -2447,6 +2447,14 @@ export const perpetualReportConfigs = pgTable(
     funnelArchitecture: varchar("funnel_architecture", { length: 40 }),
     /** Só para `sales_page`, que tem defeito de cadeia declarado no protocolo. */
     chainDefectReading: varchar("chain_defect_reading", { length: 120 }),
+    /**
+     * Story 29.37 — teto por variável, com procedência. Sem `source` a
+     * variável não entra no ranking (CEIL-01).
+     */
+    ceilings: jsonb("ceilings")
+      .$type<Record<string, { value: number; source: string; note?: string }>>()
+      .notNull()
+      .default({}),
     /** Se os nomes de campanha trazem `videos`/`estaticos` (§C.9). False = seção some, não zera. */
     temSplitFormato: boolean("tem_split_formato").notNull().default(false),
     /** `utm_source` que contam como pago. Fora disso é orgânico e fica fora de CAC/ROAS/margem. */

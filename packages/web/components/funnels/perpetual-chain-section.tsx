@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, GitBranch, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +56,8 @@ interface Props {
   periodStart: string | null;
   periodEnd: string | null;
   entryCost: { kind: EntryCostKind; value: number } | null;
+  /** Story 29.37: a seção de ranking opera sobre estas mesmas taxas. */
+  onRatesChange?: (rates: ChainRate[], cac: number | null) => void;
   onSave: (patch: {
     funnelArchitecture?: string | null;
     chainDefectReading?: string | null;
@@ -72,6 +74,7 @@ export function PerpetualChainSection({
   periodStart,
   periodEnd,
   entryCost,
+  onRatesChange,
   onSave,
   saving,
 }: Props) {
@@ -80,13 +83,24 @@ export function PerpetualChainSection({
 
   const template = architecture ? getTemplate(architecture) : null;
 
-  /** Monta a cadeia juntando o que o sistema mede com o que foi digitado. */
+  /**
+   * Monta a cadeia juntando o que o sistema mede com o que foi digitado.
+   *
+   * A editabilidade NÃO vem do `source` declarado no template — vem de o
+   * sistema ter fornecido o número ou não. `source` documenta de onde o dado
+   * DEVERIA vir; quem decide se há campo para digitar é a realidade.
+   *
+   * Isso é auto-corretivo: hoje 6 etapas estão marcadas "analytics" e nenhuma
+   * chega a esta tela, então todas são digitáveis. Quando a integração existir
+   * e `measuredRates` passar a devolvê-las, o campo some sozinho e o valor
+   * passa a vir do sistema — sem tocar no template.
+   */
   const rates: ChainRate[] = useMemo(() => {
     if (!template) return [];
     return template.stages.map((s) => {
       const manual = manualRates[s.key];
       const measured = measuredRates[s.key];
-      const isManual = s.source === "manual";
+      const isManual = measured == null;
       return {
         key: s.key,
         label: s.label,
@@ -119,6 +133,17 @@ export function PerpetualChainSection({
       };
     }
   }, [template, entryCost, rates, chainDefectReading]);
+
+  // Publica a cadeia montada para quem precisa dela (ranking da 29.37) sem
+  // recalcular — duas montagens da mesma cadeia divergiriam.
+  const publishedRef = useRef<string>("");
+  useEffect(() => {
+    if (!onRatesChange) return;
+    const sig = JSON.stringify(rates.map((r) => [r.key, r.value])) + (result?.decomposed?.cac ?? "");
+    if (sig === publishedRef.current) return;
+    publishedRef.current = sig;
+    onRatesChange(rates, result?.decomposed?.cac ?? null);
+  }, [rates, result, onRatesChange]);
 
   function openEditor(key: string) {
     const cur = manualRates[key];
@@ -254,7 +279,10 @@ export function PerpetualChainSection({
               <tbody>
                 {rates.map((r) => {
                   const stage = template.stages.find((s) => s.key === r.key)!;
-                  const isManual = stage.source === "manual";
+                  // Mesma regra do `rates`: editável quando o sistema não
+                  // fornece. Ler `stage.source` aqui produziria etapa sem
+                  // valor E sem campo — travada para sempre.
+                  const isManual = measuredRates[r.key] == null;
                   // Janela do valor manual que não cobre o período em tela: a
                   // taxa existe, mas não descreve o que está sendo analisado.
                   const stale =
@@ -275,7 +303,9 @@ export function PerpetualChainSection({
                           `${(r.value * 100).toFixed(2)}%`
                         )}
                       </td>
-                      <td className="px-2 text-[10px] text-muted-foreground">{r.source ?? "—"}</td>
+                      <td className="px-2 text-[10px] text-muted-foreground">
+                        {r.source ?? <span className="italic">a preencher · ideal: {stage.source}</span>}
+                      </td>
                       <td className={`px-2 text-[10px] ${stale ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>
                         {r.windowStart ? `${r.windowStart} → ${r.windowEnd}` : "—"}
                         {stale && " · fora do período"}

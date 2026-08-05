@@ -566,3 +566,328 @@ export function runSanityTests(
 
   return out;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 29.37 — método do teto, ranking e efeito composto
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Numerador (custo, menor é melhor) ou denominador (taxa, maior é melhor). */
+export type VarRole = "numerator" | "denominator";
+
+/**
+ * De onde veio o teto. `CEIL-01` — teto é INPUT com procedência, nunca
+ * inferido. "Estimativa do analista" e "extrapolação da tendência" não são
+ * fontes aceitas: um teto inventado contamina todo o ranking.
+ */
+export type CeilingSource =
+  | "benchmark_outro_funil"
+  | "melhor_historico"
+  | "benchmark_fonte"
+  | "teto_fisico";
+
+export interface CeilingRow {
+  key: string;
+  label: string;
+  role: VarRole;
+  current: number;
+  /** `null` = sem teto declarado. Sai UNKNOWN e NÃO entra no ranking. */
+  ceiling: number | null;
+  ceilingSource: CeilingSource | null;
+  chainPosition: number;
+  /**
+   * Contagens absolutas da etapa. Sem elas o modo STATISTICAL não roda —
+   * intervalo de confiança precisa de volume, e o protocolo não estima volume.
+   */
+  successes: number | null;
+  trials: number | null;
+}
+
+/**
+ * Fator pelo qual o CAC é multiplicado ao levar a variável ao teto.
+ *
+ * Taxa: `atual ÷ teto` (subir a taxa divide o CAC).
+ * Custo: `teto ÷ atual` (baixar o custo multiplica).
+ */
+export function retentionFactor(row: CeilingRow): number | null {
+  if (row.ceiling == null || row.ceiling === 0 || row.current === 0) return null;
+  return row.role === "numerator" ? row.ceiling / row.current : row.current / row.ceiling;
+}
+
+/**
+ * Queda REAL do CAC. Negativa quando o CAC cai.
+ *
+ * D2 — o deck calcula `teto/atual − 1` para taxas, que é o ganho da MÉTRICA,
+ * não a queda do CAC. Para o numerador as duas contas coincidem, e é daí que
+ * nasce a distorção: misturar custo e taxa num ranking pelo método do deck
+ * pode INVERTER a ordem. Existe contraexemplo no teste.
+ */
+export function realDrop(row: CeilingRow): number | null {
+  const f = retentionFactor(row);
+  return f == null ? null : f - 1;
+}
+
+/** Como o deck rotula. Só nota de rodapé — nunca ordena. */
+export function deckLabel(row: CeilingRow): number | null {
+  if (row.ceiling == null || row.current === 0) return null;
+  return row.role === "numerator"
+    ? row.ceiling / row.current - 1
+    : 1 - row.ceiling / row.current;
+}
+
+/**
+ * Quantis da normal padrão, bicaudais. TABELADOS de propósito.
+ *
+ * Nível fora desta tabela ABORTA em vez de aproximar: um z inventado produz
+ * intervalo errado, e intervalo errado muda quem empata com quem — ou seja,
+ * muda a ordem do ranking sem ninguém perceber.
+ */
+const Z_TABLE: Record<string, number> = {
+  "0.8": 1.2815515655446004,
+  "0.9": 1.6448536269514722,
+  "0.95": 1.959963984540054,
+  "0.98": 2.3263478740408408,
+  "0.99": 2.5758293035489004,
+};
+
+export const DEFAULT_CONFIDENCE = 0.95;
+
+export function zFor(confidence: number): number {
+  const z = Z_TABLE[String(confidence)];
+  if (z === undefined) {
+    throw new ProtocolViolation(
+      "RANK-01",
+      `nível de confiança ${confidence} não tabelado. Disponíveis: ${Object.keys(Z_TABLE).join(", ")}. ` +
+        `O protocolo não aproxima o quantil.`,
+    );
+  }
+  return z;
+}
+
+/**
+ * Intervalo de Wilson para uma proporção.
+ *
+ * Escolhido em vez do intervalo normal porque as taxas deste funil são
+ * frequentemente extremas (connect ~0,9, checkout ~0,15) e medidas com n
+ * pequeno no fim da cadeia — regime em que o normal produz limites fora de
+ * [0,1].
+ */
+export function wilsonInterval(
+  successes: number,
+  trials: number,
+  z: number = zFor(DEFAULT_CONFIDENCE),
+): [number, number] {
+  if (trials <= 0) {
+    throw new ProtocolViolation("RANK-01", "intervalo de confiança exige denominador > 0.");
+  }
+  if (successes < 0 || successes > trials) {
+    throw new ProtocolViolation("RANK-01", `successes=${successes} fora de [0, ${trials}].`);
+  }
+  const n = trials;
+  const p = successes / trials;
+  const z2 = z * z;
+  const denom = 1 + z2 / n;
+  const center = (p + z2 / (2 * n)) / denom;
+  const margin = (z / denom) * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n));
+  return [Math.max(0, center - margin), Math.min(1, center + margin)];
+}
+
+/** IC do `real_drop`, propagado do IC da taxa. Custo não é proporção → null. */
+export function realDropInterval(
+  row: CeilingRow,
+  confidence: number = DEFAULT_CONFIDENCE,
+): [number, number] | null {
+  if (row.role === "numerator" || row.successes == null || row.trials == null || row.ceiling == null) {
+    return null;
+  }
+  const [lo, hi] = wilsonInterval(row.successes, row.trials, zFor(confidence));
+  return [lo / row.ceiling - 1, hi / row.ceiling - 1];
+}
+
+export type RankingMode = "STATISTICAL" | "LEXICOGRAPHIC" | "PARETO";
+
+export interface RankingResult {
+  ordered: CeilingRow[];
+  modeRequested: RankingMode;
+  modeUsed: RankingMode;
+  confidence: number;
+  tieGroups: string[][];
+  withoutInterval: string[];
+  excluded: string[];
+  notes: string[];
+  degraded: boolean;
+}
+
+/**
+ * Ranking de prioridades.
+ *
+ * `STATISTICAL` é o PADRÃO. A ordem NUNCA é fixa — sai dos dados, em dois
+ * níveis: os valores de `real_drop` variam, e o próprio conjunto de empates
+ * varia com o volume medido. Funil com pouco tráfego tem muitos empates (e
+ * C2 decide bastante); com volume alto, quase nenhum.
+ *
+ * RANK-00 — C1 (queda de CAC) é o único critério na unidade do objetivo. A
+ * equação é simétrica em posição, então C2 não mede impacto: mede velocidade
+ * de aprendizado (amostra maior no topo) e correlação entre etapas (melhorar
+ * o topo arrasta as seguintes). Por isso C2 desempata, não compete.
+ *
+ * RANK-02 — sem contagens, degrada para LEXICOGRAPHIC. A degradação precisa
+ * aparecer no TOPO da saída: quem pediu o modo estatístico acreditaria estar
+ * usando-o.
+ */
+export function rank(
+  rows: CeilingRow[],
+  mode: RankingMode = "STATISTICAL",
+  funnelState: "VALIDATED" | "NOT_VALIDATED" = "VALIDATED",
+  confidence: number = DEFAULT_CONFIDENCE,
+): RankingResult {
+  const notes: string[] = [];
+
+  // CEIL-01 — sem teto com procedência, a variável não entra no ranking.
+  const excluded = rows
+    .filter((r) => r.ceiling == null || r.ceilingSource == null)
+    .map((r) => r.label);
+  const eligible = rows.filter((r) => r.ceiling != null && r.ceilingSource != null);
+  if (excluded.length > 0) {
+    notes.push(
+      `fora do ranking por falta de teto com procedência: ${excluded.join(", ")} — ` +
+        `CEIL-01 rejeita estimativa do analista e extrapolação de tendência`,
+    );
+  }
+
+  // Override: em funil não validado, C2 é SUSPENSO. Contraintuitivo, mas é o
+  // que a fonte registra como testado — consertar gargalo interno primeiro.
+  const useC2 = funnelState !== "NOT_VALIDATED";
+  if (!useC2) {
+    notes.push("funil NÃO VALIDADO: critério C2 (posição no funil) suspenso");
+  }
+
+  // C3 (esforço) está indisponível — a fonte não define escala (U5).
+  const opKey = (r: CeilingRow) => (useC2 ? r.chainPosition : 0);
+
+  if (mode === "STATISTICAL") {
+    zFor(confidence); // falha cedo se o nível não for tabelado
+    const withoutInterval = eligible
+      .filter((r) => realDropInterval(r, confidence) == null)
+      .map((r) => r.label);
+
+    if (withoutInterval.length === eligible.length) {
+      notes.push(
+        "STATISTICAL indisponível: nenhuma etapa tem contagem absoluta. Degradado para " +
+          "LEXICOGRAPHIC — o empate estatístico NÃO foi avaliado. O protocolo não estima volume.",
+      );
+      const res = rank(rows, "LEXICOGRAPHIC", funnelState, confidence);
+      return { ...res, modeRequested: "STATISTICAL", withoutInterval, notes: [...notes, ...res.notes], degraded: true };
+    }
+    if (withoutInterval.length > 0) {
+      notes.push(
+        `sem contagem, entram como ponto (sem IC): ${withoutInterval.join(", ")} — ` +
+          `custo de entrada não é proporção`,
+      );
+    }
+
+    // Agrupa por sobreposição de IC, varrendo em ordem de C1. Variável sem IC
+    // nunca sustenta empate: abre grupo próprio. Ausência de dado não vira
+    // evidência de empate.
+    const byC1 = [...eligible].sort((a, b) => (realDrop(a) ?? 0) - (realDrop(b) ?? 0));
+    const groups: CeilingRow[][] = [];
+    for (const r of byC1) {
+      if (groups.length === 0) {
+        groups.push([r]);
+        continue;
+      }
+      const iv = realDropInterval(r, confidence);
+      let overlaps = false;
+      if (iv) {
+        for (const m of groups[groups.length - 1]) {
+          const mv = realDropInterval(m, confidence);
+          if (mv && iv[0] <= mv[1] && mv[0] <= iv[1]) {
+            overlaps = true;
+            break;
+          }
+        }
+      }
+      if (overlaps) groups[groups.length - 1].push(r);
+      else groups.push([r]);
+    }
+
+    const ordered = groups.flatMap((g) => [...g].sort((a, b) => opKey(a) - opKey(b)));
+    const tieGroups = groups.filter((g) => g.length > 1).map((g) => g.map((r) => r.label));
+    notes.push(
+      tieGroups.length > 0
+        ? `empates estatísticos em C1 (IC ${confidence * 100}% sobreposto), desempatados por C2: ${tieGroups.map((g) => g.join("/")).join(" · ")}`
+        : `nenhum empate estatístico em IC ${confidence * 100}%: C1 decidiu sozinho`,
+    );
+    return {
+      ordered, modeRequested: mode, modeUsed: mode, confidence,
+      tieGroups, withoutInterval, excluded, notes, degraded: false,
+    };
+  }
+
+  if (mode === "LEXICOGRAPHIC") {
+    const ordered = [...eligible].sort(
+      (a, b) => (realDrop(a) ?? 0) - (realDrop(b) ?? 0) || opKey(a) - opKey(b),
+    );
+    notes.push(
+      "empate em C1 é EXATO neste modo; com números reais quase nunca ocorre, então C2 raramente atua",
+    );
+    return {
+      ordered, modeRequested: mode, modeUsed: mode, confidence,
+      tieGroups: [], withoutInterval: [], excluded, notes, degraded: false,
+    };
+  }
+
+  // PARETO — devolve a fronteira e NÃO ordena dentro dela. Com C3
+  // indisponível (U5), a dominância em três critérios é indeterminável.
+  notes.push(
+    "C3 (esforço) indisponível — a fonte não define escala. A fronteira tende a conter quase tudo",
+  );
+  const front = eligible.filter(
+    (r) =>
+      !eligible.some(
+        (o) =>
+          o !== r &&
+          (realDrop(o) ?? 0) <= (realDrop(r) ?? 0) &&
+          opKey(o) <= opKey(r) &&
+          ((realDrop(o) ?? 0) < (realDrop(r) ?? 0) || opKey(o) < opKey(r)),
+      ),
+  );
+  return {
+    ordered: front, modeRequested: mode, modeUsed: mode, confidence,
+    tieGroups: [], withoutInterval: [], excluded, notes, degraded: false,
+  };
+}
+
+export const PROJECTION_DISCLAIMER =
+  "Projeção sob premissa de independência entre etapas — premissa sabidamente falsa. " +
+  "Tratar como limite superior otimista, não como previsão.";
+
+/**
+ * Efeito de levar TODAS as variáveis ao teto: PRODUTO dos fatores de retenção.
+ *
+ * D3 — somar as quedas individuais é aritmeticamente impossível: com os
+ * números do protocolo daria 178,8%, e nada cai mais que 100%.
+ */
+export function compositeEffect(rows: CeilingRow[]): number | null {
+  let p = 1;
+  for (const r of rows) {
+    const f = retentionFactor(r);
+    if (f == null) return null;
+    p *= f;
+  }
+  return p;
+}
+
+/**
+ * GR-01.b — intervalo roda nas DUAS pontas, nunca no ponto médio.
+ *
+ * Devolve (pior caso, melhor caso) da queda de CAC quando atual e teto vêm
+ * como faixa.
+ */
+export function cacDropInterval(
+  currentLow: number,
+  currentHigh: number,
+  ceilingLow: number,
+  ceilingHigh: number,
+): [number, number] {
+  return [1 - currentHigh / ceilingLow, 1 - currentLow / ceilingHigh];
+}

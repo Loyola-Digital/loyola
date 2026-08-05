@@ -62,6 +62,8 @@ export interface PerpetualReportConfig {
   funnelArchitecture: string | null;
   chainDefectReading: string | null;
   manualRates: Record<string, { value: number; source: string; windowStart: string; windowEnd: string; measuredAt: string }>;
+  /** Story 29.37 — tetos com procedência. */
+  ceilings: Record<string, { value: number; source: string; note?: string }>;
   /** Gross-up de mídia já resolvido (override do funil → META_TAX_RATE). */
   impostoPct: number;
   impostoOrigem: RateOrigem;
@@ -267,6 +269,7 @@ export async function loadPerpetualReportConfigRaw(
     funnelArchitecture: row.cfg.funnelArchitecture,
     chainDefectReading: row.cfg.chainDefectReading,
     manualRates: row.cfg.manualRates ?? {},
+    ceilings: row.cfg.ceilings ?? {},
   };
 }
 

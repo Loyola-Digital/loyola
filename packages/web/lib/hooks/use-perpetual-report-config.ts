@@ -45,6 +45,8 @@ export interface PerpetualReportConfig {
     string,
     { value: number; source: string; windowStart: string; windowEnd: string; measuredAt: string }
   >;
+  /** Story 29.37 — tetos com procedência. */
+  ceilings: Record<string, { value: number; source: string; note?: string }>;
   validado: boolean;
   validadoEm: string | null;
   validadoPor: string | null;
@@ -87,6 +89,8 @@ export interface PerpetualConfigInput {
     string,
     { value: number; source: string; windowStart: string; windowEnd: string; measuredAt: string }
   >;
+  /** Story 29.37 — tetos. */
+  ceilings?: Record<string, { value: number; source: string; note?: string }>;
 }
 
 function basePath(projectId: string, funnelId: string): string {

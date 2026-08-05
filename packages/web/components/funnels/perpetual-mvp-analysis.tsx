@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { AlertTriangle, Calculator, Info, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,8 +20,9 @@ import {
   type TargetCacResult,
 } from "@/lib/utils/cac-protocol";
 import { PerpetualChainSection, type ManualRateEntry } from "./perpetual-chain-section";
+import { PerpetualRankingSection, type CeilingEntry } from "./perpetual-ranking-section";
 import type { FunnelArchitecture } from "@/lib/utils/funnel-templates";
-import type { EntryCostKind } from "@/lib/utils/cac-protocol";
+import type { EntryCostKind, ChainRate } from "@/lib/utils/cac-protocol";
 import type { Funnel } from "@loyola-x/shared";
 
 /**
@@ -187,6 +188,23 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
     if (!(imp > 0) || !(spend > 0)) return null;
     return { kind: "CPM", value: (spend / imp) * 1000 };
   }, [overview]);
+
+  // Story 29.37: a cadeia publica suas taxas para o ranking operar sobre as
+  // MESMAS, em vez de montar uma segunda versão que poderia divergir.
+  const [chainRates, setChainRates] = useState<ChainRate[]>([]);
+  const [chainCac, setChainCac] = useState<number | null>(null);
+  const handleRatesChange = useCallback((r: ChainRate[], cac: number | null) => {
+    setChainRates(r);
+    setChainCac(cac);
+  }, []);
+
+  async function handleSaveCeilings(ceilings: Record<string, CeilingEntry>) {
+    try {
+      await saveConfig.mutateAsync({ ceilings });
+    } catch {
+      toast.error("Não foi possível salvar");
+    }
+  }
 
   async function handleSaveChain(patch: {
     funnelArchitecture?: string | null;
@@ -431,6 +449,20 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
         periodEnd={customRange?.endDate ?? null}
         entryCost={entryCost}
         onSave={handleSaveChain}
+        onRatesChange={handleRatesChange}
+        saving={saveConfig.isPending}
+      />
+
+      {/* ---- Story 29.37 — seções 07 a 10: teto, ranking, ação e projeção.
+           Fecha a sequência: quanto pode pagar (05), onde estoura (04), por
+           onde começar (08). ---- */}
+      <PerpetualRankingSection
+        rates={chainRates}
+        ceilings={cfg?.ceilings ?? {}}
+        entryCostValue={entryCost?.value ?? null}
+        currentCac={chainCac}
+        funnelValidado={cfg?.validado ?? false}
+        onSave={handleSaveCeilings}
         saving={saveConfig.isPending}
       />
 
