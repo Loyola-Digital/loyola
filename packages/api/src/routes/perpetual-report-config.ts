@@ -67,6 +67,17 @@ const configBodySchema = z.object({
       }),
     )
     .optional(),
+  /** Story 29.37 — tetos. `source` restrito aos 4 valores que CEIL-01 aceita. */
+  ceilings: z
+    .record(
+      z.string(),
+      z.object({
+        value: z.number().gt(0),
+        source: z.enum(["benchmark_outro_funil", "melhor_historico", "benchmark_fonte", "teto_fisico"]),
+        note: z.string().trim().max(200).optional(),
+      }),
+    )
+    .optional(),
 });
 
 export default fp(async function perpetualReportConfigRoutes(fastify) {
@@ -152,6 +163,7 @@ export default fp(async function perpetualReportConfigRoutes(fastify) {
             funnelArchitecture: cfg.funnelArchitecture,
             chainDefectReading: cfg.chainDefectReading,
             manualRates: cfg.manualRates,
+            ceilings: cfg.ceilings,
             validado: cfg.validado,
             validadoEm: cfg.validadoEm,
             validadoPor: cfg.validadoPor,
@@ -243,6 +255,7 @@ export default fp(async function perpetualReportConfigRoutes(fastify) {
       funnelArchitecture: d.funnelArchitecture !== undefined ? d.funnelArchitecture : (existing?.funnelArchitecture ?? null),
       chainDefectReading: d.chainDefectReading !== undefined ? d.chainDefectReading : (existing?.chainDefectReading ?? null),
       manualRates: d.manualRates !== undefined ? d.manualRates : (existing?.manualRates ?? {}),
+      ceilings: d.ceilings !== undefined ? d.ceilings : (existing?.ceilings ?? {}),
       updatedAt: new Date(),
     };
 

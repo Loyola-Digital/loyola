@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, GitBranch, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +56,8 @@ interface Props {
   periodStart: string | null;
   periodEnd: string | null;
   entryCost: { kind: EntryCostKind; value: number } | null;
+  /** Story 29.37: a seção de ranking opera sobre estas mesmas taxas. */
+  onRatesChange?: (rates: ChainRate[], cac: number | null) => void;
   onSave: (patch: {
     funnelArchitecture?: string | null;
     chainDefectReading?: string | null;
@@ -72,6 +74,7 @@ export function PerpetualChainSection({
   periodStart,
   periodEnd,
   entryCost,
+  onRatesChange,
   onSave,
   saving,
 }: Props) {
@@ -119,6 +122,17 @@ export function PerpetualChainSection({
       };
     }
   }, [template, entryCost, rates, chainDefectReading]);
+
+  // Publica a cadeia montada para quem precisa dela (ranking da 29.37) sem
+  // recalcular — duas montagens da mesma cadeia divergiriam.
+  const publishedRef = useRef<string>("");
+  useEffect(() => {
+    if (!onRatesChange) return;
+    const sig = JSON.stringify(rates.map((r) => [r.key, r.value])) + (result?.decomposed?.cac ?? "");
+    if (sig === publishedRef.current) return;
+    publishedRef.current = sig;
+    onRatesChange(rates, result?.decomposed?.cac ?? null);
+  }, [rates, result, onRatesChange]);
 
   function openEditor(key: string) {
     const cur = manualRates[key];

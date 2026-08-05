@@ -317,3 +317,190 @@ describe("runSanityTests — os 8 rodam sempre (AC8)", () => {
     expect(r.find((x) => x.id === "ST-08")?.verdict).toBe("FAIL");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 29.37 — teto, ranking e efeito composto
+// ═══════════════════════════════════════════════════════════════════════════
+
+import {
+  realDrop, deckLabel, compositeEffect, rank,
+  wilsonInterval, realDropInterval, zFor, cacDropInterval,
+  type CeilingRow,
+} from "../cac-protocol";
+
+/** Baseline e teto do cenário canônico do protocolo. */
+function ceilingRows(): CeilingRow[] {
+  const mk = (
+    key: string, label: string, role: "numerator" | "denominator",
+    current: number, ceiling: number, pos: number,
+  ): CeilingRow => ({
+    key, label, role, current, ceiling,
+    ceilingSource: "benchmark_fonte", chainPosition: pos,
+    successes: null, trials: null,
+  });
+  return [
+    mk("CPM", "CPM", "numerator", 20, 15, 0),
+    mk("CTR", "CTR", "denominator", 0.02, 0.03, 1),
+    mk("connect_rate", "Connect Rate", "denominator", 0.8, 0.9, 2),
+    mk("play_rate", "Play Rate", "denominator", 0.6, 0.85, 3),
+    mk("pitch_rate", "Retenção ao Pitch", "denominator", 0.2, 0.25, 4),
+    mk("conv_post_pitch", "Conv. Pós-Pitch", "denominator", 0.2, 0.25, 5),
+    mk("conv_checkout", "Conv. Checkout", "denominator", 0.15, 0.25, 6),
+  ];
+}
+
+describe("método do teto — paridade com cac_engine.py (AC9)", () => {
+  it("reproduz as 7 quedas reais do protocolo", () => {
+    const esperado: Record<string, number> = {
+      CPM: -0.25, CTR: -0.3333, "Connect Rate": -0.1111, "Play Rate": -0.2941,
+      "Retenção ao Pitch": -0.2, "Conv. Pós-Pitch": -0.2, "Conv. Checkout": -0.4,
+    };
+    for (const r of ceilingRows()) {
+      expect(realDrop(r)).toBeCloseTo(esperado[r.label], 4);
+    }
+  });
+
+  it("fator composto 0,12047 — queda de 87,95%", () => {
+    const f = compositeEffect(ceilingRows())!;
+    expect(f).toBeCloseTo(0.12047, 5);
+    expect(1 - f).toBeCloseTo(0.8795, 4);
+  });
+
+  it("CAC no teto: R$ 41,83", () => {
+    const cacBase = 347.22;
+    expect(cacBase * compositeEffect(ceilingRows())!).toBeCloseTo(41.83, 1);
+  });
+
+  it("D3 — somar as quedas daria 178,8%, aritmeticamente impossível", () => {
+    const soma = ceilingRows().reduce((a, r) => a + Math.abs(realDrop(r)!), 0);
+    expect(soma).toBeGreaterThan(1); // >100%: por isso o efeito é multiplicativo
+    expect(soma).toBeCloseTo(1.7886, 3);
+  });
+});
+
+describe("D2 — o método do deck pode INVERTER a ordem (AC3)", () => {
+  it("contraexemplo: CPM 20→14 vs pitch 0,20→0,28", () => {
+    const rows: CeilingRow[] = [
+      { key: "CPM", label: "CPM", role: "numerator", current: 20, ceiling: 14, ceilingSource: "melhor_historico", chainPosition: 0, successes: null, trials: null },
+      { key: "pitch", label: "Pitch", role: "denominator", current: 0.2, ceiling: 0.28, ceilingSource: "melhor_historico", chainPosition: 4, successes: null, trials: null },
+    ];
+    // Correto: CPM −30% vs pitch −28,57% → CPM vence
+    const vencedorCorreto = [...rows].sort((a, b) => realDrop(a)! - realDrop(b)!)[0];
+    // Deck: CPM −30% vs pitch −40% → pitch venceria
+    const vencedorDeck = [...rows].sort((a, b) => deckLabel(a)! - deckLabel(b)!)[0];
+    expect(vencedorCorreto.label).toBe("CPM");
+    expect(vencedorDeck.label).toBe("Pitch");
+    expect(vencedorCorreto.label).not.toBe(vencedorDeck.label); // a ordem inverte
+  });
+
+  it("para o NUMERADOR as duas contas coincidem — é daí que nasce a distorção", () => {
+    const cpm = ceilingRows().find((r) => r.key === "CPM")!;
+    expect(realDrop(cpm)).toBeCloseTo(deckLabel(cpm)!, 6);
+  });
+});
+
+describe("Wilson e nível de confiança", () => {
+  it("intervalo fica dentro de [0,1] mesmo com proporção extrema e n pequeno", () => {
+    const [lo, hi] = wilsonInterval(1, 10);
+    expect(lo).toBeGreaterThanOrEqual(0);
+    expect(hi).toBeLessThanOrEqual(1);
+  });
+
+  it("mais volume estreita o intervalo", () => {
+    const [l1, h1] = wilsonInterval(15, 100);
+    const [l2, h2] = wilsonInterval(1500, 10000);
+    expect(h2 - l2).toBeLessThan(h1 - l1);
+  });
+
+  it("confiança maior alarga o intervalo, sempre", () => {
+    const larguras = [0.8, 0.95, 0.99].map((c) => {
+      const [lo, hi] = wilsonInterval(150, 1000, zFor(c));
+      return hi - lo;
+    });
+    expect(larguras[0]).toBeLessThan(larguras[1]);
+    expect(larguras[1]).toBeLessThan(larguras[2]);
+  });
+
+  it("nível não tabelado ABORTA em vez de aproximar o quantil", () => {
+    expect(() => zFor(0.93)).toThrow(ProtocolViolation);
+  });
+
+  it("custo de entrada não tem IC — não é proporção", () => {
+    const cpm = ceilingRows().find((r) => r.key === "CPM")!;
+    expect(realDropInterval(cpm)).toBeNull();
+  });
+});
+
+describe("ranking — a ordem sai dos DADOS (AC3, AC4)", () => {
+  /** Mesmas taxas, volume variável — é o volume que muda o agrupamento. */
+  function withCounts(mult: number): CeilingRow[] {
+    const imp = 100_000 * mult;
+    const clicks = Math.round(imp * 0.02);
+    const pv = Math.round(clicks * 0.8);
+    const plays = Math.round(pv * 0.6);
+    const pitch = Math.round(plays * 0.2);
+    const checkouts = Math.round(pitch * 0.2);
+    const purchases = Math.round(checkouts * 0.15);
+    const base = ceilingRows();
+    const counts: Record<string, [number, number]> = {
+      CTR: [clicks, imp], connect_rate: [pv, clicks], play_rate: [plays, pv],
+      pitch_rate: [pitch, plays], conv_post_pitch: [checkouts, pitch],
+      conv_checkout: [purchases, checkouts],
+    };
+    return base.map((r) =>
+      counts[r.key] ? { ...r, successes: counts[r.key][0], trials: counts[r.key][1] } : r,
+    );
+  }
+
+  it("ordena por queda real, não pelo rótulo do deck", () => {
+    const r = rank(ceilingRows(), "LEXICOGRAPHIC");
+    expect(r.ordered[0].label).toBe("Conv. Checkout"); // −40%, a maior queda
+  });
+
+  it("STATISTICAL é o padrão de rank()", () => {
+    expect(rank(withCounts(100)).modeUsed).toBe("STATISTICAL");
+  });
+
+  it("o agrupamento muda com o VOLUME — a ordem não é fixa (S5-D3)", () => {
+    const baixo = rank(withCounts(1));
+    const alto = rank(withCounts(100));
+    expect(baixo.tieGroups.length).not.toBe(alto.tieGroups.length);
+  });
+
+  it("RANK-02 — sem contagens degrada e DECLARA", () => {
+    const r = rank(ceilingRows()); // sem successes/trials
+    expect(r.degraded).toBe(true);
+    expect(r.modeRequested).toBe("STATISTICAL");
+    expect(r.modeUsed).toBe("LEXICOGRAPHIC");
+    expect(r.notes.join(" ")).toMatch(/NÃO foi avaliado/);
+  });
+
+  it("CEIL-01 — variável sem teto com procedência fica FORA do ranking", () => {
+    const rows = ceilingRows();
+    rows[2] = { ...rows[2], ceiling: null, ceilingSource: null };
+    const r = rank(rows, "LEXICOGRAPHIC");
+    expect(r.excluded).toContain("Connect Rate");
+    expect(r.ordered.find((x) => x.label === "Connect Rate")).toBeUndefined();
+  });
+
+  it("funil NÃO VALIDADO suspende C2 e declara", () => {
+    const r = rank(withCounts(1), "STATISTICAL", "NOT_VALIDATED");
+    expect(r.notes.join(" ")).toMatch(/C2.*suspenso/);
+  });
+});
+
+describe("GR-01.b — intervalo nunca vira ponto (AC9)", () => {
+  it("Cloudflare: connect rate 70–75% → 93–97% dá queda entre 19,35% e 27,84%", () => {
+    const [pior, melhor] = cacDropInterval(0.7, 0.75, 0.93, 0.97);
+    expect(pior).toBeCloseTo(0.1935, 4);
+    expect(melhor).toBeCloseTo(0.2784, 4);
+  });
+
+  it("o ponto médio (23,68%) NÃO é o resultado — está fora do que reportamos", () => {
+    const [pior, melhor] = cacDropInterval(0.7, 0.75, 0.93, 0.97);
+    const pontoMedio = 1 - 0.725 / 0.95;
+    expect(pontoMedio).toBeGreaterThan(pior);
+    expect(pontoMedio).toBeLessThan(melhor);
+    // Reportar 23,68% seria trocar uma faixa medida por um número inventado.
+  });
+});
