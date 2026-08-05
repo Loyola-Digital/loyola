@@ -221,6 +221,13 @@ const PERPETUAL_DAILY_COLUMNS: Array<{ label: string; title: string }> = [
   { label: "ROAS", title: "Faturamento Bruto ÷ Investimento" },
 ];
 
+/**
+ * Story 29.34: teto de criativos por request de Tipo/Link. Espelha o
+ * `AD_CREATIVES_LIMIT` da rota /ad-creatives — o backend corta em 50 de
+ * qualquer forma, então mandar mais só infla a URL.
+ */
+const CREATIVE_BATCH_LIMIT = 50;
+
 // Story 29.25: paginação do Quadro de Dados Diários — 16 linhas por página.
 const PERPETUAL_DAILY_PAGE_SIZE = 16;
 
@@ -1313,16 +1320,37 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // nesta tabela seria dezenas de chamadas a cada troca de período.
   //
   // `enabled` só dispara no modo Criativo: campanha e adset não têm criativo.
-  const creativeAdIds = useMemo(
-    () => (tableFilter === "ad" ? detailRows.map((r) => r.representativeAdId).filter(Boolean) : []),
-    [tableFilter, detailRows],
-  );
+  //
+  // Story 29.34 (QA-03/QA-04): o backend aceita no máximo 50 ad_ids por
+  // request. Duas consequências tratadas aqui:
+  //
+  //   1. QUAIS 50 — mandamos os de MAIOR INVESTIMENTO, não os primeiros da
+  //      lista. Se o corte é inevitável, que caia sobre os criativos que menos
+  //      pesam no resultado. A ordem de `detailRows` é a de chegada da API,
+  //      isto é, arbitrária para este fim.
+  //   2. NÃO MANDAR o excedente — enviar 200 ids para o backend descartar 150
+  //      infla a URL sem propósito, e proxies com teto de 2 KB podem cortar no
+  //      meio de um id.
+  const creativeAdIds = useMemo(() => {
+    if (tableFilter !== "ad") return [];
+    return [...detailRows]
+      .sort((a, b) => b.spend - a.spend)
+      .slice(0, CREATIVE_BATCH_LIMIT)
+      .map((r) => r.representativeAdId)
+      .filter(Boolean);
+  }, [tableFilter, detailRows]);
   const { data: creativesData } = useAdCreatives(projectId, creativeAdIds);
   const creativeByAdId = useMemo(() => {
     const m = new Map<string, MetaAdCreative>();
     for (const c of creativesData?.creatives ?? []) m.set(c.adId, c);
     return m;
   }, [creativesData]);
+
+  // Story 29.34 (QA-03): quantas linhas ficaram SEM Tipo/Link por causa do
+  // teto. Sem este aviso, o "—" dessas linhas se confunde com "a Meta não tem
+  // o dado" — e o gestor conclui que metade dos criativos não tem link.
+  const creativesOmitted =
+    tableFilter === "ad" ? Math.max(0, detailRows.length - CREATIVE_BATCH_LIMIT) : 0;
 
   const sortedRows = useMemo<DetailRow[]>(() => {
     if (!sortCol) return detailRows;
@@ -1873,6 +1901,15 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             <Filter className="h-4 w-4" />
             Detalhamento
           </h3>
+          {/* Story 29.34 (QA-03): truncar é legítimo — truncar em silêncio não.
+              Sem esta linha, as demais linhas mostram "—" em Tipo/Link e isso
+              se lê como ausência de dado na Meta, não como corte nosso. */}
+          {creativesOmitted > 0 && (
+            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+              Tipo e Link resolvidos para os {CREATIVE_BATCH_LIMIT} criativos de maior investimento
+              {" "}· {creativesOmitted} {creativesOmitted === 1 ? "linha exibe" : "linhas exibem"} “—” por esse limite, não por falta de dado
+            </p>
+          )}
           <div className="flex items-center gap-2">
             <Select value={tableFilter} onValueChange={(v) => setTableFilter(v as typeof tableFilter)}>
               <SelectTrigger className="w-[160px] h-8 text-xs">

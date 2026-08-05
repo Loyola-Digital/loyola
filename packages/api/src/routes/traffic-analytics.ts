@@ -649,6 +649,15 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   );
 
   // ---- GET /api/traffic/analytics/:projectId/ad-creatives ---- (Story 8.1)
+  /**
+   * Teto de criativos por request. Protege o rate limit da Meta — o mesmo que
+   * derrubou a integração em 2026-07-16.
+   *
+   * Story 29.34: exportado no response (`limit`/`requested`) para que a UI
+   * possa dizer que houve corte. Truncar é legítimo; truncar em silêncio faz o
+   * consumidor ler dado incompleto como dado ausente.
+   */
+  const AD_CREATIVES_LIMIT = 50;
   const adCreativesQuerySchema = z.object({
     adIds: z.string().min(1),
   });
@@ -674,7 +683,13 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
         return reply.code(400).send({ error: "adIds obrigatorio" });
       }
 
-      const adIds = queryResult.data.adIds.split(",").filter(Boolean).slice(0, 50);
+      // Story 29.34 (QA-03): o corte em 50 existe desde a 8.1 para proteger o
+      // rate limit da Meta, e está certo. O que estava errado era ser MUDO: o
+      // chamador recebia menos criativos do que pediu sem nenhum sinal, e a UI
+      // não tinha como distinguir "a Meta não tem esse dado" de "nós não
+      // perguntamos". Agora o total pedido volta no response.
+      const requestedAdIds = queryResult.data.adIds.split(",").filter(Boolean);
+      const adIds = requestedAdIds.slice(0, AD_CREATIVES_LIMIT);
       if (adIds.length === 0) {
         return reply.code(400).send({ error: "adIds vazio" });
       }
@@ -712,7 +727,9 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
           accessToken,
           adIds,
         );
-        return { creatives };
+        // Story 29.34: `requested` > `limit` diz à UI que houve corte. Campos
+        // aditivos — consumidor antigo que só lê `creatives` segue funcionando.
+        return { creatives, requested: requestedAdIds.length, limit: AD_CREATIVES_LIMIT };
       } catch (err) {
         return reply.code(502).send({
           error: "Erro ao buscar criativos",
