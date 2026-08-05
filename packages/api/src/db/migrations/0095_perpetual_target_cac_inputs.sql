@@ -6,13 +6,23 @@
 --   CAC_alvo = ticket
 --            − (ticket × margem_desejada)
 --            − (ticket × imposto)
---            − (ticket × gateway% + gateway_fixo)
+--            − (ticket × taxa_plataforma_pct)   ← taxa da plataforma de vendas
+--            − (ticket × gateway_pct_var)       ← taxa do gateway de pagamento
 --            − cmv
 --
 -- Dos seis inputs, TRÊS já existem em `perpetual_report_configs` (migration
 -- 0087): `imposto_pct`, `taxa_plataforma_pct` (o gateway %) e as demais
 -- deduções. O ticket médio é DERIVADO (faturamento bruto ÷ vendas), não campo.
 -- Faltavam os três abaixo.
+--
+-- Story 29.39 / decisão do @po em 2026-08-05: o gateway desta operação NÃO tem
+-- parcela fixa por transação — o custo inteiro varia com o faturamento. Por isso
+-- a coluna nasce como FRAÇÃO (`gateway_pct_var`) e não em reais.
+--
+-- Este arquivo era `0092_perpetual_target_cac_inputs.sql` e foi renumerado para
+-- `0095` porque o `0092` já pertencia à integração VTurb (PR #469), que chegou
+-- pela main e JÁ foi aplicada. Duas migrations com o mesmo prefixo na mesma
+-- pasta é ambiguidade que não sobrevive ao primeiro runner automático.
 --
 -- O que NÃO está aqui, de propósito:
 --   reembolso/chargeback → o protocolo (M-DECK) os provisiona como % do ticket,
@@ -30,7 +40,7 @@ ALTER TABLE "perpetual_report_configs"
   ADD COLUMN IF NOT EXISTS "cmv" numeric(12, 2);
 
 ALTER TABLE "perpetual_report_configs"
-  ADD COLUMN IF NOT EXISTS "gateway_fixo" numeric(12, 2);
+  ADD COLUMN IF NOT EXISTS "gateway_pct_var" numeric(6, 5);
 
 COMMENT ON COLUMN "perpetual_report_configs"."margem_desejada_pct" IS
   'Margem desejada sobre o ticket BRUTO, decimal (0.15 = 15%). Precisa embutir equipe, ferramentas e comissao: o CAC alvo nao cobre nenhum dos tres (aviso D7 do protocolo).';
@@ -38,10 +48,10 @@ COMMENT ON COLUMN "perpetual_report_configs"."margem_desejada_pct" IS
 COMMENT ON COLUMN "perpetual_report_configs"."cmv" IS
   'Custo da mercadoria vendida por unidade, em reais. Inclui frete e embalagem. Tipicamente 0 em produto digital.';
 
-COMMENT ON COLUMN "perpetual_report_configs"."gateway_fixo" IS
-  'Parcela FIXA da taxa do gateway, em reais por transacao. O percentual vive em taxa_plataforma_pct.';
+COMMENT ON COLUMN "perpetual_report_configs"."gateway_pct_var" IS
+  'Taxa do GATEWAY DE PAGAMENTO como fracao do faturamento (0.025 = 2,5%). Custo distinto de taxa_plataforma_pct, que e a taxa da plataforma de vendas: os dois incidem sobre o mesmo ticket e SOMAM. Ficam separados para o memorial do CAC alvo manter rastreavel de onde cada deducao saiu.';
 
 -- Rollback:
 --   ALTER TABLE "perpetual_report_configs" DROP COLUMN IF EXISTS "margem_desejada_pct";
 --   ALTER TABLE "perpetual_report_configs" DROP COLUMN IF EXISTS "cmv";
---   ALTER TABLE "perpetual_report_configs" DROP COLUMN IF EXISTS "gateway_fixo";
+--   ALTER TABLE "perpetual_report_configs" DROP COLUMN IF EXISTS "gateway_pct_var";

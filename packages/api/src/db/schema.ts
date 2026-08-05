@@ -2432,8 +2432,17 @@ export const perpetualReportConfigs = pgTable(
     margemDesejadaPct: numeric("margem_desejada_pct", { precision: 6, scale: 4 }),
     /** CMV por unidade (frete e embalagem inclusos). Tipicamente 0 em digital. */
     cmv: numeric("cmv", { precision: 12, scale: 2 }),
-    /** Parcela FIXA do gateway, em R$/transação. O % vive em `taxaPlataformaPct`. */
-    gatewayFixo: numeric("gateway_fixo", { precision: 12, scale: 2 }),
+    /**
+     * Story 29.39 — taxa do GATEWAY DE PAGAMENTO como fração do faturamento.
+     *
+     * Custo distinto de `taxaPlataformaPct` (taxa da plataforma de vendas): os
+     * dois incidem sobre o mesmo ticket e SOMAM. Ficam separados para o memorial
+     * do CAC alvo manter rastreável de onde cada dedução saiu.
+     *
+     * Era `gatewayFixo` em R$/transação até a 29.39. O gateway desta operação
+     * não tem parcela fixa — o custo inteiro varia com o faturamento.
+     */
+    gatewayPctVar: numeric("gateway_pct_var", { precision: 6, scale: 5 }),
     /**
      * Story 29.36 — taxas digitadas por etapa, com proveniência.
      * A janela de medição vem junto do valor: cadeia que mistura janelas não

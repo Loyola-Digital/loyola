@@ -14,7 +14,7 @@ function cfg(over: Partial<PerpetualReportConfig> = {}): PerpetualReportConfig {
     inicioTrafego: null, validado: true, validadoEm: null, validadoPor: null,
     impostoPct: 0.1215, impostoOrigem: "default",
     taxaPlataformaPct: null, taxaImpostoPct: null, taxaOutrosPct: null,
-    margemDesejadaPct: null, cmv: null, gatewayFixo: null,
+    margemDesejadaPct: null, cmv: null, gatewayPctVar: null,
     funnelArchitecture: null, chainDefectReading: null, manualRates: {}, ceilings: {}, ...over,
   };
 }
