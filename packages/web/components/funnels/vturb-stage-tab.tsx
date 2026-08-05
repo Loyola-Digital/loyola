@@ -159,6 +159,40 @@ function PlayerPicker({
 }: { projectId: string; stageId: string; open: boolean; onOpenChange: (o: boolean) => void }) {
   const { data, isLoading } = useVturbPlayers(projectId, open);
   const link = useLinkVturbPlayer(projectId, stageId);
+  const [busca, setBusca] = useState("");
+  const [colado, setColado] = useState("");
+
+  const todos = data?.players ?? [];
+
+  // Mais recentes primeiro: numa conta compartilhada, a VSL que você acabou de
+  // subir é quase sempre a que você quer vincular.
+  const ordenados = [...todos].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+
+  // Filtro no CLIENTE de propósito. /players/list não é paginado (vem a conta
+  // inteira numa tacada) e a cota de queries é por conta — numa conta com muita
+  // gente, cada busca no servidor roubaria cota de todo mundo.
+  const termo = busca.trim().toLowerCase();
+  const filtrados = termo
+    ? ordenados.filter((p) => p.name.toLowerCase().includes(termo) || p.id.toLowerCase().includes(termo))
+    : ordenados;
+
+  /**
+   * Vincular colando ID ou código embed. A API não expõe as pastas do painel,
+   * então quem tem a VSL dentro de uma pasta navega lá, copia o embed e cola
+   * aqui. Em vez de adivinhar o formato do ID por regex, procuramos qual dos
+   * players da conta aparece dentro do texto colado — funciona com ID puro,
+   * embed, iframe ou URL.
+   */
+  function vincularColado() {
+    const txt = colado.trim();
+    if (!txt) return;
+    const achado = ordenados.find((p) => txt.includes(p.id));
+    if (!achado) {
+      toast.error("Não achei nenhuma VSL desta conta no texto colado. Confira se o ID está correto.");
+      return;
+    }
+    vincular(achado);
+  }
 
   function vincular(p: VturbPlayer) {
     link.mutate(
@@ -171,7 +205,11 @@ function PlayerPicker({
         pitchTime: p.pitch_time ?? undefined,
       },
       {
-        onSuccess: () => { toast.success(`${p.name} vinculada`); onOpenChange(false); },
+        onSuccess: () => {
+        toast.success(`${p.name} vinculada`);
+        setBusca(""); setColado("");
+        onOpenChange(false);
+      },
         onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao vincular"),
       },
     );
@@ -182,37 +220,78 @@ function PlayerPicker({
       <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Vincular VSL</DialogTitle>
-          <DialogDescription>VSLs da sua conta VTurb.</DialogDescription>
+          <DialogDescription>
+            A API da VTurb não expõe as pastas do painel — esta é a lista plana da conta
+            inteira. Busque pelo nome, ou cole o ID/embed da VSL que está dentro da sua pasta.
+          </DialogDescription>
         </DialogHeader>
+
+        {/* Colar ID/embed — atalho pra quem organiza por pasta no painel VTurb. */}
+        <div className="space-y-1.5 rounded-lg border border-border/40 p-2.5">
+          <Label className="text-xs font-medium">Colar ID ou código embed</Label>
+          <div className="flex gap-1.5">
+            <Input
+              value={colado}
+              onChange={(e) => setColado(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); vincularColado(); } }}
+              placeholder="Cole aqui o ID do player ou o embed inteiro"
+              className="h-8 text-xs"
+            />
+            <Button size="sm" className="h-8 shrink-0" onClick={vincularColado} disabled={!colado.trim() || link.isPending}>
+              Vincular
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            No painel da VTurb: abra a pasta, menu de 3 pontos do vídeo → Copiar código embed.
+          </p>
+        </div>
+
         {isLoading ? (
           <div className="space-y-2">
             <Skeleton className="h-14" /><Skeleton className="h-14" />
           </div>
-        ) : !data?.players.length ? (
+        ) : !todos.length ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             Nenhuma VSL encontrada nessa conta.
           </p>
         ) : (
-          <div className="space-y-1.5">
-            {data.players.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => vincular(p)}
-                disabled={link.isPending}
-                className="flex w-full items-center gap-2 rounded-lg border border-border/40 p-2.5 text-left transition-colors hover:bg-muted/40"
-              >
-                <Video className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{p.name}</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {p.duration ? `${mmss(p.duration)} de vídeo` : "sem duração cadastrada"}
-                    {p.pitch_time ? ` · pitch em ${mmss(p.pitch_time)}` : ""}
-                  </p>
-                </div>
-                <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              </button>
-            ))}
+          <div className="space-y-2">
+            <Input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder={`Buscar entre ${todos.length} VSLs da conta...`}
+              className="h-8 text-xs"
+            />
+            {filtrados.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                Nenhuma VSL com “{busca}”.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {filtrados.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => vincular(p)}
+                    disabled={link.isPending}
+                    className="flex w-full items-center gap-2 rounded-lg border border-border/40 p-2.5 text-left transition-colors hover:bg-muted/40"
+                  >
+                    <Video className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{p.name}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {p.duration ? `${mmss(p.duration)} de vídeo` : "sem duração cadastrada"}
+                        {p.pitch_time ? ` · pitch em ${mmss(p.pitch_time)}` : ""}
+                      </p>
+                      {/* ID visível: é assim que se confere qual é qual quando
+                          dois vídeos de pastas diferentes têm o mesmo nome. */}
+                      <p className="truncate font-mono text-[10px] text-muted-foreground/70">{p.id}</p>
+                    </div>
+                    <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </DialogContent>
