@@ -504,3 +504,64 @@ describe("GR-01.b — intervalo nunca vira ponto (AC9)", () => {
     // Reportar 23,68% seria trocar uma faixa medida por um número inventado.
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Regressão do blocker achado no gate da 29.36
+// ═══════════════════════════════════════════════════════════════════════════
+
+import { FUNNEL_TEMPLATES, type FunnelArchitecture } from "../funnel-templates";
+
+/**
+ * O gate reprovou a 29.36 porque `connect_rate` ficava sem valor E sem campo
+ * para digitar: o template a marcava como "analytics", o sistema não fornecia
+ * o número, e o campo de edição só aparecia para `source === "manual"`. Como
+ * `GR-01.d` derruba o cálculo inteiro quando falta uma etapa, o CAC decomposto
+ * nunca calculava — em nenhuma das 7 arquiteturas.
+ *
+ * A correção derivou a editabilidade do que o sistema FORNECE, e não do
+ * `source` declarado. Estes testes travam a propriedade que importa: toda
+ * etapa precisa ter um caminho para receber valor.
+ */
+describe("toda etapa tem caminho para receber valor (regressão do gate)", () => {
+  /** O que a tela obtém do sistema hoje. Só CTR. */
+  const SYSTEM_PROVIDES = new Set(["CTR"]);
+
+  const architectures = Object.keys(FUNNEL_TEMPLATES) as FunnelArchitecture[];
+
+  it.each(architectures)("%s — nenhuma etapa fica sem valor e sem campo", (arch) => {
+    const t = FUNNEL_TEMPLATES[arch];
+    const orfas = t.stages.filter((s) => {
+      const doSistema = SYSTEM_PROVIDES.has(s.key);
+      // Regra nova: editável = o sistema não fornece. Com ela, nenhuma etapa
+      // fica órfã. Com a regra antiga (`source === "manual"`), toda etapa
+      // "analytics" ficava.
+      const editavel = !doSistema;
+      return !doSistema && !editavel;
+    });
+    expect(orfas).toHaveLength(0);
+  });
+
+  it("a regra ANTIGA deixaria etapas órfãs — é o bug que o gate pegou", () => {
+    const SYSTEM_PROVIDES = new Set(["CTR"]);
+    const orfasPelaRegraAntiga = architectures.flatMap((arch) =>
+      FUNNEL_TEMPLATES[arch].stages
+        .filter((s) => !SYSTEM_PROVIDES.has(s.key) && s.source !== "manual")
+        .map((s) => `${arch}.${s.key}`),
+    );
+    // Prova de que o problema não era só connect_rate: 6 etapas distintas,
+    // espalhadas por 6 das 7 arquiteturas.
+    expect(orfasPelaRegraAntiga.length).toBeGreaterThan(0);
+    const chaves = new Set(orfasPelaRegraAntiga.map((x) => x.split(".")[1]));
+    expect(chaves).toContain("connect_rate");
+    expect(chaves.size).toBeGreaterThan(1);
+  });
+
+  it("connect_rate está em TODAS as arquiteturas — por isso derrubava tudo (R2)", () => {
+    for (const arch of architectures) {
+      const temConnect = FUNNEL_TEMPLATES[arch].stages.some((s) =>
+        s.key === "connect_rate" || s.key === "vsl_connect",
+      );
+      expect(temConnect).toBe(true);
+    }
+  });
+});

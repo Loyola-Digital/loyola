@@ -83,13 +83,24 @@ export function PerpetualChainSection({
 
   const template = architecture ? getTemplate(architecture) : null;
 
-  /** Monta a cadeia juntando o que o sistema mede com o que foi digitado. */
+  /**
+   * Monta a cadeia juntando o que o sistema mede com o que foi digitado.
+   *
+   * A editabilidade NÃO vem do `source` declarado no template — vem de o
+   * sistema ter fornecido o número ou não. `source` documenta de onde o dado
+   * DEVERIA vir; quem decide se há campo para digitar é a realidade.
+   *
+   * Isso é auto-corretivo: hoje 6 etapas estão marcadas "analytics" e nenhuma
+   * chega a esta tela, então todas são digitáveis. Quando a integração existir
+   * e `measuredRates` passar a devolvê-las, o campo some sozinho e o valor
+   * passa a vir do sistema — sem tocar no template.
+   */
   const rates: ChainRate[] = useMemo(() => {
     if (!template) return [];
     return template.stages.map((s) => {
       const manual = manualRates[s.key];
       const measured = measuredRates[s.key];
-      const isManual = s.source === "manual";
+      const isManual = measured == null;
       return {
         key: s.key,
         label: s.label,
@@ -268,7 +279,10 @@ export function PerpetualChainSection({
               <tbody>
                 {rates.map((r) => {
                   const stage = template.stages.find((s) => s.key === r.key)!;
-                  const isManual = stage.source === "manual";
+                  // Mesma regra do `rates`: editável quando o sistema não
+                  // fornece. Ler `stage.source` aqui produziria etapa sem
+                  // valor E sem campo — travada para sempre.
+                  const isManual = measuredRates[r.key] == null;
                   // Janela do valor manual que não cobre o período em tela: a
                   // taxa existe, mas não descreve o que está sendo analisado.
                   const stale =
@@ -289,7 +303,9 @@ export function PerpetualChainSection({
                           `${(r.value * 100).toFixed(2)}%`
                         )}
                       </td>
-                      <td className="px-2 text-[10px] text-muted-foreground">{r.source ?? "—"}</td>
+                      <td className="px-2 text-[10px] text-muted-foreground">
+                        {r.source ?? <span className="italic">a preencher · ideal: {stage.source}</span>}
+                      </td>
                       <td className={`px-2 text-[10px] ${stale ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>
                         {r.windowStart ? `${r.windowStart} → ${r.windowEnd}` : "—"}
                         {stale && " · fora do período"}
