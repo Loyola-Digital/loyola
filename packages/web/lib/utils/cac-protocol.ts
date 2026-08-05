@@ -281,3 +281,288 @@ export function compareToTarget(realizedCac: number | null, targetCac: number | 
     note: "CAC realizado acima da tolerância — o funil não paga a margem planejada.",
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 29.36 — cadeia de conversão e CAC decomposto
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Uma taxa da cadeia, com a proveniência que o protocolo exige.
+ *
+ * `windowStart`/`windowEnd` não são enfeite: `AGG-01` e `ST-07` exigem que
+ * TODAS as taxas de uma cadeia venham da mesma janela. Um play rate medido em
+ * janeiro multiplicado por um CTR de ontem produz um número sem significado —
+ * e o protocolo manda abortar, não avisar em rodapé.
+ */
+export interface ChainRate {
+  key: string;
+  label: string;
+  /** Semântica das bases — é o que CHAIN-01 valida. */
+  numerator: string;
+  denominator: string;
+  /** `null` = não medido. NUNCA vira 1,0 (GR-01.d). */
+  value: number | null;
+  status: DerivationStatus;
+  /** Sistema + tela + coluna. "VTurb" sozinho é insuficiente. */
+  source: string | null;
+  windowStart: string | null;
+  windowEnd: string | null;
+  /** Quando o valor foi transcrito — para o usuário ver que envelheceu. */
+  measuredAt: string | null;
+}
+
+export interface DecomposedCac {
+  /** `null` quando alguma etapa está sem medição — jamais um número otimista. */
+  cac: number | null;
+  status: DerivationStatus;
+  /** Produto das taxas. `null` se qualquer uma faltar. */
+  chainProduct: number | null;
+  /** 1 ÷ produto — a leitura que denuncia erro de unidade. */
+  entriesPerSale: number | null;
+  /** Etapas sem valor, por label. */
+  unmeasured: string[];
+  expression: string | null;
+}
+
+/**
+ * CHAIN-01 / ST-05 — as bases precisam encadear.
+ *
+ * O denominador de cada etapa tem que ser textualmente o numerador da
+ * anterior. Duas taxas na mesma base contam a mesma perda duas vezes (CAC
+ * superestimado); um salto de base faz uma perda inteira sumir (CAC
+ * subestimado). Os dois erros são silenciosos — o número sai plausível.
+ */
+export function assertChainIntegrity(rates: ChainRate[]): void {
+  for (let i = 0; i < rates.length - 1; i++) {
+    const cur = rates[i];
+    const next = rates[i + 1];
+    if (next.denominator !== cur.numerator) {
+      throw new ProtocolViolation(
+        "CHAIN-01",
+        `bases não encadeiam entre "${cur.label}" e "${next.label}": ` +
+          `o numerador de "${cur.label}" é "${cur.numerator}" mas o denominador de ` +
+          `"${next.label}" é "${next.denominator}". Uma perda está sendo contada ` +
+          `duas vezes ou desaparecendo.`,
+      );
+    }
+  }
+}
+
+/**
+ * AGG-01 / ST-07 — janela e atribuição homogêneas.
+ *
+ * Só considera etapas COM janela declarada. Etapa sem janela não é comparada
+ * (seria falso positivo), mas também não passa por medida: `ST-08` a pega
+ * antes, porque etapa sem medição bloqueia o CAC decomposto de qualquer forma.
+ */
+export function assertHomogeneousWindow(rates: ChainRate[]): void {
+  const declared = rates.filter((r) => r.windowStart && r.windowEnd);
+  if (declared.length < 2) return;
+  const first = declared[0];
+  const divergent = declared.filter(
+    (r) => r.windowStart !== first.windowStart || r.windowEnd !== first.windowEnd,
+  );
+  if (divergent.length > 0) {
+    const janelas = [...new Set(declared.map((r) => `${r.windowStart}..${r.windowEnd}`))];
+    throw new ProtocolViolation(
+      "ST-07",
+      `INCOMPATIBLE_MEASUREMENT_BASIS — a cadeia mistura ${janelas.length} janelas: ` +
+        `${janelas.join(" · ")}. O produto das taxas não tem significado quando os ` +
+        `fatores medem períodos diferentes.`,
+    );
+  }
+}
+
+/**
+ * ST-06 — numerador único.
+ *
+ * Se a entrada é CPC, o CTR SAI da cadeia: o custo do clique já embute a taxa
+ * de clique. Manter os dois conta o mesmo custo duas vezes.
+ */
+export function assertSingleNumerator(entry: EntryCostKind, rates: ChainRate[]): void {
+  const hasCtr = rates.some((r) => r.key.toUpperCase() === "CTR");
+  if (entry === "CPM" && !hasCtr) {
+    throw new ProtocolViolation("ST-06", "entrada por CPM exige CTR na cadeia.");
+  }
+  if ((entry === "CPC" || entry === "CPL") && hasCtr) {
+    throw new ProtocolViolation(
+      "ST-06",
+      `entrada por ${entry} com CTR na cadeia: o mesmo custo é contado duas vezes.`,
+    );
+  }
+}
+
+export type EntryCostKind = "CPM" | "CPC" | "CPL";
+
+/**
+ * Custo de UMA entrada.
+ *
+ * U-04 — CPM entra SEMPRE dividido por 1000. É a única exceção de escala do
+ * protocolo: CPM é cotado por mil impressões e a equação precisa de uma.
+ */
+export function entryCostPerUnit(kind: EntryCostKind, value: number): number {
+  return kind === "CPM" ? value / 1000 : value;
+}
+
+/**
+ * E1/E2 — `CAC = custo_da_entrada ÷ ∏(taxas)`.
+ *
+ * DIVISÃO, não multiplicação. O deck original escrevia com `×`, o que daria
+ * CAC menor que um único clique. É identidade exata em modo diagnóstico —
+ * desde que as bases encadeiem e a janela seja a mesma.
+ */
+export function decomposeCac(
+  entry: { kind: EntryCostKind; value: number },
+  rates: ChainRate[],
+): DecomposedCac {
+  assertSingleNumerator(entry.kind, rates);
+  assertChainIntegrity(rates);
+  assertHomogeneousWindow(rates);
+
+  // GR-01.d — etapa existente e não medida torna o resultado UNKNOWN. Nunca
+  // se preenche com 1,0 ("assumindo 100%"), que faria o CAC parecer melhor.
+  const unmeasured = rates.filter((r) => r.value == null).map((r) => r.label);
+  if (unmeasured.length > 0) {
+    return {
+      cac: null,
+      status: "UNKNOWN",
+      chainProduct: null,
+      entriesPerSale: null,
+      unmeasured,
+      expression: null,
+    };
+  }
+
+  for (const r of rates) assertRate(r.value as number, r.label);
+
+  const product = rates.reduce((acc, r) => acc * (r.value as number), 1);
+  const cost = entryCostPerUnit(entry.kind, entry.value);
+  const cac = cost / product;
+
+  return {
+    cac,
+    status: "DERIVED",
+    chainProduct: product,
+    entriesPerSale: 1 / product,
+    unmeasured: [],
+    expression:
+      `${cost} ÷ (${rates.map((r) => r.value).join(" × ")}) = ${cost} ÷ ${product} = ${cac.toFixed(2)}`,
+  };
+}
+
+export type SanityVerdict = "PASS" | "FAIL" | "INCONCLUSIVE";
+
+export interface SanityResult {
+  id: string;
+  name: string;
+  verdict: SanityVerdict;
+  detail: string;
+}
+
+/**
+ * ST-02 — bandas do produto das taxas. Calibradas SÓ para `vsl_direct`.
+ *
+ * Arquitetura com número diferente de etapas tem produto em outra ordem de
+ * grandeza por construção — aplicar esta banda a um quiz produziria FAIL
+ * espúrio. Por isso o teste sai INCONCLUSIVE, não FAIL, fora dela.
+ */
+const SANITY_BANDS: Record<string, { low: number; high: number }> = {
+  "vsl_direct:CPM": { low: 0.00005, high: 0.0004 },
+  "vsl_direct:CPC": { low: 0.002, high: 0.015 },
+};
+
+/**
+ * ST-01 a ST-08 — rodam TODOS antes de qualquer resultado ser emitido.
+ *
+ * Qualquer FAIL bloqueia a emissão. INCONCLUSIVE não bloqueia: significa que o
+ * teste não se aplica àquele contexto, o que é diferente de reprovar.
+ */
+export function runSanityTests(
+  architecture: string,
+  entry: { kind: EntryCostKind; value: number },
+  rates: ChainRate[],
+  decomposed: DecomposedCac,
+): SanityResult[] {
+  const out: SanityResult[] = [];
+  const measured = rates.filter((r) => r.value != null);
+
+  // ST-01 — toda taxa em (0, 1]
+  const bad = measured.filter((r) => !((r.value as number) > 0 && (r.value as number) <= 1));
+  out.push({
+    id: "ST-01",
+    name: "Taxas em (0, 1]",
+    verdict: bad.length === 0 ? "PASS" : "FAIL",
+    detail: bad.length === 0
+      ? `${measured.length} taxa(s) dentro do intervalo`
+      : `fora do intervalo: ${bad.map((r) => r.label).join(", ")} — provável valor em pontos percentuais`,
+  });
+
+  // ST-02 — banda do produto
+  const band = SANITY_BANDS[`${architecture}:${entry.kind}`];
+  if (!band || decomposed.chainProduct == null) {
+    out.push({
+      id: "ST-02",
+      name: "Produto na banda esperada",
+      verdict: "INCONCLUSIVE",
+      detail: band
+        ? "produto indisponível — há etapa não medida"
+        : `sem banda calibrada para ${architecture} com entrada por ${entry.kind}; só vsl_direct tem`,
+    });
+  } else {
+    const ok = decomposed.chainProduct >= band.low && decomposed.chainProduct <= band.high;
+    out.push({
+      id: "ST-02",
+      name: "Produto na banda esperada",
+      verdict: ok ? "PASS" : "FAIL",
+      detail: `produto = ${decomposed.chainProduct} vs banda [${band.low}, ${band.high}]`,
+    });
+  }
+
+  // ST-03 — leitura de volume plausível
+  if (decomposed.entriesPerSale == null) {
+    out.push({ id: "ST-03", name: "Volume por venda plausível", verdict: "INCONCLUSIVE", detail: "cadeia incompleta" });
+  } else {
+    const ok = decomposed.entriesPerSale >= 10;
+    out.push({
+      id: "ST-03",
+      name: "Volume por venda plausível",
+      verdict: ok ? "PASS" : "FAIL",
+      detail: `${Math.round(decomposed.entriesPerSale)} entradas por venda` +
+        (ok ? "" : " — número baixo demais, provável erro de unidade"),
+    });
+  }
+
+  // ST-04 — colapsada = aberta. Sem conversão total medida de forma
+  // independente, o teste não roda: seria comparar o número consigo mesmo.
+  out.push({
+    id: "ST-04",
+    name: "Colapsada = aberta",
+    verdict: "INCONCLUSIVE",
+    detail: "exige conversão total medida independentemente da cadeia — não disponível hoje",
+  });
+
+  // ST-05 / ST-06 / ST-07 — já validados por exceção em decomposeCac. Chegar
+  // aqui significa que passaram.
+  out.push({ id: "ST-05", name: "Bases encadeadas (CHAIN-01)", verdict: "PASS", detail: "denominadores batem com o numerador anterior" });
+  out.push({ id: "ST-06", name: "Numerador único", verdict: "PASS", detail: `entrada por ${entry.kind}, sem dupla contagem de custo` });
+  out.push({
+    id: "ST-07",
+    name: "Janela homogênea",
+    verdict: "PASS",
+    detail: measured.some((r) => r.windowStart)
+      ? "todas as etapas com janela declarada compartilham o mesmo período"
+      : "nenhuma etapa declarou janela — nada a comparar",
+  });
+
+  // ST-08 — cobertura de etapas
+  out.push({
+    id: "ST-08",
+    name: "Cobertura de etapas",
+    verdict: decomposed.unmeasured.length === 0 ? "PASS" : "FAIL",
+    detail: decomposed.unmeasured.length === 0
+      ? `${rates.length} etapa(s) medida(s)`
+      : `sem medição: ${decomposed.unmeasured.join(", ")} — CAC decomposto é UNKNOWN, nunca preenchido com 100%`,
+  });
+
+  return out;
+}

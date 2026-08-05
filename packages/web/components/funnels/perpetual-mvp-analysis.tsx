@@ -19,6 +19,9 @@ import {
   ProtocolViolation,
   type TargetCacResult,
 } from "@/lib/utils/cac-protocol";
+import { PerpetualChainSection, type ManualRateEntry } from "./perpetual-chain-section";
+import type { FunnelArchitecture } from "@/lib/utils/funnel-templates";
+import type { EntryCostKind } from "@/lib/utils/cac-protocol";
 import type { Funnel } from "@loyola-x/shared";
 
 /**
@@ -154,6 +157,48 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
     () => (hasError ? null : compareToTarget(realizedCac, target.valueExact)),
     [hasError, realizedCac, target],
   );
+
+  /**
+   * Story 29.36 — taxas que o sistema JÁ mede. CTR e connect rate saem do
+   * overview; o resto da cadeia depende de instrumentação que não existe e
+   * entra por digitação.
+   *
+   * `null` quando o denominador é zero — nunca 0, que leria como "conversão
+   * nula" em vez de "sem base para medir".
+   */
+  const measuredRates = useMemo<Record<string, number | null>>(() => {
+    const imp = overview?.totalImpressions ?? 0;
+    const clicks = overview?.totalLinkClicks ?? overview?.totalClicks ?? 0;
+    return {
+      CTR: imp > 0 && clicks > 0 ? clicks / imp : null,
+      // Connect rate exige pageviews, que vêm de analytics e ainda não chegam
+      // a esta tela — fica como manual até a integração existir.
+      connect_rate: null,
+    };
+  }, [overview]);
+
+  /**
+   * Custo da entrada. CPM porque é o que o overview entrega; com CPM na
+   * entrada, o CTR ENTRA na cadeia (ST-06) — que é o caso aqui.
+   */
+  const entryCost = useMemo<{ kind: EntryCostKind; value: number } | null>(() => {
+    const imp = overview?.totalImpressions ?? 0;
+    const spend = overview?.totalSpend ?? 0;
+    if (!(imp > 0) || !(spend > 0)) return null;
+    return { kind: "CPM", value: (spend / imp) * 1000 };
+  }, [overview]);
+
+  async function handleSaveChain(patch: {
+    funnelArchitecture?: string | null;
+    chainDefectReading?: string | null;
+    manualRates?: Record<string, ManualRateEntry>;
+  }) {
+    try {
+      await saveConfig.mutateAsync(patch);
+    } catch {
+      toast.error("Não foi possível salvar");
+    }
+  }
 
   async function handleSave() {
     const m = parseOrNull(margemPct);
@@ -373,6 +418,21 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
           contagem.
         </p>
       </div>
+
+      {/* ---- Story 29.36 — seções 01, 03 e 04: arquitetura, cadeia e CAC
+           decomposto. Vive abaixo do gap porque responde a pergunta seguinte:
+           sabendo que o CAC estourou, ONDE ele estourou. ---- */}
+      <PerpetualChainSection
+        architecture={(cfg?.funnelArchitecture as FunnelArchitecture | null) ?? null}
+        chainDefectReading={cfg?.chainDefectReading ?? null}
+        manualRates={cfg?.manualRates ?? {}}
+        measuredRates={measuredRates}
+        periodStart={customRange?.startDate ?? null}
+        periodEnd={customRange?.endDate ?? null}
+        entryCost={entryCost}
+        onSave={handleSaveChain}
+        saving={saveConfig.isPending}
+      />
 
       {/* ---- Seção 11 — ressalvas desta análise ---- */}
       <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-2">

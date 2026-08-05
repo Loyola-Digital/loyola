@@ -2434,6 +2434,19 @@ export const perpetualReportConfigs = pgTable(
     cmv: numeric("cmv", { precision: 12, scale: 2 }),
     /** Parcela FIXA do gateway, em R$/transação. O % vive em `taxaPlataformaPct`. */
     gatewayFixo: numeric("gateway_fixo", { precision: 12, scale: 2 }),
+    /**
+     * Story 29.36 — taxas digitadas por etapa, com proveniência.
+     * A janela de medição vem junto do valor: cadeia que mistura janelas não
+     * tem significado, e o protocolo manda abortar (AGG-01/ST-07).
+     */
+    manualRates: jsonb("manual_rates")
+      .$type<Record<string, { value: number; source: string; windowStart: string; windowEnd: string; measuredAt: string }>>()
+      .notNull()
+      .default({}),
+    /** Qual dos 7 templates descreve o funil. NULL = cadeia não calculada. */
+    funnelArchitecture: varchar("funnel_architecture", { length: 40 }),
+    /** Só para `sales_page`, que tem defeito de cadeia declarado no protocolo. */
+    chainDefectReading: varchar("chain_defect_reading", { length: 120 }),
     /** Se os nomes de campanha trazem `videos`/`estaticos` (§C.9). False = seção some, não zera. */
     temSplitFormato: boolean("tem_split_formato").notNull().default(false),
     /** `utm_source` que contam como pago. Fora disso é orgânico e fica fora de CAC/ROAS/margem. */

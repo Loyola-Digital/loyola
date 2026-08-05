@@ -38,6 +38,13 @@ export interface PerpetualReportConfig {
   margemDesejadaPct: number | null;
   cmv: number | null;
   gatewayFixo: number | null;
+  /** Story 29.36 — arquitetura declarada e taxas digitadas com proveniência. */
+  funnelArchitecture: string | null;
+  chainDefectReading: string | null;
+  manualRates: Record<
+    string,
+    { value: number; source: string; windowStart: string; windowEnd: string; measuredAt: string }
+  >;
   validado: boolean;
   validadoEm: string | null;
   validadoPor: string | null;
@@ -73,6 +80,13 @@ export interface PerpetualConfigInput {
   margemDesejadaPct?: number | null;
   cmv?: number | null;
   gatewayFixo?: number | null;
+  /** Story 29.36 — cadeia. */
+  funnelArchitecture?: string | null;
+  chainDefectReading?: string | null;
+  manualRates?: Record<
+    string,
+    { value: number; source: string; windowStart: string; windowEnd: string; measuredAt: string }
+  >;
 }
 
 function basePath(projectId: string, funnelId: string): string {

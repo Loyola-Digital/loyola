@@ -158,3 +158,162 @@ describe("compareToTarget — gap e kill/continue (MTAX-04)", () => {
     expect(compareToTarget(347.22, null).verdict).toBe("UNKNOWN");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 29.36 — cadeia de conversão
+// ═══════════════════════════════════════════════════════════════════════════
+
+import {
+  decomposeCac,
+  assertChainIntegrity,
+  assertHomogeneousWindow,
+  assertSingleNumerator,
+  entryCostPerUnit,
+  runSanityTests,
+  type ChainRate,
+} from "../cac-protocol";
+
+/** Cadeia canônica do protocolo — a que produz CAC de R$ 347,22. */
+function chain(over: Partial<Record<string, number | null>> = {}): ChainRate[] {
+  const mk = (
+    key: string,
+    label: string,
+    numerator: string,
+    denominator: string,
+    value: number | null,
+  ): ChainRate => ({
+    key, label, numerator, denominator,
+    value: key in over ? (over[key] as number | null) : value,
+    status: "MEASURED",
+    source: "teste",
+    windowStart: "2026-01-01",
+    windowEnd: "2026-01-31",
+    measuredAt: "2026-02-01",
+  });
+  return [
+    mk("CTR", "CTR", "cliques no link", "impressões", 0.02),
+    mk("connect_rate", "Connect Rate", "pageviews", "cliques no link", 0.8),
+    mk("play_rate", "Play Rate", "plays únicos", "pageviews", 0.6),
+    mk("pitch_rate", "Retenção ao Pitch", "únicos no pitch", "plays únicos", 0.2),
+    mk("conv_post_pitch", "Conv. Pós-Pitch", "checkouts iniciados", "únicos no pitch", 0.2),
+    mk("conv_checkout", "Conv. Checkout", "compras aprovadas", "checkouts iniciados", 0.15),
+  ];
+}
+
+describe("decomposeCac — paridade com cac_engine.py (AC10)", () => {
+  it("reproduz o cenário canônico: CAC R$ 347,22", () => {
+    const r = decomposeCac({ kind: "CPM", value: 20 }, chain());
+    expect(r.cac).toBeCloseTo(347.22, 2);
+    expect(r.chainProduct).toBeCloseTo(0.0000576, 10);
+    expect(Math.round(r.entriesPerSale!)).toBe(17361);
+    expect(r.status).toBe("DERIVED");
+  });
+
+  it("via CPC sem CTR na cadeia dá o MESMO CAC — ST-04 fecha", () => {
+    const semCtr = chain().filter((r) => r.key !== "CTR");
+    const r = decomposeCac({ kind: "CPC", value: 1 }, semCtr);
+    expect(r.cac).toBeCloseTo(347.22, 2);
+    expect(r.chainProduct).toBeCloseTo(0.00288, 8);
+  });
+
+  it("CPM entra dividido por 1000 — única exceção de escala (U-04)", () => {
+    expect(entryCostPerUnit("CPM", 20)).toBe(0.02);
+    expect(entryCostPerUnit("CPC", 1)).toBe(1);
+  });
+
+  it("é DIVISÃO, não multiplicação — multiplicar daria CAC menor que um clique", () => {
+    const r = decomposeCac({ kind: "CPC", value: 2 }, [
+      {
+        key: "conv", label: "Conv", numerator: "vendas", denominator: "cliques",
+        value: 0.02, status: "MEASURED", source: "t", windowStart: null, windowEnd: null, measuredAt: null,
+      },
+    ]);
+    expect(r.cac).toBe(100); // 2 ÷ 0,02 — não 0,04
+  });
+});
+
+describe("GR-01.d — etapa não medida (AC6)", () => {
+  it("devolve UNKNOWN e nomeia a etapa, nunca assume 100%", () => {
+    const r = decomposeCac({ kind: "CPM", value: 20 }, chain({ pitch_rate: null }));
+    expect(r.cac).toBeNull();
+    expect(r.status).toBe("UNKNOWN");
+    expect(r.unmeasured).toEqual(["Retenção ao Pitch"]);
+  });
+
+  it("assumir 100% produziria CAC otimista — é o que a guarda impede", () => {
+    const comum = decomposeCac({ kind: "CPM", value: 20 }, chain()).cac!;
+    const otimista = decomposeCac({ kind: "CPM", value: 20 }, chain({ pitch_rate: 1 })).cac!;
+    expect(otimista).toBeLessThan(comum); // 5× melhor, e mentira
+  });
+});
+
+describe("CHAIN-01 — bases encadeadas (AC7)", () => {
+  it("aceita a cadeia canônica", () => {
+    expect(() => assertChainIntegrity(chain())).not.toThrow();
+  });
+
+  it("aborta quando uma etapa pula de base", () => {
+    const quebrada = chain();
+    quebrada[3] = { ...quebrada[3], denominator: "pageviews" }; // deveria ser "plays únicos"
+    expect(() => assertChainIntegrity(quebrada)).toThrow(ProtocolViolation);
+    expect(() => assertChainIntegrity(quebrada)).toThrow(/não encadeiam/);
+  });
+});
+
+describe("ST-07 — janela homogênea (AC3)", () => {
+  it("aceita cadeia com janela única", () => {
+    expect(() => assertHomogeneousWindow(chain())).not.toThrow();
+  });
+
+  it("aborta quando um valor manual é de outro período", () => {
+    const mista = chain();
+    mista[2] = { ...mista[2], windowStart: "2025-11-01", windowEnd: "2025-11-30" };
+    expect(() => assertHomogeneousWindow(mista)).toThrow(/INCOMPATIBLE_MEASUREMENT_BASIS/);
+  });
+
+  it("etapa sem janela declarada não dispara falso positivo", () => {
+    const semJanela = chain().map((r) => ({ ...r, windowStart: null, windowEnd: null }));
+    expect(() => assertHomogeneousWindow(semJanela)).not.toThrow();
+  });
+});
+
+describe("ST-06 — numerador único", () => {
+  it("aborta com CPC + CTR na mesma cadeia", () => {
+    expect(() => assertSingleNumerator("CPC", chain())).toThrow(/duas vezes/);
+  });
+
+  it("aborta com CPM sem CTR", () => {
+    expect(() => assertSingleNumerator("CPM", chain().filter((r) => r.key !== "CTR"))).toThrow(
+      ProtocolViolation,
+    );
+  });
+});
+
+describe("runSanityTests — os 8 rodam sempre (AC8)", () => {
+  it("roda ST-01 a ST-08, sem pular nenhum", () => {
+    const d = decomposeCac({ kind: "CPM", value: 20 }, chain());
+    const r = runSanityTests("vsl_direct", { kind: "CPM", value: 20 }, chain(), d);
+    expect(r.map((x) => x.id)).toEqual([
+      "ST-01", "ST-02", "ST-03", "ST-04", "ST-05", "ST-06", "ST-07", "ST-08",
+    ]);
+  });
+
+  it("cenário canônico não produz nenhum FAIL", () => {
+    const d = decomposeCac({ kind: "CPM", value: 20 }, chain());
+    const r = runSanityTests("vsl_direct", { kind: "CPM", value: 20 }, chain(), d);
+    expect(r.filter((x) => x.verdict === "FAIL")).toHaveLength(0);
+  });
+
+  it("ST-02 sai INCONCLUSIVE fora de vsl_direct — banda não se aplica, não reprova", () => {
+    const d = decomposeCac({ kind: "CPM", value: 20 }, chain());
+    const r = runSanityTests("quiz", { kind: "CPM", value: 20 }, chain(), d);
+    expect(r.find((x) => x.id === "ST-02")?.verdict).toBe("INCONCLUSIVE");
+  });
+
+  it("ST-08 reprova quando há etapa sem medição", () => {
+    const rates = chain({ play_rate: null });
+    const d = decomposeCac({ kind: "CPM", value: 20 }, rates);
+    const r = runSanityTests("vsl_direct", { kind: "CPM", value: 20 }, rates, d);
+    expect(r.find((x) => x.id === "ST-08")?.verdict).toBe("FAIL");
+  });
+});
