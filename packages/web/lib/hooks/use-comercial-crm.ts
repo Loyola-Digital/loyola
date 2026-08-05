@@ -68,10 +68,21 @@ export interface CrmSyncResult {
   totalBuyers?: number;
 }
 
+export interface CrmCardSurveySource {
+  surveyId: string;
+  spreadsheetName: string;
+  sheetName: string;
+  matchedBy: "email" | "phone";
+  answers: { label: string; answer: string }[];
+}
+
 export interface CrmCardSurvey {
   matched: boolean;
   matchedBy?: "email" | "phone";
+  /** Achatado (todas as planilhas juntas) — mantido para compatibilidade. */
   answers: { label: string; answer: string }[];
+  /** Uma entrada por planilha que casou com o card. Pode ter mais de uma. */
+  sources?: CrmCardSurveySource[];
 }
 
 function basePath(projectId: string, funnelId: string, stageId: string): string {
