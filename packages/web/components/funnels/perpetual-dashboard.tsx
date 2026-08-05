@@ -198,23 +198,26 @@ interface PerpetualDailyRow {
   lpViews: number;
 }
 
-// Colunas na ordem pedida (elicitação 29.23). `title` = memorial da fórmula
-// (tooltip no header, mesmo padrão das tabelas de LPs/Criativos — 18.58/18.60).
+// Story 29.33: quadro enxuto — só o que decide investimento. As 8 colunas de
+// mídia (Ticket Médio, Tx Conv., Cliques, Impressões, CPM, CPC, CTR, Connect
+// Rate) saíram: quem opera abre este quadro para responder "o dia deu lucro ou
+// prejuízo?", e varrer eficiência de mídia para chegar nisso custa uma rolagem
+// horizontal. Elas seguem disponíveis por dimensão no Detalhamento.
+//
+// ATENÇÃO ao editar: o header itera este array, mas o CORPO e o RODAPÉ são
+// células posicionais. Mudar a ordem aqui sem mudar lá desalinha os números
+// dos títulos — sem erro de tipo, sem erro em runtime, só valor na coluna
+// errada. As três listas andam juntas.
+//
+// `title` = memorial da fórmula (tooltip no header, padrão de 18.58/18.60).
 const PERPETUAL_DAILY_COLUMNS: Array<{ label: string; title: string }> = [
   { label: "Investimento", title: "Gasto Meta do dia + imposto de 12,15% (a partir de 2026-01-01)" },
   { label: "Faturamento Bruto", title: "Faturamento bruto do dia (planilha; fallback pixel Meta)" },
+  { label: "Margem", title: "Faturamento Líquido (após fees da plataforma) − Investimento c/ imposto" },
+  { label: "Margem %", title: "Margem ÷ Faturamento Bruto × 100" },
   { label: "Vendas", title: "Contagem de vendas do dia (planilha; fallback pixel Meta)" },
-  { label: "CPV", title: "Investimento ÷ Vendas" },
+  { label: "CAC", title: "Investimento ÷ Vendas" },
   { label: "ROAS", title: "Faturamento Bruto ÷ Investimento" },
-  { label: "Margem de Contribuição", title: "Faturamento Líquido (após fees) − Investimento c/ imposto" },
-  { label: "Ticket Médio", title: "Faturamento Bruto ÷ Vendas" },
-  { label: "Tx Conv.", title: "Vendas ÷ Cliques no link × 100" },
-  { label: "Cliques", title: "Cliques no link (link_click da Meta)" },
-  { label: "Impressões", title: "Impressões da Meta" },
-  { label: "CPM", title: "Investimento ÷ Impressões × 1000" },
-  { label: "CPC", title: "Investimento ÷ Cliques no link" },
-  { label: "CTR", title: "Cliques no link ÷ Impressões × 100" },
-  { label: "Connect Rate", title: "LP Views ÷ Cliques no link × 100" },
 ];
 
 // Story 29.25: paginação do Quadro de Dados Diários — 16 linhas por página.
@@ -249,6 +252,8 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
 
   // Story 29.25: totais do PERÍODO INTEIRO (não da página) — aditivas somam;
   // derivadas recalculadas pelos totais na renderização do rodapé (AC2).
+  // Story 29.33: só as 4 aditivas que sobreviveram ao enxugamento. Impressões,
+  // cliques e LP views saíram junto com as colunas de mídia que as consumiam.
   const totals = useMemo(() => {
     return rows.reduce(
       (a, r) => ({
@@ -256,13 +261,16 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
         revenue: a.revenue + r.revenue,
         margin: a.margin + r.margin,
         salesCount: a.salesCount + r.salesCount,
-        impressions: a.impressions + r.impressions,
-        linkClicks: a.linkClicks + r.linkClicks,
-        lpViews: a.lpViews + r.lpViews,
       }),
-      { spend: 0, revenue: 0, margin: 0, salesCount: 0, impressions: 0, linkClicks: 0, lpViews: 0 },
+      { spend: 0, revenue: 0, margin: 0, salesCount: 0 },
     );
   }, [rows]);
+
+  // Cor do rodapé: Margem e Margem % compartilham o sinal do total do período.
+  const totalsMarginTone =
+    totals.margin >= 0
+      ? "text-emerald-600 dark:text-emerald-400"
+      : "text-red-600 dark:text-red-400";
 
   if (rows.length === 0) return null;
 
@@ -326,39 +334,34 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
           </TableHeader>
           <TableBody>
             {pageRows.map((r) => {
-              const cpv = div(r.spend, r.salesCount);
+              // Story 29.33: CAC é o antigo CPV — mesma conta, nome que o resto
+              // do produto e o mercado usam.
+              const cac = div(r.spend, r.salesCount);
               const roas = div(r.revenue, r.spend);
-              const ticket = div(r.revenue, r.salesCount);
-              const txConv = r.linkClicks > 0 ? (r.salesCount / r.linkClicks) * 100 : null;
-              const cpm = r.impressions > 0 ? (r.spend / r.impressions) * 1000 : null;
-              const cpc = div(r.spend, r.linkClicks);
-              const ctr = r.impressions > 0 ? (r.linkClicks / r.impressions) * 100 : null;
-              const connect = r.linkClicks > 0 ? (r.lpViews / r.linkClicks) * 100 : null;
+              // Story 29.33: Margem % sobre o faturamento BRUTO — mesmo
+              // denominador de `buildFunnelMarginPercentFormula`, usado no
+              // Detalhamento. Duas tabelas, uma conta. Faturamento 0 → null →
+              // "—", nunca 0% (que leria como "margem nula", não "sem base").
+              const marginPct = r.revenue > 0 ? (r.margin / r.revenue) * 100 : null;
+              // Margem e Margem % compartilham o sinal, logo compartilham a cor.
+              const marginTone =
+                r.margin >= 0
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-red-600 dark:text-red-400";
               return (
                 <TableRow key={r.dateIso} className="text-xs">
                   <TableCell className="font-medium whitespace-nowrap">{r.date}</TableCell>
                   <TableCell className="text-right tabular-nums">{fmtCurrency(r.spend)}</TableCell>
                   <TableCell className="text-right tabular-nums">{fmtCurrency(r.revenue)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{fmtNumber(r.salesCount)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{fmtCurrency(cpv)}</TableCell>
-                  <TableCell className="text-right tabular-nums font-medium">{fmtRoas(roas)}</TableCell>
-                  <TableCell
-                    className={`text-right tabular-nums font-medium ${
-                      r.margin >= 0
-                        ? "text-emerald-600 dark:text-emerald-400"
-                        : "text-red-600 dark:text-red-400"
-                    }`}
-                  >
+                  <TableCell className={`text-right tabular-nums font-medium ${marginTone}`}>
                     {fmtCurrency(r.margin)}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{fmtCurrency(ticket)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{fmtPercent(txConv)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{fmtNumber(r.linkClicks)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{fmtNumber(r.impressions)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{fmtCurrency(cpm)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{fmtCurrency(cpc)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{fmtPercent(ctr)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{fmtPercent(connect)}</TableCell>
+                  <TableCell className={`text-right tabular-nums font-medium ${marginTone}`}>
+                    {fmtPercent(marginPct)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtNumber(r.salesCount)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtCurrency(cac)}</TableCell>
+                  <TableCell className="text-right tabular-nums font-medium">{fmtRoas(roas)}</TableCell>
                 </TableRow>
               );
             })}
@@ -369,26 +372,18 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
               <TableCell className="font-semibold whitespace-nowrap">Total</TableCell>
               <TableCell className="text-right tabular-nums">{fmtCurrency(totals.spend)}</TableCell>
               <TableCell className="text-right tabular-nums">{fmtCurrency(totals.revenue)}</TableCell>
+              <TableCell className={`text-right tabular-nums ${totalsMarginTone}`}>
+                {fmtCurrency(totals.margin)}
+              </TableCell>
+              {/* Story 29.33: as derivadas do rodapé saem dos SOMATÓRIOS do
+                  período, nunca da média das linhas — média de médias é o
+                  paradoxo de Simpson entrando pela porta da frente. */}
+              <TableCell className={`text-right tabular-nums ${totalsMarginTone}`}>
+                {fmtPercent(totals.revenue > 0 ? (totals.margin / totals.revenue) * 100 : null)}
+              </TableCell>
               <TableCell className="text-right tabular-nums">{fmtNumber(totals.salesCount)}</TableCell>
               <TableCell className="text-right tabular-nums">{fmtCurrency(div(totals.spend, totals.salesCount))}</TableCell>
               <TableCell className="text-right tabular-nums">{fmtRoas(div(totals.revenue, totals.spend))}</TableCell>
-              <TableCell
-                className={`text-right tabular-nums ${
-                  totals.margin >= 0
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-red-600 dark:text-red-400"
-                }`}
-              >
-                {fmtCurrency(totals.margin)}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">{fmtCurrency(div(totals.revenue, totals.salesCount))}</TableCell>
-              <TableCell className="text-right tabular-nums">{fmtPercent(totals.linkClicks > 0 ? (totals.salesCount / totals.linkClicks) * 100 : null)}</TableCell>
-              <TableCell className="text-right tabular-nums">{fmtNumber(totals.linkClicks)}</TableCell>
-              <TableCell className="text-right tabular-nums">{fmtNumber(totals.impressions)}</TableCell>
-              <TableCell className="text-right tabular-nums">{fmtCurrency(totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : null)}</TableCell>
-              <TableCell className="text-right tabular-nums">{fmtCurrency(div(totals.spend, totals.linkClicks))}</TableCell>
-              <TableCell className="text-right tabular-nums">{fmtPercent(totals.impressions > 0 ? (totals.linkClicks / totals.impressions) * 100 : null)}</TableCell>
-              <TableCell className="text-right tabular-nums">{fmtPercent(totals.linkClicks > 0 ? (totals.lpViews / totals.linkClicks) * 100 : null)}</TableCell>
             </TableRow>
           </TableFooter>
         </Table>
@@ -932,7 +927,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         formulasByKey: {
           spend: buildFunnelDailyFormula("Investimento", spendSource, spendComTax, true, dateLabel),
           revenue: buildFunnelDailyFormula("Faturamento Bruto", revenueSource, revenueBruto, true, dateLabel),
-          margin: buildFunnelDailyFormula("Margem (Líquida − Spend c/ tax)", "Derivado · (revenue × (1−feeRate)) − (spend × 1.1215)", margin, true, dateLabel),
+          // Story 29.33 (AC4b): o memorial descrevia a operação errada — um
+          // MARKUP sobre o spend líquido — enquanto `applyMetaTax` faz
+          // GROSS-UP: spend ÷ (1 − 0,1215), fator 1,1383039. O cálculo sempre
+          // esteve certo; era o texto que mentia, com 1,5% de diferença — o
+          // bastante para quem confere a conta na mão concluir que o dashboard
+          // está quebrado, ou pior, "corrigir" o código para bater com o texto.
+          margin: buildFunnelDailyFormula("Margem (Líquida − Spend c/ tax)", "Derivado · (revenue × (1−feeRate)) − (spend ÷ (1−0,1215))", margin, true, dateLabel),
         },
       };
     });
