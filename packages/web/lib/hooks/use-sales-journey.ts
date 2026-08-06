@@ -44,7 +44,8 @@ export interface BuyersOrigin {
   semOrigem: number;
   porFonte: { nome: string; compradores: number }[];
   porCampanha: { nome: string; compradores: number }[];
-  fontes: { label: string; tipo: "pesquisa" | "aplicacao" | "captacao" }[];
+  /** Toda planilha conectada no funil (menos as de venda) e quantos casou. */
+  fontes: { label: string; tipo: "pesquisa" | "aplicacao" | "captacao"; compradores: number }[];
 }
 
 export interface JourneyEvent {
