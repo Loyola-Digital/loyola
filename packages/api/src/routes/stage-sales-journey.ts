@@ -32,6 +32,7 @@ import {
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
+import { parseUtmTerm } from "../services/utm-term.js";
 
 const paramsSchema = z.object({
   projectId: z.string().uuid(),
@@ -395,11 +396,14 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
       // origens, senão o maior comprador enviesaria o gráfico.
       const compradores = new Set(vendas.map((v) => v.email).filter(Boolean));
       if (compradores.size === 0) {
-        return { semDados: true, totalCompradores: 0, casados: 0, semOrigem: 0, porFonte: [], porCampanha: [], fontes: [] };
+        return { semDados: true, totalCompradores: 0, casados: 0, semOrigem: 0, dimensoes: [], comTermEstruturado: 0, fontes: [] };
       }
 
       const fontes = await fontesDeOrigem(p.data.funnelId);
-      const origemPorEmail = new Map<string, { source: string; medium: string; campaign: string; fonteLabel: string }>();
+      const origemPorEmail = new Map<
+        string,
+        { source: string; medium: string; campaign: string; term: string; fonteLabel: string }
+      >();
 
       for (const f of fontes) {
         let data: { headers: string[]; rows: string[][] };
@@ -413,6 +417,7 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         const srcIdx = acharCol(data.headers, f.mapping.utm_source, /^utm_?source$/i);
         const medIdx = acharCol(data.headers, f.mapping.utm_medium, /^utm_?medium$/i);
         const cmpIdx = acharCol(data.headers, f.mapping.utm_campaign, /^utm_?campaign$/i);
+        const termIdx = acharCol(data.headers, f.mapping.utm_term, /^utm_?term$/i);
 
         for (const row of data.rows) {
           const email = normalizeEmail(row[emailIdx]);
@@ -424,18 +429,57 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
             source: (srcIdx !== -1 ? row[srcIdx] : "")?.trim() || "(sem utm)",
             medium: (medIdx !== -1 ? row[medIdx] : "")?.trim() || "",
             campaign: (cmpIdx !== -1 ? row[cmpIdx] : "")?.trim() || "(sem campanha)",
+            // O term carrega LP, criativo, público e formato — é ele que
+            // responde "de qual LP veio", que a campanha sozinha não responde.
+            term: (termIdx !== -1 ? row[termIdx] : "")?.trim() || "",
             fonteLabel: f.label,
           });
         }
       }
 
-      const contar = (chave: (o: { source: string; medium: string; campaign: string }) => string) => {
+      // Term parseado por comprador — daqui saem LP, criativo, público, formato.
+      const detalhes = [...origemPorEmail.values()].map((o) => ({ ...o, t: parseUtmTerm(o.term) }));
+
+      type Detalhe = (typeof detalhes)[number];
+      const contar = (chave: (o: Detalhe) => string | null) => {
         const m = new Map<string, number>();
-        for (const o of origemPorEmail.values()) m.set(chave(o), (m.get(chave(o)) ?? 0) + 1);
+        for (const d of detalhes) {
+          // Sem valor não vira "(vazio)" numa lista de igual pra igual: some, e
+          // o total da dimensão mostra sozinho quantos tinham a informação.
+          const k = chave(d);
+          if (!k) continue;
+          m.set(k, (m.get(k) ?? 0) + 1);
+        }
         return [...m.entries()]
           .map(([nome, compradores]) => ({ nome, compradores }))
           .sort((a, b) => b.compradores - a.compradores);
       };
+
+      /**
+       * Dimensões em vez de duas abas fixas. Cada uma responde uma pergunta
+       * diferente sobre o mesmo conjunto de compradores, e vem com o total de
+       * quem tinha aquela informação — sem isso, "3 vieram da lpa" esconde que
+       * só 5 dos 27 tinham LP no term.
+       */
+      const dimensoes = [
+        { key: "fonte", label: "Fonte", itens: contar((d) => (d.medium ? `${d.source} / ${d.medium}` : d.source)) },
+        { key: "campanha", label: "Campanha", itens: contar((d) => d.t.campanha || d.campaign) },
+        { key: "lp", label: "LP", itens: contar((d) => d.t.lp) },
+        { key: "anuncio", label: "Anúncio", itens: contar((d) => d.t.anuncio) },
+        { key: "conjunto", label: "Conjunto", itens: contar((d) => d.t.conjunto) },
+        { key: "formato", label: "Formato", itens: contar((d) => d.t.formato) },
+        { key: "publico", label: "Público", itens: contar((d) => d.t.publico) },
+        { key: "posicionamento", label: "Posicionamento", itens: contar((d) => d.t.posicionamento) },
+        { key: "objetivo", label: "Objetivo", itens: contar((d) => d.t.objetivo) },
+        { key: "lote", label: "Lote", itens: contar((d) => d.t.lote) },
+      ]
+        // Dimensão sem nenhum valor não vira aba vazia pra pessoa clicar e não
+        // achar nada — some.
+        .filter((d) => d.itens.length > 0)
+        .map((d) => ({
+          ...d,
+          comInfo: d.itens.reduce((s, i) => s + i.compradores, 0),
+        }));
 
       // Quantos compradores cada PLANILHA casou. Sem isso não dá pra saber se
       // uma fonte conectada está de fato contribuindo ou entrou só de enfeite
@@ -452,8 +496,9 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         // Comprador que não aparece em nenhuma pesquisa/planilha de lead: comprou
         // sem passar pela aplicação, ou usou outro e-mail no checkout.
         semOrigem: compradores.size - origemPorEmail.size,
-        porFonte: contar((o) => (o.medium ? `${o.source} / ${o.medium}` : o.source)),
-        porCampanha: contar((o) => o.campaign),
+        dimensoes,
+        /** Quantos compradores tinham utm_term estruturado (padrão do Meta). */
+        comTermEstruturado: detalhes.filter((d) => d.t.estruturado).length,
         fontes: fontes.map((f) => ({
           label: f.label,
           tipo: f.tipo,

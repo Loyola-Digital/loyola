@@ -42,8 +42,19 @@ export interface BuyersOrigin {
   casados: number;
   /** Comprou sem passar pela aplicação, ou usou outro e-mail no checkout. */
   semOrigem: number;
-  porFonte: { nome: string; compradores: number }[];
-  porCampanha: { nome: string; compradores: number }[];
+  /**
+   * Cada dimensão responde uma pergunta diferente sobre os mesmos compradores.
+   * `comInfo` = quantos tinham aquela informação no utm_term — sem isso, "3
+   * vieram da lpa" esconde que só 5 dos 27 tinham LP registrada.
+   */
+  dimensoes: {
+    key: string;
+    label: string;
+    comInfo: number;
+    itens: { nome: string; compradores: number }[];
+  }[];
+  /** Compradores cujo utm_term seguia o padrão estruturado do Meta. */
+  comTermEstruturado: number;
   /** Toda planilha conectada no funil (menos as de venda) e quantos casou. */
   fontes: { label: string; tipo: "pesquisa" | "aplicacao" | "captacao"; compradores: number }[];
 }
