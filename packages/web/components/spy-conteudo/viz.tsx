@@ -33,8 +33,13 @@ export const VIZ_CATEGORICAL = [
 export const nf = (n: number | null | undefined): string =>
   n == null ? "—" : n.toLocaleString("pt-BR");
 
-/** Compacta números grandes no eixo (12.9K) sem perder legibilidade. */
-export const nfCompact = (n: number): string => {
+/**
+ * Compacta números grandes no eixo (12.9K) sem perder legibilidade.
+ * Aceita null/undefined porque também formata valor vindo de API — sem a
+ * guarda, um campo ausente virava a string "undefined" no meio do dashboard.
+ */
+export const nfCompact = (n: number | null | undefined): string => {
+  if (n == null || !Number.isFinite(n)) return "—";
   if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(n % 1000 === 0 ? 0 : 1)}K`;
   return String(n);

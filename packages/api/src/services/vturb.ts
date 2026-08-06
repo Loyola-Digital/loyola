@@ -201,6 +201,43 @@ function fimDoDia(data: string): string {
   return `${data} 23:59:59`;
 }
 
+/**
+ * A API mistura tipos no MESMO objeto: as taxas vêm como string
+ * (`play_rate: "51.3"`, `engagement_rate: "16.1"`, `over_pitch_rate: "8.56"`)
+ * e os contadores como número (`total_viewed: 4760`). Quem consumir direto
+ * quebra ao formatar — `"51.3".toFixed()` não existe.
+ *
+ * Normalizamos aqui, na fronteira, para o resto do sistema ver só `number`,
+ * como os tipos declaram. Campo ausente vira 0 em vez de `undefined`: a UI
+ * formata esses valores sem guarda, e um buraco no meio do objeto derrubava a
+ * página inteira.
+ */
+function num(v: unknown): number {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
+/** Lista explícita: garante que todo campo exista mesmo se a API omitir. */
+const CAMPOS_STATS = [
+  "total_viewed", "total_viewed_device_uniq", "total_viewed_session_uniq",
+  "total_started", "total_started_device_uniq", "total_started_session_uniq",
+  "total_finished", "total_finished_device_uniq", "total_finished_session_uniq",
+  "engagement_rate", "total_clicked", "total_clicked_device_uniq",
+  "total_clicked_session_uniq", "total_over_pitch", "total_under_pitch",
+  "over_pitch_rate", "total_conversions", "overall_conversion_rate",
+  "total_amount_usd", "total_amount_brl", "total_amount_eur", "play_rate",
+] as const;
+
+function normalizarStats(raw: Record<string, unknown> | null | undefined): VturbSessionStats {
+  const out = {} as Record<string, number>;
+  for (const k of CAMPOS_STATS) out[k] = num(raw?.[k]);
+  return out as unknown as VturbSessionStats;
+}
+
 export async function listPlayers(
   token: string,
   opts: { name?: string; timezone?: string } = {},
@@ -218,7 +255,7 @@ export async function sessionStats(
   token: string,
   input: VturbRange & { playerId: string; videoDuration?: number | null; pitchTime?: number | null },
 ): Promise<VturbSessionStats> {
-  return request<VturbSessionStats>(token, "POST", "/sessions/stats", {
+  const raw = await request<Record<string, unknown>>(token, "POST", "/sessions/stats", {
     player_id: input.playerId,
     start_date: inicioDoDia(input.startDate),
     end_date: fimDoDia(input.endDate),
@@ -228,13 +265,14 @@ export async function sessionStats(
     video_duration: input.videoDuration ?? undefined,
     pitch_time: input.pitchTime ?? undefined,
   });
+  return normalizarStats(raw);
 }
 
 export async function sessionStatsByDay(
   token: string,
   input: VturbRange & { playerId: string; videoDuration?: number | null; pitchTime?: number | null },
 ): Promise<VturbStatsByDay> {
-  return request<VturbStatsByDay>(token, "POST", "/sessions/stats_by_day", {
+  const raw = await request<Record<string, unknown>[]>(token, "POST", "/sessions/stats_by_day", {
     player_id: input.playerId,
     start_date: inicioDoDia(input.startDate),
     end_date: fimDoDia(input.endDate),
@@ -242,31 +280,46 @@ export async function sessionStatsByDay(
     video_duration: input.videoDuration ?? undefined,
     pitch_time: input.pitchTime ?? undefined,
   });
+  // date_key é o único campo não-numérico da linha; preservado como veio.
+  return (Array.isArray(raw) ? raw : []).map((linha) => ({
+    ...normalizarStats(linha),
+    date_key: String(linha?.date_key ?? ""),
+  }));
 }
 
 export async function userEngagement(
   token: string,
   input: VturbRange & { playerId: string; videoDuration: number },
 ): Promise<VturbEngagement> {
-  return request<VturbEngagement>(token, "POST", "/times/user_engagement", {
+  const raw = await request<Record<string, unknown>>(token, "POST", "/times/user_engagement", {
     player_id: input.playerId,
     video_duration: input.videoDuration,
     start_date: inicioDoDia(input.startDate),
     end_date: fimDoDia(input.endDate),
     timezone: input.timezone,
   });
+  const pontos = Array.isArray(raw?.grouped_timed) ? (raw.grouped_timed as Record<string, unknown>[]) : [];
+  return {
+    average_watched_time: num(raw?.average_watched_time),
+    engagement_rate: num(raw?.engagement_rate),
+    grouped_timed: pontos.map((p) => ({ timed: num(p?.timed), total_users: num(p?.total_users) })),
+  };
 }
 
 export async function clicksTimed(
   token: string,
   input: VturbRange & { playerId: string },
 ): Promise<VturbClicksTimed> {
-  return request<VturbClicksTimed>(token, "POST", "/clicks/total_by_company_timed", {
+  const raw = await request<Record<string, unknown>[]>(token, "POST", "/clicks/total_by_company_timed", {
     player_id: input.playerId,
     start_date: inicioDoDia(input.startDate),
     end_date: fimDoDia(input.endDate),
     timezone: input.timezone,
   });
+  return (Array.isArray(raw) ? raw : []).map((p) => ({
+    timed: num(p?.timed),
+    total_users: num(p?.total_users),
+  }));
 }
 
 export async function quotaUsage(token: string): Promise<VturbQuota> {
