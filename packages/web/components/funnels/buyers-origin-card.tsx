@@ -31,9 +31,11 @@ function Ranking({ itens, total }: { itens: { nome: string; compradores: number 
           <div key={i.nome} className="space-y-0.5">
             <div className="flex items-baseline justify-between gap-3 text-xs">
               <span className="truncate text-muted-foreground">{i.nome}</span>
+              {/* Separador explícito: "3" e "15%" lado a lado eram lidos como
+                  "315%" ao copiar o texto do card. */}
               <span className="shrink-0 tabular-nums">
                 <strong className="text-foreground">{nf(i.compradores)}</strong>
-                <span className="ml-1.5 text-[10px] text-muted-foreground">{share.toFixed(0)}%</span>
+                <span className="text-[10px] text-muted-foreground"> · {share.toFixed(0)}%</span>
               </span>
             </div>
             {/* Barra proporcional ao MAIOR item, não ao total: com uma cauda
@@ -131,10 +133,29 @@ export function BuyersOriginCard({
 
       <Ranking itens={itens} total={data.casados} />
 
+      {/* Toda planilha conectada no funil entra aqui automaticamente (menos as
+          de venda). Mostrar quantos cada uma casou é o que denuncia a fonte que
+          entrou mas não contribui — coluna de e-mail não mapeada, aba errada. */}
       {data.fontes.length > 0 && (
-        <p className="mt-3 border-t border-border/30 pt-2 text-[10px] text-muted-foreground">
-          Cruzado contra: {data.fontes.map((f) => f.label).join(" · ")}
-        </p>
+        <div className="mt-3 border-t border-border/30 pt-2">
+          <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            Planilhas cruzadas ({data.fontes.length}) — automático
+          </p>
+          <ul className="space-y-0.5">
+            {data.fontes.map((f) => (
+              <li key={f.label} className="flex items-baseline justify-between gap-3 text-[11px]">
+                <span className="truncate text-muted-foreground">{f.label}</span>
+                <span
+                  className={`shrink-0 tabular-nums ${
+                    f.compradores === 0 ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"
+                  }`}
+                >
+                  {f.compradores === 0 ? "nenhum" : `${nf(f.compradores)} comprador${f.compradores !== 1 ? "es" : ""}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

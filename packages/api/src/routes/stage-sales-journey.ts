@@ -315,34 +315,43 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
    * aplicação/lead do funil. As UTMs vivem nelas — a planilha de venda costuma
    * ter UTM do checkout, que diz o último clique, não de onde o lead nasceu.
    */
-  async function fontesDeOrigem(funnelId: string, stageIds: string[]) {
+  /**
+   * Planilhas que NÃO servem de origem: são registros de COMPRA. Cruzar o
+   * comprador contra elas casaria 100% por construção (ele está lá porque
+   * comprou) e a UTM que carregam é a do checkout — último clique, não de onde
+   * o lead nasceu.
+   */
+  const TIPOS_DE_VENDA = new Set(["sales", "perpetual_sales", "perpetual_upsell"]);
+
+  async function fontesDeOrigem(funnelId: string) {
     const surveys = await fastify.db
       .select()
       .from(funnelSurveys)
       .where(eq(funnelSurveys.funnelId, funnelId));
 
-    const sheets = await fastify.db
+    // Sem allowlist de tipos: pega TODA planilha conectada no funil e descarta
+    // só as de venda. Assim, tipo novo de planilha entra na conta sozinho, sem
+    // precisar lembrar de editar esta lista.
+    const todas = await fastify.db
       .select()
       .from(funnelSpreadsheets)
-      .where(
-        and(
-          eq(funnelSpreadsheets.funnelId, funnelId),
-          inArray(funnelSpreadsheets.type, ["applications", "leads", "custom"]),
-        ),
-      );
-
-    void stageIds;
+      .where(eq(funnelSpreadsheets.funnelId, funnelId));
+    const sheets = todas.filter((s) => !TIPOS_DE_VENDA.has(s.type));
 
     return [
       ...surveys.map((s) => ({
+        // Nome da ABA junto: "Leads" não diz qual planilha é, e o time precisa
+        // conferir que a fonte certa entrou.
         label: `${s.spreadsheetName} / ${s.sheetName}`,
+        sheetLabel: s.sheetName,
         tipo: "pesquisa" as const,
         spreadsheetId: s.spreadsheetId,
         sheetName: s.sheetName,
         mapping: (s.columnMapping ?? {}) as Record<string, unknown>,
       })),
       ...sheets.map((s) => ({
-        label: s.label ?? `${s.spreadsheetName} / ${s.sheetName}`,
+        label: s.label ? `${s.label} · ${s.sheetName}` : `${s.spreadsheetName} / ${s.sheetName}`,
+        sheetLabel: s.sheetName,
         tipo: (s.type === "applications" ? "aplicacao" : "captacao") as "aplicacao" | "captacao",
         spreadsheetId: s.spreadsheetId,
         sheetName: s.sheetName,
@@ -389,7 +398,7 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         return { semDados: true, totalCompradores: 0, casados: 0, semOrigem: 0, porFonte: [], porCampanha: [], fontes: [] };
       }
 
-      const fontes = await fontesDeOrigem(p.data.funnelId, [p.data.stageId]);
+      const fontes = await fontesDeOrigem(p.data.funnelId);
       const origemPorEmail = new Map<string, { source: string; medium: string; campaign: string; fonteLabel: string }>();
 
       for (const f of fontes) {
@@ -428,6 +437,14 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
           .sort((a, b) => b.compradores - a.compradores);
       };
 
+      // Quantos compradores cada PLANILHA casou. Sem isso não dá pra saber se
+      // uma fonte conectada está de fato contribuindo ou entrou só de enfeite
+      // (coluna de e-mail não mapeada, aba errada, planilha vazia).
+      const porPlanilha = new Map<string, number>();
+      for (const o of origemPorEmail.values()) {
+        porPlanilha.set(o.fonteLabel, (porPlanilha.get(o.fonteLabel) ?? 0) + 1);
+      }
+
       return {
         semDados: false,
         totalCompradores: compradores.size,
@@ -437,7 +454,11 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         semOrigem: compradores.size - origemPorEmail.size,
         porFonte: contar((o) => (o.medium ? `${o.source} / ${o.medium}` : o.source)),
         porCampanha: contar((o) => o.campaign),
-        fontes: fontes.map((f) => ({ label: f.label, tipo: f.tipo })),
+        fontes: fontes.map((f) => ({
+          label: f.label,
+          tipo: f.tipo,
+          compradores: porPlanilha.get(f.label) ?? 0,
+        })),
       };
     },
   );
