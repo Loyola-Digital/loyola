@@ -57,7 +57,7 @@ export function BuyersOriginCard({
   projectId, funnelId, stageId,
 }: { projectId: string; funnelId: string; stageId: string }) {
   const { data, isLoading } = useBuyersOrigin(projectId, funnelId, stageId);
-  const [aba, setAba] = useState<"fonte" | "campanha">("fonte");
+  const [dim, setDim] = useState<string | null>(null);
 
   if (isLoading) return <Skeleton className="h-[280px] rounded-xl" />;
   if (!data) return null;
@@ -76,34 +76,35 @@ export function BuyersOriginCard({
   }
 
   const taxa = data.totalCompradores > 0 ? (data.casados / data.totalCompradores) * 100 : 0;
-  const itens = aba === "fonte" ? data.porFonte : data.porCampanha;
+  const ativa = data.dimensoes.find((d) => d.key === dim) ?? data.dimensoes[0];
 
   return (
     <div className="spy-viz rounded-xl border border-border/40 bg-card p-4">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold">Origem dos compradores</h3>
-          <p className="text-[11px] text-muted-foreground">
-            E-mail de quem comprou, cruzado com a pesquisa de aplicação
-          </p>
-        </div>
-        <div className="inline-flex rounded-md border border-border/50 p-0.5 text-xs">
-          {([
-            ["fonte", "Por fonte"],
-            ["campanha", "Por campanha"],
-          ] as const).map(([k, label]) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setAba(k)}
-              className={`rounded px-2.5 py-1 transition-colors ${
-                aba === k ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+      <div className="mb-3">
+        <h3 className="text-sm font-semibold">Origem dos compradores</h3>
+        <p className="text-[11px] text-muted-foreground">
+          E-mail de quem comprou, cruzado com as planilhas de lead e pesquisa. LP, anúncio,
+          formato e público saem do <code className="text-[10px]">utm_term</code>.
+        </p>
+      </div>
+
+      {/* Uma dimensão por pergunta. Quebra em várias linhas em vez de virar
+          dropdown: com o rótulo à vista dá pra varrer as opções de relance. */}
+      <div className="mb-3 flex flex-wrap gap-1">
+        {data.dimensoes.map((d) => (
+          <button
+            key={d.key}
+            type="button"
+            onClick={() => setDim(d.key)}
+            className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
+              ativa?.key === d.key
+                ? "border-primary bg-primary/10 font-medium text-primary"
+                : "border-border/50 text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            {d.label}
+          </button>
+        ))}
       </div>
 
       <div className="mb-4 flex flex-wrap gap-5">
@@ -131,7 +132,20 @@ export function BuyersOriginCard({
         </p>
       )}
 
-      <Ranking itens={itens} total={data.casados} />
+      {ativa && (
+        <>
+          {/* Denominador explícito por dimensão: "3 vieram da lpa" sem dizer
+              que só 5 tinham LP no term levaria a conclusão errada. */}
+          {ativa.comInfo < data.casados && (
+            <p className="mb-2 text-[11px] text-muted-foreground">
+              {ativa.comInfo} de {data.casados} compradores com origem têm{" "}
+              <strong>{ativa.label.toLowerCase()}</strong> registrada no term — os percentuais abaixo
+              são sobre esses {ativa.comInfo}.
+            </p>
+          )}
+          <Ranking itens={ativa.itens} total={ativa.comInfo} />
+        </>
+      )}
 
       {/* Toda planilha conectada no funil entra aqui automaticamente (menos as
           de venda). Mostrar quantos cada uma casou é o que denuncia a fonte que
