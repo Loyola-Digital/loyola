@@ -19,6 +19,9 @@ import { CampaignLogButton } from "./campaign-log-link";
 import { SalesMetaKpis } from "./sales-meta-kpis";
 import { MauticStageTab } from "./mautic-stage-tab";
 import { SalesConversionCard } from "./sales-conversion-card";
+import { SalesDailyComparisonChart } from "./sales-daily-comparison-chart";
+import { BuyersOriginCard } from "./buyers-origin-card";
+import { LeadJourneyPanel } from "./lead-journey-panel";
 import { ManualPixSalesSection } from "./manual-pix-sales-section";
 import { ManualSaleDialog } from "./manual-sale-dialog";
 import { useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
@@ -180,6 +183,25 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
             funnelId={funnelId}
             stageId={stage.id}
           />
+          {/* Ritmo de venda contra o lançamento anterior, alinhado em D-day. */}
+          <SalesDailyComparisonChart
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+          />
+          {/* De onde veio quem comprou + busca da jornada de um e-mail. */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <BuyersOriginCard
+              projectId={projectId}
+              funnelId={funnelId}
+              stageId={stage.id}
+            />
+            <LeadJourneyPanel
+              projectId={projectId}
+              funnelId={funnelId}
+              stageId={stage.id}
+            />
+          </div>
           <StageSalesSection
             projectId={projectId}
             funnelId={funnelId}
