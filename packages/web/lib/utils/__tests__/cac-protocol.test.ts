@@ -4,6 +4,7 @@ import {
   killContinueThreshold,
   compareToTarget,
   assertRate,
+  assertCostRate,
   roundMoney,
   ProtocolViolation,
   SCOPE_WARNING_D7,
@@ -27,7 +28,11 @@ const PROTOCOL_INPUTS: TargetCacInputs = {
   margemDesejada: 0.15,
   imposto: 0.1,
   gatewayPct: 0.0699,
-  gatewayFixo: 1,
+  // Story 29.39 — o gateway de pagamento passou de R$/transação a fração do
+  // faturamento. 1/450 é EXATAMENTE o R$1,00 do cenário do protocolo sobre o
+  // ticket de 450, o que mantém este fixture ancorado no caso de referência
+  // original: mesmo CAC alvo (R$204,55), semântica nova.
+  gatewayPctVar: 1 / 450,
   cmv: 60,
   reembolso: 0.08,
   chargeback: 0.01,
@@ -43,10 +48,13 @@ describe("targetCacDeck — paridade com cac_engine.py (AC8)", () => {
 
   it("arredonda SÓ no fim (ROUND-01) — o gateway exato é 32,455, não 32,46", () => {
     const r = targetCacDeck(PROTOCOL_INPUTS);
-    const gateway = r.lines.find((l) => l.label === "− Gateway");
-    // 450 × 0,0699 + 1 = 32,455. A fonte reporta R$204,54 porque arredonda
-    // ISTO para 32,46 antes de subtrair; nós não.
-    expect(gateway?.value).toBeCloseTo(-32.455, 3);
+    // Story 29.39: duas linhas de gateway, somadas aqui só para a asserção. Na
+    // tela elas permanecem separadas — é o que mantém rastreável qual mudou.
+    const plataforma = r.lines.find((l) => l.label === "− Gateway plataforma")!.value;
+    const pagamento = r.lines.find((l) => l.label === "− Gateway pagamento")!.value;
+    // 450 × 0,0699 + 450 × (1/450) = 31,455 + 1 = 32,455. A fonte reporta
+    // R$204,54 porque arredonda ISTO para 32,46 antes de subtrair; nós não.
+    expect(plataforma + pagamento).toBeCloseTo(-32.455, 3);
     // Prova de que a diferença de R$0,01 vem daí:
     expect(roundMoney(450 - 67.5 - 45 - 32.46 - 60 - 36 - 4.5)).toBe(204.54);
   });
@@ -57,7 +65,8 @@ describe("targetCacDeck — paridade com cac_engine.py (AC8)", () => {
       "Ticket médio",
       "− Margem desejada",
       "− Imposto",
-      "− Gateway",
+      "− Gateway plataforma",
+      "− Gateway pagamento",
       "− CMV",
       "− Reembolso",
       "− Chargeback",
@@ -76,6 +85,125 @@ describe("targetCacDeck — paridade com cac_engine.py (AC8)", () => {
     // Prova de que derivar do arredondado divergiria — é o erro que ROUND-01
     // existe para impedir, e que este teste pegou no primeiro port.
     expect(killContinueThreshold(204.55)).toBe(265.92);
+  });
+});
+
+describe("Story 29.39 — gateway como fração do faturamento", () => {
+  it("gateway de 2,5% dá CAC alvo de R$ 194,30 (conferido no cac_engine.py)", () => {
+    // Valor gerado rodando o engine de referência com gateway_fixed = 450×0,025,
+    // não derivado à mão. Exato: 194,295.
+    const r = targetCacDeck({ ...PROTOCOL_INPUTS, gatewayPctVar: 0.025 });
+    expect(r.value).toBe(194.3);
+    expect(r.valueExact).toBeCloseTo(194.295, 3);
+    expect(killContinueThreshold(r.valueExact)).toBe(252.58);
+  });
+
+  it("escala com o ticket — que é a razão de a mudança existir", () => {
+    // Uma parcela FIXA não muda quando o ticket dobra; uma percentual sim. Se
+    // este teste falhar, o campo voltou a ser tratado como valor absoluto.
+    const base = targetCacDeck({ ...PROTOCOL_INPUTS, gatewayPctVar: 0.025 });
+    const dobro = targetCacDeck({ ...PROTOCOL_INPUTS, ticket: 900, gatewayPctVar: 0.025 });
+    const gwBase = base.lines.find((l) => l.label === "− Gateway pagamento")!.value;
+    const gwDobro = dobro.lines.find((l) => l.label === "− Gateway pagamento")!.value;
+    expect(gwDobro).toBeCloseTo(gwBase * 2, 6);
+  });
+
+  it("as duas deduções de gateway ficam separadas no memorial", () => {
+    const r = targetCacDeck({ ...PROTOCOL_INPUTS, gatewayPctVar: 0.025 });
+    const labels = r.lines.map((l) => l.label);
+    expect(labels).toContain("− Gateway plataforma");
+    expect(labels).toContain("− Gateway pagamento");
+    // Colapsá-las numa linha só daria o mesmo total e esconderia a origem.
+    expect(labels.filter((l) => l.includes("Gateway"))).toHaveLength(2);
+  });
+
+  it("ausente é MISSING nomeado, nunca zero (GR-01)", () => {
+    const r = targetCacDeck({ ...PROTOCOL_INPUTS, gatewayPctVar: null });
+    expect(r.value).toBeNull();
+    expect(r.status).toBe("MISSING");
+    expect(r.missing).toContain("gateway de pagamento %");
+  });
+
+  it("em pontos percentuais aborta, como as demais frações (U-01)", () => {
+    expect(() => targetCacDeck({ ...PROTOCOL_INPUTS, gatewayPctVar: 2.5 })).toThrow(
+      ProtocolViolation,
+    );
+  });
+});
+
+describe("QA-05/QA-06 — zero é configuração real em CUSTO, não erro", () => {
+  it("CMV zero é o caso REAL desta operação, não uma borda", () => {
+    // Confirmado pelo dono do produto em 2026-08-05: "CMV zero em todos os
+    // nossos casos". Produto digital não tem custo unitário. Se este teste
+    // falhar, o cenário PADRÃO do projeto parou de calcular.
+    const r = targetCacDeck({ ...PROTOCOL_INPUTS, cmv: 0 });
+    expect(r.status).toBe("DERIVED");
+    expect(r.value).not.toBeNull();
+    expect(r.missing).toHaveLength(0);
+  });
+
+  it("gateway de pagamento 0% é aceito — não se paga taxa que não existe", () => {
+    const r = targetCacDeck({ ...PROTOCOL_INPUTS, gatewayPctVar: 0 });
+    expect(r.status).toBe("DERIVED");
+    // A linha continua no memorial, valendo zero: some-la esconderia que a
+    // dedução foi considerada e deu zero.
+    const linha = r.lines.find((l) => l.label === "− Gateway pagamento")!;
+    expect(linha.value).toBe(0);
+    // QA-07: zero POSITIVO. `toBe` usa Object.is, então isto reprova `-0`, que
+    // é o que o formatador BRL transformava em "-R$ 0,00".
+    expect(Object.is(linha.value, -0)).toBe(false);
+  });
+
+  it("imposto zero (isenção) é aceito", () => {
+    expect(targetCacDeck({ ...PROTOCOL_INPUTS, imposto: 0 }).status).toBe("DERIVED");
+  });
+
+  it("MARGEM zero continua abortando — ali zero é erro de preenchimento", () => {
+    expect(() => targetCacDeck({ ...PROTOCOL_INPUTS, margemDesejada: 0 })).toThrow(
+      ProtocolViolation,
+    );
+  });
+
+  it("a cadeia de CONVERSÃO segue estrita: zero lá é etapa não medida", () => {
+    // É a razão original de U-01 e não muda. Se este teste falhar, alguém
+    // estendeu `assertCostRate` para além de custo.
+    expect(() => assertRate(0, "play rate")).toThrow(ProtocolViolation);
+  });
+
+  it("assertCostRate ainda rejeita negativo e ponto percentual", () => {
+    expect(() => assertCostRate(-0.01, "gateway")).toThrow(/fora de \[0, 1\]/);
+    expect(() => assertCostRate(2.5, "gateway")).toThrow(/pontos percentuais/);
+    expect(assertCostRate(0, "gateway")).toBe(0);
+    expect(assertCostRate(1, "gateway")).toBe(1);
+  });
+});
+
+describe("QA-07 — nenhuma linha do memorial carrega zero negativo", () => {
+  it("todas as deduções zeradas saem como zero POSITIVO", () => {
+    const r = targetCacDeck({
+      ...PROTOCOL_INPUTS,
+      imposto: 0,
+      gatewayPct: 0,
+      gatewayPctVar: 0,
+      cmv: 0,
+    });
+    const negativos = r.lines.filter((l) => Object.is(l.value, -0)).map((l) => l.label);
+    expect(negativos).toEqual([]);
+  });
+
+  it("normalizar o zero NÃO altera o CAC alvo", () => {
+    // A soma das linhas é como o valor é calculado. Se `-0` virasse `0` e o
+    // total mudasse, a correção teria efeito colateral aritmético — não tem,
+    // e este teste é o que garante isso.
+    const r = targetCacDeck({ ...PROTOCOL_INPUTS, cmv: 0, gatewayPctVar: 0 });
+    const soma = r.lines.reduce((a, l) => a + l.value, 0);
+    expect(roundMoney(soma)).toBe(r.value);
+  });
+
+  it("deduções não-zeradas seguem negativas", () => {
+    const r = targetCacDeck(PROTOCOL_INPUTS);
+    expect(r.lines.find((l) => l.label === "− Margem desejada")!.value).toBeLessThan(0);
+    expect(r.lines.find((l) => l.label === "− CMV")!.value).toBeLessThan(0);
   });
 });
 

@@ -1,0 +1,418 @@
+storyIds: ["29.38", "29.39"]
+storyTitles:
+  - "Perpétuo — destravar a aba Análise MVP (migrations + upsert que apaga config)"
+  - "Perpétuo — gateway como percentual do faturamento"
+verdict: CONCERNS
+verdictFinal: CONCERNS — nenhum blocking aberto; QA-07 (low) recomendado antes do merge
+reviewedBy: "@qa (Quinn)"
+reviewedAt: "2026-08-05"
+rereviewedAt: "2026-08-05 (3ª passada — QA-05/06 resolvidos, QA-07 novo)"
+branch: "feat/29.38-perpetual-mvp-unblock"
+commits: ["a2f2f8c", "cd3d567", "c769d37", "ffe59d3", "f1cc6ca", "7952dc7"]
+
+checks:
+  code_review:
+    status: PASS
+    note: >-
+      A decisão central foi acertada: extrair `mergeConfigValues` do handler.
+      A regra é de domínio, não de transporte, e tê-la enterrada dentro do
+      `fastify.put` é exatamente o que a tornou invisível para dois gates
+      anteriores — inclusive os meus. Agora ela tem nome, assinatura e teste.
+
+      O `keep` restaura a distinção `undefined` vs `null` que o `??` destruía, e
+      o uso de `??` (não `||`) está correto: `false`, `0` e `[]` sobrevivem. Isto
+      não é detalhe — `temSplitFormato: false` com `||` viraria o default.
+
+      Verifiquei a hipótese de que `previous ?? fallback` pudesse alterar dado
+      quando o banco tem `null` numa coluna com fallback não-nulo. Não procede:
+      `produtosOrderBump`, `temSplitFormato` e `origensPagas` são `.notNull()`
+      no schema, então `previous` nunca é nulo nesses três.
+
+  unit_tests:
+    status: PASS
+    note: >-
+      7 testes de regressão, e — o que importa mais — o autor os validou por
+      MUTAÇÃO: reintroduzindo o bug, 4 dos 7 falham. É a diferença entre um
+      teste que passa e um teste que protege.
+
+      Rodei 5 sondas adicionais não cobertas por ele: PUT `{}` totalmente vazio,
+      limpeza explícita de `manualRates` com `{}`, string vazia em prefixo,
+      `origensPagas: []` explícito e INSERT com corpo vazio. Todas passam.
+
+      Paridade da 29.39 reancorada RODANDO o `cac_engine.py`, não derivando à
+      mão — que era exatamente o que o AC4 exigia e o caminho fácil teria sido
+      pular. O teste que prova escala com o ticket é a melhor peça do conjunto:
+      se alguém voltar a tratar o campo como absoluto, ele quebra.
+
+  acceptance_criteria:
+    status: CONCERNS
+    note: >-
+      29.38 — AC1, AC3, AC4, AC5, AC6, AC8 atendidos. AC2 e AC7 abertos por
+      dependência de terceiros (@data-engineer e @devops), não por omissão.
+      29.39 — AC1 atendido COM DEFEITO (ver QA-01), AC2–AC5 atendidos, AC6
+      aberto pela mesma dependência.
+
+  no_regressions:
+    status: PASS
+    note: >-
+      tsc limpo nos 3 pacotes, `next build` limpo, ESLint sem warnings nos
+      arquivos novos, 158 testes web passando.
+
+      As 7 falhas da API são pré-existentes e isso foi PROVADO, não afirmado: o
+      diff do `schema.ts` toca unicamente a coluna do gateway, e as permissões
+      `traffic`/`youtubeAds` que quebram o `schema.test.ts` vieram do commit
+      `678bd75`, de outro autor. Confirmei o diff eu mesmo.
+
+  performance:
+    status: PASS
+    note: >-
+      `mergeConfigValues` é O(1) sobre ~15 campos. O banner de erro é render
+      condicional. Nenhuma query nova.
+
+  security:
+    status: PASS
+    note: >-
+      Superfície inalterada: guest segue bloqueado, `resolveFunnel` segue
+      validando a cadeia project→funnel, Drizzle parametriza. O `logApiError`
+      escreve no console do navegador — o corpo de erro desta rota não carrega
+      segredo.
+
+      Pendência PRÉ-EXISTENTE, fora do escopo destas stories: a rota não
+      verifica se o usuário pertence ao projeto (herdado da 41.7).
+
+  documentation:
+    status: PASS
+    note: >-
+      Os comentários explicam POR QUE, não O QUE — e o do `mergeConfigValues`
+      narra o defeito inteiro, incluindo por que ele ficou invisível. Daqui a
+      seis meses isso vale mais que o código.
+
+      A nota acrescentada às 29.35/29.36/29.37 corrige o registro histórico:
+      elas constavam com validação visual "pendente", o que sugeria falta de
+      agenda quando na verdade era impossibilidade.
+
+acceptance_criteria_evidence:
+  "29.38-AC1": "PASS — 0095/0096/0097 via `git mv` (histórico preservado), `0092_vturb` intacta, nenhuma auto-referência de número nos cabeçalhos."
+  "29.38-AC2": "ABERTO — @data-engineer. Não é falha do @dev."
+  "29.38-AC3": "PASS — `mergeConfigValues` cobre os 15 campos. Verificado por mutação e por 5 sondas minhas."
+  "29.38-AC4": "PASS — `premissaMudou` não dispara em PUT parcial; testado nas duas formas de salvamento da aba."
+  "29.38-AC5": "PASS com ressalva — zero `catch {}` nos 3 componentes; ver QA-02 sobre o texto."
+  "29.38-AC6": "PASS — 7 testes, os 5 cenários do AC mais 2 de borda (`false`/`[]` e zero)."
+  "29.38-AC7": "ABERTO — depende de AC2 + deploy."
+  "29.38-AC8": "PASS — as três stories anteriores anotadas com o motivo real."
+  "29.39-AC1": "CONCERNS — o campo é percentual e converte na borda, mas a hidratação exibe lixo de ponto flutuante. Ver QA-01."
+  "29.39-AC2": "PASS — `gateway_pct_var numeric(6,5)` nasceu na 0095; nenhuma migration desfeita."
+  "29.39-AC3": "PASS — duas linhas separadas no memorial; `assertRate` nas duas frações; ROUND-01 preservado."
+  "29.39-AC4": "PASS — engine executado, não estimado: 2,5% → R$194,30 (exato 194,295; limiar 252,58). Fixture com 1/450 mantém a âncora original em R$204,55."
+  "29.39-AC5": "PASS — as 3 ocorrências restantes de `gatewayFixo` são comentários que documentam a mudança, que o próprio AC5 pede."
+  "29.39-AC6": "ABERTO — depende do deploy."
+
+issues:
+  - id: QA-01
+    severity: medium
+    category: correctness
+    blocking: true
+    status: RESOLVIDO
+    resolution: >-
+      Corrigido em `ffe59d3`. `fracaoParaPP`/`ppParaFracao` em
+      `lib/utils/percent.ts`, aplicados aos dois campos. A medição que apontou o
+      defeito foi repetida com a correção: **0 de 2000** (era 537). 15 testes
+      novos, sendo o principal uma varredura de 2000 taxas — os valores redondos
+      que se testa por instinto passavam mesmo com a implementação ingênua.
+    description: >-
+      LIXO DE PONTO FLUTUANTE NOS CAMPOS PERCENTUAIS.
+
+      `perpetual-mvp-analysis.tsx:109` e `:111` hidratam os campos editáveis com
+      `String(fração * 100)`, sem arredondar. Em JavaScript isso produz:
+
+        0.07   × 100 = 7.000000000000001
+        0.0399 × 100 = 3.9900000000000007
+        0.035  × 100 = 3.5000000000000004
+        0.0199 × 100 = 1.9900000000000002
+
+      Medi o alcance percorrendo o caminho REAL — pontos percentuais → fração →
+      `numeric(6,5)` do banco → leitura → × 100 → tela. De 2000 taxas entre
+      0,01% e 20,00%, **537 (27%) exibem lixo**. Entre elas 7% e 3,99%, que são
+      valores correntes de gateway.
+
+      O erro numérico é de 1e-16 e não corrompe cálculo. O problema é de
+      confiança: um gestor que abre a tela e vê `7.000000000000001` conclui que
+      o sistema está quebrado — e o valor volta a ser gravado assim no save
+      seguinte.
+
+      Atinge DOIS campos:
+        - `gatewayPctVar` (:111) — introduzido pela 29.39;
+        - `margemDesejadaPct` (:109) — vem da 29.35, mas NUNCA foi visto porque
+          a aba nunca funcionou. Vai estrear com o defeito no primeiro deploy.
+
+      Agravante: o padrão correto já existe no MESMO arquivo — as linhas 380 e
+      381 usam `.toFixed(2)` para os campos herdados. Não foi aplicado aos
+      editáveis. Isso é descuido, não decisão de design.
+    recommendation: >-
+      Um helper na borda, aplicado aos dois campos. `.toFixed(4)` cobre a
+      precisão de `numeric(6,5)` em pontos percentuais, e o `Number(...)` remove
+      os zeros à direita para não exibir "2,5000":
+
+        const fracaoParaPP = (f: number) => String(Number((f * 100).toFixed(4)));
+
+      Corrigir os dois na mesma passada — deixar a margem para depois seria
+      entregar o defeito conscientemente.
+
+  - id: QA-02
+    severity: low
+    category: correctness
+    blocking: false
+    status: RESOLVIDO
+    resolution: "Corrigido em `ffe59d3`. `apiErrorMessage` recebe a operação; o banner de carga informa 'ao carregar'."
+    description: >-
+      MENSAGEM DE ERRO FORA DE CONTEXTO NA LEITURA.
+
+      `apiErrorMessage` devolve, para 500, "Erro no servidor **ao salvar**...".
+      A função é usada tanto nos três `catch` de gravação quanto no banner de
+      falha de CARGA (`:271`). Se o GET falhar com 500 — precisamente o cenário
+      de migration pendente que originou esta story — o banner de leitura vai
+      dizer que houve erro ao salvar.
+
+      Não induz a ação errada, mas é o tipo de imprecisão que faz o usuário
+      descrever o problema errado quando abre um chamado.
+    recommendation: >-
+      Neutralizar o texto ("Erro no servidor") ou aceitar um parâmetro de
+      operação. A dica sobre migration pendente é útil e deve ficar.
+
+  - id: QA-03
+    severity: low
+    category: maintainability
+    blocking: false
+    status: RESOLVIDO
+    resolution: "Corrigido em `ffe59d3` — `genérica` → `isGeneric`."
+    description: >-
+      Identificador com acento em `api-error.ts:35` (`const genérica`). É válido
+      em TypeScript e o build passa, mas destoa do resto do código e complica
+      grep para quem procurar por `generic`.
+    recommendation: "Renomear na próxima vez que o arquivo for tocado. Não vale um commit próprio."
+
+  - id: QA-04
+    severity: medium
+    category: process
+    blocking: false
+    description: >-
+      DUAS STORIES NUM PR. A 29.38 e a 29.39 vão juntas, e a justificativa do
+      @dev procede: separadas produziriam um deploy intermediário gravando
+      fração num campo rotulado "R$". Os commits estão separados por story, o
+      que preserva a rastreabilidade.
+
+      Registro para que a decisão fique explícita no histórico e não seja lida
+      como descuido de escopo.
+    recommendation: "Nenhuma ação. Decisão correta, apenas documentada."
+
+  - id: QA-05
+    severity: medium
+    category: correctness
+    blocking: true
+    status: RESOLVIDO
+    resolution: >-
+      Corrigido em `7952dc7`, pela via de fundo e não pela mínima. O dono do
+      produto confirmou em 2026-08-05 que **o CMV é zero em todos os casos**
+      (produto digital), o que estabeleceu que zero em custo é configuração
+      real, não erro de preenchimento.
+
+      `assertCostRate` aceita [0, 1] e é aplicada a imposto e aos dois gateways.
+      `assertRate` segue em (0, 1] e continua valendo na cadeia de conversão,
+      que é onde zero de fato significa "etapa não medida". A margem também
+      segue estrita.
+
+      Cenário real conferido ponta a ponta: CMV 0 + gateway variável 0 →
+      CAC alvo R$ 305,37, status DERIVED, linhas zeradas presentes no memorial.
+    description: >-
+      O FORMULÁRIO ACEITA UM GATEWAY QUE O MOTOR REJEITA.
+
+      `perpetual-mvp-analysis.tsx:239` valida `g < 0 || g > 99` — permite **zero**.
+      Mas `assertRate` rejeita zero (U-01), então:
+
+        1. usuário digita `0` em Gateway (%) — leitura legítima: "não pago taxa
+           variável de gateway";
+        2. o formulário aceita e salva;
+        3. a análise inteira aborta com
+           `U-01: gateway de pagamento % = 0 fora de (0, 1]. Provável valor em
+           pontos percentuais — dividir por 100.`
+
+      A mensagem acusa erro de unidade quando o usuário digitou zero de propósito.
+      Ele vai dividir por 100, digitar 0 de novo, e ver o mesmo erro.
+
+      É assimetria introduzida por esta story: a margem, no mesmo formulário,
+      valida `m <= 0` e bloqueia zero com mensagem no campo. O gateway não.
+
+      Confirmei contra o `cac_engine.py`: o engine também aborta com
+      `gateway_pct = 0`, então o PORT está fiel à referência. O defeito é do
+      formulário, que deixa passar o que o motor recusa.
+    recommendation: >-
+      Correção mínima e segura: alinhar com a margem (`g <= 0`) e dizer no toast
+      que, não havendo taxa, o campo deve ficar VAZIO — vazio significa "não
+      informado" e produz análise parcial explícita, que é honesto.
+
+      A alternativa melhor exige decisão do @po: tratar zero como legítimo para
+      CUSTOS, distinguindo-os de taxas de conversão. A justificativa de U-01 no
+      YAML do protocolo (linha 227) é explicitamente sobre conversão — *"taxa
+      zero torna o CAC infinito e quase sempre significa etapa não medida"* — e
+      nada disso vale para um custo. Mas divergir do protocolo é decisão de
+      produto, não de implementação.
+
+  - id: QA-06
+    severity: low
+    category: correctness
+    blocking: false
+    status: RESOLVIDO
+    resolution: >-
+      Corrigido em `7952dc7`. A divergência passou de acidental a DECLARADA: o
+      cabeçalho do módulo agora diz que existe exatamente uma, nomeia onde
+      (`assertCostRate`), e afirma que qualquer outra é defeito e não decisão.
+      O comportamento não mudou — o que mudou é que agora está escrito.
+    description: >-
+      DIVERGÊNCIA PORT × ENGINE NÃO DOCUMENTADA, NO CMV.
+
+      O cabeçalho do `cac-protocol.ts` declara: *"onde divergir do engine, o
+      engine vence"*. Testei os dois com `cmv = 0`:
+
+        engine (`cac_engine.py`) → ABORTA por U-02 (`valor monetário = 0 não é > 0`)
+        port   (`cac-protocol.ts`) → ACEITA, devolve CAC = 294,80
+
+      O port não aplica U-02 ao CMV. Na prática isso é BOM: a própria migration
+      `0095` descreve o CMV como *"tipicamente 0 em produto digital"*, que é o
+      caso deste projeto. Se o port seguisse o engine à risca, o cenário mais
+      comum abortaria.
+
+      O problema é que a divergência não está declarada em lugar nenhum, e o
+      contrato do módulo diz o oposto. Pré-existente da 29.35, não desta story —
+      registro aqui porque só apareceu ao investigar o QA-05.
+    recommendation: >-
+      Documentar a divergência no cabeçalho do módulo como decisão consciente, ou
+      revisar o contrato de autoridade. O comportamento atual não deve mudar.
+
+  - id: QA-07
+    severity: low
+    category: correctness
+    blocking: false
+    status: RESOLVIDO
+    resolution: >-
+      Corrigido em `032abd9`, na ORIGEM em vez do formatador — divergindo da
+      recomendação do @qa, com justificativa registrada no código: `-0` é
+      artefato da negação e não informação, e mantê-lo até a formatação faria
+      qualquer consumidor futuro de `lines` (export CSV/PDF) herdar o problema.
+      A normalização não altera aritmética, e há teste travando que a soma das
+      linhas continua igual ao CAC alvo.
+
+      Aplicado a TODAS as deduções, não só às duas visíveis hoje: imposto e
+      gateway da plataforma também podem ser zero legitimamente.
+
+      Memorial conferido: linhas limpas, CAC alvo segue R$ 305,37.
+    description: >-
+      "MENOS ZERO REAIS" NO MEMORIAL.
+
+      Com custo zero agora aceito, `-cmv` e `-gatewayPagamento` produzem `-0`
+      (zero negativo do IEEE 754). O `fmtBRL` do componente formata isso como:
+
+        − Gateway pagamento     -R$ 0,00
+        − CMV                   -R$ 0,00
+
+      Confirmei renderizando o memorial do cenário real com o mesmo `fmtBRL` do
+      componente. O rótulo já traz o sinal de dedução, então a linha exibe dois
+      negativos e um valor nulo — "menos zero reais".
+
+      Severidade baixa: o número está certo e é interpretável. Mas a FREQUÊNCIA
+      é 100%, não é borda — o dono do produto confirmou que o CMV é zero em
+      todos os casos, então toda leitura de CAC alvo deste projeto vai exibir
+      pelo menos uma linha assim.
+
+      É a mesma família do QA-01: valor correto, exibição que faz duvidar. A
+      diferença é a magnitude do estranhamento — `-R$ 0,00` se entende, mas
+      parece descuido.
+    recommendation: >-
+      Normalizar em `fmtBRL`, que é onde formatação é responsabilidade:
+
+        const n = Object.is(v, -0) ? 0 : v;
+
+      Não mexer no cálculo: `-0` é aritmeticamente correto e some-lo da linha
+      esconderia que a dedução foi considerada.
+
+waived: []
+
+blocked_by_dependency:
+  - "29.38-AC2 — @data-engineer aplica 0095/0096/0097 em produção"
+  - "29.38-AC7 — validação end-to-end, depende de AC2 + deploy da API (@devops)"
+  - "29.39-AC6 — validação na aplicação, mesma dependência"
+
+final_notes: >-
+  3ª PASSADA (após `7952dc7`). **Veredicto final: CONCERNS.** Nenhum issue
+  bloqueante permanece aberto.
+
+  QA-05 e QA-06 estão resolvidos, e a correção foi melhor do que a que eu havia
+  recomendado. Eu ofereci a saída mínima — bloquear zero no formulário — e ela
+  teria funcionado, mas ao custo de obrigar quem não tem taxa de gateway a
+  deixar o campo vazio, transformando um fato ("é zero") em ausência de dado
+  ("não informei"). A informação do dono do produto sobre o CMV expôs que o
+  problema era mais fundo: o motor aplicava a `custo` uma regra escrita para
+  `taxa de conversão`.
+
+  Verifiquei que a separação das guardas não vazou, que era o risco real desta
+  correção: `assertRate` segue na cadeia de conversão (`:518`) e na margem
+  (`:252`); `assertCostRate` só nos três custos. Zero segue abortando onde
+  significa "etapa não medida" — que é a razão de U-01 existir.
+
+  Segui o caminho do zero por todo o pipeline, porque zero é o valor que mais se
+  confunde com ausente: `toFiniteNumber` (`0` sobrevive), zod `min(0)`, o
+  `!= null` da hidratação, `parseOrNull("0")`, e o `v == null` do `required` em
+  `targetCacDeck`. Nenhum ponto trata zero como ausência.
+
+  QA-07 é o que sobrou, e não bloqueia: `-R$ 0,00` no memorial. Cosmético, mas
+  com frequência de 100% — recomendo corrigir junto, é uma linha no `fmtBRL`, e
+  seria estranho entregar a correção do lixo binário (QA-01) e deixar "menos
+  zero reais" na mesma tela.
+
+  ---
+
+  2ª PASSADA (após `ffe59d3`). Veredicto mantido em CONCERNS, à época por QA-05.
+
+  QA-01, QA-02 e QA-03 estão RESOLVIDOS e verifiquei cada um por conta própria,
+  não pelo relato. Repeti a medição que apontou o QA-01 — 0 de 2000, era 537 — e
+  sondei extremos que o autor não cobriu (0,01% · 99,99% · 12,345% · soma com
+  erro binário acumulado). Todos limpos.
+
+  A forma da correção merece registro: o helper foi centralizado em vez de
+  corrigido inline nas duas linhas, e o teste principal é uma VARREDURA de 2000
+  taxas. Isso importa porque os valores que se escolhe por instinto — 2,5 · 5 ·
+  15 — passavam mesmo com a implementação ingênua. Foi assim que o defeito
+  entrou, e um punhado de casos escolhidos à mão o deixaria entrar de novo.
+
+  QA-05 é novo e bloqueia: o formulário aceita gateway zero e o motor o rejeita,
+  com uma mensagem que acusa erro de unidade quando o usuário digitou zero de
+  propósito. Confirmei contra o engine de referência que o port está fiel — o
+  defeito é da validação do formulário, e é assimetria com a margem, que no
+  mesmo formulário bloqueia zero corretamente.
+
+  QA-06 apareceu ao investigar o QA-05 e não bloqueia: o port aceita `cmv = 0`
+  enquanto o engine aborta. O comportamento do port é o correto para o negócio
+  (produto digital), mas contradiz o contrato de autoridade declarado no próprio
+  cabeçalho do módulo. É dívida de documentação, herdada da 29.35.
+
+notes: >-
+  CONCERNS, com QA-01 marcado blocking.
+
+  O trabalho de engenharia aqui está acima da média da sequência: a extração da
+  função, a validação por mutação e a reancoragem executando o engine de
+  referência são três decisões que o caminho fácil teria dispensado. A prova de
+  que as falhas da API são pré-existentes foi feita com diff, não com alegação —
+  e isso importa depois de uma auditoria que apontou justamente inferência
+  passando por verificação.
+
+  QA-01 não desmerece isso, mas precisa ser corrigido antes do merge: são duas
+  linhas, e o defeito estreia visível para o usuário no primeiro deploy em que
+  a aba finalmente funcionar. Entregar o destravamento da aba junto com um campo
+  que exibe `7.000000000000001` desperdiçaria a primeira impressão que esta
+  entrega existe para consertar.
+
+  Nota pessoal de processo: o defeito que a 29.38 corrige passou por dois gates
+  meus. Nos dois, li o comentário do autor que dizia "preserva o que já existe
+  quando o PUT não manda o campo" e verifiquei que os quatro campos citados
+  estavam protegidos — sem perguntar quantos campos existiam ao todo. A lição é
+  que revisar a afirmação do autor não é o mesmo que revisar o código, e o
+  padrão repetido quinze vezes é onde essa diferença se esconde.

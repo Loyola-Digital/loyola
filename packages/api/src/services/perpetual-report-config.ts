@@ -57,7 +57,7 @@ export interface PerpetualReportConfig {
   /** CMV por unidade, em reais. */
   cmv: number | null;
   /** Parcela fixa do gateway, em R$/transação. */
-  gatewayFixo: number | null;
+  gatewayPctVar: number | null;
   /** Story 29.36 — arquitetura declarada e taxas digitadas. */
   funnelArchitecture: string | null;
   chainDefectReading: string | null;
@@ -265,7 +265,7 @@ export async function loadPerpetualReportConfigRaw(
     // de assumir zero (que seria um teto de mídia inventado).
     margemDesejadaPct: toFiniteNumber(row.cfg.margemDesejadaPct),
     cmv: toFiniteNumber(row.cfg.cmv),
-    gatewayFixo: toFiniteNumber(row.cfg.gatewayFixo),
+    gatewayPctVar: toFiniteNumber(row.cfg.gatewayPctVar),
     funnelArchitecture: row.cfg.funnelArchitecture,
     chainDefectReading: row.cfg.chainDefectReading,
     manualRates: row.cfg.manualRates ?? {},

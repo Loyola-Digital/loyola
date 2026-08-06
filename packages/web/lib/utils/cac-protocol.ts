@@ -4,7 +4,11 @@
  * Contrato de autoridade, definido pelo próprio protocolo:
  *   - o YAML manda na SEMÂNTICA (o que cada variável significa);
  *   - `cac_engine.py` manda na ARITMÉTICA (ordem de operações, arredondamento).
- * Este arquivo implementa a segunda; onde divergir do engine, o engine vence.
+ * Este arquivo implementa a segunda; onde divergir do engine, o engine vence —
+ * SALVO divergência declarada, e há exatamente uma, em `assertCostRate`: custo
+ * zero (gateway sem taxa, CMV de produto digital) é aceito aqui e abortado lá.
+ * O motivo está documentado na própria função. Qualquer outra divergência é
+ * defeito deste arquivo, não decisão.
  *
  * Por que TypeScript e não rodar o Python: Railway e Vercel executam Node. O
  * engine é especificação executável, não dependência de runtime.
@@ -37,12 +41,29 @@ export interface TargetCacInputs {
   /** Ticket médio. Derivado de faturamento bruto ÷ vendas — inclui order bumps. */
   ticket: number | null;
   ticketBasis: TicketBasis;
-  /** Decimais em (0, 1]. Percentual é coisa de tela, não de fórmula (U-01). */
+  /**
+   * Decimais, nunca pontos percentuais — percentual é coisa de tela (U-01).
+   *
+   * A margem vive em (0, 1]: zero aborta. Os CUSTOS abaixo vivem em [0, 1],
+   * com zero permitido — ver `assertCostRate` para o porquê da diferença.
+   */
   margemDesejada: number | null;
   imposto: number | null;
   gatewayPct: number | null;
-  /** Parcela fixa do gateway, em reais. */
-  gatewayFixo: number | null;
+  /**
+   * Story 29.39 — taxa do gateway de PAGAMENTO, como fração do ticket.
+   *
+   * Era `gatewayFixo` (R$/transação) até a 29.39. O protocolo modela a parcela
+   * fixa porque ela existe no mercado; o gateway desta operação não a tem — o
+   * custo inteiro varia com o faturamento.
+   *
+   * Isto NÃO é desvio do LOYOLA-X-CAC-PROTOCOL: o modelo M-DECK já prevê um
+   * componente percentual (`gatewayPct`), e aqui há uma segunda fonte percentual,
+   * de origem distinta. As duas seguem rastreáveis separadamente no memorial —
+   * que é o que o protocolo exige. Quem comparar código e YAML vai ver
+   * `gateway_fixo` lá e não aqui: a razão é esta, e não esquecimento.
+   */
+  gatewayPctVar: number | null;
   cmv: number | null;
   /**
    * Provisões de reembolso/chargeback. No Loyola X ficam em 0 porque essas
@@ -121,6 +142,58 @@ export function assertRate(value: number, name: string): number {
 }
 
 /**
+ * U-01 aplicado a CUSTO: intervalo [0, 1], com o zero permitido.
+ *
+ * ## Por que existe uma segunda guarda
+ *
+ * A justificativa de U-01 no YAML do protocolo (linha 227) é sobre CONVERSÃO:
+ *
+ *   "taxa zero torna o CAC infinito e quase sempre significa etapa não medida,
+ *    não etapa com conversão nula real"
+ *
+ * Ambas as razões falham para um custo. Um gateway de 0% não torna o CAC
+ * infinito — é uma dedução a menos. E zero não indica ausência de medição:
+ * indica que a taxa não é cobrada, o que é fato comum.
+ *
+ * O caso decisivo veio da operação: **o CMV é zero em todos os produtos deste
+ * projeto** (produto digital, sem custo unitário). O port já aceitava `cmv = 0`
+ * enquanto o `cac_engine.py` aborta por U-02 — divergência que o @qa encontrou
+ * (QA-06) e que se revelou correta. Esta função apenas estende ao gateway a
+ * mesma leitura, agora explícita em vez de acidental.
+ *
+ * ## Divergência declarada em relação ao engine
+ *
+ * O cabeçalho deste módulo diz que, onde houver divergência, o engine vence.
+ * Aqui há divergência DELIBERADA e esta é a declaração dela:
+ *
+ *   `cac_engine.py`  → aborta com gateway 0% (U-01) e com CMV R$0 (U-02)
+ *   `cac-protocol.ts` → aceita ambos, porque são configurações reais aqui
+ *
+ * A regra do engine continua valendo onde foi desenhada para valer: taxas de
+ * conversão da cadeia seguem usando `assertRate`, e zero segue abortando lá —
+ * é exatamente onde zero significa "ninguém mediu".
+ *
+ * ## O que continua bloqueado
+ *
+ * A MARGEM segue em `assertRate`. Margem zero é decisão estratégica de peso
+ * (vender no empate) e, muito mais provavelmente, campo preenchido errado.
+ * Deixá-la passar em silêncio produziria um CAC alvo alto e convidativo,
+ * derivado de uma premissa que ninguém tomou de propósito.
+ */
+export function assertCostRate(value: number, name: string): number {
+  if (!Number.isFinite(value)) {
+    throw new ProtocolViolation("U-01", `${name} não é um número finito.`);
+  }
+  if (value < 0 || value > 1) {
+    throw new ProtocolViolation(
+      "U-01",
+      `${name} = ${value} fora de [0, 1]. Provável valor em pontos percentuais — dividir por 100.`,
+    );
+  }
+  return value;
+}
+
+/**
  * ROUND-01 — arredondar SOMENTE no valor final.
  *
  * A fonte reporta R$ 204,54 porque arredonda o gateway (32,455 → 32,46) antes
@@ -147,8 +220,8 @@ export function targetCacDeck(input: TargetCacInputs): TargetCacResult {
     ["ticket médio", input.ticket],
     ["margem desejada", input.margemDesejada],
     ["imposto", input.imposto],
-    ["gateway %", input.gatewayPct],
-    ["gateway fixo", input.gatewayFixo],
+    ["gateway da plataforma %", input.gatewayPct],
+    ["gateway de pagamento %", input.gatewayPctVar],
     ["CMV", input.cmv],
   ];
   const missing = required.filter(([, v]) => v == null).map(([name]) => name);
@@ -174,26 +247,54 @@ export function targetCacDeck(input: TargetCacInputs): TargetCacResult {
   if (!(ticket > 0)) {
     throw new ProtocolViolation("U-02", `ticket médio = ${ticket} não é > 0.`);
   }
+  // Margem: estrita. Zero aqui é decisão de peso ou, muito mais provavelmente,
+  // erro de preenchimento — ver o comentário de `assertCostRate`.
   assertRate(input.margemDesejada as number, "margem desejada");
-  assertRate(input.imposto as number, "imposto");
-  assertRate(input.gatewayPct as number, "gateway %");
+  // Custos: zero é configuração real (isenção fiscal, gateway sem taxa).
+  assertCostRate(input.imposto as number, "imposto");
+  assertCostRate(input.gatewayPct as number, "gateway da plataforma %");
+  assertCostRate(input.gatewayPctVar as number, "gateway de pagamento %");
 
   const margem = ticket * (input.margemDesejada as number);
   const imposto = ticket * (input.imposto as number);
-  const gateway = ticket * (input.gatewayPct as number) + (input.gatewayFixo as number);
+  // Duas deduções distintas sobre o mesmo ticket: a taxa da plataforma de vendas
+  // e a do gateway de pagamento. Somá-las numa linha só daria o mesmo total e
+  // esconderia qual delas mudou — e o memorial existe justamente para isso.
+  const gatewayPlataforma = ticket * (input.gatewayPct as number);
+  const gatewayPagamento = ticket * (input.gatewayPctVar as number);
   const cmv = input.cmv as number;
   const reembolsoBrl = ticket * reembolso;
   const chargebackBrl = ticket * chargeback;
 
+  /**
+   * Nega para o memorial, normalizando o zero negativo (QA-07).
+   *
+   * `-0` é o que o IEEE 754 devolve ao negar zero, e desde que custo zero passou
+   * a ser aceito (QA-05) isso deixou de ser hipótese: o CMV é zero em TODOS os
+   * produtos deste projeto, então toda leitura de CAC alvo produzia ao menos uma
+   * linha assim. Formatado em BRL, `-0` vira `-R$ 0,00` — "menos zero reais",
+   * ao lado de um rótulo que já carrega o sinal de dedução.
+   *
+   * Normalizar aqui, e não no formatador, por duas razões:
+   *   1. `-0` é artefato da negação, não informação — quem consome `lines` não
+   *      deveria precisar saber disso. Um export para CSV ou PDF amanhã herdaria
+   *      o problema se ele ficasse guardado até a formatação;
+   *   2. não altera aritmética alguma: `-0` e `0` somam idêntico, e a soma das
+   *      linhas é justamente como o CAC alvo é calculado três linhas abaixo.
+   *      A única diferença observável entre os dois é a exibição.
+   */
+  const deducao = (v: number): number => (v === 0 ? 0 : -v);
+
   const lines: TargetCacLine[] = [
     { label: "Ticket médio", value: ticket },
-    { label: "− Margem desejada", value: -margem },
-    { label: "− Imposto", value: -imposto },
-    { label: "− Gateway", value: -gateway },
-    { label: "− CMV", value: -cmv },
+    { label: "− Margem desejada", value: deducao(margem) },
+    { label: "− Imposto", value: deducao(imposto) },
+    { label: "− Gateway plataforma", value: deducao(gatewayPlataforma) },
+    { label: "− Gateway pagamento", value: deducao(gatewayPagamento) },
+    { label: "− CMV", value: deducao(cmv) },
   ];
-  if (reembolsoBrl > 0) lines.push({ label: "− Reembolso", value: -reembolsoBrl });
-  if (chargebackBrl > 0) lines.push({ label: "− Chargeback", value: -chargebackBrl });
+  if (reembolsoBrl > 0) lines.push({ label: "− Reembolso", value: deducao(reembolsoBrl) });
+  if (chargebackBrl > 0) lines.push({ label: "− Chargeback", value: deducao(chargebackBrl) });
 
   // Soma dos termos exatos; o arredondamento acontece uma única vez, no fim.
   const exact = lines.reduce((acc, l) => acc + l.value, 0);
@@ -205,7 +306,7 @@ export function targetCacDeck(input: TargetCacInputs): TargetCacResult {
     lines,
     missing: [],
     expression:
-      `${ticket} − ${margem} − ${imposto} − ${gateway} − ${cmv}` +
+      `${ticket} − ${margem} − ${imposto} − ${gatewayPlataforma} − ${gatewayPagamento} − ${cmv}` +
       (reembolsoBrl > 0 ? ` − ${reembolsoBrl}` : "") +
       (chargebackBrl > 0 ? ` − ${chargebackBrl}` : "") +
       ` = ${roundMoney(exact)}`,

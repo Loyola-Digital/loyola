@@ -37,7 +37,7 @@ export interface PerpetualReportConfig {
    */
   margemDesejadaPct: number | null;
   cmv: number | null;
-  gatewayFixo: number | null;
+  gatewayPctVar: number | null;
   /** Story 29.36 — arquitetura declarada e taxas digitadas com proveniência. */
   funnelArchitecture: string | null;
   chainDefectReading: string | null;
@@ -81,7 +81,7 @@ export interface PerpetualConfigInput {
   /** Story 29.35 — inputs do CAC alvo. */
   margemDesejadaPct?: number | null;
   cmv?: number | null;
-  gatewayFixo?: number | null;
+  gatewayPctVar?: number | null;
   /** Story 29.36 — cadeia. */
   funnelArchitecture?: string | null;
   chainDefectReading?: string | null;

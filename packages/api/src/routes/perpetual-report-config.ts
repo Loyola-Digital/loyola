@@ -44,9 +44,13 @@ const configBodySchema = z.object({
   // Story 29.35 — inputs do CAC alvo. `margemDesejadaPct` usa o mesmo
   // validador `rate` das demais taxas: fração, nunca pontos percentuais (U-01).
   margemDesejadaPct: rate,
-  /** Valores em reais, não frações — por isso não usam `rate`. */
+  /** CMV é valor em reais — por isso não usa `rate`. */
   cmv: z.number().min(0).nullable().optional(),
-  gatewayFixo: z.number().min(0).nullable().optional(),
+  /**
+   * Story 29.39 — taxa do gateway de pagamento como FRAÇÃO. Usa `rate` pelo mesmo
+   * motivo das demais: rejeita ponto percentual chegando por engano (U-01).
+   */
+  gatewayPctVar: rate,
   // Story 29.36 — cadeia de conversão.
   funnelArchitecture: z.string().trim().max(40).nullable().optional(),
   chainDefectReading: z.string().trim().max(120).nullable().optional(),
@@ -79,6 +83,75 @@ const configBodySchema = z.object({
     )
     .optional(),
 });
+
+type ConfigBody = z.infer<typeof configBodySchema>;
+
+/**
+ * Story 29.38 — merge PARCIAL da config. Extraída do handler para ser testável:
+ * é regra de domínio, não de transporte, e enterrá-la dentro do `fastify.put`
+ * foi o que permitiu o defeito passar por dois QA gates.
+ *
+ * ## O defeito que esta função corrige
+ *
+ * A 41.7 escreveu o PUT supondo um único consumidor — a tela de config, que
+ * manda o formulário inteiro a cada gravação. Sob essa premissa, `d.x ?? null`
+ * era inofensivo: o campo sempre vinha.
+ *
+ * A aba Análise MVP (29.35–29.37) quebrou a premissa: ela manda só o que edita.
+ * Salvar a arquitetura enviava `{ funnelArchitecture }` e apagava prefixo,
+ * produto, imposto e as três taxas de plataforma. Pior: como `prefixoCampanha` e
+ * `impostoPct` "mudavam", `premissaMudou` disparava e resetava `validado`,
+ * bloqueando o relatório perpétuo inteiro pelo gate do §C.8.
+ *
+ * Não chegou a acontecer em produção só porque as colunas do Epic 29 nunca foram
+ * criadas — o 500 do Postgres escondeu o estrago atrás de um erro mais barulhento.
+ *
+ * ## A regra
+ *
+ *   undefined → o campo NÃO veio no corpo     → preserva o que está no banco
+ *   null      → o campo veio explicitamente   → limpa (é intenção do usuário)
+ *
+ * Essa distinção existe no protocolo HTTP e o `??` a destruía. Vale para TODO
+ * campo — a versão anterior protegia quatro e deixava onze de fora, e foi a
+ * repetição do mesmo ternário quinze vezes que tornou a omissão invisível.
+ */
+export function mergeConfigValues(
+  d: ConfigBody,
+  existing?: typeof perpetualReportConfigs.$inferSelect,
+) {
+  const keep = <T>(incoming: T | undefined, previous: T | undefined | null, fallback: T): T =>
+    incoming !== undefined ? incoming : ((previous ?? fallback) as T);
+
+  /**
+   * `numeric` viaja como string no driver. Preserva `undefined` de propósito:
+   * convertê-lo a `null` aqui reintroduziria o bug um nível acima.
+   */
+  const numIfSent = (v: number | null | undefined): string | null | undefined =>
+    v === undefined ? undefined : v === null ? null : String(v);
+
+  return {
+    prefixoCampanha: keep(d.prefixoCampanha, existing?.prefixoCampanha, null),
+    produto: keep(d.produto, existing?.produto, null),
+    produtosOrderBump: keep(d.produtosOrderBump, existing?.produtosOrderBump, [] as string[]),
+    temSplitFormato: keep(d.temSplitFormato, existing?.temSplitFormato, false),
+    origensPagas: keep(d.origensPagas, existing?.origensPagas, ["meta"]),
+    inicioTrafego: keep(d.inicioTrafego, existing?.inicioTrafego, null),
+    impostoPct: keep(numIfSent(d.impostoPct), existing?.impostoPct, null),
+    taxaPlataformaPct: keep(numIfSent(d.taxaPlataformaPct), existing?.taxaPlataformaPct, null),
+    taxaImpostoPct: keep(numIfSent(d.taxaImpostoPct), existing?.taxaImpostoPct, null),
+    taxaOutrosPct: keep(numIfSent(d.taxaOutrosPct), existing?.taxaOutrosPct, null),
+    // Story 29.35 — inputs do CAC alvo.
+    margemDesejadaPct: keep(numIfSent(d.margemDesejadaPct), existing?.margemDesejadaPct, null),
+    cmv: keep(numIfSent(d.cmv), existing?.cmv, null),
+    // Story 29.39 — fração do faturamento, não reais. Ver a coluna no schema.
+    gatewayPctVar: keep(numIfSent(d.gatewayPctVar), existing?.gatewayPctVar, null),
+    // Story 29.36/29.37 — cadeia de conversão e tetos.
+    funnelArchitecture: keep(d.funnelArchitecture, existing?.funnelArchitecture, null),
+    chainDefectReading: keep(d.chainDefectReading, existing?.chainDefectReading, null),
+    manualRates: keep(d.manualRates, existing?.manualRates, {}),
+    ceilings: keep(d.ceilings, existing?.ceilings, {}),
+  };
+}
 
 export default fp(async function perpetualReportConfigRoutes(fastify) {
   /**
@@ -158,7 +231,7 @@ export default fp(async function perpetualReportConfigRoutes(fastify) {
             // Story 29.35 — inputs do CAC alvo.
             margemDesejadaPct: cfg.margemDesejadaPct,
             cmv: cfg.cmv,
-            gatewayFixo: cfg.gatewayFixo,
+            gatewayPctVar: cfg.gatewayPctVar,
             // Story 29.36 — cadeia.
             funnelArchitecture: cfg.funnelArchitecture,
             chainDefectReading: cfg.chainDefectReading,
@@ -211,8 +284,6 @@ export default fp(async function perpetualReportConfigRoutes(fastify) {
       .limit(1);
 
     const d = body.data;
-    const asNumeric = (v: number | null | undefined) =>
-      v === null || v === undefined ? null : String(v);
 
     // Mudou premissa → a conferência anterior não vale mais. Mesma regra da 41.1:
     // `validado` é afirmação sobre um conjunto específico de premissas; trocar
@@ -227,37 +298,14 @@ export default fp(async function perpetualReportConfigRoutes(fastify) {
         numericChanged(d.taxaImpostoPct, existing.taxaImpostoPct) ||
         numericChanged(d.taxaOutrosPct, existing.taxaOutrosPct) ||
         numericChanged(d.impostoPct, existing.impostoPct));
-    // Story 29.35: `margemDesejadaPct`, `cmv` e `gatewayFixo` NÃO entram aqui,
+    // Story 29.35: `margemDesejadaPct`, `cmv` e `gatewayPctVar` NÃO entram aqui,
     // de propósito. `validado` afirma que as premissas do RELATÓRIO foram
     // conferidas — faturamento, investimento, taxas de plataforma. Os três
     // campos novos não alteram nenhum número do relatório: alimentam só o CAC
     // alvo, que é leitura à parte. Resetar a validação por causa deles
     // invalidaria uma conferência que continua verdadeira.
 
-    const values = {
-      funnelId,
-      prefixoCampanha: d.prefixoCampanha ?? null,
-      produto: d.produto ?? null,
-      produtosOrderBump: d.produtosOrderBump ?? [],
-      temSplitFormato: d.temSplitFormato ?? false,
-      origensPagas: d.origensPagas ?? ["meta"],
-      inicioTrafego: d.inicioTrafego ?? null,
-      impostoPct: asNumeric(d.impostoPct),
-      taxaPlataformaPct: asNumeric(d.taxaPlataformaPct),
-      taxaImpostoPct: asNumeric(d.taxaImpostoPct),
-      taxaOutrosPct: asNumeric(d.taxaOutrosPct),
-      // Story 29.35 — inputs do CAC alvo.
-      margemDesejadaPct: asNumeric(d.margemDesejadaPct),
-      cmv: asNumeric(d.cmv),
-      gatewayFixo: asNumeric(d.gatewayFixo),
-      // Story 29.36 — preserva o que já existe quando o PUT não manda o campo:
-      // a aba MVP salva só o que ela edita, e um `?? {}` apagaria as taxas.
-      funnelArchitecture: d.funnelArchitecture !== undefined ? d.funnelArchitecture : (existing?.funnelArchitecture ?? null),
-      chainDefectReading: d.chainDefectReading !== undefined ? d.chainDefectReading : (existing?.chainDefectReading ?? null),
-      manualRates: d.manualRates !== undefined ? d.manualRates : (existing?.manualRates ?? {}),
-      ceilings: d.ceilings !== undefined ? d.ceilings : (existing?.ceilings ?? {}),
-      updatedAt: new Date(),
-    };
+    const values = { ...mergeConfigValues(d, existing), funnelId, updatedAt: new Date() };
 
     if (!existing) {
       await fastify.db.insert(perpetualReportConfigs).values(values);

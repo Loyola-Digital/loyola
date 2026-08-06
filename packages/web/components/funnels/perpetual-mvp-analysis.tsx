@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { apiErrorMessage, logApiError } from "@/lib/utils/api-error";
+import { fracaoParaPP, ppParaFracao } from "@/lib/utils/percent";
 import { usePerpetualSalesData } from "@/lib/hooks/use-perpetual-sales-data";
 import { useTrafficOverview } from "@/lib/hooks/use-traffic-analytics";
 import {
@@ -85,7 +87,11 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
     customRange?.startDate,
     customRange?.endDate,
   );
-  const { data: configData } = usePerpetualReportConfig(projectId, funnel.id);
+  const {
+    data: configData,
+    isError: configFailed,
+    error: configError,
+  } = usePerpetualReportConfig(projectId, funnel.id);
   const saveConfig = useSavePerpetualReportConfig(projectId, funnel.id);
 
   const cfg = configData?.config ?? null;
@@ -95,15 +101,15 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
   // duplicar a edição aqui criaria duas fontes para o mesmo campo.
   const [margemPct, setMargemPct] = useState("");
   const [cmv, setCmv] = useState("");
-  const [gatewayFixo, setGatewayFixo] = useState("");
+  const [gatewayPagtoPct, setGatewayPagtoPct] = useState("");
 
   useEffect(() => {
     if (!cfg) return;
     // O banco guarda fração; a tela fala em pontos percentuais. A conversão
     // acontece AQUI, na borda — dentro da fórmula só circula decimal (U-01).
-    setMargemPct(cfg.margemDesejadaPct != null ? String(cfg.margemDesejadaPct * 100) : "");
+    setMargemPct(cfg.margemDesejadaPct != null ? fracaoParaPP(cfg.margemDesejadaPct) : "");
     setCmv(cfg.cmv != null ? String(cfg.cmv) : "");
-    setGatewayFixo(cfg.gatewayFixo != null ? String(cfg.gatewayFixo) : "");
+    setGatewayPagtoPct(cfg.gatewayPctVar != null ? fracaoParaPP(cfg.gatewayPctVar) : "");
   }, [cfg]);
 
   const parseOrNull = (s: string): number | null => {
@@ -141,7 +147,7 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
         margemDesejada: cfg?.margemDesejadaPct ?? null,
         imposto: cfg?.impostoPct ?? null,
         gatewayPct: cfg?.taxaPlataformaPct ?? null,
-        gatewayFixo: cfg?.gatewayFixo ?? null,
+        gatewayPctVar: cfg?.gatewayPctVar ?? null,
         cmv: cfg?.cmv ?? null,
         reembolso: 0,
         chargeback: 0,
@@ -201,8 +207,9 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
   async function handleSaveCeilings(ceilings: Record<string, CeilingEntry>) {
     try {
       await saveConfig.mutateAsync({ ceilings });
-    } catch {
-      toast.error("Não foi possível salvar");
+    } catch (err) {
+      logApiError("mvp:save-ceilings", err);
+      toast.error(apiErrorMessage(err, "Não foi possível salvar os tetos"));
     }
   }
 
@@ -213,8 +220,9 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
   }) {
     try {
       await saveConfig.mutateAsync(patch);
-    } catch {
-      toast.error("Não foi possível salvar");
+    } catch (err) {
+      logApiError("mvp:save-chain", err);
+      toast.error(apiErrorMessage(err, "Não foi possível salvar a cadeia"));
     }
   }
 
@@ -224,20 +232,64 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
       toast.error("Margem desejada deve ficar entre 0 e 99%.");
       return;
     }
+    // Story 29.39 — gateway em pontos percentuais na tela, fração no resto do
+    // sistema. A conversão fica AQUI, na borda: dentro da fórmula só circula
+    // decimal (U-01), e o backend rejeita ponto percentual pelo validador `rate`.
+    //
+    // Zero é ACEITO de propósito (QA-05): quem não paga taxa variável de
+    // gateway informa 0, e isso é diferente de deixar vazio — vazio significa
+    // "não informei" e produz análise parcial. Ver `assertCostRate`.
+    const g = parseOrNull(gatewayPagtoPct);
+    if (g != null && (g < 0 || g > 99)) {
+      toast.error("Gateway deve ficar entre 0 e 99%.");
+      return;
+    }
+    // CMV zero é o caso PADRÃO aqui (produto digital). A validação existe só
+    // para barrar negativo, que não tem leitura possível.
+    const c = parseOrNull(cmv);
+    if (c != null && c < 0) {
+      toast.error("CMV não pode ser negativo.");
+      return;
+    }
     try {
       await saveConfig.mutateAsync({
-        margemDesejadaPct: m == null ? null : m / 100,
-        cmv: parseOrNull(cmv),
-        gatewayFixo: parseOrNull(gatewayFixo),
+        margemDesejadaPct: m == null ? null : ppParaFracao(m),
+        cmv: c,
+        gatewayPctVar: g == null ? null : ppParaFracao(g),
       });
       toast.success("Premissas do CAC alvo salvas");
-    } catch {
-      toast.error("Não foi possível salvar");
+    } catch (err) {
+      logApiError("mvp:save-premissas", err);
+      toast.error(apiErrorMessage(err, "Não foi possível salvar as premissas"));
     }
   }
 
   return (
     <div className="space-y-4">
+      {/* ---- Story 29.38 — falha ao CARREGAR a config.
+           Sem isto, erro de carga e "funil ainda não configurado" produzem a
+           mesma tela vazia, e o usuário conclui que nada foi salvo. Foi o que
+           aconteceu enquanto o banco estava sem as colunas do Epic 29: a aba
+           parecia funcionar e simplesmente não guardava nada. ---- */}
+      {configFailed && (
+        <div className="rounded-xl border border-red-500/40 bg-red-500/5 p-4">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+            <div className="text-sm">
+              <p className="font-medium text-red-700 dark:text-red-300">
+                Não foi possível carregar a configuração deste funil
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                {apiErrorMessage(configError, "Erro desconhecido ao consultar a API.", "carregar")}
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                Os números abaixo podem estar incompletos. Salvar agora pode falhar.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ---- Seção 02 — dados faltantes. Bloqueante: se não estiver vazia,
            as seções seguintes saem PARCIAIS e isso é dito no topo. ---- */}
       {!hasError && target.missing.length > 0 && (
@@ -308,19 +360,26 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
                   placeholder="ex: 0"
                   className="h-8 text-xs"
                 />
+                <p className="text-[11px] text-muted-foreground">
+                  Zero em produto digital — informe 0 em vez de deixar vazio.
+                </p>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="mvp-gwfixo" className="text-xs">
-                  Gateway fixo (R$)
+                <Label htmlFor="mvp-gwpct" className="text-xs">
+                  Gateway (%)
                 </Label>
                 <Input
-                  id="mvp-gwfixo"
+                  id="mvp-gwpct"
                   inputMode="decimal"
-                  value={gatewayFixo}
-                  onChange={(e) => setGatewayFixo(e.target.value)}
-                  placeholder="ex: 1"
+                  value={gatewayPagtoPct}
+                  onChange={(e) => setGatewayPagtoPct(e.target.value)}
+                  placeholder="ex: 2,5"
                   className="h-8 text-xs"
                 />
+                <p className="text-[11px] text-muted-foreground">
+                  Taxa do gateway de pagamento. <strong>Soma</strong> à taxa da plataforma
+                  mostrada abaixo — são custos distintos sobre o mesmo faturamento.
+                </p>
               </div>
             </div>
 
@@ -334,7 +393,7 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
           <div className="space-y-1 border-t border-border/20 pt-3 text-[11px] text-muted-foreground">
             <p className="font-medium uppercase tracking-wider">Herdado da config do relatório</p>
             <p>Imposto sobre faturamento: {cfg?.impostoPct != null ? `${(cfg.impostoPct * 100).toFixed(2)}%` : "—"}</p>
-            <p>Gateway %: {cfg?.taxaPlataformaPct != null ? `${(cfg.taxaPlataformaPct * 100).toFixed(2)}%` : "—"}</p>
+            <p>Gateway da plataforma: {cfg?.taxaPlataformaPct != null ? `${(cfg.taxaPlataformaPct * 100).toFixed(2)}%` : "—"}</p>
             <p>Ticket médio (derivado): {fmtBRL(ticket)}</p>
           </div>
         </div>
