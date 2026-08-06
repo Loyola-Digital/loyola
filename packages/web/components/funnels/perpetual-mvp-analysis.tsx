@@ -5,6 +5,9 @@ import { AlertTriangle, Calculator, Info, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DayRangePicker } from "@/components/ui/day-range-picker";
+import { janelaDaAba } from "@/lib/utils/mvp-window";
+import { useVturbChain, type TaxaMedida } from "@/lib/hooks/use-vturb";
 import { toast } from "sonner";
 import { apiErrorMessage, logApiError } from "@/lib/utils/api-error";
 import { fracaoParaPP, ppParaFracao } from "@/lib/utils/percent";
@@ -60,6 +63,121 @@ function StatusTag({ status }: { status: string }) {
   );
 }
 
+/**
+ * Story 29.41 — uma taxa da cadeia, medida ou ausente.
+ *
+ * Ausente NUNCA vira 0%. A distinção importa porque "3% de quem viu deu play" e
+ * "não medimos quantos deram play" levam a decisões opostas, e um zero na tela
+ * é indistinguível de uma medição legítima de zero.
+ */
+function TaxaMedidaLinha({ rotulo, taxa }: { rotulo: string; taxa: TaxaMedida }) {
+  const ausente = taxa.valor == null;
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1.5">
+      <span className="text-xs text-muted-foreground">{rotulo}</span>
+      {ausente ? (
+        <span className="text-xs text-amber-600 dark:text-amber-400" title={taxa.motivo}>
+          não medida — {taxa.motivo}
+        </span>
+      ) : (
+        <span
+          className="text-sm font-medium tabular-nums"
+          // Os brutos no title tornam a taxa conferível contra o painel do
+          // VTurb sem sair da tela (AC9).
+          title={`${taxa.numerador.toLocaleString("pt-BR")} ÷ ${taxa.denominador.toLocaleString("pt-BR")}`}
+        >
+          {(taxa.valor! * 100).toFixed(2)}%
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Story 29.41 (AC5) — o cartão da cadeia medida, com proveniência visível.
+ *
+ * A 29.36 exige `source`, janela e `measuredAt` em cada taxa. Para as medidas
+ * isso deixa de ser digitado, mas continua tendo que ser LEGÍVEL: o comentário
+ * do `cac-protocol.ts:306` é explícito — *"Sistema + tela + coluna. 'VTurb'
+ * sozinho é insuficiente"*.
+ */
+function VturbChainCard({
+  chain,
+  error,
+  janela,
+}: {
+  chain: ReturnType<typeof useVturbChain>["data"];
+  error: unknown;
+  janela: { startDate: string; endDate: string };
+}) {
+  // Sem VSL vinculada é estado normal, não erro: a maioria dos funis perpétuos
+  // ainda não tem. Dizer o que fazer é mais útil que um alerta vermelho.
+  if (error) {
+    const semPlayer = (error as { code?: string })?.code === "NO_PLAYER"
+      || String((error as Error)?.message ?? "").includes("Nenhuma VSL");
+    return (
+      <div className="rounded-xl border border-border/30 bg-card/60 p-4">
+        <p className="text-xs text-muted-foreground">
+          {semPlayer
+            ? "Nenhuma VSL vinculada a este funil — as taxas da cadeia seguem digitadas manualmente. Vincule um player do VTurb na etapa para que sejam medidas."
+            : `Não foi possível medir a cadeia pelo VTurb: ${(error as Error)?.message ?? "erro desconhecido"}`}
+        </p>
+      </div>
+    );
+  }
+  if (!chain) return null;
+
+  const { cadeia, player, proveniencia } = chain;
+  // AC6: a janela devolvida pela API é a EFETIVAMENTE consultada. Se divergir
+  // da janela da aba, a cadeia mede outro período — bloqueia em vez de exibir
+  // "aproximadamente".
+  const janelaDivergente =
+    proveniencia.windowStart !== janela.startDate || proveniencia.windowEnd !== janela.endDate;
+
+  return (
+    <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Cadeia da VSL — medida</h3>
+        <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+          medida
+        </span>
+      </div>
+
+      {janelaDivergente ? (
+        <p className="text-xs text-red-600 dark:text-red-400">
+          Janela divergente: a aba usa {janela.startDate} → {janela.endDate}, o VTurb respondeu{" "}
+          {proveniencia.windowStart} → {proveniencia.windowEnd}. A cadeia não é exibida — misturar
+          janelas produziria uma taxa que não corresponde a período nenhum.
+        </p>
+      ) : (
+        <div className="divide-y divide-border/20">
+          <TaxaMedidaLinha rotulo="Play rate (plays únicos ÷ pageviews)" taxa={cadeia.playRate} />
+          <TaxaMedidaLinha rotulo="Pitch rate (chegaram ao pitch ÷ plays únicos)" taxa={cadeia.pitchRate} />
+          <div className="flex items-baseline justify-between gap-3 py-1.5">
+            <span className="text-xs text-muted-foreground">Conversão pós-pitch</span>
+            <span className="text-xs text-muted-foreground">
+              {/* AC4: só o denominador é medido. O numerador é "checkouts
+                  iniciados", evento de outro sistema — cliques no CTA não são a
+                  mesma coisa e não servem de proxy. */}
+              denominador medido: {cadeia.convPostPitchDenominador.toLocaleString("pt-BR")} · numerador manual
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-0.5 border-t border-border/20 pt-2 text-[10px] text-muted-foreground">
+        <p>{proveniencia.source}</p>
+        <p className="tabular-nums">
+          Janela {proveniencia.windowStart} → {proveniencia.windowEnd} ({proveniencia.timezone})
+          {player.pitchTime
+            ? ` · pitch em ${Math.floor(player.pitchTime / 60)}:${String(player.pitchTime % 60).padStart(2, "0")}`
+            : " · pitch_time não configurado"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   funnel: Funnel;
   projectId: string;
@@ -68,12 +186,49 @@ interface Props {
 }
 
 export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: Props) {
+  // ============================================================
+  // Story 29.41 (AC0) — período PRÓPRIO da aba. Resolve o QA-07 da 29.35.
+  //
+  // Antes, a aba usava o `days` da página, cujo seletor mora dentro da aba
+  // Meta Ads. Quem estivesse na Análise MVP não tinha como saber de que
+  // janela os números vinham, muito menos mudá-la sem trocar de aba.
+  //
+  // Isso deixa de ser incômodo e vira impedimento na 29.41: o VTurb exige
+  // `start_date`/`end_date` em toda chamada, e o AC6 (`AGG-01`/`ST-07`) exige
+  // que a janela da cadeia seja a MESMA do resto da aba. Sem período
+  // explícito e controlável aqui, não há como afirmar que são a mesma.
+  //
+  // As props seguem sendo o valor INICIAL — a aba abre no mesmo período em
+  // que a página está, e só diverge se o usuário escolher. Não unificamos os
+  // dois seletores: isso mexeria em componente de fora e está registrado como
+  // follow-up no AC0.
+  // ============================================================
+  const [mvpDays, setMvpDays] = useState(days);
+  const [mvpRange, setMvpRange] = useState<{ startDate: string; endDate: string } | undefined>(
+    customRange,
+  );
+
+  // A página mudou de período enquanto a aba estava montada: acompanhar, senão
+  // a aba fica exibindo uma janela que o usuário já trocou lá fora e não tem
+  // como saber disso.
+  useEffect(() => {
+    setMvpDays(days);
+    setMvpRange(customRange);
+  }, [days, customRange?.startDate, customRange?.endDate]);
+
+  // Story 29.41 (AC6): a janela explícita da aba. O VTurb exige datas; os
+  // demais endpoints aceitam `days`. Derivar aqui, de um lugar só, é o que
+  // permite afirmar que a cadeia mede a MESMA janela do resto da aba — e
+  // exibi-la na tela é o que torna isso conferível.
+  const janela = useMemo(() => janelaDaAba(mvpDays, mvpRange), [mvpDays, mvpRange]);
+  const { data: vturbChain, error: vturbError } = useVturbChain(projectId, funnel.id, janela);
+
   const { data: salesData } = usePerpetualSalesData(
     projectId,
     funnel.id,
-    days,
-    customRange?.startDate,
-    customRange?.endDate,
+    mvpDays,
+    mvpRange?.startDate,
+    mvpRange?.endDate,
   );
   // Investimento do período. Vem de `useTrafficOverview` e NÃO de uma
   // reagregação local: o dashboard já teve bug de dupla contagem no bulk
@@ -82,10 +237,10 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
   const campaignIds = funnel.campaigns.map((c) => c.id);
   const { data: overview } = useTrafficOverview(
     projectId,
-    days,
+    mvpDays,
     campaignIds.length > 0 ? campaignIds : null,
-    customRange?.startDate,
-    customRange?.endDate,
+    mvpRange?.startDate,
+    mvpRange?.endDate,
   );
   const {
     data: configData,
@@ -266,6 +421,29 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
 
   return (
     <div className="space-y-4">
+      {/* ---- Story 29.41 (AC0): o período da aba, explícito e controlável.
+           Fica no topo porque tudo abaixo depende dele — CAC realizado, cadeia
+           e, a partir desta story, as consultas ao VTurb. ---- */}
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] text-muted-foreground">
+          Todos os números desta aba usam o período{" "}
+          <span className="font-medium text-foreground tabular-nums">
+            {janela.startDate} → {janela.endDate}
+          </span>
+          {" "}— inclusive as métricas da VSL.
+        </p>
+        <DayRangePicker
+          days={mvpDays}
+          onDaysChange={setMvpDays}
+          onRangeChange={(r) => setMvpRange(r ?? undefined)}
+        />
+      </div>
+
+      {/* ---- Story 29.41 — a cadeia da VSL medida pelo VTurb (AC3, AC4, AC5).
+           Taxa medida e taxa digitada convivem na aba; sem distinção visual o
+           usuário não sabe em qual confiar. ---- */}
+      <VturbChainCard chain={vturbChain} error={vturbError} janela={janela} />
+
       {/* ---- Story 29.38 — falha ao CARREGAR a config.
            Sem isto, erro de carga e "funil ainda não configurado" produzem a
            mesma tela vazia, e o usuário conclui que nada foi salvo. Foi o que

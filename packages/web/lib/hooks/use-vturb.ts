@@ -166,3 +166,67 @@ export function useVturbOverview(
     placeholderData: (prev) => prev,
   });
 }
+
+// ============================================================
+// Story 29.41 — cadeia de conversão medida, para a aba Análise MVP.
+// ============================================================
+
+/** Taxa medida. `valor: null` significa AUSENTE, nunca zero. */
+export interface TaxaMedida {
+  valor: number | null;
+  motivo?: string;
+  numerador: number;
+  denominador: number;
+}
+
+export interface VturbChain {
+  player: {
+    id: string;
+    playerId: string;
+    name: string;
+    duration: number | null;
+    pitchTime: number | null;
+  };
+  cadeia: {
+    playRate: TaxaMedida;
+    pitchRate: TaxaMedida;
+    convPostPitchDenominador: number;
+  };
+  proveniencia: {
+    source: string;
+    windowStart: string;
+    windowEnd: string;
+    timezone: string;
+  };
+  brutos: { viewedUniq: number; startedUniq: number; overPitch: number };
+}
+
+/**
+ * Story 29.41 (AC3, AC7) — a cadeia medida do funil perpétuo.
+ *
+ * Uma consulta por (funil, janela). O `staleTime` de 2min existe pelo rate
+ * limit do VTurb (60/min no Basic), que já derrubou a integração uma vez.
+ *
+ * 404 com `code: NO_PLAYER` não é falha: é o estado normal de um funil sem VSL
+ * vinculada, e a aba usa isso para oferecer o seletor de player. Por isso
+ * `retry: false` — insistir num 404 esperado só queima cota.
+ */
+export function useVturbChain(
+  projectId: string | null,
+  funnelId: string | null,
+  range: { startDate: string; endDate: string } | null,
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["vturb-chain", projectId, funnelId, range?.startDate, range?.endDate],
+    queryFn: () =>
+      apiClient<VturbChain>(
+        `/api/projects/${projectId}/funnels/${funnelId}/vturb/chain` +
+          `?startDate=${range!.startDate}&endDate=${range!.endDate}`,
+      ),
+    enabled: !!projectId && !!funnelId && !!range?.startDate && !!range?.endDate,
+    staleTime: 2 * 60 * 1000,
+    retry: false,
+    placeholderData: (prev) => prev,
+  });
+}
