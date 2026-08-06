@@ -1097,6 +1097,20 @@ function setCachedCreative(creative: MetaAdCreative): void {
   creativeCache.set(creative.adId, { data: creative, timestamp: Date.now() });
 }
 
+/**
+ * Story 29.40 (AC0/AC1) — onde a Meta guarda a URL de destino de um anúncio.
+ *
+ * `link_url` só é preenchido para link ads no formato antigo. Medição em 40
+ * anúncios reais com investimento (funil fz-a1, 2026-08-06): **0% via
+ * `link_url`, 100% via `object_story_spec`** — 75% em `video_data`, 25% em
+ * `link_data`. Como o sync pedia apenas `link_url`, a URL vinha nula para
+ * todos, e o cache — que guarda o objeto já normalizado — registrava essa
+ * ausência sem poder distinguir "a Meta não tem" de "não foi perguntado".
+ *
+ * `asset_feed_spec` não apareceu na amostra (0 criativos dinâmicos), mas fica
+ * na cascata: é onde a URL mora em criativos flexíveis, e o custo de tentar é
+ * um campo a mais no mesmo request.
+ */
 interface MetaCreativeRaw {
   id?: string;
   thumbnail_url?: string;
@@ -1107,6 +1121,32 @@ interface MetaCreativeRaw {
   call_to_action_type?: string;
   object_type?: string;
   video_id?: string;
+  object_story_spec?: {
+    link_data?: { link?: string };
+    video_data?: { call_to_action?: { value?: { link?: string } } };
+  };
+  asset_feed_spec?: {
+    link_urls?: { website_url?: string }[];
+  };
+}
+
+/**
+ * Resolve a URL de destino tentando as origens na ordem que a medição do AC0
+ * estabeleceu. Devolve `null` quando nenhuma resolve — nunca inventa, porque
+ * um destino errado é pior que um destino ausente (GR-01): a linha some da
+ * tabela de LPs para o bucket "Sem link resolvido", que é honesto, em vez de
+ * ir para a LP errada e corromper CAC e ROAS das duas.
+ */
+export function resolveCreativeLinkUrl(c: MetaCreativeRaw | undefined): string | null {
+  if (!c) return null;
+  const oss = c.object_story_spec;
+  return (
+    oss?.link_data?.link ??
+    oss?.video_data?.call_to_action?.value?.link ??
+    c.asset_feed_spec?.link_urls?.find((l) => l?.website_url)?.website_url ??
+    c.link_url ??
+    null
+  );
 }
 
 interface MetaAdWithCreative {
@@ -1149,7 +1189,10 @@ export async function fetchAdCreatives(
     try {
       const idsParam = batch.join(",");
       const data = await fetchMeta<Record<string, MetaAdWithCreative & { creative?: MetaCreativeRaw & { id?: string; effective_instagram_media_id?: string } }>>(
-        `/?ids=${idsParam}&fields=id,creative{id,thumbnail_url,image_url,effective_instagram_media_id,title,body,link_url,call_to_action_type,object_type,video_id}`,
+        // Story 29.40: object_story_spec/asset_feed_spec entram aqui porque é
+        // onde a URL de destino realmente vive (ver resolveCreativeLinkUrl).
+        // Mesmo request, mesmo lote de 50 — nenhum custo de rate limit a mais.
+        `/?ids=${idsParam}&fields=id,creative{id,thumbnail_url,image_url,effective_instagram_media_id,title,body,link_url,call_to_action_type,object_type,video_id,object_story_spec,asset_feed_spec}`,
         accessToken
       );
       for (const adId of batch) {
@@ -1161,7 +1204,7 @@ export async function fetchAdCreatives(
           imageUrl: c?.image_url ?? null,
           title: c?.title ?? null,
           body: c?.body ?? null,
-          linkUrl: c?.link_url ?? null,
+          linkUrl: resolveCreativeLinkUrl(c),
           ctaType: c?.call_to_action_type ?? null,
           objectType: c?.object_type ?? null,
           videoId: c?.video_id ?? null,

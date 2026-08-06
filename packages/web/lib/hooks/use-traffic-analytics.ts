@@ -407,6 +407,43 @@ export function useAdCreatives(
   });
 }
 
+export interface AdLinkUrlsResponse {
+  /** ad_id → URL de destino. `null` = está no cache, mas a Meta não deu URL. */
+  linkUrls: Record<string, string | null>;
+  requested: number;
+  resolved: number;
+  /**
+   * ad_ids que não estão no cache. Distinto de `linkUrls[id] === null`: aqui a
+   * causa é "ainda não sincronizado", que se resolve sozinho; lá é "a Meta não
+   * tem". O tooltip da linha "Sem link resolvido" usa essa diferença para não
+   * mandar o gestor procurar no lugar errado.
+   */
+  missingFromCache: string[];
+}
+
+/**
+ * Story 29.40 — URLs de destino para a tabela de LPs.
+ *
+ * Diferente de `useAdCreatives`, este endpoint NÃO tem teto de 50: lê do cache
+ * do Postgres, onde não há rate limit. O teto lá existe porque aquele caminho
+ * chama a Meta. Aqui ele seria fatal — a soma da tabela de LPs precisa fechar
+ * com a do Detalhamento (AC6), e isso exige todos os anúncios, não os 50
+ * maiores.
+ */
+export function useAdLinkUrls(projectId: string | null, adIds: string[]) {
+  const apiClient = useApiClient();
+  const idsParam = adIds.join(",");
+  return useQuery({
+    queryKey: ["traffic-ad-link-urls", projectId, idsParam],
+    queryFn: () =>
+      apiClient<AdLinkUrlsResponse>(
+        `/api/traffic/analytics/${projectId}/ad-link-urls?adIds=${encodeURIComponent(idsParam)}`,
+      ),
+    enabled: !!projectId && adIds.length > 0,
+    staleTime: CREATIVE_STALE_TIME,
+  });
+}
+
 export interface VideoSourceData {
   sourceUrl: string | null;
   embedHtml: string | null;
