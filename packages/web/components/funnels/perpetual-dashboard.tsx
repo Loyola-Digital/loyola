@@ -64,6 +64,7 @@ import {
   useAllAdSets,
   useAllAds,
   useAdCreatives,
+  useAdLinkUrls,
   type CampaignAnalytics,
   type MetaAdCreative,
 } from "@/lib/hooks/use-traffic-analytics";
@@ -107,6 +108,7 @@ import {
   type ChartGranularity,
 } from "@/lib/utils/chart-granularity";
 import { deriveDetailMetrics } from "@/lib/utils/perpetual-detail-metrics";
+import { buildLpRows, sortLpRows, UNRESOLVED_LP_KEY, type LpRow } from "@/lib/utils/perpetual-lp-rows";
 
 interface PerpetualDashboardProps {
   funnel: Funnel;
@@ -230,6 +232,9 @@ const CREATIVE_BATCH_LIMIT = 50;
 
 // Story 29.25: paginação do Quadro de Dados Diários — 16 linhas por página.
 const PERPETUAL_DAILY_PAGE_SIZE = 16;
+
+/** Story 29.40: colunas ordenáveis da tabela de LPs (AC3). */
+type LpSortCol = "lp" | "spend" | "revenue" | "margin" | "marginPct" | "sales" | "cac" | "roas";
 
 function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
   // Guarda de divisão: denominador 0 → null → "—" (nunca NaN/Infinity).
@@ -753,6 +758,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // Story 29.19: ordenação de colunas + largura da coluna Dimensão no Detalhamento
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  // Story 29.40: ordenação da tabela de LPs. Default investimento decrescente
+  // (AC3) — a pergunta que abre a tabela é "onde está indo o dinheiro".
+  const [lpSortCol, setLpSortCol] = useState<LpSortCol>("spend");
+  const [lpSortDir, setLpSortDir] = useState<"asc" | "desc">("desc");
   const [dimWidth, setDimWidth] = useState(200);
   // Story 29.21: resize da coluna Dimensão arrastando a borda (estilo Excel).
   // Substitui os botões −/+ da 29.19. Os listeners no document são removidos no
@@ -1352,6 +1361,56 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const creativesOmitted =
     tableFilter === "ad" ? Math.max(0, detailRows.length - CREATIVE_BATCH_LIMIT) : 0;
 
+  // ============================================================
+  // Story 29.40 — comparativo entre LPs
+  //
+  // A fonte é `funnelAds`, NÃO `detailRows`. Duas razões:
+  //
+  //   1. `detailRows` segue o `tableFilter` — no modo Campanha ele nem tem
+  //      ad_id, e a tabela de LPs sumiria junto. A LP é atributo do anúncio e
+  //      independe de como o usuário está olhando o Detalhamento.
+  //   2. `funnelAds` é exatamente a população do "Detalhamento no modo
+  //      Criativo", que é contra quem o AC6 manda reconciliar. Partir da mesma
+  //      lista é o que faz as somas fecharem por construção, em vez de por
+  //      coincidência.
+  //
+  // Sem teto de 50 aqui: `useAdLinkUrls` lê do cache do Postgres. O teto do
+  // `useAdCreatives` protege o rate limit da Meta e está certo lá — aqui ele
+  // apagaria o investimento do 51º anúncio em diante e quebraria o AC6.
+  const lpAdIds = useMemo(
+    () => funnelAds.map((a) => a.campaignId).filter(Boolean),
+    [funnelAds],
+  );
+  const { data: linkUrlsData } = useAdLinkUrls(projectId, lpAdIds);
+
+  // A agregação em si vive em `perpetual-lp-rows.ts`, não aqui: é regra de
+  // domínio e precisa ser testável sem montar o dashboard — o AC6 exige provar
+  // por teste que a soma fecha com a do Detalhamento.
+  const lpRows = useMemo<LpRow[]>(
+    () =>
+      buildLpRows(
+        funnelAds,
+        linkUrlsData?.linkUrls ?? {},
+        linkUrlsData?.missingFromCache ?? [],
+        detailFeeRate,
+      ),
+    [funnelAds, linkUrlsData, detailFeeRate],
+  );
+
+  // AC5: se o não atribuído concentra parcela relevante do investimento, a
+  // tabela inteira é uma leitura parcial — e isso precisa estar no topo, não
+  // num rodapé que se lê depois de já ter tirado conclusão.
+  const lpTotalSpend = useMemo(() => lpRows.reduce((s, r) => s + r.spend, 0), [lpRows]);
+  const lpUnresolvedShare = useMemo(() => {
+    const u = lpRows.find((r) => r.isUnresolved);
+    return u && lpTotalSpend > 0 ? (u.spend / lpTotalSpend) * 100 : 0;
+  }, [lpRows, lpTotalSpend]);
+
+  const sortedLpRows = useMemo<LpRow[]>(
+    () => sortLpRows(lpRows, lpSortCol, lpSortDir),
+    [lpRows, lpSortCol, lpSortDir],
+  );
+
   const sortedRows = useMemo<DetailRow[]>(() => {
     if (!sortCol) return detailRows;
     const num = (v: number | null | undefined) => (v == null ? Number.NEGATIVE_INFINITY : v);
@@ -1396,6 +1455,19 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     }
   };
   const sortArrow = (col: string) => (sortCol === col ? (sortDir === "asc" ? " ▲" : " ▼") : "");
+
+  // Story 29.40: ordenação da tabela de LPs. Colunas numéricas abrem em "desc"
+  // (maior primeiro, que é a leitura natural de investimento e margem); a
+  // coluna LP abre em "asc", porque ordem alfabética invertida não ajuda ninguém.
+  const toggleLpSort = (col: LpSortCol) => {
+    if (lpSortCol === col) {
+      setLpSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setLpSortCol(col);
+      setLpSortDir(col === "lp" ? "asc" : "desc");
+    }
+  };
+  const lpSortArrow = (col: LpSortCol) => (lpSortCol === col ? (lpSortDir === "asc" ? " ▲" : " ▼") : "");
 
   // Sem campanha E sem planilha conectada: nenhuma fonte de dados — empty state.
   // Com planilha conectada, o dashboard renderiza normalmente só com dados dela.
@@ -2073,6 +2145,112 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           </table>
         </div>
       </div>
+
+      {/* ================================================================ */}
+      {/* COMPARATIVO ENTRE LPs — Story 29.40
+            Abaixo do Detalhamento, como o AC3 pede. A LP é atributo do anúncio
+            e a agregação parte de `funnelAds`, então esta tabela independe do
+            filtro do Detalhamento acima. */}
+      {/* ================================================================ */}
+      {lpRows.length > 0 && (
+        <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <Filter className="h-4 w-4" />
+              Desempenho por LP
+            </h3>
+          </div>
+
+          {/* AC5: quando o não atribuído pesa, o aviso vai para o TOPO. Um
+              rodapé se lê depois de já ter tirado conclusão da tabela. */}
+          {lpUnresolvedShare >= 10 && (
+            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+              Análise parcial — {fmtPercent(lpUnresolvedShare)} do investimento está em anúncios sem LP
+              identificada e aparece na linha “{UNRESOLVED_LP_KEY}”. As demais linhas comparam apenas o
+              investimento atribuído.
+            </p>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-muted-foreground border-b border-border/20">
+                  <th className="text-left py-2 pr-3 select-none">
+                    <span className="cursor-pointer hover:text-foreground" onClick={() => toggleLpSort("lp")}>LP{lpSortArrow("lp")}</span>
+                  </th>
+                  <th className="text-right py-2 px-2 select-none">
+                    <span className="cursor-pointer hover:text-foreground" onClick={() => toggleLpSort("spend")}>Investimento{lpSortArrow("spend")}</span>
+                  </th>
+                  <th className="text-right py-2 px-2 select-none">
+                    <span className="cursor-pointer hover:text-foreground" onClick={() => toggleLpSort("revenue")}>Faturamento Bruto{lpSortArrow("revenue")}</span>
+                  </th>
+                  <th className="text-right py-2 px-2 select-none">
+                    <span className="cursor-pointer hover:text-foreground" onClick={() => toggleLpSort("margin")}>Margem{lpSortArrow("margin")}</span>
+                  </th>
+                  <th className="text-right py-2 px-2 select-none">
+                    <span className="cursor-pointer hover:text-foreground" onClick={() => toggleLpSort("marginPct")}>Margem %{lpSortArrow("marginPct")}</span>
+                  </th>
+                  <th className="text-right py-2 px-2 select-none">
+                    <span className="cursor-pointer hover:text-foreground" onClick={() => toggleLpSort("sales")}>Vendas{lpSortArrow("sales")}</span>
+                  </th>
+                  <th className="text-right py-2 px-2 select-none">
+                    <span className="cursor-pointer hover:text-foreground" onClick={() => toggleLpSort("cac")}>CAC{lpSortArrow("cac")}</span>
+                  </th>
+                  <th className="text-right py-2 px-2 select-none">
+                    <span className="cursor-pointer hover:text-foreground" onClick={() => toggleLpSort("roas")}>ROAS{lpSortArrow("roas")}</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedLpRows.map((row) => (
+                  <tr
+                    key={row.key}
+                    className={`border-b border-border/10 hover:bg-muted/30 ${row.isUnresolved ? "text-muted-foreground italic" : ""}`}
+                  >
+                    <td className="py-2 pr-3 max-w-[380px] truncate">
+                      {row.isUnresolved ? (
+                        <span
+                          title={
+                            // AC5: as duas causas mandam o gestor a lugares
+                            // diferentes — "fora do cache" se resolve sozinho,
+                            // "sem link na Meta" é dado que não existe.
+                            [
+                              row.semLinkNaMeta > 0 ? `${row.semLinkNaMeta} sem link na Meta` : null,
+                              row.foraDoCache > 0 ? `${row.foraDoCache} fora do cache de criativos` : null,
+                            ].filter(Boolean).join(" · ") || "sem LP identificada"
+                          }
+                          className="cursor-help underline decoration-dotted decoration-border/60 underline-offset-2"
+                        >
+                          Sem link resolvido
+                        </span>
+                      ) : row.url ? (
+                        <a
+                          href={row.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={row.url}
+                          className="text-primary hover:underline"
+                        >
+                          {row.key}
+                        </a>
+                      ) : (
+                        row.key
+                      )}
+                    </td>
+                    <td className="text-right px-2 tabular-nums">{fmtCurrency(row.spend)}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtCurrency(row.revenue)}</td>
+                    <td className={`text-right px-2 tabular-nums font-medium ${marginColorClass(row.margin)}`}>{fmtCurrency(row.margin)}</td>
+                    <td className={`text-right px-2 tabular-nums font-medium ${marginColorClass(row.marginPct)}`}>{fmtPercent(row.marginPct)}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtNumber(row.sales)}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtCurrency(row.costPerSale)}</td>
+                    <td className={`text-right px-2 tabular-nums font-medium ${roasColorClass(row.roas)}`}>{fmtRoas(row.roas)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* ================================================================ */}
       {/* GRÁFICOS EM BARRAS HORIZONTAIS — Story 29.8: 3 gráficos via UTM da planilha

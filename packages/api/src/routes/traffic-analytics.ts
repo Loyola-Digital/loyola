@@ -24,7 +24,7 @@ import {
   type MetaEntityType,
   type ResolveEntityNamesCacheAdapter,
 } from "../services/meta-ads.js";
-import { metaAdsAccounts, metaAdsAccountProjects, metaEntityNamesCache, projectMembers } from "../db/schema.js";
+import { metaAdsAccounts, metaAdsAccountProjects, metaEntityNamesCache, metaAdCreativesCache, projectMembers } from "../db/schema.js";
 import { getProjectMetaFreshness } from "../services/meta-sync-state.js";
 
 // Story 18.26 Fase 1 / 18.37: TTL alinhado com stage-sales-data.ts (30d). Evita
@@ -737,6 +737,96 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
         });
       }
     }
+  );
+
+  // ---- GET /api/traffic/analytics/:projectId/ad-link-urls ---- (Story 29.40, AC1/AC5)
+  /**
+   * Devolve `ad_id → URL de destino` LENDO DO BANCO, sem teto de 50.
+   *
+   * Por que não reusar `/ad-creatives`: aquele endpoint corta em 50 porque
+   * CHAMA a Meta, e o corte protege o rate limit que derrubou a integração em
+   * 2026-07-16. O corte está certo lá — a tabela de Criativos mostra as linhas
+   * de maior investimento e o resto exibe "—", que é aceitável.
+   *
+   * Aqui não é. Uma LP só existe na tabela se TODOS os anúncios que apontam
+   * para ela forem considerados: com teto de 50, o investimento do 51º anúncio
+   * em diante desapareceria, e a soma da tabela deixaria de bater com o
+   * Detalhamento — que é justamente o que o AC6 proíbe.
+   *
+   * A saída é a regra que o projeto adotou depois daquele estouro: ler do
+   * cache. `meta_ad_creatives_cache` já guarda o criativo por ad_id, e ler do
+   * Postgres não tem rate limit — o teto some sem risco nenhum.
+   *
+   * O que NÃO fazemos aqui: buscar na Meta o que falta no cache. Um gestor
+   * abrindo a aba com 800 anúncios novos dispararia 16 lotes de uma vez. O
+   * cache é populado pelo caminho normal (`/ad-creatives`, sync de criativos),
+   * e o que ainda não chegou volta como `null` — vira a linha "Sem link
+   * resolvido" (AC5), que é visível e honesta, em vez de uma espera de 30s.
+   */
+  const adLinkUrlsQuerySchema = z.object({
+    adIds: z.string().min(1),
+  });
+
+  fastify.get(
+    "/api/traffic/analytics/:projectId/ad-link-urls",
+    async (request, reply) => {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+
+      const queryResult = adLinkUrlsQuerySchema.safeParse(request.query);
+      if (!queryResult.success) {
+        return reply.code(400).send({ error: "adIds obrigatorio" });
+      }
+
+      const adIds = [...new Set(queryResult.data.adIds.split(",").filter(Boolean))];
+      if (adIds.length === 0) {
+        return reply.code(400).send({ error: "adIds vazio" });
+      }
+
+      const rows = await fastify.db
+        .select({
+          adId: metaAdCreativesCache.adId,
+          creative: metaAdCreativesCache.creative,
+        })
+        .from(metaAdCreativesCache)
+        .where(
+          and(
+            eq(metaAdCreativesCache.projectId, paramResult.data.projectId),
+            inArray(metaAdCreativesCache.adId, adIds),
+          ),
+        );
+
+      const linkUrls: Record<string, string | null> = {};
+      for (const row of rows) {
+        const c = row.creative as { linkUrl?: string | null } | null;
+        linkUrls[row.adId] = c?.linkUrl ?? null;
+      }
+
+      // Distinguir "não está no cache" de "está no cache sem URL" importa para
+      // o tooltip da linha "Sem link resolvido" (AC5): a primeira causa se
+      // resolve abrindo a aba de Criativos, a segunda é dado que a Meta não
+      // tem. Tratar as duas como a mesma coisa manda o gestor procurar no
+      // lugar errado.
+      const cached = new Set(rows.map((r) => r.adId));
+      const missingFromCache = adIds.filter((id) => !cached.has(id));
+
+      return {
+        linkUrls,
+        requested: adIds.length,
+        resolved: Object.values(linkUrls).filter(Boolean).length,
+        missingFromCache,
+      };
+    },
   );
 
   // ---- POST /api/traffic/analytics/:projectId/invalidate ----
