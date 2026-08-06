@@ -13,6 +13,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import {
+  AlertTriangle,
   Handshake,
   Minus,
   Phone,
@@ -332,6 +333,25 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
     }
     return map;
   }, [board?.cards, columns, optimisticMoves]);
+
+  /**
+   * E-mail já presente no kanban, checado enquanto a pessoa digita.
+   *
+   * O board inteiro já está no cliente, então avisar na hora não custa request —
+   * e é muito melhor que deixar a pessoa preencher o formulário todo pra levar
+   * um 409 no fim. Comparação normalizada porque ninguém digita duas vezes o
+   * mesmo e-mail com o mesmo espaçamento/caixa.
+   */
+  const emailDuplicado = useMemo(() => {
+    const alvo = leadEmail.trim().toLowerCase();
+    if (!alvo) return null;
+    const existente = (board?.cards ?? []).find(
+      (c) => (c.customerEmail ?? "").trim().toLowerCase() === alvo,
+    );
+    if (!existente) return null;
+    const colId = optimisticMoves[existente.id] ?? existente.columnId;
+    return { card: existente, coluna: columns.find((c) => c.id === colId)?.name ?? null };
+  }, [leadEmail, board?.cards, columns, optimisticMoves]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const [dragging, setDragging] = useState<CrmCard | null>(null);
@@ -794,11 +814,39 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
                 />
               </div>
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              Com e-mail, o lead cruza com as respostas da pesquisa e o sync faz merge se ele
-              aparecer na planilha depois — em vez de criar um card duplicado. Sem e-mail, fica
-              fora dos dois.
-            </p>
+            {emailDuplicado ? (
+              <div className="space-y-1.5 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2">
+                <p className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-500">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                  <span>
+                    Esse e-mail <strong>já está no kanban</strong>
+                    {emailDuplicado.coluna ? (
+                      <> — coluna <strong>{emailDuplicado.coluna}</strong></>
+                    ) : null}
+                    {emailDuplicado.card.customerName ? ` (${emailDuplicado.card.customerName})` : ""}.
+                  </span>
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-[11px]"
+                  onClick={() => {
+                    // Levar até o card existente resolve o caso real: a pessoa
+                    // quer atualizar aquele lead, não criar um segundo.
+                    setNewLeadOpen(false);
+                    setOpenCard(emailDuplicado.card);
+                  }}
+                >
+                  Abrir o card existente
+                </Button>
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted-foreground">
+                Com e-mail, o lead cruza com as respostas da pesquisa e o sync faz merge se ele
+                aparecer na planilha depois — em vez de criar um card duplicado. Sem e-mail, fica
+                fora dos dois.
+              </p>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="lead-assignee">Responsável</Label>
               <Input
@@ -823,8 +871,15 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
             <Button variant="outline" size="sm" onClick={() => setNewLeadOpen(false)}>
               Cancelar
             </Button>
-            <Button size="sm" onClick={handleCreateLead} disabled={!leadName.trim() || createCard.isPending}>
-              {createCard.isPending ? "Criando..." : "Criar lead"}
+            {/* Bloqueia com o motivo à vista: o backend recusaria de qualquer
+                forma (unique por etapa+email), então deixar clicável só entregaria
+                um erro depois de preencher tudo. */}
+            <Button
+              size="sm"
+              onClick={handleCreateLead}
+              disabled={!leadName.trim() || !!emailDuplicado || createCard.isPending}
+            >
+              {createCard.isPending ? "Criando..." : emailDuplicado ? "E-mail já no kanban" : "Criar lead"}
             </Button>
           </DialogFooter>
         </DialogContent>

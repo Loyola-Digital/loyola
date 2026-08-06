@@ -871,11 +871,29 @@ export default fp(async function stageComercialRoutes(fastify) {
     const email = normalizeEmail(body.data.customerEmail) || null;
     if (email) {
       const [dup] = await fastify.db
-        .select({ id: stageCrmCards.id })
+        .select({
+          id: stageCrmCards.id,
+          columnId: stageCrmCards.columnId,
+          customerName: stageCrmCards.customerName,
+        })
         .from(stageCrmCards)
         .where(and(eq(stageCrmCards.stageId, params.data.stageId), eq(stageCrmCards.customerEmail, email)))
         .limit(1);
-      if (dup) return reply.code(409).send({ error: "Já existe um card com esse e-mail nesta etapa" });
+      if (dup) {
+        // Dizer só "já existe" obriga a pessoa a caçar o card coluna por coluna.
+        // Devolvemos ONDE ele está e de quem é, pra mensagem ser acionável.
+        const coluna = columns.find((c) => c.id === dup.columnId);
+        return reply.code(409).send({
+          error: `Esse e-mail já está no kanban${coluna ? `, na coluna "${coluna.name}"` : ""}${dup.customerName ? ` (${dup.customerName})` : ""}.`,
+          code: "DUPLICATE_EMAIL",
+          existente: {
+            cardId: dup.id,
+            columnId: dup.columnId,
+            columnName: coluna?.name ?? null,
+            customerName: dup.customerName,
+          },
+        });
+      }
     }
 
     const siblings = await fastify.db
