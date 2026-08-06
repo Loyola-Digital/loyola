@@ -34,8 +34,24 @@ import {
 } from "@/lib/hooks/use-vturb";
 import { ChartCard, StatTile, VizTooltip, axisProps, gridProps, nf, nfCompact, VIZ_SERIES_1 } from "@/components/spy-conteudo/viz";
 
-const pct = (n: number | null | undefined) => (n == null ? "—" : `${n.toFixed(1)}%`);
-const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+/**
+ * Formatadores tolerantes de propósito. A API do VTurb devolve taxa como string
+ * ("51.3") e número no mesmo objeto; a normalização vive no serviço da API, mas
+ * aqui é a última linha de defesa — um campo inesperado não pode derrubar a
+ * página inteira no error boundary do Next.
+ */
+const numero = (v: unknown): number | null => {
+  const n = typeof v === "string" ? Number(v) : typeof v === "number" ? v : NaN;
+  return Number.isFinite(n) ? n : null;
+};
+const pct = (v: unknown) => {
+  const n = numero(v);
+  return n == null ? "—" : `${n.toFixed(1)}%`;
+};
+const brl = (v: unknown) => {
+  const n = numero(v);
+  return n == null ? "—" : n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+};
 
 /** Segundos → mm:ss. O eixo da retenção é tempo de vídeo, não número solto. */
 function mmss(s: number): string {
