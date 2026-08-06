@@ -13,6 +13,7 @@ import { useCampaignPicker } from "@/lib/hooks/use-funnels";
 import { MultiSalesSpreadsheets } from "./multi-sales-spreadsheets";
 import { StageSalesSection } from "./stage-sales-section";
 import { StageSalesSpreadsheetSection } from "./stage-sales-spreadsheet-section";
+import { FunnelSpreadsheetsTab } from "./funnel-spreadsheets-tab";
 import { CampaignSelector } from "./campaign-selector";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
@@ -266,6 +267,25 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
             subtype="tmb"
             title="TMB"
           />
+          <div className="border-t border-border/30" />
+          {/* Leads da página de vendas.
+              As três seções acima são planilhas de VENDA (produto vendido); a
+              página de vendas também CAPTA — quem se cadastrou e ainda não
+              comprou. São `funnel_spreadsheets` (tipo "leads"), a mesma coisa
+              que a Captação Paga usa, e é o que alimenta a origem do comprador
+              e a jornada do lead. A etapa de Vendas renderiza esta view e sai
+              antes da aba genérica de planilhas, então este vínculo não existia
+              em lugar nenhum daqui. */}
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold">Captação da página de vendas</h3>
+            <p className="text-[11px] text-muted-foreground">
+              Planilha de <strong>leads</strong> — quem se cadastrou na página, tenha comprado ou
+              não. Diferente de <strong>Produto de Captação</strong> acima, que é a planilha de
+              venda do ingresso. Os leads daqui entram automaticamente no cruzamento de origem do
+              comprador e na jornada do lead.
+            </p>
+          </div>
+          <FunnelSpreadsheetsTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
           <div className="border-t border-border/30 pt-4" />
           <details className="group">
             <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground select-none">
