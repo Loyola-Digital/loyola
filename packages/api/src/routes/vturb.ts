@@ -11,15 +11,17 @@
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { funnelStages, vturbConnections, vturbPlayers } from "../db/schema.js";
+import { funnels, funnelStages, vturbConnections, vturbPlayers } from "../db/schema.js";
 import { decrypt, encrypt } from "../services/encryption.js";
 import {
   VturbError, clicksTimed, listPlayers, quotaUsage, sessionStats, sessionStatsByDay,
   userEngagement, validateToken,
 } from "../services/vturb.js";
+import { ProtocolViolation, derivarCadeia, fonteVturb } from "../services/vturb-chain.js";
 
 const projectParam = z.object({ projectId: z.string().uuid() });
 const stageParam = z.object({ projectId: z.string().uuid(), stageId: z.string().uuid() });
+const funnelParam = z.object({ projectId: z.string().uuid(), funnelId: z.string().uuid() });
 
 const connectBody = z.object({
   apiToken: z.string().trim().min(10).max(500),
@@ -281,6 +283,106 @@ export default fp(async function vturbRoutes(fastify) {
           clicks,
         };
       } catch (err) {
+        return replyVturbError(reply, err);
+      }
+    },
+  );
+
+  // ---- GET /funnels/:funnelId/vturb/chain ---- (Story 29.41, AC3/AC4/AC5)
+  /**
+   * A cadeia de conversão da VSL medida, para a aba Análise MVP do perpétuo.
+   *
+   * Por que uma rota por FUNIL e não por etapa: a aba MVP raciocina sobre o
+   * funil inteiro. O vínculo do player continua sendo por `stage_id` — a
+   * medição de 2026-08-06 confirmou que essa âncora já funciona com funil
+   * perpétuo real, então não foi preciso tornar `stage_id` anulável nem criar
+   * `funnel_id`, que era a alternativa prevista no AC1.
+   *
+   * UMA chamada ao VTurb por (player, janela). O rate limit é de 60/min no
+   * plano Basic, e já derrubou a integração em 2026-07-16 — o cache do React
+   * Query no cliente evita repetir a cada render.
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/vturb/chain",
+    async (request, reply) => {
+      if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+      const p = funnelParam.safeParse(request.params);
+      const q = rangeQuery.safeParse(request.query);
+      if (!p.success || !q.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      // O funil tem que pertencer ao projeto — sem isso, um funnelId de outro
+      // projeto leria dados que não são dele.
+      const [funnel] = await fastify.db
+        .select({ id: funnels.id })
+        .from(funnels)
+        .where(and(eq(funnels.id, p.data.funnelId), eq(funnels.projectId, p.data.projectId)))
+        .limit(1);
+      if (!funnel) return reply.code(404).send({ error: "Funil não encontrado neste projeto" });
+
+      const conn = await tokenFor(p.data.projectId);
+      if (!conn) return reply.code(409).send({ error: "VTurb não conectado", code: "NOT_CONNECTED" });
+
+      // Player vinculado a qualquer etapa deste funil. Um por funil (AC1).
+      const [link] = await fastify.db
+        .select({
+          id: vturbPlayers.id,
+          playerId: vturbPlayers.playerId,
+          playerName: vturbPlayers.playerName,
+          duration: vturbPlayers.duration,
+          pitchTime: vturbPlayers.pitchTime,
+        })
+        .from(vturbPlayers)
+        .innerJoin(funnelStages, eq(funnelStages.id, vturbPlayers.stageId))
+        .where(eq(funnelStages.funnelId, p.data.funnelId))
+        .limit(1);
+      // 404 aqui não é erro: é o estado normal de um funil sem VSL vinculada.
+      // O front usa isso para oferecer o seletor de player.
+      if (!link) return reply.code(404).send({ error: "Nenhuma VSL vinculada a este funil", code: "NO_PLAYER" });
+
+      try {
+        const stats = await sessionStats(conn.token, {
+          playerId: link.playerId,
+          startDate: q.data.startDate,
+          endDate: q.data.endDate,
+          timezone: conn.timezone,
+          videoDuration: link.duration,
+          pitchTime: link.pitchTime,
+        });
+
+        const cadeia = derivarCadeia(stats, link.pitchTime);
+
+        return {
+          player: {
+            id: link.id,
+            playerId: link.playerId,
+            name: link.playerName,
+            duration: link.duration,
+            pitchTime: link.pitchTime,
+          },
+          cadeia,
+          // AC5: proveniência preenchida automaticamente. A janela devolvida é
+          // a EFETIVAMENTE enviada à API — não a pedida — para que o AC6 possa
+          // comparar com a janela do resto da aba sem depender de confiança.
+          proveniencia: {
+            source: fonteVturb(link.playerName, link.playerId),
+            windowStart: q.data.startDate,
+            windowEnd: q.data.endDate,
+            timezone: conn.timezone,
+          },
+          // Brutos no response para o memorial poder mostrar a conta em vez de
+          // só o resultado — é o que torna a taxa conferível contra o painel.
+          brutos: {
+            viewedUniq: stats.total_viewed_device_uniq,
+            startedUniq: stats.total_started_device_uniq,
+            overPitch: stats.total_over_pitch,
+          },
+        };
+      } catch (err) {
+        // Violação de protocolo é defeito de definição, não falha do VTurb —
+        // 502 mandaria investigar o lado errado.
+        if (err instanceof ProtocolViolation) {
+          return reply.code(422).send({ error: err.message, code: "PROTOCOL_VIOLATION" });
+        }
         return replyVturbError(reply, err);
       }
     },
