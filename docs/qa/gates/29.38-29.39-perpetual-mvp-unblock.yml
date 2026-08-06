@@ -58,10 +58,34 @@ checks:
       tsc limpo nos 3 pacotes, `next build` limpo, ESLint sem warnings nos
       arquivos novos, 158 testes web passando.
 
-      As 7 falhas da API são pré-existentes e isso foi PROVADO, não afirmado: o
+      As falhas da API são pré-existentes e isso foi PROVADO, não afirmado: o
       diff do `schema.ts` toca unicamente a coluna do gateway, e as permissões
       `traffic`/`youtubeAds` que quebram o `schema.test.ts` vieram do commit
       `678bd75`, de outro autor. Confirmei o diff eu mesmo.
+
+      CORREÇÃO (@devops, 2026-08-06, pré-merge do #473) — o número acima
+      constava como "7 falhas" e estava errado. São **14**. A conclusão
+      (pré-existentes) permanece; a contagem, não.
+
+      Medido em quatro estados, com os mesmos 6 arquivos e as mesmas linhas
+      falhando em todos:
+
+        origin/main (79edfe1, sem nada desta branch) : 14 falhas · 777 passando (791)
+        branch em bbacb66 (antes do merge da main)   : 14 falhas · 784 passando (798)
+        branch em 60c19b3 (HEAD no gate final)       : 14 falhas · 784 passando (798)
+        merge simulado sobre a main de 2026-08-06    : 14 falhas · 784 passando (798)
+
+      A `main` sozinha já falha exatamente igual, o que encerra a questão.
+
+      De onde veio o 7: é a diferença de TOTAL entre a branch e a main —
+      798 − 791 = 7 — que são os 7 testes de regressão que a própria 29.38
+      adicionou no `perpetual-report-config-merge.test.ts` (arquivo novo,
+      exatamente 7 `it(`). O número dos testes ENTREGUES foi anotado no lugar
+      do número dos testes QUEBRADOS.
+
+      Registrado porque a diferença importa: "7 falhas herdadas" e "14 falhas
+      herdadas" levam a leituras diferentes sobre a saúde da suíte da API, e
+      quem for investigar isso depois precisa do número certo.
 
   performance:
     status: PASS
