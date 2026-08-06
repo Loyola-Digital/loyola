@@ -5,6 +5,7 @@ import { AlertTriangle, Calculator, Info, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { toast } from "sonner";
 import { apiErrorMessage, logApiError } from "@/lib/utils/api-error";
 import { fracaoParaPP, ppParaFracao } from "@/lib/utils/percent";
@@ -68,12 +69,42 @@ interface Props {
 }
 
 export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: Props) {
+  // ============================================================
+  // Story 29.41 (AC0) — período PRÓPRIO da aba. Resolve o QA-07 da 29.35.
+  //
+  // Antes, a aba usava o `days` da página, cujo seletor mora dentro da aba
+  // Meta Ads. Quem estivesse na Análise MVP não tinha como saber de que
+  // janela os números vinham, muito menos mudá-la sem trocar de aba.
+  //
+  // Isso deixa de ser incômodo e vira impedimento na 29.41: o VTurb exige
+  // `start_date`/`end_date` em toda chamada, e o AC6 (`AGG-01`/`ST-07`) exige
+  // que a janela da cadeia seja a MESMA do resto da aba. Sem período
+  // explícito e controlável aqui, não há como afirmar que são a mesma.
+  //
+  // As props seguem sendo o valor INICIAL — a aba abre no mesmo período em
+  // que a página está, e só diverge se o usuário escolher. Não unificamos os
+  // dois seletores: isso mexeria em componente de fora e está registrado como
+  // follow-up no AC0.
+  // ============================================================
+  const [mvpDays, setMvpDays] = useState(days);
+  const [mvpRange, setMvpRange] = useState<{ startDate: string; endDate: string } | undefined>(
+    customRange,
+  );
+
+  // A página mudou de período enquanto a aba estava montada: acompanhar, senão
+  // a aba fica exibindo uma janela que o usuário já trocou lá fora e não tem
+  // como saber disso.
+  useEffect(() => {
+    setMvpDays(days);
+    setMvpRange(customRange);
+  }, [days, customRange?.startDate, customRange?.endDate]);
+
   const { data: salesData } = usePerpetualSalesData(
     projectId,
     funnel.id,
-    days,
-    customRange?.startDate,
-    customRange?.endDate,
+    mvpDays,
+    mvpRange?.startDate,
+    mvpRange?.endDate,
   );
   // Investimento do período. Vem de `useTrafficOverview` e NÃO de uma
   // reagregação local: o dashboard já teve bug de dupla contagem no bulk
@@ -82,10 +113,10 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
   const campaignIds = funnel.campaigns.map((c) => c.id);
   const { data: overview } = useTrafficOverview(
     projectId,
-    days,
+    mvpDays,
     campaignIds.length > 0 ? campaignIds : null,
-    customRange?.startDate,
-    customRange?.endDate,
+    mvpRange?.startDate,
+    mvpRange?.endDate,
   );
   const {
     data: configData,
@@ -266,6 +297,20 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
 
   return (
     <div className="space-y-4">
+      {/* ---- Story 29.41 (AC0): o período da aba, explícito e controlável.
+           Fica no topo porque tudo abaixo depende dele — CAC realizado, cadeia
+           e, a partir desta story, as consultas ao VTurb. ---- */}
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] text-muted-foreground">
+          Todos os números desta aba usam o período selecionado ao lado.
+        </p>
+        <DayRangePicker
+          days={mvpDays}
+          onDaysChange={setMvpDays}
+          onRangeChange={(r) => setMvpRange(r ?? undefined)}
+        />
+      </div>
+
       {/* ---- Story 29.38 — falha ao CARREGAR a config.
            Sem isto, erro de carga e "funil ainda não configurado" produzem a
            mesma tela vazia, e o usuário conclui que nada foi salvo. Foi o que
