@@ -172,6 +172,59 @@ describe("buildEntitySeries — reconciliacao (AC0/AC10)", () => {
     expect(totalForDate(r.all, "2026-08-01", "spend")).toBe(600);
   });
 
+  // ---- Gate QA-01: a reconciliacao das OUTRAS duas metricas. Estes tres
+  // casos eram o ponto cego — o teste original so cobria `spend`.
+  it("faturamento e vendas sem UTM entram no residuo, nao somem", () => {
+    const r = buildEntitySeries(params({
+      rows: [{ entityId: "ad_1", entityName: "A", dateStart: "2026-08-01", spend: 100 }],
+      salesByEntity: {
+        ad_1: { revenueByDay: { "2026-08-01": 500 }, salesByDay: { "2026-08-01": 1 } },
+        // Rotulo que o backend usa para venda sem UTM — nunca e um entityId.
+        "(sem origem)": { revenueByDay: { "2026-08-01": 300 }, salesByDay: { "2026-08-01": 2 } },
+      },
+    }));
+    expect(totalForDate(r.all, "2026-08-01", "revenue")).toBe(800);
+    expect(totalForDate(r.all, "2026-08-01", "sales")).toBe(3);
+  });
+
+  it("venda de anuncio ausente do cache de insights entra no residuo", () => {
+    const r = buildEntitySeries(params({
+      rows: [{ entityId: "ad_1", entityName: "A", dateStart: "2026-08-01", spend: 100 }],
+      salesByEntity: {
+        ad_1: { revenueByDay: { "2026-08-01": 500 }, salesByDay: { "2026-08-01": 1 } },
+        ad_deletado: { revenueByDay: { "2026-08-01": 200 }, salesByDay: { "2026-08-01": 1 } },
+      },
+    }));
+    expect(totalForDate(r.all, "2026-08-01", "revenue")).toBe(700);
+    expect(totalForDate(r.all, "2026-08-01", "sales")).toBe(2);
+    expect(r.all.map((s) => s.key)).toContain(UNATTRIBUTED_SERIES_KEY);
+  });
+
+  it("as TRES metricas fecham ao mesmo tempo, com as duas ausencias juntas", () => {
+    const r = buildEntitySeries(params({
+      rows: [{ entityId: "ad_1", entityName: "A", dateStart: "2026-08-01", spend: 600 }],
+      unattributedByDate: { "2026-08-01": 15 },          // gasto sem anuncio
+      salesByEntity: {
+        ad_1: { revenueByDay: { "2026-08-01": 500 }, salesByDay: { "2026-08-01": 1 } },
+        "(sem origem)": { revenueByDay: { "2026-08-01": 300 }, salesByDay: { "2026-08-01": 2 } },
+      },
+    }));
+    expect(totalForDate(r.all, "2026-08-01", "spend")).toBeCloseTo(615, 8);
+    expect(totalForDate(r.all, "2026-08-01", "revenue")).toBe(800);
+    expect(totalForDate(r.all, "2026-08-01", "sales")).toBe(3);
+  });
+
+  it("venda residual num dia sem investimento nenhum ainda entra no eixo X", () => {
+    const r = buildEntitySeries(params({
+      rows: [{ entityId: "ad_1", entityName: "A", dateStart: "2026-08-01", spend: 100 }],
+      salesByEntity: {
+        "(sem origem)": { revenueByDay: { "2026-08-03": 300 }, salesByDay: { "2026-08-03": 1 } },
+      },
+    }));
+    expect(r.dates).toContain("2026-08-03");
+    expect(totalForDate(r.all, "2026-08-03", "revenue")).toBe(300);
+  });
+
   it("dia com gasto SO no nao-atribuido ainda entra no eixo X", () => {
     const r = buildEntitySeries(params({
       rows: [{ entityId: "1", entityName: "A", dateStart: "2026-08-01", spend: 100 }],

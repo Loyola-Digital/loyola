@@ -784,7 +784,7 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
       <PerpetualRankingSection
         rates={chainRates}
         ceilings={cfg?.ceilings ?? {}}
-        entryCostValue={entryCost?.value ?? null}
+        entryCost={entryCost}
         currentCac={chainCac}
         funnelValidado={cfg?.validado ?? false}
         onSave={handleSaveCeilings}
@@ -809,6 +809,15 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
           <li>
             Reembolso e chargeback não entram como provisão porque já saem do faturamento quando
             acontecem — provisionar de novo seria deduzir a mesma perda duas vezes.
+          </li>
+          {/* Gate QA-06: a troca de CPM para CPC precisa estar legível para quem
+              confere a conta na tela, não só para quem lê o código. Sem isto, o
+              gestor procura o CTR na cadeia e conclui que falta uma etapa. */}
+          <li>
+            O custo de entrada da cadeia é o <strong>CPC</strong> (investimento ÷ cliques no link),
+            porque toda arquitetura começa numa etapa cujo denominador são os cliques. Por isso o{" "}
+            <strong>CTR fica fora</strong> da cadeia: com o custo já sendo por clique, incluí-lo
+            contaria a mesma perda duas vezes (ST-06).
           </li>
         </ul>
       </div>

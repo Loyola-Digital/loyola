@@ -284,9 +284,17 @@ function EntityDimensionCharts({
   semCobertura: string[];
 }) {
   // AC4: visibilidade por GRÁFICO, não global — desligar uma campanha no de
-  // CAC não a desliga no de Margem. O reset ao trocar dimensão/período vem de
-  // graça: as chaves são outras e a série some do `plotted`.
+  // CAC não a desliga no de Margem.
   const [ocultas, setOcultas] = useState<Record<string, Set<string>>>({});
+
+  // Gate QA-02: o reset NÃO vinha de graça, como o comentário anterior afirmava.
+  // Trocar de dimensão faz as séries novas aparecerem (chaves diferentes), mas
+  // voltar à dimensão anterior reencontra o estado antigo — e a série volta
+  // escondida, o que se lê como ausência de dado. O AC4 pede reset explícito.
+  const assinaturaDoConjunto = `${dimensao}|${series.dates.join(",")}`;
+  useEffect(() => {
+    setOcultas({});
+  }, [assinaturaDoConjunto]);
   const toggle = (grafico: string, key: string) =>
     setOcultas((prev) => {
       const atual = new Set(prev[grafico] ?? []);
@@ -355,12 +363,13 @@ function EntityDimensionCharts({
         </p>
       )}
 
-      {/* AC0: o não atribuído é dito, não escondido. */}
+      {/* AC0 + gate QA-01: as duas ausências são ditas, não escondidas. */}
       {series.all.some((s) => s.key === UNATTRIBUTED_SERIES_KEY) && (
         <p className="text-[11px] text-muted-foreground">
-          A série <strong>{UNATTRIBUTED_SERIES_KEY}</strong> carrega o investimento que a Meta reporta
-          na campanha sem linha de anúncio correspondente — anúncio excluído, tipicamente. Sem ela, a
-          soma das séries ficaria abaixo do total do período.
+          A série <strong>{UNATTRIBUTED_SERIES_KEY}</strong> reúne o que não se atribui a nenhum item
+          desta dimensão: <em>investimento</em> que a Meta reporta na campanha sem linha de anúncio
+          (anúncio excluído, tipicamente) e <em>vendas</em> sem UTM ou de anúncio ausente do cache.
+          Sem ela, as somas das séries ficariam abaixo dos totais do período.
         </p>
       )}
       {semCobertura.length > 0 && (

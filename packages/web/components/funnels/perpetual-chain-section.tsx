@@ -405,6 +405,13 @@ export function PerpetualChainSection({
                             —
                           </span>
                         ) : (
+                          /* Gate QA-05 — premissa registrada, como o AC5 pediu:
+                             VERDE = subiu. Vale porque toda etapa de todo
+                             template é uma taxa de CONVERSÃO, e subir é sempre
+                             melhorar. Se algum dia entrar etapa onde subir é
+                             piorar (abandono, churn, taxa de recusa), esta cor
+                             passa a mentir e o template precisará declarar a
+                             direção — não basta inverter aqui. */
                           <span
                             className={
                               delta > 0

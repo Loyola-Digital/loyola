@@ -28,8 +28,27 @@
  * um número cortado denunciando o próprio corte.
  */
 
-/** Rótulo da série que carrega o investimento sem anúncio correspondente. */
-export const UNATTRIBUTED_SERIES_KEY = "(sem anúncio atribuído)";
+/**
+ * Rótulo da série residual — o que não se atribui a nenhuma entidade da dimensão.
+ *
+ * Carrega DUAS ausências distintas, de pontas opostas do funil:
+ *
+ *   • **investimento sem anúncio** — a Meta reporta o gasto no nível da campanha
+ *     e não existe linha de anúncio (anúncio excluído, tipicamente). Medido em
+ *     1,55% do total pelo @po em 2026-08-07.
+ *   • **venda sem entidade** — a venda não tem UTM (`(sem origem)` na planilha),
+ *     ou aponta para um anúncio que não está no cache de insights.
+ *
+ * Um bucket só, e não dois, porque é o que faz as TRÊS reconciliações fecharem
+ * com uma série a mais em vez de duas — e porque a margem do resíduo (receita
+ * não atribuível − investimento não atribuível) é uma leitura legítima, ao passo
+ * que duas séries meia-métrica cada não seriam.
+ *
+ * O gate QA-01 pegou a segunda ausência sumindo em silêncio: as séries eram
+ * montadas só a partir das linhas de investimento, então venda sem entidade
+ * correspondente nunca entrava em lugar nenhum.
+ */
+export const UNATTRIBUTED_SERIES_KEY = "(sem atribuição)";
 
 /** Story 29.42 (AC5) — quantas entidades são plotadas. Decisão do usuário. */
 export const TOP_N_SERIES = 10;
@@ -133,12 +152,6 @@ export function buildEntitySeries({
   resolveName,
   applyTax,
 }: BuildSeriesParams): BuildSeriesResult {
-  // Eixo X: a união dos dias com investimento atribuído e não atribuído. Um dia
-  // em que só houve gasto sem anúncio ainda é um dia do período.
-  const dates = [
-    ...new Set([...rows.map((r) => r.dateStart), ...Object.keys(unattributedByDate)]),
-  ].sort();
-
   // --- Agrega investimento por (nome resolvido, dia).
   // O agrupamento é por NOME, não por id: um Ad Name pode ter N ad_ids (cópias),
   // e a tabela do Detalhamento agrupa da mesma forma. Séries por id não
@@ -157,6 +170,38 @@ export function buildEntitySeries({
       (e.spendByDate.get(r.dateStart) ?? 0) + applyTax(r.spend, r.dateStart),
     );
   }
+
+  // --- O resíduo de VENDAS, antes do eixo X: uma venda cuja chave não casa com
+  // nenhuma entidade das linhas de investimento pode estar num dia que nenhuma
+  // outra fonte conhece, e esse dia precisa entrar no eixo.
+  const idsAtribuidos = new Set<string>();
+  for (const { ids } of porNome.values()) for (const id of ids) idsAtribuidos.add(id);
+
+  const residualRevenue = new Map<string, number>();
+  const residualSales = new Map<string, number>();
+  if (salesByEntity) {
+    for (const [id, s] of Object.entries(salesByEntity)) {
+      if (idsAtribuidos.has(id)) continue;
+      for (const [d, v] of Object.entries(s.revenueByDay)) {
+        residualRevenue.set(d, (residualRevenue.get(d) ?? 0) + v);
+      }
+      for (const [d, v] of Object.entries(s.salesByDay)) {
+        residualSales.set(d, (residualSales.get(d) ?? 0) + v);
+      }
+    }
+  }
+
+  // Eixo X: união de TODAS as origens de dia — investimento atribuído, gasto sem
+  // anúncio, e venda sem entidade. Montado depois do resíduo justamente porque a
+  // última origem só existe depois de saber quem casou.
+  const dates = [
+    ...new Set([
+      ...rows.map((r) => r.dateStart),
+      ...Object.keys(unattributedByDate),
+      ...residualRevenue.keys(),
+      ...residualSales.keys(),
+    ]),
+  ].sort();
 
   // --- Receita/vendas: casadas pelos MESMOS ids que compõem cada nome.
   const series: EntitySeries[] = [];
@@ -192,15 +237,33 @@ export function buildEntitySeries({
     series.push({ key: nome, name: nome, totalSpend, byDate });
   }
 
-  // --- A série do não-atribuído. Só existe se houver o que atribuir.
-  const totalUnattributed = Object.values(unattributedByDate).reduce((s, v) => s + v, 0);
-  if (totalUnattributed > 0) {
+  // --- A série residual: as duas ausências, num bucket só.
+  //
+  // Gate QA-01: antes daqui só entrava o investimento sem anúncio. Toda venda
+  // cuja chave não casasse com uma entidade das linhas de investimento era
+  // descartada em silêncio — incluindo, garantidamente, TODA venda sem UTM,
+  // que o backend rotula "(sem origem)". Na tela isso aparecia como o gráfico
+  // por dimensão mostrando menos faturamento que o agregado logo acima.
+  const diasResiduais = [
+    ...new Set([
+      ...Object.keys(unattributedByDate),
+      ...residualRevenue.keys(),
+      ...residualSales.keys(),
+    ]),
+  ].sort();
+
+  if (diasResiduais.length > 0) {
     const byDate: Record<string, SeriesPoint> = {};
     let totalSpend = 0;
-    for (const [d, v] of Object.entries(unattributedByDate)) {
-      const spend = applyTax(v, d);
-      // Sem receita atribuível: CAC e margem % ficam `null`, não zero.
-      byDate[d] = derivePoint(spend, 0, 0, feeRate);
+    for (const d of diasResiduais) {
+      const spendBruto = unattributedByDate[d] ?? 0;
+      const spend = spendBruto > 0 ? applyTax(spendBruto, d) : 0;
+      byDate[d] = derivePoint(
+        spend,
+        residualRevenue.get(d) ?? 0,
+        residualSales.get(d) ?? 0,
+        feeRate,
+      );
       totalSpend += spend;
     }
     series.push({
