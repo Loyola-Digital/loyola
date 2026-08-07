@@ -1,104 +1,93 @@
 schema: 1
 story: '29.42'
-gate: FAIL
-iteration: 2
+gate: PASS
+iteration: 3
 status_reason: >-
-  A QA-01 foi corrigida na origem: o residuo agora carrega as duas ausencias e a
-  reconciliacao fecha nas TRES metricas, com testes. Mas a correcao abriu a
-  QA-07: a serie residual e ordenada por `totalSpend` e disputa vaga no teto de
-  10 como se fosse uma entidade. Quando ela tem receita e NAO tem investimento —
-  o que acontece SEMPRE na dimensao Por Campanha, porque ali `unattributedByDate`
-  e vazio por construcao — ela fica com totalSpend=0, ordena por ultimo e cai do
-  corte. Com mais de 10 campanhas (73 ativas nos ultimos 30 dias nesta conta), o
-  sintoma que a QA-01 descreveu volta identico na visao PADRAO da tela: o
-  faturamento existe em `all`, o teste passa, e o grafico nao mostra. Fix de
-  poucas linhas — o residuo nao e concorrente por vaga.
+  QA-07 resolvida corretamente: o residuo saiu da disputa por vaga. So as
+  entidades sao ordenadas e fatiadas, o residuo e anexado sempre que existe, e
+  `omittedCount`/`omittedSpendShare` passam a contar somente entidades — o que
+  esta certo, porque o residuo nunca e omitido. Verifiquei 4 bordas que o @dev
+  nao escreveu (so residuo sem entidade nenhuma; residuo nao reduzindo o numero
+  de entidades exibidas; entidades todas com spend zero; reconciliacao das tres
+  metricas apos a mudanca de ordenacao) e todas passam. QA-08 tambem tratada.
+  Restam duas imprecisoes de texto, ambas low, nenhuma bloqueante.
 reviewer: 'Quinn'
 updated: '2026-08-07T00:00:00Z'
 
-top_issues:
+resolvidos_nesta_iteracao:
   - id: 'QA-07'
-    severity: high
-    finding: >-
-      A serie residual entra no mesmo `sort((a,b) => b.totalSpend - a.totalSpend)`
-      e no mesmo `slice(0, TOP_N_SERIES)` das entidades. `totalSpend` do residuo
-      conta apenas o investimento sem anuncio — receita residual nao pontua. Logo,
-      residuo sem investimento vai para o fim da fila.
-    reproduction: >-
-      15 entidades com investimento + salesByEntity={"(sem origem)": 50000/90vendas},
-      unattributedByDate={} -> residuo na posicao 15 de 16, fora de `plotted`.
-      totalForDate(all, revenue)=50000; totalForDate(plotted, revenue)=0.
-    impact: >-
-      Na dimensao **Por Campanha** — que e a inicial do `tableFilter` —
-      `getEntityDailySeries` devolve `unattributedByDate: {}` por construcao. O
-      residuo tem sempre totalSpend=0 e, havendo mais de 10 campanhas, e sempre
-      cortado. Vendas sem UTM voltam a nao aparecer no grafico, exatamente como
-      na QA-01. A diferenca e que agora os testes passam, porque operam sobre
-      `all` e o defeito esta no recorte de `plotted`.
-    suggested_action: >-
-      Tirar o residuo da disputa: ordenar e fatiar somente as entidades, e
-      anexar o residuo a `plotted` sempre que existir. Ele nao concorre por vaga
-      porque nao e uma entidade — e a prestacao de contas do que sobrou.
-      Ajustar `omittedCount`/`omittedSpendShare` para nao conta-lo, e acrescentar
-      teste com residuo sem investimento e mais de 10 entidades.
-    ac_violated: 'AC0 (o residuo tem de ser visivel), AC5'
-
+    status: RESOLVED
+    verificacao: >-
+      Reproducao original (15 entidades, residuo so com receita, Por Campanha):
+      faturamento em `plotted` foi de 0 para 50.000, com as 10 entidades
+      preservadas — o residuo nao tomou vaga de ninguem. Bordas adicionais
+      testadas por mim: residuo sozinho sem entidades entra em `plotted`;
+      12 entidades + residuo continuam plotando 10 entidades (nao 9);
+      entidades com spend zero nao produzem NaN em `omittedSpendShare`;
+      reconciliacao das 3 metricas em `all` intacta apos a reordenacao.
   - id: 'QA-08'
+    status: RESOLVED
+    nota: 'Guarda com funcao de atualizacao — devolve `prev` quando nao ha o que limpar.'
+
+top_issues:
+  - id: 'QA-09'
     severity: low
     finding: >-
-      `useEffect(() => setOcultas({}), [assinatura])` dispara tambem na montagem,
-      substituindo `{}` por um `{}` novo. Nao ha laco (a dep e string primitiva e
-      nao inclui `ocultas`), mas custa um render extra por montagem e por troca
-      de periodo.
+      A nota do teto diz "X% do investimento do periodo", mas o denominador
+      passou a ser o investimento das ENTIDADES, sem o residuo. Com residuo
+      grande o percentual sai superestimado em relacao ao que a frase promete.
+      Ex.: entidades 1000, residuo 500, omitidas 200 -> a tela diz 20% "do
+      periodo", quando sobre o periodo real (1500) sao 13,3%.
     suggested_action: >-
-      Guardar com `if (Object.keys(ocultas).length) setOcultas({})`, ou aceitar.
-      Cosmetico — registrado para nao ser reachado como novidade depois.
+      Trocar a redacao para "do investimento atribuido" (ou "das entidades").
+      O denominador esta certo — quem esta impreciso e o rotulo. Nao bloqueia.
 
-resolvidos_nesta_iteracao:
-  - id: 'QA-01'
-    status: RESOLVED_NA_ORIGEM
-    nota: >-
-      Residuo unificado carregando investimento sem anuncio E venda sem entidade.
-      A escolha de um bucket em vez de dois esta bem justificada: faz as tres
-      reconciliacoes fecharem com uma serie a mais, e a margem do residuo e
-      leitura legitima. Mover a montagem do eixo X para depois do residuo foi
-      correto e nao obvio — venda residual pode cair em dia que nenhuma outra
-      fonte conhece, e ha teste para isso. 4 testes novos cobrem faturamento e
-      vendas, que eram o ponto cego. Ver QA-07 para o que sobrou no recorte.
-  - id: 'QA-02'
-    status: RESOLVED
-    nota: >-
-      useEffect explicito sobre (dimensao, dias). O @dev registrou que o
-      comentario anterior estava errado, em vez de so trocar o codigo — isso vale
-      tanto quanto o fix.
-  - id: 'QA-03'
-    status: RESOLVED
-    nota: 'Tratada junto com a QA-05, na 29.44.'
+  - id: 'QA-10'
+    severity: low
+    finding: >-
+      O comentario acima da nota ("calculado sobre o conjunto INTEIRO, nao sobre
+      os 10 plotados") envelheceu meio passo: continua verdadeiro quanto ao que
+      importava na iteracao 1, mas nao menciona que o residuo agora esta fora do
+      denominador.
+    suggested_action: 'Uma linha no comentario. Pode ir junto com a QA-09.'
 
 coverage:
-  ac0_reconciliacao_medida: CONCERNS  # QA-07 — reconcilia em `all`, nao no que e exibido
+  ac0_reconciliacao_medida: PASS      # residuo visivel em `all` E em `plotted`
   ac1_tres_graficos: PASS
   ac2_segue_tablefilter: PASS
   ac3_serie_por_entidade: PASS
-  ac4_legenda_ligavel: PASS           # QA-02 resolvida
-  ac5_teto_10: FAIL                   # QA-07 — o teto engole o residuo
+  ac4_legenda_ligavel: PASS
+  ac5_teto_10: PASS                   # 10 entidades + residuo, que nao concorre
   ac6_endpoint_do_banco: PASS
   ac7_imposto_uma_vez: PASS
-  ac8_receita_por_utm: PASS           # QA-01 resolvida na origem
+  ac8_receita_por_utm: PASS
   ac9_ausencia_nao_e_zero: PASS
-  ac10_reconciliacao: PASS            # 3 metricas fecham, com testes
+  ac10_reconciliacao: PASS            # 3 metricas, verificadas de forma independente
   ac11_performance: WAIVED            # exige dados reais
 
 quality_checks:
-  code_review: CONCERNS               # QA-07
-  unit_tests: CONCERNS                # 24 testes; nenhum cobre residuo + teto de 10 juntos
-  acceptance_criteria: FAIL           # AC5 e AC0 na parte exibida
-  no_regressions: PASS                # 287 verdes, tsc e next build limpos
+  code_review: PASS
+  unit_tests: PASS                    # 28 no modulo, 291 no total
+  acceptance_criteria: PASS
+  no_regressions: PASS                # tsc e next build limpos
   performance: PASS
   security: PASS
-  documentation: PASS                 # nota D6 registra o erro proprio com precisao
+  documentation: PASS                 # nota D7 registra o padrao do proprio erro, nao so o fix
+
+validacao_manual_pendente:
+  - 'Somar o investimento das series de um dia e conferir com o mesmo dia no grafico agregado da 29.32'
+  - 'Somar a serie de uma campanha no periodo e conferir com a linha dela no Detalhamento (AC10 teste 2)'
+  - 'Trocar Campanha/Publico/Criativo e confirmar que os 3 graficos re-plotam e a legenda reseta'
+  - 'Confirmar que a serie (sem atribuicao) aparece em cinza e nunca e cortada pelo teto'
+  - 'Dia sem venda numa campanha: a linha de CAC tem lacuna, nao toca o zero'
 
 waiver: { active: false }
+
+nota_ao_dev: >-
+  O registro na nota D7 — nomear o proprio padrao (a mudanca certa aplicada ate
+  a metade do caminho) em vez de so consertar — e o que faz esta iteracao valer
+  mais que as duas anteriores juntas. Tres achados high em tres rodadas nao e
+  um bom numero; ter a causa comum escrita na story e o que impede a quarta.
 
 blast_radius:
   files_new: 3
