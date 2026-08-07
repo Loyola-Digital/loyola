@@ -26,6 +26,7 @@ import {
 } from "../services/meta-ads.js";
 import { metaAdsAccounts, metaAdsAccountProjects, metaEntityNamesCache, metaAdCreativesCache, projectMembers } from "../db/schema.js";
 import { getProjectMetaFreshness } from "../services/meta-sync-state.js";
+import { getEntityDailySeries } from "../services/meta-entity-daily.js";
 
 // Story 18.26 Fase 1 / 18.37: TTL alinhado com stage-sales-data.ts (30d). Evita
 // re-consultar a Meta a cada 24h e estourar rate limit; refresh vem do backfill.
@@ -826,6 +827,81 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
         resolved: Object.values(linkUrls).filter(Boolean).length,
         missingFromCache,
       };
+    },
+  );
+
+  // ---- GET /api/traffic/analytics/:projectId/entity-daily ---- (Story 29.42, AC6/AC7)
+  /**
+   * Série diária por entidade, para os gráficos por dimensão do Perpétuo.
+   *
+   * Lê do banco e NÃO chama a Meta: o rate limit derrubou a integração em
+   * 2026-07-16 e a regra desde então é ler do cache que o sync mantém quente.
+   * Range sem cobertura devolve o que há e sinaliza em `daysWithoutCoverage` —
+   * nunca dispara fetch ao vivo.
+   *
+   * `spend` volta BRUTO, mesma convenção de `/campaign-daily`. O gross-up dos
+   * 12,15% é do frontend, e acontece uma única vez. Ver `meta-entity-daily.ts`.
+   */
+  const entityDailyQuerySchema = z.object({
+    groupBy: z.enum(["campaign", "adset", "ad"]),
+    campaignIds: z.string().optional(),
+    days: z.coerce.number().int().min(1).max(365).default(30),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
+  });
+
+  fastify.get(
+    "/api/traffic/analytics/:projectId/entity-daily",
+    async (request, reply) => {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+
+      const queryResult = entityDailyQuerySchema.safeParse(request.query);
+      if (!queryResult.success) {
+        return reply.code(400).send({ error: "parametros invalidos" });
+      }
+      const { groupBy, days, startDate, endDate } = queryResult.data;
+
+      // Mesma aritmetica de `/campaign-daily`: datas explicitas tem precedencia
+      // sobre `days`, e o range e inclusivo nas duas pontas.
+      const hoje = new Date();
+      const until = startDate && endDate ? endDate : hoje.toISOString().slice(0, 10);
+      const since =
+        startDate && endDate
+          ? startDate
+          : new Date(hoje.getTime() - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+
+      const campaignIds = queryResult.data.campaignIds
+        ?.split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      try {
+        const result = await getEntityDailySeries(
+          fastify.db,
+          paramResult.data.projectId,
+          groupBy,
+          since,
+          until,
+          campaignIds,
+        );
+        return { ...result, since, until, groupBy };
+      } catch (err) {
+        return reply.code(500).send({
+          error: "Erro ao montar a serie diaria por entidade",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
     },
   );
 

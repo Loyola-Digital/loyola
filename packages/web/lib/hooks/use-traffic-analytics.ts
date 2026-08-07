@@ -444,6 +444,67 @@ export function useAdLinkUrls(projectId: string | null, adIds: string[]) {
   });
 }
 
+// ============================================================
+// Story 29.42 — série diária por entidade (campanha / público / criativo).
+// ============================================================
+
+export type EntityDailyGroupBy = "campaign" | "adset" | "ad";
+
+export interface EntityDailyRow {
+  entityId: string;
+  entityName: string;
+  dateStart: string;
+  /** BRUTO. O gross-up de 12,15% é aplicado UMA vez, no consumidor. */
+  spend: number;
+  impressions: number;
+  clicks: number;
+  linkClicks: number;
+}
+
+export interface EntityDailyResponse {
+  rows: EntityDailyRow[];
+  /**
+   * Investimento por dia que existe no grão de campanha e não aparece em
+   * nenhuma linha de anúncio — medido em 1,55% do total (@po, 2026-08-07).
+   * Vazio quando `groupBy === "campaign"`.
+   */
+  unattributedByDate: Record<string, number>;
+  daysWithoutCoverage: string[];
+  since: string;
+  until: string;
+  groupBy: EntityDailyGroupBy;
+}
+
+/**
+ * Story 29.42 (AC6) — um request por (dimensão, período), nunca um por entidade.
+ *
+ * O endpoint lê do cache do Postgres e não chama a Meta, então não há teto de
+ * entidades como no `/ad-creatives`.
+ */
+export function useEntityDaily(
+  projectId: string | null,
+  groupBy: EntityDailyGroupBy | null,
+  campaignIds: string[] | null,
+  days: number,
+  startDate?: string,
+  endDate?: string,
+) {
+  const apiClient = useApiClient();
+  const idsKey = campaignIds ? [...campaignIds].sort().join(",") : "";
+  return useQuery({
+    queryKey: ["traffic-entity-daily", projectId, groupBy, idsKey, days, startDate, endDate],
+    queryFn: () => {
+      const range = startDate && endDate ? `startDate=${startDate}&endDate=${endDate}` : `days=${days}`;
+      const ids = idsKey ? `&campaignIds=${encodeURIComponent(idsKey)}` : "";
+      return apiClient<EntityDailyResponse>(
+        `/api/traffic/analytics/${projectId}/entity-daily?groupBy=${groupBy}&${range}${ids}`,
+      );
+    },
+    enabled: !!projectId && !!groupBy,
+    staleTime: TRAFFIC_STALE_TIME,
+  });
+}
+
 export interface VideoSourceData {
   sourceUrl: string | null;
   embedHtml: string | null;

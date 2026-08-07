@@ -65,6 +65,7 @@ import {
   useAllAds,
   useAdCreatives,
   useAdLinkUrls,
+  useEntityDaily,
   type CampaignAnalytics,
   type MetaAdCreative,
 } from "@/lib/hooks/use-traffic-analytics";
@@ -77,6 +78,7 @@ import { usePerpetualSpreadsheet } from "@/lib/hooks/use-perpetual-spreadsheet";
 import {
   usePerpetualSalesData,
   usePerpetualSalesDataDaily,
+  usePerpetualSalesDataDailyByEntity,
 } from "@/lib/hooks/use-perpetual-sales-data";
 import type { Funnel, FunnelCampaign, StageType } from "@loyola-x/shared";
 import { StageSalesSection } from "./stage-sales-section";
@@ -109,6 +111,13 @@ import {
 } from "@/lib/utils/chart-granularity";
 import { deriveDetailMetrics } from "@/lib/utils/perpetual-detail-metrics";
 import { buildLpRows, sortLpRows, UNRESOLVED_LP_KEY, type LpRow } from "@/lib/utils/perpetual-lp-rows";
+import {
+  buildEntitySeries,
+  toComposedRows,
+  LINE_KEY_SUFFIX,
+  UNATTRIBUTED_SERIES_KEY,
+  TOP_N_SERIES,
+} from "@/lib/utils/perpetual-entity-series";
 
 interface PerpetualDashboardProps {
   funnel: Funnel;
@@ -235,6 +244,247 @@ const PERPETUAL_DAILY_PAGE_SIZE = 16;
 
 /** Story 29.40: colunas ordenáveis da tabela de LPs (AC3). */
 type LpSortCol = "lp" | "spend" | "revenue" | "margin" | "marginPct" | "sales" | "cac" | "roas";
+
+/**
+ * Story 29.42 — os três gráficos por dimensão.
+ *
+ * Componente próprio, e não JSX solto no dashboard, por causa do estado: cada
+ * gráfico guarda quais séries estão desligadas (AC4), e esse estado é POR
+ * gráfico. Inline, seriam três `useState` no componente pai que já tem 2.700
+ * linhas — e a leitura de qual estado pertence a qual gráfico se perderia.
+ */
+const CORES_SERIES = [
+  "hsl(217 91% 60%)", "hsl(150 60% 45%)", "hsl(38 92% 50%)", "hsl(280 65% 60%)",
+  "hsl(190 70% 50%)", "hsl(0 72% 55%)", "hsl(47 98% 54%)", "hsl(260 60% 65%)",
+  "hsl(170 55% 40%)", "hsl(20 85% 55%)",
+];
+
+/** A série do não-atribuído sai em cinza: não é uma entidade, é o resto. */
+function corDaSerie(key: string, i: number): string {
+  return key === UNATTRIBUTED_SERIES_KEY ? "hsl(215 15% 55%)" : CORES_SERIES[i % CORES_SERIES.length];
+}
+
+const DIMENSAO_LABEL: Record<"campaign" | "adset" | "ad", string> = {
+  campaign: "campanha",
+  adset: "público",
+  ad: "criativo",
+};
+
+function EntityDimensionCharts({
+  series,
+  loading,
+  dimensao,
+  temPlanilha,
+  semCobertura,
+}: {
+  series: ReturnType<typeof buildEntitySeries>;
+  loading: boolean;
+  dimensao: "campaign" | "adset" | "ad";
+  temPlanilha: boolean;
+  semCobertura: string[];
+}) {
+  // AC4: visibilidade por GRÁFICO, não global — desligar uma campanha no de
+  // CAC não a desliga no de Margem. O reset ao trocar dimensão/período vem de
+  // graça: as chaves são outras e a série some do `plotted`.
+  const [ocultas, setOcultas] = useState<Record<string, Set<string>>>({});
+  const toggle = (grafico: string, key: string) =>
+    setOcultas((prev) => {
+      const atual = new Set(prev[grafico] ?? []);
+      if (atual.has(key)) atual.delete(key);
+      else atual.add(key);
+      return { ...prev, [grafico]: atual };
+    });
+
+  const graficos = [
+    {
+      key: "invest-cac",
+      titulo: "Investimento × CAC",
+      areaKey: "spend" as const,
+      lineKey: "cac" as const,
+      fmtArea: (v: number) => fmtCurrencyCompact(v),
+      fmtLine: (v: number) => fmtCurrencyCompact(v),
+      exigePlanilha: false,
+    },
+    {
+      key: "fat-vendas",
+      titulo: "Faturamento × Vendas",
+      areaKey: "revenue" as const,
+      lineKey: "sales" as const,
+      fmtArea: (v: number) => fmtCurrencyCompact(v),
+      fmtLine: (v: number) => fmtNumber(v),
+      exigePlanilha: true,
+    },
+    {
+      key: "margem-pct",
+      titulo: "Margem × Margem %",
+      areaKey: "margin" as const,
+      lineKey: "marginPct" as const,
+      fmtArea: (v: number) => fmtCurrencyCompact(v),
+      fmtLine: (v: number) => `${v.toFixed(0)}%`,
+      exigePlanilha: true,
+    },
+  ];
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-72 rounded-xl" />)}
+      </div>
+    );
+  }
+  if (series.plotted.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold">
+          Evolução por {DIMENSAO_LABEL[dimensao]}
+        </h3>
+        <p className="text-[11px] text-muted-foreground">
+          Clique no nome da série para ligar ou desligar · segue o filtro do Detalhamento acima
+        </p>
+      </div>
+
+      {/* AC5: truncar é legítimo; truncar em silêncio não. O percentual é
+          calculado sobre o conjunto INTEIRO, não sobre os 10 plotados. */}
+      {series.omittedCount > 0 && (
+        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+          Exibindo {TOP_N_SERIES} de maior investimento · {series.omittedCount}{" "}
+          {series.omittedCount === 1 ? "entidade fora do gráfico soma" : "entidades fora do gráfico somam"}{" "}
+          {fmtPercent(series.omittedSpendShare)} do investimento do período.
+        </p>
+      )}
+
+      {/* AC0: o não atribuído é dito, não escondido. */}
+      {series.all.some((s) => s.key === UNATTRIBUTED_SERIES_KEY) && (
+        <p className="text-[11px] text-muted-foreground">
+          A série <strong>{UNATTRIBUTED_SERIES_KEY}</strong> carrega o investimento que a Meta reporta
+          na campanha sem linha de anúncio correspondente — anúncio excluído, tipicamente. Sem ela, a
+          soma das séries ficaria abaixo do total do período.
+        </p>
+      )}
+      {semCobertura.length > 0 && (
+        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+          {semCobertura.length} {semCobertura.length === 1 ? "dia sem" : "dias sem"} detalhamento por
+          anúncio no cache — o investimento desses dias aparece inteiro em “{UNATTRIBUTED_SERIES_KEY}”.
+        </p>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {graficos.map((g) => {
+          const off = ocultas[g.key] ?? new Set<string>();
+          const visiveis = series.plotted.filter((s) => !off.has(s.key));
+          const semFonte = g.exigePlanilha && !temPlanilha;
+          return (
+            <div key={g.key} className="rounded-xl border border-border/30 bg-card/60 p-5">
+              <h4 className="text-sm font-semibold mb-1">{g.titulo}</h4>
+              <p className="text-[11px] text-muted-foreground mb-3">
+                por {DIMENSAO_LABEL[dimensao]} · {series.dates.length}{" "}
+                {series.dates.length === 1 ? "dia" : "dias"} do período
+              </p>
+
+              {semFonte ? (
+                <div className="flex h-[220px] items-center justify-center text-center text-[11px] text-muted-foreground">
+                  Sem fonte de vendas conectada — faturamento e margem por{" "}
+                  {DIMENSAO_LABEL[dimensao]} exigem planilha.
+                </div>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <ComposedChart
+                      data={toComposedRows(series.plotted, series.dates, g.areaKey, g.lineKey)}
+                      margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
+                      <YAxis yAxisId="left" tick={{ fontSize: 10, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => g.fmtArea(v)} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => g.fmtLine(v)} />
+                      <Tooltip
+                        contentStyle={{
+                          background: "var(--color-card)",
+                          border: "1px solid var(--color-border)",
+                          borderRadius: 8,
+                          fontSize: 11,
+                        }}
+                        formatter={(value, name) => {
+                          const n = typeof value === "number" ? value : null;
+                          const isLinha = String(name).endsWith(LINE_KEY_SUFFIX);
+                          const rotulo = String(name).slice(
+                            0,
+                            isLinha ? -LINE_KEY_SUFFIX.length : undefined,
+                          );
+                          if (n === null) return ["—", rotulo];
+                          return [isLinha ? g.fmtLine(n) : g.fmtArea(n), rotulo];
+                        }}
+                      />
+                      {visiveis.map((s) => (
+                        <Area
+                          key={`a-${s.key}`}
+                          yAxisId="left"
+                          type="monotone"
+                          dataKey={s.key}
+                          name={s.key}
+                          stroke={corDaSerie(s.key, series.plotted.indexOf(s))}
+                          fill={corDaSerie(s.key, series.plotted.indexOf(s))}
+                          fillOpacity={0.14}
+                          strokeWidth={1.5}
+                          connectNulls={false}
+                        />
+                      ))}
+                      {visiveis.map((s) => (
+                        <Line
+                          key={`l-${s.key}`}
+                          yAxisId="right"
+                          type="monotone"
+                          dataKey={`${s.key}${LINE_KEY_SUFFIX}`}
+                          name={`${s.key}${LINE_KEY_SUFFIX}`}
+                          stroke={corDaSerie(s.key, series.plotted.indexOf(s))}
+                          strokeWidth={1.5}
+                          strokeDasharray="4 2"
+                          dot={{ r: 2 }}
+                          connectNulls={false}
+                        />
+                      ))}
+                    </ComposedChart>
+                  </ResponsiveContainer>
+
+                  {/* AC4: legenda própria, não a do recharts. A do recharts
+                      listaria área e linha como itens separados (dois cliques
+                      para esconder uma entidade) e não tem estado de "off". */}
+                  <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                    {series.plotted.map((s) => {
+                      const desligada = off.has(s.key);
+                      return (
+                        <button
+                          key={s.key}
+                          type="button"
+                          onClick={() => toggle(g.key, s.key)}
+                          className={`flex items-center gap-1 text-[10px] transition-opacity ${
+                            desligada ? "opacity-35 line-through" : "hover:opacity-70"
+                          }`}
+                          title={desligada ? "Clique para mostrar" : "Clique para ocultar"}
+                        >
+                          <span
+                            className="inline-block h-2 w-2 shrink-0 rounded-sm"
+                            style={{ background: corDaSerie(s.key, series.plotted.indexOf(s)) }}
+                          />
+                          <span className="max-w-[130px] truncate">{s.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-muted-foreground">
+                    Área = volume (eixo esquerdo) · linha tracejada = eficiência (eixo direito)
+                  </p>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
   // Guarda de divisão: denominador 0 → null → "—" (nunca NaN/Infinity).
@@ -847,6 +1097,33 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     customRange?.startDate, customRange?.endDate,
   );
 
+  // ============================================================
+  // Story 29.42 — série diária POR ENTIDADE, para os gráficos por dimensão.
+  //
+  // Duas fontes, uma consulta cada, ambas seguindo o `tableFilter` (AC2):
+  //   • investimento → cache Meta no Postgres, sem chamar a Graph API
+  //   • receita/vendas → planilha, agora com dimensão de UTM
+  //
+  // O `enabled` é a própria dimensão: trocar Campanha/Público/Criativo troca a
+  // queryKey e o React Query reusa o que já buscou.
+  // ============================================================
+  const { data: entityDaily, isLoading: entityDailyLoading } = useEntityDaily(
+    metaProjectId,
+    hasCampaigns ? tableFilter : null,
+    hasCampaigns ? campaignIds : null,
+    days,
+    customRange?.startDate,
+    customRange?.endDate,
+  );
+  const { data: salesByEntityDaily } = usePerpetualSalesDataDailyByEntity(
+    projectId,
+    funnel?.id ?? null,
+    usingSpreadsheet ? tableFilter : null,
+    days,
+    customRange?.startDate,
+    customRange?.endDate,
+  );
+
   // Story 29.13: resolve utm_medium (adset id) → adset name e utm_content
   // (ad id) → ad name via cache de nomes Meta (/meta-names/resolve, DB 24h).
   // Resolve qualquer id (não só os com insights na janela). Fallback pro id cru.
@@ -1248,6 +1525,31 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
 
   // Story 29.20 (Danilo): fee rate da plataforma pra Margem LÍQUIDA por linha.
   const detailFeeRate = usingSpreadsheet && salesData ? salesData.feeRate : 0;
+
+  // ============================================================
+  // Story 29.42 — séries por entidade dos 3 gráficos por dimensão.
+  //
+  // A montagem vive em `perpetual-entity-series.ts` (regra de domínio,
+  // testável fora do componente). Aqui só se injetam as três coisas que
+  // dependem DESTA tela: a normalização de nome, o fee e a regra de imposto.
+  //
+  // `applyMetaTax` é injetada, não reescrita: é date-aware (vale a partir de
+  // 2026-01-01) e uma segunda cópia divergiria da primeira em silêncio.
+  // ============================================================
+  const entitySeries = useMemo(
+    () =>
+      buildEntitySeries({
+        rows: entityDaily?.rows ?? [],
+        unattributedByDate: entityDaily?.unattributedByDate ?? {},
+        salesByEntity: salesByEntityDaily?.byEntity ?? null,
+        feeRate: detailFeeRate,
+        // Mesma normalização do `detailRows` — é o que faz uma série do
+        // gráfico corresponder a exatamente uma linha da tabela acima.
+        resolveName: (_id, fallback) => normalizeCampaignName(fallback),
+        applyTax: applyMetaTax,
+      }),
+    [entityDaily, salesByEntityDaily, detailFeeRate],
+  );
   // Story 29.29: Hook/Hold/Body só existem a nível de ANÚNCIO — campanha e
   // adset agregam criativos diferentes, e a média não significaria nada.
   const showVideoCols = tableFilter === "ad";
@@ -2145,6 +2447,22 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           </table>
         </div>
       </div>
+
+      {/* ================================================================ */}
+      {/* Story 29.42 — TRÊS GRÁFICOS POR DIMENSÃO                          */}
+      {/*                                                                  */}
+      {/* Mesmos cruzamentos volume×eficiência da 29.32, agora com uma     */}
+      {/* série por entidade. Seguem o MESMO `tableFilter` do Detalhamento */}
+      {/* (AC2): duas fontes de recorte na mesma tela produziriam gráfico  */}
+      {/* e tabela mostrando populações diferentes sem nada avisar.        */}
+      {/* ================================================================ */}
+      <EntityDimensionCharts
+        series={entitySeries}
+        loading={entityDailyLoading}
+        dimensao={tableFilter}
+        temPlanilha={usingSpreadsheet}
+        semCobertura={entityDaily?.daysWithoutCoverage ?? []}
+      />
 
       {/* ================================================================ */}
       {/* COMPARATIVO ENTRE LPs — Story 29.40
