@@ -1,0 +1,108 @@
+schema: 1
+story: '29.42'
+gate: FAIL
+status_reason: >-
+  Os graficos de Faturamento x Vendas e Margem x Margem % PERDEM receita e vendas
+  em silencio. Vendas sem UTM ("(sem origem)") e vendas de anuncio ausente do
+  cache de insights nunca viram serie, porque as series so existem para entidades
+  presentes em entityDaily.rows. Reproduzido: 500 de 1000 de faturamento plotados,
+  1 de 4 vendas. Isso quebra o AC10 teste 1 para faturamento/vendas e e exatamente
+  a classe de defeito que o AC0 foi criado para impedir — residuo que some — so
+  que aplicada a outra metrica. Na tela, o grafico por dimensao contradiz o
+  agregado da 29.32 logo acima. Fix pequeno e localizado no util.
+reviewer: 'Quinn'
+updated: '2026-08-07T00:00:00Z'
+
+top_issues:
+  - id: 'QA-01'
+    severity: high
+    finding: >-
+      buildEntitySeries monta `porNome` APENAS a partir de `rows` (entityDaily).
+      Receita/vendas de qualquer chave de `salesByEntity` que nao case com um
+      entityId presente em `rows` e descartada sem sinal. Dois casos garantidos
+      em producao: (a) a chave "(sem origem)" que o backend usa para vendas sem
+      UTM nunca e um entityId; (b) anuncio com venda na planilha mas sem linha
+      em meta_ad_insights_daily (deletado, ou fora da janela de sync) — a mesma
+      causa que gerou os 59 pares campanha-dia do AC0.
+    reproduction: >-
+      rows=[{entityId:"ad_1",spend:100}], salesByEntity={ad_1:500/1venda,
+      "(sem origem)":300/2vendas, ad_deletado:200/1venda}
+      -> totalForDate(revenue)=500 (esperado 1000); totalForDate(sales)=1 (esperado 4).
+    impact: >-
+      O grafico "Faturamento x Vendas" por dimensao mostra faturamento menor que
+      o grafico agregado da 29.32 na MESMA tela, sem nada explicando a diferenca.
+      Margem e Margem % herdam o erro (derivam de revenue). O gestor le como
+      queda de receita.
+    suggested_action: >-
+      Mesmo tratamento que o AC0 deu ao investimento: uma serie residual visivel.
+      Somar as chaves de salesByEntity nao casadas numa serie "(sem origem
+      atribuida)" — ou acumular na propria "(sem anuncio atribuido)", com o
+      rotulo ajustado para cobrir as duas ausencias. Acrescentar ao teste de
+      reconciliacao os casos de faturamento e vendas, que hoje so cobrem spend.
+    ac_violated: 'AC10 (teste 1), AC0 (principio)'
+
+  - id: 'QA-02'
+    severity: low
+    finding: >-
+      AC4 exige que o estado da legenda resete ao trocar dimensao ou periodo.
+      `ocultas` e indexado so pela chave do grafico e nunca e limpo — nao ha
+      useEffect de reset em EntityDimensionCharts. Esconder "Campanha A", trocar
+      para Por Criativo e voltar mantem "Campanha A" escondida.
+    impact: >-
+      Baixo. O comentario do @dev afirma que "o reset vem de graca porque as
+      chaves sao outras" — verdade para a dimensao NOVA, falso ao voltar para a
+      anterior. Serie escondida que reaparece escondida pode ser lida como
+      ausencia de dado.
+    suggested_action: >-
+      useEffect([dimensao, series.dates.join()]) -> setOcultas({}). Ou assumir a
+      persistencia como comportamento desejado e corrigir o AC4 — mas ai a
+      decisao precisa ser do @po, nao do comentario.
+    ac_violated: 'AC4'
+
+  - id: 'QA-03'
+    severity: low
+    finding: >-
+      A cor do delta assume que subir e sempre melhorar. O AC5 da 29.44 pediu
+      explicitamente que, nao havendo hoje etapa onde subir e piorar, isso fosse
+      REGISTRADO. Nao esta registrado em lugar nenhum do codigo. (Registrado
+      aqui na 29.42 porque a mesma premissa reaparece nos graficos: CAC subindo
+      e ruim, e a linha de CAC nao tem semantica de cor.)
+    suggested_action: 'Comentario de uma linha no ponto da cor. Nao bloqueante.'
+
+coverage:
+  ac0_reconciliacao_medida: PASS      # serie (sem anuncio atribuido) implementada e testada para spend
+  ac1_tres_graficos: PASS             # posicao correta, 29.32 preservada
+  ac2_segue_tablefilter: PASS         # sem segundo seletor; subtitulo nomeia a dimensao
+  ac3_serie_por_entidade: PASS        # normalizeCampaignName, taxas re-derivadas dos somatorios
+  ac4_legenda_ligavel: CONCERNS       # QA-02 — liga/desliga funciona; reset nao
+  ac5_teto_10: PASS                   # teto de exibicao, % sobre conjunto inteiro, testado
+  ac6_endpoint_do_banco: PASS         # entity-daily le do Postgres, zero chamada Meta
+  ac7_imposto_uma_vez: PASS           # applyMetaTax INJETADA (nao duplicada) + teste de gross-up vs markup
+  ac8_receita_por_utm: FAIL           # QA-01 — o groupBy existe e agrega certo, mas o consumo descarta o nao casado
+  ac9_ausencia_nao_e_zero: PASS       # dia ausente vira undefined, connectNulls=false, CAC/margem% null
+  ac10_reconciliacao: FAIL            # QA-01 — teste 1 so cobre spend; faturamento e vendas nao fecham
+  ac11_performance: WAIVED            # exige dados reais; O(n^2) do data prop foi corrigido antes do commit
+
+quality_checks:
+  code_review: CONCERNS               # QA-01 e um erro de completude, nao de estilo
+  unit_tests: CONCERNS                # 20 testes bons, mas o de reconciliacao so cobre spend — foi o ponto cego
+  acceptance_criteria: FAIL           # AC8 e AC10 nao atendidos
+  no_regressions: PASS                # bloco aditivo; 29.32, Detalhamento e LP intocados; 283 testes verdes
+  performance: PASS                   # 1 request por (dimensao, periodo); toComposedRows O(n)
+  security: PASS                      # guestCanAccessTraffic aplicado; zod nos params; sem SQL cru
+  documentation: PASS                 # File List completa, 5 notas de implementacao
+
+verificacoes_independentes:
+  - check: 'campaign_id/adset_id nulos descartariam linhas no filtro inArray'
+    resultado: 'NAO PROCEDE — 0 nulos em 12.473 linhas (medido no banco de producao)'
+  - check: 'falhas de teste da API sao pre-existentes'
+    resultado: 'CONFIRMADO — mesmas 11 falhas / 5 arquivos na main limpa'
+  - check: 'perda de receita por entidade sem linha de investimento'
+    resultado: 'CONFIRMADO E REPRODUZIDO — ver QA-01'
+
+waiver: { active: false }
+
+blast_radius:
+  files_new: 3
+  files_modified: 5
+  risk_level: MEDIUM                  # backend aditivo; o defeito e de leitura, nao de escrita
