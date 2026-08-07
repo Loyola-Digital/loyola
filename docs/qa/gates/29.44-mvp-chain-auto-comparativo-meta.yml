@@ -1,100 +1,74 @@
 schema: 1
 story: '29.44'
-gate: FAIL
+gate: PASS
+iteration: 2
 status_reason: >-
-  O entregavel da story esta correto e bem testado — a troca de CPM para CPC foi
-  o achado certo e destravou uma cadeia que nunca calculou desde a 29.36. Mas ela
-  quebrou a secao de Ranking na MESMA aba: PerpetualRankingSection tem "CPM"
-  cravado no rotulo e na chave de teto (perpetual-ranking-section.tsx:63-66), e
-  agora exibe um valor de CPC rotulado como CPM. Para um gestor de trafego, CPC
-  R$ 2,50 e CPM R$ 2,50 sao realidades opostas. Com teto salvo, a comparacao
-  CPC-contra-teto-de-CPM tambem produz ranking errado. Fix de poucas linhas, mas
-  nao pode ir para producao assim.
+  QA-04 resolvida pela raiz, nao pelo sintoma: em vez de trocar a string "CPM"
+  por "CPC", o @dev passou a transportar `entryCost` inteiro (kind + value) ao
+  PerpetualRankingSection. A unidade viaja junto com o valor, e o defeito — os
+  dois divergirem — deixa de ser possivel por construcao. Teto salvo sob outra
+  unidade simplesmente nao e encontrado, que e o comportamento correto: teto de
+  CPM nao limita CPC. QA-05 e QA-06 aplicadas. Todos os AC atendidos; AC10 fica
+  como validacao manual, sem bloquear.
 reviewer: 'Quinn'
 updated: '2026-08-07T00:00:00Z'
 
-top_issues:
+resolvidos_nesta_iteracao:
   - id: 'QA-04'
-    severity: high
-    finding: >-
-      A troca de entryCost (CPM -> CPC) nao foi propagada ao consumidor vizinho.
-      PerpetualRankingSection monta a linha de entrada com label "CPM", key "CPM"
-      e ceilings["CPM"] cravados, alimentada por `entryCostValue={entryCost?.value}`
-      — que agora e CPC.
-    impact: >-
-      (a) Rotulo errado sempre: a aba exibe "CPM R$ X" com o valor do clique.
-      (b) Com teto salvo sob a chave "CPM", `rank()` compara um CPC contra um teto
-      de CPM e devolve posicao sem significado. Sem teto salvo, a linha e filtrada
-      do ranking e so o rotulo mente — que ja basta.
-    suggested_action: >-
-      Passar `entryCost` inteiro (kind + value) ao PerpetualRankingSection e usar
-      `entryCost.kind` como label e como chave de teto. Migracao de tetos salvos
-      sob "CPM" nao e necessaria: a chave nunca correspondeu a um CPC real, entao
-      nao ha historico valido a preservar — mas convem NAO ler ceilings["CPM"]
-      para um CPC, que e o defeito.
-    ac_violated: 'AC4 da 29.36 por tabela; regressao introduzida pela 29.44'
-
+    status: RESOLVED_NA_RAIZ
+    verificacao: >-
+      Varredura por `"CPM"` cravado em perpetual-ranking-section.tsx,
+      perpetual-mvp-analysis.tsx e perpetual-chain-section.tsx: a unica
+      ocorrencia restante esta dentro do comentario que explica a correcao.
+      `ceilings[entryCost.kind]`, `key: entryCost.kind`, `label: entryCost.kind`.
   - id: 'QA-05'
-    severity: low
-    finding: >-
-      A cor do delta de "vs Periodo anterior" assume que subir e sempre melhorar.
-      O proprio AC5 pediu que, nao havendo hoje etapa onde subir e piorar, isso
-      fosse REGISTRADO no codigo. Nao foi.
-    suggested_action: 'Comentario de uma linha. Nao bloqueante.'
-    ac_violated: 'AC5 (parte final)'
-
+    status: RESOLVED
+    nota: >-
+      A premissa foi registrada com a consequencia certa: se entrar etapa onde
+      subir e piorar, quem precisa declarar a direcao e o TEMPLATE — inverter no
+      componente nao resolveria. Isso e mais util que o comentario que eu pedi.
   - id: 'QA-06'
-    severity: low
-    finding: >-
-      A troca para CPC nao esta refletida nas ressalvas visiveis da aba. A secao
-      "Ressalvas" segue sem mencionar que o custo de entrada da cadeia e o clique,
-      nem que por isso o CTR fica FORA da cadeia (ST-06). Quem conferir a conta na
-      mao vai procurar o CTR e nao achar.
-    suggested_action: >-
-      Um item na lista de Ressalvas. O comentario de codigo esta excelente — falta
-      a versao para quem le a tela, nao o fonte.
+    status: RESOLVED
+    nota: 'Item nas Ressalvas explicando CPC como custo de entrada e o CTR fora da cadeia (ST-06).'
+
+top_issues: []
 
 coverage:
-  ac1_colunas: PASS                   # Metrica/Atual/vs Periodo anterior/vs Meta; Origem e Janela viraram tooltip (GR-01.e preservada)
-  ac2_atual_do_funil: PASS            # measuredRates real; derivado dos brutos, nunca das taxas prontas
-  ac3_chain01_pageviews: PASS         # numerador do VTurb nas duas pontas; decisao do @po implementada e testada
-  ac4_conv_post_pitch: PASS           # medido com guarda >100% que devolve AUSENTE e devolve a etapa a digitacao
-  ac5_periodo_anterior: CONCERNS      # QA-05 — janela correta e testada (o off-by-one da story foi corrigido); falta so o registro da premissa de cor
-  ac6_vs_meta: PASS                   # inversao correta: teste prova que substituir a etapa pela necessaria devolve o CAC alvo exato; >100% nao truncado
-  ac7_ausencia_nunca_zero: PASS       # numerador zero -> AUSENTE (U-01 aborta com zero); pitch_time herdado do backend
-  ac8_janela_homogenea: PASS          # corrigido de customRange (pagina) para janela (aba) — bug que a story nem citava
-  ac9_testes: PASS                    # 32 testes; o caso do exemplo errado da story virou teste literal
-  ac10_dados_reais: PENDING           # exige app rodando + painel VTurb — validacao manual
+  ac1_colunas: PASS
+  ac2_atual_do_funil: PASS
+  ac3_chain01_pageviews: PASS
+  ac4_conv_post_pitch: PASS
+  ac5_periodo_anterior: PASS          # QA-05 resolvida; janela ja estava correta e testada
+  ac6_vs_meta: PASS                   # inversao provada pelo inverso: substituir a etapa pela necessaria devolve o CAC alvo
+  ac7_ausencia_nunca_zero: PASS
+  ac8_janela_homogenea: PASS
+  ac9_testes: PASS
+  ac10_dados_reais: PENDING           # exige app rodando + painel VTurb
 
 quality_checks:
-  code_review: CONCERNS               # QA-04 — a mudanca certa, propagada pela metade
-  unit_tests: PASS                    # 32 testes cobrindo guardas, inversao e bordas de janela
-  acceptance_criteria: PASS           # todos os AC da story atendidos
-  no_regressions: FAIL                # QA-04 — regressao visivel na mesma aba
-  performance: PASS                   # 2 consultas a mais no total (nao por etapa); staleTime do VTurb preservado
-  security: PASS                      # sem superficie nova
-  documentation: PASS                 # notas D1-D4 excelentes; a D1 e o tipo de registro que evita re-investigacao
+  code_review: PASS
+  unit_tests: PASS                    # 32 testes; o exemplo errado da story virou teste literal
+  acceptance_criteria: PASS
+  no_regressions: PASS                # regressao da iteracao 1 corrigida; 287 verdes
+  performance: PASS
+  security: PASS
+  documentation: PASS
 
-verificacoes_independentes:
-  - check: 'ST-06 travava a cadeia em 100% dos casos (premissa do fix)'
-    resultado: 'CONFIRMADO — nenhum dos 7 templates tem etapa CTR; CPM lanca, CPC computa'
-  - check: 'todos os templates aceitam CPC em entryCosts'
-    resultado: 'CONFIRMADO — os 7 listam CPC'
-  - check: 'pitch_time utilizavel (dependencia da 29.41)'
-    resultado: 'CONFIRMADO — pitch_time=160 num video de 303s'
-  - check: 'janelaAnterior nao repete o off-by-one da story'
-    resultado: 'CONFIRMADO — 25/07 a 31/07 para 7 dias terminando em 07/08, com teste literal'
+validacao_manual_pendente:
+  - 'Conferir play rate e retencao ao pitch contra o painel do VTurb, mesma janela'
+  - 'Conferir que a coluna vs Meta, substituida a mao na cadeia, devolve o CAC alvo da secao 05'
+  - 'Zerar uma premissa do CAC alvo e confirmar que a coluna vs Meta inteira vira travessao com motivo'
+  - 'Confirmar que a secao de Ranking exibe CPC (nao CPM) no rotulo da linha de entrada'
 
 waiver: { active: false }
 
 nota_ao_dev: >-
-  O achado do ST-06 e o melhor trabalho deste lote. Descobrir que uma secao
-  inteira nunca funcionou, provar com teste ANTES de mexer, e escolher a
-  correcao pelo motivo certo (a unidade de entrada da cadeia e o clique, nao a
-  impressao) — isso e o que a story precisava e nao pedia. O FAIL e por nao ter
-  seguido o fio ate o consumidor vizinho do valor trocado.
+  As duas correcoes desta story foram na raiz, nao no sintoma — e o @dev
+  registrou nas notas onde o proprio comentario anterior estava errado, em vez
+  de apenas trocar o codigo. Registro do erro vale tanto quanto o fix: e o que
+  impede a proxima pessoa de reintroduzi-lo.
 
 blast_radius:
   files_new: 3
-  files_modified: 5
-  risk_level: LOW                     # frontend-only, contido na aba Analise MVP
+  files_modified: 6
+  risk_level: LOW
