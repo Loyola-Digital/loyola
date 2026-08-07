@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
-import { janelaDaAba } from "@/lib/utils/mvp-window";
+import { janelaDaAba, janelaAnterior } from "@/lib/utils/mvp-window";
+import { buildMeasuredRates } from "@/lib/utils/mvp-chain-rates";
 import { useVturbChain, type TaxaMedida } from "@/lib/hooks/use-vturb";
 import { toast } from "sonner";
 import { apiErrorMessage, logApiError } from "@/lib/utils/api-error";
@@ -223,6 +224,12 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
   const janela = useMemo(() => janelaDaAba(mvpDays, mvpRange), [mvpDays, mvpRange]);
   const { data: vturbChain, error: vturbError } = useVturbChain(projectId, funnel.id, janela);
 
+  // Story 29.44 (AC5): a janela imediatamente anterior, de mesma duração. A
+  // aritmética vive em `mvp-window.ts` com teste próprio — foi exatamente aqui
+  // que a story errou por um dia na primeira escrita.
+  const janelaPrev = useMemo(() => janelaAnterior(janela), [janela]);
+  const { data: vturbChainAnterior } = useVturbChain(projectId, funnel.id, janelaPrev);
+
   const { data: salesData } = usePerpetualSalesData(
     projectId,
     funnel.id,
@@ -241,6 +248,16 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
     campaignIds.length > 0 ? campaignIds : null,
     mvpRange?.startDate,
     mvpRange?.endDate,
+  );
+  // Story 29.44 (AC5): mesmo overview, janela anterior. Datas EXPLÍCITAS nas
+  // duas pontas — passar `days` deixaria o servidor recalcular a janela por
+  // conta própria e o comparativo mediria um período que ninguém escolheu.
+  const { data: overviewAnterior } = useTrafficOverview(
+    projectId,
+    mvpDays,
+    campaignIds.length > 0 ? campaignIds : null,
+    janelaPrev.startDate,
+    janelaPrev.endDate,
   );
   const {
     data: configData,
@@ -321,33 +338,97 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
   );
 
   /**
-   * Story 29.36 — taxas que o sistema JÁ mede. CTR e connect rate saem do
-   * overview; o resto da cadeia depende de instrumentação que não existe e
-   * entra por digitação.
+   * Story 29.44 (AC2) — as taxas que o sistema mede, agora de verdade.
    *
-   * `null` quando o denominador é zero — nunca 0, que leria como "conversão
-   * nula" em vez de "sem base para medir".
+   * O que havia aqui antes devolvia `CTR` e `connect_rate: null`. `CTR` **não
+   * é chave de etapa de nenhum template** (`funnel-templates.ts`), então nunca
+   * casou com linha alguma da cadeia; e o `null` do connect rate era
+   * justificado por um comentário que a realidade já contradizia. Resultado
+   * prático: a cadeia inteira dependia de digitação.
+   *
+   * A composição Meta + VTurb vive em `mvp-chain-rates.ts` — é regra de
+   * domínio e precisa ser testável sem montar a aba.
    */
-  const measuredRates = useMemo<Record<string, number | null>>(() => {
-    const imp = overview?.totalImpressions ?? 0;
-    const clicks = overview?.totalLinkClicks ?? overview?.totalClicks ?? 0;
-    return {
-      CTR: imp > 0 && clicks > 0 ? clicks / imp : null,
-      // Connect rate exige pageviews, que vêm de analytics e ainda não chegam
-      // a esta tela — fica como manual até a integração existir.
-      connect_rate: null,
-    };
-  }, [overview]);
+  const measuredRates = useMemo(
+    () =>
+      buildMeasuredRates({
+        overview: overview
+          ? {
+              totalLinkClicks: overview.totalLinkClicks ?? overview.totalClicks ?? null,
+              totalCheckouts: overview.totalCheckouts ?? null,
+              totalSales: overview.totalSales ?? null,
+            }
+          : null,
+        vturb: vturbChain
+          ? {
+              playerName: vturbChain.player.name,
+              playerId: vturbChain.player.playerId,
+              viewedUniq: vturbChain.brutos.viewedUniq,
+              startedUniq: vturbChain.brutos.startedUniq,
+              overPitch: vturbChain.brutos.overPitch,
+              playRate: vturbChain.cadeia.playRate,
+              pitchRate: vturbChain.cadeia.pitchRate,
+            }
+          : null,
+      }),
+    [overview, vturbChain],
+  );
 
   /**
-   * Custo da entrada. CPM porque é o que o overview entrega; com CPM na
-   * entrada, o CTR ENTRA na cadeia (ST-06) — que é o caso aqui.
+   * Story 29.44 (AC5) — as MESMAS taxas na janela imediatamente anterior.
+   *
+   * Uma consulta a mais por fonte, não uma por etapa: as duas fontes já
+   * entregam a janela inteira num payload só.
+   */
+  const measuredRatesAnterior = useMemo(
+    () =>
+      buildMeasuredRates({
+        overview: overviewAnterior
+          ? {
+              totalLinkClicks: overviewAnterior.totalLinkClicks ?? overviewAnterior.totalClicks ?? null,
+              totalCheckouts: overviewAnterior.totalCheckouts ?? null,
+              totalSales: overviewAnterior.totalSales ?? null,
+            }
+          : null,
+        vturb: vturbChainAnterior
+          ? {
+              playerName: vturbChainAnterior.player.name,
+              playerId: vturbChainAnterior.player.playerId,
+              viewedUniq: vturbChainAnterior.brutos.viewedUniq,
+              startedUniq: vturbChainAnterior.brutos.startedUniq,
+              overPitch: vturbChainAnterior.brutos.overPitch,
+              playRate: vturbChainAnterior.cadeia.playRate,
+              pitchRate: vturbChainAnterior.cadeia.pitchRate,
+            }
+          : null,
+      }),
+    [overviewAnterior, vturbChainAnterior],
+  );
+
+  /**
+   * Custo da entrada — **CPC**, e a troca importa (Story 29.44).
+   *
+   * Antes daqui saía CPM. Com CPM, `assertSingleNumerator` (ST-06) exige uma
+   * etapa `CTR` na cadeia — e **nenhum dos 7 templates tem uma**. Consequência
+   * medida: `decomposeCac` abortava com `ST-06` em 100% dos casos, e a seção
+   * "CAC decomposto" nunca produziu número desde a 29.36. O usuário via
+   * "Cadeia interrompida por invariante do protocolo" e não havia como sair.
+   *
+   * CPC é o custo certo aqui, não um contorno: **toda** arquitetura em
+   * `funnel-templates.ts` começa numa etapa cujo denominador é "cliques no
+   * link". A unidade de entrada da cadeia é o clique — então o custo da
+   * entrada é o custo do clique. Com CPM a cadeia teria de começar uma etapa
+   * antes, na impressão, e é justamente essa etapa que os templates não têm.
+   *
+   * Alterar os templates para incluir CTR ficou FORA do escopo da 29.44 por
+   * decisão explícita da story; se um dia entrar, o `kind` volta a CPM e a
+   * guarda ST-06 passa a ser satisfeita pelo outro lado.
    */
   const entryCost = useMemo<{ kind: EntryCostKind; value: number } | null>(() => {
-    const imp = overview?.totalImpressions ?? 0;
+    const clicks = overview?.totalLinkClicks ?? overview?.totalClicks ?? 0;
     const spend = overview?.totalSpend ?? 0;
-    if (!(imp > 0) || !(spend > 0)) return null;
-    return { kind: "CPM", value: (spend / imp) * 1000 };
+    if (!(clicks > 0) || !(spend > 0)) return null;
+    return { kind: "CPC", value: spend / clicks };
   }, [overview]);
 
   // Story 29.37: a cadeia publica suas taxas para o ranking operar sobre as
@@ -682,8 +763,15 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
         chainDefectReading={cfg?.chainDefectReading ?? null}
         manualRates={cfg?.manualRates ?? {}}
         measuredRates={measuredRates}
-        periodStart={customRange?.startDate ?? null}
-        periodEnd={customRange?.endDate ?? null}
+        previousRates={measuredRatesAnterior}
+        previousWindow={janelaPrev}
+        targetCacExact={hasError ? null : target.valueExact}
+        /* Story 29.44 (AC8): a janela da aba, não `customRange`. A aba tem
+           período próprio desde a 29.41 (AC0) e é ele que vale — passar
+           `customRange` fazia a guarda de janela comparar contra o período da
+           PÁGINA, que pode ser outro. */
+        periodStart={janela.startDate}
+        periodEnd={janela.endDate}
         entryCost={entryCost}
         onSave={handleSaveChain}
         onRatesChange={handleRatesChange}

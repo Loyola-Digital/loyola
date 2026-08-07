@@ -992,3 +992,112 @@ export function cacDropInterval(
 ): [number, number] {
   return [1 - currentHigh / ceilingLow, 1 - currentLow / ceilingHigh];
 }
+
+// ============================================================
+// Story 29.44 — a taxa que cada etapa precisaria ter para o CAC bater o alvo.
+// ============================================================
+
+/**
+ * Resultado da inversão da cadeia para UMA etapa.
+ *
+ * `required = null` nunca é "zero" nem "sem gap": é "não dá para calcular", e
+ * `reason` diz por quê. A distinção importa porque uma etapa sem meta calculável
+ * e uma etapa já na meta levam a decisões opostas.
+ */
+export interface RequiredRateResult {
+  key: string;
+  /** Taxa necessária, em fração. `null` quando indeterminável. */
+  required: number | null;
+  /** Por que não deu para calcular. `null` quando `required` existe. */
+  reason: string | null;
+  /**
+   * `false` quando a taxa necessária passa de 100% — a etapa sozinha não fecha
+   * o gap nem sendo perfeita. O valor continua em `required`, NÃO truncado:
+   * truncar em 1,0 transformaria "impossível" em "quase lá".
+   */
+  attainable: boolean;
+  /** `(atual − necessária)` em PONTOS PERCENTUAIS. `null` se faltar uma ponta. */
+  gapPp: number | null;
+}
+
+/**
+ * Story 29.44 (AC6) — inverte `CAC = custo_entrada ÷ ∏(taxas)` para uma etapa.
+ *
+ * Fixando todas as outras taxas nos valores atuais:
+ *
+ *     CAC_alvo = custo ÷ (taxa_i × ∏_{j≠i} taxa_j)
+ *  ⇒  taxa_i   = custo ÷ (CAC_alvo × ∏_{j≠i} taxa_j)
+ *
+ * **A coluna é função da cadeia inteira, não propriedade da etapa.** Mudar
+ * qualquer taxa muda a necessária de todas as outras — por isso o cálculo não
+ * pode viver dentro da linha da tabela.
+ *
+ * `GR-01.d` aplicado: se QUALQUER outra taxa estiver ausente, o resultado é
+ * `null` com o motivo. Preencher a ausente com 1,0 (“assumindo 100%”) faria a
+ * necessária parecer mais fácil do que é — o mesmo erro que `decomposeCac` já
+ * se recusa a cometer.
+ */
+export function requiredRateForTargetCac(
+  entry: { kind: EntryCostKind; value: number } | null,
+  rates: ChainRate[],
+  targetCacExact: number | null,
+  stageKey: string,
+): RequiredRateResult {
+  const base: RequiredRateResult = {
+    key: stageKey,
+    required: null,
+    reason: null,
+    attainable: true,
+    gapPp: null,
+  };
+
+  if (!entry || !(entry.value > 0)) {
+    return { ...base, reason: "custo da entrada indisponível no período" };
+  }
+  if (targetCacExact == null || !(targetCacExact > 0)) {
+    return { ...base, reason: "CAC alvo não calculado — faltam premissas do produto" };
+  }
+
+  const stage = rates.find((r) => r.key === stageKey);
+  if (!stage) return { ...base, reason: "etapa fora da arquitetura declarada" };
+
+  // O produto das DEMAIS. Uma ausente já basta para não haver resposta.
+  const others = rates.filter((r) => r.key !== stageKey);
+  const missing = others.filter((r) => r.value == null).map((r) => r.label);
+  if (missing.length > 0) {
+    return {
+      ...base,
+      reason: `depende de ${missing.join(", ")} — sem medição`,
+    };
+  }
+
+  const productOthers = others.reduce((acc, r) => acc * (r.value as number), 1);
+  if (!(productOthers > 0)) {
+    return { ...base, reason: "produto das demais etapas é zero" };
+  }
+
+  const cost = entryCostPerUnit(entry.kind, entry.value);
+  const required = cost / (targetCacExact * productOthers);
+
+  return {
+    key: stageKey,
+    required,
+    reason: null,
+    // Sem clamp. Ver o comentário de `attainable`.
+    attainable: required <= 1,
+    gapPp: stage.value == null ? null : (stage.value - required) * 100,
+  };
+}
+
+/**
+ * A etapa com o MAIOR gap negativo — por onde começar.
+ *
+ * Ignora etapas sem necessária calculável e as que já estão na meta. Devolve
+ * `null` quando nenhuma etapa está abaixo do necessário, que é informação: a
+ * cadeia inteira já comporta o alvo e o problema está em outro lugar.
+ */
+export function worstChainGap(results: RequiredRateResult[]): RequiredRateResult | null {
+  const abaixo = results.filter((r) => r.gapPp != null && r.gapPp < 0);
+  if (abaixo.length === 0) return null;
+  return abaixo.reduce((pior, r) => ((r.gapPp as number) < (pior.gapPp as number) ? r : pior));
+}
