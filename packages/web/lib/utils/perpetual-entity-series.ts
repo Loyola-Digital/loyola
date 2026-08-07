@@ -90,13 +90,16 @@ export interface EntitySeries {
 }
 
 export interface BuildSeriesResult {
-  /** Todas as séries, ordenadas por investimento desc. Inclui a de não-atribuído. */
+  /** Entidades por investimento desc, com o resíduo por último (se existir). */
   all: EntitySeries[];
-  /** As `TOP_N_SERIES` de maior investimento — o que vai ao gráfico. */
+  /**
+   * O que vai ao gráfico: as `TOP_N_SERIES` entidades de maior investimento
+   * **mais o resíduo**, que nunca é cortado (ver o comentário do corte).
+   */
   plotted: EntitySeries[];
-  /** Quantas ficaram de fora do gráfico. */
+  /** Quantas ENTIDADES ficaram de fora. O resíduo nunca conta aqui. */
   omittedCount: number;
-  /** Quanto do investimento do período está nas omitidas, em %. */
+  /** Quanto do investimento das entidades está nas omitidas, em %. */
   omittedSpendShare: number;
   /** Dias do eixo X, em ordem. */
   dates: string[];
@@ -275,19 +278,41 @@ export function buildEntitySeries({
   }
 
   // --- Ordenação e teto de EXIBIÇÃO.
-  const all = [...series].sort((a, b) => b.totalSpend - a.totalSpend);
-  const plotted = all.slice(0, TOP_N_SERIES);
-  const omitted = all.slice(TOP_N_SERIES);
-  // O denominador é o total do CONJUNTO INTEIRO. Calculá-lo sobre `plotted`
-  // faria a nota que denuncia o corte ser ela mesma um número cortado.
-  const totalGeral = all.reduce((s, x) => s + x.totalSpend, 0);
+  //
+  // Gate QA-07: o resíduo **não disputa vaga**. Ele não é uma entidade
+  // concorrendo por espaço — é a prestação de contas do que sobrou, e some do
+  // gráfico exatamente quando mais importa aparecer.
+  //
+  // O defeito era ordená-lo junto por `totalSpend`, que no resíduo conta apenas
+  // o investimento sem anúncio: receita residual não pontua. Resultado, na
+  // dimensão **Por Campanha** — a inicial da tela —, `unattributedByDate` é
+  // vazio por construção, o resíduo fica com `totalSpend = 0`, ordena por
+  // último e é sempre cortado havendo mais de 10 campanhas. O faturamento sem
+  // UTM voltava a sumir do gráfico, com os testes verdes: eles operavam sobre
+  // `all`, e o defeito morava no recorte de `plotted`.
+  const entidades = series.filter((s) => s.key !== UNATTRIBUTED_SERIES_KEY);
+  const residual = series.find((s) => s.key === UNATTRIBUTED_SERIES_KEY);
+
+  const entidadesOrdenadas = [...entidades].sort((a, b) => b.totalSpend - a.totalSpend);
+  const exibidas = entidadesOrdenadas.slice(0, TOP_N_SERIES);
+  const omitted = entidadesOrdenadas.slice(TOP_N_SERIES);
+
+  // `all` mantém o resíduo por último: é onde a leitura o espera, e é sobre
+  // `all` que a reconciliação opera.
+  const all = residual ? [...entidadesOrdenadas, residual] : entidadesOrdenadas;
+  const plotted = residual ? [...exibidas, residual] : exibidas;
+
+  // O denominador é o investimento das ENTIDADES, e a contagem também: o
+  // resíduo nunca é omitido, então incluí-lo aqui inflaria o "fora do gráfico"
+  // com algo que está dentro dele.
+  const totalEntidades = entidadesOrdenadas.reduce((s, x) => s + x.totalSpend, 0);
   const omittedSpend = omitted.reduce((s, x) => s + x.totalSpend, 0);
 
   return {
     all,
     plotted,
     omittedCount: omitted.length,
-    omittedSpendShare: totalGeral > 0 ? (omittedSpend / totalGeral) * 100 : 0,
+    omittedSpendShare: totalEntidades > 0 ? (omittedSpend / totalEntidades) * 100 : 0,
     dates,
   };
 }

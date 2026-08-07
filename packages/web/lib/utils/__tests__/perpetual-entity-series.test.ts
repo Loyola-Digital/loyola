@@ -298,6 +298,62 @@ describe("buildEntitySeries — teto de exibicao (AC5)", () => {
     expect(r.omittedSpendShare).toBeCloseTo((omitido / total) * 100, 8);
   });
 
+  // ---- Gate QA-07: o residuo nao disputa vaga. Estes casos cobrem o buraco
+  // que a correcao da QA-01 abriu — os testes anteriores operavam sobre `all`
+  // e o defeito morava no recorte de `plotted`.
+  it("residuo COM receita e SEM investimento sobrevive ao teto (cenario Por Campanha)", () => {
+    const r = buildEntitySeries(params({
+      rows: muitas(15),
+      unattributedByDate: {},   // Por Campanha: vazio por construcao
+      salesByEntity: {
+        "(sem origem)": { revenueByDay: { "2026-08-01": 50000 }, salesByDay: { "2026-08-01": 90 } },
+      },
+    }));
+    expect(r.plotted.some((s) => s.key === UNATTRIBUTED_SERIES_KEY)).toBe(true);
+    // O que o gestor ve tem que conter o faturamento residual.
+    expect(totalForDate(r.plotted, "2026-08-01", "revenue")).toBe(50000);
+    expect(totalForDate(r.plotted, "2026-08-01", "sales")).toBe(90);
+  });
+
+  it("o residuo NAO ocupa vaga de entidade — 10 entidades continuam plotadas", () => {
+    const r = buildEntitySeries(params({
+      rows: muitas(15),
+      unattributedByDate: { "2026-08-01": 5 },
+    }));
+    const entidades = r.plotted.filter((s) => s.key !== UNATTRIBUTED_SERIES_KEY);
+    expect(entidades).toHaveLength(TOP_N_SERIES);
+    expect(r.plotted).toHaveLength(TOP_N_SERIES + 1);
+  });
+
+  it("o residuo nunca conta como omitido", () => {
+    const r = buildEntitySeries(params({
+      rows: muitas(15),
+      unattributedByDate: { "2026-08-01": 999999 },  // residuo grande de proposito
+    }));
+    expect(r.omittedCount).toBe(5);                   // 15 - 10, sem o residuo
+    // O denominador da nota e o investimento das ENTIDADES; um residuo enorme
+    // nao pode diluir o percentual do que ficou de fora.
+    const rows = muitas(15);
+    const total = rows.reduce((s, x) => s + x.spend, 0);
+    const omitido = [...rows].sort((a, b) => b.spend - a.spend).slice(TOP_N_SERIES)
+      .reduce((s, x) => s + x.spend, 0);
+    expect(r.omittedSpendShare).toBeCloseTo((omitido / total) * 100, 8);
+  });
+
+  it("`all` continua fechando a reconciliacao com o residuo no fim", () => {
+    const r = buildEntitySeries(params({
+      rows: muitas(15),
+      unattributedByDate: { "2026-08-01": 20 },
+      salesByEntity: {
+        "(sem origem)": { revenueByDay: { "2026-08-01": 700 }, salesByDay: { "2026-08-01": 3 } },
+      },
+    }));
+    expect(r.all[r.all.length - 1].key).toBe(UNATTRIBUTED_SERIES_KEY);
+    const esperado = muitas(15).reduce((s, x) => s + x.spend, 0) + 20;
+    expect(totalForDate(r.all, "2026-08-01", "spend")).toBeCloseTo(esperado, 8);
+    expect(totalForDate(r.all, "2026-08-01", "revenue")).toBe(700);
+  });
+
   it("com 10 ou menos, nada e omitido", () => {
     const r = buildEntitySeries(params({ rows: muitas(10) }));
     expect(r.omittedCount).toBe(0);

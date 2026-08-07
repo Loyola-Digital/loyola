@@ -293,7 +293,10 @@ function EntityDimensionCharts({
   // escondida, o que se lê como ausência de dado. O AC4 pede reset explícito.
   const assinaturaDoConjunto = `${dimensao}|${series.dates.join(",")}`;
   useEffect(() => {
-    setOcultas({});
+    // Gate QA-08: só troca o estado se houver o que limpar. Sem a guarda, a
+    // montagem e toda mudança de período substituíam `{}` por outro `{}` — sem
+    // laço (a dep é string primitiva), mas com um render a mais de graça.
+    setOcultas((prev) => (Object.keys(prev).length === 0 ? prev : {}));
   }, [assinaturaDoConjunto]);
   const toggle = (grafico: string, key: string) =>
     setOcultas((prev) => {
