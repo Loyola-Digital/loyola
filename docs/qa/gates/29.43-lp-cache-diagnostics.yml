@@ -1,119 +1,83 @@
 schema: 1
 story: '29.43'
-gate: FAIL
-iteration: 1
+gate: PASS
+iteration: 2
 status_reason: >-
-  O entregavel funciona e foi validado com dado real: o backfill levou a
-  cobertura do funil fz-a1 de 0% para 100% do investimento (92 de 92 anuncios, 3
-  LPs distintas). A decisao do AC2 — carimbo em vez de inferencia por proporcao
-  — esta certa e bem argumentada, e a medicao que a sustenta e verificavel. Mas
-  a classificacao das causas MENTE quando a API ainda nao devolve `staleInCache`
-  (QA-11), e esse e exatamente o cenario que esta story existe para consertar:
-  este projeto tem historico de a API ficar dias atras da main. Alem disso, o
-  AC6 pedia testes de `resolveCreativeLinkUrl` — a funcao de que a story inteira
-  depende — e nao ha nenhum (QA-12). Dois fixes pequenos.
+  As tres correcoes procedem e foram verificadas de forma independente. A QA-12
+  passou por teste de MUTACAO: inverti a ordem da cascata em
+  `resolveCreativeLinkUrl` (movendo `link_url` para o topo) e a suite acusou 2
+  falhas — os testes tem dentes, nao so cobertura. A QA-11 agora distingue
+  `undefined` de `[]`, e verifiquei que `foraDoCache` continua afirmavel mesmo
+  com a API antiga, porque nao depende do carimbo. A QA-13 virou funcao pura com
+  as fronteiras testadas. O AC7 ja estava validado com dado real na iteracao
+  anterior: o funil `fz-a1` saiu de 0% para 100% de cobertura por investimento.
 reviewer: 'Quinn'
 updated: '2026-08-08T00:00:00Z'
 
-top_issues:
-  - id: 'QA-11'
-    severity: medium
-    finding: >-
-      `staleInCache` e opcional no contrato (`staleInCache?: string[]`) e o
-      dashboard faz `?? []`, colapsando "a API nao informou" em "medi e nao ha
-      nenhum". Como `buildLpRows` usa o `else` final para `semLinkNaMeta`, todo
-      anuncio sem LP passa a ser reportado como **sem URL na Meta**.
-    reproduction: >-
-      buildLpRows com 2 anuncios em cache sem URL e `staleInCache: []`
-      -> cacheDesatualizado=0, semLinkNaMeta=2. A tela afirma "2 sem URL na
-      Meta", quando a causa real e cache escrito por codigo antigo.
-    impact: >-
-      A frase mais cara da tela e justamente essa: "sem URL na Meta" nao tem
-      acao, e encerra a investigacao do gestor. E o cenario nao e hipotetico —
-      o web sobe no merge (Vercel) e a API e deploy separado; ESTA story nasceu
-      de uma janela dessas, que durou mais de um dia. O @dev registrou uma
-      variante disso na nota D4 ("direcao segura"), mas o caso web-novo +
-      API-antiga e a direcao OPOSTA da que ele descreveu.
-    suggested_action: >-
-      Distinguir `undefined` de `[]`. Quando a resposta nao traz `staleInCache`,
-      a causa do `null` e DESCONHECIDA — nem "cache velho" nem "sem URL na
-      Meta". Uma quarta contagem (`causaIndeterminada`) ou, mais simples,
-      propagar `undefined` ate o util e cair num rotulo neutro do tipo "causa
-      nao determinada — API pode estar desatualizada".
-    ac_violated: 'AC2, AC3'
-
+resolvidos_nesta_iteracao:
   - id: 'QA-12'
-    severity: medium
-    finding: >-
-      O AC6 pede, textualmente: *"`resolveCreativeLinkUrl`: um fixture por
-      origem da cascata (`link_data`, `video_data`, `asset_feed_spec`,
-      `link_url`) + um sem nenhuma -> `null`"*. Nao existe teste algum dessa
-      funcao — `grep -rl resolveCreativeLinkUrl src/__tests__/` volta vazio.
-    impact: >-
-      E a funcao de que a story inteira depende, e a unica cuja regressao
-      reproduziria o defeito original em silencio: a cascata voltaria a nao
-      encontrar a URL, o cache gravaria `null` com carimbo NOVO, e a tela
-      passaria a afirmar com confianca que a Meta nao tem o dado. O carimbo,
-      que e a boa ideia desta story, amplifica o estrago de uma regressao ali.
-    suggested_action: >-
-      5 casos em `packages/api/src/__tests__/`. A ordem da cascata tambem merece
-      um caso: `link_data` deve vencer `link_url` quando os dois existem.
-    ac_violated: 'AC6'
-
+    status: RESOLVED
+    verificacao: >-
+      11 casos, e os 4 de ORDEM sao os que importam — foram o que o gate pediu
+      alem do obvio. Teste de mutacao: com `link_url` movido para o topo da
+      cascata, falham "link_data vence link_url" e "asset_feed_spec vence
+      link_url". Codigo restaurado e suite de volta a 11 verdes; `git status`
+      limpo, sem alteracao residual.
+  - id: 'QA-11'
+    status: RESOLVED
+    verificacao: >-
+      `apiInformouStale = staleInCache !== undefined` separa os dois casos, e o
+      dashboard parou de colapsar com `?? []`. Bordas que verifiquei alem das do
+      @dev: as 4 causas somam exatamente os anuncios nao resolvidos; e com API
+      antiga o `foraDoCache` continua sendo afirmado corretamente, porque
+      `missingFromCache` e fato do proprio response e nao depende do carimbo.
+      A quarta causa tem texto proprio na tela, com acao.
   - id: 'QA-13'
-    severity: low
-    finding: >-
-      O AC6 tambem pede caso para "100% nao resolvido -> analise impossivel". O
-      comportamento foi implementado (limiar `>= 99.5` no componente), mas mora
-      no JSX e nao e alcancavel por teste unitario na estrutura atual.
-    suggested_action: >-
-      Extrair o limiar e a escolha do tom para uma funcao pura no util (algo como
-      `classifyLpCoverage(share)`), que ai fica testavel. Ou aceitar e cobrir na
-      validacao manual. Nao bloqueia.
+    status: RESOLVED
+    verificacao: >-
+      `classifyLpCoverage` pura, com `LP_PARTIAL_THRESHOLD` e
+      `LP_IMPOSSIBLE_THRESHOLD` nomeados. Fronteiras exatas conferidas por mim:
+      9,999 -> ok · 10 -> parcial · 99,499 -> parcial · 99,5 -> impossivel.
 
-verificacoes_independentes:
-  - check: 'carimbo gravado nos DOIS pontos de escrita'
-    resultado: 'CONFIRMADO — meta-insights-cache.ts:496 e traffic-analytics.ts:88'
-  - check: 'classificacao stale na rota usa a versao, nao a idade'
-    resultado: 'CONFIRMADO — `(c?.linkUrlResolver ?? 0) < LINK_URL_RESOLVER_VERSION`'
-  - check: 'AC4 preservado (nao herdar LP de outro anuncio)'
-    resultado: 'CONFIRMADO — bucket UNRESOLVED_LP_KEY intacto, sem heranca'
-  - check: 'AC7 com dado real'
-    resultado: >-
-      CONFIRMADO — fz-a1 saiu de 0% para 100% do investimento com LP, 3 LPs
-      distintas, e as tres causas em zero. O aviso some nesse funil.
-  - check: 'precedencia fora-do-cache > cache-velho > sem-URL'
-    resultado: 'CONFIRMADO — testado pelo @dev'
+top_issues: []
 
 coverage:
-  ac0_deploy: PASS                    # medido e confirmado antes de codar
-  ac1_backfill: PASS                  # script + rota admin, opt-in nos dois; relatorio de cobertura no final
-  ac2_causa_do_null: CONCERNS         # QA-11 — o criterio esta certo; o fallback mente
-  ac3_aviso_com_causa: CONCERNS       # QA-11 — herda o defeito da classificacao
+  ac0_deploy: PASS
+  ac1_backfill: PASS                  # script + rota admin, opt-in nos dois
+  ac2_causa_do_null: PASS             # carimbo de versao; undefined != vazio
+  ac3_aviso_com_causa: PASS           # 4 causas, e acao so onde ha acao
   ac4_nunca_inventar_destino: PASS
-  ac5_reconciliacao: PASS             # soma das linhas = total dos anuncios, testado
-  ac6_testes: FAIL                    # QA-12 — a funcao central nao tem teste; QA-13
-  ac7_dados_reais: PASS               # backfill executado, 100% de cobertura no funil
+  ac5_reconciliacao: PASS
+  ac6_testes: PASS                    # QA-12 e QA-13 fecharam o que faltava
+  ac7_dados_reais: PASS               # fz-a1: 0% -> 100%, 92 de 92 anuncios, 3 LPs
 
 quality_checks:
-  code_review: CONCERNS               # QA-11
-  unit_tests: FAIL                    # QA-12 — 5 testes novos no front, zero na funcao que decide tudo
-  acceptance_criteria: CONCERNS       # AC6 nao atendido
-  no_regressions: PASS                # 296 verdes, tsc e build limpos; 11 falhas da API seguem pre-existentes
-  performance: PASS                   # backfill em lotes de 50, opt-in
+  code_review: PASS
+  unit_tests: PASS                    # 302 no web, 830 na API; mutacao confirma que pegam regressao
+  acceptance_criteria: PASS
+  no_regressions: PASS                # 11 falhas da API seguem pre-existentes e nao tocam os arquivos da story
+  performance: PASS
   security: PASS
-  documentation: PASS                 # a nota D1 registra por que a inferencia por proporcao quebraria
+  documentation: PASS
+
+validacao_manual_pendente:
+  - 'Abrir o Perpetuo do funil fz-a1 e confirmar que o aviso de analise parcial sumiu'
+  - 'Conferir que a tabela lista 3 LPs e que a soma do investimento bate com o Detalhamento em Por Criativo'
+  - 'Abrir 3 anuncios no Gerenciador da Meta e comparar a URL de destino com a LP da tabela'
+  - 'Num funil de outro projeto (cobertura menor), conferir que o aviso decompoe a causa e sugere o backfill'
 
 nota_ao_dev: >-
-  A decisao do AC2 e a melhor deste lote. A story dava duas opcoes e voce nao
-  escolheu por preferencia — mediu o estado do cache, mostrou que a inferencia
-  por proporcao quebraria PRECISAMENTE no estado atual, e decidiu com isso. O
-  JSDoc explicando que mudar a cascata exige incrementar a versao e o tipo de
-  registro que sobrevive a quem escreveu. O FAIL e por a funcao no centro de
-  tudo isso nao ter um unico teste.
+  Dois testes existentes falharam com a correcao, e ambos codificavam o
+  comportamento errado — um deles escrito na rodada anterior afirmando
+  exatamente o que o gate depois apontou como defeito. Ter corrigido os dois COM
+  a nota explicando ("teste verde nao prova que o comportamento esta certo,
+  prova que ele e o que alguem escreveu que deveria ser") vale mais que a
+  correcao: e o unico registro deste lote que ataca a causa de tres achados
+  seguidos, e nao os sintomas.
 
 waiver: { active: false }
 
 blast_radius:
-  files_modified: 10
-  risk_level: LOW                     # aditivo; o pior caso e um rotulo errado, nao dado errado
+  files_modified: 12
+  files_new: 1
+  risk_level: LOW
