@@ -38,8 +38,27 @@ export type LpRow = DetailMetricsOutput & {
   key: string;
   url: string | null;
   isUnresolved: boolean;
+  /**
+   * Story 29.43 (AC2) — as TRÊS causas da não-resolução, contadas em anúncios.
+   * Cada uma pede uma ação diferente do gestor, e tratá-las como uma só era o
+   * defeito: a tela dizia QUANTO não foi atribuído, nunca POR QUÊ.
+   */
+  /** Está no cache, carimbado pelo resolver atual, e a Meta não tem URL. */
   semLinkNaMeta: number;
+  /** Nunca sincronizado — abrir a aba Criativos resolve. */
   foraDoCache: number;
+  /** Cache escrito por código anterior à 29.40 — exige backfill de criativos. */
+  cacheDesatualizado: number;
+  /**
+   * Gate QA-11 — a API não informou `staleInCache`, então a causa do `null` é
+   * **desconhecida**. Não é "a Meta não tem": afirmar isso encerraria a
+   * investigação do gestor com base numa informação que não temos.
+   *
+   * Acontece quando o web está mais novo que a API — cenário recorrente neste
+   * projeto (a própria 29.43 nasceu de uma janela dessas) porque o web sobe no
+   * merge e a API é deploy separado.
+   */
+  causaIndeterminada: number;
   revenue: number;
   sales: number;
 };
@@ -59,15 +78,33 @@ export function buildLpRows(
   linkUrls: Record<string, string | null>,
   missingFromCache: string[],
   feeRate: number,
+  /**
+   * Story 29.43 (AC2): ad_ids cuja linha de cache foi escrita por código
+   * anterior à correção do resolver.
+   *
+   * Gate QA-11 — `undefined` e `[]` significam coisas DIFERENTES e o código
+   * anterior os colapsava:
+   *
+   *   `undefined` → a API não informou (versão antiga) → causa desconhecida
+   *   `[]`        → a API informou que não há nenhum   → o `null` é da Meta
+   *
+   * Tratar o primeiro como o segundo fazia a tela afirmar "sem URL na Meta"
+   * para linhas que eram só cache velho — e essa é a única das causas que não
+   * tem ação, ou seja, a que encerra a investigação.
+   */
+  staleInCache?: string[],
 ): LpRow[] {
   if (!ads.length) return [];
   const missing = new Set(missingFromCache);
+  const apiInformouStale = staleInCache !== undefined;
+  const stale = new Set(staleInCache ?? []);
 
   type Acc = {
     key: string; url: string | null;
     spend: number; impressions: number; clicks: number; linkClicks: number;
     revenue: number; sales: number;
     semLinkNaMeta: number; foraDoCache: number;
+    cacheDesatualizado: number; causaIndeterminada: number;
   };
   const groups = new Map<string, Acc>();
 
@@ -81,7 +118,7 @@ export function buildLpRows(
     const acc = groups.get(bucket) ?? {
       key: bucket, url: key ? raw : null,
       spend: 0, impressions: 0, clicks: 0, linkClicks: 0, revenue: 0, sales: 0,
-      semLinkNaMeta: 0, foraDoCache: 0,
+      semLinkNaMeta: 0, foraDoCache: 0, cacheDesatualizado: 0, causaIndeterminada: 0,
     };
     acc.spend += ad.spend;
     acc.impressions += ad.impressions;
@@ -90,7 +127,12 @@ export function buildLpRows(
     acc.revenue += ad.revenue ?? 0;
     acc.sales += ad.sales ?? 0;
     if (!key) {
+      // Ordem importa: fora do cache é a causa mais forte (não há linha), e
+      // cache velho tem precedência sobre "a Meta não tem" — afirmar ausência
+      // na Meta com base numa linha que nunca perguntou seria inventar.
       if (missing.has(ad.campaignId)) acc.foraDoCache += 1;
+      else if (stale.has(ad.campaignId)) acc.cacheDesatualizado += 1;
+      else if (!apiInformouStale) acc.causaIndeterminada += 1;
       else acc.semLinkNaMeta += 1;
     }
     groups.set(bucket, acc);
@@ -102,6 +144,8 @@ export function buildLpRows(
     isUnresolved: g.key === UNRESOLVED_LP_KEY,
     semLinkNaMeta: g.semLinkNaMeta,
     foraDoCache: g.foraDoCache,
+    cacheDesatualizado: g.cacheDesatualizado,
+    causaIndeterminada: g.causaIndeterminada,
     revenue: g.revenue,
     sales: g.sales,
     // AC4: mesma aritmética do Detalhamento, via a MESMA função. Taxas são
@@ -152,4 +196,28 @@ export function sortLpRows(
     return dir === "asc" ? cmp : -cmp;
   });
   return [...sorted.filter((r) => !r.isUnresolved), ...sorted.filter((r) => r.isUnresolved)];
+}
+
+/**
+ * Gate QA-13 — o tom do aviso de cobertura, como função pura.
+ *
+ * Estava embutido no JSX, o que o tornava inalcançável por teste — e o AC6
+ * pedia explicitamente um caso para "100% não resolvido → análise impossível".
+ *
+ * A distinção não é cosmética: uma tabela em que TODO o investimento caiu na
+ * linha "—" não é uma comparação parcial, é a ausência de comparação. Chamá-la
+ * de "análise parcial" sugere que as demais linhas dizem algo, quando não há
+ * demais linhas.
+ */
+export type LpCoverageTone = "ok" | "parcial" | "impossivel";
+
+/** Abaixo disto o aviso não aparece: ruído de atribuição é esperado. */
+export const LP_PARTIAL_THRESHOLD = 10;
+/** A partir daqui não sobrou investimento atribuído com que comparar. */
+export const LP_IMPOSSIBLE_THRESHOLD = 99.5;
+
+export function classifyLpCoverage(unresolvedSharePct: number): LpCoverageTone {
+  if (unresolvedSharePct >= LP_IMPOSSIBLE_THRESHOLD) return "impossivel";
+  if (unresolvedSharePct >= LP_PARTIAL_THRESHOLD) return "parcial";
+  return "ok";
 }

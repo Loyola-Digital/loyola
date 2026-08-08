@@ -16,6 +16,7 @@ import {
   decryptAccountToken,
   todayInTimezone,
   dateRangeFromDays,
+  LINK_URL_RESOLVER_VERSION,
   type AdCreativeCacheAdapter,
   type MetaAdCreative,
   type MetaDailyInsight,
@@ -81,6 +82,10 @@ export function makeAdCreativeCacheAdapter(
               linkUrl: c.linkUrl,
               ctaType: c.ctaType,
               objectType: c.objectType,
+              // Story 29.43 (AC2): mesmo carimbo do sync diário — os dois
+              // caminhos gravam a mesma tabela e precisam ser indistinguíveis
+              // na leitura.
+              linkUrlResolver: LINK_URL_RESOLVER_VERSION,
             },
             lastSyncedAt: new Date(),
           })),

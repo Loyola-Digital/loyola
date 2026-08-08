@@ -33,12 +33,22 @@ export default fp(async function adminRoutes(fastify) {
     if (request.userRole !== "admin" && request.userRole !== "manager") {
       return reply.code(403).send({ error: "Acesso negado" });
     }
-    const body = (request.body ?? {}) as { days?: number; projectIds?: string[] };
+    const body = (request.body ?? {}) as {
+      days?: number;
+      projectIds?: string[];
+      creatives?: boolean;
+    };
     const days = Math.min(Math.max(Number(body.days) || 7, 1), 90);
     const projectIds = Array.isArray(body.projectIds) ? body.projectIds : undefined;
+    // Story 29.43 (AC1): este disparo tinha o mesmo furo do script de backfill —
+    // nunca repassava `creatives`, então o único caminho que repopulava
+    // meta_ad_creatives_cache era o scheduler das 4h. Opt-in porque custa
+    // chamadas à Graph API; o default preserva o comportamento anterior.
+    const creatives = body.creatives === true;
     const meta = await syncMetaPerformance(fastify.db, {
       days,
       projectIds,
+      creatives,
       log: (m) => fastify.log.info(m),
     });
     const leads = await syncLeadOrigin(fastify.db, {

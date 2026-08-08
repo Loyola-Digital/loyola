@@ -1,0 +1,83 @@
+schema: 1
+story: '29.43'
+gate: PASS
+iteration: 2
+status_reason: >-
+  As tres correcoes procedem e foram verificadas de forma independente. A QA-12
+  passou por teste de MUTACAO: inverti a ordem da cascata em
+  `resolveCreativeLinkUrl` (movendo `link_url` para o topo) e a suite acusou 2
+  falhas — os testes tem dentes, nao so cobertura. A QA-11 agora distingue
+  `undefined` de `[]`, e verifiquei que `foraDoCache` continua afirmavel mesmo
+  com a API antiga, porque nao depende do carimbo. A QA-13 virou funcao pura com
+  as fronteiras testadas. O AC7 ja estava validado com dado real na iteracao
+  anterior: o funil `fz-a1` saiu de 0% para 100% de cobertura por investimento.
+reviewer: 'Quinn'
+updated: '2026-08-08T00:00:00Z'
+
+resolvidos_nesta_iteracao:
+  - id: 'QA-12'
+    status: RESOLVED
+    verificacao: >-
+      11 casos, e os 4 de ORDEM sao os que importam — foram o que o gate pediu
+      alem do obvio. Teste de mutacao: com `link_url` movido para o topo da
+      cascata, falham "link_data vence link_url" e "asset_feed_spec vence
+      link_url". Codigo restaurado e suite de volta a 11 verdes; `git status`
+      limpo, sem alteracao residual.
+  - id: 'QA-11'
+    status: RESOLVED
+    verificacao: >-
+      `apiInformouStale = staleInCache !== undefined` separa os dois casos, e o
+      dashboard parou de colapsar com `?? []`. Bordas que verifiquei alem das do
+      @dev: as 4 causas somam exatamente os anuncios nao resolvidos; e com API
+      antiga o `foraDoCache` continua sendo afirmado corretamente, porque
+      `missingFromCache` e fato do proprio response e nao depende do carimbo.
+      A quarta causa tem texto proprio na tela, com acao.
+  - id: 'QA-13'
+    status: RESOLVED
+    verificacao: >-
+      `classifyLpCoverage` pura, com `LP_PARTIAL_THRESHOLD` e
+      `LP_IMPOSSIBLE_THRESHOLD` nomeados. Fronteiras exatas conferidas por mim:
+      9,999 -> ok · 10 -> parcial · 99,499 -> parcial · 99,5 -> impossivel.
+
+top_issues: []
+
+coverage:
+  ac0_deploy: PASS
+  ac1_backfill: PASS                  # script + rota admin, opt-in nos dois
+  ac2_causa_do_null: PASS             # carimbo de versao; undefined != vazio
+  ac3_aviso_com_causa: PASS           # 4 causas, e acao so onde ha acao
+  ac4_nunca_inventar_destino: PASS
+  ac5_reconciliacao: PASS
+  ac6_testes: PASS                    # QA-12 e QA-13 fecharam o que faltava
+  ac7_dados_reais: PASS               # fz-a1: 0% -> 100%, 92 de 92 anuncios, 3 LPs
+
+quality_checks:
+  code_review: PASS
+  unit_tests: PASS                    # 302 no web, 830 na API; mutacao confirma que pegam regressao
+  acceptance_criteria: PASS
+  no_regressions: PASS                # 11 falhas da API seguem pre-existentes e nao tocam os arquivos da story
+  performance: PASS
+  security: PASS
+  documentation: PASS
+
+validacao_manual_pendente:
+  - 'Abrir o Perpetuo do funil fz-a1 e confirmar que o aviso de analise parcial sumiu'
+  - 'Conferir que a tabela lista 3 LPs e que a soma do investimento bate com o Detalhamento em Por Criativo'
+  - 'Abrir 3 anuncios no Gerenciador da Meta e comparar a URL de destino com a LP da tabela'
+  - 'Num funil de outro projeto (cobertura menor), conferir que o aviso decompoe a causa e sugere o backfill'
+
+nota_ao_dev: >-
+  Dois testes existentes falharam com a correcao, e ambos codificavam o
+  comportamento errado — um deles escrito na rodada anterior afirmando
+  exatamente o que o gate depois apontou como defeito. Ter corrigido os dois COM
+  a nota explicando ("teste verde nao prova que o comportamento esta certo,
+  prova que ele e o que alguem escreveu que deveria ser") vale mais que a
+  correcao: e o unico registro deste lote que ataca a causa de tres achados
+  seguidos, e nao os sintomas.
+
+waiver: { active: false }
+
+blast_radius:
+  files_modified: 12
+  files_new: 1
+  risk_level: LOW

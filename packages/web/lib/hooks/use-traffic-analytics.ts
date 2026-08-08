@@ -419,6 +419,13 @@ export interface AdLinkUrlsResponse {
    * mandar o gestor procurar no lugar errado.
    */
   missingFromCache: string[];
+  /**
+   * Story 29.43 (AC2) — ad_ids cuja linha de cache foi escrita por código
+   * anterior à correção do resolver de LP (`linkUrlResolver` ausente ou antigo).
+   * `linkUrl: null` ali significa "não foi perguntado", não "a Meta não tem" —
+   * e a ação é rodar o backfill de criativos, não desistir do dado.
+   */
+  staleInCache?: string[];
 }
 
 /**
