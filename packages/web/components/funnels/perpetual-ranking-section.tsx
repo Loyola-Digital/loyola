@@ -13,7 +13,7 @@ import { actionFor } from "@/lib/utils/diagnostic-tree";
 import {
   rank, realDrop, deckLabel, compositeEffect, realDropInterval,
   PROJECTION_DISCLAIMER, ProtocolViolation,
-  type CeilingRow, type CeilingSource, type ChainRate,
+  type CeilingRow, type CeilingSource, type ChainRate, type EntryCostKind,
 } from "@/lib/utils/cac-protocol";
 
 /**
@@ -43,7 +43,19 @@ const SOURCE_LABELS: Record<CeilingSource, string> = {
 interface Props {
   rates: ChainRate[];
   ceilings: Record<string, CeilingEntry>;
-  entryCostValue: number | null;
+  /**
+   * Custo da entrada COM a unidade — gate QA-04.
+   *
+   * Antes eram só `entryCostValue: number | null`, e a unidade ficava cravada
+   * como "CPM" no rótulo e na chave de teto. Quando a 29.44 trocou o custo de
+   * entrada para CPC (porque toda arquitetura começa em "cliques no link"), a
+   * seção passou a exibir um CPC rotulado CPM — e, com teto salvo, a comparar
+   * um CPC contra um teto de CPM. Para quem opera tráfego, CPC e CPM de R$ 2,50
+   * são realidades opostas.
+   *
+   * A unidade viaja junto com o valor: não há como um voltar a divergir do outro.
+   */
+  entryCost: { kind: EntryCostKind; value: number } | null;
   currentCac: number | null;
   funnelValidado: boolean;
   onSave: (ceilings: Record<string, CeilingEntry>) => Promise<void>;
@@ -51,7 +63,7 @@ interface Props {
 }
 
 export function PerpetualRankingSection({
-  rates, ceilings, entryCostValue, currentCac, funnelValidado, onSave, saving,
+  rates, ceilings, entryCost, currentCac, funnelValidado, onSave, saving,
 }: Props) {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [draft, setDraft] = useState({ value: "", source: "", note: "" });
@@ -59,11 +71,14 @@ export function PerpetualRankingSection({
   /** Monta as linhas do teto a partir da cadeia + entrada de custo. */
   const rows: CeilingRow[] = useMemo(() => {
     const out: CeilingRow[] = [];
-    if (entryCostValue != null) {
-      const c = ceilings["CPM"];
+    if (entryCost != null) {
+      // A chave do teto e o rótulo saem da MESMA unidade do valor. Teto salvo
+      // sob outra unidade simplesmente não é encontrado — que é o correto:
+      // teto de CPM não limita CPC.
+      const c = ceilings[entryCost.kind];
       out.push({
-        key: "CPM", label: "CPM", role: "numerator",
-        current: entryCostValue,
+        key: entryCost.kind, label: entryCost.kind, role: "numerator",
+        current: entryCost.value,
         ceiling: c?.value ?? null,
         ceilingSource: (c?.source as CeilingSource) ?? null,
         chainPosition: 0, successes: null, trials: null,
@@ -84,7 +99,7 @@ export function PerpetualRankingSection({
       });
     }
     return out;
-  }, [rates, ceilings, entryCostValue]);
+  }, [rates, ceilings, entryCost]);
 
   const ranking = useMemo(() => {
     if (rows.length === 0) return null;

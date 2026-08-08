@@ -1,0 +1,95 @@
+schema: 1
+story: '29.42'
+gate: PASS
+iteration: 3
+status_reason: >-
+  QA-07 resolvida corretamente: o residuo saiu da disputa por vaga. So as
+  entidades sao ordenadas e fatiadas, o residuo e anexado sempre que existe, e
+  `omittedCount`/`omittedSpendShare` passam a contar somente entidades — o que
+  esta certo, porque o residuo nunca e omitido. Verifiquei 4 bordas que o @dev
+  nao escreveu (so residuo sem entidade nenhuma; residuo nao reduzindo o numero
+  de entidades exibidas; entidades todas com spend zero; reconciliacao das tres
+  metricas apos a mudanca de ordenacao) e todas passam. QA-08 tambem tratada.
+  Restam duas imprecisoes de texto, ambas low, nenhuma bloqueante.
+reviewer: 'Quinn'
+updated: '2026-08-07T00:00:00Z'
+
+resolvidos_nesta_iteracao:
+  - id: 'QA-07'
+    status: RESOLVED
+    verificacao: >-
+      Reproducao original (15 entidades, residuo so com receita, Por Campanha):
+      faturamento em `plotted` foi de 0 para 50.000, com as 10 entidades
+      preservadas — o residuo nao tomou vaga de ninguem. Bordas adicionais
+      testadas por mim: residuo sozinho sem entidades entra em `plotted`;
+      12 entidades + residuo continuam plotando 10 entidades (nao 9);
+      entidades com spend zero nao produzem NaN em `omittedSpendShare`;
+      reconciliacao das 3 metricas em `all` intacta apos a reordenacao.
+  - id: 'QA-08'
+    status: RESOLVED
+    nota: 'Guarda com funcao de atualizacao — devolve `prev` quando nao ha o que limpar.'
+
+top_issues:
+  - id: 'QA-09'
+    severity: low
+    finding: >-
+      A nota do teto diz "X% do investimento do periodo", mas o denominador
+      passou a ser o investimento das ENTIDADES, sem o residuo. Com residuo
+      grande o percentual sai superestimado em relacao ao que a frase promete.
+      Ex.: entidades 1000, residuo 500, omitidas 200 -> a tela diz 20% "do
+      periodo", quando sobre o periodo real (1500) sao 13,3%.
+    suggested_action: >-
+      Trocar a redacao para "do investimento atribuido" (ou "das entidades").
+      O denominador esta certo — quem esta impreciso e o rotulo. Nao bloqueia.
+
+  - id: 'QA-10'
+    severity: low
+    finding: >-
+      O comentario acima da nota ("calculado sobre o conjunto INTEIRO, nao sobre
+      os 10 plotados") envelheceu meio passo: continua verdadeiro quanto ao que
+      importava na iteracao 1, mas nao menciona que o residuo agora esta fora do
+      denominador.
+    suggested_action: 'Uma linha no comentario. Pode ir junto com a QA-09.'
+
+coverage:
+  ac0_reconciliacao_medida: PASS      # residuo visivel em `all` E em `plotted`
+  ac1_tres_graficos: PASS
+  ac2_segue_tablefilter: PASS
+  ac3_serie_por_entidade: PASS
+  ac4_legenda_ligavel: PASS
+  ac5_teto_10: PASS                   # 10 entidades + residuo, que nao concorre
+  ac6_endpoint_do_banco: PASS
+  ac7_imposto_uma_vez: PASS
+  ac8_receita_por_utm: PASS
+  ac9_ausencia_nao_e_zero: PASS
+  ac10_reconciliacao: PASS            # 3 metricas, verificadas de forma independente
+  ac11_performance: WAIVED            # exige dados reais
+
+quality_checks:
+  code_review: PASS
+  unit_tests: PASS                    # 28 no modulo, 291 no total
+  acceptance_criteria: PASS
+  no_regressions: PASS                # tsc e next build limpos
+  performance: PASS
+  security: PASS
+  documentation: PASS                 # nota D7 registra o padrao do proprio erro, nao so o fix
+
+validacao_manual_pendente:
+  - 'Somar o investimento das series de um dia e conferir com o mesmo dia no grafico agregado da 29.32'
+  - 'Somar a serie de uma campanha no periodo e conferir com a linha dela no Detalhamento (AC10 teste 2)'
+  - 'Trocar Campanha/Publico/Criativo e confirmar que os 3 graficos re-plotam e a legenda reseta'
+  - 'Confirmar que a serie (sem atribuicao) aparece em cinza e nunca e cortada pelo teto'
+  - 'Dia sem venda numa campanha: a linha de CAC tem lacuna, nao toca o zero'
+
+waiver: { active: false }
+
+nota_ao_dev: >-
+  O registro na nota D7 — nomear o proprio padrao (a mudanca certa aplicada ate
+  a metade do caminho) em vez de so consertar — e o que faz esta iteracao valer
+  mais que as duas anteriores juntas. Tres achados high em tres rodadas nao e
+  um bom numero; ter a causa comum escrita na story e o que impede a quarta.
+
+blast_radius:
+  files_new: 3
+  files_modified: 7
+  risk_level: MEDIUM

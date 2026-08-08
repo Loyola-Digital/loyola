@@ -22,10 +22,14 @@ import {
 import {
   decomposeCac,
   runSanityTests,
+  requiredRateForTargetCac,
+  worstChainGap,
   ProtocolViolation,
   type ChainRate,
   type EntryCostKind,
+  type RequiredRateResult,
 } from "@/lib/utils/cac-protocol";
+import { deltaEmPontosPercentuais, type MeasuredRate } from "@/lib/utils/mvp-chain-rates";
 
 /**
  * Story 29.36 — cadeia de conversão da aba Análise MVP.
@@ -50,8 +54,19 @@ interface Props {
   architecture: FunnelArchitecture | null;
   chainDefectReading: string | null;
   manualRates: Record<string, ManualRateEntry>;
-  /** Taxas que o sistema já mede — CTR e connect rate vêm daqui. */
-  measuredRates: Record<string, number | null>;
+  /**
+   * Story 29.44: taxas que o sistema mede, agora com proveniência e brutos.
+   * Antes era `Record<string, number | null>` e trazia só `CTR` — chave que
+   * não corresponde a etapa de template nenhum, ou seja, a cadeia inteira caía
+   * em digitação manual.
+   */
+  measuredRates: Record<string, MeasuredRate>;
+  /** Story 29.44 (AC5): as mesmas taxas medidas na janela imediatamente anterior. */
+  previousRates?: Record<string, MeasuredRate>;
+  /** Janela anterior, para exibir na tela quais datas estão sendo comparadas. */
+  previousWindow?: { startDate: string; endDate: string } | null;
+  /** Story 29.44 (AC6): CAC alvo exato da seção 05, para a coluna "vs Meta". */
+  targetCacExact?: number | null;
   /** Janela do período selecionado, para confrontar com a dos valores manuais. */
   periodStart: string | null;
   periodEnd: string | null;
@@ -71,6 +86,9 @@ export function PerpetualChainSection({
   chainDefectReading,
   manualRates,
   measuredRates,
+  previousRates,
+  previousWindow,
+  targetCacExact,
   periodStart,
   periodEnd,
   entryCost,
@@ -100,21 +118,45 @@ export function PerpetualChainSection({
     return template.stages.map((s) => {
       const manual = manualRates[s.key];
       const measured = measuredRates[s.key];
-      const isManual = measured == null;
+      // Story 29.44: a editabilidade continua vindo de o sistema ter fornecido
+      // NÚMERO — não de a chave existir. Etapa medida cujo valor caiu em `null`
+      // (denominador zero, taxa acima de 100%) volta a aceitar digitação, senão
+      // ficaria travada sem valor e sem campo.
+      const isManual = measured?.value == null;
       return {
         key: s.key,
         label: s.label,
         numerator: s.numerator,
         denominator: s.denominator,
-        value: isManual ? (manual?.value ?? null) : (measured ?? null),
-        status: isManual ? (manual ? "MEASURED" : "MISSING") : measured != null ? "MEASURED" : "MISSING",
-        source: isManual ? (manual?.source ?? null) : "sistema",
+        value: isManual ? (manual?.value ?? null) : (measured!.value as number),
+        status: isManual ? (manual ? "MEASURED" : "MISSING") : "MEASURED",
+        source: isManual ? (manual?.source ?? null) : (measured!.source ?? "sistema"),
         windowStart: isManual ? (manual?.windowStart ?? null) : periodStart,
         windowEnd: isManual ? (manual?.windowEnd ?? null) : periodEnd,
         measuredAt: isManual ? (manual?.measuredAt ?? null) : null,
       };
     });
   }, [template, manualRates, measuredRates, periodStart, periodEnd]);
+
+  /**
+   * Story 29.44 (AC6) — a taxa necessária de cada etapa para o CAC bater o alvo.
+   *
+   * Calculado no nível da TABELA, não da linha: a necessária de cada etapa
+   * depende do produto de todas as outras. Dentro do `map` da linha, cada uma
+   * só enxergaria a si mesma.
+   */
+  const requiredByKey = useMemo(() => {
+    const m = new Map<string, RequiredRateResult>();
+    for (const r of rates) {
+      m.set(r.key, requiredRateForTargetCac(entryCost, rates, targetCacExact ?? null, r.key));
+    }
+    return m;
+  }, [rates, entryCost, targetCacExact]);
+
+  const piorGap = useMemo(
+    () => worstChainGap([...requiredByKey.values()]),
+    [requiredByKey],
+  );
 
   const result = useMemo(() => {
     if (!template || !entryCost || rates.length === 0) return null;
@@ -263,26 +305,37 @@ export function PerpetualChainSection({
       {/* ---- Cadeia: uma linha por etapa ---- */}
       {template && (
         <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
-          <h3 className="text-sm font-semibold">Cadeia de conversão</h3>
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 className="text-sm font-semibold">Cadeia de conversão</h3>
+            {previousWindow && (
+              <p className="text-[10px] text-muted-foreground tabular-nums">
+                comparativo: {previousWindow.startDate} → {previousWindow.endDate}
+              </p>
+            )}
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-border/20 text-muted-foreground">
-                  <th className="py-2 pr-3 text-left">Etapa</th>
-                  <th className="px-2 text-left">Base</th>
-                  <th className="px-2 text-right">Taxa</th>
-                  <th className="px-2 text-left">Origem</th>
-                  <th className="px-2 text-left">Janela</th>
+                  <th className="py-2 pr-3 text-left">Métrica</th>
+                  <th className="px-2 text-right">Atual</th>
+                  <th className="px-2 text-right" title="Diferença em pontos percentuais contra o período imediatamente anterior, de mesma duração">
+                    vs Período anterior
+                  </th>
+                  <th className="px-2 text-right" title="Taxa que esta etapa precisaria ter, mantidas as demais, para o CAC fechar no alvo">
+                    vs Meta
+                  </th>
                   <th className="pl-2" />
                 </tr>
               </thead>
               <tbody>
                 {rates.map((r) => {
                   const stage = template.stages.find((s) => s.key === r.key)!;
-                  // Mesma regra do `rates`: editável quando o sistema não
-                  // fornece. Ler `stage.source` aqui produziria etapa sem
-                  // valor E sem campo — travada para sempre.
-                  const isManual = measuredRates[r.key] == null;
+                  const medida = measuredRates[r.key];
+                  // Mesma regra de sempre: editável quando o sistema não
+                  // fornece NÚMERO. Ler `stage.source` aqui produziria etapa
+                  // sem valor E sem campo — travada para sempre.
+                  const isManual = medida?.value == null;
                   // Janela do valor manual que não cobre o período em tela: a
                   // taxa existe, mas não descreve o que está sendo analisado.
                   const stale =
@@ -290,26 +343,119 @@ export function PerpetualChainSection({
                     r.windowStart != null &&
                     periodStart != null &&
                     (r.windowStart > periodStart || (r.windowEnd ?? "") < (periodEnd ?? ""));
+
+                  const anterior = previousRates?.[r.key]?.value ?? null;
+                  const delta = deltaEmPontosPercentuais(r.value, anterior);
+                  const req = requiredByKey.get(r.key);
+
+                  // AC1: Origem e Janela não somem — viram o subtexto e o
+                  // tooltip da coluna Atual. GR-01.e continua satisfeita.
+                  const provenienciaTitle = [
+                    medida?.numerador != null && medida?.denominador != null
+                      ? `${medida.numerador.toLocaleString("pt-BR")} ÷ ${medida.denominador.toLocaleString("pt-BR")}`
+                      : null,
+                    r.source,
+                    r.windowStart ? `janela ${r.windowStart} → ${r.windowEnd}` : null,
+                  ].filter(Boolean).join(" · ");
+
                   return (
-                    <tr key={r.key} className="border-b border-border/10">
-                      <td className="py-2 pr-3 font-medium">{r.label}</td>
-                      <td className="px-2 text-[10px] text-muted-foreground">
-                        {r.numerator} ÷ {r.denominator}
+                    <tr key={r.key} className="border-b border-border/10 align-top">
+                      {/* --- Métrica: nome + base --- */}
+                      <td className="py-2 pr-3">
+                        <div className="font-medium">{r.label}</div>
+                        <div className="text-[10px] text-muted-foreground">
+                          {r.numerator} ÷ {r.denominator}
+                        </div>
                       </td>
+
+                      {/* --- Atual: valor + proveniência --- */}
+                      <td className="px-2 text-right">
+                        <div className="tabular-nums" title={provenienciaTitle || undefined}>
+                          {r.value == null ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <span className={medida?.value != null ? "cursor-help underline decoration-dotted decoration-border/60 underline-offset-2" : undefined}>
+                              {(r.value * 100).toFixed(2)}%
+                            </span>
+                          )}
+                        </div>
+                        <div className={`text-[10px] ${stale ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>
+                          {medida?.value != null
+                            ? "medida"
+                            : medida?.motivo
+                              ? medida.motivo
+                              : r.source
+                                ? "digitada"
+                                : <span className="italic">a preencher · ideal: {stage.source}</span>}
+                          {stale && " · janela fora do período"}
+                        </div>
+                      </td>
+
+                      {/* --- vs Período anterior: delta em pp --- */}
                       <td className="px-2 text-right tabular-nums">
-                        {r.value == null ? (
-                          <span className="text-muted-foreground">—</span>
+                        {delta == null ? (
+                          <span
+                            className="text-muted-foreground"
+                            title={
+                              anterior == null
+                                ? "sem medição no período anterior"
+                                : "sem medição no período atual"
+                            }
+                          >
+                            —
+                          </span>
                         ) : (
-                          `${(r.value * 100).toFixed(2)}%`
+                          /* Gate QA-05 — premissa registrada, como o AC5 pediu:
+                             VERDE = subiu. Vale porque toda etapa de todo
+                             template é uma taxa de CONVERSÃO, e subir é sempre
+                             melhorar. Se algum dia entrar etapa onde subir é
+                             piorar (abandono, churn, taxa de recusa), esta cor
+                             passa a mentir e o template precisará declarar a
+                             direção — não basta inverter aqui. */
+                          <span
+                            className={
+                              delta > 0
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : delta < 0
+                                  ? "text-red-600 dark:text-red-400"
+                                  : "text-muted-foreground"
+                            }
+                            title={anterior != null ? `anterior: ${(anterior * 100).toFixed(2)}%` : undefined}
+                          >
+                            {delta > 0 ? "+" : ""}
+                            {delta.toFixed(2)} pp
+                          </span>
                         )}
                       </td>
-                      <td className="px-2 text-[10px] text-muted-foreground">
-                        {r.source ?? <span className="italic">a preencher · ideal: {stage.source}</span>}
+
+                      {/* --- vs Meta: taxa necessária + gap --- */}
+                      <td className="px-2 text-right tabular-nums">
+                        {req?.required == null ? (
+                          <span className="text-muted-foreground" title={req?.reason ?? undefined}>—</span>
+                        ) : (
+                          <>
+                            <div className={req.attainable ? "" : "text-red-600 dark:text-red-400"}>
+                              {(req.required * 100).toFixed(2)}%
+                              {/* AC6: acima de 100% NÃO é truncado — a etapa
+                                  sozinha não fecha o gap nem sendo perfeita. */}
+                              {!req.attainable && " ⚠"}
+                            </div>
+                            {req.gapPp != null && (
+                              <div
+                                className={`text-[10px] ${
+                                  req.gapPp >= 0
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : "text-red-600 dark:text-red-400"
+                                }`}
+                              >
+                                {req.gapPp >= 0 ? "na meta " : "faltam "}
+                                {Math.abs(req.gapPp).toFixed(2)} pp
+                              </div>
+                            )}
+                          </>
+                        )}
                       </td>
-                      <td className={`px-2 text-[10px] ${stale ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>
-                        {r.windowStart ? `${r.windowStart} → ${r.windowEnd}` : "—"}
-                        {stale && " · fora do período"}
-                      </td>
+
                       <td className="pl-2 text-right">
                         {isManual && (
                           <Button
@@ -328,6 +474,22 @@ export function PerpetualChainSection({
               </tbody>
             </table>
           </div>
+
+          {/* AC6: a coluna "vs Meta" é função da cadeia INTEIRA. Sem dizer
+              isso, cada linha se lê como uma meta própria daquela etapa. */}
+          <p className="text-[10px] text-muted-foreground">
+            <strong>vs Meta</strong> mantém as demais etapas nos valores atuais — mexer em uma muda a
+            necessária de todas as outras. Etapa marcada com ⚠ precisaria passar de 100%: sozinha ela
+            não fecha o gap.
+          </p>
+
+          {piorGap && (
+            <p className="text-[11px] text-amber-700 dark:text-amber-400">
+              Maior distância da meta:{" "}
+              <strong>{rates.find((r) => r.key === piorGap.key)?.label ?? piorGap.key}</strong> —
+              faltam {Math.abs(piorGap.gapPp as number).toFixed(2)} pp. É por onde começar.
+            </p>
+          )}
 
           {/* Avisos de medição — só nas etapas que a fonte apontou. */}
           {rates.some((r) => STAGE_MEASUREMENT_WARNINGS[r.key]) && (

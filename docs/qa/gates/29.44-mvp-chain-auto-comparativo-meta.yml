@@ -1,0 +1,74 @@
+schema: 1
+story: '29.44'
+gate: PASS
+iteration: 2
+status_reason: >-
+  QA-04 resolvida pela raiz, nao pelo sintoma: em vez de trocar a string "CPM"
+  por "CPC", o @dev passou a transportar `entryCost` inteiro (kind + value) ao
+  PerpetualRankingSection. A unidade viaja junto com o valor, e o defeito — os
+  dois divergirem — deixa de ser possivel por construcao. Teto salvo sob outra
+  unidade simplesmente nao e encontrado, que e o comportamento correto: teto de
+  CPM nao limita CPC. QA-05 e QA-06 aplicadas. Todos os AC atendidos; AC10 fica
+  como validacao manual, sem bloquear.
+reviewer: 'Quinn'
+updated: '2026-08-07T00:00:00Z'
+
+resolvidos_nesta_iteracao:
+  - id: 'QA-04'
+    status: RESOLVED_NA_RAIZ
+    verificacao: >-
+      Varredura por `"CPM"` cravado em perpetual-ranking-section.tsx,
+      perpetual-mvp-analysis.tsx e perpetual-chain-section.tsx: a unica
+      ocorrencia restante esta dentro do comentario que explica a correcao.
+      `ceilings[entryCost.kind]`, `key: entryCost.kind`, `label: entryCost.kind`.
+  - id: 'QA-05'
+    status: RESOLVED
+    nota: >-
+      A premissa foi registrada com a consequencia certa: se entrar etapa onde
+      subir e piorar, quem precisa declarar a direcao e o TEMPLATE — inverter no
+      componente nao resolveria. Isso e mais util que o comentario que eu pedi.
+  - id: 'QA-06'
+    status: RESOLVED
+    nota: 'Item nas Ressalvas explicando CPC como custo de entrada e o CTR fora da cadeia (ST-06).'
+
+top_issues: []
+
+coverage:
+  ac1_colunas: PASS
+  ac2_atual_do_funil: PASS
+  ac3_chain01_pageviews: PASS
+  ac4_conv_post_pitch: PASS
+  ac5_periodo_anterior: PASS          # QA-05 resolvida; janela ja estava correta e testada
+  ac6_vs_meta: PASS                   # inversao provada pelo inverso: substituir a etapa pela necessaria devolve o CAC alvo
+  ac7_ausencia_nunca_zero: PASS
+  ac8_janela_homogenea: PASS
+  ac9_testes: PASS
+  ac10_dados_reais: PENDING           # exige app rodando + painel VTurb
+
+quality_checks:
+  code_review: PASS
+  unit_tests: PASS                    # 32 testes; o exemplo errado da story virou teste literal
+  acceptance_criteria: PASS
+  no_regressions: PASS                # regressao da iteracao 1 corrigida; 287 verdes
+  performance: PASS
+  security: PASS
+  documentation: PASS
+
+validacao_manual_pendente:
+  - 'Conferir play rate e retencao ao pitch contra o painel do VTurb, mesma janela'
+  - 'Conferir que a coluna vs Meta, substituida a mao na cadeia, devolve o CAC alvo da secao 05'
+  - 'Zerar uma premissa do CAC alvo e confirmar que a coluna vs Meta inteira vira travessao com motivo'
+  - 'Confirmar que a secao de Ranking exibe CPC (nao CPM) no rotulo da linha de entrada'
+
+waiver: { active: false }
+
+nota_ao_dev: >-
+  As duas correcoes desta story foram na raiz, nao no sintoma — e o @dev
+  registrou nas notas onde o proprio comentario anterior estava errado, em vez
+  de apenas trocar o codigo. Registro do erro vale tanto quanto o fix: e o que
+  impede a proxima pessoa de reintroduzi-lo.
+
+blast_radius:
+  files_new: 3
+  files_modified: 6
+  risk_level: LOW

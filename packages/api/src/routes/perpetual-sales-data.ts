@@ -26,6 +26,17 @@ const querySchema = z.object({
   days: z.coerce.number().int().positive().optional(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /**
+   * Story 29.42 (AC8) — dimensão opcional do `sales-data-daily`.
+   *
+   * Ausente = comportamento de sempre (`byDay`/`salesByDay` totais), intacto
+   * para todos os consumidores atuais. Presente, acrescenta `byEntity` sem
+   * remover nada — campo aditivo.
+   *
+   * No perpétuo, o UTM carrega o ID da entidade Meta:
+   *   campaign -> utm_campaign · adset -> utm_medium · ad -> utm_content
+   */
+  groupBy: z.enum(["campaign", "adset", "ad"]).optional(),
 });
 
 // ---- helpers (copiados de stage-sales-data — refactor DRY pode esperar) ----
@@ -431,6 +442,10 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         valorBruto?: string;
         dataVenda?: string;
         status?: string;
+        // Story 29.42 (AC8): mesmos campos que o endpoint irmão já mapeia.
+        utm_medium?: string;
+        utm_content?: string;
+        utm_campaign?: string;
       };
 
       let sheetData;
@@ -452,6 +467,16 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       const dataIdx = colIdx(mapping.dataVenda);
       const statusIdx = colIdx(mapping.status);
       const hasStatusCol = statusIdx !== -1;
+
+      // Story 29.42 (AC8): a coluna de UTM que corresponde à dimensão pedida.
+      // `-1` quando a planilha não tem a coluna — as vendas caem todas em
+      // "(sem origem)", que é honesto, em vez de sumirem.
+      const groupBy = query.data.groupBy;
+      const utmIdx =
+        groupBy === "campaign" ? colIdx(mapping.utm_campaign)
+        : groupBy === "adset" ? colIdx(mapping.utm_medium)
+        : groupBy === "ad" ? colIdx(mapping.utm_content)
+        : -1;
 
       if (dataIdx === -1) return { byDay: {} as Record<string, number>, semDados: true };
 
@@ -485,6 +510,15 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       // contando transações em vez de somar faturamento) — base de Vendas/CPV/
       // Ticket Médio por dia no Quadro de Dados Diários.
       const salesByDay: Record<string, number> = {};
+      /**
+       * Story 29.42 (AC8): `chave da entidade -> série diária`. A chave é o
+       * valor cru do UTM (ID da entidade Meta no perpétuo); resolver para nome
+       * é do frontend, que já tem os mapas de nomes carregados.
+       */
+      const byEntity: Record<
+        string,
+        { revenueByDay: Record<string, number>; salesByDay: Record<string, number> }
+      > = {};
       let counted = 0;
 
       for (const row of rows) {
@@ -517,12 +551,34 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         // saía `getFullYear/getMonth/getDate`, que usava o fuso do processo.
         byDay[rowDay] = (byDay[rowDay] ?? 0) + bruto;
         salesByDay[rowDay] = (salesByDay[rowDay] ?? 0) + 1;
+
+        // Story 29.42 (AC8): a MESMA linha que entrou no total entra aqui.
+        // Derivar a dimensão dentro do mesmo laço é o que garante que a soma
+        // de `byEntity` feche com `byDay` — se fossem dois laços com filtros
+        // separados, divergiriam na primeira mudança de regra.
+        if (groupBy) {
+          const chave = sanitizeUtmValue(utmIdx === -1 ? undefined : row[utmIdx]) ?? SEM_ORIGEM_LABEL;
+          const e = (byEntity[chave] ??= { revenueByDay: {}, salesByDay: {} });
+          e.revenueByDay[rowDay] = (e.revenueByDay[rowDay] ?? 0) + bruto;
+          e.salesByDay[rowDay] = (e.salesByDay[rowDay] ?? 0) + 1;
+        }
         counted++;
       }
 
-      return counted > 0
-        ? { byDay, salesByDay, semDados: false }
-        : { byDay: {} as Record<string, number>, salesByDay: {} as Record<string, number>, semDados: false };
+      if (counted === 0) {
+        return {
+          byDay: {} as Record<string, number>,
+          salesByDay: {} as Record<string, number>,
+          ...(groupBy ? { byEntity: {} as typeof byEntity, groupBy } : {}),
+          semDados: false,
+        };
+      }
+      return {
+        byDay,
+        salesByDay,
+        ...(groupBy ? { byEntity, groupBy } : {}),
+        semDados: false,
+      };
     },
   );
 });
