@@ -21,6 +21,7 @@ import {
   fetchVideoSource,
   decryptAccountToken,
   resolveEntityNames,
+  LINK_URL_RESOLVER_VERSION,
   type MetaEntityType,
   type ResolveEntityNamesCacheAdapter,
 } from "../services/meta-ads.js";
@@ -808,16 +809,31 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
         );
 
       const linkUrls: Record<string, string | null> = {};
+      // Story 29.43 (AC2): ad_ids cuja linha foi escrita por código anterior à
+      // correção da 29.40 — `linkUrl: null` ali significa "não foi perguntado",
+      // não "a Meta não tem".
+      const staleInCache: string[] = [];
       for (const row of rows) {
-        const c = row.creative as { linkUrl?: string | null } | null;
-        linkUrls[row.adId] = c?.linkUrl ?? null;
+        const c = row.creative as { linkUrl?: string | null; linkUrlResolver?: number } | null;
+        const url = c?.linkUrl ?? null;
+        linkUrls[row.adId] = url;
+        if (url === null && (c?.linkUrlResolver ?? 0) < LINK_URL_RESOLVER_VERSION) {
+          staleInCache.push(row.adId);
+        }
       }
 
-      // Distinguir "não está no cache" de "está no cache sem URL" importa para
-      // o tooltip da linha "Sem link resolvido" (AC5): a primeira causa se
-      // resolve abrindo a aba de Criativos, a segunda é dado que a Meta não
-      // tem. Tratar as duas como a mesma coisa manda o gestor procurar no
-      // lugar errado.
+      // Story 29.43 (AC2) — TRÊS causas para a ausência de LP, com ações
+      // diferentes. Tratá-las como uma só manda o gestor procurar no lugar
+      // errado, que era o defeito:
+      //
+      //   missingFromCache → nunca sincronizado; abrir a aba Criativos resolve
+      //   staleInCache     → cache escrito por código antigo; exige backfill
+      //   null e carimbado → a Meta realmente não tem URL para este anúncio
+      //
+      // O carimbo (`linkUrlResolver`) torna a terceira categoria AFIRMÁVEL. Sem
+      // ele o projeto só podia inferir pela proporção de resolvidos — critério
+      // que quebra justamente num cache misto, que é o estado atual: em
+      // 2026-08-08, 511 linhas novas convivem com 1.661 antigas.
       const cached = new Set(rows.map((r) => r.adId));
       const missingFromCache = adIds.filter((id) => !cached.has(id));
 
@@ -826,6 +842,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
         requested: adIds.length,
         resolved: Object.values(linkUrls).filter(Boolean).length,
         missingFromCache,
+        staleInCache,
       };
     },
   );

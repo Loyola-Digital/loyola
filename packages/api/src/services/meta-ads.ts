@@ -1137,6 +1137,37 @@ interface MetaCreativeRaw {
  * tabela de LPs para o bucket "Sem link resolvido", que é honesto, em vez de
  * ir para a LP errada e corromper CAC e ROAS das duas.
  */
+/**
+ * Story 29.43 (AC2) — versão do resolver de LP gravada junto com o criativo.
+ *
+ * ## Por que um carimbo, e não a proporção do projeto
+ *
+ * A story ofereceu duas saídas para distinguir "a Meta não tem URL" de "o cache
+ * foi escrito por código que não perguntava": inferir pela proporção de
+ * criativos resolvidos no projeto, ou carimbar a versão do resolver na linha.
+ *
+ * A medição de 2026-08-08 decidiu. O cache está **misto** — 511 linhas escritas
+ * pelo sync corrigido e 1.661 anteriores:
+ *
+ * ```
+ *   total ...... 2.172
+ *   com link ...   511   (o sync das 4h resolveu 99,03% do que tocou)
+ * ```
+ *
+ * A inferência por proporção diria "alguns têm URL, logo `null` significa que a
+ * Meta não tem" — e estaria **errada nas 1.661**, que são exatamente as que
+ * precisam ser identificadas. O critério quebra precisamente no estado em que o
+ * projeto se encontra hoje, que é o estado em que ele será usado.
+ *
+ * O carimbo não infere: linha sem `linkUrlResolver`, ou com versão anterior, foi
+ * escrita por código que não perguntava pela URL. É fato, não estimativa. Custa
+ * um campo no jsonb, escrito nos dois lugares que persistem criativo.
+ *
+ * **Ao mudar a cascata de `resolveCreativeLinkUrl`, incremente este número.** É
+ * o que faz o cache antigo se declarar velho em vez de se passar por medição.
+ */
+export const LINK_URL_RESOLVER_VERSION = 2;
+
 export function resolveCreativeLinkUrl(c: MetaCreativeRaw | undefined): string | null {
   if (!c) return null;
   const oss = c.object_story_spec;

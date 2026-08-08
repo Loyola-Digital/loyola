@@ -38,8 +38,17 @@ export type LpRow = DetailMetricsOutput & {
   key: string;
   url: string | null;
   isUnresolved: boolean;
+  /**
+   * Story 29.43 (AC2) — as TRÊS causas da não-resolução, contadas em anúncios.
+   * Cada uma pede uma ação diferente do gestor, e tratá-las como uma só era o
+   * defeito: a tela dizia QUANTO não foi atribuído, nunca POR QUÊ.
+   */
+  /** Está no cache, carimbado pelo resolver atual, e a Meta não tem URL. */
   semLinkNaMeta: number;
+  /** Nunca sincronizado — abrir a aba Criativos resolve. */
   foraDoCache: number;
+  /** Cache escrito por código anterior à 29.40 — exige backfill de criativos. */
+  cacheDesatualizado: number;
   revenue: number;
   sales: number;
 };
@@ -59,15 +68,22 @@ export function buildLpRows(
   linkUrls: Record<string, string | null>,
   missingFromCache: string[],
   feeRate: number,
+  /**
+   * Story 29.43 (AC2): ad_ids cuja linha de cache foi escrita por código
+   * anterior à correção do resolver. Opcional para não quebrar chamadores
+   * antigos — vazio significa "não sei", e a tela trata como a Meta não ter.
+   */
+  staleInCache: string[] = [],
 ): LpRow[] {
   if (!ads.length) return [];
   const missing = new Set(missingFromCache);
+  const stale = new Set(staleInCache);
 
   type Acc = {
     key: string; url: string | null;
     spend: number; impressions: number; clicks: number; linkClicks: number;
     revenue: number; sales: number;
-    semLinkNaMeta: number; foraDoCache: number;
+    semLinkNaMeta: number; foraDoCache: number; cacheDesatualizado: number;
   };
   const groups = new Map<string, Acc>();
 
@@ -81,7 +97,7 @@ export function buildLpRows(
     const acc = groups.get(bucket) ?? {
       key: bucket, url: key ? raw : null,
       spend: 0, impressions: 0, clicks: 0, linkClicks: 0, revenue: 0, sales: 0,
-      semLinkNaMeta: 0, foraDoCache: 0,
+      semLinkNaMeta: 0, foraDoCache: 0, cacheDesatualizado: 0,
     };
     acc.spend += ad.spend;
     acc.impressions += ad.impressions;
@@ -90,7 +106,11 @@ export function buildLpRows(
     acc.revenue += ad.revenue ?? 0;
     acc.sales += ad.sales ?? 0;
     if (!key) {
+      // Ordem importa: fora do cache é a causa mais forte (não há linha), e
+      // cache velho tem precedência sobre "a Meta não tem" — afirmar ausência
+      // na Meta com base numa linha que nunca perguntou seria inventar.
       if (missing.has(ad.campaignId)) acc.foraDoCache += 1;
+      else if (stale.has(ad.campaignId)) acc.cacheDesatualizado += 1;
       else acc.semLinkNaMeta += 1;
     }
     groups.set(bucket, acc);
@@ -102,6 +122,7 @@ export function buildLpRows(
     isUnresolved: g.key === UNRESOLVED_LP_KEY,
     semLinkNaMeta: g.semLinkNaMeta,
     foraDoCache: g.foraDoCache,
+    cacheDesatualizado: g.cacheDesatualizado,
     revenue: g.revenue,
     sales: g.sales,
     // AC4: mesma aritmética do Detalhamento, via a MESMA função. Taxas são
