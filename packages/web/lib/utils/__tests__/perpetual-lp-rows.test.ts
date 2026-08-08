@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildLpRows, sortLpRows, UNRESOLVED_LP_KEY, type LpAdInput } from "../perpetual-lp-rows";
+import { buildLpRows, sortLpRows, UNRESOLVED_LP_KEY, type LpAdInput, classifyLpCoverage } from "../perpetual-lp-rows";
 import { deriveDetailMetrics } from "../perpetual-detail-metrics";
 
 const ad = (over: Partial<LpAdInput> & { campaignId: string }): LpAdInput => ({
@@ -146,11 +146,15 @@ describe("buildLpRows — Story 29.40", () => {
 
   describe("AC5 — as duas causas de não-resolução são distinguidas", () => {
     it("separa 'sem link na Meta' de 'fora do cache'", () => {
+      // Gate QA-11: o `[]` explicito passou a importar. Sem ele a API nao
+      // informou o estado do cache, e a causa e indeterminada — nao "a Meta
+      // nao tem". Este teste afirma a ausencia REAL, entao informa a lista.
       const rows = buildLpRows(
         [ad({ campaignId: "a1" }), ad({ campaignId: "a2" })],
         { a1: null }, // a1 no cache sem URL; a2 nem aparece
         ["a2"],
         0,
+        [], // a API informou: nenhum stale
       );
       const u = rows.find((r) => r.isUnresolved)!;
       expect(u.semLinkNaMeta).toBe(1);
@@ -249,11 +253,15 @@ describe("buildLpRows — causa da nao-resolucao (Story 29.43)", () => {
     expect(u.cacheDesatualizado).toBe(0);
   });
 
-  it("sem staleInCache (chamador antigo), nada quebra e tudo cai em semLinkNaMeta", () => {
+  it("sem staleInCache (chamador antigo), a causa e INDETERMINADA", () => {
+    // Este teste afirmava `semLinkNaMeta: 1` e passava — codificando o defeito
+    // que o gate QA-11 pegou. Um teste verde nao prova que o comportamento
+    // esta certo; prova que ele e o que alguem escreveu que deveria ser.
     const rows = buildLpRows([ad("a", 100)], { a: null }, [], 0);
     const u = rows.find((r) => r.isUnresolved)!;
+    expect(u.causaIndeterminada).toBe(1);
+    expect(u.semLinkNaMeta).toBe(0);
     expect(u.cacheDesatualizado).toBe(0);
-    expect(u.semLinkNaMeta).toBe(1);
   });
 
   it("anuncio COM LP nao conta em nenhuma das tres causas", () => {
@@ -281,5 +289,59 @@ describe("buildLpRows — causa da nao-resolucao (Story 29.43)", () => {
     // E as tres causas somam exatamente os anuncios nao resolvidos.
     const u = rows.find((r) => r.isUnresolved)!;
     expect(u.cacheDesatualizado + u.foraDoCache + u.semLinkNaMeta).toBe(2);
+  });
+});
+
+// ============================================================
+// Gate QA-11 / QA-13 — "a API nao informou" nao e "a Meta nao tem".
+// ============================================================
+describe("buildLpRows — causa indeterminada (gate QA-11)", () => {
+  const ad = (id: string, spend: number) => ({
+    campaignId: id, spend, impressions: 100, clicks: 10, linkClicks: 8, revenue: 0, sales: 0,
+  });
+
+  it("API que NAO informa staleInCache -> causa indeterminada, nunca 'sem URL na Meta'", () => {
+    // Cenario real: web sobe no merge, API e deploy separado e fica atras.
+    const rows = buildLpRows([ad("a", 100), ad("b", 100)], { a: null, b: null }, [], 0, undefined);
+    const u = rows.find((r) => r.isUnresolved)!;
+    expect(u.causaIndeterminada).toBe(2);
+    expect(u.semLinkNaMeta).toBe(0);   // <- era 2 antes do fix
+    expect(u.cacheDesatualizado).toBe(0);
+  });
+
+  it("API que informa lista VAZIA -> ai sim e ausencia real na Meta", () => {
+    const rows = buildLpRows([ad("a", 100)], { a: null }, [], 0, []);
+    const u = rows.find((r) => r.isUnresolved)!;
+    expect(u.semLinkNaMeta).toBe(1);
+    expect(u.causaIndeterminada).toBe(0);
+  });
+
+  it("as quatro causas somam exatamente os anuncios nao resolvidos", () => {
+    const rows = buildLpRows(
+      [ad("a", 10), ad("b", 10), ad("c", 10), ad("d", 10)],
+      { a: "https://lp.exemplo.com/x", b: null, c: null },
+      ["d"],
+      0,
+      ["b"],
+    );
+    const u = rows.find((r) => r.isUnresolved)!;
+    const soma = u.cacheDesatualizado + u.foraDoCache + u.semLinkNaMeta + u.causaIndeterminada;
+    expect(soma).toBe(3);   // b, c, d — a resolveu
+  });
+});
+
+describe("classifyLpCoverage (gate QA-13)", () => {
+  it("100% nao resolvido e analise IMPOSSIVEL, nao parcial", () => {
+    expect(classifyLpCoverage(100)).toBe("impossivel");
+    expect(classifyLpCoverage(99.5)).toBe("impossivel");
+  });
+  it("entre 10% e 99,5% e parcial", () => {
+    expect(classifyLpCoverage(10)).toBe("parcial");
+    expect(classifyLpCoverage(61.93)).toBe("parcial");
+    expect(classifyLpCoverage(99.49)).toBe("parcial");
+  });
+  it("abaixo de 10% o aviso nao aparece", () => {
+    expect(classifyLpCoverage(9.99)).toBe("ok");
+    expect(classifyLpCoverage(0)).toBe("ok");
   });
 });

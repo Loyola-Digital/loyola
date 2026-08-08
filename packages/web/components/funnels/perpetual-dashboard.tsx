@@ -110,7 +110,9 @@ import {
   type ChartGranularity,
 } from "@/lib/utils/chart-granularity";
 import { deriveDetailMetrics } from "@/lib/utils/perpetual-detail-metrics";
-import { buildLpRows, sortLpRows, UNRESOLVED_LP_KEY, type LpRow } from "@/lib/utils/perpetual-lp-rows";
+import {
+  buildLpRows, sortLpRows, classifyLpCoverage, UNRESOLVED_LP_KEY, type LpRow,
+} from "@/lib/utils/perpetual-lp-rows";
 import {
   buildEntitySeries,
   toComposedRows,
@@ -1707,7 +1709,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         linkUrlsData?.linkUrls ?? {},
         linkUrlsData?.missingFromCache ?? [],
         detailFeeRate,
-        linkUrlsData?.staleInCache ?? [],
+        // Gate QA-11: SEM `?? []`. `undefined` significa "a API não informou"
+        // e precisa chegar assim ao util — colapsar em array vazio fazia a tela
+        // afirmar "sem URL na Meta" para o que era só cache velho.
+        linkUrlsData?.staleInCache,
       ),
     [funnelAds, linkUrlsData, detailFeeRate],
   );
@@ -2496,30 +2501,31 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
               São três causas com ações diferentes, e a versão anterior tratava
               todas como uma: o gestor lia "sem LP identificada" e concluía que
               a Meta não tinha o dado, quando quase sempre era cache velho. */}
-          {lpUnresolvedShare >= 10 && (() => {
+          {(() => {
+            const tom = classifyLpCoverage(lpUnresolvedShare);
+            if (tom === "ok") return null;
             const u = lpRows.find((r) => r.isUnresolved);
             const stale = u?.cacheDesatualizado ?? 0;
             const fora = u?.foraDoCache ?? 0;
             const semNaMeta = u?.semLinkNaMeta ?? 0;
-            // AC3: quando TUDO cai em "—" não é análise parcial, é análise
-            // impossível. A tabela não deve se apresentar como comparação
-            // quando não há nada com que comparar.
-            const total = lpUnresolvedShare >= 99.5;
+            const indeterminada = u?.causaIndeterminada ?? 0;
+            const impossivel = tom === "impossivel";
             const causas = [
               stale > 0 && `${fmtNumber(stale)} com cache desatualizado`,
               fora > 0 && `${fmtNumber(fora)} ainda não sincronizados`,
               semNaMeta > 0 && `${fmtNumber(semNaMeta)} sem URL na Meta`,
+              indeterminada > 0 && `${fmtNumber(indeterminada)} de causa não determinada`,
             ].filter(Boolean).join(" · ");
             return (
               <div className={`rounded-lg border px-3 py-2 ${
-                total
+                impossivel
                   ? "border-red-500/30 bg-red-500/5"
                   : "border-amber-500/30 bg-amber-500/5"
               }`}>
                 <p className={`text-[11px] font-medium ${
-                  total ? "text-red-700 dark:text-red-400" : "text-amber-700 dark:text-amber-400"
+                  impossivel ? "text-red-700 dark:text-red-400" : "text-amber-700 dark:text-amber-400"
                 }`}>
-                  {total
+                  {impossivel
                     ? "Comparação indisponível — todo o investimento está sem LP identificada."
                     : `Análise parcial — ${fmtPercent(lpUnresolvedShare)} do investimento está na linha “${UNRESOLVED_LP_KEY}”.`}
                 </p>
@@ -2528,13 +2534,15 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                     Anúncios sem LP: {causas}.
                   </p>
                 )}
-                {/* Dizer o que fazer, e só quando há o que fazer. "A Meta não
-                    tem URL" é resposta legítima e não tem ação. */}
-                {(stale > 0 || fora > 0) && (
+                {/* Dizer o que fazer, e só quando há o que fazer. "Sem URL na
+                    Meta" é resposta legítima e não tem ação. */}
+                {(stale > 0 || fora > 0 || indeterminada > 0) && (
                   <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    {stale > 0
-                      ? "Cache desatualizado se resolve rodando o sync de criativos (backfill --creatives)."
-                      : "Os não sincronizados entram no próximo ciclo, ou ao abrir o Detalhamento em “Por Criativo”."}
+                    {indeterminada > 0
+                      ? "Causa não determinada: a API não informou o estado do cache — provável versão desatualizada. Rode o sync de criativos e confira novamente."
+                      : stale > 0
+                        ? "Cache desatualizado se resolve rodando o sync de criativos (backfill --creatives)."
+                        : "Os não sincronizados entram no próximo ciclo, ou ao abrir o Detalhamento em “Por Criativo”."}
                   </p>
                 )}
               </div>
