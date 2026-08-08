@@ -1,0 +1,119 @@
+schema: 1
+story: '29.43'
+gate: FAIL
+iteration: 1
+status_reason: >-
+  O entregavel funciona e foi validado com dado real: o backfill levou a
+  cobertura do funil fz-a1 de 0% para 100% do investimento (92 de 92 anuncios, 3
+  LPs distintas). A decisao do AC2 — carimbo em vez de inferencia por proporcao
+  — esta certa e bem argumentada, e a medicao que a sustenta e verificavel. Mas
+  a classificacao das causas MENTE quando a API ainda nao devolve `staleInCache`
+  (QA-11), e esse e exatamente o cenario que esta story existe para consertar:
+  este projeto tem historico de a API ficar dias atras da main. Alem disso, o
+  AC6 pedia testes de `resolveCreativeLinkUrl` — a funcao de que a story inteira
+  depende — e nao ha nenhum (QA-12). Dois fixes pequenos.
+reviewer: 'Quinn'
+updated: '2026-08-08T00:00:00Z'
+
+top_issues:
+  - id: 'QA-11'
+    severity: medium
+    finding: >-
+      `staleInCache` e opcional no contrato (`staleInCache?: string[]`) e o
+      dashboard faz `?? []`, colapsando "a API nao informou" em "medi e nao ha
+      nenhum". Como `buildLpRows` usa o `else` final para `semLinkNaMeta`, todo
+      anuncio sem LP passa a ser reportado como **sem URL na Meta**.
+    reproduction: >-
+      buildLpRows com 2 anuncios em cache sem URL e `staleInCache: []`
+      -> cacheDesatualizado=0, semLinkNaMeta=2. A tela afirma "2 sem URL na
+      Meta", quando a causa real e cache escrito por codigo antigo.
+    impact: >-
+      A frase mais cara da tela e justamente essa: "sem URL na Meta" nao tem
+      acao, e encerra a investigacao do gestor. E o cenario nao e hipotetico —
+      o web sobe no merge (Vercel) e a API e deploy separado; ESTA story nasceu
+      de uma janela dessas, que durou mais de um dia. O @dev registrou uma
+      variante disso na nota D4 ("direcao segura"), mas o caso web-novo +
+      API-antiga e a direcao OPOSTA da que ele descreveu.
+    suggested_action: >-
+      Distinguir `undefined` de `[]`. Quando a resposta nao traz `staleInCache`,
+      a causa do `null` e DESCONHECIDA — nem "cache velho" nem "sem URL na
+      Meta". Uma quarta contagem (`causaIndeterminada`) ou, mais simples,
+      propagar `undefined` ate o util e cair num rotulo neutro do tipo "causa
+      nao determinada — API pode estar desatualizada".
+    ac_violated: 'AC2, AC3'
+
+  - id: 'QA-12'
+    severity: medium
+    finding: >-
+      O AC6 pede, textualmente: *"`resolveCreativeLinkUrl`: um fixture por
+      origem da cascata (`link_data`, `video_data`, `asset_feed_spec`,
+      `link_url`) + um sem nenhuma -> `null`"*. Nao existe teste algum dessa
+      funcao — `grep -rl resolveCreativeLinkUrl src/__tests__/` volta vazio.
+    impact: >-
+      E a funcao de que a story inteira depende, e a unica cuja regressao
+      reproduziria o defeito original em silencio: a cascata voltaria a nao
+      encontrar a URL, o cache gravaria `null` com carimbo NOVO, e a tela
+      passaria a afirmar com confianca que a Meta nao tem o dado. O carimbo,
+      que e a boa ideia desta story, amplifica o estrago de uma regressao ali.
+    suggested_action: >-
+      5 casos em `packages/api/src/__tests__/`. A ordem da cascata tambem merece
+      um caso: `link_data` deve vencer `link_url` quando os dois existem.
+    ac_violated: 'AC6'
+
+  - id: 'QA-13'
+    severity: low
+    finding: >-
+      O AC6 tambem pede caso para "100% nao resolvido -> analise impossivel". O
+      comportamento foi implementado (limiar `>= 99.5` no componente), mas mora
+      no JSX e nao e alcancavel por teste unitario na estrutura atual.
+    suggested_action: >-
+      Extrair o limiar e a escolha do tom para uma funcao pura no util (algo como
+      `classifyLpCoverage(share)`), que ai fica testavel. Ou aceitar e cobrir na
+      validacao manual. Nao bloqueia.
+
+verificacoes_independentes:
+  - check: 'carimbo gravado nos DOIS pontos de escrita'
+    resultado: 'CONFIRMADO — meta-insights-cache.ts:496 e traffic-analytics.ts:88'
+  - check: 'classificacao stale na rota usa a versao, nao a idade'
+    resultado: 'CONFIRMADO — `(c?.linkUrlResolver ?? 0) < LINK_URL_RESOLVER_VERSION`'
+  - check: 'AC4 preservado (nao herdar LP de outro anuncio)'
+    resultado: 'CONFIRMADO — bucket UNRESOLVED_LP_KEY intacto, sem heranca'
+  - check: 'AC7 com dado real'
+    resultado: >-
+      CONFIRMADO — fz-a1 saiu de 0% para 100% do investimento com LP, 3 LPs
+      distintas, e as tres causas em zero. O aviso some nesse funil.
+  - check: 'precedencia fora-do-cache > cache-velho > sem-URL'
+    resultado: 'CONFIRMADO — testado pelo @dev'
+
+coverage:
+  ac0_deploy: PASS                    # medido e confirmado antes de codar
+  ac1_backfill: PASS                  # script + rota admin, opt-in nos dois; relatorio de cobertura no final
+  ac2_causa_do_null: CONCERNS         # QA-11 — o criterio esta certo; o fallback mente
+  ac3_aviso_com_causa: CONCERNS       # QA-11 — herda o defeito da classificacao
+  ac4_nunca_inventar_destino: PASS
+  ac5_reconciliacao: PASS             # soma das linhas = total dos anuncios, testado
+  ac6_testes: FAIL                    # QA-12 — a funcao central nao tem teste; QA-13
+  ac7_dados_reais: PASS               # backfill executado, 100% de cobertura no funil
+
+quality_checks:
+  code_review: CONCERNS               # QA-11
+  unit_tests: FAIL                    # QA-12 — 5 testes novos no front, zero na funcao que decide tudo
+  acceptance_criteria: CONCERNS       # AC6 nao atendido
+  no_regressions: PASS                # 296 verdes, tsc e build limpos; 11 falhas da API seguem pre-existentes
+  performance: PASS                   # backfill em lotes de 50, opt-in
+  security: PASS
+  documentation: PASS                 # a nota D1 registra por que a inferencia por proporcao quebraria
+
+nota_ao_dev: >-
+  A decisao do AC2 e a melhor deste lote. A story dava duas opcoes e voce nao
+  escolheu por preferencia — mediu o estado do cache, mostrou que a inferencia
+  por proporcao quebraria PRECISAMENTE no estado atual, e decidiu com isso. O
+  JSDoc explicando que mudar a cascata exige incrementar a versao e o tipo de
+  registro que sobrevive a quem escreveu. O FAIL e por a funcao no centro de
+  tudo isso nao ter um unico teste.
+
+waiver: { active: false }
+
+blast_radius:
+  files_modified: 10
+  risk_level: LOW                     # aditivo; o pior caso e um rotulo errado, nao dado errado
