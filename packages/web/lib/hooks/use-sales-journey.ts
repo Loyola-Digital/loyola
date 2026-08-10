@@ -16,6 +16,8 @@ export interface SalesDay {
   date: string;
   vendas: number;
   acumulado: number;
+  /** Quebra das vendas do dia por origem (utm_source da venda), desc. */
+  porSource: { source: string; vendas: number }[];
 }
 
 export interface SalesDailyComparison {

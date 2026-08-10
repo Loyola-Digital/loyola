@@ -36,6 +36,9 @@ interface Ponto {
   anterior: number | null;
   dataAtual: string | null;
   dataAnterior: string | null;
+  /** origem das vendas DO DIA (não acumulado), por funil. */
+  sourceAtual: { source: string; vendas: number }[];
+  sourceAnterior: { source: string; vendas: number }[];
 }
 
 /** Junta as duas séries pelo D-day. Falta de dado vira null (a linha corta). */
@@ -54,9 +57,30 @@ function merge(atual: SalesDay[], anterior: SalesDay[] | undefined, modo: "diari
       anterior: b ? b[campo] : null,
       dataAtual: a?.date ?? null,
       dataAnterior: b?.date ?? null,
+      // Origem é sempre do DIA (não acumula) — responde "de onde vieram as vendas deste dia".
+      sourceAtual: a?.porSource ?? [],
+      sourceAnterior: b?.porSource ?? [],
     });
   }
   return out;
+}
+
+/** Lista compacta "origem → nº de vendas" do dia, dentro do tooltip. */
+function SourceBreakdown({ itens }: { itens: { source: string; vendas: number }[] }) {
+  if (itens.length === 0) return null;
+  return (
+    <div className="mt-1 space-y-0.5 pl-[18px]">
+      <p className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground/70">
+        Origem (vendas do dia)
+      </p>
+      {itens.map((s) => (
+        <div key={s.source} className="flex items-baseline justify-between gap-3 text-[10px]">
+          <span className="max-w-[130px] truncate text-muted-foreground">{s.source}</span>
+          <span className="tabular-nums font-medium text-foreground">{nf(s.vendas)}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function SalesDailyComparisonChart({
@@ -214,6 +238,7 @@ export function SalesDailyComparisonChart({
                         {p.dataAtual && (
                           <p className="pl-[18px] text-[10px] text-muted-foreground">{fmtDate(p.dataAtual)}</p>
                         )}
+                        <SourceBreakdown itens={p.sourceAtual} />
                       </div>
                       {temComparacao && (
                         <div>
@@ -227,6 +252,7 @@ export function SalesDailyComparisonChart({
                           {p.dataAnterior && (
                             <p className="pl-[18px] text-[10px] text-muted-foreground">{fmtDate(p.dataAnterior)}</p>
                           )}
+                          <SourceBreakdown itens={p.sourceAnterior} />
                         </div>
                       )}
                     </div>

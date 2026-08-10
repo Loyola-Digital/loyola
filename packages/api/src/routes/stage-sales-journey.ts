@@ -82,10 +82,15 @@ export interface SalesDailyPoint {
   date: string;
   vendas: number;
   acumulado: number;
+  /** Quebra das vendas do dia por origem (utm_source da venda), desc. */
+  porSource: { source: string; vendas: number }[];
 }
 
 /** Todos os dias entre o primeiro e o último, inclusive os zerados. */
-function fillGaps(counts: Map<string, number>): SalesDailyPoint[] {
+function fillGaps(
+  counts: Map<string, number>,
+  bySource?: Map<string, Map<string, number>>,
+): SalesDailyPoint[] {
   const dias = [...counts.keys()].sort();
   if (!dias.length) return [];
 
@@ -101,7 +106,11 @@ function fillGaps(counts: Map<string, number>): SalesDailyPoint[] {
     // omitir deslocaria o D-day de todos os dias seguintes.
     const n = counts.get(key) ?? 0;
     acumulado += n;
-    out.push({ dia: i, date: key, vendas: n, acumulado });
+    const src = bySource?.get(key);
+    const porSource = src
+      ? [...src.entries()].map(([source, vendas]) => ({ source, vendas })).sort((a, b) => b.vendas - a.vendas)
+      : [];
+    out.push({ dia: i, date: key, vendas: n, acumulado, porSource });
     i++;
   }
   return out;
@@ -115,6 +124,8 @@ interface VendaLida {
   origem: string;
   /** true se a planilha de origem TEM coluna de data mapeada (pro filtro de janela). */
   dated: boolean;
+  /** origem da venda (utm_source, fallback canalOrigem). "(sem origem)" se vazio. */
+  source: string;
 }
 
 export default fp(async function stageSalesJourneyRoutes(fastify) {
@@ -144,6 +155,8 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         dataVenda?: string;
         transactionId?: string;
         status?: string;
+        utm_source?: string;
+        canalOrigem?: string;
       };
 
       let data: { headers: string[]; rows: string[][] };
@@ -159,6 +172,8 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
       const brutoIdx = col(mapping.valorBruto);
       const txIdx = col(mapping.transactionId);
       const statusIdx = col(mapping.status);
+      const utmSrcIdx = col(mapping.utm_source);
+      const canalIdx = col(mapping.canalOrigem);
 
       // Pass 1: transações reembolsadas.
       const reembolsados = new Set<string>();
@@ -190,6 +205,9 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         }
 
         const day = dataIdx !== -1 ? parseDay(row[dataIdx]) : null;
+        const srcRaw =
+          (utmSrcIdx !== -1 ? (row[utmSrcIdx] ?? "") : "").trim() ||
+          (canalIdx !== -1 ? (row[canalIdx] ?? "") : "").trim();
         out.push({
           email,
           produto,
@@ -197,6 +215,7 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
           bruto: brutoIdx !== -1 ? parseNumber(row[brutoIdx]) : 0,
           origem: `${sp.spreadsheetName} / ${sp.sheetName}`,
           dated: dataIdx !== -1,
+          source: srcRaw || "(sem origem)",
         });
       }
     }
@@ -208,6 +227,7 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
   async function serieDeVendas(stageId: string) {
     const vendas = await lerVendas(stageId, "main_product");
     const counts = new Map<string, number>();
+    const bySource = new Map<string, Map<string, number>>();
     let semData = 0;
     for (const v of vendas) {
       // Linha sem data válida não entra: entraria como "hoje" e inflaria o
@@ -217,8 +237,11 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         continue;
       }
       counts.set(v.day, (counts.get(v.day) ?? 0) + 1);
+      const m = bySource.get(v.day) ?? new Map<string, number>();
+      m.set(v.source, (m.get(v.source) ?? 0) + 1);
+      bySource.set(v.day, m);
     }
-    return { points: fillGaps(counts), total: vendas.length - semData, semData, temPlanilha: vendas.length > 0 };
+    return { points: fillGaps(counts, bySource), total: vendas.length - semData, semData, temPlanilha: vendas.length > 0 };
   }
 
   // ============================================================
