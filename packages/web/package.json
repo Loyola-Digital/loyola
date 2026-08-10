@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "next build",
+    "build": "pnpm --filter=@loyola-x/shared build && next build",
     "dev": "next dev --port 3000",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
