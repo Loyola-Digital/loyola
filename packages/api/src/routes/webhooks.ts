@@ -7,6 +7,8 @@ import {
   kiwifyConnections,
   kiwifyWebhookEvents,
   kiwifySubscriptions,
+  revenuecatStageConfig,
+  revenuecatSales,
 } from "../db/schema.js";
 import {
   computeDedupKey,
@@ -14,6 +16,10 @@ import {
   extractOrderId,
   normalizeKiwifySubscriptionEvent,
 } from "../services/kiwify-subscriptions.js";
+import {
+  computeRevenuecatDedupKey,
+  normalizeRevenuecatEvent,
+} from "../services/revenuecat.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -302,6 +308,104 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
     } catch (err) {
       // Nunca propagar erro (não-2xx faz a Kiwify reenviar em loop). Só status.
       fastify.log.error({ err, projectId }, "Kiwify webhook handler error");
+    }
+
+    return reply.code(200).send({ ok: true });
+  });
+
+  // ============================================================
+  // Etapa Lyrio — Webhook RevenueCat.
+  // URL única por ETAPA: POST /api/webhooks/revenuecat/:stageId?token=<webhookToken>.
+  // O expert cola essa URL no painel de webhooks do RevenueCat. Roteamento pelo
+  // stageId no path; autenticação pela comparação constant-time do token guardado
+  // na config da etapa (revenuecat_stage_config).
+  //
+  // O RevenueCat também permite configurar um header Authorization no webhook —
+  // se enviado, exigimos que bata com o token (defesa extra). O token na query é
+  // o canal principal (o header pode não estar disponível em toda config).
+  //
+  // Idempotente via (stage_id, event_id). Responde 200 em qualquer erro de
+  // processamento (não-2xx faz o RevenueCat reenviar). SEGURANÇA: nunca logar o
+  // corpo (app_user_id é PII) nem o token.
+  // ============================================================
+  fastify.post("/api/webhooks/revenuecat/:stageId", async (request, reply) => {
+    const { stageId } = request.params as { stageId: string };
+    const token = (request.query as { token?: string }).token ?? "";
+
+    if (!UUID_RE.test(stageId)) {
+      return reply.code(404).send({ error: "Not found" });
+    }
+
+    const [cfg] = await fastify.db
+      .select({
+        projectId: revenuecatStageConfig.projectId,
+        webhookToken: revenuecatStageConfig.webhookToken,
+      })
+      .from(revenuecatStageConfig)
+      .where(eq(revenuecatStageConfig.stageId, stageId))
+      .limit(1);
+
+    if (!cfg?.webhookToken) {
+      // Etapa sem webhook configurado — não revela se a etapa existe.
+      return reply.code(404).send({ error: "Not found" });
+    }
+
+    // Token via query (canal principal) OU via header Authorization (se o
+    // RevenueCat estiver configurado com "Authorization: <token>").
+    const authHeader = (request.headers["authorization"] as string | undefined) ?? "";
+    const headerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+    const provided = token || headerToken;
+    if (!provided || !tokensMatch(provided, cfg.webhookToken)) {
+      return reply.code(401).send({ error: "Invalid token" });
+    }
+
+    const rawBody = typeof request.body === "string" ? request.body : "";
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(rawBody) as Record<string, unknown>;
+    } catch {
+      fastify.log.warn({ stageId }, "RevenueCat webhook: corpo não-JSON, ignorando");
+      return reply.code(200).send({ ok: true });
+    }
+
+    try {
+      const norm = normalizeRevenuecatEvent(payload, rawBody);
+      if (!norm) {
+        // Payload sem objeto de evento (ex.: teste de conexão) — 200 e ignora.
+        return reply.code(200).send({ ok: true });
+      }
+      const dedupKey = computeRevenuecatDedupKey(rawBody);
+
+      const inserted = await fastify.db
+        .insert(revenuecatSales)
+        .values({
+          stageId,
+          projectId: cfg.projectId,
+          eventId: norm.eventId,
+          dedupKey,
+          eventType: norm.eventType,
+          store: norm.store,
+          environment: norm.environment,
+          appUserId: norm.appUserId,
+          productId: norm.productId,
+          countryCode: norm.countryCode,
+          currency: norm.currency,
+          priceInPurchasedCurrency: norm.priceInPurchasedCurrency,
+          revenueUsd: norm.revenueUsd,
+          purchasedAt: norm.purchasedAt,
+          payload,
+        })
+        .onConflictDoNothing({
+          target: [revenuecatSales.stageId, revenuecatSales.eventId],
+        })
+        .returning({ id: revenuecatSales.id });
+
+      if (inserted.length === 0) {
+        return reply.code(200).send({ ok: true, duplicate: true });
+      }
+    } catch (err) {
+      // Nunca propagar erro (não-2xx faz o RevenueCat reenviar em loop).
+      fastify.log.error({ err, stageId }, "RevenueCat webhook handler error");
     }
 
     return reply.code(200).send({ ok: true });
