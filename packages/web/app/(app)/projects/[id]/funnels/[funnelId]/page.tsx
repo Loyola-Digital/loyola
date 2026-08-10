@@ -164,7 +164,11 @@ export default function FunnelPage() {
         <div>
           <h1 className="text-2xl font-bold">{funnel.name}</h1>
           <p className="text-sm text-muted-foreground">
-            {funnelData.funnelType === "launch" ? "Funil de Lançamento" : "Funil Perpétuo"}
+            {funnelData.funnelType === "launch"
+              ? "Funil de Lançamento"
+              : funnelData.funnelType === "mobile"
+                ? "Funil Mobile (App)"
+                : "Funil Perpétuo"}
             {compareFunnelName && (
               <span className="ml-2 text-xs text-muted-foreground/70">
                 · Comparando com <span className="font-medium">{compareFunnelName}</span>
@@ -181,7 +185,43 @@ export default function FunnelPage() {
             </PopoverTrigger>
             <PopoverContent className="w-80" align="end">
               <div className="space-y-4">
-                <div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Tipo do funil</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(
+                      [
+                        ["launch", "Lançamento"],
+                        ["perpetual", "Perpétuo"],
+                        ["mobile", "Mobile"],
+                      ] as const
+                    ).map(([t, label]) => (
+                      <button
+                        key={t}
+                        type="button"
+                        disabled={updateFunnel.isPending}
+                        onClick={() =>
+                          updateFunnel.mutate(
+                            { type: t },
+                            { onSuccess: () => toast.success(`Tipo alterado para ${label}`) },
+                          )
+                        }
+                        className={cn(
+                          "rounded-md border px-2 py-1.5 text-xs transition-colors",
+                          funnelData.funnelType === t
+                            ? "border-primary bg-primary/5 text-primary font-medium"
+                            : "border-border hover:bg-muted",
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Mobile mostra o dashboard RevenueCat + Meta (etapa Lyrio).
+                  </p>
+                </div>
+
+                <div className="border-t border-border/30 pt-3">
                   <p className="text-sm font-medium">Funil de Comparação</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     Exibe métricas do Meta Ads deste funil como benchmark.

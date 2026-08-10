@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Rocket, Repeat, ArrowLeft, ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
+import { Rocket, Repeat, Smartphone, ArrowLeft, ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -188,7 +188,7 @@ export function FunnelWizard({
 
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Tipo do Funil</label>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-3 gap-3">
                       <button
                         type="button"
                         onClick={() => setType("launch")}
@@ -219,6 +219,22 @@ export function FunnelWizard({
                         <span className="text-sm font-medium">Perpétuo</span>
                         <span className="text-xs text-muted-foreground">
                           Evergreen. Dashboard com tendências e métricas contínuas.
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setType("mobile")}
+                        className={cn(
+                          "flex flex-col items-center gap-2 rounded-lg border-2 p-4 text-center transition-colors",
+                          type === "mobile"
+                            ? "border-primary bg-primary/5"
+                            : "border-muted hover:border-muted-foreground/30",
+                        )}
+                      >
+                        <Smartphone className="h-8 w-8 text-primary" />
+                        <span className="text-sm font-medium">Mobile</span>
+                        <span className="text-xs text-muted-foreground">
+                          App mobile. Dashboard com RevenueCat + Meta (etapa Lyrio).
                         </span>
                       </button>
                     </div>
@@ -252,6 +268,8 @@ export function FunnelWizard({
                     <div className="flex items-center gap-2">
                       {type === "launch" ? (
                         <Rocket className="h-5 w-5 text-primary" />
+                      ) : type === "mobile" ? (
+                        <Smartphone className="h-5 w-5 text-primary" />
                       ) : (
                         <Repeat className="h-5 w-5 text-primary" />
                       )}
@@ -259,7 +277,12 @@ export function FunnelWizard({
                     </div>
                     <div className="text-sm text-muted-foreground space-y-1">
                       <p>
-                        Tipo: {type === "launch" ? "Lançamento" : "Perpétuo"}
+                        Tipo:{" "}
+                        {type === "launch"
+                          ? "Lançamento"
+                          : type === "mobile"
+                            ? "Mobile"
+                            : "Perpétuo"}
                       </p>
                       <p>
                         Campanhas:{" "}
