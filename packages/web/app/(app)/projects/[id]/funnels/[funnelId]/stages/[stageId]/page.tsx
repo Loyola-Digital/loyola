@@ -22,6 +22,7 @@ import { SalesStageView } from "@/components/funnels/sales-stage-view";
 import { EventStageView } from "@/components/funnels/event-stage-view";
 import { DebriefingStageView } from "@/components/funnels/debriefing-stage-view";
 import { ComercialStageView } from "@/components/funnels/comercial-stage-view";
+import { LyrioStageView } from "@/components/funnels/lyrio-stage-view";
 import { ManualPixSalesSection } from "@/components/funnels/manual-pix-sales-section";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
@@ -147,6 +148,18 @@ export default function StagePage() {
   if (stage.stageType === "comercial") {
     return (
       <ComercialStageView
+        projectId={params.id}
+        funnelId={params.funnelId}
+        funnelName={funnel.name}
+        stage={stage}
+      />
+    );
+  }
+
+  // Etapa "lyrio" — app mobile: conversões Meta + vendas RevenueCat. Render dedicado.
+  if (stage.stageType === "lyrio") {
+    return (
+      <LyrioStageView
         projectId={params.id}
         funnelId={params.funnelId}
         funnelName={funnel.name}
@@ -358,6 +371,24 @@ export default function StagePage() {
                   >
                     <span className="font-medium">Comercial</span>
                     <span className="text-xs text-muted-foreground">CRM kanban de compradores</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateStage.mutate(
+                        { stageType: "lyrio" },
+                        { onSuccess: () => toast.success("Tipo alterado para Lyrio") }
+                      );
+                    }}
+                    className={cn(
+                      "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                      (stage.stageType as string) === "lyrio"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border hover:bg-muted"
+                    )}
+                  >
+                    <span className="font-medium">Lyrio</span>
+                    <span className="text-xs text-muted-foreground">App mobile — Meta + RevenueCat</span>
                   </button>
                 </div>
               </div>

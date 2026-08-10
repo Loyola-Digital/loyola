@@ -1665,6 +1665,99 @@ export const kiwifyCache = pgTable(
   (table) => [primaryKey({ columns: [table.projectId, table.cacheKey] })]
 );
 
+// ============================================================
+// Epic — Etapa Lyrio (app mobile) — Integração RevenueCat
+// ============================================================
+// Conexão POR PROJETO: uma Secret API Key (v2) do RevenueCat, cifrada via
+// AES-256-GCM (services/encryption.ts). Usada pra validar a conexão e listar os
+// projects do RevenueCat (dropdown da etapa). NUNCA logar/serializar a key.
+export const revenuecatConnections = pgTable(
+  "revenuecat_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .unique()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    apiKeyEncrypted: text("api_key_encrypted").notNull(),
+    apiKeyIv: text("api_key_iv").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_revenuecat_connections_project").on(table.projectId)]
+);
+
+// Config POR ETAPA (stageType "lyrio"): qual RevenueCat project a etapa observa
+// + token secreto do webhook. A URL única do webhook que o expert cola no
+// RevenueCat é /api/webhooks/revenuecat/<stageId>?token=<webhookToken> —
+// roteamento pelo stageId no path, auth pela comparação constant-time do token.
+export const revenuecatStageConfig = pgTable(
+  "revenuecat_stage_config",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .unique()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** id do project no RevenueCat (v2) que esta etapa observa. */
+    rcProjectId: varchar("rc_project_id", { length: 64 }),
+    /** nome amigável do app/project no RevenueCat (só exibição). */
+    label: varchar("label", { length: 255 }),
+    /** token secreto embutido na URL do webhook. Gerado sob demanda. NUNCA logar. */
+    webhookToken: text("webhook_token").unique(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_revenuecat_stage_config_stage").on(table.stageId),
+    index("idx_revenuecat_stage_config_project").on(table.projectId),
+  ]
+);
+
+// Vendas/eventos vindos do webhook do RevenueCat, por etapa. Idempotente via
+// event_id (id do evento no RevenueCat); dedup_key (sha256 do corpo) é fallback.
+// Valores: revenue_usd = event.price (USD estimado); price_in_purchased_currency
+// + currency = valor na moeda da compra. NUNCA logar app_user_id (PII).
+export const revenuecatSales = pgTable(
+  "revenuecat_sales",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** event.id do RevenueCat — chave de idempotência por etapa. */
+    eventId: varchar("event_id", { length: 255 }).notNull(),
+    /** sha256 hex do corpo cru — fallback de idempotência. */
+    dedupKey: text("dedup_key").notNull(),
+    /** event.type: INITIAL_PURCHASE, RENEWAL, NON_RENEWING_PURCHASE, CANCELLATION... */
+    eventType: varchar("event_type", { length: 40 }),
+    /** APP_STORE | PLAY_STORE | STRIPE | AMAZON | ... */
+    store: varchar("store", { length: 30 }),
+    /** PRODUCTION | SANDBOX */
+    environment: varchar("environment", { length: 20 }),
+    appUserId: varchar("app_user_id", { length: 255 }),
+    productId: varchar("product_id", { length: 255 }),
+    countryCode: varchar("country_code", { length: 8 }),
+    currency: varchar("currency", { length: 8 }),
+    priceInPurchasedCurrency: numeric("price_in_purchased_currency", { precision: 14, scale: 4 }),
+    revenueUsd: numeric("revenue_usd", { precision: 14, scale: 4 }),
+    purchasedAt: timestamp("purchased_at", { withTimezone: true }),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("revenuecat_sales_stage_event_unique").on(table.stageId, table.eventId),
+    index("idx_revenuecat_sales_stage_purchased").on(table.stageId, table.purchasedAt),
+    index("idx_revenuecat_sales_project").on(table.projectId),
+  ]
+);
+
 // Story 28.7: cache persistente de nomes Meta (ad/adset/campaign) — substitui
 // resolução in-memory que estourava rate limit Meta. TTL aplicado no código (24h).
 export const metaEntityNamesCache = pgTable(

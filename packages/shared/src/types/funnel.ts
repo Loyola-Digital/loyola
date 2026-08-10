@@ -21,7 +21,9 @@ export interface SwitchyLinkRef {
 // "debriefing" = etapa que agrupa os docs de debriefing da campanha (Epic 37 —
 // movido do menu global pra dentro do funil). Cabe exato no varchar(10).
 // "comercial" = etapa CRM (Epic 40): kanban de compradores das etapas-fonte.
-export type StageType = "paid" | "free" | "sales" | "cpl" | "event" | "debriefing" | "comercial";
+// "lyrio" = etapa do app mobile Lyrio: campanhas Meta (conversões/spend) + vendas
+// do RevenueCat (API key + webhook). Cabe no varchar(10).
+export type StageType = "paid" | "free" | "sales" | "cpl" | "event" | "debriefing" | "comercial" | "lyrio";
 // Story 19.10: "event_sales" = planilha de vendas de evento presencial (formato
 // Nome/Produto/Valor/Caixa/Closer/Telefone, SEM email).
 export type StageSalesSubtype = "capture" | "main_product" | "sales" | "tmb" | "event_sales";
