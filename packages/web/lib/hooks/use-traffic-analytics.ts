@@ -1,7 +1,9 @@
 "use client";
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueries } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { chunkAdIds } from "@/lib/utils/perpetual-lp-ads";
 
 // ============================================================
 // TYPES
@@ -439,15 +441,51 @@ export interface AdLinkUrlsResponse {
  */
 export function useAdLinkUrls(projectId: string | null, adIds: string[]) {
   const apiClient = useApiClient();
-  const idsParam = adIds.join(",");
-  return useQuery({
-    queryKey: ["traffic-ad-link-urls", projectId, idsParam],
-    queryFn: () =>
-      apiClient<AdLinkUrlsResponse>(
-        `/api/traffic/analytics/${projectId}/ad-link-urls?adIds=${encodeURIComponent(idsParam)}`,
-      ),
-    enabled: !!projectId && adIds.length > 0,
-    staleTime: CREATIVE_STALE_TIME,
+
+  // Story 29.47 (AC6) — a lista vai na QUERY STRING, e a 29.47 levou esta
+  // chamada do grão de Ad Name para o de ad_id: 32 ids (~0,6 KB) viraram 184
+  // (~3,5 KB) no funil medido, e cresce linear com o número de anúncios.
+  // ~500 anúncios ativos passariam de 9 KB, que é onde proxies começam a
+  // recusar. O modo de falha seria a requisição parar de responder sem nada
+  // na tela — o silêncio que a 29.45 acabou de eliminar dos gráficos.
+  const lotes = useMemo(() => chunkAdIds(adIds), [adIds]);
+
+  // `combine` é a API do React Query v5 para reduzir vários resultados num só
+  // objeto — e ela memoiza internamente. Fazer a junção num `useMemo` do lado
+  // de fora exigiria uma dependência estável que a lista de resultados não
+  // oferece, e a saída trocaria de identidade a cada render.
+  return useQueries({
+    queries: lotes.map((lote) => ({
+      queryKey: ["traffic-ad-link-urls", projectId, lote.join(",")],
+      queryFn: () =>
+        apiClient<AdLinkUrlsResponse>(
+          `/api/traffic/analytics/${projectId}/ad-link-urls?adIds=${encodeURIComponent(lote.join(","))}`,
+        ),
+      enabled: !!projectId && lote.length > 0,
+      staleTime: CREATIVE_STALE_TIME,
+    })),
+    // A junção precisa preservar a distinção do gate QA-11 da 29.43:
+    // `staleInCache === undefined` significa "a API não informou" e NÃO pode
+    // virar `[]`. Só há informação quando TODOS os lotes responderam com o
+    // campo — um lote sem ele já torna o conjunto desconhecido.
+    combine: (results) => {
+      const respostas = results.map((r) => r.data).filter(Boolean) as AdLinkUrlsResponse[];
+      const isLoading = results.some((r) => r.isLoading);
+      if (respostas.length === 0) return { data: undefined, isLoading };
+      const todasInformaramStale = respostas.every((r) => r.staleInCache !== undefined);
+      return {
+        data: {
+          linkUrls: Object.assign({}, ...respostas.map((r) => r.linkUrls)) as Record<string, string | null>,
+          requested: respostas.reduce((s, r) => s + r.requested, 0),
+          resolved: respostas.reduce((s, r) => s + r.resolved, 0),
+          missingFromCache: respostas.flatMap((r) => r.missingFromCache),
+          staleInCache: todasInformaramStale
+            ? respostas.flatMap((r) => r.staleInCache ?? [])
+            : undefined,
+        } satisfies AdLinkUrlsResponse,
+        isLoading,
+      };
+    },
   });
 }
 

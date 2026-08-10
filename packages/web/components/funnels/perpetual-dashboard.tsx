@@ -124,6 +124,7 @@ import {
   classifyEntityChartsState,
   httpStatusOf,
 } from "@/lib/utils/perpetual-entity-charts-state";
+import { buildLpAdInputs } from "@/lib/utils/perpetual-lp-ads";
 
 interface PerpetualDashboardProps {
   funnel: Funnel;
@@ -1755,23 +1756,59 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
 
   // ============================================================
   // Story 29.40 — comparativo entre LPs
+  // Story 29.47 — a fonte deixou de ser `funnelAds`
   //
-  // A fonte é `funnelAds`, NÃO `detailRows`. Duas razões:
+  // `funnelAds` vem de `getAllAdsForProject`, que agrega por **Ad Name** e
+  // guarda um único `ad_id` por nome (`traffic-analytics.ts:839-841`). Para o
+  // Detalhamento isso está certo — 1 Ad Name ⊃ N Ad IDs, e o gestor pensa em
+  // criativo. Para a LP, não: LP é atributo do `ad_id`, e o mesmo criativo
+  // rodando em páginas diferentes é exatamente o desenho de um teste de LP.
   //
-  //   1. `detailRows` segue o `tableFilter` — no modo Campanha ele nem tem
-  //      ad_id, e a tabela de LPs sumiria junto. A LP é atributo do anúncio e
-  //      independe de como o usuário está olhando o Detalhamento.
-  //   2. `funnelAds` é exatamente a população do "Detalhamento no modo
-  //      Criativo", que é contra quem o AC6 manda reconciliar. Partir da mesma
-  //      lista é o que faz as somas fecharem por construção, em vez de por
-  //      coincidência.
+  // Medido em produção (2026-08-10): 25,26% do investimento do funil estava em
+  // Ad Names que rodam em mais de uma LP, e as três páginas de teste não
+  // apareciam — o investimento delas somava na LP principal.
   //
-  // Sem teto de 50 aqui: `useAdLinkUrls` lê do cache do Postgres. O teto do
-  // `useAdCreatives` protege o rate limit da Meta e está certo lá — aqui ele
-  // apagaria o investimento do 51º anúncio em diante e quebraria o AC6.
+  // A série por anúncio já existe desde a 29.42 e lê do Postgres, sem tocar a
+  // Meta. Uma segunda consulta com `groupBy: "ad"`, independente do
+  // `tableFilter`, é o caminho barato: a LP não pode depender de como o
+  // usuário está olhando o Detalhamento.
+  const { data: lpEntityDaily } = useEntityDaily(
+    metaProjectId,
+    hasCampaigns ? "ad" : null,
+    hasCampaigns ? campaignIds : null,
+    days,
+    customRange?.startDate,
+    customRange?.endDate,
+  );
+
+  // Story 29.47 (AC5) — vendas por `ad_id`, sem passar pelo Ad Name.
+  // `porUtmContent[].content` É o ad id; `salesByAdName` (linha ~1568) resolve
+  // esse id para nome e agrega — a mesma perda de granularidade do
+  // investimento, e pelo mesmo motivo não serve aqui.
+  const salesByAdId = useMemo(() => {
+    const m = new Map<string, { vendas: number; bruto: number }>();
+    if (!usingSpreadsheet || !salesData) return m;
+    for (const u of salesData.porUtmContent ?? []) {
+      const e = m.get(u.content) ?? { vendas: 0, bruto: 0 };
+      e.vendas += u.vendas;
+      e.bruto += u.bruto;
+      m.set(u.content, e);
+    }
+    return m;
+  }, [salesData, usingSpreadsheet]);
+
+  const lpAds = useMemo(
+    () => buildLpAdInputs(lpEntityDaily?.rows ?? [], salesByAdId, applyMetaTax),
+    [lpEntityDaily, salesByAdId],
+  );
+
+  // Sem teto aqui: `useAdLinkUrls` lê do cache do Postgres e agora vai em
+  // lotes (29.47 AC6). O teto de 50 do `useAdCreatives` protege o rate limit
+  // da Meta e está certo lá — aqui apagaria o investimento do 51º anúncio em
+  // diante e quebraria a invariante da soma.
   const lpAdIds = useMemo(
-    () => funnelAds.map((a) => a.campaignId).filter(Boolean),
-    [funnelAds],
+    () => lpAds.map((a) => a.campaignId).filter(Boolean),
+    [lpAds],
   );
   const { data: linkUrlsData } = useAdLinkUrls(projectId, lpAdIds);
 
@@ -1781,7 +1818,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const lpRows = useMemo<LpRow[]>(
     () =>
       buildLpRows(
-        funnelAds,
+        lpAds,
         linkUrlsData?.linkUrls ?? {},
         linkUrlsData?.missingFromCache ?? [],
         detailFeeRate,
@@ -1790,7 +1827,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         // afirmar "sem URL na Meta" para o que era só cache velho.
         linkUrlsData?.staleInCache,
       ),
-    [funnelAds, linkUrlsData, detailFeeRate],
+    [lpAds, linkUrlsData, detailFeeRate],
   );
 
   // AC5: se o não atribuído concentra parcela relevante do investimento, a
