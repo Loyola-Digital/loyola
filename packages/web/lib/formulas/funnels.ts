@@ -11,7 +11,7 @@ import type { MetricFormula } from "@/lib/types/metric-formula";
 
 export interface FunnelFilters {
   days: number;
-  funnelType?: "launch" | "perpetual";
+  funnelType?: "launch" | "perpetual" | "mobile";
   funnelName?: string;
 }
 

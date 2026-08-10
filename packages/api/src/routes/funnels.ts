@@ -29,7 +29,7 @@ const switchyLinkRefSchema = z.object({
 
 const createFunnelSchema = z.object({
   name: z.string().min(1).max(255),
-  type: z.enum(["launch", "perpetual"]),
+  type: z.enum(["launch", "perpetual", "mobile"]),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).default([]),
   googleAdsAccountId: z.string().uuid().nullable().optional(),
@@ -40,7 +40,7 @@ const createFunnelSchema = z.object({
 
 const updateFunnelSchema = z.object({
   name: z.string().min(1).max(255).optional(),
-  type: z.enum(["launch", "perpetual"]).optional(),
+  type: z.enum(["launch", "perpetual", "mobile"]).optional(),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).optional(),
   googleAdsAccountId: z.string().uuid().nullable().optional(),
@@ -288,13 +288,13 @@ export default fp(async function funnelRoutes(fastify) {
       }
     }
 
-    // Hard rule: perpétuos contíguos no início. Assim que ver um launch,
-    // nenhum perpetual pode aparecer depois.
-    let sawLaunch = false;
+    // Hard rule: perpétuos contíguos no início. Assim que ver um não-perpétuo
+    // (launch ou mobile), nenhum perpetual pode aparecer depois.
+    let sawNonPerpetual = false;
     for (const id of body.data.ids) {
       const t = typeById.get(id);
-      if (t === "launch") sawLaunch = true;
-      else if (t === "perpetual" && sawLaunch) {
+      if (t !== "perpetual") sawNonPerpetual = true;
+      else if (sawNonPerpetual) {
         return reply
           .code(400)
           .send({ error: "Perpétuos devem vir antes de lançamentos" });
@@ -485,6 +485,24 @@ export default fp(async function funnelRoutes(fastify) {
         funnelId: funnel.id,
         name: funnel.name,
         stageType: "paid",
+        metaAccountId: funnel.metaAccountId,
+        campaigns: funnel.campaigns,
+        googleAdsAccountId: funnel.googleAdsAccountId,
+        googleAdsCampaigns: funnel.googleAdsCampaigns,
+        switchyFolderIds: funnel.switchyFolderIds,
+        switchyLinkedLinks: funnel.switchyLinkedLinks,
+        sortOrder: 0,
+      });
+    }
+
+    // Funil mobile: auto-cria 1 etapa Lyrio (RevenueCat + Meta). A página do
+    // funil redireciona pra ela (etapa única), então o dashboard mobile é o
+    // LyrioStageView — sem o usuário precisar criar etapa.
+    if (type === "mobile") {
+      await fastify.db.insert(funnelStages).values({
+        funnelId: funnel.id,
+        name: funnel.name,
+        stageType: "lyrio",
         metaAccountId: funnel.metaAccountId,
         campaigns: funnel.campaigns,
         googleAdsAccountId: funnel.googleAdsAccountId,
@@ -808,7 +826,7 @@ export default fp(async function funnelRoutes(fastify) {
     const byStage: Record<string, { stageName: string; orphans: typeof orphans }> = {};
     for (const stage of stages) {
       const phaseSuffix = resolveStagePhaseSuffix(
-        funnel.type as "launch" | "perpetual",
+        funnel.type as "launch" | "perpetual" | "mobile",
         (stage.stageType ?? "free") as "paid" | "free" | "sales" | "cpl" | "event",
         stage.name,
       );

@@ -324,7 +324,7 @@ function CreativeLightbox({
   initialIndex: number;
   projectId: string;
   onClose: () => void;
-  funnelContext?: { days: number; funnelType?: "launch" | "perpetual"; funnelName?: string };
+  funnelContext?: { days: number; funnelType?: "launch" | "perpetual" | "mobile"; funnelName?: string };
 }) {
   const [index, setIndex] = useState(initialIndex);
   const item = items[index];
@@ -567,7 +567,7 @@ interface TopCreativesGalleryProps {
   stageId?: string;
   funnelContext?: {
     days: number;
-    funnelType?: "launch" | "perpetual";
+    funnelType?: "launch" | "perpetual" | "mobile";
     funnelName?: string;
   };
   /**

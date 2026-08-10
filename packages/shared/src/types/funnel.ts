@@ -1,4 +1,5 @@
-export type FunnelType = "launch" | "perpetual";
+// "mobile" = funil de app mobile (RevenueCat + Meta), dashboard da etapa Lyrio.
+export type FunnelType = "launch" | "perpetual" | "mobile";
 
 export interface FunnelCampaign {
   id: string;

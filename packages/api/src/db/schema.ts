@@ -567,7 +567,7 @@ export const youtubeChannelProjects = pgTable(
 // FUNNELS TABLES (EPIC-10)
 // ============================================================
 
-export const funnelTypeEnum = pgEnum("funnel_type", ["launch", "perpetual"]);
+export const funnelTypeEnum = pgEnum("funnel_type", ["launch", "perpetual", "mobile"]);
 
 export const funnels = pgTable(
   "funnels",
