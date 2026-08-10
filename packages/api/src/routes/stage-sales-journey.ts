@@ -33,6 +33,7 @@ import {
 import { readSheetData } from "../services/google-sheets.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
 import { parseUtmTerm } from "../services/utm-term.js";
+import { phoneTail } from "../utils/lead-origin.js";
 
 const paramsSchema = z.object({
   projectId: z.string().uuid(),
@@ -792,6 +793,270 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
           primeiroContato: eventos.find((e) => e.date)?.date ?? null,
           funis: [...new Set(eventos.map((e) => e.funnelName))],
         },
+      };
+    },
+  );
+
+  // ============================================================
+  // 4) Faixas por formulário de aplicação
+  // ============================================================
+
+  /**
+   * "A Página A traz lead melhor que a Página B?" — quebra as aplicações de CADA
+   * formulário (planilha `applications` do funil) por faixa de qualificação, e
+   * cruza com quem comprou o produto principal.
+   *
+   * De onde sai a faixa, nesta ordem:
+   *
+   *  1. Coluna de faixa NA PRÓPRIA aba do formulário ("Faixa 1", escrita pelo
+   *     n8n). É a fonte boa — cobre 100% de quem aplicou naquele form.
+   *  2. Cruzamento por contato com as pesquisas do funil (e-mail primeiro,
+   *     últimos 8 dígitos do telefone como reserva), pros forms que ainda não
+   *     têm coluna de faixa própria.
+   *
+   * A ordem existe porque medimos a cobertura real: quem aplica direto na página
+   * de aplicação em geral NÃO respondeu a pesquisa de captação, então o
+   * cruzamento sozinho deixa a maioria sem faixa. Quem fica sem faixa continua na
+   * resposta como `band: null` — sumir com ele mentiria sobre o tamanho do form e
+   * inflaria a conversão das faixas reais.
+   *
+   * Sem janela de dias de propósito: a leitura é do lançamento inteiro. Filtrar
+   * a venda por janela sem filtrar a aplicação (que é sempre anterior)
+   * subestimaria a conversão de todas as faixas.
+   */
+  const SEM_FAIXA = " sem-faixa";
+
+  /** Coluna de faixa: mapeamento explícito > "faixa 1" > 1º header "faixa…". */
+  function acharColFaixa(headers: string[], mapeado: unknown): number {
+    if (typeof mapeado === "string" && mapeado) {
+      const i = headers.indexOf(mapeado);
+      if (i !== -1) return i;
+    }
+    const norm = (s: string) => s.trim().toLowerCase();
+    let i = headers.findIndex((h) => norm(h) === "faixa 1");
+    if (i === -1) i = headers.findIndex((h) => norm(h).startsWith("faixa"));
+    return i;
+  }
+
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/application-bands",
+    async (request, reply) => {
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+      const p = paramsSchema.safeParse(request.params);
+      if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const [stage] = await fastify.db
+        .select({ id: funnelStages.id })
+        .from(funnelStages)
+        .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+        .where(
+          and(
+            eq(funnelStages.id, p.data.stageId),
+            eq(funnelStages.funnelId, p.data.funnelId),
+            eq(funnels.projectId, p.data.projectId),
+          ),
+        )
+        .limit(1);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const forms = await fastify.db
+        .select({
+          id: funnelSpreadsheets.id,
+          label: funnelSpreadsheets.label,
+          spreadsheetId: funnelSpreadsheets.spreadsheetId,
+          sheetName: funnelSpreadsheets.sheetName,
+          columnMapping: funnelSpreadsheets.columnMapping,
+        })
+        .from(funnelSpreadsheets)
+        .where(
+          and(
+            eq(funnelSpreadsheets.funnelId, p.data.funnelId),
+            eq(funnelSpreadsheets.type, "applications"),
+          ),
+        );
+
+      if (forms.length === 0) {
+        return { semPlanilha: true, semFaixa: true, bandLabels: [], forms: [], total: null };
+      }
+
+      // --- Índice faixa por contato (vem das pesquisas do funil) ---
+      const surveys = await fastify.db
+        .select()
+        .from(funnelSurveys)
+        .where(eq(funnelSurveys.funnelId, p.data.funnelId));
+
+      const faixaPorEmail = new Map<string, string>();
+      const faixaPorTelefone = new Map<string, string>();
+      const bandSet = new Set<string>();
+
+      for (const s of surveys) {
+        let data: { headers: string[]; rows: string[][] };
+        try {
+          data = await readSheetData(s.spreadsheetId, s.sheetName);
+        } catch {
+          continue;
+        }
+        const mapping = (s.columnMapping ?? {}) as Record<string, unknown>;
+        const faixaIdx = acharColFaixa(data.headers, mapping.faixa);
+        // Pesquisa sem coluna de faixa não contribui (é o caso das pesquisas de
+        // aplicação: elas identificam a página, não a qualificação).
+        if (faixaIdx === -1) continue;
+        const emailIdx = acharCol(data.headers, mapping.email, /e-?mail/i);
+        const phoneIdx = acharCol(data.headers, mapping.phone, /telefone|whats|phone|celular/i);
+        if (emailIdx === -1 && phoneIdx === -1) continue;
+
+        for (const row of data.rows) {
+          const faixa = (row[faixaIdx] ?? "").trim().toUpperCase();
+          if (!faixa) continue;
+          bandSet.add(faixa);
+          // Primeira resposta vence — o mesmo contato pode responder duas vezes.
+          if (emailIdx !== -1) {
+            const k = normalizeEmail(row[emailIdx]);
+            if (k && !faixaPorEmail.has(k)) faixaPorEmail.set(k, faixa);
+          }
+          if (phoneIdx !== -1) {
+            const k = phoneTail(row[phoneIdx]);
+            if (k && !faixaPorTelefone.has(k)) faixaPorTelefone.set(k, faixa);
+          }
+        }
+      }
+
+      // --- Compradores do produto principal (mesma leitura do resto do dashboard) ---
+      const receitaPorEmail = new Map<string, number>();
+      for (const v of await lerVendas(p.data.stageId, "main_product")) {
+        if (!v.email) continue;
+        receitaPorEmail.set(v.email, (receitaPorEmail.get(v.email) ?? 0) + v.bruto);
+      }
+
+      interface Contato {
+        faixa: string | null;
+        email: string;
+      }
+
+      function agregar(contatos: Map<string, Contato>) {
+        const porFaixa = new Map<string, { aplicacoes: number; compradores: number; receita: number }>();
+        let comFaixa = 0;
+        let compradores = 0;
+        let receita = 0;
+
+        for (const c of contatos.values()) {
+          if (c.faixa) comFaixa++;
+          const chave = c.faixa ?? SEM_FAIXA;
+          const acc = porFaixa.get(chave) ?? { aplicacoes: 0, compradores: 0, receita: 0 };
+          acc.aplicacoes++;
+          const r = c.email ? receitaPorEmail.get(c.email) : undefined;
+          if (r !== undefined) {
+            acc.compradores++;
+            acc.receita += r;
+            compradores++;
+            receita += r;
+          }
+          porFaixa.set(chave, acc);
+        }
+
+        const bands = [...porFaixa.entries()]
+          .map(([band, a]) => ({
+            band: band === SEM_FAIXA ? null : band,
+            aplicacoes: a.aplicacoes,
+            compradores: a.compradores,
+            receita: +a.receita.toFixed(2),
+            conversao: a.aplicacoes > 0 ? +((a.compradores / a.aplicacoes) * 100).toFixed(1) : 0,
+          }))
+          // Faixa nomeada em ordem alfabética (A antes de D); "sem faixa" no fim,
+          // porque é resíduo de cruzamento, não uma faixa de verdade.
+          .sort((x, y) => {
+            if (x.band === null) return 1;
+            if (y.band === null) return -1;
+            return x.band.localeCompare(y.band);
+          });
+
+        return {
+          aplicacoes: contatos.size,
+          comFaixa,
+          compradores,
+          receita: +receita.toFixed(2),
+          conversao: contatos.size > 0 ? +((compradores / contatos.size) * 100).toFixed(1) : 0,
+          bands,
+        };
+      }
+
+      // Total dedup por contato: quem aplicou nas duas páginas conta uma vez só,
+      // senão a receita dele entraria duas vezes no consolidado.
+      const contatosTotais = new Map<string, Contato>();
+      const formsOut = [];
+
+      for (const f of forms) {
+        const mapping = (f.columnMapping ?? {}) as Record<string, unknown>;
+        let data: { headers: string[]; rows: string[][] } | null = null;
+        try {
+          data = await readSheetData(f.spreadsheetId, f.sheetName);
+        } catch {
+          data = null;
+        }
+
+        const contatos = new Map<string, Contato>();
+        let linhas = 0;
+
+        // Faixa na própria aba do form vence o cruzamento: cobre todo mundo que
+        // aplicou ali, enquanto a pesquisa só cobre quem também respondeu ela.
+        const faixaPropriaIdx = data ? acharColFaixa(data.headers, mapping.faixa) : -1;
+
+        if (data) {
+          const emailIdx = acharCol(data.headers, mapping.email, /e-?mail/i);
+          const phoneIdx = acharCol(data.headers, mapping.phone, /telefone|whats|phone|celular/i);
+
+          for (const row of data.rows) {
+            const email = emailIdx !== -1 ? normalizeEmail(row[emailIdx]) : "";
+            const phone = phoneIdx !== -1 ? phoneTail(row[phoneIdx]) : "";
+            // Linha sem nenhum identificador não dá pra cruzar com nada.
+            if (!email && !phone) continue;
+            linhas++;
+            const key = email || `p:${phone}`;
+            if (contatos.has(key)) continue;
+            const propria =
+              faixaPropriaIdx !== -1 ? (row[faixaPropriaIdx] ?? "").trim().toUpperCase() : "";
+            if (propria) bandSet.add(propria);
+            const faixa =
+              propria ||
+              (email ? faixaPorEmail.get(email) : undefined) ||
+              (phone ? faixaPorTelefone.get(phone) : undefined) ||
+              null;
+            contatos.set(key, { faixa, email });
+            if (!contatosTotais.has(key)) contatosTotais.set(key, { faixa, email });
+          }
+        }
+
+        const agregado = agregar(contatos);
+
+        formsOut.push({
+          sheetId: f.id,
+          label: f.label,
+          /** Planilha ilegível (permissão, aba renomeada) — o card mostra o aviso. */
+          erro: data === null,
+          /** Linhas com contato. Difere de `aplicacoes` quando alguém aplica 2x. */
+          linhas,
+          /**
+           * Como a faixa foi obtida neste form. "cruzamento" costuma ter
+           * cobertura baixa — o card avisa, senão o time lê "sem faixa" como se
+           * fosse lead ruim em vez de dado que não casou.
+           */
+          fonteFaixa: (faixaPropriaIdx !== -1
+            ? "form"
+            : agregado.comFaixa > 0
+              ? "cruzamento"
+              : null) as "form" | "cruzamento" | null,
+          ...agregado,
+        });
+      }
+
+      return {
+        semPlanilha: false,
+        // Nenhuma faixa em lugar nenhum (nem no form, nem nas pesquisas) — o card
+        // explica o que configurar em vez de mostrar tudo como "sem faixa".
+        semFaixa: bandSet.size === 0,
+        bandLabels: [...bandSet].sort(),
+        forms: formsOut,
+        total: agregar(contatosTotais),
       };
     },
   );

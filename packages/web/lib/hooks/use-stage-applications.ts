@@ -65,3 +65,80 @@ export function useStageApplications(
     staleTime: 60 * 1000,
   });
 }
+
+// ============================================================
+// Faixas por formulário
+// ============================================================
+
+/**
+ * Mesma lista de formas do gráfico acima, agora quebrada por faixa de
+ * qualificação e cruzada com quem comprou — responde "qual página traz lead
+ * melhor", não só "qual página traz mais lead".
+ *
+ * A faixa sai da coluna "Faixa 1" da própria aba do formulário quando ela
+ * existe; senão, do cruzamento por e-mail/telefone com as pesquisas do funil.
+ * Leitura do lançamento inteiro — não acompanha o filtro de dias do dashboard.
+ */
+export interface ApplicationBandRow {
+  /** Faixa (A/B/C/D…). null = aplicou mas não foi encontrado na pesquisa. */
+  band: string | null;
+  /** Contatos únicos que aplicaram nesta forma dentro da faixa. */
+  aplicacoes: number;
+  compradores: number;
+  /** % de compradores sobre aplicações da faixa. */
+  conversao: number;
+  receita: number;
+}
+
+export interface ApplicationBandGroup {
+  aplicacoes: number;
+  /** Quantos contatos tiveram faixa identificada (resto é `band: null`). */
+  comFaixa: number;
+  compradores: number;
+  conversao: number;
+  receita: number;
+  bands: ApplicationBandRow[];
+}
+
+export interface ApplicationBandForm extends ApplicationBandGroup {
+  sheetId: string;
+  label: string;
+  /** Planilha ilegível (permissão/aba renomeada) — a forma aparece zerada. */
+  erro: boolean;
+  /** Linhas com contato. Maior que `aplicacoes` quando alguém aplica 2x. */
+  linhas: number;
+  /**
+   * "form" = coluna de faixa na própria aba (cobertura total).
+   * "cruzamento" = faixa veio da pesquisa por e-mail/telefone (cobertura
+   * parcial). null = nenhuma faixa encontrada pra esta forma.
+   */
+  fonteFaixa: "form" | "cruzamento" | null;
+}
+
+export interface StageApplicationBands {
+  /** true = nenhuma planilha do tipo "applications" vinculada ao funil. */
+  semPlanilha: boolean;
+  /** true = nenhuma pesquisa do funil tem coluna de faixa. */
+  semFaixa: boolean;
+  bandLabels: string[];
+  forms: ApplicationBandForm[];
+  /** Consolidado, deduplicado por contato entre as formas. */
+  total: ApplicationBandGroup | null;
+}
+
+export function useStageApplicationBands(
+  projectId: string | null,
+  funnelId: string | null,
+  stageId: string | null,
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["stage-application-bands", projectId, funnelId, stageId],
+    queryFn: () =>
+      apiClient<StageApplicationBands>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/application-bands`,
+      ),
+    enabled: !!projectId && !!funnelId && !!stageId,
+    staleTime: 60 * 1000,
+  });
+}

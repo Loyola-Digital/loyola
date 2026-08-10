@@ -47,48 +47,52 @@ function base(projectId: string, funnelId: string, stageId: string) {
   return `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/zoom`;
 }
 
-export function useZoomConnection(projectId: string, funnelId: string, stageId: string) {
+/** Conexão Zoom é global do projeto — vale pra todas as etapas. */
+function projectBase(projectId: string) {
+  return `/api/projects/${projectId}/zoom`;
+}
+
+export function useZoomConnection(projectId: string) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["zoom-connection", projectId, funnelId, stageId],
-    queryFn: () => apiClient<ZoomConnectionResponse>(`${base(projectId, funnelId, stageId)}/connection`),
+    queryKey: ["zoom-connection", projectId],
+    queryFn: () => apiClient<ZoomConnectionResponse>(`${projectBase(projectId)}/connection`),
     staleTime: STALE,
   });
 }
 
-export function useSetZoomConnection(projectId: string, funnelId: string, stageId: string) {
+export function useSetZoomConnection(projectId: string) {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: { accountId: string; clientId: string; clientSecret: string }) =>
-      apiClient<{ connected: boolean }>(`${base(projectId, funnelId, stageId)}/connection`, {
+      apiClient<{ connected: boolean }>(`${projectBase(projectId)}/connection`, {
         method: "POST",
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["zoom-connection", projectId, funnelId, stageId] });
+      qc.invalidateQueries({ queryKey: ["zoom-connection", projectId] });
     },
   });
 }
 
-export function useDeleteZoomConnection(projectId: string, funnelId: string, stageId: string) {
+export function useDeleteZoomConnection(projectId: string) {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () =>
-      apiClient<void>(`${base(projectId, funnelId, stageId)}/connection`, { method: "DELETE" }),
+    mutationFn: () => apiClient<void>(`${projectBase(projectId)}/connection`, { method: "DELETE" }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["zoom-connection", projectId, funnelId, stageId] });
-      qc.invalidateQueries({ queryKey: ["zoom-meetings", projectId, funnelId, stageId] });
+      qc.invalidateQueries({ queryKey: ["zoom-connection", projectId] });
+      qc.invalidateQueries({ queryKey: ["zoom-past-meetings", projectId] });
     },
   });
 }
 
-export function useZoomPastMeetings(projectId: string, funnelId: string, stageId: string, enabled = false) {
+export function useZoomPastMeetings(projectId: string, enabled = false) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["zoom-past-meetings", projectId, funnelId, stageId],
-    queryFn: () => apiClient<{ meetings: ZoomPastMeeting[] }>(`${base(projectId, funnelId, stageId)}/past-meetings`),
+    queryKey: ["zoom-past-meetings", projectId],
+    queryFn: () => apiClient<{ meetings: ZoomPastMeeting[] }>(`${projectBase(projectId)}/past-meetings`),
     enabled,
     staleTime: STALE,
   });

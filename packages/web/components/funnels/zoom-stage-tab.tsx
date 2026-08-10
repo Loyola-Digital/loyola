@@ -52,11 +52,11 @@ function fmtTime(iso: string | null): string {
 }
 
 export function ZoomStageTab({ projectId, funnelId, stageId }: Props) {
-  const conn = useZoomConnection(projectId, funnelId, stageId);
+  const conn = useZoomConnection(projectId);
 
   if (conn.isLoading) return <Skeleton className="h-32" />;
   if (!conn.data?.connected) {
-    return <ZoomConnectionForm projectId={projectId} funnelId={funnelId} stageId={stageId} />;
+    return <ZoomConnectionForm projectId={projectId} />;
   }
 
   return (
@@ -70,8 +70,8 @@ export function ZoomStageTab({ projectId, funnelId, stageId }: Props) {
   );
 }
 
-function ZoomConnectionForm({ projectId, funnelId, stageId }: Props) {
-  const setConn = useSetZoomConnection(projectId, funnelId, stageId);
+function ZoomConnectionForm({ projectId }: { projectId: string }) {
+  const setConn = useSetZoomConnection(projectId);
   const [accountId, setAccountId] = useState("");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
@@ -100,6 +100,9 @@ function ZoomConnectionForm({ projectId, funnelId, stageId }: Props) {
         <Video className="h-5 w-5 text-primary" />
         <h3 className="text-sm font-semibold">Conectar Zoom</h3>
       </div>
+      <p className="text-xs text-muted-foreground">
+        A conexão é <strong>do projeto inteiro</strong> — configura uma vez e todas as etapas CPL reusam.
+      </p>
       <p className="text-xs text-muted-foreground">
         Crie um app <strong>Server-to-Server OAuth</strong> em <a href="https://marketplace.zoom.us" target="_blank" rel="noreferrer" className="underline">marketplace.zoom.us</a> com scope <code className="font-mono text-[10px] bg-muted/50 px-1 rounded">report:read:list_meeting_participants:admin</code>. Reports API requer plano Pro+.
       </p>
@@ -135,7 +138,7 @@ function ZoomConnectedView({
 }: Props & { accountId: string; clientId: string }) {
   const linked = useZoomLinkedMeetings(projectId, funnelId, stageId);
   const unlink = useUnlinkZoomMeeting(projectId, funnelId, stageId);
-  const deleteConn = useDeleteZoomConnection(projectId, funnelId, stageId);
+  const deleteConn = useDeleteZoomConnection(projectId);
   const [linkOpen, setLinkOpen] = useState(false);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -148,7 +151,7 @@ function ZoomConnectedView({
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs text-muted-foreground">Conectado · Account: <code className="font-mono">{accountId}</code></p>
+          <p className="text-xs text-muted-foreground">Conectado (projeto) · Account: <code className="font-mono">{accountId}</code></p>
           <p className="text-[10px] text-muted-foreground">Client ID: <code className="font-mono">{clientId.slice(0, 8)}...</code></p>
         </div>
         <div className="flex gap-2">
@@ -245,8 +248,11 @@ function ZoomConnectedView({
       <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Desconectar Zoom?</AlertDialogTitle>
-            <AlertDialogDescription>Credenciais e reuniões vinculadas serão removidas. Não afeta o Zoom.</AlertDialogDescription>
+            <AlertDialogTitle>Desconectar Zoom do projeto?</AlertDialogTitle>
+            <AlertDialogDescription>
+              As credenciais são do projeto inteiro — desconectar afeta <strong>todas as etapas CPL</strong>.
+              As reuniões vinculadas continuam salvas, mas param de sincronizar até reconectar. Não afeta o Zoom.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
@@ -274,7 +280,7 @@ function ZoomLinkMeetingDialog({
   open,
   onOpenChange,
 }: Props & { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const past = useZoomPastMeetings(projectId, funnelId, stageId, open);
+  const past = useZoomPastMeetings(projectId, open);
   const link = useLinkZoomMeeting(projectId, funnelId, stageId);
   const [meetingId, setMeetingId] = useState("");
   const [label, setLabel] = useState("");

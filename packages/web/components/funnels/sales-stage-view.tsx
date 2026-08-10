@@ -22,6 +22,7 @@ import { MauticStageTab } from "./mautic-stage-tab";
 import { SalesConversionCard } from "./sales-conversion-card";
 import { SalesDailyComparisonChart } from "./sales-daily-comparison-chart";
 import { ApplicationsDailyChart } from "./applications-daily-chart";
+import { ApplicationBandsCard } from "./application-bands-card";
 import { BuyersOriginCard } from "./buyers-origin-card";
 import { LeadJourneyPanel } from "./lead-journey-panel";
 import { ManualPixSalesSection } from "./manual-pix-sales-section";
@@ -197,6 +198,14 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
               `applications` do funil, então renderizar a partir da etapa de
               Vendas funciona. */}
           <ApplicationsDailyChart
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+          />
+          {/* Mesmas formas do gráfico acima, agora por faixa de qualificação e
+              cruzadas com venda — o volume sozinho não diz qual página traz
+              lead melhor. */}
+          <ApplicationBandsCard
             projectId={projectId}
             funnelId={funnelId}
             stageId={stage.id}
