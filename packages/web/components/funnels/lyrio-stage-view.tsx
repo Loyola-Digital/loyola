@@ -13,6 +13,10 @@ import {
   ShoppingCart,
   Store,
   Package,
+  Zap,
+  TrendingUp,
+  Users,
+  Repeat,
 } from "lucide-react";
 import {
   CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -26,6 +30,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { useCampaignPicker } from "@/lib/hooks/use-funnels";
+import { useCampaignDailyInsightsBulk } from "@/lib/hooks/use-traffic-analytics";
+import { sumMetaInsights } from "@/lib/utils/funnel-metrics";
+import { useUsdBrl } from "@/lib/hooks/use-fx";
 import { CampaignSelector } from "./campaign-selector";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
@@ -71,6 +78,27 @@ function fmtDay(iso: string): string {
   const [, m, d] = iso.split("-");
   return `${d}/${m}`;
 }
+function fmtBRL(v: number | null | undefined): string {
+  if (v == null) return "—";
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+}
+/** Converte USD -> BRL pela cotação; "—" quando falta valor ou câmbio. */
+function brl(usd: number | null | undefined, rate: number | null): string {
+  if (usd == null || rate == null) return "—";
+  return fmtBRL(usd * rate);
+}
+function fmtRoas(v: number | null): string {
+  return v == null ? "—" : `${v.toFixed(2)}x`;
+}
+/** Pega o valor de uma métrica do overview por id (aceita fallbacks de id). */
+function metricValue(metrics: RevenuecatMetric[] | undefined, ...ids: string[]): number | null {
+  if (!metrics) return null;
+  for (const id of ids) {
+    const m = metrics.find((x) => x.id === id);
+    if (m) return m.value;
+  }
+  return null;
+}
 
 export function LyrioStageView({ projectId, funnelId, funnelName, stage }: LyrioStageViewProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -93,6 +121,29 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   const ensureWebhook = useEnsureRevenuecatWebhook(projectId, funnelId, stage.id);
   const sales = useRevenuecatSales(projectId, funnelId, stage.id, days);
   const overview = useRevenuecatOverview(projectId, funnelId, stage.id);
+
+  // Câmbio USD->BRL: a Meta vem em BRL e o RevenueCat em USD; unifica em R$.
+  const { data: fx } = useUsdBrl();
+  const brlRate = fx?.rate ?? null;
+
+  // Spend da Meta em 28 dias (mesma janela do overview do RevenueCat) pra ROAS.
+  const { data: metaDaily28 } = useCampaignDailyInsightsBulk(
+    campaignIds.length ? projectId : null,
+    campaignIds.length ? campaignIds : null,
+    28,
+  );
+  const metaSpend28 = metaDaily28 ? sumMetaInsights([metaDaily28]).spend : 0;
+
+  // Métricas do overview (28d / snapshot) pro resumo mobile.
+  const ov = overview.data?.metrics;
+  const mrrUsd = metricValue(ov, "mrr");
+  const activeSubs = metricValue(ov, "active_subscriptions");
+  const activeTrials = metricValue(ov, "active_trials");
+  const newCustomers = metricValue(ov, "new_customers_last_28_days", "new_customers");
+  const revenue28Usd = metricValue(ov, "revenue_last_28_days", "revenue");
+  const revenue28Brl = revenue28Usd != null && brlRate != null ? revenue28Usd * brlRate : null;
+  const roas28 =
+    revenue28Brl != null && metaSpend28 > 0 ? revenue28Brl / metaSpend28 : null;
 
   async function handleSaveName() {
     if (!stageName.trim() || stageName.trim() === stage.name) return;
@@ -353,6 +404,38 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
         </div>
       </div>
 
+      {/* Resumo Mobile — visão unificada em R$ (aquisição Meta + monetização
+          RevenueCat). Janela de 28 dias (a que o RevenueCat expõe no overview). */}
+      <section className="spy-viz space-y-2 rounded-xl border border-border/40 bg-card p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold">Resumo mobile · últimos 28 dias</h2>
+          <p className="text-[10px] text-muted-foreground">
+            Tudo em R$
+            {brlRate != null && (
+              <>
+                {" "}· câmbio US$1 = {fmtBRL(brlRate)}
+                {fx?.source === "live" ? " (ao vivo)" : fx?.source === "manual" ? " (manual)" : " (fallback)"}
+              </>
+            )}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+          <Kpi icon={Zap} label="Investimento (Meta)" value={fmtBRL(metaSpend28)} />
+          <Kpi icon={DollarSign} label="Receita (RevenueCat)" value={brl(revenue28Usd, brlRate)} />
+          <Kpi icon={TrendingUp} label="ROAS" value={fmtRoas(roas28)} highlight />
+          <Kpi icon={Repeat} label="MRR" value={brl(mrrUsd, brlRate)} />
+          <Kpi icon={Package} label="Assinaturas ativas" value={fmtNum(activeSubs)} />
+          <Kpi icon={ShoppingCart} label="Trials ativos" value={fmtNum(activeTrials)} />
+          <Kpi icon={Users} label="Novos clientes" value={fmtNum(newCustomers)} />
+        </div>
+        {!connected && (
+          <p className="text-[11px] text-muted-foreground">
+            Conecte o RevenueCat em <strong>Configurar</strong> pra preencher receita, MRR e
+            assinaturas.
+          </p>
+        )}
+      </section>
+
       {/* Meta — conversões + spend das campanhas linkadas */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground">Meta Ads</h2>
@@ -372,12 +455,14 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
           loading={overview.isLoading}
           connected={connected}
           data={overview.data}
+          brlRate={brlRate}
           onConfigure={() => setSettingsOpen(true)}
         />
         <RevenuecatPanel
           loading={sales.isLoading}
           connected={connected}
           data={sales.data}
+          brlRate={brlRate}
           onConfigure={() => setSettingsOpen(true)}
         />
       </section>
@@ -393,13 +478,18 @@ function RevenuecatPanel({
   loading,
   connected,
   data,
+  brlRate,
   onConfigure,
 }: {
   loading: boolean;
   connected: boolean;
   data: ReturnType<typeof useRevenuecatSales>["data"];
+  brlRate: number | null;
   onConfigure: () => void;
 }) {
+  // Mostra em R$ quando há câmbio; senão cai pro USD nativo.
+  const money = (usd: number | null | undefined) =>
+    brlRate != null ? brl(usd, brlRate) : fmtUsd(usd);
   if (loading) return <Skeleton className="h-[320px] rounded-xl" />;
 
   if (!connected) {
@@ -432,7 +522,12 @@ function RevenuecatPanel({
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Kpi icon={ShoppingCart} label="Vendas" value={fmtNum(totalSales)} />
-        <Kpi icon={DollarSign} label="Receita (USD)" value={fmtUsd(revenueUsd)} highlight />
+        <Kpi
+          icon={DollarSign}
+          label={brlRate != null ? "Receita" : "Receita (USD)"}
+          value={money(revenueUsd)}
+          highlight
+        />
         {byCurrency.slice(0, 2).map((c) => (
           <Kpi
             key={c.currency}
@@ -479,7 +574,7 @@ function RevenuecatPanel({
                       </p>
                       <p className="text-sm font-semibold tabular-nums">{fmtNum(p.sales)} vendas</p>
                       <p className="text-[11px] text-muted-foreground tabular-nums">
-                        {fmtUsd(p.revenueUsd)}
+                        {money(p.revenueUsd)}
                       </p>
                     </div>
                   );
@@ -506,6 +601,7 @@ function RevenuecatPanel({
             <BreakdownTable
               icon={Store}
               title="Por loja"
+              money={money}
               rows={byStore.map((s) => ({ label: s.store, sales: s.sales, revenueUsd: s.revenueUsd }))}
             />
           )}
@@ -513,6 +609,7 @@ function RevenuecatPanel({
             <BreakdownTable
               icon={Package}
               title="Por produto"
+              money={money}
               rows={byProduct.map((p) => ({ label: p.productId, sales: p.sales, revenueUsd: p.revenueUsd }))}
             />
           )}
@@ -543,8 +640,9 @@ function isMoneyMetric(m: RevenuecatMetric): boolean {
   return m.unit === "$" || /revenue|mrr|arr|proceeds/i.test(m.id);
 }
 
-function fmtMetric(m: RevenuecatMetric): string {
-  if (isMoneyMetric(m)) return fmtUsd(m.value);
+function fmtMetric(m: RevenuecatMetric, brlRate: number | null): string {
+  // Valores monetários vêm em USD; converte pra R$ quando há câmbio.
+  if (isMoneyMetric(m)) return brlRate != null ? fmtBRL(m.value * brlRate) : fmtUsd(m.value);
   if (m.unit === "%") return `${m.value.toLocaleString("pt-BR")}%`;
   return fmtNum(m.value);
 }
@@ -559,11 +657,13 @@ function RevenuecatOverviewPanel({
   loading,
   connected,
   data,
+  brlRate,
   onConfigure,
 }: {
   loading: boolean;
   connected: boolean;
   data: ReturnType<typeof useRevenuecatOverview>["data"];
+  brlRate: number | null;
   onConfigure: () => void;
 }) {
   if (loading) return <Skeleton className="h-[110px] rounded-xl" />;
@@ -608,7 +708,7 @@ function RevenuecatOverviewPanel({
             key={m.id}
             icon={metricIcon(m)}
             label={METRIC_LABEL[m.id] ?? m.name}
-            value={fmtMetric(m)}
+            value={fmtMetric(m, brlRate)}
             highlight={m.id === "mrr" || /^revenue/.test(m.id)}
           />
         ))}
@@ -647,10 +747,12 @@ function BreakdownTable({
   icon: Icon,
   title,
   rows,
+  money,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   rows: { label: string; sales: number; revenueUsd: number }[];
+  money: (usd: number | null | undefined) => string;
 }) {
   return (
     <div className="rounded-lg border border-border/40">
@@ -664,7 +766,7 @@ function BreakdownTable({
             <tr key={r.label} className="border-t border-border/30 first:border-t-0">
               <td className="px-3 py-1.5 truncate max-w-[160px]">{r.label}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">{fmtNum(r.sales)}</td>
-              <td className="px-3 py-1.5 text-right tabular-nums">{fmtUsd(r.revenueUsd)}</td>
+              <td className="px-3 py-1.5 text-right tabular-nums">{money(r.revenueUsd)}</td>
             </tr>
           ))}
         </tbody>
