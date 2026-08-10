@@ -50,8 +50,33 @@
  */
 export const UNATTRIBUTED_SERIES_KEY = "(sem atribuição)";
 
-/** Story 29.42 (AC5) — quantas entidades são plotadas. Decisão do usuário. */
-export const TOP_N_SERIES = 10;
+/**
+ * Story 29.42 (AC5) — quantas entidades são plotadas. Decisão do usuário.
+ *
+ * Story 29.48: 10 → 5. Com 10 campanhas de nomes longos e parecidos
+ * (`…hot_cbo_videos`, `…hot_cbo_estaticos`, `…hot_cbo_vencedores`), as linhas
+ * se cruzavam tantas vezes que nenhuma era seguível.
+ *
+ * O teto continua sendo de **exibição**: as séries são montadas sobre o
+ * conjunto inteiro, o percentual omitido é calculado sobre o conjunto inteiro,
+ * e a nota de truncamento continua aparecendo. E o resíduo não disputa vaga
+ * (gate QA-07, mais abaixo) — com resíduo presente, o gráfico mostra 6 séries.
+ */
+export const TOP_N_SERIES = 5;
+
+/**
+ * Story 29.48 (AC2) — quantos dias os gráficos por dimensão plotam.
+ *
+ * Mesma janela dos três gráficos agregados do topo da tela
+ * (`perpetual-dashboard.tsx`, `last7Days = dailyChartData.slice(-7)`). Os por
+ * dimensão nasceram fora desse padrão sem que nada justificasse.
+ *
+ * O recorte é de EXIBIÇÃO: a requisição continua trazendo o período inteiro, e
+ * o "top N por investimento" continua sendo decidido sobre o período filtrado.
+ * Decidir o top sobre 7 dias faria o filtro de data deixar de governar quais
+ * entidades aparecem — surpreendente para quem acabou de mexer no filtro.
+ */
+export const CHART_WINDOW_DAYS = 7;
 
 export interface EntityDailyInput {
   entityId: string;
@@ -347,6 +372,20 @@ export function toRechartsRows(
  * objeto e o gráfico plotaria a mesma série duas vezes.
  */
 export const LINE_KEY_SUFFIX = "__l";
+
+/**
+ * Story 29.48 (AC2) — a janela de exibição dos gráficos.
+ *
+ * Recorta as últimas `n` datas do eixo. `dates` já vem ordenado (união das
+ * origens, ordenada em `buildEntitySeries`), então `slice(-n)` basta — é o
+ * mesmo `slice(-7)` que os gráficos agregados do topo usam.
+ *
+ * Período mais curto que a janela devolve o que há: um funil de 3 dias mostra
+ * 3 dias, não 7 com quatro vazios.
+ */
+export function lastNDates(dates: string[], n: number = CHART_WINDOW_DAYS): string[] {
+  return n > 0 ? dates.slice(-n) : dates;
+}
 
 export function toComposedRows(
   plotted: EntitySeries[],
