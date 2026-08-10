@@ -140,6 +140,23 @@ export const PLATFORM_FEE_RATES: Record<SalesPlatform, number> = {
  * Epic 29 — Planilha de vendas conectada a um funil de tipo perpétuo.
  * 1 por funil (sem stage). Mesmo mapper de colunas do StageSalesSpreadsheet.
  */
+/**
+ * Story 29.49 — tipo de um produto vendido no funil perpétuo.
+ *
+ * `principal` é o default de quem não foi classificado: é o que mantém uma
+ * planilha já conectada com o comportamento anterior à story, e espelha a
+ * regra da Captação Paga, onde o produto não marcado é o de entrada.
+ */
+export type PerpetualProductType = "principal" | "order_bump" | "upsell";
+
+/** Item da lista de produtos distintos da planilha do perpétuo. */
+export interface PerpetualProduct {
+  name: string;
+  /** Linhas da planilha com este produto — ordena a lista e dá contexto ao gestor. */
+  count: number;
+  type: PerpetualProductType;
+}
+
 export interface PerpetualSpreadsheet {
   id: string;
   funnelId: string;
@@ -149,6 +166,12 @@ export interface PerpetualSpreadsheet {
   columnMapping: SaleColumnMapping;
   /** Story 29.7: plataforma de pagamento (null = sem desconto de fees) */
   platform: SalesPlatform | null;
+  /**
+   * Story 29.49: `productName` (lowercase, trim) → tipo. Ausente = `principal`.
+   * Vazio em toda planilha anterior à story — e vazio significa exatamente o
+   * comportamento de antes, não "sem informação".
+   */
+  productTypes: Record<string, PerpetualProductType>;
   createdAt: string;
   updatedAt: string;
 }

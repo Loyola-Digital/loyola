@@ -52,6 +52,9 @@ export type {
   StageSalesProduct,
   StageSalesProductsResponse,
   PerpetualSpreadsheet,
+  // Story 29.49
+  PerpetualProduct,
+  PerpetualProductType,
   SalesPlatform,
   PerpetualSalesData,
   PerpetualSalesDataDaily,

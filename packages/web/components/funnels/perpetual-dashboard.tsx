@@ -19,6 +19,7 @@ import {
   ArrowUp,
   ArrowDown,
   Receipt,
+  Tags,
 } from "lucide-react";
 import {
   LineChart,
@@ -74,6 +75,7 @@ import { TopCreativesGallery } from "./top-creatives-gallery";
 import { RefreshDataButton } from "./refresh-data-button";
 import { MetaFreshnessBadge } from "./meta-freshness-badge";
 import { PerpetualSpreadsheetWizardDialog } from "./perpetual-spreadsheet-wizard-dialog";
+import { PerpetualProductTypesDialog } from "./perpetual-product-types-dialog";
 import { usePerpetualSpreadsheet } from "@/lib/hooks/use-perpetual-spreadsheet";
 import {
   usePerpetualSalesData,
@@ -1095,6 +1097,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const [granularity, setGranularity] = useState<ChartGranularity>("day");
   const [showCampaignManager, setShowCampaignManager] = useState(false);
   const [showSpreadsheetWizard, setShowSpreadsheetWizard] = useState(false);
+  const [showProductTypes, setShowProductTypes] = useState(false);
   const [showUpsellWizard, setShowUpsellWizard] = useState(false);
   const [tableFilter, setTableFilter] = useState<"campaign" | "adset" | "ad">("campaign");
   // Story 29.19: ordenação de colunas + largura da coluna Dimensão no Detalhamento
@@ -1981,6 +1984,26 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
               </>
             )}
           </Button>
+          {/* Story 29.49: só aparece com planilha conectada — sem ela não há
+              produto para classificar, e um botão que abre um diálogo vazio é
+              pior do que botão nenhum. */}
+          {perpetualSpreadsheet && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs"
+              onClick={() => setShowProductTypes(true)}
+              title="Marcar quais produtos são principal, order bump ou upsell"
+            >
+              <Tags className="h-3.5 w-3.5" />
+              Classificar produtos
+              {Object.keys(perpetualSpreadsheet.productTypes ?? {}).length > 0 && (
+                <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground">
+                  {Object.keys(perpetualSpreadsheet.productTypes).length}
+                </span>
+              )}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -2021,6 +2044,16 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         current={upsellSpreadsheet ?? null}
         open={showUpsellWizard}
         onOpenChange={setShowUpsellWizard}
+      />
+
+      {/* Story 29.49 — a lista de produtos só é buscada com o diálogo aberto
+          (o hook recebe `open` como `enabled`): ler a planilha inteira a cada
+          carga do dashboard custaria uma chamada ao Sheets sem ninguém pedir. */}
+      <PerpetualProductTypesDialog
+        projectId={projectId}
+        funnelId={funnel.id}
+        open={showProductTypes}
+        onOpenChange={setShowProductTypes}
       />
 
       {showCampaignManager && pickerData && (

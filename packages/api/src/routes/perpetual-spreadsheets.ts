@@ -7,7 +7,7 @@ import {
   projects,
   projectMembers,
 } from "../db/schema.js";
-import { clearSheetDataCache } from "../services/google-sheets.js";
+import { clearSheetDataCache, readSheetData } from "../services/google-sheets.js";
 
 // ============================================================
 // Epic 29 Story 29.1 — Perpetual Spreadsheet (1 por funil, sem stage)
@@ -54,6 +54,74 @@ const upsertSchema = z.object({
   platform: platformSchema.nullable().optional(),
 });
 
+// Story 29.49 — classificação de produto. Ausente do mapa = `principal`.
+const PRODUCT_TYPES = ["principal", "order_bump", "upsell"] as const;
+type ProductType = (typeof PRODUCT_TYPES)[number];
+const productTypesSchema = z.record(z.string().min(1), z.enum(PRODUCT_TYPES));
+
+/**
+ * Chave canônica de produto: `trim().toLowerCase()`.
+ *
+ * Mesma regra da 18.51a na Captação Paga — sem ela "Imersão" e "imersão"
+ * viram dois produtos, e o gestor classifica um e não entende por que o outro
+ * continua contando como principal.
+ */
+export function productKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+/**
+ * Agrupa os produtos de uma planilha lida e aplica a classificação salva.
+ *
+ * Pura de propósito: é a regra que decide o que o gestor vê no diálogo, e o
+ * caminho HTTP em volta dela depende do Google Sheets — testar por lá cobriria
+ * o transporte, não a regra. Mesmo movimento de `mergeConfigValues` na 29.38.
+ */
+export function aggregateProducts(
+  headers: string[],
+  rows: string[][],
+  productColumn: string | undefined,
+  types: Record<string, ProductType>,
+): { productMapped: boolean; products: Array<{ name: string; count: number; type: ProductType }> } {
+  if (!productColumn) return { productMapped: false, products: [] };
+  const idx = headers.indexOf(productColumn);
+  // Coluna mapeada que sumiu da planilha (renomeada no Sheets) é, para quem
+  // olha a tela, o mesmo beco de "não mapeada": não há o que listar, e a ação
+  // é voltar ao wizard.
+  if (idx === -1) return { productMapped: false, products: [] };
+
+  const byKey = new Map<string, { name: string; count: number }>();
+  for (const row of rows) {
+    const raw = (row[idx] ?? "").trim();
+    if (!raw) continue;
+    const key = productKey(raw);
+    const entry = byKey.get(key) ?? { name: raw, count: 0 };
+    entry.count += 1;
+    byKey.set(key, entry);
+  }
+
+  const products = Array.from(byKey.entries())
+    .map(([key, p]) => ({ name: p.name, count: p.count, type: types[key] ?? ("principal" as ProductType) }))
+    .sort((a, b) => b.count - a.count);
+  return { productMapped: true, products };
+}
+
+/**
+ * Normaliza o mapa antes de gravar: chave canônica e SEM os `principal`.
+ *
+ * `principal` já é o default de quem está ausente. Guardá-lo explicitamente
+ * faria o mapa crescer com informação nula e transformaria "desclassificar um
+ * produto" num caso especial em vez de uma remoção.
+ */
+export function normalizeProductTypes(input: Record<string, string>): Record<string, ProductType> {
+  const out: Record<string, ProductType> = {};
+  for (const [name, tipo] of Object.entries(input)) {
+    if (tipo === "principal") continue;
+    if (tipo === "order_bump" || tipo === "upsell") out[productKey(name)] = tipo;
+  }
+  return out;
+}
+
 function shapeRow(row: typeof funnelSpreadsheets.$inferSelect) {
   return {
     id: row.id,
@@ -63,6 +131,9 @@ function shapeRow(row: typeof funnelSpreadsheets.$inferSelect) {
     sheetName: row.sheetName,
     columnMapping: row.columnMapping as z.infer<typeof columnMappingSchema>,
     platform: (row.platform ?? null) as "kiwify" | "hotmart" | "other" | null,
+    // Story 29.49: sempre presente, `{}` quando nada foi classificado. O web
+    // trata ausente-no-mapa como `principal`.
+    productTypes: (row.productTypes as Record<string, ProductType> | null) ?? {},
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -243,6 +314,99 @@ export default fp(async function perpetualSpreadsheetsRoutes(fastify) {
         );
 
       return reply.code(204).send();
+    },
+  );
+
+  // ---- GET /products ---- (Story 29.49, AC2)
+  /**
+   * Produtos DISTINTOS da planilha, com contagem e tipo já classificado.
+   *
+   * Espelha `stage-sales-spreadsheets.ts:385-452` (Captação Paga), com uma
+   * diferença: lá o retorno é booleano (`isOrderBump`), aqui é o tipo, porque
+   * o perpétuo precisa distinguir order bump de upsell.
+   *
+   * `productMapped: false` quando a coluna de produto não foi mapeada no
+   * wizard. Distinto de `products: []`, que significa "a coluna existe e a
+   * planilha não tem produto nenhum" — as duas pedem ações diferentes do
+   * gestor, e colapsá-las mandaria metade deles procurar no lugar errado.
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/perpetual-spreadsheet/products",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const funnel = await getFunnel(params.data.funnelId, params.data.projectId);
+      if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
+
+      const [sheet] = await fastify.db
+        .select()
+        .from(funnelSpreadsheets)
+        .where(
+          and(
+            eq(funnelSpreadsheets.funnelId, params.data.funnelId),
+            eq(funnelSpreadsheets.type, "perpetual_sales"),
+          ),
+        )
+        .limit(1);
+      if (!sheet) return reply.code(404).send({ error: "Planilha não encontrada" });
+
+      const mapping = sheet.columnMapping as { productName?: string };
+      const types = (sheet.productTypes as Record<string, ProductType> | null) ?? {};
+      if (!mapping.productName) {
+        return { productMapped: false, products: [] };
+      }
+
+      let sheetData;
+      try {
+        sheetData = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
+      } catch {
+        return reply.code(502).send({ error: "Não foi possível ler a planilha" });
+      }
+
+      return aggregateProducts(sheetData.headers, sheetData.rows, mapping.productName, types);
+    },
+  );
+
+  // ---- PUT /product-types ---- (Story 29.49, AC1)
+  fastify.put(
+    "/api/projects/:projectId/funnels/:funnelId/perpetual-spreadsheet/product-types",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+
+      const body = z.object({ productTypes: productTypesSchema }).safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: "productTypes inválido" });
+
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const funnel = await getFunnel(params.data.funnelId, params.data.projectId);
+      if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
+
+      // Grava com a chave canônica e SEM os `principal`: o default já é esse, e
+      // guardá-lo explicitamente faria o mapa crescer com informação nula e a
+      // remoção de uma classificação virar um caso especial.
+      const normalizado = normalizeProductTypes(body.data.productTypes);
+
+      const [row] = await fastify.db
+        .update(funnelSpreadsheets)
+        .set({ productTypes: normalizado, updatedAt: new Date() })
+        .where(
+          and(
+            eq(funnelSpreadsheets.funnelId, params.data.funnelId),
+            eq(funnelSpreadsheets.type, "perpetual_sales"),
+          ),
+        )
+        .returning();
+
+      if (!row) return reply.code(404).send({ error: "Planilha não encontrada" });
+      return shapeRow(row);
     },
   );
 });
