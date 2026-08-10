@@ -1,18 +1,22 @@
 /**
- * Aplicações por dia na Captação Paga — e a comparação com o lançamento anterior.
+ * Aplicações por dia — uma série por planilha de aplicação (forma) do funil, e a
+ * comparação com o lançamento anterior por forma.
  *
- * O gráfico existe pra responder uma pergunta: "estamos melhor ou pior que o
- * lançamento passado nesta altura?". Comparar por DATA não responde isso — dois
- * lançamentos começam em dias diferentes. Por isso a série é indexada em
- * D1/D2/D3: dia relativo ao início de cada lançamento.
+ * O time pode ter MAIS DE UMA planilha de aplicação no mesmo lançamento (ex.:
+ * "form com ticket" e "form sem ticket"). Cada planilha do tipo `applications`
+ * vira uma série própria, nomeada pelo `label` da planilha — é o que aparece no
+ * tooltip/legenda do gráfico.
  *
- * O que é D1: o PRIMEIRO DIA COM APLICAÇÃO daquela planilha. Ancorar assim
- * dispensa cadastrar data de início (que não existe na etapa) e é o marco que o
- * time realmente usa — "dia 1 de aplicação".
+ * Alinhamento em D-day (dia relativo ao início do lançamento) porque a pergunta
+ * é "estamos melhor ou pior que o lançamento passado NESTA altura?" — comparar
+ * por data não responde isso, já que dois lançamentos começam em dias
+ * diferentes. O D1 é definido no nível do LANÇAMENTO (menor data com aplicação
+ * em qualquer forma), não por planilha: assim todas as formas do mesmo
+ * lançamento compartilham o mesmo eixo e ficam comparáveis entre si.
  *
- * O funil de comparação já é configurado no funil (`compareFunnelId`) e reusado
- * aqui: a etapa equivalente é achada pelo mesmo `stageType`, igual faz o
- * comparativo de Meta Ads.
+ * A comparação com o lançamento anterior (`compareFunnelId`, configurado no
+ * funil) é casada FORMA A FORMA pelo nome (label): "form com ticket" do atual
+ * compara com "form com ticket" do anterior.
  */
 
 import { z } from "zod";
@@ -28,7 +32,7 @@ const paramsSchema = z.object({
 });
 
 export interface DailyPoint {
-  /** Dia relativo: 1 = primeiro dia com aplicação. */
+  /** Dia relativo: 1 = primeiro dia com aplicação do lançamento. */
   dia: number;
   /** Data real daquele dia — o tooltip mostra, senão D12 não diz nada. */
   date: string;
@@ -55,45 +59,37 @@ function parseDay(raw: string | undefined): string | null {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** Todos os dias entre o primeiro e o último, inclusive os zerados. */
-function fillGaps(counts: Map<string, number>): DailyPoint[] {
-  const dias = [...counts.keys()].sort();
-  if (!dias.length) return [];
+/** Nome normalizado pra casar a mesma forma entre lançamentos. */
+function normalizeLabel(s: string): string {
+  return s.trim().toLowerCase();
+}
 
-  const inicio = new Date(`${dias[0]}T00:00:00Z`);
-  const fim = new Date(`${dias[dias.length - 1]}T00:00:00Z`);
-  const out: DailyPoint[] = [];
-  let acumulado = 0;
-  let i = 1;
+interface RawForm {
+  sheetId: string;
+  label: string;
+  /** data (aaaa-mm-dd) -> nº de aplicações naquele dia. */
+  counts: Map<string, number>;
+  total: number;
+}
 
-  for (let d = new Date(inicio); d <= fim; d.setUTCDate(d.getUTCDate() + 1)) {
-    const key = d.toISOString().slice(0, 10);
-    // Dia sem aplicação vira 0, não some da série: um buraco no meio da curva é
-    // informação (fim de semana, campanha pausada), e omitir distorceria o D-day
-    // de todos os dias seguintes.
-    const n = counts.get(key) ?? 0;
-    acumulado += n;
-    out.push({ dia: i, date: key, aplicacoes: n, acumulado });
-    i++;
-  }
-  return out;
+interface FormSeries {
+  sheetId: string;
+  label: string;
+  points: DailyPoint[];
+  total: number;
 }
 
 export default fp(async function stageApplicationsRoutes(fastify) {
   /**
-   * Lê a planilha de aplicações de uma etapa e devolve a série diária.
-   * Procura no escopo da ETAPA primeiro; se não achar, aceita uma do FUNIL
-   * (stage_id NULL) — lançamento antigo costuma ter a planilha no funil.
+   * Lê TODAS as planilhas de aplicação de um funil e devolve, por planilha, a
+   * contagem por data (calendário). O alinhamento em D-day é feito depois
+   * (alignForms), no nível do lançamento.
    */
-  async function seriesFor(
-    funnelId: string,
-    stageId: string,
-  ): Promise<{ points: DailyPoint[]; total: number; sheetLabel: string | null }> {
+  async function rawFormsFor(funnelId: string): Promise<RawForm[]> {
     const sheets = await fastify.db
       .select({
         id: funnelSpreadsheets.id,
         label: funnelSpreadsheets.label,
-        stageId: funnelSpreadsheets.stageId,
         spreadsheetId: funnelSpreadsheets.spreadsheetId,
         sheetName: funnelSpreadsheets.sheetName,
         columnMapping: funnelSpreadsheets.columnMapping,
@@ -103,34 +99,73 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         and(eq(funnelSpreadsheets.funnelId, funnelId), eq(funnelSpreadsheets.type, "applications")),
       );
 
-    const sheet = sheets.find((s) => s.stageId === stageId) ?? sheets.find((s) => !s.stageId);
-    if (!sheet) return { points: [], total: 0, sheetLabel: null };
+    return Promise.all(
+      sheets.map(async (sheet): Promise<RawForm> => {
+        const empty: RawForm = {
+          sheetId: sheet.id,
+          label: sheet.label,
+          counts: new Map(),
+          total: 0,
+        };
+        const dateCol = sheet.columnMapping?.date;
+        if (!dateCol) return empty;
 
-    const dateCol = sheet.columnMapping?.date;
-    if (!dateCol) return { points: [], total: 0, sheetLabel: sheet.label };
+        let data: { headers: string[]; rows: string[][] };
+        try {
+          data = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
+        } catch {
+          return empty;
+        }
 
-    let data: { headers: string[]; rows: string[][] };
-    try {
-      data = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
-    } catch {
-      return { points: [], total: 0, sheetLabel: sheet.label };
+        const idx = data.headers.indexOf(dateCol);
+        if (idx === -1) return empty;
+
+        const counts = new Map<string, number>();
+        let total = 0;
+        for (const row of data.rows) {
+          const day = parseDay(row[idx]);
+          // Linha sem data válida (arrasto no fim da planilha, célula em branco)
+          // não entra: entraria como "hoje" e inflaria o último dia.
+          if (!day) continue;
+          counts.set(day, (counts.get(day) ?? 0) + 1);
+          total++;
+        }
+        return { sheetId: sheet.id, label: sheet.label, counts, total };
+      }),
+    );
+  }
+
+  /**
+   * Alinha todas as formas no MESMO eixo D-day: D1 = menor data com aplicação em
+   * qualquer forma; a série vai até a maior data. Dias sem aplicação viram 0 (um
+   * buraco no meio da curva é informação — fim de semana, campanha pausada) e
+   * omiti-los distorceria o D-day dos dias seguintes.
+   */
+  function alignForms(forms: RawForm[]): FormSeries[] {
+    const dates = new Set<string>();
+    for (const f of forms) for (const k of f.counts.keys()) dates.add(k);
+    const sorted = [...dates].sort();
+
+    if (!sorted.length) {
+      return forms.map((f) => ({ sheetId: f.sheetId, label: f.label, points: [], total: f.total }));
     }
 
-    const idx = data.headers.indexOf(dateCol);
-    if (idx === -1) return { points: [], total: 0, sheetLabel: sheet.label };
+    const inicio = new Date(`${sorted[0]}T00:00:00Z`);
+    const fim = new Date(`${sorted[sorted.length - 1]}T00:00:00Z`);
 
-    const counts = new Map<string, number>();
-    let total = 0;
-    for (const row of data.rows) {
-      const day = parseDay(row[idx]);
-      // Linha sem data válida (arrasto no fim da planilha, célula em branco) não
-      // entra: entraria como "hoje" e inflaria o último dia.
-      if (!day) continue;
-      counts.set(day, (counts.get(day) ?? 0) + 1);
-      total++;
-    }
-
-    return { points: fillGaps(counts), total, sheetLabel: sheet.label };
+    return forms.map((f) => {
+      const points: DailyPoint[] = [];
+      let acumulado = 0;
+      let i = 1;
+      for (let d = new Date(inicio); d <= fim; d.setUTCDate(d.getUTCDate() + 1)) {
+        const key = d.toISOString().slice(0, 10);
+        const n = f.counts.get(key) ?? 0;
+        acumulado += n;
+        points.push({ dia: i, date: key, aplicacoes: n, acumulado });
+        i++;
+      }
+      return { sheetId: f.sheetId, label: f.label, points, total: f.total };
+    });
   }
 
   fastify.get(
@@ -145,7 +180,6 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         .select({
           funnelName: funnels.name,
           compareFunnelId: funnels.compareFunnelId,
-          stageType: funnelStages.stageType,
         })
         .from(funnelStages)
         .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
@@ -159,64 +193,56 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         .limit(1);
       if (!ctx) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      const atual = await seriesFor(funnelId, stageId);
+      const atual = alignForms(await rawFormsFor(funnelId));
 
-      // Comparação: mesma etapa (por stageType) no funil de comparação.
-      let comparacao: {
-        funnelName: string;
-        points: DailyPoint[];
-        total: number;
-        semPlanilha: boolean;
-      } | null = null;
-
+      // Comparação forma a forma (casada por nome) com o lançamento anterior.
+      let compareFunnelName: string | null = null;
+      const compareByLabel = new Map<string, FormSeries>();
       if (ctx.compareFunnelId) {
         const [cmpFunnel] = await fastify.db
           .select({ id: funnels.id, name: funnels.name })
           .from(funnels)
           .where(eq(funnels.id, ctx.compareFunnelId))
           .limit(1);
-
-        const [cmpStage] = await fastify.db
-          .select({ id: funnelStages.id })
-          .from(funnelStages)
-          .where(
-            and(
-              eq(funnelStages.funnelId, ctx.compareFunnelId),
-              eq(funnelStages.stageType, ctx.stageType),
-            ),
-          )
-          .limit(1);
-
-        if (cmpFunnel && cmpStage) {
-          const s = await seriesFor(ctx.compareFunnelId, cmpStage.id);
-          comparacao = {
-            funnelName: cmpFunnel.name,
-            points: s.points,
-            total: s.total,
-            semPlanilha: s.sheetLabel === null,
-          };
+        if (cmpFunnel) {
+          compareFunnelName = cmpFunnel.name;
+          for (const f of alignForms(await rawFormsFor(ctx.compareFunnelId))) {
+            compareByLabel.set(normalizeLabel(f.label), f);
+          }
         }
       }
 
-      // Delta na MESMA altura: compara o acumulado do atual com o acumulado do
-      // anterior no mesmo D-day. Comparar com o total final do anterior diria que
-      // estamos sempre perdendo até o último dia — leitura inútil.
-      let deltaPercent: number | null = null;
-      const ultimoDia = atual.points.length;
-      if (ultimoDia > 0 && comparacao?.points.length) {
-        const base = comparacao.points.find((p) => p.dia === ultimoDia)?.acumulado;
-        const meu = atual.points[ultimoDia - 1].acumulado;
-        if (base && base > 0) deltaPercent = +(((meu - base) / base) * 100).toFixed(1);
-      }
+      const forms = atual.map((f) => {
+        const cmp = compareByLabel.get(normalizeLabel(f.label)) ?? null;
+
+        // Delta na MESMA altura: acumulado do atual vs. o do anterior no mesmo
+        // D-day. Comparar com o total final do anterior diria que estamos sempre
+        // perdendo até o último dia — leitura inútil.
+        let deltaPercent: number | null = null;
+        const ultimoDia = f.points.length;
+        if (ultimoDia > 0 && cmp && cmp.points.length) {
+          const base = cmp.points.find((p) => p.dia === ultimoDia)?.acumulado;
+          const meu = f.points[ultimoDia - 1].acumulado;
+          if (base && base > 0) deltaPercent = +(((meu - base) / base) * 100).toFixed(1);
+        }
+
+        return {
+          sheetId: f.sheetId,
+          label: f.label,
+          total: f.total,
+          points: f.points,
+          comparacao: cmp ? { points: cmp.points, total: cmp.total } : null,
+          deltaPercent,
+        };
+      });
 
       return {
         funnelName: ctx.funnelName,
-        semPlanilha: atual.sheetLabel === null,
-        sheetLabel: atual.sheetLabel,
-        total: atual.total,
-        points: atual.points,
-        comparacao,
-        deltaPercent,
+        compareFunnelName,
+        // Sem nenhuma planilha de aplicação vinculada — não é erro, é etapa que
+        // ainda não tem comercial rodando.
+        semPlanilha: forms.length === 0,
+        forms,
       };
     },
   );

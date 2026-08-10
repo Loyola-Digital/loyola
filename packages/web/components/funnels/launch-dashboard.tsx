@@ -67,7 +67,6 @@ import {
 import { useOrganicLeadsByDay } from "@/lib/hooks/use-organic-leads-by-day";
 import { useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { SurveyQualificationSection } from "./survey-qualification-section";
-import { ApplicationsDailyChart } from "./applications-daily-chart";
 import { GroupsDashboardSection } from "./groups-dashboard-section";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
@@ -776,12 +775,8 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         </div>
       )}
 
-      {/* Aplicações do comercial — só na Captação Paga, que é onde o comercial
-          entra depois do lançamento. Alinhado em D1/D2/D3 contra o lançamento
-          de comparação já configurado no funil. */}
-      {isPaidCapture && stageId && (
-        <ApplicationsDailyChart projectId={projectId} funnelId={funnel.id} stageId={stageId} />
-      )}
+      {/* Aplicações por dia foi movido para a etapa de Vendas (perto do volume
+          de vendas) — ver sales-stage-view.tsx. */}
 
       {/* Resultados da Pesquisa — Qualificação do público (Story 18.6 sub-feature 3.a) */}
       <SurveyQualificationSection

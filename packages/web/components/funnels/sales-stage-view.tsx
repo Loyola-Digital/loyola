@@ -21,6 +21,7 @@ import { SalesMetaKpis } from "./sales-meta-kpis";
 import { MauticStageTab } from "./mautic-stage-tab";
 import { SalesConversionCard } from "./sales-conversion-card";
 import { SalesDailyComparisonChart } from "./sales-daily-comparison-chart";
+import { ApplicationsDailyChart } from "./applications-daily-chart";
 import { BuyersOriginCard } from "./buyers-origin-card";
 import { LeadJourneyPanel } from "./lead-journey-panel";
 import { ManualPixSalesSection } from "./manual-pix-sales-section";
@@ -186,6 +187,16 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
           />
           {/* Ritmo de venda contra o lançamento anterior, alinhado em D-day. */}
           <SalesDailyComparisonChart
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+          />
+          {/* Aplicações por dia (captação do comercial) — ao lado do volume de
+              vendas. Uma linha por planilha de aplicação do funil (ex.: form com
+              ticket / sem ticket); o endpoint lê todas as planilhas
+              `applications` do funil, então renderizar a partir da etapa de
+              Vendas funciona. */}
+          <ApplicationsDailyChart
             projectId={projectId}
             funnelId={funnelId}
             stageId={stage.id}
