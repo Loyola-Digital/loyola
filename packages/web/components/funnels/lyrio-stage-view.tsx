@@ -17,9 +17,14 @@ import {
   TrendingUp,
   Users,
   Repeat,
+  Wallet,
+  Coins,
+  CalendarClock,
+  Activity,
+  HelpCircle,
 } from "lucide-react";
 import {
-  CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -82,6 +87,21 @@ function fmtBRL(v: number | null | undefined): string {
   if (v == null) return "—";
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 }
+/** Moeda compacta pra eixo/rótulo (ex.: R$ 1,2 mil, US$ 900). */
+function fmtCompactMoney(v: number, currency: "BRL" | "USD"): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency,
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(v);
+}
+/** Meses -> texto amigável ("2,3 meses", "< 1 mês"). */
+function fmtMonths(v: number | null): string {
+  if (v == null) return "—";
+  if (v < 1) return "< 1 mês";
+  return `${v.toFixed(1).replace(".", ",")} ${v >= 2 ? "meses" : "mês"}`;
+}
 /** Converte USD -> BRL pela cotação; "—" quando falta valor ou câmbio. */
 function brl(usd: number | null | undefined, rate: number | null): string {
   if (usd == null || rate == null) return "—";
@@ -142,8 +162,20 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   const newCustomers = metricValue(ov, "new_customers_last_28_days", "new_customers");
   const revenue28Usd = metricValue(ov, "revenue_last_28_days", "revenue");
   const revenue28Brl = revenue28Usd != null && brlRate != null ? revenue28Usd * brlRate : null;
+  const mrrBrl = mrrUsd != null && brlRate != null ? mrrUsd * brlRate : null;
   const roas28 =
     revenue28Brl != null && metaSpend28 > 0 ? revenue28Brl / metaSpend28 : null;
+
+  // Unit economics (economia por cliente) — tudo em R$:
+  // • ARPU = receita recorrente mensal (MRR) ÷ assinantes ativos → quanto cada
+  //   assinante rende por mês.
+  // • CAC = investimento em anúncio (28d) ÷ clientes novos (28d) → quanto custa
+  //   trazer 1 cliente novo.
+  // • Payback = CAC ÷ ARPU → em quantos meses o cliente paga o que custou.
+  const arpuBrl = mrrBrl != null && activeSubs != null && activeSubs > 0 ? mrrBrl / activeSubs : null;
+  const cac =
+    newCustomers != null && newCustomers > 0 && metaSpend28 > 0 ? metaSpend28 / newCustomers : null;
+  const paybackMonths = cac != null && arpuBrl != null && arpuBrl > 0 ? cac / arpuBrl : null;
 
   async function handleSaveName() {
     if (!stageName.trim() || stageName.trim() === stage.name) return;
@@ -404,11 +436,17 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
         </div>
       </div>
 
-      {/* Resumo Mobile — visão unificada em R$ (aquisição Meta + monetização
-          RevenueCat). Janela de 28 dias (a que o RevenueCat expõe no overview). */}
-      <section className="spy-viz space-y-2 rounded-xl border border-border/40 bg-card p-4">
+      {/* Saúde do app — hero band em R$ (aquisição Meta + monetização RevenueCat).
+          Janela de 28 dias (a que o RevenueCat expõe no overview). Métricas-herói
+          grandes + linha de apoio, cada uma com explicação em linguagem simples. */}
+      <section className="spy-viz space-y-3 rounded-xl border border-border/40 bg-card p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold">Resumo mobile · últimos 28 dias</h2>
+          <div>
+            <h2 className="text-sm font-semibold">Saúde do app · últimos 28 dias</h2>
+            <p className="text-[11px] text-muted-foreground">
+              Os números que dizem se o app está crescendo e dando lucro.
+            </p>
+          </div>
           <p className="text-[10px] text-muted-foreground">
             Tudo em R$
             {brlRate != null && (
@@ -419,15 +457,67 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
             )}
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-          <Kpi icon={Zap} label="Investimento (Meta)" value={fmtBRL(metaSpend28)} />
-          <Kpi icon={DollarSign} label="Receita (RevenueCat)" value={brl(revenue28Usd, brlRate)} />
-          <Kpi icon={TrendingUp} label="ROAS" value={fmtRoas(roas28)} highlight />
-          <Kpi icon={Repeat} label="MRR" value={brl(mrrUsd, brlRate)} />
-          <Kpi icon={Package} label="Assinaturas ativas" value={fmtNum(activeSubs)} />
-          <Kpi icon={ShoppingCart} label="Trials ativos" value={fmtNum(activeTrials)} />
-          <Kpi icon={Users} label="Novos clientes" value={fmtNum(newCustomers)} />
+
+        {/* Métricas-herói */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Kpi
+            icon={Repeat}
+            label="MRR"
+            value={brl(mrrUsd, brlRate)}
+            hint="Receita recorrente por mês — o coração de um app de assinatura"
+            tooltip="Monthly Recurring Revenue: soma do valor mensal de todas as assinaturas ativas."
+            highlight
+            big
+          />
+          <Kpi
+            icon={DollarSign}
+            label="Receita (28 dias)"
+            value={brl(revenue28Usd, brlRate)}
+            hint="Quanto entrou de fato nos últimos 28 dias"
+            tooltip="Receita reconhecida pelo RevenueCat nos últimos 28 dias, convertida pra R$."
+            big
+          />
+          <Kpi
+            icon={TrendingUp}
+            label="ROAS"
+            value={fmtRoas(roas28)}
+            hint="Retorno do anúncio: R$ de receita por R$1 investido na Meta"
+            tooltip="Receita 28d ÷ Investimento Meta 28d. Acima de 1x já se paga; quanto maior, melhor."
+            big
+          />
+          <Kpi
+            icon={Package}
+            label="Assinantes ativos"
+            value={fmtNum(activeSubs)}
+            hint="Pessoas pagando assinatura agora"
+            tooltip="Assinaturas ativas no momento (fonte: RevenueCat)."
+            big
+          />
         </div>
+
+        {/* Linha de apoio */}
+        <div className="grid grid-cols-3 gap-3">
+          <Kpi
+            icon={Zap}
+            label="Investimento (Meta)"
+            value={fmtBRL(metaSpend28)}
+            hint="Gasto em anúncio (28d)"
+          />
+          <Kpi
+            icon={ShoppingCart}
+            label="Trials ativos"
+            value={fmtNum(activeTrials)}
+            hint="Em teste grátis — futuros pagantes"
+            tooltip="Usuários no período de teste gratuito; parte deles vira assinante pagante."
+          />
+          <Kpi
+            icon={Users}
+            label="Novos clientes"
+            value={fmtNum(newCustomers)}
+            hint="Primeiras compras (28d)"
+          />
+        </div>
+
         {!connected && (
           <p className="text-[11px] text-muted-foreground">
             Conecte o RevenueCat em <strong>Configurar</strong> pra preencher receita, MRR e
@@ -436,9 +526,20 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
         )}
       </section>
 
+      {/* Economia por cliente (unit economics) — o bloco que responde
+          "cada cliente dá lucro?". Só aparece quando dá pra calcular. */}
+      {(cac != null || arpuBrl != null) && (
+        <UnitEconomics cac={cac} arpuBrl={arpuBrl} paybackMonths={paybackMonths} />
+      )}
+
       {/* Meta — conversões + spend das campanhas linkadas */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-muted-foreground">Meta Ads</h2>
+        <div>
+          <h2 className="text-sm font-semibold">Aquisição · como você traz clientes</h2>
+          <p className="text-[11px] text-muted-foreground">
+            Anúncios da Meta: do investimento até a venda, passo a passo.
+          </p>
+        </div>
         <SalesMetaKpis
           projectId={projectId}
           funnelId={funnelId}
@@ -450,7 +551,12 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
 
       {/* RevenueCat — métricas ao vivo (API) + vendas do período (webhook) */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-muted-foreground">RevenueCat</h2>
+        <div>
+          <h2 className="text-sm font-semibold">Monetização · vendas e assinaturas</h2>
+          <p className="text-[11px] text-muted-foreground">
+            Dados do RevenueCat: quanto o app vende por dia e de onde vem a receita.
+          </p>
+        </div>
         <RevenuecatOverviewPanel
           loading={overview.isLoading}
           connected={connected}
@@ -517,18 +623,30 @@ function RevenuecatPanel({
   const byStore = data?.byStore ?? [];
   const byProduct = data?.byProduct ?? [];
 
+  // Série diária de RECEITA (não contagem) na moeda de exibição — receita é o
+  // que importa num app de assinatura; área comunica volume no tempo.
+  const cur: "BRL" | "USD" = brlRate != null ? "BRL" : "USD";
+  const dailyChart = daily.map((d) => ({
+    day: d.day,
+    sales: d.sales,
+    revenue: brlRate != null ? d.revenueUsd * brlRate : d.revenueUsd,
+  }));
+  const ticketMedio = totalSales > 0 ? revenueUsd / totalSales : null;
+
   return (
     <div className="spy-viz space-y-4 rounded-xl border border-border/40 bg-card p-4">
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Kpi icon={ShoppingCart} label="Vendas" value={fmtNum(totalSales)} />
+        <Kpi icon={ShoppingCart} label="Vendas" value={fmtNum(totalSales)} hint="Compras no período" />
         <Kpi
           icon={DollarSign}
           label={brlRate != null ? "Receita" : "Receita (USD)"}
           value={money(revenueUsd)}
+          hint="Total do período"
           highlight
         />
-        {byCurrency.slice(0, 2).map((c) => (
+        <Kpi icon={Coins} label="Ticket médio" value={money(ticketMedio)} hint="Receita ÷ vendas" />
+        {byCurrency.slice(0, 1).map((c) => (
           <Kpi
             key={c.currency}
             icon={DollarSign}
@@ -544,71 +662,89 @@ function RevenuecatPanel({
           na janela selecionada.
         </p>
       ) : (
-        <div className="h-[240px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={daily} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-              <CartesianGrid stroke="var(--viz-grid)" strokeDasharray="0" vertical={false} />
-              <XAxis
-                dataKey="day"
-                tickFormatter={fmtDay}
-                tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
-                tickLine={false}
-                axisLine={{ stroke: "var(--viz-axis)" }}
-                interval={daily.length > 20 ? Math.floor(daily.length / 12) : 0}
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
-                tickLine={false}
-                axisLine={{ stroke: "var(--viz-axis)" }}
-                width={40}
-              />
-              <Tooltip
-                cursor={{ stroke: "var(--viz-axis)", strokeWidth: 1 }}
-                content={({ active, payload, label }) => {
-                  if (!active || !payload?.length) return null;
-                  const p = payload[0]?.payload as { sales: number; revenueUsd: number };
-                  return (
-                    <div className="rounded-lg border border-border/60 bg-popover px-2.5 py-2 shadow-lg">
-                      <p className="mb-1 text-[11px] font-medium text-muted-foreground">
-                        {fmtDay(String(label))}
-                      </p>
-                      <p className="text-sm font-semibold tabular-nums">{fmtNum(p.sales)} vendas</p>
-                      <p className="text-[11px] text-muted-foreground tabular-nums">
-                        {money(p.revenueUsd)}
-                      </p>
-                    </div>
-                  );
-                }}
-              />
-              <Line
-                name="Vendas"
-                type="monotone"
-                dataKey="sales"
-                stroke="var(--viz-series-1)"
-                strokeWidth={2}
-                dot={false}
-                activeDot={{ r: 5, stroke: "var(--color-card)", strokeWidth: 2 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">
+            Receita por dia {brlRate != null ? "(R$)" : "(US$)"}
+          </p>
+          <div className="h-[240px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={dailyChart} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id="lyrioRev" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--viz-series-1)" stopOpacity={0.28} />
+                    <stop offset="100%" stopColor="var(--viz-series-1)" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="var(--viz-grid)" strokeDasharray="0" vertical={false} />
+                <XAxis
+                  dataKey="day"
+                  tickFormatter={fmtDay}
+                  tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                  tickLine={false}
+                  axisLine={{ stroke: "var(--viz-axis)" }}
+                  interval={dailyChart.length > 20 ? Math.floor(dailyChart.length / 12) : 0}
+                />
+                <YAxis
+                  tickFormatter={(v: number) => fmtCompactMoney(v, cur)}
+                  tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                  tickLine={false}
+                  axisLine={{ stroke: "var(--viz-axis)" }}
+                  width={56}
+                />
+                <Tooltip
+                  cursor={{ stroke: "var(--viz-axis)", strokeWidth: 1 }}
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null;
+                    const p = payload[0]?.payload as { sales: number; revenue: number };
+                    return (
+                      <div className="rounded-lg border border-border/60 bg-popover px-2.5 py-2 shadow-lg">
+                        <p className="mb-1 text-[11px] font-medium text-muted-foreground">
+                          {fmtDay(String(label))}
+                        </p>
+                        <p className="text-sm font-semibold tabular-nums">
+                          {cur === "BRL" ? fmtBRL(p.revenue) : fmtUsd(p.revenue)}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground tabular-nums">
+                          {fmtNum(p.sales)} {p.sales === 1 ? "venda" : "vendas"}
+                        </p>
+                      </div>
+                    );
+                  }}
+                />
+                <Area
+                  name="Receita"
+                  type="monotone"
+                  dataKey="revenue"
+                  stroke="var(--viz-series-1)"
+                  strokeWidth={2}
+                  fill="url(#lyrioRev)"
+                  dot={false}
+                  activeDot={{ r: 5, stroke: "var(--color-card)", strokeWidth: 2 }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       )}
 
-      {/* Breakdown por loja e produto */}
+      {/* Breakdown por loja e produto — barras horizontais (magnitude por
+          identidade), com receita como rótulo direto. */}
       {(byStore.length > 0 || byProduct.length > 0) && (
         <div className="grid gap-4 sm:grid-cols-2">
           {byStore.length > 0 && (
-            <BreakdownTable
+            <BreakdownBars
               icon={Store}
-              title="Por loja"
+              title="Receita por loja"
+              color="var(--viz-series-1)"
               money={money}
               rows={byStore.map((s) => ({ label: s.store, sales: s.sales, revenueUsd: s.revenueUsd }))}
             />
           )}
           {byProduct.length > 0 && (
-            <BreakdownTable
+            <BreakdownBars
               icon={Package}
-              title="Por produto"
+              title="Receita por produto"
+              color="var(--viz-series-2)"
               money={money}
               rows={byProduct.map((p) => ({ label: p.productId, sales: p.sales, revenueUsd: p.revenueUsd }))}
             />
@@ -722,55 +858,208 @@ function Kpi({
   label,
   value,
   highlight,
+  hint,
+  tooltip,
+  big,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
   highlight?: boolean;
+  /** Explicação curta em linguagem simples (aparece abaixo do valor). */
+  hint?: string;
+  /** Texto no hover (title nativo) — detalhe da conta. */
+  tooltip?: string;
+  /** Card maior pra métricas-herói. */
+  big?: boolean;
 }) {
   return (
     <div
       className={`rounded-lg border p-3 space-y-1 ${
         highlight ? "border-primary/30 bg-primary/5" : "border-border/50"
       }`}
+      title={tooltip}
     >
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Icon className="h-3.5 w-3.5" />
-        {label}
+        <Icon className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">{label}</span>
+        {tooltip && <HelpCircle className="h-3 w-3 shrink-0 opacity-40" />}
       </div>
-      <p className={`text-base font-bold ${highlight ? "text-primary" : ""}`}>{value}</p>
+      <p
+        className={`font-bold tabular-nums ${big ? "text-2xl" : "text-base"} ${
+          highlight ? "text-primary" : ""
+        }`}
+      >
+        {value}
+      </p>
+      {hint && <p className="text-[10px] leading-tight text-muted-foreground">{hint}</p>}
     </div>
   );
 }
 
-function BreakdownTable({
+function BreakdownBars({
   icon: Icon,
   title,
   rows,
   money,
+  color,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   rows: { label: string; sales: number; revenueUsd: number }[];
   money: (usd: number | null | undefined) => string;
+  color: string;
 }) {
+  const sorted = [...rows].sort((a, b) => b.revenueUsd - a.revenueUsd);
+  const max = Math.max(...sorted.map((r) => r.revenueUsd), 0);
   return (
-    <div className="rounded-lg border border-border/40">
-      <div className="flex items-center gap-1.5 border-b border-border/40 px-3 py-2 text-xs font-medium">
+    <div className="rounded-lg border border-border/40 p-3">
+      <div className="mb-3 flex items-center gap-1.5 text-xs font-medium">
         <Icon className="h-3.5 w-3.5 text-muted-foreground" />
         {title}
       </div>
-      <table className="w-full text-xs">
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.label} className="border-t border-border/30 first:border-t-0">
-              <td className="px-3 py-1.5 truncate max-w-[160px]">{r.label}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">{fmtNum(r.sales)}</td>
-              <td className="px-3 py-1.5 text-right tabular-nums">{money(r.revenueUsd)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="space-y-2.5">
+        {sorted.map((r) => {
+          const pct = max > 0 ? Math.max((r.revenueUsd / max) * 100, 2) : 0;
+          return (
+            <div key={r.label} className="space-y-1">
+              <div className="flex items-baseline justify-between gap-2 text-xs">
+                <span className="truncate" title={r.label}>{r.label}</span>
+                <span className="shrink-0 tabular-nums font-medium">
+                  {money(r.revenueUsd)}
+                  <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
+                    {fmtNum(r.sales)} {r.sales === 1 ? "venda" : "vendas"}
+                  </span>
+                </span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted/40">
+                <div
+                  className="h-full rounded-full"
+                  style={{ width: `${pct}%`, backgroundColor: color }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
+  );
+}
+
+// ============================================================
+// Economia por cliente (unit economics) — CAC vs ARPU + Payback.
+// Bloco didático: mostra em linguagem simples se cada cliente dá lucro.
+// ============================================================
+
+function UnitEconomics({
+  cac,
+  arpuBrl,
+  paybackMonths,
+}: {
+  cac: number | null;
+  arpuBrl: number | null;
+  paybackMonths: number | null;
+}) {
+  // Barra comparativa CAC (custo) vs ARPU (retorno/mês). Escala pelo maior.
+  const scale = Math.max(cac ?? 0, arpuBrl ?? 0, 0.01);
+  const cacPct = cac != null ? Math.max((cac / scale) * 100, 2) : 0;
+  const arpuPct = arpuBrl != null ? Math.max((arpuBrl / scale) * 100, 2) : 0;
+
+  // Leitura de saúde do payback (regra de bolso p/ apps de assinatura:
+  // recuperar o CAC em até ~12 meses é saudável).
+  let verdict: { label: string; cls: string } | null = null;
+  if (paybackMonths != null) {
+    if (paybackMonths <= 6)
+      verdict = { label: "Excelente — cliente se paga rápido", cls: "text-emerald-600 dark:text-emerald-400" };
+    else if (paybackMonths <= 12)
+      verdict = { label: "Saudável — dentro do recomendado (até 12 meses)", cls: "text-emerald-600 dark:text-emerald-400" };
+    else if (paybackMonths <= 18)
+      verdict = { label: "Atenção — demora a se pagar", cls: "text-amber-600 dark:text-amber-400" };
+    else verdict = { label: "Crítico — custo de aquisição alto demais", cls: "text-red-600 dark:text-red-400" };
+  }
+
+  return (
+    <section className="spy-viz space-y-3 rounded-xl border border-border/40 bg-card p-4">
+      <div>
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+          <Activity className="h-4 w-4 text-primary" />
+          Economia por cliente
+        </h2>
+        <p className="text-[11px] text-muted-foreground">
+          Cada cliente dá lucro? Compare o custo de trazê-lo com o quanto ele rende por mês.
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Kpi
+          icon={Wallet}
+          label="CAC"
+          value={cac != null ? fmtBRL(cac) : "—"}
+          hint="Custo pra trazer 1 cliente novo"
+          tooltip="Custo de Aquisição = Investimento Meta (28d) ÷ clientes novos (28d)."
+        />
+        <Kpi
+          icon={Coins}
+          label="ARPU"
+          value={arpuBrl != null ? fmtBRL(arpuBrl) : "—"}
+          hint="Quanto cada assinante rende por mês"
+          tooltip="Average Revenue Per User = MRR ÷ assinantes ativos."
+        />
+        <Kpi
+          icon={CalendarClock}
+          label="Payback"
+          value={fmtMonths(paybackMonths)}
+          hint="Meses até o cliente pagar o que custou"
+          tooltip="Payback = CAC ÷ ARPU. Quanto menor, mais rápido o cliente se paga."
+          highlight
+        />
+      </div>
+
+      {(cac != null || arpuBrl != null) && (
+        <div className="space-y-2 rounded-lg border border-border/40 p-3">
+          <div className="space-y-1">
+            <div className="flex items-baseline justify-between gap-2 text-xs">
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <span
+                  className="inline-block h-2.5 w-2.5 rounded-sm"
+                  style={{ backgroundColor: "var(--viz-series-2)" }}
+                />
+                Custo pra trazer (CAC)
+              </span>
+              <span className="tabular-nums font-medium">{cac != null ? fmtBRL(cac) : "—"}</span>
+            </div>
+            <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted/40">
+              <div
+                className="h-full rounded-full"
+                style={{ width: `${cacPct}%`, backgroundColor: "var(--viz-series-2)" }}
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-baseline justify-between gap-2 text-xs">
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <span
+                  className="inline-block h-2.5 w-2.5 rounded-sm"
+                  style={{ backgroundColor: "var(--viz-series-3)" }}
+                />
+                Rende por mês (ARPU)
+              </span>
+              <span className="tabular-nums font-medium">{arpuBrl != null ? fmtBRL(arpuBrl) : "—"}</span>
+            </div>
+            <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted/40">
+              <div
+                className="h-full rounded-full"
+                style={{ width: `${arpuPct}%`, backgroundColor: "var(--viz-series-3)" }}
+              />
+            </div>
+          </div>
+          {verdict && (
+            <p className={`pt-1 text-[11px] font-medium ${verdict.cls}`}>
+              {fmtMonths(paybackMonths)} pra se pagar · {verdict.label}
+            </p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
