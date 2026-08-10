@@ -27,7 +27,7 @@ const paramsSchema = z.object({
   stageId: z.string().uuid(),
 });
 
-// A conexão Zoom é POR PROJETO (migration 0100) — só as reuniões vinculadas
+// A conexão Zoom é POR PROJETO (migration 0101) — só as reuniões vinculadas
 // continuam por etapa.
 const projectParamsSchema = z.object({ projectId: z.string().uuid() });
 

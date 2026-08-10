@@ -1,4 +1,4 @@
-// Aplica a migration 0100_zoom_project_connection.sql (conexão Zoom passa de
+// Aplica a migration 0101_zoom_project_connection.sql (conexão Zoom passa de
 // por-etapa para por-projeto, migrando as conexões existentes). Mesmo padrão do
 // apply-funnel-mobile-migration.ts — usa a DATABASE_URL do .env.
 //
@@ -13,7 +13,7 @@ import { Pool } from "pg";
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const sqlPath = path.join(__dirname, "../db/migrations/0100_zoom_project_connection.sql");
+const sqlPath = path.join(__dirname, "../db/migrations/0101_zoom_project_connection.sql");
 const sql = readFileSync(sqlPath, "utf-8");
 
 async function main() {
