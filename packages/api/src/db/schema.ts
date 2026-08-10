@@ -1232,17 +1232,19 @@ export const funnelBatchTurns = pgTable(
 );
 
 // ============================================================
-// ZOOM INTEGRATION (Story 19.8 — stage-level)
+// ZOOM INTEGRATION (Story 19.8 — conexão por projeto)
+// Migration 0100: a conexão era por etapa e virou POR PROJETO (mesmo padrão do
+// Mautic). As reuniões vinculadas seguem por etapa — ver funnelStageZoomMeetings.
 // ============================================================
 
-export const funnelStageZoomConnections = pgTable(
-  "funnel_stage_zoom_connections",
+export const projectZoomConnections = pgTable(
+  "project_zoom_connections",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    stageId: uuid("stage_id")
+    projectId: uuid("project_id")
       .notNull()
       .unique()
-      .references(() => funnelStages.id, { onDelete: "cascade" }),
+      .references(() => projects.id, { onDelete: "cascade" }),
     accountId: varchar("account_id", { length: 255 }).notNull(),
     clientId: varchar("client_id", { length: 255 }).notNull(),
     clientSecretEncrypted: text("client_secret_encrypted").notNull(),
@@ -1250,7 +1252,7 @@ export const funnelStageZoomConnections = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index("idx_zoom_connections_stage").on(table.stageId)]
+  (table) => [index("idx_project_zoom_connections_project").on(table.projectId)]
 );
 
 // ============================================================

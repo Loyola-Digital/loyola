@@ -2,7 +2,7 @@ import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
-  funnelStageZoomConnections,
+  projectZoomConnections,
   funnelStageZoomMeetings,
   funnelStages,
   funnels,
@@ -26,6 +26,10 @@ const paramsSchema = z.object({
   funnelId: z.string().uuid(),
   stageId: z.string().uuid(),
 });
+
+// A conexão Zoom é POR PROJETO (migration 0100) — só as reuniões vinculadas
+// continuam por etapa.
+const projectParamsSchema = z.object({ projectId: z.string().uuid() });
 
 // Estado de sync ativo em memória (true = sincronizando agora, false/missing
 // = idle). Persistente entre requests do mesmo processo. Reset em restart.
@@ -89,25 +93,24 @@ export default fp(async function zoomStageRoutes(fastify) {
     return stage ?? null;
   }
 
-  async function getConnection(stageId: string) {
+  /** Conexão Zoom do projeto (global — vale pra todas as etapas). */
+  async function getConnection(projectId: string) {
     const [row] = await fastify.db
       .select()
-      .from(funnelStageZoomConnections)
-      .where(eq(funnelStageZoomConnections.stageId, stageId))
+      .from(projectZoomConnections)
+      .where(eq(projectZoomConnections.projectId, projectId))
       .limit(1);
     return row ?? null;
   }
 
-  // ------------ GET connection ------------
-  fastify.get("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/zoom/connection", async (request, reply) => {
-    const params = paramsSchema.safeParse(request.params);
+  // ------------ GET connection (projeto) ------------
+  fastify.get("/api/projects/:projectId/zoom/connection", async (request, reply) => {
+    const params = projectParamsSchema.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
     const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
     if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
-    const stage = await checkStage(params.data.projectId, params.data.funnelId, params.data.stageId);
-    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-    const conn = await getConnection(params.data.stageId);
+    const conn = await getConnection(params.data.projectId);
     if (!conn) return { connected: false };
     return {
       connected: true,
@@ -118,10 +121,10 @@ export default fp(async function zoomStageRoutes(fastify) {
     };
   });
 
-  // ------------ POST connection (create or update) ------------
-  fastify.post("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/zoom/connection", async (request, reply) => {
+  // ------------ POST connection (create or update, projeto) ------------
+  fastify.post("/api/projects/:projectId/zoom/connection", async (request, reply) => {
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
-    const params = paramsSchema.safeParse(request.params);
+    const params = projectParamsSchema.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
     const bodySchema = z.object({
       accountId: z.string().min(1),
@@ -133,8 +136,6 @@ export default fp(async function zoomStageRoutes(fastify) {
 
     const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
     if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
-    const stage = await checkStage(params.data.projectId, params.data.funnelId, params.data.stageId);
-    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
     // Valida credenciais antes de salvar
     try {
@@ -146,16 +147,16 @@ export default fp(async function zoomStageRoutes(fastify) {
 
     const enc = encrypt(body.data.clientSecret);
     await fastify.db
-      .insert(funnelStageZoomConnections)
+      .insert(projectZoomConnections)
       .values({
-        stageId: params.data.stageId,
+        projectId: params.data.projectId,
         accountId: body.data.accountId,
         clientId: body.data.clientId,
         clientSecretEncrypted: enc.encrypted,
         clientSecretIv: enc.iv,
       })
       .onConflictDoUpdate({
-        target: funnelStageZoomConnections.stageId,
+        target: projectZoomConnections.projectId,
         set: {
           accountId: body.data.accountId,
           clientId: body.data.clientId,
@@ -168,25 +169,27 @@ export default fp(async function zoomStageRoutes(fastify) {
     return { connected: true };
   });
 
-  // ------------ DELETE connection ------------
-  fastify.delete("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/zoom/connection", async (request, reply) => {
+  // ------------ DELETE connection (projeto) ------------
+  fastify.delete("/api/projects/:projectId/zoom/connection", async (request, reply) => {
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
-    const params = paramsSchema.safeParse(request.params);
+    const params = projectParamsSchema.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
     const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
     if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
-    await fastify.db.delete(funnelStageZoomConnections).where(eq(funnelStageZoomConnections.stageId, params.data.stageId));
+    await fastify.db
+      .delete(projectZoomConnections)
+      .where(eq(projectZoomConnections.projectId, params.data.projectId));
     return reply.code(204).send();
   });
 
-  // ------------ GET past meetings (lista do Zoom) ------------
-  fastify.get("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/zoom/past-meetings", async (request, reply) => {
-    const params = paramsSchema.safeParse(request.params);
+  // ------------ GET past meetings (lista do Zoom, projeto) ------------
+  fastify.get("/api/projects/:projectId/zoom/past-meetings", async (request, reply) => {
+    const params = projectParamsSchema.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
     const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
     if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
 
-    const conn = await getConnection(params.data.stageId);
+    const conn = await getConnection(params.data.projectId);
     if (!conn) return reply.code(404).send({ error: "Conexão Zoom não configurada" });
 
     try {
@@ -214,6 +217,8 @@ export default fp(async function zoomStageRoutes(fastify) {
     if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
     const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
     if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await checkStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
     const rows = await fastify.db
       .select()
@@ -410,8 +415,10 @@ export default fp(async function zoomStageRoutes(fastify) {
 
     const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
     if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await checkStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-    const conn = await getConnection(params.data.stageId);
+    const conn = await getConnection(params.data.projectId);
     if (!conn) return reply.code(404).send({ error: "Conexão Zoom não configurada" });
 
     try {
@@ -482,6 +489,8 @@ export default fp(async function zoomStageRoutes(fastify) {
     if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
     const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
     if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await checkStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
     await fastify.db
       .delete(funnelStageZoomMeetings)
       .where(
@@ -500,8 +509,10 @@ export default fp(async function zoomStageRoutes(fastify) {
     if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
     const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
     if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await checkStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-    const conn = await getConnection(params.data.stageId);
+    const conn = await getConnection(params.data.projectId);
     if (!conn) return reply.code(404).send({ error: "Conexão Zoom não configurada" });
 
     const [meetingRow] = await fastify.db
@@ -559,8 +570,10 @@ export default fp(async function zoomStageRoutes(fastify) {
     if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
     const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
     if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await checkStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-    const conn = await getConnection(params.data.stageId);
+    const conn = await getConnection(params.data.projectId);
     if (!conn) return reply.code(404).send({ error: "Conexão Zoom não configurada" });
 
     const [meetingRow] = await fastify.db
