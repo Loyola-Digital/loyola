@@ -29,13 +29,6 @@ export interface ApplicationForm {
   label: string;
   total: number;
   points: ApplicationDay[];
-  /** mesma forma (por nome) no lançamento anterior. null = sem par. */
-  comparacao: {
-    points: ApplicationDay[];
-    total: number;
-  } | null;
-  /** Acumulado atual vs. o do anterior NO MESMO D-day. null = sem base. */
-  deltaPercent: number | null;
 }
 
 export interface StageApplications {
@@ -44,8 +37,16 @@ export interface StageApplications {
   compareFunnelName: string | null;
   /** true = nenhuma planilha do tipo "applications" vinculada. */
   semPlanilha: boolean;
-  /** uma série por planilha de aplicação. */
+  /** uma série por planilha de aplicação (lançamento atual). */
   forms: ApplicationForm[];
+  /** total AGREGADO do lançamento anterior (soma das planilhas), no eixo D-day.
+   *  É a linha tracejada de comparação — casa lançamento vs lançamento, não por
+   *  nome de forma. null = sem lançamento de comparação / sem dados. */
+  comparison: { points: ApplicationDay[]; total: number } | null;
+  /** soma das aplicações de todas as formas do lançamento atual. */
+  currentTotal: number;
+  /** Acumulado total atual vs. o do anterior NO MESMO D-day. null = sem base. */
+  deltaPercent: number | null;
 }
 
 export function useStageApplications(

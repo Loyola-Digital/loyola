@@ -59,11 +59,6 @@ function parseDay(raw: string | undefined): string | null {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** Nome normalizado pra casar a mesma forma entre lançamentos. */
-function normalizeLabel(s: string): string {
-  return s.trim().toLowerCase();
-}
-
 interface RawForm {
   sheetId: string;
   label: string;
@@ -168,6 +163,38 @@ export default fp(async function stageApplicationsRoutes(fastify) {
     });
   }
 
+  /** Soma todas as planilhas de aplicação de um lançamento numa forma única. */
+  function aggregateForms(forms: RawForm[]): RawForm {
+    const counts = new Map<string, number>();
+    let total = 0;
+    for (const f of forms) {
+      for (const [k, v] of f.counts) counts.set(k, (counts.get(k) ?? 0) + v);
+      total += f.total;
+    }
+    return { sheetId: "__total__", label: "Total", counts, total };
+  }
+
+  /** Soma séries JÁ alinhadas (mesmo eixo D-day) num total por dia. */
+  function totalOfAligned(forms: FormSeries[]): DailyPoint[] {
+    const len = forms.reduce((m, f) => Math.max(m, f.points.length), 0);
+    const out: DailyPoint[] = [];
+    let acumulado = 0;
+    for (let i = 0; i < len; i++) {
+      let aplicacoes = 0;
+      let date = "";
+      for (const f of forms) {
+        const p = f.points[i];
+        if (p) {
+          aplicacoes += p.aplicacoes;
+          date = p.date;
+        }
+      }
+      acumulado += aplicacoes;
+      out.push({ dia: i + 1, date, aplicacoes, acumulado });
+    }
+    return out;
+  }
+
   fastify.get(
     "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/applications-daily",
     async (request, reply) => {
@@ -195,9 +222,13 @@ export default fp(async function stageApplicationsRoutes(fastify) {
 
       const atual = alignForms(await rawFormsFor(funnelId));
 
-      // Comparação forma a forma (casada por nome) com o lançamento anterior.
+      // Comparação com o lançamento anterior é AGREGADA (total vs total), não
+      // forma a forma: cada lançamento nomeia suas planilhas do seu jeito, então
+      // casar por nome quebrava a comparação (some quando os nomes diferem). A
+      // pergunta é "estamos à frente do lançamento passado NO TOTAL, nesta
+      // altura?" — soma todas as planilhas de aplicação de cada lançamento.
       let compareFunnelName: string | null = null;
-      const compareByLabel = new Map<string, FormSeries>();
+      let comparison: { points: DailyPoint[]; total: number } | null = null;
       if (ctx.compareFunnelId) {
         const [cmpFunnel] = await fastify.db
           .select({ id: funnels.id, name: funnels.name })
@@ -206,43 +237,42 @@ export default fp(async function stageApplicationsRoutes(fastify) {
           .limit(1);
         if (cmpFunnel) {
           compareFunnelName = cmpFunnel.name;
-          for (const f of alignForms(await rawFormsFor(ctx.compareFunnelId))) {
-            compareByLabel.set(normalizeLabel(f.label), f);
-          }
+          const prevTotal = alignForms([aggregateForms(await rawFormsFor(ctx.compareFunnelId))]);
+          const p = prevTotal[0];
+          if (p && p.points.length) comparison = { points: p.points, total: p.total };
         }
       }
 
-      const forms = atual.map((f) => {
-        const cmp = compareByLabel.get(normalizeLabel(f.label)) ?? null;
+      // Total do lançamento atual (soma das formas, já no mesmo eixo D-day).
+      const currentTotalPoints = totalOfAligned(atual);
+      const currentTotal = atual.reduce((s, f) => s + f.total, 0);
 
-        // Delta na MESMA altura: acumulado do atual vs. o do anterior no mesmo
-        // D-day. Comparar com o total final do anterior diria que estamos sempre
-        // perdendo até o último dia — leitura inútil.
-        let deltaPercent: number | null = null;
-        const ultimoDia = f.points.length;
-        if (ultimoDia > 0 && cmp && cmp.points.length) {
-          const base = cmp.points.find((p) => p.dia === ultimoDia)?.acumulado;
-          const meu = f.points[ultimoDia - 1].acumulado;
-          if (base && base > 0) deltaPercent = +(((meu - base) / base) * 100).toFixed(1);
-        }
-
-        return {
-          sheetId: f.sheetId,
-          label: f.label,
-          total: f.total,
-          points: f.points,
-          comparacao: cmp ? { points: cmp.points, total: cmp.total } : null,
-          deltaPercent,
-        };
-      });
+      // Delta na MESMA altura: acumulado total do atual vs. o do anterior no
+      // mesmo D-day. Comparar com o total FINAL do anterior diria que estamos
+      // sempre perdendo até o último dia — leitura inútil.
+      let deltaPercent: number | null = null;
+      const ultimoDia = currentTotalPoints.length;
+      if (ultimoDia > 0 && comparison && comparison.points.length) {
+        const base = comparison.points.find((pt) => pt.dia === ultimoDia)?.acumulado;
+        const meu = currentTotalPoints[ultimoDia - 1].acumulado;
+        if (base && base > 0) deltaPercent = +(((meu - base) / base) * 100).toFixed(1);
+      }
 
       return {
         funnelName: ctx.funnelName,
         compareFunnelName,
         // Sem nenhuma planilha de aplicação vinculada — não é erro, é etapa que
         // ainda não tem comercial rodando.
-        semPlanilha: forms.length === 0,
-        forms,
+        semPlanilha: atual.length === 0,
+        forms: atual.map((f) => ({
+          sheetId: f.sheetId,
+          label: f.label,
+          total: f.total,
+          points: f.points,
+        })),
+        comparison,
+        currentTotal,
+        deltaPercent,
       };
     },
   );
