@@ -191,10 +191,11 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
             funnelId={funnelId}
             stageId={stage.id}
           />
-          {/* Aplicações por dia (captação do comercial) — movido da Captação
-              Paga pra cá, ao lado do volume de vendas. A planilha de aplicação
-              fica vinculada à Captação Paga; o endpoint acha por funil, então
-              renderizar a partir da etapa de Vendas funciona. */}
+          {/* Aplicações por dia (captação do comercial) — ao lado do volume de
+              vendas. Uma linha por planilha de aplicação do funil (ex.: form com
+              ticket / sem ticket); o endpoint lê todas as planilhas
+              `applications` do funil, então renderizar a partir da etapa de
+              Vendas funciona. */}
           <ApplicationsDailyChart
             projectId={projectId}
             funnelId={funnelId}

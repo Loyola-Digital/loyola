@@ -1,11 +1,15 @@
 "use client";
 
 /**
- * Aplicações por dia — lançamento atual vs. o anterior, alinhados em D1/D2/D3.
+ * Aplicações por dia — uma linha por forma (planilha de aplicação), nomeada pelo
+ * label da planilha, alinhadas em D1/D2/D3.
  *
- * Duas séries num eixo só. O jeito errado (e comum) seria eixo duplo, que
- * inventa correlação: aqui as duas séries têm a MESMA unidade (aplicações) e o
- * mesmo índice (dia relativo), então dividem escala honestamente.
+ * O time pode mapear mais de uma planilha de aplicação no mesmo lançamento (ex.:
+ * "form com ticket" e "form sem ticket"): cada uma vira uma série própria, com o
+ * nome aparecendo na legenda e no tooltip. A comparação com o lançamento
+ * anterior é casada forma a forma (mesmo nome) e desenhada tracejada, na mesma
+ * cor da forma — cor identifica a forma, traço cheio/tracejado identifica o
+ * lançamento.
  *
  * Alternar Diário/Acumulado existe porque as duas leituras respondem coisas
  * diferentes: o diário mostra o pico e o vale do dia a dia; o acumulado é o que
@@ -13,15 +17,21 @@
  */
 
 import { useState } from "react";
-import { TrendingUp, TrendingDown, Minus, FileSpreadsheet, Info } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, FileSpreadsheet } from "lucide-react";
 import {
   CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useStageApplications, type ApplicationDay } from "@/lib/hooks/use-stage-applications";
+import {
+  useStageApplications,
+  type ApplicationForm,
+} from "@/lib/hooks/use-stage-applications";
 
-const SERIE_ATUAL = "var(--viz-series-1)";
-const SERIE_ANTERIOR = "var(--viz-series-2)";
+// Paleta de séries do design system (.spy-viz). Categoria nominal: identidade
+// nunca é só cor — legenda e tooltip sempre trazem o nome da forma. Além de 3
+// formas as cores repetem, mas o rótulo continua distinguindo.
+const PALETTE = ["var(--viz-series-1)", "var(--viz-series-2)", "var(--viz-series-3)"];
+const colorFor = (i: number) => PALETTE[i % PALETTE.length];
 
 const nf = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString("pt-BR"));
 
@@ -30,37 +40,40 @@ function fmtDate(iso: string): string {
   return `${d}/${m}/${a.slice(2)}`;
 }
 
-interface Ponto {
+type Campo = "aplicacoes" | "acumulado";
+
+interface Row {
   dia: string;
-  atual: number | null;
-  anterior: number | null;
-  dataAtual: string | null;
-  dataAnterior: string | null;
+  date: string | null;
+  [serie: string]: number | string | null;
 }
 
-/** Junta as duas séries pelo D-day. Falta de dado vira null (a linha corta). */
-function merge(
-  atual: ApplicationDay[],
-  anterior: ApplicationDay[] | undefined,
-  modo: "diario" | "acumulado",
-): Ponto[] {
-  const campo = modo === "diario" ? "aplicacoes" : "acumulado";
-  const maxDia = Math.max(atual.length, anterior?.length ?? 0);
-  const out: Ponto[] = [];
-  for (let i = 1; i <= maxDia; i++) {
-    const a = atual.find((p) => p.dia === i);
-    const b = anterior?.find((p) => p.dia === i);
-    out.push({
-      dia: `D${i}`,
-      // null e não 0: o lançamento atual ainda não chegou no D30, e desenhar
-      // zero ali diria "tivemos zero aplicações", que é falso.
-      atual: a ? a[campo] : null,
-      anterior: b ? b[campo] : null,
-      dataAtual: a?.date ?? null,
-      dataAnterior: b?.date ?? null,
-    });
+/** Chaves de dataKey por forma — estáveis pelo sheetId. */
+const keyAtual = (f: ApplicationForm) => `a_${f.sheetId}`;
+const keyAnterior = (f: ApplicationForm) => `b_${f.sheetId}`;
+
+/**
+ * Junta todas as formas (atual + anterior) num array de linhas indexado por
+ * D-day. Todas as formas do lançamento compartilham o mesmo eixo (mesmo D1),
+ * então a data de um D-day é a mesma pra todas — usamos a da primeira forma.
+ */
+function buildRows(forms: ApplicationForm[], campo: Campo): Row[] {
+  let maxDia = 0;
+  for (const f of forms) {
+    maxDia = Math.max(maxDia, f.points.length, f.comparacao?.points.length ?? 0);
   }
-  return out;
+  const rows: Row[] = [];
+  for (let i = 1; i <= maxDia; i++) {
+    const row: Row = { dia: `D${i}`, date: forms[0]?.points[i - 1]?.date ?? null };
+    for (const f of forms) {
+      const a = f.points[i - 1];
+      const b = f.comparacao?.points[i - 1];
+      row[keyAtual(f)] = a ? a[campo] : null;
+      row[keyAnterior(f)] = b ? b[campo] : null;
+    }
+    rows.push(row);
+  }
+  return rows;
 }
 
 export function ApplicationsDailyChart({
@@ -87,24 +100,19 @@ export function ApplicationsDailyChart({
         <FileSpreadsheet className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
         <p className="text-sm font-medium">Aplicações do comercial</p>
         <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
-          Vincule a planilha de aplicação em <strong>Planilhas → Vincular</strong>, com o tipo{" "}
-          <strong>Aplicação (comercial)</strong> e a coluna de data mapeada. O gráfico compara o
-          volume dia a dia com o lançamento anterior.
+          Vincule uma ou mais planilhas em <strong>Planilhas → Vincular</strong>, com o tipo{" "}
+          <strong>Aplicação (comercial)</strong> e a coluna de data mapeada. Cada planilha vira uma
+          linha do gráfico — dê um nome (label) a cada uma, ex.: <em>form com ticket</em> e{" "}
+          <em>form sem ticket</em>.
         </p>
       </div>
     );
   }
 
-  const pontos = merge(data.points, data.comparacao?.points, modo);
-  const temComparacao = !!data.comparacao && data.comparacao.points.length > 0;
-  const delta = data.deltaPercent;
-  const DeltaIcon = delta == null ? Minus : delta >= 0 ? TrendingUp : TrendingDown;
-  const deltaCor =
-    delta == null
-      ? "text-muted-foreground"
-      : delta >= 0
-        ? "text-emerald-600 dark:text-emerald-500"
-        : "text-red-500";
+  const forms = data.forms;
+  const campo: Campo = modo === "diario" ? "aplicacoes" : "acumulado";
+  const rows = buildRows(forms, campo);
+  const temComparacao = forms.some((f) => f.comparacao && f.comparacao.points.length > 0);
 
   return (
     <div className="spy-viz rounded-xl border border-border/40 bg-card p-4">
@@ -112,8 +120,11 @@ export function ApplicationsDailyChart({
         <div>
           <h3 className="text-sm font-semibold">Aplicações por dia</h3>
           <p className="text-[11px] text-muted-foreground">
-            Alinhado por dia de lançamento — D1 é o primeiro dia com aplicação de cada um
-            {data.sheetLabel ? ` · ${data.sheetLabel}` : ""}
+            Uma linha por planilha de aplicação, alinhada por dia de lançamento (D1 = primeiro dia
+            com aplicação)
+            {temComparacao && data.compareFunnelName
+              ? ` · tracejado = ${data.compareFunnelName}`
+              : ""}
           </p>
         </div>
 
@@ -127,7 +138,9 @@ export function ApplicationsDailyChart({
               type="button"
               onClick={() => setModo(k)}
               className={`rounded px-2.5 py-1 transition-colors ${
-                modo === k ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                modo === k
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {label}
@@ -136,60 +149,48 @@ export function ApplicationsDailyChart({
         </div>
       </div>
 
-      {/* Números-chave. O delta é sempre "na mesma altura" — comparar com o
-          total final do lançamento anterior diria que estamos perdendo até o
-          último dia, o que não ajuda ninguém a decidir nada. */}
-      <div className="mb-4 flex flex-wrap gap-5">
-        <div>
-          <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            Aplicações
-          </p>
-          <p className="text-2xl font-semibold leading-none">{nf(data.total)}</p>
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            {data.points.length} dia{data.points.length !== 1 ? "s" : ""} de captação
-          </p>
-        </div>
-
-        {temComparacao && (
-          <>
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                No mesmo D{data.points.length}
+      {/* Números-chave por forma. O delta é sempre "na mesma altura" — comparar
+          com o total final do lançamento anterior diria que estamos perdendo até
+          o último dia, o que não ajuda ninguém a decidir nada. */}
+      <div className="mb-4 flex flex-wrap gap-x-6 gap-y-3">
+        {forms.map((f, i) => {
+          const delta = f.deltaPercent;
+          const DeltaIcon = delta == null ? Minus : delta >= 0 ? TrendingUp : TrendingDown;
+          const deltaCor =
+            delta == null
+              ? "text-muted-foreground"
+              : delta >= 0
+                ? "text-emerald-600 dark:text-emerald-500"
+                : "text-red-500";
+          return (
+            <div key={f.sheetId}>
+              <p className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                <span
+                  className="inline-block h-2 w-2 shrink-0 rounded-full"
+                  style={{ background: colorFor(i) }}
+                />
+                {f.label}
               </p>
-              <p className={`flex items-center gap-1 text-2xl font-semibold leading-none ${deltaCor}`}>
-                <DeltaIcon className="h-4 w-4" />
-                {delta == null ? "—" : `${delta > 0 ? "+" : ""}${delta}%`}
-              </p>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                vs. {data.comparacao?.funnelName}
-              </p>
+              <p className="text-2xl font-semibold leading-none">{nf(f.total)}</p>
+              {f.comparacao ? (
+                <p className={`mt-1 flex items-center gap-1 text-[11px] ${deltaCor}`}>
+                  <DeltaIcon className="h-3 w-3" />
+                  {delta == null ? "—" : `${delta > 0 ? "+" : ""}${delta}%`}
+                  <span className="text-muted-foreground">vs. anterior</span>
+                </p>
+              ) : (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {f.points.length} dia{f.points.length !== 1 ? "s" : ""} de captação
+                </p>
+              )}
             </div>
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                Anterior (total)
-              </p>
-              <p className="text-2xl font-semibold leading-none text-muted-foreground">
-                {nf(data.comparacao?.total)}
-              </p>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                em {data.comparacao?.points.length} dias
-              </p>
-            </div>
-          </>
-        )}
+          );
+        })}
       </div>
-
-      {data.comparacao?.semPlanilha && (
-        <p className="mb-3 flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-600 dark:text-amber-500">
-          <Info className="mt-0.5 h-3 w-3 shrink-0" />
-          O lançamento de comparação ({data.comparacao.funnelName}) não tem planilha de aplicação
-          vinculada — só a série atual aparece.
-        </p>
-      )}
 
       <div className="h-[260px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={pontos} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          <LineChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid stroke="var(--viz-grid)" strokeDasharray="0" vertical={false} />
             <XAxis
               dataKey="dia"
@@ -197,7 +198,7 @@ export function ApplicationsDailyChart({
               tickLine={false}
               axisLine={{ stroke: "var(--viz-axis)" }}
               // Muitos dias: mostra 1 rótulo a cada N pra não colidir.
-              interval={pontos.length > 20 ? Math.floor(pontos.length / 12) : 0}
+              interval={rows.length > 20 ? Math.floor(rows.length / 12) : 0}
             />
             <YAxis
               tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
@@ -209,77 +210,83 @@ export function ApplicationsDailyChart({
               cursor={{ stroke: "var(--viz-axis)", strokeWidth: 1 }}
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;
-                const p = payload[0]?.payload as Ponto | undefined;
-                if (!p) return null;
+                const row = payload[0]?.payload as Row | undefined;
+                if (!row) return null;
                 return (
-                  <div className="min-w-[190px] rounded-lg border border-border/60 bg-popover px-2.5 py-2 shadow-lg">
+                  <div className="min-w-[210px] rounded-lg border border-border/60 bg-popover px-2.5 py-2 shadow-lg">
                     <p className="mb-1.5 border-b border-border/40 pb-1 text-[11px] font-medium text-muted-foreground">
                       Dia {String(label).replace("D", "")} do lançamento
+                      {row.date ? ` · ${fmtDate(row.date)}` : ""}
                     </p>
                     <div className="space-y-1.5">
-                      {/* Valor lidera, nome da série é secundário. A série é
-                          marcada por um traço curto, não quadrado cheio. */}
-                      <div>
-                        <div className="flex items-baseline justify-between gap-4">
-                          <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                            <span className="inline-block h-0.5 w-3 rounded-full" style={{ background: SERIE_ATUAL }} />
-                            {data.funnelName}
-                          </span>
-                          <span className="text-sm font-semibold tabular-nums">{nf(p.atual)}</span>
-                        </div>
-                        {p.dataAtual && (
-                          <p className="pl-[18px] text-[10px] text-muted-foreground">{fmtDate(p.dataAtual)}</p>
-                        )}
-                      </div>
-                      {temComparacao && (
-                        <div>
-                          <div className="flex items-baseline justify-between gap-4">
-                            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                              <span className="inline-block h-0.5 w-3 rounded-full" style={{ background: SERIE_ANTERIOR }} />
-                              {data.comparacao?.funnelName}
-                            </span>
-                            <span className="text-sm font-semibold tabular-nums">{nf(p.anterior)}</span>
+                      {forms.map((f, i) => {
+                        const atual = row[keyAtual(f)] as number | null;
+                        const anterior = row[keyAnterior(f)] as number | null;
+                        return (
+                          <div key={f.sheetId}>
+                            <div className="flex items-baseline justify-between gap-4">
+                              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                                <span
+                                  className="inline-block h-0.5 w-3 rounded-full"
+                                  style={{ background: colorFor(i) }}
+                                />
+                                {f.label}
+                              </span>
+                              <span className="text-sm font-semibold tabular-nums">{nf(atual)}</span>
+                            </div>
+                            {f.comparacao && (
+                              <div className="flex items-baseline justify-between gap-4 pl-[18px]">
+                                <span className="text-[10px] text-muted-foreground">anterior</span>
+                                <span className="text-[11px] tabular-nums text-muted-foreground">
+                                  {nf(anterior)}
+                                </span>
+                              </div>
+                            )}
                           </div>
-                          {p.dataAnterior && (
-                            <p className="pl-[18px] text-[10px] text-muted-foreground">{fmtDate(p.dataAnterior)}</p>
-                          )}
-                        </div>
-                      )}
+                        );
+                      })}
                     </div>
                   </div>
                 );
               }}
             />
-            {/* Legenda sempre presente com 2 séries — identidade nunca é só cor. */}
-            {temComparacao && (
-              <Legend
-                verticalAlign="top"
-                height={26}
-                iconType="plainline"
-                wrapperStyle={{ fontSize: 11, color: "var(--color-muted-foreground)" }}
-              />
-            )}
-            <Line
-              name={data.funnelName}
-              type="monotone"
-              dataKey="atual"
-              stroke={SERIE_ATUAL}
-              strokeWidth={2}
-              dot={false}
-              activeDot={{ r: 5, stroke: "var(--color-card)", strokeWidth: 2 }}
-              connectNulls={false}
+            {/* Legenda com uma entrada por forma (só a linha do atual entra —
+                as tracejadas do anterior ficam fora pra não duplicar o nome). */}
+            <Legend
+              verticalAlign="top"
+              height={26}
+              iconType="plainline"
+              wrapperStyle={{ fontSize: 11, color: "var(--color-muted-foreground)" }}
             />
-            {temComparacao && (
+            {forms.map((f, i) => (
               <Line
-                name={data.comparacao?.funnelName}
+                key={keyAtual(f)}
+                name={f.label}
                 type="monotone"
-                dataKey="anterior"
-                stroke={SERIE_ANTERIOR}
+                dataKey={keyAtual(f)}
+                stroke={colorFor(i)}
                 strokeWidth={2}
                 dot={false}
                 activeDot={{ r: 5, stroke: "var(--color-card)", strokeWidth: 2 }}
                 connectNulls={false}
               />
+            ))}
+            {forms.map((f, i) =>
+              f.comparacao ? (
+                <Line
+                  key={keyAnterior(f)}
+                  name={`${f.label} (anterior)`}
+                  type="monotone"
+                  dataKey={keyAnterior(f)}
+                  stroke={colorFor(i)}
+                  strokeWidth={2}
+                  strokeDasharray="4 3"
+                  dot={false}
+                  activeDot={{ r: 4, stroke: "var(--color-card)", strokeWidth: 2 }}
+                  connectNulls={false}
+                  legendType="none"
+                />
+              ) : null,
             )}
           </LineChart>
         </ResponsiveContainer>
@@ -299,25 +306,25 @@ export function ApplicationsDailyChart({
               <tr>
                 <th className="px-2 py-1.5 text-left font-medium">Dia</th>
                 <th className="px-2 py-1.5 text-left font-medium">Data</th>
-                <th className="px-2 py-1.5 text-right font-medium">{data.funnelName}</th>
-                {temComparacao && (
-                  <th className="px-2 py-1.5 text-right font-medium">{data.comparacao?.funnelName}</th>
-                )}
+                {forms.map((f) => (
+                  <th key={f.sheetId} className="px-2 py-1.5 text-right font-medium">
+                    {f.label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {pontos.map((p) => (
-                <tr key={p.dia} className="border-t border-border/30">
-                  <td className="px-2 py-1.5">{p.dia}</td>
+              {rows.map((row) => (
+                <tr key={row.dia} className="border-t border-border/30">
+                  <td className="px-2 py-1.5">{row.dia}</td>
                   <td className="px-2 py-1.5 text-muted-foreground">
-                    {p.dataAtual ? fmtDate(p.dataAtual) : "—"}
+                    {row.date ? fmtDate(row.date) : "—"}
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{nf(p.atual)}</td>
-                  {temComparacao && (
-                    <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
-                      {nf(p.anterior)}
+                  {forms.map((f) => (
+                    <td key={f.sheetId} className="px-2 py-1.5 text-right tabular-nums">
+                      {nf(row[keyAtual(f)] as number | null)}
                     </td>
-                  )}
+                  ))}
                 </tr>
               ))}
             </tbody>
