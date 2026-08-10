@@ -20,4 +20,9 @@ COPY --from=build /app/packages/api/drizzle.config.ts ./drizzle.config.ts
 COPY --from=build /app/packages/api/package.json ./package.json
 COPY squads ./squads
 EXPOSE 3001
-CMD ["sh", "-c", "npx drizzle-kit push --force && node dist/server.js"]
+# node --import tsx (NÃO trocar por node puro): o pacote @loyola-x/shared é
+# consumido como TS-fonte (main = src/index.ts). Desde que a API passou a
+# importar um VALOR do shared (API_CONTRACT_VERSION), o index.ts é carregado em
+# runtime; o type-stripping do Node 22 não resolve os re-exports ./x.js -> x.ts,
+# quebrando o boot. O loader tsx resolve (mesmo comportamento do dev).
+CMD ["sh", "-c", "npx drizzle-kit push --force && node --import tsx dist/server.js"]
