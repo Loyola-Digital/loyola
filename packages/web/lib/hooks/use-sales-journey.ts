@@ -96,11 +96,20 @@ export function useSalesDailyComparison(projectId: string, funnelId: string, sta
   });
 }
 
-export function useBuyersOrigin(projectId: string, funnelId: string, stageId: string, enabled = true) {
+export function useBuyersOrigin(
+  projectId: string,
+  funnelId: string,
+  stageId: string,
+  days?: number,
+  enabled = true,
+) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["buyers-origin", projectId, funnelId, stageId],
-    queryFn: () => apiClient<BuyersOrigin>(`${base(projectId, funnelId, stageId)}/buyers-origin`),
+    queryKey: ["buyers-origin", projectId, funnelId, stageId, days ?? null],
+    queryFn: () =>
+      apiClient<BuyersOrigin>(
+        `${base(projectId, funnelId, stageId)}/buyers-origin${days ? `?days=${days}` : ""}`,
+      ),
     enabled: enabled && !!projectId && !!funnelId && !!stageId,
     staleTime: 5 * 60 * 1000,
   });

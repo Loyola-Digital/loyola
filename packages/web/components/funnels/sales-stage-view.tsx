@@ -207,6 +207,7 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
               projectId={projectId}
               funnelId={funnelId}
               stageId={stage.id}
+              days={days}
             />
             <LeadJourneyPanel
               projectId={projectId}
@@ -214,11 +215,14 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
               stageId={stage.id}
             />
           </div>
+          {/* "Produto Principal" agrega main_product + TMB pra bater com o total
+              do topo (SalesMetaKpis também usa main_product,tmb). O TMB isolado
+              continua na seção abaixo como detalhamento. */}
           <StageSalesSection
             projectId={projectId}
             funnelId={funnelId}
             stageId={stage.id}
-            subtype="main_product"
+            subtype="main_product,tmb"
             title="Produto Principal"
             days={days}
             adsetsMap={adsetsMap}
