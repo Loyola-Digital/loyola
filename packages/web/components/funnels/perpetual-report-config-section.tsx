@@ -27,6 +27,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { usePerpetualProducts } from "@/lib/hooks/use-perpetual-spreadsheet";
+import {
+  proporPremissas,
+  aplicarProposta,
+  detectarDivergencia,
+} from "@/lib/utils/perpetual-premissas-produto";
 import {
   usePerpetualReportConfig,
   useSavePerpetualReportConfig,
@@ -130,6 +136,11 @@ function RatesPreview({ rates, titulo, nota }: { rates: PerpetualRates; titulo: 
   );
 }
 
+/** Mesma quebra do `splitList` do formulário, disponível antes dele. */
+function splitListPuro(s: string): string[] {
+  return s.split(",").map((v) => v.trim()).filter(Boolean);
+}
+
 export function PerpetualReportConfigSection({ projectId, funnelId }: Props) {
   const { data, isLoading } = usePerpetualReportConfig(projectId, funnelId);
   const save = useSavePerpetualReportConfig(projectId, funnelId);
@@ -139,6 +150,16 @@ export function PerpetualReportConfigSection({ projectId, funnelId }: Props) {
   const [origensText, setOrigensText] = useState("meta");
   const [bumpsText, setBumpsText] = useState("");
   const [showChecklist, setShowChecklist] = useState(false);
+
+  // Story 29.50 — a classificação da planilha (29.49) alimenta as premissas.
+  // Antes disto, produto e bumps eram redigitados aqui, e um acento diferente
+  // fazia o relatório calcular sobre um produto inexistente sem avisar.
+  const { data: produtosData } = usePerpetualProducts(projectId, funnelId);
+  const proposta = proporPremissas(produtosData?.products ?? []);
+  // Marca o que ESTA sessão preencheu automaticamente — é o que o AC3 exige
+  // mostrar. Sem isso o campo aparece preenchido do nada e o gestor reconfere
+  // tudo à mão, anulando o ganho.
+  const [origemAuto, setOrigemAuto] = useState({ produto: false, bumps: false });
 
   // Hidrata o formulário quando a config chega. `origensPagas` e order bumps são
   // listas — na UI viram texto separado por vírgula, que é como o usuário pensa.
@@ -156,8 +177,22 @@ export function PerpetualReportConfigSection({ projectId, funnelId }: Props) {
       taxaOutrosPct: c?.taxaOutrosPct ?? null,
     });
     setOrigensText((c?.origensPagas ?? ["meta"]).join(", "));
-    setBumpsText((c?.produtosOrderBump ?? []).join(", "));
-  }, [data]);
+
+    // AC1/AC4: a proposta SÓ age em campo vazio. Premissa que o gestor ajustou
+    // de propósito não pode ser sobrescrita pela chegada desta story.
+    const aplicado = aplicarProposta(
+      { produto: c?.produto ?? null, produtosOrderBump: c?.produtosOrderBump ?? [] },
+      proposta,
+    );
+    if (aplicado.preencheuProduto) {
+      setForm((f) => ({ ...f, produto: aplicado.produto }));
+    }
+    setBumpsText(aplicado.produtosOrderBump.join(", "));
+    setOrigemAuto({ produto: aplicado.preencheuProduto, bumps: aplicado.preencheuBumps });
+    // `proposta` deriva de `produtosData`; incluí-la na lista faria a hidratação
+    // reescrever o formulário a cada refetch, apagando edição em andamento.
+    // eslint-disable-next-line
+  }, [data, produtosData]);
 
   if (isLoading) {
     return (
@@ -170,6 +205,14 @@ export function PerpetualReportConfigSection({ projectId, funnelId }: Props) {
   if (!data) return null;
 
   const validado = data.config?.validado ?? false;
+
+  // AC2: puxar não trava. O gestor sobrescreve, e a tela avisa da divergência
+  // em vez de bloquear — comparando pela chave canônica, então acento e caixa
+  // não disparam aviso (sinalizá-los treinaria o gestor a ignorá-lo).
+  const divergencia = detectarDivergencia(
+    { produto: form.produto ?? null, produtosOrderBump: splitListPuro(bumpsText) },
+    proposta,
+  );
 
   const splitList = (s: string) =>
     s
@@ -245,8 +288,37 @@ export function PerpetualReportConfigSection({ projectId, funnelId }: Props) {
               <Input
                 value={form.produto ?? ""}
                 placeholder="Nome do produto na plataforma de venda"
-                onChange={(e) => setForm((f) => ({ ...f, produto: e.target.value || null }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, produto: e.target.value || null }));
+                  // Digitou: deixa de ser valor da planilha, e o rótulo some.
+                  setOrigemAuto((o) => ({ ...o, produto: false }));
+                }}
               />
+              {/* AC3: dizer DE ONDE veio. Campo preenchido sozinho, sem
+                  explicação, gera a dúvida oposta ("de onde saiu isso?") e faz
+                  o gestor reconferir tudo à mão. */}
+              {origemAuto.produto && (
+                <p className="text-[11px] text-emerald-600">
+                  Preenchido pela classificação da planilha.
+                </p>
+              )}
+              {/* AC1: com mais de um principal, a tela NÃO escolhe. */}
+              {proposta.ambiguo && (
+                <p className="text-[11px] text-amber-600">
+                  A planilha tem {proposta.candidatosPrincipal.length} produtos classificados como
+                  principal ({proposta.candidatosPrincipal.join(", ")}). Escolha qual vale para o
+                  relatório.
+                </p>
+              )}
+              {divergencia.produto && (
+                <p className="text-[11px] text-amber-600">
+                  Diferente do que está classificado na planilha
+                  {proposta.candidatosPrincipal.length === 1
+                    ? ` (${proposta.candidatosPrincipal[0]})`
+                    : ""}
+                  .
+                </p>
+              )}
             </div>
 
             <div className="space-y-1">
@@ -254,12 +326,37 @@ export function PerpetualReportConfigSection({ projectId, funnelId }: Props) {
               <Input
                 value={bumpsText}
                 placeholder="Nomes separados por vírgula (vazio se não há)"
-                onChange={(e) => setBumpsText(e.target.value)}
+                onChange={(e) => {
+                  setBumpsText(e.target.value);
+                  setOrigemAuto((o) => ({ ...o, bumps: false }));
+                }}
               />
               <p className="text-[11px] text-muted-foreground">
                 Contam no faturamento, mas não criam comprador novo — a oferta do perpétuo é
                 única.
               </p>
+              {origemAuto.bumps && (
+                <p className="text-[11px] text-emerald-600">
+                  Preenchidos pela classificação da planilha.
+                </p>
+              )}
+              {divergencia.bumps && (
+                <p className="text-[11px] text-amber-600">
+                  Diferente do que está classificado na planilha
+                  {proposta.produtosOrderBump.length > 0
+                    ? ` (${proposta.produtosOrderBump.join(", ")})`
+                    : " (nenhum produto marcado como order bump)"}
+                  .
+                </p>
+              )}
+              {/* AC4: sem classificação, o comportamento é o de sempre — e uma
+                  dica de que classificar preencheria isto sozinho. */}
+              {produtosData && !produtosData.productMapped && (
+                <p className="text-[11px] text-muted-foreground">
+                  Classifique os produtos na planilha do funil para preencher este campo
+                  automaticamente.
+                </p>
+              )}
             </div>
 
             <div className="space-y-1">
