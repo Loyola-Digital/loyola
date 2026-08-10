@@ -1084,6 +1084,29 @@ export const funnelSpreadsheets = pgTable(
         utm_content?: string;
         utm_term?: string;
       }>(),
+    /**
+     * Story 29.49: tipo de cada produto vendido — `productName` → tipo.
+     *
+     * A 29.31 mapeou a coluna e o rótulo do wizard já prometia "classificar
+     * Order Bump / Upsell"; a classificação em si nunca existiu.
+     *
+     * **Mapa, e não a lista `orderBumpProducts` de `stageSalesSpreadsheets`
+     * (:761):** aquela só distingue bump de não-bump, e o perpétuo precisa dos
+     * três estados. Produto **ausente do mapa = `principal`**, mesmo default da
+     * Captação Paga (o que não é marcado é o produto de entrada) — assim
+     * planilha antiga não muda de comportamento ao ganhar a coluna.
+     *
+     * Match case-insensitive sobre `productName.trim().toLowerCase()`, igual ao
+     * da 18.51a, para não separar "Imersão" de "imersão".
+     *
+     * A tabela é compartilhada por TODOS os tipos de planilha (leads, sales,
+     * applications, upsell). Só `perpetual_sales` lê esta coluna; para os
+     * demais o default `{}` mantém o comportamento anterior intacto.
+     */
+    productTypes: jsonb("product_types")
+      .notNull()
+      .default({})
+      .$type<Record<string, "principal" | "order_bump" | "upsell">>(),
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
