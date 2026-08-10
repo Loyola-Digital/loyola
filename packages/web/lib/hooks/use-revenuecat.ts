@@ -32,6 +32,19 @@ export interface RevenuecatSales {
   byProduct: { productId: string; sales: number; revenueUsd: number }[];
 }
 
+export interface RevenuecatMetric {
+  id: string;
+  name: string;
+  value: number;
+  unit: string | null;
+}
+
+export interface RevenuecatOverview {
+  /** false = nenhum app do RevenueCat selecionado na etapa. */
+  configured: boolean;
+  metrics: RevenuecatMetric[];
+}
+
 // ---- Connection (por projeto) ----
 
 export function useRevenuecatConnection(projectId: string) {
@@ -144,6 +157,19 @@ export function useRevenuecatSales(
     queryFn: () =>
       apiClient<RevenuecatSales>(
         `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/sales?days=${days}`,
+      ),
+    staleTime: STALE,
+  });
+}
+
+// Overview agregado puxado da API do RevenueCat (não depende do webhook).
+export function useRevenuecatOverview(projectId: string, funnelId: string, stageId: string) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["revenuecat-overview", stageId],
+    queryFn: () =>
+      apiClient<RevenuecatOverview>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/overview`,
       ),
     staleTime: STALE,
   });

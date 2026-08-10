@@ -39,6 +39,8 @@ import {
   useSaveRevenuecatConfig,
   useEnsureRevenuecatWebhook,
   useRevenuecatSales,
+  useRevenuecatOverview,
+  type RevenuecatMetric,
 } from "@/lib/hooks/use-revenuecat";
 import type { FunnelCampaign, FunnelStage } from "@loyola-x/shared";
 
@@ -90,6 +92,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   const saveConfig = useSaveRevenuecatConfig(projectId, funnelId, stage.id);
   const ensureWebhook = useEnsureRevenuecatWebhook(projectId, funnelId, stage.id);
   const sales = useRevenuecatSales(projectId, funnelId, stage.id, days);
+  const overview = useRevenuecatOverview(projectId, funnelId, stage.id);
 
   async function handleSaveName() {
     if (!stageName.trim() || stageName.trim() === stage.name) return;
@@ -362,9 +365,15 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
         />
       </section>
 
-      {/* RevenueCat — vendas do app */}
+      {/* RevenueCat — métricas ao vivo (API) + vendas do período (webhook) */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-muted-foreground">Vendas (RevenueCat)</h2>
+        <h2 className="text-sm font-semibold text-muted-foreground">RevenueCat</h2>
+        <RevenuecatOverviewPanel
+          loading={overview.isLoading}
+          connected={connected}
+          data={overview.data}
+          onConfigure={() => setSettingsOpen(true)}
+        />
         <RevenuecatPanel
           loading={sales.isLoading}
           connected={connected}
@@ -509,6 +518,101 @@ function RevenuecatPanel({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// Painel de métricas agregadas (pull ao vivo da API do RevenueCat)
+// ============================================================
+
+// Rótulos PT pros ids conhecidos do overview; fallback = name do RevenueCat.
+const METRIC_LABEL: Record<string, string> = {
+  mrr: "MRR",
+  active_subscriptions: "Assinaturas ativas",
+  active_trials: "Trials ativos",
+  revenue: "Receita (28d)",
+  revenue_last_28_days: "Receita (28d)",
+  new_customers: "Novos clientes (28d)",
+  new_customers_last_28_days: "Novos clientes (28d)",
+  active_users: "Usuários ativos (28d)",
+  active_users_last_28_days: "Usuários ativos (28d)",
+};
+
+function isMoneyMetric(m: RevenuecatMetric): boolean {
+  return m.unit === "$" || /revenue|mrr|arr|proceeds/i.test(m.id);
+}
+
+function fmtMetric(m: RevenuecatMetric): string {
+  if (isMoneyMetric(m)) return fmtUsd(m.value);
+  if (m.unit === "%") return `${m.value.toLocaleString("pt-BR")}%`;
+  return fmtNum(m.value);
+}
+
+function metricIcon(m: RevenuecatMetric) {
+  if (isMoneyMetric(m)) return DollarSign;
+  if (/subscription|trial/i.test(m.id)) return Package;
+  return ShoppingCart;
+}
+
+function RevenuecatOverviewPanel({
+  loading,
+  connected,
+  data,
+  onConfigure,
+}: {
+  loading: boolean;
+  connected: boolean;
+  data: ReturnType<typeof useRevenuecatOverview>["data"];
+  onConfigure: () => void;
+}) {
+  if (loading) return <Skeleton className="h-[110px] rounded-xl" />;
+  // Não conectado: o painel de vendas abaixo já mostra esse estado.
+  if (!connected) return null;
+
+  if (!data?.configured) {
+    return (
+      <div className="rounded-xl border border-dashed border-border/40 bg-card p-4 text-center">
+        <p className="text-xs text-muted-foreground">
+          Selecione o <strong>app do RevenueCat</strong> em{" "}
+          <button
+            type="button"
+            onClick={onConfigure}
+            className="font-medium text-primary hover:underline"
+          >
+            Configurar
+          </button>{" "}
+          pra puxar as métricas (MRR, assinaturas, receita 28d).
+        </p>
+      </div>
+    );
+  }
+
+  if (!data.metrics.length) {
+    return (
+      <div className="rounded-xl border border-border/40 bg-card p-4 text-center">
+        <p className="text-xs text-muted-foreground">Sem métricas retornadas pelo RevenueCat.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="spy-viz rounded-xl border border-border/40 bg-card p-4">
+      <p className="mb-3 text-[11px] text-muted-foreground">
+        Métricas ao vivo (via API do RevenueCat) — snapshot atual; receita e novos clientes dos
+        últimos 28 dias.
+      </p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {data.metrics.map((m) => (
+          <Kpi
+            key={m.id}
+            icon={metricIcon(m)}
+            label={METRIC_LABEL[m.id] ?? m.name}
+            value={fmtMetric(m)}
+            highlight={m.id === "mrr" || /^revenue/.test(m.id)}
+          />
+        ))}
+      </div>
     </div>
   );
 }
