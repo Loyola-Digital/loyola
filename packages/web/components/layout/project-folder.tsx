@@ -374,6 +374,42 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
 
           <div className="space-y-4">
             <div className="space-y-2">
+              <Label className="text-sm font-medium">Tipo do funil</Label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    ["launch", "Lançamento"],
+                    ["perpetual", "Perpétuo"],
+                    ["mobile", "Mobile"],
+                  ] as const
+                ).map(([t, label]) => (
+                  <button
+                    key={t}
+                    type="button"
+                    disabled={updateFunnel.isPending}
+                    onClick={() =>
+                      updateFunnel.mutate(
+                        { type: t },
+                        { onSuccess: () => toast.success(`Tipo alterado para ${label}`) },
+                      )
+                    }
+                    className={cn(
+                      "rounded-md border px-2 py-1.5 text-xs transition-colors",
+                      funnel.type === t
+                        ? "border-primary bg-primary/5 text-primary font-medium"
+                        : "border-border hover:bg-muted",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Mobile mostra o dashboard RevenueCat + Meta (etapa Lyrio).
+              </p>
+            </div>
+
+            <div className="space-y-2 border-t border-border/30 pt-3">
               <Label className="text-sm font-medium">Funil de Comparação</Label>
               <p className="text-xs text-muted-foreground">
                 Exibe métricas do Meta Ads deste funil como benchmark.
