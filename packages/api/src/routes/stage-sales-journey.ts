@@ -113,6 +113,8 @@ interface VendaLida {
   day: string | null;
   bruto: number;
   origem: string;
+  /** true se a planilha de origem TEM coluna de data mapeada (pro filtro de janela). */
+  dated: boolean;
 }
 
 export default fp(async function stageSalesJourneyRoutes(fastify) {
@@ -194,6 +196,7 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
           day,
           bruto: brutoIdx !== -1 ? parseNumber(row[brutoIdx]) : 0,
           origem: `${sp.spreadsheetName} / ${sp.sheetName}`,
+          dated: dataIdx !== -1,
         });
       }
     }
@@ -391,7 +394,23 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         .limit(1);
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      const vendas = await lerVendas(p.data.stageId, "main_product");
+      // Janela de dias — alinha com o resto do dashboard (stage-sales-data): só
+      // filtra vendas de planilhas COM coluna de data; linha sem data válida numa
+      // planilha datada é excluída. Sem ?days= = histórico completo.
+      const days = ((): number | undefined => {
+        const parsed = z.coerce.number().int().min(1).max(365).safeParse((request.query as { days?: unknown }).days);
+        return parsed.success ? parsed.data : undefined;
+      })();
+      const cutoffYmd: string | null = (() => {
+        if (!days) return null;
+        const c = new Date();
+        c.setDate(c.getDate() - days);
+        return `${c.getFullYear()}-${String(c.getMonth() + 1).padStart(2, "0")}-${String(c.getDate()).padStart(2, "0")}`;
+      })();
+      const vendasRaw = await lerVendas(p.data.stageId, "main_product");
+      const vendas = cutoffYmd
+        ? vendasRaw.filter((v) => !v.dated || (v.day !== null && v.day >= cutoffYmd))
+        : vendasRaw;
       // Um comprador = um e-mail. Quem compra duas vezes não conta como duas
       // origens, senão o maior comprador enviesaria o gráfico.
       const compradores = new Set(vendas.map((v) => v.email).filter(Boolean));

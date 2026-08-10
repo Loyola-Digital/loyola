@@ -54,9 +54,9 @@ function Ranking({ itens, total }: { itens: { nome: string; compradores: number 
 }
 
 export function BuyersOriginCard({
-  projectId, funnelId, stageId,
-}: { projectId: string; funnelId: string; stageId: string }) {
-  const { data, isLoading } = useBuyersOrigin(projectId, funnelId, stageId);
+  projectId, funnelId, stageId, days,
+}: { projectId: string; funnelId: string; stageId: string; days?: number }) {
+  const { data, isLoading } = useBuyersOrigin(projectId, funnelId, stageId, days);
   const [dim, setDim] = useState<string | null>(null);
 
   if (isLoading) return <Skeleton className="h-[280px] rounded-xl" />;
@@ -85,6 +85,11 @@ export function BuyersOriginCard({
         <p className="text-[11px] text-muted-foreground">
           E-mail de quem comprou, cruzado com as planilhas de lead e pesquisa. LP, anúncio,
           formato e público saem do <code className="text-[10px]">utm_term</code>.
+        </p>
+        <p className="mt-1 text-[10px] text-muted-foreground/80">
+          Conta <strong>pessoas únicas</strong> (por e-mail) do produto principal — quem comprou
+          2x conta 1. <strong>Não inclui vendas manuais (PIX)</strong>, por isso o número é menor
+          que o total de vendas.
         </p>
       </div>
 

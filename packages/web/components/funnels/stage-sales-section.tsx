@@ -163,7 +163,8 @@ interface StageSalesSectionProps {
   projectId: string;
   funnelId: string;
   stageId: string;
-  subtype: StageSalesSubtype;
+  // Aceita subtype único OU CSV ("main_product,tmb") pra agregar — igual useStageSalesData.
+  subtype: StageSalesSubtype | (string & {});
   title: string;
   days?: number;
   stageType?: 'paid' | 'free' | 'sales' | 'cpl';
