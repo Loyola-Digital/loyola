@@ -5,6 +5,14 @@ export type AppConfig = {
 
 export const APP_NAME = "Loyola Digital X" as const;
 
+/**
+ * Story 29.46 — contrato painel↔API. Definido em `./contract.ts`, um módulo
+ * folha, porque o webpack do Next não resolve a cadeia de imports NodeNext
+ * deste índice. O web importa `@loyola-x/shared/src/contract` direto; a API,
+ * que resolve o índice sem problema, pode usar qualquer um dos dois.
+ */
+export { API_CONTRACT_VERSION } from "./contract.js";
+
 export type {
   MindArtifactPaths,
   MindMetadata,
