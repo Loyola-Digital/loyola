@@ -85,6 +85,7 @@ import hotmartRoutes from "./routes/hotmart.js";
 import kiwifyRoutes from "./routes/kiwify.js";
 import memberkitRoutes from "./routes/memberkit.js";
 import revenuecatRoutes from "./routes/revenuecat.js";
+import fxRoutes from "./routes/fx.js";
 import stageEventConfigRoutes from "./routes/stage-event-config.js";
 import stageSalesPlanRoutes from "./routes/stage-sales-plan.js";
 import ga4Routes from "./routes/ga4.js";
@@ -209,6 +210,7 @@ export async function buildServer() {
   await app.register(kiwifyRoutes);
   await app.register(memberkitRoutes);
   await app.register(revenuecatRoutes);
+  await app.register(fxRoutes);
   await app.register(stageEventConfigRoutes);
   await app.register(stageSalesPlanRoutes);
   await app.register(ga4Routes);
