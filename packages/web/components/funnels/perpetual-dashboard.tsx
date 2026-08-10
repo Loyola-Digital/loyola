@@ -120,6 +120,10 @@ import {
   UNATTRIBUTED_SERIES_KEY,
   TOP_N_SERIES,
 } from "@/lib/utils/perpetual-entity-series";
+import {
+  classifyEntityChartsState,
+  httpStatusOf,
+} from "@/lib/utils/perpetual-entity-charts-state";
 
 interface PerpetualDashboardProps {
   funnel: Funnel;
@@ -278,12 +282,19 @@ function EntityDimensionCharts({
   dimensao,
   temPlanilha,
   semCobertura,
+  isError,
+  errorStatus,
+  onRetry,
 }: {
   series: ReturnType<typeof buildEntitySeries>;
   loading: boolean;
   dimensao: "campaign" | "adset" | "ad";
   temPlanilha: boolean;
   semCobertura: string[];
+  /** Story 29.45 — sem isto a seção não distingue "falhou" de "não tem dado". */
+  isError: boolean;
+  errorStatus: number | null;
+  onRetry: () => void;
 }) {
   // AC4: visibilidade por GRÁFICO, não global — desligar uma campanha no de
   // CAC não a desliga no de Margem.
@@ -338,25 +349,82 @@ function EntityDimensionCharts({
     },
   ];
 
-  if (loading) {
+  // Story 29.45 — a decisão de estado é função pura (`lib/utils`), testável no
+  // runner atual. Antes daqui havia `return null`, e a seção sumia inteira sem
+  // dizer se o recurso não existe, se falhou, ou se o período está vazio.
+  const estado = classifyEntityChartsState({
+    loading,
+    isError,
+    status: errorStatus,
+    plottedCount: series.plotted.length,
+  });
+
+  if (estado.kind === "loading") {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-72 rounded-xl" />)}
       </div>
     );
   }
-  if (series.plotted.length === 0) return null;
 
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold">
-          Evolução por {DIMENSAO_LABEL[dimensao]}
-        </h3>
+  // AC4: o título sobrevive a todos os estados. Uma área em branco sem rótulo
+  // não é reportável — o gestor precisa saber que a seção existe para dizer
+  // qual seção falhou.
+  const cabecalho = (
+    <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <h3 className="text-sm font-semibold">
+        Evolução por {DIMENSAO_LABEL[dimensao]}
+      </h3>
+      {estado.kind === "ok" && (
         <p className="text-[11px] text-muted-foreground">
           Clique no nome da série para ligar ou desligar · segue o filtro do Detalhamento acima
         </p>
+      )}
+    </div>
+  );
+
+  if (estado.kind !== "ok") {
+    return (
+      <div className="space-y-3">
+        {cabecalho}
+        {estado.kind === "vazio" ? (
+          /* Mesmo padrão dos demais gráficos do arquivo desde a 29.32: sem
+             dado, EmptyState — nunca a seção sumir sem explicação. */
+          <EmptyState />
+        ) : (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-3">
+            {estado.kind === "erro-versao" ? (
+              <>
+                <p className="text-[11px] font-medium text-red-700 dark:text-red-400">
+                  Estes gráficos não existem na versão da API em uso (HTTP 404).
+                </p>
+                {/* Sem botão de repetir: a requisição vai falhar igual. O que
+                    destrava é deploy, e quem faz é outra pessoa — dizer isso é
+                    a única ação útil que cabe nesta tela. */}
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  O painel está à frente do servidor. Avise o time — um deploy da API resolve.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-[11px] font-medium text-red-700 dark:text-red-400">
+                  Não foi possível carregar os gráficos por {DIMENSAO_LABEL[dimensao]}
+                  {estado.status != null ? ` (HTTP ${estado.status})` : ""}.
+                </p>
+                <Button size="sm" variant="outline" className="mt-2 h-7 text-[11px]" onClick={onRetry}>
+                  Tentar novamente
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {cabecalho}
 
       {/* AC5: truncar é legítimo; truncar em silêncio não. O percentual é
           calculado sobre o conjunto INTEIRO, não sobre os 10 plotados. */}
@@ -1121,7 +1189,15 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // O `enabled` é a própria dimensão: trocar Campanha/Público/Criativo troca a
   // queryKey e o React Query reusa o que já buscou.
   // ============================================================
-  const { data: entityDaily, isLoading: entityDailyLoading } = useEntityDaily(
+  const {
+    data: entityDaily,
+    isLoading: entityDailyLoading,
+    // Story 29.45: `isError` e `error` eram descartados aqui, e a seção lá
+    // embaixo não tinha como distinguir falha de período vazio.
+    isError: entityDailyIsError,
+    error: entityDailyError,
+    refetch: refetchEntityDaily,
+  } = useEntityDaily(
     metaProjectId,
     hasCampaigns ? tableFilter : null,
     hasCampaigns ? campaignIds : null,
@@ -2480,6 +2556,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         dimensao={tableFilter}
         temPlanilha={usingSpreadsheet}
         semCobertura={entityDaily?.daysWithoutCoverage ?? []}
+        isError={entityDailyIsError}
+        errorStatus={httpStatusOf(entityDailyError)}
+        onRetry={() => { void refetchEntityDaily(); }}
       />
 
       {/* ================================================================ */}
@@ -2538,8 +2617,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                     Meta" é resposta legítima e não tem ação. */}
                 {(stale > 0 || fora > 0 || indeterminada > 0) && (
                   <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {/* Story 29.46 (AC4): a versão anterior mandava rodar o
+                        sync de criativos, que não conserta API defasada — a
+                        única causa possível de a resposta vir sem o estado do
+                        cache. Sugerir a ação errada gasta o tempo do gestor e
+                        queima a confiança na próxima mensagem. */}
                     {indeterminada > 0
-                      ? "Causa não determinada: a API não informou o estado do cache — provável versão desatualizada. Rode o sync de criativos e confira novamente."
+                      ? "Causa não determinada: a API que respondeu não informa o estado do cache — é uma versão anterior à do painel. Avise o time: um deploy da API resolve."
                       : stale > 0
                         ? "Cache desatualizado se resolve rodando o sync de criativos (backfill --creatives)."
                         : "Os não sincronizados entram no próximo ciclo, ou ao abrir o Detalhamento em “Por Criativo”."}

@@ -1,6 +1,7 @@
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { UserStatusGuard } from "@/components/layout/user-status-guard";
+import { ApiContractBanner } from "@/components/layout/api-contract-banner";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -9,6 +10,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <AppSidebar />
         <div className="flex flex-1 flex-col overflow-hidden min-h-0">
           <Topbar />
+          {/* Story 29.46: acima do conteúdo e abaixo da Topbar — visível em
+              qualquer tela, sem competir com a navegação. */}
+          <ApiContractBanner />
           <main className="flex-1 overflow-auto p-3 md:p-6 min-h-0">{children}</main>
         </div>
       </div>

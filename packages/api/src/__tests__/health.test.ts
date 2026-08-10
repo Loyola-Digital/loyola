@@ -43,6 +43,7 @@ const mockAuthPlugin = fp(async (fastify) => {
 
 // Import the actual health routes
 import healthRoutes from "../routes/health.js";
+import { API_CONTRACT_VERSION } from "@loyola-x/shared";
 
 describe("Health Endpoint", () => {
   const app = Fastify();
@@ -95,6 +96,41 @@ describe("Health Endpoint", () => {
     const body = response.json();
     expect(body.status).toBe("error");
     expect(body.db).toBe("disconnected");
+  });
+
+  // ---- Story 29.46 (AC2/AC5) ----
+
+  it("publica o contrato do shared, para o web comparar", async () => {
+    const response = await app.inject({ method: "GET", url: "/api/health" });
+    expect(response.json().contract).toBe(API_CONTRACT_VERSION);
+  });
+
+  it("commit e null sem a variavel do provedor", async () => {
+    delete process.env.RAILWAY_GIT_COMMIT_SHA;
+    delete process.env.GIT_COMMIT_SHA;
+
+    const response = await app.inject({ method: "GET", url: "/api/health" });
+    expect(response.json().commit).toBeNull();
+  });
+
+  it("commit e o SHA curto quando o Railway injeta a variavel", async () => {
+    process.env.RAILWAY_GIT_COMMIT_SHA = "0489cfe6c9d10c9d7640f94ab08d8e2d9e3ae4be";
+    try {
+      const response = await app.inject({ method: "GET", url: "/api/health" });
+      expect(response.json().commit).toBe("0489cfe");
+    } finally {
+      delete process.env.RAILWAY_GIT_COMMIT_SHA;
+    }
+  });
+
+  // Quando o banco cai e que saber o build importa mais, nao menos.
+  it("contrato e commit tambem no 503", async () => {
+    mockExecute.mockRejectedValueOnce(new Error("Connection refused"));
+
+    const response = await app.inject({ method: "GET", url: "/api/health" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().contract).toBe(API_CONTRACT_VERSION);
+    expect(response.json()).toHaveProperty("commit");
   });
 });
 
