@@ -5,6 +5,8 @@ import {
   totalForDate,
   UNATTRIBUTED_SERIES_KEY,
   TOP_N_SERIES,
+  CHART_WINDOW_DAYS,
+  lastNDates,
   type BuildSeriesParams,
 } from "../perpetual-entity-series";
 
@@ -278,7 +280,7 @@ describe("buildEntitySeries — teto de exibicao (AC5)", () => {
     const r = buildEntitySeries(params({ rows: muitas(25) }));
     expect(r.plotted).toHaveLength(TOP_N_SERIES);
     expect(r.plotted[0].key).toBe("E0");
-    expect(r.omittedCount).toBe(15);
+    expect(r.omittedCount).toBe(25 - TOP_N_SERIES);
   });
 
   it("o teto corta o que e PLOTADO, nunca o que e somado", () => {
@@ -330,7 +332,7 @@ describe("buildEntitySeries — teto de exibicao (AC5)", () => {
       rows: muitas(15),
       unattributedByDate: { "2026-08-01": 999999 },  // residuo grande de proposito
     }));
-    expect(r.omittedCount).toBe(5);                   // 15 - 10, sem o residuo
+    expect(r.omittedCount).toBe(15 - TOP_N_SERIES);   // sem o residuo, que nao disputa vaga
     // O denominador da nota e o investimento das ENTIDADES; um residuo enorme
     // nao pode diluir o percentual do que ficou de fora.
     const rows = muitas(15);
@@ -354,8 +356,8 @@ describe("buildEntitySeries — teto de exibicao (AC5)", () => {
     expect(totalForDate(r.all, "2026-08-01", "revenue")).toBe(700);
   });
 
-  it("com 10 ou menos, nada e omitido", () => {
-    const r = buildEntitySeries(params({ rows: muitas(10) }));
+  it("com o teto ou menos entidades, nada e omitido", () => {
+    const r = buildEntitySeries(params({ rows: muitas(TOP_N_SERIES) }));
     expect(r.omittedCount).toBe(0);
     expect(r.omittedSpendShare).toBe(0);
   });
@@ -364,5 +366,71 @@ describe("buildEntitySeries — teto de exibicao (AC5)", () => {
     const r = buildEntitySeries(params({ rows: [] }));
     expect(r.omittedSpendShare).toBe(0);
     expect(r.plotted).toEqual([]);
+  });
+});
+
+// ============================================================
+// Story 29.48 — teto de 5, janela de 7 dias, e o residuo fora do corte.
+// ============================================================
+
+describe("Story 29.48 — teto de exibicao", () => {
+  const muitas = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      entityId: String(i),
+      entityName: `E${i}`,
+      dateStart: "2026-08-01",
+      spend: (n - i) * 10,
+    }));
+
+  it("plota 5 entidades e conta o resto como omitido (AC1/AC5.1)", () => {
+    const r = buildEntitySeries(params({ rows: muitas(8) }));
+    const entidades = r.plotted.filter((s) => s.key !== UNATTRIBUTED_SERIES_KEY);
+    expect(entidades).toHaveLength(5);
+    expect(r.omittedCount).toBe(3);
+  });
+
+  // AC5.2 — o percentual denuncia o corte; calculado sobre as 5 plotadas ele
+  // seria um numero cortado denunciando o proprio corte.
+  it("o percentual omitido sai do conjunto INTEIRO (AC5.2)", () => {
+    const rows = muitas(8);
+    const r = buildEntitySeries(params({ rows }));
+    const total = rows.reduce((s, x) => s + x.spend, 0);
+    const omitido = [...rows].sort((a, b) => b.spend - a.spend).slice(5)
+      .reduce((s, x) => s + x.spend, 0);
+    expect(r.omittedSpendShare).toBeCloseTo((omitido / total) * 100, 8);
+  });
+});
+
+describe("Story 29.48 — janela de exibicao", () => {
+  const muitas = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      entityId: String(i),
+      entityName: `E${i}`,
+      dateStart: "2026-08-01",
+      spend: (n - i) * 10,
+    }));
+
+  it("lastNDates devolve os ultimos 7 dias (AC2)", () => {
+    const dias = Array.from({ length: 30 }, (_, i) => `2026-08-${String(i + 1).padStart(2, "0")}`);
+    const janela = lastNDates(dias);
+    expect(janela).toHaveLength(CHART_WINDOW_DAYS);
+    expect(janela[janela.length - 1]).toBe("2026-08-30");
+    expect(janela[0]).toBe("2026-08-24");
+  });
+
+  it("periodo mais curto que a janela devolve o que ha, sem preencher vazio", () => {
+    expect(lastNDates(["2026-08-01", "2026-08-02", "2026-08-03"])).toHaveLength(3);
+  });
+
+  it("lista vazia continua vazia", () => {
+    expect(lastNDates([])).toEqual([]);
+  });
+
+  // O recorte e de EXIBICAO: quem decide o top 5 e o periodo filtrado inteiro.
+  it("a janela nao altera quais series foram escolhidas", () => {
+    const r = buildEntitySeries(params({ rows: muitas(8) }));
+    const antes = r.plotted.map((s) => s.key);
+    lastNDates(r.dates);
+    expect(r.plotted.map((s) => s.key)).toEqual(antes);
   });
 });

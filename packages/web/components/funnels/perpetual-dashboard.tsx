@@ -116,6 +116,7 @@ import {
 import {
   buildEntitySeries,
   toComposedRows,
+  lastNDates,
   LINE_KEY_SUFFIX,
   UNATTRIBUTED_SERIES_KEY,
   TOP_N_SERIES,
@@ -320,6 +321,11 @@ function EntityDimensionCharts({
       return { ...prev, [grafico]: atual };
     });
 
+  // Story 29.48 (AC2): os gráficos plotam os últimos 7 dias do período, como
+  // os agregados do topo. O recorte é de exibição — `series.plotted` continua
+  // decidido pelo investimento do período INTEIRO (ver `CHART_WINDOW_DAYS`).
+  const datasPlotadas = lastNDates(series.dates);
+
   const graficos = [
     {
       key: "invest-cac",
@@ -462,8 +468,8 @@ function EntityDimensionCharts({
             <div key={g.key} className="rounded-xl border border-border/30 bg-card/60 p-5">
               <h4 className="text-sm font-semibold mb-1">{g.titulo}</h4>
               <p className="text-[11px] text-muted-foreground mb-3">
-                por {DIMENSAO_LABEL[dimensao]} · {series.dates.length}{" "}
-                {series.dates.length === 1 ? "dia" : "dias"} do período
+                por {DIMENSAO_LABEL[dimensao]} · últimos {datasPlotadas.length}{" "}
+                {datasPlotadas.length === 1 ? "dia" : "dias"} do período
               </p>
 
               {semFonte ? (
@@ -475,7 +481,7 @@ function EntityDimensionCharts({
                 <>
                   <ResponsiveContainer width="100%" height={220}>
                     <ComposedChart
-                      data={toComposedRows(series.plotted, series.dates, g.areaKey, g.lineKey)}
+                      data={toComposedRows(series.plotted, datasPlotadas, g.areaKey, g.lineKey)}
                       margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
@@ -534,7 +540,10 @@ function EntityDimensionCharts({
                   {/* AC4: legenda própria, não a do recharts. A do recharts
                       listaria área e linha como itens separados (dois cliques
                       para esconder uma entidade) e não tem estado de "off". */}
-                  <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                  {/* Story 29.48 (AC3): uma série por linha. Em `flex-wrap` os
+                      nomes longos de campanha quebravam no meio e viravam uma
+                      massa de texto em que ninguém achava a cor certa. */}
+                  <div className="mt-2 flex flex-col gap-y-1">
                     {series.plotted.map((s) => {
                       const desligada = off.has(s.key);
                       return (
