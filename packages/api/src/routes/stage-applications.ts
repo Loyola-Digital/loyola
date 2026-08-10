@@ -83,7 +83,12 @@ export default fp(async function stageApplicationsRoutes(fastify) {
   /**
    * Lê a planilha de aplicações de uma etapa e devolve a série diária.
    * Procura no escopo da ETAPA primeiro; se não achar, aceita uma do FUNIL
-   * (stage_id NULL) — lançamento antigo costuma ter a planilha no funil.
+   * (stage_id NULL) — lançamento antigo costuma ter a planilha no funil; e por
+   * fim qualquer planilha de aplicação do funil. Esse último fallback existe
+   * porque o gráfico agora é renderizado a partir da etapa de Vendas, cujo
+   * stageId não bate com o da planilha (que fica vinculada à Captação Paga):
+   * aplicação é um conceito de nível de lançamento, então basta haver UMA no
+   * funil.
    */
   async function seriesFor(
     funnelId: string,
@@ -103,7 +108,10 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         and(eq(funnelSpreadsheets.funnelId, funnelId), eq(funnelSpreadsheets.type, "applications")),
       );
 
-    const sheet = sheets.find((s) => s.stageId === stageId) ?? sheets.find((s) => !s.stageId);
+    const sheet =
+      sheets.find((s) => s.stageId === stageId) ??
+      sheets.find((s) => !s.stageId) ??
+      sheets[0];
     if (!sheet) return { points: [], total: 0, sheetLabel: null };
 
     const dateCol = sheet.columnMapping?.date;
