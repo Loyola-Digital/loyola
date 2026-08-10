@@ -78,6 +78,62 @@ export async function verifyRevenuecatKey(apiKey: string): Promise<void> {
 }
 
 // ============================================================
+// Overview metrics (pull agregado via API key)
+// ============================================================
+// GET /v2/projects/{project_id}/metrics/overview — snapshot de métricas
+// agregadas (mrr, assinaturas ativas, receita 28d, etc.). Requer que a Secret
+// Key tenha a permissão `charts_metrics:overview:read`. Sem parâmetros de data.
+// Docs: revenuecat.com/docs/api-v2 (Overview metrics).
+
+export interface RevenuecatMetric {
+  id: string;
+  name: string;
+  value: number;
+  /** "$", "#", "%" ... quando o RevenueCat manda. null = não informado. */
+  unit: string | null;
+}
+
+function toNumber(v: unknown): number {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) return Number(v);
+  return 0;
+}
+
+/**
+ * Puxa as métricas de overview do project no RevenueCat. Parseia os DOIS shapes
+ * conhecidos: `{ metrics: [{ id, name, value, unit }] }` (v2 atual) e o objeto
+ * plano `{ mrr: 123, active_subscriptions: 456, ... }`.
+ */
+export async function getRevenuecatOverview(
+  apiKey: string,
+  rcProjectId: string,
+): Promise<RevenuecatMetric[]> {
+  const data = (await rcFetch(apiKey, `/projects/${rcProjectId}/metrics/overview`)) as
+    | { metrics?: unknown }
+    | Record<string, unknown>;
+
+  const metricsArr = (data as { metrics?: unknown }).metrics;
+  if (Array.isArray(metricsArr)) {
+    return metricsArr
+      .filter((m): m is Record<string, unknown> => !!m && typeof m === "object")
+      .filter((m) => typeof m.id === "string")
+      .map((m) => ({
+        id: m.id as string,
+        name: typeof m.name === "string" ? (m.name as string) : (m.id as string),
+        value: toNumber(m.value),
+        unit: typeof m.unit === "string" ? (m.unit as string) : null,
+      }));
+  }
+
+  // Fallback: objeto plano id -> número.
+  const out: RevenuecatMetric[] = [];
+  for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+    if (typeof v === "number") out.push({ id: k, name: k, value: v, unit: null });
+  }
+  return out;
+}
+
+// ============================================================
 // Webhook — normalização de evento
 // ============================================================
 

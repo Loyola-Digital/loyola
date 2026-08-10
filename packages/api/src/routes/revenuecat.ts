@@ -16,6 +16,7 @@ import {
   decryptRevenuecatKey,
   verifyRevenuecatKey,
   listRevenuecatProjects,
+  getRevenuecatOverview,
   REVENUE_EVENT_TYPES,
 } from "../services/revenuecat.js";
 
@@ -406,6 +407,45 @@ export default fp(async function revenuecatRoutes(fastify) {
         byStore: byStore.filter((s) => s.store),
         byProduct: byProduct.filter((p) => p.productId),
       };
+    },
+  );
+
+  // ---- GET overview (métricas agregadas puxadas da API do RevenueCat) ----
+  // Pull ao vivo via API key (não depende do webhook): MRR, assinaturas ativas,
+  // receita 28d, etc. Requer key conectada + rcProjectId escolhido na etapa.
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/overview",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const apiKey = await getApiKey(params.data.projectId);
+      if (!apiKey) return reply.code(409).send({ error: "RevenueCat não conectado neste projeto" });
+
+      const [cfg] = await fastify.db
+        .select({ rcProjectId: revenuecatStageConfig.rcProjectId })
+        .from(revenuecatStageConfig)
+        .where(eq(revenuecatStageConfig.stageId, params.data.stageId))
+        .limit(1);
+
+      // Sem app selecionado na etapa — o front pede pra configurar.
+      if (!cfg?.rcProjectId) return { configured: false, metrics: [] };
+
+      try {
+        const metrics = await getRevenuecatOverview(apiKey, cfg.rcProjectId);
+        return { configured: true, metrics };
+      } catch (err) {
+        request.log.error(err, "Erro ao puxar overview do RevenueCat");
+        // 403 = a Secret Key não tem a permissão charts_metrics:overview:read.
+        return reply.code(502).send({
+          error:
+            "Não foi possível puxar as métricas do RevenueCat. Confirme que a Secret API Key tem a permissão de leitura de métricas (charts_metrics:overview:read).",
+        });
+      }
     },
   );
 });
