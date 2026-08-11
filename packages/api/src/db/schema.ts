@@ -1256,7 +1256,7 @@ export const funnelBatchTurns = pgTable(
 
 // ============================================================
 // ZOOM INTEGRATION (Story 19.8 — conexão por projeto)
-// Migration 0100: a conexão era por etapa e virou POR PROJETO (mesmo padrão do
+// Migration 0101: a conexão era por etapa e virou POR PROJETO (mesmo padrão do
 // Mautic). As reuniões vinculadas seguem por etapa — ver funnelStageZoomMeetings.
 // ============================================================
 

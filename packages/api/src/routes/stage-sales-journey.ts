@@ -824,7 +824,7 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
    * a venda por janela sem filtrar a aplicação (que é sempre anterior)
    * subestimaria a conversão de todas as faixas.
    */
-  const SEM_FAIXA = " sem-faixa";
+  const SEM_FAIXA = "\u0000sem-faixa";
 
   /** Coluna de faixa: mapeamento explícito > "faixa 1" > 1º header "faixa…". */
   function acharColFaixa(headers: string[], mapeado: unknown): number {
