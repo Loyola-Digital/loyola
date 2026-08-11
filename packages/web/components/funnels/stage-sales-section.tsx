@@ -203,6 +203,16 @@ export function StageSalesSection({
   );
   const role = useUserRole();
   const canEditSellers = role !== null && role !== "guest";
+  /**
+   * `subtype` pode vir como CSV ("main_product,tmb") — a etapa de Vendas agrega
+   * o TMB no Produto Principal pra bater com o total do topo. Comparar por
+   * igualdade simples (`subtype === "main_product"`) fazia o bloco de
+   * Vendedores × Perfil sumir da tela quando o subtype virou CSV.
+   */
+  const incluiProdutoPrincipal = subtype
+    .split(",")
+    .map((s) => s.trim())
+    .includes("main_product");
 
   if (isLoading) {
     return (
@@ -374,7 +384,7 @@ export function StageSalesSection({
           Lead scoring vive na etapa Captação Paga; backend busca o scoring/
           survey em qualquer stage do mesmo funnel pra atribuir perfil aos
           compradores do principal via email. */}
-      {subtype === "main_product" && (
+      {incluiProdutoPrincipal && (
         <div className="space-y-2 border-t pt-4 mt-4">
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs font-medium text-muted-foreground">
