@@ -21,6 +21,7 @@ import clickupServicePlugin from "./services/clickup.js";
 import instagramServicePlugin from "./services/instagram.js";
 import metaNamesSchedulerPlugin from "./plugins/meta-names-scheduler.js";
 import metaPerfSchedulerPlugin from "./plugins/meta-perf-scheduler.js";
+import metaActivitiesSchedulerPlugin from "./plugins/meta-activities-scheduler.js";
 
 // Routes
 import healthRoutes from "./routes/health.js";
@@ -141,6 +142,8 @@ export async function buildServer() {
   await app.register(metaNamesSchedulerPlugin);
   // Refresh diário da performance Meta no cache (Story 36.4)
   await app.register(metaPerfSchedulerPlugin);
+  // Log de Campanha automático a partir do histórico de alterações da Meta.
+  await app.register(metaActivitiesSchedulerPlugin);
   await app.register(paymentAlertsSchedulerPlugin);
   // Spy de Conteúdo: consome a fila de scans do Instagram em background.
   await app.register(instaScanWorkerPlugin);

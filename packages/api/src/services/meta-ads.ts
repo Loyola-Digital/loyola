@@ -1627,3 +1627,55 @@ export async function fetchAdCreativesWithCache(
 
   return [...cached, ...fresh];
 }
+
+// ============================================================
+// ACTIVITY LOG (histórico de alterações da conta)
+// ============================================================
+
+/**
+ * Uma linha do "Histórico de alterações" do Gerenciador de Anúncios. É o que
+ * alimenta o Log de Campanha com o que foi mexido na Meta (verba, liga/desliga,
+ * público, criativos) sem ninguém anotar à mão.
+ *
+ * `translated_event_type` já vem traduzido pela Meta no idioma da conta ("Orçamento
+ * da campanha atualizado"), então o log não precisa manter dicionário próprio.
+ * `extra_data` é um JSON string com old_value/new_value — formato varia por tipo.
+ */
+export interface MetaActivity {
+  event_type: string;
+  event_time: string;
+  translated_event_type?: string;
+  object_id?: string;
+  object_name?: string;
+  actor_name?: string;
+  extra_data?: string;
+}
+
+/**
+ * Histórico de alterações da conta no período. Pagina até `maxPages` (a conta
+ * movimentada gera milhares de eventos/mês; sem teto uma janela larga viraria
+ * varredura infinita).
+ */
+export async function fetchAccountActivities(
+  metaAccountId: string,
+  accessToken: string,
+  since: string,
+  until: string,
+  maxPages = 20,
+): Promise<MetaActivity[]> {
+  const fields =
+    "event_type,event_time,translated_event_type,object_id,object_name,actor_name,extra_data";
+  let response = await fetchMeta<{ data?: MetaActivity[]; paging?: { next?: string } }>(
+    `/act_${metaAccountId}/activities?fields=${fields}&since=${since}&until=${until}&limit=200`,
+    accessToken,
+  );
+
+  const out: MetaActivity[] = [...(response.data ?? [])];
+  for (let page = 1; page < maxPages && response.paging?.next; page++) {
+    response = await fetchMetaNext<{ data?: MetaActivity[]; paging?: { next?: string } }>(
+      response.paging.next,
+    );
+    out.push(...(response.data ?? []));
+  }
+  return out;
+}

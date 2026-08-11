@@ -14,7 +14,9 @@ export type MetaSyncKind =
   | "campaign-daily"
   | "placements"
   | "creatives"
-  | "names";
+  | "names"
+  // Histórico de alterações da conta que alimenta o Log de Campanha.
+  | "activities";
 
 export interface SyncRunResult {
   success: boolean;
