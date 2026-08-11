@@ -35,6 +35,13 @@ const envSchema = z.object({
   // Epic 35+: refresh INTRADAY (mantém "hoje/recente" fresco no banco para os
   // painéis lerem sem chamar a Meta). Intervalo em minutos (default 15) e janela
   // curta de dias (default 3). META_PERF_INTRADAY_ENABLED=false desliga.
+  // Log de Campanha automático: histórico de alterações da Meta (verba,
+  // liga/desliga, público, criativos) vira entrada de log. Intervalo em minutos
+  // (default 30) e janela em dias (default 7 — sobreposição é segura, o
+  // sourceId deduplica). META_ACTIVITIES_ENABLED=false desliga.
+  META_ACTIVITIES_ENABLED: z.enum(["true", "false"]).optional(),
+  META_ACTIVITIES_MINUTES: z.coerce.number().int().min(5).max(1440).optional(),
+  META_ACTIVITIES_DAYS: z.coerce.number().int().min(1).max(90).optional(),
   META_PERF_INTRADAY_ENABLED: z.enum(["true", "false"]).optional(),
   META_PERF_INTRADAY_MINUTES: z.coerce.number().int().min(1).max(720).optional(),
   META_PERF_INTRADAY_DAYS: z.coerce.number().int().min(1).max(90).optional(),
