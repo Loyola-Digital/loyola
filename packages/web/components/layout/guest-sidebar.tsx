@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, ChevronDown, Instagram, MessageSquare, Brain, TrendingUp, Rocket, Repeat, Share2, ArrowUpDown } from "lucide-react";
+import { ChevronRight, ChevronDown, Instagram, MessageSquare, Brain, TrendingUp, Rocket, Repeat, Smartphone, Share2, ArrowUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -76,7 +76,8 @@ function GuestFunnelItem({
     prevActiveRef.current = isActiveFunnel;
   }, [isActiveFunnel]);
 
-  const FunnelIcon = funnel.type === "launch" ? Rocket : Repeat;
+  const FunnelIcon =
+    funnel.type === "launch" ? Rocket : funnel.type === "mobile" ? Smartphone : Repeat;
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
