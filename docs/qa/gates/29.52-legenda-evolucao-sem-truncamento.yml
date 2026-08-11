@@ -1,0 +1,70 @@
+schema: 1
+story: '29.52'
+gate: PASS
+iteration: 1
+status_reason: >-
+  AC1-AC5 atendidos num unico bloco. A causa foi removida na raiz (o
+  `max-w-[130px] truncate`), nao contornada com tooltip ou abreviacao. O
+  `min-w-0` junto do `wrap-anywhere` mostra entendimento do problema real: sem
+  ele o item flex nao encolhe abaixo do min-content e o nome longo passaria a
+  empurrar a largura do botao em vez de quebrar. Nada do comportamento das
+  29.42/29.48 regrediu.
+reviewer: 'Quinn'
+updated: '2026-08-11T00:00:00Z'
+
+verificacoes:
+  code_review: PASS
+  unit_tests: N/A           # bloco de CSS; runner do pacote nao tem jsdom
+  acceptance_criteria: PASS
+  no_regressions: PASS
+  performance: PASS
+  security: PASS            # `title` recebe s.name como atributo — React escapa
+  documentation: PASS
+
+verificacoes_manuais_executadas:
+  - o: 'Alcance da mudanca'
+    como: 'O bloco esta dentro do .map de `graficos`'
+    resultado: >-
+      Renderizado 3x por dimensao — a edicao unica cobre os tres graficos e as
+      tres dimensoes, como o AC5 exige.
+  - o: 'Preservacao do estado ligado/desligado'
+    como: 'Leitura do JSX: onClick, off.has, classes'
+    resultado: >-
+      `toggle(g.key, s.key)`, `opacity-35 line-through` e o estado por grafico
+      intactos. O `line-through` no botao nao afeta o quadrado de cor (span
+      vazio com background), igual ao comportamento anterior.
+  - o: 'Alinhamento do quadrado de cor'
+    como: 'Analise do `items-start` + `mt-[3px]` contra text-[10px]'
+    resultado: >-
+      Correto para nome de duas linhas, que era o objetivo. Para nome de uma
+      linha o deslocamento difere do `items-center` anterior em ~1px —
+      imperceptivel, e o `items-start` e o que o AC2 pede.
+  - o: 'Grade dos cards (AC4)'
+    como: 'Verificacao de que nenhum `items-start` entrou no container da grade'
+    resultado: >-
+      O `items-start` esta apenas no botao da legenda. A grade nao foi tocada e
+      o `align-items: stretch` do CSS Grid segue valendo — os tres cards mantem
+      a mesma altura mesmo com uma legenda mais alta.
+
+top_issues:
+  - id: 'QA-01'
+    severity: LOW
+    finding: >-
+      O botao da legenda e um toggle e nao expoe `aria-pressed`. O AC3 melhorou
+      a leitura por leitor de tela colocando o nome no `title`, mas o ESTADO
+      (serie ligada ou desligada) segue comunicado so por cor e risco visual.
+    nota: >-
+      PRE-EXISTENTE da 29.42, nao regressao desta story. Registrado porque o
+      AC3 encostou no tema e o conserto e de uma linha.
+    suggested_action: '`aria-pressed={!desligada}` no botao.'
+    blocking: false
+
+pendencias_nao_bloqueantes:
+  - validacao_visual: >-
+      E A verificacao desta story — nao ha teste possivel sem jsdom. Conferir em
+      tela larga (nome completo de campanha nos 3 graficos) e estreita (quebra
+      em duas linhas, nada cortado). Itens no DoD.
+
+nota_de_processo:
+  coderabbit: >-
+    NAO EXECUTADO — binario ausente nesta maquina. Revisao integralmente manual.

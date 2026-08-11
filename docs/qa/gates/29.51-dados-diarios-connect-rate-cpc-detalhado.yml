@@ -1,0 +1,108 @@
+schema: 1
+story: '29.51'
+gate: PASS
+iteration: 1
+status_reason: >-
+  AC1-AC9 atendidos e verificados um a um contra o codigo, nao contra o relato.
+  O AC7 — o coracao da story — foi cumprido pela raiz: corpo e rodape deixaram
+  de ter celulas posicionais e passaram a iterar a mesma lista do header, com
+  `render` unico servindo linha e total. O rodape nao tem mais calculo proprio,
+  entao media-de-medias deixou de ser um erro possivel: nao sobrou lugar onde
+  escreve-la. Ordem das 14 colunas conferida programaticamente contra o pedido
+  do gestor — bate exatamente, e o Simplificado e prefixo do Detalhado.
+  Uma lacuna de teste foi FECHADA no proprio gate (ver testes_criados_no_gate).
+reviewer: 'Quinn'
+updated: '2026-08-11T00:00:00Z'
+
+verificacoes:
+  code_review: PASS
+  unit_tests: PASS          # 386 verdes no pacote (32 novos nesta branch)
+  acceptance_criteria: PASS # AC1-AC9, verificados individualmente
+  no_regressions: PASS
+  performance: PASS
+  security: N/A             # sem input de usuario, sem I/O, sem markup dinamico
+  documentation: PASS
+
+testes_criados_no_gate:
+  - arquivo: 'packages/web/lib/utils/__tests__/perpetual-daily-detail-parity.test.ts'
+    casos: 8
+    motivo: >-
+      O AC4 AFIRMA que "os numeros do dia batem com os da entidade para o mesmo
+      recorte", e usa isso para justificar a base de cliques compartilhada. A
+      afirmacao estava CORRETA na implementacao, mas nenhum teste a travava: os
+      dois modulos calculam CPC/CPM/ROAS/CAC em arquivos separados, e nada
+      impediria uma refatoracao futura de mudar a regra em um so. A divergencia
+      apareceria em producao como "o CPC do dia nao bate com o do criativo" — o
+      tipo de defeito que o gestor descobre antes do time.
+    resultado: >-
+      Paridade CONFIRMADA para CPC, CPM, ROAS, CAC, Margem % e para o fallback
+      da base de cliques. A divergencia no caso-zero (Detalhamento devolve 0,
+      Quadro Diario devolve null) e DELIBERADA — AC5 — e ficou documentada em
+      teste proprio para que ninguem a "conserte" achando que e descuido.
+
+verificacoes_manuais_executadas:
+  - o: 'Ordem e contagem das colunas'
+    como: 'Extracao do array via awk; comparacao com o pedido literal do gestor'
+    resultado: >-
+      9 metricas no Simplificado (+ Dia = 10) e 13 no Detalhado (+ Dia = 14).
+      Sequencia identica a pedida, com Connect Rate e CPC a esquerda de ROAS.
+  - o: 'Rules of Hooks'
+    como: 'Leitura da ordem de declaracao ate o early-return'
+    resultado: >-
+      Os 8 hooks (2 useState novos incluidos) estao antes de
+      `if (rows.length === 0) return null`. Sem hook condicional.
+  - o: 'AC1 — trocar de modo nao reseta pagina nem ordenacao'
+    como: 'Deps dos hooks: o useEffect de reset depende de [rows], nao de [modo]'
+    resultado: 'Confirmado por construcao — os estados sao independentes.'
+  - o: 'Regressao de estilo'
+    como: 'Diff do JSX antigo contra o novo, celula a celula'
+    resultado: >-
+      O `font-medium` exclusivo do ROAS havia se perdido na troca das celulas
+      posicionais; o @dev pegou relendo o proprio diff e restaurou via campo
+      `emphasis`. Confirmado no codigo entregue. Cores condicionais de
+      Margem/Margem % preservadas em linha e rodape.
+  - o: 'Guarda de imposto (regressao 29.24)'
+    como: 'Leitura do modulo + teste dedicado do @dev'
+    resultado: >-
+      `spend` entra tributado e sai sem fator. `margin` entra pronta e nao e
+      recalculada — o que impede o prejuizo inventado da 29.10 em projeto sem
+      planilha. Ambos travados em teste.
+
+top_issues:
+  - id: 'QA-01'
+    severity: LOW
+    finding: >-
+      O memorial da coluna CPC diz "Investimento ÷ Cliques", mas no modo
+      Simplificado — que e o PADRAO — a coluna Cliques nao esta visivel. O AC4
+      construiu um argumento inteiro sobre a conta fechar na calculadora, e no
+      modo que o gestor mais usa o denominador fica invisivel.
+    suggested_action: >-
+      Enriquecer o `title` do CPC com a base, como o Connect Rate ja faz:
+      "Investimento ÷ Cliques no link (fallback: cliques totais)". Uma linha.
+    blocking: false
+
+  - id: 'QA-02'
+    severity: LOW
+    finding: >-
+      Nao ha teste que trave a ORDEM das colunas — o array vive no .tsx (carrega
+      formatadores locais) e nao e importavel pelo runner.
+    nota: >-
+      Risco baixo e MENOR que o anterior: apos o AC7, reordenar move a coluna
+      inteira (header + corpo + rodape juntos), o que e visivel. O perigo que
+      existia era o desalinhamento silencioso, e esse acabou.
+    suggested_action: 'Nenhuma agora. Registrar como debito se o array crescer.'
+    blocking: false
+
+pendencias_nao_bloqueantes:
+  - validacao_visual: >-
+      Nao executavel por mim (exige dados reais e sessao autenticada). Os itens
+      estao no DoD da story. Os dois que mais importam: rodape Total conferido
+      contra os cards do topo em AMBOS os modos, e Impressoes por extenso com
+      `Cliques ÷ Impressoes` fechando com a coluna CTR.
+
+nota_de_processo:
+  coderabbit: >-
+    NAO EXECUTADO — binario ausente nesta maquina (`~/.local/bin/coderabbit` e
+    `which coderabbit` falham). O passo automatizado do meu workflow nao rodou;
+    esta revisao e integralmente manual. Registro para que a ausencia do scan
+    nao seja lida como scan limpo.
