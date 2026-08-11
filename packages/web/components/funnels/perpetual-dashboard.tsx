@@ -113,6 +113,12 @@ import {
 } from "@/lib/utils/chart-granularity";
 import { deriveDetailMetrics } from "@/lib/utils/perpetual-detail-metrics";
 import {
+  deriveDailyMetrics,
+  sumDailyMetrics,
+  type DailyMetricsInput,
+  type DailyMetricsOutput,
+} from "@/lib/utils/perpetual-daily-metrics";
+import {
   buildLpRows, sortLpRows, classifyLpCoverage, UNRESOLVED_LP_KEY, type LpRow,
 } from "@/lib/utils/perpetual-lp-rows";
 import {
@@ -185,6 +191,17 @@ function fmtPercent(val: number | null | undefined): string {
   return `${val.toFixed(2)}%`;
 }
 
+// Story 29.51: inteiro por extenso, com separador de milhar e SEM abreviar.
+// `fmtNumber` abrevia acima de 1.000 (45.312 → "45.3K"), e num quadro cuja
+// razão de existir é permitir conferir `CTR = Cliques ÷ Impressões` na
+// calculadora isso destrói o que a coluna entrega: "45.3K ÷ 612" dá 1,35%
+// enquanto a coluna CTR mostra 1,34%, e quem confere conclui — com razão
+// aparente — que o dashboard está quebrado.
+function fmtInteger(val: number | null | undefined): string {
+  if (val == null) return "—";
+  return Math.round(val).toLocaleString("pt-BR");
+}
+
 function fmtRoas(val: number | null | undefined): string {
   if (val == null) return "—";
   return `${val.toFixed(2)}x`;
@@ -208,38 +225,145 @@ function dailyActionCount(
 // Story 29.23: QUADRO DE DADOS DIÁRIOS (tabela por dia)
 // ============================================================
 
-interface PerpetualDailyRow {
+// Story 29.51: estende `DailyMetricsInput` — os campos numéricos da linha SÃO
+// a entrada do módulo de derivação, e o rodapé "Total" usa a mesma interface
+// com os somatórios. Uma fonte, duas leituras, zero divergência possível.
+interface PerpetualDailyRow extends DailyMetricsInput {
   date: string;
   dateIso: string;
-  spend: number; // Investimento com imposto 12,15%
-  revenue: number; // Faturamento bruto
-  margin: number; // Margem de Contribuição (líquida − spend c/ tax)
-  salesCount: number;
-  impressions: number;
-  linkClicks: number;
-  lpViews: number;
+  // spend: Investimento com imposto 12,15% · revenue: Faturamento bruto
+  // margin: Margem de Contribuição (líquida − spend c/ tax)
+  // impressions / linkClicks / clicks / lpViews: crus da Meta por dia
 }
 
 // Story 29.33: quadro enxuto — só o que decide investimento. As 8 colunas de
-// mídia (Ticket Médio, Tx Conv., Cliques, Impressões, CPM, CPC, CTR, Connect
-// Rate) saíram: quem opera abre este quadro para responder "o dia deu lucro ou
-// prejuízo?", e varrer eficiência de mídia para chegar nisso custa uma rolagem
-// horizontal. Elas seguem disponíveis por dimensão no Detalhamento.
+// mídia saíram porque quem opera abre este quadro para responder "o dia deu
+// lucro ou prejuízo?", e varrer eficiência de mídia para chegar nisso custa uma
+// rolagem horizontal.
 //
-// ATENÇÃO ao editar: o header itera este array, mas o CORPO e o RODAPÉ são
-// células posicionais. Mudar a ordem aqui sem mudar lá desalinha os números
-// dos títulos — sem erro de tipo, sem erro em runtime, só valor na coluna
-// errada. As três listas andam juntas.
+// Story 29.51: a 29.33 acertou o uso mais frequente e não previu o segundo, que
+// é diário também — quando a margem cai, a pergunta seguinte é "caiu por quê?".
+// Daí as duas visualizações: o quadro enxuto continua sendo o PADRÃO, e as
+// métricas de mídia voltam atrás de um clique. Connect Rate e CPC ficam nos
+// dois modos: são os primeiros lugares onde um dia ruim aparece, antes de a
+// margem cair.
 //
-// `title` = memorial da fórmula (tooltip no header, padrão de 18.58/18.60).
-const PERPETUAL_DAILY_COLUMNS: Array<{ label: string; title: string }> = [
-  { label: "Investimento", title: "Gasto Meta do dia + imposto de 12,15% (a partir de 2026-01-01)" },
-  { label: "Faturamento Bruto", title: "Faturamento bruto do dia (planilha; fallback pixel Meta)" },
-  { label: "Margem", title: "Faturamento Líquido (após fees da plataforma) − Investimento c/ imposto" },
-  { label: "Margem %", title: "Margem ÷ Faturamento Bruto × 100" },
-  { label: "Vendas", title: "Contagem de vendas do dia (planilha; fallback pixel Meta)" },
-  { label: "CAC", title: "Investimento ÷ Vendas" },
-  { label: "ROAS", title: "Faturamento Bruto ÷ Investimento" },
+// A ARMADILHA QUE ESTE DESENHO ELIMINA: até a 29.51, o header iterava o array
+// mas o corpo e o rodapé eram células posicionais escritas à mão. Mudar a ordem
+// aqui sem mudar lá punha valor na coluna errada — sem erro de tipo, sem erro
+// em runtime. Com duas visualizações seriam três listas × dois modos mantidas
+// alinhadas na disciplina. Agora cada coluna carrega o próprio `render`, e os
+// três consumidores iteram a MESMA lista: desalinhar virou impossível por
+// construção, não por atenção.
+//
+// `render` recebe os crus e as derivadas, e serve tanto à linha do dia quanto
+// ao rodapé — as fórmulas são idênticas, só mudam os números que entram. É
+// literalmente por isso que o total nunca vira média de médias.
+type DailyColumn = {
+  key: string;
+  label: string;
+  /** Memorial da fórmula (tooltip no header, padrão de 18.58/18.60). */
+  title: string;
+  /** Só aparece no modo Detalhado. */
+  detailedOnly?: boolean;
+  render: (v: DailyMetricsInput, m: DailyMetricsOutput) => string;
+  /** Cor condicional — recebe os mesmos valores, linha ou total. */
+  tone?: (v: DailyMetricsInput) => string;
+  /** Peso de fonte maior na linha do dia (ROAS já tinha, antes da 29.51). */
+  emphasis?: boolean;
+};
+
+// Margem e Margem % compartilham o sinal, logo compartilham a cor.
+const marginTone = (v: DailyMetricsInput): string =>
+  v.margin >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400";
+
+const PERPETUAL_DAILY_COLUMNS: DailyColumn[] = [
+  {
+    key: "spend",
+    label: "Investimento",
+    title: "Gasto Meta do dia + imposto de 12,15% (a partir de 2026-01-01)",
+    render: (v) => fmtCurrency(v.spend),
+  },
+  {
+    key: "revenue",
+    label: "Faturamento Bruto",
+    title: "Faturamento bruto do dia (planilha; fallback pixel Meta)",
+    render: (v) => fmtCurrency(v.revenue),
+  },
+  {
+    key: "margin",
+    label: "Margem",
+    title: "Faturamento Líquido (após fees da plataforma) − Investimento c/ imposto",
+    render: (v) => fmtCurrency(v.margin),
+    tone: marginTone,
+  },
+  {
+    key: "marginPct",
+    label: "Margem %",
+    title: "Margem ÷ Faturamento Bruto × 100",
+    render: (_v, m) => fmtPercent(m.marginPct),
+    tone: marginTone,
+  },
+  {
+    key: "sales",
+    label: "Vendas",
+    title: "Contagem de vendas do dia (planilha; fallback pixel Meta)",
+    render: (v) => fmtNumber(v.salesCount),
+  },
+  {
+    key: "cac",
+    label: "CAC",
+    title: "Investimento ÷ Vendas",
+    render: (_v, m) => fmtCurrency(m.cac),
+  },
+  {
+    key: "connectRate",
+    label: "Connect Rate",
+    title: "Landing Page Views ÷ Cliques no Link × 100 · sem cliques no link o dia mostra “—”, nunca 100%",
+    render: (_v, m) => fmtPercent(m.connectRate),
+  },
+  {
+    key: "cpc",
+    label: "CPC",
+    title: "Investimento ÷ Cliques",
+    render: (_v, m) => fmtCurrency(m.cpc),
+  },
+  {
+    key: "roas",
+    label: "ROAS",
+    title: "Faturamento Bruto ÷ Investimento",
+    render: (_v, m) => fmtRoas(m.roas),
+    emphasis: true,
+  },
+  // ---- daqui para baixo, só no modo Detalhado ----
+  {
+    key: "impressions",
+    label: "Impressões",
+    title: "Impressões do dia (Meta)",
+    detailedOnly: true,
+    render: (v) => fmtInteger(v.impressions),
+  },
+  {
+    key: "clicks",
+    label: "Cliques",
+    title: "Cliques no link do dia (fallback: cliques totais quando o dia não reporta link_click)",
+    detailedOnly: true,
+    render: (_v, m) => fmtInteger(m.costClicks),
+  },
+  {
+    key: "ctr",
+    label: "CTR",
+    title: "Cliques ÷ Impressões × 100",
+    detailedOnly: true,
+    render: (_v, m) => fmtPercent(m.ctr),
+  },
+  {
+    key: "cpm",
+    label: "CPM",
+    title: "Investimento ÷ Impressões × 1.000",
+    detailedOnly: true,
+    render: (_v, m) => fmtCurrency(m.cpm),
+  },
 ];
 
 /**
@@ -545,6 +669,13 @@ function EntityDimensionCharts({
                   {/* Story 29.48 (AC3): uma série por linha. Em `flex-wrap` os
                       nomes longos de campanha quebravam no meio e viravam uma
                       massa de texto em que ninguém achava a cor certa. */}
+                  {/* Story 29.52: o nome usa a largura toda. O `max-w-[130px]
+                      truncate` que estava aqui vinha do layout antigo em linha
+                      corrida, onde limitar a largura fazia sentido para caber
+                      várias séries na mesma linha. Com uma série por linha ele
+                      só cortava — e cortava justamente o SUFIXO, que é a parte
+                      que distingue `…hot_cbo_videos` de `…hot_cbo_estaticos`.
+                      Três séries ficavam com a mesma legenda visível. */}
                   <div className="mt-2 flex flex-col gap-y-1">
                     {series.plotted.map((s) => {
                       const desligada = off.has(s.key);
@@ -553,16 +684,28 @@ function EntityDimensionCharts({
                           key={s.key}
                           type="button"
                           onClick={() => toggle(g.key, s.key)}
-                          className={`flex items-center gap-1 text-[10px] transition-opacity ${
+                          className={`flex w-full items-start gap-1 text-left text-[10px] transition-opacity ${
                             desligada ? "opacity-35 line-through" : "hover:opacity-70"
                           }`}
-                          title={desligada ? "Clique para mostrar" : "Clique para ocultar"}
+                          // O nome entra no title: rede de segurança para o caso
+                          // extremo em que nem duas linhas bastem, e é o que o
+                          // leitor de tela anuncia junto com a ação.
+                          title={`${s.name} — ${desligada ? "clique para mostrar" : "clique para ocultar"}`}
                         >
                           <span
-                            className="inline-block h-2 w-2 shrink-0 rounded-sm"
+                            // `mt-[3px]` alinha o quadrado com a PRIMEIRA linha
+                            // do texto: com `items-start` e um nome de duas
+                            // linhas, sem isso ele encostaria no topo do bloco.
+                            className="mt-[3px] inline-block h-2 w-2 shrink-0 rounded-sm"
                             style={{ background: corDaSerie(s.key, series.plotted.indexOf(s)) }}
                           />
-                          <span className="max-w-[130px] truncate">{s.name}</span>
+                          {/* `wrap-anywhere` (Tailwind 4.1+) e não `break-words`:
+                              nome de campanha não tem espaço, só hífen e
+                              underscore, e o `overflow-wrap: break-word` só
+                              quebra onde já haveria oportunidade. `min-w-0`
+                              porque item flex não encolhe abaixo do min-content
+                              sem isso. */}
+                          <span className="min-w-0 wrap-anywhere">{s.name}</span>
                         </button>
                       );
                     })}
@@ -581,15 +724,22 @@ function EntityDimensionCharts({
 }
 
 function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
-  // Guarda de divisão: denominador 0 → null → "—" (nunca NaN/Infinity).
-  const div = (n: number, d: number): number | null => (d > 0 ? n / d : null);
-
   // Story 29.25: paginação (16/página). Estado antes de qualquer early-return
   // (Rules of Hooks). Reset p/ página 0 quando o range/filtro muda (rows nova ref).
   const [pageIndex, setPageIndex] = useState(0);
   useEffect(() => {
     setPageIndex(0);
   }, [rows]);
+
+  // Story 29.51: visualização. Padrão "simplificado" a cada montagem — é o uso
+  // de 90% das aberturas, e o quadro enxuto da 29.33 segue sendo o desenho
+  // certo para "o dia deu lucro?". Trocar de modo NÃO reseta página nem
+  // ordenação: é a mesma tabela com mais colunas, não outra consulta.
+  const [modo, setModo] = useState<"simplificado" | "detalhado">("simplificado");
+  const colunas = useMemo(
+    () => PERPETUAL_DAILY_COLUMNS.filter((c) => modo === "detalhado" || !c.detailedOnly),
+    [modo],
+  );
 
   // Story 29.32: ordenação por dia. Padrão "desc" = dia mais recente primeiro —
   // quem opera abre o painel para ver ontem, não o primeiro dia do período.
@@ -608,26 +758,14 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
   }, [rows, sortDir]);
 
   // Story 29.25: totais do PERÍODO INTEIRO (não da página) — aditivas somam;
-  // derivadas recalculadas pelos totais na renderização do rodapé (AC2).
-  // Story 29.33: só as 4 aditivas que sobreviveram ao enxugamento. Impressões,
-  // cliques e LP views saíram junto com as colunas de mídia que as consumiam.
-  const totals = useMemo(() => {
-    return rows.reduce(
-      (a, r) => ({
-        spend: a.spend + r.spend,
-        revenue: a.revenue + r.revenue,
-        margin: a.margin + r.margin,
-        salesCount: a.salesCount + r.salesCount,
-      }),
-      { spend: 0, revenue: 0, margin: 0, salesCount: 0 },
-    );
-  }, [rows]);
-
-  // Cor do rodapé: Margem e Margem % compartilham o sinal do total do período.
-  const totalsMarginTone =
-    totals.margin >= 0
-      ? "text-emerald-600 dark:text-emerald-400"
-      : "text-red-600 dark:text-red-400";
+  // derivadas recalculadas pelos totais (AC2).
+  // Story 29.51: as aditivas de mídia voltaram ao somatório, e ele passou a ser
+  // `sumDailyMetrics` — a mesma função testada que o módulo expõe. O rodapé
+  // deriva do TOTAL com a MESMA `deriveDailyMetrics` das linhas: é o que impede
+  // a taxa do período de virar média das taxas diárias (Simpson pela porta da
+  // frente — o comentário que estava aqui alertava, agora o tipo garante).
+  const totals = useMemo(() => sumDailyMetrics(rows), [rows]);
+  const totalsMetrics = useMemo(() => deriveDailyMetrics(totals), [totals]);
 
   if (rows.length === 0) return null;
 
@@ -643,11 +781,35 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
 
   return (
     <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
-      <div>
-        <h3 className="text-sm font-semibold">Dados Diários</h3>
-        <p className="text-[11px] text-muted-foreground">
-          {rows.length} {rows.length === 1 ? "dia" : "dias"} · métricas monetárias com imposto de 12,15%
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">Dados Diários</h3>
+          <p className="text-[11px] text-muted-foreground">
+            {rows.length} {rows.length === 1 ? "dia" : "dias"} · métricas monetárias com imposto de 12,15%
+          </p>
+        </div>
+        {/* Story 29.51 (AC1): botões segmentados. Não usa ToggleGroup porque não
+            existe em `components/ui/` (só `tabs.tsx`, pesado demais para dois
+            botões); as classes são as mesmas da paginação logo abaixo. */}
+        <div role="group" aria-label="Visualização do quadro" className="flex items-center gap-1">
+          {([
+            ["simplificado", "Simplificado", "Só o que decide investimento — o dia deu lucro ou prejuízo?"],
+            ["detalhado", "Detalhado", "Acrescenta as métricas de mídia: impressões, cliques, CTR e CPM"],
+          ] as const).map(([valor, rotulo, dica]) => (
+            <button
+              key={valor}
+              type="button"
+              onClick={() => setModo(valor)}
+              aria-pressed={modo === valor}
+              title={dica}
+              className={`h-7 px-2 rounded-md border border-border/40 text-xs transition-colors ${
+                modo === valor ? "bg-muted font-medium text-foreground" : "hover:bg-muted/50 text-muted-foreground"
+              }`}
+            >
+              {rotulo}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="overflow-x-auto rounded-lg border border-border/30">
         <Table>
@@ -678,11 +840,11 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
                   )}
                 </button>
               </TableHead>
-              {PERPETUAL_DAILY_COLUMNS.map((c) => (
+              {colunas.map((c) => (
                 <TableHead
-                  key={c.label}
+                  key={c.key}
                   title={c.title}
-                  className="text-right text-xs font-semibold cursor-help"
+                  className="text-right text-xs font-semibold cursor-help whitespace-nowrap"
                 >
                   {c.label}
                 </TableHead>
@@ -690,57 +852,44 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
+            {/* Story 29.51: as células saem da MESMA lista do header, na mesma
+                ordem, pela mesma função. A coluna "Dia" segue explícita nos três
+                lugares (header com o botão de ordenar, célula com a data, rodapé
+                com "Total") — ela não é uma métrica e não participa do modo. */}
             {pageRows.map((r) => {
-              // Story 29.33: CAC é o antigo CPV — mesma conta, nome que o resto
-              // do produto e o mercado usam.
-              const cac = div(r.spend, r.salesCount);
-              const roas = div(r.revenue, r.spend);
-              // Story 29.33: Margem % sobre o faturamento BRUTO — mesmo
-              // denominador de `buildFunnelMarginPercentFormula`, usado no
-              // Detalhamento. Duas tabelas, uma conta. Faturamento 0 → null →
-              // "—", nunca 0% (que leria como "margem nula", não "sem base").
-              const marginPct = r.revenue > 0 ? (r.margin / r.revenue) * 100 : null;
-              // Margem e Margem % compartilham o sinal, logo compartilham a cor.
-              const marginTone =
-                r.margin >= 0
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-red-600 dark:text-red-400";
+              const m = deriveDailyMetrics(r);
               return (
                 <TableRow key={r.dateIso} className="text-xs">
                   <TableCell className="font-medium whitespace-nowrap">{r.date}</TableCell>
-                  <TableCell className="text-right tabular-nums">{fmtCurrency(r.spend)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{fmtCurrency(r.revenue)}</TableCell>
-                  <TableCell className={`text-right tabular-nums font-medium ${marginTone}`}>
-                    {fmtCurrency(r.margin)}
-                  </TableCell>
-                  <TableCell className={`text-right tabular-nums font-medium ${marginTone}`}>
-                    {fmtPercent(marginPct)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{fmtNumber(r.salesCount)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{fmtCurrency(cac)}</TableCell>
-                  <TableCell className="text-right tabular-nums font-medium">{fmtRoas(roas)}</TableCell>
+                  {colunas.map((c) => (
+                    <TableCell
+                      key={c.key}
+                      className={`text-right tabular-nums ${c.tone || c.emphasis ? "font-medium" : ""} ${c.tone ? c.tone(r) : ""}`}
+                    >
+                      {c.render(r, m)}
+                    </TableCell>
+                  ))}
                 </TableRow>
               );
             })}
           </TableBody>
-          {/* Story 29.25: linha Total do PERÍODO INTEIRO (imune à paginação). */}
+          {/* Story 29.25: linha Total do PERÍODO INTEIRO (imune à paginação).
+              Story 29.51: as derivadas do rodapé saem dos SOMATÓRIOS do período
+              porque `totalsMetrics` é `deriveDailyMetrics(totals)` — a mesma
+              função das linhas aplicada à soma. Média das linhas seria o
+              paradoxo de Simpson entrando pela porta da frente, e agora não há
+              onde ela caber: o rodapé não tem cálculo próprio. */}
           <TableFooter>
             <TableRow className="bg-muted/50 hover:bg-muted/50 text-xs font-semibold border-t-2">
               <TableCell className="font-semibold whitespace-nowrap">Total</TableCell>
-              <TableCell className="text-right tabular-nums">{fmtCurrency(totals.spend)}</TableCell>
-              <TableCell className="text-right tabular-nums">{fmtCurrency(totals.revenue)}</TableCell>
-              <TableCell className={`text-right tabular-nums ${totalsMarginTone}`}>
-                {fmtCurrency(totals.margin)}
-              </TableCell>
-              {/* Story 29.33: as derivadas do rodapé saem dos SOMATÓRIOS do
-                  período, nunca da média das linhas — média de médias é o
-                  paradoxo de Simpson entrando pela porta da frente. */}
-              <TableCell className={`text-right tabular-nums ${totalsMarginTone}`}>
-                {fmtPercent(totals.revenue > 0 ? (totals.margin / totals.revenue) * 100 : null)}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">{fmtNumber(totals.salesCount)}</TableCell>
-              <TableCell className="text-right tabular-nums">{fmtCurrency(div(totals.spend, totals.salesCount))}</TableCell>
-              <TableCell className="text-right tabular-nums">{fmtRoas(div(totals.revenue, totals.spend))}</TableCell>
+              {colunas.map((c) => (
+                <TableCell
+                  key={c.key}
+                  className={`text-right tabular-nums ${c.tone ? c.tone(totals) : ""}`}
+                >
+                  {c.render(totals, totalsMetrics)}
+                </TableCell>
+              ))}
             </TableRow>
           </TableFooter>
         </Table>
@@ -1314,6 +1463,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       const impressions = d ? safeNum(d.impressions) : 0;
       const linkClicks = dailyActionCount(d?.actions, "link_click");
       const lpViews = dailyActionCount(d?.actions, "landing_page_view");
+      // Story 29.51: cliques TOTAIS — já vinham no insight (`CampaignDailyInsight
+      // .clicks`), só não eram propagados. São o fallback de CPC/CTR quando o dia
+      // não reporta `link_click`, o mesmo que o Detalhamento por entidade usa.
+      const clicks = d ? safeNum(d.clicks) : 0;
       // Vendas/dia: planilha (fonte oficial) quando há daily; senão fallback pixel
       // Meta — mesma lógica de fonte da Receita (:596). Sem planilha → 0 (29.10).
       const salesFromSheet = sheetHasDaily ? (sheetSalesByDay[date] ?? 0) : 0;
@@ -1340,6 +1493,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         // Story 29.23: campos crus por dia para o Quadro de Dados Diários.
         impressions,
         linkClicks,
+        clicks,
         lpViews,
         salesCount,
         formulasByKey: {
