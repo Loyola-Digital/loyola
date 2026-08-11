@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Settings2,
   Smartphone,
@@ -29,11 +29,13 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Skeleton } from "@/components/ui/skeleton";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
-import { useCampaignPicker } from "@/lib/hooks/use-funnels";
+import { useCampaignPicker, useGoogleAdsCampaignPicker } from "@/lib/hooks/use-funnels";
 import { useCampaignDailyInsightsBulk } from "@/lib/hooks/use-traffic-analytics";
 import { sumMetaInsights } from "@/lib/utils/funnel-metrics";
 import { useUsdBrl } from "@/lib/hooks/use-fx";
 import { CampaignSelector } from "./campaign-selector";
+import { GoogleAdsCampaignSelector } from "./google-ads-campaign-selector";
+import { useGoogleAdsCampaigns } from "@/lib/hooks/use-google-ads-analytics";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
 import { SalesMetaKpis } from "./sales-meta-kpis";
@@ -111,6 +113,16 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   const campaignIds = stage.campaigns.map((c) => c.id);
   const { data: metaPicker } = useCampaignPicker(settingsOpen ? projectId : null);
 
+  // Google Ads: o picker é a única fonte do accountId enquanto a etapa não tem
+  // campanha vinculada (aí o id fica salvo em stage.googleAdsAccountId).
+  const { data: googlePicker } = useGoogleAdsCampaignPicker(projectId);
+  const googleAccountId = stage.googleAdsAccountId ?? googlePicker?.accountId ?? null;
+  const googleCampaigns = stage.googleAdsCampaigns ?? [];
+  const googleCampaignIds = useMemo(
+    () => new Set(googleCampaigns.map((c) => c.id)),
+    [googleCampaigns],
+  );
+
   const connection = useRevenuecatConnection(projectId);
   const connected = connection.data?.connected ?? false;
   const saveConnection = useSaveRevenuecatConnection(projectId);
@@ -134,6 +146,19 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   );
   const metaSpend28 = metaDaily28 ? sumMetaInsights([metaDaily28]).spend : 0;
 
+  // Investimento do Google na MESMA janela de 28 dias. Só as campanhas
+  // vinculadas à etapa entram — a conta pode servir outros produtos.
+  const { data: googleCampaigns28 } = useGoogleAdsCampaigns(
+    googleCampaignIds.size > 0 ? googleAccountId : null,
+    28,
+  );
+  const googleSpend28 = (googleCampaigns28?.campaigns ?? [])
+    .filter((c) => googleCampaignIds.has(c.id))
+    .reduce((soma, c) => soma + c.spend, 0);
+  // ROAS contra o investimento TOTAL: usar só a Meta inflaria o número assim que
+  // houvesse verba no Google.
+  const investimento28 = metaSpend28 + googleSpend28;
+
   // Métricas do overview (28d / snapshot) pro resumo mobile.
   const ov = overview.data?.metrics;
   const mrrUsd = metricValue(ov, "mrr");
@@ -143,7 +168,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   const revenue28Usd = metricValue(ov, "revenue_last_28_days", "revenue");
   const revenue28Brl = revenue28Usd != null && brlRate != null ? revenue28Usd * brlRate : null;
   const roas28 =
-    revenue28Brl != null && metaSpend28 > 0 ? revenue28Brl / metaSpend28 : null;
+    revenue28Brl != null && investimento28 > 0 ? revenue28Brl / investimento28 : null;
 
   async function handleSaveName() {
     if (!stageName.trim() || stageName.trim() === stage.name) return;
@@ -264,6 +289,35 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
                         updateStage.mutate(
                           { campaigns },
                           { onSuccess: () => toast.success("Campanhas atualizadas") },
+                        );
+                      }}
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Carregando campanhas...</p>
+                  )}
+                </div>
+
+                {/* Campanhas Google Ads */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Campanhas Google Ads</Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Campanhas de app (UAC) entram aqui — o investimento soma ao da Meta no
+                    resumo e no ROAS.
+                  </p>
+                  {googlePicker ? (
+                    <GoogleAdsCampaignSelector
+                      campaigns={googlePicker.campaigns}
+                      accountLinked={googlePicker.accountLinked}
+                      value={googleCampaigns}
+                      onChange={(googleAdsCampaigns) => {
+                        updateStage.mutate(
+                          {
+                            googleAdsCampaigns,
+                            // Grava a conta junto: sem isso a etapa dependeria do
+                            // picker pra saber de qual conta puxar as métricas.
+                            googleAdsAccountId: googleAccountId,
+                          },
+                          { onSuccess: () => toast.success("Campanhas Google atualizadas") },
                         );
                       }}
                     />
@@ -421,6 +475,9 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
           <Kpi icon={Zap} label="Investimento (Meta)" value={fmtBRL(metaSpend28)} />
+          {googleCampaignIds.size > 0 && (
+            <Kpi icon={Zap} label="Investimento (Google)" value={fmtBRL(googleSpend28)} />
+          )}
           <Kpi icon={DollarSign} label="Receita (RevenueCat)" value={brl(revenue28Usd, brlRate)} />
           <Kpi icon={TrendingUp} label="ROAS" value={fmtRoas(roas28)} highlight />
           <Kpi icon={Repeat} label="MRR" value={brl(mrrUsd, brlRate)} />
@@ -447,6 +504,19 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
           days={days}
         />
       </section>
+
+      {/* Google Ads — campanhas de app vinculadas à etapa. Só aparece quando há
+          campanha vinculada: seção vazia num app que só roda Meta seria ruído. */}
+      {googleCampaignIds.size > 0 && googleAccountId && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-muted-foreground">Google Ads</h2>
+          <GoogleAdsKpis
+            accountId={googleAccountId}
+            days={days}
+            campaignIds={googleCampaignIds}
+          />
+        </section>
+      )}
 
       {/* RevenueCat — métricas ao vivo (API) + vendas do período (webhook) */}
       <section className="space-y-3">
@@ -771,6 +841,72 @@ function BreakdownTable({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ============================================================
+// Google Ads — KPIs das campanhas de app vinculadas à etapa
+// ============================================================
+
+/**
+ * Agrega as campanhas do Google vinculadas à etapa. A rota devolve a conta
+ * inteira, então filtrar por `campaignIds` é o que impede o investimento de
+ * outro produto da mesma conta vazar pro painel do app.
+ */
+function GoogleAdsKpis({
+  accountId,
+  days,
+  campaignIds,
+}: {
+  accountId: string;
+  days: number;
+  campaignIds: Set<string>;
+}) {
+  const { data, isLoading } = useGoogleAdsCampaigns(accountId, days);
+
+  if (isLoading) return <Skeleton className="h-20 rounded-xl" />;
+
+  const vinculadas = (data?.campaigns ?? []).filter((c) => campaignIds.has(c.id));
+
+  if (vinculadas.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-border/40 bg-card p-4">
+        <p className="text-xs text-muted-foreground">
+          As campanhas vinculadas não tiveram entrega nos últimos {days} dias.
+        </p>
+      </div>
+    );
+  }
+
+  const total = vinculadas.reduce(
+    (acc, c) => ({
+      spend: acc.spend + c.spend,
+      impressions: acc.impressions + c.impressions,
+      clicks: acc.clicks + c.clicks,
+      conversions: acc.conversions + c.conversions,
+    }),
+    { spend: 0, impressions: 0, clicks: 0, conversions: 0 },
+  );
+
+  // CPA em cima de conversão do próprio Google (instalação/evento do app), que é
+  // o que a plataforma otimiza — a receita real vem do RevenueCat, no resumo.
+  const cpa = total.conversions > 0 ? total.spend / total.conversions : null;
+  const ctr = total.impressions > 0 ? (total.clicks / total.impressions) * 100 : null;
+
+  return (
+    <div className="spy-viz grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <Kpi icon={Zap} label="Investimento" value={fmtBRL(total.spend)} />
+      <Kpi icon={Users} label="Impressões" value={fmtNum(total.impressions)} />
+      <Kpi icon={ShoppingCart} label="Cliques" value={fmtNum(total.clicks)} />
+      <Kpi icon={Package} label="Conversões" value={fmtNum(total.conversions)} />
+      <Kpi icon={DollarSign} label="CPA" value={cpa != null ? fmtBRL(cpa) : "—"} />
+      {ctr != null && (
+        <p className="col-span-full text-[10px] text-muted-foreground">
+          CTR {ctr.toFixed(2)}% · {vinculadas.length} campanha
+          {vinculadas.length > 1 ? "s" : ""} vinculada{vinculadas.length > 1 ? "s" : ""}
+        </p>
+      )}
     </div>
   );
 }

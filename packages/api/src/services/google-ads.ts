@@ -4,7 +4,19 @@ import { decrypt } from "./encryption.js";
 // CONSTANTS
 // ============================================================
 
-const GOOGLE_ADS_API_VERSION = "v18";
+/**
+ * O Google desliga versões da Ads API todo ano, e a versão desligada não
+ * responde erro de API: devolve **404 com uma página HTML**, que sobe pelo
+ * serviço como "Google Ads API error (404): <!DOCTYPE html>…". Foi o que
+ * aconteceu com a v18 — parou de existir e derrubou a integração inteira em
+ * silêncio.
+ *
+ * Se esse 404-HTML voltar a aparecer, é isso: suba a versão aqui. Pra descobrir
+ * quais ainda vivem, basta um GET sem auth em
+ * `https://googleads.googleapis.com/<v>/customers:listAccessibleCustomers` —
+ * 401 = versão viva, 404 = versão desligada.
+ */
+const GOOGLE_ADS_API_VERSION = "v21";
 const GOOGLE_ADS_BASE = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}`;
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 

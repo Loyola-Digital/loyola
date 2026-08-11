@@ -45,6 +45,7 @@ import { OrphanCampaignsBanner } from "@/components/funnels/orphan-campaigns-ban
 import { CampaignSelector } from "@/components/funnels/campaign-selector";
 import { useCampaignPicker } from "@/lib/hooks/use-funnels";
 import { useGoogleAdsCampaignPicker } from "@/lib/hooks/use-funnels";
+import { GoogleAdsCampaignSelector } from "@/components/funnels/google-ads-campaign-selector";
 import { useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -417,36 +418,17 @@ export default function StagePage() {
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Campanhas Google Ads</Label>
                 {googlePicker ? (
-                  googlePicker.accountLinked ? (
-                    <div className="space-y-1 max-h-48 overflow-y-auto">
-                      {googlePicker.campaigns.map((c) => {
-                        const isSelected = stage.googleAdsCampaigns.some((s) => s.id === c.id);
-                        return (
-                          <div
-                            key={c.id}
-                            className={`flex items-center gap-2 p-2 rounded-md cursor-pointer text-sm ${isSelected ? "bg-primary/10" : "hover:bg-muted"}`}
-                            onClick={() => {
-                              const current = stage.googleAdsCampaigns;
-                              const updated = isSelected
-                                ? current.filter((s) => s.id !== c.id)
-                                : [...current, { id: c.id, name: c.name }];
-                              updateStage.mutate(
-                                { googleAdsCampaigns: updated },
-                                { onSuccess: () => toast.success("Campanhas Google atualizadas") }
-                              );
-                            }}
-                          >
-                            <div className={`h-3 w-3 rounded-sm border flex items-center justify-center shrink-0 ${isSelected ? "bg-primary border-primary" : "border-muted-foreground"}`}>
-                              {isSelected && <span className="text-[8px] text-primary-foreground font-bold">✓</span>}
-                            </div>
-                            <span className="truncate">{c.name}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Nenhuma conta Google Ads vinculada ao projeto.</p>
-                  )
+                  <GoogleAdsCampaignSelector
+                    campaigns={googlePicker.campaigns}
+                    accountLinked={googlePicker.accountLinked}
+                    value={stage.googleAdsCampaigns}
+                    onChange={(googleAdsCampaigns) => {
+                      updateStage.mutate(
+                        { googleAdsCampaigns },
+                        { onSuccess: () => toast.success("Campanhas Google atualizadas") }
+                      );
+                    }}
+                  />
                 ) : (
                   <p className="text-xs text-muted-foreground">Carregando campanhas...</p>
                 )}
