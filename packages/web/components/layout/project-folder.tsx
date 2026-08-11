@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings, Brain, EyeOff, Eye, Archive, RotateCcw, Link2, CreditCard } from "lucide-react";
+import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Smartphone, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings, Brain, EyeOff, Eye, Archive, RotateCcw, Link2, CreditCard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -137,7 +137,8 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
     prevActiveRef.current = isActiveFunnel;
   }, [isActiveFunnel]);
 
-  const FunnelIcon = funnel.type === "launch" ? Rocket : Repeat;
+  const FunnelIcon =
+    funnel.type === "launch" ? Rocket : funnel.type === "mobile" ? Smartphone : Repeat;
   const oppositeType = funnel.type === "launch" ? "perpetual" : "launch";
   const oppositeLabel = funnel.type === "launch" ? "Perpétuo" : "Lançamento";
 
@@ -1020,65 +1021,87 @@ interface SortableFunnelListProps {
   isAdmin: boolean;
 }
 
+/**
+ * Ordem de exibição dos grupos na sidebar. Um tipo que NÃO esteja nesta lista
+ * ainda assim é renderizado, no fim — a lista só define ordem, nunca quem
+ * aparece. Antes ela montava dois grupos fixos (perpetual e launch) e filtrava
+ * por eles, então funil de tipo novo ("mobile") sumia inteiro da navegação:
+ * existia na API, mas nenhum grupo o recebia.
+ */
+const ORDEM_DOS_TIPOS: string[] = ["perpetual", "launch", "mobile"];
+
+/** Agrupa por tipo preservando a ordem vinda do servidor dentro de cada grupo. */
+function agruparPorTipo(funnels: Funnel[]): { tipo: string; funnels: Funnel[] }[] {
+  const porTipo = new Map<string, Funnel[]>();
+  for (const f of funnels) {
+    const atual = porTipo.get(f.type);
+    if (atual) atual.push(f);
+    else porTipo.set(f.type, [f]);
+  }
+  const posicao = (t: string) => {
+    const i = ORDEM_DOS_TIPOS.indexOf(t);
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  return [...porTipo.entries()]
+    .sort((a, b) => posicao(a[0]) - posicao(b[0]))
+    .map(([tipo, funnels]) => ({ tipo, funnels }));
+}
+
 function SortableFunnelList({ funnels: allFunnels, projectId, isAdmin }: SortableFunnelListProps) {
   const reorder = useReorderFunnels(projectId);
 
   // Mantém ordem local pra otimismo; sincroniza quando server retorna
-  const [orderedPerpetuals, setOrderedPerpetuals] = useState<Funnel[]>([]);
-  const [orderedLaunches, setOrderedLaunches] = useState<Funnel[]>([]);
+  const [grupos, setGrupos] = useState<{ tipo: string; funnels: Funnel[] }[]>([]);
 
   useEffect(() => {
-    setOrderedPerpetuals(allFunnels.filter((f) => f.type === "perpetual"));
-    setOrderedLaunches(allFunnels.filter((f) => f.type === "launch"));
+    setGrupos(agruparPorTipo(allFunnels));
   }, [allFunnels]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
-  function dispatchReorder(perpetuals: Funnel[], launches: Funnel[]) {
-    const ids = [...perpetuals.map((f) => f.id), ...launches.map((f) => f.id)];
+  function dispatchReorder(next: { tipo: string; funnels: Funnel[] }[]) {
+    // Manda TODOS os grupos, não só os dois de antes: funil fora dos grupos
+    // enviados nunca recebia sort_order novo e ia ficando pra trás.
+    const ids = next.flatMap((g) => g.funnels.map((f) => f.id));
     reorder.mutate(ids, {
       onError: () => {
-        // Reverte os 2 grupos pra estado base
-        setOrderedPerpetuals(allFunnels.filter((f) => f.type === "perpetual"));
-        setOrderedLaunches(allFunnels.filter((f) => f.type === "launch"));
+        setGrupos(agruparPorTipo(allFunnels));
         toast.error("Erro ao reordenar — voltei pra ordem anterior");
       },
     });
   }
 
-  function handleDragEndPerpetual(event: DragEndEvent) {
+  function handleDragEnd(tipo: string, event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = orderedPerpetuals.findIndex((f) => f.id === active.id);
-    const newIndex = orderedPerpetuals.findIndex((f) => f.id === over.id);
+    const grupo = grupos.find((g) => g.tipo === tipo);
+    if (!grupo) return;
+    const oldIndex = grupo.funnels.findIndex((f) => f.id === active.id);
+    const newIndex = grupo.funnels.findIndex((f) => f.id === over.id);
     if (oldIndex < 0 || newIndex < 0) return;
-    const next = arrayMove(orderedPerpetuals, oldIndex, newIndex);
-    setOrderedPerpetuals(next);
-    dispatchReorder(next, orderedLaunches);
-  }
-
-  function handleDragEndLaunch(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = orderedLaunches.findIndex((f) => f.id === active.id);
-    const newIndex = orderedLaunches.findIndex((f) => f.id === over.id);
-    if (oldIndex < 0 || newIndex < 0) return;
-    const next = arrayMove(orderedLaunches, oldIndex, newIndex);
-    setOrderedLaunches(next);
-    dispatchReorder(orderedPerpetuals, next);
+    const next = grupos.map((g) =>
+      g.tipo === tipo ? { ...g, funnels: arrayMove(g.funnels, oldIndex, newIndex) } : g,
+    );
+    setGrupos(next);
+    dispatchReorder(next);
   }
 
   return (
     <>
-      {orderedPerpetuals.length > 0 && (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEndPerpetual}>
+      {grupos.map((grupo) => (
+        <DndContext
+          key={grupo.tipo}
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={(event) => handleDragEnd(grupo.tipo, event)}
+        >
           <SortableContext
-            items={orderedPerpetuals.map((f) => f.id)}
+            items={grupo.funnels.map((f) => f.id)}
             strategy={verticalListSortingStrategy}
           >
-            {orderedPerpetuals.map((funnel) => (
+            {grupo.funnels.map((funnel) => (
               <SortableFunnelItem
                 key={funnel.id}
                 funnel={funnel}
@@ -1088,25 +1111,7 @@ function SortableFunnelList({ funnels: allFunnels, projectId, isAdmin }: Sortabl
             ))}
           </SortableContext>
         </DndContext>
-      )}
-
-      {orderedLaunches.length > 0 && (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEndLaunch}>
-          <SortableContext
-            items={orderedLaunches.map((f) => f.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            {orderedLaunches.map((funnel) => (
-              <SortableFunnelItem
-                key={funnel.id}
-                funnel={funnel}
-                projectId={projectId}
-                isAdmin={isAdmin}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
-      )}
+      ))}
     </>
   );
 }
