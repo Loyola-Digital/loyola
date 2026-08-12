@@ -47,7 +47,22 @@ const connectionBodySchema = z.object({
 const configBodySchema = z.object({
   rcProjectId: z.string().max(64).nullable().optional(),
   label: z.string().max(255).nullable().optional(),
+  // Story 42.4 — percentuais da Margem de Contribuição, sobre o faturamento
+  // bruto. A soma dos três é validada abaixo (não pode passar de 100%).
+  platformFeePct: z.number().min(0).max(100).optional(),
+  taxPct: z.number().min(0).max(100).optional(),
+  otherCostsPct: z.number().min(0).max(100).optional(),
 });
+
+/** Defaults do memorial especificado pelo gestor (Story 42.4). */
+const MARGIN_DEFAULTS = { platformFeePct: 15, taxPct: 5, otherCostsPct: 1 } as const;
+
+/** `numeric` do Postgres chega como string no Drizzle. */
+function pct(value: string | null | undefined, fallback: number): number {
+  if (value == null) return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
 
 const salesQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(365).default(90),
@@ -218,6 +233,11 @@ export default fp(async function revenuecatRoutes(fastify) {
         rcProjectId: row?.rcProjectId ?? null,
         label: row?.label ?? null,
         webhook,
+        // Sempre preenchidos: etapa sem linha de config usa os defaults, e o
+        // painel precisa de números para exibir nos campos.
+        platformFeePct: pct(row?.platformFeePct, MARGIN_DEFAULTS.platformFeePct),
+        taxPct: pct(row?.taxPct, MARGIN_DEFAULTS.taxPct),
+        otherCostsPct: pct(row?.otherCostsPct, MARGIN_DEFAULTS.otherCostsPct),
       };
     },
   );
@@ -238,23 +258,60 @@ export default fp(async function revenuecatRoutes(fastify) {
       const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
+      const [existing] = await fastify.db
+        .select()
+        .from(revenuecatStageConfig)
+        .where(eq(revenuecatStageConfig.stageId, params.data.stageId))
+        .limit(1);
+
+      // Story 42.4: o PUT passou a ser PARCIAL. Antes, campo ausente no body
+      // virava null — salvar um percentual apagaria o rcProjectId da etapa e
+      // derrubaria as métricas do RevenueCat. Só o que veio no body muda.
+      const has = <K extends keyof typeof body.data>(k: K) => body.data[k] !== undefined;
+
+      const platformFeePct = has("platformFeePct")
+        ? body.data.platformFeePct!
+        : pct(existing?.platformFeePct, MARGIN_DEFAULTS.platformFeePct);
+      const taxPct = has("taxPct")
+        ? body.data.taxPct!
+        : pct(existing?.taxPct, MARGIN_DEFAULTS.taxPct);
+      const otherCostsPct = has("otherCostsPct")
+        ? body.data.otherCostsPct!
+        : pct(existing?.otherCostsPct, MARGIN_DEFAULTS.otherCostsPct);
+
+      // Acima de 100% o faturamento líquido fica negativo por construção e o
+      // card de margem vira ficção.
+      const soma = platformFeePct + taxPct + otherCostsPct;
+      if (soma > 100) {
+        return reply.code(400).send({
+          error: `Os percentuais somam ${soma.toFixed(2)}%. Juntos não podem passar de 100%.`,
+        });
+      }
+
+      const rcProjectId = has("rcProjectId")
+        ? (body.data.rcProjectId ?? null)
+        : (existing?.rcProjectId ?? null);
+      const label = has("label") ? (body.data.label ?? null) : (existing?.label ?? null);
+
       const now = new Date();
+      const valores = {
+        rcProjectId,
+        label,
+        platformFeePct: String(platformFeePct),
+        taxPct: String(taxPct),
+        otherCostsPct: String(otherCostsPct),
+        updatedAt: now,
+      };
       await fastify.db
         .insert(revenuecatStageConfig)
         .values({
           stageId: params.data.stageId,
           projectId: params.data.projectId,
-          rcProjectId: body.data.rcProjectId ?? null,
-          label: body.data.label ?? null,
-          updatedAt: now,
+          ...valores,
         })
         .onConflictDoUpdate({
           target: revenuecatStageConfig.stageId,
-          set: {
-            rcProjectId: body.data.rcProjectId ?? null,
-            label: body.data.label ?? null,
-            updatedAt: now,
-          },
+          set: valores,
         });
       return { ok: true };
     },

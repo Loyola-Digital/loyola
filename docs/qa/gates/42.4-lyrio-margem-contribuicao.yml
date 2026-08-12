@@ -1,0 +1,150 @@
+schema: 1
+story: '42.4'
+gate: CONCERNS
+iteration: 1
+status_reason: >-
+  A implementacao esta correta em relacao ao que foi especificado: o calculo puro
+  vive em lib/utils com 18 testes, o caso canonico do gestor fecha em 2.208,48, e
+  o PUT parcial corrigiu um bug real de tabela que apagaria o rcProjectId da
+  etapa. O CONCERNS carrega tres coisas de naturezas diferentes, e a mais grave
+  nao e um defeito de codigo: o AC9 segue aberto, e enquanto estiver aberto o
+  numero exibido pode estar 15% errado sem que nada na tela sinalize. O @dev
+  escalou em vez de chutar, que era exatamente o que o AC mandava — mas o card
+  ja esta em producao no merge, e um card de margem em que nao se pode confiar
+  e pior que nenhum card de margem.
+reviewer: 'Quinn'
+updated: '2026-08-12T00:00:00Z'
+
+verificacoes:
+  code_review: PASS
+  unit_tests: PASS          # 18 testes no calculo puro; rota sem teste (ver QA-09)
+  acceptance_criteria: CONCERNS   # AC9 aberto; AC3 com defeito de entrada
+  no_regressions: PASS
+  performance: PASS
+  security: PASS            # zod valida faixa; validacao de soma tambem no servidor
+  documentation: PASS
+
+verificacoes_manuais_executadas:
+  - o: 'PUT parcial nao apaga campos ausentes'
+    como: 'Leitura de :261-302'
+    resultado: >-
+      Le a linha existente antes do upsert e so sobrescreve o que veio no body.
+      `has()` compara com undefined, entao `rcProjectId: null` EXPLICITO (limpar
+      o app selecionado) continua funcionando e nao e confundido com ausencia.
+      Correto — e a distincao que a maioria das implementacoes erra.
+
+  - o: 'Validacao da soma acontece nos dois lados'
+    como: 'Leitura da rota (:284-289) e de validarPercentuaisMargem'
+    resultado: >-
+      Servidor devolve 400 com a soma no texto; cliente valida antes de chamar.
+      Defesa em profundidade correta.
+
+  - o: 'Aritmetica de exibicao da cadeia do memorial'
+    como: >-
+      Simulacao de 200.000 faturamentos, comparando a subtracao das quatro linhas
+      FORMATADAS com o faturamento liquido FORMATADO.
+    resultado: >-
+      93.553 divergencias (46,8%). Exemplo: memorial lista
+      18.127,98 - 2.719,20 - 906,40 - 181,28 (= 14.321,10) e exibe o liquido como
+      14.321,11. Praticamente uma em duas vezes a conta nao fecha. Ver QA-07.
+
+  - o: 'Campo vazio no formulario de percentuais'
+    como: 'Execucao de Number("") e Number.isFinite(0)'
+    resultado: >-
+      `Number("")` = 0 e `Number.isFinite(0)` = true, entao campo apagado passa
+      na validacao e grava 0%. Ver QA-08.
+
+  - o: 'Migration'
+    como: 'Leitura do 0103'
+    resultado: >-
+      Tres ADD COLUMN IF NOT EXISTS com NOT NULL DEFAULT — seguro em Postgres 11+
+      e idempotente. Linhas existentes nascem em 15/5/1, como o AC1 exige.
+      Renumerada de 0102 para 0103 porque df57b84 ocupou a 0102: verificado, nao
+      ha colisao.
+
+issues:
+  - id: QA-07
+    severity: high
+    category: requirements
+    description: >-
+      AC9 NAO RESOLVIDO. O card usa `revenue_last_28_days` do RevenueCat como
+      faturamento BRUTO e desconta 15% de comissao por cima. Se essa metrica ja
+      vier liquida de comissao (o RevenueCat distingue revenue de proceeds), o
+      desconto e aplicado duas vezes e a margem sai sistematicamente MENOR que a
+      real. Nada na tela sinaliza a duvida: o card exibe um numero de aparencia
+      confiavel.
+      Registro como HIGH e nao como bloqueio porque o @dev fez o certo — o AC
+      mandava parar e escalar, e ele parou e escalou em vez de escolher o
+      comportamento "provavel". A pendencia e de decisao, nao de implementacao.
+    recommendation: >-
+      Antes de o card ser usado para qualquer decisao de verba: abrir o Overview
+      do RevenueCat e comparar o Revenue de 28 dias com o valor que o card usa
+      como bruto. Iguais = correto. Se o painel mostrar ~15% a mais, a metrica e
+      liquida e o desconto de plataforma sai do calculo.
+      Enquanto isso nao acontecer, considerar acrescentar ao `note` do memorial
+      que a base de receita esta em verificacao.
+
+  - id: QA-08
+    severity: medium
+    category: correctness
+    description: >-
+      Campo de percentual apagado vira 0% em silencio. `Number("")` e 0, e a
+      validacao aceita 0 como valor legitimo (e e). O usuario que limpa o campo
+      para redigitar e clica em "Salvar percentuais" grava 0% sem nenhum aviso —
+      e 0% de comissao de loja infla a margem de forma invisivel.
+    recommendation: >-
+      Rejeitar string vazia antes do Number: um teste de `s.trim() === ""` em
+      validarPercentuaisMargem (ou no parse do formulario) devolvendo "informe um
+      valor". A funcao ja tem a forma certa para isso, so falta o caso.
+      Vale um teste unitario junto — o modulo ja e coberto.
+
+  - id: QA-09
+    severity: medium
+    category: correctness-display
+    description: >-
+      Mesma familia do QA-04 (Story 42.2), com incidencia muito maior: a cadeia
+      do memorial da margem nao fecha em 46,8% dos casos. O memorial lista bruto
+      e tres descontos, todos arredondados isoladamente, e depois exibe um
+      liquido arredondado a partir do valor exato. O usuario que somar as linhas
+      — que e literalmente o que um memorial convida a fazer — erra por 1 centavo
+      quase metade das vezes.
+    recommendation: >-
+      Derivar a ultima linha do total arredondado, para a cadeia fechar por
+      construcao. Corrigir junto com QA-04, que e o mesmo defeito no mesmo
+      arquivo.
+
+  - id: QA-10
+    severity: low
+    category: tests
+    description: >-
+      A rota PUT nao tem teste automatizado. A logica de merge parcial (o que
+      preserva, o que sobrescreve, como trata null explicito) e exatamente o tipo
+      de codigo que regride silenciosamente numa refatoracao futura. O pacote api
+      tem 50 arquivos de teste, entao a infraestrutura existe.
+    recommendation: >-
+      Tres casos cobririam o essencial: PUT so com percentual preserva
+      rcProjectId; PUT com rcProjectId null explicito limpa o campo; PUT com soma
+      > 100 devolve 400.
+
+pontos_fortes:
+  - >-
+    O bug do PUT destrutivo foi encontrado e corrigido durante a implementacao,
+    nao era escopo. Sem isso, a primeira vez que alguem salvasse um percentual
+    derrubaria as metricas do RevenueCat da etapa — e o nexo causal entre as duas
+    coisas seria dificil de reconstruir depois.
+  - >-
+    O calculo foi isolado em lib/utils ANTES da UI, seguindo a orientacao da
+    story. Resultado: 18 testes cobrindo margem negativa sem clamp, faturamento
+    zero sem NaN, imposto Meta ausente e Google somado sem tributo.
+  - >-
+    O teste que verifica que os percentuais NAO sao aplicados em cascata (imposto
+    de 5% sobre 10.000, nao sobre 8.500) trava uma interpretacao alternativa
+    plausivel da especificacao.
+  - >-
+    Margem negativa em vermelho e sem clamp. Numero negativo em preto passa
+    despercebido, e este e o numero que mais importa quando fica negativo.
+
+decisao: >-
+  CONCERNS — aprovado. QA-08 e QA-09 sao correcoes baratas e deveriam entrar
+  antes do merge. QA-07 nao e corrigivel por codigo: exige a verificacao no
+  painel do RevenueCat, e ate la o card nao deve embasar decisao de verba.

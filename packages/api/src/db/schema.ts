@@ -1731,6 +1731,19 @@ export const revenuecatStageConfig = pgTable(
     rcProjectId: varchar("rc_project_id", { length: 64 }),
     /** nome amigável do app/project no RevenueCat (só exibição). */
     label: varchar("label", { length: 255 }),
+    /**
+     * Story 42.4 — percentuais da Margem de Contribuição, todos incidindo sobre
+     * o faturamento BRUTO (não em cascata). Configuráveis porque a comissão da
+     * loja muda por contrato e por tempo de assinatura.
+     * Drizzle devolve `numeric` como string: converter antes de calcular.
+     */
+    platformFeePct: numeric("platform_fee_pct", { precision: 5, scale: 2 })
+      .notNull()
+      .default("15.00"),
+    taxPct: numeric("tax_pct", { precision: 5, scale: 2 }).notNull().default("5.00"),
+    otherCostsPct: numeric("other_costs_pct", { precision: 5, scale: 2 })
+      .notNull()
+      .default("1.00"),
     /** token secreto embutido na URL do webhook. Gerado sob demanda. NUNCA logar. */
     webhookToken: text("webhook_token").unique(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

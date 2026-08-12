@@ -20,6 +20,11 @@ export interface RevenuecatStageConfig {
   rcProjectId: string | null;
   label: string | null;
   webhook: { path: string; token: string } | null;
+  /** Story 42.4 — percentuais da Margem de Contribuição, sobre o faturamento
+   * bruto. A API sempre devolve os três preenchidos (defaults 15/5/1). */
+  platformFeePct: number;
+  taxPct: number;
+  otherCostsPct: number;
 }
 
 export interface RevenuecatSales {
@@ -117,7 +122,14 @@ export function useSaveRevenuecatConfig(projectId: string, funnelId: string, sta
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { rcProjectId?: string | null; label?: string | null }) =>
+    // PUT parcial: o que não vier no body é preservado pela API (Story 42.4).
+    mutationFn: (data: {
+      rcProjectId?: string | null;
+      label?: string | null;
+      platformFeePct?: number;
+      taxPct?: number;
+      otherCostsPct?: number;
+    }) =>
       apiClient<{ ok: boolean }>(
         `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/config`,
         { method: "PUT", body: JSON.stringify(data) },

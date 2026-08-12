@@ -36,6 +36,48 @@ export function applyMetaAdsTax(spendValue: number, dateStr: string): number {
 }
 
 /**
+ * Parcela do imposto embutida no gross-up — o que `applyMetaAdsTax` ACRESCENTA.
+ * Derivada da própria `applyMetaAdsTax` de propósito: a alíquota e a regra de
+ * data vivem em um lugar só.
+ *
+ * Story 42.1: existe para quem precisa exibir "investimento líquido" e "imposto"
+ * como linhas separadas (memorial de cálculo), sem reimplementar a aritmética.
+ */
+export function metaTaxAmount(spendValue: number, dateStr: string): number {
+  return applyMetaAdsTax(spendValue, dateStr) - spendValue;
+}
+
+/**
+ * Mesma soma de `sumMetaInsights`, decomposta nas duas parcelas que o memorial
+ * de cálculo precisa mostrar.
+ *
+ * `spendComImposto` é numericamente a mesma coisa que `sumMetaInsights(...).spend`
+ * — comparações entre os dois são de ponto flutuante e devem usar tolerância de
+ * centavo, não igualdade estrita.
+ *
+ * Story 42.1 (AC5).
+ */
+export function sumMetaSpendWithTax(allInsights: CampaignDailyInsight[][]): {
+  /** Soma do spend cru da API Meta, sem imposto. */
+  spendLiquido: number;
+  /** Soma das parcelas de imposto (0 para linhas anteriores a 2026). */
+  imposto: number;
+  /** Soma já tributada — o que os cards exibem. */
+  spendComImposto: number;
+} {
+  let spendLiquido = 0;
+  let imposto = 0;
+  for (const insights of allInsights) {
+    for (const row of insights) {
+      const rowSpend = parseFloat(row.spend || "0");
+      spendLiquido += rowSpend;
+      imposto += metaTaxAmount(rowSpend, row.date_start);
+    }
+  }
+  return { spendLiquido, imposto, spendComImposto: spendLiquido + imposto };
+}
+
+/**
  * Retorna o value numérico de uma action específica do array `actions[]` do Meta Ads.
  * Usado pra extrair `link_click`, `landing_page_view`, etc.
  */

@@ -1,0 +1,119 @@
+schema: 1
+story: '42.2'
+gate: CONCERNS
+iteration: 1
+status_reason: >-
+  O bloqueador que o @po identificou na validacao foi resolvido na raiz: o `Kpi`
+  virou forwardRef com spread de props, e o TooltipProvider entrou. Sem os dois,
+  os oito memoriais renderizariam e nunca abririam, sem erro nenhum em tela.
+  Conferi que os outros cinco usos do `Kpi` (paineis RevenueCat e Google Ads) nao
+  regridem — nenhum passa hintTooltip/valueClassName/className, entao renderizam
+  identicos. O CONCERNS e por um defeito de apresentacao que medi: o memorial do
+  card Investimento exibe "liquido + imposto = total" com os tres valores
+  formatados de forma independente, e em 25% dos casos a conta exibida nao fecha
+  por 1 centavo. Num componente cuja unica funcao e deixar o usuario conferir a
+  conta, isso corroi exatamente o que a story entrega.
+reviewer: 'Quinn'
+updated: '2026-08-12T00:00:00Z'
+
+verificacoes:
+  code_review: PASS
+  unit_tests: N/A           # componente; runner do pacote nao tem jsdom
+  acceptance_criteria: CONCERNS   # AC3 com defeito de apresentacao; AC7 com desvio declarado
+  no_regressions: PASS
+  performance: PASS         # memoriais montados em useMemo, fora do JSX
+  security: PASS            # so leitura de valores ja carregados
+  documentation: PASS
+
+verificacoes_manuais_executadas:
+  - o: 'O bloqueador do @po foi realmente resolvido'
+    como: 'Leitura do novo `Kpi` contra o padrao de launch-dashboard.tsx:877-894'
+    resultado: >-
+      forwardRef<HTMLDivElement, {...} & React.HTMLAttributes<HTMLDivElement>>,
+      com ref e {...rest} na div raiz e className CONCATENADO (nao sobrescrito).
+      Ganhou hintTooltip e valueClassName. Correto.
+
+  - o: 'Regressao nos outros usos do Kpi'
+    como: 'grep de todos os <Kpi> do arquivo e das props que cada um passa'
+    resultado: >-
+      Cinco usos fora do Resumo (RevenuecatPanel, overview, painel Google Ads).
+      NENHUM passa hintTooltip, valueClassName ou className — renderizam
+      exatamente como antes. Sem regressao.
+
+  - o: 'Aritmetica de exibicao do memorial (Investimento Meta)'
+    como: >-
+      Simulacao de 300.000 valores de spend com o gross-up aplicado, comparando
+      a soma dos dois valores FORMATADOS com o total FORMATADO.
+    resultado: >-
+      75.059 divergencias (25,02%). Exemplo real: memorial mostra
+      "R$ 815,37 + R$ 112,77" (= 928,14) enquanto o card exibe R$ 928,13.
+      Ver QA-04.
+
+issues:
+  - id: QA-04
+    severity: medium
+    category: correctness-display
+    description: >-
+      O memorial exibe parcelas e total arredondados de forma independente, entao
+      a conta que o usuario ve nem sempre fecha. Medido: 25,02% dos casos no card
+      Investimento (Meta), com 1 centavo de diferenca. O VALOR do card esta
+      correto — o defeito e de apresentacao, mas atinge justamente o componente
+      criado para tornar a conta conferivel. O mesmo padrao afeta a Story 42.4 com
+      incidencia bem maior (46,8%), e la esta registrado no gate proprio.
+    recommendation: >-
+      Duas saidas possiveis, ambas baratas:
+      (a) derivar a ultima parcela do total arredondado, para a soma fechar por
+          construcao (`imposto exibido = total arredondado - liquido arredondado`);
+      (b) acrescentar ao `note` que os valores sao arredondados para centavo e
+          podem divergir em 0,01 do total.
+      A (a) e preferivel: o memorial existe para conferencia, e uma nota pedindo
+      desculpa pela conta nao fechar e um remendo.
+
+  - id: QA-05
+    severity: low
+    category: accessibility
+    description: >-
+      O `tabIndex={0}` torna os oito cards focaveis, mas eles seguem sendo
+      <div> sem papel semantico. Leitor de tela anuncia o conteudo, nao a
+      existencia do memorial.
+    recommendation: >-
+      `role="button"` + `aria-describedby` apontando para o conteudo do tooltip,
+      se e quando a acessibilidade do painel virar tema. Nao e regressao: o
+      estado anterior nao tinha memorial nenhum.
+
+pontos_fortes:
+  - >-
+    As DUAS causas silenciosas foram tratadas, nao so a que o @po apontou. Um dev
+    apressado teria adicionado o TooltipProvider, visto que ainda nao funcionava,
+    e ido atras do motivo errado.
+  - >-
+    O AC4 (period distinguindo "28 dias" de "snapshot") corrige uma imprecisao
+    que existia ANTES da story: o titulo da secao dizia "ultimos 28 dias" para
+    cards que sao snapshot do momento. O memorial ficou mais correto que o
+    cabecalho.
+  - >-
+    O memorial do card Google declara explicitamente que NAO leva o imposto de
+    12,15%. E exatamente a duvida que alguem teria olhando dois cards de
+    investimento lado a lado.
+  - >-
+    Card sem dado nao recebe formula, e com isso perde hintTooltip e tabIndex
+    juntos — fica visualmente inerte, como era antes. Coerente.
+
+desvios_declarados:
+  - >-
+    AC7 pedia layout identico; a grade foi de lg:grid-cols-7 para 5. O desvio
+    esta documentado nas Completion Notes com justificativa verificavel: a grade
+    ja nao fechava desde df57b84 (8 cards em 7 colunas) e a 42.4 adiciona o nono.
+    Aceito.
+
+processo:
+  coderabbit: 'NAO EXECUTOU — binario ausente. Revisao manual.'
+  validacao_visual: >-
+    PENDENTE e critica nesta story — e a unica forma de verificar que os tooltips
+    de fato abrem. Inclui o item do console sem warning de ref, que e o sintoma
+    de um AC2 mal resolvido. Nenhum teste automatizado cobre componente neste
+    pacote (sem jsdom, decisao deliberada desde a 29.35).
+
+decisao: >-
+  CONCERNS — aprovado. QA-04 deveria ser corrigido antes do merge: e barato e
+  atinge o proposito da story. QA-05 e opcional.
