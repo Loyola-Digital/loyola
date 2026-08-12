@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   calcularMargemContribuicao,
   validarPercentuaisMargem,
+  fecharEmCentavos,
+  parsePercentual,
   type MargemContribuicaoInput,
 } from "@/lib/utils/lyrio-margin";
 import { metaTaxAmount } from "@/lib/utils/funnel-metrics";
@@ -100,6 +102,115 @@ describe("calcularMargemContribuicao — bordas", () => {
     // 5.000 + 691,52 + 1.000 — o Google entra íntegro.
     expect(r.investimentoTotal).toBeCloseTo(6_691.52, 2);
     expect(r.margem).toBeCloseTo(1_208.48, 2);
+  });
+});
+
+describe("QA-09 — a cadeia do memorial fecha quando exibida em centavos", () => {
+  const f = (v: number) => v.toFixed(2);
+
+  it("bruto − plataforma − imposto − outros = líquido, nos valores exibidos", () => {
+    // Antes da correção isto falhava em 46,8% dos casos. 2.000 amostras
+    // pseudo-aleatórias determinísticas — sem Math.random, para o teste não
+    // passar hoje e falhar amanhã.
+    let divergencias = 0;
+    for (let i = 1; i <= 2000; i++) {
+      const bruto = (i * 7919) % 97531 / 3.7; // valores irregulares, com dízimas
+      const r = calcularMargemContribuicao({ ...CASO_CANONICO, faturamentoBrutoBrl: bruto });
+      const somaExibida = (
+        Number(f(r.faturamentoBruto)) -
+        Number(f(r.descontosPlataforma)) -
+        Number(f(r.imposto)) -
+        Number(f(r.outrosCustos))
+      ).toFixed(2);
+      if (somaExibida !== f(r.faturamentoLiquido)) divergencias++;
+    }
+    expect(divergencias).toBe(0);
+  });
+
+  it("líquido − investimento total = margem, nos valores exibidos", () => {
+    let divergencias = 0;
+    for (let i = 1; i <= 2000; i++) {
+      const bruto = (i * 5417) % 88883 / 2.3;
+      const meta = (i * 3313) % 44449 / 5.1;
+      const r = calcularMargemContribuicao({
+        ...CASO_CANONICO,
+        faturamentoBrutoBrl: bruto,
+        investimentoMetaLiquidoBrl: meta,
+        impostoMetaBrl: metaTaxAmount(meta, "2026-08-01"),
+        investimentoGoogleBrl: meta / 3,
+      });
+      const somaExibida = (
+        Number(f(r.faturamentoLiquido)) - Number(f(r.investimentoTotal))
+      ).toFixed(2);
+      if (somaExibida !== f(r.margem)) divergencias++;
+    }
+    expect(divergencias).toBe(0);
+  });
+
+  it("todo valor devolvido é múltiplo exato de um centavo", () => {
+    const r = calcularMargemContribuicao({ ...CASO_CANONICO, faturamentoBrutoBrl: 9999.987 });
+    for (const [campo, v] of Object.entries(r)) {
+      expect(Math.abs(Math.round(v * 100) - v * 100), `${campo} não está em centavos`).toBeLessThan(1e-6);
+    }
+  });
+});
+
+describe("QA-04 — fecharEmCentavos", () => {
+  it("as parcelas somam exatamente o total exibido", () => {
+    // 815,37 + 112,77 = 928,14, mas o total exato arredonda para 928,13.
+    // A última parcela absorve a diferença.
+    const [a, b] = fecharEmCentavos(928.134, [815.3712, 112.7628]);
+    expect(Number((a + b).toFixed(2))).toBeCloseTo(928.13, 2);
+  });
+
+  it("fecha para qualquer combinação de parcelas", () => {
+    let divergencias = 0;
+    for (let i = 1; i <= 3000; i++) {
+      const liq = ((i * 6151) % 71237) / 4.3;
+      const total = liq / (1 - 0.1215);
+      const [a, b] = fecharEmCentavos(total, [liq, total - liq]);
+      if ((a + b).toFixed(2) !== total.toFixed(2)) divergencias++;
+    }
+    expect(divergencias).toBe(0);
+  });
+
+  it("devolve lista vazia para entrada vazia", () => {
+    expect(fecharEmCentavos(100, [])).toEqual([]);
+  });
+
+  it("com uma única parcela, ela é o total", () => {
+    expect(fecharEmCentavos(10.005, [3])).toEqual([10.01]);
+  });
+});
+
+describe("QA-08 — parsePercentual", () => {
+  it("campo vazio devolve NaN, não zero", () => {
+    // `Number("")` é 0, e 0% é um percentual legítimo — por isso o campo
+    // apagado passava na validação e gravava zero em silêncio.
+    expect(Number.isNaN(parsePercentual(""))).toBe(true);
+    expect(Number.isNaN(parsePercentual("   "))).toBe(true);
+  });
+
+  it("aceita vírgula decimal", () => {
+    expect(parsePercentual("15,5")).toBe(15.5);
+  });
+
+  it("aceita ponto decimal", () => {
+    expect(parsePercentual("15.5")).toBe(15.5);
+  });
+
+  it("texto inválido devolve NaN", () => {
+    expect(Number.isNaN(parsePercentual("abc"))).toBe(true);
+  });
+
+  it("campo vazio é rejeitado pela validação", () => {
+    const r = validarPercentuaisMargem({
+      platformFeePct: parsePercentual(""),
+      taxPct: 5,
+      otherCostsPct: 1,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.erro).toContain("Descontos da plataforma");
   });
 });
 

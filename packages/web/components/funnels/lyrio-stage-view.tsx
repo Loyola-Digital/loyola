@@ -39,6 +39,8 @@ import { sumMetaInsights, sumMetaSpendWithTax } from "@/lib/utils/funnel-metrics
 import {
   calcularMargemContribuicao,
   validarPercentuaisMargem,
+  parsePercentual,
+  fecharEmCentavos,
   MARGEM_DEFAULTS,
 } from "@/lib/utils/lyrio-margin";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -244,23 +246,28 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
         ? { label: "Câmbio US$ 1 →", value: fmtBRL(brlRate), source: fxSource }
         : null;
 
+    // QA-04: as duas parcelas precisam SOMAR o total exibido. Arredondadas de
+    // forma independente, divergiam do card em ~25% dos casos.
+    const [metaLiqExib, metaImpExib] = fecharEmCentavos(metaSpend28, [
+      metaSpend28Detalhe.spendLiquido,
+      metaSpend28Detalhe.imposto,
+    ]);
+
     const investimentoMeta: MetricFormula = {
       expression: "Σ spend diário ÷ (1 − 12,15%)",
       values: [
         {
           label: "Investimento líquido",
-          value: fmtBRL(metaSpend28Detalhe.spendLiquido),
+          value: fmtBRL(metaLiqExib),
           source: "Meta Ads API · soma do spend diário das campanhas vinculadas",
         },
         {
           label: "Imposto (12,15%)",
-          value: fmtBRL(metaSpend28Detalhe.imposto),
+          value: fmtBRL(metaImpExib),
           source: "alíquota vigente desde 01/01/2026, aplicada por dia",
         },
       ],
-      result: `${fmtBRL(metaSpend28Detalhe.spendLiquido)} + ${fmtBRL(
-        metaSpend28Detalhe.imposto,
-      )} = ${fmtBRL(metaSpend28)}`,
+      result: `${fmtBRL(metaLiqExib)} + ${fmtBRL(metaImpExib)} = ${fmtBRL(metaSpend28)}`,
       period: "últimos 28 dias",
       note: "O valor do card JÁ inclui o imposto. O gross-up é por dentro: o imposto incide sobre o bruto, então não é spend × 1,1215.",
     };
@@ -361,8 +368,11 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
               "(Bruto − plataforma − imposto − outros custos) − investimento − imposto Meta",
             values: [
               {
+                // Do resultado, não de revenue28Brl: o cálculo já trabalha ao
+                // centavo, e a primeira linha do memorial tem de ser a mesma
+                // base que as subtrações usam.
                 label: "Faturamento bruto",
-                value: fmtBRL(revenue28Brl),
+                value: fmtBRL(margem28.faturamentoBruto),
                 source: "RevenueCat, convertido pelo câmbio",
               },
               {
@@ -387,12 +397,12 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
               },
               {
                 label: "− Investimento (Meta líquido)",
-                value: fmtBRL(metaSpend28Detalhe.spendLiquido),
+                value: fmtBRL(metaLiqExib),
                 source: "Meta Ads API, sem imposto",
               },
               {
                 label: "− Imposto Meta (12,15%)",
-                value: fmtBRL(metaSpend28Detalhe.imposto),
+                value: fmtBRL(metaImpExib),
                 source: "gross-up por dentro, desde 01/01/2026",
               },
               ...(googleSpend28 > 0
@@ -1296,17 +1306,17 @@ function MargemConfigForm({
   }, [platformFeePct, taxPct, otherCostsPct]);
 
   const sujo =
-    Number(plataforma) !== platformFeePct ||
-    Number(imposto) !== taxPct ||
-    Number(outros) !== otherCostsPct;
+    parsePercentual(plataforma) !== platformFeePct ||
+    parsePercentual(imposto) !== taxPct ||
+    parsePercentual(outros) !== otherCostsPct;
 
   function handleSave() {
-    // Vírgula decimal é o que o usuário brasileiro digita.
-    const parse = (s: string) => Number(s.replace(",", "."));
+    // `parsePercentual` aceita vírgula decimal e devolve NaN para campo vazio —
+    // sem isso, apagar o campo gravaria 0% em silêncio (QA-08).
     const p = {
-      platformFeePct: parse(plataforma),
-      taxPct: parse(imposto),
-      otherCostsPct: parse(outros),
+      platformFeePct: parsePercentual(plataforma),
+      taxPct: parsePercentual(imposto),
+      otherCostsPct: parsePercentual(outros),
     };
     const check = validarPercentuaisMargem(p);
     if (!check.ok) {

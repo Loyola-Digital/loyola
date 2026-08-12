@@ -25,9 +25,50 @@
  * `sumMetaSpendWithTax` (funnel-metrics) para obter as duas parcelas, em vez de
  * recalcular a alíquota e arriscar divergir do card.
  *
- * Sem arredondamento interno: arredondar etapas intermediárias faz o total
- * divergir da soma das linhas exibidas. A formatação é responsabilidade da UI.
+ * **Aritmética em centavos (QA-09).** Cada parcela é arredondada ao centavo e as
+ * derivadas saem das parcelas já arredondadas. A versão anterior calculava em
+ * precisão total e deixava a formatação para a UI — o que fazia o memorial
+ * exibir uma cadeia que não fechava em 46,8% dos casos: o usuário somava as
+ * quatro linhas e chegava a um centavo de distância do líquido exibido.
+ *
+ * Num memorial, a conta fechar não é detalhe estético: é a única razão de ele
+ * existir. Centavo é a menor unidade real de dinheiro, e a margem é um valor
+ * final, não um intermediário que alguém vá compor depois.
  */
+
+/** Arredonda ao centavo. `Math.round` sobre centavos inteiros, não `toFixed`. */
+export function centavos(valor: number): number {
+  return Math.round(valor * 100) / 100;
+}
+
+/**
+ * Reparte um total em parcelas que **fecham** quando exibidas em centavos.
+ *
+ * Arredonda todas as parcelas menos a última; a última absorve o resto, de
+ * modo que a soma das parcelas exibidas seja exatamente o total exibido.
+ * Sem isto, dois arredondamentos independentes divergem do total em ~25% dos
+ * casos (QA-04).
+ */
+export function fecharEmCentavos(total: number, partes: number[]): number[] {
+  if (partes.length === 0) return [];
+  const alvo = centavos(total);
+  const iniciais = partes.slice(0, -1).map(centavos);
+  const soma = iniciais.reduce((a, b) => a + b, 0);
+  return [...iniciais, centavos(alvo - soma)];
+}
+
+/**
+ * Converte o que o usuário digitou num percentual.
+ *
+ * Campo vazio devolve `NaN` — e **não** zero (QA-08). `Number("")` é `0`, e
+ * como 0% é um percentual legítimo, o campo apagado passava direto pela
+ * validação e gravava zero em silêncio. Zerar a comissão de loja infla a
+ * margem, que é o erro mais caro que este formulário pode cometer.
+ */
+export function parsePercentual(entrada: string): number {
+  if (entrada.trim() === "") return Number.NaN;
+  return Number(entrada.replace(",", "."));
+}
 
 export interface MargemContribuicaoInput {
   /** Receita bruta do período, em R$ (RevenueCat convertido pelo câmbio). */
@@ -47,6 +88,8 @@ export interface MargemContribuicaoInput {
 }
 
 export interface MargemContribuicaoResult {
+  /** Bruto já ao centavo — é o que o memorial deve exibir como primeira linha. */
+  faturamentoBruto: number;
   descontosPlataforma: number;
   imposto: number;
   outrosCustos: number;
@@ -67,24 +110,32 @@ export function calcularMargemContribuicao({
   impostoMetaBrl,
   investimentoGoogleBrl,
 }: MargemContribuicaoInput): MargemContribuicaoResult {
-  const descontosPlataforma = faturamentoBrutoBrl * (platformFeePct / 100);
-  const imposto = faturamentoBrutoBrl * (taxPct / 100);
-  const outrosCustos = faturamentoBrutoBrl * (otherCostsPct / 100);
+  // Tudo em centavos, e as derivadas saem das parcelas JÁ arredondadas — é o
+  // que faz a cadeia do memorial fechar quando o usuário soma as linhas.
+  const bruto = centavos(faturamentoBrutoBrl);
+  const descontosPlataforma = centavos(bruto * (platformFeePct / 100));
+  const imposto = centavos(bruto * (taxPct / 100));
+  const outrosCustos = centavos(bruto * (otherCostsPct / 100));
 
-  const faturamentoLiquido =
-    faturamentoBrutoBrl - descontosPlataforma - imposto - outrosCustos;
+  const faturamentoLiquido = centavos(
+    bruto - descontosPlataforma - imposto - outrosCustos,
+  );
 
-  const investimentoTotal =
-    investimentoMetaLiquidoBrl + impostoMetaBrl + investimentoGoogleBrl;
+  const investimentoTotal = centavos(
+    centavos(investimentoMetaLiquidoBrl) +
+      centavos(impostoMetaBrl) +
+      centavos(investimentoGoogleBrl),
+  );
 
   return {
+    faturamentoBruto: bruto,
     descontosPlataforma,
     imposto,
     outrosCustos,
     faturamentoLiquido,
     investimentoTotal,
     // Sem clamp: margem negativa é informação, não erro a esconder.
-    margem: faturamentoLiquido - investimentoTotal,
+    margem: centavos(faturamentoLiquido - investimentoTotal),
   };
 }
 

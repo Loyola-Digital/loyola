@@ -1,0 +1,90 @@
+schema: 1
+story: '42.3'
+gate: CONCERNS
+iteration: 1
+status_reason: >-
+  Escopo entregue por terceiro (df57b84, Lucas Vital) antes desta sessao comecar.
+  Conferi os ACs de forma independente contra o codigo, sem me apoiar so na
+  tabela do @dev: AC1, AC2, AC4, AC6 e AC7 confirmados. O AC3 tem desvio, e o
+  desvio e melhor que o pedido — dois cards separados em vez de um total
+  agregado mostram a divisao da verba. O CONCERNS existe por um unico motivo:
+  o AC5 (moeda do Google) segue NAO VERIFICADO. Nao e negligencia — exige acesso
+  a conta Google Ads, e o proprio AC instrui a escalar em vez de decidir. Mas
+  uma story nao esta pronta com um AC em aberto, e este e o AC que protege
+  contra somar duas moedas no mesmo card.
+reviewer: 'Quinn'
+updated: '2026-08-12T00:00:00Z'
+
+verificacoes:
+  code_review: PASS
+  unit_tests: N/A           # componente; sem jsdom no pacote
+  acceptance_criteria: CONCERNS   # AC5 aberto; AC3 com desvio favoravel
+  no_regressions: PASS
+  performance: PASS         # hook desabilitado sem accountId
+  security: PASS
+  documentation: PASS
+
+verificacoes_manuais_executadas:
+  - o: 'AC1 — o accountId e salvo junto com as campanhas'
+    como: 'grep googleAdsAccountId no componente'
+    resultado: >-
+      `:625` salva googleAdsAccountId na mesma mutacao das campanhas, e `:133`
+      resolve o id preferindo stage.googleAdsAccountId sobre o picker. Correto:
+      sem a conta salva, o spend nao poderia ser buscado fora do painel.
+
+  - o: 'AC2 — filtro por campanha vinculada, imposto so no Meta'
+    como: 'Leitura de :182-187'
+    resultado: >-
+      `.filter((c) => googleCampaignIds.has(c.id))` antes do reduce — a conta
+      pode servir outros produtos e o filtro impede o vazamento. `googleSpend28`
+      nao passa por applyMetaAdsTax em ponto nenhum. Correto.
+
+  - o: 'AC6 — sem Google nada regride'
+    como: 'Leitura de :850-856'
+    resultado: >-
+      Card condicionado a `googleCampaignIds.size > 0`; hook com
+      `enabled: !!accountId`. Etapa sem Google renderiza como antes.
+
+  - o: 'AC5 — moeda'
+    como: 'Busca por currency_code em todo o servico e rotas do Google Ads'
+    resultado: >-
+      ZERO ocorrencias. `spend` sai de cost_micros / 1e6 na moeda da conta, que
+      o sistema nunca le. Confirmar a moeda real exige acesso a conta.
+
+issues:
+  - id: QA-06
+    severity: medium
+    category: requirements
+    description: >-
+      AC5 nao verificado. Enquanto a conta Google vinculada operar em BRL os
+      numeros estao certos, e nao ha indicio de que nao esteja. Mas a
+      verificacao e justamente o que separa "esta certo" de "presumimos que
+      esta certo", e o custo do erro e alto: o card do Resumo somaria BRL com
+      outra moeda, produzindo um numero plausivel e errado por ~5x, sem nenhum
+      sinal visual.
+    recommendation: >-
+      Abrir a conta Google Ads vinculada ao projeto e confirmar a moeda. Se BRL,
+      fechar o AC com a evidencia registrada. Se nao for, escalar como o AC
+      manda — converter moeda e decisao de produto.
+      Follow-up sugerido, independente da resposta: ler `customer.currency_code`
+      e falhar alto quando divergir de BRL, em vez de assumir em silencio.
+
+pontos_fortes:
+  - >-
+    O @dev nao reimplementou nada ao descobrir que o escopo ja estava na main.
+    Conferiu AC por AC e registrou a origem (df57b84) na story. O caminho
+    preguicoso — reimplementar e alegar entrega — teria gerado conflito e
+    trabalho jogado fora.
+  - >-
+    O desvio do AC3 foi reconhecido como desvio, com justificativa, em vez de
+    ser silenciosamente reinterpretado como conformidade.
+  - >-
+    O commit de terceiro trouxe junto a correcao de GOOGLE_ADS_API_VERSION v18
+    -> v21: a v18 havia sido desligada pelo Google e respondia 404 com HTML,
+    derrubando a integracao inteira em silencio. Fora do escopo desta story, mas
+    registrado — e o tipo de contexto que se perde se ninguem anota.
+
+decisao: >-
+  CONCERNS — aprovado com AC5 em aberto. Nao bloqueia o merge: o risco so se
+  materializa se uma conta em moeda estrangeira for vinculada, o que nao e o
+  caso hoje. Mas o AC deve ser fechado com evidencia, nao esquecido.
