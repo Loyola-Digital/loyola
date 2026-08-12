@@ -157,6 +157,8 @@ export interface NormalizedRevenuecatEvent {
   priceInPurchasedCurrency: string | null;
   revenueUsd: string | null;
   purchasedAt: Date | null;
+  /** Instante do evento — preenchido também nos que não são compra (paywall). */
+  eventAt: Date | null;
 }
 
 /** sha256 hex do corpo cru — idempotência fallback quando falta event.id. */
@@ -186,12 +188,22 @@ export function normalizeRevenuecatEvent(
 ): NormalizedRevenuecatEvent | null {
   const ev = (payload.event ?? payload) as Record<string, unknown> | undefined;
   if (!ev || typeof ev !== "object") return null;
+  // Evento de verdade sempre traz `type`. Sem ele (corpo vazio, ping de
+  // conexão, JSON de outra origem) não há o que registrar — e sem esta guarda
+  // um POST `{}` autenticado criava uma linha só com nulos, com o hash do corpo
+  // fazendo as vezes de id.
+  if (!str(ev.type)) return null;
 
-  const purchasedMs = ev.purchased_at_ms;
-  const purchasedAt =
-    typeof purchasedMs === "number" && Number.isFinite(purchasedMs)
-      ? new Date(purchasedMs)
-      : null;
+  const paraData = (valor: unknown): Date | null => {
+    const ms = typeof valor === "number" ? valor : Number(valor);
+    return Number.isFinite(ms) && ms > 0 ? new Date(ms) : null;
+  };
+
+  const purchasedAt = paraData(ev.purchased_at_ms);
+  // Evento de paywall (PAYWALL_IMPRESSION, PAYWALL_CLOSE…) não tem
+  // `purchased_at_ms` — carimba em `event_timestamp_ms`. Sem esse fallback ele
+  // entrava no banco sem data e sumia de qualquer leitura por período.
+  const eventAt = paraData(ev.event_timestamp_ms) ?? purchasedAt;
 
   return {
     // event.id é o identificador único do evento; fallback pro hash do corpo.
@@ -207,5 +219,6 @@ export function normalizeRevenuecatEvent(
     // event.price é o valor em USD (estimado) do evento.
     revenueUsd: num(ev.price),
     purchasedAt,
+    eventAt,
   };
 }
