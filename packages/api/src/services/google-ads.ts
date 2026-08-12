@@ -5,19 +5,27 @@ import { decrypt } from "./encryption.js";
 // ============================================================
 
 /**
- * O Google desliga versões da Ads API todo ano, e a versão desligada não
- * responde erro de API: devolve **404 com uma página HTML**, que sobe pelo
- * serviço como "Google Ads API error (404): <!DOCTYPE html>…". Foi o que
- * aconteceu com a v18 — parou de existir e derrubou a integração inteira em
- * silêncio.
+ * O Google aposenta versões da Ads API todo ano, em DOIS estágios, e nenhum
+ * deles se parece com um erro de versão:
  *
- * Se esse 404-HTML voltar a aparecer, é isso: suba a versão aqui. Pra descobrir
- * quais ainda vivem, basta um GET sem auth em
- * `https://googleads.googleapis.com/<v>/customers:listAccessibleCustomers` —
- * 401 = versão viva, 404 = versão desligada.
+ *  1. deprecada — responde **400 INVALID_ARGUMENT** e o motivo real
+ *     ("Version vXX is deprecated") fica enterrado em `error.details[].errors[]`;
+ *  2. desligada — responde **404 com página HTML**, que sobe como
+ *     "Google Ads API error (404): <!DOCTYPE html>…".
+ *
+ * Já aconteceu duas vezes seguidas aqui: a v18 estava desligada (404) e a v21,
+ * escolhida pra substituí-la, já estava deprecada (400 em quase toda query).
+ * Por isso a regra é usar a versão MAIS NOVA que responde, não a "do meio".
+ *
+ * Medido em 12/08/2026 com a conta do Lyrio: v20 e v21 bloqueadas, v22 e v23 ok.
+ *
+ * Pra revalidar: `GET https://googleads.googleapis.com/<v>/customers:listAccessibleCustomers`
+ * sem auth — 401 = a versão existe, 404 = foi desligada. Existir não basta:
+ * rode uma query real, porque deprecada existe e mesmo assim recusa.
  */
-const GOOGLE_ADS_API_VERSION = "v21";
+const GOOGLE_ADS_API_VERSION = "v23";
 const GOOGLE_ADS_BASE = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}`;
+
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 // ============================================================
@@ -98,6 +106,50 @@ async function getAccessToken(
 // GOOGLE ADS API FETCH
 // ============================================================
 
+/**
+ * Erro da Google Ads API em uma linha legível.
+ *
+ * Sem isto o motivo real fica ilegível justamente nos dois casos que mais
+ * acontecem: versão DESLIGADA devolve uma página HTML inteira (o "erro" vira
+ * `<!DOCTYPE html>…`), e versão DEPRECADA devolve 400 com a frase
+ * "Version vXX is deprecated" escondida em `error.details[].errors[].message`.
+ * Nos dois, quem lê o log conclui "a API caiu" em vez de "suba a versão".
+ */
+export function resumirErroGoogleAds(status: number, corpo: string): string {
+  const texto = corpo.trim();
+
+  if (texto.startsWith("<")) {
+    return status === 404
+      ? `versão ${GOOGLE_ADS_API_VERSION} da API foi DESLIGADA pelo Google — suba GOOGLE_ADS_API_VERSION`
+      : "resposta HTML inesperada da Google";
+  }
+
+  try {
+    // `searchStream` devolve o erro dentro de um ARRAY de batches; `search`
+    // devolve o objeto direto. Sem normalizar isso, o erro do endpoint que a
+    // aplicação mais usa cairia sempre no fallback de texto cru.
+    const parsed: unknown = JSON.parse(texto);
+    const json = (Array.isArray(parsed) ? parsed[0] : parsed) as {
+      error?: {
+        message?: string;
+        details?: { errors?: { message?: string }[] }[];
+      };
+    };
+    const detalhes = (json?.error?.details ?? [])
+      .flatMap((d) => d.errors ?? [])
+      .map((e) => e.message)
+      .filter((m): m is string => Boolean(m));
+
+    const deprecada = detalhes.find((m) => /is deprecated/i.test(m));
+    if (deprecada) {
+      return `${deprecada} — suba GOOGLE_ADS_API_VERSION (hoje ${GOOGLE_ADS_API_VERSION})`;
+    }
+    return detalhes[0] ?? json?.error?.message ?? texto.slice(0, 200);
+  } catch {
+    return texto.slice(0, 200);
+  }
+}
+
 async function queryGoogleAds(
   customerId: string,
   developerToken: string,
@@ -119,7 +171,7 @@ async function queryGoogleAds(
 
   if (!res.ok) {
     const error = await res.text();
-    throw new Error(`Google Ads API error (${res.status}): ${error}`);
+    throw new Error(`Google Ads API error (${res.status}): ${resumirErroGoogleAds(res.status, error)}`);
   }
 
   // searchStream returns array of batches
@@ -164,6 +216,20 @@ export async function validateGoogleAdsAccount(
 // ANALYTICS — OVERVIEW
 // ============================================================
 
+/**
+ * VIEWS DE VÍDEO NÃO EXISTEM MAIS NA API — por isso `views` vem 0 e
+ * `cpv`/`viewRate` vêm null em todo este arquivo.
+ *
+ * A v22+ removeu `metrics.video_views`, e não é renomeação: verificado campo a
+ * campo em 12/08/2026, `views`, `video_view_rate`, `average_cpv`,
+ * `video_view_count` e `average_cpv_micros` também não são reconhecidos — nem em
+ * `campaign`, nem em `video`. Pedir qualquer um deles fazia a query falhar
+ * INTEIRA com "Unrecognized field in the query", levando junto spend, cliques e
+ * conversões. Era essa a causa do painel do Google vir vazio.
+ *
+ * Os campos seguem no contrato pra não quebrar os consumidores (o painel de
+ * YouTube os exibe). Se o Google reintroduzir sob outro nome, é aqui que religa.
+ */
 export interface GoogleAdsOverview {
   totalSpend: number;
   totalViews: number;
@@ -211,7 +277,6 @@ export async function fetchGoogleAdsOverview(
       metrics.cost_micros,
       metrics.impressions,
       metrics.clicks,
-      metrics.video_views,
       metrics.ctr,
       metrics.average_cpc,
       metrics.average_cpm,
@@ -315,8 +380,7 @@ export async function fetchGoogleAdsDailyInsights(
       segments.date,
       metrics.cost_micros,
       metrics.impressions,
-      metrics.clicks,
-      metrics.video_views
+      metrics.clicks
     FROM campaign
     WHERE segments.date BETWEEN '${startStr}' AND '${endStr}'
       ${campaignFilter}
@@ -382,7 +446,7 @@ export async function fetchGoogleAdsCampaigns(
     `SELECT
       campaign.id, campaign.name, campaign.status,
       metrics.cost_micros, metrics.impressions, metrics.clicks,
-      metrics.video_views, metrics.ctr, metrics.average_cpc,
+      metrics.ctr, metrics.average_cpc,
       metrics.average_cpm, metrics.conversions
     FROM campaign
     WHERE segments.date BETWEEN '${startStr}' AND '${endStr}'
@@ -450,7 +514,7 @@ export async function fetchGoogleAdsAdGroups(
     `SELECT
       ad_group.id, ad_group.name,
       metrics.cost_micros, metrics.impressions, metrics.clicks,
-      metrics.video_views, metrics.conversions
+      metrics.conversions
     FROM ad_group
     WHERE campaign.id = ${campaignId}
       AND segments.date BETWEEN '${start.toISOString().slice(0, 10)}' AND '${end.toISOString().slice(0, 10)}'`
@@ -515,7 +579,7 @@ export async function fetchGoogleAdsAds(
     `SELECT
       ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type,
       metrics.cost_micros, metrics.impressions, metrics.clicks,
-      metrics.video_views, metrics.conversions,
+      metrics.conversions,
       metrics.video_quartile_p25_rate, metrics.video_quartile_p50_rate,
       metrics.video_quartile_p75_rate, metrics.video_quartile_p100_rate
     FROM ad_group_ad
@@ -632,14 +696,14 @@ export async function fetchGoogleAdsTopPerformers(
     `SELECT
       ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type,
       metrics.cost_micros, metrics.impressions, metrics.clicks,
-      metrics.video_views, metrics.conversions,
+      metrics.conversions,
       metrics.video_quartile_p25_rate, metrics.video_quartile_p50_rate,
       metrics.video_quartile_p75_rate, metrics.video_quartile_p100_rate
     FROM ad_group_ad
     WHERE segments.date BETWEEN '${start.toISOString().slice(0, 10)}' AND '${end.toISOString().slice(0, 10)}'
       AND ad_group_ad.ad.type = 'VIDEO_AD'
       AND metrics.impressions > 0
-    ORDER BY metrics.video_views DESC
+    ORDER BY metrics.impressions DESC
     LIMIT ${limit}`
   );
 
