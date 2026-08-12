@@ -1,0 +1,156 @@
+schema: 1
+story: '42.1'
+gate: CONCERNS
+iteration: 1
+status_reason: >-
+  A auditoria esta correta e a aritmetica foi verificada de forma independente:
+  os 10 pontos de spend da etapa aplicam o imposto exatamente 1x, e a
+  equivalencia entre `sumMetaSpendWithTax` e `sumMetaInsights` se sustenta com
+  divergencia maxima de 5,6e-9 em 100 mil linhas simuladas. O codigo esta certo.
+  O CONCERNS e sobre o entregavel do AC1: 4 dos 10 pontos do inventario, mais
+  uma referencia no corpo do texto, apontam para linhas que nao existem mais no
+  commit onde o documento vive — deslocadas pelo proprio codigo das stories
+  42.2/42.4, no mesmo commit. O documento se declara "referencia para quem for
+  mexer nesta tela depois", e coordenadas erradas nao cumprem essa funcao.
+  Correcao de minutos, sem tocar em codigo.
+reviewer: 'Quinn'
+updated: '2026-08-12T00:00:00Z'
+
+verificacoes:
+  code_review: PASS
+  unit_tests: PASS          # 15 testes; 419 no pacote web
+  acceptance_criteria: CONCERNS   # AC1 entregue com refs desatualizadas
+  no_regressions: PASS
+  performance: PASS         # soma O(n) sobre as mesmas linhas ja carregadas
+  security: PASS            # aritmetica pura, sem entrada de usuario nem I/O
+  documentation: CONCERNS   # ver QA-01 e QA-02
+
+verificacoes_manuais_executadas:
+  - o: 'Equivalencia matematica entre as duas somas (invariante 2 do AC5)'
+    como: >-
+      Reimplementei applyMetaAdsTax/metaTaxAmount de forma independente a partir
+      da leitura do codigo e comparei as duas estrategias de soma em 200 rodadas
+      de 500 linhas com datas e valores aleatorios cruzando 2025/2026.
+    resultado: >-
+      Pior divergencia: 5,588e-9. A tolerancia do teste (toBeCloseTo _,2 =
+      0,005) e adequada e folgada. A escolha do @po de exigir toBeCloseTo em vez
+      de toBe estava certa: as duas somas acumulam em ordens diferentes.
+
+  - o: 'Caso canonico do historico do projeto'
+    como: 'Calculo independente de 2777,96 e de 5000 com gross-up por dentro'
+    resultado: >-
+      3162,16 e 691,5197 — batem com o que os testes afirmam. O teste que prova
+      que o resultado NAO e `spend x 1,1215` (985,24) e a melhor peca da suite:
+      trava a decisao de junho/2026 contra uma regressao plausivel.
+
+  - o: 'AC3 — endpoint nao pre-tributa'
+    como: 'grep applyMetaTax no bloco da rota /campaign-daily (:553-640)'
+    resultado: '0 ocorrencias. Confirmado, como o @dev afirmou.'
+
+  - o: 'Refs de linha do inventario, uma a uma, contra o commit e466483'
+    como: 'grep das declaracoes e dos JSX citados'
+    resultado: >-
+      Pontos #4 a #8 (sales-meta-kpis.tsx): CORRETOS — o arquivo nao foi tocado
+      no commit. Pontos #1, #2, #3, #9, #10 (lyrio-stage-view.tsx): DESLOCADOS.
+      Ver QA-01.
+
+  - o: 'Comportamento com spend negativo'
+    como: 'Execucao direta de applyTax(-100) e taxAmt(-100)'
+    resultado: >-
+      Passa intacto, imposto 0. Comportamento correto (nao inventa imposto sobre
+      valor negativo), porem nao coberto por teste. Ver QA-03.
+
+issues:
+  - id: QA-01
+    severity: medium
+    category: docs
+    description: >-
+      4 dos 10 pontos do inventario e uma referencia no corpo do texto apontam
+      para linhas do estado ANTERIOR ao commit. O documento foi escrito olhando
+      lyrio-stage-view.tsx antes das edicoes das stories 42.2/42.4, que entraram
+      no MESMO commit e deslocaram tudo. Desvio real medido:
+        - metaSpend28: doc diz :155, real :165
+        - googleSpend28: doc diz :163-165, real :182-185
+        - investimento28: doc diz :168, real :187
+        - roas28: doc diz :178-179, real :197
+        - card Investimento (Meta): doc diz :545, real :846
+        - card Investimento (Google): doc diz :547, real :853
+        - card ROAS: doc diz :550, real :866
+        - corpo do texto: "funnel-metrics.ts:94" para sumMetaInsights, real :121
+          (deslocada pelas 44 linhas que a propria story adicionou)
+    recommendation: >-
+      Reexecutar o grep das declaracoes e atualizar a coluna Arquivo:linha do
+      inventario e a mencao no corpo. So edicao de documento. Nao bloqueia o
+      merge, mas o valor declarado do doc depende disso.
+
+  - id: QA-02
+    severity: low
+    category: docs
+    description: >-
+      O AC1 pedia cobrir "no minimo os 7 cards do Resumo mobile". O inventario
+      lista apenas os pontos que envolvem spend — leitura correta da intencao do
+      AC — mas nao registra que MRR, Assinaturas ativas, Trials ativos e Novos
+      clientes foram considerados e excluidos por nao terem spend. Um leitor
+      futuro nao consegue distinguir "avaliado e descartado" de "esquecido".
+    recommendation: >-
+      Uma linha no doc dizendo quais cards do Resumo ficaram fora do inventario
+      e por que.
+
+  - id: QA-03
+    severity: low
+    category: tests
+    description: >-
+      Spend negativo nao tem teste. A guarda `spendValue <= 0` faz o valor passar
+      intacto com imposto 0, o que e o comportamento desejado, mas nada trava
+      isso. A API da Meta nao devolve spend negativo hoje.
+    recommendation: >-
+      Um caso em metaTaxAmount com valor negativo, se e quando reembolso/credito
+      passar a aparecer no spend.
+
+pontos_fortes:
+  - >-
+    O escopo foi renegociado com honestidade. O pedido original era "acrescentar
+    12,15%"; ao descobrir que a regra ja existia, a story virou auditoria em vez
+    de simular trabalho. O resultado ("nada estava errado") e entregue como
+    achado, nao disfarcado.
+  - >-
+    Os helpers derivam de applyMetaAdsTax em vez de reimplementar a aliquota.
+    metaTaxAmount e literalmente `applyMetaAdsTax(v,d) - v`. Nao existe caminho
+    para os dois divergirem.
+  - >-
+    A aritmetica de referencia dos testes (878,50 -> 1.000,00, imposto 121,50)
+    e conferivel de cabeca. Testes que ninguem consegue verificar mentalmente
+    nao protegem contra nada.
+  - >-
+    O inventario capturou os 3 pontos novos de Google Ads que entraram na main
+    (df57b84) depois que a story foi escrita, em vez de auditar so o que o
+    rascunho previa.
+
+debito_tecnico_identificado:
+  - >-
+    perpetual-dashboard.tsx:174-178 mantem copias locais de applyMetaTax e
+    metaTaxAmount, nao exportadas. Agora que lib/utils tem as versoes testadas,
+    a duplicacao ficou gratuita. Explicitamente fora de escopo desta story e
+    corretamente registrado como tal — mexer no perpetuo aqui seria risco sem
+    retorno.
+  - >-
+    currency_code do Google Ads nao e lido em ponto nenhum do servico. Fora do
+    escopo desta story (e o AC5 da 42.3), mas registrado na auditoria, que foi
+    a decisao certa: apareceu durante o trabalho e afeta 4 dos 10 pontos.
+
+processo:
+  coderabbit: >-
+    NAO EXECUTOU — binario ausente nesta maquina. Revisao integralmente manual,
+    com verificacao independente da aritmetica.
+  validacao_visual: >-
+    PENDENTE — conferir o card Investimento (Meta) contra o Meta Ads Manager
+    (valor do painel deve ser ~ spend do Manager / 0,8785). Item aberto no DoD.
+  falhas_pre_existentes: >-
+    11 testes da api e 3 erros de lint falham na main sem estas mudancas. O @dev
+    provou isso rodando com e sem o codigo. Nenhum arquivo afetado e tocado por
+    esta story. Nao contam contra o gate.
+
+decisao: >-
+  CONCERNS — aprovado. O codigo esta correto, testado e verificado de forma
+  independente. QA-01 e correcao de documento e deveria entrar antes do merge da
+  PR #515; QA-02 e QA-03 sao opcionais.

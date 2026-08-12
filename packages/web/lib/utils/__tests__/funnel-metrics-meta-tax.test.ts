@@ -57,6 +57,15 @@ describe("applyMetaAdsTax — regra da data (AC4)", () => {
   it("deixa o valor intacto quando o spend é zero", () => {
     expect(applyMetaAdsTax(0, "2026-05-01")).toBe(0);
   });
+
+  it("deixa valor negativo intacto (QA-03)", () => {
+    // A API da Meta não devolve spend negativo hoje. Se um dia devolver
+    // (crédito, reembolso), a guarda `spendValue <= 0` faz o valor passar
+    // inteiro — tributar um crédito inventaria custo. Travado aqui para que a
+    // decisão seja deliberada, e não um efeito colateral que ninguém notou.
+    expect(applyMetaAdsTax(-100, "2026-05-01")).toBe(-100);
+    expect(metaTaxAmount(-100, "2026-05-01")).toBe(0);
+  });
 });
 
 describe("metaTaxAmount — a parcela do imposto (AC5)", () => {
