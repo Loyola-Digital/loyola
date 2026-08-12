@@ -174,3 +174,63 @@ export function useRevenuecatOverview(projectId: string, funnelId: string, stage
     staleTime: STALE,
   });
 }
+
+// ============================================================
+// Backfill do histórico de assinaturas
+// ============================================================
+
+/**
+ * O webhook só registra o que acontece depois de plugado; o backfill traz o que
+ * veio antes, lendo as assinaturas cliente a cliente na API v2. É percurso
+ * longo (milhares de clientes), então roda por LOTE: cada disparo avança um
+ * pedaço e salva o cursor, e `temMais` diz se ainda falta.
+ */
+export interface RevenuecatBackfillStatus {
+  status: "idle" | "running" | "done" | "error";
+  customersProcessed: number;
+  subscriptionsUpserted: number;
+  temMais: boolean;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  temAlgumaAssinatura: boolean;
+}
+
+export interface RevenuecatBackfillResult {
+  status: "done" | "partial" | "error";
+  customersProcessed: number;
+  subscriptionsUpserted: number;
+  temMais: boolean;
+  error?: string;
+}
+
+export function useRevenuecatBackfillStatus(
+  projectId: string,
+  funnelId: string,
+  stageId: string,
+  enabled = true,
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["revenuecat-backfill", stageId],
+    queryFn: () =>
+      apiClient<RevenuecatBackfillStatus>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/backfill`,
+      ),
+    enabled: enabled && !!projectId && !!funnelId && !!stageId,
+    staleTime: 10 * 1000,
+  });
+}
+
+export function useRunRevenuecatBackfill(projectId: string, funnelId: string, stageId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (limite?: number) =>
+      apiClient<RevenuecatBackfillResult>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/backfill`,
+        { method: "POST", body: JSON.stringify(limite ? { limite } : {}) },
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["revenuecat-backfill", stageId] }),
+  });
+}

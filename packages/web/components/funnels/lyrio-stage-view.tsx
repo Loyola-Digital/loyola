@@ -17,6 +17,8 @@ import {
   TrendingUp,
   Users,
   Repeat,
+  History,
+  Loader2,
 } from "lucide-react";
 import {
   CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -50,6 +52,8 @@ import {
   useRevenuecatSales,
   useRevenuecatOverview,
   type RevenuecatMetric,
+  useRevenuecatBackfillStatus,
+  useRunRevenuecatBackfill,
 } from "@/lib/hooks/use-revenuecat";
 import type { FunnelCampaign, FunnelStage } from "@loyola-x/shared";
 
@@ -133,6 +137,10 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   const ensureWebhook = useEnsureRevenuecatWebhook(projectId, funnelId, stage.id);
   const sales = useRevenuecatSales(projectId, funnelId, stage.id, days);
   const overview = useRevenuecatOverview(projectId, funnelId, stage.id);
+  // Histórico anterior ao webhook — só interessa quando a etapa já está
+  // conectada, então a consulta acompanha o painel de configuração.
+  const backfillStatus = useRevenuecatBackfillStatus(projectId, funnelId, stage.id, settingsOpen && connected);
+  const runBackfill = useRunRevenuecatBackfill(projectId, funnelId, stage.id);
 
   // Câmbio USD->BRL: a Meta vem em BRL e o RevenueCat em USD; unifica em R$.
   const { data: fx } = useUsdBrl();
@@ -445,6 +453,66 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
                     )}
                   </div>
                 </div>
+
+                {/* Histórico anterior ao webhook */}
+                {connected && (
+                  <div className="space-y-2 border-t border-border/30 pt-5">
+                    <Label className="text-sm font-medium">Histórico de assinaturas</Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      O webhook só registra o que acontece depois de plugado. Isto importa as
+                      assinaturas anteriores lendo cliente a cliente na API do RevenueCat. São
+                      milhares de clientes, então roda por lote — clique de novo até concluir.
+                    </p>
+
+                    {backfillStatus.data && (
+                      <p className="text-[11px] text-muted-foreground">
+                        {backfillStatus.data.customersProcessed > 0 ? (
+                          <>
+                            {fmtNum(backfillStatus.data.customersProcessed)} clientes lidos ·{" "}
+                            <strong>{fmtNum(backfillStatus.data.subscriptionsUpserted)}</strong>{" "}
+                            assinaturas importadas
+                            {backfillStatus.data.temMais ? " · ainda há mais" : " · completo"}
+                          </>
+                        ) : (
+                          "Nenhum lote rodado ainda."
+                        )}
+                      </p>
+                    )}
+
+                    {backfillStatus.data?.error && (
+                      <p className="text-[11px] text-destructive">{backfillStatus.data.error}</p>
+                    )}
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      disabled={runBackfill.isPending}
+                      onClick={() =>
+                        runBackfill.mutate(undefined, {
+                          onSuccess: (r) => {
+                            const msg = `${r.subscriptionsUpserted} assinaturas · ${r.customersProcessed} clientes`;
+                            if (r.temMais) toast.success(`Lote importado (${msg}). Rode de novo pra continuar.`);
+                            else toast.success(`Histórico completo: ${msg}`);
+                          },
+                          onError: (e) =>
+                            toast.error(e instanceof Error ? e.message : "Erro no backfill"),
+                        })
+                      }
+                    >
+                      {runBackfill.isPending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <History className="h-3.5 w-3.5" />
+                      )}
+                      {runBackfill.isPending
+                        ? "Importando… (pode levar minutos)"
+                        : backfillStatus.data?.temMais
+                          ? "Continuar importação"
+                          : "Importar histórico"}
+                    </Button>
+                  </div>
+                )}
 
                 <StageDeleteSection
                   projectId={projectId}

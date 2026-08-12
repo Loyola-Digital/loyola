@@ -19,6 +19,10 @@ import {
   getRevenuecatOverview,
   REVENUE_EVENT_TYPES,
 } from "../services/revenuecat.js";
+import {
+  backfillRevenuecatSubscriptions,
+  statusBackfill,
+} from "../services/revenuecat-backfill.js";
 
 // ============================================================
 // Etapa Lyrio — Rotas RevenueCat
@@ -446,6 +450,59 @@ export default fp(async function revenuecatRoutes(fastify) {
             "Não foi possível puxar as métricas do RevenueCat. Confirme que a Secret API Key tem a permissão de leitura de métricas (charts_metrics:overview:read).",
         });
       }
+    },
+  );
+
+  // ============================================================
+  // Backfill do histórico de assinaturas (API v2)
+  // ============================================================
+  //
+  // O webhook só registra o que acontece depois de plugado. Estas rotas trazem
+  // o que veio antes. É percurso longo (uma chamada por cliente, milhares de
+  // clientes), então roda por LOTE e retomável: o POST devolve logo e o cursor
+  // fica salvo, o GET mostra o progresso e o próximo POST continua de onde
+  // parou.
+
+  // ---- GET status do backfill ----
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/backfill",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      return statusBackfill(fastify.db, params.data.stageId);
+    },
+  );
+
+  // ---- POST roda um lote do backfill ----
+  fastify.post(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/backfill",
+    async (request, reply) => {
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const corpo = z
+        .object({ limite: z.coerce.number().int().min(1).max(2000).optional() })
+        .safeParse(request.body ?? {});
+
+      const resultado = await backfillRevenuecatSubscriptions(fastify.db, params.data.stageId, {
+        limite: corpo.success ? corpo.data.limite : undefined,
+        log: (m) => request.log.info(m),
+      });
+
+      if (resultado.status === "error") {
+        return reply.code(502).send(resultado);
+      }
+      return resultado;
     },
   );
 });

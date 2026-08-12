@@ -393,6 +393,7 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
           priceInPurchasedCurrency: norm.priceInPurchasedCurrency,
           revenueUsd: norm.revenueUsd,
           purchasedAt: norm.purchasedAt,
+          eventAt: norm.eventAt,
           payload,
         })
         .onConflictDoNothing({

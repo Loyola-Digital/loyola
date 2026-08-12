@@ -1773,15 +1773,82 @@ export const revenuecatSales = pgTable(
     priceInPurchasedCurrency: numeric("price_in_purchased_currency", { precision: 14, scale: 4 }),
     revenueUsd: numeric("revenue_usd", { precision: 14, scale: 4 }),
     purchasedAt: timestamp("purchased_at", { withTimezone: true }),
+    /**
+     * Instante do EVENTO — sempre preenchido. `purchased_at` só existe em compra
+     * (vem de `purchased_at_ms`); paywall usa `event_timestamp_ms` e ficava sem
+     * data nenhuma, invisível pra leitura por período.
+     */
+    eventAt: timestamp("event_at", { withTimezone: true }),
     payload: jsonb("payload").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     unique("revenuecat_sales_stage_event_unique").on(table.stageId, table.eventId),
     index("idx_revenuecat_sales_stage_purchased").on(table.stageId, table.purchasedAt),
+    index("idx_revenuecat_sales_stage_event_at").on(table.stageId, table.eventAt),
     index("idx_revenuecat_sales_project").on(table.projectId),
   ]
 );
+
+/**
+ * Estado das assinaturas lido da API v2 (backfill do histórico anterior ao
+ * webhook). Tabela separada de `revenuecat_sales` de propósito: aquela é log de
+ * EVENTO (imutável, chegou por webhook), esta é ESTADO — muda com o tempo e é
+ * reescrita a cada sincronização.
+ */
+export const revenuecatSubscriptions = pgTable(
+  "revenuecat_subscriptions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    subscriptionId: varchar("subscription_id", { length: 255 }).notNull(),
+    customerId: varchar("customer_id", { length: 255 }).notNull(),
+    productId: varchar("product_id", { length: 255 }),
+    store: varchar("store", { length: 30 }),
+    country: varchar("country", { length: 8 }),
+    autoRenewalStatus: varchar("auto_renewal_status", { length: 40 }),
+    status: varchar("status", { length: 40 }),
+    startsAt: timestamp("starts_at", { withTimezone: true }),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    currentPeriodStartsAt: timestamp("current_period_starts_at", { withTimezone: true }),
+    currentPeriodEndsAt: timestamp("current_period_ends_at", { withTimezone: true }),
+    entitlements: jsonb("entitlements"),
+    payload: jsonb("payload").notNull(),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_revenuecat_subscriptions_stage_sub").on(table.stageId, table.subscriptionId),
+    index("idx_revenuecat_subscriptions_stage_starts").on(table.stageId, table.startsAt),
+    index("idx_revenuecat_subscriptions_customer").on(table.stageId, table.customerId),
+  ]
+);
+
+/**
+ * Cursor de retomada do backfill. A base tem milhares de clientes e o backfill
+ * custa uma chamada por cliente — sem cursor, falhar no meio obrigaria a
+ * recomeçar do zero.
+ */
+export const revenuecatBackfillState = pgTable("revenuecat_backfill_state", {
+  stageId: uuid("stage_id")
+    .primaryKey()
+    .references(() => funnelStages.id, { onDelete: "cascade" }),
+  /** idle | running | done | error */
+  status: varchar("status", { length: 20 }).notNull().default("idle"),
+  /** `starting_after` da paginação de customers na API v2. */
+  nextCursor: text("next_cursor"),
+  customersProcessed: integer("customers_processed").notNull().default(0),
+  subscriptionsUpserted: integer("subscriptions_upserted").notNull().default(0),
+  error: text("error"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
 
 // Story 28.7: cache persistente de nomes Meta (ad/adset/campaign) — substitui
 // resolução in-memory que estourava rate limit Meta. TTL aplicado no código (24h).
