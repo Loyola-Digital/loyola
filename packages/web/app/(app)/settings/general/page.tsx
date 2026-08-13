@@ -45,13 +45,15 @@ export default function GeneralSettingsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Project selector */}
-            <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex flex-wrap items-center gap-3">
               <span className="text-sm font-medium shrink-0">Empresa:</span>
               {projectsLoading ? (
                 <Skeleton className="h-9 w-48" />
               ) : (
+                /* Largura fixa apertava em tela estreita; no celular o seletor
+                   ocupa a linha inteira e o botão de convidar vai pra baixo. */
                 <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-                  <SelectTrigger className="w-[220px]">
+                  <SelectTrigger className="w-full sm:w-[220px]">
                     <SelectValue placeholder="Selecionar empresa" />
                   </SelectTrigger>
                   <SelectContent>
@@ -64,7 +66,12 @@ export default function GeneralSettingsPage() {
                 </Select>
               )}
               {selectedProjectId && (
-                <Button size="sm" variant="outline" onClick={() => setInviteOpen(true)}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full sm:w-auto"
+                  onClick={() => setInviteOpen(true)}
+                >
                   + Convidar membro
                 </Button>
               )}

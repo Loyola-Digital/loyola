@@ -72,24 +72,28 @@ export function MemberPermissionsEditor({ projectId }: MemberPermissionsEditorPr
     <div className="flex flex-col gap-3">
       {members?.map((member) => (
         <div key={member.id} className="rounded-md border p-3 flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">{member.userEmail}</p>
+          <div className="flex items-center justify-between gap-2">
+            {/* min-w-0 + truncate: e-mail longo não tem espaço pra quebrar e
+                empurrava o botão de remover pra fora do card no celular. */}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{member.userEmail}</p>
               {member.userName !== member.userEmail && (
-                <p className="text-xs text-muted-foreground">{member.userName}</p>
+                <p className="truncate text-xs text-muted-foreground">{member.userName}</p>
               )}
             </div>
             <Button
               size="icon"
               variant="ghost"
-              className="h-7 w-7 text-destructive hover:text-destructive"
+              className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
               disabled={removeMember.isPending}
               onClick={() => removeMember.mutate(member.userId)}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
-          <div className="flex gap-4">
+          {/* flex-wrap: são 6 módulos numa linha só — sem quebrar, a fileira
+              passa de 500px e estoura a largura do celular. */}
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
             {MODULE_LABELS.map(({ key, label }) => (
               <div key={key} className="flex items-center gap-1.5">
                 <Switch
@@ -116,20 +120,20 @@ export function MemberPermissionsEditor({ projectId }: MemberPermissionsEditorPr
       ))}
 
       {pendingInvites?.map((invite) => (
-        <div key={invite.id} className="rounded-md border border-dashed border-border/60 p-3 flex items-center justify-between opacity-70">
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
-            <div>
-              <p className="text-sm font-medium">{invite.email}</p>
-              <p className="text-xs text-muted-foreground">Convite enviado · aguardando aceite</p>
+        <div key={invite.id} className="flex items-center justify-between gap-2 rounded-md border border-dashed border-border/60 p-3 opacity-70">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">{invite.email}</p>
+              <p className="truncate text-xs text-muted-foreground">Convite enviado · aguardando aceite</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <Badge variant="secondary" className="text-xs">Pendente</Badge>
             <Button
               size="icon"
               variant="ghost"
-              className="h-7 w-7 text-destructive hover:text-destructive"
+              className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
               disabled={cancelInvitation.isPending}
               onClick={() => cancelInvitation.mutate(invite.id)}
             >
