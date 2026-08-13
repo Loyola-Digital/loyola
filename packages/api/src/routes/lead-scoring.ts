@@ -14,6 +14,7 @@ import {
 import { readSheetData } from "../services/google-sheets.js";
 import { fetchCampaignInsights, fetchAllAdSetInsights, fetchAllAdInsights, decryptAccountToken } from "../services/meta-ads.js";
 import { applyMetaTax } from "../utils/meta-tax.js";
+import { phoneTail } from "../utils/lead-origin.js";
 
 // ============================================================
 // SCHEMAS
@@ -380,6 +381,56 @@ function isAnswerConditional(a: Answer): a is AnswerConditional {
  * Retorna Map vazio se: sem coluna de email, sem bandas configuradas, ou
  * sheet vazio. Caller deve tratar Map vazio como "sem perfil disponível".
  */
+/** Faixas que o breakdown por vendedor sabe exibir. */
+const FAIXAS_ACEITAS = new Set(["A", "B", "C", "D"]);
+
+/**
+ * email → faixa lida DIRETO da coluna da planilha, sem lead scoring.
+ *
+ * O `computeLeadBandMap` também sabe ler faixa pré-calculada, mas só depois de
+ * receber um `LeadScoringSchema` (usa as bandas dele pra validar). Quando o time
+ * já escreve a faixa na planilha de captação — que é o caso hoje — exigir o
+ * schema fazia todo mundo cair em "Sem perfil" por falta de uma configuração
+ * que não muda nada no resultado.
+ *
+ * Aceita só A/B/C/D (o que o grid de vendedores exibe); valor fora disso é
+ * ignorado, e o lead fica sem perfil em vez de criar uma faixa fantasma.
+ */
+export function computeLeadBandMapFromColumn(
+  sheet: { headers: string[]; rows: string[][] },
+  emailColumnName: string,
+  faixaColumnName: string,
+  phoneColumnName?: string | null,
+): { byEmail: Map<string, string>; byPhone: Map<string, string> } {
+  const byEmail = new Map<string, string>();
+  const byPhone = new Map<string, string>();
+  const { headers, rows } = sheet;
+  if (!emailColumnName || !faixaColumnName || rows.length === 0) return { byEmail, byPhone };
+
+  const idxDe = (nome: string | null | undefined) =>
+    nome ? headers.findIndex((h) => normalizeForMatch(h) === normalizeForMatch(nome)) : -1;
+
+  const emailIdx = idxDe(emailColumnName);
+  const faixaIdx = idxDe(faixaColumnName);
+  const phoneIdx = idxDe(phoneColumnName);
+  if (emailIdx === -1 || faixaIdx === -1) return { byEmail, byPhone };
+
+  for (const row of rows) {
+    const faixa = (row[faixaIdx] ?? "").trim().toUpperCase();
+    if (!FAIXAS_ACEITAS.has(faixa)) continue;
+
+    // Primeira resposta vence — o mesmo contato pode responder a pesquisa 2x.
+    const email = (row[emailIdx] ?? "").trim().toLowerCase();
+    if (email && !byEmail.has(email)) byEmail.set(email, faixa);
+
+    if (phoneIdx !== -1) {
+      const phone = phoneTail(row[phoneIdx]);
+      if (phone && !byPhone.has(phone)) byPhone.set(phone, faixa);
+    }
+  }
+  return { byEmail, byPhone };
+}
+
 export function computeLeadBandMap(
   schema: LeadScoringSchema,
   sheet: { headers: string[]; rows: string[][] },
