@@ -55,6 +55,26 @@ const querySchema = z.object({
 });
 
 const VALID_SUBTYPES = new Set(["capture", "main_product", "sales", "tmb"]);
+
+/**
+ * A venda manual (PIX direto) pertence a UM subtype só: o produto principal da
+ * etapa. Na etapa de Vendas isso é `main_product`; na Paga o lançamento manual é
+ * ingresso, então é `capture`.
+ *
+ * Sem esse recorte a manual era somada em todo subtype pedido — a seção TMB
+ * exibia as manuais como se fossem TMB (1 venda virava 3) e a Captação inflava.
+ * No CSV "main_product,tmb" o total não muda: a soma acontece uma vez só.
+ */
+export function subtypeDasVendasManuais(stageType: string): string {
+  return stageType === "sales" ? "main_product" : "capture";
+}
+
+export function deveIncluirVendasManuais(
+  stageType: string,
+  requestedSubtypes: string[],
+): boolean {
+  return requestedSubtypes.includes(subtypeDasVendasManuais(stageType));
+}
 /** Parseia `subtype` (único ou CSV) em lista validada. Fallback ["capture"]. */
 function parseSubtypes(raw: string): string[] {
   const list = raw
@@ -597,25 +617,32 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       // Story 19.9 ext: soma vendas manuais (PIX direto) no agregado total.
       // Período = mesmo cutoff usado pra planilha (days param). Sem days =
       // sem filtro temporal (pega todas).
+      //
+      // Ver `deveIncluirVendasManuais`: a manual conta uma vez, no subtype
+      // principal da etapa.
+      const incluiManuais = deveIncluirVendasManuais(stage.stageType, requestedSubtypes);
+
       const manualCutoff = query.data.days
         ? new Date(Date.now() - query.data.days * 24 * 60 * 60 * 1000)
         : null;
-      const manualRows = await fastify.db
-        .select({
-          value: manualSales.value,
-          saleDate: manualSales.saleDate,
-          email: manualSales.customerEmail,
-          product: manualSales.product,
-        })
-        .from(manualSales)
-        .where(
-          manualCutoff
-            ? and(
-                eq(manualSales.stageId, params.data.stageId),
-                gte(manualSales.saleDate, manualCutoff),
-              )
-            : eq(manualSales.stageId, params.data.stageId),
-        );
+      const manualRows = incluiManuais
+        ? await fastify.db
+            .select({
+              value: manualSales.value,
+              saleDate: manualSales.saleDate,
+              email: manualSales.customerEmail,
+              product: manualSales.product,
+            })
+            .from(manualSales)
+            .where(
+              manualCutoff
+                ? and(
+                    eq(manualSales.stageId, params.data.stageId),
+                    gte(manualSales.saleDate, manualCutoff),
+                  )
+                : eq(manualSales.stageId, params.data.stageId),
+            )
+        : [];
       const manualVendas = manualRows.length;
       const manualBruto = manualRows.reduce((s, r) => s + (Number(r.value) || 0), 0);
       // Story 18.48: vendas manuais (PIX direto) entram como ingresso "sem track".
