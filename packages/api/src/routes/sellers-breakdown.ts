@@ -23,8 +23,11 @@ import {
   sellerAliases,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
+import { phoneTail } from "../utils/lead-origin.js";
 import {
   computeLeadBandMap,
+  computeLeadBandMapFromColumn,
   resolvePrecomputedBandColumn,
   type LeadScoringSchema,
 } from "./lead-scoring.js";
@@ -300,10 +303,30 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
         allScoring[0];
 
       const scoringSchema = (scoringRow?.schemaJson ?? null) as LeadScoringSchema | null;
-      const hasScoringConfig = !!surveyToUse && !!scoringSchema;
+
+      /**
+       * Fonte da faixa, nesta ordem:
+       *   1. coluna de faixa da própria planilha de pesquisa (o time já escreve
+       *      A/B/C/D lá — é a fonte de verdade e não depende de configuração);
+       *   2. lead scoring, recalculando o score lead a lead (legado).
+       *
+       * Antes só existia o caminho 2, então funil com faixa pronta na planilha
+       * mas sem schema de scoring cadastrado jogava TODAS as vendas em
+       * "Sem perfil".
+       */
+      const faixaColumnDireta = surveyToUse?.columnMapping?.faixa?.trim() || null;
+      const emailColumn = surveyToUse?.columnMapping?.email?.trim() || null;
+      const usaFaixaDaPlanilha = !!surveyToUse && !!faixaColumnDireta && !!emailColumn;
+      const hasScoringConfig = usaFaixaDaPlanilha || (!!surveyToUse && !!scoringSchema);
 
       // 3. Build lead profile map (email_lower → bandId | "no_profile")
       let leadBandMap = new Map<string, string>();
+      /**
+       * Faixa indexada por telefone (últimos 8 dígitos). Reserva para o
+       * comprador que usou um e-mail no checkout e outro na pesquisa — sem isso
+       * a maioria das vendas cai em "Sem perfil" mesmo com a faixa existindo.
+       */
+      let leadBandPorTelefone = new Map<string, string>();
       const debugInfo: Record<string, unknown> = {
         surveyFound: !!surveyToUse,
         surveyStageId: surveyToUse?.stageId ?? null,
@@ -317,7 +340,7 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
         leadBandMapSize: 0,
         leadEmailsSample: [] as string[],
       };
-      if (surveyToUse && scoringSchema) {
+      if (surveyToUse && (usaFaixaDaPlanilha || scoringSchema)) {
         try {
           const surveySheet = await readSheetData(
             surveyToUse.spreadsheetId,
@@ -325,12 +348,27 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
           );
           debugInfo.surveyHeaders = surveySheet.headers;
           const emailCol = surveyToUse.columnMapping?.email;
-          if (emailCol) {
+          if (usaFaixaDaPlanilha && emailColumn && faixaColumnDireta) {
+            debugInfo.faixaColumn = faixaColumnDireta;
+            debugInfo.fonteDaFaixa = "planilha";
+            const mapas = computeLeadBandMapFromColumn(
+              surveySheet,
+              emailColumn,
+              faixaColumnDireta,
+              surveyToUse.columnMapping?.phone ?? null,
+            );
+            leadBandMap = mapas.byEmail;
+            leadBandPorTelefone = mapas.byPhone;
+            debugInfo.leadBandMapSize = leadBandMap.size;
+            debugInfo.leadBandPorTelefoneSize = leadBandPorTelefone.size;
+            debugInfo.leadEmailsSample = Array.from(leadBandMap.keys()).slice(0, 5);
+          } else if (scoringSchema && emailCol) {
             const faixaCol = resolvePrecomputedBandColumn(
               scoringSchema,
               surveyToUse.columnMapping,
             );
             debugInfo.faixaColumn = faixaCol;
+            debugInfo.fonteDaFaixa = "lead scoring";
             leadBandMap = computeLeadBandMap(scoringSchema, surveySheet, emailCol, faixaCol);
             debugInfo.leadBandMapSize = leadBandMap.size;
             debugInfo.leadEmailsSample = Array.from(leadBandMap.keys()).slice(0, 5);
@@ -363,6 +401,8 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
           utm_source?: string;
           dataVenda?: string;
           productName?: string;
+          status?: string;
+          phone?: string;
         };
 
         let sheetData;
@@ -386,12 +426,40 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
         const utmSourceIdx = colIdx(mapping.utm_source);
         const dataIdx = colIdx(mapping.dataVenda);
         const productIdx = colIdx(mapping.productName);
+        const statusIdx = colIdx(mapping.status);
+        // A planilha de venda costuma ter "Telefone" sem estar no columnMapping —
+        // por isso o fallback por apelido no header.
+        const phoneIdx = (() => {
+          const mapeado = colIdx(mapping.phone);
+          if (mapeado !== -1) return mapeado;
+          return headers.findIndex((h) => /telefone|whats|phone|celular/i.test(h.trim()));
+        })();
+
+        // Reembolso/chargeback anula TAMBÉM a linha "paid" pareada (mesmo txId) —
+        // mesma regra do KPI do topo e da tabela de vendas. Sem isso o card
+        // contava a venda reembolsada e ficava acima do resto do dashboard (no
+        // dg-pg04: 38 contra 36).
+        const reembolsados = new Set<string>();
+        if (statusIdx !== -1 && txIdx !== -1) {
+          for (const row of rows) {
+            if (isRefundBucket(classifyRefundStatus(row[statusIdx], true))) {
+              const tx = (row[txIdx] ?? "").trim();
+              if (tx) reembolsados.add(tx);
+            }
+          }
+        }
 
         let rowIndex = -1;
         for (const row of rows) {
           rowIndex += 1;
           const email = (row[emailIdx] ?? "").trim().toLowerCase();
           if (!email) continue;
+
+          if (statusIdx !== -1) {
+            if (isRefundBucket(classifyRefundStatus(row[statusIdx], true))) continue;
+            const tx = txIdx !== -1 ? (row[txIdx] ?? "").trim() : "";
+            if (tx && reembolsados.has(tx)) continue;
+          }
 
           if (dataIdx !== -1 && (startDate || endDate)) {
             const dt = parseDate(row[dataIdx]);
@@ -423,7 +491,12 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
           const utmSourceRaw = utmSourceIdx >= 0 ? (row[utmSourceIdx] ?? "").trim() : "";
           const { display: utmSource, key: sellerKey } = resolveSeller(utmSourceRaw || NO_SELLER);
 
-          const bandId = leadBandMap.get(email);
+          // E-mail primeiro; telefone como reserva (comprador que usou um e-mail
+          // no checkout e outro na pesquisa).
+          const telefoneVenda = phoneIdx !== -1 ? phoneTail(row[phoneIdx]) : "";
+          const bandId =
+            leadBandMap.get(email) ??
+            (telefoneVenda ? leadBandPorTelefone.get(telefoneVenda) : undefined);
           const bandKey: BandKey =
             bandId === "A" || bandId === "B" || bandId === "C" || bandId === "D"
               ? bandId
@@ -461,6 +534,7 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
           sellerUserId: manualSales.sellerUserId,
           sellerName: manualSales.sellerName,
           customerEmail: manualSales.customerEmail,
+          customerPhone: manualSales.customerPhone,
           saleDate: manualSales.saleDate,
         })
         .from(manualSales)
@@ -474,7 +548,11 @@ export default fp(async function sellersBreakdownRoutes(fastify) {
         const { display: label, key: sellerKey } = resolveSeller((m.sellerName ?? "").trim() || NO_SELLER);
 
         const email = (m.customerEmail ?? "").trim().toLowerCase();
-        const bandId = email ? leadBandMap.get(email) : undefined;
+        // Mesma regra da planilha: e-mail primeiro, telefone como reserva.
+        const telefone = phoneTail(m.customerPhone);
+        const bandId =
+          (email ? leadBandMap.get(email) : undefined) ??
+          (telefone ? leadBandPorTelefone.get(telefone) : undefined);
         const bandKey: BandKey =
           bandId === "A" || bandId === "B" || bandId === "C" || bandId === "D"
             ? bandId

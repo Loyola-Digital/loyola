@@ -146,7 +146,7 @@ export function SellersBreakdownGrid({
       <p className="text-xs text-muted-foreground">
         {data.hasScoringConfig
           ? "Sem vendas no período selecionado."
-          : "Configure o lead scoring e o survey desta etapa para ver o breakdown por perfil."}
+          : "Mapeie a coluna de faixa na planilha de pesquisa deste funil para ver o breakdown por perfil."}
       </p>
     );
   }
@@ -163,11 +163,11 @@ export function SellersBreakdownGrid({
           {hasScoringConfig ? (
             <>
               Cobertura de perfil: <span className="font-semibold">{coverage.pct}%</span>{" "}
-              ({coverage.matched}/{coverage.total} matched por email)
+              ({coverage.matched}/{coverage.total} cruzados por e-mail ou telefone)
             </>
           ) : (
             <span className="text-amber-600 dark:text-amber-400">
-              Lead scoring não configurado — todos vão pra &quot;Sem perfil&quot;
+              Faixa não encontrada — mapeie a coluna de faixa na pesquisa do funil
             </span>
           )}
         </p>
