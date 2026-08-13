@@ -331,6 +331,7 @@ function VslDashboard({
 
   const s = data.stats;
   const pitch = data.player.pitchTime;
+  const duracao = data.player.duration;
 
   // Curva de retenção em % da audiência inicial: comparar "quantos usuários" em
   // absoluto entre VSLs de tráfego diferente não diz nada; o que importa é a
@@ -383,7 +384,20 @@ function VslDashboard({
           sub={`${nf(s.total_conversions)} vendas · ${brl(s.total_amount_brl)}`}
         />
         <StatTile label="Views" value={nfCompact(s.total_viewed)} sub={`${nfCompact(s.total_viewed_device_uniq)} dispositivos únicos`} />
-        <StatTile label="Assistiram até o fim" value={nfCompact(s.total_finished)} />
+        {/* Não confundir com "Chegaram no pitch": este é o FIM do vídeo, sempre
+            um subconjunto de quem passou do pitch. Sem o comparativo no rótulo,
+            a leitura natural é achar que os dois deviam bater. */}
+        <StatTile
+          label="Assistiram até o fim"
+          value={nfCompact(s.total_finished)}
+          sub={
+            pitch != null
+              ? `${duracao ? mmss(duracao) : "fim"} · ${nfCompact(s.total_over_pitch)} chegaram no pitch`
+              : duracao
+                ? `vídeo de ${mmss(duracao)}`
+                : undefined
+          }
+        />
         <StatTile label="Cliques" value={nfCompact(s.total_clicked)} />
         <StatTile label="Período" value={`${dias}d`} sub={`${range.startDate} → ${range.endDate}`} />
       </div>
