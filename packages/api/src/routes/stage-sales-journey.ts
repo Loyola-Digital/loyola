@@ -224,9 +224,41 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
     return out;
   }
 
-  /** Série diária de VENDAS (unidades) do produto principal, indexada em D-day. */
+  /**
+   * Série diária de VENDAS (unidades) do produto principal, indexada em D-day.
+   *
+   * Conta a MESMA coisa que o card "Produto Principal" e o KPI do topo da etapa:
+   * planilha `main_product` + `tmb` + vendas manuais (PIX). Antes lia só
+   * `main_product`, então o gráfico ficava vendas atrás do número exibido logo
+   * acima dele — a mesma pergunta com duas respostas na mesma tela.
+   *
+   * A comparação com o lançamento anterior passa por aqui também, então os dois
+   * lados do gráfico seguem o mesmo critério.
+   */
   async function serieDeVendas(stageId: string) {
-    const vendas = await lerVendas(stageId, "main_product");
+    const vendas = [
+      ...(await lerVendas(stageId, "main_product")),
+      ...(await lerVendas(stageId, "tmb")),
+    ];
+
+    // Venda manual não vive em planilha; sem ela o gráfico ignora o PIX direto,
+    // que é justamente a venda que o time lança na mão durante o carrinho.
+    const manuais = await fastify.db
+      .select({ saleDate: manualSales.saleDate, value: manualSales.value })
+      .from(manualSales)
+      .where(eq(manualSales.stageId, stageId));
+    for (const m of manuais) {
+      vendas.push({
+        email: "",
+        produto: "(venda manual)",
+        day: m.saleDate ? parseDay(m.saleDate.toISOString()) : null,
+        bruto: Number(m.value) || 0,
+        origem: "Venda manual",
+        dated: true,
+        source: "venda manual",
+      });
+    }
+
     const counts = new Map<string, number>();
     const bySource = new Map<string, Map<string, number>>();
     let semData = 0;
