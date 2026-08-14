@@ -1,0 +1,206 @@
+schema: 1
+story: '43.3'
+gate: PASS
+iteration: 2
+status_reason: >-
+  Iteracao 2 — PASS. A condicao do gate anterior (QA-26) esta cumprida, e com
+  cuidado: o @dev percebeu que trocar 0 por undefined quebraria a guarda de "e
+  video" (`views3s === 0` deixa de casar) e resolveu com `?? 0` SOMENTE na
+  guarda, mantendo a distincao no valor exposto. Era o ponto onde a correcao
+  poderia introduzir um defeito novo, e nao introduziu.
+  Verifiquei tambem o caso de borda que a correcao cria: array VAZIO vindo da
+  Meta produz `0`, nao `undefined` — e isso esta certo, porque o campo veio e
+  nao houve eventos. Ausencia real (`undefined`/`null`) some do jsonb.
+  QA-27 e QA-28 tambem aplicados. Nada ficou aberto.
+reviewer: 'Quinn'
+updated: '2026-08-14T00:00:00Z'
+
+verificacoes:
+  code_review: PASS          # QA-26 corrigido na iteração 2
+  unit_tests: PASS           # 12 testes; o caminho de ausência passou a ser coberto
+  acceptance_criteria: PASS       # AC1-AC5, com o AC2 agora cumprido no ponto de ausência
+  no_regressions: PASS       # 940 passando (era 928); as 11 falhas sao as de sempre
+  performance: PASS          # aditivo; um campo a mais no fields
+  security: PASS
+  documentation: PASS        # o contrato ficou bem declarado
+
+verificacoes_manuais_executadas:
+  - o: 'A prova do AC3 se sustenta?'
+    como: >-
+      Avaliacao do argumento: nosso p25 sai de `actions[0].value`; o AC4 da 43.2
+      comparou com o TOTAL da Meta e deu desvio zero.
+    resultado: >-
+      Sustenta. Se o array tivesse outras entradas com valor > 0, o total da Meta
+      seria MAIOR que `actions[0]`. Desvio zero em 3 anuncios x 4 metricas so e
+      possivel com uma entrada unica (ou demais zeradas, que dá no mesmo).
+      E uma inferencia valida a partir de medicao — nao uma suposicao.
+      Registro que o @dev tambem NAO tentou descriptografar o token para ver o
+      array cru: obter por meio arriscado uma resposta que a medicao ja dava
+      seria a escolha errada.
+
+  - o: 'A divergencia de reuso e defensavel?'
+    como: 'Leitura de traffic-analytics.ts:255 e da funcao privada em stage-creative-performance.ts:151'
+    resultado: >-
+      Sim, e melhor que o especificado. A story mandava reusar
+      `parseVideo3sViews`, que NAO e exportada e vive numa rota — importa-la
+      faria `services/` depender de `routes/`. `parseActionCount` do util
+      compartilhado e o mesmo caminho que `traffic-analytics.ts:255` ja usava
+      para o `video_view`. Uma definicao de "o que e o 3s", no lugar certo.
+
+  - o: 'O comportamento e mesmo aditivo, como a story afirma?'
+    como: 'Leitura da guarda de "nao e video" antes e depois'
+    resultado: >-
+      Aditivo nos CAMPOS, mas nao na classificacao: a guarda passou de "os 4
+      quartis sao zero" para incluir `views3s` e `plays`, entao anuncio com
+      `video_view` > 0 e quartis zerados antes voltava `null` e agora volta
+      objeto. E melhoria — o dado existia e era descartado.
+      Na iteracao 2 isso foi registrado na nota de deploy da story (QA-27), com
+      teste dedicado. RESOLVIDO.
+
+  - o: 'O que acontece quando o dado de video NAO vem da Meta?'
+    como: >-
+      Leitura de `parseVideoAction` e `parseActionCount` (ambos devolvem 0 para
+      campo ausente); rastreio ate a gravacao em `meta-insights-cache.ts:388`.
+    resultado: >-
+      Na iteracao 1 era DEFEITO: ambos devolviam `0`, o objeto saia sempre com as
+      duas chaves preenchidas, e isso era persistido no jsonb — o `?` no tipo era
+      decorativo (QA-26).
+      Na iteracao 2, campo ausente vira `undefined` e a chave some do jsonb.
+      RESOLVIDO, com teste que verifica o objeto SERIALIZADO, nao so o de
+      memoria.
+
+  - o: 'As 3 formulas do Slide 22 fecham com o payload?'
+    como: 'Conferencia contra os campos expostos e as definicoes oficiais'
+    resultado: >-
+      Fecham: `views3s ÷ impressions`, `thruplay ÷ views3s`, `p75 ÷ views3s`.
+      A documentacao acerta ao avisar que `p25` inclui quem pulou e por isso nao
+      serve de proxy de gancho — e ha teste travando essa relacao.
+
+  - o: 'A correcao do QA-26 quebrou a guarda de "e video"?'
+    como: >-
+      Leitura da guarda apos a mudanca + teste "anuncio sem NENHUM sinal de
+      video continua devolvendo null".
+    resultado: >-
+      Nao. Era o risco real da correcao: com `undefined`, a comparacao
+      `views3s === 0` deixa de casar, e um anuncio sem video passaria a
+      retornar objeto. O @dev usou `?? 0` SOMENTE na guarda, com a
+      justificativa certa escrita ao lado — para decidir SE e video, ausencia e
+      zero valem o mesmo; a distincao importa no valor exposto.
+
+  - o: 'O que acontece com array VAZIO vindo da Meta?'
+    como: 'Execucao do fluxo com actions=undefined, null, [] e com valor'
+    resultado: >-
+      `undefined` e `null` -> chave some do jsonb (ausencia real).
+      `[]` -> `0`, e isso esta CERTO: o campo veio na resposta e nao houve
+      eventos. Zero legitimo e informacao, nao ruido.
+      Com valor -> o valor. Os quatro caminhos se comportam como deveriam.
+
+  - o: 'Os testes novos cobrem o que dizem cobrir?'
+    como: 'Leitura dos 5 testes da iteracao 2'
+    resultado: >-
+      Sim, e melhor do que o pedido: em vez de so checar o objeto em memoria,
+      verificam `JSON.parse(JSON.stringify(r))` — ou seja, o que de fato vai
+      para o jsonb. E onde o defeito importava.
+
+issues:
+  - id: QA-26
+    severity: medium
+    status: RESOLVIDO na iteração 2
+    category: correctness
+    description: >-
+      `views3s` e `plays` viram `0` quando o dado nao vem, em vez de ficarem
+      ausentes — violando o AC2, que exige textualmente que a ausencia "precisa
+      ser visivel, nao mascarada com zero".
+
+      `parseVideoAction(undefined)` devolve `0` (`meta-ads.ts`), e
+      `parseActionCount` idem. Como `extractVideoMetrics` sempre monta o objeto
+      com as duas chaves, o `views3s?: number` do tipo nunca acontece na pratica.
+
+      **O agravante e a persistencia.** O objeto e gravado em
+      `meta_ad_insights_daily.video_metrics` (`meta-insights-cache.ts:388`).
+      Com `undefined`, `JSON.stringify` remove a chave e o jsonb fica
+      `{"p25":10}` — o consumidor ve que nao ha dado. Com `0`, grava
+      `{"p25":10,"views3s":0,"plays":0}`, e depois **nao ha como distinguir
+      "a Meta nao reportou" de "ninguem assistiu"**.
+
+      Isso importa direto nas formulas do AC5: `thruplay ÷ views3s` com
+      `views3s = 0` ausente vira divisao por zero disfarcada de dado real.
+
+      E a MESMA distincao que a 43.2 protegeu ao manter `null` em vez de
+      `{0,0,0,0,0}` — e que esta story defende no proprio AC2.
+    recommendation: >-
+      Devolver `undefined` quando o campo nao veio, mantendo `0` quando veio e e
+      legitimamente zero:
+
+        const views3s = raw.actions ? parseActionCount(raw.actions, "video_view") : undefined;
+        const plays = raw.video_play_actions ? parseVideoAction(raw.video_play_actions) : undefined;
+
+      Acrescentar teste do caso — que hoje nao existe (QA-28) e foi por onde o
+      defeito passou.
+
+      **Entrar antes do merge**: o dado comeca a ser gravado no deploy, e
+      corrigir depois nao recupera as linhas escritas no intervalo.
+
+  - id: QA-27
+    severity: low
+    status: RESOLVIDO na iteração 2
+    category: correctness
+    description: >-
+      A guarda de "nao e video" mudou de "os 4 quartis sao zero" para incluir
+      `views3s` e `plays`. Anuncio com `video_view` > 0 e quartis zerados antes
+      voltava `null`, agora volta objeto.
+      E melhoria — o dado existe e passa a aparecer — mas contradiz a afirmacao
+      de que a story e estritamente aditiva e "nenhum numero existente muda".
+      Alguns anuncios mudam de classificacao.
+    recommendation: >-
+      Ajustar a nota de deploy na story: e aditiva nos CAMPOS, mas a
+      classificacao "e video" ficou mais abrangente. Vale uma linha, para ninguem
+      estranhar um anuncio que antes nao tinha bloco de video e agora tem.
+
+  - id: QA-28
+    severity: low
+    status: RESOLVIDO na iteração 2
+    category: tests
+    description: >-
+      Os 7 testes cobrem a leitura do `video_view` e documentam o contrato, mas
+      NENHUM cobre o caminho de ausencia de campo — que e exatamente onde o
+      QA-26 mora. O unico `undefined` testado e no argumento de
+      `parseActionCount`, nao no resultado de `extractVideoMetrics`.
+    recommendation: >-
+      Ao corrigir o QA-26, cobrir: campo ausente -> chave ausente no objeto;
+      campo presente com zero -> `0` preservado. Sao os dois lados da distincao.
+
+pontos_fortes:
+  - >-
+    **O AC3 foi encerrado sem escrever codigo, e com prova.** A pergunta era se o
+    parser perdia dado; a resposta veio da medicao da 43.2, por inferencia
+    valida. Resistir a "melhorar" um parser que estava correto e mais dificil que
+    mexer nele — e teria introduzido dupla contagem, que foi o que o @po barrou.
+  - >-
+    **A divergencia de reuso foi na direcao certa.** A story mandava importar de
+    uma rota; o @dev viu que isso inverteria o acoplamento e usou o util
+    compartilhado que ja existia. Seguir a story ao pe da letra teria piorado o
+    desenho.
+  - >-
+    O @dev **nao tentou descriptografar o token** para ver o array cru da Graph
+    API. Era o caminho "completo", e era o errado: risco com credencial para
+    obter uma resposta que a medicao ja dava.
+  - >-
+    Dois dos sete testes nao exercitam logica — documentam o contrato em codigo
+    executavel, incluindo a relacao `p25 > views3s` por incluir quem pulou. Isso
+    trava um mal-entendido, nao so um comportamento.
+  - >-
+    O contrato no cabecalho do endpoint responde a pergunta certa antes que ela
+    seja feita: o que cada campo significa, o que NAO usar como proxy, e por que.
+
+decisao: >-
+  ITERACAO 2 — PASS, aprovado para merge sem condicao. Os tres achados foram
+  resolvidos, e o QA-26 foi resolvido melhor do que o minimo: o @dev viu que a
+  troca quebraria a guarda de "e video" e isolou o `?? 0` nela, preservando a
+  distincao onde ela importa.
+  Verificacoes de borda feitas nesta iteracao: array vazio da Meta produz `0`
+  (correto — o campo veio), ausencia real some do jsonb, e anuncio sem nenhum
+  sinal de video continua devolvendo `null`.
+  Somando as duas iteracoes, esta story fecha com o AC3 encerrado sem escrever
+  codigo e com o AC2 cumprido no unico ponto onde ele podia ser violado sem
+  ninguem notar.

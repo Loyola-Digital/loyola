@@ -34,6 +34,31 @@ import {
  *
  * `spend` já vem COM o imposto Meta (gross-up 12,15% p/ datas ≥2026) via `applyMetaTax`,
  * porque não há frontend para aplicá-lo depois — assim bate com o dashboard interno.
+ *
+ * ── CONTRATO DE `videoMetrics` (Story 43.3) ─────────────────────────────────
+ *
+ * TODOS os campos são CONTAGENS DE EVENTOS NO PERÍODO. Nenhum é taxa.
+ *
+ *   views3s    reproduções de 3s — o `video_view` do Gerenciador
+ *   plays      vídeo começou a tocar; EXCLUI replays
+ *   p25..p100  assistiu X% do vídeo — INCLUI quem PULOU até o ponto
+ *   thruplay   completou OU assistiu ≥15s (não existe `video_15_sec` separado)
+ *
+ * As três métricas de gancho/retenção derivam disto:
+ *
+ *   play do hook       = views3s ÷ impressions
+ *   conversão do hook  = thruplay ÷ views3s      (thruplay É o 15s)
+ *   retenção do body   = p75 ÷ views3s
+ *
+ * NÃO use `p25` como proxy de gancho: ele conta quem arrastou até os 25% sem
+ * assistir, e sai sistematicamente maior que `views3s`.
+ *
+ * `views3s` e `plays` só existem em linhas sincronizadas a partir da 43.3.
+ * Histórico anterior vem sem eles — `undefined`, nunca zero, porque "não
+ * medimos" e "ninguém assistiu" são coisas diferentes.
+ *
+ * Desde a Story 43.2, os valores são a SOMA do período. Antes vinham de um
+ * único dia, o que produzia taxas ~N× menores.
  */
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
