@@ -12,6 +12,19 @@
 //     Meta. Coluna que mostra 0 se lê como "não vende", não como "não sabemos".
 //     Ver Story 42.6 (extração da atribuição) e 42.7 (as colunas de receita).
 //
+//     Isso inclui BODY CONV. (vendas ÷ views 75%) e TX CONVERSÃO (vendas ÷
+//     cliques no link), que o Detalhamento do Perpétuo tem em Por Criativo
+//     (perpetual-dashboard.tsx:2670,2677). As duas têm Vendas no numerador, e
+//     Vendas por anúncio é exatamente o que falta aqui — mostrariam "—" em
+//     100% das linhas. Se você veio procurar por elas, o motivo é este.
+//
+//   • CTR e CPC já são os de LINK CLICK, com a mesma fórmula do Perpétuo
+//     (`costClicks` em lyrio-detail-rows.ts). O rótulo diz "(link)" para não
+//     mandar ninguém procurar uma coluna que já está na tela. Ressalva que o
+//     Perpétuo não tem: as linhas do Google trazem CTR/CPC prontos da API do
+//     Google, que não são cliques em link — daí o tooltip separar as duas
+//     origens em vez de prometer "link" para a tabela inteira.
+//
 //   • Google Ads só no nível de CAMPANHA. Os hooks de público e criativo do
 //     Google aceitam um pai por chamada — cobrir os 3 níveis seria N+1 sem
 //     lote nem cache, contra a regra que ficou após o rate limit de julho/2026.
@@ -156,7 +169,7 @@ export function LyrioDetailTable({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="campaign">Por Campanha</SelectItem>
-            <SelectItem value="adset">Por Publico</SelectItem>
+            <SelectItem value="adset">Por Público</SelectItem>
             <SelectItem value="ad">Por Criativo</SelectItem>
           </SelectContent>
         </Select>
@@ -188,22 +201,22 @@ export function LyrioDetailTable({
                   className="text-left py-2 pr-3 cursor-pointer select-none hover:text-foreground"
                   onClick={() => toggleSort("name")}
                 >
-                  Dimensao{seta("name")}
+                  Dimensão{seta("name")}
                 </th>
                 <th className={th} onClick={() => toggleSort("spend")} title="Meta já com o imposto de 12,15%; Google sem imposto (o imposto é da Meta)">
                   Investimento{seta("spend")}
                 </th>
                 <th className={th} onClick={() => toggleSort("impressions")}>
-                  Impressoes{seta("impressions")}
+                  Impressões{seta("impressions")}
                 </th>
-                <th className={th} onClick={() => toggleSort("clicks")} title="Cliques no link quando a plataforma reporta; senão, cliques totais">
+                <th className={th} onClick={() => toggleSort("clicks")} title="Meta: cliques no link quando reportados, senão cliques totais. Google: cliques da campanha">
                   Cliques{seta("clicks")}
                 </th>
-                <th className={th} onClick={() => toggleSort("ctr")} title="Cliques ÷ Impressões × 100">
-                  CTR{seta("ctr")}
+                <th className={th} onClick={() => toggleSort("ctr")} title="Meta: cliques no link ÷ impressões × 100 (cai para cliques totais se a Meta não reportar link). Google: CTR como a API do Google entrega">
+                  CTR (link){seta("ctr")}
                 </th>
-                <th className={th} onClick={() => toggleSort("cpc")} title="Investimento ÷ Cliques">
-                  CPC{seta("cpc")}
+                <th className={th} onClick={() => toggleSort("cpc")} title="Meta: investimento ÷ cliques no link (cai para cliques totais se a Meta não reportar link). Google: CPC como a API do Google entrega">
+                  CPC (link){seta("cpc")}
                 </th>
                 <th className={th} onClick={() => toggleSort("cpm")} title="Investimento ÷ Impressões × 1000">
                   CPM{seta("cpm")}
