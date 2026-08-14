@@ -73,7 +73,18 @@ const creativesQuerySchema = rangeQuerySchema.extend({
   orderBy: z
     .enum(["spend", "ctr", "cpc", "cpm", "cpl", "cpa", "roas", "leads", "impressions", "clicks"])
     .default("spend"),
-  limit: z.coerce.number().int().min(1).max(200).default(50),
+  // Story 43.4 — teto MEDIDO, não escolhido por gosto. Medição em produção
+  // (2026-08-14, janela de 30 dias, projeto com mais criativos):
+  //
+  //   433 criativos  ->  259 KB serializados  (611 B por criativo)
+  //   query do banco ->  192 ms
+  //   projeção com limit=500  ->  ~299 KB
+  //
+  // 500 cabe confortavelmente. O default segue 50 para não mudar o
+  // comportamento de quem já consome (AC6).
+  limit: z.coerce.number().int().min(1).max(500).default(50),
+  /** Story 43.4 — paginação. Com `total` e `offset` o consumidor busca tudo. */
+  offset: z.coerce.number().int().min(0).default(0),
 });
 
 const projectParam = z.object({ projectId: z.string().uuid() });
@@ -307,7 +318,7 @@ export default fp(async function publicMetaRoutes(fastify) {
       if (!(await assertProject(projectId))) return reply.code(404).send({ error: "Projeto não encontrado", code: "NOT_FOUND" });
 
       const { from, to } = resolveRange(query.data.from, query.data.to);
-      const { campaignId, orderBy, limit } = query.data;
+      const { campaignId, orderBy, limit, offset } = query.data;
 
       const filters = [
         eq(metaAdInsightsDaily.projectId, projectId),
@@ -400,7 +411,16 @@ export default fp(async function publicMetaRoutes(fastify) {
         const v = c[orderBy as keyof typeof c];
         return typeof v === "number" ? v : -Infinity;
       };
-      creatives.sort((a, b) => orderVal(b) - orderVal(a));
+      // Story 43.4 — desempate OBRIGATÓRIO por adId. Ordenar só pela métrica
+      // deixa a ordem indefinida entre empatados, e aí paginar por offset pula
+      // ou repete criativo entre requisições. É o mesmo defeito que o QA-15
+      // apontou na paginação do backfill da 42.6.
+      creatives.sort((a, b) => {
+        const d = orderVal(b) - orderVal(a);
+        return d !== 0 ? d : a.adId.localeCompare(b.adId);
+      });
+
+      const pagina = creatives.slice(offset, offset + limit);
 
       return {
         projectId,
@@ -410,8 +430,16 @@ export default fp(async function publicMetaRoutes(fastify) {
         orderBy,
         partial: daysWithData.size < daysInRange(from, to),
         lastSyncedAt: lastSyncedAt ? (lastSyncedAt as Date).toISOString() : null,
+        /** @deprecated Story 43.4 — use `total`. Mantido por compatibilidade. */
         count: creatives.length,
-        creatives: creatives.slice(0, limit),
+        // Story 43.4 — sem estes três, `limit=50` (o default) devolve 50 de 448
+        // e PARECE o conjunto inteiro: a resposta truncada é idêntica em forma
+        // a uma completa.
+        total: creatives.length,
+        returned: pagina.length,
+        offset,
+        truncated: offset + pagina.length < creatives.length,
+        creatives: pagina,
       };
     }
   );
