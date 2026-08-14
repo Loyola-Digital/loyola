@@ -1,6 +1,7 @@
 import { decrypt } from "./encryption.js";
 import { singleFlight } from "../utils/single-flight.js";
 import { parseActionCount } from "../utils/meta-metrics.js";
+import { avaliarCap, mensagemTruncamento } from "./pagination-cap.js";
 
 // ============================================================
 // CONSTANTS
@@ -430,8 +431,13 @@ export async function fetchCampaigns(
     allResults.push(...(res.data ?? []));
     // Hard cap defensivo — contas extremamente antigas podem ter milhares de
     // campanhas; 2000 é mais do que suficiente pro Loyola e evita loop infinito.
-    if (res.paging?.next && allResults.length < 2000) {
-      nextPath = res.paging.next;
+    // Story 43.4: o cap existia e truncava calado.
+    const cap = avaliarCap(res.paging?.next, allResults.length, 2000);
+    if (cap.truncado) {
+      console.warn(mensagemTruncamento("fetchCampaigns", 2000, `conta=${metaAccountId}`));
+    }
+    if (cap.continuar) {
+      nextPath = res.paging!.next!; // `continuar` só é true com próxima página
       useFullUrl = true;
     } else {
       nextPath = null;
@@ -761,8 +767,15 @@ async function fetchAllAdSetInsightsImpl(
       : await fetchMeta<PageResponse>(nextPath, accessToken);
     allResults.push(...(res.data ?? []));
     const nextUrl = res.paging?.next;
-    if (nextUrl && allResults.length < 500) {
-      nextPath = nextUrl;
+    // Story 43.4: 500 adsets truncava SEM aviso. É o cap mais apertado do
+    // arquivo, e o mais provável de morder — uma conta com muitos conjuntos
+    // chega lá bem antes de chegar em 5000 linhas.
+    const cap = avaliarCap(nextUrl, allResults.length, 500);
+    if (cap.truncado) {
+      console.warn(mensagemTruncamento("fetchAllAdSetInsightsImpl", 500, `conta=${metaAccountId}`));
+    }
+    if (cap.continuar) {
+      nextPath = nextUrl!; // `continuar` só é true com próxima página
       useFullUrl = true;
     } else {
       nextPath = null;
@@ -944,11 +957,20 @@ async function fetchAllAdInsightsImpl(
       });
     }
 
-    // Meta returns full absolute URL for next page (may use different API version)
-    // Continue pagination to fetch ALL ads (needed for accurate top performer sorting)
+    // Meta devolve a URL absoluta da próxima página (pode usar outra versão da API).
+    //
+    // Story 43.4: este laço segue TODAS as páginas — é o único fetch do arquivo
+    // que não tinha teto. Um cap alto entra como proteção anti-loop (resposta
+    // malformada da Meta apontando para si mesma), não como limite de negócio:
+    // 10.000 anúncios é muito acima de qualquer conta real do projeto (a maior
+    // hoje tem 448). Se ele morder algum dia, o aviso diz que mordeu.
     const nextUrl: string | undefined = res.paging?.next;
-    if (nextUrl) {
-      nextPath = nextUrl;
+    const cap = avaliarCap(nextUrl, allResults.length, 10_000);
+    if (cap.truncado) {
+      console.warn(mensagemTruncamento("fetchAllAdInsightsImpl", 10_000, `conta=${metaAccountId}`));
+    }
+    if (cap.continuar) {
+      nextPath = nextUrl!;
       useFullUrl = true;
     } else {
       nextPath = null;
@@ -1098,8 +1120,13 @@ export async function fetchPlacementDailyInsights(
         : await fetchMeta<PageResponse>(nextPath, accessToken);
       out.push(...(res.data ?? []));
       const nextUrl = res.paging?.next;
-      if (nextUrl && out.length < 5000) {
-        nextPath = nextUrl;
+      // Story 43.4: cap existente, agora com aviso.
+      const cap = avaliarCap(nextUrl, out.length, 5000);
+      if (cap.truncado) {
+        console.warn(mensagemTruncamento("fetchPlacementDailyInsights", 5000, `conta=${metaAccountId}`));
+      }
+      if (cap.continuar) {
+        nextPath = nextUrl!; // `continuar` só é true com próxima página
         useFullUrl = true;
       } else {
         nextPath = null;
