@@ -44,7 +44,12 @@ interface LPCampaignsResponse {
   };
 }
 
-function extractLPName(campaignName: string): string | null {
+/**
+ * Exportada na Story 43.1: o gráfico de Aplicações precisa da MESMA definição de
+ * "o que é uma LP" para avisar sobre página ativa sem aba. Duplicar a regex
+ * criaria duas definições que divergem na primeira mudança.
+ */
+export function extractLPName(campaignName: string): string | null {
   const match = campaignName.match(/lp([a-z])/i);
   return match ? `LP${match[1].toUpperCase()}` : null;
 }

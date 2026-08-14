@@ -29,9 +29,19 @@ import {
 } from "@/lib/hooks/use-stage-applications";
 
 // Paleta de séries do design system (.spy-viz). Categoria nominal: identidade
-// nunca é só cor — legenda e tooltip sempre trazem o nome da forma. Além de 3
-// formas as cores repetem, mas o rótulo continua distinguindo.
-const PALETTE = ["var(--viz-series-1)", "var(--viz-series-2)", "var(--viz-series-3)"];
+// nunca é só cor — legenda e tooltip sempre trazem o nome da forma.
+//
+// Story 43.1: eram 3 cores. Com a descoberta automática de abas, um lançamento
+// com páginas A, B, C e D deixou de ser hipótese — e na 4ª a cor repetia, o que
+// torna a comparação visual errada mesmo com o rótulo certo.
+const PALETTE = [
+  "var(--viz-series-1)",
+  "var(--viz-series-2)",
+  "var(--viz-series-3)",
+  "var(--viz-series-4)",
+  "var(--viz-series-5)",
+  "var(--viz-series-6)",
+];
 const colorFor = (i: number) => PALETTE[i % PALETTE.length];
 
 const nf = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString("pt-BR"));
@@ -126,6 +136,30 @@ export function ApplicationsDailyChart({
 
   return (
     <div className="spy-viz rounded-xl border border-border/40 bg-card p-4">
+      {/* Story 43.1 — o que NÃO está no gráfico, e por quê. Antes uma aba
+          ilegível virava série zerada e se lia como "essa página não teve
+          aplicação". Página faltando com aviso é problema que alguém resolve. */}
+      {(data.avisos?.length > 0 || data.lpsOrfas?.length > 0) && (
+        <div className="mb-3 space-y-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+          {data.avisos?.map((a) => (
+            <p key={a.aba} className="text-[11px] text-amber-700 dark:text-amber-400">
+              <span className="font-medium">{a.aba}</span> não está no gráfico — {a.motivo}.
+            </p>
+          ))}
+          {data.lpsOrfas?.length > 0 && (
+            <p className="text-[11px] text-amber-700 dark:text-amber-400">
+              <span className="font-medium">
+                {data.lpsOrfas.join(", ")}
+              </span>{" "}
+              {data.lpsOrfas.length === 1 ? "está rodando" : "estão rodando"} na Meta mas não
+              {data.lpsOrfas.length === 1 ? " tem aba" : " têm aba"} de aplicação. Se
+              {data.lpsOrfas.length === 1 ? " essa página tem" : " essas páginas têm"} formulário,
+              crie a aba na planilha do lançamento.
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold">Aplicações por dia</h3>

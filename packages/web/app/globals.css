@@ -169,6 +169,13 @@
   --viz-series-1: #2a78d6;  /* azul — série única / slot 1 */
   --viz-series-2: #eb6834;  /* laranja */
   --viz-series-3: #1baf7a;  /* aqua (2.82:1 → exige rótulo visível ou tabela) */
+  /* Slots 4-6 (Story 43.1): a descoberta automática de abas tornou comum um
+     lançamento com 4+ páginas, e repetir cor na 4ª série torna a comparação
+     visual errada mesmo com o rótulo certo. Mantêm o mesmo critério dos três
+     primeiros: separação sob daltonismo e croma suficiente para linha fina. */
+  --viz-series-4: #8b5cf6;  /* roxo */
+  --viz-series-5: #d4a017;  /* âmbar (distinto do laranja no eixo de matiz) */
+  --viz-series-6: #d6336c;  /* magenta */
   --viz-grid: #e1e0d9;
   --viz-axis: #c3c2b7;
   /* Rampa ordinal (categorias ORDENADAS: faixas de tamanho de legenda).
@@ -182,6 +189,10 @@
   --viz-series-1: #3987e5;
   --viz-series-2: #d95926;
   --viz-series-3: #199e70;
+  /* Passos escolhidos para a superfície escura, não o claro com filtro. */
+  --viz-series-4: #a78bfa;
+  --viz-series-5: #e0b32b;
+  --viz-series-6: #e35d8a;
   --viz-grid: #2c2c2a;
   --viz-axis: #383835;
   --viz-ord-1: #184f95;
