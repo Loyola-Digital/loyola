@@ -394,6 +394,16 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
           revenueUsd: norm.revenueUsd,
           purchasedAt: norm.purchasedAt,
           eventAt: norm.eventAt,
+          // Story 42.6 — atribuição. Sem PII: só UTM, click ids e o atributo
+          // custom do app.
+          utmSource: norm.utmSource,
+          utmMedium: norm.utmMedium,
+          utmCampaign: norm.utmCampaign,
+          utmTerm: norm.utmTerm,
+          utmContent: norm.utmContent,
+          gclid: norm.gclid,
+          fbclid: norm.fbclid,
+          acquisitionSource: norm.acquisitionSource,
           payload,
         })
         .onConflictDoNothing({
