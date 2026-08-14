@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { derivarCadeia, type TaxaMedida } from "../services/vturb-chain.js";
+import { derivarCadeia } from "../services/vturb-chain.js";
+import {
+  montarEtapa,
+  taxaPublica,
+  pitchTimeUtil,
+  consultasRestantes,
+  quotaComporta,
+  NOTA_CONV_POST_PITCH,
+} from "../services/vsl-funnel.js";
 
 /**
  * Story 43.5 — funil de VSL no feed público.
@@ -13,17 +21,12 @@ import { derivarCadeia, type TaxaMedida } from "../services/vturb-chain.js";
  *
  * A cadeia em si (`derivarCadeia`) já tem cobertura própria em
  * `vturb-chain.test.ts`, da Story 29.41 — não é reimplementada nem re-testada.
+ *
+ * QA-32: na primeira iteração, os testes de AC3 e AC4b verificavam objetos
+ * literais criados dentro do próprio teste — passariam mesmo se o endpoint
+ * mudasse. Agora exercitam as MESMAS funções que a rota chama
+ * (`services/vsl-funnel.ts`).
  */
-
-/** Mesma projeção do endpoint (`public-vsl.ts`). */
-function taxaPublica(t: TaxaMedida) {
-  return {
-    valor: t.valor,
-    ...(t.motivo ? { motivo: t.motivo } : {}),
-    numerador: t.numerador,
-    denominador: t.denominador,
-  };
-}
 
 // Números do teste da Story 29.41, para as duas suítes falarem do mesmo caso.
 const stats = {
@@ -89,27 +92,79 @@ describe("conversão pós-pitch é declarada ausente, nunca estimada (AC3)", () 
     expect(c).not.toHaveProperty("convPostPitch");
   });
 
-  it("total_clicked_device_uniq NÃO pode virar proxy do numerador", () => {
-    // Se alguém "resolvesse" a ausência com cliques no CTA, sairia um número
-    // plausível e errado: clicar e iniciar checkout diferem por tudo que
-    // acontece entre os dois. Este teste existe para essa tentação falhar.
+  it("montarEtapa fixa convPostPitch em null — o proxy é calculável e MESMO ASSIM não é usado", () => {
     const c = derivarCadeia(stats, 30);
+
+    // O proxy proibido está ao alcance: clicks ÷ denominador dá um número.
     const proxyProibido = stats.total_clicked_device_uniq / c.convPostPitchDenominador;
-    expect(proxyProibido).toBeGreaterThan(0); // o proxy É calculável…
-    // …e mesmo assim a resposta pública fixa null.
-    const respostaPublica = { convPostPitch: null as number | null };
-    expect(respostaPublica.convPostPitch).toBeNull();
+    expect(proxyProibido).toBeGreaterThan(0);
+
+    // E a função que a ROTA chama devolve null assim mesmo. Se alguém trocar
+    // esse null pelo proxy em vsl-funnel.ts, este teste quebra — que era
+    // exatamente o que a versão anterior NÃO fazia (QA-32).
+    const etapa = montarEtapa(
+      { stageId: "s1", stageName: "VSL", playerId: "p1", playerName: "Player" },
+      c,
+    );
+    expect(etapa.convPostPitch).toBeNull();
+    expect(etapa.convPostPitch).not.toBe(proxyProibido);
+    expect(etapa.convPostPitchNota).toBe(NOTA_CONV_POST_PITCH);
+  });
+
+  it("o denominador é exposto para quem tiver o numerador por fora", () => {
+    const etapa = montarEtapa(
+      { stageId: "s1", stageName: "VSL", playerId: "p1", playerName: "Player" },
+      derivarCadeia(stats, 30),
+    );
+    expect(etapa.convPostPitchDenominador).toBe(191);
   });
 });
 
-describe("lista vazia: conectado distingue os dois casos (AC4b)", () => {
-  it("sem conexão e sem players têm a mesma lista e significados opostos", () => {
-    const semConexao = { conectado: false, etapas: [] };
-    const semPlayers = { conectado: true, etapas: [] };
+describe("quota do VTurb antes do lote (QA-33)", () => {
+  it("usa a janela mais apertada, não a primeira", () => {
+    const quota = {
+      quotas: [
+        { queries: { remaining: 100 } },
+        { queries: { remaining: 3 } }, // a que manda
+      ],
+    };
+    expect(consultasRestantes(quota)).toBe(3);
+  });
 
-    expect(semConexao.etapas).toEqual(semPlayers.etapas);
-    // Uma pede configurar a integração; a outra pede vincular player. Sem o
-    // indicador, quem consome não sabe qual das duas.
-    expect(semConexao.conectado).not.toBe(semPlayers.conectado);
+  it("sem informação de quota não é o mesmo que sem saldo", () => {
+    // Bloquear por falta de informação transformaria uma incerteza em falha.
+    expect(consultasRestantes({ quotas: [] })).toBe(Infinity);
+  });
+
+  it("comporta quando há saldo para todos os players", () => {
+    expect(quotaComporta(6, 6)).toBe(true);
+    expect(quotaComporta(10, 6)).toBe(true);
+  });
+
+  it("NÃO comporta quando o saldo é menor que o número de etapas", () => {
+    // Sem esta checagem, o funil gastaria o saldo restante para colher N falhas
+    // opacas — e ninguém saberia que a causa era quota.
+    expect(quotaComporta(3, 6)).toBe(false);
+  });
+});
+
+describe("pitchTimeUtil — a normalização que a rota usa (AC5)", () => {
+  it("zero e null viram ausência; positivo passa", () => {
+    // A rota chama ESTA função; trocar a regra aqui quebra o teste.
+    expect(pitchTimeUtil(0)).toBeNull();
+    expect(pitchTimeUtil(null)).toBeNull();
+    expect(pitchTimeUtil(undefined)).toBeNull();
+    expect(pitchTimeUtil(30)).toBe(30);
+  });
+
+  it("o resultado alimenta a cadeia preservando o playRate", () => {
+    const c = derivarCadeia(stats, pitchTimeUtil(0));
+    const etapa = montarEtapa(
+      { stageId: "s1", stageName: "VSL", playerId: "p1", playerName: "Player" },
+      c,
+    );
+    expect(etapa.pitchRate.valor).toBeNull();
+    expect(etapa.pitchRate.motivo).toBeTruthy();
+    expect(etapa.playRate.valor).not.toBeNull();
   });
 });

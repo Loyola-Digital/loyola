@@ -5,8 +5,15 @@ import { projects, funnelStages, vturbConnections, vturbPlayers } from "../db/sc
 import { decrypt } from "../services/encryption.js";
 import { requireScope } from "../middleware/api-key-auth.js";
 import { PUBLIC_READ_SCOPE } from "./public-discovery.js";
-import { sessionStats } from "../services/vturb.js";
-import { derivarCadeia, ProtocolViolation, type TaxaMedida } from "../services/vturb-chain.js";
+import { sessionStats, quotaUsage } from "../services/vturb.js";
+import { derivarCadeia, ProtocolViolation } from "../services/vturb-chain.js";
+import {
+  montarEtapa,
+  pitchTimeUtil,
+  consultasRestantes,
+  quotaComporta,
+  type EtapaVsl,
+} from "../services/vsl-funnel.js";
 
 /**
  * Story 43.5 — funil de VSL por etapa, no feed público.
@@ -37,26 +44,6 @@ const rangeSchema = z.object({
   since: z.string().regex(YMD),
   until: z.string().regex(YMD),
 });
-
-/** O que a resposta expõe por taxa. Nunca só o valor — ver AC2. */
-interface TaxaPublica {
-  /** Fração em [0,1]. `null` quando não há medição. */
-  valor: number | null;
-  /** Preenchido só quando `valor` é `null`. */
-  motivo?: string;
-  /** Os brutos que produziram a taxa. Sem eles, ninguém confere. */
-  numerador: number;
-  denominador: number;
-}
-
-function taxaPublica(t: TaxaMedida): TaxaPublica {
-  return {
-    valor: t.valor,
-    ...(t.motivo ? { motivo: t.motivo } : {}),
-    numerador: t.numerador,
-    denominador: t.denominador,
-  };
-}
 
 export default fp(async function publicVslRoutes(fastify) {
   fastify.get<{ Params: z.infer<typeof projectParam>; Querystring: z.infer<typeof rangeSchema> }>(
@@ -127,8 +114,37 @@ export default fp(async function publicVslRoutes(fastify) {
       }
 
       const token = decrypt(conn.enc, conn.iv);
-      const etapas: unknown[] = [];
+      const etapas: EtapaVsl[] = [];
       const avisos: { stageId: string; motivo: string }[] = [];
+
+      // QA-33 — uma consulta de quota antes do lote. Sem isto, um projeto perto
+      // do limite gastaria o saldo restante para colher N falhas opacas ("não
+      // foi possível consultar"), sem ninguém saber que a causa era quota.
+      try {
+        const restantes = consultasRestantes(await quotaUsage(token));
+        if (!quotaComporta(restantes, players.length)) {
+          fastify.log.warn(
+            { projectId, restantes, players: players.length },
+            "[43.5] quota do VTurb insuficiente para o funil",
+          );
+          return {
+            projectId,
+            range: { since, until },
+            conectado: true,
+            etapas: [],
+            avisos: [
+              {
+                stageId: "*",
+                motivo: `quota do VTurb insuficiente: ${restantes} consultas restantes para ${players.length} etapas`,
+              },
+            ],
+          };
+        }
+      } catch (err) {
+        // Falhar ao LER a quota não pode impedir o funil — seguir e deixar que
+        // os erros por etapa apareçam, se houver.
+        fastify.log.warn({ err, projectId }, "[43.5] não foi possível ler a quota do VTurb");
+      }
 
       for (const p of players) {
         try {
@@ -146,25 +162,22 @@ export default fp(async function publicVslRoutes(fastify) {
           // AC5 — `pitch_time` ausente OU zero: `derivarCadeia` já devolve
           // `pitchRate` com `valor: null` e o motivo, preservando o `playRate`.
           // Zero aqui produziria 100% falso (medido na 29.41).
-          const cadeia = derivarCadeia(stats, p.pitchTime && p.pitchTime > 0 ? p.pitchTime : null);
+          const cadeia = derivarCadeia(stats, pitchTimeUtil(p.pitchTime));
 
-          etapas.push({
-            stageId: p.stageId,
-            stageName: p.stageName,
-            playerId: p.playerId,
-            playerName: p.playerName,
-            playRate: taxaPublica(cadeia.playRate),
-            pitchRate: taxaPublica(cadeia.pitchRate),
-            // AC3 — SEMPRE null. O numerador (checkouts iniciados) vem de outro
-            // sistema e é manual. `total_clicked_device_uniq` NÃO serve de
-            // proxy: clicar no CTA e iniciar checkout diferem por tudo que
-            // acontece entre os dois. Número plausível e errado é pior que
-            // ausência declarada.
-            convPostPitch: null,
-            convPostPitchDenominador: cadeia.convPostPitchDenominador,
-            convPostPitchNota:
-              "numerador (checkouts iniciados) vem de outro sistema e não é automatizado",
-          });
+          // A montagem — inclusive a decisão de `convPostPitch: null` — vive em
+          // `services/vsl-funnel.ts`, para que o teste exercite a MESMA função
+          // que roda aqui. Ver QA-32.
+          etapas.push(
+            montarEtapa(
+              {
+                stageId: p.stageId,
+                stageName: p.stageName,
+                playerId: p.playerId,
+                playerName: p.playerName,
+              },
+              cadeia,
+            ),
+          );
         } catch (err) {
           // `derivarCadeia` ABORTA em taxa fora de [0,1] em vez de degradar
           // (vturb-chain.ts:61-65) — uma etapa com dado inconsistente não pode
