@@ -1,0 +1,135 @@
+schema: 1
+story: '43.2'
+gate: PASS
+iteration: 1
+status_reason: >-
+  PASS, e e a primeira desta sequencia de stories que nao carrega uma pendencia
+  de "nunca rodou contra dado real". O AC4 fechou com DESVIO ZERO contra a
+  propria Meta em 3 anuncios e 4 metricas cada — incluindo o caso de anuncio sem
+  video, que volta null dos dois lados. O AC5 foi medido em producao sobre 546
+  criativos. Nao ha nada que dependa de deploy para ser verificado: a correcao
+  esta provada antes de subir.
+  Os dois achados sao LOW, sobre decisoes de design que hoje estao corretas e
+  podem envelhecer mal. Nenhum afeta o resultado.
+reviewer: 'Quinn'
+updated: '2026-08-14T00:00:00Z'
+
+verificacoes:
+  code_review: PASS
+  unit_tests: PASS           # 12 testes, executados nesta revisão
+  acceptance_criteria: PASS  # AC1-AC5, todos com evidência
+  no_regressions: PASS       # 928 passando (era 916); as 11 falhas são as de sempre
+  performance: PASS          # ver QA-25 (LOW)
+  security: PASS             # sem entrada de usuário; nenhuma credencial nova
+  documentation: PASS
+
+verificacoes_manuais_executadas:
+  - o: 'A soma esta correta e preserva a distincao null vs zero'
+    como: 'Leitura de `somarVideoMetrics` + execução dos 12 testes'
+    resultado: >-
+      Correta. Valida a forma (a coluna e `jsonb` sem `$type<>`), ignora
+      nao-numericos, `NaN` e `Infinity`, nao muta a entrada, e devolve `null`
+      quando nenhuma linha tem video — sem transformar ausencia em
+      `{0,0,0,0,0}`, que era a distincao explicitamente protegida pelo AC1.
+
+  - o: 'O AC3 se sustenta: nada alem de videoMetrics mudou?'
+    como: 'Leitura do diff de public-meta.ts, funcao a funcao'
+    resultado: >-
+      Sim. Seis alteracoes e um import, todas de `videoMetrics`. `accumulate()`
+      e `deriveMetrics()` — que produzem impressoes, cliques, spend, CTR, CPC,
+      CPM e ROAS — estao intactas. Prova estrutural, reproduzivel com `git diff`.
+
+  - o: 'O precedente citado na story existe mesmo?'
+    como: 'Leitura de stage-creative-performance.ts:736'
+    resultado: >-
+      Existe e reforca o diagnostico: `group.videoViews75 += ad.videoMetrics?.p75
+      ?? 0` — a rota INTERNA ja somava corretamente. So a publica estava errada.
+      Isso descarta qualquer duvida sobre a soma ser a leitura certa do dado.
+
+  - o: 'O desvio zero do AC4 e verossimil?'
+    como: >-
+      Tentativa de verificacao independente com um 4o anuncio; e avaliacao da
+      forca da evidencia apresentada.
+    resultado: >-
+      Nao consegui um 4o ponto — os anuncios de menor volume da conta nao
+      tiveram entrega na janela e voltam sem metricas. Mas a evidencia
+      apresentada e forte: 3 anuncios, 4 metricas cada, TODAS identicas, mais o
+      caso de controle (anuncio sem video volta `null` dos dois lados).
+      Coincidencia nesse padrao e improvavel. Aceito.
+
+  - o: 'Regressao na suite'
+    como: 'Contagem antes/depois + cruzamento dos arquivos com o diff'
+    resultado: >-
+      916 -> 928 passando (os +12 sao desta story). As 11 falhas seguem nos
+      mesmos 5 arquivos pre-existentes, nenhum tocado aqui.
+
+issues:
+  - id: QA-24
+    severity: low
+    category: correctness
+    description: >-
+      `somarVideoMetrics` soma TODAS as chaves numericas encontradas. Isso
+      embute uma premissa nao declarada: **todo campo de `videoMetrics` e uma
+      contagem somavel**.
+      Hoje e verdade — sao contagens de eventos — e a 43.3 acrescenta `views3s`
+      e `plays`, que tambem sao. Mas a Meta expoe metricas de video que sao
+      MEDIA (`video_avg_time_watched`, por exemplo). Se alguem acrescentar uma
+      dessas ao JSONB, ela sera somada em silencio, e "tempo medio assistido"
+      viraria a soma de 30 medias.
+      Registro como LOW e nao MEDIUM porque o trade-off do @dev e defensavel: a
+      alternativa (lista fixa) falha do outro lado — campo novo que nao soma —, e
+      foi exatamente esse o bug corrigido aqui. Alem disso, somar medias produz
+      numero visivelmente absurdo, enquanto nao somar produz numero plausivel e
+      errado. Entre as duas falhas, a escolhida e a que grita.
+    recommendation: >-
+      Declarar a premissa no JSDoc da funcao: "todo campo de videoMetrics e
+      contagem de eventos; media ou taxa NAO pode entrar aqui". Se um dia
+      entrar, a guarda vira uma deny-list de sufixos (`avg`, `rate`, `pct`).
+
+  - id: QA-25
+    severity: low
+    category: performance
+    description: >-
+      O acumulador passou a guardar um objeto por dia por anuncio
+      (`videoMetricsDiarios: unknown[]`) em vez de um objeto por anuncio. Com os
+      546 criativos medidos numa janela de 30 dias, sao ~16 mil objetos pequenos
+      vivos ate o fim da agregacao.
+      Nao morde no volume atual, e a leitura fica mais clara. Mas somar
+      incrementalmente (acumular na hora, em vez de guardar a lista) daria o
+      mesmo resultado com memoria constante — e continuaria testavel, com a
+      funcao pura recebendo (acumulado, linha).
+    recommendation: >-
+      Deixar como esta enquanto o volume for este. Se o endpoint passar a servir
+      janelas longas com muitos criativos (a Story 43.4 vai justamente subir o
+      teto), trocar por soma incremental.
+
+pontos_fortes:
+  - >-
+    O AC4 fechou com DESVIO ZERO contra a Meta — impressoes, p25, p75 e thruplay
+    identicos em 3 anuncios. Isso nao so valida o fix: **encerra a hipotese de
+    sub-contagem por placement com numero**, que era o item mais critico da lista
+    original. A investigacao que abriria uma story propria morreu com evidencia.
+  - >-
+    O caso de controle no AC4 e o detalhe que separa medicao de coincidencia: o
+    terceiro anuncio, sem video, volta `null` dos dois lados. Se houvesse
+    qualquer confusao entre "sem video" e "zero", apareceria ali.
+  - >-
+    O AC5 nao mediu so a media — mediu a DISTRIBUICAO (181 -> 1 criativos abaixo
+    de 1%) e mostrou que o fator de correcao acompanha o numero de dias de cada
+    anuncio (4 dias corrige ~5x, 19 dias ~92x). E a assinatura exata do defeito
+    descrito na story. Numero que confirma o mecanismo, nao so o resultado.
+  - >-
+    A soma dinamica foi escolhida com a 43.3 em mente e com o motivo escrito: um
+    campo novo que nao soma por ter ficado fora de uma lista fixa e exatamente o
+    bug que esta story corrige. Pensar no proximo desenvolvedor e o oposto de
+    resolver so o ticket.
+  - >-
+    A nota final da story avisa que os numeros VAO SUBIR no deploy e que
+    relatorios anteriores subestimam retencao. Uma correcao que muda numero ja
+    mostrado a alguem precisa vir com esse aviso — e ele quase sempre falta.
+
+decisao: >-
+  PASS — aprovado para merge, sem condicao. QA-24 e QA-25 sao notas para o
+  futuro: a primeira e uma premissa que merece estar escrita no codigo, a segunda
+  so importa se a Story 43.4 subir muito o teto de volume. Nenhuma afeta o
+  resultado hoje, e nada aqui depende de deploy para ser verificado.
