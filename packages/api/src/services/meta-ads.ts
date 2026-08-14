@@ -1,5 +1,6 @@
 import { decrypt } from "./encryption.js";
 import { singleFlight } from "../utils/single-flight.js";
+import { parseActionCount } from "../utils/meta-metrics.js";
 
 // ============================================================
 // CONSTANTS
@@ -313,12 +314,35 @@ export interface MetaAdSetInsight extends MetaDailyInsight {
   campaign_name?: string;
 }
 
+/**
+ * Contagens de eventos de vídeo no período — NÃO são taxas.
+ *
+ * Story 43.3 — definições oficiais da Meta, para quem consome não inventar a
+ * própria interpretação:
+ *
+ *   views3s   reproduções de 3 segundos. É o `video_view` do Gerenciador, e vem
+ *             de `actions[]`, não de um campo `video_3_sec_*` — esse campo NÃO
+ *             existe na API (verificado no catálogo de campos em 2026-08-14).
+ *   plays     "number of times your video starts to play… excludes replays".
+ *             É o denominador sem ambiguidade quando a pergunta é "de quem
+ *             começou a ver".
+ *   p25..p100 assistiu X% do vídeo — **inclui quem PULOU até o ponto**. Por isso
+ *             p25 não serve de proxy para gancho: quem arrastou até 25% conta.
+ *   thruplay  completou **ou** assistiu ≥15s. Não existe um `video_15_sec`
+ *             separado na API; thruplay já é essa métrica.
+ *
+ * `views3s` e `plays` só existem em linhas sincronizadas a partir da 43.3 —
+ * histórico anterior não tem, e ficam `undefined` (nunca zero, que faria
+ * "não medimos" parecer "ninguém assistiu").
+ */
 export interface VideoMetrics {
   p25: number;
   p50: number;
   p75: number;
   p100: number;
   thruplay: number;
+  views3s?: number;
+  plays?: number;
 }
 
 export interface MetaAdInsight extends MetaDailyInsight {
@@ -756,6 +780,7 @@ interface RawAdInsight extends MetaDailyInsight {
   video_p75_watched_actions?: { action_type: string; value: string }[];
   video_p100_watched_actions?: { action_type: string; value: string }[];
   video_thruplay_watched_actions?: { action_type: string; value: string }[];
+  video_play_actions?: { action_type: string; value: string }[];
 }
 
 function parseVideoAction(actions?: { action_type: string; value: string }[]): number {
@@ -769,8 +794,14 @@ function extractVideoMetrics(raw: RawAdInsight): VideoMetrics | null {
   const p75 = parseVideoAction(raw.video_p75_watched_actions);
   const p100 = parseVideoAction(raw.video_p100_watched_actions);
   const thruplay = parseVideoAction(raw.video_thruplay_watched_actions);
-  if (p25 === 0 && p50 === 0 && p75 === 0 && p100 === 0) return null;
-  return { p25, p50, p75, p100, thruplay };
+  // Story 43.3 — o 3s vem de `actions[].video_view`, com o MESMO leitor que
+  // `traffic-analytics.ts:255` usa. Não há campo `video_3_sec_*` na API.
+  const views3s = parseActionCount(raw.actions, "video_view");
+  const plays = parseVideoAction(raw.video_play_actions);
+  if (p25 === 0 && p50 === 0 && p75 === 0 && p100 === 0 && views3s === 0 && plays === 0) {
+    return null;
+  }
+  return { p25, p50, p75, p100, thruplay, views3s, plays };
 }
 
 export function fetchAdInsights(
@@ -799,7 +830,7 @@ async function fetchAdInsightsImpl(
     ])
   );
   const res = await fetchMeta<{ data: RawAdInsight[] }>(
-    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name,actions,action_values,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions&time_range=${timeRange}&level=ad&filtering=${filtering}`,
+    `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name,actions,action_values,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions,video_play_actions&time_range=${timeRange}&level=ad&filtering=${filtering}`,
     accessToken
   );
   return (res.data ?? []).map((raw) => ({
@@ -877,7 +908,7 @@ async function fetchAllAdInsightsImpl(
         ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: idList[0] }]))}`
         : `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "IN", value: idList }]))}`;
 
-  const fields = "impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,actions,action_values,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions";
+  const fields = "impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,actions,action_values,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions,video_play_actions";
 
   // Paginate — Meta defaults to 25 results per page
   type PageResponse = { data: RawAllAdInsight[]; paging?: { next?: string } };
@@ -945,7 +976,7 @@ export async function fetchAdDailyInsights(
   const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
   const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
   const fields =
-    "impressions,reach,clicks,spend,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,actions,action_values,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions";
+    "impressions,reach,clicks,spend,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,actions,action_values,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions,video_play_actions";
 
   type RawDaily = RawAllAdInsight & { date_start: string };
   type PageResponse = { data: RawDaily[]; paging?: { next?: string } };
