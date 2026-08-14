@@ -1,0 +1,170 @@
+schema: 1
+story: '43.4'
+gate: PASS
+iteration: 1
+status_reason: >-
+  PASS. O @dev descobriu que a story errou o alvo e, em vez de implementar o que
+  estava escrito, mapeou o arquivo e resolveu o problema real — que era maior:
+  tres dos quatro tetos de paginacao truncavam SEM AVISO, e o unico fetch citado
+  pela story (criativos) nem tinha teto.
+  Verifiquei as duas afirmacoes centrais e ambas procedem: o cap de 500 pertence
+  a `fetchAllAdSetInsightsImpl` (adsets), e o cap de 10.000 no fetch de
+  criativos nao existia na `main`.
+  Os tres achados sao LOW: um limite novo criado onde nao havia, o alcance do
+  campo `truncated`, e a instabilidade inerente do offset. Nenhum e defeito de
+  correcao — sao limites que merecem estar escritos.
+reviewer: 'Quinn'
+updated: '2026-08-14T00:00:00Z'
+
+verificacoes:
+  code_review: PASS
+  unit_tests: PASS           # 15 testes, executados nesta revisão
+  acceptance_criteria: PASS  # AC1-AC6, com o alvo corrigido e justificado
+  no_regressions: PASS       # 955 passando (era 940); 11 falhas, as de sempre
+  performance: PASS          # AC5 medido, não estimado
+  security: PASS
+  documentation: PASS
+
+verificacoes_manuais_executadas:
+  - o: 'A story errou o alvo, como o @dev afirma?'
+    como: 'Rastreio de qual funcao contem o cap de 500'
+    resultado: >-
+      Procede. O cap de 500 esta em `fetchAllAdSetInsightsImpl` — ADSETS. Os
+      criativos passam por `fetchAllAdInsightsImpl`, que nao tinha teto algum.
+      A story apontou o arquivo certo e a linha errada, e a conclusao que tirou
+      dela ("o comentario 'fetch ALL ads' e mentiroso") tambem estava errada: o
+      comentario era verdadeiro.
+      Implementar o que estava escrito teria mexido no cap de adsets achando que
+      protegia criativos — e deixado o problema real intacto.
+
+  - o: 'O cap de 10.000 e novo?'
+    como: '`git show origin/main` + grep'
+    resultado: >-
+      Sim, zero ocorrencias na `main`. E um limite CRIADO onde nao havia. Ver
+      QA-29 — nao e erro, mas e uma decisao que extrapola o AC1 e merece estar
+      visivel.
+
+  - o: '`avaliarCap` distingue os dois motivos de parar?'
+    como: 'Leitura da funcao + execucao dos 7 testes'
+    resultado: >-
+      Sim, e essa e a parte que importa. `truncado` so e `true` quando havia
+      proxima pagina E o teto cortou. Fim natural de dados nao gera aviso —
+      senao o log encheria em toda chamada normal e o aviso perderia o valor.
+      O teste "distingue os dois motivos de parar" trava exatamente isso.
+
+  - o: 'A paginacao entrega tudo sem repetir nem pular?'
+    como: 'Execucao dos 8 testes de creatives-pagination'
+    resultado: >-
+      Entrega. O teste central percorre 448 criativos com MUITOS empates de
+      spend em 3 requisicoes de 200 e verifica conjunto identico ao original,
+      sem duplicatas. Ha tambem a contraprova: sem desempate, a mesma entrada
+      invertida produz ordem diferente. Provar que a alternativa quebra e melhor
+      que so afirmar que a escolhida funciona.
+
+  - o: 'O AC5 foi medido ou estimado?'
+    como: 'Leitura do comentario no schema'
+    resultado: >-
+      Medido, e o registro esta no codigo: 433 criativos, 259 KB serializados,
+      611 B por criativo, query em 192 ms, projecao de ~299 KB com limit=500.
+      O @dev registrou na story que havia escrito "~0,4 MB" de chute antes,
+      percebeu e mediu. Admitir o chute no proprio registro e o que faz o numero
+      valer.
+
+  - o: 'A flakiness relatada procede?'
+    como: 'Execucao da suite completa nesta revisao'
+    resultado: >-
+      Procede. 11 falhas / 955 passando, os mesmos 5 arquivos pre-existentes.
+      A execucao com 12 que o @dev viu nao se repetiu, e ele investigou antes de
+      reportar "sem regressao" — rodou o arquivo isolado 3x e a suite 2x. E o
+      comportamento certo: uma contagem estranha vira investigacao, nao nota de
+      rodape.
+
+issues:
+  - id: QA-29
+    severity: low
+    category: correctness
+    description: >-
+      O cap de 10.000 em `fetchAllAdInsightsImpl` e um limite NOVO — nao existia
+      na `main`, onde o laco seguia todas as paginas sem teto.
+      A justificativa e boa (protecao anti-loop contra resposta malformada
+      apontando para si mesma) e o valor e folgado (a maior conta real tem 433).
+      Mas o AC1 pedia para tornar EXPLICITO um teto existente, nao para criar um
+      onde nao havia: uma conta com mais de 10.000 anuncios no periodo, que antes
+      vinha completa, agora vem truncada.
+      Com aviso — o que e infinitamente melhor que os tres caps que truncavam
+      calados. Registro pela mudanca de comportamento, nao pelo risco.
+    recommendation: >-
+      Manter. Vale uma linha na nota de deploy da story dizendo que o fetch de
+      criativos ganhou teto de 10.000, para ninguem descobrir isso investigando
+      um numero faltando daqui a um ano.
+
+  - id: QA-30
+    severity: low
+    category: correctness
+    description: >-
+      `truncated` do endpoint cobre apenas a paginacao da RESPOSTA
+      (`offset + returned < total`). Nao cobre truncamento do SYNC: se um cap
+      cortou o fetch, o banco fica com menos anuncios e o endpoint devolve
+      `truncated: false` — tecnicamente correto (a pagina esta completa), mas
+      lendo o payload inteiro alguem pode concluir completude que nao existe.
+
+      O AC3 pedia `truncated: true` tambem "quando o fetch bateu no teto", o que
+      nao e implementavel como escrito: o endpoint le do BANCO, e o fetch e outra
+      camada, que roda em outro momento. O AC misturava as duas.
+
+      Mitigacao ja existente: o payload tem `partial`, que sinaliza dias sem dado
+      no range — cobre parte do problema, mas nao o caso de anuncios cortados
+      pelo cap num dia que TEM dado.
+    recommendation: >-
+      Deixar como esta e documentar o alcance de cada campo no cabecalho:
+      `partial` = dias faltando no range; `truncated` = ha mais paginas.
+      Propagar truncamento do sync ate o endpoint exigiria persistir esse estado
+      junto do cache — story propria, e so vale se o cap comecar a morder.
+
+  - id: QA-31
+    severity: low
+    category: correctness
+    description: >-
+      Paginacao por `offset` sobre um conjunto que pode mudar entre requisicoes:
+      se o sync gravar linhas novas enquanto o consumidor pagina, um criativo
+      pode aparecer duas vezes ou nenhuma — mesmo com o desempate por `adId`,
+      que resolve a ordem mas nao a mutacao do conjunto.
+      E limitacao inerente do offset, nao defeito da implementacao, e o cursor
+      (a alternativa) foi corretamente considerado mais caro no AC4.
+    recommendation: >-
+      Uma linha na documentacao do endpoint: para consistencia forte entre
+      paginas, fixar `from`/`to` no passado. Janela fechada nao muda durante a
+      paginacao.
+
+pontos_fortes:
+  - >-
+    **O @dev nao implementou a story — implementou o problema.** Ao ver que o cap
+    apontado era de adsets, mapeou os quatro tetos do arquivo e descobriu que
+    tres truncavam calados. Seguir a story ao pe da letra teria mexido no cap
+    errado e deixado o defeito real de pe.
+  - >-
+    A solucao aprendeu com o proprio codebase: o unico cap que ja avisava virou o
+    modelo, com a justificativa dele preservada. Isso e reuso de decisao, nao so
+    de codigo.
+  - >-
+    `avaliarCap` distinguir "acabaram os dados" de "o teto cortou" e o detalhe
+    que faz o aviso ser util. Avisar nos dois casos encheria o log e ninguem
+    leria o que importa.
+  - >-
+    O teste de contraprova — mostrar que SEM desempate a ordem muda — vale mais
+    que o teste do caminho feliz. Ele documenta por que a linha existe.
+  - >-
+    O AC5 foi medido depois de um chute, e o chute foi ADMITIDO no registro.
+    259 KB para 433 criativos e um numero que sustenta a decisao de subir o teto;
+    "~0,4 MB" era so uma sensacao com aparencia de dado.
+  - >-
+    A contagem estranha de falhas (12 em vez de 11) virou investigacao antes de
+    virar afirmacao. Rodar o arquivo isolado 3x e a suite 2x antes de dizer "sem
+    regressao" e a diferenca entre relato e verificacao.
+
+decisao: >-
+  PASS — aprovado para merge, sem condicao. Os tres achados sao limites a
+  documentar, nao defeitos: QA-29 (teto novo, com aviso), QA-30 (alcance do
+  `truncated`, com o AC ambiguo na origem) e QA-31 (instabilidade inerente do
+  offset). Nenhum muda numero nem esconde dado — ao contrario, esta story existe
+  justamente para parar de esconder.
