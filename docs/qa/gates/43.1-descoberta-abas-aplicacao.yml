@@ -1,0 +1,243 @@
+schema: 1
+story: '43.1'
+gate: CONCERNS
+iteration: 2
+status_reason: >-
+  Iteracao 2. A condicao do gate anterior esta cumprida: o falso positivo de LP
+  orfa (QA-17) foi fechado, e por um caminho melhor do que o que eu havia
+  recomendado — minha sugestao (passar tambem os sheetNames) NAO teria
+  resolvido, porque a aba-base nao carrega letra em lugar nenhum. O @dev
+  verificou isso antes de aplicar e trocou por uma regra conservadora: diante de
+  qualquer forma nao identificavel, o aviso inteiro silencia. QA-18 tambem
+  fechado.
+  Segue CONCERNS por um motivo so, e ele nao e corrigivel por codigo: o nucleo
+  da story — a descoberta de abas — nunca rodou contra dado real, porque a
+  credencial do Google so existe em producao. Os achados novos (QA-22, QA-23)
+  sao efeitos colaterais LOW da regra conservadora e estao documentados.
+reviewer: 'Quinn'
+updated: '2026-08-14T00:00:00Z'
+
+verificacoes:
+  code_review: PASS          # QA-17 corrigido na iteração 2
+  unit_tests: PASS           # 28 testes (+6 na iteração 2), executados nesta revisão
+  acceptance_criteria: CONCERNS  # AC1-AC8 corretos; AC5 com escopo reduzido (QA-23) e nunca rodou real (QA-21)
+  no_regressions: PASS       # 916 passam; 11 falhas nos mesmos 5 arquivos, estável em 2 execuções
+  performance: PASS          # QA-18 corrigido na iteração 2
+  security: PASS             # sem entrada de usuário; nenhuma credencial nova
+  documentation: PASS
+
+verificacoes_manuais_executadas:
+  - o: 'F1 e F2 foram realmente corrigidos (os furos que o @po pegou)'
+    como: 'Execução dos 22 testes + conferência da regex caso a caso'
+    resultado: >-
+      Sim, os dois. `derivarPrefixos(["…-PaginaB"])` devolve o prefixo do grupo
+      e a descoberta acha a base e a PaginaC — a regra antiga acharia zero.
+      `["form com ticket","form sem ticket"]` nao abre a porta do AC5. Ambos com
+      teste dedicado e nomeados no arquivo, o que impede regressao silenciosa.
+
+  - o: 'O aviso de LP orfa ainda dispara com a pagina presente no grafico? (QA-17)'
+    como: >-
+      Leitura de `letrasDasFormas` + da integracao em lpsSemForma + execucao dos
+      2 testes nomeados QA-17.
+    resultado: >-
+      NAO — corrigido. `letrasDasFormas` devolve `null` assim que UMA forma nao
+      e identificavel, e `lpsSemForma` retorna lista vazia nesse caso. No cenario
+      F1 (aba-base descoberta, label = sheet_name sem letra) o aviso silencia em
+      vez de acusar a LPA.
+      Verifiquei tambem o caso vizinho: com `forms` vazio, `identificadores` e
+      `nomes` ficam vazios e a porta de entrada ja barra — nao ha caminho em que
+      zero formas produza "todas as LPs estao orfas".
+
+  - o: 'A regra conservadora abriu furo novo?'
+    como: >-
+      Simulacao dos cenarios de borda: funil misto (pagina + form livre), funil
+      com uma forma legivel e outra ilegivel, funil sem formas.
+    resultado: >-
+      Dois efeitos colaterais, ambos LOW e ambos preferiveis ao falso positivo:
+      QA-22 (uma forma ilegivel pode gerar aviso impreciso para a pagina dela) e
+      QA-23 (o AC5 so opera em funil 100% nomeado por pagina). Nenhum reintroduz
+      a classe de defeito do QA-17.
+
+  - o: 'Custo de chamadas ao Google no caminho do grafico (AC8)'
+    como: 'Leitura do fluxo de rawFormsFor + do cache adicionado em google-sheets.ts'
+    resultado: >-
+      O cache de `getSpreadsheetSheets` foi adicionado com o mesmo TTL do de
+      dados (30s) e e limpo pelo botao Atualizar — correto, e era requisito.
+      Duas ressalvas: as abas descobertas sao contadas EM SERIE (QA-18) e a
+      descoberta roda tambem para o funil de comparacao (QA-19).
+
+  - o: 'AC5 lê do banco em vez da API da Meta — a troca se sustenta?'
+    como: 'Leitura da query (insights diarios + cache de nomes) e comparacao com lp-campaigns'
+    resultado: >-
+      Sim, e a decisao esta melhor que a especificada. `fetchAllAdInsights`
+      varre a conta inteira e estaria no caminho de um grafico aberto o dia todo
+      — contrariando o AC8 da propria story. Investimento nos ultimos 30 dias e
+      evidencia de entrega mais confiavel que `effective_status`, que a 18.61
+      mostrou ficar vazio sem backfill. Zero chamada externa.
+
+  - o: 'Regressao na comparacao com o lancamento anterior (AC7)'
+    como: 'Leitura dos chamadores de rawFormsFor apos a mudanca de assinatura'
+    resultado: >-
+      `alignForms`, `aggregateForms` e o calculo de delta seguem intactos; so o
+      desempacotamento mudou (`.forms`). `semPlanilha` foi corretamente
+      redefinido para nao esconder o funil que tem planilha mas nao consegue
+      ler nenhuma.
+
+  - o: 'Falhas de teste e lint sao pre-existentes?'
+    como: 'Contagem antes/depois + cruzamento dos arquivos com o diff'
+    resultado: >-
+      Sim. 888 -> 905 passando (os +17 sao desta story); as 11 falhas seguem nos
+      mesmos 5 arquivos, nenhum tocado aqui, e ja foram provadas em worktree do
+      origin/main puro na revisao do PR #521. Os 3 erros de lint estao em
+      arquivos que a story nao altera.
+
+issues:
+  - id: QA-17
+    severity: high
+    status: RESOLVIDO na iteração 2
+    category: correctness
+    description: >-
+      FALSO POSITIVO DE LP ORFA quando a aba-base e descoberta em vez de
+      cadastrada. `comForma` (lpsSemForma) e montado apenas de `labels`, e no
+      cenario que o F1 destravou — so a `…-PaginaB` cadastrada, a base vindo
+      pela varredura — o label da base e o proprio `sheet_name`
+      ("Pesquisa-Aplicacao-Comercial"), cujo `letraDaPagina` e `null`.
+      Resultado: a Pagina A aparece no grafico E o grafico avisa "a LPA esta
+      rodando na Meta mas nao ha aba de aplicacao para ela".
+      E a mesma classe de defeito do F2, que o @po barrou na validacao,
+      ressurgindo pelo caminho que o F1 abriu. A porta de entrada usa
+      `nomes` (sheetNames + labels), mas o casamento usa so `labels` — a
+      assimetria entre os dois e a causa.
+    recommendation: >-
+      Montar `comForma` a partir de sheetNames E labels, como ja e feito na
+      porta de entrada. Duas linhas: passar os sheetNames das formas para
+      `lpsSemForma` e derivar a letra de ambos.
+      Acrescentar teste: aba-base descoberta (label = sheet_name) + campanha
+      `lpa` ativa NAO pode gerar aviso.
+
+  - id: QA-18
+    severity: medium
+    status: RESOLVIDO na iteração 2
+    category: performance
+    description: >-
+      As abas descobertas sao contadas em SERIE (`for` com `await contar()`
+      dentro), enquanto as cadastradas usam `Promise.all`. Cada aba nova custa
+      um round-trip ao Google somado ao anterior. Num lancamento com paginas A a
+      E, sao 4 leituras sequenciais so nas descobertas — e o gráfico e aberto
+      varias vezes ao dia. O cache de 30s ameniza a repeticao, mas nao o
+      primeiro carregamento, que e justamente quando o gestor esta olhando.
+    recommendation: >-
+      `Promise.all` sobre os alvos, igual as cadastradas. A funcao `contar` ja e
+      isolada e faz push em `avisos` — verificar apenas que a ordem dos avisos
+      nao importa (nao importa, sao exibidos como lista).
+
+  - id: QA-19
+    severity: low
+    category: performance
+    description: >-
+      `rawFormsFor` e chamada tambem para o funil de COMPARACAO, e agora ela faz
+      descoberta de abas. Isso dobra as listagens ao Google por render, e os
+      `avisos` do funil de comparacao sao descartados (so `.forms` e usado) —
+      trabalho feito e jogado fora. Nao esta errado: descobrir abas do
+      lancamento anterior melhora a linha tracejada. Mas o custo e invisivel.
+    recommendation: >-
+      Ou aceitar e documentar (a comparacao fica mais correta), ou pular a
+      descoberta quando o funil e o de comparacao — o total agregado dificilmente
+      muda o suficiente para justificar as chamadas.
+
+  - id: QA-20
+    severity: low
+    category: correctness
+    description: >-
+      O mapping herdado usa `doArquivo.find(s => s.columnMapping?.date)` — o
+      primeiro que tiver coluna de data. Com duas planilhas do mesmo arquivo
+      mapeando colunas de data DIFERENTES, a escolha e arbitraria e depende da
+      ordem do banco. Hoje as duas do dg-pg04 sao identicas, entao nao morde.
+    recommendation: >-
+      Documentar a premissa no codigo, ou preferir o mapping da planilha cujo
+      `sheet_name` gerou o prefixo que casou com a aba descoberta — e o
+      candidato mais provavel de compartilhar o formulario.
+
+  - id: QA-21
+    severity: medium
+    category: requirements
+    description: >-
+      O nucleo da story — a descoberta de abas — NUNCA rodou contra dado real.
+      `GOOGLE_SERVICE_ACCOUNT_KEY` esta vazia no `.env` local e sem ela
+      `getSpreadsheetSheets` lanca na primeira chamada. Tudo que foi verificado
+      e a logica pura e o caminho de erro; o caminho feliz completo
+      (listar abas -> herdar mapping -> ler -> alinhar -> plotar) e inedito.
+      O @dev declarou isso com clareza no DoD e nas Completion Notes, em vez de
+      marcar o item como feito — o que e o comportamento correto.
+    recommendation: >-
+      Apos o deploy da API, percorrer os 4 pontos das Completion Notes. O item 3
+      (series A e B mantendo os mesmos totais) e a checagem de nao-regressao do
+      AC7 e o mais importante — a descoberta nao pode alterar o que ja existia.
+
+  - id: QA-22
+    severity: low
+    category: correctness
+    description: >-
+      Efeito colateral da regra conservadora do QA-17. Com UMA forma legivel e
+      OUTRA ilegivel (permissao, aba renomeada), a ilegivel nao entra em `forms`
+      e portanto nao entra em `identificadores`. Se a legivel for a PAGINA A e a
+      LPB estiver ativa, o grafico avisa "LPB sem aba de aplicacao" — quando a
+      aba B existe e apenas nao pode ser lida.
+      Impacto contido: o aviso de leitura da aba B aparece ao lado e da o
+      contexto. O usuario ve os dois e entende. Mas o texto do segundo aviso
+      induz a criar uma aba que ja existe.
+    recommendation: >-
+      Suprimir o aviso de LP orfa quando houver qualquer aviso de leitura no
+      mesmo funil — nao da para afirmar orfandade com parte das abas ilegivel.
+      Mesmo principio do QA-17, aplicado a outra fonte de incerteza.
+
+  - id: QA-23
+    severity: low
+    category: requirements
+    description: >-
+      A regra conservadora reduz o alcance real do AC5: como `letrasDasFormas`
+      devolve null se ALGUMA forma nao for identificavel, o aviso so opera em
+      funis 100% nomeados por pagina. Num funil misto — "PAGINA A" + "form com
+      ticket" — a porta de entrada abre (ha uma pagina) mas o casamento silencia
+      (o form nao e identificavel).
+      Nao e defeito: e o trade-off correto, e prefiro o falso negativo. Mas o
+      AC5 entrega menos do que a leitura da story sugere, e isso deve estar
+      claro para quem for cobrar a funcionalidade.
+    recommendation: >-
+      Registrar a limitacao na story (secao de escopo) para nao virar
+      "o aviso nao funciona" num chamado futuro.
+
+pontos_fortes:
+  - >-
+    Os dois furos do @po nao foram so corrigidos: viraram teste NOMEADO (`F1:`,
+    `F2:`) com o porque escrito no proprio teste. Quem mexer na regex daqui a
+    seis meses vai ler por que ela e assim antes de "simplificar".
+  - >-
+    `abasParaDescobrir()` foi extraida da rota DURANTE a implementacao porque um
+    item de DoD nao fecharia honestamente sem ela. E o oposto de marcar o
+    checkbox e seguir — o @dev mudou o desenho para poder verificar de verdade.
+  - >-
+    A troca do `fetchAllAdInsights` por leitura do banco no AC5 e uma decisao
+    melhor que a especificada, e veio com a justificativa certa: a story pedia
+    para "ver como lp-campaigns faz", e fazer igual teria violado o AC8 da
+    propria story. Seguir a letra teria sido pior que pensar.
+  - >-
+    `contar()` devolvendo `null` + aviso em vez de forma zerada e a mudanca que
+    da sentido a story inteira: zerado se le como "essa pagina nao vendeu", e
+    era exatamente assim que a Pagina C desapareceu sem ninguem notar.
+  - >-
+    A mensagem de erro e traduzida para acao ("verifique permissao de leitura e
+    se ela nao foi renomeada") com o `PERMISSION_DENIED` cru indo para o log.
+    Erro de API na tela do gestor e ruido; erro no log e diagnostico.
+
+decisao: >-
+  ITERACAO 2 — CONCERNS, aprovado para merge. A condicao do gate anterior
+  (QA-17) esta cumprida, e cumprida melhor do que eu havia sugerido: o @dev
+  verificou que passar os sheetNames NAO resolveria, porque a aba-base nao
+  carrega letra em lugar nenhum, e trocou por uma regra conservadora que silencia
+  diante de qualquer forma nao identificavel. Minha recomendacao estava
+  incompleta; a implementacao esta certa.
+  Restam QA-21 (o nucleo nunca rodou contra dado real — unica razao de nao ser
+  PASS), QA-22 e QA-23 (efeitos colaterais LOW da regra nova) e QA-19/QA-20
+  (debito consciente). Nada disso bloqueia o merge; QA-21 bloqueia a confianca
+  no resultado ate a passada no dg-pg04 pos-deploy.

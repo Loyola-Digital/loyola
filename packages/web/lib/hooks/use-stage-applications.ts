@@ -31,12 +31,30 @@ export interface ApplicationForm {
   points: ApplicationDay[];
 }
 
+/** Story 43.1 — aba que não entrou no gráfico, e o motivo (AC4). */
+export interface AvisoForma {
+  aba: string;
+  motivo: string;
+}
+
 export interface StageApplications {
   funnelName: string;
   /** nome do lançamento de comparação (compareFunnelId). null = não configurado. */
   compareFunnelName: string | null;
   /** true = nenhuma planilha do tipo "applications" vinculada. */
   semPlanilha: boolean;
+  /**
+   * Story 43.1 — abas que ficaram FORA do gráfico, com o motivo. Antes viravam
+   * série zerada, e zerado se lê como "essa página não vendeu" em vez de
+   * "não conseguimos ler essa página".
+   */
+  avisos: AvisoForma[];
+  /**
+   * Story 43.1 — LPs com investimento recente na Meta que não têm forma no
+   * gráfico. Vazio em funis que nomeiam as formas por formulário, onde a
+   * pergunta "cadê a LPA" não faz sentido.
+   */
+  lpsOrfas: string[];
   /** uma série por planilha de aplicação (lançamento atual). */
   forms: ApplicationForm[];
   /** total AGREGADO do lançamento anterior (soma das planilhas), no eixo D-day.

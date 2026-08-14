@@ -20,10 +20,24 @@
  */
 
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gte } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { funnelSpreadsheets, funnelStages, funnels } from "../db/schema.js";
-import { readSheetData } from "../services/google-sheets.js";
+import {
+  funnelSpreadsheets,
+  funnelStages,
+  funnels,
+  metaCampaignInsightsDaily,
+  metaEntityNamesCache,
+} from "../db/schema.js";
+import { extractLPName } from "./lp-campaigns.js";
+import { getSpreadsheetSheets, readSheetData } from "../services/google-sheets.js";
+import {
+  abasParaDescobrir,
+  derivarPrefixos,
+  ehNomeDePagina,
+  labelDaAbaDescoberta,
+  letrasDasFormas,
+} from "../services/application-sheets.js";
 
 const paramsSchema = z.object({
   projectId: z.string().uuid(),
@@ -62,9 +76,39 @@ function parseDay(raw: string | undefined): string | null {
 interface RawForm {
   sheetId: string;
   label: string;
+  /** Nome da aba de origem — identifica a página quando o label não identifica. */
+  sheetName: string;
   /** data (aaaa-mm-dd) -> nº de aplicações naquele dia. */
   counts: Map<string, number>;
   total: number;
+}
+
+/**
+ * Story 43.1 — problema que impediu uma forma de entrar no gráfico.
+ *
+ * Antes, tudo isso virava uma série zerada (ou sumia), e zerado é
+ * indistinguível de "página sem aplicação". Uma página faltando COM aviso é um
+ * problema que alguém resolve; sem aviso, é uma decisão errada que ninguém
+ * rastreia.
+ */
+interface AvisoForma {
+  aba: string;
+  motivo: string;
+}
+
+/** Resultado de `rawFormsFor`: as formas legíveis + o que ficou de fora. */
+interface FormsResult {
+  forms: RawForm[];
+  avisos: AvisoForma[];
+  /** Nomes (aba + label) considerados, para a porta de entrada do AC5. */
+  nomes: string[];
+  /**
+   * Por forma, os nomes que podem identificá-la como página (label e aba).
+   *
+   * É uma lista por forma, e não um conjunto achatado, porque o AC5 precisa
+   * saber se ALGUMA forma ficou sem letra identificável — ver `lpsSemForma`.
+   */
+  identificadores: string[][];
 }
 
 interface FormSeries {
@@ -80,7 +124,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
    * contagem por data (calendário). O alinhamento em D-day é feito depois
    * (alignForms), no nível do lançamento.
    */
-  async function rawFormsFor(funnelId: string): Promise<RawForm[]> {
+  async function rawFormsFor(funnelId: string): Promise<FormsResult> {
     const sheets = await fastify.db
       .select({
         id: funnelSpreadsheets.id,
@@ -94,40 +138,125 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         and(eq(funnelSpreadsheets.funnelId, funnelId), eq(funnelSpreadsheets.type, "applications")),
       );
 
-    return Promise.all(
-      sheets.map(async (sheet): Promise<RawForm> => {
-        const empty: RawForm = {
-          sheetId: sheet.id,
-          label: sheet.label,
-          counts: new Map(),
-          total: 0,
-        };
-        const dateCol = sheet.columnMapping?.date;
-        if (!dateCol) return empty;
+    if (!sheets.length) return { forms: [], avisos: [], nomes: [], identificadores: [] };
 
-        let data: { headers: string[]; rows: string[][] };
-        try {
-          data = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
-        } catch {
-          return empty;
-        }
+    const avisos: AvisoForma[] = [];
 
-        const idx = data.headers.indexOf(dateCol);
-        if (idx === -1) return empty;
+    /**
+     * Conta as linhas de UMA aba. Devolve `null` (com aviso) em vez de forma
+     * zerada quando a aba não dá para ler ou não tem a coluna de data — zerado
+     * mente, dizendo "essa página não teve aplicação".
+     */
+    async function contar(
+      sheetId: string,
+      label: string,
+      spreadsheetId: string,
+      sheetName: string,
+      dateCol: string | undefined,
+    ): Promise<RawForm | null> {
+      if (!dateCol) {
+        avisos.push({ aba: sheetName, motivo: `a planilha "${label}" está sem coluna de data mapeada` });
+        return null;
+      }
 
-        const counts = new Map<string, number>();
-        let total = 0;
-        for (const row of data.rows) {
-          const day = parseDay(row[idx]);
-          // Linha sem data válida (arrasto no fim da planilha, célula em branco)
-          // não entra: entraria como "hoje" e inflaria o último dia.
-          if (!day) continue;
-          counts.set(day, (counts.get(day) ?? 0) + 1);
-          total++;
-        }
-        return { sheetId: sheet.id, label: sheet.label, counts, total };
-      }),
+      let data: { headers: string[]; rows: string[][] };
+      try {
+        data = await readSheetData(spreadsheetId, sheetName);
+      } catch (error) {
+        // Mensagem crua da API do Google ("PERMISSION_DENIED") não diz ao time o
+        // que fazer. Traduz para ação; o detalhe técnico fica no log.
+        fastify.log.warn({ err: error, sheetName }, "[43.1] aba de aplicação ilegível");
+        avisos.push({
+          aba: sheetName,
+          motivo: "não foi possível ler a aba — verifique permissão de leitura e se ela não foi renomeada",
+        });
+        return null;
+      }
+
+      const idx = data.headers.indexOf(dateCol);
+      if (idx === -1) {
+        avisos.push({ aba: sheetName, motivo: `a aba não tem a coluna "${dateCol}"` });
+        return null;
+      }
+
+      const counts = new Map<string, number>();
+      let total = 0;
+      for (const row of data.rows) {
+        const day = parseDay(row[idx]);
+        // Linha sem data válida (arrasto no fim da planilha, célula em branco)
+        // não entra: entraria como "hoje" e inflaria o último dia.
+        if (!day) continue;
+        counts.set(day, (counts.get(day) ?? 0) + 1);
+        total++;
+      }
+      return { sheetId, label, sheetName, counts, total };
+    }
+
+    // ── Cadastradas ────────────────────────────────────────────────────────
+    const cadastradas = await Promise.all(
+      sheets.map((s) => contar(s.id, s.label, s.spreadsheetId, s.sheetName, s.columnMapping?.date)),
     );
+
+    // ── Descobertas (AC1) ──────────────────────────────────────────────────
+    // Varre cada arquivo já vinculado atrás de abas do mesmo grupo que ainda
+    // não foram cadastradas. É o que faz uma página nova aparecer sozinha.
+    const porArquivo = new Map<string, typeof sheets>();
+    for (const s of sheets) {
+      const lista = porArquivo.get(s.spreadsheetId) ?? [];
+      lista.push(s);
+      porArquivo.set(s.spreadsheetId, lista);
+    }
+
+    const descobertas: (RawForm | null)[] = [];
+    for (const [spreadsheetId, doArquivo] of porArquivo) {
+      const prefixos = derivarPrefixos(doArquivo.map((s) => s.sheetName));
+      // Mapping herdado do grupo — as planilhas de um mesmo arquivo usam o mesmo
+      // formulário, então as colunas coincidem. O AC2 exige validar antes de
+      // contar: `contar()` já devolve aviso se a coluna não existir na aba nova.
+      const dateColHerdada = doArquivo.find((s) => s.columnMapping?.date)?.columnMapping?.date;
+
+      let abas: { title: string }[];
+      try {
+        abas = (await getSpreadsheetSheets(spreadsheetId)).sheets;
+      } catch (error) {
+        fastify.log.warn({ err: error, spreadsheetId }, "[43.1] falha ao listar abas");
+        avisos.push({
+          aba: spreadsheetId,
+          motivo: "não foi possível listar as abas da planilha — páginas novas podem estar faltando no gráfico",
+        });
+        continue;
+      }
+
+      const alvos = abasParaDescobrir(
+        abas.map((a) => a.title),
+        doArquivo.map((s) => s.sheetName),
+        prefixos,
+      );
+      // Em paralelo, como as cadastradas: em série, cada aba nova somava um
+      // round-trip ao Google no primeiro carregamento — que é exatamente quando
+      // o gestor está olhando a tela.
+      descobertas.push(
+        ...(await Promise.all(
+          alvos.map(({ aba, prefixo }) =>
+            contar(
+              `descoberta:${spreadsheetId}:${aba}`,
+              labelDaAbaDescoberta(aba, prefixo),
+              spreadsheetId,
+              aba,
+              dateColHerdada,
+            ),
+          ),
+        )),
+      );
+    }
+
+    const forms = [...cadastradas, ...descobertas].filter((f): f is RawForm => f !== null);
+    // Aba e label alimentam a porta de entrada do AC5: se NENHUM deles segue a
+    // nomenclatura por página, este funil não fala a língua de "LPA/LPB" e o
+    // aviso de LP órfã não faz sentido nele.
+    const identificadores = forms.map((f) => [f.label, f.sheetName]);
+    const nomes = identificadores.flat();
+    return { forms, avisos, nomes, identificadores };
   }
 
   /**
@@ -163,6 +292,73 @@ export default fp(async function stageApplicationsRoutes(fastify) {
     });
   }
 
+  /**
+   * AC5 — LPs que estão rodando na Meta mas não têm forma no gráfico.
+   *
+   * Lê do BANCO, não da API da Meta: campanhas com investimento nos últimos 30
+   * dias (evidência de entrega, mais confiável que um `effective_status` que
+   * pode estar desatualizado) e o nome resolvido pelo cache de entidades.
+   * Chamar `fetchAllAdInsights` aqui — como faz `lp-campaigns` — colocaria uma
+   * requisição pesada à Meta no caminho de um gráfico aberto o dia inteiro,
+   * exatamente o que o AC8 manda evitar.
+   */
+  async function lpsSemForma(
+    projectId: string,
+    nomes: string[],
+    identificadores: string[][],
+  ): Promise<string[]> {
+    // Porta de entrada: funil que nomeia as formas por formulário ("form com
+    // ticket") não fala a língua de LPA/LPB. Ali, "a LPA não tem aba" não
+    // significa nada — e um aviso que aparece com tudo certo ensina o time a
+    // ignorar avisos, matando o valor do AC4.
+    if (!nomes.some(ehNomeDePagina)) return [];
+
+    // Segunda guarda (QA-17). A aba-base de um grupo — a que não tem sufixo,
+    // como `Pesquisa-Aplicacao-Comercial` — NÃO carrega letra nem no nome nem
+    // no label quando vem pela descoberta. Ela é a "Página A" só por convenção
+    // do time, e cravar essa convenção no código seria inventar semântica.
+    //
+    // Enquanto existir uma forma que não sabemos identificar, não dá para
+    // afirmar que uma LP está órfã: essa forma pode ser exatamente a página em
+    // questão. Silêncio aqui é um falso negativo; o contrário seria acusar erro
+    // com a página na tela — a mesma armadilha que a porta de entrada acima
+    // evita, e a única que o gate anterior deixou passar.
+    const letras = letrasDasFormas(identificadores);
+    if (letras === null) return [];
+    const comForma = new Set(letras);
+
+    const desde = new Date();
+    desde.setDate(desde.getDate() - 30);
+    const desdeStr = desde.toISOString().slice(0, 10);
+
+    const ativas = await fastify.db
+      .selectDistinct({ nome: metaEntityNamesCache.entityName })
+      .from(metaCampaignInsightsDaily)
+      .innerJoin(
+        metaEntityNamesCache,
+        and(
+          eq(metaEntityNamesCache.projectId, metaCampaignInsightsDaily.projectId),
+          eq(metaEntityNamesCache.entityId, metaCampaignInsightsDaily.campaignId),
+          eq(metaEntityNamesCache.entityType, "campaign"),
+        ),
+      )
+      .where(
+        and(
+          eq(metaCampaignInsightsDaily.projectId, projectId),
+          gte(metaCampaignInsightsDaily.dateStart, desdeStr),
+        ),
+      );
+
+    const faltando = new Set<string>();
+    for (const { nome } of ativas) {
+      const lp = extractLPName(nome); // REUSE — mesma definição da Story 18.44
+      if (!lp) continue;
+      const letra = lp.replace(/^LP/i, "").toUpperCase();
+      if (!comForma.has(letra)) faltando.add(lp.toUpperCase());
+    }
+    return [...faltando].sort();
+  }
+
   /** Soma todas as planilhas de aplicação de um lançamento numa forma única. */
   function aggregateForms(forms: RawForm[]): RawForm {
     const counts = new Map<string, number>();
@@ -171,7 +367,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
       for (const [k, v] of f.counts) counts.set(k, (counts.get(k) ?? 0) + v);
       total += f.total;
     }
-    return { sheetId: "__total__", label: "Total", counts, total };
+    return { sheetId: "__total__", label: "Total", sheetName: "__total__", counts, total };
   }
 
   /** Soma séries JÁ alinhadas (mesmo eixo D-day) num total por dia. */
@@ -220,7 +416,8 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         .limit(1);
       if (!ctx) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      const atual = alignForms(await rawFormsFor(funnelId));
+      const atualRaw = await rawFormsFor(funnelId);
+      const atual = alignForms(atualRaw.forms);
 
       // Comparação com o lançamento anterior é AGREGADA (total vs total), não
       // forma a forma: cada lançamento nomeia suas planilhas do seu jeito, então
@@ -237,7 +434,9 @@ export default fp(async function stageApplicationsRoutes(fastify) {
           .limit(1);
         if (cmpFunnel) {
           compareFunnelName = cmpFunnel.name;
-          const prevTotal = alignForms([aggregateForms(await rawFormsFor(ctx.compareFunnelId))]);
+          const prevTotal = alignForms([
+            aggregateForms((await rawFormsFor(ctx.compareFunnelId)).forms),
+          ]);
           const p = prevTotal[0];
           if (p && p.points.length) comparison = { points: p.points, total: p.total };
         }
@@ -258,12 +457,17 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         if (base && base > 0) deltaPercent = +(((meu - base) / base) * 100).toFixed(1);
       }
 
+      // Sem nenhuma planilha vinculada não há o que avisar: é etapa que ainda
+      // não tem comercial rodando, e o empty state já explica o que fazer.
+      const semPlanilha = atualRaw.forms.length === 0 && atualRaw.avisos.length === 0;
+      const lpsOrfas = semPlanilha
+        ? []
+        : await lpsSemForma(projectId, atualRaw.nomes, atualRaw.identificadores);
+
       return {
         funnelName: ctx.funnelName,
         compareFunnelName,
-        // Sem nenhuma planilha de aplicação vinculada — não é erro, é etapa que
-        // ainda não tem comercial rodando.
-        semPlanilha: atual.length === 0,
+        semPlanilha,
         forms: atual.map((f) => ({
           sheetId: f.sheetId,
           label: f.label,
@@ -273,6 +477,10 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         comparison,
         currentTotal,
         deltaPercent,
+        /** Story 43.1 — abas que ficaram de fora, e por quê (AC4). */
+        avisos: atualRaw.avisos,
+        /** Story 43.1 — LPs rodando na Meta sem forma no gráfico (AC5). */
+        lpsOrfas,
       };
     },
   );

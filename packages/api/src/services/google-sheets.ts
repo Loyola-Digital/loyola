@@ -102,7 +102,17 @@ export interface SheetInfo {
   rowCount: number;
 }
 
+// Story 43.1: a listagem de abas passou a ser chamada no caminho do gráfico de
+// Aplicações, que é aberto muitas vezes ao dia durante um lançamento. Sem cache
+// isso vira uma requisição extra ao Google por render — e rate limit no pior
+// momento (a regra que ficou depois do estouro de 2026-07-16). Mesmo TTL do
+// cache de dados: criar/renomear aba é raro, mas o usuário espera ver rápido.
+const sheetsCache = new Map<string, { data: { name: string; sheets: SheetInfo[] }; timestamp: number }>();
+
 export async function getSpreadsheetSheets(spreadsheetId: string): Promise<{ name: string; sheets: SheetInfo[] }> {
+  const cached = sheetsCache.get(spreadsheetId);
+  if (cached && Date.now() - cached.timestamp < DATA_CACHE_TTL) return cached.data;
+
   const accessToken = await getAccessToken();
   const res = await fetch(
     `${SHEETS_API}/${spreadsheetId}?fields=properties.title,sheets.properties`,
@@ -119,7 +129,7 @@ export async function getSpreadsheetSheets(spreadsheetId: string): Promise<{ nam
     sheets?: { properties?: { sheetId?: number; title?: string; gridProperties?: { rowCount?: number } } }[];
   };
 
-  return {
+  const result = {
     name: data.properties?.title ?? spreadsheetId,
     sheets: (data.sheets ?? []).map((s) => ({
       sheetId: s.properties?.sheetId ?? 0,
@@ -127,6 +137,8 @@ export async function getSpreadsheetSheets(spreadsheetId: string): Promise<{ nam
       rowCount: s.properties?.gridProperties?.rowCount ?? 0,
     })),
   };
+  sheetsCache.set(spreadsheetId, { data: result, timestamp: Date.now() });
+  return result;
 }
 
 // ============================================================
@@ -185,5 +197,10 @@ export function clearSheetDataCache(spreadsheetId: string, sheetName: string): v
 export function clearAllSheetDataCache(): number {
   const size = dataCache.size;
   dataCache.clear();
+  // Story 43.1: a listagem de abas também é cache. Sem limpar aqui, o botão
+  // "Atualizar" traria linhas frescas mas não veria uma aba recém-criada — que
+  // é justamente o motivo mais provável de alguém clicar em Atualizar depois de
+  // mexer na planilha.
+  sheetsCache.clear();
   return size;
 }
