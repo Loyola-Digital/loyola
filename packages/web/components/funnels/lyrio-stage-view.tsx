@@ -989,9 +989,9 @@ function RevenuecatPanel({
   brlRate: number | null;
   onConfigure: () => void;
 }) {
-  // Mostra em R$ quando há câmbio; senão cai pro USD nativo.
-  const money = (usd: number | null | undefined) =>
-    brlRate != null ? brl(usd, brlRate) : fmtUsd(usd);
+  // Sempre R$. O painel nunca exibe dólar: sem câmbio carregado o valor fica
+  // "—" (estado momentâneo) em vez de virar US$, que ninguém aqui lê.
+  const money = (usd: number | null | undefined) => brl(usd, brlRate);
   if (loading) return <Skeleton className="h-[320px] rounded-xl" />;
 
   if (!connected) {
@@ -1024,18 +1024,23 @@ function RevenuecatPanel({
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Kpi icon={ShoppingCart} label="Vendas" value={fmtNum(totalSales)} />
-        <Kpi
-          icon={DollarSign}
-          label={brlRate != null ? "Receita" : "Receita (USD)"}
-          value={money(revenueUsd)}
-          highlight
-        />
+        <Kpi icon={DollarSign} label="Receita" value={money(revenueUsd)} highlight />
+        {/* Quebra por moeda de compra, mas exibida em R$: BRL entra direto (é a
+            moeda nativa da maior parte das vendas) e USD passa pelo câmbio.
+            Moeda diferente dessas duas cairia em conversão errada com a taxa do
+            dólar, então fica no valor nativo com o código à mostra. */}
         {byCurrency.slice(0, 2).map((c) => (
           <Kpi
             key={c.currency}
             icon={DollarSign}
-            label={`Receita (${c.currency})`}
-            value={fmtMoney(c.revenue, c.currency)}
+            label={`Receita · ${c.currency}`}
+            value={
+              c.currency === "BRL"
+                ? fmtBRL(c.revenue)
+                : c.currency === "USD"
+                  ? brl(c.revenue, brlRate)
+                  : fmtMoney(c.revenue, c.currency)
+            }
           />
         ))}
       </div>
@@ -1143,8 +1148,9 @@ function isMoneyMetric(m: RevenuecatMetric): boolean {
 }
 
 function fmtMetric(m: RevenuecatMetric, brlRate: number | null): string {
-  // Valores monetários vêm em USD; converte pra R$ quando há câmbio.
-  if (isMoneyMetric(m)) return brlRate != null ? fmtBRL(m.value * brlRate) : fmtUsd(m.value);
+  // Valor monetário do RevenueCat vem em USD e SEMPRE é exibido em R$. Sem
+  // câmbio ainda carregado mostra "—" — nunca o valor em dólar.
+  if (isMoneyMetric(m)) return brlRate != null ? fmtBRL(m.value * brlRate) : "—";
   if (m.unit === "%") return `${m.value.toLocaleString("pt-BR")}%`;
   return fmtNum(m.value);
 }
