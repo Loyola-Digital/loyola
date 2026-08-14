@@ -10,6 +10,7 @@ import {
 } from "../db/schema.js";
 import { requireScope } from "../middleware/api-key-auth.js";
 import { PUBLIC_READ_SCOPE } from "./public-discovery.js";
+import { somarVideoMetrics } from "../services/video-metrics-agg.js";
 import { applyMetaTax } from "../utils/meta-tax.js";
 import {
   parseLeads,
@@ -317,7 +318,8 @@ export default fp(async function publicMetaRoutes(fastify) {
         campaignName: string | null;
         adsetId: string | null;
         adsetName: string | null;
-        videoMetrics: unknown;
+        /** Story 43.2: uma entrada por dia; somadas em `somarVideoMetrics`. */
+        videoMetricsDiarios: unknown[];
       }
       const byAd = new Map<string, AdAcc>();
       const daysWithData = new Set<string>();
@@ -331,12 +333,15 @@ export default fp(async function publicMetaRoutes(fastify) {
             campaignName: row.campaignName,
             adsetId: row.adsetId,
             adsetName: row.adsetName,
-            videoMetrics: row.videoMetrics ?? null,
+            videoMetricsDiarios: [],
           };
           byAd.set(row.adId, acc);
         }
         accumulate(acc, row);
-        if (row.videoMetrics && !acc.videoMetrics) acc.videoMetrics = row.videoMetrics;
+        // Story 43.2: coleta as linhas diárias para somar depois. Antes daqui
+        // saía `acc.videoMetrics = row.videoMetrics` na PRIMEIRA linha com
+        // valor — o que dava numerador de um dia contra denominador de N.
+        if (row.videoMetrics) acc.videoMetricsDiarios.push(row.videoMetrics);
         daysWithData.add(row.dateStart);
       }
 
@@ -361,7 +366,7 @@ export default fp(async function publicMetaRoutes(fastify) {
           adsetId: acc.adsetId,
           adsetName: acc.adsetName,
           creative: creativeMap.get(id) ?? null,
-          videoMetrics: acc.videoMetrics ?? null,
+          videoMetrics: somarVideoMetrics(acc.videoMetricsDiarios),
           ...deriveMetrics(acc),
         };
       });
