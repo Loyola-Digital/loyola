@@ -38,6 +38,7 @@ import adminRoutes from "./routes/admin.js";
 import apiKeysRoutes from "./routes/api-keys.js";
 import publicDiscoveryRoutes from "./routes/public-discovery.js";
 import publicMetaRoutes from "./routes/public-meta.js";
+import publicVslRoutes from "./routes/public-vsl.js";
 import publicLeadsRoutes from "./routes/public-leads.js";
 import metaAdsRoutes from "./routes/meta-ads.js";
 import trafficAnalyticsRoutes from "./routes/traffic-analytics.js";
@@ -164,6 +165,7 @@ export async function buildServer() {
   // API pública read-only (/api/public/*) — Story 36.3
   await app.register(publicDiscoveryRoutes);
   await app.register(publicMetaRoutes);
+  await app.register(publicVslRoutes);
   await app.register(publicLeadsRoutes);
   await app.register(metaAdsRoutes);
   await app.register(trafficAnalyticsRoutes);
