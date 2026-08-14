@@ -53,6 +53,7 @@ import { useGoogleAdsCampaigns } from "@/lib/hooks/use-google-ads-analytics";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
 import { SalesMetaKpis } from "./sales-meta-kpis";
+import { LyrioDetailTable } from "./lyrio-detail-table";
 import {
   useRevenuecatConnection,
   useSaveRevenuecatConnection,
@@ -947,6 +948,20 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
             campaignIds={googleCampaignIds}
           />
         </section>
+      )}
+
+      {/* Story 42.5 — Detalhamento por campanha, público e criativo. Segue o
+          DayRangePicker do cabeçalho (`days`), não os 28 dias fixos do Resumo.
+          Sem campanha vinculada em nenhuma das duas plataformas não há o que
+          detalhar — a seção some em vez de mostrar tabela vazia. */}
+      {(campaignIds.length > 0 || googleCampaignIds.size > 0) && (
+        <LyrioDetailTable
+          projectId={projectId}
+          campaignIds={campaignIds}
+          googleAccountId={googleAccountId}
+          googleCampaignIds={googleCampaignIds}
+          days={days}
+        />
       )}
 
       {/* RevenueCat — métricas ao vivo (API) + vendas do período (webhook) */}

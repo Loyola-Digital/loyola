@@ -1,0 +1,180 @@
+schema: 1
+story: '42.5'
+gate: CONCERNS
+iteration: 1
+status_reason: >-
+  A implementacao acerta o que a story sinalizou como risco numero 1: o imposto
+  do Meta nao e reaplicado, e o do Google nao existe. Verifiquei no codigo, nao
+  na descricao — `lyrio-detail-rows.ts` nao tem uma unica multiplicacao por
+  fator de imposto, e os dois testes que travam isso passam. A separacao do
+  calculo em `lib/utils` foi a decisao certa e e o que tornou a verificacao
+  possivel. O CONCERNS vem de um item so, e ele e o mesmo que a propria story
+  declara em aberto no DoD: a tabela nunca foi vista renderizada. Os demais
+  achados sao LOW e nao justificariam segurar o merge sozinhos.
+reviewer: 'Quinn'
+updated: '2026-08-14T00:00:00Z'
+
+verificacoes:
+  code_review: PASS
+  unit_tests: PASS          # 18 testes no adaptador puro; componente sem teste (sem jsdom no runner)
+  acceptance_criteria: CONCERNS   # AC1-AC9 implementados; nenhum confirmado em tela
+  no_regressions: PASS      # provado: mesmas 11 falhas de api no origin/main puro
+  performance: PASS         # so a dimensao ativa consulta; sem N+1
+  security: PASS            # sem entrada de usuario, sem query nova
+  documentation: PASS
+
+verificacoes_manuais_executadas:
+  - o: 'Imposto do Meta nao e aplicado duas vezes, nem cai no Google (AC5)'
+    como: 'Leitura de lyrio-detail-rows.ts inteiro + os 2 testes dedicados'
+    resultado: >-
+      `metaRow` repassa `spend: e.spend` sem tocar, e `googleRow` idem. Nenhuma
+      constante 1,1215 nem `applyMetaAdsTax` no modulo. E o bug que ja aconteceu
+      duas vezes no projeto (29.24, corrigido pela 29.27) e desta vez esta
+      travado por teste, nao por atencao.
+
+  - o: 'Coerencia entre a coluna Cliques, o CTR e o CPC da mesma linha'
+    como: >-
+      Comparacao da funcao `costClicks` local com a de `deriveDetailMetrics`
+      e com o builder do backend (traffic-analytics.ts:910-911)
+    resultado: >-
+      As tres usam a mesma regra (link click quando > 0, senao clicks totais).
+      A linha exibe Cliques, CTR e CPC sobre a MESMA base — foi o que fui
+      procurar suspeitando de divergencia, e nao ha. Ver QA-12 quanto a
+      duplicacao da regra.
+
+  - o: 'A tabela Por Publico mostra nome de publico, nao da campanha pai'
+    como: >-
+      `fonte.map(metaRow)` le `campaignId`/`campaignName`; rastreei o tipo ate
+      o backend (AdSetAnalyticsResponse.adsets: CampaignAnalytics[] e o builder
+      generico em traffic-analytics.ts:901-905)
+    resultado: >-
+      O builder faz `campaignId: id, campaignName: name` com o id/nome da
+      ENTIDADE montada. Adset e ad reusam o shape de campanha. Nao ha
+      vazamento de nome de campanha para linhas de publico/criativo. Risco
+      levantado e descartado com evidencia.
+
+  - o: 'Estado vazio e rodape cobrem a largura certa da tabela'
+    como: 'Aritmetica de colSpan contra a contagem real de <th>'
+    resultado: >-
+      colunas = 7 (+2 em Por Criativo). Empty state usa colunas+1 = 8/10, que
+      bate com os 8/10 <th> reais. Rodape: 2 + 1 + (colunas-2) = 8/10. Corretos
+      nas duas dimensoes.
+
+  - o: 'Aviso do Google em Por Publico e Por Criativo (AC3)'
+    como: 'Leitura de :167-173'
+    resultado: >-
+      Condicionado a `temGoogle && dimensao !== "campaign"`, com contagem real e
+      singular/plural tratado. Sem ele o total encolheria ao trocar de aba e se
+      leria como queda de investimento — que era exatamente a preocupacao do AC.
+
+  - o: 'Nota de ausencia de receita (AC8) e janela explicita (AC6)'
+    como: 'Leitura de :151 e :282-285'
+    resultado: >-
+      "· ultimos {days} dias" no titulo e a nota de rodape sobre ROAS/CAC
+      presentes com o texto que o AC pedia. O rodape com total, que a story nao
+      pedia, e o que torna o AC6 verificavel na tela.
+
+  - o: 'Conflito semantico com o fix #520 (dolar) que entrou no main'
+    como: 'Diff das duas mudancas em lyrio-stage-view.tsx + grep de moeda na tabela'
+    resultado: >-
+      Regioes disjuntas do arquivo (#520 em :989-1155, esta story em :53 e :950).
+      A tabela formata tudo com fmtBRL e nao consome nenhum valor em USD do
+      RevenueCat (`revenue: null` por construcao). Nao e uma quarta saida de
+      dolar.
+
+issues:
+  - id: QA-11
+    severity: medium
+    category: requirements
+    description: >-
+      Validacao visual nao executada — item que a propria story deixa aberto no
+      DoD. Nenhum dos 5 pontos foi confirmado em tela: as 3 dimensoes carregando
+      sem erro de console, o total batendo com os cards em janela de 30 dias, o
+      aviso amarelo aparecendo, Hook/Hold so em Por Criativo, e o
+      DayRangePicker recarregando a tabela.
+      Registro como MEDIUM e nao HIGH porque a logica que produz os numeros esta
+      coberta por 18 testes e o tsc/build passam — o risco residual e de
+      renderizacao e integracao de hooks, nao de calculo. Mas e uma tabela nova
+      que ninguem viu funcionando.
+    recommendation: >-
+      Abrir a etapa `Lyrio - APP` e percorrer os 5 pontos da secao "Validacao
+      visual pendente" da story. O item 2 (total x cards em 30 dias) e o que
+      fecha o AC6 de verdade; os outros quatro sao inspecao rapida.
+
+  - id: QA-12
+    severity: low
+    category: code
+    description: >-
+      A regra de `costClicks` (link click quando > 0, senao clicks) esta
+      reescrita em `lyrio-detail-rows.ts:69-71`, em vez de importada de
+      `perpetual-detail-metrics.ts`, que ja a implementa identica internamente.
+      Hoje as duas concordam e verifiquei isso. O problema e futuro: se a regra
+      mudar num lado, o CPC (que vem do modulo compartilhado) e o CTR (calculado
+      localmente) da MESMA linha passam a contar cliques diferentes, sem que
+      nenhum teste quebre.
+    recommendation: >-
+      Exportar `costClicks` de `perpetual-detail-metrics.ts` e importar aqui, ou
+      passar a usar um `ctr` devolvido pelo proprio `deriveDetailMetrics`. Vale
+      um teste que afirme a igualdade das bases.
+
+  - id: QA-13
+    severity: low
+    category: docs
+    description: >-
+      Rotulos visiveis ao usuario sem acentuacao: "Por Publico" (:159),
+      "Dimensao" (:191) e "Impressoes" (:197). Nao e padrao do arquivo — o mesmo
+      componente escreve "Publico e criativo cobrem apenas o Meta" com acento
+      (:169) e "veiculacao" com cedilha (:227). E descuido pontual, nao decisao.
+    recommendation: >-
+      Trocar por "Por Publico" -> "Por Público", "Dimensao" -> "Dimensão",
+      "Impressoes" -> "Impressões". Correcao de um minuto, mas aparece na tela
+      do gestor.
+
+  - id: QA-14
+    severity: low
+    category: requirements
+    description: >-
+      O AC9 foi fechado por confirmacao verbal do gestor (conta Google em BRL),
+      e isso e legitimo — era o que o AC pedia. O que segue ausente e a protecao
+      estrutural: o codigo continua sem ler `customer.currency_code`, entao
+      vincular no futuro uma conta em outra moeda produz um total somado errado,
+      plausivel e silencioso. A propria story registra isso com honestidade nas
+      Completion Notes.
+    recommendation: >-
+      Story propria: ler `currency_code` na sincronizacao da conta e barrar (ou
+      sinalizar) a soma quando divergir de BRL. Baixo custo, e remove uma classe
+      inteira de erro que ninguem detectaria olhando a tela.
+
+pontos_fortes:
+  - >-
+    O calculo saiu do componente e foi para `lib/utils` ANTES da UI, com a
+    justificativa correta escrita no cabecalho do arquivo: e onde um imposto a
+    mais entraria sem ninguem ver, e e o unico lugar que o vitest do web cobre.
+    Foi essa decisao que permitiu verificar o AC5 lendo 180 linhas em vez de
+    auditar um componente de tabela.
+  - >-
+    `revenue: null` em vez de `0` no `metaRow`. Com zero, o ROAS sairia 0; com
+    null, sai null. O efeito pratico hoje e nenhum porque a coluna nao existe —
+    mas fixa o contrato certo para a 42.7 herdar, e a story explica exatamente
+    isso. E o oposto de codigo escrito no automatico.
+  - >-
+    Ordenacao com `null` sempre no fim nas DUAS direcoes. Linha sem Hook nao e
+    "a pior", e desconhecida: ordenar por Hook ascendente com null valendo zero
+    colocaria todo anuncio de imagem no topo como se fosse o pior video.
+  - >-
+    CTR/CPC/CPM do Google usados como a API entrega, em vez de re-derivados. A
+    justificativa esta escrita e e a certa: re-derivar produz divergencia de
+    arredondamento contra o painel do proprio Google, e "por que aqui e 1,59 e
+    la 1,6" custa mais do que a consistencia vale.
+  - >-
+    As tres decisoes nao previstas na story (rodape com total, status como
+    tooltip do badge em vez de coluna, null no fim da ordenacao) estao
+    documentadas com o porque. A do status e particularmente boa: uma coluna
+    preenchida em ~30% das linhas se le como dado faltando.
+
+decisao: >-
+  CONCERNS — aprovado para merge. QA-13 e QA-12 sao correcoes baratas e cabem
+  antes ou depois, indiferente. O que nao deveria ficar para depois e o QA-11:
+  a tabela precisa ser aberta uma vez na etapa Lyrio antes de embasar decisao de
+  escala. Nada aqui indica defeito de calculo — o que falta e a confirmacao de
+  que a tela renderiza o que o modulo calcula.

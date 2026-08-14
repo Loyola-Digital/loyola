@@ -1792,6 +1792,28 @@ export const revenuecatSales = pgTable(
      * data nenhuma, invisível pra leitura por período.
      */
     eventAt: timestamp("event_at", { withTimezone: true }),
+    /**
+     * Story 42.6 — atribuição extraída de `payload.event.subscriber_attributes`.
+     * O dado sempre esteve no `payload`; estas colunas existem para poder ler
+     * por período e cruzar com as entidades da Meta sem varrer jsonb.
+     *
+     * Em campanha da Meta bem configurada, `utm_campaign`/`utm_medium`/
+     * `utm_content` trazem campaign id / adset id / ad id — mesmo contrato da
+     * planilha do Perpétuo, de propósito: o cruzamento é o mesmo código.
+     */
+    utmSource: varchar("utm_source", { length: 255 }),
+    /** adset id da Meta quando o rastreio está correto. */
+    utmMedium: varchar("utm_medium", { length: 255 }),
+    /** campaign id da Meta quando o rastreio está correto. */
+    utmCampaign: varchar("utm_campaign", { length: 255 }),
+    utmTerm: varchar("utm_term", { length: 255 }),
+    /** ad id da Meta quando o rastreio está correto. */
+    utmContent: varchar("utm_content", { length: 255 }),
+    /** Click id do Google — sem limite de tamanho documentado, daí `text`. */
+    gclid: text("gclid"),
+    fbclid: text("fbclid"),
+    /** Atributo custom do app: paid_ads | referral_url | play_store_organic. */
+    acquisitionSource: varchar("acquisition_source", { length: 64 }),
     payload: jsonb("payload").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1800,6 +1822,9 @@ export const revenuecatSales = pgTable(
     index("idx_revenuecat_sales_stage_purchased").on(table.stageId, table.purchasedAt),
     index("idx_revenuecat_sales_stage_event_at").on(table.stageId, table.eventAt),
     index("idx_revenuecat_sales_project").on(table.projectId),
+    // Story 42.6: chaves de cruzamento com campanha e anúncio da Meta.
+    index("idx_revenuecat_sales_stage_utm_campaign").on(table.stageId, table.utmCampaign),
+    index("idx_revenuecat_sales_stage_utm_content").on(table.stageId, table.utmContent),
   ]
 );
 

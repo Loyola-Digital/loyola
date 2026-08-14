@@ -1,0 +1,141 @@
+schema: 1
+story: '42.6'
+gate: PASS
+iteration: 1
+status_reason: >-
+  A story identificou seu proprio risco numero 1 — o mesmo atributo chega como
+  objeto `{value, updated_at_ms}` e como string plana, e ler so um formato perde
+  99% ou 1% do dado — e resolveu exatamente ali: `readSubscriberAttribute` e uma
+  funcao pura, exportada, com teste nos dois formatos. Verifiquei os 9 ACs
+  contra o codigo; todos atendidos. A story ja rodou em producao com relatorio
+  de cobertura publicado, o que e mais evidencia do que a maioria das stories
+  apresenta. Os dois achados sao LOW e nao afetam o resultado ja obtido.
+reviewer: 'Quinn'
+updated: '2026-08-14T00:00:00Z'
+
+verificacoes:
+  code_review: PASS
+  unit_tests: PASS          # 21 testes, executados nesta revisao
+  acceptance_criteria: PASS # AC1-AC9 verificados no codigo
+  no_regressions: PASS      # provado: mesmas 11 falhas de api no origin/main puro
+  performance: PASS         # backfill em lote, 1 query por pagina de 500
+  security: PASS            # AC7 verificado campo a campo: nenhum PII extraido
+  documentation: PASS       # relatorio do AC6 colado nas Completion Notes
+
+verificacoes_manuais_executadas:
+  - o: 'Os dois formatos de atributo sao lidos (AC2 — risco no 1 da story)'
+    como: 'Leitura de readSubscriberAttribute + execucao dos 21 testes'
+    resultado: >-
+      Trata string, number, boolean e objeto com `.value` (que por sua vez
+      aceita string/number/boolean). Array e explicitamente rejeitado nos dois
+      niveis. Ausencia devolve null sem lancar. A funcao esta exportada e
+      testada isoladamente, como o AC exigia.
+
+  - o: 'Nenhum PII entra em coluna (AC7)'
+    como: >-
+      Conferencia campo a campo dos 8 novos atributos contra a lista de PII
+      da story ($email, $phoneNumber, $displayName, $ip, $idfa, $idfv,
+      $gpsAdId, $fbAnonId, $attConsentStatus)
+    resultado: >-
+      Os 8 sao utm_source/medium/campaign/term/content, gclid, fbclid e
+      acquisition_source. Nenhum PII e lido, persistido ou logado. A migration
+      declara a regra em comentario e o insert do webhook so repassa esses 8.
+
+  - o: 'Descarte de lixo acontece antes de qualquer persistencia (AC3)'
+    como: 'Leitura de ehLixoDeAtribuicao e do ponto onde e chamada'
+    resultado: >-
+      O descarte mora DENTRO de readSubscriberAttribute, nao no chamador. Isso
+      significa que nenhum caminho de leitura — nem webhook, nem backfill —
+      consegue persistir `{{ad.id}}` ou `(not set)`. E a colocacao certa: uma
+      verificacao no chamador seria esquecida no segundo chamador.
+
+  - o: 'Encadeamento entre descarte e fallback (AC1 + AC3)'
+    como: 'Leitura de primeiroAtributo + teste dedicado'
+    resultado: >-
+      `utm_campaign` valendo `{{campaign.id}}` e descartado e ENTAO `$campaign`
+      e consultado. O comportamento oposto (macro literal bloqueando o fallback)
+      descartaria dado bom. Foi decidido de proposito e ha teste — nao e
+      acidente de implementacao.
+
+  - o: 'Webhook nao regride para nao-2xx (AC9)'
+    como: 'Diff de webhooks.ts'
+    resultado: >-
+      A mudanca e puramente aditiva: 8 campos a mais no objeto do insert.
+      Nenhuma alteracao no try/catch nem no codigo de resposta. O handler segue
+      devolvendo 2xx, que e o que impede o RevenueCat de reenviar em loop.
+
+  - o: 'Migration aditiva e idempotente (AC4)'
+    como: 'Leitura do 0104'
+    resultado: >-
+      8 ADD COLUMN IF NOT EXISTS + 2 CREATE INDEX IF NOT EXISTS. Tipos batem com
+      o AC (varchar 255 para utm_*, text para os click ids, varchar 64 para
+      acquisition_source). Indices em (stage_id, utm_campaign) e
+      (stage_id, utm_content) — as chaves que a 42.7 vai cruzar.
+
+  - o: 'Backfill em lote e idempotente (AC5)'
+    como: 'Leitura da paginacao e do UPDATE ... FROM (VALUES)'
+    resultado: >-
+      Paginas de 500 com uma unica query de UPDATE por pagina, nao uma por
+      evento. Reprocessa sempre a partir do payload, entao rodar duas vezes
+      produz o mesmo resultado. Escreve apenas nas 8 colunas novas. Ver QA-15
+      quanto a ordenacao da paginacao.
+
+issues:
+  - id: QA-15
+    severity: low
+    category: correctness
+    description: >-
+      A paginacao do backfill usa `ORDER BY created_at` sem desempate. Como
+      `created_at` nao e unico, o Postgres nao garante ordem estavel entre duas
+      execucoes de LIMIT/OFFSET: linhas com timestamp identico podem trocar de
+      posicao e, na virada de pagina, uma linha pode ser pulada (ou repetida —
+      repetir e inofensivo aqui, pular deixa a linha sem backfill).
+      Nao invalida a execucao ja feita: os numeros do relatorio batem com o
+      levantamento previo e o volume e pequeno. Mas o script foi escrito para
+      ser reusado com volume maior, e e ai que o defeito aparece.
+    recommendation: >-
+      `ORDER BY created_at, id`. Uma palavra, e a paginacao passa a ser
+      deterministica.
+
+  - id: QA-16
+    severity: low
+    category: correctness
+    description: >-
+      A contagem de valores descartados so inspeciona `chaves[0]` (a chave
+      primaria do campo). Um `$campaign` que valha `(not set)` e descartado
+      corretamente, mas nao entra na contagem. O relatorio do AC6 — que e o
+      entregavel de negocio da story — subestima levemente os descartes.
+    recommendation: >-
+      Percorrer todas as `chaves` na contagem, ou declarar no output que o
+      numero cobre apenas o atributo primario. A segunda opcao e mais barata e
+      igualmente honesta.
+
+pontos_fortes:
+  - >-
+    A story mediu o proprio resultado e publicou o numero que o desautoriza: dos
+    67 eventos de receita, ZERO carrega id de anuncio da Meta, e a conclusao
+    escrita e "consequencia para a 42.7: nao fazer ainda". Entregar o
+    instrumento de medicao e usar esse instrumento para recomendar nao construir
+    a proxima feature e o oposto do incentivo natural.
+  - >-
+    O descarte foi colocado dentro do leitor, nao nos chamadores. Decisao
+    pequena com efeito estrutural: torna impossivel um caminho futuro de leitura
+    persistir lixo por esquecimento.
+  - >-
+    A diferenca entre os numeros do levantamento e os da execucao esta explicada
+    linha a linha (utm_source 3.876 -> 3.753 por causa do `(not set)` agora
+    descartado; total 7.711 -> 7.786 porque o webhook seguiu recebendo). Numero
+    que muda sem explicacao vira desconfianca no dado inteiro.
+  - >-
+    Truncamento defensivo para os limites de varchar, com a justificativa certa:
+    nenhum valor observado chega perto, mas o conteudo vem do app, nao de nos.
+  - >-
+    A nota sobre ordem de deploy registra um cenario que NAO aconteceu (API
+    subir antes da migration) e explica por que ele seria silencioso — o handler
+    devolve 200 e o RevenueCat nao reenvia. Documentar o quase-acidente e o que
+    evita o acidente.
+
+decisao: >-
+  PASS — aprovado. QA-15 e QA-16 sao melhorias no script de backfill, que ja
+  cumpriu seu papel; cabem em qualquer momento futuro em que o script for
+  reaproveitado. Nada bloqueia o merge.
