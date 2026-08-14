@@ -1,0 +1,188 @@
+schema: 1
+story: '43.5'
+gate: PASS
+iteration: 2
+status_reason: >-
+  Iteracao 2 — PASS. QA-32 e QA-33 resolvidos.
+  A montagem saiu para `services/vsl-funnel.ts` e os testes passaram a chamar as
+  MESMAS funcoes que a rota chama. Nao aceitei a prova do @dev: rodei duas
+  mutacoes proprias, em pontos que ele nao testou — `pitchTimeUtil` passando a
+  aceitar zero (que reintroduziria o defeito medido na 29.41) e
+  `consultasRestantes` pegando a primeira janela em vez da mais apertada.
+  Cada uma derrubou exatamente um teste, e o codigo restaurado volta a 14/14.
+  A cobertura agora e real.
+  A quota passou a ser consultada antes do lote, com duas decisoes bem
+  fundamentadas. Nao paralelizar foi registrado como escolha, com o motivo — que
+  e a forma certa de deixar um risco aceito.
+reviewer: 'Quinn'
+updated: '2026-08-14T00:00:00Z'
+
+verificacoes:
+  code_review: PASS
+  unit_tests: PASS           # 14 testes; cobertura confirmada por mutação
+  acceptance_criteria: PASS       # AC1-AC6 e AC4b, agora com verificação real
+  no_regressions: PASS       # 963 passando (era 955); as 11 falhas são as de sempre
+  performance: PASS          # quota checada antes do lote; sequencial por escolha registrada
+  security: PASS             # requireScope aplicado; token nunca sai na resposta
+  documentation: PASS
+
+verificacoes_manuais_executadas:
+  - o: 'Os testes exercitam o endpoint?'
+    como: 'Leitura dos imports do arquivo de teste e dos casos de AC3/AC4b'
+    resultado: >-
+      Na iteracao 1, NAO em 3 dos 8: o arquivo importava apenas `derivarCadeia`,
+      e os testes de AC3 e AC4b construiam objetos literais para depois
+      verifica-los (QA-32).
+      Na iteracao 2, a montagem foi extraida para `services/vsl-funnel.ts` e os
+      testes passaram a chamar as mesmas funcoes da rota. RESOLVIDO — confirmado
+      por mutacao propria (ver verificacao abaixo).
+
+  - o: 'A quota do VTurb e verificada antes do lote?'
+    como: 'Grep por `quota` em public-vsl.ts + leitura da tabela de Riscos da story'
+    resultado: >-
+      Na iteracao 1, nao havia nenhuma referencia a quota, apesar de a tabela de
+      Riscos da story trazer a mitigacao explicita (QA-33).
+      Na iteracao 2, `quotaUsage()` e consultada uma vez antes do laco e a
+      resposta passa a dizer que a causa e quota. RESOLVIDO.
+      As chamadas seguem sequenciais — por escolha registrada na story, nao por
+      omissao.
+
+  - o: 'O reuso da cadeia foi mesmo sem reimplementacao?'
+    como: 'Leitura de public-vsl.ts contra vturb-chain.ts'
+    resultado: >-
+      Sim. `derivarCadeia` e chamada como esta; a unica transformacao e a
+      projecao `taxaPublica`, que copia `valor`/`motivo`/`numerador`/
+      `denominador`. Nenhuma conta refeita.
+      O @dev tambem acertou ao notar que `TaxaMedida` e `MotivoAusencia` ja
+      resolviam AC2 e AC5 — em vez de criar estrutura nova por cima.
+
+  - o: 'O tratamento de excecao protege a resposta?'
+    como: 'Leitura do try/catch por etapa'
+    resultado: >-
+      Sim, e melhor que o especificado. `derivarCadeia` aborta com
+      `ProtocolViolation` (correto: taxa fora de [0,1] significa definicao
+      errada). O endpoint isola isso POR ETAPA — a que falha sai da lista com o
+      motivo em `avisos[]`, e as demais seguem. Uma etapa inconsistente nao
+      apaga as outras cinco.
+
+  - o: 'AC5 — pitch_time zero vira ausencia?'
+    como: 'Leitura da normalizacao + os 3 testes de AC5 (esses sao reais)'
+    resultado: >-
+      Sim: `p.pitchTime && p.pitchTime > 0 ? p.pitchTime : null`. Com zero, a
+      cadeia devolve `pitchRate` nulo com motivo e PRESERVA o `playRate` —
+      testado. E o comportamento certo: perder as duas metricas porque falta uma
+      configuracao seria desperdicio.
+
+  - o: 'Os testes agora exercitam o codigo? (verificacao propria, nao a do @dev)'
+    como: >-
+      Duas mutacoes minhas, em pontos que o @dev NAO testou:
+      (1) `pitchTimeUtil` passando a aceitar zero — reintroduziria o Pitch rate
+      de 100% falso medido na 29.41;
+      (2) `consultasRestantes` pegando a primeira janela em vez da mais apertada.
+    resultado: >-
+      Cada mutacao derrubou exatamente UM teste; o codigo restaurado volta a
+      14/14. A cobertura e real — os testes chamam as mesmas funcoes que a rota
+      chama, e uma mudanca de comportamento no modulo quebra a suite.
+      Refiz a verificacao em vez de aceitar a do autor porque era exatamente
+      esse o defeito da iteracao 1: um teste que parecia proteger e nao protegia.
+
+  - o: 'A checagem de quota nao introduz um bloqueio novo?'
+    como: 'Leitura do try/catch em volta de `quotaUsage`'
+    resultado: >-
+      Nao. Falhar ao LER a quota apenas loga e segue — sem informacao nao e o
+      mesmo que sem saldo, e bloquear ali transformaria incerteza em falha.
+      Bloqueio so acontece quando a quota RESPONDE e o saldo nao comporta, e ai
+      a resposta diz que a causa e quota em vez de devolver N falhas opacas.
+
+issues:
+  - id: QA-32
+    severity: medium
+    status: RESOLVIDO na iteração 2
+    category: tests
+    description: >-
+      Tres dos oito testes nao exercitam o codigo sob teste. O arquivo importa
+      apenas `derivarCadeia`; `public-vsl.ts` nao e importado.
+
+      O caso mais grave e o do AC3, porque a story se apoia nele:
+
+          const respostaPublica = { convPostPitch: null as number | null };
+          expect(respostaPublica.convPostPitch).toBeNull();
+
+      Isso verifica um literal criado duas linhas acima. **Trocar `null` pelo
+      proxy de cliques em `public-vsl.ts` mantem este teste verde.** A story
+      afirma que "o teste existe para essa tentacao falhar" — a tentacao
+      passaria.
+
+      Mesma coisa no AC4b: `{ conectado: false, etapas: [] }` e
+      `{ conectado: true, etapas: [] }` sao literais do proprio teste, nao
+      respostas do endpoint.
+
+      Os cinco testes de AC2/AC5 sao legitimos — exercitam `derivarCadeia`.
+      A diferenca entre os dois grupos e exatamente a diferenca entre
+      documentacao e verificacao.
+    recommendation: >-
+      Testar o endpoint de verdade com `app.inject()`, como
+      `projects.test.ts` e `instagram-routes.test.ts` ja fazem neste projeto.
+      Tres casos cobrem o essencial:
+        • projeto sem conexao -> `{conectado: false, etapas: []}`
+        • projeto conectado sem players -> `{conectado: true, etapas: []}`
+        • etapa com player -> `convPostPitch` null e `convPostPitchDenominador` presente
+      Se o custo de subir o app no teste for alto, a alternativa honesta e
+      extrair a montagem da resposta para funcao pura e testar ELA — mas nao
+      manter testes que passam independentemente do codigo.
+
+  - id: QA-33
+    severity: medium
+    status: RESOLVIDO na iteração 2
+    category: performance
+    description: >-
+      O endpoint faz UMA chamada a `sessionStats` por player, em laco
+      SEQUENCIAL, e nao consulta a quota antes.
+
+      A tabela de Riscos da propria story trazia a mitigacao: "`routes/vturb.ts:155`
+      ja tem endpoint de quota — verificar antes de chamar em lote". Nao foi
+      implementada, e nao ha nota explicando por que.
+
+      Dois efeitos: um funil com 6 etapas custa 6 chamadas em serie (latencia
+      somada, num endpoint publico), e um projeto perto do limite pode ver o
+      funil falhar etapa a etapa sem que ninguem saiba que era quota.
+      O `avisos[]` capturaria o erro — mas como "nao foi possivel consultar",
+      sem dizer a causa real.
+    recommendation: >-
+      Duas opcoes, e a primeira ja resolve a maior parte:
+        1. Consultar a quota uma vez antes do laco; se estiver esgotada, devolver
+           `etapas: []` com aviso explicito de quota em vez de N falhas opacas.
+        2. Paralelizar com `Promise.all` — mas SO depois da checagem de quota,
+           senao acelera o consumo do limite.
+      Se a decisao for nao implementar agora, registrar na story por que o risco
+      foi aceito.
+
+pontos_fortes:
+  - >-
+    **Recusar o proxy e a melhor decisao da story.** `total_clicked_device_uniq`
+    esta ali, e calculavel, e ninguem notaria a diferenca de imediato — e
+    justamente por isso um "Conv. pos-pitch" derivado dele seria o pior tipo de
+    numero: plausivel e errado. A resposta declara a ausencia e explica.
+  - >-
+    O tratamento de erro POR ETAPA e melhor do que a story pedia. Manter o
+    `ProtocolViolation` abortando (correto) sem deixar que ele derrube o funil
+    inteiro exigiu entender por que a cadeia aborta.
+  - >-
+    O @dev percebeu que `TaxaMedida` e `MotivoAusencia` ja resolviam AC2 e AC5, e
+    reusou em vez de criar estrutura nova por cima. Ler o que existe antes de
+    escrever e o que fez esta story ser pequena.
+  - >-
+    O erro do fixture (nomes inventados de `VturbSessionStats`) foi registrado na
+    story em vez de silenciosamente corrigido — e a correcao passou a usar os
+    numeros do teste da 29.41, fazendo as duas suites falarem do mesmo caso.
+
+decisao: >-
+  ITERACAO 2 — PASS, aprovado para merge sem condicao.
+  O QA-32 foi resolvido no lugar certo: o problema nao era escrever mais testes,
+  era os testes tocarem o codigo. Extrair a montagem resolveu os dois de uma vez.
+  Confirmei por mutacao propria, em pontos diferentes dos que o @dev testou.
+  O QA-33 entrou com decisoes que valem alem desta story: usar a janela de quota
+  mais apertada, e nao deixar que FALHAR AO LER a quota vire bloqueio — sem
+  informacao nao e o mesmo que sem saldo.
+  Fecha o Epic 43 com a decisao central intacta: duas metricas entregues, a
+  terceira declarada ausente em vez de estimada.
