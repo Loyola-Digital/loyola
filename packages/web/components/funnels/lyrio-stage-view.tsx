@@ -69,13 +69,6 @@ function fmtUsd(v: number | null | undefined): string {
   if (v == null) return "—";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
 }
-function fmtMoney(v: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(v);
-  } catch {
-    return `${v.toFixed(2)} ${currency}`;
-  }
-}
 function fmtNum(v: number | null | undefined): string {
   return v == null ? "—" : v.toLocaleString("pt-BR");
 }
@@ -618,7 +611,6 @@ function RevenuecatPanel({
 
   const totalSales = data?.totalSales ?? 0;
   const revenueUsd = data?.revenueUsd ?? 0;
-  const byCurrency = data?.byCurrency ?? [];
   const daily = data?.daily ?? [];
   const byStore = data?.byStore ?? [];
   const byProduct = data?.byProduct ?? [];
@@ -635,25 +627,17 @@ function RevenuecatPanel({
 
   return (
     <div className="spy-viz space-y-4 rounded-xl border border-border/40 bg-card p-4">
-      {/* KPIs */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* KPIs — tudo em R$ (receita do RevenueCat convertida de USD pela cotação) */}
+      <div className="grid grid-cols-3 gap-3">
         <Kpi icon={ShoppingCart} label="Vendas" value={fmtNum(totalSales)} hint="Compras no período" />
         <Kpi
           icon={DollarSign}
-          label={brlRate != null ? "Receita" : "Receita (USD)"}
+          label="Receita"
           value={money(revenueUsd)}
-          hint="Total do período"
+          hint="Total do período em R$"
           highlight
         />
         <Kpi icon={Coins} label="Ticket médio" value={money(ticketMedio)} hint="Receita ÷ vendas" />
-        {byCurrency.slice(0, 1).map((c) => (
-          <Kpi
-            key={c.currency}
-            icon={DollarSign}
-            label={`Receita (${c.currency})`}
-            value={fmtMoney(c.revenue, c.currency)}
-          />
-        ))}
       </div>
 
       {daily.length === 0 ? (
