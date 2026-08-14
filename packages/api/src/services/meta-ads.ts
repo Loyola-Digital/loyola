@@ -771,7 +771,7 @@ async function fetchAllAdSetInsightsImpl(
   return allResults;
 }
 
-interface RawAdInsight extends MetaDailyInsight {
+export interface RawAdInsight extends MetaDailyInsight {
   ad_id: string;
   ad_name: string;
   actions?: { action_type: string; value: string }[];
@@ -788,17 +788,32 @@ function parseVideoAction(actions?: { action_type: string; value: string }[]): n
   return parseInt(actions[0].value, 10) || 0;
 }
 
-function extractVideoMetrics(raw: RawAdInsight): VideoMetrics | null {
+export function extractVideoMetrics(raw: RawAdInsight): VideoMetrics | null {
   const p25 = parseVideoAction(raw.video_p25_watched_actions);
   const p50 = parseVideoAction(raw.video_p50_watched_actions);
   const p75 = parseVideoAction(raw.video_p75_watched_actions);
   const p100 = parseVideoAction(raw.video_p100_watched_actions);
   const thruplay = parseVideoAction(raw.video_thruplay_watched_actions);
+
   // Story 43.3 — o 3s vem de `actions[].video_view`, com o MESMO leitor que
   // `traffic-analytics.ts:255` usa. Não há campo `video_3_sec_*` na API.
-  const views3s = parseActionCount(raw.actions, "video_view");
-  const plays = parseVideoAction(raw.video_play_actions);
-  if (p25 === 0 && p50 === 0 && p75 === 0 && p100 === 0 && views3s === 0 && plays === 0) {
+  //
+  // QA-26: campo AUSENTE vira `undefined`, não `0`. Este objeto é persistido em
+  // `meta_ad_insights_daily.video_metrics` (`meta-insights-cache.ts:388`), e
+  // `JSON.stringify` remove chaves `undefined` — o jsonb fica sem elas, que é
+  // como o consumidor sabe que o dado nao existe. Gravar `0` no lugar tornaria
+  // "a Meta nao reportou" indistinguivel de "ninguem assistiu", e isso NAO se
+  // recupera depois. Zero legitimo (o campo veio valendo zero) e preservado.
+  const views3s = raw.actions ? parseActionCount(raw.actions, "video_view") : undefined;
+  const plays = raw.video_play_actions ? parseVideoAction(raw.video_play_actions) : undefined;
+
+  // `?? 0` aqui e proposital: para decidir "isto e video?", ausencia e zero
+  // valem o mesmo. A distincao entre os dois importa no VALOR exposto, nao
+  // nesta pergunta.
+  if (
+    p25 === 0 && p50 === 0 && p75 === 0 && p100 === 0 &&
+    (views3s ?? 0) === 0 && (plays ?? 0) === 0
+  ) {
     return null;
   }
   return { p25, p50, p75, p100, thruplay, views3s, plays };
