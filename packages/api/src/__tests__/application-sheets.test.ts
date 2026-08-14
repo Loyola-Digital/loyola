@@ -5,6 +5,7 @@ import {
   derivarPrefixos,
   ehNomeDePagina,
   letraDaPagina,
+  letrasDasFormas,
   labelDaAbaDescoberta,
 } from "../services/application-sheets.js";
 
@@ -144,6 +145,55 @@ describe("abasParaDescobrir", () => {
     const abas = [ABA_C, "Outro-Form-PaginaB", "Nada-A-Ver"];
     const r = abasParaDescobrir(abas, [], [ABA_A, "Outro-Form"]);
     expect(r.map((x) => x.aba)).toEqual([ABA_C, "Outro-Form-PaginaB"]);
+  });
+});
+
+describe("letrasDasFormas", () => {
+  it("identifica pelo label", () => {
+    expect(letrasDasFormas([["PAGINA A", ABA_A], ["PAGINA B", ABA_B]])).toEqual(["A", "B"]);
+  });
+
+  it("identifica pela aba quando o label não diz", () => {
+    // Label livre ("Form principal") mas a aba carrega a letra.
+    expect(letrasDasFormas([["Form principal", ABA_B]])).toEqual(["B"]);
+  });
+
+  /**
+   * CASO QA-17 (@qa, gate iteração 1).
+   *
+   * No cenário que o F1 destravou, a aba-base vem pela DESCOBERTA e seu label é
+   * o próprio sheet_name — que não carrega letra. Ela é a "Página A" só por
+   * convenção do time.
+   *
+   * Antes deste fix, `comForma` era montado só dos labels: a Página A entrava
+   * no gráfico mas ficava fora do conjunto, e uma campanha `lpa` ativa gerava
+   * "a LPA está rodando mas não há aba de aplicação" — com a página na tela.
+   * Mesma classe de aviso-falso que o F2 barrou.
+   */
+  it("QA-17: devolve null quando alguma forma não é identificável", () => {
+    const identificadores = [
+      [ABA_A, ABA_A], // aba-base descoberta: label = sheet_name, sem letra
+      ["PAGINA C", ABA_C],
+    ];
+    expect(letrasDasFormas(identificadores)).toBeNull();
+  });
+
+  it("QA-17: null faz o chamador silenciar em vez de acusar LP órfã", () => {
+    const letras = letrasDasFormas([[ABA_A, ABA_A], ["PAGINA C", ABA_C]]);
+    // É o contrato que a rota usa: null => nenhum aviso de LP órfã.
+    const lpsOrfas = letras === null ? [] : ["LPA"];
+    expect(lpsOrfas).toEqual([]);
+  });
+
+  it("com todas identificáveis, o conjunto sai completo e o aviso pode existir", () => {
+    const letras = letrasDasFormas([["PAGINA A", ABA_A], ["PAGINA B", ABA_B]]);
+    expect(letras).toEqual(["A", "B"]);
+    const comForma = new Set(letras!);
+    expect(comForma.has("C")).toBe(false); // LPC seria legitimamente órfã
+  });
+
+  it("lista vazia não bloqueia (sem formas, sem afirmação)", () => {
+    expect(letrasDasFormas([])).toEqual([]);
   });
 });
 

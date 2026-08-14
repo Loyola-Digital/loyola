@@ -90,6 +90,35 @@ export function letraDaPagina(nome: string): string | null {
  * é o que evita improviso diferente em cada ponto do código.
  */
 /**
+ * Letras de página das formas do gráfico — ou `null` se alguma não puder ser
+ * identificada.
+ *
+ * Cada forma entra como a lista de nomes que podem identificá-la (label e aba).
+ * Basta um deles carregar a letra.
+ *
+ * O `null` é o ponto todo desta função. A aba-base de um grupo — a que não tem
+ * sufixo, como `Pesquisa-Aplicacao-Comercial` — não carrega letra em lugar
+ * nenhum quando vem pela descoberta: ela é a "Página A" só por convenção do
+ * time, e cravar isso no código seria inventar semântica que a planilha não
+ * declara.
+ *
+ * Enquanto existir uma forma não identificável, não dá para afirmar que uma LP
+ * está órfã — essa forma pode ser exatamente a página em questão. Devolver
+ * `null` faz o chamador silenciar. Silêncio é falso negativo; o contrário seria
+ * acusar erro com a página na tela, que é a armadilha que a Story 43.1 existe
+ * para não criar.
+ */
+export function letrasDasFormas(identificadores: string[][]): string[] | null {
+  const letras: string[] = [];
+  for (const ids of identificadores) {
+    const achada = ids.map(letraDaPagina).find((l): l is string => l !== null);
+    if (!achada) return null;
+    letras.push(achada);
+  }
+  return letras;
+}
+
+/**
  * Decide quais abas do arquivo entram como formas DESCOBERTAS.
  *
  * Uma aba entra quando começa por algum prefixo do grupo e ainda não está

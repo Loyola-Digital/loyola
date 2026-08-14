@@ -36,7 +36,7 @@ import {
   derivarPrefixos,
   ehNomeDePagina,
   labelDaAbaDescoberta,
-  letraDaPagina,
+  letrasDasFormas,
 } from "../services/application-sheets.js";
 
 const paramsSchema = z.object({
@@ -76,6 +76,8 @@ function parseDay(raw: string | undefined): string | null {
 interface RawForm {
   sheetId: string;
   label: string;
+  /** Nome da aba de origem — identifica a página quando o label não identifica. */
+  sheetName: string;
   /** data (aaaa-mm-dd) -> nº de aplicações naquele dia. */
   counts: Map<string, number>;
   total: number;
@@ -100,6 +102,13 @@ interface FormsResult {
   avisos: AvisoForma[];
   /** Nomes (aba + label) considerados, para a porta de entrada do AC5. */
   nomes: string[];
+  /**
+   * Por forma, os nomes que podem identificá-la como página (label e aba).
+   *
+   * É uma lista por forma, e não um conjunto achatado, porque o AC5 precisa
+   * saber se ALGUMA forma ficou sem letra identificável — ver `lpsSemForma`.
+   */
+  identificadores: string[][];
 }
 
 interface FormSeries {
@@ -129,7 +138,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         and(eq(funnelSpreadsheets.funnelId, funnelId), eq(funnelSpreadsheets.type, "applications")),
       );
 
-    if (!sheets.length) return { forms: [], avisos: [], nomes: [] };
+    if (!sheets.length) return { forms: [], avisos: [], nomes: [], identificadores: [] };
 
     const avisos: AvisoForma[] = [];
 
@@ -180,7 +189,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         counts.set(day, (counts.get(day) ?? 0) + 1);
         total++;
       }
-      return { sheetId, label, counts, total };
+      return { sheetId, label, sheetName, counts, total };
     }
 
     // ── Cadastradas ────────────────────────────────────────────────────────
@@ -223,25 +232,31 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         doArquivo.map((s) => s.sheetName),
         prefixos,
       );
-      for (const { aba, prefixo } of alvos) {
-        descobertas.push(
-          await contar(
-            `descoberta:${spreadsheetId}:${aba}`,
-            labelDaAbaDescoberta(aba, prefixo),
-            spreadsheetId,
-            aba,
-            dateColHerdada,
+      // Em paralelo, como as cadastradas: em série, cada aba nova somava um
+      // round-trip ao Google no primeiro carregamento — que é exatamente quando
+      // o gestor está olhando a tela.
+      descobertas.push(
+        ...(await Promise.all(
+          alvos.map(({ aba, prefixo }) =>
+            contar(
+              `descoberta:${spreadsheetId}:${aba}`,
+              labelDaAbaDescoberta(aba, prefixo),
+              spreadsheetId,
+              aba,
+              dateColHerdada,
+            ),
           ),
-        );
-      }
+        )),
+      );
     }
 
     const forms = [...cadastradas, ...descobertas].filter((f): f is RawForm => f !== null);
     // Aba e label alimentam a porta de entrada do AC5: se NENHUM deles segue a
     // nomenclatura por página, este funil não fala a língua de "LPA/LPB" e o
     // aviso de LP órfã não faz sentido nele.
-    const nomes = [...sheets.map((s) => s.sheetName), ...forms.map((f) => f.label)];
-    return { forms, avisos, nomes };
+    const identificadores = forms.map((f) => [f.label, f.sheetName]);
+    const nomes = identificadores.flat();
+    return { forms, avisos, nomes, identificadores };
   }
 
   /**
@@ -287,12 +302,30 @@ export default fp(async function stageApplicationsRoutes(fastify) {
    * requisição pesada à Meta no caminho de um gráfico aberto o dia inteiro,
    * exatamente o que o AC8 manda evitar.
    */
-  async function lpsSemForma(projectId: string, nomes: string[], labels: string[]): Promise<string[]> {
+  async function lpsSemForma(
+    projectId: string,
+    nomes: string[],
+    identificadores: string[][],
+  ): Promise<string[]> {
     // Porta de entrada: funil que nomeia as formas por formulário ("form com
     // ticket") não fala a língua de LPA/LPB. Ali, "a LPA não tem aba" não
     // significa nada — e um aviso que aparece com tudo certo ensina o time a
     // ignorar avisos, matando o valor do AC4.
     if (!nomes.some(ehNomeDePagina)) return [];
+
+    // Segunda guarda (QA-17). A aba-base de um grupo — a que não tem sufixo,
+    // como `Pesquisa-Aplicacao-Comercial` — NÃO carrega letra nem no nome nem
+    // no label quando vem pela descoberta. Ela é a "Página A" só por convenção
+    // do time, e cravar essa convenção no código seria inventar semântica.
+    //
+    // Enquanto existir uma forma que não sabemos identificar, não dá para
+    // afirmar que uma LP está órfã: essa forma pode ser exatamente a página em
+    // questão. Silêncio aqui é um falso negativo; o contrário seria acusar erro
+    // com a página na tela — a mesma armadilha que a porta de entrada acima
+    // evita, e a única que o gate anterior deixou passar.
+    const letras = letrasDasFormas(identificadores);
+    if (letras === null) return [];
+    const comForma = new Set(letras);
 
     const desde = new Date();
     desde.setDate(desde.getDate() - 30);
@@ -316,10 +349,6 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         ),
       );
 
-    const comForma = new Set(
-      labels.map(letraDaPagina).filter((l): l is string => l !== null),
-    );
-
     const faltando = new Set<string>();
     for (const { nome } of ativas) {
       const lp = extractLPName(nome); // REUSE — mesma definição da Story 18.44
@@ -338,7 +367,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
       for (const [k, v] of f.counts) counts.set(k, (counts.get(k) ?? 0) + v);
       total += f.total;
     }
-    return { sheetId: "__total__", label: "Total", counts, total };
+    return { sheetId: "__total__", label: "Total", sheetName: "__total__", counts, total };
   }
 
   /** Soma séries JÁ alinhadas (mesmo eixo D-day) num total por dia. */
@@ -433,11 +462,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
       const semPlanilha = atualRaw.forms.length === 0 && atualRaw.avisos.length === 0;
       const lpsOrfas = semPlanilha
         ? []
-        : await lpsSemForma(
-            projectId,
-            atualRaw.nomes,
-            atual.map((f) => f.label),
-          );
+        : await lpsSemForma(projectId, atualRaw.nomes, atualRaw.identificadores);
 
       return {
         funnelName: ctx.funnelName,
