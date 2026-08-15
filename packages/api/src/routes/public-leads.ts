@@ -4,7 +4,7 @@ import fp from "fastify-plugin";
 import { publicMetricsCache } from "../db/schema.js";
 import { requireScope } from "../middleware/api-key-auth.js";
 import { PUBLIC_READ_SCOPE } from "./public-discovery.js";
-import { LEAD_ORIGIN_SCOPE } from "../services/lead-origin-sync.js";
+import { LEAD_ORIGIN_SCOPE, resolveLeadSource } from "../services/lead-origin-sync.js";
 import { SURVEY_SCOPE } from "../services/survey-aggregation.js";
 import { SALES_DAILY_SCOPE } from "../services/sales-daily-sync.js";
 
@@ -45,12 +45,28 @@ export default fp(async function publicLeadsRoutes(fastify) {
         .limit(1);
 
       if (!row) {
-        return {
-          projectId,
-          stageId,
-          semDados: true,
-          message: "Sem dados de leads em cache para este stage (sync ainda não rodou ou stage sem survey).",
-        };
+        // Story 36.9 (AC5): a mensagem antiga juntava duas causas com ações
+        // OPOSTAS — "sync ainda não rodou" (espere) e "stage sem survey"
+        // (configure). Foi essa ambiguidade que fez o chamado de 2026-08-14
+        // pedir "rodar o sync" para um problema que rodar o sync não resolvia.
+        const fonte = await resolveLeadSource(fastify.db, stageId);
+        return fonte
+          ? {
+              projectId,
+              stageId,
+              semDados: true,
+              motivo: "sync_pendente" as const,
+              message:
+                "A etapa tem fonte de leads conectada, mas o cache ainda não foi computado. O sync roda diariamente; para antecipar, use scripts/backfill-lead-origin.ts.",
+            }
+          : {
+              projectId,
+              stageId,
+              semDados: true,
+              motivo: "etapa_sem_fonte" as const,
+              message:
+                "A etapa não tem planilha de leads nem pesquisa conectada. Rodar o sync não muda isso — é preciso conectar uma planilha à etapa.",
+            };
       }
 
       return {
