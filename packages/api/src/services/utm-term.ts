@@ -165,3 +165,61 @@ export function idDoAnuncio(anuncio: string | null): string | null {
   const primeiro = anuncio.split("--")[0]?.trim();
   return primeiro || null;
 }
+
+// ============================================================
+// Identificação da LP a partir das UTMs de uma linha de planilha
+// ============================================================
+
+/** De onde a LP foi deduzida — o consumidor decide o quanto confiar. */
+export type FonteLp = "term" | "campanha";
+
+/** "lpa" / "LPAA" → "LPA"; qualquer outra coisa → null. */
+export function rotuloLp(bruto: string | null | undefined): string | null {
+  const t = (bruto ?? "").trim();
+  if (!t) return null;
+  const m = t.match(/^lp([a-z0-9]*)$/i);
+  return m ? `LP${m[1].toUpperCase()}` : null;
+}
+
+/**
+ * Chave de agrupamento: só a primeira letra depois de "LP".
+ *
+ * A tabela de LPs do dashboard identifica a página pelo campaign_name com
+ * `/lp([a-z])/`, então "lpaa" e "lpa" já chegam fundidos como LPA lá. Agrupar
+ * diferente aqui faria o mesmo lançamento ter duas contagens de LP na mesma
+ * tela — o rótulo fino continua disponível em `variantes`.
+ */
+export function chaveLp(rotulo: string): string {
+  const m = rotulo.match(/^LP([A-Z0-9])/);
+  return m ? `LP${m[1]}` : rotulo;
+}
+
+/**
+ * A LP de um registro (lead, aplicação, resposta de pesquisa ou venda), a partir
+ * do que a linha carrega de UTM. Ordem: term estruturado → LP solta no term →
+ * campanha.
+ *
+ * A regra da campanha é a MESMA que a tabela de LPs usa (`/lp([a-z])/`, casando
+ * em qualquer posição), inclusive no falso positivo que ela tem ("helpdesk" →
+ * LPD). Repetir o erro de forma previsível é melhor que divergir: os dois
+ * números aparecem lado a lado na mesma tela.
+ */
+export function lpDoRegistro(
+  term: string | null | undefined,
+  campaign: string | null | undefined,
+): { rotulo: string; fonte: FonteLp } | null {
+  const t = (term ?? "").trim();
+  const c = (campaign ?? "").trim();
+
+  const viaTerm = rotuloLp(parseUtmTerm(t).lp);
+  if (viaTerm) return { rotulo: viaTerm, fonte: "term" };
+
+  // Term não estruturado ainda pode trazer a LP solta entre separadores.
+  const solto = t.match(/(?:^|[-_|])lp([a-z0-9])(?=[-_|]|$)/i);
+  if (solto) return { rotulo: `LP${solto[1].toUpperCase()}`, fonte: "term" };
+
+  const viaCampanha = c.match(/lp([a-z])/i);
+  if (viaCampanha) return { rotulo: `LP${viaCampanha[1].toUpperCase()}`, fonte: "campanha" };
+
+  return null;
+}

@@ -51,6 +51,7 @@ import { StageSalesSection } from "./stage-sales-section";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
+import { useLpFunnel, useLpFunnelView } from "@/lib/hooks/use-sales-journey";
 // Story 18.56: links manuais por LP (lê o stage e salva via PUT existente)
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
@@ -1429,6 +1430,12 @@ function LpPerformanceSection({
     publicoFilter,
   });
 
+  // Mini-funil por LP: lê todas as planilhas do funil, então só busca depois que
+  // alguém expande a primeira linha.
+  const [funilPedido, setFunilPedido] = useState(false);
+  const lpFunnel = useLpFunnel(projectId, funnelId, stageId, days, funilPedido);
+  const funil = useLpFunnelView(lpFunnel.data);
+
   // Story 18.56: links manuais por LP (funnel_stages.lp_links). O stage já é
   // cacheado pelo React Query (staleTime 2min) — sem fetch novo por render.
   const { data: stage } = useFunnelStage(projectId, funnelId, stageId);
@@ -1478,6 +1485,12 @@ function LpPerformanceSection({
           isLoading={false}
           lpLinks={lpLinks}
           onSaveLpLink={handleSaveLpLink}
+          funnelByLp={funil.byLp}
+          funnelLoading={lpFunnel.isLoading}
+          refConversao={funil.refConversao}
+          pctHeranca={funil.pctHeranca}
+          etapasIndisponiveis={funil.etapasIndisponiveis}
+          onFirstExpand={() => setFunilPedido(true)}
         />
       )}
     </div>

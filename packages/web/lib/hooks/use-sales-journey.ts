@@ -84,8 +84,110 @@ export interface LeadJourney {
   };
 }
 
+/** Uma LP no mini-funil: o meio do funil que só existe nas planilhas. */
+export interface LpFunnelRow {
+  /** "LPA" — mesma chave que a tabela de LPs usa. */
+  lp: string;
+  /** Rótulos finos fundidos nesta chave ("LPAA"). Vazio quando não houve. */
+  variantes: string[];
+  leads: number;
+  aplicacoes: number;
+  pesquisas: number;
+  compras: number;
+  receita: number;
+}
+
+export interface LpFunnel {
+  semDados: boolean;
+  lps: LpFunnelRow[];
+  /** Pessoas cuja LP não foi identificada — NÃO rateadas entre as páginas. */
+  semLp: { leads: number; aplicacoes: number; pesquisas: number; compras: number };
+  /**
+   * Como cada pessoa foi atribuída. `heranca` alto significa que a LP veio do
+   * lead de captação, não do registro da própria etapa — o card avisa.
+   */
+  cobertura: { term: number; campanha: number; heranca: number; semLp: number };
+  fontes: {
+    label: string;
+    tipo: "pesquisa" | "aplicacao" | "captacao";
+    linhas: number;
+    comLp: number;
+    erro: boolean;
+    semColunaTerm: boolean;
+  }[];
+}
+
 function base(projectId: string, funnelId: string, stageId: string): string {
   return `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}`;
+}
+
+/**
+ * Mini-funil por LP. Lê todas as planilhas do funil no servidor, então só
+ * dispara quando alguém abre um card (`enabled`) — e o resultado é compartilhado
+ * entre todas as LPs, porque a query não depende de qual linha foi expandida.
+ */
+export function useLpFunnel(
+  projectId: string,
+  funnelId: string,
+  stageId: string,
+  days?: number,
+  enabled = true,
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["lp-funnel", projectId, funnelId, stageId, days ?? null],
+    queryFn: () =>
+      apiClient<LpFunnel>(
+        `${base(projectId, funnelId, stageId)}/lp-funnel${days ? `?days=${days}` : ""}`,
+      ),
+    enabled: enabled && !!projectId && !!funnelId && !!stageId,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export interface LpFunnelView {
+  byLp: Record<string, LpFunnelRow>;
+  /** Conversão lead → compra somando TODAS as LPs — a régua de cada card. */
+  refConversao: number | null;
+  /** % das atribuições que vieram por herança do lead de captação. */
+  pctHeranca: number | null;
+  /** Etapa sem planilha conectada ≠ etapa que mediu zero. */
+  etapasIndisponiveis: { aplicacoes: boolean; pesquisas: boolean };
+}
+
+/**
+ * Deriva o que o card precisa a partir da resposta crua. Vive aqui, e não em
+ * cada dashboard, porque as duas telas que mostram a tabela de LPs (lançamento e
+ * Meta Ads Teste) precisam exatamente das mesmas contas — e uma régua calculada
+ * de dois jeitos diferentes é como o mesmo número acaba divergindo entre abas.
+ */
+export function useLpFunnelView(data: LpFunnel | undefined): LpFunnelView {
+  const byLp: Record<string, LpFunnelRow> = {};
+  let leads = 0;
+  let compras = 0;
+  for (const l of data?.lps ?? []) {
+    byLp[l.lp.toUpperCase()] = l;
+    leads += l.leads;
+    compras += l.compras;
+  }
+
+  const c = data?.cobertura;
+  const atribuidos = c ? c.term + c.campanha + c.heranca : 0;
+
+  // "Sem planilha do tipo" só é afirmável quando NENHUMA fonte daquele tipo foi
+  // conectada. Fonte conectada que devolveu zero linhas é um zero de verdade.
+  const temFonte = (tipo: "aplicacao" | "pesquisa") =>
+    (data?.fontes ?? []).some((f) => f.tipo === tipo && !f.erro);
+
+  return {
+    byLp,
+    refConversao: leads > 0 ? (compras / leads) * 100 : null,
+    pctHeranca: atribuidos > 0 ? (c!.heranca / atribuidos) * 100 : null,
+    etapasIndisponiveis: {
+      aplicacoes: !!data && !temFonte("aplicacao"),
+      pesquisas: !!data && !temFonte("pesquisa"),
+    },
+  };
 }
 
 export function useSalesDailyComparison(projectId: string, funnelId: string, stageId: string) {
