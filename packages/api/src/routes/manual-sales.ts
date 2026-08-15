@@ -23,6 +23,7 @@ import {
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { enrollMember, decryptMemberkitKey } from "../services/memberkit.js";
+import { extrairComprovante, MIMES_IMAGEM, MIME_PDF } from "../services/comprovante-extract.js";
 import type { MemberkitEnrollmentStatus, MemberkitMemberStatus } from "@loyola-x/shared";
 
 /** Story 19.15 — remove máscara do CPF, deixando só dígitos. */
@@ -137,6 +138,7 @@ function shapeManualSale(r: typeof manualSales.$inferSelect) {
     createdBy: r.createdBy,
     createdAt: r.createdAt.toISOString(),
     product: r.product,
+    paymentMethod: r.paymentMethod,
     invoiceStatus: r.invoiceStatus as "emitida" | "pendente" | null,
     // Story 19.10 / 19.11
     valorRecebido: r.valorRecebido != null ? Number(r.valorRecebido) : null,
@@ -183,6 +185,8 @@ const baseSaleObject = z.object({
   sellerName: z.string().trim().min(2).max(255).optional().or(z.literal("").transform(() => undefined)),
   saleDate: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
   product: z.string().trim().max(255).optional().or(z.literal("").transform(() => undefined)),
+  // Captação de Evento: forma de pagamento do ingresso (PIX, Cartão, …).
+  paymentMethod: z.string().trim().max(40).optional().or(z.literal("").transform(() => undefined)),
   invoiceStatus: z.enum(["emitida", "pendente"]).nullable().optional(),
   // Story 19.10 — Evento Presencial
   valorRecebido: z.number().positive().finite().nullable().optional(),
@@ -534,8 +538,10 @@ export default fp(async function manualSalesRoutes(fastify) {
       // Story 19.10: venda manual permitida em etapas "sales" e "event".
       // Captação Paga ("paid") e Gratuita ("free") também — ambas têm a seção
       // "Vendas da captação" com lançamento manual (ManualPixSalesSection).
+      // "event_capture" (Captação de Evento) entra pelo mesmo motivo: a venda de
+      // ingresso É um lançamento manual, e é o caminho principal da etapa.
       const isEvent = stage.stageType === "event";
-      const allowedTypes = ["sales", "event", "paid", "free"];
+      const allowedTypes = ["sales", "event", "event_capture", "paid", "free"];
       if (!allowedTypes.includes(stage.stageType ?? "")) {
         return reply.code(400).send({
           error: "Vendas manuais não são permitidas neste tipo de etapa",
@@ -623,6 +629,7 @@ export default fp(async function manualSalesRoutes(fastify) {
           saleDate,
           createdBy: request.userId,
           product: body.data.product ?? null,
+          paymentMethod: body.data.paymentMethod ?? null,
           invoiceStatus: body.data.invoiceStatus ?? null,
           valorRecebido: body.data.valorRecebido != null ? body.data.valorRecebido.toFixed(2) : null,
           negociacao: body.data.negociacao ?? null,
@@ -770,6 +777,9 @@ export default fp(async function manualSalesRoutes(fastify) {
       }
 
       if (body.data.product !== undefined) updates.product = body.data.product ?? null;
+      if (body.data.paymentMethod !== undefined) {
+        updates.paymentMethod = body.data.paymentMethod ?? null;
+      }
       if (body.data.invoiceStatus !== undefined) updates.invoiceStatus = body.data.invoiceStatus ?? null;
       // Story 19.10 — Evento Presencial
       if (body.data.valorRecebido !== undefined) {
@@ -1291,6 +1301,66 @@ export default fp(async function manualSalesRoutes(fastify) {
         return reply.code(502).send({ error: "Matrícula no MemberKit não concluída", status, sale: refreshed ? shapeManualSale(refreshed) : null });
       }
       return { status, sale: refreshed ? shapeManualSale(refreshed) : null };
+    },
+  );
+
+  /**
+   * Captação de Evento — lê um comprovante (print ou PDF) e devolve os campos da
+   * venda de ingresso preenchidos, pra pessoa conferir e confirmar.
+   *
+   * NÃO grava nada: quem grava é o POST de sempre, depois da confirmação. Isso
+   * é de propósito — extração de imagem erra, e uma venda entrando na base sem
+   * ninguém ter olhado é pior do que digitar à mão.
+   */
+  fastify.post(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/manual-sales/extract-receipt",
+    {
+      config: {
+        // Cada chamada é uma request multimodal paga; 20/min por usuário já cobre
+        // o lançamento de uma fila de ingressos sem virar torneira aberta.
+        rateLimit: { max: 20, timeWindow: "1 minute" },
+      },
+    },
+    async (request, reply) => {
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const stage = await getStageContext(
+        params.data.projectId,
+        params.data.funnelId,
+        params.data.stageId,
+        request.userId,
+        request.userRole,
+      );
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const arquivo = await request.file();
+      if (!arquivo) return reply.code(400).send({ error: "Envie o comprovante (print ou PDF)" });
+
+      const mimeType = arquivo.mimetype;
+      if (!MIMES_IMAGEM.has(mimeType) && mimeType !== MIME_PDF) {
+        return reply.code(400).send({
+          error: "Formato não suportado — envie um print (PNG, JPG, WEBP) ou um PDF",
+        });
+      }
+
+      const buffer = await arquivo.toBuffer();
+      if (buffer.length === 0) return reply.code(400).send({ error: "Arquivo vazio" });
+
+      try {
+        const dados = await extrairComprovante(fastify.claude.client, { buffer, mimeType });
+        return { dados };
+      } catch (err) {
+        const mensagem = err instanceof Error ? err.message : String(err);
+        fastify.log.error({ err, stageId: params.data.stageId }, "[comprovante] extração falhou");
+        // 502: a falha é do provedor/leitura, não do que o cliente mandou — a UI
+        // usa isso pra oferecer o preenchimento manual em vez de culpar o arquivo.
+        return reply.code(502).send({
+          error: "Não consegui ler o comprovante. Preencha os dados à mão.",
+          details: mensagem,
+        });
+      }
     },
   );
 });

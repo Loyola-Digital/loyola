@@ -1,4 +1,5 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
+import { ehCaptacaoPaga, ehEtapaDeCaptacao } from "../utils/stage-types.js";
 import type { Database } from "../db/client.js";
 import { stageSalesSpreadsheets, manualSales, funnelStages, funnels, funnelSpreadsheets, publicMetricsCache } from "../db/schema.js";
 import { readSheetData } from "./google-sheets.js";
@@ -155,7 +156,7 @@ export async function resolveSalesSheetsForStage(
   // não tem planilha de venda — quando tem as duas, a capture costuma repetir as
   // MESMAS transações (dedup é por sheet) e dobraria o faturamento.
   let sheets: ResolvedSalesSheet[] = allSheets.filter((s) => SALES_SUBTYPES.includes(s.subtype));
-  if (sheets.length === 0 && stageRow?.stageType === "paid") {
+  if (sheets.length === 0 && ehCaptacaoPaga(stageRow?.stageType)) {
     sheets = allSheets.filter((s) => s.subtype === "capture");
   }
 
@@ -164,7 +165,7 @@ export async function resolveSalesSheetsForStage(
   // stage_id NULL) — os 4 perpétuos em prod têm 0 planilhas de etapa, então o
   // get_stage_sales_daily devolvia semDados pra TODOS. A etapa de dashboard
   // (free/paid) herda a planilha do funil como fonte de vendas.
-  if (stageRow && (stageRow.stageType === "free" || stageRow.stageType === "paid")) {
+  if (stageRow && ehEtapaDeCaptacao(stageRow.stageType)) {
     const [perpSheet] = await db
       .select({
         id: funnelSpreadsheets.id,

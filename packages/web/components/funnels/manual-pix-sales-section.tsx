@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Wallet, ReceiptText } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Wallet, ReceiptText, ScanLine } from "lucide-react";
 import type { ManualSale } from "@loyola-x/shared";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,10 @@ interface ManualPixSalesSectionProps {
   days: number;
   onLaunchClick: () => void;
   onEditSale?: (sale: ManualSale) => void;
+  /** Captação de Evento: a venda é de ingresso — muda rótulos e libera o upload. */
+  isTicket?: boolean;
+  /** Abre a leitura de comprovante. Só passado na Captação de Evento. */
+  onUploadReceipt?: () => void;
 }
 
 function formatCurrency(value: number): string {
@@ -117,6 +121,8 @@ export function ManualPixSalesSection({
   days,
   onLaunchClick,
   onEditSale,
+  isTicket = false,
+  onUploadReceipt,
 }: ManualPixSalesSectionProps) {
   // Tabela unificada puxa só Produto Principal + TMB (planilhas) + vendas
   // manuais (PIX). Captação e "Outras planilhas" (subtype sales) ficam de fora.
@@ -208,7 +214,7 @@ export function ManualPixSalesSection({
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           <Wallet className="h-4 w-4 text-emerald-600" />
-          <h2 className="text-base font-semibold">Vendas (Produto Principal + TMB + PIX direto)</h2>
+          <h2 className="text-base font-semibold">{isTicket ? "Venda de ingressos" : "Vendas (Produto Principal + TMB + PIX direto)"}</h2>
           <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
             {filteredSummary.totalSales} venda(s)
             {platform !== "all" && (
@@ -216,10 +222,20 @@ export function ManualPixSalesSection({
             )}
           </span>
         </div>
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={onLaunchClick}>
-          <Plus className="h-3.5 w-3.5" />
-          Lançar venda manual
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {/* Na Captação de Evento o caminho rápido é o comprovante: ler o print
+              e confirmar é mais curto que digitar tudo com fila na frente. */}
+          {isTicket && onUploadReceipt && (
+            <Button size="sm" className="gap-1.5" onClick={onUploadReceipt}>
+              <ScanLine className="h-3.5 w-3.5" />
+              Ler comprovante
+            </Button>
+          )}
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={onLaunchClick}>
+            <Plus className="h-3.5 w-3.5" />
+            {isTicket ? "Lançar ingresso" : "Lançar venda manual"}
+          </Button>
+        </div>
       </div>
 
       <p className="text-xs text-muted-foreground">

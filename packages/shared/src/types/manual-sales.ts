@@ -21,6 +21,11 @@ export interface ManualSale {
   createdAt: string;
   /** Story 19.9 ext: nome do produto vendido (texto livre, manual). */
   product: string | null;
+  /**
+   * Captação de Evento: como o ingresso foi pago (PIX, Cartão, Dinheiro…).
+   * Preenchido pela leitura do comprovante ou à mão. null = não informado.
+   */
+  paymentMethod: string | null;
   /** Story 19.9 ext: status da NF — null = não preenchido. */
   invoiceStatus: InvoiceStatus | null;
   /** Story 19.10 — valor efetivamente recebido (Caixa) na venda de evento. */
