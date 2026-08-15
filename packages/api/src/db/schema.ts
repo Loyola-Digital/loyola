@@ -676,7 +676,9 @@ export const funnelStages = pgTable(
       .notNull()
       .default([])
       .$type<{ uniq: number; id: string; domain: string }[]>(),
-    stageType: varchar("stage_type", { length: 10 }).notNull().default("free"),
+    // 20 e não 10: "debriefing" já ocupava o limite exato, e "event_capture"
+    // (Captação de Evento) passou. Ampliado na migration 0102.
+    stageType: varchar("stage_type", { length: 20 }).notNull().default("free"),
     sortOrder: integer("sort_order").notNull().default(0),
     lastAuditAt: timestamp("last_audit_at", { withTimezone: true }),
     lastAuditBy: uuid("last_audit_by").references(() => users.id, {
@@ -972,6 +974,8 @@ export const manualSales = pgTable(
     value: numeric("value", { precision: 12, scale: 2 }).notNull(),
     /** Story 19.9 ext: nome do produto vendido (texto livre). */
     product: varchar("product", { length: 255 }),
+    /** Captação de Evento: forma de pagamento do ingresso (PIX, Cartão, …). */
+    paymentMethod: varchar("payment_method", { length: 40 }),
     /** Story 19.9 ext: status da nota fiscal — 'emitida' | 'pendente' | null. */
     invoiceStatus: varchar("invoice_status", { length: 20 }),
     sellerUserId: uuid("seller_user_id").references(() => users.id, {

@@ -19,6 +19,7 @@ import {
   manualSales,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import { temDashboardDeVendas } from "../utils/stage-types.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
 import {
   decryptAccountToken,
@@ -328,7 +329,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      if (stage.stageType !== "paid" && stage.stageType !== "sales") {
+      if (!temDashboardDeVendas(stage.stageType)) {
         return { ...EMPTY_RESPONSE, semDados: true };
       }
 
@@ -347,7 +348,18 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         );
 
       if (spreadsheets.length === 0) {
-        return { ...EMPTY_RESPONSE, semDados: true };
+        // Sem planilha ainda pode haver venda: na Captação de Evento o ingresso
+        // é lançado à mão, não vem de checkout. Sair aqui zerava a etapa inteira
+        // mesmo com ingressos vendidos. Só devolve vazio quando não há NADA —
+        // nem planilha, nem venda manual — pra este subtype.
+        const temManual = deveIncluirVendasManuais(stage.stageType, requestedSubtypes);
+        if (!temManual) return { ...EMPTY_RESPONSE, semDados: true };
+
+        const [{ n } = { n: 0 }] = await fastify.db
+          .select({ n: sql<number>`count(*)::int` })
+          .from(manualSales)
+          .where(eq(manualSales.stageId, params.data.stageId));
+        if (n === 0) return { ...EMPTY_RESPONSE, semDados: true };
       }
 
       let cutoffDate: Date | null = null;
@@ -1094,7 +1106,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       };
 
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
-      if (stage.stageType !== "paid" && stage.stageType !== "sales") return empty;
+      if (!temDashboardDeVendas(stage.stageType)) return empty;
 
       const [spreadsheet] = await fastify.db
         .select()
@@ -1225,7 +1237,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      if (stage.stageType !== "paid" && stage.stageType !== "sales") return { byDay: {} as Record<string, number>, semDados: true };
+      if (!temDashboardDeVendas(stage.stageType)) return { byDay: {} as Record<string, number>, semDados: true };
 
       const spreadsheets = await fastify.db
         .select()

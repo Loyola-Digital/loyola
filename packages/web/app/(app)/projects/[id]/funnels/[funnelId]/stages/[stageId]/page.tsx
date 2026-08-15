@@ -25,6 +25,8 @@ import { ComercialStageView } from "@/components/funnels/comercial-stage-view";
 import { LyrioStageView } from "@/components/funnels/lyrio-stage-view";
 import { ManualPixSalesSection } from "@/components/funnels/manual-pix-sales-section";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
+import { ReceiptUploadDialog } from "@/components/funnels/receipt-upload-dialog";
+import type { DadosComprovante } from "@/lib/hooks/use-receipt-extract";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { GroupsSpreadsheetCard } from "@/components/funnels/groups-spreadsheet-card";
 import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
@@ -60,6 +62,9 @@ export default function StagePage() {
   const [stageName, setStageName] = useState("");
   // Vendas da captação paga (lançamento manual) — só usado quando stageType === "paid".
   const [manualSaleOpen, setManualSaleOpen] = useState(false);
+  // Captação de Evento: comprovante lido pela IA vira rascunho da venda.
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptPrefill, setReceiptPrefill] = useState<DadosComprovante | null>(null);
   const [editingSale, setEditingSale] = useState<ManualSale | null>(null);
   const [paidSalesDays, setPaidSalesDays] = useState(90);
 
@@ -95,6 +100,17 @@ export default function StagePage() {
   }
 
   const { funnel, funnelType } = funnelData;
+
+  /**
+   * A Captação de Evento é a Captação Paga com venda de INGRESSO no lugar da
+   * venda de produto: tudo que hoje liga por "paid" — tráfego, planilhas de
+   * venda, lançamento manual — vale pra ela igual. Concentrado num helper pra
+   * um ponto novo não nascer fora do tipo.
+   */
+  const ehCaptacaoPaga =
+    stage.stageType === "paid" || (stage.stageType as string) === "event_capture";
+  /** Rótulos mudam de "produto" pra "ingresso" na Captação de Evento. */
+  const ehCaptacaoDeEvento = (stage.stageType as string) === "event_capture";
 
   // Etapa do tipo "sales" tem dashboard simplificado próprio — só vendas, sem
   // tabs/tráfego/leads. Render dedicado.
@@ -341,6 +357,24 @@ export default function StagePage() {
                     type="button"
                     onClick={() => {
                       updateStage.mutate(
+                        { stageType: "event_capture" },
+                        { onSuccess: () => toast.success("Tipo alterado para Captação de Evento") }
+                      );
+                    }}
+                    className={cn(
+                      "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                      (stage.stageType as string) === "event_capture"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border hover:bg-muted"
+                    )}
+                  >
+                    <span className="font-medium">Captação de Evento</span>
+                    <span className="text-xs text-muted-foreground">Tráfego + ingressos</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateStage.mutate(
                         { stageType: "debriefing" },
                         { onSuccess: () => toast.success("Tipo alterado para Debriefing") }
                       );
@@ -477,7 +511,7 @@ export default function StagePage() {
               Análise MVP
             </TabsTrigger>
           )}
-          {funnelType === "launch" && (stage.stageType as string) === "paid" && (
+          {funnelType === "launch" && ehCaptacaoPaga && (
             <TabsTrigger value="meta-ads-teste" className="gap-1.5">
               <FlaskConical className="h-3.5 w-3.5 text-cyan-400" />
               Meta Ads TESTE
@@ -561,7 +595,7 @@ export default function StagePage() {
               Vive DENTRO da aba Meta Ads — antes ficava fora do <Tabs> e por
               isso aparecia embaixo de todas as abas (NPS, GA4, Planilhas...).
               Etapas "paid" (Captação Paga) e "free" (Gratuita). */}
-          {(stage.stageType === "paid" || stage.stageType === "free") && (
+          {(ehCaptacaoPaga || stage.stageType === "free") && (
             <div className="mt-2">
               <div className="mb-2 flex justify-end">
                 <DayRangePicker days={paidSalesDays} onDaysChange={setPaidSalesDays} />
@@ -571,7 +605,14 @@ export default function StagePage() {
                 funnelId={params.funnelId}
                 stageId={params.stageId}
                 days={paidSalesDays}
-                onLaunchClick={() => setManualSaleOpen(true)}
+                isTicket={ehCaptacaoDeEvento}
+                onUploadReceipt={ehCaptacaoDeEvento ? () => setReceiptOpen(true) : undefined}
+                onLaunchClick={() => {
+                  // Lançamento à mão começa do zero — um rascunho de comprovante
+                  // anterior não pode reaparecer aqui.
+                  setReceiptPrefill(null);
+                  setManualSaleOpen(true);
+                }}
                 onEditSale={(sale) => {
                   setEditingSale(sale);
                   setManualSaleOpen(true);
@@ -586,7 +627,7 @@ export default function StagePage() {
           <VslCollapsibleSection projectId={params.id} stageId={params.stageId} />
         </TabsContent>
 
-        {funnelType === "launch" && (stage.stageType as string) === "paid" && (
+        {funnelType === "launch" && ehCaptacaoPaga && (
           <TabsContent value="meta-ads-teste" className="mt-6">
             <MetaAdsTesteTab
               funnel={stageAsFunnel}
@@ -653,7 +694,7 @@ export default function StagePage() {
 
         <TabsContent value="spreadsheets" className="mt-6">
           <div className="space-y-6">
-            {stage.stageType === "paid" && (
+            {ehCaptacaoPaga && (
               <>
                 <StageSalesSpreadsheetSection
                   projectId={params.id}
@@ -735,7 +776,7 @@ export default function StagePage() {
       {/* Dialog de venda manual fica FORA do <Tabs>: é overlay controlado por
           estado, não conteúdo de aba — desmontá-lo na troca de aba fecharia o
           formulário no meio do preenchimento. */}
-      {(stage.stageType === "paid" || stage.stageType === "free") && (
+      {(ehCaptacaoPaga || stage.stageType === "free") && (
         <ManualSaleDialog
           projectId={params.id}
           funnelId={params.funnelId}
@@ -743,9 +784,33 @@ export default function StagePage() {
           open={manualSaleOpen}
           onOpenChange={(open) => {
             setManualSaleOpen(open);
-            if (!open) setEditingSale(null);
+            if (!open) {
+              setEditingSale(null);
+              setReceiptPrefill(null);
+            }
           }}
           editingSale={editingSale}
+          isTicket={ehCaptacaoDeEvento}
+          prefill={receiptPrefill}
+        />
+      )}
+
+      {/* Leitura de comprovante — só na Captação de Evento, onde a venda é de
+          ingresso lançado na correria do evento. */}
+      {ehCaptacaoDeEvento && (
+        <ReceiptUploadDialog
+          projectId={params.id}
+          funnelId={params.funnelId}
+          stageId={params.stageId}
+          open={receiptOpen}
+          onOpenChange={setReceiptOpen}
+          onConfirmar={(dados) => {
+            // Abre o formulário já preenchido: a gravação continua sendo do
+            // fluxo normal, depois da conferência.
+            setEditingSale(null);
+            setReceiptPrefill(dados);
+            setManualSaleOpen(true);
+          }}
         />
       )}
     </div>

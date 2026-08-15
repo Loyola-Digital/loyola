@@ -98,6 +98,24 @@ interface ManualSaleDialogProps {
    * Caixa (valor recebido) + Negociação.
    */
   isEvent?: boolean;
+  /**
+   * Captação de Evento: a venda é de INGRESSO. Troca os rótulos (Produto vira
+   * Ingresso) e habilita o campo de forma de pagamento.
+   */
+  isTicket?: boolean;
+  /**
+   * Valores lidos de um comprovante pela IA. Entram no formulário como rascunho
+   * — a pessoa confere e salva. Só se aplica em venda NOVA; em edição o que
+   * vale é o que já está gravado.
+   */
+  prefill?: {
+    customerName?: string | null;
+    value?: number | null;
+    saleDate?: string | null;
+    paymentMethod?: string | null;
+    customerCpf?: string | null;
+    customerPhone?: string | null;
+  } | null;
 }
 
 function formatBrCurrencyFromNumber(value: number): string {
@@ -157,6 +175,8 @@ export function ManualSaleDialog({
   onOpenChange,
   editingSale,
   isEvent = false,
+  isTicket = false,
+  prefill = null,
 }: ManualSaleDialogProps) {
   const isEditing = !!editingSale;
   // No evento o vendedor é o Closer (lista cadastrada) — não busca usuários da plataforma.
@@ -179,6 +199,7 @@ export function ManualSaleDialog({
   const [closer, setCloser] = useState(""); // Story 19.10 — vendedor texto livre (evento)
   const [saleDate, setSaleDate] = useState<string>(todayIso());
   const [product, setProduct] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [invoiceStatus, setInvoiceStatus] = useState<InvoiceStatus | "">("");
   const [valorRecebidoInput, setValorRecebidoInput] = useState(""); // Story 19.10 — Caixa
   const [negociacao, setNegociacao] = useState(""); // Story 19.10
@@ -246,7 +267,20 @@ export function ManualSaleDialog({
       setFirstInstallmentDate(editingSale.firstInstallmentDate ?? "");
     } else {
       resetForm();
+      // Rascunho vindo da leitura do comprovante. Campo que a IA não leu fica
+      // vazio de propósito — melhor a pessoa preencher do que herdar um chute.
+      if (prefill) {
+        if (prefill.customerName) setCustomerName(prefill.customerName);
+        if (prefill.value != null) setValueInput(formatBrCurrencyFromNumber(prefill.value));
+        if (prefill.saleDate) setSaleDate(prefill.saleDate);
+        if (prefill.paymentMethod) setPaymentMethod(prefill.paymentMethod);
+        if (prefill.customerCpf) setCustomerCpf(prefill.customerCpf);
+        if (prefill.customerPhone) setCustomerPhone(prefill.customerPhone);
+      }
     }
+    // `prefill` fora das deps de propósito: ele só vale no momento em que o
+    // dialog abre. Incluí-lo faria o formulário voltar ao rascunho a cada
+    // rerender do pai, apagando o que a pessoa acabou de corrigir.
   }, [open, editingSale?.id]);
 
   function resetForm() {
@@ -258,6 +292,7 @@ export function ManualSaleDialog({
     setCloser("");
     setSaleDate(todayIso());
     setProduct("");
+    setPaymentMethod("");
     setInvoiceStatus("");
     setValorRecebidoInput("");
     setNegociacao("");
@@ -378,6 +413,7 @@ export function ManualSaleDialog({
         : { sellerUserId }),
       saleDate,
       product: product.trim() || undefined,
+      paymentMethod: paymentMethod.trim() || undefined,
       invoiceStatus: invoiceStatus || null,
     };
 
@@ -413,17 +449,23 @@ export function ManualSaleDialog({
           <DialogHeader className="shrink-0 border-b px-5 py-4 pr-10">
             <DialogTitle>
               {isEditing
-                ? "Editar venda"
+                ? isTicket
+                  ? "Editar venda de ingresso"
+                  : "Editar venda"
                 : isEvent
                   ? "Lançar venda (Evento Presencial)"
-                  : "Lançar venda manual (PIX direto)"}
+                  : isTicket
+                    ? "Lançar venda de ingresso"
+                    : "Lançar venda manual (PIX direto)"}
             </DialogTitle>
             <DialogDescription>
               {isEditing
                 ? "Ajuste os campos abaixo e clique em Salvar."
                 : isEvent
                   ? "Ao lançar, o comprador é matriculado automaticamente no MemberKit (se configurado na etapa)."
-                  : "Vendas registradas aqui ficam separadas das vendas vindas da planilha."}
+                  : isTicket
+                    ? "Ingressos lançados aqui entram no faturamento da etapa, separados das vendas da planilha."
+                    : "Vendas registradas aqui ficam separadas das vendas vindas da planilha."}
             </DialogDescription>
           </DialogHeader>
 
@@ -586,14 +628,27 @@ export function ManualSaleDialog({
                   )}
                 </div>
               ) : (
-                <div className="space-y-1.5">
-                  <Label htmlFor="product">Produto</Label>
-                  <Input
-                    id="product"
-                    value={product}
-                    onChange={(e) => setProduct(e.target.value)}
-                    placeholder="Ex: Mentoria 1:1 (opcional)"
-                  />
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="product">{isTicket ? "Ingresso / lote" : "Produto"}</Label>
+                    <Input
+                      id="product"
+                      value={product}
+                      onChange={(e) => setProduct(e.target.value)}
+                      placeholder={isTicket ? "Ex: Lote 1 (opcional)" : "Ex: Mentoria 1:1 (opcional)"}
+                    />
+                  </div>
+                  {isTicket && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="payment-method">Forma de pagamento</Label>
+                      <Input
+                        id="payment-method"
+                        value={paymentMethod}
+                        onChange={(e) => setPaymentMethod(e.target.value)}
+                        placeholder="PIX, Cartão, Dinheiro…"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 

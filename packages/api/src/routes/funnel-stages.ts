@@ -39,7 +39,7 @@ const switchyLinkRefSchema = z.object({
 
 const createStageSchema = z.object({
   name: z.string().min(1).max(255),
-  stageType: z.enum(["paid", "free", "sales", "cpl", "event", "debriefing", "comercial", "lyrio"]).default("free"),
+  stageType: z.enum(["paid", "free", "sales", "cpl", "event", "event_capture", "debriefing", "comercial", "lyrio"]).default("free"),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).default([]),
   googleAdsAccountId: z.string().uuid().nullable().optional(),
@@ -50,7 +50,7 @@ const createStageSchema = z.object({
 
 const updateStageSchema = z.object({
   name: z.string().min(1).max(255).optional(),
-  stageType: z.enum(["paid", "free", "sales", "cpl", "event", "debriefing", "comercial", "lyrio"]).optional(),
+  stageType: z.enum(["paid", "free", "sales", "cpl", "event", "event_capture", "debriefing", "comercial", "lyrio"]).optional(),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).optional(),
   googleAdsAccountId: z.string().uuid().nullable().optional(),

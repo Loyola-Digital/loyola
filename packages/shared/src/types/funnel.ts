@@ -24,7 +24,20 @@ export interface SwitchyLinkRef {
 // "comercial" = etapa CRM (Epic 40): kanban de compradores das etapas-fonte.
 // "lyrio" = etapa do app mobile Lyrio: campanhas Meta (conversões/spend) + vendas
 // do RevenueCat (API key + webhook). Cabe no varchar(10).
-export type StageType = "paid" | "free" | "sales" | "cpl" | "event" | "debriefing" | "comercial" | "lyrio";
+// "event_capture" = Captação de Evento: idêntica à Captação Paga (tráfego, leads,
+// dashboard), mas a venda manual é VENDA DE INGRESSO — com upload de comprovante
+// que a IA lê pra preencher a venda. Passou de 10 chars: a coluna foi ampliada
+// pra varchar(20) na migration 0102.
+export type StageType =
+  | "paid"
+  | "free"
+  | "sales"
+  | "cpl"
+  | "event"
+  | "event_capture"
+  | "debriefing"
+  | "comercial"
+  | "lyrio";
 // Story 19.10: "event_sales" = planilha de vendas de evento presencial (formato
 // Nome/Produto/Valor/Caixa/Closer/Telefone, SEM email).
 export type StageSalesSubtype = "capture" | "main_product" | "sales" | "tmb" | "event_sales";

@@ -11,6 +11,7 @@
  */
 
 import { z } from "zod";
+import { ehEtapaDeCaptacao } from "../utils/stage-types.js";
 import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
@@ -313,7 +314,7 @@ export default fp(async function stageComercialRoutes(fastify) {
       .from(funnelStages)
       .where(inArray(funnelStages.id, sourceStageIds));
     const hasDashboardSource = sourceStages.some(
-      (s) => s.stageType === "free" || s.stageType === "paid",
+      (s) => ehEtapaDeCaptacao(s.stageType),
     );
     if (hasDashboardSource) {
       const [pSheet] = await fastify.db
