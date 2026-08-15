@@ -166,15 +166,43 @@ export async function resolveLeadSource(db: Database, stageId: string): Promise<
     .from(funnelSpreadsheets)
     .where(and(eq(funnelSpreadsheets.stageId, stageId), eq(funnelSpreadsheets.type, "leads")));
 
+  // AC2b (@po, 2026-08-15): planilha de leads com campo de VALOR mapeado não é
+  // planilha de leads.
+  //
+  // A `n8n-kiwify-captação` está classificada como `sales` na `fz-l2-jun-26` e
+  // como `leads` na `dg-pg02` e na `dg-pg03` — é a planilha de vendas do Kiwify,
+  // e a coluna `Evento` guarda pix gerado / carrinho abandonado / compra
+  // aprovada. Contá-la como leads reportaria evento de venda como lead no feed
+  // público.
+  //
+  // Só campos de VALOR desqualificam. `status` não entra: uma planilha de leads
+  // legitimamente tem status do lead, e usá-lo aqui derrubaria fonte boa.
+  const limpas = sheets.filter((s) => !temCampoDeValor(s.columnMapping));
+
   // Uma etapa pode ter MAIS DE UMA planilha de leads (`bbe-pr1-mar-26` tem duas).
   // Decisão de 2026-08-15: somar todas, deduplicando entre elas, e declarar as
   // fontes no payload — somar sem dizer de onde veio produziria um total que
   // ninguém consegue explicar.
-  if (sheets.length > 0) {
-    return { kind: "planilha_leads", sheets };
+  if (limpas.length > 0) {
+    return { kind: "planilha_leads", sheets: limpas };
   }
 
+  // Havia planilha, mas nenhuma serve: cai para `etapa_sem_fonte` (AC5). É o
+  // comportamento certo — a ação é reclassificar a planilha, não esperar o sync.
   return null;
+}
+
+/**
+ * AC2b — a planilha carrega valor de venda?
+ *
+ * Exportado porque a mesma pergunta vale para quem for auditar a classificação
+ * das planilhas (a story de precedência do AC2 começa por aí).
+ */
+export function temCampoDeValor(
+  columnMapping: Record<string, string | undefined> | null,
+): boolean {
+  if (!columnMapping) return false;
+  return Boolean(columnMapping.value || columnMapping.valorBruto || columnMapping.valorLiquido);
 }
 
 interface Bucket {

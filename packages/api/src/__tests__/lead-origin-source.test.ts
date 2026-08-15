@@ -101,6 +101,64 @@ describe("resolveLeadSource — elegibilidade (AC1)", () => {
   });
 });
 
+describe("resolveLeadSource — AC2b: planilha de venda não é fonte de leads", () => {
+  it("planilha com `value` mapeado é recusada — vira etapa_sem_fonte", async () => {
+    // Caso real da `dg-pg03`: a `n8n-kiwify-captação` está classificada como
+    // `type='leads'`, mas é a planilha de VENDAS do Kiwify (a mesma está como
+    // `sales` na fz-l2-jun-26). Sem esta recusa, a 36.9 colocaria evento de
+    // venda — pix gerado, carrinho abandonado — no feed público como lead.
+    const db = fakeDb({
+      scoring: [[]],
+      surveys: [[]],
+      spreadsheets: [[{
+        spreadsheetId: "ss", sheetName: "n8n-kiwify-captação", label: "Leads",
+        columnMapping: { email: "E-mail", utm_source: "s=", value: "Preço" },
+      }]],
+    });
+    expect(await resolveLeadSource(db, "dg-pg03")).toBeNull();
+  });
+
+  it("recusa também por valorBruto e valorLiquido", async () => {
+    for (const campo of ["valorBruto", "valorLiquido"] as const) {
+      const db = fakeDb({
+        scoring: [[]],
+        surveys: [[]],
+        spreadsheets: [[{
+          spreadsheetId: "ss", sheetName: "X", label: "X",
+          columnMapping: { email: "E-mail", [campo]: "Valor" },
+        }]],
+      });
+      expect(await resolveLeadSource(db, "s")).toBeNull();
+    }
+  });
+
+  it("`status` NÃO desqualifica — planilha de leads tem status do lead", async () => {
+    // Desqualificar por `status` derrubaria fonte boa. Só valor desqualifica.
+    const db = fakeDb({
+      scoring: [[]],
+      surveys: [[]],
+      spreadsheets: [[{
+        spreadsheetId: "ss", sheetName: "n8n-leads-lp", label: "Leads Popup",
+        columnMapping: { email: "E-mail", status: "Situação" },
+      }]],
+    });
+    expect((await resolveLeadSource(db, "s"))?.kind).toBe("planilha_leads");
+  });
+
+  it("etapa com duas planilhas mantém a limpa e descarta a de venda", async () => {
+    const db = fakeDb({
+      scoring: [[]],
+      surveys: [[]],
+      spreadsheets: [[
+        { spreadsheetId: "ss", sheetName: "vendas", label: "Vendas", columnMapping: { value: "Preço" } },
+        { spreadsheetId: "ss", sheetName: "leads", label: "Leads", columnMapping: { email: "E-mail" } },
+      ]],
+    });
+    const fonte = await resolveLeadSource(db, "s");
+    expect(fonte?.sheets.map((s) => s.label)).toEqual(["Leads"]);
+  });
+});
+
 describe("resolveLeadSource — precedência", () => {
   it("etapa com pesquisa E planilha de leads continua na PESQUISA", async () => {
     // O ponto desta story é não mexer em quem já funciona. O diagnóstico de
