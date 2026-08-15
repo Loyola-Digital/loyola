@@ -12,7 +12,15 @@
  */
 
 import React, { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink, Pencil } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Pencil,
+} from "lucide-react";
 import {
   Table,
   TableBody,
@@ -37,6 +45,8 @@ import {
   formatRatio,
 } from "@/lib/utils/lp-metrics-calculator";
 import type { LpRow } from "@/lib/hooks/useLpPerformanceData";
+import { LpFunnelCard } from "@/components/funnels/lp-funnel-card";
+import type { LpFunnelRow } from "@/lib/hooks/use-sales-journey";
 
 /** Story 18.60: inteiro pt-BR para colunas de contagem (Ing. Únicos/Totais, LP View). */
 function formatInt(value: number | null | undefined): string {
@@ -52,6 +62,23 @@ interface LpPerformanceTableProps {
   lpLinks?: Record<string, string>;
   /** Story 18.56: salva/remove (url vazia) o link de uma LP. */
   onSaveLpLink?: (lpName: string, url: string) => Promise<void>;
+  /**
+   * Mini-funil por LP (chave = lpName UPPERCASE, como o backend devolve).
+   * Ausente = a coluna de expansão não aparece e a tabela fica idêntica à antiga.
+   */
+  funnelByLp?: Record<string, LpFunnelRow>;
+  funnelLoading?: boolean;
+  /** Conversão lead → compra do conjunto, como régua dentro de cada card. */
+  refConversao?: number | null;
+  /** % de atribuições herdadas do lead de captação (aviso no card). */
+  pctHeranca?: number | null;
+  /** Etapas sem planilha conectada — o card marca "não medido" em vez de zero. */
+  etapasIndisponiveis?: { aplicacoes?: boolean; pesquisas?: boolean };
+  /**
+   * Chamado na PRIMEIRA expansão. O mini-funil lê todas as planilhas do funil no
+   * servidor, então a leitura só acontece se alguém pedir para ver.
+   */
+  onFirstExpand?: () => void;
 }
 
 /**
@@ -289,9 +316,34 @@ export function LpPerformanceTable({
   isLoading = false,
   lpLinks,
   onSaveLpLink,
+  funnelByLp,
+  funnelLoading = false,
+  refConversao = null,
+  pctHeranca = null,
+  etapasIndisponiveis,
+  onFirstExpand,
 }: LpPerformanceTableProps) {
   const isPaid = stageType === "paid";
   const columns = isPaid ? PAID_COLUMNS : FREE_COLUMNS;
+
+  // Várias LPs podem ficar abertas ao mesmo tempo: comparar página A com página
+  // B é o motivo de existir do mini-funil, e um acordeão de uma linha só
+  // obrigaria a decorar o número da anterior.
+  const [expandidas, setExpandidas] = useState<Set<string>>(new Set());
+  const expansivel = !!funnelByLp || funnelLoading;
+
+  function toggleExpandir(lpName: string) {
+    setExpandidas((prev) => {
+      const next = new Set(prev);
+      if (next.has(lpName)) {
+        next.delete(lpName);
+      } else {
+        if (next.size === 0) onFirstExpand?.();
+        next.add(lpName);
+      }
+      return next;
+    });
+  }
 
   // Story 18.60 (AC8/AC9): sort clicável por coluna. O estado vive aqui (filho),
   // então persiste ao trocar o filtro de público (Hot/Cold/Todos) ou o range —
@@ -445,6 +497,8 @@ export function LpPerformanceTable({
         <TableHeader>
           {/* Story 18.58/18.60: todos os headers com tooltip de cálculo + sort clicável */}
           <TableRow>
+            {/* Coluna do chevron: só existe quando há mini-funil para mostrar. */}
+            {expansivel && <TableHead className="w-8 px-1" />}
             {/* Coluna LP: tooltip, sem sort (texto/link via LpNameCell) */}
             <TableHead>
               <span
@@ -476,29 +530,82 @@ export function LpPerformanceTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sortedRows.map((row) => (
-            <TableRow key={row.lpName}>
-              <TableCell className="font-medium">
-                {/* Story 18.56: nome hiperlinkado + lápis (match pela chave
-                    normalizada, mesma do lpTotals no useLpPerformanceData) */}
-                <LpNameCell
-                  lpName={row.lpName}
-                  url={lpLinks?.[row.lpName.trim().toLowerCase()]}
-                  onSave={onSaveLpLink}
-                />
-              </TableCell>
-              {columns.map((col) => (
-                <TableCell key={col.key} className="text-right tabular-nums">
-                  {formatCell(row.values[col.key], col.kind)}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
+          {sortedRows.map((row, i) => {
+            const aberta = expandidas.has(row.lpName);
+            return (
+              <React.Fragment key={row.lpName}>
+                <TableRow className={aberta ? "border-b-0 bg-muted/30" : undefined}>
+                  {expansivel && (
+                    <TableCell className="px-1">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpandir(row.lpName)}
+                        aria-expanded={aberta}
+                        aria-label={`${aberta ? "Recolher" : "Expandir"} funil da ${row.lpName}`}
+                        className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      >
+                        {aberta ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                      </button>
+                    </TableCell>
+                  )}
+                  <TableCell className="font-medium">
+                    {/* Story 18.56: nome hiperlinkado + lápis (match pela chave
+                        normalizada, mesma do lpTotals no useLpPerformanceData) */}
+                    <LpNameCell
+                      lpName={row.lpName}
+                      url={lpLinks?.[row.lpName.trim().toLowerCase()]}
+                      onSave={onSaveLpLink}
+                    />
+                  </TableCell>
+                  {columns.map((col) => (
+                    <TableCell key={col.key} className="text-right tabular-nums">
+                      {formatCell(row.values[col.key], col.kind)}
+                    </TableCell>
+                  ))}
+                </TableRow>
+
+                {aberta && (
+                  <TableRow className="bg-muted/30 hover:bg-muted/30">
+                    <TableCell colSpan={columns.length + (expansivel ? 2 : 1)} className="p-0">
+                      {/*
+                        `sticky left-0` porque a tabela tem 13 colunas e rola na
+                        horizontal: sem isso, o card fica ancorado na borda
+                        esquerda da TABELA, não da tela — quem rolou até o ROAS
+                        para decidir qual LP abrir expandiria o card fora da
+                        própria vista. No celular é a diferença entre ver e não
+                        ver. A largura é contida no mesmo movimento: o card é uma
+                        leitura vertical, e esticá-lo na tabela inteira afastaria
+                        demais o rótulo da etapa do número dela.
+                      */}
+                      <div className="sticky left-0 w-[min(28rem,calc(100vw-3rem))] p-3">
+                        <LpFunnelCard
+                          lpName={row.lpName}
+                          colorIndex={i}
+                          lpViews={row.values.lpViews ?? 0}
+                          investimento={row.values.investimento ?? 0}
+                          funil={funnelByLp?.[row.lpName.toUpperCase()] ?? null}
+                          refConversao={refConversao}
+                          pctHeranca={pctHeranca}
+                          etapasIndisponiveis={etapasIndisponiveis}
+                          isLoading={funnelLoading}
+                        />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </React.Fragment>
+            );
+          })}
         </TableBody>
         {/* Story 18.62: linha "Total" fixa no rodapé (imune ao sort). */}
         {totalsRow && (
           <TableFooter>
             <TableRow className="border-t-2 bg-muted/50 font-semibold hover:bg-muted/50">
+              {expansivel && <TableCell className="px-1" />}
               <TableCell className="font-semibold">Total</TableCell>
               {columns.map((col) => (
                 <TableCell key={col.key} className="text-right tabular-nums font-semibold">

@@ -32,7 +32,7 @@ import {
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
-import { parseUtmTerm } from "../services/utm-term.js";
+import { chaveLp, lpDoRegistro, parseUtmTerm, type FonteLp } from "../services/utm-term.js";
 import { phoneTail } from "../utils/lead-origin.js";
 
 const paramsSchema = z.object({
@@ -127,6 +127,10 @@ interface VendaLida {
   dated: boolean;
   /** origem da venda (utm_source, fallback canalOrigem). "(sem origem)" se vazio. */
   source: string;
+  /** utm_term cru do checkout — carrega a LP, quando o link preservou. */
+  term: string;
+  /** utm_campaign cru — reserva pra achar a LP quando o term não tem. */
+  campaign: string;
 }
 
 export default fp(async function stageSalesJourneyRoutes(fastify) {
@@ -157,6 +161,8 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         transactionId?: string;
         status?: string;
         utm_source?: string;
+        utm_term?: string;
+        utm_campaign?: string;
         canalOrigem?: string;
       };
 
@@ -175,6 +181,14 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
       const statusIdx = col(mapping.status);
       const utmSrcIdx = col(mapping.utm_source);
       const canalIdx = col(mapping.canalOrigem);
+      // Apelido além do mapeamento: a planilha de venda quase nunca tem
+      // utm_term mapeado no wizard, mas a coluna costuma existir na aba.
+      const termIdx = col(mapping.utm_term) !== -1
+        ? col(mapping.utm_term)
+        : data.headers.findIndex((h) => /^utm_?term$|^te=$/i.test(h.trim()));
+      const cmpIdx = col(mapping.utm_campaign) !== -1
+        ? col(mapping.utm_campaign)
+        : data.headers.findIndex((h) => /^utm_?campaign$|^ca=$/i.test(h.trim()));
 
       // Pass 1: transações reembolsadas.
       const reembolsados = new Set<string>();
@@ -217,6 +231,8 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
           origem: `${sp.spreadsheetName} / ${sp.sheetName}`,
           dated: dataIdx !== -1,
           source: srcRaw || "(sem origem)",
+          term: termIdx !== -1 ? (row[termIdx] ?? "").trim() : "",
+          campaign: cmpIdx !== -1 ? (row[cmpIdx] ?? "").trim() : "",
         });
       }
     }
@@ -256,6 +272,10 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         origem: "Venda manual",
         dated: true,
         source: "venda manual",
+        // Venda lançada na mão não tem UTM nenhuma — fica fora do funil por LP,
+        // que é o correto: ninguém sabe de qual página ela veio.
+        term: "",
+        campaign: "",
       });
     }
 
@@ -1089,6 +1109,316 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         bandLabels: [...bandSet].sort(),
         forms: formsOut,
         total: agregar(contatosTotais),
+      };
+    },
+  );
+
+  // ============================================================
+  // 5) Mini-funil por LP
+  // ============================================================
+
+  /**
+   * "A LPA converte melhor que a LPB?" — a mesma pergunta do `buyers-origin`,
+   * mas olhando a CADEIA inteira em vez de só o comprador: quantos viraram lead,
+   * quantos aplicaram, quantos responderam pesquisa e quantos compraram, por
+   * página de captura.
+   *
+   * A tabela de LPs (`lp-performance-table`) já responde o lado do tráfego —
+   * investimento, LP View, CPL, ROAS — porque esses números só existem na API do
+   * Meta. O que ela não responde é o meio do funil, que só existe nas planilhas.
+   * Este endpoint entrega esse meio; o card une os dois lados.
+   *
+   * **Atribuição, nesta ordem (cada linha é classificada uma vez):**
+   *
+   *  1. `utm_term` estruturado → `parseUtmTerm().lp`. É a fonte boa: o term é
+   *     escrito pelo time no Meta e carrega a LP explicitamente.
+   *  2. `utm_campaign` com `lp{letra}` — mesma regra que a tabela usa sobre o
+   *     campaign_name, para o card não brigar com a linha que ele expande.
+   *  3. Herança do lead de captação (por e-mail, telefone como reserva). Existe
+   *     porque planilha de aplicação e de pesquisa quase nunca carregam o term:
+   *     sem este degrau, essas duas etapas apareceriam zeradas mesmo com o funil
+   *     inteiro rastreado. É o degrau mais fraco, então vem contado separado em
+   *     `cobertura` — o card avisa quando a maior parte do número veio daqui.
+   *
+   * Quem não casa em nenhum dos três NÃO é distribuído entre as LPs: vai para
+   * `semLp`. Ratear "não sei" entre as páginas inflaria a vencedora.
+   */
+
+  /** `heranca` só existe aqui: as duas outras vêm de `lpDoRegistro`. */
+  type FonteAtribuicao = FonteLp | "heranca";
+  type EtapaLp = "leads" | "aplicacoes" | "pesquisas";
+
+  interface RegistroLp {
+    email: string;
+    phone: string;
+    lp: string | null;
+    fonte: FonteAtribuicao | null;
+  }
+
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/lp-funnel",
+    async (request, reply) => {
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+      const p = paramsSchema.safeParse(request.params);
+      if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const [stage] = await fastify.db
+        .select({ id: funnelStages.id })
+        .from(funnelStages)
+        .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+        .where(
+          and(
+            eq(funnelStages.id, p.data.stageId),
+            eq(funnelStages.funnelId, p.data.funnelId),
+            eq(funnels.projectId, p.data.projectId),
+          ),
+        )
+        .limit(1);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const days = ((): number | undefined => {
+        const parsed = z.coerce
+          .number()
+          .int()
+          .min(1)
+          .max(365)
+          .safeParse((request.query as { days?: unknown }).days);
+        return parsed.success ? parsed.data : undefined;
+      })();
+      const cutoffYmd: string | null = (() => {
+        if (!days) return null;
+        const c = new Date();
+        c.setDate(c.getDate() - days);
+        return `${c.getFullYear()}-${String(c.getMonth() + 1).padStart(2, "0")}-${String(c.getDate()).padStart(2, "0")}`;
+      })();
+
+      // --- Passada 1: lê cada planilha e classifica o que dá pelo term/campanha ---
+      const porEtapa: Record<EtapaLp, Map<string, RegistroLp>> = {
+        leads: new Map(),
+        aplicacoes: new Map(),
+        pesquisas: new Map(),
+      };
+      const fontes = await fontesDeOrigem(p.data.funnelId);
+      const fontesOut: {
+        label: string;
+        tipo: "pesquisa" | "aplicacao" | "captacao";
+        linhas: number;
+        comLp: number;
+        erro: boolean;
+        semColunaTerm: boolean;
+      }[] = [];
+
+      for (const f of fontes) {
+        const etapa: EtapaLp =
+          f.tipo === "aplicacao" ? "aplicacoes" : f.tipo === "pesquisa" ? "pesquisas" : "leads";
+
+        let data: { headers: string[]; rows: string[][] };
+        try {
+          data = await readSheetData(f.spreadsheetId, f.sheetName);
+        } catch {
+          fontesOut.push({
+            label: f.label,
+            tipo: f.tipo,
+            linhas: 0,
+            comLp: 0,
+            erro: true,
+            semColunaTerm: false,
+          });
+          continue;
+        }
+
+        const emailIdx = acharCol(data.headers, f.mapping.email, /e-?mail/i);
+        const phoneIdx = acharCol(data.headers, f.mapping.phone, /telefone|whats|phone|celular/i);
+        // Nenhum identificador = não dá pra deduplicar nem herdar. A planilha
+        // entra no diagnóstico zerada em vez de sumir sem explicação.
+        if (emailIdx === -1 && phoneIdx === -1) {
+          fontesOut.push({
+            label: f.label,
+            tipo: f.tipo,
+            linhas: 0,
+            comLp: 0,
+            erro: false,
+            semColunaTerm: false,
+          });
+          continue;
+        }
+
+        const termIdx = acharCol(data.headers, f.mapping.utm_term, /^utm_?term$|^te=$/i);
+        const cmpIdx = acharCol(data.headers, f.mapping.utm_campaign, /^utm_?campaign$|^ca=$/i);
+        const dataIdx = acharCol(
+          data.headers,
+          f.mapping.timestamp ?? f.mapping.date,
+          /^(data|date|timestamp|carimbo de data\/hora|submitted at)$/i,
+        );
+
+        let linhas = 0;
+        let comLp = 0;
+
+        for (const row of data.rows) {
+          // Janela só se a aba tem data: filtrar planilha sem data mataria
+          // fontes inteiras (o card mostraria zero onde há dado).
+          if (cutoffYmd && dataIdx !== -1) {
+            const dia = parseDay(row[dataIdx]);
+            if (!dia || dia < cutoffYmd) continue;
+          }
+
+          const email = emailIdx !== -1 ? normalizeEmail(row[emailIdx]) : "";
+          const phone = phoneIdx !== -1 ? phoneTail(row[phoneIdx]) : "";
+          if (!email && !phone) continue;
+
+          linhas++;
+          const chave = email || `p:${phone}`;
+          // Primeira linha do contato vence — quem preenche duas vezes é uma
+          // pessoa só, e a primeira passagem é a que tem a origem real.
+          if (porEtapa[etapa].has(chave)) continue;
+
+          const achado = lpDoRegistro(
+            termIdx !== -1 ? (row[termIdx] ?? "").trim() : "",
+            cmpIdx !== -1 ? (row[cmpIdx] ?? "").trim() : "",
+          );
+          if (achado) comLp++;
+          porEtapa[etapa].set(chave, {
+            email,
+            phone,
+            lp: achado?.rotulo ?? null,
+            fonte: achado?.fonte ?? null,
+          });
+        }
+
+        fontesOut.push({
+          label: f.label,
+          tipo: f.tipo,
+          linhas,
+          comLp,
+          erro: false,
+          semColunaTerm: termIdx === -1 && cmpIdx === -1,
+        });
+      }
+
+      // --- Índice de herança: a LP que o contato tinha na CAPTAÇÃO ---
+      const lpPorEmail = new Map<string, string>();
+      const lpPorTelefone = new Map<string, string>();
+      for (const r of porEtapa.leads.values()) {
+        if (!r.lp) continue;
+        if (r.email && !lpPorEmail.has(r.email)) lpPorEmail.set(r.email, r.lp);
+        if (r.phone && !lpPorTelefone.has(r.phone)) lpPorTelefone.set(r.phone, r.lp);
+      }
+      const herdar = (email: string, phone: string): string | null =>
+        (email ? lpPorEmail.get(email) : undefined) ??
+        (phone ? lpPorTelefone.get(phone) : undefined) ??
+        null;
+
+      // --- Passada 2: herança para quem ficou sem LP própria ---
+      for (const etapa of ["aplicacoes", "pesquisas"] as const) {
+        for (const r of porEtapa[etapa].values()) {
+          if (r.lp) continue;
+          const h = herdar(r.email, r.phone);
+          if (h) {
+            r.lp = h;
+            r.fonte = "heranca";
+          }
+        }
+      }
+
+      // --- Vendas: ingresso da captação e/ou produto principal ---
+      // As duas coexistem porque a Captação Paga vende ingresso (`capture`) e a
+      // etapa de Vendas vende o principal (`main_product`) — na prática cada
+      // etapa configura uma. Dedup por e-mail evita contar em dobro quem
+      // aparece nas duas.
+      const vendasRaw = [
+        ...(await lerVendas(p.data.stageId, "main_product")),
+        ...(await lerVendas(p.data.stageId, "capture")),
+      ];
+      const vendas = cutoffYmd
+        ? vendasRaw.filter((v) => !v.dated || (v.day !== null && v.day >= cutoffYmd))
+        : vendasRaw;
+
+      const compradores = new Map<string, { lp: string | null; fonte: FonteAtribuicao | null; receita: number }>();
+      for (const v of vendas) {
+        if (!v.email) continue;
+        const existente = compradores.get(v.email);
+        if (existente) {
+          existente.receita += v.bruto;
+          continue;
+        }
+        const achado = lpDoRegistro(v.term, v.campaign);
+        const lp = achado?.rotulo ?? herdar(v.email, "");
+        compradores.set(v.email, {
+          lp,
+          fonte: achado?.fonte ?? (lp ? "heranca" : null),
+          receita: v.bruto,
+        });
+      }
+
+      // --- Agregação por LP ---
+      interface Acc {
+        lp: string;
+        variantes: Set<string>;
+        leads: number;
+        aplicacoes: number;
+        pesquisas: number;
+        compras: number;
+        receita: number;
+      }
+      const acc = new Map<string, Acc>();
+      const pegar = (rotulo: string): Acc => {
+        const k = chaveLp(rotulo);
+        let a = acc.get(k);
+        if (!a) {
+          a = { lp: k, variantes: new Set(), leads: 0, aplicacoes: 0, pesquisas: 0, compras: 0, receita: 0 };
+          acc.set(k, a);
+        }
+        if (rotulo !== k) a.variantes.add(rotulo);
+        return a;
+      };
+
+      const semLp = { leads: 0, aplicacoes: 0, pesquisas: 0, compras: 0 };
+      const cobertura = { term: 0, campanha: 0, heranca: 0, semLp: 0 };
+
+      for (const etapa of ["leads", "aplicacoes", "pesquisas"] as const) {
+        for (const r of porEtapa[etapa].values()) {
+          if (!r.lp) {
+            semLp[etapa]++;
+            cobertura.semLp++;
+            continue;
+          }
+          pegar(r.lp)[etapa]++;
+          if (r.fonte) cobertura[r.fonte]++;
+        }
+      }
+      for (const c of compradores.values()) {
+        if (!c.lp) {
+          semLp.compras++;
+          cobertura.semLp++;
+          continue;
+        }
+        const a = pegar(c.lp);
+        a.compras++;
+        a.receita += c.receita;
+        if (c.fonte) cobertura[c.fonte]++;
+      }
+
+      const lps = [...acc.values()]
+        .map((a) => ({
+          lp: a.lp,
+          variantes: [...a.variantes].sort(),
+          leads: a.leads,
+          aplicacoes: a.aplicacoes,
+          pesquisas: a.pesquisas,
+          compras: a.compras,
+          receita: +a.receita.toFixed(2),
+        }))
+        // Ordena pelo topo do funil: é o número que dá escala à página.
+        .sort((x, y) => y.leads - x.leads || y.compras - x.compras);
+
+      return {
+        // Nenhuma planilha do funil rendeu uma linha sequer — o card explica o
+        // que conectar, em vez de desenhar um funil todo zerado.
+        semDados: lps.length === 0 && cobertura.semLp === 0,
+        lps,
+        semLp,
+        cobertura,
+        fontes: fontesOut,
       };
     },
   );

@@ -40,6 +40,7 @@ import { useStageSalesByDay } from "@/lib/hooks/use-stage-sales-by-day";
 import { useStageHotColdBuyers } from "@/lib/hooks/use-stage-hot-cold-buyers";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
+import { useLpFunnel, useLpFunnelView } from "@/lib/hooks/use-sales-journey";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { expandChartDataV2, calculateProjectionPercentage } from "@/lib/utils/lead-trend-calculations";
@@ -1130,6 +1131,10 @@ function TesteLpSection({
 }) {
   const [publicoFilter, setPublicoFilter] = useState<"todos" | "hot" | "cold">("todos");
   const { lps, isLoading } = useLpPerformanceData({ projectId, funnelId, stageId, days, publicoFilter });
+  // Mini-funil por LP: só busca depois que alguém expande a primeira linha.
+  const [funilPedido, setFunilPedido] = useState(false);
+  const lpFunnel = useLpFunnel(projectId, funnelId, stageId, days, funilPedido);
+  const funil = useLpFunnelView(lpFunnel.data);
   const { data: stage } = useFunnelStage(projectId, funnelId, stageId);
   const updateStage = useUpdateStage(projectId, funnelId, stageId);
   const lpLinks = stage?.lpLinks ?? {};
@@ -1157,7 +1162,19 @@ function TesteLpSection({
       {isLoading ? (
         <div className="p-4 text-center text-sm text-muted-foreground">Carregando dados de LPs...</div>
       ) : (
-        <LpPerformanceTable rows={lps} stageType={isPaid ? "paid" : "free"} isLoading={false} lpLinks={lpLinks} onSaveLpLink={handleSaveLpLink} />
+        <LpPerformanceTable
+          rows={lps}
+          stageType={isPaid ? "paid" : "free"}
+          isLoading={false}
+          lpLinks={lpLinks}
+          onSaveLpLink={handleSaveLpLink}
+          funnelByLp={funil.byLp}
+          funnelLoading={lpFunnel.isLoading}
+          refConversao={funil.refConversao}
+          pctHeranca={funil.pctHeranca}
+          etapasIndisponiveis={funil.etapasIndisponiveis}
+          onFirstExpand={() => setFunilPedido(true)}
+        />
       )}
     </SectionShell>
   );
