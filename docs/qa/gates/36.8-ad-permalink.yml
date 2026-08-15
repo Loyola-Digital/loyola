@@ -1,0 +1,186 @@
+schema: 1
+story: '36.8'
+gate: CONCERNS
+iteration: 1
+status_reason: >-
+  CONCERNS — aprovado para merge com duas observacoes, nenhuma bloqueante.
+  Os seis ACs estao atendidos e o AC5 foi superado: em vez de aceitar a divida
+  que a story autorizava (`adPermalinkUrl: null` indistinguivel de "ainda nao
+  buscamos"), o @dev reusou o `LINK_URL_RESOLVER_VERSION` da 29.43 e entregou
+  `adPermalinkStale`. A decisao central da story — recusar o `preview_shareable_link`
+  que o chamado pediu, porque carrega token e exige sessao do Business Manager —
+  esta correta e protegida por teste.
+  As duas observacoes tem a mesma raiz: o achado mais valioso da story (o cast que
+  escondia o cache-hit sem o campo) foi corrigido no sintoma, mas a causa
+  permaneceu. Verifiquei por mutacao propria — removi o fix e NADA quebrou:
+  nem teste, nem `tsc`. O proximo campo repete o defeito em silencio.
+reviewer: 'Quinn'
+updated: '2026-08-15T00:00:00Z'
+
+verificacoes:
+  code_review: CONCERNS       # cast `as MetaAdCreative[]` mantido — ver QA-34
+  unit_tests: CONCERNS        # 6 testes reais no resolver; o fix do cache-hit sem rede
+  acceptance_criteria: PASS   # AC1-AC6; AC5 superado
+  no_regressions: PASS        # 975 passando (era 969); as mesmas 11 falhas de sempre
+  performance: PASS           # campo entra no `fields=` do lote de 50 — zero requisicao a mais
+  security: PASS              # nenhum token persistido; a story existe justamente para evitar isso
+  documentation: PASS         # Dev Agent Record com medicao, File List completa
+
+verificacoes_manuais_executadas:
+  - o: 'A recusa do `preview_shareable_link` esta protegida de verdade?'
+    como: >-
+      Leitura do teste + execucao. O @dev ja tinha mutado `resolveAdPermalinkUrl`
+      para devolver o `fb.me`; reli o caso para confirmar que ele nao passa por
+      acaso — o fixture tem SO o `preview_shareable_link`, sem
+      `effective_object_story_id`, entao o `null` esperado so acontece se o
+      resolver de fato ignorar o campo.
+    resultado: >-
+      Sim. O teste protege a tentacao mais provavel desta story: o `fb.me` cobre
+      100%, e exatamente o link que o chamado pediu, e esta a um campo de
+      distancia. Quem trocar quebra a suite e le o porque no proprio teste.
+      6/6 verdes.
+
+  - o: 'O fix do cache-hit (o bug que o cast escondia) tem rede de protecao?'
+    como: >-
+      Mutacao propria, em ponto que o @dev NAO testou: removi a linha
+      `adPermalinkUrl: r.creative?.adPermalinkUrl ?? null` de
+      `makeAdCreativeCacheAdapter.loadCached` — ou seja, reintroduzi exatamente o
+      defeito que ele descreve no Dev Agent Record. Rodei a suite e o `tsc`.
+    resultado: >-
+      NAO. Nada quebrou: as mesmas 5 falhas pre-existentes, os mesmos numeros, e
+      `tsc --noEmit` com exit 0.
+      O defeito volta em silencio — todo cache-hit devolveria criativo sem
+      permalink, com a suite verde e o compilador limpo.
+      Este e o QA-34. O @dev achou o bug "porque foi conferir os pontos de
+      leitura, nao porque o compilador reclamou" — e escreveu isso na story. A
+      frase continua verdadeira depois do fix.
+
+  - o: 'O cast `as MetaAdCreative[]` e removivel, ou existe por um motivo?'
+    como: >-
+      Removi o cast (`})) as MetaAdCreative[]` -> `}));`) e rodei `tsc --noEmit`.
+      Restaurei em seguida (`git diff --stat` vazio).
+    resultado: >-
+      Removivel, a custo zero: exit 0. O literal ja fornece os 10 campos da
+      interface. Com o cast fora, o compilador passa a pegar sozinho o proximo
+      campo que faltar — que e precisamente a protecao que faltou aqui.
+      Recomendacao verificada, nao opiniao.
+
+  - o: 'Os dois caminhos de persistencia foram mesmo cobertos?'
+    como: >-
+      Grep por `insert(metaAdCreativesCache)` em `src` e `scripts`, fora de testes.
+    resultado: >-
+      Sim, e sao exatamente dois: `traffic-analytics.ts:75` e
+      `meta-insights-cache.ts:506`. Ambos gravam o par valor+carimbo. Nao ha um
+      terceiro ponto de escrita esquecido.
+
+  - o: 'A regressao alegada pelo @dev confere?'
+    como: >-
+      Suite completa + conferencia de quais arquivos falham contra os arquivos
+      tocados pelo diff.
+    resultado: >-
+      Confere. 11 falhas / 975 passando, em 5 arquivos —
+      `funnel-stages-lead-inputs`, `schema`, `instagram`, `projects`,
+      `instagram-routes`. Nenhum deles e tocado pelo diff
+      (`git diff main...HEAD --name-only -- src/__tests__/` traz so o arquivo novo).
+      Atencao especial ao `schema.test.ts`, que falha e cujo `db/schema.ts` FOI
+      alterado: a falha e sobre `projectMembers.permissions.default` ganhar
+      `traffic`/`youtubeAds`/`youtubeOrganic` — outra tabela, e a mudanca da 36.8
+      e `$type<>()`, que e tipo e nao existe em runtime. Pre-existente.
+
+  - o: 'O `--creatives` do backfill enxerga o campo novo?'
+    como: 'Leitura de `src/scripts/backfill-meta-perf.ts`'
+    resultado: >-
+      Nao. O relatorio pos-backfill conta `creative->>'linkUrl'` e
+      `creative->>'linkUrlResolver'` (Story 29.43), e nada sobre
+      `adPermalinkUrl`/`adPermalinkResolver`.
+      O backfill POPULA o campo (passa por `upsertAdCreatives`, que carimba) — o
+      que falta e enxergar. Quem rodar vai ver so a cobertura do linkUrl.
+      Este e o QA-35.
+
+issues:
+  - id: QA-34
+    severity: medium
+    status: ABERTO — aceito para merge
+    category: code
+    description: >-
+      O cast `as MetaAdCreative[]` (`traffic-analytics.ts:70`) permanece, e com
+      ele a causa raiz do unico bug que a story descobriu.
+
+      O @dev descreve o mecanismo com precisao no Dev Agent Record — "o cast faz
+      o TypeScript aceitar um objeto sem o campo novo (...) e o tsc ficaria
+      limpo" — e ate deixou um comentario no codigo apontando para ele. Depois
+      corrigiu a linha e manteve o cast.
+
+      Provei que a protecao nao existe, por mutacao: removida a linha do
+      `loadCached`, a suite fica identica (mesmas 11 falhas, mesmos 975 passando)
+      e `tsc --noEmit` sai com exit 0. Nem teste nem compilador pegam.
+
+      Nao ha defeito em producao hoje — o campo esta correto nos dois caminhos.
+      O que fica exposto e o proximo campo.
+    recommendation: >-
+      Remover o cast. Verifiquei: `tsc --noEmit` passa limpo sem ele, porque o
+      literal ja fornece os 10 campos da interface. Uma linha, custo zero, e o
+      compilador passa a fazer o trabalho que a inspecao manual fez desta vez.
+      Se por algum motivo o cast precisar ficar, a alternativa e um teste do
+      `makeAdCreativeCacheAdapter.loadCached` que falhe quando o campo sumir.
+      O que nao serve e depender de alguem lembrar de conferir os pontos de
+      leitura na proxima vez.
+
+  - id: QA-35
+    severity: low
+    status: ABERTO — aceito para merge
+    category: code
+    description: >-
+      `backfill-meta-perf.ts --creatives` reporta `com_link` e `carimbados`
+      olhando `linkUrl`/`linkUrlResolver`, mas nao diz nada sobre
+      `adPermalinkUrl`/`adPermalinkResolver`.
+
+      O AC5 e o Dev Agent Record avisam que o cache ja povoado so ganha o
+      permalink depois desse backfill — entao ele e exatamente o momento em que
+      alguem quer medir o campo desta story, e e o momento em que o script fica
+      cego para ele.
+
+      O AC6 foi atendido na Graph API (100% em 150 anuncios). Isto e outra coisa:
+      a cobertura efetiva no cache de producao, depois de rodar.
+    recommendation: >-
+      Acrescentar duas colunas ao mesmo `count(*) FILTER` que ja existe
+      (`com_permalink`, `permalink_carimbados`). E o arquivo que o @devops vai
+      abrir de qualquer forma para rodar o backfill.
+
+pontos_fortes:
+  - >-
+    **A medicao derrubou o campo que o chamado pediu, e a story registrou o
+    porque com a evidencia na mao.** O `preview_shareable_link` cobre 100% e e
+    literalmente o `fb.me` solicitado; o Dev Agent Record mostra a cadeia de
+    redirect ate `encrypted_experience_id` e a tela de login do Business Manager.
+    Persistido, seria um link com cara de valido falhando no clique de quem
+    consome — a classe de defeito que o Epic 43 passou cinco stories fechando.
+  - >-
+    **O AC5 foi superado em vez de cumprido.** A story autorizava aceitar a
+    ambiguidade como divida; o @dev viu que a 29.43 ja tinha resolvido o problema
+    identico com um carimbo de versao e reusou o mecanismo. REUSE sobre CREATE,
+    e a divida deixou de existir por um campo.
+  - >-
+    **O teste da tentacao esta no lugar certo.** Nao verifica o caminho feliz —
+    verifica que o atalho errado, que e mais curto e mais obvio, quebra a suite.
+  - >-
+    `resolveAdPermalinkUrl` devolve `null` para formato inesperado em vez de
+    montar URL com as metades que sobraram. Uma URL montada de dado mal-lido
+    responderia 404 parecendo legitima.
+
+decisao: >-
+  CONCERNS — segue para o @devops, sem condicao de merge.
+  Os seis ACs estao atendidos, a regressao foi medida e confere, e a decisao
+  central da story (recusar o link com token) esta correta e protegida.
+  As duas observacoes ficam abertas de proposito: QA-34 e uma linha que devolve
+  ao compilador uma protecao que hoje depende de inspecao manual, e QA-35 e
+  observabilidade no script que o @devops vai rodar de qualquer jeito. Nenhuma
+  muda o comportamento entregue.
+  Registrei QA-34 como medium, e nao low, por um motivo: a story documenta o
+  mecanismo do bug com clareza exemplar e mesmo assim ele continua armado. Bug
+  entendido e bug desarmado nao sao a mesma coisa.
+
+  Lembrete de deploy que a story ja carrega: nada disso aparece em producao antes
+  do deploy da API, e o cache existente so ganha o permalink depois do
+  `backfill-meta-perf.ts --creatives` — ate la, `adPermalinkStale: true` diz isso
+  na cara de quem consome, que e o ganho do AC5 superado.
