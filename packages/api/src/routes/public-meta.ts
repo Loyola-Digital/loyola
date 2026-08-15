@@ -11,6 +11,7 @@ import {
 import { requireScope } from "../middleware/api-key-auth.js";
 import { PUBLIC_READ_SCOPE } from "./public-discovery.js";
 import { somarVideoMetrics } from "../services/video-metrics-agg.js";
+import { AD_PERMALINK_RESOLVER_VERSION } from "../services/meta-ads.js";
 import { applyMetaTax } from "../utils/meta-tax.js";
 import {
   parseLeads,
@@ -394,6 +395,7 @@ export default fp(async function publicMetaRoutes(fastify) {
       const creatives = adIds.map((id) => {
         const acc = byAd.get(id)!;
         if (acc.lastSyncedAt && (!lastSyncedAt || acc.lastSyncedAt > lastSyncedAt)) lastSyncedAt = acc.lastSyncedAt;
+        const creative = creativeMap.get(id) ?? null;
         return {
           adId: id,
           adName: acc.adName,
@@ -401,7 +403,16 @@ export default fp(async function publicMetaRoutes(fastify) {
           campaignName: acc.campaignName,
           adsetId: acc.adsetId,
           adsetName: acc.adsetName,
-          creative: creativeMap.get(id) ?? null,
+          creative,
+          // Story 36.8 — link do ANÚNCIO, promovido ao topo do objeto porque é
+          // uma leitura diferente de `creative.linkUrl` (o DESTINO do clique).
+          // Explicitamente `null` quando ausente: em JSON, `undefined` some da
+          // resposta, e chave ausente é pior de consumir que valor nulo.
+          adPermalinkUrl: creative?.adPermalinkUrl ?? null,
+          // Sem isto, `adPermalinkUrl: null` de linha gravada antes desta story
+          // seria lido como "a Meta não tem post para este anúncio". Mesmo
+          // mecanismo do `linkUrlResolver` da 29.43.
+          adPermalinkStale: (creative?.adPermalinkResolver ?? 0) < AD_PERMALINK_RESOLVER_VERSION,
           videoMetrics: somarVideoMetrics(acc.videoMetricsDiarios),
           ...deriveMetrics(acc),
         };

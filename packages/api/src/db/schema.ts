@@ -1938,6 +1938,15 @@ export const metaAdCreativesCache = pgTable(
         linkUrl?: string | null;
         ctaType?: string | null;
         objectType?: string | null;
+        /** Story 29.43: versão do resolver que escreveu `linkUrl`. */
+        linkUrlResolver?: number;
+        /**
+         * Story 36.8: permalink do ANÚNCIO (post no Facebook) — não o destino
+         * do clique (`linkUrl`) nem o permalink do vídeo.
+         */
+        adPermalinkUrl?: string | null;
+        /** Story 36.8: versão do resolver que escreveu `adPermalinkUrl`. */
+        adPermalinkResolver?: number;
       }>(),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
   },

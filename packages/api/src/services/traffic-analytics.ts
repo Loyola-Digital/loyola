@@ -17,6 +17,7 @@ import {
   todayInTimezone,
   dateRangeFromDays,
   LINK_URL_RESOLVER_VERSION,
+  AD_PERMALINK_RESOLVER_VERSION,
   type AdCreativeCacheAdapter,
   type MetaAdCreative,
   type MetaDailyInsight,
@@ -63,6 +64,9 @@ export function makeAdCreativeCacheAdapter(
         ctaType: r.creative?.ctaType ?? null,
         objectType: r.creative?.objectType ?? null,
         videoId: r.creative?.videoId ?? null,
+        // Story 36.8: sem esta linha o cache-hit devolveria o criativo SEM o
+        // permalink, e o `as MetaAdCreative[]` abaixo esconderia a ausência.
+        adPermalinkUrl: r.creative?.adPermalinkUrl ?? null,
       })) as MetaAdCreative[];
     },
     async saveToCache(creatives) {
@@ -86,6 +90,10 @@ export function makeAdCreativeCacheAdapter(
               // caminhos gravam a mesma tabela e precisam ser indistinguíveis
               // na leitura.
               linkUrlResolver: LINK_URL_RESOLVER_VERSION,
+              // Story 36.8: mesmo par valor+carimbo do linkUrl, pelo mesmo
+              // motivo — `null` sem carimbo é "não perguntamos", não "não tem".
+              adPermalinkUrl: c.adPermalinkUrl,
+              adPermalinkResolver: AD_PERMALINK_RESOLVER_VERSION,
             },
             lastSyncedAt: new Date(),
           })),
