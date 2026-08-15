@@ -366,6 +366,12 @@ export interface MetaAdCreative {
   ctaType: string | null;
   objectType: string | null;
   videoId: string | null;
+  /**
+   * Story 36.8: permalink **do anúncio** (o post no Facebook). Não confundir
+   * com `linkUrl`, que é o **destino** do clique (a LP), nem com o
+   * `permalinkUrl` de `fetchVideoSource`, que é o permalink **do vídeo**.
+   */
+  adPermalinkUrl: string | null;
 }
 
 // ============================================================
@@ -1194,6 +1200,8 @@ interface MetaCreativeRaw {
   call_to_action_type?: string;
   object_type?: string;
   video_id?: string;
+  /** Story 36.8: `{pageId}_{postId}` do post que o anúncio veicula. */
+  effective_object_story_id?: string;
   object_story_spec?: {
     link_data?: { link?: string };
     video_data?: { call_to_action?: { value?: { link?: string } } };
@@ -1240,6 +1248,38 @@ interface MetaCreativeRaw {
  * o que faz o cache antigo se declarar velho em vez de se passar por medição.
  */
 export const LINK_URL_RESOLVER_VERSION = 2;
+
+/**
+ * Story 36.8 — carimbo do resolver de permalink do anúncio, mesmo mecanismo do
+ * `LINK_URL_RESOLVER_VERSION` acima e pelo mesmo motivo: sem ele,
+ * `adPermalinkUrl: null` escrito por código que ainda não perguntava pelo campo
+ * é indistinguível de "a Meta não tem post para este anúncio".
+ *
+ * **Ao mudar `resolveAdPermalinkUrl`, incremente este número.**
+ */
+export const AD_PERMALINK_RESOLVER_VERSION = 1;
+
+/**
+ * Story 36.8 — permalink do anúncio a partir de `effective_object_story_id`.
+ *
+ * **Por que não `preview_shareable_link`:** medido em 2026-08-14 sobre 150
+ * anúncios com entrega (3 contas), ele cobre 100% — mas o `fb.me/…` redireciona
+ * para `business.facebook.com/…?encrypted_experience_id=…`, ou seja, carrega
+ * token e exige sessão do Business Manager. Persistir isso no jsonb produziria
+ * link com cara de válido que falha no clique de quem consome (AC2 da story).
+ *
+ * `effective_object_story_id` também cobriu 100% nas mesmas 150, são IDs
+ * estáveis, e a URL montada responde 200 sem sessão.
+ */
+export function resolveAdPermalinkUrl(c: MetaCreativeRaw | undefined): string | null {
+  const raw = c?.effective_object_story_id;
+  if (!raw) return null;
+  // Formato `{pageId}_{postId}`. Qualquer outra coisa é dado que não sabemos
+  // ler — devolver null é melhor que montar uma URL que erra em silêncio.
+  const [pageId, postId] = raw.split("_");
+  if (!pageId || !postId) return null;
+  return `https://www.facebook.com/${pageId}/posts/${postId}`;
+}
 
 export function resolveCreativeLinkUrl(c: MetaCreativeRaw | undefined): string | null {
   if (!c) return null;
@@ -1296,7 +1336,9 @@ export async function fetchAdCreatives(
         // Story 29.40: object_story_spec/asset_feed_spec entram aqui porque é
         // onde a URL de destino realmente vive (ver resolveCreativeLinkUrl).
         // Mesmo request, mesmo lote de 50 — nenhum custo de rate limit a mais.
-        `/?ids=${idsParam}&fields=id,creative{id,thumbnail_url,image_url,effective_instagram_media_id,title,body,link_url,call_to_action_type,object_type,video_id,object_story_spec,asset_feed_spec}`,
+        // Story 36.8: `effective_object_story_id` entra no MESMO `fields=`, no
+        // mesmo lote de 50 — zero requisição a mais (ver resolveAdPermalinkUrl).
+        `/?ids=${idsParam}&fields=id,creative{id,thumbnail_url,image_url,effective_instagram_media_id,title,body,link_url,call_to_action_type,object_type,video_id,object_story_spec,asset_feed_spec,effective_object_story_id}`,
         accessToken
       );
       for (const adId of batch) {
@@ -1312,6 +1354,7 @@ export async function fetchAdCreatives(
           ctaType: c?.call_to_action_type ?? null,
           objectType: c?.object_type ?? null,
           videoId: c?.video_id ?? null,
+          adPermalinkUrl: resolveAdPermalinkUrl(c),
         };
         // Store IDs temporarily for hi-res fetch
         const extra = creative as unknown as Record<string, unknown>;
@@ -1325,6 +1368,7 @@ export async function fetchAdCreatives(
         batchResults.push({
           adId, thumbnailUrl: null, imageUrl: null, title: null,
           body: null, linkUrl: null, ctaType: null, objectType: null, videoId: null,
+          adPermalinkUrl: null,
         });
       }
     }

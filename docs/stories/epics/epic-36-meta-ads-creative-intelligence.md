@@ -34,8 +34,17 @@ Expor a **performance de criativos do Meta Ads por campanha** como uma **API con
 | 36.4 | Job de sync/refresh de performance | Draft | — (paralelo) | — |
 | 36.5 | ROAS real (Meta × vendas Kiwify/Hotmart) | Draft | 36.3 | @architect + @data-engineer |
 | 36.6 | MCP server + `llms.txt` | 🔨 Implementado (local) | 36.3 | @devops (publicar) |
+| 36.7 | Buracos 1/2/3 — pesquisa, leads por origem, vendas diárias | ⚠️ Implementado, **sem arquivo de story** | 36.3 | — |
+| 36.8 | Link do anúncio no feed `/creatives` | ✅ Ready — GO 8/10 (@po 2026-08-14) | 36.3 | — |
+| 36.9 | LEADS POPUP — elegibilidade do `lead-origin-sync` | ✅ Ready — GO 9/10 (@po 2026-08-14) | 36.7 | — |
 
-**Sequência:** 36.1 → 36.2 → 36.3/36.4 (paralelo) → 36.6 → 36.5.
+**Sequência:** 36.1 → 36.2 → 36.3/36.4 (paralelo) → 36.6 → 36.5. As 36.8 e 36.9 são independentes entre si e podem correr em paralelo.
+
+### Dívida: a 36.7 não tem arquivo de story
+
+Ela existe em 8 arquivos do código (`public-leads.ts`, `lead-origin-sync.ts`, `meta-perf-scheduler.ts`, 3 scripts de backfill, `schema.ts`, `utils/lead-origin.ts`), com os "Buracos" 1, 2 e 3 nomeados, e criou a tabela `public_metrics_cache`. A 36.9 depende dela e não tem o que referenciar além do código.
+
+Registrado pelo @po em 2026-08-14. Escrever a story retroativa é conversa com o @pm — não bloqueia a 36.9.
 
 ## Gates que exigem decisão humana
 

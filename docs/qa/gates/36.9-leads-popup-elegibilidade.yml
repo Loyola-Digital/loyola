@@ -1,0 +1,227 @@
+schema: 1
+story: '36.9'
+gate: CONCERNS
+iteration: 1
+status_reason: >-
+  CONCERNS — aprovado para merge com tres observacoes, nenhuma bloqueante.
+  A story entrega o que o chamado pediu e recusa o que ele nao pediu: a etapa
+  alvo sai de `semDados`, e a `dg-pg03` — que entraria junto com a planilha de
+  VENDAS do Kiwify classificada como `type='leads'` — e recusada pelo AC2b.
+  O caminho ate aqui foi exemplar: o diagnostico como primeiro item do DoD pegou
+  a etapa certa entre 6 homonimas, e a medicao do @po pegou a fonte contaminada
+  antes de ela virar numero no feed publico. Duas decisoes salvas por medir em
+  vez de presumir.
+  As observacoes concentram-se num ponto so: **os testes provam a logica, nao as
+  queries**. Confirmei por mutacao propria — trocar o filtro `type='leads'` por
+  `'sales'`, ou remover o filtro por `stageId`, deixa os 13 testes verdes.
+reviewer: 'Quinn'
+updated: '2026-08-15T00:00:00Z'
+
+verificacoes:
+  code_review: PASS
+  unit_tests: CONCERNS       # 13 testes reais na logica; queries sem cobertura — QA-36
+  acceptance_criteria: PASS  # AC1, AC2 (reduzido/aprovado), AC2b, AC3-AC7
+  no_regressions: PASS       # 988 passando (era 975); as mesmas 11 falhas de sempre
+  performance: PASS          # `idx_funnel_spreadsheets_stage` existe; caminho sem cache e indexado
+  security: PASS             # `requireScope`; `fontes[]` nao expoe `spreadsheetId`
+  documentation: CONCERNS    # caminho errado em mensagem de endpoint publico — QA-38
+
+verificacoes_manuais_executadas:
+  - o: 'Os testes protegem as QUERIES, ou so a logica de precedencia?'
+    como: >-
+      Duas mutacoes minhas, nos predicados — territorio que o @dev nao tocou
+      (as 3 mutacoes dele foram todas na logica):
+      (A) `eq(funnelSpreadsheets.type, "leads")` -> `"sales"`;
+      (B) remover `eq(funnelSpreadsheets.stageId, stageId)` do `and(...)`.
+    resultado: >-
+      **13/13 verdes nas duas.** O `fakeDb` roteia por identidade de tabela e
+      trata `where()` como no-op, entao nenhum predicado e verificado.
+      A mutacao (B) e a que preocupa: sem o filtro por `stageId`, toda etapa
+      leria as planilhas de leads de TODAS as outras — inclusive de outros
+      projetos — num endpoint publico.
+      O codigo esta CORRETO hoje, e a validacao contra producao do @dev cobre
+      isso empiricamente (as 3 etapas resolveram as planilhas certas). O que
+      falta e rede para quem mexer depois. Este e o QA-36.
+
+  - o: 'O AC2b resolve o caso real, ou so o caso do teste?'
+    como: >-
+      Rodei `resolveLeadSource` contra as 3 etapas que a story ativa em
+      producao, e depois passei a heuristica por TODAS as 14 etapas com
+      planilha `type='leads'`.
+    resultado: >-
+      Resolve o caso real. Das 3 etapas ativadas: `bbe-pr2` (alvo) e
+      `dg-pg04/Vendas` passam com planilha limpa; `dg-pg03` e recusada e cai em
+      `etapa_sem_fonte`. As 4 que ja produziam cache seguem em `pesquisa` e
+      `lead_scoring` — inalteradas.
+      Nas 14, a heuristica recusa 2 e passa 13 — ver QA-37 para os
+      falso-negativos.
+
+  - o: 'A heuristica do AC2b tem falso-negativo nos dados reais?'
+    como: 'Cruzei `column_mapping` com o nome do label/sheet nas 14 etapas'
+    resultado: >-
+      Tem dois, e nenhum ativo:
+      (1) `Leads bbe-escala-sales` (`bbe-pr1-mar-26`, 452 linhas) passa porque
+      ninguem mapeou valor nela — mas "sales" esta no nome. O @po ja tinha
+      suspeitado.
+      (2) `fz-l3-jul-26/Captacao` tem planilha `type='leads'` cujo `sheet_name`
+      e **`Pesquisa-Captacao`** — contaminacao INVERSA: uma pesquisa
+      classificada como leads. Contar por ela seria contar respondentes
+      declarando `fonte: "planilha_leads"`, ou seja, o payload mentiria.
+      As duas etapas tem pesquisa vinculada e continuam nela, entao nenhuma e
+      atingida por esta story. Viram risco na story de precedencia. QA-37.
+
+  - o: 'O AC7 sobreviveu a reescrita do compute?'
+    como: 'Leitura do laco de `syncLeadOrigin` + o teste de planilha ilegivel'
+    resultado: >-
+      Sim, e ganhou uma camada. O `try/catch` por etapa esta intacto, e o
+      `computeLeadOriginForStage` agora tem `try/catch` por PLANILHA: uma
+      ilegivel sai da lista `fontes` e as outras seguem.
+      O detalhe que fecha isso bem: quando TODAS falham, devolve `null` em vez
+      de payload zerado. Gravar zero no cache faria "nao consegui ler" virar
+      "ninguem se cadastrou" — e o endpoint entregaria isso com cara de dado
+      bom. Testado, e a mutacao do @dev confirma.
+
+  - o: 'O `fontes[]` vaza algo num endpoint publico?'
+    como: 'Leitura do `fontes.push` contra o que o payload carrega'
+    resultado: >-
+      Nao. Carrega `label`, `sheetName` e `leads` — nomes descritivos, sem o
+      `spreadsheetId`, que e o que daria acesso a planilha. O endpoint exige
+      `requireScope(PUBLIC_READ_SCOPE)` com API key.
+      A auditabilidade que o campo entrega vale mais que o metadado que expoe.
+
+  - o: 'O caminho sem cache aguenta ser martelado?'
+    como: 'Contei as queries do ramo `semDados` e conferi os indices'
+    resultado: >-
+      Aguenta. Ate 3 queries no ramo sem cache, todas por `stageId`, e
+      `idx_funnel_spreadsheets_stage` existe (junto com o pkey e o de
+      `funnel_id`). Etapa com cache resolve em 1 query e nem chama o resolver.
+
+  - o: 'A regressao confere?'
+    como: 'Suite completa + os arquivos que falham contra os tocados pelo diff'
+    resultado: >-
+      Confere. 988 passando (975 antes da 36.9), 11 falhas nos mesmos 5 arquivos
+      pre-existentes — nenhum tocado por esta story.
+
+issues:
+  - id: QA-36
+    severity: medium
+    status: ABERTO — aceito para merge
+    category: tests
+    description: >-
+      Os 13 testes exercitam as funcoes reais — isso e verdade e e melhor que a
+      media do projeto — mas o `fakeDb` trata `where()` como no-op, entao
+      NENHUM predicado de query esta coberto.
+
+      Provei com duas mutacoes:
+
+        (A) eq(funnelSpreadsheets.type, "leads") -> "sales"     => 13/13 verdes
+        (B) remover eq(funnelSpreadsheets.stageId, stageId)     => 13/13 verdes
+
+      A (B) e a grave: sem o filtro por `stageId`, `resolveLeadSource` devolveria
+      as planilhas de leads de TODAS as etapas do sistema para qualquer etapa
+      consultada. Num endpoint publico, isso mistura dados entre projetos.
+
+      Nao ha defeito hoje — as queries estao certas, e a validacao contra
+      producao do @dev prova empiricamente que cada etapa resolveu a sua
+      planilha. O buraco e de forma: o proximo que mexer nesse `and(...)` nao
+      tem nada que o avise.
+
+      Registro como medium e nao low porque o modo de falha (vazamento entre
+      projetos) e desproporcional ao tamanho do erro que o causaria.
+    recommendation: >-
+      Fazer o `fakeDb` capturar o argumento de `where()` e o teste assertar
+      sobre ele — nao precisa interpretar drizzle, basta guardar a chamada e
+      verificar que houve filtro por stage e por tipo. Duas linhas no fake e um
+      `expect` por teste.
+      Alternativa mais forte, se o projeto quiser: um teste de integracao com
+      banco real para `resolveLeadSource`, ja que `projects.test.ts` e
+      `instagram-routes.test.ts` mostram que o padrao `app.inject()` existe
+      aqui.
+
+  - id: QA-37
+    severity: low
+    status: ABERTO — aceito para merge
+    category: requirements
+    description: >-
+      O AC2b recusa por `column_mapping`, e o mapeamento e preenchido por gente.
+      Passei a heuristica pelas 14 etapas com planilha `type='leads'` e achei
+      dois casos que ela nao pega:
+
+        1. `Leads bbe-escala-sales` (bbe-pr1-mar-26, 452 linhas) — "sales" no
+           nome, mas sem valor mapeado, entao PASSA.
+        2. `fz-l3-jul-26/Captacao` — planilha `type='leads'` cujo `sheet_name` e
+           `Pesquisa-Captacao`. Contaminacao INVERSA: uma pesquisa classificada
+           como leads. Contar por ela devolveria respondentes com
+           `fonte: "planilha_leads"` — o payload mentiria sobre si mesmo, que e
+           exatamente o que o AC3 existe para impedir.
+
+      Nenhuma das duas e atingida por esta story: ambas tem pesquisa vinculada e
+      continuam nela. Sao risco para a story de precedencia, quando a planilha
+      de leads passar a ter prioridade.
+    recommendation: >-
+      Nao mexer agora — corrigir a heuristica aqui seria resolver um problema
+      que esta story nao tem. Levar os dois casos para o AC de auditoria da
+      story de precedencia, que o @po ja mandou criar. A auditoria precisa olhar
+      o CONTEUDO da planilha (headers), nao so o `column_mapping`.
+
+  - id: QA-38
+    severity: low
+    status: ABERTO — aceito para merge
+    category: docs
+    description: >-
+      A mensagem de `sync_pendente` (`public-leads.ts:60`) manda quem consome
+      usar `scripts/backfill-lead-origin.ts`. O caminho real e
+      `src/scripts/backfill-lead-origin.ts`.
+
+      O erro nao e do @dev: veio da tabela "O que existe hoje" da propria story,
+      que ja trazia o caminho errado. Mas agora ele esta numa resposta de
+      endpoint publico, dizendo a quem consome para rodar um arquivo que nao
+      existe naquele caminho.
+    recommendation: >-
+      Corrigir para `src/scripts/backfill-lead-origin.ts` na mensagem e na
+      tabela da story. Vale conferir de passagem se a 36.8 tem o mesmo problema
+      com `backfill-meta-perf.ts`, que tambem vive em `src/scripts/`.
+
+pontos_fortes:
+  - >-
+    **O diagnostico como primeiro item do DoD pagou.** Havia SEIS etapas
+    chamadas "Captacao Paga"; sem ele, a story teria sido implementada contra a
+    etapa errada — e a errada ja funcionava. Promover o diagnostico a gate, com
+    instrucao explicita de voltar ao @sm, foi o que transformou uma premissa em
+    fato antes de virar codigo.
+  - >-
+    **A cadeia @dev -> @po -> @dev funcionou como deveria.** O @dev reduziu o
+    escopo por instinto ("nao mexer no que funciona") e DECLAROU a reducao em
+    vez de implementa-la em silencio. O @po mediu e achou que o instinto estava
+    certo pelo motivo errado — a fonte alternativa esta contaminada. Sem a
+    declaracao, ninguem teria olhado.
+  - >-
+    **`null` em vez de payload zerado quando nenhuma planilha le.** E a decisao
+    que separa "nao consegui ler" de "ninguem se cadastrou", e a unica das duas
+    que nao mente no cache.
+  - >-
+    **O AC2b nao foi ampliado alem do necessario.** Incluir `status` na regra
+    seria natural — e derrubaria fonte boa, porque planilha de leads tem status
+    do lead. O @dev escreveu teste para os DOIS lados e provou por mutacao que a
+    regra nao faz demais nem de menos. Prender uma heuristica pelos dois lados e
+    raro.
+  - >-
+    **A ironia esta registrada na story:** para destravar a `dg-pg03`, a acao e
+    reclassificar a planilha no banco — rodar o sync nao resolve. Mesmo formato
+    do chamado que originou tudo isto, e agora o endpoint diz isso na resposta
+    (`etapa_sem_fonte`) em vez de deixar quem consome adivinhar.
+
+decisao: >-
+  CONCERNS — segue para o @devops, sem condicao de merge.
+  Os ACs estao atendidos, a regressao confere, e as duas decisoes de risco da
+  story (reduzir o AC2, recusar planilha de venda) foram tomadas com numero na
+  mao e ficaram registradas.
+  As tres observacoes ficam abertas de proposito. A QA-36 e a unica que eu
+  gostaria de ver fechada logo — nao pelo defeito, que nao existe, mas porque o
+  modo de falha que ela deixa desprotegido (planilha de outra etapa entrando no
+  payload) e grande demais para depender de ninguem errar um `and(...)`.
+  A QA-37 e materia-prima da proxima story, nao desta.
+
+  Pendencias que a story ja carrega e o gate confirma: sem o deploy da API nada
+  disto existe em producao, e as 2 etapas novas so ganham cache depois do
+  `backfill-lead-origin.ts` ou do ciclo diario das 4h.

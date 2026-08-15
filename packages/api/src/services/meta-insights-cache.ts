@@ -16,7 +16,7 @@
 
 import { eq, and, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { LINK_URL_RESOLVER_VERSION } from "./meta-ads.js";
+import { LINK_URL_RESOLVER_VERSION, AD_PERMALINK_RESOLVER_VERSION } from "./meta-ads.js";
 import {
   metaCampaignInsightsDaily,
   metaAdInsightsDaily,
@@ -494,6 +494,10 @@ export async function upsertAdCreatives(
         // Story 29.43 (AC2): carimbo de quem escreveu esta linha. Sem ele,
         // `linkUrl: null` de código antigo é indistinguível de "a Meta não tem".
         linkUrlResolver: LINK_URL_RESOLVER_VERSION,
+        // Story 36.8: permalink do anúncio + carimbo, escritos junto com o
+        // linkUrl para que os dois caminhos de persistência fiquem iguais.
+        adPermalinkUrl: c.adPermalinkUrl,
+        adPermalinkResolver: AD_PERMALINK_RESOLVER_VERSION,
       },
       lastSyncedAt: now,
     }));
