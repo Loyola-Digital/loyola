@@ -117,8 +117,18 @@ export default fp(async function pdiRoutes(fastify) {
       .where(eq(users.status, "active"))
       .orderBy(users.name);
 
-    // Guest não navega fora de /projects — PDI não faria sentido pra ele.
-    return { usuarios: rows.filter((u) => u.role !== "guest") };
+    return {
+      usuarios: rows.filter((u) => {
+        // Guest não navega fora de /projects — PDI não faria sentido pra ele.
+        if (u.role === "guest") return false;
+        // Conta fantasma: o authPlugin provisiona com `<clerkId>@placeholder.dev`
+        // quando o Clerk não devolve o e-mail. A mesma pessoa acaba com 2 ou 3
+        // linhas, e a lista de "para quem" fica com o nome repetido sem jeito de
+        // saber qual é a de verdade. A real é a que tem e-mail.
+        if (u.email.endsWith("@placeholder.dev")) return false;
+        return true;
+      }),
+    };
   });
 
   /** HTML completo de um PDI específico. Admin only (o dono usa /api/pdi/me). */
