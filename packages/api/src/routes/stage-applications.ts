@@ -44,7 +44,11 @@ import {
   agruparPorPagina,
   derivarPrefixos,
   ehNomeDePagina,
+  acharColunaEmail,
+  acharColunaNome,
+  acharColunaUtmSource,
   labelDaAbaDescoberta,
+  letraDaLpNoUtmTerm,
   letraDaPagina,
   type LinhaParaAgrupar,
 } from "../services/application-sheets.js";
@@ -152,13 +156,30 @@ interface FormSeries {
   total: number;
 }
 
+/**
+ * Story 43.7 — uma aba a ler: cadastrada no banco ou descoberta na varredura.
+ *
+ * Existe para que a lista de aplicações e o gráfico leiam EXATAMENTE o mesmo
+ * conjunto de abas. Duplicar a descoberta produziria duas verdades sobre "o que
+ * conta como aplicação neste funil", e a divergência só apareceria como número
+ * que não bate entre a tabela e o gráfico logo acima dela.
+ */
+interface AbaResolvida {
+  id: string;
+  label: string;
+  spreadsheetId: string;
+  sheetName: string;
+  dateCol: string | undefined;
+}
+
 export default fp(async function stageApplicationsRoutes(fastify) {
   /**
-   * Lê TODAS as planilhas de aplicação de um funil e devolve, por planilha, a
-   * contagem por data (calendário). O alinhamento em D-day é feito depois
-   * (alignForms), no nível do lançamento.
+   * Descobre quais abas entram — cadastradas + as do mesmo grupo que ainda não
+   * foram vinculadas (Story 43.1). Não lê conteúdo: só resolve a lista.
    */
-  async function rawFormsFor(funnelId: string): Promise<FormsResult> {
+  async function resolverAbas(
+    funnelId: string,
+  ): Promise<{ abas: AbaResolvida[]; avisos: AvisoForma[] }> {
     const sheets = await fastify.db
       .select({
         id: funnelSpreadsheets.id,
@@ -172,18 +193,81 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         and(eq(funnelSpreadsheets.funnelId, funnelId), eq(funnelSpreadsheets.type, "applications")),
       );
 
-    if (!sheets.length)
+    const avisos: AvisoForma[] = [];
+    if (!sheets.length) return { abas: [], avisos };
+
+    const abas: AbaResolvida[] = sheets.map((s) => ({
+      id: s.id,
+      label: s.label,
+      spreadsheetId: s.spreadsheetId,
+      sheetName: s.sheetName,
+      dateCol: s.columnMapping?.date,
+    }));
+
+    const porArquivo = new Map<string, typeof sheets>();
+    for (const s of sheets) {
+      const lista = porArquivo.get(s.spreadsheetId) ?? [];
+      lista.push(s);
+      porArquivo.set(s.spreadsheetId, lista);
+    }
+
+    for (const [spreadsheetId, doArquivo] of porArquivo) {
+      const prefixos = derivarPrefixos(doArquivo.map((s) => s.sheetName));
+      // Mapping herdado do grupo — as planilhas de um mesmo arquivo usam o mesmo
+      // formulário, então as colunas coincidem.
+      const dateColHerdada = doArquivo.find((s) => s.columnMapping?.date)?.columnMapping?.date;
+
+      let doGoogle: { title: string }[];
+      try {
+        doGoogle = (await getSpreadsheetSheets(spreadsheetId)).sheets;
+      } catch (error) {
+        fastify.log.warn({ err: error, spreadsheetId }, "[43.1] falha ao listar abas");
+        avisos.push({
+          aba: spreadsheetId,
+          motivo:
+            "não foi possível listar as abas da planilha — páginas novas podem estar faltando no gráfico",
+        });
+        continue;
+      }
+
+      for (const { aba, prefixo } of abasParaDescobrir(
+        doGoogle.map((a) => a.title),
+        doArquivo.map((s) => s.sheetName),
+        prefixos,
+      )) {
+        abas.push({
+          id: `descoberta:${spreadsheetId}:${aba}`,
+          label: labelDaAbaDescoberta(aba, prefixo),
+          spreadsheetId,
+          sheetName: aba,
+          dateCol: dateColHerdada,
+        });
+      }
+    }
+
+    return { abas, avisos };
+  }
+
+  /**
+   * Lê TODAS as planilhas de aplicação de um funil e devolve, por planilha, a
+   * contagem por data (calendário). O alinhamento em D-day é feito depois
+   * (alignForms), no nível do lançamento.
+   */
+  async function rawFormsFor(funnelId: string): Promise<FormsResult> {
+    // Story 43.7: a descoberta vive em `resolverAbas` para que a lista de
+    // aplicações leia exatamente o mesmo conjunto de abas que o gráfico.
+    const { abas: abasResolvidas, avisos } = await resolverAbas(funnelId);
+
+    if (!abasResolvidas.length)
       return {
         forms: [],
-        avisos: [],
+        avisos,
         nomes: [],
         identificadores: [],
         letrasComForma: [],
         semPagina: 0,
         quebrouPorUtmTerm: false,
       };
-
-    const avisos: AvisoForma[] = [];
 
     /**
      * Conta as linhas de UMA aba e devolve as séries que ela produz.
@@ -254,70 +338,12 @@ export default fp(async function stageApplicationsRoutes(fastify) {
       }));
     }
 
-    // ── Cadastradas ────────────────────────────────────────────────────────
-    // Story 43.6: `.flat()` porque uma aba-base pode gerar várias séries.
-    const cadastradas = (
+    const forms = (
       await Promise.all(
-        sheets.map((s) => contar(s.id, s.label, s.spreadsheetId, s.sheetName, s.columnMapping?.date)),
+        abasResolvidas.map((a) => contar(a.id, a.label, a.spreadsheetId, a.sheetName, a.dateCol)),
       )
     ).flat();
 
-    // ── Descobertas (AC1) ──────────────────────────────────────────────────
-    // Varre cada arquivo já vinculado atrás de abas do mesmo grupo que ainda
-    // não foram cadastradas. É o que faz uma página nova aparecer sozinha.
-    const porArquivo = new Map<string, typeof sheets>();
-    for (const s of sheets) {
-      const lista = porArquivo.get(s.spreadsheetId) ?? [];
-      lista.push(s);
-      porArquivo.set(s.spreadsheetId, lista);
-    }
-
-    const descobertas: RawForm[] = [];
-    for (const [spreadsheetId, doArquivo] of porArquivo) {
-      const prefixos = derivarPrefixos(doArquivo.map((s) => s.sheetName));
-      // Mapping herdado do grupo — as planilhas de um mesmo arquivo usam o mesmo
-      // formulário, então as colunas coincidem. O AC2 exige validar antes de
-      // contar: `contar()` já devolve aviso se a coluna não existir na aba nova.
-      const dateColHerdada = doArquivo.find((s) => s.columnMapping?.date)?.columnMapping?.date;
-
-      let abas: { title: string }[];
-      try {
-        abas = (await getSpreadsheetSheets(spreadsheetId)).sheets;
-      } catch (error) {
-        fastify.log.warn({ err: error, spreadsheetId }, "[43.1] falha ao listar abas");
-        avisos.push({
-          aba: spreadsheetId,
-          motivo: "não foi possível listar as abas da planilha — páginas novas podem estar faltando no gráfico",
-        });
-        continue;
-      }
-
-      const alvos = abasParaDescobrir(
-        abas.map((a) => a.title),
-        doArquivo.map((s) => s.sheetName),
-        prefixos,
-      );
-      // Em paralelo, como as cadastradas: em série, cada aba nova somava um
-      // round-trip ao Google no primeiro carregamento — que é exatamente quando
-      // o gestor está olhando a tela.
-      descobertas.push(
-        ...(
-          await Promise.all(
-            alvos.map(({ aba, prefixo }) =>
-              contar(
-                `descoberta:${spreadsheetId}:${aba}`,
-                labelDaAbaDescoberta(aba, prefixo),
-                spreadsheetId,
-                aba,
-                dateColHerdada,
-              ),
-            ),
-          )
-        ).flat(),
-      );
-    }
-
-    const forms = [...cadastradas, ...descobertas];
     // Aba e label alimentam a porta de entrada do AC5: se NENHUM deles segue a
     // nomenclatura por página, este funil não fala a língua de "LPA/LPB" e o
     // aviso de LP órfã não faz sentido nele.
@@ -614,6 +640,119 @@ export default fp(async function stageApplicationsRoutes(fastify) {
          */
         paginasVieramDoUtmTerm: atualRaw.quebrouPorUtmTerm,
       };
+    },
+  );
+
+  /**
+   * Story 43.7 — a lista das aplicações, linha a linha.
+   *
+   * O gráfico responde "quantas por dia, por página"; esta rota responde "quem
+   * aplicou, e de que página veio". A LP sai do mesmo `utm_term` e pela mesma
+   * função da 43.6 — se as duas telas discordassem sobre a página de uma
+   * aplicação, nenhuma das duas serviria.
+   *
+   * Sem paginação no servidor de propósito: são dezenas de linhas por
+   * lançamento (70 no maior funil de produção hoje), e paginar aqui obrigaria
+   * um round-trip ao Google a cada troca de página — para dado que já está todo
+   * em memória. A tela pagina o que recebe.
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/applications-list",
+    async (request, reply) => {
+      // As duas verificações abaixo são as mesmas do `applications-daily`, e
+      // aqui pesam MAIS: aquele devolve contagens por dia, este devolve nome e
+      // e-mail de pessoas reais.
+      //
+      // O guest-guard global (middleware/guest-guard.ts) NÃO cobre isto: ele
+      // valida a membership do guest no projeto da URL e retorna cedo para
+      // qualquer outro papel. Sem a query de vínculo, um usuário do projeto A
+      // passaria o funnelId do projeto B na própria URL de A e receberia os
+      // dados de B — a membership que o guard confere seria a de A, que ele tem.
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+
+      const paramsResult = paramsSchema.safeParse(request.params);
+      if (!paramsResult.success) {
+        return reply.code(400).send({ error: "Parâmetros inválidos" });
+      }
+      const { projectId, funnelId, stageId } = paramsResult.data;
+
+      // Prova que etapa, funil e projeto formam a mesma cadeia. `projectId` e
+      // `stageId` existiam na rota sem serem usados — validar o vínculo é a
+      // única razão de eles estarem na URL.
+      const [ctx] = await fastify.db
+        .select({ funnelName: funnels.name })
+        .from(funnelStages)
+        .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+        .where(
+          and(
+            eq(funnelStages.id, stageId),
+            eq(funnelStages.funnelId, funnelId),
+            eq(funnels.projectId, projectId),
+          ),
+        )
+        .limit(1);
+      if (!ctx) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const { abas, avisos } = await resolverAbas(funnelId);
+      if (!abas.length) return { semPlanilha: true, aplicacoes: [], avisos };
+
+      const aplicacoes = (
+        await Promise.all(
+          abas.map(async (aba) => {
+            if (!aba.dateCol) return [];
+            let data: { headers: string[]; rows: string[][] };
+            try {
+              data = await readSheetData(aba.spreadsheetId, aba.sheetName);
+            } catch (error) {
+              fastify.log.warn({ err: error, aba: aba.sheetName }, "[43.7] aba ilegível");
+              return [];
+            }
+
+            const iData = data.headers.indexOf(aba.dateCol);
+            if (iData === -1) return [];
+
+            // Colunas homônimas são a regra nestas planilhas, não a exceção: a
+            // aba-base do dg-pg04 tem três `name`, três `email` e três
+            // `utm_term`, com dado só na primeira. Escolher pela PREENCHIDA
+            // sobrevive à próxima versão do formulário.
+            const iNome = acharColunaNome(data.headers, data.rows);
+            const iEmail = acharColunaEmail(data.headers, data.rows);
+            // O `utm_term` continua sendo lido: é dele que sai a LP. A tabela
+            // exibe o `utm_source` (o canal), que é curto e legível — o
+            // `utm_term` passa de 100 caracteres e vai como tooltip da LP.
+            const iUtm = acharColunaUtmTerm(data.headers, data.rows);
+            const iSource = acharColunaUtmSource(data.headers, data.rows);
+
+            // A aba com sufixo declara a página (mesma regra da 43.6): ali o
+            // `utm_term` não sobrepõe o que o nome já disse.
+            const letraDaAba = letraDaPagina(aba.sheetName);
+
+            const out = [];
+            for (const row of data.rows) {
+              const dia = parseDay(row[iData]);
+              if (!dia) continue;
+              const utmTerm = iUtm === null ? "" : (row[iUtm] ?? "").trim();
+              const letra = letraDaAba ?? letraDaLpNoUtmTerm(utmTerm);
+              out.push({
+                data: dia,
+                nome: iNome === null ? "" : (row[iNome] ?? "").trim(),
+                email: iEmail === null ? "" : (row[iEmail] ?? "").trim(),
+                utmSource: iSource === null ? "" : (row[iSource] ?? "").trim(),
+                utmTerm,
+                lp: letra ? `PAGINA ${letra}` : null,
+                aba: aba.label,
+              });
+            }
+            return out;
+          }),
+        )
+      ).flat();
+
+      // Mais recente primeiro. `parseDay` normaliza para aaaa-mm-dd, então a
+      // ordem lexicográfica é a cronológica — sem custo de Date por linha.
+      aplicacoes.sort((a, b) => (a.data < b.data ? 1 : a.data > b.data ? -1 : 0));
+
+      return { semPlanilha: false, aplicacoes, avisos };
     },
   );
 });

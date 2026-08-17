@@ -201,10 +201,12 @@ export function letraDaLpNoUtmTerm(texto: string | null | undefined): string | n
  * `null` quando nenhuma candidata tem dado: a aba não sabe dizer a página, e o
  * chamador cai no comportamento antigo (aba = série).
  */
-export function acharColunaUtmTerm(headers: string[], rows: string[][]): number | null {
-  const candidatas = headers
-    .map((h, i) => ({ h, i }))
-    .filter(({ h }) => /utm[_ ]?term/i.test(h.trim()));
+export function acharColunaPreenchida(
+  headers: string[],
+  rows: string[][],
+  casa: RegExp,
+): number | null {
+  const candidatas = headers.map((h, i) => ({ h, i })).filter(({ h }) => casa.test(h.trim()));
   if (!candidatas.length) return null;
 
   let melhor: { i: number; n: number } | null = null;
@@ -214,6 +216,40 @@ export function acharColunaUtmTerm(headers: string[], rows: string[][]): number 
     if (!melhor || n > melhor.n) melhor = { i, n };
   }
   return melhor && melhor.n > 0 ? melhor.i : null;
+}
+
+export function acharColunaUtmTerm(headers: string[], rows: string[][]): number | null {
+  return acharColunaPreenchida(headers, rows, /utm[_ ]?term/i);
+}
+
+/**
+ * Story 43.7 — nome e e-mail de quem aplicou.
+ *
+ * Mesmo problema de homônimas do `utm_term`, e pior: a aba-base do `dg-pg04`
+ * tem `name` (16), `Nome` (24) e `name` (40) — só a primeira preenchida. Um
+ * `indexOf` acertaria hoje e erraria no dia em que o formulário mudar de versão.
+ *
+ * Âncoras (`^…$`) de propósito: sem elas, "Nome do produto" ou "email de
+ * cobrança" entrariam como se fossem a coluna da pessoa.
+ */
+export function acharColunaNome(headers: string[], rows: string[][]): number | null {
+  return acharColunaPreenchida(headers, rows, /^(nome|name|nome completo|full name)$/i);
+}
+
+export function acharColunaEmail(headers: string[], rows: string[][]): number | null {
+  return acharColunaPreenchida(headers, rows, /^(e-?mail|e-?mail address|seu e-?mail)$/i);
+}
+
+/**
+ * Origem declarada da aplicação (`meta`, `ig`, `whatsapp`, `yt`, `mautic`…).
+ *
+ * É o que a tabela mostra. Não confundir com a fonte da LP: a página continua
+ * saindo do `utm_term`, que carrega o nome do anúncio. O `utm_source` diz de
+ * qual CANAL a pessoa veio; o `utm_term`, de qual PÁGINA — e trocar um pelo
+ * outro na extração faria toda aplicação de Meta virar a mesma página.
+ */
+export function acharColunaUtmSource(headers: string[], rows: string[][]): number | null {
+  return acharColunaPreenchida(headers, rows, /^utm[_ ]?source$/i);
 }
 
 /** Linha já reduzida ao que importa para agrupar. */

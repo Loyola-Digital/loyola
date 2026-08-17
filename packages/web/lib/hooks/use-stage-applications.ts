@@ -187,3 +187,56 @@ export function useStageApplicationBands(
     staleTime: 60 * 1000,
   });
 }
+
+// ============================================================
+// Story 43.7 — a lista das aplicações, linha a linha.
+// ============================================================
+
+export interface AplicacaoLinha {
+  /** aaaa-mm-dd. A lista vem ordenada do mais recente para o mais antigo. */
+  data: string;
+  nome: string;
+  email: string;
+  /** Canal declarado: `meta`, `ig`, `whatsapp`, `yt`, `mautic`… — é o exibido. */
+  utmSource: string;
+  /**
+   * Nome do anúncio. NÃO é exibido como coluna (passa de 100 caracteres), mas
+   * vai como tooltip da LP — é dele que a página é extraída, e esconder a
+   * evidência tornaria a coluna LP inauditável.
+   */
+  utmTerm: string;
+  /** "PAGINA C" ou null quando o `utm_term` não declara a LP. */
+  lp: string | null;
+  /** Label da aba de origem — desempata quando duas páginas têm o mesmo nome. */
+  aba: string;
+}
+
+export interface StageApplicationsList {
+  semPlanilha: boolean;
+  aplicacoes: AplicacaoLinha[];
+  avisos: AvisoForma[];
+}
+
+/**
+ * Lista completa, sem paginação de servidor.
+ *
+ * São dezenas de linhas por lançamento (70 no maior funil de produção hoje);
+ * paginar no servidor obrigaria um round-trip ao Google a cada troca de página,
+ * para dado que já está todo em memória. A tabela pagina o que recebe.
+ */
+export function useStageApplicationsList(
+  projectId: string | null,
+  funnelId: string | null,
+  stageId: string | null,
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["stage-applications-list", projectId, funnelId, stageId],
+    queryFn: () =>
+      apiClient<StageApplicationsList>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/applications-list`,
+      ),
+    enabled: !!projectId && !!funnelId && !!stageId,
+    staleTime: 60 * 1000,
+  });
+}

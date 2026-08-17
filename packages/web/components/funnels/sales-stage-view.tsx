@@ -22,6 +22,7 @@ import { MauticStageTab } from "./mautic-stage-tab";
 import { SalesConversionCard } from "./sales-conversion-card";
 import { SalesDailyComparisonChart } from "./sales-daily-comparison-chart";
 import { ApplicationsDailyChart } from "./applications-daily-chart";
+import { ApplicationsListTable } from "@/components/funnels/applications-list-table";
 import { ApplicationBandsCard } from "./application-bands-card";
 import { BuyersOriginCard } from "./buyers-origin-card";
 import { LeadJourneyPanel } from "./lead-journey-panel";
@@ -198,6 +199,16 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
               `applications` do funil, então renderizar a partir da etapa de
               Vendas funciona. */}
           <ApplicationsDailyChart
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+          />
+          {/* Story 43.7 — logo abaixo do gráfico, e de propósito: o gráfico diz
+              "quantas por dia, por página" e a tabela diz "quem, e de que
+              página veio". Ler a segunda pergunta na sequência da primeira é o
+              que permite conferir uma linha do gráfico contra as pessoas que a
+              compõem. */}
+          <ApplicationsListTable
             projectId={projectId}
             funnelId={funnelId}
             stageId={stage.id}
