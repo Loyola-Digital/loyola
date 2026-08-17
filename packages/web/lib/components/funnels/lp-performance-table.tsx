@@ -72,8 +72,10 @@ interface LpPerformanceTableProps {
   refConversao?: number | null;
   /** % de atribuições herdadas do lead de captação (aviso no card). */
   pctHeranca?: number | null;
-  /** Etapas sem planilha conectada — o card marca "não medido" em vez de zero. */
-  etapasIndisponiveis?: { aplicacoes?: boolean; pesquisas?: boolean };
+  /** Tipos de planilha da etapa — etapa sem fonte sai da cadeia do card. */
+  temFonte?: { aplicacao: boolean; pesquisa: boolean };
+  /** Rótulos das planilhas por etapa, para o tooltip de cada linha do funil. */
+  fontesPorEtapa?: { captacao: string[]; aplicacao: string[]; pesquisa: string[] };
   /**
    * Chamado na PRIMEIRA expansão. O mini-funil lê todas as planilhas do funil no
    * servidor, então a leitura só acontece se alguém pedir para ver.
@@ -320,7 +322,8 @@ export function LpPerformanceTable({
   funnelLoading = false,
   refConversao = null,
   pctHeranca = null,
-  etapasIndisponiveis,
+  temFonte = { aplicacao: true, pesquisa: true },
+  fontesPorEtapa,
   onFirstExpand,
 }: LpPerformanceTableProps) {
   const isPaid = stageType === "paid";
@@ -585,12 +588,14 @@ export function LpPerformanceTable({
                         <LpFunnelCard
                           lpName={row.lpName}
                           colorIndex={i}
+                          stageType={stageType}
                           lpViews={row.values.lpViews ?? 0}
                           investimento={row.values.investimento ?? 0}
                           funil={funnelByLp?.[row.lpName.toUpperCase()] ?? null}
                           refConversao={refConversao}
                           pctHeranca={pctHeranca}
-                          etapasIndisponiveis={etapasIndisponiveis}
+                          temFonte={temFonte}
+                          fontesPorEtapa={fontesPorEtapa}
                           isLoading={funnelLoading}
                         />
                       </div>
