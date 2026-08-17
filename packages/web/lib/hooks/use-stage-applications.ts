@@ -197,6 +197,13 @@ export interface AplicacaoLinha {
   data: string;
   nome: string;
   email: string;
+  /** Canal declarado: `meta`, `ig`, `whatsapp`, `yt`, `mautic`… — é o exibido. */
+  utmSource: string;
+  /**
+   * Nome do anúncio. NÃO é exibido como coluna (passa de 100 caracteres), mas
+   * vai como tooltip da LP — é dele que a página é extraída, e esconder a
+   * evidência tornaria a coluna LP inauditável.
+   */
   utmTerm: string;
   /** "PAGINA C" ou null quando o `utm_term` não declara a LP. */
   lp: string | null;

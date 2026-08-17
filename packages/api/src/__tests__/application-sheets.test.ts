@@ -4,6 +4,7 @@ import {
   abasParaDescobrir,
   acharColunaEmail,
   acharColunaNome,
+  acharColunaUtmSource,
   acharColunaUtmTerm,
   agruparPorPagina,
   derivarPrefixo,
@@ -467,5 +468,32 @@ describe("acharColunaNome / acharColunaEmail", () => {
   it("devolve null quando a coluna não existe ou está toda vazia", () => {
     expect(acharColunaNome(["data"], [["2026-08-14"]])).toBeNull();
     expect(acharColunaEmail(["email"], [[""]])).toBeNull();
+  });
+});
+
+describe("acharColunaUtmSource", () => {
+  it("acha a coluna do canal", () => {
+    expect(acharColunaUtmSource(["data", "utm_source"], [["2026-08-14", "meta"]])).toBe(1);
+    expect(acharColunaUtmSource(["UTM_SOURCE"], [["ig"]])).toBe(0);
+    expect(acharColunaUtmSource([" utm source "], [["whatsapp"]])).toBe(0);
+  });
+
+  it("escolhe a preenchida entre homônimas", () => {
+    // dg-pg04: utm_source em 20 e 44, só a primeira com dado.
+    const headers = ["utm_source", "x", "utm_source"];
+    const rows = [["meta", "-", ""], ["ig", "-", ""]];
+    expect(acharColunaUtmSource(headers, rows)).toBe(0);
+  });
+
+  /**
+   * A âncora impede confundir com `utm_source_original` ou `utm_sourced`, e
+   * — o que mais importaria aqui — com `utm_term`: o canal e a página são
+   * perguntas diferentes, e extrair a LP do `utm_source` faria toda aplicação
+   * vinda do Meta virar a mesma página.
+   */
+  it("não casa outras colunas utm", () => {
+    expect(acharColunaUtmSource(["utm_term"], [["--lpa|"]])).toBeNull();
+    expect(acharColunaUtmSource(["utm_campaign"], [["dg-pg04"]])).toBeNull();
+    expect(acharColunaUtmSource(["utm_source_original"], [["meta"]])).toBeNull();
   });
 });

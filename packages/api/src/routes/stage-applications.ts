@@ -46,6 +46,7 @@ import {
   ehNomeDePagina,
   acharColunaEmail,
   acharColunaNome,
+  acharColunaUtmSource,
   labelDaAbaDescoberta,
   letraDaLpNoUtmTerm,
   letraDaPagina,
@@ -688,7 +689,11 @@ export default fp(async function stageApplicationsRoutes(fastify) {
             // sobrevive à próxima versão do formulário.
             const iNome = acharColunaNome(data.headers, data.rows);
             const iEmail = acharColunaEmail(data.headers, data.rows);
+            // O `utm_term` continua sendo lido: é dele que sai a LP. A tabela
+            // exibe o `utm_source` (o canal), que é curto e legível — o
+            // `utm_term` passa de 100 caracteres e vai como tooltip da LP.
             const iUtm = acharColunaUtmTerm(data.headers, data.rows);
+            const iSource = acharColunaUtmSource(data.headers, data.rows);
 
             // A aba com sufixo declara a página (mesma regra da 43.6): ali o
             // `utm_term` não sobrepõe o que o nome já disse.
@@ -704,6 +709,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
                 data: dia,
                 nome: iNome === null ? "" : (row[iNome] ?? "").trim(),
                 email: iEmail === null ? "" : (row[iEmail] ?? "").trim(),
+                utmSource: iSource === null ? "" : (row[iSource] ?? "").trim(),
                 utmTerm,
                 lp: letra ? `PAGINA ${letra}` : null,
                 aba: aba.label,

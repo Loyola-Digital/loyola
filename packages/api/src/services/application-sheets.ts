@@ -240,6 +240,18 @@ export function acharColunaEmail(headers: string[], rows: string[][]): number | 
   return acharColunaPreenchida(headers, rows, /^(e-?mail|e-?mail address|seu e-?mail)$/i);
 }
 
+/**
+ * Origem declarada da aplicação (`meta`, `ig`, `whatsapp`, `yt`, `mautic`…).
+ *
+ * É o que a tabela mostra. Não confundir com a fonte da LP: a página continua
+ * saindo do `utm_term`, que carrega o nome do anúncio. O `utm_source` diz de
+ * qual CANAL a pessoa veio; o `utm_term`, de qual PÁGINA — e trocar um pelo
+ * outro na extração faria toda aplicação de Meta virar a mesma página.
+ */
+export function acharColunaUtmSource(headers: string[], rows: string[][]): number | null {
+  return acharColunaPreenchida(headers, rows, /^utm[_ ]?source$/i);
+}
+
 /** Linha já reduzida ao que importa para agrupar. */
 export interface LinhaParaAgrupar {
   /** Dia já normalizado (YYYY-MM-DD). */

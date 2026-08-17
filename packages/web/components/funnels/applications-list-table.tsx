@@ -67,7 +67,7 @@ export function ApplicationsListTable({
             Aplicações
           </h3>
           <p className="text-[11px] text-muted-foreground">
-            Quem aplicou e de qual página veio · mais recentes primeiro
+            Quem aplicou, de qual canal e de qual página · mais recentes primeiro
           </p>
         </div>
         <p className="text-2xl font-semibold leading-none">
@@ -88,11 +88,8 @@ export function ApplicationsListTable({
                   <TableHead className="w-[80px]">Data</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead>E-mail</TableHead>
-                  <TableHead
-                    className="max-w-[280px]"
-                    title="utm_term do anúncio de origem — é dele que a LP é extraída"
-                  >
-                    utm_term
+                  <TableHead className="w-[120px]" title="Canal declarado na origem da aplicação">
+                    utm_source
                   </TableHead>
                   <TableHead className="w-[130px]">LP vinculada</TableHead>
                 </TableRow>
@@ -105,18 +102,18 @@ export function ApplicationsListTable({
                     </TableCell>
                     <TableCell className="text-sm font-medium">{l.nome || "—"}</TableCell>
                     <TableCell className="text-xs">{l.email || "—"}</TableCell>
-                    {/* `title` com o valor inteiro: o utm_term real passa de 100
-                        caracteres e truncar sem dar acesso ao original esconderia
-                        justamente a evidência de qual anúncio trouxe a pessoa. */}
-                    <TableCell
-                      className="max-w-[280px] truncate font-mono text-[10px] text-muted-foreground"
-                      title={l.utmTerm || undefined}
-                    >
-                      {l.utmTerm || "—"}
+                    <TableCell className="font-mono text-[11px] text-muted-foreground">
+                      {l.utmSource || "—"}
                     </TableCell>
                     <TableCell>
                       {l.lp ? (
-                        <span className="inline-block rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                        /* O utm_term vai no tooltip: ele passa de 100 caracteres
+                           e não cabe como coluna, mas é DELE que a LP sai —
+                           sem acesso a ele a coluna vira um rótulo inauditável. */
+                        <span
+                          className="inline-block rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                          title={l.utmTerm ? `Extraída de: ${l.utmTerm}` : "Declarada pelo nome da aba"}
+                        >
                           {l.lp}
                         </span>
                       ) : (
