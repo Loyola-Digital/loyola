@@ -273,6 +273,7 @@ describe("POST /api/chat", () => {
     await app.register(mockClaudePlugin);
     await app.register(chatRoutes);
     await app.ready();
+    await app.mindRegistry.whenReady();
   });
 
   afterAll(async () => {

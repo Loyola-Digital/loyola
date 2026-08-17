@@ -54,6 +54,7 @@ describe("MindRegistry — Filesystem Scanner", () => {
     await app.register(mindRegistryPlugin);
     await app.register(mindsRoutes);
     await app.ready();
+    await app.mindRegistry.whenReady();
   });
 
   afterAll(async () => {
@@ -119,6 +120,7 @@ describe("Minds REST Endpoints", () => {
     await app.register(mindRegistryPlugin);
     await app.register(mindsRoutes);
     await app.ready();
+    await app.mindRegistry.whenReady();
   });
 
   afterAll(async () => {
