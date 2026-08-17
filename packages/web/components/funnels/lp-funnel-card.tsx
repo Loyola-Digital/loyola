@@ -17,6 +17,7 @@
 import { AlertTriangle, TrendingDown } from "lucide-react";
 import type { LpFunnelRow } from "@/lib/hooks/use-sales-journey";
 import { formatCurrency, formatRatio } from "@/lib/utils/lp-metrics-calculator";
+import { baseDoFunil, montarEtapasLpFunnel } from "@/lib/utils/lp-funnel-steps";
 
 /**
  * Paleta de séries do design system (`.spy-viz`, em `globals.css`). Categoria
@@ -46,19 +47,19 @@ function fmtPct(v: number | null): string {
   return `${v.toFixed(1).replace(".", ",")}%`;
 }
 
-interface EtapaFunil {
-  label: string;
-  valor: number;
-  /** Explica de onde o número saiu — sem isso o time compara fontes diferentes. */
-  fonte: string;
-  /** Etapa que não pôde ser medida (planilha ausente), diferente de medir zero. */
-  indisponivel?: boolean;
-}
-
 interface LpFunnelCardProps {
   lpName: string;
   /** Índice da LP na lista, para a cor. */
   colorIndex: number;
+  /**
+   * O funil muda de FORMA conforme a etapa, não só de número:
+   * - `paid` (Captação Paga): a planilha de leads é o POPUP, a compra é o
+   *   ingresso, e a pesquisa é respondida por quem JÁ comprou — então ela fecha a
+   *   cadeia, não fica no meio. Não existe "aplicaram" aqui.
+   * - `free` (Captação Gratuita): a pesquisa é respondida pelo lead, e o
+   *   formulário de aplicação (quando conectado) fica entre lead e compra.
+   */
+  stageType: "paid" | "free";
   /** Da tabela (Meta API). */
   lpViews: number;
   investimento: number;
@@ -71,20 +72,29 @@ interface LpFunnelCardProps {
   refConversao: number | null;
   /** % das atribuições que vieram de herança do lead — acima de 50% avisa. */
   pctHeranca: number | null;
-  /** Etapas sem planilha conectada, para marcar "não medido" em vez de zero. */
-  etapasIndisponiveis?: { aplicacoes?: boolean; pesquisas?: boolean };
+  /**
+   * Que tipos de planilha a ETAPA tem conectados. Etapa sem fonte sai da cadeia
+   * em vez de aparecer zerada: uma linha "Aplicaram 0" num funil que não tem
+   * aplicação afirma que ninguém aplicou, o que é diferente de não haver o quê
+   * medir.
+   */
+  temFonte: { aplicacao: boolean; pesquisa: boolean };
+  /** Rótulo das planilhas por etapa, para o tooltip dizer de ONDE veio. */
+  fontesPorEtapa?: { captacao: string[]; aplicacao: string[]; pesquisa: string[] };
   isLoading?: boolean;
 }
 
 export function LpFunnelCard({
   lpName,
   colorIndex,
+  stageType,
   lpViews,
   investimento,
   funil,
   refConversao,
   pctHeranca,
-  etapasIndisponiveis,
+  temFonte,
+  fontesPorEtapa,
   isLoading = false,
 }: LpFunnelCardProps) {
   const cor = corDaLp(colorIndex);
@@ -102,35 +112,18 @@ export function LpFunnelCard({
     );
   }
 
-  const etapas: EtapaFunil[] = [
-    { label: "LP View", valor: lpViews, fonte: "Landing Page Views da API do Meta" },
-    {
-      label: "Leads",
-      valor: funil?.leads ?? 0,
-      fonte: "Planilha de captação, atribuída à LP pelo utm_term",
-    },
-    {
-      label: "Aplicaram",
-      valor: funil?.aplicacoes ?? 0,
-      fonte: "Planilha de aplicações (formulário), dedup por contato",
-      indisponivel: etapasIndisponiveis?.aplicacoes,
-    },
-    {
-      label: "Responderam pesquisa",
-      valor: funil?.pesquisas ?? 0,
-      fonte: "Pesquisas vinculadas ao funil, dedup por contato",
-      indisponivel: etapasIndisponiveis?.pesquisas,
-    },
-    {
-      label: "Compraram",
-      valor: funil?.compras ?? 0,
-      fonte: "Compradores únicos (e-mail) das planilhas de venda da etapa",
-    },
-  ];
+  const isPaid = stageType === "paid";
 
-  // A base é a primeira etapa com volume: sem Meta conectada o LP View é 0, e
-  // ancorar em zero apagaria todas as barras de um funil que existe.
-  const base = etapas.find((e) => e.valor > 0)?.valor ?? 0;
+  // A cadeia (quais etapas, em que ordem, com que rótulo) é regra de domínio e
+  // vive em `lp-funnel-steps`, com teste — foi onde a primeira versão errou.
+  const etapas = montarEtapasLpFunnel({
+    stageType,
+    lpViews,
+    funil,
+    temFonte,
+    fontesPorEtapa,
+  });
+  const base = baseDoFunil(etapas);
 
   const receita = funil?.receita ?? 0;
   const roas = investimento > 0 ? receita / investimento : null;
@@ -172,30 +165,22 @@ export function LpFunnelCard({
               <div className="flex items-baseline justify-between gap-2">
                 <span className="truncate text-[13px] text-foreground/90">{e.label}</span>
                 <span className="shrink-0 text-[13px] tabular-nums">
-                  {e.indisponivel ? (
-                    <span className="text-muted-foreground">não medido</span>
-                  ) : (
-                    <>
-                      <span className="font-medium">{fmtInt(e.valor)}</span>{" "}
-                      <span className="text-[11px] text-muted-foreground">
-                        ({fmtPct(base > 0 ? pct : null)})
-                      </span>
-                    </>
-                  )}
+                  <span className="font-medium">{fmtInt(e.valor)}</span>{" "}
+                  <span className="text-[11px] text-muted-foreground">
+                    ({fmtPct(base > 0 ? pct : null)})
+                  </span>
                 </span>
               </div>
               {/* Trilho sempre visível: uma barra de largura zero ainda precisa
                   ocupar a linha, senão a etapa "some" e o funil parece menor. */}
               <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                {!e.indisponivel && (
-                  <div
-                    className="h-full rounded-full transition-[width] duration-500"
-                    style={{
-                      width: `${Math.min(100, Math.max(pct > 0 ? 1.5 : 0, pct))}%`,
-                      background: cor,
-                    }}
-                  />
-                )}
+                <div
+                  className="h-full rounded-full transition-[width] duration-500"
+                  style={{
+                    width: `${Math.min(100, Math.max(pct > 0 ? 1.5 : 0, pct))}%`,
+                    background: cor,
+                  }}
+                />
               </div>
             </div>
           );
@@ -227,7 +212,9 @@ export function LpFunnelCard({
       </div>
 
       <div className="mt-2.5 flex items-center justify-between gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
-        <span className="text-[11px] text-muted-foreground">Lead → compra</span>
+        <span className="text-[11px] text-muted-foreground">
+          {isPaid ? "Popup → ingresso" : "Lead → compra"}
+        </span>
         <span className="flex items-baseline gap-1.5 text-[11px]">
           <span className="text-[13px] font-semibold tabular-nums">
             {fmtPct(convLeadCompra)}

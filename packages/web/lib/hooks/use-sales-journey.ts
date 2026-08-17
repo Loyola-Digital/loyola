@@ -114,6 +114,8 @@ export interface LpFunnel {
     comLp: number;
     erro: boolean;
     semColunaTerm: boolean;
+    /** Linhas descartadas por data ilegível na coluna de data da aba. */
+    dataIlegivel: number;
   }[];
 }
 
@@ -151,8 +153,12 @@ export interface LpFunnelView {
   refConversao: number | null;
   /** % das atribuições que vieram por herança do lead de captação. */
   pctHeranca: number | null;
-  /** Etapa sem planilha conectada ≠ etapa que mediu zero. */
-  etapasIndisponiveis: { aplicacoes: boolean; pesquisas: boolean };
+  /** Que tipos de planilha a etapa tem. Etapa sem fonte sai da cadeia do card. */
+  temFonte: { aplicacao: boolean; pesquisa: boolean };
+  /** Rótulos das planilhas por etapa, para o tooltip dizer de ONDE veio o número. */
+  fontesPorEtapa: { captacao: string[]; aplicacao: string[]; pesquisa: string[] };
+  /** Linhas descartadas por data ilegível — some do card sem isso. */
+  dataIlegivel: number;
 }
 
 /**
@@ -174,19 +180,25 @@ export function useLpFunnelView(data: LpFunnel | undefined): LpFunnelView {
   const c = data?.cobertura;
   const atribuidos = c ? c.term + c.campanha + c.heranca : 0;
 
-  // "Sem planilha do tipo" só é afirmável quando NENHUMA fonte daquele tipo foi
-  // conectada. Fonte conectada que devolveu zero linhas é um zero de verdade.
-  const temFonte = (tipo: "aplicacao" | "pesquisa") =>
-    (data?.fontes ?? []).some((f) => f.tipo === tipo && !f.erro);
+  // Antes de carregar (`data` undefined) nada é afirmável: dizer "sem fonte"
+  // aqui removeria etapas da cadeia e elas voltariam ao chegar a resposta.
+  const labels = (tipo: "captacao" | "aplicacao" | "pesquisa"): string[] =>
+    (data?.fontes ?? []).filter((f) => f.tipo === tipo && !f.erro).map((f) => f.label);
 
   return {
     byLp,
     refConversao: leads > 0 ? (compras / leads) * 100 : null,
     pctHeranca: atribuidos > 0 ? (c!.heranca / atribuidos) * 100 : null,
-    etapasIndisponiveis: {
-      aplicacoes: !!data && !temFonte("aplicacao"),
-      pesquisas: !!data && !temFonte("pesquisa"),
+    temFonte: {
+      aplicacao: !data || labels("aplicacao").length > 0,
+      pesquisa: !data || labels("pesquisa").length > 0,
     },
+    fontesPorEtapa: {
+      captacao: labels("captacao"),
+      aplicacao: labels("aplicacao"),
+      pesquisa: labels("pesquisa"),
+    },
+    dataIlegivel: (data?.fontes ?? []).reduce((s, f) => s + (f.dataIlegivel ?? 0), 0),
   };
 }
 

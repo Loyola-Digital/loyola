@@ -403,11 +403,23 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
    */
   const TIPOS_DE_VENDA = new Set(["sales", "perpetual_sales", "perpetual_upsell"]);
 
-  async function fontesDeOrigem(funnelId: string) {
-    const surveys = await fastify.db
-      .select()
-      .from(funnelSurveys)
-      .where(eq(funnelSurveys.funnelId, funnelId));
+  /**
+   * `stageId` restringe as fontes à etapa (mais as planilhas do funil sem etapa
+   * definida, que valem para todas). Sem ele, varre o funil inteiro.
+   *
+   * Quem CONTA pessoas por etapa precisa passar o stageId: sem isso a planilha de
+   * Aplicação (comercial), que pertence à etapa de Vendas, aparece na Captação
+   * Paga e vira uma linha de funil que não existe naquele funil. Quem só procura
+   * a ORIGEM de um e-mail (buyers-origin, jornada) quer o funil inteiro de
+   * propósito — o lead pode ter nascido em qualquer etapa.
+   */
+  async function fontesDeOrigem(funnelId: string, stageId?: string) {
+    const daEtapa = <T extends { stageId: string | null }>(rows: T[]): T[] =>
+      stageId ? rows.filter((r) => r.stageId === stageId || r.stageId === null) : rows;
+
+    const surveys = daEtapa(
+      await fastify.db.select().from(funnelSurveys).where(eq(funnelSurveys.funnelId, funnelId)),
+    );
 
     // Sem allowlist de tipos: pega TODA planilha conectada no funil e descarta
     // só as de venda. Assim, tipo novo de planilha entra na conta sozinho, sem
@@ -416,7 +428,7 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
       .select()
       .from(funnelSpreadsheets)
       .where(eq(funnelSpreadsheets.funnelId, funnelId));
-    const sheets = todas.filter((s) => !TIPOS_DE_VENDA.has(s.type));
+    const sheets = daEtapa(todas.filter((s) => !TIPOS_DE_VENDA.has(s.type)));
 
     return [
       ...surveys.map((s) => ({
@@ -1198,7 +1210,9 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         aplicacoes: new Map(),
         pesquisas: new Map(),
       };
-      const fontes = await fontesDeOrigem(p.data.funnelId);
+      // Escopado na ETAPA: este endpoint conta pessoas por etapa, então a
+      // planilha de outra etapa não pode virar linha do funil desta.
+      const fontes = await fontesDeOrigem(p.data.funnelId, p.data.stageId);
       const fontesOut: {
         label: string;
         tipo: "pesquisa" | "aplicacao" | "captacao";
@@ -1206,6 +1220,8 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         comLp: number;
         erro: boolean;
         semColunaTerm: boolean;
+        /** Linhas jogadas fora por data ilegível — descarte deixa de ser silencioso. */
+        dataIlegivel: number;
       }[] = [];
 
       for (const f of fontes) {
@@ -1223,6 +1239,7 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
             comLp: 0,
             erro: true,
             semColunaTerm: false,
+            dataIlegivel: 0,
           });
           continue;
         }
@@ -1239,6 +1256,7 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
             comLp: 0,
             erro: false,
             semColunaTerm: false,
+            dataIlegivel: 0,
           });
           continue;
         }
@@ -1253,13 +1271,21 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
 
         let linhas = 0;
         let comLp = 0;
+        let dataIlegivel = 0;
 
         for (const row of data.rows) {
           // Janela só se a aba tem data: filtrar planilha sem data mataria
-          // fontes inteiras (o card mostraria zero onde há dado).
+          // fontes inteiras (o card mostraria zero onde há dado). Data presente
+          // mas ilegível descarta a linha — mesmo critério das vendas — só que
+          // agora contado, porque uma coluna em formato inesperado zerava a
+          // planilha inteira sem deixar rastro.
           if (cutoffYmd && dataIdx !== -1) {
             const dia = parseDay(row[dataIdx]);
-            if (!dia || dia < cutoffYmd) continue;
+            if (!dia) {
+              dataIlegivel++;
+              continue;
+            }
+            if (dia < cutoffYmd) continue;
           }
 
           const email = emailIdx !== -1 ? normalizeEmail(row[emailIdx]) : "";
@@ -1292,6 +1318,7 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
           comLp,
           erro: false,
           semColunaTerm: termIdx === -1 && cmpIdx === -1,
+          dataIlegivel,
         });
       }
 
