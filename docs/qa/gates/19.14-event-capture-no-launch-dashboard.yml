@@ -1,6 +1,6 @@
 storyId: "19.14"
 storyTitle: "Captação de Evento no dashboard — event_capture não é paid para o frontend"
-gate: CONCERNS
+gate: PASS
 reviewer: "@qa (Quinn)"
 reviewedAt: "2026-08-17"
 reReviewedAt: "2026-08-17"
@@ -197,3 +197,48 @@ reReview:
   nextAction: >
     @devops abre o PR. Após o preview do Vercel, validar os 9 itens do AC3 e
     registrar o resultado na story. Só então mergear.
+
+# ─────────────────────────────────────────────────────────────
+# FECHAMENTO — 2026-08-17, após a validação visual
+# ─────────────────────────────────────────────────────────────
+closure:
+  gate: PASS
+  previousGate: CONCERNS
+
+  resolvedIssue:
+    id: QA-19.14-02
+    severity: medium
+    status: RESOLVED
+    title: "AC3 — validação visual"
+    executedBy: "Danilo (marketing@bonsaitrafegopago.com.br)"
+    executedAt: "2026-08-17"
+    verdict: "conforme"
+    attribution: >
+      IMPORTANTE para a rastreabilidade da evidência: quem abriu a tela e
+      conferiu foi Danilo. O @qa NÃO inspecionou o dashboard — este registro é o
+      reporte de quem validou, não uma segunda inspeção independente. As demais
+      verificações deste gate (runtime Node, matriz de tipos, builds, suíte de
+      testes) foram executadas e conferidas pelo @qa diretamente.
+
+  finalState:
+    codeReview: PASS
+    unitTests: PASS
+    acceptanceCriteria: PASS    # 6/6 — AC3 fechado pela validação humana
+    noRegressions: PASS
+    performance: PASS
+    security: PASS
+    documentation: PASS
+
+  coverageNote: >
+    A story fica verificada de ponta a ponta, por dois meios distintos: o
+    caminho técnico (resolução de módulos, matriz de comportamento dos 9
+    stage_types, tsc, next build, 1029 testes) por execução do @qa; e a ponta
+    visível (API -> hook -> card -> formatação) por validação humana. Nenhuma das
+    verificações automatizadas alcança a segunda — foi exatamente o que o gate
+    anterior sustentou ao recusar o PASS antecipado.
+
+  stillOpenElsewhere:
+    - "Card Pesquisa ausente: CORRETO (funnel_surveys = 0). Vincular a planilha é ação de produto."
+    - "'Leads únicos: 1' com R$ 3,0K: problema de DADO na planilha n8n-leads-lp. Fora do escopo desta story, em aberto."
+    - "stage-phase.ts:37 ignora event_capture no auto-popular de campanhas — ClickUp 86ak1fett (backlog)."
+    - "/health de produção devolve commit:null — o detector de defasagem das stories 29.45/29.46 fica parcialmente cego. Resolve-se com RAILWAY_GIT_COMMIT_SHA."
