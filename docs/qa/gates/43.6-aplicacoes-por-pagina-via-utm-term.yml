@@ -1,0 +1,184 @@
+storyId: "43.6"
+storyTitle: "Aplicações por página vêm do utm_term, não do nome da aba"
+gate: CONCERNS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-08-17"
+commit: 00acf1de   # re-review; implementação original em 7337a645
+branch: feature/43.6-aplicacoes-por-utm-term
+
+summary: >
+  A lógica está correta e medida contra dados reais — a Página C aparece e o
+  total é preservado nas três abas. O que impede o PASS é o AC4: a explicação na
+  tela está condicionada à existência de aplicações órfãs, e há um cenário
+  plausível em que os números mudam sem que ela apareça. É defeito de gatilho,
+  não de cálculo.
+
+issues:
+  - id: QA-43.6-01
+    severity: medium
+    category: requirements
+    title: "AC4 não dispara quando a aba-base quebra sem deixar órfãs"
+    file: packages/web/components/funnels/applications-daily-chart.tsx
+    line: 240
+    description: >
+      A nota que explica "cada linha é uma página, o número pode ficar menor" é
+      renderizada sob `data.aplicacoesSemPagina > 0`. Mas o AC4 existe para
+      cobrir a MUDANÇA DE NÚMERO, e ela acontece sempre que a aba-base quebra —
+      com ou sem órfãs.
+    evidence: |
+      Executado contra agruparPorPagina() com uma aba-base de 3 linhas, todas
+      com LP (mesmo shape do teste "AC8" escrito pelo próprio dev):
+
+        séries geradas: PAGINA A=1, PAGINA B=1, PAGINA C=1
+        aplicacoesSemPagina = 0
+        nota do AC4 apareceria? NÃO
+
+      A série única de 3 virou três séries de 1. Os números mudaram e a tela
+      não explica nada.
+    whyItMatters: >
+      É exatamente o reporte falso de regressão que o AC4 foi escrito para
+      evitar — e o AC4 é obrigatório na story, não cosmético.
+    recommendation: >
+      O gatilho certo é "houve quebra", não "há órfãs". Levar no payload um
+      sinal do tipo `paginasVieramDoUtmTerm` (true quando alguma série de página
+      nasceu de aba SEM sufixo) e condicionar a nota a ele. `aplicacoesSemPagina`
+      continua útil para a ressalva do aviso — são dois sinais diferentes.
+
+  - id: QA-43.6-02
+    severity: low
+    category: docs
+    title: "Cabeçalho do arquivo descreve o comportamento antigo"
+    file: packages/api/src/routes/stage-applications.ts
+    line: 2
+    description: >
+      Abre com "uma série por planilha de aplicação (forma) do funil" e "Cada
+      planilha do tipo applications vira uma série própria, nomeada pelo label
+      da planilha". Depois desta story uma planilha pode virar N séries, e o
+      label deixa de nomeá-las quando a quebra acontece.
+    note: >
+      A segunda frase do mesmo bloco — "a comparação é casada FORMA A FORMA pelo
+      nome (label)" — já estava errada ANTES desta story: o código usa
+      `aggregateForms` (total vs total) desde antes. Dívida pré-existente,
+      registrada aqui porque quem for corrigir o cabeçalho vai tropeçar nela.
+    recommendation: "Atualizar o bloco. É comentário, não código."
+
+  - id: QA-43.6-03
+    severity: low
+    category: requirements
+    title: "Validação visual não executada"
+    description: >
+      Declarada abertamente pelo @dev. O efeito está medido contra as planilhas
+      reais, mas que a série "PAGINA C" desenhe na tela não foi confirmado.
+    recommendation: "Validar no preview do Vercel. Condição de saída, não bloqueio de gate."
+
+positives:
+  - "Medição contra as 3 abas de produção, com total preservado em todas — não é estimativa."
+  - "A Página C aparece: 17 -> PAGINA A 2 + PAGINA C 1 + Sem página 14. É o chamado que originou o Epic 43."
+  - "AC1 verificado: a aba -PaginaB segue intacta em 53, inclusive as 9 linhas sem utm_term."
+  - "AC6 confirmado por teste: alpha e alphabet NÃO viram LPH com a extração ancorada; extractLPName ficou intocado, como o AC6 exigia."
+  - "AC5 resolvido na raiz: o aviso passou a ler as séries do gráfico (ehPagina) em vez dos labels do banco — que era a origem do defeito."
+  - "O aviso ganhou ressalva em vez de sumir. Com 14 aplicações sem página, 'LPD não teve aplicação' seria afirmar mais do que se sabe. Está no espírito do Epic 43."
+  - "O @dev REFUTOU a premissa do @po sobre o dg-pg02 com evidência (os utm_term não trazem LP) em vez de forçar o exemplo. Reduziu o alcance de 2 funis para 1, honestamente."
+  - "Risco descartado por verificação: a comparação entre lançamentos usa aggregateForms (total vs total), então a quebra em N séries não a afeta."
+  - "aggregateForms recebeu ehPagina: false — o agregado não é página nenhuma e não contamina o cálculo do aviso."
+
+qualityChecks:
+  codeReview: PASS
+  unitTests: PASS            # 43/43, 18 novos, cobrindo AC1/2/3/6/7/8/9
+  acceptanceCriteria: CONCERNS   # AC4 com gatilho incompleto
+  noRegressions: PASS        # total preservado nas 3 abas; comparação intocada
+  performance: PASS
+  security: PASS
+  documentation: CONCERNS    # QA-43.6-02
+
+coderabbit:
+  status: N/A
+  reason: "CLI configurado para WSL/Windows; sessão em darwin. Revisão manual no lugar."
+
+nextAction: >
+  @dev corrige QA-43.6-01 (trocar o gatilho da nota) e QA-43.6-02 (cabeçalho).
+  QA-43.6-03 vai para o preview.
+
+# ─────────────────────────────────────────────────────────────
+# RE-REVIEW — 2026-08-17, commit 00acf1de
+# ─────────────────────────────────────────────────────────────
+reReview:
+  gate: CONCERNS
+  previousGate: CONCERNS
+
+  resolvedIssues:
+    - id: QA-43.6-01
+      status: RESOLVED
+      verifiedBy: >
+        Executei agruparPorPagina nos 5 cenários e conferi o sinal em cada um —
+        não o relato:
+          quebra SEM órfãs (o furo) -> paginasVieramDoUtmTerm=true,  semPagina=0
+          quebra COM órfãs          -> true,  semPagina=1
+          aba com sufixo (AC1)      -> false, semPagina=0
+          sem LP nenhuma (AC9)      -> false, semPagina=2
+          aba vazia                 -> false, semPagina=0
+        O caso que falhava agora dispara, e os que não deviam disparar seguem
+        calados. Separar `veioDoUtmTerm` de `aplicacoesSemPagina` foi a correção
+        certa: são duas perguntas distintas.
+
+    - id: QA-43.6-02
+      status: RESOLVED
+      verifiedBy: >
+        Os três arquivos corrigidos (rota, hook, componente). As ocorrências que
+        um grep ingênuo ainda encontra são as NEGAÇÕES escritas pelo @dev ("não
+        é casada forma a forma"), não a afirmação antiga. Conferido em contexto.
+      note: >
+        O @dev achou que a dívida estava em 3 arquivos, não em 1 como o gate
+        apontou — e corrigiu os três, registrando em cada um que a comparação é
+        agregada.
+
+  newIssue:
+    id: QA-43.6-04
+    severity: medium
+    category: requirements
+    title: "Aviso de 'aplicações sem página' aparece em funil que não mudou (AC9)"
+    file: packages/web/components/funnels/applications-daily-chart.tsx
+    line: 173
+    description: >
+      O bloco `!lpsOrfas.length && aplicacoesSemPagina > 0` não considera se
+      houve quebra. No cenário do AC9 — aba-base sem nenhuma LP — a série
+      continua única e idêntica ao que era, mas `aplicacoesSemPagina` é o total
+      de linhas, e a tela passa a exibir um aviso âmbar novo.
+    concreteCase: >
+      dg-pg02: 49 aplicações, série única "apc", NADA mudou com esta story
+      (medido pelo próprio @dev). Passaria a mostrar "49 aplicações estão no
+      gráfico sem página identificada". Factualmente verdadeiro e operacionalmente
+      inútil: aquele funil nunca organizou por página.
+    whyItMatters: >
+      O AC9 existe para o funil que não usa páginas NÃO mudar — "nada de série
+      solitária substituindo um gráfico que funcionava". Um aviso âmbar novo é
+      mudança. E a própria story cita a lição da 43.1: aviso que aparece com
+      tudo certo ensina o time a ignorar avisos.
+    recommendation: >
+      Condicionar o bloco também a `paginasVieramDoUtmTerm` — só faz sentido
+      falar de "aplicação sem página" quando o gráfico de fato organiza por
+      página. Uma linha.
+    doesNotRequireNewGate: >
+      Fix de uma condição, com o mesmo sinal que já existe no payload. Pode ser
+      verificado junto com a validação visual no preview, sem novo ciclo.
+
+  stillOpen:
+    - id: QA-43.6-03
+      title: "Validação visual"
+      note: >
+        Pesa mais nesta story que na média: o AC4 é INTEIRAMENTE de tela. Os
+        testes provam que o sinal chega; nenhum prova que a nota aparece no
+        lugar certo e legível. O próprio @dev registrou isso.
+
+  finalChecks:
+    codeReview: PASS
+    unitTests: PASS            # 47/47, 4 novos travando o furo do gate anterior
+    acceptanceCriteria: CONCERNS   # AC9 com efeito colateral na tela
+    noRegressions: PASS
+    performance: PASS
+    security: PASS
+    documentation: PASS        # QA-43.6-02 resolvido em 3 arquivos
+
+  nextAction: >
+    @dev corrige QA-43.6-04 (uma condição) e segue para o PR. A validação visual
+    no preview cobre os dois itens abertos de uma vez.

@@ -1,12 +1,16 @@
 import { describe, it, expect } from "vitest";
 import {
+  SEM_PAGINA,
   abasParaDescobrir,
+  acharColunaUtmTerm,
+  agruparPorPagina,
   derivarPrefixo,
   derivarPrefixos,
   ehNomeDePagina,
+  labelDaAbaDescoberta,
+  letraDaLpNoUtmTerm,
   letraDaPagina,
   letrasDasFormas,
-  labelDaAbaDescoberta,
 } from "../services/application-sheets.js";
 
 // Nomes reais do funil dg-pg04 (produção, 2026-08-14) — é o caso que originou
@@ -210,5 +214,212 @@ describe("labelDaAbaDescoberta", () => {
 
   it("preserva sufixo que não é de página", () => {
     expect(labelDaAbaDescoberta("Form-ComTicket", "Form")).toBe("ComTicket");
+  });
+});
+
+// ============================================================
+// Story 43.6 — a página vem do `utm_term`, não do nome da aba.
+// ============================================================
+
+describe("letraDaLpNoUtmTerm", () => {
+  const UTM_REAL =
+    "Instagram_Stories_dg-pg04-ago-26--vendas-principal-leads--2026-08-11--hot--cbo--estaticos-escassez--lpc|01_FD-ST_ALLINONE30D|ad01";
+
+  it("extrai a LP do utm_term real que motivou a story", () => {
+    expect(letraDaLpNoUtmTerm(UTM_REAL)).toBe("C");
+  });
+
+  it("aceita a LP delimitada por hífen, pipe, espaço, underscore e fim", () => {
+    expect(letraDaLpNoUtmTerm("--lpa|01")).toBe("A");
+    expect(letraDaLpNoUtmTerm("x--lpb--y")).toBe("B");
+    expect(letraDaLpNoUtmTerm("campanha lpd fim")).toBe("D");
+    expect(letraDaLpNoUtmTerm("lpe")).toBe("E");
+    expect(letraDaLpNoUtmTerm("algo_lpf")).toBe("F");
+  });
+
+  /**
+   * A razão de esta função existir em vez de reusar `extractLPName`.
+   *
+   * `extractLPName` é /lp([a-z])/i, sem âncora: "alpha" devolve LPH. Como `lph`
+   * é uma LP real do dg-pg04, o falso positivo sairia plausível demais para
+   * alguém desconfiar — e uma aplicação apareceria na página errada.
+   */
+  it("NÃO casa lp no meio de palavra — alpha não é LPH", () => {
+    expect(letraDaLpNoUtmTerm("alpha")).toBeNull();
+    expect(letraDaLpNoUtmTerm("alphabet")).toBeNull();
+    expect(letraDaLpNoUtmTerm("campanha-alpha-teste")).toBeNull();
+  });
+
+  it("devolve null para utm_term que não é nome de anúncio", () => {
+    expect(letraDaLpNoUtmTerm("publico-imersao")).toBeNull();
+    expect(letraDaLpNoUtmTerm("vendas-principal-leads")).toBeNull();
+    expect(letraDaLpNoUtmTerm("")).toBeNull();
+    expect(letraDaLpNoUtmTerm(null)).toBeNull();
+    expect(letraDaLpNoUtmTerm(undefined)).toBeNull();
+  });
+});
+
+describe("acharColunaUtmTerm", () => {
+  it("prefere a coluna PREENCHIDA, não a primeira homônima", () => {
+    // A aba-base do dg-pg04 tem três colunas "utm_term"; só uma tem dado.
+    const headers = ["data", "utm_term", "x", "utm_term", "utm_term"];
+    const rows = [
+      ["2026-08-14", "", "a", "--lpc|01", ""],
+      ["2026-08-15", "", "b", "--lpa|01", ""],
+    ];
+    expect(acharColunaUtmTerm(headers, rows)).toBe(3);
+  });
+
+  it("aceita variações de grafia do cabeçalho", () => {
+    expect(acharColunaUtmTerm(["UTM_TERM"], [["--lpa|"]])).toBe(0);
+    expect(acharColunaUtmTerm([" utm term "], [["--lpa|"]])).toBe(0);
+  });
+
+  it("devolve null quando nenhuma candidata tem dado", () => {
+    expect(acharColunaUtmTerm(["data", "utm_term"], [["2026-08-14", ""]])).toBeNull();
+    expect(acharColunaUtmTerm(["data"], [["2026-08-14"]])).toBeNull();
+  });
+});
+
+describe("agruparPorPagina", () => {
+  const linha = (dia: string, identificador = "") => ({ dia, identificador });
+
+  it("AC1 — aba COM sufixo não quebra: o nome já declarou a página", () => {
+    // Caso real: a aba -PaginaB do dg-pg04 tem 44 linhas com lpb e 9 sem UTM.
+    // As 9 pertencem à Página B, porque quem criou a aba já disse isso.
+    const g = agruparPorPagina("Pesquisa-Aplicacao-Comercial-PaginaB", "PAGINA B", [
+      linha("2026-08-10", "--lpb|01"),
+      linha("2026-08-11", ""),
+      linha("2026-08-11", "--lpc|01"),
+    ]);
+    expect(g).toHaveLength(1);
+    expect(g[0].label).toBe("PAGINA B");
+    expect(g[0].total).toBe(3);
+    expect(g[0].ehPagina).toBe(true);
+  });
+
+  it("AC2/AC3 — aba-base quebra por utm_term e guarda o resto", () => {
+    // A forma do dg-pg04: 2 lpa, 1 lpc, e o resto sem LP.
+    const g = agruparPorPagina("Pesquisa-Aplicacao-Comercial", "PAGINA A", [
+      linha("2026-08-04", "--lpa|01"),
+      linha("2026-08-14", "--lpa|01"),
+      linha("2026-08-14", "--lpc|01"),
+      linha("2026-08-01", "publico-imersao"),
+      linha("2026-08-02", ""),
+    ]);
+    expect(g.map((x) => x.label)).toEqual(["PAGINA A", "PAGINA C", SEM_PAGINA]);
+    expect(g.map((x) => x.total)).toEqual([2, 1, 2]);
+    expect(g.find((x) => x.label === "PAGINA C")?.ehPagina).toBe(true);
+    expect(g.find((x) => x.label === SEM_PAGINA)?.ehPagina).toBe(false);
+  });
+
+  it("AC3 — o total do gráfico não muda por causa da quebra", () => {
+    const linhas = [
+      linha("2026-08-04", "--lpa|01"),
+      linha("2026-08-14", "--lpc|01"),
+      linha("2026-08-01", "publico-imersao"),
+      linha("2026-08-02", ""),
+    ];
+    const g = agruparPorPagina("Pesquisa-Aplicacao-Comercial", "PAGINA A", linhas);
+    expect(g.reduce((n, x) => n + x.total, 0)).toBe(linhas.length);
+  });
+
+  it("AC8 — quebra pelo utm_term mesmo com label que não parece página (dg-pg02)", () => {
+    // O label do dg-pg02 é "apc" e a aba não tem sufixo. Pelo critério antigo
+    // (nome da aba) ele ficaria de fora — e é o funil que mais precisa: roda 4
+    // LPs numa aba-base só, hoje somadas numa série única.
+    const g = agruparPorPagina("Pesquisa-AplicaçãoComercial", "apc", [
+      linha("2026-08-01", "--lpa|01"),
+      linha("2026-08-02", "--lpb|01"),
+      linha("2026-08-03", "--lpc|01"),
+      linha("2026-08-04", "--lpf|01"),
+    ]);
+    expect(g.map((x) => x.label)).toEqual(["PAGINA A", "PAGINA B", "PAGINA C", "PAGINA F"]);
+    expect(g.every((x) => x.ehPagina)).toBe(true);
+  });
+
+  it("AC9 — aba-base sem nenhuma LP continua sendo uma série só", () => {
+    const g = agruparPorPagina("form com ticket", "form com ticket", [
+      linha("2026-08-01", "publico-geral"),
+      linha("2026-08-02", ""),
+    ]);
+    expect(g).toHaveLength(1);
+    expect(g[0].label).toBe("form com ticket");
+    expect(g[0].total).toBe(2);
+    // `false` mantém a guarda da 43.1: sem saber a página, o aviso se cala.
+    expect(g[0].ehPagina).toBe(false);
+  });
+
+  it("AC7 — aba sem coluna de utm_term cai no comportamento antigo", () => {
+    // `identificador` vazio em todas as linhas é como a rota sinaliza "sem coluna".
+    const g = agruparPorPagina("Pesquisa-Aplicacao-Comercial", "PAGINA A", [
+      linha("2026-08-01"),
+      linha("2026-08-02"),
+    ]);
+    expect(g).toHaveLength(1);
+    expect(g[0].ehPagina).toBe(false);
+  });
+
+  it("agrupa por dia dentro de cada página", () => {
+    const g = agruparPorPagina("base", "base", [
+      linha("2026-08-01", "--lpa|"),
+      linha("2026-08-01", "--lpa|"),
+      linha("2026-08-02", "--lpa|"),
+    ]);
+    expect(g[0].counts.get("2026-08-01")).toBe(2);
+    expect(g[0].counts.get("2026-08-02")).toBe(1);
+  });
+
+  it("aba vazia não inventa série", () => {
+    expect(agruparPorPagina("base", "base", [])).toEqual([
+      {
+        chave: "todas",
+        label: "base",
+        ehPagina: false,
+        veioDoUtmTerm: false,
+        counts: new Map(),
+        total: 0,
+      },
+    ]);
+  });
+});
+
+describe("agruparPorPagina — sinal de quebra (QA-43.6-01)", () => {
+  const linha = (dia: string, identificador = "") => ({ dia, identificador });
+
+  /**
+   * O furo que o gate pegou: a tela usava "há órfãs" como gatilho da explicação
+   * do AC4. Uma aba-base pode quebrar SEM deixar nenhuma órfã — e aí os números
+   * mudam do mesmo jeito, com a tela calada.
+   */
+  it("marca veioDoUtmTerm mesmo quando NÃO sobra nenhuma órfã", () => {
+    const g = agruparPorPagina("Pesquisa-AplicaçãoComercial", "apc", [
+      linha("2026-08-01", "--lpa|01"),
+      linha("2026-08-02", "--lpb|01"),
+      linha("2026-08-03", "--lpc|01"),
+    ]);
+    expect(g).toHaveLength(3);
+    expect(g.every((x) => x.veioDoUtmTerm)).toBe(true);
+    // nenhuma órfã — era exatamente aqui que o gatilho antigo falhava
+    expect(g.filter((x) => !x.ehPagina)).toHaveLength(0);
+  });
+
+  it("não marca veioDoUtmTerm quando a aba tem sufixo (AC1)", () => {
+    const g = agruparPorPagina("X-PaginaB", "PAGINA B", [linha("2026-08-01", "--lpb|01")]);
+    expect(g[0].veioDoUtmTerm).toBe(false);
+  });
+
+  it("não marca veioDoUtmTerm quando não houve quebra (AC9)", () => {
+    const g = agruparPorPagina("base", "base", [linha("2026-08-01", "publico-geral")]);
+    expect(g[0].veioDoUtmTerm).toBe(false);
+  });
+
+  it("a série SEM_PAGINA não sinaliza quebra sozinha — quem sinaliza são as páginas", () => {
+    const g = agruparPorPagina("base", "base", [
+      linha("2026-08-01", "--lpa|01"),
+      linha("2026-08-02", ""),
+    ]);
+    expect(g.find((x) => x.label === SEM_PAGINA)?.veioDoUtmTerm).toBe(false);
+    expect(g.find((x) => x.label === "PAGINA A")?.veioDoUtmTerm).toBe(true);
   });
 });

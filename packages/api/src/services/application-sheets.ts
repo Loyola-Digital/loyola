@@ -152,3 +152,193 @@ export function labelDaAbaDescoberta(sheetName: string, prefixo: string): string
   const limpo = sufixo.replace(/^[-_ ]+/, "").trim();
   return limpo === "" ? sheetName : limpo;
 }
+
+// ============================================================
+// Story 43.6 — a página vem do `utm_term`, não do nome da aba.
+//
+// A 43.1 assumiu 1 aba = 1 página. Na prática existe a ABA-BASE: o formulário
+// genérico onde caem todas as páginas que não ganharam aba própria. No
+// `dg-pg04` isso fez uma aplicação da Página C ser contada como Página A; no
+// `dg-pg02`, quatro LPs virarem uma série só — e em silêncio, porque o label
+// dali (`apc`) não parece nome de página e nem o aviso da 43.1 dispara.
+// ============================================================
+
+/** Rótulo das linhas cuja página não dá para saber. */
+export const SEM_PAGINA = "Sem página identificada";
+
+/**
+ * Letra da LP dentro de um `utm_term`, **ancorada nas fronteiras**.
+ *
+ * Por que não reusar `extractLPName` (`lp-campaigns.ts:52`): ele é
+ * `/lp([a-z])/i`, sem âncora. Em nome de campanha — curto e controlado — isso
+ * basta. Num `utm_term`, que é string longa e livre, **`alpha` casa como LPH**
+ * (`a-**lp-h**-a`), e `lph` é uma LP real do `dg-pg04`: o falso positivo sairia
+ * plausível demais para alguém desconfiar.
+ *
+ * Aqui a LP só conta quando vem delimitada, que é como ela de fato aparece:
+ * `…--estaticos-escassez--lpc|01_FD-ST…`
+ *
+ * `extractLPName` NÃO foi alterado — ele é consumido por `lpsSemForma` e pela
+ * Story 18.44, e mudar semântica compartilhada não é escopo desta story.
+ */
+const LP_ANCORADA = /(?:^|[-_|\s])lp([a-z])(?=$|[-_|\s])/i;
+
+export function letraDaLpNoUtmTerm(texto: string | null | undefined): string | null {
+  if (!texto) return null;
+  const m = texto.match(LP_ANCORADA);
+  return m ? m[1].toUpperCase() : null;
+}
+
+/**
+ * Índice da coluna que carrega o `utm_term` — a **preenchida**, não a primeira
+ * homônima.
+ *
+ * A aba-base do `dg-pg04` tem TRÊS colunas chamadas `utm_term` (índices 23, 47
+ * e 48). Hoje só a 23 tem dados, então `headers.indexOf("utm_term")` acerta —
+ * por sorte. No dia em que alguém preencher a 47, ele passa a devolver a coluna
+ * errada e o gráfico volta a agrupar errado, sem nenhum sinal.
+ *
+ * `null` quando nenhuma candidata tem dado: a aba não sabe dizer a página, e o
+ * chamador cai no comportamento antigo (aba = série).
+ */
+export function acharColunaUtmTerm(headers: string[], rows: string[][]): number | null {
+  const candidatas = headers
+    .map((h, i) => ({ h, i }))
+    .filter(({ h }) => /utm[_ ]?term/i.test(h.trim()));
+  if (!candidatas.length) return null;
+
+  let melhor: { i: number; n: number } | null = null;
+  for (const { i } of candidatas) {
+    let n = 0;
+    for (const r of rows) if ((r[i] ?? "").trim()) n++;
+    if (!melhor || n > melhor.n) melhor = { i, n };
+  }
+  return melhor && melhor.n > 0 ? melhor.i : null;
+}
+
+/** Linha já reduzida ao que importa para agrupar. */
+export interface LinhaParaAgrupar {
+  /** Dia já normalizado (YYYY-MM-DD). */
+  dia: string;
+  /** Texto onde procurar a LP (`utm_term`). Vazio quando a aba não tem a coluna. */
+  identificador: string;
+}
+
+export interface GrupoDePagina {
+  /** Sufixo estável para compor o id da série. */
+  chave: string;
+  label: string;
+  /**
+   * A série corresponde a uma página CONHECIDA?
+   *
+   * É o que alimenta o aviso de LP órfã: uma série que não sabe que página é
+   * não pode servir de prova de que a página X tem aplicação — e é justamente
+   * essa dúvida que faz o aviso se calar (ver `letrasDasFormas`).
+   */
+  ehPagina: boolean;
+  /**
+   * A página desta série foi determinada pelo `utm_term` — e não pelo sufixo da
+   * aba?
+   *
+   * É o sinal de que os números da tela MUDARAM de forma: uma série que antes
+   * somava páginas diferentes virou várias. A tela precisa disso para explicar
+   * a queda antes que alguém a reporte como regressão (AC4).
+   *
+   * Distinto de `ehPagina` e de "há órfãs": uma aba-base pode quebrar em três
+   * páginas sem sobrar nenhuma linha órfã — e os números mudam do mesmo jeito.
+   * Foi o furo QA-43.6-01, onde `aplicacoesSemPagina` estava fazendo este
+   * trabalho e falhava exatamente nesse caso.
+   */
+  veioDoUtmTerm: boolean;
+  counts: Map<string, number>;
+  total: number;
+}
+
+/**
+ * Agrupa as linhas de UMA aba nas séries que vão para o gráfico.
+ *
+ * | Caso | Resultado |
+ * |---|---|
+ * | aba com sufixo de página (`…-PaginaB`) | uma série só — o nome já declarou a página (AC1) |
+ * | aba-base com LP no `utm_term` | uma série por LP + `SEM_PAGINA` para o resto (AC2/AC3) |
+ * | aba-base sem nenhuma LP | uma série só, como antes (AC9) |
+ *
+ * **A porta de entrada da quebra é a presença de LP nas linhas — não a grafia
+ * do label.** Usar o nome da aba aqui excluiria o `dg-pg02`, cujo label é
+ * `apc` e que roda quatro LPs numa aba-base só: exatamente o caso que esta
+ * story existe para corrigir.
+ */
+export function agruparPorPagina(
+  sheetName: string,
+  labelDaAba: string,
+  linhas: LinhaParaAgrupar[],
+): GrupoDePagina[] {
+  const soma = (ls: LinhaParaAgrupar[]) => {
+    const counts = new Map<string, number>();
+    for (const l of ls) counts.set(l.dia, (counts.get(l.dia) ?? 0) + 1);
+    return counts;
+  };
+  const serieUnica = (ehPagina: boolean): GrupoDePagina[] => [
+    {
+      chave: "todas",
+      label: labelDaAba,
+      ehPagina,
+      // Série única = nada mudou de forma, venha ela do sufixo (AC1) ou da
+      // ausência de LP (AC9).
+      veioDoUtmTerm: false,
+      counts: soma(linhas),
+      total: linhas.length,
+    },
+  ];
+
+  // AC1 — o sufixo da aba é declaração explícita da página. O `utm_term` não
+  // sobrepõe: quem criou a aba já disse a que página ela pertence, e as linhas
+  // sem UTM dela pertencem a ela também.
+  const letraDaAba = letraDaPagina(sheetName);
+  if (letraDaAba) return serieUnica(true);
+
+  const porLetra = new Map<string, LinhaParaAgrupar[]>();
+  const orfas: LinhaParaAgrupar[] = [];
+  for (const l of linhas) {
+    const letra = letraDaLpNoUtmTerm(l.identificador);
+    if (!letra) orfas.push(l);
+    else porLetra.set(letra, [...(porLetra.get(letra) ?? []), l]);
+  }
+
+  // AC9 — nenhuma LP identificada: a aba não fala a língua de páginas (ou não
+  // tem a coluna). Mantém o gráfico como está, em vez de trocar uma série que
+  // funcionava por um "Sem página identificada" solitário.
+  //
+  // `ehPagina: false` preserva a guarda da 43.1: enquanto uma série não souber
+  // que página é, o aviso de LP órfã continua calado.
+  if (porLetra.size === 0) return serieUnica(false);
+
+  const grupos: GrupoDePagina[] = [...porLetra.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([letra, ls]) => ({
+      chave: `LP${letra}`,
+      label: `PAGINA ${letra}`,
+      ehPagina: true,
+      veioDoUtmTerm: true,
+      counts: soma(ls),
+      total: ls.length,
+    }));
+
+  // AC3 — o que não deu para atribuir continua no gráfico. Descartar trocaria
+  // um número errado por um número menor e igualmente errado; o total da tela
+  // não pode mudar por causa desta story.
+  if (orfas.length) {
+    grupos.push({
+      chave: "sem-pagina",
+      label: SEM_PAGINA,
+      ehPagina: false,
+      // Não é página, então não "veio do utm_term" — quem sinaliza a quebra são
+      // as séries de página acima. Esta pode existir sozinha? Não: se nenhuma
+      // linha tivesse LP, o AC9 já teria devolvido série única.
+      veioDoUtmTerm: false,
+      counts: soma(orfas),
+      total: orfas.length,
+    });
+  }
+  return grupos;
+}
