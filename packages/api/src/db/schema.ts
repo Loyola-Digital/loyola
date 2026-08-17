@@ -2939,3 +2939,37 @@ export const vturbPlayers = pgTable(
     index("idx_vturb_players_stage").on(table.stageId),
   ]
 );
+
+// ============================================================
+// PDI — Plano de Desenvolvimento Individual
+// ============================================================
+// Documento HTML autocontido, escrito fora do app e atribuído a uma pessoa por
+// um admin. Guardamos o HTML inteiro (não um caminho de arquivo) porque o PDI é
+// um snapshot: precisa continuar exibindo exatamente o que foi combinado
+// naquele momento, mesmo que o arquivo original suma ou seja editado.
+//
+// Sem UNIQUE em userId de propósito: cada atribuição nova é uma versão. A
+// pessoa vê a mais recente; o histórico serve pra comparar com o ciclo anterior.
+export const pdiDocuments = pgTable(
+  "pdi_documents",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** Dono do PDI — é ele, e só ele, que enxerga o documento. */
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 255 }).notNull(),
+    /** HTML completo do documento (<!DOCTYPE html>…). Renderizado em iframe sandbox. */
+    html: text("html").notNull(),
+    /** Admin que atribuiu. `restrict` porque apagar quem atribuiu não pode apagar o PDI. */
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // A consulta quente é "o PDI mais recente desta pessoa", em todo boot do app.
+    index("idx_pdi_documents_user_created").on(table.userId, table.createdAt),
+  ]
+);

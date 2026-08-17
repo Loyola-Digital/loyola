@@ -1506,7 +1506,8 @@ function LpPerformanceSection({
           funnelLoading={lpFunnel.isLoading}
           refConversao={funil.refConversao}
           pctHeranca={funil.pctHeranca}
-          etapasIndisponiveis={funil.etapasIndisponiveis}
+          temFonte={funil.temFonte}
+          fontesPorEtapa={funil.fontesPorEtapa}
           onFirstExpand={() => setFunilPedido(true)}
         />
       )}
