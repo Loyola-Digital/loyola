@@ -1,0 +1,111 @@
+storyId: "19.14"
+storyTitle: "Captação de Evento no dashboard — event_capture não é paid para o frontend"
+gate: FAIL
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-08-17"
+commit: d183ad4b
+branch: feature/19.14-event-capture-dashboard
+
+summary: >
+  A lógica da story está correta e a mudança é cirúrgica — só `event_capture`
+  muda de comportamento. Mas o AC1 quebra a API em produção: o reexport usa o
+  subpath `@loyola-x/shared/src/stage-types`, que o `tsc` emite literalmente no
+  JS e o Node não consegue resolver em runtime. Três módulos do caminho de boot
+  dependem dele. Nenhuma das validações executadas (tsc --noEmit, vitest,
+  next build) exercita a resolução do Node puro, que é como a API roda.
+
+issues:
+  - id: QA-19.14-01
+    severity: critical
+    category: code
+    title: "API não sobe em produção — ERR_MODULE_NOT_FOUND no reexport do shared"
+    file: packages/api/src/utils/stage-types.ts
+    description: >
+      O reexport aponta para `@loyola-x/shared/src/stage-types`. O tsc não
+      reescreve especificadores, então `dist/utils/stage-types.js` mantém o
+      caminho para `src/` SEM extensão — e `src/` só contém `.ts`. Em ESM o Node
+      exige extensão explícita e o pacote não declara `exports`, então a
+      resolução falha.
+    evidence: |
+      $ node -e "import('./dist/utils/stage-types.js')"
+      FALHOU: ERR_MODULE_NOT_FOUND | Cannot find module
+        '.../node_modules/@loyola-x/shared/src/stage-types'
+        imported from '.../packages/api/dist/utils/stage-types.js'
+
+      $ node -e "import('./dist/routes/stage-sales-data.js')"
+      ROTA FALHOU: ERR_MODULE_NOT_FOUND (mesma causa)
+    blastRadius: >
+      3 módulos do caminho de boot importam utils/stage-types.js —
+      routes/stage-sales-data.ts:22, routes/stage-comercial.ts:14 e
+      services/sales-daily-sync.ts:2. A API roda `node dist/server.js`
+      (package.json:16), então o processo não sobe. stage-sales-data é
+      justamente a rota que serve o faturamento que esta story quer exibir.
+    whyValidationsMissedIt: >
+      tsc --noEmit resolve `.ts` e passa; vitest transpila on-the-fly e passa;
+      next build usa transpilePackages e passa. Só o runtime Node puro quebra.
+    recommendation: >
+      Seguir o padrão do contract.ts por completo, não pela metade:
+      (1) `packages/shared/src/index.ts` → adicionar
+          `export * from "./stage-types.js";` (o contract.ts está na linha 14);
+      (2) `packages/api/src/utils/stage-types.ts` → reexportar de
+          `@loyola-x/shared` (bare), que resolve por `main` → `dist/index.js`;
+      (3) o web MANTÉM o subpath `@loyola-x/shared/src/stage-types`
+          (transpilePackages cuida da transpilação — e o next build já provou).
+      Verificado: o bare import carrega e hoje expõe API_CONTRACT_VERSION mas
+      NÃO ehCaptacaoPaga, exatamente porque falta o passo (1).
+    verification: >
+      Depois do fix, rodar `pnpm --filter @loyola-x/api build` e
+      `node -e "import('./dist/routes/stage-sales-data.js')"`. Este comando
+      precisa entrar no DoD — é o único que teria pego o defeito.
+
+  - id: QA-19.14-02
+    severity: medium
+    category: requirements
+    title: "AC3 (validação visual) não executado"
+    description: >
+      Declarado abertamente pelo @dev, não escondido — e a tentativa de subir o
+      ambiente local falhou por motivos pré-existentes (API trava no boot; web
+      fica em LISTEN sem responder; chaves Clerk são pk_test/sk_test contra
+      banco de produção, então o usuário local não teria membership no projeto).
+    recommendation: >
+      Validar no preview do Vercel após o fix do QA-19.14-01. Os 9 itens estão
+      no AC3. Não repetir o débito das stories 29.51/29.52.
+
+  - id: QA-19.14-03
+    severity: low
+    category: code
+    title: "ehCaptacaoPaga(stageType) chamado 3x por hook em vez de constante"
+    file: packages/web/components/funnels/launch-dashboard.tsx
+    lines: "132-151"
+    description: >
+      Os três hooks repetem a chamada 3x cada (9 no total). Espelha o código
+      anterior, que repetia `stageType === "paid"` do mesmo jeito, então não é
+      regressão. `isPaidCapture` já existe na linha 273 — só está declarado
+      DEPOIS dos hooks.
+    recommendation: >
+      Subir a constante para antes dos hooks e reusar. Cosmético; sem impacto
+      funcional (a função é pura e trivial).
+
+positives:
+  - "Mudança cirúrgica por construção: ehCaptacaoPaga só difere de === \"paid\" para event_capture. Os outros 8 stage_types mantêm comportamento idêntico — AC4 satisfeito por raciocínio, não só por amostragem."
+  - "As 3 exceções do AC2 foram respeitadas: stage-card.tsx intocado (git diff vazio), page.tsx:299 (seletor de tipo) e launch-dashboard.tsx:835 (bloco === \"free\") seguem literais."
+  - "Sem duplicação do LpPerformanceSection: :644 e :851 são mutuamente exclusivos para os três tipos relevantes (paid, event_capture, free) — conferido caso a caso."
+  - "Decisão de não tocar lp-performance-table.tsx está correta e documentada: os dois call sites normalizam com stageType={isPaid ? \"paid\" : \"free\"}."
+  - "As 11 falhas de teste foram PROVADAS pré-existentes via git stash, não presumidas."
+  - "Ampliar as props para StageType foi diagnóstico certo: as uniões escritas à mão estavam defasadas e o estreitamento do call site as escondia."
+  - "AC3b: a inferência sobre o deploy da API (registro gravado 21 min após o commit exige o zod enum novo) é sólida, e a ressalva de que é indireta foi registrada."
+
+qualityChecks:
+  codeReview: CONCERNS      # QA-19.14-03 (cosmético) + QA-19.14-01 (crítico)
+  unitTests: PASS           # 9/9 no helper; cobre event_capture e null/undefined
+  acceptanceCriteria: FAIL  # AC1 quebra runtime da API; AC3 não executado
+  noRegressions: FAIL       # a API deixa de subir
+  performance: PASS         # função pura, sem I/O
+  security: PASS            # sem superfície nova; nenhum dado sensível tocado
+  documentation: PASS       # story e comentários de código acima da média
+
+coderabbit:
+  status: N/A
+  reason: "CLI configurado para WSL/Windows; sessão em darwin. Revisão manual no lugar."
+
+nextAction: "@dev corrige QA-19.14-01 (fix de 2 linhas) e re-submete. QA-19.14-02 vai para o preview do Vercel; QA-19.14-03 é opcional."
