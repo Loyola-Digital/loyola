@@ -55,7 +55,21 @@ export interface StageApplications {
    * pergunta "cadê a LPA" não faz sentido.
    */
   lpsOrfas: string[];
-  /** uma série por planilha de aplicação (lançamento atual). */
+  /**
+   * Story 43.6 — aplicações que entraram no gráfico sem página conhecida.
+   *
+   * Anda junto com `lpsOrfas`: enquanto for > 0, "a LPD não teve aplicação" é
+   * afirmação com ressalva, porque alguma dessas linhas pode ser dela. A tela
+   * precisa poder dizer isso em vez de apresentar a lista como certeza.
+   */
+  aplicacoesSemPagina: number;
+  /**
+   * Uma série por PÁGINA (Story 43.6) — não mais por planilha.
+   *
+   * A aba-base é o formulário genérico onde caem todas as páginas sem aba
+   * própria; quem decide a página é o `utm_term` da linha. Aba com sufixo
+   * (`…-PaginaB`) continua produzindo uma série só.
+   */
   forms: ApplicationForm[];
   /** total AGREGADO do lançamento anterior (soma das planilhas), no eixo D-day.
    *  É a linha tracejada de comparação — casa lançamento vs lançamento, não por

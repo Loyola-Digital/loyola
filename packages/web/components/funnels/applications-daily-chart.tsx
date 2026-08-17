@@ -146,15 +146,35 @@ export function ApplicationsDailyChart({
               <span className="font-medium">{a.aba}</span> não está no gráfico — {a.motivo}.
             </p>
           ))}
+          {/* Story 43.6 — o conselho mudou. Antes era "crie a aba", e a aba
+              deixou de ser o que determina a página: agora quem decide é o
+              `utm_term` da linha. Dizer "crie a aba" mandaria o time criar uma
+              aba que não recuperaria a aplicação já registrada. */}
           {data.lpsOrfas?.length > 0 && (
             <p className="text-[11px] text-amber-700 dark:text-amber-400">
-              <span className="font-medium">
-                {data.lpsOrfas.join(", ")}
-              </span>{" "}
-              {data.lpsOrfas.length === 1 ? "está rodando" : "estão rodando"} na Meta mas não
-              {data.lpsOrfas.length === 1 ? " tem aba" : " têm aba"} de aplicação. Se
-              {data.lpsOrfas.length === 1 ? " essa página tem" : " essas páginas têm"} formulário,
-              crie a aba na planilha do lançamento.
+              <span className="font-medium">{data.lpsOrfas.join(", ")}</span>{" "}
+              {data.lpsOrfas.length === 1 ? "está rodando" : "estão rodando"} na Meta e não
+              {data.lpsOrfas.length === 1 ? " teve nenhuma aplicação" : " tiveram nenhuma aplicação"}{" "}
+              atribuída.
+              {data.aplicacoesSemPagina > 0 && (
+                <>
+                  {" "}Há <span className="font-medium">{data.aplicacoesSemPagina}</span>{" "}
+                  {data.aplicacoesSemPagina === 1 ? "aplicação" : "aplicações"} sem página
+                  identificada no gráfico —{" "}
+                  {data.aplicacoesSemPagina === 1 ? "ela pode ser" : "algumas podem ser"} destas
+                  páginas.
+                </>
+              )}
+            </p>
+          )}
+          {/* Sem LP órfã, mas com aplicação sem página: a tela ainda deve dizer
+              que uma parte do gráfico não sabe a que página pertence. */}
+          {!data.lpsOrfas?.length && data.aplicacoesSemPagina > 0 && (
+            <p className="text-[11px] text-amber-700 dark:text-amber-400">
+              <span className="font-medium">{data.aplicacoesSemPagina}</span>{" "}
+              {data.aplicacoesSemPagina === 1 ? "aplicação está" : "aplicações estão"} no gráfico sem
+              página identificada — o anúncio de origem não trazia a LP no{" "}
+              <span className="font-mono">utm_term</span>.
             </p>
           )}
         </div>
@@ -164,8 +184,7 @@ export function ApplicationsDailyChart({
         <div>
           <h3 className="text-sm font-semibold">Aplicações por dia</h3>
           <p className="text-[11px] text-muted-foreground">
-            Uma linha por planilha de aplicação, alinhada por dia de lançamento (D1 = primeiro dia
-            com aplicação)
+            Uma linha por página, alinhada por dia de lançamento (D1 = primeiro dia com aplicação)
             {temComparacao && data.compareFunnelName
               ? ` · tracejado = ${data.compareFunnelName}`
               : ""}
@@ -211,6 +230,24 @@ export function ApplicationsDailyChart({
             <p className="text-2xl font-semibold leading-none">{nf(f.total)}</p>
           </div>
         ))}
+      </div>
+
+      {/* Story 43.6 (AC4) — o número de uma página pode ter CAÍDO com esta
+          mudança, e cair parece bug. No dg-pg04 a "Página A" foi de 17 para 2:
+          as outras 15 eram de páginas diferentes que caíam no mesmo formulário
+          e apareciam somadas. Sem esta linha, alguém abre a tela, vê o número
+          menor e reporta uma regressão que não existe. */}
+      {data.aplicacoesSemPagina > 0 && (
+        <div className="mb-4 rounded-lg border border-border/40 bg-muted/30 px-3 py-2">
+          <p className="text-[11px] text-muted-foreground">
+            Cada linha é uma <span className="font-medium">página</span>, não uma aba da planilha.
+            Aplicações que caem no formulário genérico são atribuídas pela LP do{" "}
+            <span className="font-mono">utm_term</span> do anúncio — por isso o número de uma página
+            pode ficar menor do que antes: o valor anterior somava páginas diferentes.
+          </p>
+        </div>
+      )}
+      <div className="mb-4 flex flex-wrap gap-x-6 gap-y-3">
 
         {/* Total do lançamento + delta vs. anterior (só quando há comparação
             ou mais de uma forma, pra não repetir o número da forma única). */}

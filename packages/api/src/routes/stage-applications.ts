@@ -33,10 +33,13 @@ import { extractLPName } from "./lp-campaigns.js";
 import { getSpreadsheetSheets, readSheetData } from "../services/google-sheets.js";
 import {
   abasParaDescobrir,
+  acharColunaUtmTerm,
+  agruparPorPagina,
   derivarPrefixos,
   ehNomeDePagina,
   labelDaAbaDescoberta,
-  letrasDasFormas,
+  letraDaPagina,
+  type LinhaParaAgrupar,
 } from "../services/application-sheets.js";
 
 const paramsSchema = z.object({
@@ -78,6 +81,14 @@ interface RawForm {
   label: string;
   /** Nome da aba de origem — identifica a página quando o label não identifica. */
   sheetName: string;
+  /**
+   * Story 43.6 — a série corresponde a uma página CONHECIDA?
+   *
+   * `false` para a série "Sem página identificada" e para a aba-base que não
+   * conseguiu quebrar. É o que impede o aviso de LP órfã de afirmar mais do que
+   * se sabe: enquanto houver aplicação sem página, ela pode ser da LP acusada.
+   */
+  ehPagina: boolean;
   /** data (aaaa-mm-dd) -> nº de aplicações naquele dia. */
   counts: Map<string, number>;
   total: number;
@@ -109,6 +120,10 @@ interface FormsResult {
    * saber se ALGUMA forma ficou sem letra identificável — ver `lpsSemForma`.
    */
   identificadores: string[][];
+  /** Story 43.6 — letras das séries que SÃO página (base do aviso, AC5). */
+  letrasComForma: string[];
+  /** Story 43.6 — aplicações que não deu para atribuir a nenhuma página. */
+  semPagina: number;
 }
 
 interface FormSeries {
@@ -138,14 +153,22 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         and(eq(funnelSpreadsheets.funnelId, funnelId), eq(funnelSpreadsheets.type, "applications")),
       );
 
-    if (!sheets.length) return { forms: [], avisos: [], nomes: [], identificadores: [] };
+    if (!sheets.length)
+      return { forms: [], avisos: [], nomes: [], identificadores: [], letrasComForma: [], semPagina: 0 };
 
     const avisos: AvisoForma[] = [];
 
     /**
-     * Conta as linhas de UMA aba. Devolve `null` (com aviso) em vez de forma
-     * zerada quando a aba não dá para ler ou não tem a coluna de data — zerado
-     * mente, dizendo "essa página não teve aplicação".
+     * Conta as linhas de UMA aba e devolve as séries que ela produz.
+     *
+     * Story 43.6: uma aba pode virar VÁRIAS séries. A aba-base é o formulário
+     * genérico onde caem todas as páginas sem aba própria, então quem decide a
+     * página é o `utm_term` da linha, não o nome do arquivo. Aba com sufixo
+     * (`…-PaginaB`) continua produzindo uma série só.
+     *
+     * Devolve `[]` (com aviso) em vez de série zerada quando a aba não dá para
+     * ler ou não tem a coluna de data — zerado mente, dizendo "essa página não
+     * teve aplicação".
      */
     async function contar(
       sheetId: string,
@@ -153,10 +176,10 @@ export default fp(async function stageApplicationsRoutes(fastify) {
       spreadsheetId: string,
       sheetName: string,
       dateCol: string | undefined,
-    ): Promise<RawForm | null> {
+    ): Promise<RawForm[]> {
       if (!dateCol) {
         avisos.push({ aba: sheetName, motivo: `a planilha "${label}" está sem coluna de data mapeada` });
-        return null;
+        return [];
       }
 
       let data: { headers: string[]; rows: string[][] };
@@ -170,32 +193,46 @@ export default fp(async function stageApplicationsRoutes(fastify) {
           aba: sheetName,
           motivo: "não foi possível ler a aba — verifique permissão de leitura e se ela não foi renomeada",
         });
-        return null;
+        return [];
       }
 
       const idx = data.headers.indexOf(dateCol);
       if (idx === -1) {
         avisos.push({ aba: sheetName, motivo: `a aba não tem a coluna "${dateCol}"` });
-        return null;
+        return [];
       }
 
-      const counts = new Map<string, number>();
-      let total = 0;
+      // AC7: a coluna PREENCHIDA, não a primeira homônima — a aba-base do
+      // `dg-pg04` tem três colunas `utm_term` e só uma com dado.
+      const idxUtm = acharColunaUtmTerm(data.headers, data.rows);
+
+      const linhas: LinhaParaAgrupar[] = [];
       for (const row of data.rows) {
         const day = parseDay(row[idx]);
         // Linha sem data válida (arrasto no fim da planilha, célula em branco)
         // não entra: entraria como "hoje" e inflaria o último dia.
         if (!day) continue;
-        counts.set(day, (counts.get(day) ?? 0) + 1);
-        total++;
+        linhas.push({ dia: day, identificador: idxUtm === null ? "" : (row[idxUtm] ?? "") });
       }
-      return { sheetId, label, sheetName, counts, total };
+
+      return agruparPorPagina(sheetName, label, linhas).map((g) => ({
+        // Id composto para as séries não colidirem quando uma aba gera várias.
+        sheetId: g.chave === "todas" ? sheetId : `${sheetId}::${g.chave}`,
+        label: g.label,
+        sheetName,
+        ehPagina: g.ehPagina,
+        counts: g.counts,
+        total: g.total,
+      }));
     }
 
     // ── Cadastradas ────────────────────────────────────────────────────────
-    const cadastradas = await Promise.all(
-      sheets.map((s) => contar(s.id, s.label, s.spreadsheetId, s.sheetName, s.columnMapping?.date)),
-    );
+    // Story 43.6: `.flat()` porque uma aba-base pode gerar várias séries.
+    const cadastradas = (
+      await Promise.all(
+        sheets.map((s) => contar(s.id, s.label, s.spreadsheetId, s.sheetName, s.columnMapping?.date)),
+      )
+    ).flat();
 
     // ── Descobertas (AC1) ──────────────────────────────────────────────────
     // Varre cada arquivo já vinculado atrás de abas do mesmo grupo que ainda
@@ -207,7 +244,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
       porArquivo.set(s.spreadsheetId, lista);
     }
 
-    const descobertas: (RawForm | null)[] = [];
+    const descobertas: RawForm[] = [];
     for (const [spreadsheetId, doArquivo] of porArquivo) {
       const prefixos = derivarPrefixos(doArquivo.map((s) => s.sheetName));
       // Mapping herdado do grupo — as planilhas de um mesmo arquivo usam o mesmo
@@ -236,27 +273,43 @@ export default fp(async function stageApplicationsRoutes(fastify) {
       // round-trip ao Google no primeiro carregamento — que é exatamente quando
       // o gestor está olhando a tela.
       descobertas.push(
-        ...(await Promise.all(
-          alvos.map(({ aba, prefixo }) =>
-            contar(
-              `descoberta:${spreadsheetId}:${aba}`,
-              labelDaAbaDescoberta(aba, prefixo),
-              spreadsheetId,
-              aba,
-              dateColHerdada,
+        ...(
+          await Promise.all(
+            alvos.map(({ aba, prefixo }) =>
+              contar(
+                `descoberta:${spreadsheetId}:${aba}`,
+                labelDaAbaDescoberta(aba, prefixo),
+                spreadsheetId,
+                aba,
+                dateColHerdada,
+              ),
             ),
-          ),
-        )),
+          )
+        ).flat(),
       );
     }
 
-    const forms = [...cadastradas, ...descobertas].filter((f): f is RawForm => f !== null);
+    const forms = [...cadastradas, ...descobertas];
     // Aba e label alimentam a porta de entrada do AC5: se NENHUM deles segue a
     // nomenclatura por página, este funil não fala a língua de "LPA/LPB" e o
     // aviso de LP órfã não faz sentido nele.
     const identificadores = forms.map((f) => [f.label, f.sheetName]);
     const nomes = identificadores.flat();
-    return { forms, avisos, nomes, identificadores };
+
+    // Story 43.6 — a prova de que uma página TEM aplicação passa a ser a série
+    // do gráfico, não o label cadastrado à mão. Era o label "PAGINA A" da
+    // aba-base que anulava a guarda da 43.1 e fazia o aviso acusar LPC–LPI.
+    const letrasComForma = [
+      ...new Set(
+        forms
+          .filter((f) => f.ehPagina)
+          .map((f) => letraDaPagina(f.label) ?? letraDaPagina(f.sheetName))
+          .filter((l): l is string => l !== null),
+      ),
+    ];
+    const semPagina = forms.filter((f) => !f.ehPagina).reduce((n, f) => n + f.total, 0);
+
+    return { forms, avisos, nomes, identificadores, letrasComForma, semPagina };
   }
 
   /**
@@ -306,6 +359,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
     projectId: string,
     nomes: string[],
     identificadores: string[][],
+    letrasComForma: string[],
   ): Promise<string[]> {
     // Porta de entrada: funil que nomeia as formas por formulário ("form com
     // ticket") não fala a língua de LPA/LPB. Ali, "a LPA não tem aba" não
@@ -323,9 +377,18 @@ export default fp(async function stageApplicationsRoutes(fastify) {
     // questão. Silêncio aqui é um falso negativo; o contrário seria acusar erro
     // com a página na tela — a mesma armadilha que a porta de entrada acima
     // evita, e a única que o gate anterior deixou passar.
-    const letras = letrasDasFormas(identificadores);
-    if (letras === null) return [];
-    const comForma = new Set(letras);
+    // Story 43.6 — a prova de que uma página tem aplicação é a SÉRIE do gráfico,
+    // não o label cadastrado no banco.
+    //
+    // Antes vinha de `letrasDasFormas(identificadores)`, que lia labels. A
+    // guarda dela — devolver `null` quando alguma forma não tem letra — existia
+    // justamente para calar o aviso na dúvida, e foi anulada no `dg-pg04` por
+    // alguém ter cadastrado a aba-base com o label "PAGINA A". Ler as séries
+    // resolve na origem: a aba-base agora se declara por linha, via `utm_term`.
+    //
+    // `letrasDasFormas` continua exportada e testada — segue valendo para quem
+    // precise da pergunta antiga, e mudá-la não é escopo desta story.
+    const comForma = new Set(letrasComForma);
 
     const desde = new Date();
     desde.setDate(desde.getDate() - 30);
@@ -367,7 +430,17 @@ export default fp(async function stageApplicationsRoutes(fastify) {
       for (const [k, v] of f.counts) counts.set(k, (counts.get(k) ?? 0) + v);
       total += f.total;
     }
-    return { sheetId: "__total__", label: "Total", sheetName: "__total__", counts, total };
+    // `ehPagina: false` — o agregado é a soma de TODAS as páginas, então ele não
+    // é página nenhuma. Só existe para o total da comparação entre lançamentos;
+    // não entra no cálculo do aviso de LP órfã.
+    return {
+      sheetId: "__total__",
+      label: "Total",
+      sheetName: "__total__",
+      ehPagina: false,
+      counts,
+      total,
+    };
   }
 
   /** Soma séries JÁ alinhadas (mesmo eixo D-day) num total por dia. */
@@ -462,7 +535,12 @@ export default fp(async function stageApplicationsRoutes(fastify) {
       const semPlanilha = atualRaw.forms.length === 0 && atualRaw.avisos.length === 0;
       const lpsOrfas = semPlanilha
         ? []
-        : await lpsSemForma(projectId, atualRaw.nomes, atualRaw.identificadores);
+        : await lpsSemForma(
+            projectId,
+            atualRaw.nomes,
+            atualRaw.identificadores,
+            atualRaw.letrasComForma,
+          );
 
       return {
         funnelName: ctx.funnelName,
@@ -481,6 +559,14 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         avisos: atualRaw.avisos,
         /** Story 43.1 — LPs rodando na Meta sem forma no gráfico (AC5). */
         lpsOrfas,
+        /**
+         * Story 43.6 — aplicações que entraram no gráfico sem página conhecida.
+         *
+         * Vai junto com `lpsOrfas` de propósito: enquanto este número for > 0,
+         * "a LPD não tem aplicação" é uma afirmação com ressalva — alguma
+         * dessas linhas pode ser dela. A tela precisa poder dizer isso.
+         */
+        aplicacoesSemPagina: atualRaw.semPagina,
       };
     },
   );
