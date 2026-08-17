@@ -1,11 +1,15 @@
 /**
- * Aplicações por dia — uma série por planilha de aplicação (forma) do funil, e a
- * comparação com o lançamento anterior por forma.
+ * Aplicações por dia — uma série por PÁGINA, e a comparação com o lançamento
+ * anterior.
  *
- * O time pode ter MAIS DE UMA planilha de aplicação no mesmo lançamento (ex.:
- * "form com ticket" e "form sem ticket"). Cada planilha do tipo `applications`
- * vira uma série própria, nomeada pelo `label` da planilha — é o que aparece no
- * tooltip/legenda do gráfico.
+ * O time pode ter mais de uma planilha de aplicação no mesmo lançamento (ex.:
+ * "form com ticket" e "form sem ticket").
+ *
+ * Story 43.6 — uma planilha pode virar VÁRIAS séries. A aba-base é o formulário
+ * genérico onde caem todas as páginas que não ganharam aba própria; ali quem
+ * decide a página é a LP do `utm_term` da linha, não o nome do arquivo nem o
+ * label cadastrado. Aba com sufixo (`…-PaginaB`) continua produzindo uma série
+ * só, porque o nome já declarou a página.
  *
  * Alinhamento em D-day (dia relativo ao início do lançamento) porque a pergunta
  * é "estamos melhor ou pior que o lançamento passado NESTA altura?" — comparar
@@ -15,8 +19,11 @@
  * lançamento compartilham o mesmo eixo e ficam comparáveis entre si.
  *
  * A comparação com o lançamento anterior (`compareFunnelId`, configurado no
- * funil) é casada FORMA A FORMA pelo nome (label): "form com ticket" do atual
- * compara com "form com ticket" do anterior.
+ * funil) é AGREGADA: total do lançamento contra total do anterior, via
+ * `aggregateForms`. Não é casada forma a forma — o cabeçalho afirmou isso por
+ * um tempo, mas o código nunca fez (corrigido na 43.6, QA-43.6-02). Agregar é
+ * também o que mantém a comparação estável agora que uma planilha pode virar
+ * várias séries.
  */
 
 import { z } from "zod";
@@ -89,6 +96,8 @@ interface RawForm {
    * se sabe: enquanto houver aplicação sem página, ela pode ser da LP acusada.
    */
   ehPagina: boolean;
+  /** Story 43.6 — a página veio do `utm_term` (a aba-base foi quebrada)? */
+  veioDoUtmTerm: boolean;
   /** data (aaaa-mm-dd) -> nº de aplicações naquele dia. */
   counts: Map<string, number>;
   total: number;
@@ -124,6 +133,16 @@ interface FormsResult {
   letrasComForma: string[];
   /** Story 43.6 — aplicações que não deu para atribuir a nenhuma página. */
   semPagina: number;
+  /**
+   * Story 43.6 (QA-43.6-01) — alguma série de página nasceu da quebra da
+   * aba-base?
+   *
+   * É o gatilho da explicação na tela. Antes eu usava `semPagina > 0` para
+   * isso, e o @qa mostrou o furo: uma aba-base pode quebrar em três páginas
+   * sem sobrar nenhuma órfã — os números mudam igual e a tela ficava calada.
+   * São dois sinais diferentes e cada um responde a sua pergunta.
+   */
+  quebrouPorUtmTerm: boolean;
 }
 
 interface FormSeries {
@@ -154,7 +173,15 @@ export default fp(async function stageApplicationsRoutes(fastify) {
       );
 
     if (!sheets.length)
-      return { forms: [], avisos: [], nomes: [], identificadores: [], letrasComForma: [], semPagina: 0 };
+      return {
+        forms: [],
+        avisos: [],
+        nomes: [],
+        identificadores: [],
+        letrasComForma: [],
+        semPagina: 0,
+        quebrouPorUtmTerm: false,
+      };
 
     const avisos: AvisoForma[] = [];
 
@@ -221,6 +248,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         label: g.label,
         sheetName,
         ehPagina: g.ehPagina,
+        veioDoUtmTerm: g.veioDoUtmTerm,
         counts: g.counts,
         total: g.total,
       }));
@@ -309,7 +337,17 @@ export default fp(async function stageApplicationsRoutes(fastify) {
     ];
     const semPagina = forms.filter((f) => !f.ehPagina).reduce((n, f) => n + f.total, 0);
 
-    return { forms, avisos, nomes, identificadores, letrasComForma, semPagina };
+    const quebrouPorUtmTerm = forms.some((f) => f.veioDoUtmTerm);
+
+    return {
+      forms,
+      avisos,
+      nomes,
+      identificadores,
+      letrasComForma,
+      semPagina,
+      quebrouPorUtmTerm,
+    };
   }
 
   /**
@@ -438,6 +476,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
       label: "Total",
       sheetName: "__total__",
       ehPagina: false,
+      veioDoUtmTerm: false,
       counts,
       total,
     };
@@ -567,6 +606,13 @@ export default fp(async function stageApplicationsRoutes(fastify) {
          * dessas linhas pode ser dela. A tela precisa poder dizer isso.
          */
         aplicacoesSemPagina: atualRaw.semPagina,
+        /**
+         * Story 43.6 — a tela deve explicar que os números mudaram de forma.
+         *
+         * Separado de `aplicacoesSemPagina` porque a quebra acontece com ou sem
+         * órfãs, e foi confundir os dois que produziu o QA-43.6-01.
+         */
+        paginasVieramDoUtmTerm: atualRaw.quebrouPorUtmTerm,
       };
     },
   );

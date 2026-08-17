@@ -372,7 +372,54 @@ describe("agruparPorPagina", () => {
 
   it("aba vazia não inventa série", () => {
     expect(agruparPorPagina("base", "base", [])).toEqual([
-      { chave: "todas", label: "base", ehPagina: false, counts: new Map(), total: 0 },
+      {
+        chave: "todas",
+        label: "base",
+        ehPagina: false,
+        veioDoUtmTerm: false,
+        counts: new Map(),
+        total: 0,
+      },
     ]);
+  });
+});
+
+describe("agruparPorPagina — sinal de quebra (QA-43.6-01)", () => {
+  const linha = (dia: string, identificador = "") => ({ dia, identificador });
+
+  /**
+   * O furo que o gate pegou: a tela usava "há órfãs" como gatilho da explicação
+   * do AC4. Uma aba-base pode quebrar SEM deixar nenhuma órfã — e aí os números
+   * mudam do mesmo jeito, com a tela calada.
+   */
+  it("marca veioDoUtmTerm mesmo quando NÃO sobra nenhuma órfã", () => {
+    const g = agruparPorPagina("Pesquisa-AplicaçãoComercial", "apc", [
+      linha("2026-08-01", "--lpa|01"),
+      linha("2026-08-02", "--lpb|01"),
+      linha("2026-08-03", "--lpc|01"),
+    ]);
+    expect(g).toHaveLength(3);
+    expect(g.every((x) => x.veioDoUtmTerm)).toBe(true);
+    // nenhuma órfã — era exatamente aqui que o gatilho antigo falhava
+    expect(g.filter((x) => !x.ehPagina)).toHaveLength(0);
+  });
+
+  it("não marca veioDoUtmTerm quando a aba tem sufixo (AC1)", () => {
+    const g = agruparPorPagina("X-PaginaB", "PAGINA B", [linha("2026-08-01", "--lpb|01")]);
+    expect(g[0].veioDoUtmTerm).toBe(false);
+  });
+
+  it("não marca veioDoUtmTerm quando não houve quebra (AC9)", () => {
+    const g = agruparPorPagina("base", "base", [linha("2026-08-01", "publico-geral")]);
+    expect(g[0].veioDoUtmTerm).toBe(false);
+  });
+
+  it("a série SEM_PAGINA não sinaliza quebra sozinha — quem sinaliza são as páginas", () => {
+    const g = agruparPorPagina("base", "base", [
+      linha("2026-08-01", "--lpa|01"),
+      linha("2026-08-02", ""),
+    ]);
+    expect(g.find((x) => x.label === SEM_PAGINA)?.veioDoUtmTerm).toBe(false);
+    expect(g.find((x) => x.label === "PAGINA A")?.veioDoUtmTerm).toBe(true);
   });
 });

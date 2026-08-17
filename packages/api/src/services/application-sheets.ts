@@ -236,6 +236,20 @@ export interface GrupoDePagina {
    * essa dúvida que faz o aviso se calar (ver `letrasDasFormas`).
    */
   ehPagina: boolean;
+  /**
+   * A página desta série foi determinada pelo `utm_term` — e não pelo sufixo da
+   * aba?
+   *
+   * É o sinal de que os números da tela MUDARAM de forma: uma série que antes
+   * somava páginas diferentes virou várias. A tela precisa disso para explicar
+   * a queda antes que alguém a reporte como regressão (AC4).
+   *
+   * Distinto de `ehPagina` e de "há órfãs": uma aba-base pode quebrar em três
+   * páginas sem sobrar nenhuma linha órfã — e os números mudam do mesmo jeito.
+   * Foi o furo QA-43.6-01, onde `aplicacoesSemPagina` estava fazendo este
+   * trabalho e falhava exatamente nesse caso.
+   */
+  veioDoUtmTerm: boolean;
   counts: Map<string, number>;
   total: number;
 }
@@ -265,7 +279,16 @@ export function agruparPorPagina(
     return counts;
   };
   const serieUnica = (ehPagina: boolean): GrupoDePagina[] => [
-    { chave: "todas", label: labelDaAba, ehPagina, counts: soma(linhas), total: linhas.length },
+    {
+      chave: "todas",
+      label: labelDaAba,
+      ehPagina,
+      // Série única = nada mudou de forma, venha ela do sufixo (AC1) ou da
+      // ausência de LP (AC9).
+      veioDoUtmTerm: false,
+      counts: soma(linhas),
+      total: linhas.length,
+    },
   ];
 
   // AC1 — o sufixo da aba é declaração explícita da página. O `utm_term` não
@@ -296,6 +319,7 @@ export function agruparPorPagina(
       chave: `LP${letra}`,
       label: `PAGINA ${letra}`,
       ehPagina: true,
+      veioDoUtmTerm: true,
       counts: soma(ls),
       total: ls.length,
     }));
@@ -308,6 +332,10 @@ export function agruparPorPagina(
       chave: "sem-pagina",
       label: SEM_PAGINA,
       ehPagina: false,
+      // Não é página, então não "veio do utm_term" — quem sinaliza a quebra são
+      // as séries de página acima. Esta pode existir sozinha? Não: se nenhuma
+      // linha tivesse LP, o AC9 já teria devolvido série única.
+      veioDoUtmTerm: false,
       counts: soma(orfas),
       total: orfas.length,
     });
