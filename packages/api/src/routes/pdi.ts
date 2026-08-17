@@ -12,7 +12,7 @@
  */
 
 import { z } from "zod";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { pdiDocuments, users } from "../db/schema.js";
 
@@ -114,21 +114,15 @@ export default fp(async function pdiRoutes(fastify) {
     const rows = await fastify.db
       .select({ id: users.id, name: users.name, email: users.email, role: users.role })
       .from(users)
-      .where(eq(users.status, "active"))
+      // `listed` é o controle explícito de quem aparece em seletor de pessoa,
+      // ajustável em Settings → Usuários. Substituiu o filtro por e-mail
+      // placeholder: a heurística acertava as contas fantasma, mas não cobria
+      // conta de teste com e-mail real nem dava ao admin como corrigir sozinho.
+      .where(and(eq(users.status, "active"), eq(users.listed, true)))
       .orderBy(users.name);
 
-    return {
-      usuarios: rows.filter((u) => {
-        // Guest não navega fora de /projects — PDI não faria sentido pra ele.
-        if (u.role === "guest") return false;
-        // Conta fantasma: o authPlugin provisiona com `<clerkId>@placeholder.dev`
-        // quando o Clerk não devolve o e-mail. A mesma pessoa acaba com 2 ou 3
-        // linhas, e a lista de "para quem" fica com o nome repetido sem jeito de
-        // saber qual é a de verdade. A real é a que tem e-mail.
-        if (u.email.endsWith("@placeholder.dev")) return false;
-        return true;
-      }),
-    };
+    // Guest não navega fora de /projects — PDI não faria sentido pra ele.
+    return { usuarios: rows.filter((u) => u.role !== "guest") };
   });
 
   /** HTML completo de um PDI específico. Admin only (o dono usa /api/pdi/me). */

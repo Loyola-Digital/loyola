@@ -12,8 +12,22 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAdminUsers, useUpdateUserStatus, useSyncUsers } from "@/lib/hooks/use-admin-users";
+import {
+  useAdminUsers,
+  useUpdateUserStatus,
+  useSyncUsers,
+  useUpdateUser,
+  type UserRole,
+} from "@/lib/hooks/use-admin-users";
 import { useUserRole } from "@/lib/hooks/use-user-role";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 function StatusBadge({ status }: { status: string }) {
   if (status === "active")
@@ -25,6 +39,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function UsersSettingsPage() {
   const role = useUserRole();
+  const updateUser = useUpdateUser();
   const isAdmin = role === "admin" || role === "manager";
   const { data: users, isLoading } = useAdminUsers();
   const updateStatus = useUpdateUserStatus();
@@ -160,11 +175,56 @@ export default function UsersSettingsPage() {
           )}
           {!isLoading && others.map((u) => (
             <div key={u.id} className="flex items-center justify-between py-3 border-b last:border-0">
-              <div>
-                <p className="text-sm font-medium">{u.name === u.email ? u.email : u.name}</p>
-                <p className="text-xs text-muted-foreground">{u.email} · {u.role}</p>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{u.name === u.email ? u.email : u.name}</p>
+                <p className="truncate text-xs text-muted-foreground">{u.email}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {/* Aparece nas listas: controla os seletores de pessoa (PDI,
+                    vendedor). Conta fantasma fica desmarcada sem precisar
+                    apagar — várias são donas de dados reais. */}
+                <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Switch
+                    checked={u.listed}
+                    disabled={!isAdmin || updateUser.isPending}
+                    onCheckedChange={(checked: boolean) =>
+                      updateUser.mutate(
+                        { userId: u.id, listed: checked },
+                        {
+                          onSuccess: () =>
+                            toast.success(checked ? "Aparece nas listas." : "Escondido das listas."),
+                          onError: () => toast.error("Erro ao atualizar."),
+                        },
+                      )
+                    }
+                  />
+                  nas listas
+                </label>
+                <Select
+                  value={u.role}
+                  disabled={!isAdmin || updateUser.isPending}
+                  onValueChange={(novo: string) =>
+                    updateUser.mutate(
+                      { userId: u.id, role: novo as UserRole },
+                      {
+                        onSuccess: () => toast.success(`Papel alterado para ${novo}.`),
+                        onError: (e: unknown) =>
+                          toast.error(e instanceof Error ? e.message : "Erro ao alterar papel."),
+                      },
+                    )
+                  }
+                >
+                  <SelectTrigger className="h-8 w-[130px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {["copywriter", "strategist", "manager", "admin"].map((r) => (
+                      <SelectItem key={r} value={r} className="text-xs">
+                        {r}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <StatusBadge status={u.status} />
                 {u.status === "active" && (
                   <Button
