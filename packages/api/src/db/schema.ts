@@ -66,6 +66,14 @@ export const users = pgTable(
     name: text("name").notNull(),
     avatarUrl: text("avatar_url"),
     role: userRoleEnum("role").notNull().default("copywriter"),
+    /**
+     * Aparece nas listas de seleção de pessoa (atribuir PDI, escolher vendedor…).
+     * Existe porque nem toda linha de `users` é gente do time: sobra conta de
+     * teste, de ambiente local e a provisionada com e-mail placeholder quando o
+     * Clerk não devolve o e-mail. Elas não podem ser apagadas (viram donas de
+     * dados), mas não deveriam poluir um seletor.
+     */
+    listed: boolean("listed").notNull().default(true),
     status: userStatusEnum("status").notNull().default("active"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

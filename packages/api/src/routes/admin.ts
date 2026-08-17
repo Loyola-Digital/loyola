@@ -78,7 +78,7 @@ export default fp(async function adminRoutes(fastify) {
       : undefined;
 
     const rows = await fastify.db
-      .select({ id: users.id, name: users.name, email: users.email, role: users.role, status: users.status, createdAt: users.createdAt })
+      .select({ id: users.id, name: users.name, email: users.email, role: users.role, status: users.status, listed: users.listed, createdAt: users.createdAt })
       .from(users)
       .where(whereClause);
 
@@ -240,6 +240,56 @@ export default fp(async function adminRoutes(fastify) {
       return reply.code(404).send({ error: "Usuário não encontrado" });
     }
 
+    return updated;
+  });
+
+  /**
+   * PATCH /api/admin/users/:id — papel e visibilidade nas listas. Admin only
+   * (manager não promove ninguém: dar `admin` é dar acesso a tudo).
+   *
+   * `listed` controla quem aparece nos seletores de pessoa. É flag, e não
+   * exclusão, porque conta antiga costuma ser dona de dado real e apagá-la
+   * levaria histórico junto.
+   */
+  fastify.patch("/api/admin/users/:id", async (request, reply) => {
+    if (request.userRole !== "admin") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+
+    const paramResult = idParamSchema.safeParse(request.params);
+    if (!paramResult.success) return reply.code(400).send({ error: "ID inválido" });
+
+    const bodySchema = z
+      .object({
+        role: z.enum(["copywriter", "strategist", "manager", "admin", "guest"]).optional(),
+        listed: z.boolean().optional(),
+      })
+      .refine((b) => b.role !== undefined || b.listed !== undefined, "Nada para atualizar");
+
+    const body = bodySchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+    }
+
+    // Rebaixar a si mesmo tranca o próprio acesso à administração — e só outro
+    // admin conseguiria desfazer.
+    if (body.data.role && body.data.role !== "admin" && paramResult.data.id === request.userId) {
+      return reply.code(400).send({ error: "Você não pode remover o próprio acesso de admin" });
+    }
+
+    const patch: { role?: "copywriter" | "strategist" | "manager" | "admin" | "guest"; listed?: boolean; updatedAt: Date } = {
+      updatedAt: new Date(),
+    };
+    if (body.data.role !== undefined) patch.role = body.data.role;
+    if (body.data.listed !== undefined) patch.listed = body.data.listed;
+
+    const [updated] = await fastify.db
+      .update(users)
+      .set(patch)
+      .where(eq(users.id, paramResult.data.id))
+      .returning({ id: users.id, role: users.role, listed: users.listed });
+
+    if (!updated) return reply.code(404).send({ error: "Usuário não encontrado" });
     return updated;
   });
 

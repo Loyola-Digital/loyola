@@ -275,7 +275,9 @@ export default fp(async function manualSalesRoutes(fastify) {
         status: users.status,
       })
       .from(users)
-      .where(eq(users.status, "active"))
+      // Mesmo controle do seletor de PDI: conta fantasma/de teste não aparece
+      // como vendedor. Ajustável em Settings → Usuários.
+      .where(and(eq(users.status, "active"), eq(users.listed, true)))
       .orderBy(asc(users.name));
 
     return rows
