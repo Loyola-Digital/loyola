@@ -197,12 +197,28 @@ function deriveMetrics(a: MetricAgg) {
     cpl: round(safeDiv(a.spend, a.leads)),
     cpa: round(safeDiv(a.spend, a.purchases)),
     roas: round(safeDiv(a.revenue, a.spend)),
-    // ⚠️ Resumão v4 #5: este "connectRate" é LP views ÷ cliques — NÃO é a taxa
-    // de conexão WhatsApp/atendimento do mercado. `lpRate` é o nome honesto
+    // ⚠️ Resumão v4 #5: este "connectRate" é LP views ÷ cliques no LINK — NÃO é a
+    // taxa de conexão WhatsApp/atendimento do mercado. `lpRate` é o nome honesto
     // (mesmo valor); `connectRate` fica por compatibilidade. O connect real de
     // WhatsApp não existe como dado no Loyola X ainda (story 39.11).
-    connectRate: a.clicks > 0 ? round((a.lpViews / a.clicks) * 100) : null,
-    lpRate: a.clicks > 0 ? round((a.lpViews / a.clicks) * 100) : null,
+    //
+    // ⚠️ Story 44.2 — CORREÇÃO DE BUG. Dividia por `a.clicks` (cliques TOTAIS,
+    // que incluem curtida, comentário e clique no perfil). O denominador certo
+    // é `a.linkClicks`, como a regra de tráfego do produto manda e como
+    // `traffic-analytics.ts:443` e `:925` já faziam.
+    //
+    // O efeito não era pequeno: medido em 2026-08-17, o número público saía 18 a
+    // 35 pontos percentuais ABAIXO do interno — 25,7% contra 60,5% na Captação
+    // paga do BBE. A tela mostrava um valor e o agente Inácio outro, para a
+    // mesma etapa, e o benchmark saudável (>85%) fazia toda etapa parecer
+    // catastrófica no relatório.
+    //
+    // ⚠️ `lpRate` é o MESMO que `connectRate` (LP views ÷ link clicks). NÃO é o
+    // "Conv. LP" da especificação da aba Inácio, que é `checkouts ÷ LP views` —
+    // conceitos diferentes, e o nome parecido é armadilha. O Conv. LP não existe
+    // neste payload.
+    connectRate: a.linkClicks > 0 ? round((a.lpViews / a.linkClicks) * 100) : null,
+    lpRate: a.linkClicks > 0 ? round((a.lpViews / a.linkClicks) * 100) : null,
     // Resumão v4 #7: purchases ÷ initiate_checkout (funil de checkout do pixel).
     checkouts: a.checkouts,
     checkoutRate: a.checkouts > 0 ? round((a.purchases / a.checkouts) * 100) : null,

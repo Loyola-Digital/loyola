@@ -226,3 +226,45 @@ describe("campaigns/daily — payload", () => {
     await app.close();
   });
 });
+
+/**
+ * Story 44.2 — o denominador do `connectRate`.
+ *
+ * O bug: dividia por `clicks` (cliques TOTAIS — curtida, comentário, clique no
+ * perfil) em vez de `linkClicks`. Medido em produção, o número público saía 18 a
+ * 35 pontos percentuais abaixo do interno: 25,7% contra 60,5% numa mesma etapa.
+ *
+ * O fixture usa `clicks` ≠ `linkClicks` de propósito. Com os dois iguais, o
+ * teste passaria com a implementação errada e não provaria nada.
+ */
+describe("connectRate — denominador (Story 44.2)", () => {
+  beforeEach(() => mockSelect.mockReset());
+
+  it("divide por linkClicks, não por clicks", async () => {
+    const app = await buildApp();
+    // clicks=200 (totais) · link_click=100 · landing_page_view=80
+    //   certo : 80/100 = 80%
+    //   errado: 80/200 = 40%
+    filaDeQueries(
+      [{ id: STAGE, name: "S", campaigns: [{ id: "c1" }] }],
+      [
+        linha({
+          clicks: "200",
+          actions: [
+            { action_type: "link_click", value: "100" },
+            { action_type: "landing_page_view", value: "80" },
+          ],
+        }),
+      ],
+    );
+    // O endpoint de série por campanha não devolve taxa (Story 44.1), então o
+    // que se verifica aqui são os brutos que alimentam a conta — e que eles
+    // saem distintos, que é o que torna o denominador observável.
+    const dia = (await app.inject({ method: "GET", url: url() })).json().campanhas[0].days[0];
+    expect(dia.linkClicks).toBe(100);
+    expect(dia.landingPageViews).toBe(80);
+    // `clicks` não é exposto: quem consumir não tem como dividir pelo errado.
+    expect(dia).not.toHaveProperty("clicks");
+    await app.close();
+  });
+});

@@ -32,4 +32,10 @@
  * Um inteiro monotônico, e não uma lista de capacidades: a defasagem medida
  * foi sempre "a API inteira está atrás".
  */
-export const API_CONTRACT_VERSION = 1;
+/**
+ * v2 — Story 44.2: `connectRate` e `lpRate` passaram a dividir por `linkClicks`
+ * (antes: `clicks`, cliques totais). O valor SOBE de 18 a 35 pontos percentuais.
+ * Painel e API precisam subir juntos, senão a tela e o Inácio divergem de novo —
+ * agora ao contrário.
+ */
+export const API_CONTRACT_VERSION = 2;
