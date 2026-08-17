@@ -33,6 +33,7 @@ export {
   temDashboardDeVendas,
   ehEtapaDeCaptacao,
 } from "./stage-types.js";
+export { normalizarNomeCampanha, temSufixoDeCopia } from "./campaign-name.js";
 
 export type {
   MindArtifactPaths,
