@@ -659,11 +659,39 @@ export default fp(async function stageApplicationsRoutes(fastify) {
   fastify.get(
     "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/applications-list",
     async (request, reply) => {
+      // As duas verificações abaixo são as mesmas do `applications-daily`, e
+      // aqui pesam MAIS: aquele devolve contagens por dia, este devolve nome e
+      // e-mail de pessoas reais.
+      //
+      // O guest-guard global (middleware/guest-guard.ts) NÃO cobre isto: ele
+      // valida a membership do guest no projeto da URL e retorna cedo para
+      // qualquer outro papel. Sem a query de vínculo, um usuário do projeto A
+      // passaria o funnelId do projeto B na própria URL de A e receberia os
+      // dados de B — a membership que o guard confere seria a de A, que ele tem.
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+
       const paramsResult = paramsSchema.safeParse(request.params);
       if (!paramsResult.success) {
         return reply.code(400).send({ error: "Parâmetros inválidos" });
       }
-      const { funnelId } = paramsResult.data;
+      const { projectId, funnelId, stageId } = paramsResult.data;
+
+      // Prova que etapa, funil e projeto formam a mesma cadeia. `projectId` e
+      // `stageId` existiam na rota sem serem usados — validar o vínculo é a
+      // única razão de eles estarem na URL.
+      const [ctx] = await fastify.db
+        .select({ funnelName: funnels.name })
+        .from(funnelStages)
+        .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+        .where(
+          and(
+            eq(funnelStages.id, stageId),
+            eq(funnelStages.funnelId, funnelId),
+            eq(funnels.projectId, projectId),
+          ),
+        )
+        .limit(1);
+      if (!ctx) return reply.code(404).send({ error: "Etapa não encontrada" });
 
       const { abas, avisos } = await resolverAbas(funnelId);
       if (!abas.length) return { semPlanilha: true, aplicacoes: [], avisos };
