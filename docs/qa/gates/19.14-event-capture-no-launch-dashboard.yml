@@ -1,9 +1,10 @@
 storyId: "19.14"
 storyTitle: "Captação de Evento no dashboard — event_capture não é paid para o frontend"
-gate: FAIL
+gate: CONCERNS
 reviewer: "@qa (Quinn)"
 reviewedAt: "2026-08-17"
-commit: d183ad4b
+reReviewedAt: "2026-08-17"
+commit: 32d74382   # re-review; implementação original em d183ad4b
 branch: feature/19.14-event-capture-dashboard
 
 summary: >
@@ -109,3 +110,90 @@ coderabbit:
   reason: "CLI configurado para WSL/Windows; sessão em darwin. Revisão manual no lugar."
 
 nextAction: "@dev corrige QA-19.14-01 (fix de 2 linhas) e re-submete. QA-19.14-02 vai para o preview do Vercel; QA-19.14-03 é opcional."
+
+# ─────────────────────────────────────────────────────────────
+# RE-REVIEW — 2026-08-17, commit 32d74382
+# ─────────────────────────────────────────────────────────────
+reReview:
+  gate: CONCERNS
+  previousGate: FAIL
+
+  resolvedIssues:
+    - id: QA-19.14-01
+      severity: critical
+      status: RESOLVED
+      verifiedBy: >
+        Verificação independente, não relato do @dev. Apaguei packages/api/dist e
+        packages/shared/dist, reconstruí do zero e carreguei os módulos no Node:
+        utils/stage-types, routes/stage-sales-data, routes/stage-comercial e
+        services/sales-daily-sync — os quatro carregam.
+      behaviorMatrix: >
+        Matriz completa dos 9 stage_types + null/undefined/"" conferida em runtime:
+        só "paid" e "event_capture" retornam true. Os outros 8 e os três valores
+        vazios retornam false — comportamento idêntico ao === "paid" anterior.
+        Regressão zero por construção, não por amostragem.
+      residualCheck: >
+        Varri por outros usos do subpath: em packages/api/src e no dist compilado
+        as únicas ocorrências de "@loyola-x/shared/src" estão em COMENTÁRIOS —
+        nenhum import real. No web há 6 usos legítimos, incluindo o precedente
+        api-contract-banner.tsx que já roda em produção.
+
+    - id: QA-19.14-03
+      severity: low
+      status: RESOLVED
+      verifiedBy: >
+        `const ehPaga` declarada antes dos hooks; 28 usos unificados. O
+        LpPerformanceSection (:1471) mantém ehCaptacaoPaga(stageType) próprio —
+        correto, escopo separado. Reconferi a exclusividade mútua após o refactor
+        de 28 linhas: LpPerformanceSection :651 (ehPaga) × :858 (!ehPaga);
+        StageCreativePerformanceTable :660 (ehPaga) × :842 (=== "free").
+        Sem duplicação para nenhum tipo.
+
+  openIssues:
+    - id: QA-19.14-02
+      severity: medium
+      status: OPEN
+      title: "AC3 (validação visual) — condição de saída para o merge"
+      rationale: >
+        Não reprova o gate: 5 dos 6 ACs estão completos e verificados, e o AC3
+        depende de um ambiente que comprovadamente não existe localmente (API
+        trava no boot; Clerk pk_test contra banco de produção). Reprovar
+        devolveria ao @dev uma tarefa que ele não pode executar.
+      mergeCondition: >
+        BLOQUEIA O MERGE, não o gate. Validar os 9 itens do AC3 no preview do
+        Vercel antes de mergear. O time já mergeou as stories 29.51/29.52 com a
+        validação visual nunca executada — esta condição existe para não repetir.
+
+  unrelatedFinding:
+    title: "Erro de prerender intermitente em /instagram"
+    severity: none
+    status: "não relacionado — artefato de cache"
+    detail: >
+      Um `next build` sobre o cache .next do build anterior falhou com
+      "Error occurred prerendering page /instagram — TypeError: Cannot read
+      properties of undefined (reading 'call')". Investigado: 3 execuções, 1
+      falha (cache sujo) e 2 sucessos, sendo uma com .next removido por completo
+      (5.2min, limpo). monthly-report-view.tsx:17 usa `import type`, apagado na
+      compilação — não toca o index.ts do shared em runtime. Conclusão: cache
+      incremental, sem relação com a story. Registrado para não ser reinvestigado.
+
+  finalChecks:
+    codeReview: PASS
+    unitTests: PASS
+    acceptanceCriteria: CONCERNS   # 5/6 verificados; AC3 é condição de merge
+    noRegressions: PASS            # matriz de 12 valores conferida em runtime
+    performance: PASS
+    security: PASS
+    documentation: PASS
+
+  praise: >
+    O @dev corrigiu além do pedido: reescreveu o comentário do index.ts que
+    afirmava que a API "pode usar qualquer um dos dois" imports. Era essa frase
+    que induzia ao erro — o defeito nasceu de documentação errada, não de
+    desatenção. Trocá-la por uma tabela de qual import vale para cada lado, com
+    o motivo, é o que impede a próxima pessoa de repetir. Consertar a causa e não
+    só o sintoma.
+
+  nextAction: >
+    @devops abre o PR. Após o preview do Vercel, validar os 9 itens do AC3 e
+    registrar o resultado na story. Só então mergear.
