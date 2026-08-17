@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import type { DailyRow } from "@/lib/utils/funnel-metrics";
 import type { StageType } from "@loyola-x/shared";
+import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
 import { resolveMediumByAdsets, useResolveAdsetNames } from "@/lib/hooks/use-funnel-adsets-map";
 import {
   useFunnelBatchTurns,
@@ -186,7 +187,7 @@ export function CrossedFunnelDailyTable({
   stageType,
 }: CrossedFunnelDailyTableProps) {
   // Story 18.31: Condicionais por etapa (paid = Captação Paga, free = Captação Gratuita)
-  const isPaidCapture = stageType === "paid";
+  const isPaidCapture = ehCaptacaoPaga(stageType);
   // Story 18.51b: sabe se há planilha de vendas conectada (undefined = sem
   // planilha → AC-BUG.1: exibe "—" em vez de leads sob rótulo "Ingressos").
   const hasSalesData = isPaidCapture && ingressosUnicosByDay !== undefined;

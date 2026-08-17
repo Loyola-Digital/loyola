@@ -8,7 +8,7 @@ import { SellersBreakdownGrid } from "./sellers-breakdown-grid";
 import { SellerAliasesDialog } from "./seller-aliases-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUserRole } from "@/lib/hooks/use-user-role";
-import type { StageSalesSubtype } from "@loyola-x/shared";
+import type { StageSalesSubtype, StageType } from "@loyola-x/shared";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("pt-BR", {
@@ -167,7 +167,13 @@ interface StageSalesSectionProps {
   subtype: StageSalesSubtype | (string & {});
   title: string;
   days?: number;
-  stageType?: 'paid' | 'free' | 'sales' | 'cpl';
+  /**
+   * Story 19.14: união escrita à mão trocada por `StageType` — não conhecia
+   * `event_capture` e só não acusava erro porque o call site estreitava o tipo
+   * com `=== "paid"` antes de passar. Repassa direto para
+   * `StageCreativePerformanceTable`, que agora também usa `StageType`.
+   */
+  stageType?: StageType;
   /**
    * Map de adset_id → adset_name vindo da Meta API. Quando informado, a tabela
    * "Por Medium (Adset)" resolve `utm_medium` (que armazena o adset_id) pro

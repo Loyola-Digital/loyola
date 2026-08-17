@@ -79,6 +79,7 @@ import { RefreshDataButton } from "./refresh-data-button";
 import { MetaFreshnessBadge } from "./meta-freshness-badge";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
 import type { Funnel, StageType } from "@loyola-x/shared";
+import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
 
 // ---- paleta Loyola (estrutura do ref, cores nossas) ----
 const T = {
@@ -262,7 +263,7 @@ export function MetaAdsTesteTab({
 }) {
   const [days, setDays] = useState(90);
   const campaignIds = funnel.campaigns.map((c) => c.id);
-  const isPaid = stageType === "paid";
+  const isPaid = ehCaptacaoPaga(stageType);
 
   // ---- MESMOS hooks do LaunchDashboard (paridade de números) ----
   const { data: overview } = useTrafficOverview(projectId, days, campaignIds.length > 0 ? campaignIds : null);
@@ -1145,7 +1146,7 @@ function TesteLpSection({
     },
     [lpLinks, updateStage],
   );
-  const isPaid = stageType === "paid";
+  const isPaid = ehCaptacaoPaga(stageType);
 
   return (
     <SectionShell icon={LayoutTemplate} title="TESTES DE LPs" subtitle="Desempenho das landing pages">

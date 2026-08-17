@@ -6,12 +6,33 @@ export type AppConfig = {
 export const APP_NAME = "Loyola Digital X" as const;
 
 /**
- * Story 29.46 — contrato painel↔API. Definido em `./contract.ts`, um módulo
- * folha, porque o webpack do Next não resolve a cadeia de imports NodeNext
- * deste índice. O web importa `@loyola-x/shared/src/contract` direto; a API,
- * que resolve o índice sem problema, pode usar qualquer um dos dois.
+ * Módulos folha (`./contract.ts`, `./stage-types.ts`): existem separados porque
+ * o webpack do Next não resolve a cadeia de imports NodeNext deste índice.
+ *
+ * **Cada lado tem UM caminho válido — não são intercambiáveis:**
+ *
+ * | Lado | Import | Por quê |
+ * |---|---|---|
+ * | web | `@loyola-x/shared/src/<módulo>` | `transpilePackages` compila o `.ts`; o índice não resolve no webpack |
+ * | API | `@loyola-x/shared` (bare, por aqui) | resolve por `main` → `dist/index.js` |
+ *
+ * A API **não pode** usar o subpath: o `tsc` não reescreve especificadores, então
+ * o `dist/` sairia apontando para `src/<módulo>` sem extensão — e `src/` só tem
+ * `.ts`. Em ESM o Node exige extensão explícita e o pacote não declara
+ * `exports`, então o import falha com `ERR_MODULE_NOT_FOUND` **em runtime**, sem
+ * que `tsc --noEmit`, `vitest` ou `next build` acusem nada.
+ *
+ * Story 19.14: uma redação anterior deste comentário dizia que a API "pode usar
+ * qualquer um dos dois". Pode não — seguir aquilo derrubou o boot da API inteira
+ * (3 módulos do caminho de boot importam `utils/stage-types.js`), e o defeito só
+ * apareceu quando o @qa rodou `node dist/routes/stage-sales-data.js`.
  */
 export { API_CONTRACT_VERSION } from "./contract.js";
+export {
+  ehCaptacaoPaga,
+  temDashboardDeVendas,
+  ehEtapaDeCaptacao,
+} from "./stage-types.js";
 
 export type {
   MindArtifactPaths,

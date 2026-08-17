@@ -46,6 +46,9 @@ import { RefreshDataButton } from "./refresh-data-button";
 import { MetaFreshnessBadge } from "./meta-freshness-badge";
 import { CampaignSelector } from "./campaign-selector";
 import type { Funnel, FunnelCampaign, StageType, ComparisonDayMetrics } from "@loyola-x/shared";
+// Story 19.14: subpath do módulo folha — import de VALOR do `shared` só resolve
+// no webpack do Next por aqui (mesmo motivo documentado em `contract.ts`).
+import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { StageSalesSection } from "./stage-sales-section";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
@@ -125,27 +128,34 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   const campaignIds = funnel.campaigns.map((c) => c.id);
   const campaignIdSet = new Set(campaignIds);
 
+  /**
+   * Story 19.14: Captação Paga e Captação de Evento se comportam igual aqui —
+   * mesmos hooks, mesmos KPIs, mesmas seções. Uma constante só, declarada antes
+   * dos hooks, em vez de repetir a chamada em cada argumento (QA-19.14-03).
+   */
+  const ehPaga = ehCaptacaoPaga(stageType);
+
   const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
     projectId, days, campaignIds.length > 0 ? campaignIds : null,
   );
   const { data: salesData } = useStageSalesData(
-    stageType === "paid" ? projectId : null,
-    stageType === "paid" ? funnel.id : null,
-    stageType === "paid" ? (stageId ?? null) : null,
+    ehPaga ? projectId : null,
+    ehPaga ? funnel.id : null,
+    ehPaga ? (stageId ?? null) : null,
     "capture",
     days,
   );
   const { data: stageHotColdBuyers } = useStageHotColdBuyers(
-    stageType === "paid" ? projectId : null,
-    stageType === "paid" ? funnel.id : null,
-    stageType === "paid" ? (stageId ?? null) : null,
+    ehPaga ? projectId : null,
+    ehPaga ? funnel.id : null,
+    ehPaga ? (stageId ?? null) : null,
     "capture",
     days,
   );
   const { data: salesByDayData } = useStageSalesByDay(
-    stageType === "paid" ? projectId : null,
-    stageType === "paid" ? funnel.id : null,
-    stageType === "paid" ? (stageId ?? null) : null,
+    ehPaga ? projectId : null,
+    ehPaga ? funnel.id : null,
+    ehPaga ? (stageId ?? null) : null,
     days,
   );
   const salesByDay = salesByDayData && !salesByDayData.semDados ? salesByDayData.byDay : null;
@@ -165,7 +175,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   // Story 18.52: na Captação Paga, CPL Pago/Geral e Tx Conv. usam ingressos
   // ÚNICOS (não leads). Recalculamos as rows aqui e passamos as MESMAS rows para
   // a tabela e os gráficos de CPL — assim tabela e gráficos ficam coerentes.
-  const ingUnicosByDay = stageType === "paid" ? salesTableData?.ingressosUnicosByDay : undefined;
+  const ingUnicosByDay = ehPaga ? salesTableData?.ingressosUnicosByDay : undefined;
   const paidRows = useMemo(() => {
     if (!ingUnicosByDay) return metrics.rows;
     return metrics.rows.map((r) => {
@@ -267,7 +277,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
   // únicos (e-mails distintos que compraram, order bumps fora). Mesma virada de
   // base que a Story 18.52 fez no CPL/Tx Conv. Na Gratuita segue por leads, e aí
   // o numerador continua sendo o match respostas↔planilha de leads.
-  const isPaidCapture = stageType === "paid";
+  const isPaidCapture = ehPaga;
   const compradoresUnicos = useMemo(
     () =>
       Object.values(salesData?.ingressosUnicosByDay ?? {}).reduce(
@@ -358,7 +368,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
       ) : (
         (() => {
           const f = { days, funnelType: "launch" as const, funnelName: funnel?.name };
-          const showFaturamento = stageType === "paid" && !!stageId && !!salesData && !salesData.semDados;
+          const showFaturamento = ehPaga && !!stageId && !!salesData && !salesData.semDados;
           const showVendaIngressos = metrics.totalVendas !== null;
           const showTaxaCheckout = metrics.checkoutConversionRate !== null;
           // Story 18.51c: cards de ingressos/faturamento único vs total. Somam os
@@ -469,7 +479,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
               <MetricTooltip label="Leads" value={metrics.hasLinkedSheet ? fmtNumber(metrics.totalLeads) : "—"} formula={metrics.hasLinkedSheet ? buildFunnelLeadsFormula(metrics.totalLeads, f, { pagos: metrics.leadsPagos, org: metrics.leadsOrg, semTrack: metrics.leadsSemTrack }) : undefined}>
                 <KpiCard
                   icon={Users}
-                  label={stageType === "paid" ? "Leads Popup" : "Leads únicos"}
+                  label={ehPaga ? "Leads Popup" : "Leads únicos"}
                   value={metrics.hasLinkedSheet ? fmtNumber(metrics.totalLeads) : "—"}
                   subValue={metrics.hasLinkedSheet
                     ? (
@@ -484,7 +494,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                 />
               </MetricTooltip>
               {/* Story 18.52 AC6: card "Ingressos" removido (consolidado aqui). */}
-              {stageType === "paid" && metrics.totalVendas !== null && (
+              {ehPaga && metrics.totalVendas !== null && (
                 <KpiCard
                   icon={Banknote}
                   label="Venda Ingressos Únicos"
@@ -548,7 +558,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   } : undefined}
                 />
               </MetricTooltip>
-              {stageType === "paid" && metrics.checkoutConversionRate !== null && (
+              {ehPaga && metrics.checkoutConversionRate !== null && (
                 <KpiCard
                   icon={Percent}
                   label="Taxa Checkout"
@@ -623,7 +633,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
       {/* CPL Pago vs CPL Geral (Story 18.4) — Story 18.52: rows com CPL por ingressos únicos na Paga */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
-        <CplComparisonChart rows={paidRows} isPaidCapture={stageType === "paid"} />
+        <CplComparisonChart rows={paidRows} isPaidCapture={ehPaga} />
       ) : null}
 
       {/* Leads Acumulados (Story 18.4) — Story 18.53: paidRows + rótulos "Ingressos" na Paga */}
@@ -631,14 +641,14 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         <LeadsCumulativeChart
           rows={paidRows}
           leadsGratuitosByDay={organicLeads.hasOrganicSurveys ? organicLeads.byDay : undefined}
-          isPaidCapture={stageType === "paid"}
+          isPaidCapture={ehPaga}
         />
       ) : null}
 
       {/* Story 18.57: na Paga, os blocos de análise de mídia ficam em sequência
           logo abaixo de Ingressos Acumulados — Testes de LPs e, na sequência,
           Desempenho de Criativos (extraído de dentro de "Vendas de Captação"). */}
-      {stageType === "paid" && stageId && (
+      {ehPaga && stageId && (
         <LpPerformanceSection
           projectId={projectId}
           funnelId={funnel.id}
@@ -647,7 +657,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           stageType={stageType}
         />
       )}
-      {stageType === "paid" && stageId && (
+      {ehPaga && stageId && (
         <div className="space-y-4 pt-2 border-t border-border/30">
           <h3 className="text-base font-semibold">Desempenho de Criativos (Meta Ads)</h3>
           <StageCreativePerformanceTable
@@ -662,12 +672,12 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
       {/* Leads: Tendência + Meta (Story 18.19) + Inputs por Etapa (Story 18.27) — Story 18.53 */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
-        <LeadsTrendAndGoalChart rows={paidRows} funnelId={funnel.id} funnel={funnel} projectId={projectId} stageId={stageId} isPaidCapture={stageType === "paid"} />
+        <LeadsTrendAndGoalChart rows={paidRows} funnelId={funnel.id} funnel={funnel} projectId={projectId} stageId={stageId} isPaidCapture={ehPaga} />
       ) : null}
 
       {/* NOVO: Leads Projeção Baseada em Custo (Story 18.39) */}
       {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
-        <LeadsProjectionCostBasedChart rows={paidRows} funnelId={funnel.id} funnel={funnel} projectId={projectId} stageId={stageId} isPaidCapture={stageType === "paid"} />
+        <LeadsProjectionCostBasedChart rows={paidRows} funnelId={funnel.id} funnel={funnel} projectId={projectId} stageId={stageId} isPaidCapture={ehPaga} />
       ) : null}
 
       {/* CTR × CPM — Saturation Chart */}
@@ -719,9 +729,9 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             linkClicks={overview?.totalLinkClicks ?? null}
             landingPageViews={overview?.totalLandingPageViews ?? null}
             leads={metrics.totalLeads}
-            checkoutVisits={stageType === "paid" ? metrics.checkoutVisits : null}
-            sales={stageType === "paid" ? metrics.totalVendas : null}
-            leadsLabel={stageType === "paid" ? "Leads Popup" : undefined}
+            checkoutVisits={ehPaga ? metrics.checkoutVisits : null}
+            sales={ehPaga ? metrics.totalVendas : null}
+            leadsLabel={ehPaga ? "Leads Popup" : undefined}
           />
         </div>
       </div>
@@ -744,7 +754,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             </div>
           )}
 
-          {stageType === "paid" && (() => {
+          {ehPaga && (() => {
             // Prioriza planilha de stage_sales (Captação) — onde o usuário mapeia utm_term.
             // Fallback pra planilha funnel-spreadsheet (sales/custom) caso a stage não tenha
             // mapping mas o funil tenha.
@@ -796,7 +806,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
       />
 
       {/* Dashboard Financeiro — apenas etapas pagas (Story 19.6) */}
-      {stageType === "paid" && stageId && (
+      {ehPaga && stageId && (
         <div className="space-y-6 pt-2 border-t border-border/30">
           <h3 className="text-base font-semibold">Vendas</h3>
           {/* Story 18.57: tabela de Criativos saiu daqui — vive standalone
@@ -845,7 +855,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
       {/* Story 18.44: LP Performance Table (Testes de Landing Pages)
           Story 18.57: na Paga a seção mudou pra baixo de Ingressos Acumulados;
           aqui só as demais etapas (Gratuita etc.) — sem duplicar. */}
-      {stageId && stageType && stageType !== "paid" && (
+      {stageId && stageType && !ehPaga && (
         <LpPerformanceSection
           projectId={projectId}
           funnelId={funnel.id}
@@ -1409,7 +1419,14 @@ interface LpPerformanceSectionProps {
   funnelId: string;
   stageId: string;
   days: number;
-  stageType: StageType;
+  /**
+   * Story 19.14: opcional porque `ehCaptacaoPaga()` é predicado comum, não type
+   * guard — o `&&` do call site não estreita mais `StageType | undefined` como
+   * a comparação literal `=== "paid"` estreitava. O componente já lida com o
+   * caso (`isPaid` vira false), então aceitar `undefined` é honesto; forçar um
+   * `!` no call site esconderia a mesma coisa atrás de uma asserção.
+   */
+  stageType?: StageType;
 }
 
 function LpPerformanceSection({
@@ -1451,7 +1468,7 @@ function LpPerformanceSection({
     [lpLinks, updateStage],
   );
 
-  const isPaid = stageType === "paid";
+  const isPaid = ehCaptacaoPaga(stageType);
 
   return (
     <div className="space-y-4 pt-2 border-t border-border/30">
