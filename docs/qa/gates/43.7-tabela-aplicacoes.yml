@@ -1,9 +1,9 @@
 storyId: "43.7"
 storyTitle: "Tabela de aplicações abaixo do gráfico (nome/email/utm_source/LP)"
-gate: FAIL
+gate: PASS
 reviewer: "@qa (Quinn)"
 reviewedAt: "2026-08-17"
-commits: [a5e020c6, 03169dc1]
+commits: [a5e020c6, 03169dc1, 01dfc3b0]
 branch: feature/43.7-tabela-aplicacoes
 
 summary: >
@@ -102,3 +102,86 @@ qualityChecks:
   documentation: PASS
 
 nextAction: "@dev aplica as duas verificações de acesso do applications-daily. Fix pequeno, risco alto."
+
+# ─────────────────────────────────────────────────────────────
+# RE-REVIEW — 2026-08-17, commit 01dfc3b0
+# ─────────────────────────────────────────────────────────────
+reReview:
+  gate: PASS
+  previousGate: FAIL
+
+  resolvedIssue:
+    id: QA-43.7-01
+    severity: critical
+    status: RESOLVED
+    verifiedBy: >
+      Verificação INDEPENDENTE, não o relato do @dev. Restaurei a versão do
+      arquivo anterior ao fix (`git checkout 03169dc1 -- …`) e rodei o teste
+      novo contra ela:
+
+        FAIL  404 quando o funil não pertence ao projeto da URL — o IDOR
+        FAIL  403 para guest, mesmo com a cadeia válida
+        FAIL  guest é barrado ANTES de qualquer consulta ao banco
+        Tests  3 failed | 1 passed
+
+      Com o fix: 4/4. O teste pega a regressão — não é decorativo.
+    orderChecked: >
+      A ordem das checagens é idêntica à do endpoint irmão: guest (403) →
+      safeParse (400) → query de vínculo (404). Conferido lado a lado nas linhas
+      535-546 e 671-685 do mesmo arquivo.
+    extraCredit: >
+      O @dev cobriu também a ORDEM ("guest é barrado antes de qualquer consulta
+      ao banco"), que ninguém pediu. Verificação certa no lugar errado ainda
+      vaza a existência do recurso.
+
+  # ─── Tentativa de generalizar o achado, e por que ela não vale ───
+  attemptedGeneralization:
+    hypothesis: "Se o padrão foi esquecido aqui, pode estar esquecido em outras rotas."
+    method: "Varredura das rotas project-scoped com :funnelId, procurando as duas checagens dentro do corpo do handler."
+    rawResult: "116 rotas apontadas como suspeitas."
+    verdict: FALSO_POSITIVO_EM_MASSA
+    whyDiscarded: >
+      Calibrei num caso concreto antes de reportar. O `campaign-log.ts` aparecia
+      como "falta VINCULO+guest" e TEM as duas — nas linhas 131 e 155, dentro de
+      um helper compartilhado, fora do corpo de cada handler. A heurística
+      procurava só dentro do handler, então não as encontrava.
+    conclusion: >
+      NÃO há evidência de outros IDORs. O padrão do repositório frequentemente
+      extrai a validação para um helper, e uma varredura textual não distingue
+      isso de ausência. Registrado para que ninguém repita a varredura e leia os
+      116 como vulnerabilidades — seria alarme falso caro.
+
+  stillOpen:
+    - id: QA-43.7-02
+      severity: low
+      title: "Sem story file"
+      note: >
+        Fato de processo. A feature veio de pedido direto e a entrega
+        corresponde ao enunciado. Uma story retroativa documentaria o que já
+        está feito — registro, não trabalho pendente.
+    - id: QA-43.7-03
+      severity: low
+      title: "Validação visual"
+      note: >
+        CONDIÇÃO DE MERGE, não bloqueio de gate. É uma tabela nova: layout,
+        truncamento do e-mail, paginação e os dois tooltips (LP extraída de… /
+        LP ausente) são exatamente o que nenhum teste alcança.
+
+  finalChecks:
+    codeReview: PASS
+    unitTests: PASS            # 55/55 no módulo + 4/4 de acesso; 1051 na suite
+    acceptanceCriteria: PASS
+    noRegressions: PASS        # 11 falhas pré-existentes, estáveis
+    performance: PASS          # cache com TTL nas duas chamadas ao Google
+    security: PASS             # QA-43.7-01 resolvido e travado por teste
+    documentation: PASS
+
+  noteOnWorkingTree: >
+    Durante o re-review apareceu `packages/api/src/services/mind-registry.ts`
+    modificado no working tree — é o fix do boot da API, trabalho de outra
+    sessão (mesmo conteúdo do commit 955dde00 na branch
+    fix/api-boot-mind-registry-timeout). Conferido que NÃO entrou em nenhum dos
+    três commits da 43.7 (`git diff --name-only origin/main..HEAD` traz só os 8
+    arquivos da story). Deixado intacto.
+
+  nextAction: "@devops abre o PR. Validar a tabela no preview antes de mergear."
