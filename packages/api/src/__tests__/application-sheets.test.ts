@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   SEM_PAGINA,
   abasParaDescobrir,
+  acharColunaEmail,
+  acharColunaNome,
   acharColunaUtmTerm,
   agruparPorPagina,
   derivarPrefixo,
@@ -421,5 +423,49 @@ describe("agruparPorPagina — sinal de quebra (QA-43.6-01)", () => {
     ]);
     expect(g.find((x) => x.label === SEM_PAGINA)?.veioDoUtmTerm).toBe(false);
     expect(g.find((x) => x.label === "PAGINA A")?.veioDoUtmTerm).toBe(true);
+  });
+});
+
+// ============================================================
+// Story 43.7 — colunas de nome e e-mail para a lista de aplicações.
+// ============================================================
+
+describe("acharColunaNome / acharColunaEmail", () => {
+  it("escolhe a coluna PREENCHIDA entre homônimas", () => {
+    // Shape real da aba-base do dg-pg04: name(16), Nome(24), name(40) — só a
+    // primeira com dado. E-mail idem.
+    const headers = ["data", "name", "email", "x", "Nome", "E-mail"];
+    const rows = [
+      ["2026-08-14", "Otavio", "o@x.com", "-", "", ""],
+      ["2026-08-13", "Renata", "r@x.com", "-", "", ""],
+    ];
+    expect(acharColunaNome(headers, rows)).toBe(1);
+    expect(acharColunaEmail(headers, rows)).toBe(2);
+  });
+
+  it("prefere a segunda quando é ela que tem dado", () => {
+    const headers = ["name", "Nome"];
+    const rows = [["", "Joseilme"], ["", "Danusa"]];
+    expect(acharColunaNome(headers, rows)).toBe(1);
+  });
+
+  /**
+   * As âncoras existem para isto: sem elas, "Nome do produto" e "email de
+   * cobrança" entrariam como se fossem a coluna da pessoa.
+   */
+  it("não casa cabeçalho que apenas CONTÉM nome/email", () => {
+    expect(acharColunaNome(["Nome do produto"], [["Curso X"]])).toBeNull();
+    expect(acharColunaEmail(["email de cobrança"], [["a@b.com"]])).toBeNull();
+  });
+
+  it("aceita as variações de grafia usadas nas planilhas", () => {
+    expect(acharColunaNome([" NAME "], [["Ana"]])).toBe(0);
+    expect(acharColunaEmail(["E-Mail"], [["a@b.com"]])).toBe(0);
+    expect(acharColunaEmail(["Email"], [["a@b.com"]])).toBe(0);
+  });
+
+  it("devolve null quando a coluna não existe ou está toda vazia", () => {
+    expect(acharColunaNome(["data"], [["2026-08-14"]])).toBeNull();
+    expect(acharColunaEmail(["email"], [[""]])).toBeNull();
   });
 });
