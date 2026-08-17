@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Brain, MessageSquare, CheckSquare, Settings, Plus, Eye, EyeOff, LayoutGrid, Radar, Library } from "lucide-react";
+import { Brain, MessageSquare, CheckSquare, Settings, Plus, Eye, EyeOff, LayoutGrid, Radar, Library , Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { useHiddenProjectsStore } from "@/lib/stores/hidden-projects-store";
@@ -25,10 +25,13 @@ import { ProjectFolder } from "@/components/layout/project-folder";
 import { CreateProjectDialog } from "@/components/layout/create-project-dialog";
 import { FunnelWizard } from "@/components/funnels/funnel-wizard";
 import { useUserRole } from "@/lib/hooks/use-user-role";
+import { usePdiExiste } from "@/lib/hooks/use-pdi";
 import { GuestSidebar } from "@/components/layout/guest-sidebar";
 import { useAutoCloseSidebarOnNavigation } from "@/lib/hooks/use-auto-close-sidebar";
 
 const navItems = [
+  // PDI abre primeiro: quando a pessoa tem um, é a tela inicial do app.
+  { label: "PDI", href: "/pdi", icon: Target },
   { label: "Minds", href: "/minds", icon: Brain },
   { label: "Conversations", href: "/conversations", icon: MessageSquare },
   { label: "Tasks", href: "/tasks", icon: CheckSquare },
@@ -46,6 +49,9 @@ const navItems = [
 
 function NavContent({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname();
+  const role = useUserRole();
+  const { data: pdiExiste } = usePdiExiste();
+  const temPdi = pdiExiste?.exists ?? false;
   const { total: openTaskCount } = useTasks({ status: "open", limit: 1, offset: 0 });
   const { data: projects, isLoading: projectsLoading } = useProjects();
   const hiddenIds = useHiddenProjectsStore((s) => s.hiddenIds);
@@ -59,8 +65,15 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
   );
   const hiddenCount = projects?.filter((p) => hiddenIds.includes(p.id)).length ?? 0;
 
-  // Split navItems: items before Settings, and Settings itself
-  const topItems = navItems.filter((i) => i.href !== "/settings");
+  // Split navItems: items before Settings, and Settings itself.
+  // PDI só entra pra quem tem um documento atribuído (é a tela inicial dessa
+  // pessoa) ou pra admin, que precisa do acesso à gestão. Pra quem não tem, o
+  // item seria um link pra tela vazia.
+  const topItems = navItems.filter((i) => {
+    if (i.href === "/settings") return false;
+    if (i.href === "/pdi") return temPdi || role === "admin";
+    return true;
+  });
   const settingsItem = navItems.find((i) => i.href === "/settings")!;
 
   return (

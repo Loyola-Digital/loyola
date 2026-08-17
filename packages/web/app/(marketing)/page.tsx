@@ -60,7 +60,7 @@ function Nav() {
       <div className="flex items-center gap-3">
         {isSignedIn ? (
           <Link
-            href="/minds"
+            href="/entrar"
             className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-brand-foreground hover:bg-brand-hover transition-colors"
           >
             Ir para o Dashboard
