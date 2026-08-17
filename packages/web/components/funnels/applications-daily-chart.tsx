@@ -169,8 +169,14 @@ export function ApplicationsDailyChart({
             </p>
           )}
           {/* Sem LP órfã, mas com aplicação sem página: a tela ainda deve dizer
-              que uma parte do gráfico não sabe a que página pertence. */}
-          {!data.lpsOrfas?.length && data.aplicacoesSemPagina > 0 && (
+              que uma parte do gráfico não sabe a que página pertence.
+
+              QA-43.6-04: só quando o gráfico DE FATO organiza por página. Num
+              funil que não usa páginas (AC9 — nenhuma LP no `utm_term`), a
+              série continua única e idêntica ao que era; dizer ali que "49
+              aplicações estão sem página identificada" é verdade inútil, e
+              aviso que aparece com tudo certo ensina o time a ignorar avisos. */}
+          {data.paginasVieramDoUtmTerm && !data.lpsOrfas?.length && data.aplicacoesSemPagina > 0 && (
             <p className="text-[11px] text-amber-700 dark:text-amber-400">
               <span className="font-medium">{data.aplicacoesSemPagina}</span>{" "}
               {data.aplicacoesSemPagina === 1 ? "aplicação está" : "aplicações estão"} no gráfico sem

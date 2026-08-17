@@ -3,7 +3,7 @@ storyTitle: "Aplicações por página vêm do utm_term, não do nome da aba"
 gate: CONCERNS
 reviewer: "@qa (Quinn)"
 reviewedAt: "2026-08-17"
-commit: 7337a645
+commit: 00acf1de   # re-review; implementação original em 7337a645
 branch: feature/43.6-aplicacoes-por-utm-term
 
 summary: >
@@ -98,3 +98,87 @@ coderabbit:
 nextAction: >
   @dev corrige QA-43.6-01 (trocar o gatilho da nota) e QA-43.6-02 (cabeçalho).
   QA-43.6-03 vai para o preview.
+
+# ─────────────────────────────────────────────────────────────
+# RE-REVIEW — 2026-08-17, commit 00acf1de
+# ─────────────────────────────────────────────────────────────
+reReview:
+  gate: CONCERNS
+  previousGate: CONCERNS
+
+  resolvedIssues:
+    - id: QA-43.6-01
+      status: RESOLVED
+      verifiedBy: >
+        Executei agruparPorPagina nos 5 cenários e conferi o sinal em cada um —
+        não o relato:
+          quebra SEM órfãs (o furo) -> paginasVieramDoUtmTerm=true,  semPagina=0
+          quebra COM órfãs          -> true,  semPagina=1
+          aba com sufixo (AC1)      -> false, semPagina=0
+          sem LP nenhuma (AC9)      -> false, semPagina=2
+          aba vazia                 -> false, semPagina=0
+        O caso que falhava agora dispara, e os que não deviam disparar seguem
+        calados. Separar `veioDoUtmTerm` de `aplicacoesSemPagina` foi a correção
+        certa: são duas perguntas distintas.
+
+    - id: QA-43.6-02
+      status: RESOLVED
+      verifiedBy: >
+        Os três arquivos corrigidos (rota, hook, componente). As ocorrências que
+        um grep ingênuo ainda encontra são as NEGAÇÕES escritas pelo @dev ("não
+        é casada forma a forma"), não a afirmação antiga. Conferido em contexto.
+      note: >
+        O @dev achou que a dívida estava em 3 arquivos, não em 1 como o gate
+        apontou — e corrigiu os três, registrando em cada um que a comparação é
+        agregada.
+
+  newIssue:
+    id: QA-43.6-04
+    severity: medium
+    category: requirements
+    title: "Aviso de 'aplicações sem página' aparece em funil que não mudou (AC9)"
+    file: packages/web/components/funnels/applications-daily-chart.tsx
+    line: 173
+    description: >
+      O bloco `!lpsOrfas.length && aplicacoesSemPagina > 0` não considera se
+      houve quebra. No cenário do AC9 — aba-base sem nenhuma LP — a série
+      continua única e idêntica ao que era, mas `aplicacoesSemPagina` é o total
+      de linhas, e a tela passa a exibir um aviso âmbar novo.
+    concreteCase: >
+      dg-pg02: 49 aplicações, série única "apc", NADA mudou com esta story
+      (medido pelo próprio @dev). Passaria a mostrar "49 aplicações estão no
+      gráfico sem página identificada". Factualmente verdadeiro e operacionalmente
+      inútil: aquele funil nunca organizou por página.
+    whyItMatters: >
+      O AC9 existe para o funil que não usa páginas NÃO mudar — "nada de série
+      solitária substituindo um gráfico que funcionava". Um aviso âmbar novo é
+      mudança. E a própria story cita a lição da 43.1: aviso que aparece com
+      tudo certo ensina o time a ignorar avisos.
+    recommendation: >
+      Condicionar o bloco também a `paginasVieramDoUtmTerm` — só faz sentido
+      falar de "aplicação sem página" quando o gráfico de fato organiza por
+      página. Uma linha.
+    doesNotRequireNewGate: >
+      Fix de uma condição, com o mesmo sinal que já existe no payload. Pode ser
+      verificado junto com a validação visual no preview, sem novo ciclo.
+
+  stillOpen:
+    - id: QA-43.6-03
+      title: "Validação visual"
+      note: >
+        Pesa mais nesta story que na média: o AC4 é INTEIRAMENTE de tela. Os
+        testes provam que o sinal chega; nenhum prova que a nota aparece no
+        lugar certo e legível. O próprio @dev registrou isso.
+
+  finalChecks:
+    codeReview: PASS
+    unitTests: PASS            # 47/47, 4 novos travando o furo do gate anterior
+    acceptanceCriteria: CONCERNS   # AC9 com efeito colateral na tela
+    noRegressions: PASS
+    performance: PASS
+    security: PASS
+    documentation: PASS        # QA-43.6-02 resolvido em 3 arquivos
+
+  nextAction: >
+    @dev corrige QA-43.6-04 (uma condição) e segue para o PR. A validação visual
+    no preview cobre os dois itens abertos de uma vez.
