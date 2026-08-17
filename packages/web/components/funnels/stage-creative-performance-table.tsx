@@ -7,6 +7,11 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, ExternalLink, Info } from "lucide-react";
+// Story 19.14: recebe `stageType` cru dos call sites (launch-dashboard e
+// stage-sales-section), então precisa do helper — Captação de Evento tem as
+// mesmas colunas de ingresso/faturamento da Paga.
+import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
+import type { StageType } from "@loyola-x/shared";
 import {
   calculateCreativeMetrics,
   formatMetricValue,
@@ -41,7 +46,13 @@ interface StageCreativePerformanceTableProps {
   funnelId: string;
   stageId: string;
   days?: number;
-  stageType?: 'paid' | 'free' | 'sales' | 'cpl';
+  /**
+   * Story 19.14: era `'paid' | 'free' | 'sales' | 'cpl'` — união escrita à mão
+   * que ficou defasada quando `event_capture` nasceu, e que só não acusava erro
+   * porque o `stageType === "paid"` do call site estreitava o tipo antes de
+   * passar. Usa `StageType` para não repetir a defasagem no próximo tipo novo.
+   */
+  stageType?: StageType;
 }
 
 type TemperatureFilter = "all" | "hot" | "cold";
@@ -379,7 +390,7 @@ export function StageCreativePerformanceTable({
       totalSpend: sum.spend,
       videoViews3s: sum.videoViews3s,
       videoViews75: sum.videoViews75,
-      ...(stageType === "paid"
+      ...(ehCaptacaoPaga(stageType)
         ? {
             ingressosUnicos: sum.ingressosUnicos,
             ingressosTotais: sum.ingressosTotais,

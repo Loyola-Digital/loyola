@@ -52,6 +52,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { Funnel, FunnelCampaign, ManualSale } from "@loyola-x/shared";
+import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
 
 export default function StagePage() {
   const params = useParams<{ id: string; funnelId: string; stageId: string }>();
@@ -104,11 +105,15 @@ export default function StagePage() {
   /**
    * A Captação de Evento é a Captação Paga com venda de INGRESSO no lugar da
    * venda de produto: tudo que hoje liga por "paid" — tráfego, planilhas de
-   * venda, lançamento manual — vale pra ela igual. Concentrado num helper pra
-   * um ponto novo não nascer fora do tipo.
+   * venda, lançamento manual — vale pra ela igual.
+   *
+   * Story 19.14: era esta mesma regra escrita à mão aqui. A cópia local não era
+   * o problema — o problema é que ela parava nesta linha: a página normalizava
+   * o tipo para decidir o que renderizar, mas passava `stage.stageType` cru
+   * para o `LaunchDashboard`, que voltava a comparar com "paid" literal em 28
+   * pontos. Agora as duas pontas leem a mesma função.
    */
-  const ehCaptacaoPaga =
-    stage.stageType === "paid" || (stage.stageType as string) === "event_capture";
+  const ehCaptacaoPagaStage = ehCaptacaoPaga(stage.stageType);
   /** Rótulos mudam de "produto" pra "ingresso" na Captação de Evento. */
   const ehCaptacaoDeEvento = (stage.stageType as string) === "event_capture";
 
@@ -511,7 +516,7 @@ export default function StagePage() {
               Análise MVP
             </TabsTrigger>
           )}
-          {funnelType === "launch" && ehCaptacaoPaga && (
+          {funnelType === "launch" && ehCaptacaoPagaStage && (
             <TabsTrigger value="meta-ads-teste" className="gap-1.5">
               <FlaskConical className="h-3.5 w-3.5 text-cyan-400" />
               Meta Ads TESTE
@@ -595,7 +600,7 @@ export default function StagePage() {
               Vive DENTRO da aba Meta Ads — antes ficava fora do <Tabs> e por
               isso aparecia embaixo de todas as abas (NPS, GA4, Planilhas...).
               Etapas "paid" (Captação Paga) e "free" (Gratuita). */}
-          {(ehCaptacaoPaga || stage.stageType === "free") && (
+          {(ehCaptacaoPagaStage || stage.stageType === "free") && (
             <div className="mt-2">
               <div className="mb-2 flex justify-end">
                 <DayRangePicker days={paidSalesDays} onDaysChange={setPaidSalesDays} />
@@ -627,7 +632,7 @@ export default function StagePage() {
           <VslCollapsibleSection projectId={params.id} stageId={params.stageId} />
         </TabsContent>
 
-        {funnelType === "launch" && ehCaptacaoPaga && (
+        {funnelType === "launch" && ehCaptacaoPagaStage && (
           <TabsContent value="meta-ads-teste" className="mt-6">
             <MetaAdsTesteTab
               funnel={stageAsFunnel}
@@ -694,7 +699,7 @@ export default function StagePage() {
 
         <TabsContent value="spreadsheets" className="mt-6">
           <div className="space-y-6">
-            {ehCaptacaoPaga && (
+            {ehCaptacaoPagaStage && (
               <>
                 <StageSalesSpreadsheetSection
                   projectId={params.id}
@@ -776,7 +781,7 @@ export default function StagePage() {
       {/* Dialog de venda manual fica FORA do <Tabs>: é overlay controlado por
           estado, não conteúdo de aba — desmontá-lo na troca de aba fecharia o
           formulário no meio do preenchimento. */}
-      {(ehCaptacaoPaga || stage.stageType === "free") && (
+      {(ehCaptacaoPagaStage || stage.stageType === "free") && (
         <ManualSaleDialog
           projectId={params.id}
           funnelId={params.funnelId}
