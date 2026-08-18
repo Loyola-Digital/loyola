@@ -194,7 +194,21 @@ export function atribuirPorCampanha(
   }
 
   const atribVendas = [...porCampanha.values()].reduce((s, x) => s + x.vendasAtribuidas, 0);
-  const atribLeads = [...porCampanha.values()].reduce((s, x) => s + x.leadsUnicosAtribuidos, 0);
+
+  // ⚠️ QA-44-01: cobertura de lead é UNIÃO das chaves atribuídas, não soma dos
+  // conjuntos por campanha. O mesmo lead pode aparecer em duas campanhas — ele
+  // aplicou duas vezes, por anúncios diferentes — e aí soma 2 no numerador
+  // contra 1 no denominador (`vistos`, que já deduplica). O resultado passava
+  // de 100%.
+  //
+  // `leadsUnicosAtribuidos` POR CAMPANHA continua contando a sobreposição, e
+  // está certo: "quantos leads esta campanha trouxe" tem resposta legítima com
+  // o mesmo lead em duas. O que não pode é somar essas respostas para derivar
+  // cobertura, que é uma fração do mesmo denominador deduplicado.
+  const chavesAtribuidas = new Set<string>();
+  for (const chaves of porCampanhaLead.values()) {
+    for (const chave of chaves) chavesAtribuidas.add(chave);
+  }
 
   return {
     porCampanha: [...porCampanha.values()].sort((a, b) => b.receitaAtribuida - a.receitaAtribuida),
@@ -204,7 +218,7 @@ export function atribuirPorCampanha(
     // `null` em vez de 0 quando não há denominador: "não dá para saber" não é
     // "cobertura zero".
     coberturaVendas: totalVendas > 0 ? atribVendas / totalVendas : null,
-    coberturaLeads: vistos.size > 0 ? atribLeads / vistos.size : null,
+    coberturaLeads: vistos.size > 0 ? chavesAtribuidas.size / vistos.size : null,
     utmContentNaoResolvido: naoResolvido,
   };
 }

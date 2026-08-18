@@ -155,4 +155,44 @@ describe("atribuirPorCampanha — cobertura", () => {
     expect(r.totalVendas).toBe(1);
     expect(r.coberturaVendas).toBe(1);
   });
+
+  /**
+   * QA-44-01. O mesmo lead aplicando por DUAS campanhas — retargeting, e não é
+   * caso raro. Somando os conjuntos por campanha o numerador virava 2 contra um
+   * denominador de 1, e a cobertura saía 200%.
+   *
+   * A cobertura é a fração do total que se conseguiu atribuir: por definição
+   * não passa de 1. Um número acima disso não é impreciso, é o campo negando a
+   * própria função — e ele existe justamente para dizer quanto do dado é medido.
+   */
+  it("mesmo lead em duas campanhas não infla a cobertura acima de 100%", () => {
+    const r = atribuirPorCampanha(
+      [],
+      [
+        lead({ utmContent: "120248243282650208", chave: "jose@x.com" }), // camp-A
+        lead({ utmContent: "120247828941780208", chave: "jose@x.com" }), // camp-B
+      ],
+      mapa,
+    );
+    expect(r.totalLeadsUnicos).toBe(1);
+    expect(r.coberturaLeads).toBe(1);
+    // A sobreposição continua visível POR CAMPANHA: "quantos leads esta
+    // campanha trouxe" tem resposta legítima com o mesmo lead nas duas.
+    expect(r.porCampanha.find((c) => c.campaignId === "camp-A")?.leadsUnicosAtribuidos).toBe(1);
+    expect(r.porCampanha.find((c) => c.campaignId === "camp-B")?.leadsUnicosAtribuidos).toBe(1);
+  });
+
+  it("cobertura de lead nunca passa de 1, mesmo com sobreposição e não-atribuídos", () => {
+    const r = atribuirPorCampanha(
+      [],
+      [
+        lead({ utmContent: "120248243282650208", chave: "jose@x.com" }),
+        lead({ utmContent: "120247828941780208", chave: "jose@x.com" }),
+        lead({ utmContent: null, chave: "maria@x.com" }), // sem UTM: derruba a cobertura
+      ],
+      mapa,
+    );
+    expect(r.totalLeadsUnicos).toBe(2);
+    expect(r.coberturaLeads).toBe(0.5);
+  });
 });
