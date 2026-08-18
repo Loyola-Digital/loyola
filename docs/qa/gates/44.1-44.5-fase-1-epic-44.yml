@@ -264,3 +264,133 @@ nextAction: >
   @dev aplica QA-44-01, QA-44-02 e QA-44-03 — os três são pequenos e nenhum é
   rework. Depois: re-review e @devops abre o PR com o plano de deploy corrigido.
   As stories 44.1, 44.4 e 44.5 estão liberadas como estão.
+
+# ─────────────────────────────────────────────────────────────
+# RE-REVIEW — 2026-08-18 · commits 85bfcba8, 810f708b, a7a189aa
+# ─────────────────────────────────────────────────────────────
+reReview:
+  gate: PASS
+  previousGate: CONCERNS
+
+  method: >
+    Verificação INDEPENDENTE dos três fixes, não o relato do @dev. Para cada um:
+    reverter a correção no arquivo, rodar a suíte, confirmar que os testes novos
+    falham, restaurar. Um teste que não falha com o bug de volta é decorativo —
+    foi exatamente assim que o QA-44-02 apareceu na primeira rodada.
+
+  resolved:
+    - id: QA-44-01
+      severity: high
+      status: RESOLVED
+      commit: 85bfcba8
+      verifiedBy: |
+        Revertido `coberturaLeads` para a soma dos conjuntos:
+
+          × mesmo lead em duas campanhas não infla a cobertura acima de 100%
+          × cobertura de lead nunca passa de 1, mesmo com sobreposição e não-atribuídos
+          Tests  2 failed | 13 passed (15)
+
+        Com o fix: 15/15.
+      correctnessArgument: >
+        `chavesAtribuidas` só recebe chaves vindas de `porCampanhaLead`, que por
+        construção é subconjunto de `vistos` (o laço adiciona a `vistos` ANTES
+        de checar a UTM). Logo a razão é ≤ 1 por construção, não por sorte de
+        fixture.
+      alsoChecked: >
+        `coberturaVendas` não tinha o mesmo defeito e continua correta: cada
+        venda é atribuída a no máximo uma campanha, então `atribVendas` nunca
+        passa de `totalVendas`. Conferido no código, não presumido por simetria.
+      designPreserved: >
+        `leadsUnicosAtribuidos` POR CAMPANHA continua contando a sobreposição —
+        e está certo. O teste afirma isso explicitamente (camp-A → 1 e camp-B →
+        1 com o mesmo lead), então a decisão fica travada contra alguém
+        "consertar" a sobreposição depois achando que é bug.
+
+    - id: QA-44-02
+      severity: high
+      status: RESOLVED
+      commit: 810f708b
+      verifiedBy: |
+        Revertido `deriveMetrics` para `a.clicks`:
+
+          × connectRate = lpViews ÷ linkClicks, NÃO ÷ clicks
+          × lpRate acompanha connectRate — mesmo valor, mesmo denominador
+          × sem link click, connectRate é null e não 0
+          Tests  3 failed | 11 passed (14)
+
+        Com o fix: 14/14. Na primeira rodada o mesmo revert deixava a suíte
+        100% verde — a diferença é que agora o teste passa pelo caminho de
+        código da correção.
+      discoveryDuringFix: >
+        O @dev encontrou uma AC6 na própria story 44.2 — *"Teste que falha se
+        alguém voltar a dividir por `clicks`"* — que estava aberta e que o gate
+        anterior não tinha citado por nome (eu havia lido só as ACs 1-4). O
+        achado QA-44-02 era, na verdade, uma AC explícita não cumprida, não uma
+        lacuna de cobertura inferida. Agora atendida.
+      scopeNote: >
+        `deriveMetrics` tem cinco call sites (o @po já havia registrado:
+        `:291,417,513,584,677`). O teste passa por um deles
+        (`/stages/:stageId/daily`), o que basta: a correção mora na função, não
+        nos chamadores. Um teste por call site protegeria contra outra coisa —
+        alguém parar de chamar `deriveMetrics` — que não é o risco desta story.
+
+    - id: QA-44-03
+      severity: medium
+      status: RESOLVED
+      commit: a7a189aa
+      verifiedBy: >
+        Varredura por "subir juntos|painel e API|web e API" em todo o repo. Os
+        únicos resultados remanescentes são: as próprias correções citando a
+        frase antiga para refutá-la, o heading da AC4 (ver `stillOpen`), o
+        `api-contract-banner.tsx` e a story 29.46 — estes dois falam do banner
+        de versão em geral, que é afirmação diferente e correta.
+      correctionQuality: >
+        As três correções não só removem a frase errada: explicam por que
+        estava errada e apontam a evidência (a coluna "interno (tela)" do
+        próprio relatório). Quem ler daqui a três meses não repete o erro.
+
+  stillOpen:
+    - id: QA-44-05
+      severity: low
+      title: "Colisão de nomes `lpRate` × Conv. LP segue sem resolução estrutural"
+      note: "Nasce como problema real só na 44.6, quando os dois nomes passam a conviver."
+    - id: QA-44-06
+      severity: low
+      title: "Atribuição não-determinística para anúncio movido de campanha"
+      note: "`selectDistinct` sem `ORDER BY`. Sem consumidor de rota ainda."
+    - id: QA-44-07
+      severity: low
+      title: "`utmContentNaoResolvido` conta só vendas"
+    - id: QA-44-08
+      severity: low
+      title: "Status de venda ausente vira receita sem sinalizar no retorno"
+    - id: QA-44-09
+      severity: low
+      title: "CodeRabbit não rodou (WSL/macOS)"
+
+  handoffToPO:
+    what: "O texto da AC4 da story 44.2 — 'Deploy coordenado, web e API'."
+    why: >
+      Continua com a premissa refutada. O @dev não altera acceptance criteria
+      (agent-authority), então registrou no Change Log e parou — comportamento
+      correto, não omissão.
+    impact: >
+      Baixo para o merge: o conteúdo corrigido está nos três arquivos que o
+      @devops vai ler para montar o deploy. Importa para o histórico da story.
+
+  finalChecks:
+    codeReview: PASS
+    unitTests: PASS            # 1087 passando (era 1082); 5 novos, todos provados por revert
+    acceptanceCriteria: PASS   # AC6 da 44.2 fechada; AC2 permanece não-entregue mas o inventário existe de fato no gate
+    noRegressions: PASS        # 11 falhas pré-existentes, mesmos 5 arquivos
+    performance: PASS
+    security: PASS
+    documentation: PASS
+
+  mergeConditions:
+    - "Validação local antes do PR — o gate não substitui ver o número na tela."
+    - "Avisar o Inácio antes do deploy da API, com a tabela antes/depois."
+
+  nextAction: >
+    Validação local, depois @devops abre o PR. As 5 stories da Fase 1 estão
+    liberadas. A Fase 2 (44.6) deve consumir `campaign-attribution` já corrigido.
