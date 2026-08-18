@@ -72,7 +72,11 @@ export interface Agregado {
   linkClicks: number;
   landingPageViews: number;
   checkouts: number;
-  leadsAtribuidos: number;
+  /**
+   * `null` quando NENHUM dia trouxe o campo — ausência de dado de lead, que é
+   * afirmação diferente de "zero leads". Ver `agregar()`.
+   */
+  leadsAtribuidos: number | null;
   /** Dias que entraram na soma — 0 significa `semDados`, não zero legítimo. */
   dias: number;
 }
@@ -183,12 +187,24 @@ export function agregadoVazio(): Agregado {
     linkClicks: 0,
     landingPageViews: 0,
     checkouts: 0,
-    leadsAtribuidos: 0,
+    leadsAtribuidos: null,
     dias: 0,
   };
 }
 
-/** Soma os brutos. A divisão vem depois — ver `calcularMetricas`. */
+/**
+ * Soma os brutos. A divisão vem depois — ver `calcularMetricas`.
+ *
+ * ⚠️ **`leadsAtribuidos` só vira número se ALGUM dia trouxe o campo** (QA-446-01).
+ * `+= d.leadsAtribuidos ?? 0` transformava "a planilha de leads não está ligada"
+ * em "zero leads" — e essa distinção não se recupera depois. O estrago não era
+ * no custo (que saía `null` de qualquer jeito), era no RANKING: `Conv. LP = 0`
+ * contra um teto qualquer dá `quedaReal = 1`, e a etapa sem dado nenhum
+ * liderava a lista prometendo eliminar 100% do custo.
+ *
+ * É o mesmo padrão que a Story 44.1 usou em `videoViews25`/`videoViews100`, que
+ * por sua vez veio da QA-26 da 43.3.
+ */
 export function agregar(dias: readonly DiaBruto[]): Agregado {
   const a = agregadoVazio();
   for (const d of dias) {
@@ -197,7 +213,9 @@ export function agregar(dias: readonly DiaBruto[]): Agregado {
     a.linkClicks += d.linkClicks;
     a.landingPageViews += d.landingPageViews;
     a.checkouts += d.checkouts;
-    a.leadsAtribuidos += d.leadsAtribuidos ?? 0;
+    if (d.leadsAtribuidos !== undefined) {
+      a.leadsAtribuidos = (a.leadsAtribuidos ?? 0) + d.leadsAtribuidos;
+    }
     a.dias += 1;
   }
   return a;
@@ -223,13 +241,16 @@ function div(numerador: number, denominador: number): number | null {
  */
 export function calcularMetricas(a: Agregado, familia: Familia): Metricas {
   const cpmBruto = div(a.spend, a.impressions);
+  // ⚠️ QA-446-01: numerador AUSENTE devolve `null`, não `0`. Só a família
+  // gratuita chega aqui com ausência possível — na paga, `checkouts` é
+  // obrigatório em `DiaBruto`, então um zero ali é zero legítimo.
   const numeradorConvLP = familia === "paga" ? a.checkouts : a.leadsAtribuidos;
   return {
     cpm: cpmBruto === null ? null : cpmBruto * 1000,
     cpc: div(a.spend, a.linkClicks),
     ctr: div(a.linkClicks, a.impressions),
     connectRate: div(a.landingPageViews, a.linkClicks),
-    convLP: div(numeradorConvLP, a.landingPageViews),
+    convLP: numeradorConvLP === null ? null : div(numeradorConvLP, a.landingPageViews),
   };
 }
 

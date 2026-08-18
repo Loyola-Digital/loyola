@@ -195,6 +195,55 @@ describe("razão de somas, nunca média de médias (§2.6)", () => {
   });
 });
 
+/**
+ * QA-446-01 — o gate pegou `leadsAtribuidos` ausente virando `0`. O estrago não
+ * era no custo (saía `null` de qualquer jeito): era no RANKING, onde uma etapa
+ * sem planilha de leads ligada liderava a lista prometendo −100% de custo.
+ */
+describe("QA-446-01 — lead ausente ≠ zero lead", () => {
+  const semLead: DiaBruto = {
+    date: "2026-05-01", spend: 100, impressions: 1000, linkClicks: 100,
+    landingPageViews: 80, checkouts: 5,
+  };
+  const zeroLead: DiaBruto = { ...semLead, leadsAtribuidos: 0 };
+
+  it("campo ausente devolve convLP null, campo presente com 0 devolve 0", () => {
+    expect(calcularMetricas(agregar([semLead]), "gratuita").convLP).toBeNull();
+    expect(calcularMetricas(agregar([zeroLead]), "gratuita").convLP).toBe(0);
+  });
+
+  it("os dois casos são distinguíveis — é a distinção que não se recupera", () => {
+    const ausente = calcularMetricas(agregar([semLead]), "gratuita").convLP;
+    const zero = calcularMetricas(agregar([zeroLead]), "gratuita").convLP;
+    expect(ausente).not.toBe(zero);
+  });
+
+  it("agregar só soma os dias que trouxeram o campo", () => {
+    const misto = agregar([semLead, { ...semLead, leadsAtribuidos: 7 }, semLead]);
+    expect(misto.leadsAtribuidos).toBe(7);
+    expect(agregar([semLead, semLead]).leadsAtribuidos).toBeNull();
+  });
+
+  /** A consequência que o gate mediu: sem o fix, esta etapa lidera o ranking. */
+  it("etapa sem dado de lead NÃO produz queda de 100% — não há o que ranquear", () => {
+    const m = calcularMetricas(agregar([semLead]), "gratuita");
+    expect(m.convLP).toBeNull();
+    // Sem número não há item de ranking. Com o defeito, `convLP` era 0 e
+    // `quedaReal("convLP", 0, 0.05)` dava 1,0 — 100% de queda prometida.
+    expect(quedaReal("convLP", 0, 0.05)).toBe(1);
+    expect(m.convLP).not.toBe(0);
+  });
+
+  it("família paga não é afetada — checkouts é obrigatório, zero é zero legítimo", () => {
+    const semCheckout: DiaBruto = { ...semLead, checkouts: 0 };
+    expect(calcularMetricas(agregar([semCheckout]), "paga").convLP).toBe(0);
+  });
+
+  it("agregadoVazio começa com leadsAtribuidos null, não 0", () => {
+    expect(agregar([]).leadsAtribuidos).toBeNull();
+  });
+});
+
 describe("ausência é declarada, nunca zero (§7.4)", () => {
   it("denominador zero devolve null em toda métrica", () => {
     const m = calcularMetricas(agregar([]), "paga");
