@@ -34,6 +34,50 @@ export {
   ehEtapaDeCaptacao,
 } from "./stage-types.js";
 export { normalizarNomeCampanha, temSufixoDeCopia } from "./campaign-name.js";
+export {
+  // fronteira de unidade
+  dePercentual,
+  paraPercentual,
+  // família
+  classificarFamilia,
+  // agregação e métricas
+  agregadoVazio,
+  agregar,
+  calcularMetricas,
+  // o número principal
+  cacReal,
+  cplReal,
+  // cadeia de decomposição
+  custoDaCadeia,
+  cliquesPorConversao,
+  // janela e teto
+  janelasDe7Dias,
+  baseDaMetrica,
+  selo,
+  coberturaAtipica,
+  mediana,
+  DESVIO_COBERTURA_MAXIMO,
+  // ranking
+  DIRECAO,
+  POSICAO_NA_CADEIA,
+  quedaReal,
+  ranquear,
+  compostoNoTeto,
+  decomporCPC,
+} from "./cadeia-cac.js";
+export type {
+  Familia,
+  MotivoIndisponivel,
+  Confianca,
+  Metrica,
+  DiaBruto,
+  Agregado,
+  Metricas,
+  Teto,
+  TetoAusente,
+  ItemRanking,
+  Janela,
+} from "./cadeia-cac.js";
 
 export type {
   MindArtifactPaths,
