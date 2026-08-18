@@ -54,12 +54,19 @@
 
 ## ⚠️ Pendências que travam o merge
 
-**1. Deploy coordenado (44.2).** `API_CONTRACT_VERSION` foi para 2 e o `connectRate` **sobe 18–35 p.p.** em todo consumidor do endpoint público. Painel e API precisam subir juntos.
+**1. Aviso ao Inácio antes do deploy da API (44.2).** O `connectRate` **sobe 18–35 p.p.** no endpoint público.
+
+> ⚠️ **Corrigido em 2026-08-18 (QA-44-03).** A versão anterior dizia "painel e API precisam subir juntos". **Errado.** O painel **não consome** `/api/public/meta` — zero ocorrências de `/public` em `packages/web`. Ele usa `/api/meta-ads/*` e já calcula o Connect Rate por `linkClicks` (`funnel-metrics.ts:348`). A coluna "interno (tela)" do relatório antes/depois prova: **a tela já mostrava o valor certo e não muda com o deploy**.
+>
+> O consumidor real é `packages/mcp` — servidor **stdio na máquina do Inácio**, sem checagem de contrato. Quando a API subir, o relatório dele muda na hora. **Avisar é a coordenação que existe**; sincronizar com o painel não é.
+
 Antes/depois documentado em `docs/qa/audits/44.2-connectrate-antes-depois.md`.
 
-**2. `@qa` não rodou** nos 8 commits — inclui um breaking change de contrato público.
+**2. ✅ `@qa` rodou em 2026-08-18** — gate **CONCERNS**, `docs/qa/gates/44.1-44.5-fase-1-epic-44.yml`. PASS em 44.1, 44.4 e 44.5. Três must-fix aplicados pelo @dev na mesma data: cobertura de leads passando de 100% (QA-44-01), correção da 44.2 sem teste (QA-44-02, que era a AC6 da própria story) e esta premissa de deploy (QA-44-03).
 
-**3. `/health` de produção devolve `commit: null`** (o Railway não injeta `RAILWAY_GIT_COMMIT_SHA`), então o detector de defasagem das stories 29.45/29.46 está parcialmente cego — justamente agora que ele importa.
+**3. `/health` de produção devolve `commit: null`** (o Railway não injeta `RAILWAY_GIT_COMMIT_SHA`), então o detector das stories 29.45/29.46 está parcialmente cego.
+
+> Nuance registrada no gate: o `commit: null` cega a checagem de **commit**, não a de **contrato**. Como a 44.2 subiu o `API_CONTRACT_VERSION` para 2, o banner do painel **volta a funcionar** neste caso — ele acusa a API defasada até ela subir.
 
 ---
 

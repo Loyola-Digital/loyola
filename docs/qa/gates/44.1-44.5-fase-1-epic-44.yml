@@ -1,0 +1,266 @@
+storyId: "44.1–44.5"
+storyTitle: "Epic 44 · Fase 1 — série por campanha, connectRate, atribuição, normalização, gate do teto"
+gate: CONCERNS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-08-18"
+commits: [7e041eda, 5c62b68d, cadeee57, 44841ecb, 7aeb5d06, 9ec3edae, 3bdf1b36, 0edd2fcc, 59f9b93f]
+branch: feature/44.1-serie-diaria-por-campanha
+scope: "9 commits locais, não pushados. 2.479 inserções, 5 remoções, 21 arquivos."
+
+codeRabbit:
+  status: SKIPPED
+  reason: >
+    CLI instalado em WSL; esta máquina é macOS. Não há fallback nativo
+    configurado. Fase 0 do fluxo de review não executada — registrado como
+    lacuna de cobertura, não como aprovação.
+
+summary: >
+  A engenharia é boa e as lições de gates anteriores pegaram: o guard de IDOR da
+  43.7 foi replicado sem ninguém pedir, a distinção `undefined` ≠ `0` da 43.3 foi
+  preservada, e o débito de status de venda (`isRefundBucket` no lugar de
+  `isRevenueBucket`) NÃO foi herdado. O que segura o gate são três coisas
+  verificadas por execução, não por leitura: a cobertura de leads pode passar de
+  100%, a correção da 44.2 não tem teste nenhum que a proteja, e a premissa de
+  deploy que está em quatro documentos é factualmente errada.
+
+perStory:
+  "44.1": PASS
+  "44.2": CONCERNS
+  "44.3": CONCERNS
+  "44.4": PASS
+  "44.5": PASS
+
+issues:
+  - id: QA-44-01
+    severity: high
+    category: correctness
+    title: "coberturaLeads pode passar de 100% — mesmo lead atribuído a duas campanhas"
+    file: packages/api/src/services/campaign-attribution.ts
+    story: "44.3 (AC1, AC5)"
+    description: >
+      O numerador da cobertura de leads é a SOMA de `leadsUnicosAtribuidos` por
+      campanha; o denominador é `vistos.size`, o conjunto de chaves distintas.
+      Uma chave que aparece em duas campanhas (o mesmo e-mail aplicando duas
+      vezes, por anúncios de campanhas diferentes — retargeting) conta DUAS
+      vezes no numerador e UMA no denominador.
+    proof: |
+      Executado contra a implementação real, não deduzido:
+
+        leads = [
+          { utmContent: "111111", chave: "jose@x.com" },  // campA
+          { utmContent: "222222", chave: "jose@x.com" },  // campB
+        ]
+
+        totalLeadsUnicos: 1
+        porCampanha: campA → 1 lead · campB → 1 lead
+        coberturaLeads: 2      ← 200%
+
+    whyItMatters: >
+      A cobertura é o campo que existe para dizer "quanto deste número é
+      medido". Uma cobertura de 200% não é um número impreciso — é um número que
+      desmente a própria função do campo. E a AC5 fez dela campo de primeira
+      classe justamente para não ser nota de rodapé.
+    blastRadius: >
+      NENHUM hoje. `campaign-attribution.ts` não tem consumidor de rota — só
+      testes e o script de medição (`grep` confirmado). O defeito é latente: a
+      44.6 e a 44.7 são exatamente quem vai consumir.
+    recommendation: >
+      O numerador deve ser o tamanho da UNIÃO das chaves atribuídas, não a soma
+      dos tamanhos dos conjuntos por campanha. `leadsUnicosAtribuidos` por
+      campanha pode continuar como está (a pergunta "quantos leads esta campanha
+      trouxe" tem resposta legítima com sobreposição) — o que não pode é somá-los
+      para derivar cobertura.
+    testGap: >
+      Os 4 testes de cobertura existentes cobrem null, 1, não-pago e lead sem
+      UTM. Nenhum cobre a mesma chave em duas campanhas.
+
+  - id: QA-44-02
+    severity: high
+    category: test-coverage
+    title: "A correção da 44.2 — o único breaking change do epic — não tem teste nenhum"
+    file: packages/api/src/routes/public-meta.ts
+    story: "44.2 (AC1)"
+    description: >
+      A mudança de `a.clicks` para `a.linkClicks` acontece em `deriveMetrics()`
+      (linha 220). Nenhum teste do repositório exercita esse caminho.
+    proof: |
+      Verificação independente, não leitura. Reverti a correção no arquivo e
+      rodei a suíte do módulo:
+
+        connectRate: a.clicks > 0 ? ...   (implementação ANTIGA restaurada)
+        → Test Files 1 passed · Tests 11 passed
+
+      Verde com o bug de volta. Depois:
+
+        grep -rn "connectRate|lpRate|deriveMetrics" packages/api/src/__tests__/
+        → nenhum resultado fora do arquivo da 44.1
+
+    misleadingClaim: >
+      O relatório `docs/qa/audits/44.2-connectrate-antes-depois.md` afirma:
+      *"Teste com `clicks ≠ linkClicks` no fixture — com os dois iguais, o teste
+      passaria com a implementação errada"*. O teste existe e o fixture de fato
+      usa 200 ≠ 100 — mas ele verifica os BRUTOS do endpoint da 44.1
+      (`linkClicks: 100`, `landingPageViews: 80`, ausência de `clicks`), que é
+      outro caminho de código. O próprio teste diz isso num comentário. A frase
+      do relatório sugere uma proteção que não existe.
+    whyItMatters: >
+      É a mudança de maior risco do epic: altera número servido em produção,
+      sobe `API_CONTRACT_VERSION` e move o que o agente Inácio reporta. É
+      também a única sem rede. Um revert acidental deixa a suíte inteira verde.
+    recommendation: >
+      Um teste sobre `deriveMetrics` (ou sobre uma rota que a chame) com
+      `clicks` ≠ `linkClicks`, afirmando que `connectRate` = lpViews ÷
+      linkClicks. Deve falhar se alguém devolver o denominador antigo.
+
+  - id: QA-44-03
+    severity: medium
+    category: documentation
+    title: "\"Painel e API precisam subir juntos\" é factualmente errado, e está em quatro lugares"
+    story: "44.2 (AC4)"
+    files:
+      - packages/shared/src/contract.ts
+      - docs/stories/44.2.corrigir-connect-rate-e-nomes.md
+      - docs/qa/audits/44.2-connectrate-antes-depois.md
+      - docs/stories/epics/EPIC-44-RETOMADA.md
+    description: >
+      O painel NÃO consome `/api/public/meta`. Verificado: nenhuma ocorrência de
+      "/public" em `packages/web`. Ele usa `/api/meta-ads/*` (autenticado) e
+      calcula o Connect Rate por conta própria, já dividindo por `linkClicks` —
+      `funnel-metrics.ts:348` e `perpetual-daily-metrics.ts:95`.
+    selfContradiction: >
+      O próprio relatório antes/depois prova isso: a coluna "interno (tela)" já
+      mostra 60,5% enquanto a pública mostra 25,7%. Se a tela já exibe o valor
+      correto, o deploy da API não muda a tela — logo não há nada a coordenar
+      entre os dois.
+    whatIsActuallyTrue: >
+      O consumidor real é `packages/mcp` — servidor stdio que roda na máquina do
+      Inácio apontando para `LOYOLA_API_BASE_URL`. Não é um deploy controlado
+      pelo time: no instante em que a API subir, os números do relatório do
+      Inácio mudam, e o MCP não tem nenhuma checagem de contrato.
+      O bump `API_CONTRACT_VERSION` 1→2 faz o banner do PAINEL disparar enquanto
+      a API não acompanha — o que é o detector funcionando (o `commit: null`
+      cega só a checagem de commit, não a de contrato).
+    whyItMatters: >
+      É a instrução que o @devops vai seguir para montar o deploy. Do jeito que
+      está, ele coordena o que não precisa e não faz o único aviso que importa —
+      avisar o Inácio, com o antes/depois na mão, antes da API subir.
+    rootCause: "QA-44-04 — a AC2 existia exatamente para produzir esse levantamento."
+
+  - id: QA-44-04
+    severity: medium
+    category: requirements
+    title: "AC2 da 44.2 não foi entregue — o inventário de consumidores"
+    story: "44.2 (AC2)"
+    description: >
+      A AC pede: *"Listar TODOS os consumidores de `connectRate` e `lpRate` —
+      telas, hooks, rotas, tools MCP e o doc do Inácio. Entregar a lista ANTES
+      de alterar a primeira linha."*
+      O que foi entregue é uma tabela de medição antes/depois por ETAPA — nove
+      linhas de projeto×etapa com os dois valores. É outra coisa: mede o
+      tamanho do efeito, não mapeia quem sofre o efeito.
+    consequence: "Produziu QA-44-03. A AC não era burocracia."
+
+  - id: QA-44-05
+    severity: low
+    category: requirements
+    title: "AC3 da 44.2 atendida parcialmente — a colisão de nomes foi documentada, não resolvida"
+    story: "44.2 (AC3)"
+    description: >
+      A AC oferecia três saídas: alias depreciado, payload versionado, ou
+      renomear com ciclo de aviso. Foi feito o bump de `API_CONTRACT_VERSION`,
+      que versiona — mas `lpRate` continua no payload com o mesmo significado,
+      sem marca de depreciação e sem campo novo de nome distinto. A colisão com
+      o "Conv. LP" da spec segue viva para quem ler só o payload; o aviso está
+      em comentário de código e no relatório, não no contrato.
+    note: >
+      Não é bloqueio: o Conv. LP ainda não existe em lugar nenhum (nasce na
+      44.6). Mas a 44.6 é justamente quando os dois nomes passam a conviver.
+
+  - id: QA-44-06
+    severity: low
+    category: correctness
+    title: "Atribuição não-determinística para anúncio movido de campanha"
+    file: packages/api/src/services/campaign-attribution.ts
+    story: "44.3"
+    description: >
+      `mapearAdsParaCampanhas` usa `selectDistinct` sem `ORDER BY` e fica com o
+      primeiro `campaignId` que chegar. Sem ordenação, "o primeiro" não é
+      estável entre execuções: a mesma requisição pode atribuir a mesma venda a
+      campanhas diferentes em dois momentos.
+    mitigation: >
+      `adsAmbiguos()` existe e detecta o caso — mas é uma função separada, que
+      repete a MESMA query, e `atribuirPorCampanha` não a chama. A sinalização
+      prometida no comentário depende de o chamador lembrar de pedir.
+    recommendation: "ORDER BY determinístico, ou devolver os ambíguos no mesmo retorno."
+
+  - id: QA-44-07
+    severity: low
+    category: observability
+    title: "utmContentNaoResolvido só conta vendas; utm_content não-numérico é invisível"
+    file: packages/api/src/services/campaign-attribution.ts
+    story: "44.3"
+    description: >
+      O laço de leads faz `if (!campanha) continue` sem incrementar o contador —
+      um lead com Ad ID que não resolve some sem registro, enquanto a venda
+      equivalente é contada. Além disso, `utm_content` presente mas não-numérico
+      (ex.: "link_in_bio") é tratado como ausente. O teste da linha 93 mostra
+      que a decisão é deliberada, mas ela cria um terceiro balde — "veio UTM,
+      não é Ad ID" — que o retorno não expõe.
+    note: >
+      Cosmético hoje, mas o campo existe justamente porque o serviço se propõe a
+      não misturar causas de perda ("as duas causas pedem ações diferentes").
+
+  - id: QA-44-08
+    severity: low
+    category: requirements
+    title: "Status de venda ausente conta como receita sem sinalizar no retorno"
+    file: packages/api/src/services/campaign-attribution.ts
+    story: "44.3 (AC3)"
+    description: >
+      `if (v.status !== null && !isRevenueBucket(...)) continue` — com a coluna
+      de status não mapeada, toda linha vira receita. É o comportamento legado e
+      é coerente com `classifyRefundStatus(raw, false) → "paid"`, então não é
+      divergência do repositório. Mas `ResultadoAtribuicao` não tem campo que
+      diga "o filtro de status não rodou", e a regra 4 do prompt mestre pede que
+      ausência seja declarada.
+    recommendation: "Um booleano no retorno (ex.: `statusFiltradoIndisponivel`)."
+
+  - id: QA-44-09
+    severity: low
+    category: process
+    title: "CodeRabbit não rodou"
+    description: >
+      Fase 0 do fluxo de review é varredura automatizada. Indisponível nesta
+      máquina (CLI em WSL, host macOS). Segurança e qualidade foram avaliadas
+      manualmente; o que a ferramenta pegaria a mais não foi medido.
+
+positives:
+  - "O guard de IDOR da 43.7 foi replicado no endpoint novo sem ninguém pedir — `innerJoin(funnels)` com `eq(funnels.projectId, projectId)`, e o comentário cita a story que ensinou. A lição pegou."
+  - "`p25`/`p100` preservam a distinção `undefined` ≠ `0` com rigor: o acumulador só vira número se ALGUM anúncio do grupo reportou o campo. Um `+= x ?? 0` teria destruído a distinção que a QA-26 da 43.3 estabeleceu, e ela não se recupera depois."
+  - "O débito conhecido de status de venda NÃO foi herdado: usa `isRevenueBucket`, não `isRefundBucket`, e o teste 'descarta status que NÃO é pago — inclusive os que não são reembolso' trava exatamente o bucket 'other' que o resto do repositório deixa passar."
+  - "O endpoint de série por campanha não devolve NENHUMA taxa derivada, de propósito e documentado — impede que o consumidor tire média de médias diárias. Tem teste dedicado."
+  - "Campanha vinculada sem dado devolve `days: null` + `motivo`, não `days: []`. A diferença entre 'não sei' e 'rodou e deu zero' foi respeitada, e testada."
+  - "A escolha de ad-level sobre campaign-level foi MEDIDA antes de ser feita (21 de 164 campanhas divergem, até R$ 24.424,85) e a perda foi quantificada (41 campanhas, nenhuma ativa). Decisão de fonte com número, não com preferência."
+  - "O tratamento de range sem `from`/`to` é idêntico ao do endpoint irmão `/stages/:stageId/daily`, incluindo o motivo (lançamento é finito e frequentemente passado). Consistência deliberada, não coincidência."
+  - "Os três scripts novos leem `DATABASE_URL` do ambiente — nenhuma credencial embutida."
+  - "Baseline da suíte intacto: 11 falhas, as mesmas de sempre (instagram, projects, schema, funnel-stages-lead-inputs). Nenhuma toca o escopo do epic. 1.082 passando."
+  - "`tsc --noEmit` limpo na API depois de recompilar o `shared`."
+
+qualityChecks:
+  codeReview: PASS
+  unitTests: CONCERNS        # 31 novos verdes, mas a mudança de maior risco não tem teste (QA-44-02)
+  acceptanceCriteria: CONCERNS  # AC2 da 44.2 não entregue; AC3 parcial
+  noRegressions: PASS        # 11 falhas pré-existentes, estáveis
+  performance: PASS          # padrão de range idêntico ao endpoint irmão
+  security: PASS             # guard de vínculo presente; sem segredos
+  documentation: CONCERNS    # QA-44-03 — premissa de deploy errada em 4 arquivos
+
+mergeConditions:
+  - "QA-44-01 — corrigir o numerador de `coberturaLeads` (união, não soma) + teste da mesma chave em duas campanhas. Antes da 44.6, que é quem consome."
+  - "QA-44-02 — teste que falhe se o denominador do `connectRate` voltar a ser `clicks`."
+  - "QA-44-03 — corrigir a premissa de deploy nos 4 arquivos e trocar por: avisar o Inácio antes do deploy da API; o painel não é afetado."
+
+nextAction: >
+  @dev aplica QA-44-01, QA-44-02 e QA-44-03 — os três são pequenos e nenhum é
+  rework. Depois: re-review e @devops abre o PR com o plano de deploy corrigido.
+  As stories 44.1, 44.4 e 44.5 estão liberadas como estão.
