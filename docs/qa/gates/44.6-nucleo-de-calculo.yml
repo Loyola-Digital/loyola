@@ -1,0 +1,242 @@
+storyId: "44.6"
+storyTitle: "Núcleo de cálculo puro no shared + testes dourados"
+gate: CONCERNS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-08-18"
+commits: [2944ff7e, 2db6270b]
+branch: main
+scope: "packages/shared/src/cadeia-cac.ts (novo) · index.ts · 41 testes novos · spec mestre v1.1"
+
+codeRabbit:
+  status: SKIPPED
+  reason: "CLI em WSL, host macOS. Sem fallback nativo — lacuna de cobertura, não aprovação."
+
+summary: >
+  O módulo é bom e a disciplina de verificação é a melhor da sequência: os 12
+  valores dourados batem contra recálculo independente, a prova de runtime da
+  AC1 foi feita (é o único gate que pega a armadilha da 19.14), e o @dev achou e
+  corrigiu um bug próprio de ponto flutuante antes de commitar. O que segura o
+  gate é um defeito que a família gratuita herdou do tipo: dado de lead AUSENTE
+  vira `0`, e esse zero falso lidera o ranking prometendo 100% de queda.
+
+issues:
+  - id: QA-446-01
+    severity: high
+    category: correctness
+    title: "Etapa gratuita sem dado de lead vira Conv. LP = 0 e LIDERA o ranking com 100% de queda falsa"
+    file: packages/shared/src/cadeia-cac.ts
+    story: "44.6 (AC11, AC3)"
+    description: >
+      `DiaBruto.leadsAtribuidos` é opcional, mas `agregar()` faz
+      `a.leadsAtribuidos += d.leadsAtribuidos ?? 0`. Campo ausente e zero
+      legítimo colapsam no mesmo valor. Depois, `calcularMetricas` para a
+      família gratuita divide `0 / landingPageViews` e devolve `convLP: 0` — um
+      número, não `null`.
+    proof: |
+      Executado contra o módulo compilado:
+
+        CASO A — etapa gratuita SEM dado de lead (campo ausente)
+          convLP = 0    custoPorLead = null
+        CASO B — etapa gratuita COM dado, zero lead de verdade
+          convLP = 0    custoPorLead = null
+          distinguíveis? NÃO — mesmo valor
+
+    consequence: |
+      O custo sai `null` nos dois casos, então o dinheiro não fica errado. O
+      RANKING fica:
+
+        convLP       100.0%   <- etapa sem dado de lead
+        cpc           50.0%
+        connectRate   11.1%
+
+      `quedaReal("convLP", 0, 0.05)` = `1 − 0/0.05` = **1,0**. Uma etapa que só
+      não teve a planilha de leads ligada aparece em primeiro lugar prometendo
+      eliminar 100% do custo — e manda o time reescrever uma página que não tem
+      problema medido. O ranking é o produto inteiro desta aba.
+    whyItMatters: >
+      É a MESMA classe de erro que a QA-26 da Story 43.3 estabeleceu
+      (`undefined` ≠ `0` em `p25`/`p100`) e que a Story 44.1 respeitou com
+      rigor — o gate da Fase 1 elogiou justamente isso. A lição foi aprendida
+      num lugar do epic e perdida no outro.
+      Viola a AC11 e a regra 7.4 da spec: *"dado ausente vira indisponível com
+      motivo, nunca 0, nunca estimativa"*.
+    scopeIsPrecise: >
+      Só a família GRATUITA. Na paga, `checkouts` é obrigatório no tipo
+      `DiaBruto`, então ausência não é representável e um `0` ali é zero
+      legítimo. Conferido, não presumido por simetria.
+    recommendation: >
+      `agregar()` deve preservar a ausência — por exemplo `leadsAtribuidos:
+      number | null`, somando só quando ALGUM dia trouxe o campo (é exatamente o
+      padrão que a 44.1 usou em `videoViews25`/`videoViews100`). Com isso
+      `calcularMetricas` devolve `convLP: null` e o motivo `semDados`, e o item
+      não entra no ranking.
+    testGap: >
+      Existe teste de "gratuita usa leads atribuídos no numerador", mas nenhum
+      para o campo AUSENTE. Os 41 testes passam com o defeito presente.
+
+  - id: QA-446-02
+    severity: low
+    category: efficiency
+    title: "janelasDe7Dias é O(n²) — filtra a série inteira a cada dia"
+    file: packages/shared/src/cadeia-cac.ts
+    description: >
+      Para cada dia da série, `filter` varre todos os dias. Medido: 90 dias →
+      2ms, 365 → 30ms, 730 → 101ms.
+    impact: >
+      O teto roda sobre todas as campanhas do grupo. Com ~90 campanhas de um ano
+      dá ~3 segundos por grupo, server-side. Não é fatal e é cacheável, mas
+      cresce com o histórico — e o histórico só aumenta.
+    recommendation: "Dois ponteiros sobre a série ordenada resolve em O(n)."
+
+  - id: QA-446-03
+    severity: low
+    category: correctness
+    title: "`agregado.dias` conta LINHAS, não datas distintas"
+    file: packages/shared/src/cadeia-cac.ts
+    description: >
+      `agregar()` faz `a.dias += 1` por linha. Se a entrada trouxer duas linhas
+      para a mesma data, `dias` fica maior que o número de dias reais.
+    note: >
+      Hoje inofensivo: o endpoint da 44.1 já agrega por (campanha, dia), então a
+      entrada não tem repetição. Vira problema se alguém alimentar o módulo com
+      grão de anúncio. `dias` é usado só para diagnóstico, não entra em conta.
+
+  - id: QA-446-04
+    severity: low
+    category: process
+    title: "CodeRabbit não rodou"
+    description: "WSL/macOS. Segurança e qualidade avaliadas manualmente."
+
+positives:
+  - "Os 12 valores dourados de §8 conferidos por RECÁLCULO INDEPENDENTE, direto da spec, sem olhar a implementação — batem casa decimal por casa decimal, incluindo a identidade de telescopagem (CPC ÷ (Connect × Conv.LP) == spend ÷ checkouts == R$52,08)."
+  - "A prova de runtime da AC1 foi feita e é o ponto alto: `node -e import('@loyola-x/shared')` resolvendo os 8 exports é o ÚNICO gate que pega a armadilha da Story 19.14 — ela passa por tsc, vitest E next build sem acusar. Ninguém pediu; o @dev fez porque a AC mandava."
+  - "Verificação por reversão executada de verdade, não alegada. Conferi por conta própria a reversão de `quedaReal`: 5 testes falham, exatamente como o @dev relatou."
+  - "O @dev achou e corrigiu um bug PRÓPRIO antes de commitar: `coberturaAtipica(0.7, 0.9)` devolvia `true` porque `0.9-0.7` em IEEE754 dá `0.20000000000000007`. Um corte que vira por ruído de float faria a mesma janela concorrer num dia e não no outro — intermitente e quase irrastreável depois. Corrigiu a implementação, não o teste, que é o que a §8 manda."
+  - "`classificarFamilia` é própria da aba e o comentário explica por quê, com os helpers existentes listados e o motivo de não estendê-los (sync diário e CRM). A armadilha ficou documentada no lugar onde alguém tentaria repetir o erro."
+  - "CPM e CTR fora do composto, com teste dedicado que injeta valores absurdos neles e confirma que o resultado não muda. A identidade `CPC = (CPM/1000)/CTR` está explicada no código."
+  - "A janela de 7 dias é por DATA e o teste do gap é honesto: série com buraco de 10 dias, janela final com 2 dias e não 5. É o caso que `ROWS` erraria."
+  - "Teste de unidade que prova que taxa em ponto percentual dentro da conta destrói o resultado, e que a plausibilidade denuncia. É a fonte nº 1 de erro da spec, travada."
+  - "O @dev identificou que os arquivos `\" 2\"` deixaram de ser inertes — rodar `pnpm dev` gera 25 duplicatas em `.next/types/` que quebram o typecheck do web com TS2300. Achou o gatilho, não só o sintoma."
+
+qualityChecks:
+  codeReview: PASS
+  unitTests: CONCERNS        # 41 verdes e provados por reversão, mas nenhum cobre lead ausente (QA-446-01)
+  acceptanceCriteria: CONCERNS  # AC11 violada na família gratuita
+  noRegressions: PASS        # 1128 passando (+41); 11 falhas pré-existentes, mesmos 5 arquivos
+  performance: CONCERNS      # QA-446-02, não bloqueia
+  security: PASS             # função pura, sem I/O, sem segredos
+  documentation: PASS        # spec v1.1 versionada, com procedência por parâmetro
+
+mergeConditions:
+  - "QA-446-01 — preservar a ausência de `leadsAtribuidos` (padrão de `videoViews25` da 44.1) + teste do campo ausente. Antes da 44.7, que é quem serve o ranking."
+
+nextAction: >
+  @dev aplica QA-446-01 — é pequeno e o padrão já existe no repo. Os três `low`
+  ficam registrados e não bloqueiam. Depois: re-review e @devops.
+
+# ─────────────────────────────────────────────────────────────
+# RE-REVIEW — 2026-08-18 · commit edd728de
+# ─────────────────────────────────────────────────────────────
+reReview:
+  gate: CONCERNS
+  previousGate: CONCERNS
+
+  resolved:
+    - id: QA-446-01
+      severity: high
+      status: RESOLVED
+      commit: edd728de
+      verifiedBy: |
+        Revertido POR MIM, não pelo relato: `agregar()` voltou a fazer
+        `?? 0` e `agregadoVazio` a começar em `0`.
+
+          Tests  5 failed | 42 passed (47)
+
+        Com o fix: 47/47. Os 5 que caem são exatamente os que travam a regra.
+      correctnessArgument: >
+        O fix fecha o caminho, não só o valor: com `convLP: null` a etapa não
+        consegue virar `ItemRanking`, porque `ItemRanking.atual` exige `number`.
+        A proteção é de tipo, não de disciplina — quem tentar montar o item com
+        dado ausente não compila.
+      scopeConfirmed: >
+        Família paga intocada, conferido: `checkouts` é obrigatório em
+        `DiaBruto`, então um `0` ali é zero legítimo e continua sendo `0`.
+      auditExtra: |
+        Como o próprio @dev registrou que "aplicou a regra em metade do módulo",
+        varri TODAS as saídas contra a AC11 em vez de conferir só a corrigida:
+
+          convLP gratuita        ausente=null   zero=0     ok — distinguíveis
+          cpm / connectRate      série vazia e dia zerado → null (e `dias`
+                                 distingue os dois casos)
+          cacReal(spend, 0)      null
+          custoDaCadeia          elo null e elo 0 → null
+          selo(base 0)           null
+
+        Nenhum sibling do defeito sobrou.
+
+  newFinding:
+    - id: QA-446-05
+      severity: medium
+      category: requirements
+      title: "`Teto`, `TetoAusente` e `MotivoIndisponivel` são declarados e não têm produtor"
+      file: packages/shared/src/cadeia-cac.ts
+      story: "44.6 (AC6, AC7, AC11)"
+      description: >
+        Os três tipos existem e nenhuma das 19 funções exportadas devolve
+        qualquer um deles — conferido por varredura de assinatura. O módulo
+        entrega os INSUMOS do teto (janelas, base por métrica, selo, guarda de
+        cobertura) mas nunca ESCOLHE a janela vencedora nem monta o resultado.
+      whatIsMissing: |
+        Falta a composição que a AC6 e a AC7 descrevem:
+
+          - escolher a melhor janela de 7 dias por métrica, por campanha
+          - aplicar o piso DENTRO da janela e descartar quem não passa
+          - aplicar a guarda `coberturaAtipica` (família gratuita)
+          - montar o `Teto` com origem, base, data, fonte e selo
+          - quando não houver janela elegível, atribuir o `MotivoIndisponivel`
+
+        A AC7 diz textualmente *"cada teto carrega origem, base, data, fonte e
+        selo. Sem teto elegível → motivo `baseInsuficiente`"*. O tipo `Teto`
+        declara exatamente esses campos — e nada os preenche.
+      whyItMatters: >
+        Não produz número errado hoje (nada consome o módulo). O risco é de
+        DESENHO: a 44.7 vai precisar dessa composição para servir o payload, e
+        se ela for escrita lá, a lógica do teto passa a morar fora do
+        `shared` — que é exatamente o que a regra 7.6 da spec ("uma conta, um
+        lugar") existe para impedir, e o motivo pelo qual esta story existe.
+        Dois consumidores podem escolher janelas ou atribuir motivos de forma
+        diferente, e a divergência reaparece — foi assim que o `connectRate`
+        divergiu por um ano.
+      testGap: "Nenhum teste exercita escolha de janela vencedora ou atribuição de motivo."
+      recommendation: >
+        Decisão de escopo, não correção mecânica — por isso vai para o @po e não
+        direto para o @dev. Duas saídas legítimas: (a) 44.6 ganha a composição e
+        os testes dela; (b) fica explícito como escopo da 44.7, e os três tipos
+        saem do módulo até terem produtor, para não sugerirem uma capacidade que
+        não existe.
+
+  stillOpen:
+    - id: QA-446-02
+      severity: low
+      title: "janelasDe7Dias é O(n²)"
+      note: "Vira mais relevante se a composição do teto entrar aqui (QA-446-05)."
+    - id: QA-446-03
+      severity: low
+      title: "`agregado.dias` conta linhas, não datas distintas"
+    - id: QA-446-04
+      severity: low
+      title: "CodeRabbit não rodou (WSL/macOS)"
+
+  finalChecks:
+    codeReview: PASS
+    unitTests: PASS            # 47 no módulo (+6), todos provados por reversão
+    acceptanceCriteria: CONCERNS  # QA-446-05 — AC6/AC7 descrevem composição que não existe
+    noRegressions: PASS        # 1134 passando (+6); 11 falhas pré-existentes
+    performance: CONCERNS      # QA-446-02
+    security: PASS
+    documentation: PASS
+
+  nextAction: >
+    A condição de merge do gate anterior está FECHADA. O QA-446-05 é decisão de
+    escopo do @po: ou a composição entra na 44.6, ou sai declarada como 44.7 e
+    os tipos órfãos saem do módulo. Nada bloqueia o push do que existe.
