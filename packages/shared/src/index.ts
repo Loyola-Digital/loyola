@@ -64,6 +64,11 @@ export {
   ranquear,
   compostoNoTeto,
   decomporCPC,
+  // composição do teto (44.7)
+  calcularTetos,
+  tetosResolvidos,
+  montarRanking,
+  metricasDoTeto,
 } from "./cadeia-cac.js";
 export type {
   Familia,
@@ -77,6 +82,10 @@ export type {
   TetoAusente,
   ItemRanking,
   Janela,
+  CoberturaDiaria,
+  SerieDeCampanha,
+  OpcoesTeto,
+  TetosDoGrupo,
 } from "./cadeia-cac.js";
 
 export type {
