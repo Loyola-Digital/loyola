@@ -268,3 +268,71 @@ describe("connectRate — denominador (Story 44.2)", () => {
     await app.close();
   });
 });
+
+/**
+ * QA-44-02 — a correção da 44.2 mora em `deriveMetrics`, e o teste acima NÃO
+ * passa por lá: o endpoint de série por campanha não devolve taxa nenhuma, de
+ * propósito. Verificado no gate revertendo a linha para `a.clicks` — a suíte
+ * inteira continuava verde.
+ *
+ * Estes testes exercitam o caminho real. `/stages/:stageId/daily` chama
+ * `deriveMetrics` e tem a mesma forma de query (vínculo → insights), então
+ * reutiliza o mesmo harness.
+ *
+ * O fixture usa `clicks` (200) ≠ `linkClicks` (100) de propósito: com os dois
+ * iguais o teste passaria com o denominador errado e não provaria nada.
+ */
+const urlStageDaily = (p = PROJ, s = STAGE) =>
+  `/api/public/meta/v1/projects/${p}/stages/${s}/daily`;
+
+describe("deriveMetrics — connectRate divide por linkClicks (Story 44.2)", () => {
+  beforeEach(() => mockSelect.mockReset());
+
+  /** clicks=200 · link_click=100 · landing_page_view=80 → 80% (errado seria 40%). */
+  const linhaComClicksDistintos = () =>
+    linha({
+      clicks: "200",
+      actions: [
+        { action_type: "link_click", value: "100" },
+        { action_type: "landing_page_view", value: "80" },
+      ],
+    });
+
+  it("connectRate = lpViews ÷ linkClicks, NÃO ÷ clicks", async () => {
+    const app = await buildApp();
+    filaDeQueries([{ id: STAGE, name: "S", campaigns: [{ id: "c1" }] }], [linhaComClicksDistintos()]);
+    const dia = (await app.inject({ method: "GET", url: urlStageDaily() })).json().days[0];
+    expect(dia.connectRate).toBe(80);
+    // O valor do denominador antigo, explicitado para que a intenção do teste
+    // sobreviva a quem só lê o assert.
+    expect(dia.connectRate).not.toBe(40);
+    await app.close();
+  });
+
+  it("lpRate acompanha connectRate — mesmo valor, mesmo denominador", async () => {
+    const app = await buildApp();
+    filaDeQueries([{ id: STAGE, name: "S", campaigns: [{ id: "c1" }] }], [linhaComClicksDistintos()]);
+    const dia = (await app.inject({ method: "GET", url: urlStageDaily() })).json().days[0];
+    expect(dia.lpRate).toBe(80);
+    expect(dia.lpRate).toBe(dia.connectRate);
+    await app.close();
+  });
+
+  /** Denominador zero devolve `null`, não `0` — "não dá para saber" ≠ "0%". */
+  it("sem link click, connectRate é null e não 0", async () => {
+    const app = await buildApp();
+    filaDeQueries(
+      [{ id: STAGE, name: "S", campaigns: [{ id: "c1" }] }],
+      [
+        linha({
+          clicks: "200", // cliques totais existem...
+          actions: [{ action_type: "landing_page_view", value: "80" }], // ...mas nenhum no link
+        }),
+      ],
+    );
+    const dia = (await app.inject({ method: "GET", url: urlStageDaily() })).json().days[0];
+    expect(dia.connectRate).toBeNull();
+    expect(dia.lpRate).toBeNull();
+    await app.close();
+  });
+});
