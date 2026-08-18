@@ -51,15 +51,15 @@ const ADMIN_TABS = [
 
 type Tab = { label: string; href: string; value: string };
 
-function getAllTabs(isAdmin: boolean): readonly Tab[] {
+function getAllTabs(isAdmin: boolean, podeAnalytics = false): readonly Tab[] {
   const tabs: Tab[] = [...BASE_TABS];
   // Meta tabs available to all users
   tabs.push(...META_TABS);
   // Google tabs available to all users
   tabs.push(...GOOGLE_TABS);
   if (isAdmin) {
+    if (podeAnalytics) tabs.push(ANALYTICS_TAB);
     tabs.push(
-      ANALYTICS_TAB,
       { label: "Usuários", href: "/settings/users", value: "users" },
       { label: "API Keys", href: "/settings/api-keys", value: "api-keys" },
       { label: "Auditoria", href: "/settings/audit", value: "audit" },
@@ -86,7 +86,12 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const router = useRouter();
   const role = useUserRole();
   const isAdmin = role === "admin" || role === "manager";
-  const allTabs = getAllTabs(isAdmin);
+  // A instância de analytics é uma credencial única da base inteira, então a
+  // rota da API é admin estrito. Manager entra no `isAdmin` das outras abas,
+  // mas não aqui — mostrar a aba para quem vai levar "acesso restrito" ao
+  // clicar é pior do que não mostrar.
+  const podeAnalytics = role === "admin";
+  const allTabs = getAllTabs(isAdmin, podeAnalytics);
   const activeTab = getActiveTab(allTabs, pathname);
   const isMetaActive = META_TABS.some((t) => pathname.startsWith(t.href));
   const isGoogleActive = GOOGLE_TABS.some((t) => pathname.startsWith(t.href));
@@ -106,6 +111,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const topTabs = BASE_TABS;
   const bottomTabs = isAdmin
     ? [
+        ...(podeAnalytics ? [ANALYTICS_TAB as Tab] : []),
         { label: "Usuários", href: "/settings/users", value: "users" },
         { label: "API Keys", href: "/settings/api-keys", value: "api-keys" },
         { label: "Auditoria", href: "/settings/audit", value: "audit" },
