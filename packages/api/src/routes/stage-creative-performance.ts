@@ -100,6 +100,19 @@ interface CreativePerformanceResponse {
   videoViews3s?: number;
   videoViews75?: number;
   /**
+   * Story 44.1 — 25% e 100%, já persistidos em `meta_ad_insights_daily.video_metrics`
+   * (`extractVideoMetrics`, `meta-ads.ts:810`). O `p25` é o insumo da "conversão
+   * do hook" (25% ÷ 3s); o `p100` fecha a curva de retenção.
+   *
+   * ⚠️ `undefined` ≠ `0`, de propósito. A Story 43.3 (QA-26) grava assim: campo
+   * que a Meta não reportou some do jsonb, e é assim que o consumidor distingue
+   * "não veio dado" de "ninguém assistiu". Somar `?? 0` no acumulador destruiria
+   * a distinção — por isso o grupo só recebe valor quando ALGUM anúncio dele
+   * tinha o campo.
+   */
+  videoViews25?: number;
+  videoViews100?: number;
+  /**
    * Link de prévia do criativo no Facebook (`/watch/?v=<video_id>`).
    *
    * Ausente quando o criativo não é vídeo (imagem/carrossel não têm essa URL)
@@ -675,6 +688,10 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           // Story 18.65: retenção de vídeo (3s do actions, 75% do videoMetrics)
           videoViews3s: number;
           videoViews75: number;
+          // Story 44.1: 25% e 100%. `undefined` enquanto NENHUM anúncio do grupo
+          // reportou — ver a nota em `videoViews25` no tipo público.
+          videoViews25: number | undefined;
+          videoViews100: number | undefined;
           /** Spend por ad_id — define qual vídeo do grupo vira a prévia. */
           spendByAdId: Map<string, number>;
         };
@@ -705,6 +722,10 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               landingPageViews: 0,
               videoViews3s: 0,
               videoViews75: 0,
+              // Story 44.1: começam `undefined` — viram número só se algum
+              // anúncio do grupo tiver reportado o campo.
+              videoViews25: undefined,
+              videoViews100: undefined,
               spendByAdId: new Map(),
             };
             groupedByName.set(adName, group);
@@ -734,6 +755,14 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           // ambos já disponíveis no insight buscado; nenhuma chamada nova à Meta.
           group.videoViews3s += parseVideo3sViews(ad.actions);
           group.videoViews75 += ad.videoMetrics?.p75 ?? 0;
+          // Story 44.1: só soma quando o campo VEIO. `+= x ?? 0` transformaria
+          // "a Meta não reportou" em zero, e essa distinção não se recupera.
+          if (ad.videoMetrics?.p25 !== undefined) {
+            group.videoViews25 = (group.videoViews25 ?? 0) + ad.videoMetrics.p25;
+          }
+          if (ad.videoMetrics?.p100 !== undefined) {
+            group.videoViews100 = (group.videoViews100 ?? 0) + ad.videoMetrics.p100;
+          }
         }
 
         // Story 18.61: estado atual (effective_status) por ad_id, lido do cache
@@ -874,6 +903,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             landingPageViews: group.landingPageViews,
             // Story 18.65: retenção de vídeo (crus) p/ Hook/Hold/Body no front
             videoViews3s: group.videoViews3s,
+            videoViews25: group.videoViews25,
+            videoViews100: group.videoViews100,
             videoViews75: group.videoViews75,
             ...(previewUrl ? { previewUrl } : {}),
             // Story 18.61: status agregado (OR) + adsets ativos (aditivo)

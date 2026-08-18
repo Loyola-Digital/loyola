@@ -197,12 +197,28 @@ function deriveMetrics(a: MetricAgg) {
     cpl: round(safeDiv(a.spend, a.leads)),
     cpa: round(safeDiv(a.spend, a.purchases)),
     roas: round(safeDiv(a.revenue, a.spend)),
-    // ⚠️ Resumão v4 #5: este "connectRate" é LP views ÷ cliques — NÃO é a taxa
-    // de conexão WhatsApp/atendimento do mercado. `lpRate` é o nome honesto
+    // ⚠️ Resumão v4 #5: este "connectRate" é LP views ÷ cliques no LINK — NÃO é a
+    // taxa de conexão WhatsApp/atendimento do mercado. `lpRate` é o nome honesto
     // (mesmo valor); `connectRate` fica por compatibilidade. O connect real de
     // WhatsApp não existe como dado no Loyola X ainda (story 39.11).
-    connectRate: a.clicks > 0 ? round((a.lpViews / a.clicks) * 100) : null,
-    lpRate: a.clicks > 0 ? round((a.lpViews / a.clicks) * 100) : null,
+    //
+    // ⚠️ Story 44.2 — CORREÇÃO DE BUG. Dividia por `a.clicks` (cliques TOTAIS,
+    // que incluem curtida, comentário e clique no perfil). O denominador certo
+    // é `a.linkClicks`, como a regra de tráfego do produto manda e como
+    // `traffic-analytics.ts:443` e `:925` já faziam.
+    //
+    // O efeito não era pequeno: medido em 2026-08-17, o número público saía 18 a
+    // 35 pontos percentuais ABAIXO do interno — 25,7% contra 60,5% na Captação
+    // paga do BBE. A tela mostrava um valor e o agente Inácio outro, para a
+    // mesma etapa, e o benchmark saudável (>85%) fazia toda etapa parecer
+    // catastrófica no relatório.
+    //
+    // ⚠️ `lpRate` é o MESMO que `connectRate` (LP views ÷ link clicks). NÃO é o
+    // "Conv. LP" da especificação da aba Inácio, que é `checkouts ÷ LP views` —
+    // conceitos diferentes, e o nome parecido é armadilha. O Conv. LP não existe
+    // neste payload.
+    connectRate: a.linkClicks > 0 ? round((a.lpViews / a.linkClicks) * 100) : null,
+    lpRate: a.linkClicks > 0 ? round((a.lpViews / a.linkClicks) * 100) : null,
     // Resumão v4 #7: purchases ÷ initiate_checkout (funil de checkout do pixel).
     checkouts: a.checkouts,
     checkoutRate: a.checkouts > 0 ? round((a.purchases / a.checkouts) * 100) : null,
@@ -692,6 +708,196 @@ export default fp(async function publicMetaRoutes(fastify) {
           : effFrom != null && days.length < daysInRange(effFrom, effTo as string),
         lastSyncedAt: lastSyncedAt ? (lastSyncedAt as Date).toISOString() : null,
         days,
+      };
+    }
+  );
+
+  // ---- GET .../stages/:stageId/campaigns/daily ---------------------------
+  /**
+   * Story 44.1 — série DIÁRIA por campanha das campanhas vinculadas à etapa.
+   *
+   * O `/stages/:stageId/daily` agrega todas as campanhas da etapa num balde só.
+   * A aba de decomposição de CAC precisa do grão anterior: cada campanha é uma
+   * coluna, e o CAC de cada uma é decomposto separadamente.
+   *
+   * ## Fonte: ad-level, e a razão importa
+   *
+   * Lê `meta_ad_insights_daily` agregado por campanha — a MESMA fonte do
+   * `/campaigns` e do `/stages/:stageId/daily`. Não é a escolha óbvia (existe
+   * `meta_campaign_insights_daily`, com grão já por campanha), e foi medida
+   * antes de ser feita: as duas tabelas divergem em `spend` em 21 das 164
+   * campanhas comuns, com diferença de até R$ 24.424,85.
+   *
+   * Duas fontes para o mesmo número quebraria o propósito da aba, que é a tela
+   * e o agente Inácio dizerem a mesma coisa.
+   *
+   * ## O que se perde, e por que é aceitável
+   *
+   * 41 campanhas existem só em `meta_campaign_insights_daily` — anteriores ao
+   * job 36.4, que popula o ad-level. Medido em 2026-08-17: **nenhuma está
+   * ativa**; todas encerraram antes de junho (40 do DG & CPDF até 18/05, 1 do
+   * Lyrio). Para série corrente a perda é zero.
+   *
+   * Para o TETO histórico a perda seria real — e por isso ele é tratado à parte
+   * (Story 44.5), onde campaign-level é permitido com a fonte rotulada.
+   *
+   * ## Sem taxa derivada, de propósito
+   *
+   * Devolve só os brutos somáveis. Toda taxa é razão de somas sobre o período
+   * que o consumidor escolher; entregar `cpm`/`ctr` por dia convidaria a tirar
+   * média de médias diárias, que dá outro número.
+   */
+  const stageCampaignsDailyParam = z.object({
+    projectId: z.string().uuid(),
+    stageId: z.string().uuid(),
+  });
+  fastify.get<{
+    Params: z.infer<typeof stageCampaignsDailyParam>;
+    Querystring: z.infer<typeof rangeQuerySchema>;
+  }>(
+    "/api/public/meta/v1/projects/:projectId/stages/:stageId/campaigns/daily",
+    { preHandler: requireScope(PUBLIC_READ_SCOPE) },
+    async (request, reply) => {
+      const params = stageCampaignsDailyParam.safeParse(request.params);
+      if (!params.success)
+        return reply.code(400).send({ error: "Parâmetros inválidos", code: "BAD_REQUEST" });
+      const query = rangeQuerySchema.safeParse(request.query);
+      if (!query.success)
+        return reply.code(400).send({
+          error: "Parâmetros inválidos",
+          code: "BAD_REQUEST",
+          details: query.error.flatten().fieldErrors,
+        });
+
+      const { projectId, stageId } = params.data;
+      // Prova de vínculo etapa↔funil↔projeto. Sem o innerJoin, o stageId de
+      // outro projeto passaria — o mesmo IDOR que a Story 43.7 introduziu e o
+      // gate pegou.
+      const [stage] = await fastify.db
+        .select({ id: funnelStages.id, name: funnelStages.name, campaigns: funnelStages.campaigns })
+        .from(funnelStages)
+        .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+        .where(and(eq(funnelStages.id, stageId), eq(funnels.projectId, projectId)))
+        .limit(1);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada", code: "NOT_FOUND" });
+
+      const campaignIds = ((stage.campaigns ?? []) as { id: string }[]).map((c) => c.id);
+      const explicitRange = Boolean(query.data.from || query.data.to);
+      const { from, to } = resolveRange(query.data.from, query.data.to);
+
+      // Etapa sem campanha não é erro — é etapa orgânica.
+      if (campaignIds.length === 0) {
+        return {
+          projectId,
+          stageId,
+          stageName: stage.name,
+          fonte: "ad-level" as const,
+          spendIncludesMetaTax: true,
+          range: explicitRange ? { from, to } : { from: null, to: null },
+          campanhas: [],
+        };
+      }
+
+      const base = [
+        eq(metaAdInsightsDaily.projectId, projectId),
+        inArray(metaAdInsightsDaily.campaignId, campaignIds),
+      ];
+      const rows = await fastify.db
+        .select({
+          campaignId: metaAdInsightsDaily.campaignId,
+          campaignName: metaAdInsightsDaily.campaignName,
+          dateStart: metaAdInsightsDaily.dateStart,
+          spend: metaAdInsightsDaily.spend,
+          impressions: metaAdInsightsDaily.impressions,
+          reach: metaAdInsightsDaily.reach,
+          clicks: metaAdInsightsDaily.clicks,
+          actions: metaAdInsightsDaily.actions,
+          actionValues: metaAdInsightsDaily.actionValues,
+          lastSyncedAt: metaAdInsightsDaily.lastSyncedAt,
+        })
+        .from(metaAdInsightsDaily)
+        .where(
+          explicitRange
+            ? and(
+                ...base,
+                gte(metaAdInsightsDaily.dateStart, from),
+                lte(metaAdInsightsDaily.dateStart, to)
+              )
+            : and(...base)
+        );
+
+      // (campanha → dia → agregado). O `accumulate` já aplica o gross-up de
+      // imposto uma única vez (`applyMetaTax`) e lê link_click,
+      // landing_page_view e initiate_checkout de `actions[]`.
+      const porCampanha = new Map<
+        string,
+        { nome: string | null; dias: Map<string, MetricAgg>; lastSyncedAt: Date | null }
+      >();
+      for (const row of rows) {
+        if (!row.campaignId) continue;
+        let c = porCampanha.get(row.campaignId);
+        if (!c) {
+          c = { nome: row.campaignName ?? null, dias: new Map(), lastSyncedAt: null };
+          porCampanha.set(row.campaignId, c);
+        }
+        if (!c.nome && row.campaignName) c.nome = row.campaignName;
+        let agg = c.dias.get(row.dateStart);
+        if (!agg) {
+          agg = emptyAgg();
+          c.dias.set(row.dateStart, agg);
+        }
+        accumulate(agg, row as InsightRow);
+        if (!c.lastSyncedAt || row.lastSyncedAt > c.lastSyncedAt) c.lastSyncedAt = row.lastSyncedAt;
+      }
+
+      const campanhas = campaignIds.map((campaignId) => {
+        const c = porCampanha.get(campaignId);
+        // Campanha vinculada à etapa sem NENHUMA linha no cache: `days: null` +
+        // motivo. Devolver `days: []` diria "rodou e não teve nada", que é
+        // afirmação diferente e falsa.
+        if (!c) {
+          return {
+            campaignId,
+            campaignName: null,
+            days: null,
+            motivo: "semDados" as const,
+            lastSyncedAt: null,
+          };
+        }
+        const days = [...c.dias.entries()]
+          .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+          .map(([date, a]) => ({
+            date,
+            // Só brutos somáveis — ver a nota sobre razão de somas acima.
+            spend: round(a.spend) ?? 0,
+            impressions: a.impressions,
+            linkClicks: a.linkClicks,
+            landingPageViews: a.lpViews,
+            checkouts: a.checkouts,
+            // Pixel, não Loyola. A venda/lead real por campanha vem da Story
+            // 44.3 (utm_content → adId → campaignId).
+            leadsProxyPixel: a.leads,
+            purchasesProxyPixel: a.purchases,
+            revenueProxyPixel: round(a.revenue) ?? 0,
+          }));
+        return {
+          campaignId,
+          campaignName: c.nome,
+          days,
+          motivo: null,
+          lastSyncedAt: c.lastSyncedAt ? c.lastSyncedAt.toISOString() : null,
+        };
+      });
+
+      return {
+        projectId,
+        stageId,
+        stageName: stage.name,
+        /** Story 44.1: fonte declarada — a série corrente é sempre ad-level. */
+        fonte: "ad-level" as const,
+        spendIncludesMetaTax: true,
+        range: explicitRange ? { from, to } : { from: null, to: null },
+        campanhas,
       };
     }
   );

@@ -32,4 +32,24 @@
  * Um inteiro monotônico, e não uma lista de capacidades: a defasagem medida
  * foi sempre "a API inteira está atrás".
  */
-export const API_CONTRACT_VERSION = 1;
+/**
+ * v2 — Story 44.2: `connectRate` e `lpRate` passaram a dividir por `linkClicks`
+ * (antes: `clicks`, cliques totais). O valor SOBE de 18 a 35 pontos percentuais.
+ *
+ * ⚠️ QA-44-03 — quem muda com este deploy NÃO é o painel. O painel não consome
+ * `/api/public/meta`: ele usa `/api/meta-ads/*` e calcula o Connect Rate por
+ * conta própria, já por `linkClicks` (`funnel-metrics.ts:348`,
+ * `perpetual-daily-metrics.ts:95`). A tela já mostrava o valor correto — é o
+ * endpoint público que estava errado, e é ele que passa a concordar com ela.
+ *
+ * Quem muda é `packages/mcp`, o servidor stdio que roda na máquina do Inácio
+ * (`LOYOLA_API_BASE_URL`). Ele não tem checagem de contrato: no instante em que
+ * a API subir, o relatório dele muda. **Avisar antes é a coordenação que
+ * importa** — não sincronizar deploys.
+ *
+ * O bump em si serve ao banner do painel, que passa a acusar API defasada até
+ * ela subir. Isso é o detector funcionando: o `commit: null` do `/health`
+ * (Railway sem `RAILWAY_GIT_COMMIT_SHA`) cega a checagem de commit, não a de
+ * contrato.
+ */
+export const API_CONTRACT_VERSION = 2;
