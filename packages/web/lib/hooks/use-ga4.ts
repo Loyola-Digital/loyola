@@ -47,6 +47,15 @@ export interface Ga4StageDashboard {
   byPage?: Array<{ page: string; sessions: number; activeUsers: number; newUsers: number }>;
   pageFilter: string | null;
   configured: boolean;
+  /**
+   * De onde vieram estes números. O projeto lê UMA fonte por vez — a tela usa
+   * isto para dar o nome certo às métricas (o Plausible conta "visitas", não
+   * "sessões") e para esconder o que a fonte não mede.
+   */
+  fonte?: "ga4" | "plausible";
+  /** Só no Plausible: qual versão da API respondeu, e qual domínio foi lido. */
+  apiVersion?: "v2" | "v1";
+  siteId?: string;
 }
 
 // ---- Conexão (projeto) ----

@@ -37,8 +37,13 @@ const GOOGLE_TABS = [
   { label: "YouTube Canal", href: "/settings/youtube", value: "youtube" },
 ] as const;
 
+// Só admin: a instância de analytics é uma só, compartilhada por todos os
+// projetos — quem escolhe o site de cada projeto faz isso na etapa.
+const ANALYTICS_TAB = { label: "Analytics", href: "/settings/analytics", value: "analytics" } as const;
+
 const ADMIN_TABS = [
   ...BASE_TABS,
+  ANALYTICS_TAB,
   { label: "Usuários", href: "/settings/users", value: "users" },
   { label: "API Keys", href: "/settings/api-keys", value: "api-keys" },
   { label: "Auditoria", href: "/settings/audit", value: "audit" },
@@ -54,6 +59,7 @@ function getAllTabs(isAdmin: boolean): readonly Tab[] {
   tabs.push(...GOOGLE_TABS);
   if (isAdmin) {
     tabs.push(
+      ANALYTICS_TAB,
       { label: "Usuários", href: "/settings/users", value: "users" },
       { label: "API Keys", href: "/settings/api-keys", value: "api-keys" },
       { label: "Auditoria", href: "/settings/audit", value: "audit" },
