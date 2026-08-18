@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, BarChart3, Plug, Unlink, Save, RefreshCw, ChevronRight } from "lucide-react";
+import { Loader2, BarChart3, Plug, Unlink, Save, RefreshCw, ChevronRight, Globe } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,10 +17,23 @@ import {
   useGa4StageAnalytics,
   type Ga4Property,
 } from "@/lib/hooks/use-ga4";
+import {
+  useDeletePlausibleSite,
+  usePlausibleSite,
+  usePlausibleSites,
+  useSetPlausibleSite,
+} from "@/lib/hooks/use-plausible";
 
-// Epic 37 — Aba GA4 da etapa. A GA4 mede comportamento on-page + atribuição de
-// origem/campanha (complementa Meta/Google Ads, que dão custo). Conexão é por
-// projeto (1 property GA4); a etapa escolhe a PÁGINA (ga4PageFilter) a analisar.
+// Epic 37 — Aba Analytics da etapa. Mede comportamento on-page + atribuição de
+// origem/campanha (complementa Meta/Google Ads, que dão custo). A conexão é por
+// projeto; a etapa escolhe a PÁGINA (ga4PageFilter) a analisar.
+//
+// Duas fontes possíveis, e nunca as duas ao mesmo tempo: GA4 (OAuth por projeto)
+// ou Plausible self-hosted (instância única, site escolhido por projeto). Quem
+// decide é o que está configurado — ter um site do Plausible desliga o GA4 daqui.
+// O dashboard sai da MESMA rota nos dois casos: o backend já entrega o formato
+// pronto, então a tela abaixo desenha os dois sem saber a diferença — só troca
+// rótulo e esconde o que a fonte não mede.
 
 interface Props {
   projectId: string;
@@ -37,12 +50,13 @@ const pf = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDig
 
 export function Ga4StageTab({ projectId, funnelId, stageId }: Props) {
   const conn = useGa4Connection(projectId);
+  const plaus = usePlausibleSite(projectId);
 
-  if (conn.isLoading) return <Skeleton className="h-40" />;
+  if (conn.isLoading || plaus.isLoading) return <Skeleton className="h-40" />;
   if (conn.isError) {
     return (
       <div className="flex items-center gap-2 text-xs text-red-500">
-        <span>Erro ao carregar conexão GA4.</span>
+        <span>Erro ao carregar a conexão de analytics.</span>
         <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => conn.refetch()}>
           <RefreshCw className="h-3 w-3" /> Tentar de novo
         </Button>
@@ -50,17 +64,42 @@ export function Ga4StageTab({ projectId, funnelId, stageId }: Props) {
     );
   }
 
+  // Site do Plausible escolhido é o que manda: o GA4 fica fora até alguém
+  // desfazer a escolha. Mostrar os dois painéis ativos sugeriria que o número
+  // pode vir de qualquer um dos dois.
+  if (plaus.data?.siteId) {
+    return (
+      <PlausibleConnected
+        projectId={projectId}
+        funnelId={funnelId}
+        stageId={stageId}
+        siteId={plaus.data.siteId}
+        baseUrl={plaus.data.configGlobal.baseUrl}
+      />
+    );
+  }
+
+  const ofereceePlausible = plaus.data?.configGlobal.configured ?? false;
+
   if (!conn.data?.connected) {
-    return <Ga4ConnectPanel projectId={projectId} />;
+    return (
+      <div className="space-y-4">
+        <Ga4ConnectPanel projectId={projectId} />
+        {ofereceePlausible && <PlausiblePicker projectId={projectId} />}
+      </div>
+    );
   }
 
   return (
-    <Ga4Connected
-      projectId={projectId}
-      funnelId={funnelId}
-      stageId={stageId}
-      propertyName={conn.data.propertyName ?? conn.data.propertyId ?? "GA4"}
-    />
+    <div className="space-y-5">
+      <Ga4Connected
+        projectId={projectId}
+        funnelId={funnelId}
+        stageId={stageId}
+        propertyName={conn.data.propertyName ?? conn.data.propertyId ?? "GA4"}
+      />
+      {ofereceePlausible && <PlausiblePicker projectId={projectId} trocandoDoGa4 />}
+    </div>
   );
 }
 
@@ -147,9 +186,165 @@ function Ga4Connected({
   stageId,
   propertyName,
 }: Props & { propertyName: string }) {
+  const del = useDeleteGa4Connection(projectId);
+
+  return (
+    <StageAnalyticsBody
+      projectId={projectId}
+      funnelId={funnelId}
+      stageId={stageId}
+      header={
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-sm">
+            <BarChart3 className="h-4 w-4 text-primary" />
+            <span className="font-medium">GA4</span>
+            <Badge variant="secondary" className="text-[10px]">{propertyName}</Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 gap-1 text-[10px] text-muted-foreground hover:text-red-500"
+            onClick={() => del.mutate(undefined, { onSuccess: () => toast.success("GA4 desconectado"), onError: (e) => toast.error(errMsg(e)) })}
+            disabled={del.isPending}
+          >
+            {del.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
+            Desconectar
+          </Button>
+        </div>
+      }
+    />
+  );
+}
+
+// ---- Plausible: mesmo corpo, outro cabeçalho ----
+function PlausibleConnected({
+  projectId,
+  funnelId,
+  stageId,
+  siteId,
+  baseUrl,
+}: Props & { siteId: string; baseUrl: string | null }) {
+  const del = useDeletePlausibleSite(projectId);
+
+  return (
+    <StageAnalyticsBody
+      projectId={projectId}
+      funnelId={funnelId}
+      stageId={stageId}
+      header={
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2 text-sm">
+            <Globe className="h-4 w-4 text-primary" />
+            <span className="font-medium">Plausible</span>
+            <Badge variant="secondary" className="max-w-[220px] truncate text-[10px]" title={siteId}>{siteId}</Badge>
+            {baseUrl && (
+              <span className="hidden truncate text-[10px] text-muted-foreground sm:inline" title={baseUrl}>
+                {baseUrl.replace(/^https?:\/\//, "")}
+              </span>
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 shrink-0 gap-1 px-2 text-[10px] text-muted-foreground hover:text-red-500"
+            onClick={() => del.mutate(undefined, { onSuccess: () => toast.success("Projeto voltou para o GA4"), onError: (e) => toast.error(errMsg(e)) })}
+            disabled={del.isPending}
+          >
+            {del.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
+            Voltar ao GA4
+          </Button>
+        </div>
+      }
+    />
+  );
+}
+
+/**
+ * Escolha do site do Plausible para o projeto.
+ *
+ * Fica visível mesmo com o GA4 conectado — é assim que se troca de fonte — mas
+ * o aviso deixa explícito que a troca desliga o GA4 daqui, em vez de a pessoa
+ * descobrir isso depois pelo número que mudou.
+ */
+function PlausiblePicker({ projectId, trocandoDoGa4 }: { projectId: string; trocandoDoGa4?: boolean }) {
+  const sites = usePlausibleSites();
+  const setSite = useSetPlausibleSite(projectId);
+  const [dominio, setDominio] = useState("");
+
+  function salvar(valor: string) {
+    const v = valor.trim();
+    if (!v) return;
+    setSite.mutate(v, {
+      onSuccess: (r) => toast.success(r.detalhe || "Plausible ativado neste projeto"),
+      onError: (e) => toast.error(errMsg(e)),
+    });
+  }
+
+  return (
+    <section className="max-w-xl space-y-2 rounded-xl border border-border/40 bg-card/60 p-4">
+      <div className="flex items-center gap-2 text-sm">
+        <Globe className="h-4 w-4 text-muted-foreground" />
+        <span className="font-medium">Usar Plausible neste projeto</span>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Informe o domínio como ele está cadastrado no Plausible (ex.: <code>loja.exemplo.com</code>).
+        Pode colar a URL inteira — a gente extrai o domínio.
+        {trocandoDoGa4 && <> Ao salvar, <strong>este projeto deixa de ler o GA4</strong> e passa a ler o Plausible.</>}
+      </p>
+
+      {sites.data?.disponivel && sites.data.sites.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {sites.data.sites.slice(0, 12).map((s) => (
+            <Button
+              key={s.domain}
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-[11px]"
+              disabled={setSite.isPending}
+              onClick={() => salvar(s.domain)}
+            >
+              {s.domain}
+            </Button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <Input
+          value={dominio}
+          onChange={(e) => setDominio(e.target.value)}
+          placeholder="loja.exemplo.com"
+          onKeyDown={(e) => e.key === "Enter" && salvar(dominio)}
+        />
+        <Button size="sm" className="shrink-0 gap-1.5" onClick={() => salvar(dominio)} disabled={setSite.isPending || !dominio.trim()}>
+          {setSite.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plug className="h-4 w-4" />}
+          Ativar
+        </Button>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        O domínio é conferido contra a instância antes de salvar — domínio errado devolveria zero, que
+        se confunde com &quot;não teve tráfego&quot;.
+      </p>
+    </section>
+  );
+}
+
+/**
+ * Corpo comum às duas fontes: filtro de página da etapa + números.
+ *
+ * Os rótulos mudam com a fonte porque as palavras não são equivalentes — o
+ * Plausible conta "visitantes/visitas", o GA4 "usuários/sessões". E o que a
+ * fonte não mede fica de fora em vez de aparecer zerado: "0 novos usuários"
+ * seria lido como dado, não como ausência de dado.
+ */
+function StageAnalyticsBody({
+  projectId,
+  funnelId,
+  stageId,
+  header,
+}: Props & { header: React.ReactNode }) {
   const stageQ = useFunnelStage(projectId, funnelId, stageId);
   const updateStage = useUpdateStage(projectId, funnelId, stageId);
-  const del = useDeleteGa4Connection(projectId);
 
   const savedFilter = stageQ.data?.ga4PageFilter ?? "";
   const [filter, setFilter] = useState(savedFilter);
@@ -163,41 +358,26 @@ function Ga4Connected({
     enabled: Boolean(savedFilter),
   });
 
+  const ehPlausible = analytics.data?.fonte === "plausible";
+
   function saveFilter() {
     const value = filter.trim() || null;
     updateStage.mutate(
       { ga4PageFilter: value },
-      { onSuccess: () => toast.success(value ? "Página GA4 salva" : "Filtro GA4 limpo") },
+      { onSuccess: () => toast.success(value ? "Página salva" : "Filtro limpo") },
     );
   }
 
   return (
     <div className="space-y-5">
-      {/* Header conexão */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm">
-          <BarChart3 className="h-4 w-4 text-primary" />
-          <span className="font-medium">GA4</span>
-          <Badge variant="secondary" className="text-[10px]">{propertyName}</Badge>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 gap-1 text-[10px] text-muted-foreground hover:text-red-500"
-          onClick={() => del.mutate(undefined, { onSuccess: () => toast.success("GA4 desconectado"), onError: (e) => toast.error(errMsg(e)) })}
-          disabled={del.isPending}
-        >
-          {del.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
-          Desconectar
-        </Button>
-      </div>
+      {header}
 
       {/* Config da página desta etapa */}
       <section className="rounded-xl border border-border/40 bg-card/60 p-4 space-y-2 max-w-xl">
         <Label htmlFor="ga4-page-filter" className="text-xs font-medium">Página desta etapa</Label>
         <p className="text-[11px] text-muted-foreground">
           Um trecho que apareça na URL de TODAS as páginas da etapa — pode ser só um pedaço, ex.: <code>dg-pg04</code>.
-          Pega <strong>todas</strong> as páginas cuja URL <em>contém</em> esse texto (não precisa da <code>/</code> nem do caminho inteiro; ignora maiúsc./minúsc.). Vazio = property inteira.
+          Pega <strong>todas</strong> as páginas cuja URL <em>contém</em> esse texto (não precisa da <code>/</code> nem do caminho inteiro; ignora maiúsc./minúsc.). Vazio = site inteiro.
         </p>
         <div className="flex gap-2">
           <Input
@@ -216,7 +396,7 @@ function Ga4Connected({
 
       {/* Analytics */}
       {!savedFilter ? (
-        <p className="text-xs text-muted-foreground">Configure a página acima para ver as métricas do GA4.</p>
+        <p className="text-xs text-muted-foreground">Configure a página acima para ver as métricas.</p>
       ) : (
         <div className="space-y-4">
           <div className="flex items-center gap-1.5">
@@ -231,8 +411,8 @@ function Ga4Connected({
           {analytics.isLoading ? (
             <Skeleton className="h-40" />
           ) : analytics.isError ? (
-            <div className="flex items-center gap-2 text-xs text-red-500">
-              <span>Erro ao consultar GA4.</span>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-red-500">
+              <span>{errMsg(analytics.error)}</span>
               <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => analytics.refetch()}>
                 <RefreshCw className="h-3 w-3" /> Tentar de novo
               </Button>
@@ -240,17 +420,17 @@ function Ga4Connected({
           ) : analytics.data ? (
             <>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                <Metric label="Sessões" value={nf.format(analytics.data.totals.sessions)} />
-                <Metric label="Usuários ativos" value={nf.format(analytics.data.totals.activeUsers)} />
-                <Metric label="Novos usuários" value={nf.format(analytics.data.totals.newUsers)} />
+                <Metric label={ehPlausible ? "Visitas" : "Sessões"} value={nf.format(analytics.data.totals.sessions)} />
+                <Metric label={ehPlausible ? "Visitantes" : "Usuários ativos"} value={nf.format(analytics.data.totals.activeUsers)} />
+                {!ehPlausible && <Metric label="Novos usuários" value={nf.format(analytics.data.totals.newUsers)} />}
                 <Metric label="Engajamento" value={pf.format(analytics.data.totals.engagementRate)} />
-                <Metric label="Conversões" value={nf.format(analytics.data.totals.conversions)} />
+                <Metric label={ehPlausible ? "Eventos" : "Conversões"} value={nf.format(analytics.data.totals.conversions)} />
                 <Metric label="Páginas vistas" value={nf.format(analytics.data.totals.pageViews)} />
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <Breakdown
-                  title="Por canal"
+                  title={ehPlausible ? "Por canal (Plausible)" : "Por canal"}
                   rows={analytics.data.byChannel.map((c) => ({ label: c.channel, sessions: c.sessions, conversions: c.conversions }))}
                 />
                 <Breakdown
@@ -261,7 +441,14 @@ function Ga4Connected({
 
               {/* Páginas que o filtro puxou — agrupadas por path base (antes do ?) */}
               {analytics.data.byPage && analytics.data.byPage.length > 0 && (
-                <PagesBreakdown pages={analytics.data.byPage} />
+                <PagesBreakdown pages={analytics.data.byPage} plausible={ehPlausible} />
+              )}
+
+              {ehPlausible && (
+                <p className="text-[11px] text-muted-foreground">
+                  O Plausible não separa visitante novo de recorrente nem registra receita — por isso
+                  esses números não aparecem aqui. &quot;Engajamento&quot; é o complemento da taxa de rejeição.
+                </p>
               )}
             </>
           ) : null}
@@ -293,7 +480,7 @@ interface PageGroup {
  * Lista de páginas do GA4 agrupada pela PATH BASE (antes do "?"). Cada grupo soma
  * as métricas das variações (com query string) e abre um dropdown pra ver o detalhe.
  */
-function PagesBreakdown({ pages }: { pages: PageRow[] }) {
+function PagesBreakdown({ pages, plausible }: { pages: PageRow[]; plausible?: boolean }) {
   const [open, setOpen] = useState<string | null>(null);
 
   const groups = useMemo<PageGroup[]>(() => {
@@ -333,7 +520,9 @@ function PagesBreakdown({ pages }: { pages: PageRow[] }) {
                   {hasVariants && <span className="shrink-0 text-[10px] text-muted-foreground">({g.variants.length})</span>}
                 </span>
                 <span className="shrink-0 text-muted-foreground">
-                  {nf.format(g.sessions)} ses · {nf.format(g.activeUsers)} ativos · {nf.format(g.newUsers)} novos
+                  {plausible
+                    ? `${nf.format(g.sessions)} visitas · ${nf.format(g.activeUsers)} visitantes`
+                    : `${nf.format(g.sessions)} ses · ${nf.format(g.activeUsers)} ativos · ${nf.format(g.newUsers)} novos`}
                 </span>
               </button>
               {isOpen && hasVariants && (
@@ -342,7 +531,9 @@ function PagesBreakdown({ pages }: { pages: PageRow[] }) {
                     <div key={`${v.page}-${i}`} className="flex items-center justify-between gap-2 pl-5 text-[11px]">
                       <span className="truncate font-mono text-muted-foreground" title={v.page}>{v.page.includes("?") ? "?" + v.page.split("?").slice(1).join("?") : v.page}</span>
                       <span className="shrink-0 text-muted-foreground">
-                        {nf.format(v.sessions)} ses · {nf.format(v.activeUsers)} ativos · {nf.format(v.newUsers)} novos
+                        {plausible
+                          ? `${nf.format(v.sessions)} visitas · ${nf.format(v.activeUsers)} visitantes`
+                          : `${nf.format(v.sessions)} ses · ${nf.format(v.activeUsers)} ativos · ${nf.format(v.newUsers)} novos`}
                       </span>
                     </div>
                   ))}
