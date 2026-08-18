@@ -133,3 +133,110 @@ mergeConditions:
 nextAction: >
   @dev aplica QA-446-01 — é pequeno e o padrão já existe no repo. Os três `low`
   ficam registrados e não bloqueiam. Depois: re-review e @devops.
+
+# ─────────────────────────────────────────────────────────────
+# RE-REVIEW — 2026-08-18 · commit edd728de
+# ─────────────────────────────────────────────────────────────
+reReview:
+  gate: CONCERNS
+  previousGate: CONCERNS
+
+  resolved:
+    - id: QA-446-01
+      severity: high
+      status: RESOLVED
+      commit: edd728de
+      verifiedBy: |
+        Revertido POR MIM, não pelo relato: `agregar()` voltou a fazer
+        `?? 0` e `agregadoVazio` a começar em `0`.
+
+          Tests  5 failed | 42 passed (47)
+
+        Com o fix: 47/47. Os 5 que caem são exatamente os que travam a regra.
+      correctnessArgument: >
+        O fix fecha o caminho, não só o valor: com `convLP: null` a etapa não
+        consegue virar `ItemRanking`, porque `ItemRanking.atual` exige `number`.
+        A proteção é de tipo, não de disciplina — quem tentar montar o item com
+        dado ausente não compila.
+      scopeConfirmed: >
+        Família paga intocada, conferido: `checkouts` é obrigatório em
+        `DiaBruto`, então um `0` ali é zero legítimo e continua sendo `0`.
+      auditExtra: |
+        Como o próprio @dev registrou que "aplicou a regra em metade do módulo",
+        varri TODAS as saídas contra a AC11 em vez de conferir só a corrigida:
+
+          convLP gratuita        ausente=null   zero=0     ok — distinguíveis
+          cpm / connectRate      série vazia e dia zerado → null (e `dias`
+                                 distingue os dois casos)
+          cacReal(spend, 0)      null
+          custoDaCadeia          elo null e elo 0 → null
+          selo(base 0)           null
+
+        Nenhum sibling do defeito sobrou.
+
+  newFinding:
+    - id: QA-446-05
+      severity: medium
+      category: requirements
+      title: "`Teto`, `TetoAusente` e `MotivoIndisponivel` são declarados e não têm produtor"
+      file: packages/shared/src/cadeia-cac.ts
+      story: "44.6 (AC6, AC7, AC11)"
+      description: >
+        Os três tipos existem e nenhuma das 19 funções exportadas devolve
+        qualquer um deles — conferido por varredura de assinatura. O módulo
+        entrega os INSUMOS do teto (janelas, base por métrica, selo, guarda de
+        cobertura) mas nunca ESCOLHE a janela vencedora nem monta o resultado.
+      whatIsMissing: |
+        Falta a composição que a AC6 e a AC7 descrevem:
+
+          - escolher a melhor janela de 7 dias por métrica, por campanha
+          - aplicar o piso DENTRO da janela e descartar quem não passa
+          - aplicar a guarda `coberturaAtipica` (família gratuita)
+          - montar o `Teto` com origem, base, data, fonte e selo
+          - quando não houver janela elegível, atribuir o `MotivoIndisponivel`
+
+        A AC7 diz textualmente *"cada teto carrega origem, base, data, fonte e
+        selo. Sem teto elegível → motivo `baseInsuficiente`"*. O tipo `Teto`
+        declara exatamente esses campos — e nada os preenche.
+      whyItMatters: >
+        Não produz número errado hoje (nada consome o módulo). O risco é de
+        DESENHO: a 44.7 vai precisar dessa composição para servir o payload, e
+        se ela for escrita lá, a lógica do teto passa a morar fora do
+        `shared` — que é exatamente o que a regra 7.6 da spec ("uma conta, um
+        lugar") existe para impedir, e o motivo pelo qual esta story existe.
+        Dois consumidores podem escolher janelas ou atribuir motivos de forma
+        diferente, e a divergência reaparece — foi assim que o `connectRate`
+        divergiu por um ano.
+      testGap: "Nenhum teste exercita escolha de janela vencedora ou atribuição de motivo."
+      recommendation: >
+        Decisão de escopo, não correção mecânica — por isso vai para o @po e não
+        direto para o @dev. Duas saídas legítimas: (a) 44.6 ganha a composição e
+        os testes dela; (b) fica explícito como escopo da 44.7, e os três tipos
+        saem do módulo até terem produtor, para não sugerirem uma capacidade que
+        não existe.
+
+  stillOpen:
+    - id: QA-446-02
+      severity: low
+      title: "janelasDe7Dias é O(n²)"
+      note: "Vira mais relevante se a composição do teto entrar aqui (QA-446-05)."
+    - id: QA-446-03
+      severity: low
+      title: "`agregado.dias` conta linhas, não datas distintas"
+    - id: QA-446-04
+      severity: low
+      title: "CodeRabbit não rodou (WSL/macOS)"
+
+  finalChecks:
+    codeReview: PASS
+    unitTests: PASS            # 47 no módulo (+6), todos provados por reversão
+    acceptanceCriteria: CONCERNS  # QA-446-05 — AC6/AC7 descrevem composição que não existe
+    noRegressions: PASS        # 1134 passando (+6); 11 falhas pré-existentes
+    performance: CONCERNS      # QA-446-02
+    security: PASS
+    documentation: PASS
+
+  nextAction: >
+    A condição de merge do gate anterior está FECHADA. O QA-446-05 é decisão de
+    escopo do @po: ou a composição entra na 44.6, ou sai declarada como 44.7 e
+    os tipos órfãos saem do módulo. Nada bloqueia o push do que existe.

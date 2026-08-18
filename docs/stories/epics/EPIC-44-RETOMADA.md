@@ -80,18 +80,31 @@ Antes/depois documentado em `docs/qa/audits/44.2-connectrate-antes-depois.md`.
 
 ---
 
-## Stories 44.6–44.11 ainda não escritas
+## Mapa das stories da Fase 2 em diante
 
 Liberadas pelo gate. O mapa proposto:
 
-| Story | Conteúdo |
-|---|---|
-| 44.6 | Núcleo de cálculo puro no `shared` + testes dourados (Fase 2) |
-| 44.7 | Endpoint do payload da aba + schema versionado (Fase 3) |
-| 44.8 | A aba + campos novos em `funnel_stages` (Fase 4) |
-| 44.9 | Bloco de criativos + distribuição do Hook Rate (Fase 5) |
-| 44.10 | Unificação do CAC (`traffic-analytics`) (Fase 6) |
-| 44.11 | Doc do Inácio + rotina ClickUp + teste de paridade (Fase 6) |
+| Story | Conteúdo | Estado |
+|---|---|---|
+| 44.6 | Núcleo de cálculo puro no `shared` + testes dourados (Fase 2) | ✅ escrita, implementada, InReview |
+| **44.7** | **Composição do teto no `shared`** (Fase 2) — **inserida em 2026-08-18** | a escrever |
+| 44.8 | Endpoint do payload da aba + schema versionado (Fase 3) | era 44.7 |
+| 44.9 | A aba + campos novos em `funnel_stages` (Fase 4) | era 44.8 |
+| 44.10 | Bloco de criativos + distribuição do Hook Rate (Fase 5) | era 44.9 |
+| 44.11 | Unificação do CAC (`traffic-analytics`) (Fase 6) | era 44.10 |
+| 44.12 | Doc do Inácio + rotina ClickUp + teste de paridade (Fase 6) | era 44.11 |
+
+### Por que a 44.7 foi inserida (decisão do @po, 2026-08-18)
+
+O gate da 44.6 (QA-446-05) achou que `Teto`, `TetoAusente` e `MotivoIndisponivel` são declarados e **nenhuma das 19 funções exportadas devolve qualquer um deles**. O módulo entrega os insumos do teto — janelas, base por métrica, selo, guarda de cobertura — mas nunca escolhe a janela vencedora nem monta o resultado.
+
+**A ambiguidade é minha.** As AC6 e AC7 descrevem as *propriedades* do teto (*"o teto é o melhor valor da melhor janela"*, *"cada teto carrega origem, base, data, fonte e selo"*) e nunca dizem *"devolve um `Teto`"*. O @dev leu como primitivas, o @qa lê como composição, e as duas leituras cabem no texto que eu validei em 9,5/10. Reabrir uma story que passou no gate para acrescentar escopo, porque eu subespecifiquei, é pior processo do que abrir uma nova.
+
+**E não é embrulho mecânico do que já existe.** `coberturaAtipica(coberturaDaJanela, coberturaMediana)` precisa da cobertura de lead por janela — que exige leads **atribuídos e totais** por dia. `DiaBruto` só carrega `leadsAtribuidos`. Ou seja: a composição exige mudança na forma da entrada, que é decisão de desenho, não linha de código. Isso é story.
+
+**O que NÃO é negociável:** a composição mora no `@loyola-x/shared`, nunca na rota. Se ela for escrita dentro do endpoint, a lógica do teto passa a viver fora do lugar único — que é a regra 7.6 da spec e o motivo pelo qual a 44.6 existe. Foi assim que o `connectRate` divergiu do painel por um ano.
+
+**Onde discordo do @qa:** ele sugeriu remover os três tipos órfãos. Eles ficam. São o contrato contra o qual a 44.7 implementa, já foram revisados, e removê-los faria a 44.7 recriá-los — churn sem ganho. O problema não é existirem, é nada dizer *quando* ganham produtor. Um comentário apontando a 44.7 resolve, e é tarefa da 44.7.
 
 **Duas coisas mudaram desde que o mapa foi feito**, por causa da decisão B1:
 - a 44.6 **não** precisa de `calcularConvCheckout`
