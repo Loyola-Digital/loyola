@@ -887,6 +887,82 @@ export function compostoNoTeto(atual: Metricas, teto: Metricas): number | null {
   return 1 - t / a;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Sinalização (spec §6) — Story 44.9 AC6
+// ─────────────────────────────────────────────────────────────
+
+export type Selo = "verde" | "amarelo" | "vermelho";
+
+/** Tolerância antes do vermelho: 15% de distância do alvo (spec §6). */
+export const TOLERANCIA_DO_ALVO = 0.15;
+
+/**
+ * Selo da métrica contra o **alvo vigente** — teto quando existe, benchmark
+ * quando não existe (spec §6).
+ *
+ * ## Por que isto NÃO é apresentação
+ *
+ * `[decisão @po 2026-08-19]` A spec §6 escreve a regra assim:
+ *
+ *     🟢 ≥ alvo · 🟡 até 15% abaixo · 🔴 mais de 15% abaixo
+ *
+ * Isso só vale para métrica em que **maior é melhor**. `DIRECAO` marca `cpm` e
+ * `cpc` como `"menor"` — aplicada ao pé da letra, a regra pintaria de VERDE um
+ * CPC acima do alvo (que é ruim) e de vermelho um CPC ótimo. Duas das cinco
+ * métricas invertidas, e o erro é invisível: a tela fica plausível.
+ *
+ * Comparação com direção e limiar é **regra**, não estilo — e o agente Inácio
+ * consome a REST direto, sem ver a aba. Se a regra morasse no front, ele e a
+ * tela classificariam a mesma etapa de formas diferentes. É o mesmo motivo que
+ * levou a mediana para cá na Story 44.8.
+ *
+ * ## O limiar de 15% também inverte
+ *
+ * Para `maior`, "15% abaixo do alvo" é `atual >= alvo × 0,85`.
+ * Para `menor`, o equivalente é `atual <= alvo × 1,15` — **não** `× 0,85`.
+ * Usar o mesmo fator dos dois lados aperta o critério do CPC em vez de afrouxar.
+ *
+ * `null` = não dá para classificar (falta `atual`, falta alvo, ou o alvo é
+ * zero/negativo). Regra 7.4: ausência é declarada, nunca vira verde por acaso.
+ */
+export function sinalizar(
+  metrica: Metrica,
+  atual: number | null | undefined,
+  alvo: number | null | undefined,
+): Selo | null {
+  if (atual === null || atual === undefined || !Number.isFinite(atual)) return null;
+  if (alvo === null || alvo === undefined || !Number.isFinite(alvo)) return null;
+  if (alvo <= 0) return null;
+
+  // ⚠️ Arredondar ANTES de comparar, como `coberturaAtipica` faz: a mesma razão
+  // pode chegar por caminhos de cálculo diferentes e diferir na 15ª casa, o que
+  // faria a mesma etapa mudar de cor entre duas telas.
+  const r = (v: number) => Math.round(v * 1e6) / 1e6;
+  const a = r(atual);
+
+  if (DIRECAO[metrica] === "maior") {
+    if (a >= r(alvo)) return "verde";
+    return a >= r(alvo * (1 - TOLERANCIA_DO_ALVO)) ? "amarelo" : "vermelho";
+  }
+  // menor é melhor: estar ACIMA do alvo é que é ruim.
+  if (a <= r(alvo)) return "verde";
+  return a <= r(alvo * (1 + TOLERANCIA_DO_ALVO)) ? "amarelo" : "vermelho";
+}
+
+/**
+ * O alvo vigente de uma métrica: **teto quando existe, benchmark quando não**
+ * (spec §6). `null` quando nenhum dos dois existe — e aí não há selo.
+ */
+export function alvoVigente(
+  teto: Teto | TetoAusente,
+  benchmark: number | null | undefined,
+): number | null {
+  if (teto.valor !== null) return teto.valor;
+  return benchmark === null || benchmark === undefined || !Number.isFinite(benchmark)
+    ? null
+    : benchmark;
+}
+
 /**
  * Decomposição do CPC quando ele lidera o ranking (spec §3).
  *

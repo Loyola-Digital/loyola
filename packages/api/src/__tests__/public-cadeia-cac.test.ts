@@ -98,6 +98,9 @@ const etapa = (over: Record<string, unknown> = {}) => ({
   name: "Captação Paga",
   stageType: "paid",
   campaigns: [{ id: "c1", name: "Campanha 1" }],
+  // Story 44.9 AC4 — o `numeric` do Postgres chega como STRING.
+  lpTemVsl: true,
+  ticketMedioManual: "197.00",
   ...over,
 });
 
@@ -679,6 +682,63 @@ describe("cadeia-cac — resíduos da 2ª passada (QA-448-06, QA-448-07)", () =>
     const app = await buildApp();
     const res = await app.inject({ method: "GET", url: url() });
     expect(res.json().vendasSemDataNoTotal).toBeNull();
+    await app.close();
+  });
+});
+
+describe("cadeia-cac — os campos da etapa que decidem o benchmark (QA-449-01)", () => {
+  /**
+   * ⚠️ Estes dois campos motivaram uma migration em PRODUÇÃO e são o que a aba
+   * usa para escolher entre 4% e 7,5% de Conv. LP (spec §5). Sem teste, sumir
+   * do payload passava em typecheck e em 522 testes — e na tela virava
+   * "ninguém respondeu se a LP tem VSL", que é indistinguível do estado
+   * legítimo. A pessoa iria preencher um campo já preenchido.
+   */
+  it("`lpTemVsl` e `ticketMedioManual` chegam ao payload", async () => {
+    filaVinculo([etapa()]);
+    filaInsights(diasDe("c1", 10));
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: url() });
+    const body = res.json();
+    expect(body.lpTemVsl).toBe(true);
+    // `numeric` vem string do Postgres; o payload precisa entregar NÚMERO,
+    // senão a comparação com o corte de R$147 vira comparação de string.
+    expect(body.ticketMedioManual).toBe(197);
+    expect(typeof body.ticketMedioManual).toBe("number");
+    await app.close();
+  });
+
+  it("`false` e `null` em `lpTemVsl` são preservados como coisas diferentes", async () => {
+    // `false` = respondido, não tem VSL (resposta final).
+    // `null`  = ninguém respondeu (pede ação).
+    // As duas levam a "sem benchmark", por caminhos com ações opostas.
+    for (const [valor, esperado] of [[false, false], [null, null]] as const) {
+      mockSelect.mockReset();
+      filaVinculo([etapa({ lpTemVsl: valor })]);
+      filaInsights(diasDe("c1", 10));
+      const app = await buildApp();
+      const res = await app.inject({ method: "GET", url: url() });
+      expect(res.json().lpTemVsl).toBe(esperado);
+      await app.close();
+    }
+  });
+
+  it("ticket ausente vira null, nunca 0 — zero seria um ticket de R$0", async () => {
+    filaVinculo([etapa({ ticketMedioManual: null })]);
+    filaInsights(diasDe("c1", 10));
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: url() });
+    expect(res.json().ticketMedioManual).toBeNull();
+    await app.close();
+  });
+
+  it("os dois campos saem também na etapa FORA da aba e na etapa sem campanha", async () => {
+    // São config da etapa, não da série — quem abre a tela precisa deles para
+    // saber o que preencher, inclusive quando não há dado de mídia.
+    filaVinculo([etapa({ stageType: "comercial" })]);
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: url() });
+    expect(res.json().lpTemVsl).toBe(true);
     await app.close();
   });
 });

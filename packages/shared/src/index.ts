@@ -71,6 +71,10 @@ export {
   metricasDoTeto,
   // benchmark de referência (44.8)
   referenciasDoGrupo,
+  // sinalização (44.9)
+  sinalizar,
+  alvoVigente,
+  TOLERANCIA_DO_ALVO,
 } from "./cadeia-cac.js";
 export type {
   Familia,
@@ -89,6 +93,7 @@ export type {
   OpcoesTeto,
   TetosDoGrupo,
   ReferenciasDoGrupo,
+  Selo,
 } from "./cadeia-cac.js";
 
 export type {

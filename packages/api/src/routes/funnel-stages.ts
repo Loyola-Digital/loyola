@@ -556,6 +556,85 @@ export default fp(async function funnelStageRoutes(fastify) {
     }
   );
 
+  /**
+   * PATCH /api/projects/:projectId/funnels/:funnelId/stages/:stageId/cadeia-cac-config
+   *
+   * Story 44.9 (AC4) — os dois campos que o benchmark de Conv. LP da spec §5
+   * exige: se a LP tem VSL e o ticket médio.
+   *
+   * ⚠️ O caminho é escopado por PROJETO de propósito: o `guest-guard` global só
+   * valida membership em `/api/projects/:id/*` (`middleware/guest-guard.ts`).
+   * Uma rota `/api/funnels/...` passaria batido para convidados — que é a
+   * lacuna que as irmãs têm. Aqui a proteção vem de graça.
+   *
+   * ⚠️ `null` é valor legítimo e diferente de ausente:
+   *   `{ lpTemVsl: null }`  → "voltei a não saber" (limpa a resposta)
+   *   campo fora do corpo   → "não mexi neste campo"
+   * Sem essa distinção não haveria como desfazer uma resposta errada.
+   */
+  fastify.patch(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/cadeia-cac-config",
+    async (request, reply) => {
+      const params = z
+        .object({
+          projectId: z.string().uuid(),
+          funnelId: z.string().uuid(),
+          stageId: z.string().uuid(),
+        })
+        .safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const body = z
+        .object({
+          lpTemVsl: z.boolean().nullable().optional(),
+          // String para não perder centavos no round-trip de float.
+          ticketMedioManual: z
+            .union([z.number().nonnegative(), z.string().regex(/^\d+(\.\d{1,2})?$/)])
+            .nullable()
+            .optional(),
+        })
+        .safeParse(request.body);
+      if (!body.success)
+        return reply.code(400).send({ error: "Dados inválidos", details: body.error.issues });
+
+      // Prova a cadeia etapa→funil→projeto antes de escrever.
+      const [stage] = await fastify.db
+        .select({ id: funnelStages.id })
+        .from(funnelStages)
+        .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+        .where(
+          and(
+            eq(funnelStages.id, params.data.stageId),
+            eq(funnelStages.funnelId, params.data.funnelId),
+            eq(funnels.projectId, params.data.projectId),
+          ),
+        )
+        .limit(1);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const patch: Record<string, unknown> = { updatedAt: new Date() };
+      if ("lpTemVsl" in body.data) patch.lpTemVsl = body.data.lpTemVsl;
+      if ("ticketMedioManual" in body.data) {
+        patch.ticketMedioManual =
+          body.data.ticketMedioManual === null || body.data.ticketMedioManual === undefined
+            ? null
+            : String(body.data.ticketMedioManual);
+      }
+
+      const [updated] = await fastify.db
+        .update(funnelStages)
+        .set(patch)
+        .where(eq(funnelStages.id, params.data.stageId))
+        .returning({
+          id: funnelStages.id,
+          lpTemVsl: funnelStages.lpTemVsl,
+          ticketMedioManual: funnelStages.ticketMedioManual,
+        });
+
+      return reply.code(200).send({ success: true, stage: updated });
+    },
+  );
+
   // DELETE /api/projects/:projectId/funnels/:funnelId/stages/:stageId/audit
   // Cancela (desfaz) a auditoria da etapa â€” volta pro estado "pending" e
   // zera lastAuditAt/lastAuditBy. Isolado por stage.

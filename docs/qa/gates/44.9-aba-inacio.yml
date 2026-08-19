@@ -1,0 +1,219 @@
+storyId: "44.9"
+storyTitle: "A aba Inácio — a tela que consome o payload"
+gate: CONCERNS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-08-19"
+commits: [3ad2e380, 8371cd65, c7e732a0]
+branch: feature/44.9-aba-inacio
+scope: >
+  services/cadeia-cac-payload.ts (novo, 466 linhas — a composição extraída) ·
+  routes/stage-cadeia-cac.ts (novo) · routes/public-cadeia-cac.ts (482 → 77) ·
+  routes/funnel-stages.ts (+PATCH cadeia-cac-config) · db/schema.ts + migration 0109 ·
+  shared/cadeia-cac.ts (+sinalizar, alvoVigente) ·
+  web: lib/utils/cadeia-cac-view.ts, lib/hooks/use-cadeia-cac.ts,
+  components/funnels/cadeia-cac-stage-tab.tsx, page da etapa ·
+  42 testes novos (23 API + 19 web)
+
+codeRabbit:
+  status: SKIPPED
+  reason: "CLI em WSL, host macOS. Quinto gate seguido sem ele — lacuna de cobertura, não aprovação."
+
+summary: >
+  A story resolve um bloqueio real que oito stories não viram, e resolve do jeito
+  certo: a composição saiu para um serviço, as duas rotas viraram invólucros, e
+  existe um teste comparando o payload INTEIRO das duas em seis cenários. A rota
+  interna ainda melhora a postura das irmãs ao escopar por `/api/projects/`, o
+  único prefixo em que o `guest-guard` valida membership.
+
+  A validação visual é a melhor evidência produzida neste epic. Não foi um print
+  decorativo: o @dev reconstruiu os brutos a partir da tela e fechou a identidade
+  de telescopagem da §8 na segunda casa, o que só acontece se as cinco métricas
+  vierem da mesma agregação.
+
+  O que segura o gate não é defeito presente — é superfície desprotegida. Os dois
+  campos que a AC4 criou, que a AC5 consome e que motivaram uma migration em
+  PRODUÇÃO não têm uma linha de teste, e o modo de falha deles é indistinguível
+  de um estado legítimo. A rota de escrita que os grava também não tem teste.
+
+issues:
+  - id: QA-449-01
+    severity: medium
+    category: test-coverage
+    title: "`lpTemVsl` e `ticketMedioManual` não têm cobertura, e a falha deles se disfarça de estado válido"
+    file: packages/api/src/services/cadeia-cac-payload.ts
+    story: "44.9 (AC4, AC5)"
+    reproduced: true
+    description: >
+      Os dois campos que a AC4 adicionou ao schema, que motivaram a migration
+      0109 aplicada ao banco de produção, e que a AC5 usa para escolher o
+      benchmark de Conv. LP, aparecem ZERO vezes nos testes da API.
+
+      Reproduzido: removendo `lpTemVsl: stage.lpTemVsl` do payload —
+
+        typecheck da API      limpo
+        testes da API         42 passando
+        testes do web        480 passando
+
+      Nada acusa. E na tela o resultado é `benchmarkConvLP(undefined, …)` →
+      `{ valor: null, motivo: "vslNaoRespondido" }`, que renderiza exatamente
+      como o estado legítimo "ninguém respondeu se a LP tem VSL — preencha na
+      configuração da etapa".
+
+      ⚠️ É a mesma FAMÍLIA do QA-448-01, que segurou o gate da story anterior: a
+      tela faz uma afirmação sobre a causa que induz a ação errada. Quem visse
+      isso iria preencher um campo que já está preenchido, e nada mudaria.
+
+      A diferença — e o motivo de ser CONCERNS e não FAIL — é que ali o defeito
+      ESTAVA presente e reproduzido no comportamento entregue; aqui ele é
+      latente, e a validação visual mostrou o caminho funcionando de verdade.
+    suggestedFix: >
+      Um teste de rota afirmando que `lpTemVsl` e `ticketMedioManual` chegam ao
+      payload com o valor da etapa (inclusive `null`), verificado por reversão.
+    blocking: false
+
+  - id: QA-449-02
+    severity: medium
+    category: test-coverage
+    title: "A rota de ESCRITA `PATCH .../cadeia-cac-config` não tem nenhum teste"
+    file: packages/api/src/routes/funnel-stages.ts
+    story: "44.9 (AC4)"
+    reproduced: true
+    description: >
+      `grep -rl "cadeia-cac-config" src/__tests__/` devolve vazio. É uma rota que
+      ESCREVE em colunas recém-criadas em produção, e ninguém a exercita.
+
+      O que fica sem defesa, e que o próprio código se dá ao trabalho de
+      documentar:
+
+      - a distinção `{ lpTemVsl: null }` (limpa a resposta) contra campo ausente
+        (não mexe) — sem teste, o dia em que ela quebrar ninguém desfaz uma
+        resposta errada;
+      - a prova de cadeia etapa→funil→projeto do `innerJoin` antes de escrever;
+      - o `String(...)` no `numeric`, que existe para não perder centavos.
+    suggestedFix: "Testes de rota no molde existente: patch parcial, `null` explícito, 404 para etapa de outro projeto."
+    blocking: false
+
+  - id: QA-449-03
+    severity: low
+    category: maintainability
+    title: "O contrato do payload é declarado duas vezes, e o TypeScript não confronta as duas"
+    file: packages/api/src/services/cadeia-cac-payload.ts:165
+    story: "44.9"
+    reproduced: true
+    description: >
+      `montarPayloadCadeiaCac` devolve `Promise<Record<string, unknown>>`, e o web
+      declara `CadeiaCacPayload` à mão em 92 linhas
+      (`lib/hooks/use-cadeia-cac.ts`). O web só depende de `@loyola-x/shared`, não
+      do pacote da API, então nada confronta as duas formas.
+
+      Reproduzido: renomeando `unidadeDasTaxas` e `vendasSemDataNoTotal` só no
+      serviço, **os dois pacotes compilam limpos**.
+
+      ATENUANTE, e é o que separa isto de medium: os testes de rota da API DO
+      pegam renomeação — a mesma sonda quebrou 4 testes. O que eles não pegam é
+      (a) mudança de TIPO com o nome intacto e (b) campos que nenhum teste toca,
+      que é o QA-449-01.
+
+      A correção estrutural é a mesma que este epic já aplicou duas vezes: o tipo
+      mora no `shared` e os dois lados importam. Aí um rename quebra o build dos
+      dois, em vez de virar `undefined` na tela.
+    suggestedFix: "Mover a interface do payload para `packages/shared` e tipar o retorno do serviço com ela."
+    blocking: false
+
+acCoverage:
+  AC0: { status: PASS, evidencia: "Deploy verificado pelo @dev antes de implementar: api.loyoladigital.com/api/health → contract 3, db connected" }
+  AC1: { status: PASS, evidencia: "Composição em services/cadeia-cac-payload.ts; rota pública 482→77 linhas; rota interna nova; 6 cenários comparando o payload INTEIRO + 3 de defesa. Auth confirmada por mim: authPlugin é hook global e devolve 401 sem Clerk (middleware/auth.ts:20-23)" }
+  AC2: { status: PASS, evidencia: "Aba condicionada a classificarFamilia !== null; `value` estável; validada em tela nas duas famílias" }
+  AC3: { status: PASS, evidencia: "Nenhum recálculo; até o selo vem do shared. A identidade da §8 fechando na tela é a prova mais forte disso" }
+  AC4: { status: CONCERNS, evidencia: "Migration 0109 aplicada e verificada (39 etapas, nenhuma linha alterada). Mas os dois campos e a rota que os grava não têm teste — QA-449-01 e QA-449-02" }
+  AC5: { status: PASS, evidencia: "Constantes no web, mediana do payload com rótulo e contagem. A comparação das duas telas prova a separação: medianas mudam por grupo (CPM 77,60 vs 12,65), constantes não" }
+  AC6: { status: PASS, evidencia: "sinalizar() no shared, direção e limiar invertidos. VALIDADO EM TELA: CPC R$5,38 contra alvo R$2,60 saiu vermelho — pela §6 literal sairia verde" }
+  AC7: { status: PASS, evidencia: "Os 9 motivos distintos, com tooltip. As duas declarações de indisponibilidade apareceram na gratuita" }
+  AC8: { status: PASS, evidencia: "19 testes em lib/utils, 4 reversões. Componente fora do runner, deliberado desde a 29.35" }
+  AC9: { status: PASS, evidencia: "EXECUTADA. Ver a seção abaixo — é a melhor evidência visual do epic" }
+
+validacaoVisual:
+  veredito: "O padrão que as outras stories deveriam seguir."
+  porQue: >
+    A 29.51/29.52 declarou validação visual que nunca rodou. Esta não só rodou —
+    ela verificou ARITMÉTICA a partir do que a tela mostrou, em vez de olhar e
+    dizer "parece certo".
+
+    Três coisas que só um print com conta feita provaria:
+
+    1. O CPC de R$ 5,38 contra alvo R$ 2,60 saiu VERMELHO. Pela §6 ao pé da letra
+       ("🟢 ≥ alvo") sairia verde — um CPC ao dobro do teto pintado como
+       saudável, numa tela inteiramente plausível.
+
+    2. O Connect Rate caiu a 0,22 p.p. da fronteira (71,39% contra 71,17% de
+       corte) e ficou amarelo. Qualquer erro no limiar teria mudado aquela
+       célula de cor.
+
+    3. A identidade de telescopagem da §8, reconstruída dos números exibidos:
+       `CPC ÷ (Connect × Conv.LP) = 57,84 = spend ÷ checkouts`. Bate na segunda
+       casa, o que só acontece se as cinco métricas vierem da MESMA agregação.
+
+    E a gratuita provou a QA-446-01 até a última milha: Conv. LP saiu `—`, não
+    `0%`, e ficou fora do ranking. Com zero ali, a queda real contra qualquer
+    teto daria 100% e a etapa sem dado nenhum lideraria o "onde atacar primeiro".
+
+  achadoNaoPlanejado: >
+    A tela expôs o argumento da v1.1 sem que ninguém procurasse: CAC real
+    R$ 51,04 é MAIS BARATO que o custo por checkout R$ 57,84 — 1.283 vendas
+    reais contra ~1.132 checkouts do pixel. O pixel subconta, como o deck §7.1
+    descreve. Se o número principal viesse da cadeia, sairia inflado. É a
+    justificativa inteira da v1.1 demonstrada por acidente, em produção.
+
+nfr:
+  seguranca:
+    status: PASS
+    nota: >
+      Confirmei por mim, não pelo relatório: `authPlugin` (`middleware/auth.ts`) é
+      hook `onRequest` global e devolve 401 sem Clerk userId — a rota interna é
+      autenticada. E o escopo `/api/projects/:projectId/...` foi escolha
+      deliberada do @dev: é o único prefixo em que o `guest-guard` valida
+      membership (`guest-guard.ts:113`). As rotas irmãs
+      (`stage-creative-performance`, `stage-sales-data`) vivem sob `/api/funnels/`
+      e passam batido para convidados. **Esta rota nasce melhor que as vizinhas.**
+  performance:
+    status: PASS
+    nota: "Composição medida na 44.8 (187 ms no pior caso). O hook usa staleTime de 60s e a aba só monta quando selecionada (TabsContent não renderiza inativo)."
+  confiabilidade:
+    status: CONCERNS
+    nota: "QA-449-01 e QA-449-02: campos e rota de escrita novos, sem teste, com modo de falha disfarçado."
+  manutenibilidade:
+    status: CONCERNS
+    nota: "QA-449-03: o contrato do payload existe em duas declarações independentes."
+
+evidenciaDeQualidadeAcimaDoPadrao:
+  - "21 reversões executadas e contadas"
+  - "O @dev descobriu que uma reversão SUA estava errada (`.replace` pegou `quedaReal` em vez de `sinalizar`) e corrigiu em vez de registrar uma lacuna inexistente — autocrítica que raramente aparece"
+  - "Validação visual com aritmética conferida, incluindo a identidade da §8"
+  - "A migration em produção foi cirúrgica e autorizada: ALTER TABLE ADD COLUMN IF NOT EXISTS, recusando explicitamente o `drizzle-kit push --force` que o deploy usa, porque ele sincronizaria o schema inteiro"
+  - "A rota interna melhora a postura de segurança das irmãs em vez de copiá-la"
+
+baselineDeTestes:
+  suiteApi: "1225 passando / 11 falhando (verificado pelo @qa)"
+  suiteWeb: "480 passando / 0 falhando"
+  veredito: "Baseline preservado; +23 testes na API, +19 no web."
+
+porQueConcernsENaoFail: >
+  Nada está quebrado. Os três achados são superfície desprotegida, não defeito
+  entregue — e a validação visual mostrou os dois caminhos funcionando com
+  números conferidos.
+
+  Considerei FAIL pelo QA-449-01, porque ele é da mesma família do QA-448-01 que
+  segurou a story anterior: falha que se disfarça de estado válido e induz a ação
+  errada. A diferença é decisiva — no 44.8 o defeito estava PRESENTE no
+  comportamento entregue e eu o reproduzi no payload; aqui ele só existe se
+  alguém quebrar o campo depois. Reprovar por risco futuro seria mudar a régua no
+  meio do epic.
+
+recomendacao:
+  antesDoMerge:
+    - "QA-449-01 — teste dos dois campos novos no payload, por reversão"
+    - "QA-449-02 — testes da rota PATCH que grava em colunas de produção"
+  backlog:
+    - "QA-449-03 — mover o tipo do payload para o shared e tipar o retorno do serviço"
+  paraODevops:
+    - "Deploy da API é necessário DE NOVO: a rota interna e a 0109 estão só na branch. Sem ele a aba recebe 404 em produção."

@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail, BarChart3, Star, FlaskConical, FileBarChart2, Target } from "lucide-react";
+import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail, BarChart3, Star, FlaskConical, FileBarChart2, Target, GitBranch} from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -53,6 +53,8 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { Funnel, FunnelCampaign, ManualSale } from "@loyola-x/shared";
 import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
+import { classificarFamilia } from "@loyola-x/shared/src/cadeia-cac";
+import { CadeiaCacStageTab } from "@/components/funnels/cadeia-cac-stage-tab";
 
 export default function StagePage() {
   const params = useParams<{ id: string; funnelId: string; stageId: string }>();
@@ -565,6 +567,16 @@ export default function StagePage() {
             <Star className="h-3.5 w-3.5 text-yellow-500" />
             NPS
           </TabsTrigger>
+          {/* Story 44.9 — a aba só existe para etapa DENTRO da aba. Família
+              `null` (lyrio/comercial/debriefing) não ganha aba vazia: não ganha
+              aba. O `value` é contrato de URL — escolhido uma vez, não se mexe
+              (a lição do 0870c2a2, em que o rótulo mudou e o value ficou). */}
+          {classificarFamilia(stage.stageType) !== null && (
+            <TabsTrigger value="cadeia-cac" className="gap-1.5">
+              <GitBranch className="h-3.5 w-3.5 text-cyan-600" />
+              Cadeia de CAC
+            </TabsTrigger>
+          )}
           <TabsTrigger value="relatorios" className="gap-1.5">
             <FileBarChart2 className="h-3.5 w-3.5 text-primary" />
             Relatórios
@@ -752,6 +764,10 @@ export default function StagePage() {
 
         <TabsContent value="mautic" className="mt-6">
           <MauticStageTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
+        </TabsContent>
+
+        <TabsContent value="cadeia-cac" className="mt-6">
+          <CadeiaCacStageTab projectId={params.id} stageId={params.stageId} />
         </TabsContent>
 
         <TabsContent value="ga4" className="mt-6">
