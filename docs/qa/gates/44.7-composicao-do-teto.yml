@@ -1,9 +1,10 @@
 storyId: "44.7"
 storyTitle: "Composição do teto no shared"
-gate: FAIL
+gate: CONCERNS
+gatePrimeiraPassada: FAIL
 reviewer: "@qa (Quinn)"
 reviewedAt: "2026-08-19"
-commits: [587767a3, e314cbcc, 481a5a91, db5a6c64, 9242eabe]
+commits: [587767a3, e314cbcc, 481a5a91, db5a6c64, 9242eabe, c5292f44]
 branch: feature/44.7-composicao-do-teto
 scope: >
   packages/shared/src/cadeia-cac.ts (+256 linhas: calcularTetos, tetosResolvidos,
@@ -255,3 +256,76 @@ nextSteps:
   - "@po: decidir o motivo do QA-447-05 — quarto motivo ou `semDados`"
   - "@qa: re-review após as correções"
   - "OBS-447-01 entra como insumo da 44.9"
+
+# ─────────────────────────────────────────────────────────────
+# Re-review após as correções — @qa (Quinn), 2026-08-19, commit c5292f44
+# ─────────────────────────────────────────────────────────────
+
+reReview:
+  reviewedAt: "2026-08-19"
+  commit: c5292f44
+  verdict: CONCERNS
+  resolved: [QA-447-01, QA-447-02]
+  open: [QA-447-03, QA-447-04, QA-447-05]
+
+  QA-447-01:
+    status: RESOLVIDO
+    fix: >
+      `janelasDe7Dias` pré-computa `ultimoDaData` numa passada de trás para
+      frente e o `slice` vai até o fim do bloco da data, não até o índice
+      corrente. O(n) preservado.
+    evidence: |
+      Teste diferencial contra 067faa27, as mesmas 28 séries: 17/28 -> 28/28
+      idênticas. É a AC8 cumprida de fato, não por ausência de cobertura.
+
+      Caso minado (2 anúncios/dia, 7 dias):
+        antes ... teto cpc 0,20  base 12.000   <- um anúncio num dia
+        depois .. teto cpc 0,92  base 504.000  <- bate com o controle agregado
+
+      Bordas verificadas adversarialmente, 9/9:
+        série vazia · 1 linha · 3 linhas na MESMA data (3 janelas, todas com o
+        dia cheio) · bloco duplicado no MEIO da série · bloco a 19 dias de
+        distância não vaza para a janela de 7 dias · entrada desordenada
+        produz o mesmo que a ordenada.
+    reversion: "Revertido o `ultimoDaData[fim]` para `fim`: 2 testes caem. O teste protege."
+
+  QA-447-02:
+    status: RESOLVIDO
+    fix: >
+      `montarRanking` filtra por `METRICAS_RANQUEAVEIS` = cpc/connectRate/convLP.
+      CPM e CTR seguem com teto calculado — `decomporCPC` depende deles — mas
+      como decomposição do CPC, que é o papel que a spec §2.4 lhes dá.
+    evidence: |
+      Cenário dourado da §8 por `montarRanking` (não por `ranquear` com entrada
+      curada, que era o furo do teste antigo):
+        convLP  54,82%  ·  cpc  50,00%  ·  connectRate  11,11%
+      Três itens, na ordem que a §8 exige. Connect Rate de volta ao 3º lugar.
+      `metricasDoTeto` segue devolvendo cpm/ctr — correto: `compostoNoTeto` os
+      ignora via `custoDaCadeia`, e `decomporCPC` precisa deles.
+    reversion: "Removido o filtro: 3 testes caem. O teste protege."
+
+  regressionCheck:
+    testes: "72 no módulo (66 + 6 novos), todos verdes"
+    baseline: "11 falhas / 1159 passando — as mesmas 5 suítes pré-existentes (instagram, projects, schema, funnel-stages). Nenhuma no módulo"
+    typecheck: "shared e api limpos"
+    build: "shared OK"
+    runtime: "bare import de @loyola-x/shared sobe e exporta as 5 funções — armadilha da 19.14 não acionada"
+    performance: "365 dias 1,3ms · 730 dias 2,6ms — o O(n) sobreviveu à correção"
+    naoRegrediu: "QA-447-03 medido de novo: teto da campanha constante segue vindo de 6 dias, idêntico ao da primeira passada"
+
+  decision: >
+    CONCERNS, não PASS. Os dois must-fix estão resolvidos com prova e reversão,
+    e a AC8 passou a ser verdadeira em vez de não-verificada. O que impede o
+    PASS é o QA-447-03 seguir aberto: é `medium`, é conhecido, e degrada os
+    metadados que a spec §4 manda exibir — incluindo o selo, quando a base de 7
+    dias cruzaria o piso alto e a da janela vencedora não.
+
+    Não bloqueia a 44.8: o valor do teto é idêntico até a 15ª casa, então
+    ranking, composto e sinalização não mudam. Mas deve ir para o backlog com
+    dono, não sumir no rodapé do gate.
+
+  nextSteps:
+    - "@po: decidir o QA-447-05 (quarto motivo ou `semDados`) — bloqueia só a si mesmo"
+    - "@dev: QA-447-03 e QA-447-04 quando houver espaço; nenhum bloqueia a 44.8"
+    - "@devops: push da branch com o c5292f44"
+    - "44.9 recebe o OBS-447-01 como insumo de apresentação"
