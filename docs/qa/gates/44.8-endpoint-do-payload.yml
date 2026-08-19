@@ -1,9 +1,11 @@
 storyId: "44.8"
 storyTitle: "Endpoint do payload da aba + schema versionado"
-gate: FAIL
+gate: CONCERNS
+gatePrimeiraPassada: FAIL
 reviewer: "@qa (Quinn)"
 reviewedAt: "2026-08-19"
-commits: [4486d7e9]
+rereviewedAt: "2026-08-19"
+commits: [4486d7e9, 3d643df0]
 branch: feature/44.8-endpoint-do-payload
 scope: >
   packages/api/src/routes/public-cadeia-cac.ts (novo, 396 linhas) ·
@@ -27,12 +29,15 @@ summary: >
   defeitos reintroduzidos, 8 pegos, incluindo o conserto do próprio teste de
   IDOR, que era decorativo com o banco mockado.
 
-  O que segura o gate é um defeito que a bateria não podia ver porque nenhum
-  teste exercita falha de leitura: quando a planilha de vendas está inacessível,
-  a rota devolve 200 afirmando "A etapa não tem nenhuma fonte de vendas
-  conectada". A frase é falsa e manda o operador configurar uma planilha que já
-  está configurada. É exatamente o chamado de 2026-08-14 que a Story 36.9 AC5
-  resolveu em `public-leads.ts`, e a rota irmã devolve 502 no mesmo cenário.
+  [1ª passada] O que segurou o gate foi um defeito que a bateria não podia ver
+  porque nenhum teste exercitava falha de leitura: com a planilha inacessível, a
+  rota devolvia 200 afirmando "A etapa não tem nenhuma fonte de vendas
+  conectada" — frase falsa, mandando o operador configurar uma planilha já
+  configurada.
+
+  [2ª passada, 3d643df0] Os 5 achados resolvidos, e o conserto do bloqueante
+  ficou melhor que a correção que eu sugeri. Restam dois resíduos reproduzidos
+  (QA-448-06 e QA-448-07), nenhum deles bloqueante. Gate FAIL → CONCERNS.
 
   O escopo parcial da AC4 NÃO é defeito: o @dev parou numa decisão de produto
   legítima (a chave de dedup de venda), declarou `naoAtribuivel` como a regra
@@ -40,6 +45,7 @@ summary: >
 
 issues:
   - id: QA-448-01
+    status: RESOLVIDO (3d643df0)
     severity: high
     category: correctness
     title: "Falha de leitura da planilha vira \"a etapa não tem fonte de vendas conectada\" — afirmação falsa, com 200"
@@ -74,9 +80,10 @@ issues:
       erro → `motivo: "leituraFalhou"` (ou 502, como a irmã) com a mensagem do
       erro; `payload === null` → o `semDados` atual. Um teste com
       `mockRejectedValue` fecha.
-    blocking: true
+    blocking: false   # resolvido na 2ª passada
 
   - id: QA-448-02
+    status: RESOLVIDO (3d643df0)
     severity: medium
     category: correctness
     title: "Família gratuita funde de volta as duas causas que a Story 36.9 separou"
@@ -95,6 +102,7 @@ issues:
     blocking: false
 
   - id: QA-448-03
+    status: RESOLVIDO (3d643df0)
     severity: medium
     category: consistency
     title: "`SALES_PUBLIC_MAX_AGE_SEC` é silenciosamente ignorado nesta rota"
@@ -113,6 +121,7 @@ issues:
     blocking: false
 
   - id: QA-448-04
+    status: RESOLVIDO (3d643df0)
     severity: low
     category: clarity
     title: "`vendasSemData` descreve o período inteiro, mas viaja ao lado de um número filtrado por range"
@@ -132,6 +141,7 @@ issues:
     blocking: false
 
   - id: QA-448-05
+    status: RESOLVIDO (3d643df0)
     severity: low
     category: test-quality
     title: "O teste \"ranking sem CPM e CTR\" passaria com ranking vazio"
@@ -147,15 +157,65 @@ issues:
     suggestedFix: "Adicionar `expect(metricas.length).toBeGreaterThan(0);` antes dos `not.toContain`."
     blocking: false
 
+  - id: QA-448-06
+    severity: medium
+    category: correctness
+    title: "O conserto do QA-448-02 reintroduz o padrão do QA-448-01: `.catch(() => null)` vira afirmação categórica"
+    file: packages/api/src/routes/public-cadeia-cac.ts:385
+    story: "44.8 (AC8 / regra 7.4)"
+    reproduced: true
+    description: >
+      `resolveLeadSource(fastify.db, stageId).catch(() => null)` trata falha e
+      ausência como a mesma coisa — exatamente o que o gate anterior pegou, no
+      código escrito para consertá-lo. Reproduzido: com `resolveLeadSource`
+      rejeitando `Error("connection terminated unexpectedly")`, a rota devolve
+
+        principal.motivo  "semDados"
+        principal.message "A etapa não tem planilha de leads nem pesquisa
+                           conectada. Rodar o sync não muda isso — é preciso
+                           conectar uma fonte à etapa."
+
+      A frase é categórica sobre um fato que a rota falhou em estabelecer.
+
+      ATENUANTE REAL, e é o que separa isto de um FAIL: neste ponto do handler
+      TRÊS queries ao banco já tiveram sucesso (vínculo, insights, cache de
+      lead). Um erro aqui é falha transitória, não indisponibilidade — ordens de
+      grandeza menos provável que a falha do Google Sheets do QA-448-01, que é
+      externa, com cota, permissão revogável e histórico de chamado.
+    suggestedFix: "Mesmo padrão do conserto anterior: try/catch com um terceiro motivo (`indeterminado`), em vez de assumir ausência."
+    blocking: false
+
+  - id: QA-448-07
+    severity: low
+    category: clarity
+    title: "`vendasSemDataNoTotal: 0` é servido mesmo quando a leitura de venda falhou"
+    file: packages/api/src/routes/public-cadeia-cac.ts:297
+    story: "44.8 (AC4)"
+    reproduced: true
+    description: >
+      `let vendasSemDataNoTotal = 0` só é atribuído no ramo de sucesso (`:339`).
+      Reproduzido: com a leitura falhando, o payload sai com
+      `principal.motivo: "leituraFalhou"` E `vendasSemDataNoTotal: 0` — ou seja,
+      afirma "nenhuma venda sem data" sobre dado que não foi lido.
+
+      Mesma coisa na família gratuita, onde o campo é sempre `0` e não significa
+      nada.
+
+      Baixa porque o `motivo` está do lado e um consumidor atento não lê o
+      diagnóstico de um bloco que declarou falha. Mas é a mesma regra 7.4: zero
+      é uma afirmação.
+    suggestedFix: "`vendasSemDataNoTotal: number | null`, com `null` fora do ramo de sucesso."
+    blocking: false
+
 acCoverage:
   AC1: { status: PASS, evidencia: "innerJoin presente; 404 (não 403); 400 em uuid e range inválidos; 4 testes" }
   AC2: { status: PASS, evidencia: "Agrupamento em services/meta-campaign-daily.ts; campaigns/daily chama o mesmo; os 14 testes da 44.1 passam sem alteração; reversão do imposto quebra os DOIS lados, provando o caminho compartilhado" }
   AC3: { status: PASS, evidencia: "Os 7 passos na ordem; ZERO divisão no arquivo da rota (verificado por varredura)" }
-  AC4: { status: PARTIAL, evidencia: "cacReal/cplReal entregues e testados, inclusive com cobertura 0%. Cobertura de atribuição declarada naoAtribuivel — parada legítima numa decisão de produto (chave de dedup), documentada. vendasSemData entregue. ⚠️ Ver QA-448-01" }
+  AC4: { status: PARTIAL, evidencia: "cacReal/cplReal entregues e testados, inclusive com cobertura 0%. Cobertura de atribuição declarada naoAtribuivel — parada legítima numa decisão de produto (chave de dedup), documentada. vendasSemDataNoTotal entregue. Segue aguardando decisão do @po" }
   AC5: { status: PASS, evidencia: "guardaDeCobertura indisponivel na gratuita, naoSeAplica na paga; 2 testes; reversão pega" }
   AC6: { status: PASS, evidencia: "Imposto uma vez; teste afirma o valor E nega o quadrado; reversão quebra 6 testes" }
   AC7: { status: PASS, evidencia: "unidadeDasTaxas: decimal; ctr 0,02 e connect 0,80 testados; dinheiro absoluto e CPM ÷1000 preservados; reversão ×100 pega" }
-  AC8: { status: CONCERNS, evidencia: "4 dos 5 casos cobertos e corretos. O 5º — troca silenciosa de fonte — é o QA-448-01" }
+  AC8: { status: CONCERNS, evidencia: "O QA-448-01 foi resolvido e o desenho do conserto é melhor que a minha sugestão (ver reReview). Resta o QA-448-06, mesma classe, blast radius muito menor" }
   AC9: { status: PASS, evidencia: "API_CONTRACT_VERSION = 3, com o aviso sobre packages/mcp no próprio arquivo; health.test.ts acompanha" }
   AC10: { status: PASS, evidencia: "23 testes de rota + 10 do shared; 8 reversões provadas; teste de IDOR consertado de decorativo para real" }
   AC11: { status: PASS, evidencia: "referenciasDoGrupo com elegibilidade exposta; régua idêntica à do teto, por decisão documentada; 10 testes; 3 reversões" }
@@ -178,7 +238,7 @@ nfr:
       nesta escala, não é débito desta story.
   confiabilidade:
     status: CONCERNS
-    nota: "QA-448-01 e QA-448-03: falha de leitura mal reportada e política de frescor divergente da rota irmã."
+    nota: "QA-448-01 e QA-448-03 resolvidos. Resta o QA-448-06 (mesma classe, probabilidade muito menor) e o QA-448-07."
   manutenibilidade:
     status: PASS
     nota: >
@@ -194,10 +254,43 @@ evidenciaDeQualidadeAcimaDoPadrao:
   - "Prova de runtime nos DOIS caminhos: tsx (dev) e dist/ compilado (produção)"
 
 baselineDeTestes:
-  suiteApi: "1192 passando / 11 falhando"
+  suiteApi: "1198 passando / 11 falhando (verificado pelo @qa, não relatado)"
   veredito: "Baseline preservado — as 11 falhas são as ambientais conhecidas, nos mesmos 5 arquivos (funnel-stages-lead-inputs, instagram-routes, instagram, projects, schema). Nenhum arquivo novo entre elas."
 
-porQueFailENaoConcerns: >
+reReview:
+  commit: 3d643df0
+  veredito: "Os 5 achados resolvidos. Gate FAIL → CONCERNS."
+  verificadoIndependentemente:
+    - "QA-448-01: ramo de erro precede o de ausência; mensagem carrega o erro real e nega a frase falsa em teste"
+    - "QA-448-02: as duas causas separadas via resolveLeadSource, espelhando public-leads.ts"
+    - "QA-448-03: maxAgeFrom extraído com corpo IDÊNTICO ao original (diff conferido contra 4486d7e9); ?fresh=1 testado"
+    - "QA-448-04: renomeado, sem referência velha sobrando"
+    - "QA-448-05: a reversão 12 do @dev (METRICAS_RANQUEAVEIS esvaziado) prova que a guarda pega o caso vazio"
+    - "Suíte rodada pelo @qa: 1198/11, os mesmos 5 arquivos ambientais"
+  ondeODevAcertouContraMinhaSugestao: >
+    Sugeri "leituraFalhou OU 502, como a irmã". O @dev recusou o 502 com o
+    argumento certo: em `public-funnel-sales` a venda é o payload inteiro, aqui
+    é UM campo — o 502 jogaria fora teto, ranking e benchmarks já calculados e
+    corretos. E escreveu o teste que prova a sobrevivência desses blocos. A
+    minha sugestão estava incompleta; a execução ficou melhor que ela.
+  achadoDoDevQueNenhumTestePegaria: >
+    A rota passou a ler `fastify.config`, que o app de teste não decorava. Sem o
+    `configStub`, TODA a família paga quebraria — mas só depois do deploy,
+    porque nenhum teste exercitava esse caminho. Achado durante o conserto, não
+    depois do incidente.
+
+porQueConcernsENaoFail: >
+  O bloqueante caiu e o conserto é melhor do que eu pedi. O QA-448-06 é da mesma
+  família, e considerei FAIL de novo por consistência — mas a probabilidade não é
+  comparável: o QA-448-01 dispara em falha do Google Sheets (externa, com cota,
+  permissão revogável, chamado documentado em 2026-08-14), enquanto o QA-448-06
+  exige um erro de banco APÓS três queries bem-sucedidas no mesmo handler.
+  Mesma classe, dois regimes de risco.
+
+  Recomendo consertá-lo nesta branch — são 3 linhas e o @dev está no arquivo —
+  mas não seguro o merge por ele.
+
+porQueFailENaoConcerns_primeiraPassada: >
   A AC8 é textual: "nunca troca silenciosa de fonte". O QA-448-01 devolve 200
   com uma afirmação FALSA sobre a causa, e a ação que ela induz é a errada — é o
   chamado de 2026-08-14 acontecendo de novo, num endpoint novo, contra o

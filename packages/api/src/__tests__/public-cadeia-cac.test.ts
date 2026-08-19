@@ -621,3 +621,64 @@ describe("cadeia-cac — política de frescor igual à da rota irmã (QA-448-03)
     await app.close();
   });
 });
+
+describe("cadeia-cac — resíduos da 2ª passada (QA-448-06, QA-448-07)", () => {
+  it("checagem de fonte falhando devolve indeterminado, não \"não tem fonte conectada\"", async () => {
+    // O padrão do QA-448-01 tinha voltado no código escrito para consertá-lo.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    filaLeadCache([]);
+    mockResolveLeadSource.mockRejectedValue(new Error("connection terminated unexpectedly"));
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: url() });
+    const p = res.json().principal;
+    expect(p.motivo).toBe("indeterminado");
+    expect(p.message).toContain("connection terminated");
+    expect(p.message).not.toContain("Rodar o sync não muda isso");
+    await app.close();
+  });
+
+  it("os três motivos da gratuita são distintos entre si", async () => {
+    const cenarios = [
+      { fonte: { kind: "pesquisa" }, erro: false, esperado: "syncPendente" },
+      { fonte: null, erro: false, esperado: "semDados" },
+      { fonte: null, erro: true, esperado: "indeterminado" },
+    ];
+    for (const c of cenarios) {
+      mockSelect.mockReset();
+      filaVinculo([etapa({ stageType: "free" })]);
+      filaInsights(diasDe("c1", 10));
+      filaLeadCache([]);
+      mockResolveLeadSource.mockReset();
+      if (c.erro) mockResolveLeadSource.mockRejectedValue(new Error("x"));
+      else mockResolveLeadSource.mockResolvedValue(c.fonte);
+      const app = await buildApp();
+      const res = await app.inject({ method: "GET", url: url() });
+      expect(res.json().principal.motivo).toBe(c.esperado);
+      await app.close();
+    }
+  });
+
+  it("vendasSemDataNoTotal é null quando nada foi lido, nunca 0", async () => {
+    // `0` afirmaria "nenhuma venda sem data" sobre dado inexistente.
+    filaVinculo([etapa()]);
+    filaInsights(diasDe("c1", 10));
+    mockGetFreshSalesDaily.mockRejectedValue(new Error("403"));
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: url() });
+    const body = res.json();
+    expect(body.principal.motivo).toBe("leituraFalhou");
+    expect(body.vendasSemDataNoTotal).toBeNull();
+    await app.close();
+  });
+
+  it("na família gratuita o diagnóstico de venda é null — não há venda para diagnosticar", async () => {
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    filaLeadCache([{ payload: { uniqueLeads: 500, fonte: "planilha_leads" }, computedAt: new Date() }]);
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: url() });
+    expect(res.json().vendasSemDataNoTotal).toBeNull();
+    await app.close();
+  });
+});

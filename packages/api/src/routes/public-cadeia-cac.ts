@@ -294,7 +294,10 @@ export default fp(async function publicCadeiaCacRoutes(fastify) {
       // `purchasesProxyPixel` é pixel e subconta (R$20k viraram ~R$6–7k
       // reportados, deck §7.1).
       let principal: Record<string, unknown>;
-      let vendasSemDataNoTotal = 0;
+      // ⚠️ QA-448-07: `null`, não `0`. Fora do ramo de sucesso nada foi lido, e
+      // `0` afirmaria "nenhuma venda sem data" sobre dado inexistente. Na
+      // família gratuita ele fica `null` sempre — não há venda para diagnosticar.
+      let vendasSemDataNoTotal: number | null = null;
 
       if (familia === "paga") {
         // ⚠️ QA-448-01: erro de LEITURA e ausência de FONTE são causas
@@ -382,24 +385,46 @@ export default fp(async function publicCadeiaCacRoutes(fastify) {
           //
           // `resolveLeadSource` é o mesmo desempate que a 36.9 usa. Uma query, e
           // só no ramo de ausência.
-          const fonte = await resolveLeadSource(fastify.db, stageId).catch(() => null);
-          principal = fonte
-            ? {
-                metrica: "cplReal",
-                valor: null,
-                motivo: "syncPendente",
-                message:
-                  "A etapa TEM fonte de leads conectada, mas o cache ainda não foi computado. O sync roda diariamente; para antecipar, use scripts/backfill-lead-origin.ts.",
-                spend: agregado.spend,
-              }
-            : {
-                metrica: "cplReal",
-                valor: null,
-                motivo: "semDados",
-                message:
-                  "A etapa não tem planilha de leads nem pesquisa conectada. Rodar o sync não muda isso — é preciso conectar uma fonte à etapa.",
-                spend: agregado.spend,
-              };
+          //
+          // ⚠️ QA-448-06: aqui NÃO cabe `.catch(() => null)`. Era exatamente o
+          // padrão que o QA-448-01 corrigiu, e ele reapareceu no código escrito
+          // para consertá-lo: engolir o erro faria a rota afirmar "não tem fonte
+          // conectada" sobre um fato que ela falhou em estabelecer. Três casos,
+          // três motivos.
+          let fonte: Awaited<ReturnType<typeof resolveLeadSource>> = null;
+          let erroDaFonte: string | null = null;
+          try {
+            fonte = await resolveLeadSource(fastify.db, stageId);
+          } catch (err) {
+            erroDaFonte = err instanceof Error ? err.message : "Falha ao resolver a fonte de leads";
+          }
+
+          principal =
+            erroDaFonte !== null
+              ? {
+                  metrica: "cplReal",
+                  valor: null,
+                  motivo: "indeterminado",
+                  message: `Não foi possível determinar se esta etapa tem fonte de leads conectada — a checagem falhou: ${erroDaFonte}`,
+                  spend: agregado.spend,
+                }
+              : fonte
+                ? {
+                    metrica: "cplReal",
+                    valor: null,
+                    motivo: "syncPendente",
+                    message:
+                      "A etapa TEM fonte de leads conectada, mas o cache ainda não foi computado. O sync roda diariamente; para antecipar, use scripts/backfill-lead-origin.ts.",
+                    spend: agregado.spend,
+                  }
+                : {
+                    metrica: "cplReal",
+                    valor: null,
+                    motivo: "semDados",
+                    message:
+                      "A etapa não tem planilha de leads nem pesquisa conectada. Rodar o sync não muda isso — é preciso conectar uma fonte à etapa.",
+                    spend: agregado.spend,
+                  };
         }
       }
 
