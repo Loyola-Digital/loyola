@@ -1,0 +1,225 @@
+storyId: "44.8"
+storyTitle: "Endpoint do payload da aba + schema versionado"
+gate: FAIL
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-08-19"
+commits: [4486d7e9]
+branch: feature/44.8-endpoint-do-payload
+scope: >
+  packages/api/src/routes/public-cadeia-cac.ts (novo, 396 linhas) ·
+  services/meta-campaign-daily.ts (novo, extração da AC2) ·
+  utils/meta-insight-agg.ts (novo, movimentação de 4 helpers) ·
+  routes/public-meta.ts (−178 linhas) · app.ts ·
+  shared/src/cadeia-cac.ts (+113: referenciasDoGrupo) · index.ts · contract.ts (2→3) ·
+  33 testes novos
+
+codeRabbit:
+  status: SKIPPED
+  reason: "CLI em WSL, host macOS. Quarto gate seguido sem ele — lacuna de cobertura, não aprovação."
+
+summary: >
+  A implementação é sólida no que o epic mais protege: a regra 7.6 está
+  respeitada de forma verificável (não existe uma única divisão no arquivo da
+  rota), a extração da AC2 é uma movimentação pura provada pelos 14 testes da
+  44.1 sem alteração, e a `referenciasDoGrupo` resolve o problema real que a
+  AC11 tinha — expor a elegibilidade por campanha que `TetosDoGrupo` escondia.
+  A verificação por reversão do @dev é o padrão mais alto do epic até aqui: 8
+  defeitos reintroduzidos, 8 pegos, incluindo o conserto do próprio teste de
+  IDOR, que era decorativo com o banco mockado.
+
+  O que segura o gate é um defeito que a bateria não podia ver porque nenhum
+  teste exercita falha de leitura: quando a planilha de vendas está inacessível,
+  a rota devolve 200 afirmando "A etapa não tem nenhuma fonte de vendas
+  conectada". A frase é falsa e manda o operador configurar uma planilha que já
+  está configurada. É exatamente o chamado de 2026-08-14 que a Story 36.9 AC5
+  resolveu em `public-leads.ts`, e a rota irmã devolve 502 no mesmo cenário.
+
+  O escopo parcial da AC4 NÃO é defeito: o @dev parou numa decisão de produto
+  legítima (a chave de dedup de venda), declarou `naoAtribuivel` como a regra
+  7.4 manda, e provou que `cacReal`/`cplReal` não são afetados.
+
+issues:
+  - id: QA-448-01
+    severity: high
+    category: correctness
+    title: "Falha de leitura da planilha vira \"a etapa não tem fonte de vendas conectada\" — afirmação falsa, com 200"
+    file: packages/api/src/routes/public-cadeia-cac.ts:287
+    story: "44.8 (AC8 / regra 7.4)"
+    reproduced: true
+    description: >
+      `getFreshSalesDaily(...).catch(() => null)` engole QUALQUER erro e cai no
+      mesmo ramo do payload que representa "não há fonte conectada". Reproduzido
+      em teste: com `getFreshSalesDaily` rejeitando `Error("Google Sheets: 403
+      PERMISSION_DENIED")`, a rota devolve
+
+        status 200 · principal.motivo "semDados"
+        principal.message "A etapa não tem nenhuma fonte de vendas conectada
+                           (nem planilha, nem venda manual)."
+
+      O valor (`cacReal: null`) está certo. A CAUSA está errada, e é a causa que
+      determina a ação: "conectar planilha" e "a leitura falhou, tente de novo /
+      cheque a permissão" são ações opostas.
+
+      Precedente no próprio repo: a Story 36.9 AC5 separou exatamente essas duas
+      causas em `public-leads.ts:47-68` (`motivo: "sync_pendente"` vs
+      `motivo: "etapa_sem_fonte"`), porque a mensagem que as fundia fez o chamado
+      de 2026-08-14 pedir "rodar o sync" para um problema que rodar o sync não
+      resolvia.
+
+      A rota irmã `public-funnel-sales.ts:141-148` trata o mesmo caso com
+      `502 SALES_COMPUTE_FAILED`. Duas rotas, dois comportamentos, para a mesma
+      falha da mesma fonte.
+    suggestedFix: >
+      Trocar o `.catch(() => null)` por `try/catch` que distinga os dois casos:
+      erro → `motivo: "leituraFalhou"` (ou 502, como a irmã) com a mensagem do
+      erro; `payload === null` → o `semDados` atual. Um teste com
+      `mockRejectedValue` fecha.
+    blocking: true
+
+  - id: QA-448-02
+    severity: medium
+    category: correctness
+    title: "Família gratuita funde de volta as duas causas que a Story 36.9 separou"
+    file: packages/api/src/routes/public-cadeia-cac.ts:330
+    story: "44.8 (AC8)"
+    description: >
+      Sem linha no cache, a rota devolve "A etapa não tem cache de leads
+      computado (nenhuma planilha de leads ou pesquisa conectada, OU o sync ainda
+      não rodou)". A mensagem não é falsa — ela nomeia as duas causas — mas é
+      exatamente a ambiguidade que a 36.9 AC5 removeu, e as duas causas pedem
+      ações opostas.
+
+      `resolveLeadSource(db, stageId)` já existe (`lead-origin-sync.ts:122`) e é
+      o desempate que a 36.9 usa. Custo: uma query no ramo de ausência.
+    suggestedFix: "Espelhar `public-leads.ts:47-68`: `sync_pendente` vs `etapa_sem_fonte`."
+    blocking: false
+
+  - id: QA-448-03
+    severity: medium
+    category: consistency
+    title: "`SALES_PUBLIC_MAX_AGE_SEC` é silenciosamente ignorado nesta rota"
+    file: packages/api/src/routes/public-cadeia-cac.ts:287
+    story: "44.8"
+    description: >
+      A rota chama `getFreshSalesDaily(db, projectId, stageId)` sem `opts`, então
+      cai no `DEFAULT_MAX_AGE_MS = 120_000` fixo. A rota irmã honra
+      `fastify.config.SALES_PUBLIC_MAX_AGE_SEC` e aceita `?fresh=1`
+      (`public-funnel-sales.ts:59-62, 118`).
+
+      Quem ajustar a variável de ambiente vai ver o efeito numa rota e não na
+      outra, sem nada avisando. É a mesma classe de divergência que a AC2 existe
+      para impedir — só que na política de frescor em vez de no cálculo.
+    suggestedFix: "Passar `{ maxAgeMs: maxAgeFrom(query.fresh, fastify.config.SALES_PUBLIC_MAX_AGE_SEC) }` e extrair `maxAgeFrom` para um util compartilhado."
+    blocking: false
+
+  - id: QA-448-04
+    severity: low
+    category: clarity
+    title: "`vendasSemData` descreve o período inteiro, mas viaja ao lado de um número filtrado por range"
+    file: packages/api/src/routes/public-cadeia-cac.ts:110
+    story: "44.8 (AC4)"
+    description: >
+      `vendasSemData` é calculado sobre TODO o `byDay` contra `totalVendas`,
+      enquanto `principal.vendasReais` é filtrado pelo range. Com
+      `?from=2026-08-01&to=2026-08-05`, o payload mostra um `vendasSemData` de
+      toda a história ao lado de um `vendasReais` de 5 dias, e nada diz que os
+      dois falam de janelas diferentes.
+
+      Não é corrigível de outro jeito — venda sem data não pertence a range
+      nenhum, por definição. O que falta é dizer isso: o campo é agnóstico de
+      período e o payload não declara.
+    suggestedFix: "Renomear para `vendasSemDataNoTotal` ou documentar no payload que o diagnóstico é do total da etapa, não do range."
+    blocking: false
+
+  - id: QA-448-05
+    severity: low
+    category: test-quality
+    title: "O teste \"ranking sem CPM e CTR\" passaria com ranking vazio"
+    file: packages/api/src/__tests__/public-cadeia-cac.test.ts
+    story: "44.8 (AC10)"
+    description: >
+      `expect(metricas).not.toContain("cpm")` é vácuo se `ranking` for `[]`.
+      Verifiquei o cenário: hoje o ranking traz `['cpc','convLP','connectRate']`,
+      então a asserção é real — mas não está guardada, e uma mudança futura que
+      esvaziasse o ranking manteria o teste verde.
+
+      Pelo padrão que o próprio epic estabeleceu, é uma linha.
+    suggestedFix: "Adicionar `expect(metricas.length).toBeGreaterThan(0);` antes dos `not.toContain`."
+    blocking: false
+
+acCoverage:
+  AC1: { status: PASS, evidencia: "innerJoin presente; 404 (não 403); 400 em uuid e range inválidos; 4 testes" }
+  AC2: { status: PASS, evidencia: "Agrupamento em services/meta-campaign-daily.ts; campaigns/daily chama o mesmo; os 14 testes da 44.1 passam sem alteração; reversão do imposto quebra os DOIS lados, provando o caminho compartilhado" }
+  AC3: { status: PASS, evidencia: "Os 7 passos na ordem; ZERO divisão no arquivo da rota (verificado por varredura)" }
+  AC4: { status: PARTIAL, evidencia: "cacReal/cplReal entregues e testados, inclusive com cobertura 0%. Cobertura de atribuição declarada naoAtribuivel — parada legítima numa decisão de produto (chave de dedup), documentada. vendasSemData entregue. ⚠️ Ver QA-448-01" }
+  AC5: { status: PASS, evidencia: "guardaDeCobertura indisponivel na gratuita, naoSeAplica na paga; 2 testes; reversão pega" }
+  AC6: { status: PASS, evidencia: "Imposto uma vez; teste afirma o valor E nega o quadrado; reversão quebra 6 testes" }
+  AC7: { status: PASS, evidencia: "unidadeDasTaxas: decimal; ctr 0,02 e connect 0,80 testados; dinheiro absoluto e CPM ÷1000 preservados; reversão ×100 pega" }
+  AC8: { status: CONCERNS, evidencia: "4 dos 5 casos cobertos e corretos. O 5º — troca silenciosa de fonte — é o QA-448-01" }
+  AC9: { status: PASS, evidencia: "API_CONTRACT_VERSION = 3, com o aviso sobre packages/mcp no próprio arquivo; health.test.ts acompanha" }
+  AC10: { status: PASS, evidencia: "23 testes de rota + 10 do shared; 8 reversões provadas; teste de IDOR consertado de decorativo para real" }
+  AC11: { status: PASS, evidencia: "referenciasDoGrupo com elegibilidade exposta; régua idêntica à do teto, por decisão documentada; 10 testes; 3 reversões" }
+
+nfr:
+  seguranca:
+    status: PASS
+    nota: >
+      `requireScope(PUBLIC_READ_SCOPE)` + `innerJoin` contra `funnels.projectId`.
+      O teste de IDOR foi corrigido para inspecionar o predicado montado pelo
+      drizzle, e não só o 404 do mock — provado por reversão. Nenhum PII no
+      payload. 404 em vez de 403, como a AC1 exige.
+  performance:
+    status: PASS
+    nota: >
+      Medido: 10 campanhas × 365 dias = 32 ms · 20 × 365 = 49 ms · 40 × 730 =
+      187 ms para a composição inteira (tetos + ranking + referências). Sem
+      preocupação. Observação herdada da 44.7: `janelasDe7Dias` é recalculada uma
+      vez por métrica dentro de `calcularTetos` (5× por campanha) — irrelevante
+      nesta escala, não é débito desta story.
+  confiabilidade:
+    status: CONCERNS
+    nota: "QA-448-01 e QA-448-03: falha de leitura mal reportada e política de frescor divergente da rota irmã."
+  manutenibilidade:
+    status: PASS
+    nota: >
+      A extração da AC2 reduz `public-meta.ts` em 178 linhas e remove a
+      duplicação que a story identificou como semente de divergência. Comentários
+      documentam o PORQUÊ, com referência a story e linha.
+
+evidenciaDeQualidadeAcimaDoPadrao:
+  - "8 reversões executadas e documentadas, com a contagem de testes que cada uma quebrou"
+  - "Teste de IDOR identificado como decorativo pelo próprio @dev e consertado — inspeciona o predicado do drizzle, não só o 404 do mock"
+  - "O arredondamento por dia do spend foi detectado, medido (3,3e-6 relativo), mantido de propósito por consistência com a 44.1 e DOCUMENTADO no teste em vez de escondido"
+  - "AC4 parada por raciocínio correto (dois totalVendas com dedup diferente no mesmo payload) em vez de resolvida por chute"
+  - "Prova de runtime nos DOIS caminhos: tsx (dev) e dist/ compilado (produção)"
+
+baselineDeTestes:
+  suiteApi: "1192 passando / 11 falhando"
+  veredito: "Baseline preservado — as 11 falhas são as ambientais conhecidas, nos mesmos 5 arquivos (funnel-stages-lead-inputs, instagram-routes, instagram, projects, schema). Nenhum arquivo novo entre elas."
+
+porQueFailENaoConcerns: >
+  A AC8 é textual: "nunca troca silenciosa de fonte". O QA-448-01 devolve 200
+  com uma afirmação FALSA sobre a causa, e a ação que ela induz é a errada — é o
+  chamado de 2026-08-14 acontecendo de novo, num endpoint novo, contra o
+  precedente que já está no repo. A rota irmã trata o mesmo caso com 502.
+
+  FAIL não é bloqueio arbitrário: o conserto são ~6 linhas mais um teste com
+  `mockRejectedValue`, nada está em produção e o endpoint ainda não tem
+  consumidor. Corrigir agora custa o mínimo que vai custar — depois da 44.9, a
+  mensagem falsa já estará na tela do Inácio.
+
+  O QA-448-02 e o QA-448-03 são da mesma família e valem a mesma passada.
+  O QA-448-04 e o QA-448-05 podem ir para o backlog.
+
+recomendacao:
+  imediato:
+    - "QA-448-01 — distinguir falha de leitura de ausência de fonte (bloqueante)"
+    - "QA-448-02 — usar resolveLeadSource no ramo de ausência da gratuita"
+    - "QA-448-03 — honrar SALES_PUBLIC_MAX_AGE_SEC e ?fresh=1"
+  backlog:
+    - "QA-448-04 — declarar que vendasSemData é do total, não do range"
+    - "QA-448-05 — guardar o teste do ranking contra o caso vazio"
+  paraOPo:
+    - "AC4: decidir a chave de dedup de venda (txId+produto é a do dashboard) ou abrir a story do consumidor da 44.3, irmã da 44.12"
+  paraODevops:
+    - "Deploy da API é pré-requisito da 44.9 — contrato foi para 3 e o banner vai acusar defasagem até lá"

@@ -58,7 +58,12 @@ import { requireScope } from "../middleware/api-key-auth.js";
 import { PUBLIC_READ_SCOPE } from "./public-discovery.js";
 import { carregarSerieDiariaPorCampanha } from "../services/meta-campaign-daily.js";
 import { getFreshSalesDaily, type SalesDailyPayload } from "../services/sales-daily-sync.js";
-import { LEAD_ORIGIN_SCOPE, type LeadOriginPayload } from "../services/lead-origin-sync.js";
+import {
+  LEAD_ORIGIN_SCOPE,
+  resolveLeadSource,
+  type LeadOriginPayload,
+} from "../services/lead-origin-sync.js";
+import { maxAgeFrom } from "../utils/cache-freshness.js";
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -70,6 +75,8 @@ const paramsSchema = z.object({
 const querySchema = z.object({
   from: z.string().regex(YMD).optional(),
   to: z.string().regex(YMD).optional(),
+  /** QA-448-03: `?fresh=1` força o recompute, como na rota irmã de vendas. */
+  fresh: z.string().optional(),
 });
 
 function ymd(date: Date): string {
@@ -99,20 +106,26 @@ function resolveRange(from?: string, to?: string): { from: string; to: string } 
  * nada na tela avisando — a mesma classe do imposto ao quadrado, na direção em
  * que ninguém desconfia.
  *
- * Por isso `vendasSemData` viaja no payload (regra 7.4: ausência é declarada,
- * nunca corrigida em silêncio).
+ * Por isso `vendasSemDataNoTotal` viaja no payload (regra 7.4: ausência é
+ * declarada, nunca corrigida em silêncio).
+ *
+ * ⚠️ **O nome carrega `NoTotal` de propósito** (QA-448-04). O diagnóstico é do
+ * total da etapa e NÃO é escopável a range — venda sem data não pertence a
+ * janela nenhuma, por definição. Com `?from`/`?to`, ele viaja ao lado de um
+ * `vendasReais` filtrado, e sem o sufixo o consumidor leria "N vendas faltando
+ * NESTE range", que é outra afirmação.
  */
 function vendasDoPeriodo(
   p: SalesDailyPayload,
   range: { from: string; to: string } | null,
-): { vendas: number; vendasSemData: number } {
+): { vendas: number; vendasSemDataNoTotal: number } {
   const somaDoByDay = p.byDay.reduce((s, d) => s + d.ingressos.total, 0);
-  const vendasSemData = Math.max(0, p.totalVendas - somaDoByDay);
-  if (!range) return { vendas: p.totalVendas, vendasSemData };
+  const vendasSemDataNoTotal = Math.max(0, p.totalVendas - somaDoByDay);
+  if (!range) return { vendas: p.totalVendas, vendasSemDataNoTotal };
   const vendas = p.byDay
     .filter((d) => d.date >= range.from && d.date <= range.to)
     .reduce((s, d) => s + d.ingressos.total, 0);
-  return { vendas, vendasSemData };
+  return { vendas, vendasSemDataNoTotal };
 }
 
 export default fp(async function publicCadeiaCacRoutes(fastify) {
@@ -281,11 +294,39 @@ export default fp(async function publicCadeiaCacRoutes(fastify) {
       // `purchasesProxyPixel` é pixel e subconta (R$20k viraram ~R$6–7k
       // reportados, deck §7.1).
       let principal: Record<string, unknown>;
-      let vendasSemData = 0;
+      let vendasSemDataNoTotal = 0;
 
       if (familia === "paga") {
-        const fresh = await getFreshSalesDaily(fastify.db, projectId, stageId).catch(() => null);
-        if (!fresh?.payload) {
+        // ⚠️ QA-448-01: erro de LEITURA e ausência de FONTE são causas
+        // diferentes, com ações opostas — "cheque a permissão / tente de novo"
+        // contra "conecte uma planilha". O `.catch(() => null)` anterior fundia
+        // as duas e afirmava a segunda, mandando o operador configurar algo que
+        // já estava configurado.
+        //
+        // É o chamado de 2026-08-14 que a Story 36.9 AC5 resolveu em
+        // `public-leads.ts:47-68`. Aqui não dá para copiar o 502 da rota irmã
+        // (`public-funnel-sales.ts:141-148`): lá a venda é o payload inteiro,
+        // aqui é UM campo, e derrubar a resposta jogaria fora o teto, o ranking
+        // e os benchmarks, que estão calculados e corretos.
+        let fresh: Awaited<ReturnType<typeof getFreshSalesDaily>> | null = null;
+        let erroDeLeitura: string | null = null;
+        try {
+          fresh = await getFreshSalesDaily(fastify.db, projectId, stageId, {
+            maxAgeMs: maxAgeFrom(query.data.fresh, fastify.config.SALES_PUBLIC_MAX_AGE_SEC),
+          });
+        } catch (err) {
+          erroDeLeitura = err instanceof Error ? err.message : "Falha ao calcular vendas";
+        }
+
+        if (erroDeLeitura !== null) {
+          principal = {
+            metrica: "cacReal",
+            valor: null,
+            motivo: "leituraFalhou",
+            message: `Não foi possível LER a fonte de vendas desta etapa (a fonte existe; a leitura falhou): ${erroDeLeitura}`,
+            spend: agregado.spend,
+          };
+        } else if (!fresh?.payload) {
           principal = {
             metrica: "cacReal",
             valor: null,
@@ -295,7 +336,7 @@ export default fp(async function publicCadeiaCacRoutes(fastify) {
           };
         } else {
           const v = vendasDoPeriodo(fresh.payload, range);
-          vendasSemData = v.vendasSemData;
+          vendasSemDataNoTotal = v.vendasSemDataNoTotal;
           // ⚠️ `cacReal` sai mesmo com cobertura de atribuição 0% — ele depende
           // do TOTAL da etapa, não da atribuição por campanha. É a propriedade
           // que motivou a v1.1 inteira. `null` aqui só quando não há venda.
@@ -322,24 +363,44 @@ export default fp(async function publicCadeiaCacRoutes(fastify) {
           )
           .limit(1);
         const lead = row?.payload as LeadOriginPayload | undefined;
-        principal = lead
-          ? {
-              metrica: "cplReal",
-              valor: cplReal(agregado.spend, lead.uniqueLeads),
-              spend: agregado.spend,
-              leadsUnicos: lead.uniqueLeads,
-              fonteDeLead: lead.fonte,
-              ...(lead.uniqueLeads === 0 ? { motivo: "semDados" as const } : {}),
-              computedAt: row?.computedAt ?? null,
-            }
-          : {
-              metrica: "cplReal",
-              valor: null,
-              motivo: "semDados",
-              message:
-                "A etapa não tem cache de leads computado (nenhuma planilha de leads ou pesquisa conectada, ou o sync ainda não rodou).",
-              spend: agregado.spend,
-            };
+        if (lead) {
+          principal = {
+            metrica: "cplReal",
+            valor: cplReal(agregado.spend, lead.uniqueLeads),
+            spend: agregado.spend,
+            leadsUnicos: lead.uniqueLeads,
+            fonteDeLead: lead.fonte,
+            ...(lead.uniqueLeads === 0 ? { motivo: "semDados" as const } : {}),
+            computedAt: row?.computedAt ?? null,
+          };
+        } else {
+          // ⚠️ QA-448-02: "o sync ainda não rodou" (espere) e "a etapa não tem
+          // fonte" (configure) são ações OPOSTAS. Foi essa exata ambiguidade que
+          // a Story 36.9 AC5 removeu de `public-leads.ts:47-68`, e a mensagem
+          // que as juntava fez o chamado de 2026-08-14 pedir "rodar o sync" para
+          // um problema que rodar o sync não resolvia.
+          //
+          // `resolveLeadSource` é o mesmo desempate que a 36.9 usa. Uma query, e
+          // só no ramo de ausência.
+          const fonte = await resolveLeadSource(fastify.db, stageId).catch(() => null);
+          principal = fonte
+            ? {
+                metrica: "cplReal",
+                valor: null,
+                motivo: "syncPendente",
+                message:
+                  "A etapa TEM fonte de leads conectada, mas o cache ainda não foi computado. O sync roda diariamente; para antecipar, use scripts/backfill-lead-origin.ts.",
+                spend: agregado.spend,
+              }
+            : {
+                metrica: "cplReal",
+                valor: null,
+                motivo: "semDados",
+                message:
+                  "A etapa não tem planilha de leads nem pesquisa conectada. Rodar o sync não muda isso — é preciso conectar uma fonte à etapa.",
+                spend: agregado.spend,
+              };
+        }
       }
 
       return {
@@ -368,7 +429,7 @@ export default fp(async function publicCadeiaCacRoutes(fastify) {
           message:
             "A atribuição de venda/lead por campanha (Story 44.3) ainda não tem produtor ligado a uma etapa. Isto NÃO afeta cacReal/cplReal, que dependem do total da etapa.",
         },
-        vendasSemData,
+        vendasSemDataNoTotal,
         tetos,
         guardaDeCobertura,
         ranking,

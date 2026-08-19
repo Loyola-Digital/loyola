@@ -29,6 +29,13 @@ vi.mock("../services/sales-daily-sync.js", () => ({
   getFreshSalesDaily: (...args: unknown[]) => mockGetFreshSalesDaily(...args),
 }));
 
+/** QA-448-02: só `resolveLeadSource` é mockado — `LEAD_ORIGIN_SCOPE` é o real. */
+const mockResolveLeadSource = vi.fn();
+vi.mock("../services/lead-origin-sync.js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../services/lead-origin-sync.js")>();
+  return { ...real, resolveLeadSource: (...args: unknown[]) => mockResolveLeadSource(...args) };
+});
+
 const { default: publicCadeiaCacRoutes } = await import("../routes/public-cadeia-cac.js");
 
 const mockSelect = vi.fn();
@@ -169,6 +176,11 @@ const mockDbPlugin = fp(async (fastify) => {
   fastify.decorate("db", { select: mockSelect } as unknown as Database);
 });
 
+/** QA-448-03: a rota lê `SALES_PUBLIC_MAX_AGE_SEC` daqui. */
+const configStub = fp(async (fastify) => {
+  fastify.decorate("config", { SALES_PUBLIC_MAX_AGE_SEC: 300 } as never);
+});
+
 const apiKeyStub = fp(async (fastify) => {
   fastify.addHook("onRequest", async (request) => {
     (request as { apiKey?: unknown }).apiKey = {
@@ -182,6 +194,7 @@ const apiKeyStub = fp(async (fastify) => {
 async function buildApp() {
   const app = Fastify();
   await app.register(mockDbPlugin);
+  await app.register(configStub);
   await app.register(apiKeyStub);
   await app.register(publicCadeiaCacRoutes);
   await app.ready();
@@ -197,6 +210,8 @@ beforeEach(() => {
   mockSelect.mockReset();
   mockGetFreshSalesDaily.mockReset();
   mockGetFreshSalesDaily.mockResolvedValue(vendas());
+  mockResolveLeadSource.mockReset();
+  mockResolveLeadSource.mockResolvedValue(null);
 });
 
 describe("cadeia-cac — vínculo e acesso (AC1)", () => {
@@ -340,7 +355,7 @@ describe("cadeia-cac — o número principal (AC4)", () => {
     await app.close();
   });
 
-  it("venda SEM data é declarada em vendasSemData, não some em silêncio", async () => {
+  it("venda SEM data é declarada em vendasSemDataNoTotal, não some em silêncio", async () => {
     // `byDay` descarta linha sem data parseável (sales-daily-sync.ts:338),
     // `totalVendas` a mantém (:354). Sem declarar, o denominador do CAC vem
     // subcontado com range e o número sai ALTO sem nada avisar.
@@ -349,7 +364,7 @@ describe("cadeia-cac — o número principal (AC4)", () => {
     mockGetFreshSalesDaily.mockResolvedValue(vendas({ totalVendas: 47 })); // byDay soma 40
     const app = await buildApp();
     const res = await app.inject({ method: "GET", url: url() });
-    expect(res.json().vendasSemData).toBe(7);
+    expect(res.json().vendasSemDataNoTotal).toBe(7);
     await app.close();
   });
 
@@ -438,6 +453,9 @@ describe("cadeia-cac — composição e ranking (AC3, AC11)", () => {
     const app = await buildApp();
     const res = await app.inject({ method: "GET", url: url() });
     const metricas = res.json().ranking.map((i: { metrica: string }) => i.metrica);
+    // ⚠️ QA-448-05: sem esta linha os dois `not.toContain` passariam com o
+    // ranking VAZIO, e a asserção seria decorativa.
+    expect(metricas.length).toBeGreaterThan(0);
     expect(metricas).not.toContain("cpm");
     expect(metricas).not.toContain("ctr");
     // CPM e CTR seguem com TETO calculado — decomporCPC precisa dos dois.
@@ -512,6 +530,94 @@ describe("cadeia-cac — a guarda de cobertura é declarada (AC5)", () => {
     // Zero daria queda de 100% contra qualquer teto e a etapa sem dado
     // lideraria o ranking prometendo eliminar todo o custo.
     expect(body.ranking.map((i: { metrica: string }) => i.metrica)).not.toContain("convLP");
+    await app.close();
+  });
+});
+
+describe("cadeia-cac — falha de LEITURA não é ausência de FONTE (QA-448-01, QA-448-02)", () => {
+  it("planilha inacessível devolve leituraFalhou, não \"não tem fonte conectada\"", async () => {
+    // O defeito original: `.catch(() => null)` fundia as duas causas e afirmava
+    // a segunda, mandando o operador conectar uma planilha já conectada. É o
+    // chamado de 2026-08-14 que a Story 36.9 AC5 resolveu em public-leads.ts.
+    filaVinculo([etapa()]);
+    filaInsights(diasDe("c1", 10));
+    mockGetFreshSalesDaily.mockRejectedValue(new Error("Google Sheets: 403 PERMISSION_DENIED"));
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: url() });
+    const p = res.json().principal;
+    expect(p.motivo).toBe("leituraFalhou");
+    expect(p.message).toContain("403 PERMISSION_DENIED");
+    // A frase falsa não pode voltar por nenhum caminho.
+    expect(p.message).not.toContain("não tem nenhuma fonte de vendas conectada");
+    await app.close();
+  });
+
+  it("a falha de venda NÃO derruba teto, ranking e benchmarks, que estão corretos", async () => {
+    // Por isso a rota não copia o 502 da irmã: lá a venda é o payload inteiro,
+    // aqui é um campo só.
+    filaVinculo([etapa()]);
+    filaInsights(diasDe("c1", 10));
+    mockGetFreshSalesDaily.mockRejectedValue(new Error("timeout"));
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: url() });
+    const body = res.json();
+    expect(res.statusCode).toBe(200);
+    expect(body.tetos.cpc.valor).not.toBeNull();
+    expect(body.benchmarks.medianas.cpc).not.toBeNull();
+    expect(body.atuais.connectRate).toBeCloseTo(0.8, 6);
+    await app.close();
+  });
+
+  it("gratuita SEM cache mas COM fonte diz syncPendente (espere), não semDados (configure)", async () => {
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    filaLeadCache([]);
+    mockResolveLeadSource.mockResolvedValue({ kind: "pesquisa", sheets: [{}] });
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: url() });
+    const p = res.json().principal;
+    expect(p.motivo).toBe("syncPendente");
+    expect(p.message).toContain("backfill-lead-origin");
+    await app.close();
+  });
+
+  it("gratuita SEM cache e SEM fonte diz que rodar o sync não resolve", async () => {
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    filaLeadCache([]);
+    mockResolveLeadSource.mockResolvedValue(null);
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: url() });
+    const p = res.json().principal;
+    expect(p.motivo).toBe("semDados");
+    expect(p.message).toContain("Rodar o sync não muda isso");
+    await app.close();
+  });
+});
+
+describe("cadeia-cac — política de frescor igual à da rota irmã (QA-448-03)", () => {
+  it("usa SALES_PUBLIC_MAX_AGE_SEC em vez do default fixo de 120s", async () => {
+    filaVinculo([etapa()]);
+    filaInsights(diasDe("c1", 10));
+    const app = await buildApp();
+    await app.inject({ method: "GET", url: url() });
+    expect(mockGetFreshSalesDaily).toHaveBeenCalledWith(
+      expect.anything(),
+      PROJ,
+      STAGE,
+      { maxAgeMs: 300_000 },
+    );
+    await app.close();
+  });
+
+  it("`?fresh=1` força o recompute", async () => {
+    filaVinculo([etapa()]);
+    filaInsights(diasDe("c1", 10));
+    const app = await buildApp();
+    await app.inject({ method: "GET", url: url(PROJ, STAGE, "?fresh=1") });
+    expect(mockGetFreshSalesDaily).toHaveBeenCalledWith(expect.anything(), PROJ, STAGE, {
+      maxAgeMs: 0,
+    });
     await app.close();
   });
 });
