@@ -4,6 +4,12 @@ import fp from "fastify-plugin";
 import type { MindMetadata, MindSummary, Squad, SquadAccess } from "@loyola-x/shared";
 
 interface MindRegistry {
+  /**
+   * Resolve quando o scan inicial de squads termina. O scan NÃO bloqueia o boot
+   * (ver o hook onReady abaixo), então quem precisa do registry já populado —
+   * testes, sobretudo — deve aguardar isto depois de `app.ready()`.
+   */
+  whenReady(): Promise<void>;
   getAll(): Squad[];
   getAllForRole(role: string, projectMindIds?: string[]): Squad[];
   getById(id: string): MindMetadata | undefined;
@@ -344,22 +350,36 @@ export default fp(async function mindRegistryPlugin(fastify) {
   const basePath = fastify.config.MINDS_BASE_PATH;
   let mindsMap = new Map<string, MindMetadata>();
   let squadsCache: Squad[] = [];
+  let scanDone: Promise<void> = Promise.resolve();
 
   fastify.addHook("onReady", async () => {
-    try {
-      const result = await scanSquads(basePath);
-      mindsMap = result.minds;
-      squadsCache = result.squads;
-      fastify.log.info(
-        { mindCount: mindsMap.size, squadCount: squadsCache.length },
-        "MindRegistry initialized"
-      );
-    } catch (err) {
-      fastify.log.warn({ err }, "MindRegistry scan failed — continuing without minds");
-    }
+    // Scan roda em background: aguardá-lo aqui estoura o pluginTimeout de 10s
+    // do Fastify (squads/ tem milhares de arquivos) e derruba o boot da API
+    // inteira. Até terminar, o registry serve vazio e depois se auto-popula.
+    const startedAt = Date.now();
+    scanDone = scanSquads(basePath)
+      .then((result) => {
+        mindsMap = result.minds;
+        squadsCache = result.squads;
+        fastify.log.info(
+          {
+            mindCount: mindsMap.size,
+            squadCount: squadsCache.length,
+            durationMs: Date.now() - startedAt,
+          },
+          "MindRegistry initialized"
+        );
+      })
+      .catch((err) => {
+        fastify.log.warn({ err }, "MindRegistry scan failed — continuing without minds");
+      });
   });
 
   const registry: MindRegistry = {
+    whenReady() {
+      return scanDone;
+    },
+
     getAll() {
       return squadsCache;
     },

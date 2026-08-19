@@ -107,6 +107,7 @@ describe("PromptBuilder", () => {
     await app.register(mockEnvPlugin);
     await app.register(mindRegistryPlugin);
     await app.ready();
+    await app.mindRegistry.whenReady();
 
     const mind = app.mindRegistry.getById("mind_one")!;
     const prompt = await buildSystemPrompt(mind, 1, cache);
@@ -127,6 +128,7 @@ describe("PromptBuilder", () => {
     await app.register(mockEnvPlugin);
     await app.register(mindRegistryPlugin);
     await app.ready();
+    await app.mindRegistry.whenReady();
 
     const mind = app.mindRegistry.getById("mind_one")!;
     const promptTier1 = await buildSystemPrompt(mind, 1, cache);
@@ -146,6 +148,7 @@ describe("PromptBuilder", () => {
     await app.register(mockEnvPlugin);
     await app.register(mindRegistryPlugin);
     await app.ready();
+    await app.mindRegistry.whenReady();
 
     const agent = app.mindRegistry.getById("test-agent")!;
     const prompt = await buildSystemPrompt(agent, 1, cache);
@@ -162,6 +165,7 @@ describe("PromptBuilder", () => {
     await app.register(mockEnvPlugin);
     await app.register(mindRegistryPlugin);
     await app.ready();
+    await app.mindRegistry.whenReady();
 
     const mind = app.mindRegistry.getById("mind_two")!;
     // mind_two has COGNITIVE_OS in artifacts/ not system_prompts/
@@ -188,6 +192,7 @@ describe("PromptBuilder", () => {
     await app.register(mockEnvPlugin);
     await app.register(mindRegistryPlugin);
     await app.ready();
+    await app.mindRegistry.whenReady();
 
     const mind = app.mindRegistry.getById("mind_one")!;
     const estimate = getTokenEstimate(mind, 2);
@@ -201,6 +206,7 @@ describe("PromptBuilder", () => {
     await app.register(mockEnvPlugin);
     await app.register(mindRegistryPlugin);
     await app.ready();
+    await app.mindRegistry.whenReady();
 
     const agent = app.mindRegistry.getById("test-agent")!;
     const estimate = getTokenEstimate(agent, 1);
@@ -214,6 +220,7 @@ describe("PromptBuilder", () => {
     await app.register(mockEnvPlugin);
     await app.register(mindRegistryPlugin);
     await app.ready();
+    await app.mindRegistry.whenReady();
 
     const mind = app.mindRegistry.getById("mind_one")!;
     const result = await loadTier3Artifact(mind, "nonexistent", cache);
@@ -233,6 +240,7 @@ describe("MindEngine Fastify Plugin", () => {
     await app.register(mindRegistryPlugin);
     await app.register(mindEnginePlugin);
     await app.ready();
+    await app.mindRegistry.whenReady();
   });
 
   afterAll(async () => {
