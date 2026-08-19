@@ -129,15 +129,106 @@ export interface PlausibleSite {
   domain: string;
 }
 
+export interface PlausibleLogin {
+  email: string;
+  senha: string;
+}
+
+/** De onde veio a lista — a tela explica ao admin por que ela está vazia. */
+export type FonteDaLista = "sites-api" | "sessao" | "indisponivel";
+
 /**
- * Sites da instância. A Sites API não existe em toda instalação self-hosted —
- * quando falta, devolvemos lista vazia e a UI deixa digitar o domínio à mão, em
- * vez de travar a configuração.
+ * Sites da instância.
+ *
+ * Dois caminhos, nesta ordem:
+ *
+ * 1. `/api/v1/sites` — a Sites API documentada. **Não existe no Community
+ *    Edition**: a rota devolve 404 em HTML (não 401), porque o Plausible a
+ *    restringiu à Enterprise. Tentamos mesmo assim, porque quem roda EE tem.
+ *
+ * 2. `/api/sites` com sessão de login — é o endpoint que o próprio painel usa.
+ *    Ele existe no CE, mas recusa API key em qualquer forma (testadas: Bearer,
+ *    Token, X-API-KEY, query param e cookie — todas 401). Por isso o login é
+ *    opcional na configuração: sem ele, o seletor de site vira digitação livre.
  */
-export async function listarSites(creds: PlausibleCreds): Promise<PlausibleSite[]> {
+export async function listarSites(
+  creds: PlausibleCreds,
+  login?: PlausibleLogin | null,
+): Promise<{ sites: PlausibleSite[]; fonte: FonteDaLista }> {
   const r = await chamar<{ sites?: { domain: string }[] }>(creds, "/api/v1/sites?limit=100");
-  if (!r.ok) return [];
-  return (r.data.sites ?? []).map((s) => ({ domain: s.domain }));
+  if (r.ok) {
+    return { sites: (r.data.sites ?? []).map((s) => ({ domain: s.domain })), fonte: "sites-api" };
+  }
+
+  if (login?.email && login.senha) {
+    const porSessao = await listarSitesPorSessao(creds.baseUrl, login);
+    if (porSessao) return { sites: porSessao, fonte: "sessao" };
+  }
+  return { sites: [], fonte: "indisponivel" };
+}
+
+/** Junta os cookies de um Set-Cookie em um header `Cookie`. */
+function juntarCookies(...respostas: Response[]): string {
+  const pares = new Map<string, string>();
+  for (const res of respostas) {
+    for (const bruto of res.headers.getSetCookie?.() ?? []) {
+      const [par] = bruto.split(";");
+      const idx = par.indexOf("=");
+      if (idx > 0) pares.set(par.slice(0, idx).trim(), par.slice(idx + 1));
+    }
+  }
+  return [...pares].map(([k, v]) => `${k}=${v}`).join("; ");
+}
+
+/**
+ * Faz login no painel e lê `/api/sites`. `null` = não conseguiu (credencial
+ * errada, instância diferente, layout de login mudado).
+ *
+ * Só é chamado para montar a lista do seletor. Nenhuma métrica passa por aqui:
+ * estatística continua saindo da API key, que é a credencial certa para isso.
+ */
+export async function listarSitesPorSessao(
+  baseUrl: string,
+  login: PlausibleLogin,
+): Promise<PlausibleSite[] | null> {
+  const base = normalizarBaseUrl(baseUrl);
+  try {
+    const paginaLogin = await fetch(`${base}/login`, { signal: AbortSignal.timeout(20_000) });
+    if (!paginaLogin.ok) return null;
+    const html = await paginaLogin.text();
+    // O Phoenix exige o token do formulário; sem ele o POST é rejeitado antes
+    // de sequer olhar a senha.
+    const csrf = html.match(/name="_csrf_token"[^>]*value="([^"]+)"/)?.[1];
+    if (!csrf) return null;
+
+    const resposta = await fetch(`${base}/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: juntarCookies(paginaLogin),
+      },
+      body: new URLSearchParams({ _csrf_token: csrf, email: login.email, password: login.senha }),
+      redirect: "manual",
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    // Login OK redireciona; credencial errada devolve 200 com o formulário de
+    // volta ("Wrong email or password"). É assim que se distingue os dois.
+    const cookieSessao = juntarCookies(paginaLogin, resposta);
+    if (!cookieSessao) return null;
+
+    const sites = await fetch(`${base}/api/sites?limit=300`, {
+      headers: { Cookie: cookieSessao, Accept: "application/json" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!sites.ok) return null;
+    const dados = (await sites.json()) as { data?: Array<{ domain?: string }>; sites?: Array<{ domain?: string }> };
+    const lista = dados.data ?? dados.sites ?? [];
+    const dominios = lista.map((s) => s.domain).filter((d): d is string => Boolean(d));
+    return dominios.length > 0 ? dominios.map((domain) => ({ domain })) : null;
+  } catch {
+    return null;
+  }
 }
 
 // ============================================================
@@ -202,14 +293,27 @@ async function consultarV2(
       ...(pageFilter ? { filters: [["contains", "event:page", [pageFilter]]] } : {}),
     },
   });
-  // 404 aqui = instância antiga sem v2; vale tentar a v1. Um 400 pode ser
-  // ambos, então também cai pra v1 antes de desistir. Os demais (401/403/5xx)
-  // são problema real e viram erro visível.
+  // 404 = a rota não existe (instância antiga): vale tentar a v1.
+  //
+  // 400 é ambíguo e a distinção importa: quando vem com um corpo JSON de erro,
+  // a v2 EXISTE e recusou a consulta (ex.: "Metric `views_per_visit` cannot be
+  // queried with a filter on `event:page`"). Tratar isso como "sem v2" trocava
+  // uma mensagem que diz o que consertar por outra que culpa a instância.
   if (!r.ok) {
-    if (r.status === 404 || r.status === 400) return { tipo: "sem-v2" };
+    if (r.status === 404) return { tipo: "sem-v2" };
+    if (r.status === 400 && !temErroJson(r.erro)) return { tipo: "sem-v2" };
     return { tipo: "erro", detalhe: mensagemDoPlausible(r.erro, r.status) };
   }
   return { tipo: "ok", linhas: r.data.results ?? [] };
+}
+
+/** O corpo é um erro estruturado do Plausible (e não uma página 404 qualquer)? */
+function temErroJson(corpo: string): boolean {
+  try {
+    return typeof (JSON.parse(corpo) as { error?: unknown }).error === "string";
+  } catch {
+    return false;
+  }
 }
 
 /** Extrai o `error` do corpo do Plausible; cai pro HTTP quando não há corpo JSON. */
@@ -436,5 +540,275 @@ export async function montarDashboard(
       activeUsers: n(r.visitors),
       newUsers: 0,
     })),
+  };
+}
+
+// ============================================================
+// Dashboard completo — o mesmo recorte que a tela do Plausible mostra
+// ============================================================
+
+/**
+ * Períodos aceitos. São os mesmos nomes da API v2, e o rótulo de cada um mora
+ * na tela — repetir a tradução aqui daria dois lugares para desencontrar.
+ */
+export type PlausiblePeriodo = "day" | "7d" | "30d" | "month" | "6mo" | "12mo";
+
+/**
+ * Converte o período em um intervalo EXPLÍCITO de datas.
+ *
+ * Os períodos nomeados da v2 terminam ONTEM, não hoje: `"30d"` responde
+ * 19/07→17/08 e `"12mo"` para no mês passado. Num site que começou a receber
+ * tráfego hoje, isso devolve zero em toda janela maior que "day" — o número da
+ * tela ficaria em branco justamente quando há movimento. O painel do Plausible
+ * inclui o dia corrente, e é esse recorte que a gente reproduz.
+ *
+ * As datas saem no fuso de São Paulo porque o servidor roda em UTC: perto da
+ * meia-noite, "hoje" em UTC já é amanhã aqui, e o dia atual sumiria da conta.
+ */
+export function intervaloDoPeriodo(periodo: PlausiblePeriodo, agora = new Date()): [string, string] {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const hojeIso = fmt.format(agora); // aaaa-mm-dd
+  const [ano, mes, dia] = hojeIso.split("-").map(Number);
+  // Meio-dia UTC evita que somar/subtrair dias cruze fuso por acidente.
+  const base = new Date(Date.UTC(ano, mes - 1, dia, 12));
+
+  const menosDias = (n: number) => {
+    const d = new Date(base);
+    d.setUTCDate(d.getUTCDate() - n);
+    return d.toISOString().slice(0, 10);
+  };
+  const inicioDeMesAtras = (n: number) => {
+    const d = new Date(Date.UTC(ano, mes - 1 - n, 1, 12));
+    return d.toISOString().slice(0, 10);
+  };
+
+  switch (periodo) {
+    case "day": return [hojeIso, hojeIso];
+    case "7d": return [menosDias(6), hojeIso];
+    case "30d": return [menosDias(29), hojeIso];
+    case "month": return [inicioDeMesAtras(0), hojeIso];
+    case "6mo": return [inicioDeMesAtras(5), hojeIso];
+    case "12mo": return [inicioDeMesAtras(11), hojeIso];
+  }
+}
+
+/** Granularidade do gráfico: um dia inteiro se lê por hora; o resto, por dia. */
+function granularidade(periodo: PlausiblePeriodo): "time:hour" | "time:day" | "time:month" {
+  if (periodo === "day") return "time:hour";
+  if (periodo === "12mo" || periodo === "6mo") return "time:month";
+  return "time:day";
+}
+
+export interface LinhaBreakdown {
+  nome: string;
+  visitors: number;
+  /** Fração do total do bloco (0..1) — é a barra de proporção da tela. */
+  share: number;
+}
+
+export interface BlocoBreakdown {
+  /** Chave da aba (ex.: "channels", "sources"). */
+  chave: string;
+  rows: LinhaBreakdown[];
+}
+
+export interface PlausibleDashboardCompleto {
+  siteId: string;
+  periodo: PlausiblePeriodo;
+  pageFilter: string | null;
+  /** Visitantes nos últimos 5 minutos — o "current visitors" do Plausible. */
+  agora: number;
+  totals: {
+    visitors: number;
+    visits: number;
+    pageviews: number;
+    viewsPerVisit: number;
+    /** 0..1 */
+    bounceRate: number;
+    /** Segundos. */
+    visitDuration: number;
+  };
+  /** Série do gráfico. `label` já vem pronto para o eixo. */
+  serie: Array<{ label: string; visitors: number; pageviews: number }>;
+  /** Grupos de abas, na mesma divisão da tela do Plausible. */
+  fontes: BlocoBreakdown[];
+  paginas: BlocoBreakdown[];
+  locais: BlocoBreakdown[];
+  dispositivos: BlocoBreakdown[];
+}
+
+/** Converte linhas cruas em `LinhaBreakdown` com a proporção já calculada. */
+function comShare(
+  linhas: Array<{ metrics: number[]; dimensions: string[] }>,
+  vazio: string,
+  limite = 9,
+): LinhaBreakdown[] {
+  const total = linhas.reduce((soma, r) => soma + n(r.metrics[0]), 0);
+  return linhas.slice(0, limite).map((r) => {
+    const visitors = n(r.metrics[0]);
+    return {
+      nome: r.dimensions[0]?.trim() || vazio,
+      visitors,
+      // Proporção sobre o total do BLOCO, como o Plausible faz — não sobre o
+      // total do site, senão a soma das linhas visíveis nunca fecha em 100%.
+      share: total > 0 ? visitors / total : 0,
+    };
+  });
+}
+
+/** Visitantes nos últimos 5 minutos. Falha vira 0: é um indicador, não um dado duro. */
+export async function visitantesAgora(creds: PlausibleCreds, siteId: string): Promise<number> {
+  const r = await chamar<V2Resposta>(creds, "/api/v2/query", {
+    method: "POST",
+    body: { site_id: siteId, metrics: ["visitors"], date_range: "realtime" },
+  });
+  if (!r.ok) return 0;
+  return n(r.data.results?.[0]?.metrics?.[0] ?? 0);
+}
+
+/**
+ * Uma consulta por dimensão, todas em paralelo.
+ *
+ * O Plausible não devolve vários breakdowns numa chamada só — cada aba da tela
+ * é uma query. Rodar em paralelo é o que mantém o dashboard em um round-trip de
+ * latência em vez de doze.
+ */
+async function breakdowns(
+  creds: PlausibleCreds,
+  siteId: string,
+  periodo: PlausiblePeriodo,
+  filtro: string | null,
+  defs: Array<{ chave: string; dimensao: string; vazio: string }>,
+): Promise<BlocoBreakdown[]> {
+  const resultados = await Promise.all(
+    defs.map(async (d) => {
+      const r = await consultarV2Periodo(creds, siteId, periodo, ["visitors"], [d.dimensao], filtro);
+      return { chave: d.chave, rows: comShare(linhasOuVazio(r), d.vazio) };
+    }),
+  );
+  return resultados;
+}
+
+/** Igual a `consultarV2`, mas recebendo o período já resolvido em datas. */
+async function consultarV2Periodo(
+  creds: PlausibleCreds,
+  siteId: string,
+  periodo: PlausiblePeriodo,
+  metrics: string[],
+  dimensions: string[],
+  pageFilter?: string | null,
+): Promise<RespostaV2> {
+  const [inicio, fim] = intervaloDoPeriodo(periodo);
+  const r = await chamar<V2Resposta>(creds, "/api/v2/query", {
+    method: "POST",
+    body: {
+      site_id: siteId,
+      metrics,
+      date_range: [inicio, fim],
+      dimensions,
+      ...(pageFilter ? { filters: [["contains", "event:page", [pageFilter]]] } : {}),
+    },
+  });
+  if (!r.ok) {
+    if (r.status === 404 || r.status === 400) return { tipo: "sem-v2" };
+    return { tipo: "erro", detalhe: mensagemDoPlausible(r.erro, r.status) };
+  }
+  return { tipo: "ok", linhas: r.data.results ?? [] };
+}
+
+/**
+ * O dashboard inteiro do site, no mesmo recorte da tela do Plausible.
+ *
+ * Exige a v2: as abas de entrada/saída, região/cidade e canal não existem na v1,
+ * e montar meia tela em silêncio seria pior que dizer que a instância é antiga.
+ */
+export async function montarDashboardCompleto(
+  creds: PlausibleCreds,
+  siteId: string,
+  periodo: PlausiblePeriodo,
+  pageFilter?: string | null,
+): Promise<PlausibleDashboardCompleto> {
+  const filtro = pageFilter?.trim() || null;
+  // `views_per_visit` é a ÚNICA métrica que o Plausible recusa junto de um
+  // filtro em `event:page` — a consulta inteira volta 400. Com filtro, ela sai
+  // da lista e é derivada de pageviews/visits, que é a própria definição dela.
+  const METRICAS = filtro
+    ? ["visitors", "visits", "pageviews", "bounce_rate", "visit_duration"]
+    : ["visitors", "visits", "pageviews", "views_per_visit", "bounce_rate", "visit_duration"];
+
+  const [agregado, serie, agora, fontes, paginas, locais, dispositivos] = await Promise.all([
+    consultarV2Periodo(creds, siteId, periodo, METRICAS, [], filtro),
+    consultarV2Periodo(creds, siteId, periodo, ["visitors", "pageviews"], [granularidade(periodo)], filtro),
+    visitantesAgora(creds, siteId),
+    breakdowns(creds, siteId, periodo, filtro, [
+      { chave: "channels", dimensao: "visit:channel", vazio: "Direto" },
+      { chave: "sources", dimensao: "visit:source", vazio: "Direto" },
+      { chave: "campaigns", dimensao: "visit:utm_campaign", vazio: "(sem campanha)" },
+    ]),
+    breakdowns(creds, siteId, periodo, filtro, [
+      { chave: "pages", dimensao: "event:page", vazio: "/" },
+      { chave: "entry", dimensao: "visit:entry_page", vazio: "/" },
+      { chave: "exit", dimensao: "visit:exit_page", vazio: "/" },
+    ]),
+    breakdowns(creds, siteId, periodo, filtro, [
+      { chave: "countries", dimensao: "visit:country_name", vazio: "(desconhecido)" },
+      { chave: "regions", dimensao: "visit:region_name", vazio: "(desconhecido)" },
+      { chave: "cities", dimensao: "visit:city_name", vazio: "(desconhecido)" },
+    ]),
+    breakdowns(creds, siteId, periodo, filtro, [
+      { chave: "browsers", dimensao: "visit:browser", vazio: "(desconhecido)" },
+      { chave: "os", dimensao: "visit:os", vazio: "(desconhecido)" },
+      { chave: "devices", dimensao: "visit:device", vazio: "(desconhecido)" },
+    ]),
+  ]);
+
+  if (agregado.tipo === "erro") throw new PlausibleErro(agregado.detalhe);
+  if (agregado.tipo === "sem-v2") {
+    throw new PlausibleErro(
+      "Esta instância do Plausible não expõe a API v2 — o dashboard completo depende dela.",
+    );
+  }
+
+  const m = agregado.linhas[0]?.metrics ?? [];
+  const [visitors, visits, pageviews] = [0, 1, 2].map((i) => n(m[i] ?? 0));
+  const viewsPerVisit = filtro
+    ? visits > 0
+      ? Math.round((pageviews / visits) * 100) / 100
+      : 0
+    : n(m[3] ?? 0);
+  // Com filtro a lista tem uma métrica a menos, então as duas últimas andam
+  // uma posição para trás.
+  const desloc = filtro ? 0 : 1;
+  const bounce = n(m[3 + desloc] ?? 0);
+  const duracao = n(m[4 + desloc] ?? 0);
+
+  return {
+    siteId,
+    periodo,
+    pageFilter: filtro,
+    agora,
+    totals: {
+      visitors,
+      visits,
+      pageviews,
+      viewsPerVisit,
+      // O Plausible devolve 0..100; a tela formata como porcentagem.
+      bounceRate: bounce / 100,
+      visitDuration: duracao,
+    },
+    serie: linhasOuVazio(serie).map((r) => ({
+      label: r.dimensions[0] ?? "",
+      visitors: n(r.metrics[0]),
+      pageviews: n(r.metrics[1]),
+    })),
+    fontes,
+    paginas,
+    locais,
+    dispositivos,
   };
 }

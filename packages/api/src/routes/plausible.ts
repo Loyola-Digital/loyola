@@ -23,10 +23,14 @@ import { decryptGa4Secret, encryptGa4Secret } from "../services/ga4.js";
 import { invalidarAnalyticsDoProjeto } from "../services/analytics-cache.js";
 import {
   listarSites,
+  listarSitesPorSessao,
+  montarDashboardCompleto,
   normalizarBaseUrl,
   testarSite,
   validarCredenciais,
   type PlausibleCreds,
+  type PlausibleLogin,
+  type PlausiblePeriodo,
 } from "../services/plausible.js";
 
 const projectParamsSchema = z.object({ projectId: z.string().uuid() });
@@ -35,6 +39,12 @@ const configSchema = z.object({
   baseUrl: z.string().trim().url("Informe a URL completa (https://…)"),
   /** Opcional no PUT: permite editar só a URL sem redigitar a chave. */
   apiKey: z.string().trim().min(10).optional(),
+  /**
+   * Login do painel — opcional, e usado SÓ para listar os sites. A Sites API
+   * não existe no Community Edition, e `/api/sites` recusa API key.
+   */
+  loginEmail: z.string().trim().email().optional().or(z.literal("")),
+  loginPassword: z.string().optional(),
 });
 
 /**
@@ -69,6 +79,16 @@ export default fp(async function plausibleRoutes(fastify) {
     };
   }
 
+  /** Login do painel, se cadastrado. Só serve para listar sites. */
+  async function lerLogin(): Promise<PlausibleLogin | null> {
+    const [row] = await fastify.db.select().from(plausibleConfig).limit(1);
+    if (!row?.loginEmail || !row.loginPasswordEncrypted || !row.loginPasswordIv) return null;
+    return {
+      email: row.loginEmail,
+      senha: decryptGa4Secret(row.loginPasswordEncrypted, row.loginPasswordIv),
+    };
+  }
+
   async function getProjectAccess(projectId: string, userId: string, userRole: string) {
     if (userRole === "guest") {
       const [member] = await fastify.db
@@ -96,14 +116,22 @@ export default fp(async function plausibleRoutes(fastify) {
    */
   fastify.get("/api/plausible/config", async (request) => {
     const [row] = await fastify.db
-      .select({ baseUrl: plausibleConfig.baseUrl, updatedAt: plausibleConfig.updatedAt })
+      .select({
+        baseUrl: plausibleConfig.baseUrl,
+        updatedAt: plausibleConfig.updatedAt,
+        loginEmail: plausibleConfig.loginEmail,
+      })
       .from(plausibleConfig)
       .limit(1);
-    if (!row) return { configured: false, baseUrl: null, updatedAt: null, podeEditar: ehAdmin(request.userRole) };
+    if (!row) {
+      return { configured: false, baseUrl: null, updatedAt: null, loginEmail: null, podeEditar: ehAdmin(request.userRole) };
+    }
     return {
       configured: true,
       baseUrl: row.baseUrl,
       updatedAt: row.updatedAt.toISOString(),
+      // O e-mail volta (é identificador, não segredo); a senha nunca.
+      loginEmail: row.loginEmail,
       podeEditar: ehAdmin(request.userRole),
     };
   });
@@ -131,10 +159,27 @@ export default fp(async function plausibleRoutes(fastify) {
 
     const enc = encryptGa4Secret(apiKey);
     const now = new Date();
+
+    // Login: e-mail vazio apaga o cadastro; senha em branco mantém a guardada.
+    const emailInformado = body.data.loginEmail?.trim() ?? undefined;
+    const senhaInformada = body.data.loginPassword?.trim() || undefined;
+    const senhaEnc = senhaInformada ? encryptGa4Secret(senhaInformada) : null;
+    const camposLogin =
+      emailInformado === undefined
+        ? {}
+        : emailInformado === ""
+          ? { loginEmail: null, loginPasswordEncrypted: null, loginPasswordIv: null }
+          : {
+              loginEmail: emailInformado,
+              ...(senhaEnc
+                ? { loginPasswordEncrypted: senhaEnc.encrypted, loginPasswordIv: senhaEnc.iv }
+                : {}),
+            };
+
     if (atual) {
       await fastify.db
         .update(plausibleConfig)
-        .set({ baseUrl, apiKeyEncrypted: enc.encrypted, apiKeyIv: enc.iv, updatedAt: now })
+        .set({ baseUrl, apiKeyEncrypted: enc.encrypted, apiKeyIv: enc.iv, updatedAt: now, ...camposLogin })
         .where(eq(plausibleConfig.id, atual.id));
     } else {
       await fastify.db.insert(plausibleConfig).values({
@@ -143,10 +188,28 @@ export default fp(async function plausibleRoutes(fastify) {
         apiKeyIv: enc.iv,
         createdBy: request.userId,
         updatedAt: now,
+        ...camposLogin,
       });
     }
 
-    return { configured: true, baseUrl, aviso: teste.inconclusivo ? teste.detalhe : null };
+    // Diz de cara se o login serve para listar — descobrir isso só na tela do
+    // projeto, com o seletor vazio, é o que gerou a reclamação de "tive de
+    // colar a URL na mão".
+    let sitesEncontrados: number | null = null;
+    if (emailInformado) {
+      const login = await lerLogin();
+      if (login) {
+        const lista = await listarSitesPorSessao(baseUrl, login);
+        sitesEncontrados = lista?.length ?? 0;
+      }
+    }
+
+    return {
+      configured: true,
+      baseUrl,
+      aviso: teste.inconclusivo ? teste.detalhe : null,
+      sitesEncontrados,
+    };
   });
 
   /**
@@ -195,12 +258,12 @@ export default fp(async function plausibleRoutes(fastify) {
   fastify.get("/api/plausible/sites", async (request, reply) => {
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
     const creds = await lerCreds();
-    if (!creds) return { disponivel: false, sites: [] };
+    if (!creds) return { disponivel: false, sites: [], fonte: "indisponivel" as const };
     try {
-      const sites = await listarSites(creds);
-      return { disponivel: sites.length > 0, sites };
+      const { sites, fonte } = await listarSites(creds, await lerLogin());
+      return { disponivel: sites.length > 0, sites, fonte };
     } catch {
-      return { disponivel: false, sites: [] };
+      return { disponivel: false, sites: [], fonte: "indisponivel" as const };
     }
   });
 
@@ -286,5 +349,58 @@ export default fp(async function plausibleRoutes(fastify) {
       .where(eq(plausibleProjectSites.projectId, params.data.projectId));
     invalidarAnalyticsDoProjeto(params.data.projectId);
     return { siteId: null };
+  });
+
+  // ============================================================
+  // Dashboard completo do site (o mesmo recorte da tela do Plausible)
+  // ============================================================
+
+  /**
+   * Tudo que a tela do Plausible mostra, em uma chamada.
+   *
+   * São ~14 consultas ao Plausible (uma por aba, porque a API não devolve vários
+   * breakdowns juntos), disparadas em paralelo. Deixar o navegador fazer as 14
+   * multiplicaria a latência e exporia a chave — que nunca sai do servidor.
+   *
+   * O filtro de página é opcional: passado, recorta o site no pedaço de uma
+   * etapa; ausente, mostra o site inteiro como o painel do Plausible mostra.
+   */
+  fastify.get("/api/projects/:projectId/plausible/dashboard", async (request, reply) => {
+    const params = projectParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const query = z
+      .object({
+        periodo: z.enum(["day", "7d", "30d", "month", "6mo", "12mo"]).default("30d"),
+        pageFilter: z.string().trim().max(255).optional(),
+      })
+      .safeParse(request.query);
+    if (!query.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+    const [site] = await fastify.db
+      .select({ siteId: plausibleProjectSites.siteId })
+      .from(plausibleProjectSites)
+      .where(eq(plausibleProjectSites.projectId, params.data.projectId))
+      .limit(1);
+    if (!site) return reply.code(409).send({ error: "Este projeto não usa Plausible" });
+
+    const creds = await lerCreds();
+    if (!creds) return reply.code(409).send({ error: "Plausible não configurado" });
+
+    try {
+      return await montarDashboardCompleto(
+        creds,
+        site.siteId,
+        query.data.periodo as PlausiblePeriodo,
+        query.data.pageFilter,
+      );
+    } catch (err) {
+      request.log.error({ err }, "[plausible] dashboard falhou");
+      return reply.code(502).send({
+        error: err instanceof Error ? err.message : "Erro ao consultar o Plausible",
+      });
+    }
   });
 });

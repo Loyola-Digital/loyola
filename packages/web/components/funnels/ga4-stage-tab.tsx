@@ -17,6 +17,7 @@ import {
   useGa4StageAnalytics,
   type Ga4Property,
 } from "@/lib/hooks/use-ga4";
+import { PlausibleDashboard } from "@/components/analytics/plausible-dashboard";
 import {
   useDeletePlausibleSite,
   usePlausibleSite,
@@ -216,7 +217,7 @@ function Ga4Connected({
   );
 }
 
-// ---- Plausible: mesmo corpo, outro cabeçalho ----
+// ---- Plausible: o painel completo, mais o filtro de página da etapa ----
 function PlausibleConnected({
   projectId,
   funnelId,
@@ -225,37 +226,80 @@ function PlausibleConnected({
   baseUrl,
 }: Props & { siteId: string; baseUrl: string | null }) {
   const del = useDeletePlausibleSite(projectId);
+  const stageQ = useFunnelStage(projectId, funnelId, stageId);
+  const updateStage = useUpdateStage(projectId, funnelId, stageId);
+
+  const savedFilter = stageQ.data?.ga4PageFilter ?? "";
+  const [filter, setFilter] = useState(savedFilter);
+  useEffect(() => { setFilter(savedFilter); }, [savedFilter]);
+
+  function saveFilter() {
+    const value = filter.trim() || null;
+    updateStage.mutate(
+      { ga4PageFilter: value },
+      { onSuccess: () => toast.success(value ? "Página salva" : "Filtro limpo") },
+    );
+  }
 
   return (
-    <StageAnalyticsBody
-      projectId={projectId}
-      funnelId={funnelId}
-      stageId={stageId}
-      header={
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2 text-sm">
-            <Globe className="h-4 w-4 text-primary" />
-            <span className="font-medium">Plausible</span>
-            <Badge variant="secondary" className="max-w-[220px] truncate text-[10px]" title={siteId}>{siteId}</Badge>
-            {baseUrl && (
-              <span className="hidden truncate text-[10px] text-muted-foreground sm:inline" title={baseUrl}>
-                {baseUrl.replace(/^https?:\/\//, "")}
-              </span>
-            )}
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 shrink-0 gap-1 px-2 text-[10px] text-muted-foreground hover:text-red-500"
-            onClick={() => del.mutate(undefined, { onSuccess: () => toast.success("Projeto voltou para o GA4"), onError: (e) => toast.error(errMsg(e)) })}
-            disabled={del.isPending}
-          >
-            {del.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
-            Voltar ao GA4
+    <div className="space-y-5">
+      {/* Filtro da etapa. Vazio mostra o site inteiro — que é exatamente o que
+          o painel do Plausible mostra, então não é um estado "incompleto". */}
+      <section className="max-w-xl space-y-2 rounded-xl border border-border/40 bg-card/60 p-4">
+        <Label htmlFor="plausible-page-filter" className="text-xs font-medium">Página desta etapa (opcional)</Label>
+        <p className="text-[11px] text-muted-foreground">
+          Um trecho da URL para recortar o painel no pedaço desta etapa, ex.: <code>bbe-fc1</code>.
+          Vazio = site inteiro.
+        </p>
+        <div className="flex gap-2">
+          <Input
+            id="plausible-page-filter"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="ex.: bbe-fc1"
+            onKeyDown={(e) => e.key === "Enter" && saveFilter()}
+          />
+          <Button size="sm" className="shrink-0 gap-1.5" onClick={saveFilter} disabled={updateStage.isPending || filter.trim() === savedFilter.trim()}>
+            {updateStage.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Salvar
           </Button>
         </div>
-      }
-    />
+      </section>
+
+      <PlausibleDashboard
+        projectId={projectId}
+        pageFilter={savedFilter}
+        header={
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2 text-sm">
+              <Globe className="h-4 w-4 text-primary" />
+              <span className="font-medium">Plausible</span>
+              <Badge variant="secondary" className="max-w-[220px] truncate text-[10px]" title={siteId}>{siteId}</Badge>
+              {baseUrl && (
+                <a
+                  href={`${baseUrl}/${encodeURIComponent(siteId)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hidden truncate text-[10px] text-muted-foreground underline-offset-2 hover:underline sm:inline"
+                >
+                  abrir no Plausible
+                </a>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 shrink-0 gap-1 px-2 text-[10px] text-muted-foreground hover:text-red-500"
+              onClick={() => del.mutate(undefined, { onSuccess: () => toast.success("Projeto voltou para o GA4"), onError: (e) => toast.error(errMsg(e)) })}
+              disabled={del.isPending}
+            >
+              {del.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
+              Voltar ao GA4
+            </Button>
+          </div>
+        }
+      />
+    </div>
   );
 }
 
@@ -292,21 +336,32 @@ function PlausiblePicker({ projectId, trocandoDoGa4 }: { projectId: string; troc
         {trocandoDoGa4 && <> Ao salvar, <strong>este projeto deixa de ler o GA4</strong> e passa a ler o Plausible.</>}
       </p>
 
-      {sites.data?.disponivel && sites.data.sites.length > 0 && (
+      {sites.isLoading ? (
+        <Skeleton className="h-8" />
+      ) : sites.data && sites.data.sites.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
-          {sites.data.sites.slice(0, 12).map((s) => (
+          {sites.data.sites.map((s) => (
             <Button
               key={s.domain}
               variant="outline"
               size="sm"
-              className="h-7 px-2 text-[11px]"
+              className="h-7 max-w-full px-2 text-[11px]"
               disabled={setSite.isPending}
               onClick={() => salvar(s.domain)}
             >
-              {s.domain}
+              <span className="truncate">{s.domain}</span>
             </Button>
           ))}
         </div>
+      ) : (
+        // Sem lista, dizer POR QUE — senão parece que a instância não tem site,
+        // quando na verdade é a API que não expõe a listagem.
+        <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+          A lista de sites não veio: a API de sites do Plausible não existe no Community Edition, e o
+          endpoint do painel exige login. Um admin pode cadastrar o login em{" "}
+          <strong>Configurações → Analytics</strong> para a lista aparecer aqui. Enquanto isso, digite
+          o domínio abaixo.
+        </p>
       )}
 
       <div className="flex gap-2">
