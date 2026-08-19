@@ -21,7 +21,7 @@
  */
 
 import { z } from "zod";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { funnels, funnelStages } from "../db/schema.js";
 import { requireScope } from "../middleware/api-key-auth.js";

@@ -276,9 +276,7 @@ export default fp(async function stageComercialRoutes(fastify) {
       const termIdx = findTermHeader(data.headers);
       if (emailIdx === -1) continue; // planilha sem email (ex. event_sales) não alimenta CRM
 
-      let rowIndex = -1;
       for (const row of data.rows) {
-        rowIndex++;
         const email = (row[emailIdx] ?? "").trim();
         if (!email) {
           skippedNoEmail++;

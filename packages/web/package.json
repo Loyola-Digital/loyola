@@ -3,12 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "pnpm --filter=@loyola-x/shared build && next build",
+    "build": "pnpm --filter=@loyola-x/shared build && next build --turbopack",
     "dev": "next dev --port 3000",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:webpack": "pnpm --filter=@loyola-x/shared build && next build"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.0.4",
