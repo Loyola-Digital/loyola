@@ -345,6 +345,23 @@ export function janelasDe7Dias(dias: readonly DiaBruto[]): Janela[] {
   if (dias.length === 0) return [];
   const ordenados = [...dias].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const ms = ordenados.map((d) => paraMs(d.date));
+  const n = ordenados.length;
+
+  // Último índice que compartilha a data de cada posição. Uma passada, O(n).
+  //
+  // ⚠️ QA-447-01: sem isto, `slice(inicio, fim + 1)` para no índice corrente e
+  // a primeira janela de uma data com DUAS linhas agrega só um pedaço do dia —
+  // que então concorre ao teto sozinho. Medido: numa campanha com dois anúncios
+  // por dia, o teto de CPC saía 0,20 em vez de 0,92 (4,6× inflado), vindo de um
+  // anúncio isolado. A versão O(n²) não tinha o defeito porque filtrava por
+  // data e apanhava o dia inteiro; a AC8 manda trocar a implementação SEM
+  // mudar o comportamento.
+  const ultimoDaData = new Array<number>(n);
+  for (let i = n - 1, bloco = n - 1; i >= 0; i -= 1) {
+    if (ordenados[i]!.date !== ordenados[bloco]!.date) bloco = i;
+    ultimoDaData[i] = bloco;
+  }
+
   const out: Janela[] = [];
   // Dois ponteiros sobre a série ordenada (Story 44.7 AC8). A versão anterior
   // filtrava a série inteira a cada dia — O(n²), medido em 30ms para 365 dias e
@@ -352,13 +369,13 @@ export function janelasDe7Dias(dias: readonly DiaBruto[]): Janela[] {
   // `[fim − 6 dias, fim]` por DATA, e uma janela é emitida por LINHA (duas
   // linhas na mesma data emitem duas janelas iguais, como antes).
   let inicio = 0;
-  for (let fim = 0; fim < ordenados.length; fim += 1) {
+  for (let fim = 0; fim < n; fim += 1) {
     const inicioMs = ms[fim]! - 6 * DIA_MS;
     while (ms[inicio]! < inicioMs) inicio += 1;
     out.push({
       de: new Date(inicioMs).toISOString().slice(0, 10),
       ate: ordenados[fim]!.date,
-      agregado: agregar(ordenados.slice(inicio, fim + 1)),
+      agregado: agregar(ordenados.slice(inicio, ultimoDaData[fim]! + 1)),
     });
   }
   return out;
@@ -640,12 +657,27 @@ export function tetosResolvidos(tetos: TetosDoGrupo): Teto[] {
 }
 
 /**
+ * As métricas que podem ser LINHA do ranking.
+ *
+ * ⚠️ CPM e CTR ficam de fora (spec §2.4). `CPC = (CPM/1000) / CTR` é
+ * identidade, não coincidência: a queda do CPC já CONTÉM a do CPM e a do CTR.
+ * Listar os três daria *"duas oportunidades onde há uma só"* — no cenário
+ * dourado da §8, CTR (−33,33%) e CPM (−25%) se enfiavam entre o CPC e o
+ * Connect Rate e empurravam o Connect de 3º para 5º (QA-447-02).
+ *
+ * Eles continuam com teto calculado: `decomporCPC` precisa dos dois para dizer
+ * quanto do gap do CPC fecha por cada lado — que é o papel que a spec lhes dá.
+ */
+const METRICAS_RANQUEAVEIS: readonly Metrica[] = ["cpc", "connectRate", "convLP"];
+
+/**
  * Monta os itens de ranking a partir dos tetos resolvidos e das métricas atuais
  * (AC7). Métrica sem teto **não entra** — compete só contra benchmark.
  */
 export function montarRanking(tetos: TetosDoGrupo, atuais: Metricas): ItemRanking[] {
   const itens: ItemRanking[] = [];
   for (const teto of tetosResolvidos(tetos)) {
+    if (!METRICAS_RANQUEAVEIS.includes(teto.metrica)) continue;
     const atual = atuais[teto.metrica];
     if (atual === null) continue;
     const queda = quedaReal(teto.metrica, atual, teto.valor);

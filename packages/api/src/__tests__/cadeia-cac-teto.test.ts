@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   calcularTetos,
+  janelasDe7Dias,
   tetosResolvidos,
   montarRanking,
   metricasDoTeto,
@@ -243,5 +244,91 @@ describe("montarRanking e metricasDoTeto (AC7)", () => {
 
   it("metricasDoTeto devolve null onde não há teto", () => {
     expect(metricasDoTeto(calcularTetos([serie("c1", [])], "paga")).ctr).toBeNull();
+  });
+});
+
+/**
+ * QA-447-01 — a reescrita O(n) da AC8 mudou o comportamento.
+ *
+ * A versão antiga montava a janela com `filter(t >= inicio && t <= fim)`, que
+ * inclui TODAS as linhas da data final. A nova usa `slice(inicio, fim + 1)`,
+ * que para no índice corrente — então, com duas linhas na mesma data, a
+ * primeira janela agrega só um pedaço do dia e concorre ao teto com ele.
+ *
+ * A AC8 é explícita: trocar a implementação SEM mudar o comportamento.
+ */
+describe("QA-447-01 — duas linhas na mesma data não produzem janela parcial", () => {
+  const parcial = dia("2026-05-10", { spend: 100, impressions: 10_000, linkClicks: 200 });
+  const resto = dia("2026-05-10", { spend: 300, impressions: 30_000, linkClicks: 600 });
+
+  it("toda janela que termina numa data agrega o DIA INTEIRO, não um pedaço", () => {
+    for (const j of janelasDe7Dias([parcial, resto])) {
+      expect(j.agregado.spend).toBe(400);
+      expect(j.agregado.impressions).toBe(40_000);
+    }
+  });
+
+  it("uma janela por LINHA, como antes da reescrita", () => {
+    expect(janelasDe7Dias([parcial, resto])).toHaveLength(2);
+  });
+
+  /**
+   * O impacto que motivou a severidade: campanha de 7 dias com dois anúncios
+   * por dia (A barato e pequeno, B caro e grande). O CPC verdadeiro da semana é
+   * 6440/7000 = 0,92. Com a janela parcial, o teto vinha do anúncio A isolado.
+   */
+  it("o teto não pode vir de um anúncio isolado num dia", () => {
+    const dias = ["10", "11", "12", "13", "14", "15", "16"].flatMap((d) => [
+      dia(`2026-05-${d}`, { spend: 20, impressions: 12_000, linkClicks: 100 }),
+      dia(`2026-05-${d}`, { spend: 900, impressions: 60_000, linkClicks: 900 }),
+    ]);
+    const t = teto(calcularTetos([serie("dois-ads", dias)], "paga").cpc);
+    expect(t.valor).toBeCloseTo(0.92, 4);
+  });
+});
+
+/**
+ * QA-447-02 — CPM e CTR não são linhas próprias do ranking.
+ *
+ * spec §2.4: *"o mesmo ganho seria contado duas vezes — CPM caindo 25% arrasta
+ * o CPC junto, e o ranking listaria duas oportunidades onde há uma só"*.
+ * `CPC = (CPM/1000)/CTR`, então os −50% do CPC já CONTÊM os −25% do CPM e os
+ * −33,33% do CTR.
+ *
+ * O teste dourado existente monta três `ItemRanking` à mão e chama `ranquear`.
+ * Este passa pelo `montarRanking`, que é o produtor real.
+ */
+describe("QA-447-02 — montarRanking no cenário dourado da spec §8", () => {
+  const atuais = { cpm: 20, ctr: 0.02, cpc: 1.0, connectRate: 0.8, convLP: 0.024 };
+  const comTeto = (metrica: string, valor: number): Teto =>
+    ({
+      metrica, valor, campaignId: "X", de: "2026-05-12", ate: "2026-05-18",
+      base: 999_999, confianca: "alta", fonte: "ad-level",
+    }) as Teto;
+  const tetosDourados = {
+    cpm: comTeto("cpm", 15),
+    ctr: comTeto("ctr", 0.03),
+    cpc: comTeto("cpc", 0.5),
+    connectRate: comTeto("connectRate", 0.9),
+    convLP: comTeto("convLP", 0.053125),
+  } as ReturnType<typeof calcularTetos>;
+
+  it("devolve exatamente Conv. LP › CPC › Connect", () => {
+    expect(montarRanking(tetosDourados, atuais).map((i) => i.metrica)).toEqual([
+      "convLP",
+      "cpc",
+      "connectRate",
+    ]);
+  });
+
+  it("nem CPM nem CTR viram linha do ranking, mesmo com teto resolvido", () => {
+    const metricas = montarRanking(tetosDourados, atuais).map((i) => i.metrica);
+    expect(metricas).not.toContain("cpm");
+    expect(metricas).not.toContain("ctr");
+  });
+
+  it("o Connect Rate fica em 3º, não empurrado para 5º", () => {
+    const r = montarRanking(tetosDourados, atuais);
+    expect(r[2]?.metrica).toBe("connectRate");
   });
 });
