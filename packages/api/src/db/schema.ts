@@ -695,6 +695,30 @@ export const funnelStages = pgTable(
     auditStatus: varchar("audit_status", { length: 20 }).default("pending").notNull(),
     projectionEndDate: date("projection_end_date"),
     leadGoal: integer("lead_goal"),
+    /**
+     * Story 44.9 (AC4) — a LP desta etapa tem VSL?
+     *
+     * ⚠️ É por ETAPA, não por LP, e a decisão é do @po (2026-08-19). O campo
+     * existe para liberar o benchmark de Conv. LP da spec §5 (4% / 7,5%), que
+     * a spec aplica *"somente quando a LP tem VSL"* — e esse benchmark é
+     * comparado contra o `convLP` DA ETAPA, um número agregado. Não existe
+     * Conv. LP por LP na spec, então um booleano por LP seria falsa precisão:
+     * exigiria inventar uma regra de agregação ("todas têm?", "a dominante
+     * tem?") que a spec não define.
+     *
+     * `null` = ninguém respondeu ainda — diferente de `false` ("não tem VSL").
+     * Sem resposta, o benchmark de Conv. LP não se aplica e a coluna fica sem
+     * alvo, com o motivo (regra 7.4).
+     */
+    lpTemVsl: boolean("lp_tem_vsl"),
+    /**
+     * Story 44.9 (AC4) — ticket médio da etapa, em reais.
+     *
+     * Decide entre os dois benchmarks de Conv. LP: 4% se > R$147, 7,5% se
+     * abaixo (spec §5). Campo MANUAL **apenas enquanto não houver venda real** —
+     * com venda, o número certo é `faturamento ÷ nº de vendas` do Loyola.
+     */
+    ticketMedioManual: numeric("ticket_medio_manual", { precision: 12, scale: 2 }),
     // Story 18.56: URL manual de cada LP da tabela "Desempenho de Testes de
     // LPs". Chave = lpName normalizado (trim+lowercase, ex. "lpa"); valor =
     // URL http(s). As LPs são derivadas do Campaign Name (18.46), então o
