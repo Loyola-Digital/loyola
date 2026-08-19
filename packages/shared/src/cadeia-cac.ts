@@ -344,16 +344,39 @@ export interface Janela {
 export function janelasDe7Dias(dias: readonly DiaBruto[]): Janela[] {
   if (dias.length === 0) return [];
   const ordenados = [...dias].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const ms = ordenados.map((d) => paraMs(d.date));
+  const n = ordenados.length;
+
+  // Último índice que compartilha a data de cada posição. Uma passada, O(n).
+  //
+  // ⚠️ QA-447-01: sem isto, `slice(inicio, fim + 1)` para no índice corrente e
+  // a primeira janela de uma data com DUAS linhas agrega só um pedaço do dia —
+  // que então concorre ao teto sozinho. Medido: numa campanha com dois anúncios
+  // por dia, o teto de CPC saía 0,20 em vez de 0,92 (4,6× inflado), vindo de um
+  // anúncio isolado. A versão O(n²) não tinha o defeito porque filtrava por
+  // data e apanhava o dia inteiro; a AC8 manda trocar a implementação SEM
+  // mudar o comportamento.
+  const ultimoDaData = new Array<number>(n);
+  for (let i = n - 1, bloco = n - 1; i >= 0; i -= 1) {
+    if (ordenados[i]!.date !== ordenados[bloco]!.date) bloco = i;
+    ultimoDaData[i] = bloco;
+  }
+
   const out: Janela[] = [];
-  for (const fim of ordenados) {
-    const fimMs = paraMs(fim.date);
-    const inicioMs = fimMs - 6 * DIA_MS;
-    const dentro = ordenados.filter((d) => {
-      const t = paraMs(d.date);
-      return t >= inicioMs && t <= fimMs;
+  // Dois ponteiros sobre a série ordenada (Story 44.7 AC8). A versão anterior
+  // filtrava a série inteira a cada dia — O(n²), medido em 30ms para 365 dias e
+  // 101ms para 730. O comportamento é idêntico: a janela continua sendo
+  // `[fim − 6 dias, fim]` por DATA, e uma janela é emitida por LINHA (duas
+  // linhas na mesma data emitem duas janelas iguais, como antes).
+  let inicio = 0;
+  for (let fim = 0; fim < n; fim += 1) {
+    const inicioMs = ms[fim]! - 6 * DIA_MS;
+    while (ms[inicio]! < inicioMs) inicio += 1;
+    out.push({
+      de: new Date(inicioMs).toISOString().slice(0, 10),
+      ate: ordenados[fim]!.date,
+      agregado: agregar(ordenados.slice(inicio, ultimoDaData[fim]! + 1)),
     });
-    const inicio = new Date(inicioMs).toISOString().slice(0, 10);
-    out.push({ de: inicio, ate: fim.date, agregado: agregar(dentro) });
   }
   return out;
 }
@@ -402,6 +425,28 @@ export function selo(metrica: Metrica, base: number): Confianca | null {
 }
 
 /**
+ * Cobertura de rastreio de UM DIA, no nível da ETAPA.
+ *
+ * ⚠️ Story 44.7 AC3(b): a cobertura é da **etapa**, não da campanha. Cobertura
+ * por campanha não tem denominador — "leads atribuídos à campanha X ÷ o quê?".
+ * O que é bem definido, e o que a guarda quer medir, é a qualidade do rastreio
+ * no período: de todos os leads que entraram, quantos carregavam um
+ * `utm_content` que resolve para algum anúncio.
+ *
+ * Vêm as CONTAGENS, não a fração já dividida, porque a cobertura da janela é
+ * razão de somas — dividir por dia e tirar média daria outro número, que é o
+ * mesmo erro que a regra da §2.6 proíbe.
+ */
+export interface CoberturaDiaria {
+  /** `YYYY-MM-DD`. */
+  date: string;
+  /** Leads únicos da ETAPA no dia que resolveram para algum anúncio. */
+  leadsAtribuidos: number;
+  /** Leads únicos da ETAPA no dia. */
+  leadsTotais: number;
+}
+
+/**
  * Guarda extra para o teto de `convLP` da família GRATUITA (@po, 2026-08-18).
  *
  * O piso conta LP views, que é o denominador. Mas o numerador é lead
@@ -413,14 +458,14 @@ export function selo(metrica: Metrica, base: number): Confianca | null {
  * O selo de confiança não pega isso — ele conta volume, não qualidade de
  * atribuição.
  *
- * Janela cuja cobertura fica mais de 20 p.p. ABAIXO da mediana da campanha não
+ * Janela cuja cobertura fica mais de 20 p.p. ABAIXO da mediana da etapa não
  * concorre. Acima da mediana não é problema: é rastreio melhor, não pior.
  */
 export const DESVIO_COBERTURA_MAXIMO = 0.2;
 
 export function coberturaAtipica(
   coberturaDaJanela: number,
-  coberturaMedianaDaCampanha: number,
+  coberturaMedianaDaEtapa: number,
 ): boolean {
   // ⚠️ Arredondar ANTES de comparar. `0.9 - 0.7` em IEEE754 dá
   // `0.20000000000000007`, que passa de `0.2` por erro de representação — e o
@@ -428,7 +473,7 @@ export function coberturaAtipica(
   // ruído de float. Como o mesmo valor lógico pode chegar por caminhos de
   // cálculo diferentes, isso faria a mesma janela concorrer num dia e não no
   // outro. Quatro casas cobrem cobertura com folga (é uma razão de contagens).
-  const desvio = Math.round((coberturaMedianaDaCampanha - coberturaDaJanela) * 1e4) / 1e4;
+  const desvio = Math.round((coberturaMedianaDaEtapa - coberturaDaJanela) * 1e4) / 1e4;
   return desvio > DESVIO_COBERTURA_MAXIMO;
 }
 
@@ -437,6 +482,227 @@ export function mediana(valores: readonly number[]): number | null {
   const v = [...valores].sort((a, b) => a - b);
   const meio = Math.floor(v.length / 2);
   return v.length % 2 === 1 ? v[meio]! : (v[meio - 1]! + v[meio]!) / 2;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Composição do teto (Story 44.7 · spec §4)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * A série de UMA campanha, com a fonte de onde ela veio.
+ *
+ * ⚠️ Story 44.7 AC1: a `fonte` é propriedade da **série**, não do dia. Uma
+ * campanha inteira vem de ad-level ou de campaign-level, nunca misturada dia a
+ * dia — misturar seria o defeito que a 44.1 mediu: as duas tabelas divergem em
+ * `spend` em 21 de 164 campanhas, com diferença de até R$ 24.424,85.
+ *
+ * Sem este invólucro, `Teto.fonte` não é preenchível: `DiaBruto` não tem campo
+ * de origem nenhum.
+ */
+export interface SerieDeCampanha {
+  campaignId: string;
+  fonte: "ad-level" | "campaign-level";
+  dias: readonly DiaBruto[];
+}
+
+export interface OpcoesTeto {
+  /**
+   * Cobertura de rastreio da ETAPA, por dia. Só é usada para o teto de `convLP`
+   * da família gratuita — nas demais métricas o numerador e o denominador vêm
+   * ambos do pixel, e não há o que a atribuição possa distorcer.
+   *
+   * Ausente = a guarda não roda, e o teto sai sem `coberturaJanela`.
+   */
+  coberturaDaEtapa?: readonly CoberturaDiaria[];
+}
+
+/** Todo o resultado do teto de um grupo (projeto + família). */
+export type TetosDoGrupo = Record<Metrica, Teto | TetoAusente>;
+
+const METRICAS: readonly Metrica[] = ["cpm", "cpc", "ctr", "connectRate", "convLP"];
+
+/** Cobertura de uma janela: razão de somas, nunca média das frações diárias. */
+function coberturaDaJanela(
+  cobertura: readonly CoberturaDiaria[],
+  de: string,
+  ate: string,
+): number | null {
+  let atrib = 0;
+  let total = 0;
+  for (const c of cobertura) {
+    if (c.date >= de && c.date <= ate) {
+      atrib += c.leadsAtribuidos;
+      total += c.leadsTotais;
+    }
+  }
+  return total > 0 ? atrib / total : null;
+}
+
+function melhorPelaDirecao(metrica: Metrica, a: number, b: number): number {
+  return DIRECAO[metrica] === "menor" ? Math.min(a, b) : Math.max(a, b);
+}
+
+/**
+ * Escolhe o teto de cada métrica para um grupo (projeto + família).
+ *
+ * ## A ordem importa (AC2)
+ *
+ * Filtrar **antes** de escolher o melhor. Escolher o máximo e depois checar o
+ * piso devolveria a campanha mais sortuda com o selo errado — e um teto é um
+ * máximo, então máximo de estimativa ruidosa infla sozinho.
+ *
+ * ## O que sai quando não há teto
+ *
+ * Nunca um número inventado. `TetoAusente` com o motivo que descreve o que
+ * aconteceu, para o consumidor poder dizer *por que* a coluna está vazia:
+ *
+ * - `semDados` — nenhuma campanha do grupo tem série
+ * - `baseInsuficiente` — há série, mas nenhuma janela atinge o piso baixo
+ * - `coberturaAtipica` — só `convLP` gratuita: toda janela elegível foi barrada
+ *   pela guarda de rastreio
+ */
+export function calcularTetos(
+  campanhas: readonly SerieDeCampanha[],
+  familia: Familia,
+  opts: OpcoesTeto = {},
+): TetosDoGrupo {
+  const cobertura = opts.coberturaDaEtapa;
+
+  // A mediana de referência da guarda é da ETAPA e é uma só — não varia por
+  // campanha (AC3b). Calculada sobre as coberturas de cada dia com lead.
+  const medianaEtapa =
+    cobertura && cobertura.length
+      ? mediana(
+          cobertura
+            .filter((c) => c.leadsTotais > 0)
+            .map((c) => c.leadsAtribuidos / c.leadsTotais),
+        )
+      : null;
+
+  const out = {} as TetosDoGrupo;
+
+  for (const metrica of METRICAS) {
+    const aplicaGuarda = familia === "gratuita" && metrica === "convLP" && medianaEtapa !== null;
+
+    let melhor: Teto | null = null;
+    let houveJanela = false;
+    let houveBarradaPelaGuarda = false;
+
+    for (const camp of campanhas) {
+      for (const janela of janelasDe7Dias(camp.dias)) {
+        houveJanela = true;
+
+        const base = baseDaMetrica(metrica, janela.agregado);
+        const confianca = selo(metrica, base);
+        if (confianca === null) continue; // não atinge nem o piso baixo
+
+        const valor = calcularMetricas(janela.agregado, familia)[metrica];
+        if (valor === null) continue; // denominador zero, ou lead ausente
+
+        let cobJanela: number | undefined;
+        if (aplicaGuarda) {
+          const c = coberturaDaJanela(cobertura!, janela.de, janela.ate);
+          if (c === null) continue; // sem lead na janela: não dá para julgar
+          if (coberturaAtipica(c, medianaEtapa!)) {
+            houveBarradaPelaGuarda = true;
+            continue;
+          }
+          cobJanela = c;
+        }
+
+        // Empate no valor desempata pela MAIOR base. Uma campanha de desempenho
+        // constante produz N janelas com o mesmo valor, e ficar com a primeira
+        // escolheria a janela de 1 dia em vez da de 7 — o teto viraria "o melhor
+        // valor visto num dia" em vez de "sustentado por uma semana", que é o
+        // que a régua de 7 dias existe para exigir. Base maior também tende a
+        // trazer selo melhor.
+        const substituir =
+          melhor === null ||
+          (valor !== melhor.valor && melhorPelaDirecao(metrica, valor, melhor.valor) === valor) ||
+          (valor === melhor.valor && base > melhor.base);
+        if (substituir) {
+          melhor = {
+            metrica,
+            valor,
+            campaignId: camp.campaignId,
+            de: janela.de,
+            ate: janela.ate,
+            base,
+            confianca,
+            fonte: camp.fonte,
+            ...(cobJanela !== undefined ? { coberturaJanela: cobJanela } : {}),
+          };
+        }
+      }
+    }
+
+    if (melhor) {
+      out[metrica] = melhor;
+    } else {
+      const motivo: MotivoIndisponivel = !houveJanela
+        ? "semDados"
+        : houveBarradaPelaGuarda
+          ? "coberturaAtipica"
+          : "baseInsuficiente";
+      out[metrica] = { metrica, valor: null, motivo };
+    }
+  }
+
+  return out;
+}
+
+/** Só as métricas que têm teto resolvido — açúcar para o consumidor. */
+export function tetosResolvidos(tetos: TetosDoGrupo): Teto[] {
+  return METRICAS.map((m) => tetos[m]).filter((t): t is Teto => t.valor !== null);
+}
+
+/**
+ * As métricas que podem ser LINHA do ranking.
+ *
+ * ⚠️ CPM e CTR ficam de fora (spec §2.4). `CPC = (CPM/1000) / CTR` é
+ * identidade, não coincidência: a queda do CPC já CONTÉM a do CPM e a do CTR.
+ * Listar os três daria *"duas oportunidades onde há uma só"* — no cenário
+ * dourado da §8, CTR (−33,33%) e CPM (−25%) se enfiavam entre o CPC e o
+ * Connect Rate e empurravam o Connect de 3º para 5º (QA-447-02).
+ *
+ * Eles continuam com teto calculado: `decomporCPC` precisa dos dois para dizer
+ * quanto do gap do CPC fecha por cada lado — que é o papel que a spec lhes dá.
+ */
+const METRICAS_RANQUEAVEIS: readonly Metrica[] = ["cpc", "connectRate", "convLP"];
+
+/**
+ * Monta os itens de ranking a partir dos tetos resolvidos e das métricas atuais
+ * (AC7). Métrica sem teto **não entra** — compete só contra benchmark.
+ */
+export function montarRanking(tetos: TetosDoGrupo, atuais: Metricas): ItemRanking[] {
+  const itens: ItemRanking[] = [];
+  for (const teto of tetosResolvidos(tetos)) {
+    if (!METRICAS_RANQUEAVEIS.includes(teto.metrica)) continue;
+    const atual = atuais[teto.metrica];
+    if (atual === null) continue;
+    const queda = quedaReal(teto.metrica, atual, teto.valor);
+    if (queda === null) continue;
+    itens.push({
+      metrica: teto.metrica,
+      atual,
+      teto: teto.valor,
+      queda,
+      posicao: POSICAO_NA_CADEIA[teto.metrica],
+    });
+  }
+  return ranquear(itens);
+}
+
+/** As métricas de teto num `Metricas`, para alimentar `compostoNoTeto`. */
+export function metricasDoTeto(tetos: TetosDoGrupo): Metricas {
+  const valor = (m: Metrica) => (tetos[m].valor !== null ? (tetos[m] as Teto).valor : null);
+  return {
+    cpm: valor("cpm"),
+    cpc: valor("cpc"),
+    ctr: valor("ctr"),
+    connectRate: valor("connectRate"),
+    convLP: valor("convLP"),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────

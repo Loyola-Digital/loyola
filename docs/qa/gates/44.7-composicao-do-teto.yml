@@ -1,0 +1,331 @@
+storyId: "44.7"
+storyTitle: "Composição do teto no shared"
+gate: CONCERNS
+gatePrimeiraPassada: FAIL
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-08-19"
+commits: [587767a3, e314cbcc, 481a5a91, db5a6c64, 9242eabe, c5292f44]
+branch: feature/44.7-composicao-do-teto
+scope: >
+  packages/shared/src/cadeia-cac.ts (+256 linhas: calcularTetos, tetosResolvidos,
+  montarRanking, metricasDoTeto, SerieDeCampanha, CoberturaDiaria, OpcoesTeto,
+  janelasDe7Dias reescrita) · index.ts · 19 testes novos
+
+codeRabbit:
+  status: SKIPPED
+  reason: "CLI em WSL, host macOS. Terceiro gate seguido sem ele — lacuna de cobertura, não aprovação."
+
+summary: >
+  A composição está bem construída e a ordem que a AC2 exige — filtrar o piso
+  ANTES de escolher o melhor — está correta e testada. A verificação por
+  reversão do @dev pegou seis regras. O que segura o gate são dois defeitos que
+  a bateria de testes era estruturalmente incapaz de ver: a reescrita O(n) da
+  AC8 mudou o comportamento para séries com mais de uma linha por data, e
+  `montarRanking` devolve cinco itens onde a spec §8 exige três. O desempate por
+  maior base — a regra que a story sinaliza como a mais frágil — está correto na
+  intenção e cobre o modo de falha que motivou sua criação; degrada por ruído de
+  ponto flutuante, mas nunca de volta ao caso de um dia.
+
+issues:
+  - id: QA-447-01
+    severity: high
+    category: correctness
+    title: "A reescrita O(n) da AC8 mudou o comportamento: duas linhas na mesma data produzem uma janela PARCIAL, e o teto sai até 4,6× inflado"
+    file: packages/shared/src/cadeia-cac.ts
+    story: "44.7 (AC8)"
+    description: >
+      A AC8 é explícita: "trocar a implementação SEM mudar o comportamento". A
+      versão antiga montava a janela com `ordenados.filter(t >= inicio && t <= fim)`,
+      que inclui TODAS as linhas da data final. A nova usa `slice(inicio, fim + 1)`,
+      que para no índice corrente. Com duas linhas na mesma data, a primeira
+      janela agrega só um pedaço do dia e concorre ao teto com esse pedaço.
+
+      O comentário no próprio código afirma o contrário: "duas linhas na mesma
+      data emitem duas janelas iguais, como antes". Isso é o agravante — quem
+      escrever a 44.8 vai ler essa garantia e passar a série ad-level sem
+      agregar por dia, que é exatamente a fonte declarada na spec §2.6.
+    proof: |
+      Teste diferencial contra a implementação de 067faa27, 28 séries
+      (com/sem gap, com/sem duplicata, n de 1 a 365):
+
+        17/28 idênticas — TODAS as 11 divergências têm data duplicada.
+
+      Caso mínimo — 2 linhas em 2026-05-10 (spend 100 e 300):
+        janela 1: 2026-05-04..2026-05-10  linhas=1  spend=100   <- parcial
+        janela 2: 2026-05-04..2026-05-10  linhas=2  spend=400   <- completa
+        A implementação antiga emitia spend=400 nas duas.
+
+      Impacto no número — campanha de 7 dias com 2 anúncios por dia
+      (A: CPC 0,20 pequeno · B: CPC 1,00 grande):
+        CPC verdadeiro da campanha na semana ... 6440/7000 = 0,9200
+        teto de cpc que sai hoje ............... 0,2000  base=12.000  selo=baixa
+        controle (mesma campanha agregada/dia) . 0,9200  base=504.000
+
+      O teto vem de um anúncio num dia, rotulado como janela 04–10/mai.
+      4,6× inflado — o modo de falha que a spec §4 descreve como
+      "máximo de estimativa ruidosa infla sozinho".
+    whyTestsMissed: >
+      Nenhum teste do módulo passa duas linhas com a mesma data. As duas
+      ocorrências de "2026-05-01" na suíte estão em testes diferentes, com uma
+      linha cada. Os 47 testes da 44.6 continuaram verdes como a AC8 pedia — mas
+      verdes por não cobrirem o caso que diverge, não por equivalência.
+    suggestedAction: >
+      Duas saídas. (a) Preservar o comportamento antigo: avançar `fim` até a
+      última linha da mesma data antes de emitir a janela. (b) Decidir que a
+      entrada é uma linha por data — e então VALIDAR isso na fronteira de
+      `calcularTetos`, documentar no contrato de `SerieDeCampanha`, e corrigir o
+      comentário que hoje promete o oposto. A opção (b) é mais barata e mais
+      honesta, mas só vale se a 44.8 agregar por dia no SQL.
+
+  - id: QA-447-02
+    severity: high
+    category: correctness
+    title: "montarRanking devolve 5 itens onde a spec §8 exige 3 — CPM e CTR viram linhas próprias e empurram o Connect Rate para último"
+    file: packages/shared/src/cadeia-cac.ts
+    story: "44.7 (AC7) · spec §2.4, §3, §8"
+    description: >
+      `montarRanking` itera sobre `tetosResolvidos`, que traz as cinco métricas.
+      CPM e CTR entram no ranking como oportunidades independentes. A spec §2.4
+      proíbe exatamente isso: "o mesmo ganho seria contado duas vezes — CPM
+      caindo 25% arrasta o CPC junto, e o ranking listaria duas oportunidades
+      onde há uma só". `compostoNoTeto` está protegido (usa `custoDaCadeia`, que
+      só olha CPC/Connect/Conv.LP); o ranking não.
+    proof: |
+      Cenário dourado da spec §8, entrada exata:
+
+        convLP       queda=54,82%  posicao=3
+        cpc          queda=50,00%  posicao=1
+        ctr          queda=33,33%  posicao=0   <- mesma alavanca do CPC
+        cpm          queda=25,00%  posicao=0   <- mesma alavanca do CPC
+        connectRate  queda=11,11%  posicao=2
+
+      spec §8: "Ordem do ranking: Conv. LP › CPC › Connect" — 3 itens.
+      montarRanking devolve 5, e o Connect Rate cai de 3º para 5º.
+
+      CPC = (CPM/1000)/CTR, então os −50% do CPC JÁ contêm os −25% do CPM e os
+      −33,33% do CTR. São três linhas para uma alavanca só.
+    whyTestsMissed: >
+      O teste dourado da ordem (cadeia-cac.test.ts:99-103) monta três
+      `ItemRanking` à mão e chama `ranquear` — primitiva da 44.6 — nunca
+      `montarRanking`. Os testes da AC7 verificam `r.length > 0` e
+      `r.every(i => i.queda > 0)`: passam com 5 itens tanto quanto com 3.
+    suggestedAction: >
+      Restringir `montarRanking` a cpc/connectRate/convLP. CPM e CTR continuam
+      com teto calculado — `decomporCPC` precisa deles — mas como decomposição
+      do CPC, que é o papel que a spec §2.4 lhes dá. Depois, um teste que rode o
+      cenário da §8 por `montarRanking` e afirme a lista de três.
+
+  - id: QA-447-03
+    severity: medium
+    category: correctness
+    title: "O desempate por maior base compara float com ===; em campanha constante o teto cai para 3-6 dias em ~34% dos casos"
+    file: packages/shared/src/cadeia-cac.ts
+    story: "44.7 (regra sem AC — introduzida por dois testes que falharam)"
+    description: >
+      A regra é `valor === melhor.valor && base > melhor.base`. A igualdade é
+      exata em IEEE754. Numa campanha de desempenho constante — o cenário que
+      motivou a regra — as janelas de tamanhos diferentes produzem o mesmo valor
+      matemático com representações diferentes, e o desempate simplesmente não
+      roda: a janela "melhor" por 1 ULP vence sozinha.
+
+      O módulo já sabe disso e resolve em `coberturaAtipica`, que arredonda
+      antes de comparar com um comentário explicando `0.9 - 0.7 =
+      0.20000000000000007`. A mesma disciplina não foi aplicada aqui.
+    proof: |
+      Campanha PERFEITAMENTE constante, 8 dias, spend 12,07 e 37 linkClicks/dia:
+
+        janelas de 1 a 6 dias ... cpc = 0.3262162162162162
+        janelas de 7 dias ....... cpc = 0.32621621621621627   <- pior por 1 ULP
+
+      CPC é "menor vence", então as janelas de 7 dias são DESCARTADAS e o
+      desempate por base escolhe a melhor entre as curtas:
+
+        teto escolhido: janela 2026-05-09..2026-05-15, base 90.000, 6 dias de dado.
+
+      Varredura de 17.083 campanhas constantes (spend R$1,00-300,00 × 4 volumes
+      de clique), medindo o tamanho da janela vencedora:
+
+        7 dias .. 65,8%   (correto)
+        6 dias ..  8,6%
+        5 dias ..  8,9%
+        4 dias ..  8,8%
+        3 dias ..  7,9%
+        1-2 dias.. 0,0%   <- o modo de falha original NÃO reaparece
+    assessment: >
+      A regra está certa na intenção e cobre o que foi criada para cobrir: o
+      teto nunca volta a ser "melhor valor visto num dia". O valor do teto é
+      idêntico até a 15ª casa, então ranking, composto e sinalização não mudam.
+      O que degrada são os metadados que a spec §4 manda exibir — `base`, `de` e
+      `ate` — e, quando a base de 7 dias cruzaria o piso alto e a de 5 não, o
+      SELO cai de 🟩 alta para 🟨 baixa. Com a §4.1 dizendo que "a maior parte
+      dos tetos nasce em confiança baixa", degradar selo por ruído de float
+      importa.
+    suggestedAction: >
+      Tratar como empate o que difere por tolerância relativa, como
+      `coberturaAtipica` já faz. Um teste com a série constante de 12,07/37
+      falha hoje e passa depois — e falha de novo se a tolerância for removida.
+
+  - id: QA-447-04
+    severity: low
+    category: determinism
+    title: "Empate total entre campanhas resolve pela ordem do array de entrada"
+    file: packages/shared/src/cadeia-cac.ts
+    story: "44.7 (AC4)"
+    description: >
+      Quando duas campanhas empatam em valor E em base, fica a primeira do
+      array. `campaignId`, `fonte` e as datas exibidas passam a depender da ordem
+      em que a 44.8 montar a lista — e uma query sem `ORDER BY` não garante ordem
+      estável entre execuções.
+    proof: |
+      Duas campanhas idênticas, ALFA (ad-level) e BETA (campaign-level):
+        ordem [A,B] -> teto.campaignId = ALFA
+        ordem [B,A] -> teto.campaignId = BETA
+
+      A spec §4 manda exibir origem e fonte no rótulo do teto. Os dois rótulos
+      estão corretos; qual aparece é sorteio.
+    suggestedAction: >
+      Desempate final estável — `campaignId` crescente resolve e é trivial.
+
+  - id: QA-447-05
+    severity: low
+    category: correctness
+    title: "Família gratuita sem lead na janela devolve motivo `baseInsuficiente`, que descreve algo que não aconteceu"
+    file: packages/shared/src/cadeia-cac.ts
+    story: "44.7 (AC5)"
+    description: >
+      Quando a guarda de cobertura roda e `coberturaDaJanela` devolve `null`
+      (nenhum lead no período), o `continue` cai no ramo final e o motivo sai
+      `baseInsuficiente`. Mas a base pode estar folgada — o que faltou foi lead
+      para julgar a cobertura, não LP view.
+
+      A AC5 lista três motivos e nenhum cobre "não deu para julgar". A lacuna é
+      da AC, não da implementação.
+    proof: |
+      Etapa gratuita, 350 LP views na janela (piso baixo é 150), cobertura da
+      etapa existente mas em datas fora da janela:
+        convLP -> valor=null  motivo=baseInsuficiente
+      A regra 7.4 da spec exige motivo que descreva o que aconteceu.
+    suggestedAction: >
+      Levar ao @po: ou um quarto motivo, ou a decisão explícita de que este caso
+      cai em `semDados`. Não inferir (regra 7.5).
+
+observations:
+  - id: OBS-447-01
+    title: "`Teto.de` pode apontar para antes do início da série — herdado da 44.6, exposto pela 44.7"
+    description: >
+      `janelasDe7Dias` sempre reporta `de = fim − 6 dias`, mesmo quando a série
+      começa depois. Uma janela com 1 dia de dado sai rotulada como semana cheia:
+      `2026-05-04..2026-05-10  linhas=1`.
+
+      Verificado contra 067faa27: o comportamento é IDÊNTICO ao anterior — a AC8
+      foi cumprida neste ponto. Mas a 44.7 é a primeira a publicar esses campos
+      para exibição (AC4), e a spec §4 exige a data no rótulo do teto
+      ("12–18/mai"). Exibir uma semana onde há um dia sobrevive ao QA-447-03 e
+      independe dele. Decisão de apresentação — pertence à 44.9, e vale como
+      entrada para ela.
+
+passed:
+  - "AC2 — a ordem está certa: piso filtrado ANTES da escolha do melhor, e testado por reversão"
+  - "AC1 — `SerieDeCampanha` carrega `fonte`, resolvendo o buraco que o @po pegou na validação"
+  - "AC3 — cobertura entra como série da ETAPA, separada de `DiaBruto`; parâmetro renomeado"
+  - "AC5 — os três motivos saem corretos nos três casos que a AC descreve"
+  - "AC6 — fonte rotulada por linha de teto; o teste do grupo misto confere"
+  - "AC8 (performance) — medido: 365 dias 58,2ms→0,8ms (74×) · 730 dias 194,6ms→1,1ms (183×)"
+  - "66 testes do módulo verdes"
+  - "Baseline preservado: 11 falhas / 1153 passando, as 5 suítes que falham são instagram, projects, schema e funnel-stages — nenhuma tocada pela 44.7"
+  - "typecheck do shared e da api limpos; build do shared OK"
+  - "Prova de runtime feita: bare import de @loyola-x/shared sobe e exporta as 4 funções — armadilha da 19.14 não acionada"
+  - "As três regras do doc de retomada seguem no código: desempate por base, lead ausente ≠ zero, arredondar antes de comparar em coberturaAtipica"
+  - "compostoNoTeto protege CPM/CTR corretamente via custoDaCadeia"
+
+decision: >
+  FAIL. Não por bloqueio arbitrário: a AC8 diz textualmente "sem mudar o
+  comportamento" e o comportamento mudou, com 4,6× de inflação medida no caso
+  reproduzido; e o ranking diverge incondicionalmente do teste dourado da §8 —
+  toda chamada de `montarRanking` devolve cinco itens.
+
+  As duas correções são pequenas e localizadas. O QA-447-03 pode ir junto ou
+  virar follow-up: ele degrada metadados, não o número.
+
+  Nada disso está em produção nem tem consumidor — o custo de corrigir agora é o
+  menor que vai existir. Depois da 44.8 o `montarRanking` já estará sendo servido.
+
+nextSteps:
+  - "@dev: QA-447-01 e QA-447-02 (must-fix), com um teste que falhe hoje para cada"
+  - "@dev: QA-447-03 e QA-447-04 se forem baratos; QA-447-05 depende do @po"
+  - "@po: decidir o motivo do QA-447-05 — quarto motivo ou `semDados`"
+  - "@qa: re-review após as correções"
+  - "OBS-447-01 entra como insumo da 44.9"
+
+# ─────────────────────────────────────────────────────────────
+# Re-review após as correções — @qa (Quinn), 2026-08-19, commit c5292f44
+# ─────────────────────────────────────────────────────────────
+
+reReview:
+  reviewedAt: "2026-08-19"
+  commit: c5292f44
+  verdict: CONCERNS
+  resolved: [QA-447-01, QA-447-02]
+  open: [QA-447-03, QA-447-04, QA-447-05]
+
+  QA-447-01:
+    status: RESOLVIDO
+    fix: >
+      `janelasDe7Dias` pré-computa `ultimoDaData` numa passada de trás para
+      frente e o `slice` vai até o fim do bloco da data, não até o índice
+      corrente. O(n) preservado.
+    evidence: |
+      Teste diferencial contra 067faa27, as mesmas 28 séries: 17/28 -> 28/28
+      idênticas. É a AC8 cumprida de fato, não por ausência de cobertura.
+
+      Caso minado (2 anúncios/dia, 7 dias):
+        antes ... teto cpc 0,20  base 12.000   <- um anúncio num dia
+        depois .. teto cpc 0,92  base 504.000  <- bate com o controle agregado
+
+      Bordas verificadas adversarialmente, 9/9:
+        série vazia · 1 linha · 3 linhas na MESMA data (3 janelas, todas com o
+        dia cheio) · bloco duplicado no MEIO da série · bloco a 19 dias de
+        distância não vaza para a janela de 7 dias · entrada desordenada
+        produz o mesmo que a ordenada.
+    reversion: "Revertido o `ultimoDaData[fim]` para `fim`: 2 testes caem. O teste protege."
+
+  QA-447-02:
+    status: RESOLVIDO
+    fix: >
+      `montarRanking` filtra por `METRICAS_RANQUEAVEIS` = cpc/connectRate/convLP.
+      CPM e CTR seguem com teto calculado — `decomporCPC` depende deles — mas
+      como decomposição do CPC, que é o papel que a spec §2.4 lhes dá.
+    evidence: |
+      Cenário dourado da §8 por `montarRanking` (não por `ranquear` com entrada
+      curada, que era o furo do teste antigo):
+        convLP  54,82%  ·  cpc  50,00%  ·  connectRate  11,11%
+      Três itens, na ordem que a §8 exige. Connect Rate de volta ao 3º lugar.
+      `metricasDoTeto` segue devolvendo cpm/ctr — correto: `compostoNoTeto` os
+      ignora via `custoDaCadeia`, e `decomporCPC` precisa deles.
+    reversion: "Removido o filtro: 3 testes caem. O teste protege."
+
+  regressionCheck:
+    testes: "72 no módulo (66 + 6 novos), todos verdes"
+    baseline: "11 falhas / 1159 passando — as mesmas 5 suítes pré-existentes (instagram, projects, schema, funnel-stages). Nenhuma no módulo"
+    typecheck: "shared e api limpos"
+    build: "shared OK"
+    runtime: "bare import de @loyola-x/shared sobe e exporta as 5 funções — armadilha da 19.14 não acionada"
+    performance: "365 dias 1,3ms · 730 dias 2,6ms — o O(n) sobreviveu à correção"
+    naoRegrediu: "QA-447-03 medido de novo: teto da campanha constante segue vindo de 6 dias, idêntico ao da primeira passada"
+
+  decision: >
+    CONCERNS, não PASS. Os dois must-fix estão resolvidos com prova e reversão,
+    e a AC8 passou a ser verdadeira em vez de não-verificada. O que impede o
+    PASS é o QA-447-03 seguir aberto: é `medium`, é conhecido, e degrada os
+    metadados que a spec §4 manda exibir — incluindo o selo, quando a base de 7
+    dias cruzaria o piso alto e a da janela vencedora não.
+
+    Não bloqueia a 44.8: o valor do teto é idêntico até a 15ª casa, então
+    ranking, composto e sinalização não mudam. Mas deve ir para o backlog com
+    dono, não sumir no rodapé do gate.
+
+  nextSteps:
+    - "@po: decidir o QA-447-05 (quarto motivo ou `semDados`) — bloqueia só a si mesmo"
+    - "@dev: QA-447-03 e QA-447-04 quando houver espaço; nenhum bloqueia a 44.8"
+    - "@devops: push da branch com o c5292f44"
+    - "44.9 recebe o OBS-447-01 como insumo de apresentação"
