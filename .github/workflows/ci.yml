@@ -1,0 +1,56 @@
+# Verificação de tipos, lint e testes em cada PR.
+#
+# Existe para permitir que o BUILD pare de fazer esse trabalho: hoje o
+# `next build` roda lint + typecheck em série antes de gerar as páginas, e isso
+# respondia por quase um terço do tempo de deploy. Aqui as três checagens rodam
+# em paralelo entre si e em paralelo com o deploy do Vercel — o tempo total até
+# alguém saber que quebrou algo cai, em vez de subir.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Um push novo no mesmo PR cancela a execução anterior: ninguém precisa do
+# resultado de um commit que já foi substituído.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    strategy:
+      # Um job que falha não esconde o resultado dos outros — quem abriu o PR vê
+      # de uma vez tudo que precisa consertar.
+      fail-fast: false
+      matrix:
+        tarefa: [typecheck, lint, test]
+    name: ${{ matrix.tarefa }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sem `version:` de propósito — a action lê o `packageManager` do
+      # package.json. Declarar aqui também cria duas fontes de verdade, e a
+      # action falha na cara quando elas divergem.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # O web e a api importam tipos de @loyola-x/shared; sem o build dele, o
+      # typecheck acusa export inexistente em código que está correto.
+      - run: pnpm --filter=@loyola-x/shared build
+
+      - name: ${{ matrix.tarefa }}
+        # `test` não bloqueia por enquanto: a suíte da API já entra aqui com 13
+        # falhas anteriores a este workflow (instagram, projects, schema). Um CI
+        # que nasce vermelho é um CI que todo mundo aprende a ignorar — a marca
+        # sai assim que essas suítes forem consertadas.
+        continue-on-error: ${{ matrix.tarefa == 'test' }}
+        run: pnpm -r --if-present ${{ matrix.tarefa }}

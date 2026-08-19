@@ -553,9 +553,13 @@ export default function StagePage() {
             <Mail className="h-3.5 w-3.5 text-primary" />
             Mautic
           </TabsTrigger>
+          {/* "Analytics", e não "GA4": a aba serve as duas fontes, e o projeto
+              que usa Plausible não lê GA4 nenhum — o nome antigo dizia o
+              contrário do que a tela mostra. O `value` continua "ga4" porque é o
+              que está gravado no estado/URL de quem já usa. */}
           <TabsTrigger value="ga4" className="gap-1.5">
             <BarChart3 className="h-3.5 w-3.5 text-orange-500" />
-            GA4
+            Analytics
           </TabsTrigger>
           <TabsTrigger value="nps" className="gap-1.5">
             <Star className="h-3.5 w-3.5 text-yellow-500" />

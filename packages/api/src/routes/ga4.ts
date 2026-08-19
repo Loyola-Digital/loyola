@@ -1,8 +1,22 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { LRUCache } from "lru-cache";
-import { ga4Connections, funnels, funnelStages, projects, projectMembers } from "../db/schema.js";
+import {
+  ga4Connections,
+  funnels,
+  funnelStages,
+  projects,
+  projectMembers,
+  plausibleConfig,
+  plausibleProjectSites,
+} from "../db/schema.js";
+import {
+  chaveEtapa,
+  gravarCacheAnalytics,
+  invalidarAnalyticsDoProjeto,
+  lerCacheAnalytics,
+} from "../services/analytics-cache.js";
+import { PlausibleErro, montarDashboard as montarDashboardPlausible } from "../services/plausible.js";
 import { exchangeGoogleCode } from "../services/google-ads.js";
 import {
   encryptGa4Secret,
@@ -44,9 +58,6 @@ const analyticsQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(365).default(30),
 });
 
-// Cache L1 (memória) do dashboard por etapa — TTL 10min (GA4 tem cota de API).
-const FRESH_TTL_MS = 10 * 60 * 1000;
-const memCache = new LRUCache<string, object>({ max: 500, ttl: FRESH_TTL_MS });
 
 export default fp(async function ga4Routes(fastify) {
   // Acesso ao projeto (espelha kiwify): guest sem vínculo -> null (404).
@@ -190,9 +201,7 @@ export default fp(async function ga4Routes(fastify) {
       });
 
     // Invalida cache de analytics do projeto (property pode ter mudado).
-    for (const key of memCache.keys()) {
-      if (key.startsWith(`${params.data.projectId}:`)) memCache.delete(key);
-    }
+    invalidarAnalyticsDoProjeto(params.data.projectId);
     return { connected: true, propertyId: body.data.propertyId, propertyName: body.data.propertyName ?? null };
   });
 
@@ -204,9 +213,7 @@ export default fp(async function ga4Routes(fastify) {
     const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
     if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
     await fastify.db.delete(ga4Connections).where(eq(ga4Connections.projectId, params.data.projectId));
-    for (const key of memCache.keys()) {
-      if (key.startsWith(`${params.data.projectId}:`)) memCache.delete(key);
-    }
+    invalidarAnalyticsDoProjeto(params.data.projectId);
     return { connected: false };
   });
 
@@ -221,9 +228,6 @@ export default fp(async function ga4Routes(fastify) {
       const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
       if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
 
-      const conn = await getConnectionRow(params.data.projectId);
-      if (!conn) return reply.code(409).send({ error: "GA4 não conectado neste projeto" });
-
       // Garante que a etapa pertence ao funil e o funil ao projeto.
       const [stage] = await fastify.db
         .select({ ga4PageFilter: funnelStages.ga4PageFilter, funnelProject: funnels.projectId, funnelId: funnelStages.funnelId })
@@ -235,9 +239,50 @@ export default fp(async function ga4Routes(fastify) {
         return reply.code(404).send({ error: "Etapa não encontrada" });
       }
 
-      const cacheKey = `${params.data.projectId}:${params.data.stageId}:${query.data.days}`;
-      const cached = memCache.get(cacheKey);
+      const cacheKey = chaveEtapa(params.data.projectId, params.data.stageId, query.data.days);
+      const cached = lerCacheAnalytics(cacheKey);
       if (cached) return cached;
+
+      // ---- Escolha da fonte ----
+      // Ter um site do Plausible no projeto é o que desliga o GA4. Não há flag
+      // separada de propósito: uma flag pode dizer "Plausible" com o site vazio,
+      // e a tela ficaria zerada sem explicar por quê.
+      const [sitePlausible] = await fastify.db
+        .select({ siteId: plausibleProjectSites.siteId })
+        .from(plausibleProjectSites)
+        .where(eq(plausibleProjectSites.projectId, params.data.projectId))
+        .limit(1);
+
+      if (sitePlausible) {
+        const [cfg] = await fastify.db.select().from(plausibleConfig).limit(1);
+        if (!cfg) {
+          return reply.code(409).send({
+            error: "Plausible selecionado neste projeto, mas a instância não está configurada",
+          });
+        }
+        try {
+          const dash = await montarDashboardPlausible(
+            { baseUrl: cfg.baseUrl, apiKey: decryptGa4Secret(cfg.apiKeyEncrypted, cfg.apiKeyIv) },
+            sitePlausible.siteId,
+            ymdDaysAgo(query.data.days),
+            ymdDaysAgo(0),
+            stage.ga4PageFilter,
+          );
+          gravarCacheAnalytics(cacheKey, dash);
+          return dash;
+        } catch (err) {
+          request.log.error({ err }, "Erro no Plausible stage analytics");
+          // A mensagem do próprio Plausible ("chave sem acesso ao site X") diz o
+          // que fazer; um "erro ao consultar" genérico obrigaria a abrir o log.
+          return reply.code(502).send({
+            error: err instanceof PlausibleErro ? err.message : "Erro ao consultar o Plausible",
+            details: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      const conn = await getConnectionRow(params.data.projectId);
+      if (!conn) return reply.code(409).send({ error: "GA4 não conectado neste projeto" });
 
       try {
         const accessToken = await getGa4AccessToken(
@@ -257,8 +302,9 @@ export default fp(async function ga4Routes(fastify) {
           byPage,
           pageFilter: stage.ga4PageFilter ?? null,
           configured: Boolean(stage.ga4PageFilter),
+          fonte: "ga4" as const,
         };
-        memCache.set(cacheKey, result);
+        gravarCacheAnalytics(cacheKey, result);
         return result;
       } catch (err) {
         request.log.error({ err }, "Erro no GA4 stage analytics");

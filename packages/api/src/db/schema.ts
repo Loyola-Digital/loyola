@@ -1428,6 +1428,17 @@ export const memberkitConnections = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     apiKeyEncrypted: text("api_key_encrypted").notNull(),
     apiKeyIv: text("api_key_iv").notNull(),
+    /**
+     * Login opcional — usado SÓ para listar os sites da instância.
+     *
+     * A Sites API (/api/v1/sites) não existe no Community Edition: a rota dá
+     * 404 HTML, porque o Plausible a restringiu à Enterprise. O endpoint do
+     * próprio painel (/api/sites) existe, mas só aceita sessão. Sem isto, o
+     * seletor de site vira campo de digitação livre.
+     */
+    loginEmail: text("login_email"),
+    loginPasswordEncrypted: text("login_password_encrypted"),
+    loginPasswordIv: text("login_password_iv"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1718,6 +1729,17 @@ export const revenuecatConnections = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     apiKeyEncrypted: text("api_key_encrypted").notNull(),
     apiKeyIv: text("api_key_iv").notNull(),
+    /**
+     * Login opcional — usado SÓ para listar os sites da instância.
+     *
+     * A Sites API (/api/v1/sites) não existe no Community Edition: a rota dá
+     * 404 HTML, porque o Plausible a restringiu à Enterprise. O endpoint do
+     * próprio painel (/api/sites) existe, mas só aceita sessão. Sem isto, o
+     * seletor de site vira campo de digitação livre.
+     */
+    loginEmail: text("login_email"),
+    loginPasswordEncrypted: text("login_password_encrypted"),
+    loginPasswordIv: text("login_password_iv"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -2980,4 +3002,64 @@ export const pdiDocuments = pgTable(
     // A consulta quente é "o PDI mais recente desta pessoa", em todo boot do app.
     index("idx_pdi_documents_user_created").on(table.userId, table.createdAt),
   ]
+);
+
+// ============================================================
+// PLAUSIBLE ANALYTICS (self-hosted)
+// ============================================================
+// A instância é UMA só, compartilhada por todos os experts — daí a config ser
+// singleton em vez de por projeto, ao contrário do GA4 (que exige um OAuth por
+// cliente). O que muda por projeto é só QUAL site daquela instância ler.
+//
+// `singleton` com UNIQUE garante uma linha só: qualquer tentativa de inserir a
+// segunda dá conflito em vez de criar config duplicada silenciosamente.
+export const plausibleConfig = pgTable(
+  "plausible_config",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    singleton: boolean("singleton").notNull().default(true),
+    /** Raiz da instância self-hosted, sem barra no fim (ex.: https://analytics.exemplo.com). */
+    baseUrl: text("base_url").notNull(),
+    apiKeyEncrypted: text("api_key_encrypted").notNull(),
+    apiKeyIv: text("api_key_iv").notNull(),
+    /**
+     * Login opcional — usado SÓ para listar os sites da instância.
+     *
+     * A Sites API (/api/v1/sites) não existe no Community Edition: a rota dá
+     * 404 HTML, porque o Plausible a restringiu à Enterprise. O endpoint do
+     * próprio painel (/api/sites) existe, mas só aceita sessão. Sem isto, o
+     * seletor de site vira campo de digitação livre.
+     */
+    loginEmail: text("login_email"),
+    loginPasswordEncrypted: text("login_password_encrypted"),
+    loginPasswordIv: text("login_password_iv"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("uq_plausible_config_singleton").on(table.singleton)]
+);
+
+// Qual site da instância cada projeto lê. A presença desta linha é o que
+// DESLIGA o GA4 do projeto: a rota de analytics escolhe a fonte por aqui, e não
+// por uma flag separada que poderia divergir do que está configurado.
+export const plausibleProjectSites = pgTable(
+  "plausible_project_sites",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .unique()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** `site_id` do Plausible — que é o domínio cadastrado lá (ex.: "loja.exemplo.com"). */
+    siteId: varchar("site_id", { length: 255 }).notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_plausible_sites_project").on(table.projectId)]
 );
