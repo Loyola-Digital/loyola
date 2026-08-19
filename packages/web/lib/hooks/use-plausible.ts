@@ -129,6 +129,8 @@ export interface BlocoBreakdown {
 
 export interface PlausibleDashboardCompleto {
   siteId: string;
+  /** Raiz da instância — a tela monta com ela o favicon de cada origem. */
+  baseUrl: string;
   periodo: PlausiblePeriodo;
   pageFilter: string | null;
   /** Visitantes nos últimos 5 minutos. */
@@ -141,7 +143,18 @@ export interface PlausibleDashboardCompleto {
     bounceRate: number;
     visitDuration: number;
   };
-  serie: Array<{ label: string; visitors: number; pageviews: number }>;
+  /** Todas as métricas em cada ponto: trocar de métrica não vai à rede. */
+  serie: Array<{
+    label: string;
+    visitors: number;
+    visits: number;
+    pageviews: number;
+    viewsPerVisit: number;
+    bounceRate: number;
+    visitDuration: number;
+  }>;
+  /** Mesmos totais na janela anterior — vira a seta de variação. */
+  anterior: PlausibleDashboardCompleto["totals"] | null;
   fontes: BlocoBreakdown[];
   paginas: BlocoBreakdown[];
   locais: BlocoBreakdown[];

@@ -597,6 +597,24 @@ export function intervaloDoPeriodo(periodo: PlausiblePeriodo, agora = new Date()
   }
 }
 
+/**
+ * A janela imediatamente anterior, do mesmo tamanho.
+ *
+ * É o que dá sentido às setinhas de variação do painel: "30 dias" só é bom ou
+ * ruim comparado aos 30 dias anteriores.
+ */
+export function intervaloAnterior(periodo: PlausiblePeriodo, agora = new Date()): [string, string] {
+  const [inicio, fim] = intervaloDoPeriodo(periodo, agora);
+  const d0 = new Date(`${inicio}T12:00:00Z`);
+  const d1 = new Date(`${fim}T12:00:00Z`);
+  const dias = Math.round((d1.getTime() - d0.getTime()) / 86_400_000) + 1;
+  const fimAnterior = new Date(d0);
+  fimAnterior.setUTCDate(fimAnterior.getUTCDate() - 1);
+  const inicioAnterior = new Date(fimAnterior);
+  inicioAnterior.setUTCDate(inicioAnterior.getUTCDate() - (dias - 1));
+  return [inicioAnterior.toISOString().slice(0, 10), fimAnterior.toISOString().slice(0, 10)];
+}
+
 /** Granularidade do gráfico: um dia inteiro se lê por hora; o resto, por dia. */
 function granularidade(periodo: PlausiblePeriodo): "time:hour" | "time:day" | "time:month" {
   if (periodo === "day") return "time:hour";
@@ -633,8 +651,27 @@ export interface PlausibleDashboardCompleto {
     /** Segundos. */
     visitDuration: number;
   };
-  /** Série do gráfico. `label` já vem pronto para o eixo. */
-  serie: Array<{ label: string; visitors: number; pageviews: number }>;
+  /**
+   * Série do gráfico com TODAS as métricas do topo — é o que permite clicar em
+   * "Rejeição" e ver aquela curva sem uma nova ida ao servidor, como no painel.
+   */
+  serie: Array<{
+    label: string;
+    visitors: number;
+    visits: number;
+    pageviews: number;
+    viewsPerVisit: number;
+    bounceRate: number;
+    visitDuration: number;
+  }>;
+  /**
+   * Os mesmos totais na janela anterior de igual tamanho. É o que vira a seta
+   * de variação ao lado de cada número. `null` quando a consulta falhou — a
+   * comparação é acessório, e perdê-la não pode derrubar o painel.
+   */
+  anterior: PlausibleDashboardCompleto["totals"] | null;
+  /** Raiz da instância — a tela monta com ela o favicon de cada origem. */
+  baseUrl: string;
   /** Grupos de abas, na mesma divisão da tela do Plausible. */
   fontes: BlocoBreakdown[];
   paginas: BlocoBreakdown[];
@@ -646,7 +683,9 @@ export interface PlausibleDashboardCompleto {
 function comShare(
   linhas: Array<{ metrics: number[]; dimensions: string[] }>,
   vazio: string,
-  limite = 9,
+  // Guardamos bem mais do que cabe no card: o "Detalhes" abre a lista inteira
+  // sem uma segunda ida ao Plausible.
+  limite = 100,
 ): LinhaBreakdown[] {
   const total = linhas.reduce((soma, r) => soma + n(r.metrics[0]), 0);
   return linhas.slice(0, limite).map((r) => {
@@ -687,7 +726,7 @@ async function breakdowns(
 ): Promise<BlocoBreakdown[]> {
   const resultados = await Promise.all(
     defs.map(async (d) => {
-      const r = await consultarV2Periodo(creds, siteId, periodo, ["visitors"], [d.dimensao], filtro);
+      const r = await consultarV2Periodo(creds, siteId, periodo, ["visitors"], [d.dimensao], filtro, 100);
       return { chave: d.chave, rows: comShare(linhasOuVazio(r), d.vazio) };
     }),
   );
@@ -702,8 +741,10 @@ async function consultarV2Periodo(
   metrics: string[],
   dimensions: string[],
   pageFilter?: string | null,
+  limite?: number,
+  janela?: [string, string],
 ): Promise<RespostaV2> {
-  const [inicio, fim] = intervaloDoPeriodo(periodo);
+  const [inicio, fim] = janela ?? intervaloDoPeriodo(periodo);
   const r = await chamar<V2Resposta>(creds, "/api/v2/query", {
     method: "POST",
     body: {
@@ -741,9 +782,16 @@ export async function montarDashboardCompleto(
     ? ["visitors", "visits", "pageviews", "bounce_rate", "visit_duration"]
     : ["visitors", "visits", "pageviews", "views_per_visit", "bounce_rate", "visit_duration"];
 
-  const [agregado, serie, agora, fontes, paginas, locais, dispositivos] = await Promise.all([
+  // Na série `views_per_visit` NUNCA entra: o Plausible a recusa junto de
+  // qualquer dimensão ("cannot be queried with `dimensions`"), e time:hour é uma
+  // dimensão. Ela é derivada de pageviews/visits ponto a ponto, que é a
+  // definição — pedir a métrica derrubaria o gráfico inteiro com 400.
+  const METRICAS_SERIE = ["visitors", "visits", "pageviews", "bounce_rate", "visit_duration"];
+
+  const [agregado, serie, anterior, agora, fontes, paginas, locais, dispositivos] = await Promise.all([
     consultarV2Periodo(creds, siteId, periodo, METRICAS, [], filtro),
-    consultarV2Periodo(creds, siteId, periodo, ["visitors", "pageviews"], [granularidade(periodo)], filtro),
+    consultarV2Periodo(creds, siteId, periodo, METRICAS_SERIE, [granularidade(periodo)], filtro),
+    consultarV2Periodo(creds, siteId, periodo, METRICAS, [], filtro, undefined, intervaloAnterior(periodo)),
     visitantesAgora(creds, siteId),
     breakdowns(creds, siteId, periodo, filtro, [
       { chave: "channels", dimensao: "visit:channel", vazio: "Direto" },
@@ -774,38 +822,52 @@ export async function montarDashboardCompleto(
     );
   }
 
-  const m = agregado.linhas[0]?.metrics ?? [];
-  const [visitors, visits, pageviews] = [0, 1, 2].map((i) => n(m[i] ?? 0));
-  const viewsPerVisit = filtro
-    ? visits > 0
-      ? Math.round((pageviews / visits) * 100) / 100
-      : 0
-    : n(m[3] ?? 0);
-  // Com filtro a lista tem uma métrica a menos, então as duas últimas andam
-  // uma posição para trás.
-  const desloc = filtro ? 0 : 1;
-  const bounce = n(m[3 + desloc] ?? 0);
-  const duracao = n(m[4 + desloc] ?? 0);
-
-  return {
-    siteId,
-    periodo,
-    pageFilter: filtro,
-    agora,
-    totals: {
+  /**
+   * Lê uma linha de métricas. `temVpv` diz se `views_per_visit` está na lista —
+   * quando não está, as métricas seguintes andam uma posição para trás e o
+   * valor é derivado de pageviews/visits.
+   */
+  const lerTotais = (linha: number[], temVpv: boolean): PlausibleDashboardCompleto["totals"] => {
+    const [visitors, visits, pageviews] = [0, 1, 2].map((i) => n(linha[i] ?? 0));
+    const desloc = temVpv ? 1 : 0;
+    return {
       visitors,
       visits,
       pageviews,
-      viewsPerVisit,
+      viewsPerVisit: temVpv
+        ? n(linha[3] ?? 0)
+        : visits > 0
+          ? Math.round((pageviews / visits) * 100) / 100
+          : 0,
       // O Plausible devolve 0..100; a tela formata como porcentagem.
-      bounceRate: bounce / 100,
-      visitDuration: duracao,
-    },
-    serie: linhasOuVazio(serie).map((r) => ({
-      label: r.dimensions[0] ?? "",
-      visitors: n(r.metrics[0]),
-      pageviews: n(r.metrics[1]),
-    })),
+      bounceRate: n(linha[3 + desloc] ?? 0) / 100,
+      visitDuration: n(linha[4 + desloc] ?? 0),
+    };
+  };
+
+  const agregadoTemVpv = !filtro;
+  const totais = lerTotais(agregado.linhas[0]?.metrics ?? [], agregadoTemVpv);
+
+  return {
+    siteId,
+    baseUrl: normalizarBaseUrl(creds.baseUrl),
+    periodo,
+    pageFilter: filtro,
+    agora,
+    totals: totais,
+    anterior: anterior.tipo === "ok" ? lerTotais(anterior.linhas[0]?.metrics ?? [], agregadoTemVpv) : null,
+    serie: linhasOuVazio(serie).map((r) => {
+      const t = lerTotais(r.metrics, false);
+      return {
+        label: r.dimensions[0] ?? "",
+        visitors: t.visitors,
+        visits: t.visits,
+        pageviews: t.pageviews,
+        viewsPerVisit: t.viewsPerVisit,
+        bounceRate: t.bounceRate,
+        visitDuration: t.visitDuration,
+      };
+    }),
     fontes,
     paginas,
     locais,
