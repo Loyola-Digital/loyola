@@ -144,9 +144,11 @@ interface Props {
   /** Filtro de página da etapa. Vazio = o site inteiro, como no painel. */
   pageFilter?: string | null;
   header?: React.ReactNode;
+  /** Aplica um filtro sugerido — a etapa é quem sabe salvar. */
+  onUsarFiltro?: (filtro: string) => void;
 }
 
-export function PlausibleDashboard({ projectId, pageFilter, header }: Props) {
+export function PlausibleDashboard({ projectId, pageFilter, header, onUsarFiltro }: Props) {
   const [periodo, setPeriodo] = useState<PlausiblePeriodo>("30d");
   const [metrica, setMetrica] = useState<ChaveMetrica>("visitors");
   const dash = usePlausibleDashboard(projectId, { periodo, pageFilter, enabled: true });
@@ -243,6 +245,42 @@ export function PlausibleDashboard({ projectId, pageFilter, header }: Props) {
               )}
             </div>
           </section>
+
+          {/* Filtro que não casou com página nenhuma. Sem este aviso, a tela
+              mostra zero — e zero se lê como "não teve tráfego", não como
+              "seu filtro não bate com nada". */}
+          {d.sugestoesDePagina && d.sugestoesDePagina.length > 0 && (
+            <section className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+              <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                Nenhuma página deste site contém <code className="font-mono">{d.pageFilter}</code> — por
+                isso os números estão zerados. As páginas com tráfego no período são:
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {d.sugestoesDePagina.map((p) => {
+                  // O trecho útil é o caminho sem as barras — é o que a pessoa
+                  // digitaria no filtro.
+                  const trecho = p.page.replace(/^\/+|\/+$/g, "") || "/";
+                  return (
+                    <button
+                      key={p.page}
+                      type="button"
+                      onClick={() => onUsarFiltro?.(trecho)}
+                      disabled={!onUsarFiltro}
+                      className="rounded border border-amber-500/40 bg-white/60 px-2 py-1 font-mono text-[11px] text-amber-800 transition-colors hover:bg-white disabled:cursor-default dark:bg-gray-900/60 dark:text-amber-300 dark:hover:bg-gray-900"
+                      title={onUsarFiltro ? "Usar esta página como filtro da etapa" : p.page}
+                    >
+                      {p.page} <span className="opacity-60">({nf.format(p.visitors)})</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {onUsarFiltro && (
+                <p className="mt-2 text-[11px] text-amber-700/80 dark:text-amber-400/80">
+                  Clique em uma para preencher o filtro da etapa.
+                </p>
+              )}
+            </section>
+          )}
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Bloco titulo="Principais fontes" blocos={d.fontes} baseUrl={d.baseUrl} comFavicon={["sources"]} />
@@ -434,7 +472,7 @@ function Linha({
   mono,
   icone,
 }: {
-  linha: { nome: string; visitors: number; share: number };
+  linha: { nome: string; visitors: number; share: number; idOriginal?: string };
   baseUrl: string;
   mono?: boolean;
   icone?: boolean;
@@ -462,7 +500,12 @@ function Linha({
             onError={(e) => { e.currentTarget.style.visibility = "hidden"; }}
           />
         )}
-        <span className={`truncate text-gray-900 dark:text-gray-200 ${mono ? "font-mono text-[12px]" : ""}`} title={linha.nome}>
+        <span
+          className={`truncate text-gray-900 dark:text-gray-200 ${mono ? "font-mono text-[12px]" : ""}`}
+          // Com o id junto: o nome resolvido é o que se lê, mas quem for
+          // conferir no Gerenciador de Anúncios precisa do número.
+          title={linha.idOriginal ? `${linha.nome}\n(id ${linha.idOriginal})` : linha.nome}
+        >
           {linha.nome}
         </span>
       </span>

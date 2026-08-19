@@ -16,9 +16,15 @@
  */
 
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { plausibleConfig, plausibleProjectSites, projects, projectMembers } from "../db/schema.js";
+import {
+  metaAdInsightsDaily,
+  plausibleConfig,
+  plausibleProjectSites,
+  projects,
+  projectMembers,
+} from "../db/schema.js";
 import { decryptGa4Secret, encryptGa4Secret } from "../services/ga4.js";
 import { invalidarAnalyticsDoProjeto } from "../services/analytics-cache.js";
 import {
@@ -355,6 +361,62 @@ export default fp(async function plausibleRoutes(fastify) {
   // Dashboard completo do site (o mesmo recorte da tela do Plausible)
   // ============================================================
 
+  /** Id de objeto da Meta: só dígitos e comprido. Nome de campanha nunca é assim. */
+  function pareceIdDaMeta(valor: string): boolean {
+    return /^\d{10,}$/.test(valor.trim());
+  }
+
+  /**
+   * Troca ids de campanha por nomes, usando o que a sincronização da Meta já
+   * guardou.
+   *
+   * Quem monta o anúncio nem sempre põe o nome na UTM — o Meta preenche
+   * `utm_campaign` com o id. No painel isso vira uma lista de números que não
+   * dizem nada, e a pessoa tem de abrir o Gerenciador para saber o que é cada
+   * um. Aqui a gente já tem o mapa: `meta_ad_insights_daily` guarda id e nome.
+   *
+   * Uma consulta só para o painel inteiro, e o id fica preservado em
+   * `idOriginal` — trocar o número por um nome sem deixar rastro tiraria de
+   * quem confere a única chave que casa com o Gerenciador.
+   */
+  async function resolverNomesDeCampanha(
+    projectId: string,
+    blocos: Array<{ rows: Array<{ nome: string; idOriginal?: string }> }>,
+  ): Promise<void> {
+    const ids = [
+      ...new Set(
+        blocos.flatMap((b) => b.rows.map((r) => r.nome).filter((nome) => pareceIdDaMeta(nome))),
+      ),
+    ];
+    if (ids.length === 0) return;
+
+    const linhas = await fastify.db
+      .selectDistinct({ id: metaAdInsightsDaily.campaignId, nome: metaAdInsightsDaily.campaignName })
+      .from(metaAdInsightsDaily)
+      .where(
+        and(
+          eq(metaAdInsightsDaily.projectId, projectId),
+          inArray(metaAdInsightsDaily.campaignId, ids),
+          isNotNull(metaAdInsightsDaily.campaignName),
+        ),
+      );
+
+    const mapa = new Map(linhas.filter((l) => l.id && l.nome).map((l) => [l.id!, l.nome!]));
+    if (mapa.size === 0) return;
+
+    for (const bloco of blocos) {
+      for (const linha of bloco.rows) {
+        const nome = mapa.get(linha.nome);
+        // Sem nome cadastrado o id continua aparecendo: é melhor um número que
+        // dá para procurar do que um "(sem nome)" que não leva a lugar nenhum.
+        if (nome) {
+          linha.idOriginal = linha.nome;
+          linha.nome = nome;
+        }
+      }
+    }
+  }
+
   /**
    * Tudo que a tela do Plausible mostra, em uma chamada.
    *
@@ -390,12 +452,16 @@ export default fp(async function plausibleRoutes(fastify) {
     if (!creds) return reply.code(409).send({ error: "Plausible não configurado" });
 
     try {
-      return await montarDashboardCompleto(
+      const dash = await montarDashboardCompleto(
         creds,
         site.siteId,
         query.data.periodo as PlausiblePeriodo,
         query.data.pageFilter,
       );
+      // Campanha é onde o id aparece, mas origem também traz número às vezes —
+      // resolver os dois sai na mesma consulta.
+      await resolverNomesDeCampanha(params.data.projectId, [...dash.fontes]);
+      return dash;
     } catch (err) {
       request.log.error({ err }, "[plausible] dashboard falhou");
       return reply.code(502).send({
