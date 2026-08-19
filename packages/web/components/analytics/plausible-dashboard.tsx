@@ -120,6 +120,25 @@ function rotuloEixo(label: string): string {
   return label;
 }
 
+/**
+ * Traduz o erro para algo acionável.
+ *
+ * O 404 aqui não é "não achei o dado": é a API do Loyola X respondendo que a
+ * ROTA não existe, o que só acontece quando o backend está numa versão anterior
+ * à do site. Deixar passar o "Not Found" cru manda a pessoa procurar problema no
+ * Plausible, que está funcionando.
+ */
+function mensagemDeErro(erro: unknown): string {
+  const status = (erro as { status?: number } | null)?.status;
+  if (status === 404) {
+    return "O servidor da API ainda não tem esta tela — o deploy do backend está atrás do site. Refaça o deploy da API e recarregue.";
+  }
+  if (status === 409) {
+    return "Este projeto não está usando Plausible, ou a instância não está configurada em Configurações → Analytics.";
+  }
+  return erro instanceof Error ? erro.message : "Erro ao consultar o Plausible.";
+}
+
 interface Props {
   projectId: string;
   /** Filtro de página da etapa. Vazio = o site inteiro, como no painel. */
@@ -171,7 +190,7 @@ export function PlausibleDashboard({ projectId, pageFilter, header }: Props) {
         <Skeleton className="h-80" />
       ) : dash.isError ? (
         <div className="flex flex-wrap items-center gap-2 text-xs text-red-500">
-          <span>{dash.error instanceof Error ? dash.error.message : "Erro ao consultar o Plausible."}</span>
+          <span>{mensagemDeErro(dash.error)}</span>
           <Button variant="ghost" size="sm" className="h-6 gap-1 px-2 text-[10px]" onClick={() => dash.refetch()}>
             <RefreshCw className="h-3 w-3" /> Tentar de novo
           </Button>

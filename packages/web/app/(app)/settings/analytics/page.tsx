@@ -97,7 +97,10 @@ export default function AnalyticsSettingsPage() {
           setApiKey("");
           setLoginPassword("");
           toast.success("Plausible configurado");
-          if (r.sitesEncontrados !== null) {
+          // `typeof === "number"` e não `!== null`: uma API que ainda não
+          // conhece o campo devolve `undefined`, que passava no teste antigo e
+          // fazia a tela acusar "o login falhou" sem ninguém ter tentado logar.
+          if (typeof r.sitesEncontrados === "number") {
             toast[r.sitesEncontrados > 0 ? "success" : "error"](
               r.sitesEncontrados > 0
                 ? `${r.sitesEncontrados} site(s) encontrado(s) — já dá para escolher na lista`
