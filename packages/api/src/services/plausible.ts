@@ -700,14 +700,28 @@ function comShare(
   });
 }
 
-/** Visitantes nos últimos 5 minutos. Falha vira 0: é um indicador, não um dado duro. */
+/**
+ * Visitantes nos últimos 5 minutos — o "current visitors" do painel.
+ *
+ * Vai pela v1 porque a v2 NÃO tem tempo real: `date_range: "realtime"` responde
+ * `Invalid date range "realtime"`. Como a falha aqui vira 0 (é indicador, não
+ * dado duro), o erro passava despercebido e o contador ficava zerado para
+ * sempre, mesmo com gente no site.
+ *
+ * A resposta deste endpoint é o número puro em texto ("3"), não JSON — por isso
+ * não usa `chamar`.
+ */
 export async function visitantesAgora(creds: PlausibleCreds, siteId: string): Promise<number> {
-  const r = await chamar<V2Resposta>(creds, "/api/v2/query", {
-    method: "POST",
-    body: { site_id: siteId, metrics: ["visitors"], date_range: "realtime" },
-  });
-  if (!r.ok) return 0;
-  return n(r.data.results?.[0]?.metrics?.[0] ?? 0);
+  try {
+    const res = await fetch(
+      `${normalizarBaseUrl(creds.baseUrl)}/api/v1/stats/realtime/visitors?site_id=${encodeURIComponent(siteId)}`,
+      { headers: { Authorization: `Bearer ${creds.apiKey}` }, signal: AbortSignal.timeout(15_000) },
+    );
+    if (!res.ok) return 0;
+    return n((await res.text()).trim());
+  } catch {
+    return 0;
+  }
 }
 
 /**
