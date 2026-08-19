@@ -120,6 +120,11 @@ export interface LinhaBreakdown {
   visitors: number;
   /** Fração do total do bloco (0..1) — vira a barra de proporção. */
   share: number;
+  /**
+   * Id cru da Meta, quando `nome` já veio resolvido para o nome da campanha.
+   * A tela mostra no title: é a chave que casa com o Gerenciador de Anúncios.
+   */
+  idOriginal?: string;
 }
 
 export interface BlocoBreakdown {
@@ -131,6 +136,12 @@ export interface PlausibleDashboardCompleto {
   siteId: string;
   /** Raiz da instância — a tela monta com ela o favicon de cada origem. */
   baseUrl: string;
+  /**
+   * Páginas com tráfego no site, ignorando o filtro. Só vem preenchido quando
+   * há filtro e ele não casou com nada — é o que permite dizer "seu filtro não
+   * bate com nenhuma página; estas existem" em vez de mostrar zero calado.
+   */
+  sugestoesDePagina: Array<{ page: string; visitors: number }> | null;
   periodo: PlausiblePeriodo;
   pageFilter: string | null;
   /** Visitantes nos últimos 5 minutos. */

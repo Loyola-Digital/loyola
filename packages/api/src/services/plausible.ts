@@ -627,6 +627,14 @@ export interface LinhaBreakdown {
   visitors: number;
   /** Fração do total do bloco (0..1) — é a barra de proporção da tela. */
   share: number;
+  /**
+   * Valor cru vindo do Plausible, quando `nome` foi trocado por algo legível.
+   *
+   * A UTM de campanha da Meta chega como id (`120247296069430489`), que não diz
+   * nada a ninguém. Trocamos pelo nome cadastrado, mas o id continua aqui: sem
+   * ele, ninguém consegue conferir a linha no Gerenciador de Anúncios.
+   */
+  idOriginal?: string;
 }
 
 export interface BlocoBreakdown {
@@ -672,6 +680,17 @@ export interface PlausibleDashboardCompleto {
   anterior: PlausibleDashboardCompleto["totals"] | null;
   /** Raiz da instância — a tela monta com ela o favicon de cada origem. */
   baseUrl: string;
+  /**
+   * Páginas com tráfego no site, IGNORANDO o filtro. Só é preenchido quando há
+   * um filtro que não casou com nada.
+   *
+   * Existe porque o modo de falha aqui é mudo: um filtro com um caractere fora
+   * do lugar (`bbe-pr2` para uma URL `/bbepr2-captura-a/`) devolve zero, e zero
+   * é indistinguível de "não houve tráfego". Em vez de deixar a pessoa
+   * conferindo o Plausible para descobrir a diferença, a tela mostra o que o
+   * site realmente tem.
+   */
+  sugestoesDePagina: Array<{ page: string; visitors: number }> | null;
   /** Grupos de abas, na mesma divisão da tela do Plausible. */
   fontes: BlocoBreakdown[];
   paginas: BlocoBreakdown[];
@@ -862,9 +881,20 @@ export async function montarDashboardCompleto(
   const agregadoTemVpv = !filtro;
   const totais = lerTotais(agregado.linhas[0]?.metrics ?? [], agregadoTemVpv);
 
+  // Filtro que não casou com nada: descobrimos o que existe para poder dizer.
+  let sugestoes: Array<{ page: string; visitors: number }> | null = null;
+  if (filtro && totais.visitors === 0) {
+    const semFiltro = await consultarV2Periodo(creds, siteId, periodo, ["visitors"], ["event:page"], null, 10);
+    const linhas = linhasOuVazio(semFiltro);
+    if (linhas.length > 0) {
+      sugestoes = linhas.map((r) => ({ page: r.dimensions[0] || "/", visitors: n(r.metrics[0]) }));
+    }
+  }
+
   return {
     siteId,
     baseUrl: normalizarBaseUrl(creds.baseUrl),
+    sugestoesDePagina: sugestoes,
     periodo,
     pageFilter: filtro,
     agora,
