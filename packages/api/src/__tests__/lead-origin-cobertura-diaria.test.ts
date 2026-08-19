@@ -253,3 +253,90 @@ describe("coberturaDiaria — o dado alimenta a guarda de ponta a ponta", () => 
     expect(coberturaAtipica(janela!, medianaDaEtapa)).toBe(false);
   });
 });
+
+describe("mapeamento por ÍNDICE — a coluna de cabeçalho vazio (Story 44.12)", () => {
+  /**
+   * Export do Tally: as três primeiras colunas têm cabeçalho VAZIO e a data mora
+   * na terceira. Com cabeçalho vazio nem o mapeamento por nome alcança — 9 das
+   * 15 etapas em cache não tinham data nenhuma, e isso só ficou visível quando
+   * a cobertura diária passou a precisar dela.
+   */
+  const TALLY = ["", "", "", "name", "email", "phone", "utm_content"];
+  const linhaTally = (data: string, email: string, content: string) => [
+    "Ar7OOAo",
+    "Zjz88go",
+    data,
+    "Carol",
+    email,
+    "5511999999",
+    content,
+  ];
+
+  it("sem mapeamento, a data de cabeçalho vazio fica ilegível — o estado ANTERIOR", async () => {
+    readSheetData.mockResolvedValue({
+      headers: TALLY,
+      rows: [linhaTally("29/03/2026", "a@x.com", "111111111")],
+    });
+    const p = await computeLeadOriginForStage(fakeDb({ adsConhecidos: ["111111111"] }), "s1");
+    expect(p?.coberturaDiaria).toEqual([]);
+    expect(p?.leadsSemData).toBe(1);
+  });
+
+  it('`{"date": "2"}` resolve a coluna por índice e a cobertura passa a existir', async () => {
+    readSheetData.mockResolvedValue({
+      headers: TALLY,
+      rows: [
+        linhaTally("29/03/2026", "a@x.com", "111111111"),
+        linhaTally("30/03/2026", "b@x.com", "999999999"),
+      ],
+    });
+    const p = await computeLeadOriginForStage(
+      fakeDb({ adsConhecidos: ["111111111"], planilha: { date: "2" } }),
+      "s1",
+    );
+    expect(p?.leadsSemData).toBe(0);
+    expect(p?.coberturaDiaria).toEqual([
+      { date: "2026-03-29", leadsAtribuidos: 1, leadsTotais: 1 },
+      { date: "2026-03-30", leadsAtribuidos: 0, leadsTotais: 1 },
+    ]);
+  });
+
+  it("⚠️ o NOME vence o índice — coluna literalmente chamada '2' não é sequestrada", async () => {
+    // Inverter a ordem faria o índice roubar este caso, e a planilha passaria a
+    // ler a terceira coluna em vez da chamada "2".
+    readSheetData.mockResolvedValue({
+      headers: ["email", "2", "outra", "utm_content"],
+      rows: [["a@x.com", "05/04/2026", "lixo", "111111111"]],
+    });
+    const p = await computeLeadOriginForStage(
+      fakeDb({ adsConhecidos: ["111111111"], planilha: { date: "2" } }),
+      "s1",
+    );
+    expect(p?.coberturaDiaria[0]?.date).toBe("2026-04-05");
+  });
+
+  it("índice fora do intervalo cai nos aliases, não estoura", async () => {
+    readSheetData.mockResolvedValue({
+      headers: ["email", "Data", "utm_content"],
+      rows: [["a@x.com", "07/04/2026", "111111111"]],
+    });
+    const p = await computeLeadOriginForStage(
+      fakeDb({ adsConhecidos: ["111111111"], planilha: { date: "99" } }),
+      "s1",
+    );
+    // Caiu no alias "data" e resolveu.
+    expect(p?.coberturaDiaria[0]?.date).toBe("2026-04-07");
+  });
+
+  it("NÃO adivinha por conteúdo — coluna de data sem cabeçalho e sem mapeamento continua ilegível", async () => {
+    // Procurar "uma coluna que pareça data" é como se lê a coluna errada em
+    // silêncio. Índice é explícito: alguém escreveu 2, alguém responde por ele.
+    readSheetData.mockResolvedValue({
+      headers: ["email", "", "utm_content"],
+      rows: [["a@x.com", "09/04/2026", "111111111"]],
+    });
+    const p = await computeLeadOriginForStage(fakeDb({ adsConhecidos: ["111111111"] }), "s1");
+    expect(p?.coberturaDiaria).toEqual([]);
+    expect(p?.leadsSemData).toBe(1);
+  });
+});

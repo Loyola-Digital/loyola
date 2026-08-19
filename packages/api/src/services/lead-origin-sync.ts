@@ -79,10 +79,41 @@ function findColIdx(headers: string[], aliases: string[]): number {
  * planilha `n8n-kiwify-captação` mapeia `utm_source` para a coluna literalmente
  * chamada `s=` — nenhum alias acharia isso.
  */
+/**
+ * Resolve a coluna: primeiro pelo NOME mapeado, depois pelo **índice** mapeado,
+ * por último pelos aliases.
+ *
+ * ## Por que o índice existe (Story 44.12)
+ *
+ * Export do Tally chega com as três primeiras colunas de cabeçalho **VAZIO**, e
+ * a data mora numa delas:
+ *
+ *     headers  ["", "", "", "Qual é seu sexo?", "name", "email", ...]
+ *     linha    ["Ar7OOAo", "Zjz88go", "29/03/2026", "Feminino", ...]
+ *                                      ↑ índice 2
+ *
+ * Com cabeçalho vazio **nem o mapeamento por nome alcança**, e a data ficava
+ * ilegível — 9 das 15 etapas em cache não tinham data nenhuma, o que só ficou
+ * visível quando a 44.12 passou a precisar dela. `{"date": "2"}` resolve.
+ *
+ * ⚠️ **O nome vem ANTES do índice**, de propósito: planilha com uma coluna
+ * literalmente chamada "2" continua resolvendo por nome. Inverter faria o índice
+ * sequestrar esse caso.
+ *
+ * ⚠️ **E não há adivinhação por conteúdo.** Procurar "uma coluna que pareça
+ * data" é como se lê a coluna errada em silêncio — o Epic 44 inteiro existe por
+ * causa de um número que estava errado sem ninguém saber. Índice é explícito:
+ * alguém escreveu `2`, alguém responde por ele.
+ */
 function resolveColIdx(headers: string[], mapped: string | undefined, aliases: string[]): number {
-  if (mapped) {
-    const i = headers.map(norm).indexOf(norm(mapped));
-    if (i >= 0) return i;
+  const m = mapped?.toString().trim();
+  if (m) {
+    const porNome = headers.map(norm).indexOf(norm(m));
+    if (porNome >= 0) return porNome;
+    if (/^\d+$/.test(m)) {
+      const i = Number(m);
+      if (i >= 0 && i < headers.length) return i;
+    }
   }
   return findColIdx(headers, aliases);
 }
