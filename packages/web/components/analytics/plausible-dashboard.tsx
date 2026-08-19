@@ -236,14 +236,7 @@ export function PlausibleDashboard({ projectId, pageFilter, header }: Props) {
                         metrica === "bounceRate" ? `${Math.round(v * 100)}%` : metrica === "visitDuration" ? duracao(v) : nf.format(v)
                       }
                     />
-                    <Tooltip
-                      contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid rgba(0,0,0,.08)" }}
-                      labelStyle={{ fontWeight: 600 }}
-                      formatter={(v) => [
-                        METRICAS.find((m) => m.chave === metrica)!.formata(Number(v ?? 0)),
-                        METRICAS.find((m) => m.chave === metrica)!.label,
-                      ]}
-                    />
+                    <Tooltip cursor={{ stroke: "#4f46e5", strokeOpacity: 0.3 }} content={<TooltipGrafico metrica={metrica} />} />
                     <Area type="monotone" dataKey={metrica} stroke="#4f46e5" strokeWidth={2} fill="url(#plausible-fill)" dot={false} activeDot={{ r: 4 }} />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -266,6 +259,38 @@ export function PlausibleDashboard({ projectId, pageFilter, header }: Props) {
           )}
         </>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Tooltip do gráfico.
+ *
+ * É um componente, e não `contentStyle`, porque estilo em linha não enxerga o
+ * tema: o padrão do recharts é fundo branco, e no modo escuro o texto (que
+ * herda a cor clara da página) sumia — branco no branco. Com classes, as duas
+ * variantes vêm do próprio Tailwind.
+ */
+function TooltipGrafico({
+  active,
+  payload,
+  label,
+  metrica,
+}: {
+  active?: boolean;
+  payload?: Array<{ value?: number | string }>;
+  label?: string | number;
+  metrica: ChaveMetrica;
+}) {
+  if (!active || !payload?.length) return null;
+  const def = METRICAS.find((m) => m.chave === metrica)!;
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900">
+      <p className="font-semibold text-gray-900 dark:text-gray-100">{String(label ?? "")}</p>
+      <p className="mt-0.5 text-gray-600 dark:text-gray-300">
+        <span className="mr-1 inline-block h-2 w-2 rounded-full bg-indigo-600 align-middle" />
+        {def.label}: <span className="font-medium text-gray-900 dark:text-gray-100">{def.formata(Number(payload[0]?.value ?? 0))}</span>
+      </p>
     </div>
   );
 }
