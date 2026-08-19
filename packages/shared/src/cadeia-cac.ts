@@ -656,6 +656,119 @@ export function tetosResolvidos(tetos: TetosDoGrupo): Teto[] {
   return METRICAS.map((m) => tetos[m]).filter((t): t is Teto => t.valor !== null);
 }
 
+// ─────────────────────────────────────────────────────────────
+// Benchmark de referência (spec §5) — Story 44.8 AC11
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Mediana das campanhas ELEGÍVEIS do grupo, por métrica.
+ *
+ * ## Por que isto mora aqui e não na aba
+ *
+ * A spec §5 dá alvo constante para CTR (≥2%) e Connect Rate (>85%), mas para
+ * CPM e CPC diz que *"não existe benchmark de mercado → mediana das campanhas
+ * elegíveis do grupo, rotulada explicitamente como mediana histórica"*. Isso é
+ * cálculo, e cálculo mora no `shared` (regra 7.6).
+ *
+ * O argumento decisivo (@po, 2026-08-19) não é a duplicação de fórmula —
+ * `mediana()` já era exportada, então quem chamasse chamaria a mesma. São dois
+ * outros:
+ *
+ * 1. **O agente Inácio nunca vê a aba.** Ele consome a REST direto. Benchmark
+ *    só na aba deixaria o agente sem alvo nenhum exatamente no caso para o qual
+ *    a §5 foi escrita — grupo sem teto elegível (2 de 10 no gate da 44.5).
+ * 2. **`TetosDoGrupo` só expõe a campanha VENCEDORA.** A elegibilidade por
+ *    campanha morre dentro de `calcularTetos`. Para a aba tirar a mediana das
+ *    elegíveis, teria que re-derivar a régua do gate 44.5 — essa sim seria a
+ *    violação da 7.6.
+ *
+ * ## O que "elegível" quer dizer aqui, e por que
+ *
+ * Mesma régua do teto, aplicada ao **agregado do período da campanha** em vez
+ * de a uma janela: a campanha entra na mediana da métrica `m` se
+ * `selo(m, baseDaMetrica(m, agregado)) !== null` — isto é, se cruza pelo menos
+ * o piso BAIXO — e se a métrica tem valor (denominador > 0).
+ *
+ * A régua é a mesma do teto de propósito. Se o benchmark admitisse campanha que
+ * o teto rejeita, a coluna "alvo" trocaria de população conforme houvesse teto
+ * ou não, e a comparação entre etapas deixaria de significar a mesma coisa.
+ *
+ * ⚠️ **Mediana, não média.** Uma campanha de teste com 3 dias e CPC absurdo
+ * puxaria a média; a mediana não se move. É o mesmo motivo pelo qual a guarda
+ * de cobertura usa mediana (`calcularTetos`).
+ *
+ * ⚠️ **É referência, nunca alvo prescritivo.** A spec manda rotular como
+ * *mediana histórica* na apresentação: é "o típico do grupo", não "o saudável".
+ */
+export interface ReferenciasDoGrupo {
+  /** Mediana por métrica. `null` = nenhuma campanha elegível. */
+  medianas: Record<Metrica, number | null>;
+  /** Quantas campanhas entraram em cada mediana — sem isto o número não é auditável. */
+  campanhasElegiveis: Record<Metrica, number>;
+  /**
+   * Mediana do custo da cadeia (custo por checkout na paga, por lead na
+   * gratuita). Só entram campanhas elegíveis nos TRÊS elos (`cpc`,
+   * `connectRate`, `convLP`) — o custo é o produto delas, e admitir uma
+   * campanha frágil num elo contaminaria o número inteiro.
+   */
+  medianaCustoDaCadeia: number | null;
+  campanhasElegiveisCustoDaCadeia: number;
+  /** Campanhas do grupo com pelo menos um dia de série. O denominador honesto. */
+  campanhasComSerie: number;
+}
+
+export function referenciasDoGrupo(
+  campanhas: readonly SerieDeCampanha[],
+  familia: Familia,
+): ReferenciasDoGrupo {
+  const valores: Record<Metrica, number[]> = {
+    cpm: [],
+    cpc: [],
+    ctr: [],
+    connectRate: [],
+    convLP: [],
+  };
+  const custos: number[] = [];
+  let comSerie = 0;
+
+  const ELOS: readonly Metrica[] = ["cpc", "connectRate", "convLP"];
+
+  for (const camp of campanhas) {
+    if (camp.dias.length === 0) continue;
+    comSerie += 1;
+
+    const agregado = agregar(camp.dias);
+    const metricas = calcularMetricas(agregado, familia);
+
+    const elegivel = (m: Metrica) =>
+      selo(m, baseDaMetrica(m, agregado)) !== null && metricas[m] !== null;
+
+    for (const m of METRICAS) {
+      if (elegivel(m)) valores[m].push(metricas[m]!);
+    }
+
+    if (ELOS.every(elegivel)) {
+      const custo = custoDaCadeia(metricas);
+      if (custo !== null) custos.push(custo);
+    }
+  }
+
+  const medianas = {} as Record<Metrica, number | null>;
+  const campanhasElegiveis = {} as Record<Metrica, number>;
+  for (const m of METRICAS) {
+    medianas[m] = mediana(valores[m]);
+    campanhasElegiveis[m] = valores[m].length;
+  }
+
+  return {
+    medianas,
+    campanhasElegiveis,
+    medianaCustoDaCadeia: mediana(custos),
+    campanhasElegiveisCustoDaCadeia: custos.length,
+    campanhasComSerie: comSerie,
+  };
+}
+
 /**
  * As métricas que podem ser LINHA do ranking.
  *

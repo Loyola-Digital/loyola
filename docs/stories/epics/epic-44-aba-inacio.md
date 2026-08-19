@@ -271,7 +271,9 @@ Trava de volume: base abaixo do piso de baixa confiança → **"base insuficient
 3. **`spend` já inclui imposto Meta** — `applyMetaTax`, gross-up de 12,15% para datas ≥ 2026-01-01 `[auditoria §2.4]` (`meta-tax.ts:24`). **Nunca reaplicar** (Story 29.27).
 4. **Dado ausente vira "indisponível"** com motivo (`semDados` | `baseInsuficiente` | `naoAtribuivel`). Nunca 0, nunca estimativa, nunca troca silenciosa de fonte.
 5. **Não inferir.** Faltou definição, parar e perguntar — não escolher "o mais provável".
-6. **Uma conta, um lugar.** O cálculo mora em `@loyola-x/shared` como função pura; a aba consome, a API expõe o mesmo resultado. Hoje existe um segundo CAC em `traffic-analytics.ts:452` (`spend ÷ purchases(pixel)`) `[auditoria §4.4]` — será migrado, não duplicado (Story 44.10).
+6. **Uma conta, um lugar.** O cálculo mora em `@loyola-x/shared` como função pura; a aba consome, a API expõe o mesmo resultado. Hoje existe um segundo CAC em `traffic-analytics.ts:452` (`spend ÷ purchases(pixel)`) `[auditoria §4.4]` — será migrado, não duplicado (**Story 44.11** — era 44.10 antes do deslocamento QA-446-05, corrigido pelo @po em 2026-08-19).
+
+   ⚠️ `[@po 2026-08-19, fechamento da 44.8]` Existe uma **terceira** divergência de venda, ainda aberta, e ela não é de CAC: `computeSalesDailyForStage` (`sales-daily-sync.ts:246`) exclui só `isRefundBucket`, então **recusada, pendente e aguardando pagamento contam como venda**; `atribuirPorCampanha` (`campaign-attribution.ts:159`) admite só `isRevenueBucket` (`paid`). As mesmas linhas produzem dois `totalVendas`. Enquanto isso não for resolvido (**Story 44.13**), nenhuma cobertura de atribuição é servida — a 44.8 declara `naoAtribuivel` em vez de servir uma razão com numerador e denominador de populações diferentes.
 7. `[v1.1]` **Nenhum campo chamado `cac` na cadeia de decomposição.** `cac` é reservado para `spend ÷ vendas reais`. Dois `cac` divergentes é o Bloqueio B4.
 
 ---

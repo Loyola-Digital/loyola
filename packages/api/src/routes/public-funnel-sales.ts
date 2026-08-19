@@ -25,6 +25,7 @@ import { asc, eq } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { funnels, funnelStages } from "../db/schema.js";
 import { requireScope } from "../middleware/api-key-auth.js";
+import { maxAgeFrom } from "../utils/cache-freshness.js";
 import { PUBLIC_READ_SCOPE } from "./public-discovery.js";
 import {
   getFreshSalesDaily,
@@ -56,11 +57,6 @@ const querySchema = z.object({
 });
 
 /** `?fresh=1` → maxAge 0 (recalcula sempre). Senão, o default do serviço. */
-function maxAgeFrom(fresh: string | undefined, configured: number | undefined): number | undefined {
-  if (fresh === "1" || fresh === "true") return 0;
-  return configured != null ? configured * 1000 : undefined;
-}
-
 /**
  * Parseia `?include=`. Retorna um Set — nomes desconhecidos são ignorados em
  * silêncio de propósito: é query string escrita à mão, e derrubar a chamada

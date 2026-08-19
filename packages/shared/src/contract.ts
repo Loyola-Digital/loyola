@@ -52,4 +52,11 @@
  * (Railway sem `RAILWAY_GIT_COMMIT_SHA`) cega a checagem de commit, não a de
  * contrato.
  */
-export const API_CONTRACT_VERSION = 2;
+// v3 (Story 44.8): rota nova `GET .../stages/:stageId/cadeia-cac`. A aba da
+// 44.9 depende dela, e o bump entra AQUI — se entrasse lá, o painel pediria uma
+// rota que a API não tem e o sintoma apareceria disfarçado (18.60, 29.43, 29.45).
+//
+// ⚠️ `packages/mcp` (o servidor stdio do Inácio) NÃO tem checagem de contrato.
+// Esta rota é nova e não muda nenhuma existente, então o risco é menor — mas o
+// aviso é barato e a 44.2 já ensinou que ele some quando não está escrito.
+export const API_CONTRACT_VERSION = 3;
