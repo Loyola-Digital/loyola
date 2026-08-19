@@ -12,15 +12,14 @@ import { requireScope } from "../middleware/api-key-auth.js";
 import { PUBLIC_READ_SCOPE } from "./public-discovery.js";
 import { somarVideoMetrics } from "../services/video-metrics-agg.js";
 import { AD_PERMALINK_RESOLVER_VERSION } from "../services/meta-ads.js";
-import { applyMetaTax } from "../utils/meta-tax.js";
+import { safeDiv, round } from "../utils/meta-metrics.js";
 import {
-  parseLeads,
-  parsePurchases,
-  parsePurchaseRevenue,
-  parseActionCount,
-  safeDiv,
-  round,
-} from "../utils/meta-metrics.js";
+  accumulate,
+  emptyAgg,
+  type InsightRow,
+  type MetricAgg,
+} from "../utils/meta-insight-agg.js";
+import { carregarSerieDiariaPorCampanha } from "../services/meta-campaign-daily.js";
 
 /**
  * Story 36.3 — Endpoints públicos de leitura de performance Meta Ads.
@@ -116,65 +115,11 @@ function daysInRange(from: string, to: string): number {
   return Math.floor((b - a) / 86_400_000) + 1;
 }
 
-interface MetricAgg {
-  spend: number;
-  impressions: number;
-  reach: number;
-  clicks: number;
-  linkClicks: number;
-  leads: number;
-  purchases: number;
-  revenue: number;
-  lpViews: number;
-  checkouts: number;
-  lastSyncedAt: Date | null;
-}
-
-function emptyAgg(): MetricAgg {
-  return {
-    spend: 0,
-    impressions: 0,
-    reach: 0,
-    clicks: 0,
-    linkClicks: 0,
-    leads: 0,
-    purchases: 0,
-    revenue: 0,
-    lpViews: 0,
-    checkouts: 0,
-    lastSyncedAt: null,
-  };
-}
-
-type InsightRow = {
-  dateStart: string;
-  spend: string;
-  impressions: string;
-  reach: string;
-  clicks: string;
-  actions: { action_type: string; value: string }[] | null;
-  actionValues: { action_type: string; value: string }[] | null;
-  lastSyncedAt: Date;
-};
-
-function accumulate(agg: MetricAgg, row: InsightRow): void {
-  agg.spend += applyMetaTax(parseFloat(row.spend || "0"), row.dateStart);
-  agg.impressions += parseFloat(row.impressions || "0");
-  agg.reach += parseFloat(row.reach || "0");
-  agg.clicks += parseFloat(row.clicks || "0");
-  // Auditoria 6.2/39.9: `clicks` da Meta são cliques TOTAIS — link_click é a
-  // métrica de tráfego real (a que o dashboard interno usa no Detalhamento).
-  agg.linkClicks += parseActionCount(row.actions, "link_click");
-  agg.leads += parseLeads(row.actions);
-  agg.purchases += parsePurchases(row.actions);
-  agg.revenue += parsePurchaseRevenue(row.actionValues);
-  agg.lpViews += parseActionCount(row.actions, "landing_page_view");
-  // Resumão v4 #7: funil de checkout (initiate_checkout do pixel).
-  agg.checkouts += parseActionCount(row.actions, "initiate_checkout");
-  if (!agg.lastSyncedAt || row.lastSyncedAt > agg.lastSyncedAt) {
-    agg.lastSyncedAt = row.lastSyncedAt;
-  }
-}
+// ⚠️ Story 44.8 (AC2): `MetricAgg`, `emptyAgg`, `InsightRow` e `accumulate`
+// mudaram para `utils/meta-insight-agg.ts`, e o agrupamento por (campanha, dia)
+// para `services/meta-campaign-daily.ts`. O motivo é a rota da cadeia de CAC
+// precisar da MESMA série: duas rotas montando-a de dois jeitos é a semente da
+// próxima divergência do `connectRate` (Story 44.2).
 
 /** Métricas derivadas + arredondamento, a partir de um agregado. */
 function deriveMetrics(a: MetricAgg) {
@@ -798,95 +743,16 @@ export default fp(async function publicMetaRoutes(fastify) {
         };
       }
 
-      const base = [
-        eq(metaAdInsightsDaily.projectId, projectId),
-        inArray(metaAdInsightsDaily.campaignId, campaignIds),
-      ];
-      const rows = await fastify.db
-        .select({
-          campaignId: metaAdInsightsDaily.campaignId,
-          campaignName: metaAdInsightsDaily.campaignName,
-          dateStart: metaAdInsightsDaily.dateStart,
-          spend: metaAdInsightsDaily.spend,
-          impressions: metaAdInsightsDaily.impressions,
-          reach: metaAdInsightsDaily.reach,
-          clicks: metaAdInsightsDaily.clicks,
-          actions: metaAdInsightsDaily.actions,
-          actionValues: metaAdInsightsDaily.actionValues,
-          lastSyncedAt: metaAdInsightsDaily.lastSyncedAt,
-        })
-        .from(metaAdInsightsDaily)
-        .where(
-          explicitRange
-            ? and(
-                ...base,
-                gte(metaAdInsightsDaily.dateStart, from),
-                lte(metaAdInsightsDaily.dateStart, to)
-              )
-            : and(...base)
-        );
-
-      // (campanha → dia → agregado). O `accumulate` já aplica o gross-up de
-      // imposto uma única vez (`applyMetaTax`) e lê link_click,
-      // landing_page_view e initiate_checkout de `actions[]`.
-      const porCampanha = new Map<
-        string,
-        { nome: string | null; dias: Map<string, MetricAgg>; lastSyncedAt: Date | null }
-      >();
-      for (const row of rows) {
-        if (!row.campaignId) continue;
-        let c = porCampanha.get(row.campaignId);
-        if (!c) {
-          c = { nome: row.campaignName ?? null, dias: new Map(), lastSyncedAt: null };
-          porCampanha.set(row.campaignId, c);
-        }
-        if (!c.nome && row.campaignName) c.nome = row.campaignName;
-        let agg = c.dias.get(row.dateStart);
-        if (!agg) {
-          agg = emptyAgg();
-          c.dias.set(row.dateStart, agg);
-        }
-        accumulate(agg, row as InsightRow);
-        if (!c.lastSyncedAt || row.lastSyncedAt > c.lastSyncedAt) c.lastSyncedAt = row.lastSyncedAt;
-      }
-
-      const campanhas = campaignIds.map((campaignId) => {
-        const c = porCampanha.get(campaignId);
-        // Campanha vinculada à etapa sem NENHUMA linha no cache: `days: null` +
-        // motivo. Devolver `days: []` diria "rodou e não teve nada", que é
-        // afirmação diferente e falsa.
-        if (!c) {
-          return {
-            campaignId,
-            campaignName: null,
-            days: null,
-            motivo: "semDados" as const,
-            lastSyncedAt: null,
-          };
-        }
-        const days = [...c.dias.entries()]
-          .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-          .map(([date, a]) => ({
-            date,
-            // Só brutos somáveis — ver a nota sobre razão de somas acima.
-            spend: round(a.spend) ?? 0,
-            impressions: a.impressions,
-            linkClicks: a.linkClicks,
-            landingPageViews: a.lpViews,
-            checkouts: a.checkouts,
-            // Pixel, não Loyola. A venda/lead real por campanha vem da Story
-            // 44.3 (utm_content → adId → campaignId).
-            leadsProxyPixel: a.leads,
-            purchasesProxyPixel: a.purchases,
-            revenueProxyPixel: round(a.revenue) ?? 0,
-          }));
-        return {
-          campaignId,
-          campaignName: c.nome,
-          days,
-          motivo: null,
-          lastSyncedAt: c.lastSyncedAt ? c.lastSyncedAt.toISOString() : null,
-        };
+      // ⚠️ Story 44.8 (AC2): o agrupamento (campanha → dia → agregado) saiu
+      // deste handler para `services/meta-campaign-daily.ts`, e a rota da
+      // cadeia de CAC chama o MESMO serviço. Duas rotas montando a série de
+      // dois jeitos é como o `connectRate` divergiu por um ano (Story 44.2).
+      const campanhas = await carregarSerieDiariaPorCampanha(fastify.db, {
+        projectId,
+        campaignIds,
+        from,
+        to,
+        explicitRange,
       });
 
       return {

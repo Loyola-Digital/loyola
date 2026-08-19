@@ -69,6 +69,8 @@ export {
   tetosResolvidos,
   montarRanking,
   metricasDoTeto,
+  // benchmark de referência (44.8)
+  referenciasDoGrupo,
 } from "./cadeia-cac.js";
 export type {
   Familia,
@@ -86,6 +88,7 @@ export type {
   SerieDeCampanha,
   OpcoesTeto,
   TetosDoGrupo,
+  ReferenciasDoGrupo,
 } from "./cadeia-cac.js";
 
 export type {

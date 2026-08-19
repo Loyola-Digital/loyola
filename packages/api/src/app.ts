@@ -39,6 +39,7 @@ import pdiRoutes from "./routes/pdi.js";
 import apiKeysRoutes from "./routes/api-keys.js";
 import publicDiscoveryRoutes from "./routes/public-discovery.js";
 import publicMetaRoutes from "./routes/public-meta.js";
+import publicCadeiaCacRoutes from "./routes/public-cadeia-cac.js";
 import publicVslRoutes from "./routes/public-vsl.js";
 import publicLeadsRoutes from "./routes/public-leads.js";
 import metaAdsRoutes from "./routes/meta-ads.js";
@@ -168,6 +169,7 @@ export async function buildServer() {
   // API pública read-only (/api/public/*) — Story 36.3
   await app.register(publicDiscoveryRoutes);
   await app.register(publicMetaRoutes);
+  await app.register(publicCadeiaCacRoutes);
   await app.register(publicVslRoutes);
   await app.register(publicLeadsRoutes);
   await app.register(metaAdsRoutes);
