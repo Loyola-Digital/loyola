@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   useDeletePlausibleConfig,
   usePlausibleConfig,
+  usePlausibleSites,
   useSavePlausibleConfig,
   useTestPlausible,
   type PlausibleTeste,
@@ -40,13 +41,20 @@ export default function AnalyticsSettingsPage() {
 
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
   const [resultado, setResultado] = useState<PlausibleTeste | null>(null);
+  const sites = usePlausibleSites();
 
   // A URL salva preenche o campo assim que carrega; a chave nunca volta do
   // servidor, então o campo fica vazio e só é enviado se a pessoa digitar.
   useEffect(() => {
     if (cfg.data?.baseUrl) setBaseUrl(cfg.data.baseUrl);
   }, [cfg.data?.baseUrl]);
+
+  useEffect(() => {
+    if (cfg.data?.loginEmail) setLoginEmail(cfg.data.loginEmail);
+  }, [cfg.data?.loginEmail]);
 
   if (!isAdmin) {
     return (
@@ -78,11 +86,24 @@ export default function AnalyticsSettingsPage() {
 
   function handleSalvar() {
     salvar.mutate(
-      { baseUrl: baseUrl.trim(), apiKey: apiKey.trim() || undefined },
+      {
+        baseUrl: baseUrl.trim(),
+        apiKey: apiKey.trim() || undefined,
+        loginEmail: loginEmail.trim(),
+        loginPassword: loginPassword.trim() || undefined,
+      },
       {
         onSuccess: (r) => {
           setApiKey("");
+          setLoginPassword("");
           toast.success("Plausible configurado");
+          if (r.sitesEncontrados !== null) {
+            toast[r.sitesEncontrados > 0 ? "success" : "error"](
+              r.sitesEncontrados > 0
+                ? `${r.sitesEncontrados} site(s) encontrado(s) — já dá para escolher na lista`
+                : "Login não conseguiu listar os sites — confira e-mail e senha do painel",
+            );
+          }
           if (r.aviso) setResultado({ ok: true, inconclusivo: true, detalhe: r.aviso });
         },
         onError: (e) => toast.error(errMsg(e)),
@@ -168,6 +189,60 @@ export default function AnalyticsSettingsPage() {
                 Ela fica cifrada aqui e nunca é devolvida para a tela.
               </p>
             </div>
+          </div>
+
+          {/* Login do painel — só para listar sites. */}
+          <div className="space-y-3 rounded-lg border border-border/40 bg-muted/10 p-3">
+            <div>
+              <p className="text-xs font-medium">Listar os sites automaticamente (opcional)</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                A API de sites do Plausible (<code>/api/v1/sites</code>) <strong>não existe</strong> no
+                Community Edition — ela ficou restrita à edição Enterprise, e por isso a chave sozinha
+                não consegue listar nada. O endpoint que o próprio painel usa existe, mas só aceita
+                login. Com o e-mail e a senha do painel aqui, o seletor de site de cada projeto mostra
+                a lista pronta em vez de exigir que alguém digite o domínio. Estas credenciais são
+                guardadas cifradas e <strong>não</strong> são usadas para ler métrica nenhuma — isso
+                continua saindo da chave da API.
+              </p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="plausible-login-email" className="text-xs font-medium">E-mail do painel</Label>
+                <Input
+                  id="plausible-login-email"
+                  type="email"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="voce@empresa.com"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="plausible-login-pass" className="text-xs font-medium">
+                  Senha do painel {cfg.data?.loginEmail && <span className="font-normal text-muted-foreground">(preencha só para trocar)</span>}
+                </Label>
+                <Input
+                  id="plausible-login-pass"
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder={cfg.data?.loginEmail ? "•••••••• guardada" : "senha de login no Plausible"}
+                  autoComplete="new-password"
+                />
+              </div>
+            </div>
+            {sites.data && (
+              <p className="text-[11px] text-muted-foreground">
+                {sites.data.sites.length > 0
+                  ? `${sites.data.sites.length} site(s) disponíveis para escolha: ${sites.data.sites.slice(0, 6).map((x) => x.domain).join(", ")}${sites.data.sites.length > 6 ? "…" : ""}`
+                  : "Nenhum site listado ainda — sem o login acima, o domínio precisa ser digitado à mão em cada projeto."}
+              </p>
+            )}
+            {loginEmail.trim() && !cfg.data?.loginEmail && !loginPassword.trim() && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                Informe também a senha — só o e-mail não autentica.
+              </p>
+            )}
           </div>
 
           {resultado && (

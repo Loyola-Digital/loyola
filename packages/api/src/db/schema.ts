@@ -1428,6 +1428,17 @@ export const memberkitConnections = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     apiKeyEncrypted: text("api_key_encrypted").notNull(),
     apiKeyIv: text("api_key_iv").notNull(),
+    /**
+     * Login opcional — usado SÓ para listar os sites da instância.
+     *
+     * A Sites API (/api/v1/sites) não existe no Community Edition: a rota dá
+     * 404 HTML, porque o Plausible a restringiu à Enterprise. O endpoint do
+     * próprio painel (/api/sites) existe, mas só aceita sessão. Sem isto, o
+     * seletor de site vira campo de digitação livre.
+     */
+    loginEmail: text("login_email"),
+    loginPasswordEncrypted: text("login_password_encrypted"),
+    loginPasswordIv: text("login_password_iv"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1718,6 +1729,17 @@ export const revenuecatConnections = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     apiKeyEncrypted: text("api_key_encrypted").notNull(),
     apiKeyIv: text("api_key_iv").notNull(),
+    /**
+     * Login opcional — usado SÓ para listar os sites da instância.
+     *
+     * A Sites API (/api/v1/sites) não existe no Community Edition: a rota dá
+     * 404 HTML, porque o Plausible a restringiu à Enterprise. O endpoint do
+     * próprio painel (/api/sites) existe, mas só aceita sessão. Sem isto, o
+     * seletor de site vira campo de digitação livre.
+     */
+    loginEmail: text("login_email"),
+    loginPasswordEncrypted: text("login_password_encrypted"),
+    loginPasswordIv: text("login_password_iv"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -3000,6 +3022,17 @@ export const plausibleConfig = pgTable(
     baseUrl: text("base_url").notNull(),
     apiKeyEncrypted: text("api_key_encrypted").notNull(),
     apiKeyIv: text("api_key_iv").notNull(),
+    /**
+     * Login opcional — usado SÓ para listar os sites da instância.
+     *
+     * A Sites API (/api/v1/sites) não existe no Community Edition: a rota dá
+     * 404 HTML, porque o Plausible a restringiu à Enterprise. O endpoint do
+     * próprio painel (/api/sites) existe, mas só aceita sessão. Sem isto, o
+     * seletor de site vira campo de digitação livre.
+     */
+    loginEmail: text("login_email"),
+    loginPasswordEncrypted: text("login_password_encrypted"),
+    loginPasswordIv: text("login_password_iv"),
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
