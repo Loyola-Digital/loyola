@@ -31,9 +31,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Sem `version:` de propósito — a action lê o `packageManager` do
+      # package.json. Declarar aqui também cria duas fontes de verdade, e a
+      # action falha na cara quando elas divergem.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
