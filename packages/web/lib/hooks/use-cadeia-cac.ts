@@ -87,9 +87,12 @@ export interface CadeiaCacPayload {
     }
   >;
   guardaDeCobertura?: {
-    estado: "indisponivel" | "naoSeAplica";
+    /** Story 44.12: quatro estados. `semLeadNoPeriodo` ≠ `indisponivel`. */
+    estado: "aplicada" | "semLeadNoPeriodo" | "indisponivel" | "naoSeAplica";
     motivo: string | null;
     message: string | null;
+    /** Dias com lead (`aplicada`) ou dias da série (`semLeadNoPeriodo`). */
+    dias: number | null;
   };
   ranking?: { metrica: Metrica; atual: number; teto: number; queda: number; posicao: number }[];
   composto?: {

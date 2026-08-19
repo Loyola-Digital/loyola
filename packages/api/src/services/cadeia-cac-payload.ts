@@ -272,21 +272,70 @@ export async function montarPayloadCadeiaCac(
   const agregado = agregar(todosOsDias);
   const atuais = calcularMetricas(agregado, familia);
 
-  // ⚠️ AC5 (@po, 2026-08-19): NENHUM produtor de `CoberturaDiaria` existe
-  // hoje — as únicas ocorrências no repo são fixtures de teste. A guarda de
-  // rastreio (`coberturaAtipica`) portanto NÃO roda, e o payload diz isso.
-  // Silêncio aqui faria o consumidor ler um teto de gratuita como se fosse
-  // tão confiável quanto o de paga (regra 7.4). Story 44.12 abre o produtor.
-  const tetos = calcularTetos(series, familia);
-  const guardaDeCobertura =
-    familia === "gratuita"
-      ? {
-          estado: "indisponivel" as const,
-          motivo: "naoAtribuivel" as const,
-          message:
-            "A guarda de cobertura de rastreio (coberturaAtipica) NÃO rodou: não existe produtor de cobertura de lead por dia. O teto de convLP desta família não está protegido contra janela escolhida por rastreio melhor, e não por conversão melhor. Ver Story 44.12.",
-        }
-      : { estado: "naoSeAplica" as const, motivo: null, message: null };
+  /**
+   * ⚠️ Story 44.12 (AC4): o cache de lead é lido AQUI, antes de `calcularTetos`,
+   * e reusado lá embaixo no `cplReal`. Uma leitura, dois usos — a versão
+   * anterior lia depois dos tetos, e ligar a guarda sem reordenar duplicaria a
+   * query.
+   */
+  let lead: LeadOriginPayload | undefined;
+  let leadComputedAt: Date | null = null;
+  if (familia === "gratuita") {
+    const [row] = await db
+      .select({ payload: publicMetricsCache.payload, computedAt: publicMetricsCache.computedAt })
+      .from(publicMetricsCache)
+      .where(
+        and(
+          eq(publicMetricsCache.projectId, opts.projectId),
+          eq(publicMetricsCache.scope, LEAD_ORIGIN_SCOPE),
+          eq(publicMetricsCache.key, opts.stageId),
+        ),
+      )
+      .limit(1);
+    lead = row?.payload as LeadOriginPayload | undefined;
+    leadComputedAt = row?.computedAt ?? null;
+  }
+
+  /**
+   * A guarda de rastreio (`coberturaAtipica`, spec §4) impede que a "melhor
+   * janela" de `convLP` seja a semana em que o RASTREIO funcionou melhor, e não
+   * a de melhor conversão. Medido na 44.6: uma etapa que passou de 52% para 95%
+   * de cobertura exibiria um salto de 1,8× sem nada mudar na página.
+   *
+   * ⚠️ `coberturaDiaria` pode faltar mesmo com cache presente: registro gravado
+   * ANTES da Story 44.12 não tem o campo. Aí a guarda fica `indisponivel` até o
+   * sync reprocessar a etapa — e o payload diz isso, em vez de fingir que rodou.
+   */
+  const coberturaDaEtapa = lead?.coberturaDiaria;
+  const tetos = calcularTetos(series, familia, coberturaDaEtapa ? { coberturaDaEtapa } : {});
+
+  const guardaDeCobertura = (() => {
+    if (familia !== "gratuita") {
+      return { estado: "naoSeAplica" as const, motivo: null, message: null, dias: null };
+    }
+    if (!coberturaDaEtapa) {
+      return {
+        estado: "indisponivel" as const,
+        motivo: "naoAtribuivel" as const,
+        message:
+          "A guarda de cobertura de rastreio não rodou: esta etapa ainda não tem cobertura de lead por dia computada. O teto de convLP não está protegido contra janela escolhida por rastreio melhor, e não por conversão melhor. O sync diário popula o campo; para antecipar, use scripts/backfill-lead-origin.ts.",
+        dias: null,
+      };
+    }
+    // Há série, mas nenhum dia com lead: a guarda não teve como julgar. É
+    // afirmação DIFERENTE de "não rodou" — aqui o dado existe e está vazio.
+    const comLead = coberturaDaEtapa.filter((c) => c.leadsTotais > 0).length;
+    if (comLead === 0) {
+      return {
+        estado: "semLeadNoPeriodo" as const,
+        motivo: "semDados" as const,
+        message:
+          "A cobertura de rastreio foi computada, mas nenhum dia do período tem lead — a guarda não teve como julgar as janelas.",
+        dias: coberturaDaEtapa.length,
+      };
+    }
+    return { estado: "aplicada" as const, motivo: null, message: null, dias: comLead };
+  })();
 
   const ranking = montarRanking(tetos, atuais);
   const noTeto = metricasDoTeto(tetos);
@@ -363,18 +412,7 @@ export async function montarPayloadCadeiaCac(
       };
     }
   } else {
-    const [row] = await db
-      .select({ payload: publicMetricsCache.payload, computedAt: publicMetricsCache.computedAt })
-      .from(publicMetricsCache)
-      .where(
-        and(
-          eq(publicMetricsCache.projectId, opts.projectId),
-          eq(publicMetricsCache.scope, LEAD_ORIGIN_SCOPE),
-          eq(publicMetricsCache.key, opts.stageId),
-        ),
-      )
-      .limit(1);
-    const lead = row?.payload as LeadOriginPayload | undefined;
+    // Story 44.12 (AC4): `lead` já foi lido lá em cima, para a guarda. Reusar.
     if (lead) {
       principal = {
         metrica: "cplReal",
@@ -383,7 +421,7 @@ export async function montarPayloadCadeiaCac(
         leadsUnicos: lead.uniqueLeads,
         fonteDeLead: lead.fonte,
         ...(lead.uniqueLeads === 0 ? { motivo: "semDados" as const } : {}),
-        computedAt: row?.computedAt ?? null,
+        computedAt: leadComputedAt,
       };
     } else {
       // ⚠️ QA-448-02: "o sync ainda não rodou" (espere) e "a etapa não tem

@@ -77,7 +77,8 @@ const TEXTO_DO_MOTIVO: Record<string, string> = {
   semDados: "Não há dado para este período.",
   baseInsuficiente: "Há série, mas nenhuma janela de 7 dias atinge o piso de confiança.",
   naoAtribuivel: "O dado existe, mas não é atribuível a esta dimensão.",
-  coberturaAtipica: "Toda janela elegível foi barrada pela guarda de rastreio.",
+  coberturaAtipica:
+    "Toda janela elegível foi barrada pela guarda de rastreio: em todas elas a cobertura ficou muito abaixo da mediana da etapa, então o teto viria de uma semana de rastreio ruim, não de conversão melhor.",
   leituraFalhou: "A fonte existe, mas a leitura falhou — verifique a permissão e tente de novo.",
   syncPendente: "A fonte está conectada; o cache ainda não foi computado.",
   indeterminado: "Não foi possível determinar se a etapa tem fonte conectada.",
@@ -305,8 +306,19 @@ export function CadeiaCacStageTab({
 
       {/* Tudo que o payload declara como indisponível fica VISÍVEL. */}
       <div className="space-y-3">
-        {data.guardaDeCobertura?.estado === "indisponivel" && (
+        {/* Story 44.12 — quatro estados, e três deles precisam aparecer.
+            `aplicada` é o único que não pede ação, mas ainda assim informa: sem
+            isso o operador não distingue "protegido" de "não sei". */}
+        {(data.guardaDeCobertura?.estado === "indisponivel" ||
+          data.guardaDeCobertura?.estado === "semLeadNoPeriodo") && (
           <Motivo texto={data.guardaDeCobertura.message} />
+        )}
+        {data.guardaDeCobertura?.estado === "aplicada" && (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Info className="h-3 w-3" />
+            Guarda de rastreio ativa: o teto de Conv. LP considerou {data.guardaDeCobertura.dias}{" "}
+            dia(s) com lead e descartou janelas de cobertura atípica.
+          </p>
         )}
         {data.atribuicao?.motivo === "naoAtribuivel" && (
           <Motivo texto={data.atribuicao.message} />

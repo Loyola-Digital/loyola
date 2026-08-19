@@ -742,3 +742,93 @@ describe("cadeia-cac — os campos da etapa que decidem o benchmark (QA-449-01)"
     await app.close();
   });
 });
+
+describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)", () => {
+  const cache = (payload: Record<string, unknown>) =>
+    filaLeadCache([{ payload, computedAt: new Date("2026-08-11T00:00:00Z") }]);
+
+  const serie = (n: number, atrib = 50) =>
+    Array.from({ length: n }, (_, i) => ({
+      date: `2026-08-${String(i + 1).padStart(2, "0")}`,
+      leadsAtribuidos: atrib,
+      leadsTotais: 100,
+    }));
+
+  it("`aplicada` quando há cobertura com lead — e diz em quantos dias", async () => {
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({ uniqueLeads: 500, fonte: "planilha_leads", coberturaDiaria: serie(10) });
+    const app = await buildApp();
+    const g = (await app.inject({ method: "GET", url: url() })).json().guardaDeCobertura;
+    expect(g.estado).toBe("aplicada");
+    expect(g.dias).toBe(10);
+    expect(g.message).toBeNull();
+    await app.close();
+  });
+
+  it("`semLeadNoPeriodo` é DIFERENTE de não ter rodado", async () => {
+    // Aqui o dado existe e está vazio — a guarda rodou e não teve como julgar.
+    // Colapsar com `indisponivel` mandaria o operador rodar um backfill que não
+    // muda nada.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({
+      uniqueLeads: 0,
+      fonte: "planilha_leads",
+      coberturaDiaria: [{ date: "2026-08-01", leadsAtribuidos: 0, leadsTotais: 0 }],
+    });
+    const app = await buildApp();
+    const g = (await app.inject({ method: "GET", url: url() })).json().guardaDeCobertura;
+    expect(g.estado).toBe("semLeadNoPeriodo");
+    expect(g.dias).toBe(1);
+    await app.close();
+  });
+
+  it("`indisponivel` quando o cache é ANTERIOR à 44.12 e não tem o campo", async () => {
+    // ⚠️ É o estado real de toda etapa já cacheada no dia do deploy: o código
+    // pode estar perfeito e a guarda continua desligada até o sync reprocessar.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({ uniqueLeads: 500, fonte: "planilha_leads" }); // sem coberturaDiaria
+    const app = await buildApp();
+    const g = (await app.inject({ method: "GET", url: url() })).json().guardaDeCobertura;
+    expect(g.estado).toBe("indisponivel");
+    expect(g.message).toContain("backfill-lead-origin");
+    await app.close();
+  });
+
+  it("cache velho não quebra — nada de `undefined.length`", async () => {
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({ uniqueLeads: 500, fonte: "planilha_leads" });
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: url() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().principal.valor).not.toBeNull();
+    await app.close();
+  });
+
+  it("`naoSeAplica` na família paga, sem ler cache de lead", async () => {
+    filaVinculo([etapa()]);
+    filaInsights(diasDe("c1", 10));
+    const app = await buildApp();
+    const g = (await app.inject({ method: "GET", url: url() })).json().guardaDeCobertura;
+    expect(g.estado).toBe("naoSeAplica");
+    await app.close();
+  });
+
+  it("o cache de lead é lido UMA vez, e serve à guarda e ao cplReal", async () => {
+    // A AC4 exige a reordenação justamente para não duplicar a query. Se
+    // alguém voltar a ler no ramo do cplReal, a fila do mock acaba e o teste
+    // quebra com `undefined`.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({ uniqueLeads: 400, fonte: "planilha_leads", coberturaDiaria: serie(10) });
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+    expect(body.guardaDeCobertura.estado).toBe("aplicada");
+    expect(body.principal.leadsUnicos).toBe(400);
+    expect(mockSelect).toHaveBeenCalledTimes(3); // vínculo, insights, cache
+    await app.close();
+  });
+});

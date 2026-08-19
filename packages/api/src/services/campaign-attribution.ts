@@ -120,7 +120,15 @@ export async function adsAmbiguos(
 }
 
 /** `utm_content` só é Ad ID quando é numérico — o resto é UTM de outra coisa. */
-function comoAdId(utmContent: string | null): string | null {
+/**
+ * `utm_content` → Ad ID, ou `null` se não parece um.
+ *
+ * Exportada na Story 44.12: o produtor de cobertura de rastreio precisa da
+ * MESMA regra de "isto é um Ad ID?" que a atribuição usa. Duas definições dariam
+ * populações diferentes para o numerador e para a cobertura, e a guarda
+ * compararia coisas distintas.
+ */
+export function comoAdId(utmContent: string | null): string | null {
   if (!utmContent) return null;
   const t = utmContent.trim();
   return /^\d{5,}$/.test(t) ? t : null;
