@@ -14,7 +14,7 @@ import { metaAdInsightsDaily } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import type { CriativoBruto } from "@loyola-x/shared";
 import { accumulate, emptyAgg, type InsightRow, type MetricAgg } from "../utils/meta-insight-agg.js";
-import { round } from "../utils/meta-metrics.js";
+import { parseActionCount, round } from "../utils/meta-metrics.js";
 
 interface Params {
   projectId: string;
@@ -68,12 +68,12 @@ export async function carregarCriativosDaEtapa(db: Database, p: Params): Promise
    * O `spend` que sai daqui ja vem TRIBUTADO. Quem consome nao reaplica — foi
    * o bug da 29.24, corrigido na 29.27.
    */
-  const porAd = new Map<string, { adName: string | null; dias: Map<string, MetricAgg>; ehVideo: boolean; views3s: number; p75: number }>();
+  const porAd = new Map<string, { adName: string | null; dias: Map<string, MetricAgg>; ehVideo: boolean; temViews3s: boolean; views3s: number; p75: number }>();
   for (const r of rows) {
     if (!r.adId) continue;
     let a = porAd.get(r.adId);
     if (!a) {
-      a = { adName: r.adName ?? null, dias: new Map(), ehVideo: false, views3s: 0, p75: 0 };
+      a = { adName: r.adName ?? null, dias: new Map(), ehVideo: false, temViews3s: false, views3s: 0, p75: 0 };
       porAd.set(r.adId, a);
     }
     // O nome mais recente ganha — `ad_name` muda quando o gestor renomeia.
@@ -89,10 +89,34 @@ export async function carregarCriativosDaEtapa(db: Database, p: Params): Promise
     const vm = r.videoMetrics as { p75?: number; views3s?: number } | null;
     if (vm) {
       a.ehVideo = true;
-      // `video_view` e o 3s (Story 43.3) — nao existe campo `video_3_sec_*` na
-      // API da Meta, e a premissa contraria ja custou uma rodada no Epic 43.
-      a.views3s += Number(vm.views3s ?? 0) || 0;
       a.p75 += Number(vm.p75 ?? 0) || 0;
+      /**
+       * QA-4411-04 — `views3s` esta AUSENTE em 5.869 das 7.369 linhas de video,
+       * e em 5.680 delas o dado esta em `actions[].video_view`.
+       *
+       * `extractVideoMetrics` so grava `views3s` quando havia `actions` no
+       * momento do sync (Story 43.3); linhas anteriores ficaram sem a chave. Ler
+       * `vm.views3s ?? 0` conta ZERO para 80% dos videos — e o comentario do
+       * proprio `extractVideoMetrics` avisa por que isso e o pior dos mundos:
+       * "gravar 0 no lugar tornaria 'a Meta nao reportou' indistinguivel de
+       * 'ninguem assistiu', e isso NAO se recupera depois".
+       *
+       * `actions` e a MESMA fonte que o sync usaria — nao e invencao, e leitura
+       * do dado que ja esta na linha, com o leitor canonico.
+       */
+      if (vm.views3s !== undefined) {
+        a.views3s += Number(vm.views3s) || 0;
+        a.temViews3s = true;
+      } else {
+        const daAction = r.actions ? parseActionCount(r.actions as never, "video_view") : 0;
+        // Sem a chave E sem a action, o 3s nao existe para esta linha. Somar
+        // zero aqui afirmaria que ninguem assistiu; deixar `temViews3s` falso
+        // faz o Hook sair `null`, que e a resposta certa para "nao medido".
+        if (r.actions && (r.actions as unknown[]).some((x) => (x as { action_type?: string }).action_type === "video_view")) {
+          a.views3s += daAction;
+          a.temViews3s = true;
+        }
+      }
     }
   }
 
@@ -108,7 +132,9 @@ export async function carregarCriativosDaEtapa(db: Database, p: Params): Promise
       linkClicks: dias.reduce((s, d) => s + d.linkClicks, 0),
       // Ausencia de video e `null`, nao `0`: `0` afirmaria "e video e ninguem
       // passou de 3s", que e um criativo pessimo, nao um que nao e video.
-      views3s: a.ehVideo ? a.views3s : null,
+      // `null` quando nao e video OU quando e video sem o 3s medido — as duas
+      // sao "nao medido", e o Hook sai `null` em vez de um zero mentiroso.
+      views3s: a.ehVideo && a.temViews3s ? a.views3s : null,
       p75: a.ehVideo ? a.p75 : null,
     };
   });
