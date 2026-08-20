@@ -326,11 +326,24 @@ export async function montarPayloadCadeiaCac(
     // afirmação DIFERENTE de "não rodou" — aqui o dado existe e está vazio.
     const comLead = coberturaDaEtapa.filter((c) => c.leadsTotais > 0).length;
     if (comLead === 0) {
+      /**
+       * Story 44.12 (Sessão 2) — série vazia tem DUAS causas, e dizer a errada
+       * manda a pessoa procurar no lugar errado.
+       *
+       * Medido em produção: `bbe-pr1-mar-26` tem 214 leads e série vazia porque
+       * a coluna de data da planilha não é legível (cabeçalho em branco), não
+       * porque ninguém se cadastrou. Anunciar "nenhum dia tem lead" ali seria
+       * verdade sobre a série e mentira sobre a etapa — e a ação corretiva
+       * (apontar a coluna de data no mapeamento da pesquisa) ficaria invisível.
+       */
+      const semData = lead?.leadsSemData ?? 0;
       return {
         estado: "semLeadNoPeriodo" as const,
         motivo: "semDados" as const,
         message:
-          "A cobertura de rastreio foi computada, mas nenhum dia do período tem lead — a guarda não teve como julgar as janelas.",
+          semData > 0
+            ? `A cobertura de rastreio foi computada, mas ${semData} lead(s) ficaram fora da série porque a data não foi legível na planilha — a guarda não teve como julgar as janelas. Aponte a coluna de data no mapeamento da pesquisa.`
+            : "A cobertura de rastreio foi computada, mas nenhum dia do período tem lead — a guarda não teve como julgar as janelas.",
         dias: coberturaDaEtapa.length,
       };
     }

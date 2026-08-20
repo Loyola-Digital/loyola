@@ -784,6 +784,27 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
     await app.close();
   });
 
+  it("série vazia por data ilegível NÃO é anunciada como \"nenhum lead\"", async () => {
+    // Story 44.12 (Sessão 2). Medido em produção: `bbe-pr1-mar-26` tem 214 leads
+    // e série vazia porque a coluna de data da planilha tem cabeçalho em branco.
+    // Dizer "nenhum dia tem lead" ali é verdade sobre a série e mentira sobre a
+    // etapa — e esconde a única ação que resolve: apontar a coluna de data.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({
+      uniqueLeads: 214,
+      fonte: "planilha_leads",
+      coberturaDiaria: [],
+      leadsSemData: 213,
+    });
+    const app = await buildApp();
+    const g = (await app.inject({ method: "GET", url: url() })).json().guardaDeCobertura;
+    expect(g.estado).toBe("semLeadNoPeriodo");
+    expect(g.message).toContain("213");
+    expect(g.message).toContain("data não foi legível");
+    await app.close();
+  });
+
   it("`indisponivel` quando o cache é ANTERIOR à 44.12 e não tem o campo", async () => {
     // ⚠️ É o estado real de toda etapa já cacheada no dia do deploy: o código
     // pode estar perfeito e a guarda continua desligada até o sync reprocessar.
