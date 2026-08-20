@@ -1,3 +1,4 @@
+import { chaveDeComprador } from "../utils/comprador.js";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
@@ -280,7 +281,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       // txIds reembolsados → remove a linha "paid" pareada (mesmo id) das vendas.
       const refundedTxIds = new Set<string>();
 
-      for (const row of rows) {
+      for (const [idxDaLinha, row] of rows.entries()) {
         const email = (row[emailIdx] ?? "").trim().toLowerCase();
         if (!email) continue;
 
@@ -322,7 +323,28 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         // nem em nenhum corte por UTM.
         if (!isRevenueBucket(bucket)) continue;
 
-        const dedupKey = txId ? `tx|${txId}` : `email|${email}`;
+        /**
+         * Story 29.53 (AC2) — a unidade contada e o E-MAIL, nao a transacao.
+         *
+         * O order bump chega numa LINHA PROPRIA com a mesma transacao da compra
+         * principal, e a chave `tx|` o colapsava — em tese. Medido na planilha
+         * do Netao: o `transactionId` daquele funil aponta para a coluna `ID`,
+         * que e unica nas 196 linhas, entao a dedup nao deduplicava NADA e cada
+         * bump virava uma venda a mais. CAC de 08/08: R$ 101,85 exibido contra
+         * R$ 162,95 real, 60% de diferenca no numero que decide escala.
+         *
+         * O e-mail nao depende de mapeamento certo de coluna: 17 dos 20 bumps
+         * tem o mesmo e-mail da compra principal no mesmo dia, e as 129 linhas
+         * aprovadas colapsam em 110 compradores.
+         *
+         * ⚠️ Isto NAO e regra nova — e o que o escopo do EPIC-29 pede desde
+         * 2026-05-22: "API que agrega vendas por email (dedup 1 venda/email)".
+         * Quem divergiu foi a implementacao.
+         *
+         * `tx|` fica como rede para a linha sem e-mail, e o indice da linha
+         * como ultimo recurso: descartar em silencio some com a venda.
+         */
+        const dedupKey = chaveDeComprador(email, txId, idxDaLinha);
 
         const existing = dedupMap.get(dedupKey);
         if (existing) {
@@ -521,7 +543,20 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       > = {};
       let counted = 0;
 
-      for (const row of rows) {
+      /**
+       * Story 29.53 (AC2) — a serie diaria deduplica por e-mail DENTRO do dia.
+       *
+       * ⚠️ A soma dos dias NAO bate com o total do periodo, e isso esta certo:
+       * quem comprou em dois dias conta nos dois aqui e uma vez la. Medido na
+       * planilha do Netao, a divergencia e de **1** em 110 — um comprador que
+       * voltou em 28/07 e 04/08.
+       *
+       * Precedente identico e deliberado na Story 44.12 (Decisao 2 do @po), com
+       * a mesma justificativa: sao perguntas diferentes. "Quantos compradores
+       * neste dia?" e "quantos compradores no periodo?" nao somam.
+       */
+      const vistosPorDia = new Set<string>();
+      for (const [idxDaLinha, row] of rows.entries()) {
         const rowDay = saleDayKey(row[dataIdx]);
         if (!rowDay) continue;
         if (cutoffStartDay && rowDay < cutoffStartDay) continue;
@@ -549,8 +584,21 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
 
         // Story 41.7 (§C.7): `rowDay` já é o dia civil de São Paulo. Antes daqui
         // saía `getFullYear/getMonth/getDate`, que usava o fuso do processo.
+        // O FATURAMENTO soma todas as linhas — o order bump E receita (AC4).
         byDay[rowDay] = (byDay[rowDay] ?? 0) + bruto;
-        salesByDay[rowDay] = (salesByDay[rowDay] ?? 0) + 1;
+
+        // A CONTAGEM conta compradores. A segunda linha do mesmo e-mail no
+        // mesmo dia (o bump) soma no faturamento e nao cria venda.
+        const chaveDoDia = chaveDeComprador(
+          emailIdx === -1 ? null : row[emailIdx],
+          txIdx === -1 ? null : row[txIdx],
+          idxDaLinha,
+          rowDay,
+        );
+        if (!vistosPorDia.has(chaveDoDia)) {
+          vistosPorDia.add(chaveDoDia);
+          salesByDay[rowDay] = (salesByDay[rowDay] ?? 0) + 1;
+        }
 
         // Story 29.42 (AC8): a MESMA linha que entrou no total entra aqui.
         // Derivar a dimensão dentro do mesmo laço é o que garante que a soma
