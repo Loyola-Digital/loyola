@@ -8,6 +8,13 @@ import {
   projectMembers,
 } from "../db/schema.js";
 import { clearSheetDataCache, readSheetData } from "../services/google-sheets.js";
+import { productKey } from "../utils/produto.js";
+
+/**
+ * Story 29.53: a chave canônica saiu daqui para `utils/produto.ts`, onde a rota
+ * de vendas também a lê. Reexportada para não quebrar quem já importava daqui.
+ */
+export { productKey };
 
 // ============================================================
 // Epic 29 Story 29.1 — Perpetual Spreadsheet (1 por funil, sem stage)
@@ -58,17 +65,6 @@ const upsertSchema = z.object({
 const PRODUCT_TYPES = ["principal", "order_bump", "upsell"] as const;
 type ProductType = (typeof PRODUCT_TYPES)[number];
 const productTypesSchema = z.record(z.string().min(1), z.enum(PRODUCT_TYPES));
-
-/**
- * Chave canônica de produto: `trim().toLowerCase()`.
- *
- * Mesma regra da 18.51a na Captação Paga — sem ela "Imersão" e "imersão"
- * viram dois produtos, e o gestor classifica um e não entende por que o outro
- * continua contando como principal.
- */
-export function productKey(name: string): string {
-  return name.trim().toLowerCase();
-}
 
 /**
  * Agrupa os produtos de uma planilha lida e aplica a classificação salva.

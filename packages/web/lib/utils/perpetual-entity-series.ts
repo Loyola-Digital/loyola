@@ -48,6 +48,8 @@
  * montadas só a partir das linhas de investimento, então venda sem entidade
  * correspondente nunca entrava em lugar nenhum.
  */
+import { deriveDetailMetrics } from "./perpetual-detail-metrics";
+
 export const UNATTRIBUTED_SERIES_KEY = "(sem atribuição)";
 
 /**
@@ -103,6 +105,13 @@ export interface SeriesPoint {
   sales: number | null;
   cac: number | null;
   marginPct: number | null;
+  /**
+   * Story 29.54 (AC5): faturamento bruto ÷ investimento com imposto.
+   *
+   * `null` quando não houve investimento no dia — "0x" afirmaria que o dinheiro
+   * entrou e não voltou nada, quando na verdade não houve dinheiro.
+   */
+  roas: number | null;
 }
 
 export interface EntitySeries {
@@ -161,14 +170,26 @@ export interface BuildSeriesParams {
  * `Infinity` no eixo.
  */
 function derivePoint(spend: number, revenue: number, sales: number, feeRate: number): SeriesPoint {
-  const margin = revenue * (1 - feeRate) - spend;
+  /**
+   * Story 29.54 (AC5): as fórmulas vêm de `deriveDetailMetrics`, não daqui.
+   *
+   * O ROAS já estava escrito em cinco lugares desta base quando a story
+   * começou. Em vez de abrir o sexto, o ponto da série passou a derivar do
+   * mesmo módulo que a tabela do Detalhamento usa — e é por isso que o número
+   * da série e o da linha da tabela não podem divergir.
+   *
+   * `impressions`/`clicks` em zero: a série não plota CPC nem CPM, e o módulo
+   * devolve zero para eles sem tocar no resto.
+   */
+  const m = deriveDetailMetrics({ spend, impressions: 0, clicks: 0, revenue, sales }, feeRate);
   return {
     spend,
     revenue,
-    margin,
+    margin: m.margin,
     sales,
-    cac: sales > 0 ? spend / sales : null,
-    marginPct: revenue > 0 ? (margin / revenue) * 100 : null,
+    cac: m.costPerSale,
+    marginPct: m.marginPct,
+    roas: m.roas,
   };
 }
 
