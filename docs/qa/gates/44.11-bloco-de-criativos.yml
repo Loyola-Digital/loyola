@@ -8,6 +8,7 @@ revisadoEm: "2026-08-20"
 verdict: FAIL
 statusDoBloqueio: RESOLVIDO
 reGate: CONCERNS
+achadoPosDeploy: QA-4411-04 — resolvido no mesmo dia
 
 resumo: >
   FAIL, e sem hesitação: o serviço novo montava a série de um jeito diferente do
@@ -67,6 +68,48 @@ achados:
       Verificado depois: as **13 etapas** fecham em razão 1,0000. Teste de
       regressão trava o número (R$ 100 crus → R$ 113,83) e a reversão que
       destributa o derruba.
+
+  - id: QA-4411-04
+    severidade: high
+    categoria: correctness
+    titulo: "O Hook Rate saía 0% em 5 das 7 etapas — `views3s` não está no jsonb em 80% das linhas"
+    arquivo: "packages/api/src/services/meta-ad-daily.ts"
+    reproduzido: true
+    bloqueia: false
+    achadoEm: "validação pós-deploy, 2026-08-20"
+    statusDoItem: RESOLVIDO
+    descricao: >
+      Achado ao conferir o payload real depois do deploy: `hookMediano` vinha
+      **0,0%** em 5 das 7 etapas gratuitas. Número redondo demais para ser
+      verdade.
+
+      Medido no banco:
+
+        linhas com `video_metrics`:              7.369
+        destas, COM a chave `views3s`:           1.500
+        SEM a chave, mas com `video_view`:       5.680
+        sem o dado em lugar nenhum:                189
+
+      `extractVideoMetrics` só grava `views3s` quando havia `actions` no momento
+      do sync (Story 43.3); tudo anterior ficou sem a chave. Ler
+      `vm.views3s ?? 0` contava **zero para 80% dos vídeos**.
+
+      ⚠️ **Introduzido por mim, ao corrigir o QA-4411-01.** A primeira versão do
+      serviço tinha o fallback para `actions[].video_view`; ao refatorar para
+      usar `accumulate`, o fallback saiu junto e nenhum teste percebeu — todos
+      usam `views3s` explícito na fixture.
+
+      E o comentário do próprio `extractVideoMetrics` diz por que zero é o pior
+      dos três caminhos: *"gravar 0 no lugar tornaria 'a Meta não reportou'
+      indistinguível de 'ninguém assistiu', e isso NÃO se recupera depois"*.
+    correcaoAplicada: >
+      Fallback restaurado com `parseActionCount`, o leitor canônico. E as 189
+      linhas sem o dado em lugar nenhum passam a devolver `hookRate: null`, não
+      zero — ausência de verdade continua ausência.
+
+      Depois: Hook mediano de **16,9% a 36,0%** nas 7 etapas. Dois testes travam
+      os dois casos, e a reversão que desliga o fallback devolve `expected +0 to
+      be close to 0.25`.
 
   - id: QA-4411-02
     severidade: low

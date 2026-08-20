@@ -943,6 +943,75 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
     await app.close();
   });
 
+  it("`views3s` ausente no jsonb é lido de `actions[].video_view` (QA-4411-04)", async () => {
+    /**
+     * Achado na validação pós-deploy. `extractVideoMetrics` só grava `views3s`
+     * quando havia `actions` no momento do sync (Story 43.3) — medido em
+     * produção, **5.869 das 7.369 linhas de vídeo não têm a chave**, e em
+     * **5.680 delas o dado está em `actions[].video_view`**.
+     *
+     * Ler `vm.views3s ?? 0` contava ZERO para 80% dos vídeos: o Hook mediano
+     * saía 0,0% em 5 das 7 etapas gratuitas. O comentário do próprio
+     * `extractVideoMetrics` avisa por que é o pior dos mundos — "gravar 0 no
+     * lugar tornaria 'a Meta não reportou' indistinguível de 'ninguém
+     * assistiu'".
+     */
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 1));
+    filaLeadCache([]);
+    filaCriativos([
+      {
+        adId: "a1",
+        adName: "Vídeo antigo",
+        dateStart: "2026-08-10",
+        spend: "100",
+        impressions: 10_000,
+        reach: 9_000,
+        clicks: 300,
+        actions: [
+          { action_type: "link_click", value: "200" },
+          { action_type: "video_view", value: "2500" },
+        ],
+        actionValues: null,
+        lastSyncedAt: new Date("2026-08-11T00:00:00Z"),
+        // Sem `views3s` — o caso das 5.869 linhas.
+        videoMetrics: { p25: 3, p50: 2, p75: 1_000, p100: 0, thruplay: 3 },
+      },
+    ]);
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+    // 2.500 / 10.000 = 25%, não 0%.
+    expect(body.criativos[0].hookRate).toBeCloseTo(0.25, 9);
+    await app.close();
+  });
+
+  it("vídeo SEM o 3s em lugar nenhum devolve Hook `null`, não zero (QA-4411-04)", async () => {
+    // As outras 189 linhas: sem a chave no jsonb E sem a action. Aí a ausência
+    // é real, e `0` afirmaria que ninguém assistiu.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 1));
+    filaLeadCache([]);
+    filaCriativos([
+      {
+        adId: "a1",
+        adName: "Sem medição",
+        dateStart: "2026-08-10",
+        spend: "100",
+        impressions: 10_000,
+        reach: 9_000,
+        clicks: 300,
+        actions: [{ action_type: "link_click", value: "200" }],
+        actionValues: null,
+        lastSyncedAt: new Date("2026-08-11T00:00:00Z"),
+        videoMetrics: { p25: 3, p50: 2, p75: 1_000, p100: 0, thruplay: 3 },
+      },
+    ]);
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+    expect(body.criativos[0].hookRate).toBeNull();
+    await app.close();
+  });
+
   it("o bloco de criativos chega ao payload, agrupado e ordenado (44.11)", async () => {
     filaVinculo([etapa({ stageType: "free" })]);
     filaInsights(diasDe("c1", 10));
