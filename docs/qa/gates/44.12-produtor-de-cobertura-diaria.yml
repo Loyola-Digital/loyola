@@ -589,6 +589,72 @@ porQueConcernsENaoFail: >
   O que não é negociável antes do PR: os 8 arquivos de sync (QA-4412-05) não
   podem entrar na `main`, e o QA-4412-01 é um teste, não um redesenho.
 
+validacaoVisualPosDeploy:
+  data: "2026-08-20"
+  ambiente: "produção (deploy + backfill executados no mesmo dia)"
+  executadaPor: "usuário (Danilo), reportando a tela; @qa conferiu contra o payload"
+  resultado: CONFIRMADA
+  evidencia: >
+    Na aba Cadeia de CAC da `PP / pps1 / Aquisição`, a tela exibe:
+    "Guarda de rastreio ativa: o teto de Conv. LP considerou 26 dia(s) com lead."
+
+    O número bate com o payload que rodei contra o banco de produção antes da
+    conferência visual (`guardaDeCobertura.estado = aplicada, dias = 26`), e o
+    aviso de guarda indisponível — que aparecia em 100% das etapas antes do
+    backfill — desapareceu.
+
+    Confere também o cabeçalho: R$ 15.188,46 ÷ 75 leads = R$ 202,51, o CAC/CPL
+    exibido.
+  payloadDas7Gratuitas:
+    - "bbe-pr1-mar-26/Captação gratuita: aplicada, 20 dias, leadsSemData=4"
+    - "bbe-web-mai-26/Captação Gratuita: aplicada, 9 dias"
+    - "dg-pg02/Downsell Captação: aplicada, 14 dias"
+    - "fz-l2-jun-26/Captação Gratuita: aplicada, 17 dias"
+    - "fz-m1-mai26/Captação Gratuita: aplicada, 18 dias"
+    - "fz-m2-jul26/Captação Gratuita: aplicada, 8 dias"
+    - "pps1/Aquisição: aplicada, 26 dias  ← a conferida na tela"
+  correcaoDeContagem: >
+    São **7** etapas com a guarda aplicada, não 8. A `bbe-pr2-ago-26 / Captação
+    Paga` é `event_capture` e o payload resolve `naoSeAplica` — contá-la como
+    gratuita foi erro de ler `stage_type` em vez da família que o payload deriva.
+
+achadosDaValidacaoVisual:
+  - id: QA-4412-11
+    severidade: medium
+    categoria: correctness
+    titulo: "A frase da guarda afirma um teto de Conv. LP que a própria tela declara não existir"
+    arquivo: "packages/web/components/funnels/cadeia-cac-stage-tab.tsx:323-330"
+    reproduzido: true
+    descobertoEm: "validação visual pós-deploy, `PP / pps1 / Aquisição`"
+    descricao: >
+      Duas afirmações convivem na mesma tela e se contradizem na leitura:
+
+        linha da tabela → `Conv. LP    —    —    —    sem alvo`
+        rodapé          → "o teto de Conv. LP considerou 26 dia(s) com lead"
+
+      A guarda anuncia ter considerado dados **para um teto** que a tabela
+      declara inexistente. Quem lê conclui que o teto existe e está protegido;
+      nenhuma das duas coisas é verdade hoje.
+
+      A causa está declarada na própria tela, mas em outro parágrafo: a Story
+      44.3 ainda não tem produtor ligado, então `leadsAtribuidos` fica ausente
+      da série e `convLP` cai em `baseInsuficiente`. A informação existe —
+      partida em dois lugares que se contradizem à primeira leitura.
+
+      ⚠️ É a MESMA classe de defeito que o `09583f69` e o QA-4412-04
+      corrigiram nesta story: uma frase que afirma o que não se tem. O comentário
+      em `:317-322` já reconhece metade do problema ("`aplicada` significa que a
+      guarda RODOU, não que barrou") e corrigiu o verbo; o sujeito da frase — "o
+      teto de Conv. LP" — ficou.
+    correcaoSugerida: >
+      Quando `convLP` não tem teto, a frase deve dizer que a guarda está ativa e
+      **ainda não tem o que proteger**, apontando a 44.3 — em vez de nomear um
+      teto inexistente. Ex.: "Guarda de rastreio ativa: 26 dia(s) com lead
+      medidos. O teto de Conv. LP ainda não é calculável (Story 44.3)."
+      Natural fazer junto com a 44.3, quando o teto passa a existir e a frase
+      atual vira verdadeira sozinha.
+    bloqueia: false
+
 recomendacao:
   antesDoMerge:
     - "QA-4412-05 — `git rm` dos 8 artefatos `\" 2\"` do `5a1189be`. Mecânico e obrigatório."
