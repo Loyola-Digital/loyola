@@ -945,29 +945,62 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
     await app.close();
   });
 
-  it("Conv. LP GANHA valor quando o cache traz `leadsPorCampanhaDia` (44.10 AC2/AC3)", async () => {
-    // A linha que ficou `—` desde que a aba nasceu. 10 dias de campanha `c1`
-    // com 160 LP views/dia; 16 leads atribuídos/dia dá convLP = 0,10.
+  it("o Atual da Conv. LP usa o numerador DEDUPLICADO, não a soma por campanha (QA-4410-01)", async () => {
+    /**
+     * O achado do gate. `agregar` soma `DiaBruto.leadsAtribuidos` de todas as
+     * campanhas, e o mesmo lead pode estar em duas — ele preencheu a pesquisa
+     * duas vezes no mesmo dia, por anúncios diferentes. Somar as respostas por
+     * campanha para derivar uma taxa sobre denominador deduplicado é o que a
+     * Story 44.3 proíbe (`campaign-attribution.ts:205-215`).
+     *
+     * Aqui a soma por campanha (2× o real) está deliberadamente inflada contra
+     * a `coberturaDiaria`. Se o Atual vier dela, o número dobra.
+     */
     filaVinculo([etapa({ stageType: "free" })]);
     filaInsights(diasDe("c1", 10));
     cache({
       uniqueLeads: 500,
       fonte: "planilha_leads",
-      coberturaDiaria: serie(10),
+      coberturaDiaria: serie(10), // 50 atribuídos/dia = 500 deduplicados
       leadsPorCampanhaDia: Array.from({ length: 10 }, (_, i) => ({
         campaignId: "c1",
         date: `2026-08-${String(i + 1).padStart(2, "0")}`,
-        leads: 16,
+        leads: 100, // o dobro: a sobreposição entre campanhas
       })),
     });
     const app = await buildApp();
     const body = (await app.inject({ method: "GET", url: url() })).json();
-    expect(body.atuais.convLP).toBeCloseTo(0.1, 6);
+    // 500 deduplicados ÷ 1.600 LP views = 0,3125. Pela soma por campanha
+    // daria 0,625 — o dobro.
+    expect(body.atuais.convLP).toBeCloseTo(0.3125, 6);
     expect(body.tetos.convLP.valor).not.toBeNull();
     await app.close();
   });
 
-  it("cache SEM `leadsPorCampanhaDia` deixa Conv. LP `null` — ausente não é zero (44.10 AC2)", async () => {
+  it("cache da 44.12 (sem `leadsPorCampanhaDia`) dá Atual sem teto — não zero, não ausente", async () => {
+    /**
+     * ⚠️ Desvio deliberado do AC2 literal, achado ao corrigir o QA-4410-01.
+     *
+     * O AC dizia que sem o campo novo a Conv. LP fica ausente inteira. Mas o
+     * numerador do **Atual** é `Σ coberturaDiaria.leadsAtribuidos`, que existe
+     * desde a 44.12 e **já está em produção**. Só o **teto** precisa da série
+     * por campanha, porque ele percorre uma campanha por janela.
+     *
+     * Resultado: com o cache que já está no ar, a coluna Atual passa a mostrar
+     * valor e o Teto continua `—`, em vez de ambos vazios. É mais informação,
+     * não menos, e não exige esperar o backfill.
+     */
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({ uniqueLeads: 500, fonte: "planilha_leads", coberturaDiaria: serie(10) });
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+    expect(body.atuais.convLP).toBeCloseTo(0.3125, 6);
+    expect(body.tetos.convLP.valor).toBeNull();
+    await app.close();
+  });
+
+  it("cache anterior à 44.12 (sem `coberturaDiaria`) deixa Conv. LP `null` — ausente não é zero", async () => {
     /**
      * ⚠️ O teste que impede a regressão mais cara desta story. Preencher com
      * `0` onde não há fonte faria `convLP = 0` contra qualquer teto, o que dá
@@ -976,7 +1009,7 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
      */
     filaVinculo([etapa({ stageType: "free" })]);
     filaInsights(diasDe("c1", 10));
-    cache({ uniqueLeads: 500, fonte: "planilha_leads", coberturaDiaria: serie(10) });
+    cache({ uniqueLeads: 500, fonte: "planilha_leads" });
     const app = await buildApp();
     const body = (await app.inject({ method: "GET", url: url() })).json();
     expect(body.atuais.convLP).toBeNull();
@@ -997,8 +1030,9 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
     });
     const app = await buildApp();
     const body = (await app.inject({ method: "GET", url: url() })).json();
-    // 16 leads no total contra 1.600 LP views dos 10 dias.
-    expect(body.atuais.convLP).toBeCloseTo(0.01, 6);
+    // O TETO é o que depende da série por campanha: os 9 dias sem entrada
+    // valem zero legítimo (a campanha rodou e não trouxe lead), não ausência.
+    expect(body.tetos.convLP.valor).not.toBeNull();
     await app.close();
   });
 

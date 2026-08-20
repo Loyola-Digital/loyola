@@ -1,0 +1,243 @@
+storyId: "44.10"
+titulo: "O produtor de leads por campanha — destravar a Conv. LP"
+branch: feature/44.10-leads-por-campanha
+pr: 570
+revisadoPor: "@qa (Quinn)"
+revisadoEm: "2026-08-20"
+
+verdict: CONCERNS
+obrigatorioAntesDoMerge: ["QA-4410-01"]
+statusDoObrigatorio: RESOLVIDO
+
+resolucaoDoObrigatorio:
+  data: "2026-08-20"
+  commit: "no mesmo PR #570"
+  o_que_mudou: >
+    `atuais.convLP` da família gratuita passou a usar
+    `Σ coberturaDiaria.leadsAtribuidos` — o numerador que já vinha deduplicado
+    por dia desde a 44.12 — em vez do agregado das campanhas.
+    `DiaBruto.leadsAtribuidos` ficou intacto: ele alimenta o teto, que é por
+    campanha, e ali a sobreposição é legítima pela regra da 44.3.
+  o_teste_que_eu_escrevi_estava_errado: >
+    ⚠️ Vale registrar. O teste que escrevi para reproduzir o defeito afirmava
+    que `Σ leadsPorCampanhaDia` não podia dar 2. **Está errado** — a regra da
+    44.3 diz o oposto: contar a sobreposição POR campanha é legítimo, e o
+    proibido é somar essas respostas para derivar uma taxa. Reescrevi o teste
+    para afirmar as duas coisas ao mesmo tempo: a série por campanha soma 2, o
+    deduplicado dá 1, e o consumidor usa o segundo.
+  regressao_que_o_fix_causou_e_foi_corrigida: >
+    A primeira versão do fix recortava `coberturaDiaria` por `from`/`to` do
+    range. Rodei contra produção e apareceu `convLP = 0.0000` em 5 das 7
+    etapas: os leads são de março a agosto e as campanhas rodam em janelas bem
+    menores, então o numerador pegava dias sem campanha correspondente enquanto
+    o denominador só somava dias de campanha. Numerador e denominador de
+    conjuntos diferentes fabricam uma taxa que não significa nada — e um `0`
+    ali é exatamente o que o QA-446-01 proíbe. O recorte passou a ser pelo
+    conjunto de datas de `todosOsDias`.
+  verificado_em_producao: >
+    Com o recorte certo, as 7 etapas gratuitas devolvem `convLP` entre 0,0200 e
+    0,3002 — plausível. `teto` continua `null` em todas, e isso é esperado: ele
+    depende de `leadsPorCampanhaDia`, que só existe em cache pós-backfill.
+  desvio_de_AC_declarado: >
+    O AC2 dizia que sem o campo novo a Conv. LP fica ausente inteira. Na
+    prática, o **Atual** passa a funcionar com o cache da 44.12 que já está em
+    produção, e só o **teto** espera o backfill. Mais informação, não menos, e
+    sem esperar deploy. Registrado nos testes e na story.
+
+resumo: >
+  Os sete ACs estão implementados e a arquitetura está certa: o produtor ganhou
+  uma segunda saída sem tocar na primeira, e a reversão que corrompe a saída da
+  44.12 derruba seis testes — a proteção que o @po exigiu funciona.
+
+  Mas rodei o produtor novo contra o banco de produção, e ele diverge de si
+  mesmo em duas das sete etapas gratuitas. A causa é um defeito de contagem que
+  a própria Story 44.3 já nomeou como proibido, e que os testes não pegaram
+  porque todos usam e-mails distintos por linha.
+
+  O defeito é pequeno em magnitude (2,1% na pior etapa) e **assimétrico**, que é
+  o que o torna obrigatório: infla o valor **Atual** da Conv. LP e deixa o
+  **teto** intacto, enviesando a comparação a favor do atual.
+
+achados:
+  - id: QA-4410-01
+    severidade: high
+    categoria: correctness
+    titulo: "O mesmo lead em duas campanhas no mesmo dia é contado duas vezes no `atuais.convLP`"
+    arquivo: "packages/api/src/services/cadeia-cac-payload.ts:317"
+    story: "44.10 (AC1/AC2)"
+    reproduzido: true
+    bloqueia: true
+    medidoEmProducao: true
+    evidencia: >
+      Rodei `computeLeadOriginForStage` da branch contra as 7 etapas gratuitas
+      em produção e comparei `Σ leadsPorCampanhaDia.leads` com
+      `Σ coberturaDiaria.leadsAtribuidos` — os dois deveriam contar a mesma
+      população:
+
+        BBE / bbe-pr1-mar-26 / Captação gratuita   Σcamp=196  Σatrib=192   (+4)
+        BBE / bbe-web-mai-26 / Captação Gratuita   Σcamp=229  Σatrib=228   (+1)
+        DG & CPDF / dg-pg02 / Downsell Captação    Σcamp=656  Σatrib=656    ok
+        FZ & MFB / fz-l2-jun-26 / Cap. Gratuita    Σcamp=335  Σatrib=335    ok
+        FZ & MFB / fz-m1-mai26 / Cap. Gratuita     Σcamp=142  Σatrib=142    ok
+        FZ & MFB / fz-m2-jul26 / Cap. Gratuita     Σcamp=313  Σatrib=313    ok
+        PP / pps1 / Aquisição                      Σcamp= 67  Σatrib= 67    ok
+
+      Reproduzido em teste (`lead-origin-cobertura-diaria.test.ts`): a mesma
+      pessoa preenchendo a pesquisa duas vezes no mesmo dia, vinda de anúncios
+      de campanhas diferentes, dá `expected 2 to be 1`.
+    descricao: >
+      `coberturaDiaria` deduplica por dia com um `Set` de chave e conta **1**.
+      A série nova monta um `Set` por `(campanha, dia)`, então o mesmo lead
+      entra em **cada** campanha — e `agregar(todosOsDias)`
+      (`cadeia-cac-payload.ts:317`) soma os dois.
+
+      ⚠️ **A Story 44.3 já decidiu esta regra, e o comentário dela nomeia
+      exatamente o que fizemos** (`campaign-attribution.ts:205-215`):
+
+        "`leadsUnicosAtribuidos` POR CAMPANHA continua contando a sobreposição,
+         e está certo (...). O que **não pode** é **somar essas respostas**
+         para derivar cobertura, que é uma fração do mesmo denominador
+         deduplicado."
+
+      O commit `85bfcba8` corrigiu esse defeito uma vez ("coberturaLeads é
+      união das chaves, não soma dos conjuntos"). A 44.10 o reintroduziu por
+      outro caminho — não em `coberturaLeads`, que continua correto, mas no
+      numerador da `convLP`.
+
+      **O que torna isto obrigatório e não observação é a assimetria:**
+
+        `atuais.convLP`  ← `agregar(todosOsDias)`, soma TODAS as campanhas → INFLADO
+        `tetos.convLP`   ← janela de UMA campanha (`cadeia-cac.ts:602`)    → correto
+
+      A tabela compara um Atual inflado contra um teto correto. O erro sempre
+      favorece o atual, o que faz a Conv. LP parecer mais saudável do que é —
+      e pode mantê-la fora do ranking de "onde atacar primeiro" quando deveria
+      estar nele. Um viés de 2% que anda sempre na mesma direção não se
+      compensa; ele se acumula na decisão.
+    correcaoSugerida: >
+      O numerador deduplicado **já existe**: `coberturaDiaria.leadsAtribuidos`
+      é exatamente "leads atribuídos por dia, sem dupla contagem entre
+      campanhas". Para a família gratuita, `atuais.convLP` deve usar
+      `Σ coberturaDiaria.leadsAtribuidos` do período em vez do agregado das
+      campanhas.
+
+      `DiaBruto.leadsAtribuidos` por campanha **fica como está** — ele alimenta
+      o teto, que é por campanha, e ali a sobreposição é legítima pela regra da
+      44.3. Não mexer nele.
+
+      O teste que reproduz o defeito já está escrito e é o de regressão.
+
+  - id: QA-4410-02
+    severidade: low
+    categoria: performance
+    titulo: "O campo novo cresce com campanhas × dias, e ninguém declarou um teto"
+    arquivo: "packages/api/src/services/lead-origin-sync.ts"
+    reproduzido: true
+    bloqueia: false
+    descricao: >
+      Medido nas 7 etapas: de 18 a 67 entradas, somando 1,2 a 4,3 KB por
+      payload — sobre caches que hoje têm 1,2 a 2,5 KB. Ou seja, o payload
+      aproximadamente **dobra ou triplica**.
+
+      Nas etapas de hoje isso é irrelevante. O que não está declarado é o
+      comportamento no extremo: uma etapa com 40 campanhas e 90 dias daria
+      3.600 entradas (~250 KB) num `jsonb` que é lido inteiro em toda requisição
+      da aba, e o endpoint público devolve o payload completo
+      (`public-leads.ts:71-77`).
+
+      Não peço limite agora — pedir teto sem caso que o justifique é
+      especulação. Peço que o número seja **observado** no primeiro backfill
+      pós-deploy, junto com a validação visual, e declarado na story.
+    correcaoSugerida: >
+      Rodar o `diag` depois do backfill e registrar o maior `leadsPorCampanhaDia`
+      observado. Se passar de ~500 entradas em alguma etapa, aí sim discutir
+      corte por campanha relevante.
+
+  - id: QA-4410-03
+    severidade: low
+    categoria: maintainability
+    titulo: "O separador `\\u0000` é a terceira convenção de chave composta do epic"
+    arquivo: "packages/api/src/services/lead-origin-sync.ts"
+    reproduzido: true
+    bloqueia: false
+    descricao: >
+      A chave usa `${campanha}\\u0000${date}`, com o comentário explicando por
+      que não é `|`. O raciocínio está certo e documentado.
+
+      Mas o repo já tem `${origem}|${temperatura}` (`byOT`, mesmo arquivo) e
+      `campaignId|date` em outros pontos do epic. Três convenções para o mesmo
+      problema, cada uma com sua justificativa local, é como nasce o bug em que
+      alguém faz `split("|")` na chave errada.
+
+      Registro como `low` porque o desempate escolhido é o mais seguro dos três
+      — não peço trocar para o pior por consistência.
+    correcaoSugerida: >
+      Se um quarto caso aparecer, extrair um helper `chaveComposta`. Com três,
+      ainda não paga.
+
+verificacoes:
+  - id: V1
+    o_que: "A saída da 44.12 sobreviveu"
+    resultado: CONFERE
+    nota: >
+      Reversão R-A (corromper `coberturaDiaria`) derruba **6 testes**. O risco
+      que o @po antecipou na validação está travado por teste, não por atenção.
+  - id: V2
+    o_que: "Ausência ≠ zero (o defeito do QA-446-01)"
+    resultado: CONFERE
+    nota: >
+      Reversão R-C derruba 3 testes, incluindo o **original** do QA-446-01. A
+      proteção antiga não foi substituída — foi somada.
+  - id: V3
+    o_que: "AC7 afirma sobre o teto, não sobre a chamada"
+    resultado: CONFERE
+    nota: >
+      O teste novo lê `tetos.convLP.coberturaJanela` e `janelasBarradas`. É o
+      que o gate da 44.12 registrou como pendência explícita.
+  - id: V4
+    o_que: "A frase da guarda (QA-4412-11)"
+    resultado: CONFERE
+    nota: >
+      Três textos distintos por estado — sem teto, com teto e zero barradas,
+      com teto e N barradas. O caso `0` merecia o texto próprio que ganhou:
+      "rodou e não barrou" é afirmação diferente de "descarta janelas".
+
+baseline:
+  antes: "1278 passando / 11 falhando (main limpa, medido com git stash)"
+  depois: "1286 passando / 11 falhando"
+  delta: "+8 testes"
+  falhasPreExistentes: "funnel-stages-lead-inputs (3), instagram-routes (1), instagram (2), projects (3), schema (2)"
+  turbo: "typecheck lint build --force — 12/12"
+  nota: >
+    ⚠️ O `shared` precisa de `npx tsc` antes de os testes da API verem qualquer
+    mudança nele. O teste do AC7 falhou por `dist` velho durante a
+    implementação, e o sintoma foi um campo `undefined` que parecia bug de
+    lógica. Vale a linha no `dev-notes` da próxima story que tocar o `shared`.
+
+coderabbit: SKIPPED — CLI em WSL, host macOS. Sétimo gate seguido.
+
+porQueCONCERNSeNaoFAIL: >
+  Considerei FAIL. O QA-4410-01 é `high`, está presente no comportamento
+  entregue, e foi medido em produção — não é risco futuro.
+
+  Três coisas seguraram. **(1)** A arquitetura está certa: as duas saídas
+  convivem, a proteção da 44.12 está travada por teste, e o defeito é de
+  agregação num ponto só, não de desenho. **(2)** O numerador correto **já
+  existe** no mesmo payload (`coberturaDiaria.leadsAtribuidos`) — a correção é
+  trocar a fonte de uma linha, não redesenhar. **(3)** O teto, que é o número
+  que a story existe para produzir, está **correto**; o defeito está no lado
+  "Atual" da comparação.
+
+  Mas ele é obrigatório antes do merge, e por um motivo específico: o viés anda
+  sempre na mesma direção. Um erro de 2% que às vezes sobe e às vezes desce se
+  dilui; um que sempre infla o Atual contra o teto se acumula na decisão de
+  onde atacar — que é a única coisa que esta aba existe para responder.
+
+paraODev:
+  - "QA-4410-01 — obrigatório. `atuais.convLP` da gratuita passa a usar `Σ coberturaDiaria.leadsAtribuidos`. Não tocar em `DiaBruto.leadsAtribuidos`, que alimenta o teto e está certo."
+  - "O teste de regressão já está escrito e vermelho — ele fica verde com o fix."
+paraODevops:
+  - "⚠️ Deploy + backfill obrigatórios, como na 44.12. O campo não existe em nenhum cache anterior a hoje, e até o sync reprocessar a Conv. LP continua `—` mesmo com o código na main."
+backlog:
+  - "QA-4410-02 — observar o tamanho de `leadsPorCampanhaDia` no primeiro backfill e declarar na story."
+  - "QA-4410-03 — extrair `chaveComposta` se um quarto caso aparecer."

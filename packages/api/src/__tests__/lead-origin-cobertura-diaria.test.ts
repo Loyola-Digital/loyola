@@ -617,6 +617,57 @@ describe("coberturaDiaria — a data mapeada na pesquisa tem precedência sobre 
     expect(somaTotal).toBe(5);
   });
 
+  it("o MESMO lead em duas campanhas: a série por campanha SOBREPÕE, o deduplicado não (QA-4410-01)", async () => {
+    /**
+     * Achado do gate, medido em produção: na `bbe-pr1-mar-26/Captação gratuita`
+     * a soma de `leadsPorCampanhaDia` dava **196** contra **192** de
+     * `coberturaDiaria.leadsAtribuidos` — 4 a mais.
+     *
+     * A causa é a mesma pessoa preenchendo a pesquisa duas vezes no mesmo dia,
+     * vindo de anúncios de campanhas diferentes. `coberturaDiaria` deduplica
+     * por dia (`Set` de chave) e conta 1; a série por campanha contava 1 em
+     * cada campanha.
+     *
+     * ⚠️ É a MESMA classe do QA-44-01, que a Story 44.3 já corrigiu uma vez
+     * (`85bfcba8` — "coberturaLeads é união das chaves, não soma dos
+     * conjuntos"). O numerador da `convLP` não pode exceder o de `atribuídos`.
+     */
+    readSheetData.mockResolvedValue({
+      headers: CABECALHO_PESQUISA,
+      rows: [
+        ["ana@x.com", "", "111111111", "2026-08-01 10:00:00", "", "r1"],
+        ["ana@x.com", "", "222222222", "2026-08-01 15:00:00", "", "r2"],
+      ],
+    });
+    const p = await computeLeadOriginForStage(
+      fakeDbPesquisa({
+        kind: "pesquisa",
+        surveyMapping: { timestamp: "Submitted at" },
+        adsConhecidos: ["111111111", "222222222"],
+      }),
+      "s1",
+    );
+
+    // Uma pessoa, um dia: a cobertura conta 1 de 1.
+    expect(p?.coberturaDiaria).toEqual([{ date: "2026-08-01", leadsAtribuidos: 1, leadsTotais: 1 }]);
+
+    // ⚠️ E a série por campanha conta 1 em CADA — somando 2. Isso está CERTO
+    // pela regra da 44.3: "quantos leads esta campanha trouxe" tem resposta
+    // legítima com o mesmo lead em duas. O que não pode é SOMAR essas
+    // respostas para derivar uma taxa sobre denominador deduplicado, e é
+    // exatamente o que o consumidor deixou de fazer — ver o teste irmão em
+    // `public-cadeia-cac.test.ts` ("o Atual da Conv. LP usa o numerador
+    // deduplicado").
+    expect(p?.leadsPorCampanhaDia).toEqual([
+      { campaignId: "camp-111111111", date: "2026-08-01", leads: 1 },
+      { campaignId: "camp-222222222", date: "2026-08-01", leads: 1 },
+    ]);
+    const somaPorCampanha = p!.leadsPorCampanhaDia.reduce((a, x) => a + x.leads, 0);
+    const deduplicado = p!.coberturaDiaria.reduce((a, d) => a + d.leadsAtribuidos, 0);
+    expect(somaPorCampanha).toBe(2);
+    expect(deduplicado).toBe(1);
+  });
+
   it("sem anúncio conhecido, a série por campanha fica VAZIA — não inventa campanha", async () => {
     readSheetData.mockResolvedValue({
       headers: CABECALHO_PESQUISA,

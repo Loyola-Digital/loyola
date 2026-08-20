@@ -315,7 +315,46 @@ export async function montarPayloadCadeiaCac(
 
   const todosOsDias = series.flatMap((s) => s.dias);
   const agregado = agregar(todosOsDias);
-  const atuais = calcularMetricas(agregado, familia);
+
+  /**
+   * QA-4410-01 — o numerador do `convLP` ATUAL não pode vir da soma por campanha.
+   *
+   * `agregar` soma `DiaBruto.leadsAtribuidos` de todas as campanhas, e o mesmo
+   * lead pode estar em duas: a pessoa preencheu a pesquisa duas vezes no mesmo
+   * dia, por anúncios de campanhas diferentes. Medido em produção — na
+   * `bbe-pr1-mar-26` a soma por campanha dava 196 contra 192 deduplicados.
+   *
+   * A Story 44.3 já fixou a regra (`campaign-attribution.ts:205-215`): contar a
+   * sobreposição POR campanha está certo — "quantos leads esta campanha
+   * trouxe" tem resposta legítima com o mesmo lead em duas —, mas **somar
+   * essas respostas** para derivar uma taxa sobre denominador deduplicado não.
+   * É o defeito que o `85bfcba8` corrigiu uma vez.
+   *
+   * ⚠️ Só o AGREGADO troca de fonte. `DiaBruto.leadsAtribuidos` fica como está:
+   * ele alimenta `calcularTetos`, que percorre UMA campanha por janela
+   * (`cadeia-cac.ts:602`) e onde a sobreposição é legítima pela regra acima.
+   * O erro era assimétrico — inflava o Atual e deixava o teto correto, sempre
+   * na mesma direção.
+   */
+  /**
+   * ⚠️ O recorte é pelos DIAS DA SÉRIE, não pelo `from`/`to` do range.
+   *
+   * O denominador (`agregado.landingPageViews`) soma `todosOsDias`, que são os
+   * dias em que alguma campanha rodou. Filtrar o numerador por `from`/`to`
+   * pegaria dias de lead sem campanha correspondente — numerador e denominador
+   * de conjuntos diferentes, que é como se fabrica uma taxa que não significa
+   * nada. Medido: as etapas gratuitas têm lead de março a agosto e campanha em
+   * janelas bem menores.
+   */
+  const diasDaSerie = new Set(todosOsDias.map((d) => d.date));
+  const atribuidosDeduplicados =
+    familia === "gratuita" && lead?.coberturaDiaria
+      ? lead.coberturaDiaria.filter((d) => diasDaSerie.has(d.date)).reduce((acc, d) => acc + d.leadsAtribuidos, 0)
+      : null;
+  const atuais = calcularMetricas(
+    atribuidosDeduplicados === null ? agregado : { ...agregado, leadsAtribuidos: atribuidosDeduplicados },
+    familia,
+  );
 
   /**
    * A guarda de rastreio (`coberturaAtipica`, spec §4) impede que a "melhor
