@@ -440,6 +440,48 @@ describe("coberturaDiaria — a data mapeada na pesquisa tem precedência sobre 
     expect(p?.leadsSemData).toBe(2);
   });
 
+  it("promove também o `utm_content` — é ele que decide quem está atribuído", async () => {
+    // Medido em produção: a `pps1` guarda o Ad ID numa coluna chamada `co=`,
+    // que nenhum alias acha, e saía com cobertura 0% tendo 70 de 77 rastreados.
+    readSheetData.mockResolvedValue({
+      headers: ["E-mail", "Telefone", "co=", "Submitted at", "Data Conversão", "Respondent ID"],
+      rows: [
+        ["ana@x.com", "", "111111111", "2026-08-01 10:00:00", "", "resp-1"],
+        ["bru@x.com", "", "222222222", "2026-08-01 11:00:00", "", "resp-2"],
+      ],
+    });
+    const p = await computeLeadOriginForStage(
+      fakeDbPesquisa({
+        kind: "pesquisa",
+        surveyMapping: { timestamp: "Submitted at", utm_content: "co=" },
+        adsConhecidos: ["111111111"],
+      }),
+      "s1",
+    );
+    expect(p?.coberturaDiaria).toEqual([
+      { date: "2026-08-01", leadsAtribuidos: 1, leadsTotais: 2 },
+    ]);
+  });
+
+  it("`utm_source` NÃO é promovido — mudaria Pago/Orgânico de cache publicado", async () => {
+    // A fronteira desta story. `classifyOrigem` lê `utm_source`; promovê-lo
+    // reclassificaria etapas cujo número já está em outras abas.
+    readSheetData.mockResolvedValue({
+      headers: ["E-mail", "Telefone", "co=", "Submitted at", "s=", "Respondent ID"],
+      rows: [["ana@x.com", "", "111111111", "2026-08-01 10:00:00", "meta", "resp-1"]],
+    });
+    const p = await computeLeadOriginForStage(
+      fakeDbPesquisa({
+        kind: "pesquisa",
+        surveyMapping: { timestamp: "Submitted at", utm_content: "co=", utm_source: "s=" },
+        adsConhecidos: ["111111111"],
+      }),
+      "s1",
+    );
+    // A coluna `s=` fica ilegível para o classificador — como antes desta story.
+    expect(p?.byOrigin.find((o) => o.origem === "Pago")).toBeUndefined();
+  });
+
   it("SÓ a data é promovida — `email` segue no alias, para não trocar o dedup", async () => {
     // ⚠️ Promover as outras chaves trocaria o identificador de dedup de caches
     // já publicados. Duas linhas com o MESMO e-mail e `Respondent ID`

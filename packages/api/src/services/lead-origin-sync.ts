@@ -169,19 +169,35 @@ interface LeadSource {
  * mapeada — `fz-m2-jul26` caía numa `Data Conversão` com 0 de 343 células
  * preenchidas, enquanto o `Submitted at` mapeado tinha 343 de 343.
  *
- * ⚠️ **Só a data, deliberadamente.** As outras chaves da survey (`email`,
- * `phone`, `utm_*`) continuam resolvidas por `ALIASES`. Promovê-las trocaria o
- * identificador de dedup de caches já publicados — e preservar a fonte de quem
- * já produz cache é exatamente o que a precedência desta função defende desde a
- * Story 36.9. Ampliar isso é decisão de produto, não efeito colateral desta.
+ * ## Por que `utm_content` entra junto, e `utm_source` NÃO
+ *
+ * `utm_content` é o que decide se um lead conta como **atribuído** — é metade da
+ * razão que esta story produz. Medido: a `pps1` guarda o Ad ID numa coluna
+ * chamada `co=`, que nenhum alias acha, e saía com cobertura **0% quando o
+ * rastreio real é 70 de 77**. Entregar a cobertura com zero falso mina
+ * exatamente a guarda que ela deveria alimentar.
+ *
+ * ⚠️ **`email`, `phone` e os demais `utm_*` continuam no ALIAS, deliberadamente.**
+ * `email`/`phone` são o identificador de dedup, e `utm_source`/`utm_medium`/
+ * `utm_term` alimentam `classifyOrigem`, `classifyCanal` e `classifyTemperatura`
+ * — promovê-los reclassificaria Pago/Orgânico e canal em caches já publicados,
+ * mudando números que outras abas já mostram. Preservar a fonte de quem já
+ * produz cache é o que a precedência desta função defende desde a Story 36.9.
+ * Ampliar isso é decisão de produto, não efeito colateral desta.
+ *
+ * Impacto medido das duas chaves promovidas (15 etapas em cache, 2026-08-19):
+ * a data conserta 7 etapas; o `utm_content` conserta 1 (`pps1`), e nenhuma outra
+ * tem mapeamento divergente do alias.
  */
 function dataMapeadaNaSurvey(
-  mapping: { timestamp?: string } | null,
+  mapping: { timestamp?: string; utm_content?: string } | null,
 ): Record<string, string | undefined> | null {
   const ts = mapping?.timestamp?.trim();
-  // Sem `timestamp`, devolver `null` mantém os ALIASES como única via — que é o
-  // comportamento anterior a esta story.
-  return ts ? { date: ts } : null;
+  const content = mapping?.utm_content?.trim();
+  // Sem nenhuma das duas, devolver `null` mantém os ALIASES como única via —
+  // que é o comportamento anterior a esta story.
+  if (!ts && !content) return null;
+  return { ...(ts ? { date: ts } : {}), ...(content ? { utm_content: content } : {}) };
 }
 
 export async function resolveLeadSource(db: Database, stageId: string): Promise<LeadSource | null> {
