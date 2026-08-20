@@ -323,9 +323,27 @@ export function CadeiaCacStageTab({
         {data.guardaDeCobertura?.estado === "aplicada" && (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Info className="h-3 w-3" />
-            Guarda de rastreio ativa: o teto de Conv. LP considerou{" "}
-            {data.guardaDeCobertura.dias} dia(s) com lead. Janelas com cobertura atípica são
-            descartadas.
+            {(() => {
+              const g = data.guardaDeCobertura!;
+              const dias = `${g.dias} dia(s) com lead`;
+              // QA-4412-11: a frase antiga nomeava "o teto de Conv. LP" mesmo
+              // quando a tabela, três linhas acima, dizia `sem alvo`. Anunciar a
+              // proteção de um teto inexistente é a mesma classe de defeito que
+              // o `09583f69` e o QA-4412-04 corrigiram nesta aba.
+              if (g.tetoExiste === false) {
+                return `Guarda de rastreio ativa: ${dias} medidos. O teto de Conv. LP ainda não é calculável nesta etapa.`;
+              }
+              // `0` é afirmação diferente de `null`: a guarda rodou e nada foi
+              // descartado. Dizer "janelas são descartadas" nesse caso sugere
+              // que alguma foi.
+              if (g.janelasBarradas === 0) {
+                return `Guarda de rastreio ativa: o teto de Conv. LP considerou ${dias}, e nenhuma janela precisou ser descartada.`;
+              }
+              if (typeof g.janelasBarradas === "number") {
+                return `Guarda de rastreio ativa: o teto de Conv. LP considerou ${dias}. ${g.janelasBarradas} janela(s) descartada(s) por cobertura atípica.`;
+              }
+              return `Guarda de rastreio ativa: o teto de Conv. LP considerou ${dias}. Janelas com cobertura atípica são descartadas.`;
+            })()}
           </p>
         )}
         {data.atribuicao?.motivo === "naoAtribuivel" && (

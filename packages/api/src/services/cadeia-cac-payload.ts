@@ -251,32 +251,15 @@ export async function montarPayloadCadeiaCac(
    * `calcularMetricas` devolve `convLP: null` na família gratuita — que é a
    * resposta correta, e vai declarada em `atribuicao` abaixo.
    */
-  const series: SerieDeCampanha[] = campanhas
-    .filter((c) => c.days !== null && c.days.length > 0)
-    .map((c) => ({
-      campaignId: c.campaignId,
-      fonte: "ad-level" as const,
-      dias: c.days!.map(
-        (d): DiaBruto => ({
-          date: d.date,
-          spend: d.spend,
-          impressions: d.impressions,
-          linkClicks: d.linkClicks,
-          landingPageViews: d.landingPageViews,
-          checkouts: d.checkouts,
-        }),
-      ),
-    }));
-
-  const todosOsDias = series.flatMap((s) => s.dias);
-  const agregado = agregar(todosOsDias);
-  const atuais = calcularMetricas(agregado, familia);
-
   /**
    * ⚠️ Story 44.12 (AC4): o cache de lead é lido AQUI, antes de `calcularTetos`,
    * e reusado lá embaixo no `cplReal`. Uma leitura, dois usos — a versão
    * anterior lia depois dos tetos, e ligar a guarda sem reordenar duplicaria a
    * query.
+   *
+   * Story 44.10: subiu mais uma posição, para ANTES da montagem da série — o
+   * `leadsPorCampanhaDia` que alimenta `DiaBruto.leadsAtribuidos` sai daqui.
+   * Continua sendo UMA leitura; só mudou de lugar.
    */
   let lead: LeadOriginPayload | undefined;
   let leadComputedAt: Date | null = null;
@@ -297,6 +280,83 @@ export async function montarPayloadCadeiaCac(
   }
 
   /**
+   * Story 44.10 — o numerador da `convLP` gratuita, indexado por campanha+dia.
+   *
+   * ⚠️ `undefined` aqui NÃO é o mesmo que `0`. O mapa só existe quando há cache
+   * de lead COM o campo da 44.10; sem ele o campo fica ausente em `DiaBruto` e
+   * `convLP` continua `null`, que é a resposta correta para "não medido".
+   * Registro anterior à 44.10 (ou etapa sem fonte) cai neste caso.
+   */
+  const leadsPorCampanhaDia = lead?.leadsPorCampanhaDia
+    ? new Map(lead.leadsPorCampanhaDia.map((x) => [`${x.campaignId}\u0000${x.date}`, x.leads]))
+    : null;
+
+  const series: SerieDeCampanha[] = campanhas
+    .filter((c) => c.days !== null && c.days.length > 0)
+    .map((c) => ({
+      campaignId: c.campaignId,
+      fonte: "ad-level" as const,
+      dias: c.days!.map((d): DiaBruto => {
+        const base: DiaBruto = {
+          date: d.date,
+          spend: d.spend,
+          impressions: d.impressions,
+          linkClicks: d.linkClicks,
+          landingPageViews: d.landingPageViews,
+          checkouts: d.checkouts,
+        };
+        // Com o mapa presente, a AUSÊNCIA da chave é zero legítimo: a campanha
+        // rodou nesse dia e não trouxe lead atribuído. Sem o mapa, o campo não
+        // entra — e é `agregar` que devolve `null`, não `0`.
+        if (leadsPorCampanhaDia === null) return base;
+        return { ...base, leadsAtribuidos: leadsPorCampanhaDia.get(`${c.campaignId}\u0000${d.date}`) ?? 0 };
+      }),
+    }));
+
+  const todosOsDias = series.flatMap((s) => s.dias);
+  const agregado = agregar(todosOsDias);
+
+  /**
+   * QA-4410-01 — o numerador do `convLP` ATUAL não pode vir da soma por campanha.
+   *
+   * `agregar` soma `DiaBruto.leadsAtribuidos` de todas as campanhas, e o mesmo
+   * lead pode estar em duas: a pessoa preencheu a pesquisa duas vezes no mesmo
+   * dia, por anúncios de campanhas diferentes. Medido em produção — na
+   * `bbe-pr1-mar-26` a soma por campanha dava 196 contra 192 deduplicados.
+   *
+   * A Story 44.3 já fixou a regra (`campaign-attribution.ts:205-215`): contar a
+   * sobreposição POR campanha está certo — "quantos leads esta campanha
+   * trouxe" tem resposta legítima com o mesmo lead em duas —, mas **somar
+   * essas respostas** para derivar uma taxa sobre denominador deduplicado não.
+   * É o defeito que o `85bfcba8` corrigiu uma vez.
+   *
+   * ⚠️ Só o AGREGADO troca de fonte. `DiaBruto.leadsAtribuidos` fica como está:
+   * ele alimenta `calcularTetos`, que percorre UMA campanha por janela
+   * (`cadeia-cac.ts:602`) e onde a sobreposição é legítima pela regra acima.
+   * O erro era assimétrico — inflava o Atual e deixava o teto correto, sempre
+   * na mesma direção.
+   */
+  /**
+   * ⚠️ O recorte é pelos DIAS DA SÉRIE, não pelo `from`/`to` do range.
+   *
+   * O denominador (`agregado.landingPageViews`) soma `todosOsDias`, que são os
+   * dias em que alguma campanha rodou. Filtrar o numerador por `from`/`to`
+   * pegaria dias de lead sem campanha correspondente — numerador e denominador
+   * de conjuntos diferentes, que é como se fabrica uma taxa que não significa
+   * nada. Medido: as etapas gratuitas têm lead de março a agosto e campanha em
+   * janelas bem menores.
+   */
+  const diasDaSerie = new Set(todosOsDias.map((d) => d.date));
+  const atribuidosDeduplicados =
+    familia === "gratuita" && lead?.coberturaDiaria
+      ? lead.coberturaDiaria.filter((d) => diasDaSerie.has(d.date)).reduce((acc, d) => acc + d.leadsAtribuidos, 0)
+      : null;
+  const atuais = calcularMetricas(
+    atribuidosDeduplicados === null ? agregado : { ...agregado, leadsAtribuidos: atribuidosDeduplicados },
+    familia,
+  );
+
+  /**
    * A guarda de rastreio (`coberturaAtipica`, spec §4) impede que a "melhor
    * janela" de `convLP` seja a semana em que o RASTREIO funcionou melhor, e não
    * a de melhor conversão. Medido na 44.6: uma etapa que passou de 52% para 95%
@@ -311,7 +371,7 @@ export async function montarPayloadCadeiaCac(
 
   const guardaDeCobertura = (() => {
     if (familia !== "gratuita") {
-      return { estado: "naoSeAplica" as const, motivo: null, message: null, dias: null };
+      return { estado: "naoSeAplica" as const, motivo: null, message: null, dias: null, janelasBarradas: null, tetoExiste: false };
     }
     if (!coberturaDaEtapa) {
       return {
@@ -320,6 +380,8 @@ export async function montarPayloadCadeiaCac(
         message:
           "A guarda de cobertura de rastreio não rodou: esta etapa ainda não tem cobertura de lead por dia computada. O teto de convLP não está protegido contra janela escolhida por rastreio melhor, e não por conversão melhor. O sync diário popula o campo; para antecipar, use scripts/backfill-lead-origin.ts.",
         dias: null,
+        janelasBarradas: null,
+        tetoExiste: false,
       };
     }
     // Há série, mas nenhum dia com lead: a guarda não teve como julgar. É
@@ -369,9 +431,61 @@ export async function montarPayloadCadeiaCac(
             ? `A cobertura de rastreio foi computada, mas ${semData} lead(s) ficaram fora da série porque a data não foi legível na planilha — a guarda não teve como julgar as janelas. Aponte a coluna de data no mapeamento da pesquisa.`
             : "A cobertura de rastreio foi computada, mas nenhum dia do período tem lead — a guarda não teve como julgar as janelas.",
         dias: coberturaDaEtapa.length,
+        janelasBarradas: null,
+        tetoExiste: false,
       };
     }
-    return { estado: "aplicada" as const, motivo: null, message: null, dias: comLead };
+    /**
+     * Story 44.10 (AC4/AC5) — fecha o QA-4412-11.
+     *
+     * A frase antiga nomeava "o teto de Conv. LP" mesmo quando ele não existia,
+     * e a tabela na mesma tela dizia `sem alvo`. Agora o payload entrega os
+     * dois fatos separados — dias medidos e janelas barradas — e quem renderiza
+     * decide o texto sabendo se há teto.
+     */
+    const t = tetos.convLP as { valor: number | null; janelasBarradas?: number };
+    return {
+      estado: "aplicada" as const,
+      motivo: null,
+      message: null,
+      dias: comLead,
+      // `null` quando a guarda não reportou (não rodou), `0` quando rodou e não
+      // barrou nada. A tela precisa dizer coisas diferentes nos dois casos.
+      janelasBarradas: t.janelasBarradas ?? null,
+      tetoExiste: t.valor !== null,
+    };
+  })();
+
+  /**
+   * Story 44.10 (AC6) — cobertura de LEAD por rastreio, somando a série que a
+   * 44.12 já produz. Não é um terceiro caminho de contagem: `coberturaDiaria`
+   * carrega os dois lados por dia, e somar é a razão de somas — nunca média de
+   * razões, que daria outro número (regra §2.6).
+   */
+  const atribuicaoDaEtapa = (() => {
+    const semProdutor = {
+      coberturaVendas: null,
+      coberturaLeads: null,
+      motivo: "naoAtribuivel" as const,
+      message:
+        "A atribuição de venda/lead por campanha (Story 44.3) ainda não tem produtor ligado a uma etapa. Isto NÃO afeta cacReal/cplReal, que dependem do total da etapa.",
+    };
+    const serie = lead?.coberturaDiaria;
+    if (familia !== "gratuita" || !serie || serie.length === 0) return semProdutor;
+
+    const atribuidos = serie.reduce((acc, d) => acc + d.leadsAtribuidos, 0);
+    const totais = serie.reduce((acc, d) => acc + d.leadsTotais, 0);
+    if (totais === 0) return semProdutor;
+
+    return {
+      // `coberturaVendas` fica `null` — sem `utm_content` no sync de vendas não
+      // há numerador, e zerar afirmaria "nenhuma venda rastreada".
+      coberturaVendas: null,
+      coberturaLeads: atribuidos / totais,
+      motivo: null,
+      message:
+        "Cobertura de VENDA por campanha continua indisponível: a planilha do sync de vendas não mapeia `utm_content`. A cobertura de lead abaixo é diagnóstico de rastreio — não corrige nenhum número.",
+    };
   })();
 
   const ranking = montarRanking(tetos, atuais);
@@ -531,13 +645,17 @@ export async function montarPayloadCadeiaCac(
      * (Story 44.3) é função pura sem produtor ligado à etapa, e a planilha
      * do `sales-daily-sync` não mapeia `utm_content`.
      */
-    atribuicao: {
-      coberturaVendas: null,
-      coberturaLeads: null,
-      motivo: "naoAtribuivel" as const,
-      message:
-        "A atribuição de venda/lead por campanha (Story 44.3) ainda não tem produtor ligado a uma etapa. Isto NÃO afeta cacReal/cplReal, que dependem do total da etapa.",
-    },
+    /**
+     * Story 44.10 — o lado do LEAD ganhou produtor; o da VENDA não.
+     *
+     * ⚠️ Continua sendo **diagnóstico exibido, nunca multiplicador** (spec
+     * §2.7). O número diz quanto do rastreio funciona, e não corrige nada.
+     *
+     * `coberturaVendas` segue `null` de propósito: `sales-daily-sync` não
+     * mapeia `utm_content`, então não há de onde tirar. Declarar as duas juntas
+     * num `naoAtribuivel` só faria a que passou a existir parecer ausente.
+     */
+    atribuicao: atribuicaoDaEtapa,
     vendasSemDataNoTotal,
     /**
      * QA-4412-03 — leads cuja data não foi legível, no TOPO do payload.
