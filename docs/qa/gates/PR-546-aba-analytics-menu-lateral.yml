@@ -112,7 +112,40 @@ achados:
     bloqueia: false
 
 validacaoVisual:
-  status: NAO_EXECUTADA
+  status: PARCIAL
+  data: "2026-08-20"
+  resultado: >
+    2 dos 3 cenários confirmados — e o que falta é justamente o bug que a PR
+    corrigiu.
+
+    O usuário que testou tem `role = copywriter` (conferido em `users`:
+    `marketing@bonsaitrafegopago.com.br → copywriter`). Isso torna o teste dele
+    um caso MAIS FORTE que o cenário 2 previa — se nem manager deve ver a aba,
+    copywriter também não —, mas o deixa incapaz de exercer o cenário 1.
+
+  cenarios:
+    - id: 1
+      o_que: "Admin, desktop: a aba 'Analytics' aparece no menu lateral"
+      status: NAO_VALIDADO
+      nota: >
+        ⚠️ É EXATAMENTE o bug que a #546 conserta. O código diz que está certo
+        (`bottomTabs:114` inclui a aba quando `podeAnalytics`), mas ninguém viu
+        a aba aparecer. Só 3 contas na base têm `role = admin`; sem uma delas o
+        cenário não é exercível.
+    - id: 2
+      o_que: "Não-admin: a aba não aparece"
+      status: VALIDADO
+      nota: "Copywriter não vê a aba. Caso mais forte que o manager previsto."
+    - id: 3
+      o_que: "URL direta → card 'Acesso restrito'"
+      status: VALIDADO
+      nota: >
+        `/settings/analytics` com copywriter devolve o card 'Acesso restrito —
+        Só administradores configuram a instância de analytics'. Confirma que a
+        página se defende sozinha (`analytics/page.tsx:59-70`), não só a
+        navegação. Testado em `localhost:3000`; o código é o mesmo de produção.
+
+  statusAnterior: NAO_EXECUTADA
   motivo: >
     Sem acesso ao ambiente de produção nesta sessão. O projeto `loyola-web`
     está em `lucasvitals-projects` no Vercel; a única team acessível por aqui é
