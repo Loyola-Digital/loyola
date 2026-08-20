@@ -337,11 +337,35 @@ export async function montarPayloadCadeiaCac(
        * (apontar a coluna de data no mapeamento da pesquisa) ficaria invisível.
        */
       const semData = lead?.leadsSemData ?? 0;
+      /**
+       * QA-4412-04 — a série vazia tem TRÊS causas, não duas, e a terceira é a
+       * que a mensagem genérica descrevia errado.
+       *
+       * No produtor, uma linha só entra em `linhasDeCobertura` se tiver `key`
+       * (`lead-origin-sync.ts:537`), e `leadsSemData` só incrementa quando
+       * `key && !date` (`:538`). Logo, num payload recém-produzido:
+       *
+       *   série vazia + `leadsSemData === 0` + `totalLeads > 0`
+       *     ⟺ NENHUMA linha tem identificador (e-mail nem telefone)
+       *
+       * Medido: `fz-l2-jun-26 / Captação Paga` tem 128 leads, série vazia e
+       * `leadsSemData = 0` — as colunas `email`/`telefone` estão 0 de 128
+       * preenchidas. Dizer ali "nenhum dia tem lead" manda procurar cadastro
+       * que existe, quando a ação é mapear a coluna do identificador.
+       *
+       * Mesma classe de defeito que o `09583f69` corrigiu no ramo vizinho.
+       * Os dois ramos não colidem: `semData > 0` exige `key`, e `key` exige
+       * identificador — se um dispara, o outro não pode disparar.
+       */
+      const identificadores = (lead?.identifiersFilled?.email ?? 0) + (lead?.identifiersFilled?.phone ?? 0);
+      const linhas = lead?.totalLeads ?? 0;
+      const semIdentificador = identificadores === 0 && linhas > 0;
       return {
         estado: "semLeadNoPeriodo" as const,
         motivo: "semDados" as const,
-        message:
-          semData > 0
+        message: semIdentificador
+          ? `A cobertura de rastreio foi computada, mas nenhuma das ${linhas} linha(s) desta etapa tem e-mail ou telefone preenchido — sem identificador não há como contar lead por dia, e a guarda não teve como julgar as janelas. Aponte a coluna de e-mail ou de telefone no mapeamento da pesquisa.`
+          : semData > 0
             ? `A cobertura de rastreio foi computada, mas ${semData} lead(s) ficaram fora da série porque a data não foi legível na planilha — a guarda não teve como julgar as janelas. Aponte a coluna de data no mapeamento da pesquisa.`
             : "A cobertura de rastreio foi computada, mas nenhum dia do período tem lead — a guarda não teve como julgar as janelas.",
         dias: coberturaDaEtapa.length,

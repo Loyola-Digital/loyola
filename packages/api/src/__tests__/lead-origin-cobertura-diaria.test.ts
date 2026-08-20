@@ -28,7 +28,7 @@ import {
 const readSheetData = vi.hoisted(() => vi.fn());
 vi.mock("../services/google-sheets.js", () => ({ readSheetData }));
 
-const { computeLeadOriginForStage } = await import("../services/lead-origin-sync.js");
+const { computeLeadOriginForStage, findColIdx, ALIASES } = await import("../services/lead-origin-sync.js");
 
 /**
  * `db` falso que roteia por TABELA, como o molde da Story 36.9 — estendido para
@@ -502,5 +502,172 @@ describe("coberturaDiaria — a data mapeada na pesquisa tem precedência sobre 
     );
     expect(p?.uniqueLeads).toBe(1);
     expect(p?.coberturaDiaria.map((d) => d.leadsTotais)).toEqual([1, 1]);
+  });
+
+  it("a fronteira INTEIRA: das 7 chaves do mapping, só `date` e `utm_content` são promovidas", async () => {
+    /**
+     * QA-4412-06 — o teste anterior trava `email` e o de cima trava
+     * `utm_source`. Furando a fronteira chave a chave, `phone`, `utm_medium` e
+     * `utm_term` não faziam NENHUM teste falhar: a story afirmava uma fronteira
+     * inteira e havia meia.
+     *
+     * Os três livres não são inofensivos pelo argumento da própria story:
+     * `utm_medium` alimenta `classifyCanal` e `utm_term` alimenta
+     * `classifyTemperatura` — ambos publicados no endpoint público —, e `phone`
+     * é a metade do identificador de dedup do lead sem e-mail.
+     *
+     * Método: o mapping traz as SETE chaves, e as cinco que devem ficar de fora
+     * apontam para colunas-isca VAZIAS. Se `dataMapeadaNaSurvey` promover
+     * qualquer uma delas, o valor lido cai para vazio e a asserção quebra.
+     * A data é o controle POSITIVO: o alias resolveria `Data Conversão` (vazia),
+     * então a série só existe porque `timestamp` foi promovido de fato.
+     */
+    readSheetData.mockResolvedValue({
+      headers: [
+        "E-mail",
+        "Telefone",
+        "utm_source",
+        "utm_medium",
+        "utm_term",
+        "Submitted at",
+        "Data Conversão",
+        "isca-email",
+        "isca-phone",
+        "isca-source",
+        "isca-medium",
+        "isca-term",
+      ],
+      rows: [["ana@x.com", "11999998888", "meta", "cpc", "quente", "2026-08-01 10:00:00", "", "", "", "", "", ""]],
+    });
+    const p = await computeLeadOriginForStage(
+      fakeDbPesquisa({
+        kind: "pesquisa",
+        surveyMapping: {
+          timestamp: "Submitted at",
+          email: "isca-email",
+          phone: "isca-phone",
+          utm_source: "isca-source",
+          utm_medium: "isca-medium",
+          utm_term: "isca-term",
+        },
+      }),
+      "s1",
+    );
+
+    // Controle positivo: a data FOI promovida (o alias cairia na coluna vazia).
+    expect(p?.coberturaDiaria).toEqual([{ date: "2026-08-01", leadsAtribuidos: 0, leadsTotais: 1 }]);
+
+    // As cinco que ficam no alias, numa asserção só.
+    expect({
+      email: p?.identifiersFilled.email,
+      phone: p?.identifiersFilled.phone,
+      source: p?.byUtm.source[0]?.value,
+      medium: p?.byUtm.medium[0]?.value,
+      term: p?.byUtm.term[0]?.value,
+    }).toEqual({ email: 1, phone: 1, source: "meta", medium: "cpc", term: "quente" });
+  });
+
+  it("PONTA A PONTA: a cobertura que sai do produtor barra a janela no consumidor", async () => {
+    /**
+     * QA-4412-07 (AC7, linha 6) — o teste que já existia chamava `calcularTetos`
+     * com uma `cobertura` montada à mão. Ele prova a guarda, não a LIGAÇÃO: se o
+     * produtor parasse de emitir `coberturaDiaria`, ou emitisse no formato
+     * errado, aquele teste seguiria verde. Foi por essa fresta que o QA-4412-01
+     * passou despercebido.
+     *
+     * Aqui a cobertura vem de `computeLeadOriginForStage` — planilha de verdade,
+     * dedup de verdade, atribuição de verdade — e entra em `calcularTetos` sem
+     * ninguém tocar no meio do caminho.
+     *
+     * Cenário: 14 dias, 2 leads por dia. Na primeira semana só 1 dos 2 carrega
+     * `utm_content` que resolve para ad conhecido (rastreio 50%); na segunda,
+     * os 2 carregam (100%). A série de campanha dá à primeira semana a conversão
+     * APARENTE melhor — a armadilha exata que a guarda existe para pegar.
+     */
+    const linhas14: string[][] = [];
+    for (let i = 0; i < 14; i++) {
+      const d = `2026-08-${String(i + 1).padStart(2, "0")}`;
+      const rastreados = i < 7 ? 1 : 2;
+      for (let j = 0; j < 2; j++) {
+        linhas14.push([`lead${i}-${j}@x.com`, "", j < rastreados ? "111111111" : "", `${d} 10:00:00`, "", `r${i}-${j}`]);
+      }
+    }
+    readSheetData.mockResolvedValue({ headers: CABECALHO_PESQUISA, rows: linhas14 });
+    const p = await computeLeadOriginForStage(
+      fakeDbPesquisa({
+        kind: "pesquisa",
+        surveyMapping: { timestamp: "Submitted at" },
+        adsConhecidos: ["111111111"],
+      }),
+      "s1",
+    );
+
+    // O produtor entregou a série que o consumidor espera — 50% depois 100%.
+    expect(p?.coberturaDiaria).toHaveLength(14);
+    expect(p?.coberturaDiaria.map((c) => `${c.leadsAtribuidos}/${c.leadsTotais}`)).toEqual([
+      ...Array(7).fill("1/2"),
+      ...Array(7).fill("2/2"),
+    ]);
+
+    const serie: SerieDeCampanha[] = [
+      {
+        campaignId: "c1",
+        fonte: "ad-level",
+        dias: p!.coberturaDiaria.map((c, i) => ({
+          date: c.date,
+          spend: 100,
+          impressions: 10_000,
+          linkClicks: 200,
+          landingPageViews: 200,
+          checkouts: 0,
+          leadsAtribuidos: i < 7 ? 60 : 20,
+        })),
+      },
+    ];
+
+    const semGuarda = calcularTetos(serie, "gratuita");
+    const comGuarda = calcularTetos(serie, "gratuita", { coberturaDaEtapa: p!.coberturaDiaria });
+
+    // Sem guarda o teto vem da semana de rastreio ruim; com guarda, não.
+    expect(semGuarda.convLP.valor).toBeGreaterThan(comGuarda.convLP.valor ?? 0);
+
+    // E a janela que sobrou não é atípica perante a mediana da série PRODUZIDA.
+    const medianaDaEtapa = mediana(p!.coberturaDiaria.map((c) => c.leadsAtribuidos / c.leadsTotais))!;
+    const janela = (comGuarda.convLP as { coberturaJanela?: number }).coberturaJanela;
+    expect(janela).toBeDefined();
+    expect(coberturaAtipica(janela!, medianaDaEtapa)).toBe(false);
+  });
+});
+
+describe("findColIdx — a segunda passada, agora que o script de diagnóstico a importa (QA-4412-08)", () => {
+  /**
+   * `findColIdx` era privada e o script `diag-cobertura-colunas.ts` mantinha uma
+   * CÓPIA dela. A cópia não era fiel: a segunda passada tinha só
+   * `h.includes(na)`, sem o guarda `h.length > 2` e sem o `na.includes(h)`.
+   *
+   * Consequência: o script SUB-reportava a resolução por alias, e o
+   * levantamento das etapas do BBE sai justamente dessa saída. Agora ela é
+   * importada — e por isso passa a ser superfície pública que merece trava.
+   *
+   * ⚠️ Medido: nas 15 etapas em cache hoje a divergência não muda NENHUMA linha
+   * da saída. Ela é real (os casos abaixo), mas não é um número errado que
+   * alguém tenha lido — é a armadilha da próxima rodada.
+   */
+  it("casa pelo alias que CONTÉM o header, não só pelo header que contém o alias", () => {
+    // `"carimbodedatahora".includes("hora")` — o ramo que faltava na cópia.
+    expect(findColIdx(["hora"], ALIASES.date)).toBe(0);
+    expect(findColIdx(["Carimbo"], ALIASES.date)).toBe(0);
+  });
+
+  it("o guarda de tamanho impede header de 1–2 letras de casar com qualquer alias", () => {
+    // Sem `h.length > 2`, `"date".includes("dt")` seria falso, mas headers
+    // curtos como `s=`/`co=` normalizam para 1 letra e casariam por acidente.
+    expect(findColIdx(["dt"], ALIASES.date)).toBe(-1);
+    expect(findColIdx(["s"], ALIASES.utmSource)).toBe(-1);
+  });
+
+  it("exact normalizado continua vencendo o contains", () => {
+    // `Data Conversão` casaria por contains, mas `data` é exato e vem antes.
+    expect(findColIdx(["Data Conversão", "data"], ALIASES.date)).toBe(1);
   });
 });

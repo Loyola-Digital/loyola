@@ -30,7 +30,7 @@ import {
 
 const SCOPE = "leads-origin";
 
-const ALIASES: Record<string, string[]> = {
+export const ALIASES: Record<string, string[]> = {
   utmSource: ["utm_source", "utmsource", "fonte", "source", "origem"],
   utmTerm: ["utm_term", "utmterm", "termo", "term"],
   // Story 39.2 (auditoria Tier 2.1): sem estas 3 o classificador não acha
@@ -55,7 +55,7 @@ function norm(s: string): string {
 }
 
 /** Resolve o índice de uma coluna por aliases (exact normalizado, depois contains). */
-function findColIdx(headers: string[], aliases: string[]): number {
+export function findColIdx(headers: string[], aliases: string[]): number {
   const H = headers.map(norm);
   for (const a of aliases) {
     const na = norm(a);
@@ -192,8 +192,12 @@ interface LeadSource {
 function dataMapeadaNaSurvey(
   mapping: { timestamp?: string; utm_content?: string } | null,
 ): Record<string, string | undefined> | null {
-  const ts = mapping?.timestamp?.trim();
-  const content = mapping?.utm_content?.trim();
+  // QA-4412-09 — `String(...)` antes do `.trim()`, igual ao que `resolveColIdx`
+  // já fazia duas telas abaixo. A origem é `jsonb`: um `{"timestamp": 2}` gravado
+  // direto no banco derrubaria `computeLeadOriginForStage` da etapa inteira, e
+  // antes desta story este ramo devolvia `null` sem nunca tocar o valor.
+  const ts = String(mapping?.timestamp ?? "").trim();
+  const content = String(mapping?.utm_content ?? "").trim();
   // Sem nenhuma das duas, devolver `null` mantém os ALIASES como única via —
   // que é o comportamento anterior a esta story.
   if (!ts && !content) return null;
@@ -378,7 +382,7 @@ export interface LeadOriginPayload {
 }
 
 /** Normaliza data da célula pra YYYY-MM-DD (aceita DD/MM/YYYY e ISO). */
-function toIsoDate(raw: string): string | null {
+export function toIsoDate(raw: string): string | null {
   const t = raw.trim();
   if (!t) return null;
   const br = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);

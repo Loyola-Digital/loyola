@@ -907,6 +907,60 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
     await app.close();
   });
 
+  it("série vazia por falta de IDENTIFICADOR não é anunciada como \"nenhum lead\" nem como data ilegível (QA-4412-04)", async () => {
+    /**
+     * A terceira causa de série vazia, e a que a mensagem genérica descrevia
+     * errado. No produtor, a linha só entra na cobertura se tiver `key`
+     * (`lead-origin-sync.ts:537`) e `leadsSemData` só sobe com `key && !date`
+     * (`:538`) — então série vazia COM `leadsSemData: 0` e leads > 0 só pode
+     * significar que nenhuma linha tem e-mail nem telefone.
+     *
+     * Medido: `fz-l2-jun-26 / Captação Paga`, 128 leads, colunas `email` e
+     * `telefone` 0 de 128 preenchidas. A frase antiga mandava procurar cadastro
+     * que existe; a ação certa é mapear a coluna do identificador.
+     */
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({
+      uniqueLeads: 0,
+      totalLeads: 128,
+      fonte: "planilha_leads",
+      coberturaDiaria: [],
+      leadsSemData: 0,
+      identifiersFilled: { email: 0, phone: 0 },
+    });
+    const app = await buildApp();
+    const g = (await app.inject({ method: "GET", url: url() })).json().guardaDeCobertura;
+    expect(g.estado).toBe("semLeadNoPeriodo");
+    expect(g.message).toContain("128");
+    expect(g.message).toContain("e-mail ou telefone");
+    // E NÃO pode culpar a data nem afirmar que ninguém se cadastrou.
+    expect(g.message).not.toContain("data não foi legível");
+    expect(g.message).not.toContain("nenhum dia do período tem lead");
+    await app.close();
+  });
+
+  it("com identificador preenchido, série vazia volta a ser a mensagem genérica (QA-4412-04)", async () => {
+    // O contrapeso: o ramo novo não pode sequestrar o caso em que os leads
+    // TÊM identificador e a série está vazia por outro motivo.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({
+      uniqueLeads: 3,
+      totalLeads: 3,
+      fonte: "planilha_leads",
+      coberturaDiaria: [],
+      leadsSemData: 0,
+      identifiersFilled: { email: 3, phone: 0 },
+    });
+    const app = await buildApp();
+    const g = (await app.inject({ method: "GET", url: url() })).json().guardaDeCobertura;
+    expect(g.estado).toBe("semLeadNoPeriodo");
+    expect(g.message).toContain("nenhum dia do período tem lead");
+    expect(g.message).not.toContain("e-mail ou telefone");
+    await app.close();
+  });
+
   it("`indisponivel` quando o cache é ANTERIOR à 44.12 e não tem o campo", async () => {
     // ⚠️ É o estado real de toda etapa já cacheada no dia do deploy: o código
     // pode estar perfeito e a guarda continua desligada até o sync reprocessar.
