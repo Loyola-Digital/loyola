@@ -88,6 +88,28 @@ export interface CadeiaCacPayload {
       coberturaJanela?: number;
     }
   >;
+  /** Story 44.11 — o bloco de criativos. */
+  criativos?: {
+    nome: string;
+    ehId: boolean;
+    adIds: string[];
+    spend: number;
+    impressions: number;
+    linkClicks: number;
+    ctr: number | null;
+    cpc: number | null;
+    hookRate: number | null;
+    holdRate: number | null;
+  }[];
+  distribuicaoHook?: {
+    mediana: number;
+    melhor: { nome: string; valor: number };
+    pior: { nome: string; valor: number };
+    abaixoDeMetadeDaMediana: number;
+    criativosDeVideo: number;
+  } | null;
+  /** Story 44.11 — Body Conversion declarado como ausente, nunca omitido. */
+  bodyConvIndisponivel?: { motivo: string; message: string };
   guardaDeCobertura?: {
     /** Story 44.12: quatro estados. `semLeadNoPeriodo` ≠ `indisponivel`. */
     estado: "aplicada" | "semLeadNoPeriodo" | "indisponivel" | "naoSeAplica";

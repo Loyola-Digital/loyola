@@ -42,12 +42,15 @@ import {
   referenciasDoGrupo,
   type DiaBruto,
   type SerieDeCampanha,
+  agruparCriativos,
+  distribuicaoDoHook,
 } from "@loyola-x/shared";
 import type { Database } from "../db/client.js";
 import { funnels, funnelStages, publicMetricsCache } from "../db/schema.js";
 import { carregarSerieDiariaPorCampanha } from "./meta-campaign-daily.js";
 import { getFreshSalesDaily, type SalesDailyPayload } from "./sales-daily-sync.js";
 import { LEAD_ORIGIN_SCOPE, resolveLeadSource, type LeadOriginPayload } from "./lead-origin-sync.js";
+import { carregarCriativosDaEtapa } from "./meta-ad-daily.js";
 import { maxAgeFrom } from "../utils/cache-freshness.js";
 
 function ymd(date: Date): string {
@@ -488,6 +491,28 @@ export async function montarPayloadCadeiaCac(
     };
   })();
 
+  /**
+   * Story 44.11 — o bloco de criativos.
+   *
+   * A cadeia responde "ataque o CTR"; sem isto a pessoa sai da aba para
+   * descobrir em qual criativo, com outra regua. Mesmo periodo, mesmas
+   * campanhas, mesmo arredondamento de spend.
+   *
+   * Atencao: `bodyConv` (leads / p75) NAO entra. Ele exigiria leads por
+   * `ad_id`, e medi o custo — uma campanha do projeto tem 75 anuncios, entao
+   * `ad x dia` no cache de leads multiplicaria por ~15 o campo que o
+   * QA-4410-02 ja apontou como crescente. Fica declarado, nao silenciado.
+   */
+  const criativosBrutos = await carregarCriativosDaEtapa(db, {
+    projectId: opts.projectId,
+    campaignIds,
+    from,
+    to,
+    explicitRange,
+  });
+  const criativos = agruparCriativos(criativosBrutos);
+  const distribuicaoHook = distribuicaoDoHook(criativos);
+
   const ranking = montarRanking(tetos, atuais);
   const noTeto = metricasDoTeto(tetos);
 
@@ -656,6 +681,18 @@ export async function montarPayloadCadeiaCac(
      * num `naoAtribuivel` só faria a que passou a existir parecer ausente.
      */
     atribuicao: atribuicaoDaEtapa,
+    criativos,
+    distribuicaoHook,
+    /**
+     * Story 44.11 — declarado, nao omitido. `bodyConv` exige leads por
+     * `ad_id`; a fonte existe no produtor mas o custo no cache foi medido e
+     * recusado. Quem consome precisa saber que a ausencia e decisao.
+     */
+    bodyConvIndisponivel: {
+      motivo: "semFonteDeLeadPorCriativo" as const,
+      message:
+        "Body Conversion (leads / 75% assistido) precisa de lead por anuncio, que o cache nao guarda. Hook e Hold nao dependem disso e estao completos.",
+    },
     vendasSemDataNoTotal,
     /**
      * QA-4412-03 — leads cuja data não foi legível, no TOPO do payload.

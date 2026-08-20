@@ -138,6 +138,18 @@ const urlInterna = (qs = "") => `/api/projects/${PROJ}/stages/${STAGE}/cadeia-ca
 
 beforeEach(() => {
   mockSelect.mockReset();
+  /**
+   * Story 44.11 — default para as chamadas além das 3 enfileiradas. O bloco de
+   * criativos é a 4ª query; sem isto ela devolve `undefined` e derruba a rota,
+   * o que aparece como falha nos testes de EQUIVALÊNCIA — que não têm nada a
+   * ver com criativos e continuam provando o que sempre provaram.
+   */
+  mockSelect.mockReturnValue({
+    from: () => ({
+      where: () => Promise.resolve([]),
+      innerJoin: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
+    }),
+  });
   mockGetFreshSalesDaily.mockReset();
   mockGetFreshSalesDaily.mockResolvedValue(vendas());
   mockResolveLeadSource.mockReset();
