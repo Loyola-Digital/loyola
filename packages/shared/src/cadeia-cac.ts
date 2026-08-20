@@ -113,12 +113,20 @@ export interface Teto {
   fonte: "ad-level" | "campaign-level";
   /** Só para `convLP` da família gratuita: cobertura de lead da janela. */
   coberturaJanela?: number;
+  /**
+   * Story 44.10 (AC4) — quantas janelas a guarda descartou ANTES desta vencer.
+   * Ausente quando a guarda não roda; `0` significa que ela rodou e não barrou
+   * nada, que é afirmação diferente e a tela precisa distinguir.
+   */
+  janelasBarradas?: number;
 }
 
 export interface TetoAusente {
   metrica: Metrica;
   valor: null;
   motivo: MotivoIndisponivel;
+  /** Story 44.10 (AC4) — com `motivo: "coberturaAtipica"`, quantas foram barradas. */
+  janelasBarradas?: number;
 }
 
 export interface ItemRanking {
@@ -586,7 +594,10 @@ export function calcularTetos(
 
     let melhor: Teto | null = null;
     let houveJanela = false;
-    let houveBarradaPelaGuarda = false;
+    // Story 44.10 (AC4): CONTA, não sinaliza. A 44.12 só precisava saber SE
+    // alguma janela foi barrada, para escolher o motivo; a AC5 daquela story
+    // pedia o NÚMERO e ficou adiada até a `convLP` ter numerador.
+    let janelasBarradas = 0;
 
     for (const camp of campanhas) {
       for (const janela of janelasDe7Dias(camp.dias)) {
@@ -604,7 +615,7 @@ export function calcularTetos(
           const c = coberturaDaJanela(cobertura!, janela.de, janela.ate);
           if (c === null) continue; // sem lead na janela: não dá para julgar
           if (coberturaAtipica(c, medianaEtapa!)) {
-            houveBarradaPelaGuarda = true;
+            janelasBarradas += 1;
             continue;
           }
           cobJanela = c;
@@ -637,14 +648,17 @@ export function calcularTetos(
     }
 
     if (melhor) {
-      out[metrica] = melhor;
+      // A contagem só entra quando a guarda rodou — `aplicaGuarda` falso deixa
+      // o campo ausente, que não é o mesmo que zero.
+      out[metrica] = aplicaGuarda ? { ...melhor, janelasBarradas } : melhor;
     } else {
       const motivo: MotivoIndisponivel = !houveJanela
         ? "semDados"
-        : houveBarradaPelaGuarda
+        : janelasBarradas > 0
           ? "coberturaAtipica"
           : "baseInsuficiente";
-      out[metrica] = { metrica, valor: null, motivo };
+      out[metrica] =
+        motivo === "coberturaAtipica" ? { metrica, valor: null, motivo, janelasBarradas } : { metrica, valor: null, motivo };
     }
   }
 

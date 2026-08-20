@@ -567,6 +567,70 @@ describe("coberturaDiaria — a data mapeada na pesquisa tem precedência sobre 
     }).toEqual({ email: 1, phone: 1, source: "meta", medium: "cpc", term: "quente" });
   });
 
+  it("leadsPorCampanhaDia: o numerador da Conv. LP, por campanha e por dia (44.10 AC1)", async () => {
+    /**
+     * Story 44.10 — a SEGUNDA saída do laço. Dois anúncios de campanhas
+     * diferentes, no mesmo dia, mais um lead sem `utm_content`.
+     *
+     * ⚠️ O que este teste trava, além do agrupamento: `coberturaDiaria`
+     * **continua igual**. Ela alimenta a guarda em produção, e trocar a chave
+     * do mapa por `campaignId|date` em vez de acrescentar um segundo mapa
+     * desligaria a guarda nas 7 etapas gratuitas.
+     */
+    readSheetData.mockResolvedValue({
+      headers: CABECALHO_PESQUISA,
+      rows: [
+        ["a@x.com", "", "111111111", "2026-08-01 10:00:00", "", "r1"],
+        ["b@x.com", "", "222222222", "2026-08-01 11:00:00", "", "r2"],
+        ["c@x.com", "", "111111111", "2026-08-01 12:00:00", "", "r3"],
+        ["d@x.com", "", "", "2026-08-01 13:00:00", "", "r4"],
+        ["e@x.com", "", "111111111", "2026-08-02 10:00:00", "", "r5"],
+      ],
+    });
+    const p = await computeLeadOriginForStage(
+      fakeDbPesquisa({
+        kind: "pesquisa",
+        surveyMapping: { timestamp: "Submitted at" },
+        adsConhecidos: ["111111111", "222222222"],
+      }),
+      "s1",
+    );
+
+    expect(p?.leadsPorCampanhaDia).toEqual([
+      { campaignId: "camp-111111111", date: "2026-08-01", leads: 2 },
+      { campaignId: "camp-111111111", date: "2026-08-02", leads: 1 },
+      { campaignId: "camp-222222222", date: "2026-08-01", leads: 1 },
+    ]);
+
+    // A primeira saída não mudou: 4 atribuídos de 5 totais no dia 01 — o lead
+    // sem `utm_content` conta no total e em campanha nenhuma.
+    expect(p?.coberturaDiaria).toEqual([
+      { date: "2026-08-01", leadsAtribuidos: 3, leadsTotais: 4 },
+      { date: "2026-08-02", leadsAtribuidos: 1, leadsTotais: 1 },
+    ]);
+
+    // Σ por campanha (4) < Σ leadsTotais (5). É a distância que `coberturaLeads`
+    // reporta, e "consertar" a diferença é o que a AC6 da 44.3 proíbe.
+    const somaCampanha = p!.leadsPorCampanhaDia.reduce((a, x) => a + x.leads, 0);
+    const somaTotal = p!.coberturaDiaria.reduce((a, d) => a + d.leadsTotais, 0);
+    expect(somaCampanha).toBe(4);
+    expect(somaTotal).toBe(5);
+  });
+
+  it("sem anúncio conhecido, a série por campanha fica VAZIA — não inventa campanha", async () => {
+    readSheetData.mockResolvedValue({
+      headers: CABECALHO_PESQUISA,
+      rows: [["a@x.com", "", "999999999", "2026-08-01 10:00:00", "", "r1"]],
+    });
+    const p = await computeLeadOriginForStage(
+      fakeDbPesquisa({ kind: "pesquisa", surveyMapping: { timestamp: "Submitted at" }, adsConhecidos: [] }),
+      "s1",
+    );
+    expect(p?.leadsPorCampanhaDia).toEqual([]);
+    // E o dia continua existindo com o lead no total — a cobertura é 0/1.
+    expect(p?.coberturaDiaria).toEqual([{ date: "2026-08-01", leadsAtribuidos: 0, leadsTotais: 1 }]);
+  });
+
   it("PONTA A PONTA: a cobertura que sai do produtor barra a janela no consumidor", async () => {
     /**
      * QA-4412-07 (AC7, linha 6) — o teste que já existia chamava `calcularTetos`

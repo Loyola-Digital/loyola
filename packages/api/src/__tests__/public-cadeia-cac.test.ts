@@ -872,6 +872,44 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
     await app.close();
   });
 
+  it("a guarda chega ao TETO, não só à chamada (44.10 AC7 — promove o QA-4412-01)", async () => {
+    /**
+     * Story 44.10 (AC7). O teste acima espia o ARGUMENTO de `calcularTetos`
+     * porque, na 44.12, `leadsAtribuidos` não existia na série e o teto de
+     * `convLP` era sempre `null` — não havia teto sobre o qual afirmar. Ficou
+     * registrado no gate daquela story que a asserção subiria quando a
+     * atribuição ligasse. É agora.
+     *
+     * Cenário: 14 dias, a primeira semana com rastreio ruim (50%) e conversão
+     * APARENTE melhor. Sem guarda o teto vem dela; com guarda, não.
+     */
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 14));
+    const dias = Array.from({ length: 14 }, (_, i) => `2026-08-${String(i + 1).padStart(2, "0")}`);
+    cache({
+      uniqueLeads: 500,
+      fonte: "planilha_leads",
+      // 1ª semana: 50 de 100 (rastreio ruim). 2ª: 100 de 100.
+      coberturaDiaria: dias.map((date, i) => ({ date, leadsAtribuidos: i < 7 ? 50 : 100, leadsTotais: 100 })),
+      // A armadilha: a semana de rastreio ruim tem MAIS lead por LP view.
+      leadsPorCampanhaDia: dias.map((date, i) => ({ campaignId: "c1", date, leads: i < 7 ? 80 : 16 })),
+    });
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+
+    const teto = body.tetos.convLP;
+    expect(teto.valor).not.toBeNull();
+
+    // A janela vencedora carrega a cobertura que a guarda aprovou, e ela NÃO
+    // pode ser a da primeira semana (50%, muito abaixo da mediana da etapa).
+    expect(teto.coberturaJanela).toBeGreaterThan(0.5);
+
+    // E a guarda reporta que trabalhou.
+    expect(typeof teto.janelasBarradas).toBe("number");
+    expect(teto.janelasBarradas).toBeGreaterThan(0);
+    await app.close();
+  });
+
   it("cache SEM cobertura não inventa opts — `calcularTetos` recebe `{}`", async () => {
     // O outro lado do fio: sem o campo, passar `{coberturaDaEtapa: undefined}`
     // faria `calcularTetos` receber uma chave que não existe.
@@ -904,6 +942,96 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
     expect(g.estado).toBe("semLeadNoPeriodo");
     expect(g.message).toContain("213");
     expect(g.message).toContain("data não foi legível");
+    await app.close();
+  });
+
+  it("Conv. LP GANHA valor quando o cache traz `leadsPorCampanhaDia` (44.10 AC2/AC3)", async () => {
+    // A linha que ficou `—` desde que a aba nasceu. 10 dias de campanha `c1`
+    // com 160 LP views/dia; 16 leads atribuídos/dia dá convLP = 0,10.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({
+      uniqueLeads: 500,
+      fonte: "planilha_leads",
+      coberturaDiaria: serie(10),
+      leadsPorCampanhaDia: Array.from({ length: 10 }, (_, i) => ({
+        campaignId: "c1",
+        date: `2026-08-${String(i + 1).padStart(2, "0")}`,
+        leads: 16,
+      })),
+    });
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+    expect(body.atuais.convLP).toBeCloseTo(0.1, 6);
+    expect(body.tetos.convLP.valor).not.toBeNull();
+    await app.close();
+  });
+
+  it("cache SEM `leadsPorCampanhaDia` deixa Conv. LP `null` — ausente não é zero (44.10 AC2)", async () => {
+    /**
+     * ⚠️ O teste que impede a regressão mais cara desta story. Preencher com
+     * `0` onde não há fonte faria `convLP = 0` contra qualquer teto, o que dá
+     * queda de 100% no ranking — e a etapa SEM DADO NENHUM lideraria "onde
+     * atacar primeiro". É o defeito que o QA-446-01 evitou na 44.6.
+     */
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({ uniqueLeads: 500, fonte: "planilha_leads", coberturaDiaria: serie(10) });
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+    expect(body.atuais.convLP).toBeNull();
+    expect(body.tetos.convLP.valor).toBeNull();
+    await app.close();
+  });
+
+  it("dia sem lead atribuído conta ZERO, não ausente, quando há fonte (44.10 AC2)", async () => {
+    // O outro lado: com o mapa presente, a campanha que rodou e não trouxe
+    // lead naquele dia vale zero legítimo — não pode virar ausência.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({
+      uniqueLeads: 500,
+      fonte: "planilha_leads",
+      coberturaDiaria: serie(10),
+      leadsPorCampanhaDia: [{ campaignId: "c1", date: "2026-08-01", leads: 16 }],
+    });
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+    // 16 leads no total contra 1.600 LP views dos 10 dias.
+    expect(body.atuais.convLP).toBeCloseTo(0.01, 6);
+    await app.close();
+  });
+
+  it("`coberturaLeads` é razão de SOMAS, e `coberturaVendas` segue null (44.10 AC6)", async () => {
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({
+      uniqueLeads: 500,
+      fonte: "planilha_leads",
+      // 10 dias de 50/100 → 500/1000 = 0,5
+      coberturaDiaria: serie(10),
+    });
+    const app = await buildApp();
+    const a = (await app.inject({ method: "GET", url: url() })).json().atribuicao;
+    expect(a.coberturaLeads).toBeCloseTo(0.5, 6);
+    expect(a.coberturaVendas).toBeNull();
+    expect(a.motivo).toBeNull();
+    await app.close();
+  });
+
+  it("a guarda declara janelas barradas e se o teto existe (44.10 AC4/AC5 — fecha QA-4412-11)", async () => {
+    /**
+     * O achado da validação visual: a tela dizia "o teto de Conv. LP considerou
+     * 26 dia(s)" enquanto a tabela mostrava `sem alvo`. Sem numerador não há
+     * teto, e a frase não pode nomeá-lo.
+     */
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({ uniqueLeads: 500, fonte: "planilha_leads", coberturaDiaria: serie(10) });
+    const app = await buildApp();
+    const g = (await app.inject({ method: "GET", url: url() })).json().guardaDeCobertura;
+    expect(g.estado).toBe("aplicada");
+    expect(g.tetoExiste).toBe(false); // é o que a frase precisa saber
     await app.close();
   });
 

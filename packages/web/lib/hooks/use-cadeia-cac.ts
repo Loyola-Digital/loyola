@@ -93,6 +93,10 @@ export interface CadeiaCacPayload {
     estado: "aplicada" | "semLeadNoPeriodo" | "indisponivel" | "naoSeAplica";
     motivo: string | null;
     message: string | null;
+    /** Story 44.10: `null` = a guarda não reportou; `0` = rodou e não barrou. */
+    janelasBarradas?: number | null;
+    /** Story 44.10: sem teto, a frase não pode nomeá-lo (QA-4412-11). */
+    tetoExiste?: boolean;
     /** Dias com lead (`aplicada`) ou dias da série (`semLeadNoPeriodo`). */
     dias: number | null;
   };

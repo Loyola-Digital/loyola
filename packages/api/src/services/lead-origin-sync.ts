@@ -365,6 +365,15 @@ export interface LeadOriginPayload {
    */
   coberturaDiaria: { date: string; leadsAtribuidos: number; leadsTotais: number }[];
   /**
+   * Story 44.10 — leads ÚNICOS atribuídos, por campanha e por dia. É o
+   * numerador da `convLP` da família gratuita (`shared/cadeia-cac.ts:253`).
+   *
+   * ⚠️ Só entra lead cujo `utm_content` resolve para anúncio de campanha
+   * conhecida. `Σ leads` daqui é MENOR que `Σ coberturaDiaria.leadsTotais`, e a
+   * distância entre os dois é o que `coberturaLeads` reporta como diagnóstico.
+   */
+  leadsPorCampanhaDia: { campaignId: string; date: string; leads: number }[];
+  /**
    * Story 44.12 — linhas cuja data não foi legível. Ficam FORA da série diária
    * e continuam em `uniqueLeads`. Declarado em vez de corrigido em silêncio
    * (regra 7.4) — é o mesmo padrão do `vendasSemDataNoTotal` da Story 44.8.
@@ -601,6 +610,19 @@ export async function computeLeadOriginForStage(
    * alguém "consertar" a soma, o conserto é que está errado.
    */
   const porDia = new Map<string, { atribuidos: Set<string>; totais: Set<string> }>();
+  /**
+   * Story 44.10 — SEGUNDA saída do mesmo laço, não substituta da primeira.
+   *
+   * ⚠️ `porDia` continua existindo e alimentando `coberturaDiaria`, que é o que
+   * a guarda de rastreio consome em produção desde a 44.12. Trocar a chave
+   * deste mapa por `campaignId|date` e devolver só isso desligaria a guarda nas
+   * 7 etapas gratuitas — os dois agrupamentos convivem de propósito.
+   *
+   * Chave: `campaignId` + `\u0000` + `date`. O separador é NUL porque id de
+   * campanha da Meta é numérico mas o tipo é string, e `|` apareceria num id
+   * inventado por fixture antes de aparecer num id real.
+   */
+  const porCampanhaDia = new Map<string, Set<string>>();
   for (const l of linhasDeCobertura) {
     if (!l.date) continue; // sem data não pertence a janela nenhuma (declarado em `leadsSemData`)
     let b = porDia.get(l.date);
@@ -609,7 +631,19 @@ export async function computeLeadOriginForStage(
       porDia.set(l.date, b);
     }
     b.totais.add(l.chave);
-    if (l.adId && adParaCampanha.has(l.adId)) b.atribuidos.add(l.chave);
+    // `.get()` em vez de `.has()`: a 44.12 só precisava saber SE resolvia; a
+    // 44.10 precisa saber QUAL campanha. Mesma consulta, mesmo laço.
+    const campanha = l.adId ? adParaCampanha.get(l.adId) : undefined;
+    if (campanha !== undefined) {
+      b.atribuidos.add(l.chave);
+      const k = `${campanha}\u0000${l.date}`;
+      let c = porCampanhaDia.get(k);
+      if (!c) {
+        c = new Set();
+        porCampanhaDia.set(k, c);
+      }
+      c.add(l.chave);
+    }
   }
 
   const coberturaDiaria = [...porDia.entries()]
@@ -620,8 +654,29 @@ export async function computeLeadOriginForStage(
       leadsTotais: b.totais.size,
     }));
 
+  /**
+   * Story 44.10 — o numerador da `convLP` gratuita, por campanha e por dia.
+   *
+   * ⚠️ **`Σ leadsPorCampanhaDia` NÃO bate com `Σ coberturaDiaria.leadsTotais`,
+   * e isso está certo.** Um lead sem `utm_content`, ou com `utm_content` que
+   * não resolve para anúncio conhecido, entra no total do dia e em campanha
+   * nenhuma — é exatamente a diferença que `coberturaLeads` mede. Somar os dois
+   * lados e "consertar" a divergência trocaria um número incompleto por um
+   * número errado, que é o que a AC6 da 44.3 proíbe.
+   *
+   * A dedup é por dia E por campanha, com a mesma `chave` da `coberturaDiaria`:
+   * o mesmo lead em dois dias conta nos dois, como lá.
+   */
+  const leadsPorCampanhaDia = [...porCampanhaDia.entries()]
+    .map(([k, set]) => {
+      const sep = k.indexOf("\u0000");
+      return { campaignId: k.slice(0, sep), date: k.slice(sep + 1), leads: set.size };
+    })
+    .sort((a, b) => (a.campaignId === b.campaignId ? (a.date < b.date ? -1 : 1) : a.campaignId < b.campaignId ? -1 : 1));
+
   return {
     coberturaDiaria,
+    leadsPorCampanhaDia,
     leadsSemData,
     range: { from: minDate, to: maxDate },
     fonte: source.kind,
