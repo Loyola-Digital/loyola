@@ -1,0 +1,609 @@
+storyId: "44.12"
+storyTitle: "O produtor de `CoberturaDiaria` — ligar a guarda de rastreio"
+gate: CONCERNS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-08-19"
+branch: feature/44.12-cobertura-diaria
+commits: [44bd12e6, d8023bed, 7771bf02, 6b9f9937, 3cd1191f, 2ef170a0, c7d3dfdd, 09583f69, 3d5e92c2, 5a1189be, 7558e3c9, bbacec67, d5ac3865]
+scope: >
+  services/lead-origin-sync.ts (+219 — `coberturaDiaria`, `leadsSemData`,
+  `resolveColIdx` por índice, `dataMapeadaNaSurvey`) ·
+  services/cadeia-cac-payload.ts (+107/−37 — reordenação da leitura de cache e
+  os 4 estados da guarda) · services/campaign-attribution.ts (`comoAdId`
+  exportada) · web: use-cadeia-cac.ts (união de 4 estados + `dias`),
+  cadeia-cac-stage-tab.tsx (render dos estados + texto de `coberturaAtipica`) ·
+  __tests__/lead-origin-cobertura-diaria.test.ts (novo, 21 testes) ·
+  __tests__/public-cadeia-cac.test.ts (+7 testes) ·
+  scripts/diag-cobertura-colunas.ts (novo, diagnóstico read-only)
+
+  ⚠️ O escopo ACIMA é o legítimo. O diff `main...HEAD` traz **8 arquivos a mais**,
+  todos artefatos de sync `" 2"` varridos por um `git add` no commit `5a1189be`.
+  Ver QA-4412-05.
+
+codeRabbit:
+  status: SKIPPED
+  reason: "CLI em WSL, host macOS. Sexto gate seguido sem ele — lacuna de cobertura, não aprovação."
+
+summary: >
+  A story faz o que se propôs, e a evidência de produção é boa: de 1 para 11 de
+  15 etapas com cobertura diária, 5 delas gratuitas, e a aba deixou de exibir o
+  aviso de guarda indisponível. A Sessão 2 é o melhor trabalho do lote — o plano
+  combinado (escrever `column_mapping` direto no banco) teria produzido efeito
+  ZERO, porque o sync nunca lia esse campo e o nome lá é `timestamp`, não `date`.
+  Descobrir isso ANTES de escrever em produção, e descobrir que 7 das 9 etapas já
+  tinham a coluna certa apontada no painel, vale mais que a story inteira.
+
+  O grupo B é o achado que ninguém tinha previsto e é o mais grave: em duas
+  etapas o alias não falhava em achar a coluna — ele **achava a errada em
+  silêncio** (`Data Conversão` com 0 de 343 células contra `Submitted at` com
+  343/343). Rodar o backfill sem isso teria publicado `leadsSemData=343` numa
+  etapa cuja data está 100% preenchida.
+
+  E a honestidade do registro é o padrão do epic: a Sessão 1 declara que a R30
+  "foi mal construída e NÃO conta", o achado herdado da `fz-l2-jun-26/Cap.Paga`
+  é declarado sem ser consertado, e o efeito colateral aceito da `pps1`
+  (leads pagos não classificados como pagos, porque `utm_source` mora em `s=`)
+  está escrito com o alcance medido antes da decisão.
+
+  **O que segura o gate é uma coisa só, e é grande:** o fio que dá título à
+  story — `calcularTetos` receber a cobertura — não tem UM teste. Cortá-lo deixa
+  a suíte INTEIRA da API no baseline exato, e o payload continua anunciando
+  `estado: "aplicada"`. Ver QA-4412-01.
+
+issues:
+  - id: QA-4412-01
+    severity: high
+    category: test-coverage
+    title: "O fio que dá título à story não tem teste: cortá-lo não quebra nada, e o payload continua dizendo que a guarda rodou"
+    file: packages/api/src/services/cadeia-cac-payload.ts:310
+    story: "44.12 (AC4, AC7)"
+    reproduced: true
+    description: >
+      A story se chama "ligar a guarda de rastreio". A ligação é uma linha:
+
+        const tetos = calcularTetos(series, familia, coberturaDaEtapa ? { coberturaDaEtapa } : {});
+
+      Reproduzido — trocando por `calcularTetos(series, familia, {})`, isto é,
+      **a guarda nunca roda**:
+
+        suíte INTEIRA da API   1267 passando / 11 falhando
+        baseline               1267 passando / 11 falhando
+        typecheck              limpo
+
+      Byte por byte o mesmo resultado. Nenhum dos 1278 testes percebe.
+
+      E o pior não é a lacuna, é o que ela deixa passar: `guardaDeCobertura` é
+      calculado a partir de `lead?.coberturaDiaria` (`:309`), **independente de
+      esse valor ter chegado ao `calcularTetos`**. Com o fio cortado o payload
+      continua devolvendo `{ estado: "aplicada", dias: 10 }` e a aba continua
+      exibindo "Guarda de rastreio ativa". Não existe fonte única entre "a guarda
+      rodou" e "o payload diz que a guarda rodou".
+
+      Por que os 21 testes novos não pegam: o único teste que exercita a guarda
+      ponta a ponta (`lead-origin-cobertura-diaria.test.ts:225-254`) chama
+      `calcularTetos` DIRETO, com um array `cobertura` construído à mão
+      (`:234-238`) — nunca a saída de `computeLeadOriginForStage`, e nunca pela
+      rota. Ele testa a biblioteca do `shared`, que a 44.6 e a 44.7 já testaram.
+
+      ⚠️ É a família do QA-448-01 / QA-449-01 — a tela afirmando algo que o
+      mecanismo por trás não garante. A diferença para o QA-449-01, que foi
+      CONCERNS: lá o campo desprotegido era acessório; aqui é a entrega
+      principal da story.
+    suggestedFix: >
+      Um teste de ROTA que monte uma etapa gratuita cuja série de cobertura tenha
+      uma janela atípica, e afirme sobre `tetos.convLP` que (a) traz
+      `coberturaJanela` presente, ou (b) que o valor difere do calculado sem
+      opts. Verificado por reversão do terceiro argumento.
+    blocking: true
+
+  - id: QA-4412-02
+    severity: medium
+    category: correctness
+    status: RESOLVIDO DURANTE A REVISÃO (commit d5ac3865)
+    title: "`aplicada` afirmava ter descartado janelas quando zero foram descartadas"
+    file: packages/web/components/funnels/cadeia-cac-stage-tab.tsx:323
+    story: "44.12 (AC5)"
+    reproduced: true
+    description: >
+      Achado e reproduzido por sonda antes de o @dev commitar a correção. Fica
+      registrado porque a evidência importa para o próximo gate.
+
+      A frase original era "...considerou N dia(s) com lead **e descartou janelas
+      de cobertura atípica**", renderizada sempre que `estado === "aplicada"`.
+      Mas `aplicada` só exige `comLead > 0`; não exige que a guarda tenha barrado
+      nada.
+
+      Sonda executada contra a rota, com cobertura uniforme:
+
+        guarda        { estado: "aplicada", dias: 3, motivo: null, message: null }
+        tetos.convLP  { valor: null, motivo: "baseInsuficiente" }
+
+      E `baseInsuficiente` é emitido por `shared/cadeia-cac.ts:641-646`
+      exatamente quando `houveBarradaPelaGuarda === false` — **zero janelas
+      barradas**, com a tela dizendo que descartou.
+
+      ⚠️ Esse era o estado das CINCO gratuitas na validação visual: a própria
+      story registra "guarda=aplicada em todas, e convLP com motivo
+      baseInsuficiente". A frase falsa estava na tela durante a validação e
+      passou.
+
+      Corrigido em `d5ac3865` para "Janelas com cobertura atípica são
+      descartadas." — afirmação sobre a REGRA, verdadeira sempre.
+
+      **Residual, e por isso o item não fecha:** (a) a AC5 pede para `aplicada`
+      "quantas janelas foram barradas, se alguma", e a contagem continua não
+      sendo entregue — `calcularTetos` rastreia `houveBarradaPelaGuarda`
+      internamente (`:589`, `:607`) e não expõe; (b) a frase nova não tem teste,
+      porque componente do web não tem runner (decisão de 29.35); (c) o commit
+      não atualiza File List nem Change Log da story.
+    suggestedFix: "Expor a contagem de janelas barradas em `TetosDoGrupo` e reportá-la — ou registrar o débito explicitamente no backlog junto da 44.3."
+    blocking: false
+
+  - id: QA-4412-03
+    severity: medium
+    category: correctness
+    title: "No caso MISTO a série é truncada em silêncio — `leadsSemData` só aparece quando a série está vazia"
+    file: packages/api/src/services/cadeia-cac-payload.ts:327-350
+    story: "44.12 (AC2, AC3)"
+    reproduced: true
+    description: >
+      `leadsSemData` só é dito quando `comLead === 0` (dentro da string do
+      `semLeadNoPeriodo`, `:339-348`). Quando há dias com lead E leads sem data
+      ao mesmo tempo, cai em `aplicada` e nada é declarado.
+
+      Sonda executada contra a rota, com 10 dias de cobertura e
+      `leadsSemData: 213`:
+
+        guardaDeCobertura        { estado: "aplicada", motivo: null, message: null, dias: 10 }
+        payload menciona "213"?  false
+
+      O payload INTEIRO não menciona os 213. E `leadsSemData` não é chave de
+      topo do payload — as chaves são projectId, stageId, stageName, stageType,
+      fonte, spendIncludesMetaTax, unidadeDasTaxas, range, lpTemVsl,
+      ticketMedioManual, familia, campanhas, agregado, atuais, principal,
+      atribuicao, **vendasSemDataNoTotal**, tetos, guardaDeCobertura, ranking,
+      composto, decomposicaoCPC, benchmarks.
+
+      ⚠️ `vendasSemDataNoTotal` está lá, sempre. E a AC2 desta story diz
+      literalmente que `leadsSemData` é "o mesmo padrão do `vendasSemDataNoTotal`
+      da 44.8 — declarar, nunca corrigir em silêncio". O padrão citado é
+      justamente o que não foi seguido.
+
+      Por que importa e não é cosmético: a mediana de referência da guarda
+      (`shared:576-583`) sai da série SOBREVIVENTE. Uma etapa em que metade dos
+      leads tem data ilegível produz mediana de meia amostra, barra janelas
+      contra ela, e a aba diz "Guarda de rastreio ativa" sem nenhuma ressalva.
+    suggestedFix: "Promover `leadsSemData` a campo de topo do payload da cadeia, espelhando `vendasSemDataNoTotal`, e exibi-lo na aba com o mesmo componente `Motivo` quando > 0."
+    blocking: true
+
+  - id: QA-4412-04
+    severity: medium
+    category: correctness
+    title: "A mensagem genérica de `semLeadNoPeriodo` mente quando o problema é IDENTIFICADOR, não data"
+    file: packages/api/src/services/cadeia-cac-payload.ts:346
+    story: "44.12 (AC5)"
+    reproduced: true
+    description: >
+      Derivado do produtor, não hipotético. Em `lead-origin-sync.ts` uma linha só
+      entra em `linhasDeCobertura` se tiver `key` (`:537`), e `leadsSemData` só
+      incrementa se `key && !date` (`:538`). Logo, num payload recém-produzido:
+
+        coberturaDiaria === []  E  leadsSemData === 0
+          ⟺ NENHUMA linha tem identificador (e-mail nem telefone)
+
+      Nesse caso a mensagem servida é "A cobertura de rastreio foi computada, mas
+      **nenhum dia do período tem lead** — a guarda não teve como julgar as
+      janelas."
+
+      Numa etapa que pode ter centenas de leads. É o caso que a própria story
+      documenta na `fz-l2-jun-26 / Captação Paga`: 128 leads, `dias=0`,
+      `leadsSemData=0`, colunas `email`/`telefone` 0 de 128 preenchidas.
+
+      ⚠️ É exatamente a mesma classe de defeito que o commit `09583f69` corrigiu
+      no ramo vizinho — dizer a causa errada e mandar a pessoa procurar no lugar
+      errado. A ação certa aqui é mapear a coluna de identificador; a mensagem
+      manda procurar leads que existem.
+
+      Atenuante: a `fz-l2-jun-26/Cap.Paga` é família `paid`, então cai em
+      `naoSeAplica` e a frase não renderiza HOJE. Nada impede uma gratuita de ter
+      o mesmo problema — a `bbe-pr1-mar-26 / Captação paga` já tem 2 linhas sem
+      identificador nenhum.
+
+      O dado para distinguir já está no mesmo objeto: `identifiersFilled:
+      { email, phone }` (`lead-origin-sync.ts:341`, gravado em `:636`).
+    suggestedFix: >
+      Terceiro ramo: se `identifiersFilled.email + identifiersFilled.phone === 0`
+      e `totalLeads > 0`, dizer que nenhuma linha tem identificador e que a ação
+      é mapear a coluna de e-mail/telefone.
+    blocking: false
+
+  - id: QA-4412-05
+    severity: medium
+    category: repo-hygiene
+    title: "8 artefatos de sync `\" 2\"` foram COMMITADOS no `5a1189be` — ~1.120 linhas que não são da story"
+    file: packages/api/src/services/campaign-attribution 2.ts
+    story: "44.12"
+    reproduced: true
+    description: >
+      O commit `5a1189be` declara 11 arquivos e 1.214 inserções. Só 3 arquivos e
+      ~94 linhas são da story. Os outros 8 são artefatos de sync varridos por um
+      `git add` amplo:
+
+        packages/api/src/services/campaign-attribution 2.ts        (224)
+        packages/api/src/__tests__/public-meta-campaigns-daily.test 2.ts  (338)
+        packages/api/src/__tests__/campaign-attribution.test 2.ts  (198)
+        packages/api/src/__tests__/campaign-name.test 2.ts          (65)
+        packages/api/src/scripts/relatorio-agrupamento-campanhas 2.ts (110)
+        packages/api/src/scripts/recontagem-viabilidade-teto 2.ts    (89)
+        packages/api/src/scripts/medir-cobertura-atribuicao 2.ts     (77)
+        packages/api/src/db/migrations/0106_users_listed 2.sql       (19)
+
+      Verifiquei o risco operacional e ele é NULO, mas só por sorte:
+      - os `.test 2.ts` NÃO rodam — o include do vitest é
+        `src/__tests__/**/*.test.ts` e esses terminam em `2.ts`;
+      - o `.sql` duplicado é inerte — `grep -c users_listed
+        src/db/migrations/meta/_journal.json` devolve **0**, e o deploy usa
+        `drizzle-kit push`, que nem lê a pasta.
+
+      O que NÃO é inerte: `campaign-attribution 2.ts` está dentro de `src`, o
+      `include` do tsconfig é `["src"]`, então o `tsc` o compila e ele vai para
+      `dist/`. E ele é a cópia **pré-44.12** — a única diferença para o arquivo
+      vivo é justamente `comoAdId` sem `export`.
+
+      A ironia vale ser dita: o arquivo duplicado é aquele cujo comentário na
+      cópia viva diz que "duas definições dariam populações diferentes para o
+      numerador e para a cobertura".
+    suggestedFix: "`git rm` dos 8 arquivos num commit de limpeza antes do PR, e um `.gitignore` para `* 2.*` / `* 2/`."
+    blocking: true
+
+  - id: QA-4412-06
+    severity: low
+    category: test-coverage
+    title: "A fronteira do `dataMapeadaNaSurvey` está travada pela metade — a story afirma que está inteira"
+    file: packages/api/src/services/lead-origin-sync.ts:192-201
+    story: "44.12"
+    reproduced: true
+    description: >
+      A story (linha 392-393) diz: "`utm_source`, `utm_medium`, `utm_term`,
+      `email` e `phone` continuam no alias, **e há teste travando isso**".
+
+      Furei a fronteira nas cinco chaves, uma reversão por grupo:
+
+        promover utm_source                        → 1 teste falha  ✅ travado
+        promover email                             → 1 teste falha  ✅ travado
+        promover phone + utm_medium + utm_term     → 0 testes falham ❌ LIVRE
+
+      Dois de cinco. E os três livres não são inofensivos pelo argumento da
+      própria story: `utm_medium` alimenta `classifyCanal` e `utm_term` alimenta
+      `classifyTemperatura` — os dois são publicados em `byCanal` e `byTemp` no
+      endpoint público. `phone` é a metade do identificador de dedup para lead
+      sem e-mail.
+    suggestedFix: "Estender o teste `SÓ a data é promovida` (`:485`) para afirmar as cinco chaves numa asserção só, com o mapping trazendo todas."
+    blocking: false
+
+  - id: QA-4412-07
+    severity: low
+    category: ac-coverage
+    title: "Duas das seis linhas da AC7 não estão realmente cobertas"
+    file: packages/api/src/__tests__/lead-origin-cobertura-diaria.test.ts:225
+    story: "44.12 (AC7)"
+    reproduced: true
+    description: >
+      - AC7 linha 4 — "`coberturaDaJanela` sobre a série produzida bate com a
+        razão de somas calculada à mão": não existe. `coberturaDaJanela` é função
+        PRIVADA de `shared/cadeia-cac.ts:525`, não exportada, e nenhum teste
+        alimenta a saída do produtor nela. A única menção no repo é um
+        comentário (`:95`).
+      - AC7 linha 6 — "uma janela com cobertura 20 p.p. abaixo da mediana →
+        barrada (**o caminho ponta a ponta**)": o teste existe mas não é ponta a
+        ponta. Ele chama `calcularTetos` direto com `cobertura` montada à mão
+        (`:234-238`). É essa a razão de o QA-4412-01 passar despercebido.
+    suggestedFix: "Um teste que pegue `p.coberturaDiaria` de `computeLeadOriginForStage` e o passe a `calcularTetos`, fechando o circuito produtor→consumidor."
+    blocking: false
+
+  - id: QA-4412-08
+    severity: low
+    category: maintainability
+    title: "O script de diagnóstico reimplementa `findColIdx` e DIVERGE do serviço"
+    file: packages/api/src/scripts/diag-cobertura-colunas.ts:18-29
+    story: "44.12"
+    reproduced: true
+    description: >
+      O script copia `norm`, `findColIdx` e `toIsoDate` em vez de importar. A
+      cópia de `findColIdx` não é fiel — a segunda passada difere:
+
+        serviço  (:66)  h.length > 2 && (h.includes(na) || na.includes(h))
+        script   (:26)  h.includes(na)
+
+      Faltam o guarda de tamanho e, sobretudo, o `na.includes(h)`. O script
+      SUB-reporta a resolução por alias: um cabeçalho `hora` é casado pelo
+      serviço (`"datahora".includes("hora")`) e reportado como "ALIASES.date
+      resolve? NÃO" pelo script.
+
+      Importa porque o levantamento inteiro das 9 etapas (grupos A/B/C/D da
+      Sessão 2) saiu da saída desta ferramenta. As conclusões continuam de pé —
+      a evidência decisiva foi a contagem de células parseáveis por coluna, que
+      não usa `findColIdx` — mas a divergência é uma armadilha para a próxima
+      rodada, que ainda tem 2 etapas do BBE para mapear.
+
+      Menor: o comentário de `:108` diz "primeiras 200 linhas" e o código usa
+      `sheet.rows` inteiro (`:109`).
+
+      **Veredito sobre versionar: MANTER.** Verifiquei que é estritamente
+      read-only — só `SELECT` e `readSheetData`, zero INSERT/UPDATE/DELETE, e o
+      cabeçalho declara isso. Segue convenção já estabelecida na mesma pasta
+      (`debug-sheet-headers.ts`, `medir-cobertura-atribuicao.ts`,
+      `recontagem-viabilidade-teto.ts`, `relatorio-agrupamento-campanhas.ts`), e
+      duas etapas ainda dependem dele.
+    suggestedFix: "Exportar `findColIdx` e `toIsoDate` de `lead-origin-sync.ts` e importá-las no script, em vez de manter a terceira cópia."
+    blocking: false
+
+  - id: QA-4412-09
+    severity: low
+    category: robustness
+    title: "`dataMapeadaNaSurvey` chama `.trim()` em jsonb sem o `.toString()` que a função vizinha adicionou"
+    file: packages/api/src/services/lead-origin-sync.ts:196-197
+    story: "44.12"
+    reproduced: false
+    description: >
+      Assimetria dentro da mesma story. `resolveColIdx` ganhou defesa explícita
+      contra valor não-string (`mapped?.toString().trim()`, `:111`); duas telas
+      acima, `dataMapeadaNaSurvey` faz `mapping?.timestamp?.trim()` cru sobre um
+      `jsonb`. Um `{"timestamp": 2}` gravado direto no banco derruba
+      `computeLeadOriginForStage` da etapa inteira — e antes desta story esse
+      ramo devolvia `null` e nunca tocava o valor.
+
+      Não alcançável pelo painel: `survey-mapping-dialog.tsx:71` filtra os
+      headers para strings não vazias. Fica registrado pela assimetria, não pelo
+      risco.
+    suggestedFix: "`String(mapping?.timestamp ?? \"\").trim()`, igual à função vizinha."
+    blocking: false
+
+  - id: QA-4412-10
+    severity: low
+    category: docs
+    title: "Números já publicados MUDARAM no endpoint público, e a story diz o contrário"
+    file: packages/api/src/routes/public-leads.ts:71-77
+    story: "44.12"
+    reproduced: true
+    description: >
+      O `GET /api/public/v1/projects/:projectId/stages/:stageId/leads-origin`
+      devolve o payload INTEIRO (`...row.payload`). Promover as duas chaves muda
+      três valores que já estavam publicados nesse contrato:
+
+      - `range.from` / `range.to` — nas etapas do grupo B o alias lia coluna
+        errada (`fz-m2-jul26`: `Data Conversão`, 0/343). Depois do backfill o
+        range existe e é outro.
+      - `topUtm.content` — `bumpUtm(utmCounts.content, cell(row,
+        idx.utmContent))` (`lead-origin-sync.ts:522`) usa o índice promovido. Na
+        `pps1` isso saiu de tudo-`(vazio)` para Ad IDs reais.
+      - `columnsResolved.utmContent` — de `false` para `true` na `pps1`.
+
+      Todas as três mudanças vão na direção da correção, e é por isso que isto é
+      `low` e não bloqueia. O problema é o registro: a story afirma que "preservar
+      a fonte de quem já produz cache é o que a precedência desta função defende
+      desde a 36.9", como se nada publicado tivesse mudado. Mudou — para melhor,
+      mas mudou, e um consumidor externo do endpoint público merece a linha.
+
+      No mesmo balaio, deriva de documentação:
+      - o DoD registra "API **1264/11**"; o número real hoje é **1267/11** (os 3
+        testes de `5a1189be` não foram somados);
+      - File List e Change Log não incluem o commit `d5ac3865`.
+    suggestedFix: "Uma linha na story declarando os três campos do endpoint público que mudam de valor após o backfill, e acertar 1264 → 1267."
+    blocking: false
+
+reversoesExecutadasPeloQA:
+  metodo: >
+    Padrão do epic: reintroduzir o defeito e confirmar que o teste falha. Cada
+    reversão foi aplicada ao working tree, a suíte rodada, e o arquivo restaurado
+    com `git checkout --` antes da seguinte. 15 reversões, nenhuma alteração
+    persistida (tree confirmado limpo ao fim).
+  resultado: "13 diferenciais · 2 lacunas"
+  tabela:
+    - { id: R1,  reversao: "`dataMapeadaNaSurvey` sempre `null` — promoção inteira OFF", falhas: 4,  veredito: diferencial }
+    - { id: R2,  reversao: "só o `utm_content` deixa de ser promovido",                  falhas: 1,  veredito: diferencial }
+    - { id: R3,  reversao: "promover `utm_source` (fura a fronteira)",                    falhas: 1,  veredito: diferencial }
+    - { id: R4,  reversao: "promover `email` (troca o identificador de dedup)",           falhas: 1,  veredito: diferencial }
+    - { id: R5,  reversao: "promover `phone` + `utm_medium` + `utm_term`",                falhas: 0,  veredito: "LACUNA — QA-4412-06" }
+    - { id: R6,  reversao: "`comoAdId` removido: `utm_content` cru vira adId",            falhas: 1,  veredito: diferencial }
+    - { id: R7,  reversao: "mapeamento por ÍNDICE desligado",                             falhas: 1,  veredito: diferencial }
+    - { id: R8,  reversao: "dedup por dia vira global — o \"conserto\" que a AC2 proíbe", falhas: 2,  veredito: diferencial }
+    - { id: R9,  reversao: "mensagem de data ilegível volta à genérica (`09583f69`)",     falhas: 1,  veredito: diferencial }
+    - { id: R10, reversao: "volta a ler o cache de lead DUAS vezes (fura a AC4)",         falhas: 14, veredito: diferencial }
+    - { id: R11, reversao: "`aplicada`/`semLeadNoPeriodo` colapsam num estado só",        falhas: 2,  veredito: diferencial }
+    - { id: R12, reversao: "índice vence o nome — precedência invertida",                 falhas: 1,  veredito: diferencial }
+    - { id: R13, reversao: "`leadsSemData` para de contar",                               falhas: 4,  veredito: diferencial }
+    - { id: R14, reversao: "linha SEM identificador passa a entrar na cobertura",         falhas: 1,  veredito: diferencial }
+    - { id: R15, reversao: "`calcularTetos` deixa de receber a cobertura — a guarda NÃO roda", falhas: 0, veredito: "LACUNA CRÍTICA — QA-4412-01 (suíte inteira: 1267/11, idêntico ao baseline)" }
+
+sondasExecutadasPeloQA:
+  metodo: "Bloco `describe` temporário anexado a `public-cadeia-cac.test.ts`, rodado pela rota, arquivo restaurado em seguida."
+  sondas:
+    - id: PROBE-A
+      cenario: "10 dias com lead + `leadsSemData: 213` (caso MISTO)"
+      resultado: "`{ estado: aplicada, motivo: null, message: null, dias: 10 }` · payload menciona \"213\"? **false**"
+      conclui: QA-4412-03
+    - id: PROBE-B
+      cenario: "cobertura uniforme 100% — nenhuma janela atípica"
+      resultado: "chaves do payload confirmam que `vendasSemDataNoTotal` é campo de topo e `leadsSemData` não é"
+      conclui: QA-4412-03
+    - id: PROBE-C
+      cenario: "3 dias, cobertura 90% uniforme, LP views abaixo do piso"
+      resultado: "`guarda { estado: aplicada, dias: 3 }` com `convLP { motivo: baseInsuficiente }` — zero janelas barradas"
+      conclui: "QA-4412-02 (corrigido em `d5ac3865`)"
+
+acCoverage:
+  AC1:
+    status: PASS
+    evidencia: >
+      Decisão (b) implementada: `comoAdId` exportada de `campaign-attribution.ts`
+      e reusada, de modo que produtor e numerador do `convLP` usam a MESMA regra.
+      `projectId` resolvido por `innerJoin` etapa→funil e **preguiçosamente** —
+      etapa sem `utm_content` não paga a query (`:588-598`). Ids deduplicados por
+      `new Set` antes do `inArray` (`:586`). Travado por R6 e pelos testes de
+      `:119`, `:134`, `:141`.
+  AC2:
+    status: PASS
+    evidencia: >
+      Comentário de 20 linhas NO PONTO onde o `Map` nasce (`:578-598`), como o
+      @po exigiu — não no topo do arquivo. Explica por que NÃO é o QA-44-01 (lá o
+      denominador era único; aqui os dois lados são do mesmo dia, então cada
+      janela é ≤ 1). Teste `:153` trava com um lead em dois dias afirmando global
+      1 / série 2. R8 confirma diferencial.
+  AC3:
+    status: PASS
+    evidencia: >
+      `coberturaDiaria: {date, leadsAtribuidos, leadsTotais}[]` e `leadsSemData:
+      number` em `LeadOriginPayload` (`:359-368`), em CONTAGENS. O teste `:97-100`
+      afirma `Number.isInteger` nos dois campos. Zero PII — só contagens. R13
+      confirma diferencial (4 falhas).
+  AC4:
+    status: CONCERNS
+    evidencia: >
+      **Metade entregue e travada, metade sem defesa.** A leitura única foi
+      reordenada corretamente (cache lido em `:284-307`, reusado no `cplReal` em
+      `:428`) e o teste que conta as queries (`mockSelect` chamado 3×) é sólido —
+      R10 derruba 14 testes. Mas a outra metade da AC — `calcularTetos` receber
+      `coberturaDaEtapa` — não tem UM teste: R15 corta o fio e a suíte inteira
+      fica idêntica ao baseline. Ver QA-4412-01.
+  AC5:
+    status: CONCERNS
+    evidencia: >
+      Os quatro estados existem no back e na aba, e três estão travados (R9, R11).
+      `TEXTO_DO_MOTIVO.coberturaAtipica` ganhou texto próprio, como a AC pedia.
+      Duas pendências: (a) para `aplicada` a AC pede "quantas janelas foram
+      barradas, se alguma" e o que se reporta é `dias` com lead — a contagem
+      existe em `shared:589` e não é exposta; (b) a mensagem genérica de
+      `semLeadNoPeriodo` mente no caso sem identificador (QA-4412-04). O
+      QA-4412-02, achado nesta revisão, foi corrigido em `d5ac3865`.
+  AC6:
+    status: PASS
+    evidencia: >
+      Cache velho cai em `indisponivel` sem `undefined.length` — dois testes
+      (`:783`, `:793`), R11 diferencial, e a mensagem aponta o
+      `backfill-lead-origin.ts`, que é a ação certa. Backfill EXECUTADO contra
+      produção com resultado registrado e auditável: de 1 para **11 de 15**
+      etapas, 5 gratuitas (`dg-pg02/Downsell` 14 dias, `fz-l2-jun/Grat` 17,
+      `fz-m1-mai26` 18, `fz-m2-jul26` 8, `pps1/Aquisição` 26). As 4 que ficaram
+      em `indisponivel` estão nominadas com o motivo e a ação de cada uma.
+  AC7:
+    status: CONCERNS
+    evidencia: >
+      Quatro das seis linhas cobertas com teste diferencial. A linha 4
+      (`coberturaDaJanela` sobre a série produzida) não existe, e a linha 6 (o
+      "caminho ponta a ponta") é coberta por um teste que chama `calcularTetos`
+      direto com dado montado à mão — não é ponta a ponta, e é por isso que o
+      QA-4412-01 passou. Ver QA-4412-07.
+
+validacaoVisual:
+  veredito: "Executada, honesta, e o que ela NÃO provou está escrito."
+  porQue: >
+    Feita pelo usuário em ambiente local sobre o banco de produção, e registrada
+    com a contraprova junto: `fz-l2-jun-26/Grat`, `pps1/Aquisição` e
+    `dg-pg02/Downsell` **sem** o aviso de indisponível, e `bbe-pr1-mar-26/Grat`
+    exibindo a mensagem nova, citando os 213 leads com data ilegível. Testar o
+    caso que deve falhar junto com o que deve passar é o que separa validação de
+    print decorativo.
+
+    E o registro declara o limite do que se observou, sem embelezar: `Conv. LP`
+    continua sem alvo nas cinco gratuitas, e o motivo NÃO é a guarda — é
+    `baseInsuficiente`, porque a base do `convLP` são leads por campanha, que a
+    44.3 ainda não produz. O caminho `coberturaAtipica` segue coberto por teste,
+    não por dado de produção, e a story diz isso com todas as letras.
+  oQueElaDeixouPassar: >
+    A frase "descartou janelas de cobertura atípica" estava na tela nas cinco
+    gratuitas — todas com zero janelas barradas. Achei por sonda; o @dev
+    corrigiu em `d5ac3865`. Não é crítica à validação: é o argumento de que
+    afirmação sobre MECANISMO precisa de teste, porque olho não distingue
+    "rodou e não barrou nada" de "rodou e barrou".
+
+evidenciaDeQualidadeAcimaDoPadrao:
+  - "A Sessão 2 desmontou o próprio plano ANTES de escrever em produção: `{\"date\": \"<índice>\"}` em `funnel_surveys.column_mapping` não teria efeito nenhum, porque o sync devolvia `columnMapping: null` nos dois ramos de pesquisa e o campo lá se chama `timestamp`, não `date`. Descobrir isso antes do UPDATE é o achado mais valioso do lote."
+  - "7 das 9 etapas JÁ tinham a coluna certa apontada no painel — o dado existia no banco e faltava lê-lo. Zero escrita em `column_mapping` foi necessária."
+  - "Grupo B, não previsto por ninguém: o alias não falhava em achar, ele achava a coluna ERRADA em silêncio (`Data Conversão` 0/343 contra `Submitted at` 343/343). Rodar o backfill sem corrigir teria publicado `leadsSemData=343` numa etapa com data 100% preenchida."
+  - "A Sessão 1 declara que a reversão R30 'foi mal construída e NÃO conta' — autocrítica que reduz o próprio placar em vez de inflá-lo."
+  - "O achado herdado (`fz-l2-jun-26/Cap.Paga`, `uniqueLeads=0` desde antes desta story) foi declarado, atribuído à causa certa (`email`/`telefone` 0/128) e explicitamente NÃO consertado, com o motivo — é etapa `paid` e mexer trocaria o dedup de caches publicados."
+  - "O efeito colateral aceito da `pps1` (leads pagos não classificados como pagos, porque `utm_source` mora em `s=`) está registrado com o alcance MEDIDO antes de decidir: 1 etapa de 15."
+  - "Fallback por conteúdo foi RECUSADO com argumento: 'procurar uma coluna que pareça data é como se lê a coluna errada em silêncio'. Índice explícito responsabiliza alguém."
+  - "A armadilha operacional do `turbo build` sobre o `next dev` foi diagnosticada e registrada, evitando que a próxima pessoa persiga um defeito de render que não existe."
+
+nfr:
+  seguranca:
+    status: PASS
+    nota: >
+      Os dois campos novos são CONTAGENS — zero PII, coerente com o contrato
+      "só agregados" do scope. As chaves de dedup (`chave`) vivem só em memória
+      dentro de `linhasDeCobertura` e nunca são serializadas. A query nova é
+      escopada por `projectId` resolvido pelo `innerJoin` etapa→funil, não por
+      valor vindo do request. O `diag-cobertura-colunas.ts` é estritamente
+      read-only (verificado: só `SELECT` e `readSheetData`).
+  performance:
+    status: PASS
+    nota: >
+      Duas queries a mais por etapa gratuita, ambas condicionais: o `projectId`
+      e o `mapearAdsParaCampanhas` só rodam se houver ao menos um `utm_content`
+      que pareça Ad ID (`:587`). Ids deduplicados antes do `inArray`, como a AC1
+      exigia. A leitura do cache de lead foi REDUZIDA de 2 para 1 (AC4), com
+      teste contando as queries. Custo novo de memória: `linhasDeCobertura`
+      guarda um objeto por linha com identificador — irrelevante nas dimensões
+      medidas (maior etapa: 343 linhas), mas é O(linhas) onde antes era O(1).
+  confiabilidade:
+    status: CONCERNS
+    nota: "QA-4412-01 (o fio principal sem teste), QA-4412-03 e QA-4412-04 (duas declarações que a aba deveria fazer e não faz, ou faz errado)."
+  manutenibilidade:
+    status: CONCERNS
+    nota: "QA-4412-05 (8 arquivos duplicados commitados, um deles um serviço dentro de `src`) e QA-4412-08 (terceira cópia divergente de `findColIdx`)."
+
+baselineDeTestes:
+  suiteApi: "1267 passando / 11 falhando — verificado pelo @qa"
+  falhasPreExistentes: "funnel-stages-lead-inputs (3), instagram-routes (1), instagram (2), projects (3), schema (2) — nenhuma toca a 44.12"
+  suiteWeb: "480 passando / 0 falhando"
+  turbo: "typecheck lint build — 12 tasks, 12 successful (confirmado também com `--force`)"
+  veredito: >
+    Baseline preservado; +28 testes na API (21 no produtor + 7 na guarda).
+    ⚠️ O DoD da story registra "1264/11" — número de antes dos 3 testes do
+    `5a1189be`. Ver QA-4412-10.
+
+porQueConcernsENaoFail: >
+  Considerei FAIL pelo QA-4412-01, e por mais tempo do que nos gates anteriores.
+  Ele é pior que o QA-449-01 numa dimensão que importa: lá o campo sem cobertura
+  era acessório do payload; aqui é a entrega que dá TÍTULO à story, e o payload
+  afirma que ela aconteceu independentemente de ter acontecido.
+
+  Três coisas seguraram o FAIL, e são de fato:
+
+  1. **A ligação está correta.** Eu li o código, não só rodei o teste. O
+     `coberturaDaEtapa` é passado, `calcularTetos` o consome, e a validação
+     visual em produção mostrou as cinco gratuitas saindo de `indisponivel` para
+     `aplicada`. O defeito é latente — a régua que a 44.9 fixou ("reprovar por
+     risco futuro seria mudar a régua no meio do epic") se aplica.
+
+  2. **O único defeito que estava PRESENTE no comportamento entregue — a frase
+     que afirmava ter descartado janelas — já foi corrigido**, no `d5ac3865`, com
+     o motivo escrito no código e o débito da contagem endereçado ao backlog. Foi
+     o perfil que reprovaria (o do 44.8), e deixou de ser.
+
+  3. **O QA-4412-03 e o QA-4412-04 são omissões e imprecisões de declaração, não
+     números errados.** Nenhum valor exibido está incorreto por causa deles.
+
+  O que não é negociável antes do PR: os 8 arquivos de sync (QA-4412-05) não
+  podem entrar na `main`, e o QA-4412-01 é um teste, não um redesenho.
+
+recomendacao:
+  antesDoMerge:
+    - "QA-4412-05 — `git rm` dos 8 artefatos `\" 2\"` do `5a1189be`. Mecânico e obrigatório."
+    - "QA-4412-01 — UM teste de rota que prove que a cobertura chega ao `calcularTetos`, verificado por reversão do terceiro argumento. É o fio da story."
+    - "QA-4412-03 — promover `leadsSemData` a campo de topo do payload, como `vendasSemDataNoTotal`."
+  backlog:
+    - "QA-4412-04 — terceiro ramo do `semLeadNoPeriodo` usando `identifiersFilled`"
+    - "QA-4412-02 (residual) — expor a contagem de janelas barradas em `TetosDoGrupo`; natural fazer junto com a 44.3, quando `coberturaAtipica` vira alcançável"
+    - "QA-4412-06 — estender a asserção da fronteira às cinco chaves"
+    - "QA-4412-07 — teste ligando `computeLeadOriginForStage` a `calcularTetos`"
+    - "QA-4412-08 — importar `findColIdx`/`toIsoDate` no script em vez da terceira cópia"
+    - "QA-4412-09 — `String(...)` no `dataMapeadaNaSurvey`, igual à função vizinha"
+    - "QA-4412-10 — declarar na story os 3 campos do endpoint público que mudam de valor; acertar 1264 → 1267"
+  paraODevops:
+    - "⚠️ Deploy da API é OBRIGATÓRIO para esta story ter efeito, e o backfill JÁ foi rodado contra produção com o código da branch. Enquanto a API deployada não tiver este código, o sync diário vai REESCREVER os caches sem `coberturaDiaria` e desligar a guarda de novo nas 11 etapas."
+    - "Nada foi pushado: 13 commits locais, sem PR."
+  paraOPO:
+    - "As 2 etapas do BBE (`bbe-pr1-mar-26/Grat` e `bbe-web-mai-26/Grat`) seguem em `indisponivel` aguardando mapeamento PELO PAINEL — decisão registrada de não escrever direto no banco. Não é débito de código."
