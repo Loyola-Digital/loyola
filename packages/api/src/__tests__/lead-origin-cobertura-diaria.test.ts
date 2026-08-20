@@ -340,3 +340,125 @@ describe("mapeamento por ÍNDICE — a coluna de cabeçalho vazio (Story 44.12)"
     expect(p?.leadsSemData).toBe(1);
   });
 });
+
+/**
+ * Story 44.12 — a coluna de data que a PESQUISA já mapeou.
+ *
+ * Levantamento de produção (2026-08-19): das 9 etapas em cache sem data
+ * resolvida, 7 **já tinham** a coluna certa apontada no painel, em
+ * `funnel_surveys.column_mapping.timestamp`. O sync não a lia — os dois ramos de
+ * pesquisa devolviam `columnMapping: null` — e caía nos `ALIASES`, que em duas
+ * delas escolhiam uma coluna PIOR que a mapeada.
+ */
+describe("coberturaDiaria — a data mapeada na pesquisa tem precedência sobre o alias", () => {
+  /** Reproduz `fz-m2-jul26`: o alias acha `Data Conversão`, que está VAZIA. */
+  const CABECALHO_PESQUISA = [
+    "E-mail",
+    "Telefone",
+    "utm_content",
+    "Submitted at",
+    "Data Conversão",
+    "Respondent ID",
+  ];
+
+  function fakeDbPesquisa(opts: {
+    kind: "pesquisa" | "lead_scoring";
+    surveyMapping: Record<string, string> | null;
+    adsConhecidos?: string[];
+  }) {
+    const { kind, surveyMapping, adsConhecidos = [] } = opts;
+    const encadear = (rows: unknown[]) => {
+      const chain: Record<string, unknown> = {};
+      chain.where = () => chain;
+      chain.innerJoin = () => chain;
+      chain.limit = () => Promise.resolve(rows);
+      chain.then = (r: (v: unknown[]) => unknown) => Promise.resolve(rows).then(r);
+      return chain;
+    };
+    const paraTabela = (table: unknown): unknown[] => {
+      if (table === funnelStages) return [{ projectId: "proj-1" }];
+      if (table === stageLeadScoringSchemas) {
+        return kind === "lead_scoring" ? [{ surveyId: "sv1" }] : [];
+      }
+      if (table === funnelSurveys) {
+        return [{ spreadsheetId: "ss1", sheetName: "Pesquisa", columnMapping: surveyMapping }];
+      }
+      if (table === funnelSpreadsheets) return [];
+      if (table === metaAdInsightsDaily) {
+        return adsConhecidos.map((adId) => ({ adId, campaignId: `camp-${adId}` }));
+      }
+      throw new Error("tabela inesperada na query");
+    };
+    return {
+      select: () => ({ from: (t: unknown) => encadear(paraTabela(t)) }),
+      selectDistinct: () => ({ from: (t: unknown) => encadear(paraTabela(t)) }),
+    } as never;
+  }
+
+  const linhas = [
+    ["ana@x.com", "", "111111111", "2026-08-01 10:00:00", "", "resp-1"],
+    ["bru@x.com", "", "", "2026-08-02 11:00:00", "", "resp-2"],
+  ];
+
+  it("usa a coluna do `timestamp` da pesquisa, não a que o alias acharia", async () => {
+    readSheetData.mockResolvedValue({ headers: CABECALHO_PESQUISA, rows: linhas });
+    const p = await computeLeadOriginForStage(
+      fakeDbPesquisa({
+        kind: "pesquisa",
+        surveyMapping: { timestamp: "Submitted at" },
+        adsConhecidos: ["111111111"],
+      }),
+      "s1",
+    );
+    expect(p?.coberturaDiaria).toEqual([
+      { date: "2026-08-01", leadsAtribuidos: 1, leadsTotais: 1 },
+      { date: "2026-08-02", leadsAtribuidos: 0, leadsTotais: 1 },
+    ]);
+    expect(p?.leadsSemData).toBe(0);
+  });
+
+  it("o mesmo vale para a fonte `lead_scoring`", async () => {
+    readSheetData.mockResolvedValue({ headers: CABECALHO_PESQUISA, rows: linhas });
+    const p = await computeLeadOriginForStage(
+      fakeDbPesquisa({ kind: "lead_scoring", surveyMapping: { timestamp: "Submitted at" } }),
+      "s1",
+    );
+    expect(p?.fonte).toBe("lead_scoring");
+    expect(p?.coberturaDiaria.map((d) => d.date)).toEqual(["2026-08-01", "2026-08-02"]);
+  });
+
+  it("SEM `timestamp` mapeado, o alias continua sendo a única via", async () => {
+    // Trava que a mudança é opt-in: pesquisa sem mapeamento se comporta como
+    // antes — aqui o alias acha a `Data Conversão` vazia e a série sai vazia,
+    // com as linhas DECLARADAS em `leadsSemData` (regra 7.4), não inventadas.
+    readSheetData.mockResolvedValue({ headers: CABECALHO_PESQUISA, rows: linhas });
+    const p = await computeLeadOriginForStage(
+      fakeDbPesquisa({ kind: "pesquisa", surveyMapping: {} }),
+      "s1",
+    );
+    expect(p?.coberturaDiaria).toEqual([]);
+    expect(p?.leadsSemData).toBe(2);
+  });
+
+  it("SÓ a data é promovida — `email` segue no alias, para não trocar o dedup", async () => {
+    // ⚠️ Promover as outras chaves trocaria o identificador de dedup de caches
+    // já publicados. Duas linhas com o MESMO e-mail e `Respondent ID`
+    // diferentes: o único tem que continuar sendo 1.
+    readSheetData.mockResolvedValue({
+      headers: CABECALHO_PESQUISA,
+      rows: [
+        ["ana@x.com", "", "", "2026-08-01 10:00:00", "", "resp-1"],
+        ["ana@x.com", "", "", "2026-08-02 11:00:00", "", "resp-2"],
+      ],
+    });
+    const p = await computeLeadOriginForStage(
+      fakeDbPesquisa({
+        kind: "pesquisa",
+        surveyMapping: { timestamp: "Submitted at", email: "Respondent ID" },
+      }),
+      "s1",
+    );
+    expect(p?.uniqueLeads).toBe(1);
+    expect(p?.coberturaDiaria.map((d) => d.leadsTotais)).toEqual([1, 1]);
+  });
+});

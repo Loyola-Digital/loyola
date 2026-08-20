@@ -151,6 +151,39 @@ interface LeadSource {
  *
  * Ou seja: nenhuma etapa que já produz cache muda de fonte aqui.
  */
+/**
+ * Story 44.12 — traduz o `timestamp` da pesquisa para o `date` que o produtor
+ * de cobertura procura.
+ *
+ * ## Por que esta tradução existe
+ *
+ * A tela de mapeamento de pesquisa (`survey-mapping-dialog.tsx`) grava a coluna
+ * de data em `timestamp`, e `resolveColIdx` procura `date`. Até aqui o
+ * `column_mapping` da survey nem chegava a ser lido — os dois ramos de pesquisa
+ * devolviam `columnMapping: null` —, então uma coluna já apontada por alguém no
+ * painel ficava invisível para o produtor.
+ *
+ * Medido em produção (2026-08-19): 7 das 9 etapas sem data resolvida **já
+ * tinham** a coluna certa mapeada (`"Submitted at"`, `"Data"`). O dado existia;
+ * faltava lê-lo. Em duas delas o alias ainda escolhia uma coluna PIOR que a
+ * mapeada — `fz-m2-jul26` caía numa `Data Conversão` com 0 de 343 células
+ * preenchidas, enquanto o `Submitted at` mapeado tinha 343 de 343.
+ *
+ * ⚠️ **Só a data, deliberadamente.** As outras chaves da survey (`email`,
+ * `phone`, `utm_*`) continuam resolvidas por `ALIASES`. Promovê-las trocaria o
+ * identificador de dedup de caches já publicados — e preservar a fonte de quem
+ * já produz cache é exatamente o que a precedência desta função defende desde a
+ * Story 36.9. Ampliar isso é decisão de produto, não efeito colateral desta.
+ */
+function dataMapeadaNaSurvey(
+  mapping: { timestamp?: string } | null,
+): Record<string, string | undefined> | null {
+  const ts = mapping?.timestamp?.trim();
+  // Sem `timestamp`, devolver `null` mantém os ALIASES como única via — que é o
+  // comportamento anterior a esta story.
+  return ts ? { date: ts } : null;
+}
+
 export async function resolveLeadSource(db: Database, stageId: string): Promise<LeadSource | null> {
   const [scoring] = await db
     .select({ surveyId: stageLeadScoringSchemas.surveyId })
@@ -161,6 +194,7 @@ export async function resolveLeadSource(db: Database, stageId: string): Promise<
   const surveyCols = {
     spreadsheetId: funnelSurveys.spreadsheetId,
     sheetName: funnelSurveys.sheetName,
+    columnMapping: funnelSurveys.columnMapping,
   };
 
   if (scoring?.surveyId) {
@@ -172,7 +206,14 @@ export async function resolveLeadSource(db: Database, stageId: string): Promise<
     if (s) {
       return {
         kind: "lead_scoring",
-        sheets: [{ ...s, label: "Lead Scoring", columnMapping: null }],
+        sheets: [
+          {
+            spreadsheetId: s.spreadsheetId,
+            sheetName: s.sheetName,
+            label: "Lead Scoring",
+            columnMapping: dataMapeadaNaSurvey(s.columnMapping),
+          },
+        ],
       };
     }
   }
@@ -183,7 +224,17 @@ export async function resolveLeadSource(db: Database, stageId: string): Promise<
     .where(eq(funnelSurveys.stageId, stageId))
     .limit(1);
   if (survey) {
-    return { kind: "pesquisa", sheets: [{ ...survey, label: "Pesquisa", columnMapping: null }] };
+    return {
+      kind: "pesquisa",
+      sheets: [
+        {
+          spreadsheetId: survey.spreadsheetId,
+          sheetName: survey.sheetName,
+          label: "Pesquisa",
+          columnMapping: dataMapeadaNaSurvey(survey.columnMapping),
+        },
+      ],
+    };
   }
 
   // Story 36.9 (AC1): os LEADS POPUP vivem aqui, e o sync nunca consultou esta
