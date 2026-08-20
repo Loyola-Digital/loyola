@@ -313,11 +313,19 @@ export function CadeiaCacStageTab({
           data.guardaDeCobertura?.estado === "semLeadNoPeriodo") && (
           <Motivo texto={data.guardaDeCobertura.message} />
         )}
+        {/* ⚠️ Não afirmar que descartou: `aplicada` significa que a guarda RODOU,
+            não que barrou alguma janela. Visto em produção na `bbe-pr1-mar-26`,
+            com 20 dias de cobertura e `convLP` em `baseInsuficiente` — zero
+            janelas barradas, e a frase anterior dizia que descartou.
+            A AC5 pede "quantas janelas foram barradas, SE ALGUMA"; a contagem
+            exige `calcularTetos` expor o número, e ficou de backlog junto com a
+            44.3, que é quando `coberturaAtipica` vira alcançável de verdade. */}
         {data.guardaDeCobertura?.estado === "aplicada" && (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Info className="h-3 w-3" />
-            Guarda de rastreio ativa: o teto de Conv. LP considerou {data.guardaDeCobertura.dias}{" "}
-            dia(s) com lead e descartou janelas de cobertura atípica.
+            Guarda de rastreio ativa: o teto de Conv. LP considerou{" "}
+            {data.guardaDeCobertura.dias} dia(s) com lead. Janelas com cobertura atípica são
+            descartadas.
           </p>
         )}
         {data.atribuicao?.motivo === "naoAtribuivel" && (
