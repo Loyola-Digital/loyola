@@ -1,0 +1,142 @@
+alvo: "PR #546 — fix(settings): aba Analytics aparece no menu lateral do desktop"
+commit: a168f388
+mergeadoEm: "2026-08-18T23:40:16Z"
+autor: "Lucas Vital + Claude Opus 5"
+revisadoPor: "@qa (Quinn)"
+revisadoEm: "2026-08-20"
+arquivos: ["packages/web/app/(app)/settings/layout.tsx"]
+tamanho: "9 inserções, 3 deleções — um arquivo"
+
+decisao: PASS
+condicional: >
+  PASS no código. A validação visual em produção NÃO foi executada — está
+  fora do meu alcance nesta sessão e é o único item que falta para o gate
+  ficar incondicional. Ver `validacaoVisual` abaixo.
+
+resumo: >
+  O fix é pequeno, correto, e conserta um bug que deixava a aba invisível para
+  o admin em produção. A afirmação central do commit — que `bottomTabs` é uma
+  lista própria que não passa por `getAllTabs` — confere. A mudança de
+  permissão para admin estrito também confere, e em três camadas independentes.
+
+  Os dois achados são `low`, nenhum é regressão, e nenhum bloqueia. Mas o
+  segundo merece leitura: a causa-raiz do bug original era **listas paralelas
+  divergindo**, e a correção adicionou uma quarta condição em vez de remover a
+  duplicação. O mesmo defeito pode voltar pela mesma porta.
+
+verificacoes:
+  - id: V1
+    o_que: "`bottomTabs` (menu lateral desktop) passa a incluir a aba"
+    onde: "layout.tsx:114 — `...(podeAnalytics ? [ANALYTICS_TAB as Tab] : [])`, renderizado em `:238`"
+    resultado: CONFERE
+    nota: "É o bug declarado. A lista existia e não tinha sido atualizada quando a tela do Plausible entrou."
+
+  - id: V2
+    o_que: "A rota do Plausible é admin ESTRITO no backend"
+    onde: "packages/api/src/routes/plausible.ts:74-75 — `ehAdmin(role) { return role === 'admin' }`"
+    resultado: CONFERE
+    nota: >
+      O commit justifica a mudança dizendo que a credencial vale para a base
+      inteira. Conferi no backend, não só na alegação: é `admin` literal, sem
+      `manager`. A aba agora não promete o que a rota nega.
+
+  - id: V3
+    o_que: "A página se defende sozinha, não só a navegação"
+    onde: "settings/analytics/page.tsx:36 e :59-70 — `isAdmin = role === 'admin'` + card 'Acesso restrito'"
+    resultado: CONFERE
+    nota: >
+      Defesa em profundidade real: mesmo que a aba vazasse na navegação, ou que
+      alguém digitasse a URL, a página não renderiza o formulário. As três
+      camadas (layout, página, API) concordam em `role === "admin"`.
+
+  - id: V4
+    o_que: "Manager perdeu a aba — é intencional?"
+    onde: "layout.tsx:61 e :93"
+    resultado: CONFERE
+    nota: >
+      Sim, e está declarado no corpo do commit com o motivo. Antes da #546 o
+      manager veria a aba (via `isAdmin`, que inclui manager) e levaria 'acesso
+      restrito' ao clicar. É melhora, não regressão.
+
+achados:
+  - id: QA-546-01
+    severidade: low
+    categoria: consistency
+    titulo: "`ADMIN_TABS` ainda carrega `ANALYTICS_TAB` sem condição — e é a mesma classe do bug original"
+    arquivo: "packages/web/app/(app)/settings/layout.tsx:46"
+    reproduzido: true
+    descricao: >
+      A #546 condicionou a aba em `getAllTabs` (`:61`) e em `bottomTabs`
+      (`:114`). Sobrou a terceira lista: `ADMIN_TABS` (`:44-50`) inclui
+      `ANALYTICS_TAB` incondicionalmente.
+
+      Ela alimenta `getActiveBreadcrumb` (`:80`: `[...BASE_TABS, ...ADMIN_TABS]`).
+      Efeito prático: um manager que chegue a `/settings/analytics` pela URL vê
+      o breadcrumb dizer **"Analytics"** enquanto a página diz **"Acesso
+      restrito"**. Não vaza dado nem credencial — o `role` não é consultado no
+      breadcrumb, então a lista serve só para traduzir path em rótulo.
+
+      Registro como `low` pelo impacto, mas o padrão importa: o bug que a #546
+      corrigiu foi **exatamente** uma lista paralela que não acompanhou a
+      mudança. Agora são três listas e a correção deixou a terceira para trás.
+    correcaoSugerida: >
+      Nenhuma ação isolada — resolver junto com o QA-546-02, que ataca a causa.
+    bloqueia: false
+
+  - id: QA-546-02
+    severidade: low
+    categoria: test-coverage
+    titulo: "Não há teste, e o runner do web não alcança este arquivo"
+    arquivo: "packages/web/vitest.config.ts:33"
+    reproduzido: true
+    descricao: >
+      `include: ["lib/utils/**/*.test.ts"]` com `environment: "node"`. O runner
+      do web não roda teste de componente, e o comentário do próprio config
+      (`:11`) diz que isso é deliberado. Logo, **não existe teste possível hoje**
+      para `settings/layout.tsx` sem mudar a infra — e mudar a infra do runner
+      não é escopo de um fix de uma linha.
+
+      O que torna isto acionável: a regra "quais abas para qual role" é uma
+      **função pura** disfarçada de componente. Extraída para `lib/utils/`, ela
+      cai exatamente onde o runner já olha, e as três listas do QA-546-01 viram
+      uma fonte só.
+
+      Isso é o que impediria a terceira recorrência — o bug já aconteceu duas
+      vezes na mesma superfície (a aba faltando no desktop; a aba sobrando no
+      breadcrumb).
+    correcaoSugerida: >
+      Extrair `tabsParaRole(role)` para `packages/web/lib/utils/settings-tabs.ts`,
+      com `getAllTabs`, `bottomTabs` e `ADMIN_TABS` derivando dela. Teste de
+      tabela: para `admin`, `manager` e `member`, quais abas aparecem em cada
+      superfície. Roda no runner existente, sem jsdom.
+    bloqueia: false
+
+validacaoVisual:
+  status: NAO_EXECUTADA
+  motivo: >
+    Sem acesso ao ambiente de produção nesta sessão. O projeto `loyola-web`
+    está em `lucasvitals-projects` no Vercel; a única team acessível por aqui é
+    `bonsai`.
+  oQueConferir:
+    - "Logado como **admin**, no desktop: a aba 'Analytics' aparece no menu lateral, entre as abas base e 'Usuários'."
+    - "Logado como **manager**: a aba NÃO aparece — nem no menu lateral, nem no seletor mobile."
+    - "Manager digitando `/settings/analytics` na URL: vê o card 'Acesso restrito' (e o breadcrumb dirá 'Analytics' — é o QA-546-01, esperado)."
+  nota: >
+    A #546 é front-end puro e sobe pelo Vercel no merge da `main` — não depende
+    do deploy da API no Railway, que segue pendente por causa da Story 44.12.
+    Mergeada em 18/08, então já deve estar no ar há dois dias.
+
+baseline:
+  nota: >
+    Não rodei a suíte para esta revisão: a PR está mergeada há 2 dias e a `main`
+    recebeu 4 merges desde então (#563, #564, #565 e a própria). Um número aqui
+    mediria a main de hoje, não o efeito da #546 — seria número decorativo.
+    O CI da #546 passou na época do merge.
+
+recomendacao:
+  imediato:
+    - "Executar a validação visual acima (3 cenários) — único item que falta."
+  backlog:
+    - "QA-546-01 + QA-546-02 juntos: extrair `tabsParaRole(role)` para `lib/utils/`, unificando as três listas e ganhando teste no runner existente. É a correção da causa, não do sintoma."
+  naoFazer:
+    - "Não mexer no `vitest.config.ts` do web para rodar teste de componente — o comentário em `:11` registra que a escolha é deliberada, e reverter isso por causa de um fix de uma linha é desproporcional."
