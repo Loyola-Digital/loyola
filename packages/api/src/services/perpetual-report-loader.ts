@@ -174,7 +174,18 @@ function parseVendas(
   const campaignIdx = idx(mapping.utm_campaign);
   const mediumIdx = idx(mapping.utm_medium);
   const contentIdx = idx(mapping.utm_content);
-  const produtoIdx = idx(mapping.produto);
+  /**
+   * Story 29.53 (AC7) — a chave persistida e `productName`, nao `produto`.
+   *
+   * O parametro e `Record<string, string | undefined>`, entao o `tsc` nao pega:
+   * `mapping.produto` compila e devolve `undefined` sempre. Resultado silencioso
+   * — `produtoIdx` era `-1` em toda planilha, e `PerpetualSaleRow.produto` saia
+   * `null` mesmo quando a coluna estava mapeada no painel.
+   *
+   * Ver `funnel_spreadsheets.column_mapping` (`schema.ts:1112`) e o tipo
+   * `SaleColumnMapping` (`shared/types/funnel.ts:62`).
+   */
+  const produtoIdx = idx(mapping.productName);
 
   const hasStatusCol = statusIdx !== -1;
 
