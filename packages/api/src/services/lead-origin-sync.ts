@@ -9,6 +9,7 @@ import {
   publicMetricsCache,
 } from "../db/schema.js";
 import { readSheetData } from "./google-sheets.js";
+import { comoAdId, mapearAdsParaCampanhas } from "./campaign-attribution.js";
 import {
   classifyOrigem,
   classifyTemperatura,
@@ -78,10 +79,41 @@ function findColIdx(headers: string[], aliases: string[]): number {
  * planilha `n8n-kiwify-captação` mapeia `utm_source` para a coluna literalmente
  * chamada `s=` — nenhum alias acharia isso.
  */
+/**
+ * Resolve a coluna: primeiro pelo NOME mapeado, depois pelo **índice** mapeado,
+ * por último pelos aliases.
+ *
+ * ## Por que o índice existe (Story 44.12)
+ *
+ * Export do Tally chega com as três primeiras colunas de cabeçalho **VAZIO**, e
+ * a data mora numa delas:
+ *
+ *     headers  ["", "", "", "Qual é seu sexo?", "name", "email", ...]
+ *     linha    ["Ar7OOAo", "Zjz88go", "29/03/2026", "Feminino", ...]
+ *                                      ↑ índice 2
+ *
+ * Com cabeçalho vazio **nem o mapeamento por nome alcança**, e a data ficava
+ * ilegível — 9 das 15 etapas em cache não tinham data nenhuma, o que só ficou
+ * visível quando a 44.12 passou a precisar dela. `{"date": "2"}` resolve.
+ *
+ * ⚠️ **O nome vem ANTES do índice**, de propósito: planilha com uma coluna
+ * literalmente chamada "2" continua resolvendo por nome. Inverter faria o índice
+ * sequestrar esse caso.
+ *
+ * ⚠️ **E não há adivinhação por conteúdo.** Procurar "uma coluna que pareça
+ * data" é como se lê a coluna errada em silêncio — o Epic 44 inteiro existe por
+ * causa de um número que estava errado sem ninguém saber. Índice é explícito:
+ * alguém escreveu `2`, alguém responde por ele.
+ */
 function resolveColIdx(headers: string[], mapped: string | undefined, aliases: string[]): number {
-  if (mapped) {
-    const i = headers.map(norm).indexOf(norm(mapped));
-    if (i >= 0) return i;
+  const m = mapped?.toString().trim();
+  if (m) {
+    const porNome = headers.map(norm).indexOf(norm(m));
+    if (porNome >= 0) return porNome;
+    if (/^\d+$/.test(m)) {
+      const i = Number(m);
+      if (i >= 0 && i < headers.length) return i;
+    }
   }
   return findColIdx(headers, aliases);
 }
@@ -119,6 +151,55 @@ interface LeadSource {
  *
  * Ou seja: nenhuma etapa que já produz cache muda de fonte aqui.
  */
+/**
+ * Story 44.12 — traduz o `timestamp` da pesquisa para o `date` que o produtor
+ * de cobertura procura.
+ *
+ * ## Por que esta tradução existe
+ *
+ * A tela de mapeamento de pesquisa (`survey-mapping-dialog.tsx`) grava a coluna
+ * de data em `timestamp`, e `resolveColIdx` procura `date`. Até aqui o
+ * `column_mapping` da survey nem chegava a ser lido — os dois ramos de pesquisa
+ * devolviam `columnMapping: null` —, então uma coluna já apontada por alguém no
+ * painel ficava invisível para o produtor.
+ *
+ * Medido em produção (2026-08-19): 7 das 9 etapas sem data resolvida **já
+ * tinham** a coluna certa mapeada (`"Submitted at"`, `"Data"`). O dado existia;
+ * faltava lê-lo. Em duas delas o alias ainda escolhia uma coluna PIOR que a
+ * mapeada — `fz-m2-jul26` caía numa `Data Conversão` com 0 de 343 células
+ * preenchidas, enquanto o `Submitted at` mapeado tinha 343 de 343.
+ *
+ * ## Por que `utm_content` entra junto, e `utm_source` NÃO
+ *
+ * `utm_content` é o que decide se um lead conta como **atribuído** — é metade da
+ * razão que esta story produz. Medido: a `pps1` guarda o Ad ID numa coluna
+ * chamada `co=`, que nenhum alias acha, e saía com cobertura **0% quando o
+ * rastreio real é 70 de 77**. Entregar a cobertura com zero falso mina
+ * exatamente a guarda que ela deveria alimentar.
+ *
+ * ⚠️ **`email`, `phone` e os demais `utm_*` continuam no ALIAS, deliberadamente.**
+ * `email`/`phone` são o identificador de dedup, e `utm_source`/`utm_medium`/
+ * `utm_term` alimentam `classifyOrigem`, `classifyCanal` e `classifyTemperatura`
+ * — promovê-los reclassificaria Pago/Orgânico e canal em caches já publicados,
+ * mudando números que outras abas já mostram. Preservar a fonte de quem já
+ * produz cache é o que a precedência desta função defende desde a Story 36.9.
+ * Ampliar isso é decisão de produto, não efeito colateral desta.
+ *
+ * Impacto medido das duas chaves promovidas (15 etapas em cache, 2026-08-19):
+ * a data conserta 7 etapas; o `utm_content` conserta 1 (`pps1`), e nenhuma outra
+ * tem mapeamento divergente do alias.
+ */
+function dataMapeadaNaSurvey(
+  mapping: { timestamp?: string; utm_content?: string } | null,
+): Record<string, string | undefined> | null {
+  const ts = mapping?.timestamp?.trim();
+  const content = mapping?.utm_content?.trim();
+  // Sem nenhuma das duas, devolver `null` mantém os ALIASES como única via —
+  // que é o comportamento anterior a esta story.
+  if (!ts && !content) return null;
+  return { ...(ts ? { date: ts } : {}), ...(content ? { utm_content: content } : {}) };
+}
+
 export async function resolveLeadSource(db: Database, stageId: string): Promise<LeadSource | null> {
   const [scoring] = await db
     .select({ surveyId: stageLeadScoringSchemas.surveyId })
@@ -129,6 +210,7 @@ export async function resolveLeadSource(db: Database, stageId: string): Promise<
   const surveyCols = {
     spreadsheetId: funnelSurveys.spreadsheetId,
     sheetName: funnelSurveys.sheetName,
+    columnMapping: funnelSurveys.columnMapping,
   };
 
   if (scoring?.surveyId) {
@@ -140,7 +222,14 @@ export async function resolveLeadSource(db: Database, stageId: string): Promise<
     if (s) {
       return {
         kind: "lead_scoring",
-        sheets: [{ ...s, label: "Lead Scoring", columnMapping: null }],
+        sheets: [
+          {
+            spreadsheetId: s.spreadsheetId,
+            sheetName: s.sheetName,
+            label: "Lead Scoring",
+            columnMapping: dataMapeadaNaSurvey(s.columnMapping),
+          },
+        ],
       };
     }
   }
@@ -151,7 +240,17 @@ export async function resolveLeadSource(db: Database, stageId: string): Promise<
     .where(eq(funnelSurveys.stageId, stageId))
     .limit(1);
   if (survey) {
-    return { kind: "pesquisa", sheets: [{ ...survey, label: "Pesquisa", columnMapping: null }] };
+    return {
+      kind: "pesquisa",
+      sheets: [
+        {
+          spreadsheetId: survey.spreadsheetId,
+          sheetName: survey.sheetName,
+          label: "Pesquisa",
+          columnMapping: dataMapeadaNaSurvey(survey.columnMapping),
+        },
+      ],
+    };
   }
 
   // Story 36.9 (AC1): os LEADS POPUP vivem aqui, e o sync nunca consultou esta
@@ -249,6 +348,24 @@ export interface LeadOriginPayload {
     content: { value: string; leads: number }[];
     term: { value: string; leads: number }[];
   };
+  /**
+   * Story 44.12 — cobertura de rastreio POR DIA, para a guarda `coberturaAtipica`
+   * do teto de `convLP` da família gratuita (`@loyola-x/shared`, spec §4).
+   *
+   * ⚠️ **Contagens, nunca frações.** `coberturaDaJanela` soma numerador e
+   * denominador da janela e divide DEPOIS. Entregar a fração pronta por dia e
+   * tirar média daria outro número — o erro que a regra da §2.6 proíbe.
+   *
+   * ⚠️ **`Σ leadsTotais` NÃO bate com `uniqueLeads`, e isso está certo.** Ver o
+   * comentário no ponto onde o mapa é construído.
+   */
+  coberturaDiaria: { date: string; leadsAtribuidos: number; leadsTotais: number }[];
+  /**
+   * Story 44.12 — linhas cuja data não foi legível. Ficam FORA da série diária
+   * e continuam em `uniqueLeads`. Declarado em vez de corrigido em silêncio
+   * (regra 7.4) — é o mesmo padrão do `vendasSemDataNoTotal` da Story 44.8.
+   */
+  leadsSemData: number;
   columnsResolved: {
     utmSource: boolean;
     utmTerm: boolean;
@@ -319,6 +436,18 @@ export async function computeLeadOriginForStage(
   let phoneFilled = 0;
   let minDate: string | null = null;
   let maxDate: string | null = null;
+
+  /**
+   * Story 44.12 — 1ª passada. Guarda o trio de cada linha; a 2ª passada agrupa
+   * por dia DEPOIS de saber quais `utm_content` resolvem.
+   *
+   * Duas passadas são necessárias, não preguiça: para dizer se um lead está
+   * "atribuído" é preciso o mapa `adId → campanha`, e o mapa só pode ser
+   * consultado quando já se conhece a lista de ids — que só existe ao fim da
+   * varredura.
+   */
+  const linhasDeCobertura: { date: string | null; chave: string; adId: string | null }[] = [];
+  let leadsSemData = 0;
 
   const bump = (map: Map<string, Bucket>, k: string, key: string | null) => {
     let b = map.get(k);
@@ -401,6 +530,14 @@ export async function computeLeadOriginForStage(
         if (!minDate || d < minDate) minDate = d;
         if (!maxDate || d > maxDate) maxDate = d;
       }
+
+      // Story 44.12: só linha COM identificador entra na cobertura — sem
+      // e-mail nem telefone não há como deduplicar, e `uniqueLeads` já a
+      // ignora pelo mesmo motivo. Contar aqui e não lá inflaria o denominador.
+      if (key) {
+        if (!d) leadsSemData++;
+        linhasDeCobertura.push({ date: d, chave: key, adId: comoAdId(cell(row, idx.utmContent)) });
+      }
     }
   }
 
@@ -409,7 +546,79 @@ export async function computeLeadOriginForStage(
   // "ninguém se cadastrou".
   if (fontes.length === 0) return null;
 
+  // ───────────────────────────────────────────────────────────
+  // Story 44.12 — 2ª passada: a cobertura de rastreio por dia
+  // ───────────────────────────────────────────────────────────
+
+  // Ids DEDUPLICADOS antes da query: uma etapa com milhares de linhas geraria
+  // um `IN` gigante passando um id por linha.
+  const idsDistintos = [...new Set(linhasDeCobertura.map((l) => l.adId).filter((x): x is string => !!x))];
+
+  /**
+   * ⚠️ Story 44.12: a cobertura só conta lead cujo `utm_content` RESOLVE para um
+   * anúncio conhecido, e `mapearAdsParaCampanhas` precisa do `projectId` — que
+   * esta função não recebe. Resolvido aqui, e **só quando há id para resolver**:
+   * etapa cuja planilha não tem `utm_content` não paga nenhuma query a mais.
+   *
+   * Decisão do @po (2026-08-19): "resolve", não "preenchido". Cobertura é uma
+   * RAZÃO, e o numerador da métrica que a guarda protege (`leadsAtribuidos` do
+   * `DiaBruto`) conta só id resolvido. Contar id não resolvido aqui compararia
+   * uma população contra outra, e a guarda barraria janelas pelo motivo errado.
+   */
+  let adParaCampanha = new Map<string, string>();
+  if (idsDistintos.length) {
+    const [projeto] = await db
+      .select({ projectId: funnels.projectId })
+      .from(funnelStages)
+      .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+      .where(eq(funnelStages.id, stageId))
+      .limit(1);
+    if (projeto) adParaCampanha = await mapearAdsParaCampanhas(db, projeto.projectId, idsDistintos);
+  }
+
+  /**
+   * ⚠️ **`Σ leadsTotais` NÃO bate com `uniqueLeads`, e isso está CERTO.**
+   *
+   * `globalKeys` é um `Set` do período inteiro; aqui é um `Set` POR DIA. Um lead
+   * que se cadastrou em 03/08 e de novo em 11/08 conta **1** no global e **2** na
+   * série.
+   *
+   * A divergência é a resposta certa para a pergunta que a guarda faz — *"neste
+   * período, quanto do rastreio funcionou?"*. O lead que voltou é uma
+   * oportunidade de rastreio a mais, e deduplicá-lo entre dias responderia outra
+   * coisa.
+   *
+   * ⚠️ **Isto se parece com um defeito conhecido e NÃO é.** O QA-44-01 corrigiu
+   * uma cobertura que passava de 100% por somar conjuntos sobrepostos — lá o
+   * denominador era único e o numerador somava por campanha. Aqui os dois lados
+   * são do MESMO dia, então a razão de cada janela é sempre ≤ 1.
+   *
+   * Há um teste travando exatamente este comportamento. Se ele quebrar depois de
+   * alguém "consertar" a soma, o conserto é que está errado.
+   */
+  const porDia = new Map<string, { atribuidos: Set<string>; totais: Set<string> }>();
+  for (const l of linhasDeCobertura) {
+    if (!l.date) continue; // sem data não pertence a janela nenhuma (declarado em `leadsSemData`)
+    let b = porDia.get(l.date);
+    if (!b) {
+      b = { atribuidos: new Set(), totais: new Set() };
+      porDia.set(l.date, b);
+    }
+    b.totais.add(l.chave);
+    if (l.adId && adParaCampanha.has(l.adId)) b.atribuidos.add(l.chave);
+  }
+
+  const coberturaDiaria = [...porDia.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([date, b]) => ({
+      date,
+      leadsAtribuidos: b.atribuidos.size,
+      leadsTotais: b.totais.size,
+    }));
+
   return {
+    coberturaDiaria,
+    leadsSemData,
     range: { from: minDate, to: maxDate },
     fonte: source.kind,
     fontes,

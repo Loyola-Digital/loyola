@@ -272,21 +272,83 @@ export async function montarPayloadCadeiaCac(
   const agregado = agregar(todosOsDias);
   const atuais = calcularMetricas(agregado, familia);
 
-  // ⚠️ AC5 (@po, 2026-08-19): NENHUM produtor de `CoberturaDiaria` existe
-  // hoje — as únicas ocorrências no repo são fixtures de teste. A guarda de
-  // rastreio (`coberturaAtipica`) portanto NÃO roda, e o payload diz isso.
-  // Silêncio aqui faria o consumidor ler um teto de gratuita como se fosse
-  // tão confiável quanto o de paga (regra 7.4). Story 44.12 abre o produtor.
-  const tetos = calcularTetos(series, familia);
-  const guardaDeCobertura =
-    familia === "gratuita"
-      ? {
-          estado: "indisponivel" as const,
-          motivo: "naoAtribuivel" as const,
-          message:
-            "A guarda de cobertura de rastreio (coberturaAtipica) NÃO rodou: não existe produtor de cobertura de lead por dia. O teto de convLP desta família não está protegido contra janela escolhida por rastreio melhor, e não por conversão melhor. Ver Story 44.12.",
-        }
-      : { estado: "naoSeAplica" as const, motivo: null, message: null };
+  /**
+   * ⚠️ Story 44.12 (AC4): o cache de lead é lido AQUI, antes de `calcularTetos`,
+   * e reusado lá embaixo no `cplReal`. Uma leitura, dois usos — a versão
+   * anterior lia depois dos tetos, e ligar a guarda sem reordenar duplicaria a
+   * query.
+   */
+  let lead: LeadOriginPayload | undefined;
+  let leadComputedAt: Date | null = null;
+  if (familia === "gratuita") {
+    const [row] = await db
+      .select({ payload: publicMetricsCache.payload, computedAt: publicMetricsCache.computedAt })
+      .from(publicMetricsCache)
+      .where(
+        and(
+          eq(publicMetricsCache.projectId, opts.projectId),
+          eq(publicMetricsCache.scope, LEAD_ORIGIN_SCOPE),
+          eq(publicMetricsCache.key, opts.stageId),
+        ),
+      )
+      .limit(1);
+    lead = row?.payload as LeadOriginPayload | undefined;
+    leadComputedAt = row?.computedAt ?? null;
+  }
+
+  /**
+   * A guarda de rastreio (`coberturaAtipica`, spec §4) impede que a "melhor
+   * janela" de `convLP` seja a semana em que o RASTREIO funcionou melhor, e não
+   * a de melhor conversão. Medido na 44.6: uma etapa que passou de 52% para 95%
+   * de cobertura exibiria um salto de 1,8× sem nada mudar na página.
+   *
+   * ⚠️ `coberturaDiaria` pode faltar mesmo com cache presente: registro gravado
+   * ANTES da Story 44.12 não tem o campo. Aí a guarda fica `indisponivel` até o
+   * sync reprocessar a etapa — e o payload diz isso, em vez de fingir que rodou.
+   */
+  const coberturaDaEtapa = lead?.coberturaDiaria;
+  const tetos = calcularTetos(series, familia, coberturaDaEtapa ? { coberturaDaEtapa } : {});
+
+  const guardaDeCobertura = (() => {
+    if (familia !== "gratuita") {
+      return { estado: "naoSeAplica" as const, motivo: null, message: null, dias: null };
+    }
+    if (!coberturaDaEtapa) {
+      return {
+        estado: "indisponivel" as const,
+        motivo: "naoAtribuivel" as const,
+        message:
+          "A guarda de cobertura de rastreio não rodou: esta etapa ainda não tem cobertura de lead por dia computada. O teto de convLP não está protegido contra janela escolhida por rastreio melhor, e não por conversão melhor. O sync diário popula o campo; para antecipar, use scripts/backfill-lead-origin.ts.",
+        dias: null,
+      };
+    }
+    // Há série, mas nenhum dia com lead: a guarda não teve como julgar. É
+    // afirmação DIFERENTE de "não rodou" — aqui o dado existe e está vazio.
+    const comLead = coberturaDaEtapa.filter((c) => c.leadsTotais > 0).length;
+    if (comLead === 0) {
+      /**
+       * Story 44.12 (Sessão 2) — série vazia tem DUAS causas, e dizer a errada
+       * manda a pessoa procurar no lugar errado.
+       *
+       * Medido em produção: `bbe-pr1-mar-26` tem 214 leads e série vazia porque
+       * a coluna de data da planilha não é legível (cabeçalho em branco), não
+       * porque ninguém se cadastrou. Anunciar "nenhum dia tem lead" ali seria
+       * verdade sobre a série e mentira sobre a etapa — e a ação corretiva
+       * (apontar a coluna de data no mapeamento da pesquisa) ficaria invisível.
+       */
+      const semData = lead?.leadsSemData ?? 0;
+      return {
+        estado: "semLeadNoPeriodo" as const,
+        motivo: "semDados" as const,
+        message:
+          semData > 0
+            ? `A cobertura de rastreio foi computada, mas ${semData} lead(s) ficaram fora da série porque a data não foi legível na planilha — a guarda não teve como julgar as janelas. Aponte a coluna de data no mapeamento da pesquisa.`
+            : "A cobertura de rastreio foi computada, mas nenhum dia do período tem lead — a guarda não teve como julgar as janelas.",
+        dias: coberturaDaEtapa.length,
+      };
+    }
+    return { estado: "aplicada" as const, motivo: null, message: null, dias: comLead };
+  })();
 
   const ranking = montarRanking(tetos, atuais);
   const noTeto = metricasDoTeto(tetos);
@@ -363,18 +425,7 @@ export async function montarPayloadCadeiaCac(
       };
     }
   } else {
-    const [row] = await db
-      .select({ payload: publicMetricsCache.payload, computedAt: publicMetricsCache.computedAt })
-      .from(publicMetricsCache)
-      .where(
-        and(
-          eq(publicMetricsCache.projectId, opts.projectId),
-          eq(publicMetricsCache.scope, LEAD_ORIGIN_SCOPE),
-          eq(publicMetricsCache.key, opts.stageId),
-        ),
-      )
-      .limit(1);
-    const lead = row?.payload as LeadOriginPayload | undefined;
+    // Story 44.12 (AC4): `lead` já foi lido lá em cima, para a guarda. Reusar.
     if (lead) {
       principal = {
         metrica: "cplReal",
@@ -383,7 +434,7 @@ export async function montarPayloadCadeiaCac(
         leadsUnicos: lead.uniqueLeads,
         fonteDeLead: lead.fonte,
         ...(lead.uniqueLeads === 0 ? { motivo: "semDados" as const } : {}),
-        computedAt: row?.computedAt ?? null,
+        computedAt: leadComputedAt,
       };
     } else {
       // ⚠️ QA-448-02: "o sync ainda não rodou" (espere) e "a etapa não tem
@@ -464,6 +515,20 @@ export async function montarPayloadCadeiaCac(
         "A atribuição de venda/lead por campanha (Story 44.3) ainda não tem produtor ligado a uma etapa. Isto NÃO afeta cacReal/cplReal, que dependem do total da etapa.",
     },
     vendasSemDataNoTotal,
+    /**
+     * QA-4412-03 — leads cuja data não foi legível, no TOPO do payload.
+     *
+     * O irmão `vendasSemDataNoTotal` já é campo de topo pelo mesmo motivo, e a
+     * AC2 desta story cita esse padrão explicitamente. Só na mensagem da guarda
+     * não bastava: o caso MISTO — dias com lead E linhas sem data ao mesmo
+     * tempo — cai em `aplicada`, onde `message` é `null`, e a série saía
+     * truncada sem ninguém declarar quanto ficou de fora.
+     *
+     * `null` = a etapa não tem cache de lead; `0` = tem, e nada ficou de fora.
+     * A distinção importa: colapsar os dois em `0` afirmaria "nada ficou de
+     * fora" para etapa que não foi nem medida.
+     */
+    leadsSemData: lead?.leadsSemData ?? null,
     tetos,
     guardaDeCobertura,
     ranking,

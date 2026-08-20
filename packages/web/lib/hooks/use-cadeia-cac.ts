@@ -71,6 +71,8 @@ export interface CadeiaCacPayload {
     message: string;
   };
   vendasSemDataNoTotal?: number | null;
+  /** QA-4412-03: leads fora da série por data ilegível. `null` = etapa sem cache de lead. */
+  leadsSemData?: number | null;
   tetos?: Record<
     Metrica,
     {
@@ -87,9 +89,12 @@ export interface CadeiaCacPayload {
     }
   >;
   guardaDeCobertura?: {
-    estado: "indisponivel" | "naoSeAplica";
+    /** Story 44.12: quatro estados. `semLeadNoPeriodo` ≠ `indisponivel`. */
+    estado: "aplicada" | "semLeadNoPeriodo" | "indisponivel" | "naoSeAplica";
     motivo: string | null;
     message: string | null;
+    /** Dias com lead (`aplicada`) ou dias da série (`semLeadNoPeriodo`). */
+    dias: number | null;
   };
   ranking?: { metrica: Metrica; atual: number; teto: number; queda: number; posicao: number }[];
   composto?: {

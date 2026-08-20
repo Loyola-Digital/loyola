@@ -36,6 +36,38 @@ vi.mock("../services/lead-origin-sync.js", async (importOriginal) => {
   return { ...real, resolveLeadSource: (...args: unknown[]) => mockResolveLeadSource(...args) };
 });
 
+/**
+ * QA-4412-01 — espião PASSTHROUGH de `calcularTetos`, para provar que a
+ * cobertura chega ao 3º argumento.
+ *
+ * ## Por que espiar a chamada, e não o resultado
+ *
+ * O jeito honesto seria afirmar sobre o teto: janela com cobertura atípica
+ * barrada → teto diferente. **Não dá, e a razão importa:** `leadsAtribuidos`
+ * fica AUSENTE da série de propósito até a Story 44.3 existir
+ * (`cadeia-cac-payload.ts:239-267`), então `convLP` nunca tem valor na família
+ * gratuita, `calcularTetos` nunca produz teto de `convLP`, e a guarda nunca tem
+ * janela para barrar. Nenhum comportamento observável muda se o fio for
+ * cortado — foi assim que o buraco passou pelas 15 reversões.
+ *
+ * Enquanto isso, o único fato verificável é o CONTRATO DA CHAMADA: a série de
+ * cobertura sai do cache e entra em `calcularTetos`. Quando a 44.3 ligar, este
+ * teste deve ser promovido a asserção sobre o teto — e aí vira supérfluo.
+ *
+ * O spy DELEGA para a função real: nenhum outro teste do arquivo muda.
+ */
+const calcularTetosSpy = vi.fn();
+vi.mock("@loyola-x/shared", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@loyola-x/shared")>();
+  return {
+    ...real,
+    calcularTetos: (...args: Parameters<typeof real.calcularTetos>) => {
+      calcularTetosSpy(...args);
+      return real.calcularTetos(...args);
+    },
+  };
+});
+
 const { default: publicCadeiaCacRoutes } = await import("../routes/public-cadeia-cac.js");
 
 const mockSelect = vi.fn();
@@ -215,6 +247,7 @@ beforeEach(() => {
   mockGetFreshSalesDaily.mockResolvedValue(vendas());
   mockResolveLeadSource.mockReset();
   mockResolveLeadSource.mockResolvedValue(null);
+  calcularTetosSpy.mockClear();
 });
 
 describe("cadeia-cac — vínculo e acesso (AC1)", () => {
@@ -739,6 +772,186 @@ describe("cadeia-cac — os campos da etapa que decidem o benchmark (QA-449-01)"
     const app = await buildApp();
     const res = await app.inject({ method: "GET", url: url() });
     expect(res.json().lpTemVsl).toBe(true);
+    await app.close();
+  });
+});
+
+describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)", () => {
+  const cache = (payload: Record<string, unknown>) =>
+    filaLeadCache([{ payload, computedAt: new Date("2026-08-11T00:00:00Z") }]);
+
+  const serie = (n: number, atrib = 50) =>
+    Array.from({ length: n }, (_, i) => ({
+      date: `2026-08-${String(i + 1).padStart(2, "0")}`,
+      leadsAtribuidos: atrib,
+      leadsTotais: 100,
+    }));
+
+  it("`aplicada` quando há cobertura com lead — e diz em quantos dias", async () => {
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({ uniqueLeads: 500, fonte: "planilha_leads", coberturaDiaria: serie(10) });
+    const app = await buildApp();
+    const g = (await app.inject({ method: "GET", url: url() })).json().guardaDeCobertura;
+    expect(g.estado).toBe("aplicada");
+    expect(g.dias).toBe(10);
+    expect(g.message).toBeNull();
+    await app.close();
+  });
+
+  it("`semLeadNoPeriodo` é DIFERENTE de não ter rodado", async () => {
+    // Aqui o dado existe e está vazio — a guarda rodou e não teve como julgar.
+    // Colapsar com `indisponivel` mandaria o operador rodar um backfill que não
+    // muda nada.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({
+      uniqueLeads: 0,
+      fonte: "planilha_leads",
+      coberturaDiaria: [{ date: "2026-08-01", leadsAtribuidos: 0, leadsTotais: 0 }],
+    });
+    const app = await buildApp();
+    const g = (await app.inject({ method: "GET", url: url() })).json().guardaDeCobertura;
+    expect(g.estado).toBe("semLeadNoPeriodo");
+    expect(g.dias).toBe(1);
+    await app.close();
+  });
+
+  it("caso MISTO declara `leadsSemData` no topo — a série truncada não fica muda (QA-4412-03)", async () => {
+    // Dias com lead E linhas sem data ao mesmo tempo: a guarda vai para
+    // `aplicada`, onde `message` é null. Sem campo de topo, os leads que
+    // ficaram de fora da série sumiam do payload — o oposto da regra 7.4, e o
+    // padrão que `vendasSemDataNoTotal` já segue.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({
+      uniqueLeads: 500,
+      fonte: "planilha_leads",
+      coberturaDiaria: serie(10),
+      leadsSemData: 213,
+    });
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+    expect(body.guardaDeCobertura.estado).toBe("aplicada");
+    expect(body.guardaDeCobertura.message).toBeNull();
+    expect(body.leadsSemData).toBe(213);
+    await app.close();
+  });
+
+  it("etapa SEM cache de lead devolve `leadsSemData: null`, não zero", async () => {
+    // `0` afirmaria "nada ficou de fora"; `null` diz "não foi medido".
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    filaLeadCache([]);
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+    expect(body.leadsSemData).toBeNull();
+    await app.close();
+  });
+
+  it("a série de cobertura CHEGA ao `calcularTetos` — o fio da guarda (QA-4412-01)", async () => {
+    // ⚠️ Este é o teste que faltava. Trocar o 3º argumento por `{}` deixava a
+    // suíte inteira verde em 1267/11, o typecheck limpo, e o payload ainda
+    // dizendo `estado: "aplicada"` — a guarda desligada anunciando que rodou.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    const cobertura = serie(10);
+    cache({ uniqueLeads: 500, fonte: "planilha_leads", coberturaDiaria: cobertura });
+    const app = await buildApp();
+    await app.inject({ method: "GET", url: url() });
+
+    expect(calcularTetosSpy).toHaveBeenCalledTimes(1);
+    const [, familia, opts] = calcularTetosSpy.mock.calls[0] as [
+      unknown,
+      string,
+      { coberturaDaEtapa?: unknown } | undefined,
+    ];
+    expect(familia).toBe("gratuita");
+    // A MESMA série do cache, não uma vazia nem um `{}`.
+    expect(opts?.coberturaDaEtapa).toEqual(cobertura);
+    await app.close();
+  });
+
+  it("cache SEM cobertura não inventa opts — `calcularTetos` recebe `{}`", async () => {
+    // O outro lado do fio: sem o campo, passar `{coberturaDaEtapa: undefined}`
+    // faria `calcularTetos` receber uma chave que não existe.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({ uniqueLeads: 500, fonte: "planilha_leads" });
+    const app = await buildApp();
+    await app.inject({ method: "GET", url: url() });
+
+    const [, , opts] = calcularTetosSpy.mock.calls[0] as [unknown, string, object];
+    expect(opts).toEqual({});
+    await app.close();
+  });
+
+  it("série vazia por data ilegível NÃO é anunciada como \"nenhum lead\"", async () => {
+    // Story 44.12 (Sessão 2). Medido em produção: `bbe-pr1-mar-26` tem 214 leads
+    // e série vazia porque a coluna de data da planilha tem cabeçalho em branco.
+    // Dizer "nenhum dia tem lead" ali é verdade sobre a série e mentira sobre a
+    // etapa — e esconde a única ação que resolve: apontar a coluna de data.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({
+      uniqueLeads: 214,
+      fonte: "planilha_leads",
+      coberturaDiaria: [],
+      leadsSemData: 213,
+    });
+    const app = await buildApp();
+    const g = (await app.inject({ method: "GET", url: url() })).json().guardaDeCobertura;
+    expect(g.estado).toBe("semLeadNoPeriodo");
+    expect(g.message).toContain("213");
+    expect(g.message).toContain("data não foi legível");
+    await app.close();
+  });
+
+  it("`indisponivel` quando o cache é ANTERIOR à 44.12 e não tem o campo", async () => {
+    // ⚠️ É o estado real de toda etapa já cacheada no dia do deploy: o código
+    // pode estar perfeito e a guarda continua desligada até o sync reprocessar.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({ uniqueLeads: 500, fonte: "planilha_leads" }); // sem coberturaDiaria
+    const app = await buildApp();
+    const g = (await app.inject({ method: "GET", url: url() })).json().guardaDeCobertura;
+    expect(g.estado).toBe("indisponivel");
+    expect(g.message).toContain("backfill-lead-origin");
+    await app.close();
+  });
+
+  it("cache velho não quebra — nada de `undefined.length`", async () => {
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({ uniqueLeads: 500, fonte: "planilha_leads" });
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: url() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().principal.valor).not.toBeNull();
+    await app.close();
+  });
+
+  it("`naoSeAplica` na família paga, sem ler cache de lead", async () => {
+    filaVinculo([etapa()]);
+    filaInsights(diasDe("c1", 10));
+    const app = await buildApp();
+    const g = (await app.inject({ method: "GET", url: url() })).json().guardaDeCobertura;
+    expect(g.estado).toBe("naoSeAplica");
+    await app.close();
+  });
+
+  it("o cache de lead é lido UMA vez, e serve à guarda e ao cplReal", async () => {
+    // A AC4 exige a reordenação justamente para não duplicar a query. Se
+    // alguém voltar a ler no ramo do cplReal, a fila do mock acaba e o teste
+    // quebra com `undefined`.
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    cache({ uniqueLeads: 400, fonte: "planilha_leads", coberturaDiaria: serie(10) });
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+    expect(body.guardaDeCobertura.estado).toBe("aplicada");
+    expect(body.principal.leadsUnicos).toBe(400);
+    expect(mockSelect).toHaveBeenCalledTimes(3); // vínculo, insights, cache
     await app.close();
   });
 });
