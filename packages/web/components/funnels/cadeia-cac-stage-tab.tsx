@@ -331,6 +331,18 @@ export function CadeiaCacStageTab({
         {data.atribuicao?.motivo === "naoAtribuivel" && (
           <Motivo texto={data.atribuicao.message} />
         )}
+        {/* QA-4412-03: o caso MISTO (dias com lead E linhas sem data) cai em
+            `aplicada`, onde a guarda não tem mensagem — a série saía truncada
+            sem ninguém declarar quanto ficou de fora. Mesmo padrão do irmão
+            `vendasSemDataNoTotal`, logo abaixo. Não repetir quando a guarda já
+            fala dos mesmos leads, que é o caso da série vazia. */}
+        {data.leadsSemData != null &&
+          data.leadsSemData > 0 &&
+          data.guardaDeCobertura?.estado !== "semLeadNoPeriodo" && (
+            <Motivo
+              texto={`${data.leadsSemData} lead(s) não têm data legível na planilha e ficam fora da série de cobertura de rastreio.`}
+            />
+          )}
         {data.vendasSemDataNoTotal != null && data.vendasSemDataNoTotal > 0 && (
           <Motivo
             texto={`${data.vendasSemDataNoTotal} venda(s) do TOTAL da etapa não têm data legível e ficam fora de qualquer recorte por período.`}

@@ -71,6 +71,8 @@ export interface CadeiaCacPayload {
     message: string;
   };
   vendasSemDataNoTotal?: number | null;
+  /** QA-4412-03: leads fora da série por data ilegível. `null` = etapa sem cache de lead. */
+  leadsSemData?: number | null;
   tetos?: Record<
     Metrica,
     {

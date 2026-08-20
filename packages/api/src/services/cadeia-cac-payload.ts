@@ -515,6 +515,20 @@ export async function montarPayloadCadeiaCac(
         "A atribuição de venda/lead por campanha (Story 44.3) ainda não tem produtor ligado a uma etapa. Isto NÃO afeta cacReal/cplReal, que dependem do total da etapa.",
     },
     vendasSemDataNoTotal,
+    /**
+     * QA-4412-03 — leads cuja data não foi legível, no TOPO do payload.
+     *
+     * O irmão `vendasSemDataNoTotal` já é campo de topo pelo mesmo motivo, e a
+     * AC2 desta story cita esse padrão explicitamente. Só na mensagem da guarda
+     * não bastava: o caso MISTO — dias com lead E linhas sem data ao mesmo
+     * tempo — cai em `aplicada`, onde `message` é `null`, e a série saía
+     * truncada sem ninguém declarar quanto ficou de fora.
+     *
+     * `null` = a etapa não tem cache de lead; `0` = tem, e nada ficou de fora.
+     * A distinção importa: colapsar os dois em `0` afirmaria "nada ficou de
+     * fora" para etapa que não foi nem medida.
+     */
+    leadsSemData: lead?.leadsSemData ?? null,
     tetos,
     guardaDeCobertura,
     ranking,
