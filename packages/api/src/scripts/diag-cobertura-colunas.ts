@@ -7,36 +7,15 @@ import "dotenv/config";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../db/schema.js";
-import { resolveLeadSource } from "../services/lead-origin-sync.js";
+// QA-4412-08 — `findColIdx`/`toIsoDate`/`ALIASES` vêm do serviço, não de cópias.
+// A cópia que vivia aqui divergia: faltavam o guarda `h.length > 2` e o
+// `na.includes(h)` da segunda passada, então este diagnóstico SUB-reportava a
+// resolução por alias (um header `hora` casa no serviço via
+// `"datahora".includes("hora")` e era reportado aqui como "resolve? NÃO").
+// O levantamento das etapas do BBE ainda depende desta saída — ela precisa
+// dizer o que o sync de fato faz.
+import { resolveLeadSource, findColIdx, toIsoDate, ALIASES } from "../services/lead-origin-sync.js";
 import { readSheetData } from "../services/google-sheets.js";
-
-const ALIASES_DATE = ["data", "date", "timestamp", "carimbodedatahora", "carimbodedata", "datadecadastro", "datahora", "createdat"];
-
-function norm(s: string): string {
-  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-function findColIdx(headers: string[], aliases: string[]): number {
-  const H = headers.map(norm);
-  for (const a of aliases) {
-    const i = H.indexOf(norm(a));
-    if (i >= 0) return i;
-  }
-  for (const a of aliases) {
-    const na = norm(a);
-    const i = H.findIndex((h) => h.includes(na));
-    if (i >= 0) return i;
-  }
-  return -1;
-}
-function toIsoDate(raw: string): string | null {
-  const t = (raw ?? "").trim();
-  if (!t) return null;
-  const br = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (br) return `${br[3]}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}`;
-  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  return null;
-}
 
 async function main() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -102,10 +81,10 @@ async function main() {
         continue;
       }
       console.log(`      headers(${sheet.headers.length}): ${JSON.stringify(sheet.headers.slice(0, 12))}`);
-      const byAlias = findColIdx(sheet.headers, ALIASES_DATE);
+      const byAlias = findColIdx(sheet.headers, ALIASES.date);
       console.log(`      ALIASES.date resolve? ${byAlias >= 0 ? `SIM (idx ${byAlias} = "${sheet.headers[byAlias]}")` : "NÃO"}`);
 
-      // Evidência por coluna: quantas das primeiras 200 linhas parseiam como data.
+      // Evidência por coluna: quantas linhas da planilha INTEIRA parseiam como data.
       const amostra = sheet.rows;
       const largura = Math.max(sheet.headers.length, ...amostra.map((x) => x.length), 0);
       const candidatos: { idx: number; header: string; hits: number; exemplo: string; iso: string }[] = [];
