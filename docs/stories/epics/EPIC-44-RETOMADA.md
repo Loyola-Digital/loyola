@@ -76,7 +76,7 @@ Antes/depois documentado em `docs/qa/audits/44.2-connectrate-antes-depois.md`.
 - **Janela de 7 dias:** sempre `RANGE BETWEEN INTERVAL '6 days'` (por data), **nunca** `ROWS` — 41% das campanhas têm gap e a base inflaria.
 - **Não estender** `ehCaptacaoPaga` e irmãos: eles decidem sync diário e CRM. A aba usa classificação própria.
 - **Módulo folha no `shared`:** web importa por subpath, API por bare import. Ver a tabela em `packages/shared/src/index.ts`.
-- **`traffic-analytics.ts:452`** calcula CAC como `spend ÷ purchases` — divergente da cadeia. Migração é a 44.10.
+- ~~**`traffic-analytics.ts:452`** calcula CAC como `spend ÷ purchases`~~ — ⚠️ **CADUCA, não reabrir.** Verificado em 2026-08-20: o arquivo não tem `purchases`, não tem CAC, e a linha 452 é o handler de `all-adsets`. O arquivo mudou pela última vez em 08/08 e este epic foi escrito em 18/08 — a armadilha já estava errada quando foi registrada. Ver Story 44.13.
 
 ---
 
@@ -122,3 +122,36 @@ O gate da 44.6 (QA-446-05) achou que `Teto`, `TetoAusente` e `MotivoIndisponivel
 | `docs/qa/audits/44.2-connectrate-antes-depois.md` | antes/depois do Connect Rate |
 | `packages/api/src/scripts/recontagem-viabilidade-teto.ts` | o gate, reproduzível |
 | `packages/api/src/scripts/medir-cobertura-atribuicao.ts` | a medição de cobertura |
+
+---
+
+## Encerramento (2026-08-20)
+
+O epic entregou **12 stories**: 44.1 a 44.13, menos a 44.2 do mapa antigo que
+virou outra coisa. A aba está em produção.
+
+### O que ficou de fora, e por quê
+
+| Item | Motivo |
+|---|---|
+| **Unificação do CAC** | **Perdeu o objeto.** `traffic-analytics.ts` não calcula CAC hoje, e a página de tráfego não o exibe. Os outros pontos são do perpétuo, com régua própria. |
+| **Atribuição de VENDA por campanha** | `sales-daily-sync` não mapeia `utm_content`. A de **lead** foi entregue na 44.10. |
+| **Body Conversion no bloco de criativos** | Exige leads por `ad_id`. A maior campanha do projeto tem 75 anúncios; `ad × dia` no cache multiplicaria por ~15 um campo que já cresce. Declarado na tela. |
+
+### O que protege a regra 7.6 daqui pra frente
+
+`cadeia-cac-paridade.test.ts` compara o número servido pela rota com o que o
+núcleo produz para a mesma entrada. A reversão que reintroduz o **bug histórico
+da 44.2** — dividir por `clicks` em vez de `linkClicks` — o derruba.
+
+⚠️ **O que ele NÃO pega:** código duplicado que produz o mesmo número. Testei:
+recalcular `connectRate` inline com a fórmula certa passa. Isso é limitação
+inerente de teste de valor, não do teste — detectar duplicação idêntica é
+trabalho de análise estática. O que importa é que **divergência** quebra, e
+divergência é o defeito que custou um ano.
+
+### Doc do time
+
+`docs/guides/aba-cadeia-de-cac.md` — o que a aba faz, o que não faz e como ler.
+Vive junto do código: quando um item sai da lista de pendências, sai de lá no
+mesmo commit.
