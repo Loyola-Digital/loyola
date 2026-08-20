@@ -1,0 +1,174 @@
+storyId: "44.11"
+titulo: "Bloco de criativos na aba — onde o CTR nasce"
+branch: feature/44.11-bloco-de-criativos
+pr: 571
+revisadoPor: "@qa (Quinn)"
+revisadoEm: "2026-08-20"
+
+verdict: FAIL
+statusDoBloqueio: RESOLVIDO
+reGate: CONCERNS
+
+resumo: >
+  FAIL, e sem hesitação: o serviço novo montava a série de um jeito diferente do
+  que a cadeia usa, e o resultado era o bloco exibir **13,83% a menos** de
+  investimento por criativo do que o total no topo da mesma tela.
+
+  Um gestor somando as linhas do bloco não chegava ao número exibido acima
+  delas. Numa aba cuja razão de existir é impedir que a mesma métrica seja
+  calculada em dois lugares, isso não é um bug entre outros — é o defeito que o
+  epic nomeia.
+
+  Corrigido no mesmo PR, e re-gate CONCERNS com dois itens de backlog.
+
+achados:
+  - id: QA-4411-01
+    severidade: critical
+    categoria: correctness
+    titulo: "O bloco somava `spend` cru; a cadeia soma tributado. 13,83% de divergência na mesma tela."
+    arquivo: "packages/api/src/services/meta-ad-daily.ts"
+    reproduzido: true
+    bloqueia: true
+    medidoEmProducao: true
+    evidencia: >
+      Comparei `Σ criativos[].spend` com `agregado.spend` do mesmo payload, nas
+      13 etapas com cache, no mesmo período:
+
+        BBE / Captação Paga        cadeia  4.817,95   bloco  4.232,60   razão 1,1383
+        BBE / Captação gratuita    cadeia  5.087,41   bloco  4.469,24   razão 1,1383
+        BBE / Captação paga        cadeia 23.834,22   bloco 20.938,35   razão 1,1383
+        BBE / Captação Gratuita    cadeia  2.042,42   bloco  1.794,27   razão 1,1383
+
+      A razão é constante e é exatamente `1 / (1 - 0,1215)` — o gross-up do
+      imposto Meta.
+    descricao: >
+      `accumulate` (`utils/meta-insight-agg.ts`) **já aplica** `applyMetaTax`. A
+      série por campanha da Story 44.1 o usa; o serviço novo somava `spend`
+      direto da linha e reimplementava a leitura de `actions`.
+
+      ⚠️ O comentário do próprio agregador diz por que ele existe:
+
+        "duas rotas montando a mesma série de dois jeitos é a semente da
+         próxima divergência do `connectRate` (Story 44.2 — 18 a 35 p.p.
+         errados por mais de um ano, não por bug, por duas implementações)."
+
+      Era exatamente isso, no mesmo epic que a frase descreve.
+
+      **Agravante que pesou no veredito:** o cabeçalho que escrevi no arquivo
+      afirmava *"mesmo arredondamento de spend por dia — a aba não pode mostrar
+      um investimento total por criativo que não fecha com o da cadeia"*. A
+      afirmação era falsa quando foi escrita. Um comentário que garante a
+      propriedade que o código viola é pior que comentário nenhum: ele desliga
+      a desconfiança do próximo leitor.
+    correcaoAplicada: >
+      O serviço passou a usar `emptyAgg`/`accumulate`/`round`, os mesmos de
+      `meta-campaign-daily.ts`. A soma artesanal e o `somaAction` local saíram.
+
+      Verificado depois: as **13 etapas** fecham em razão 1,0000. Teste de
+      regressão trava o número (R$ 100 crus → R$ 113,83) e a reversão que
+      destributa o derruba.
+
+  - id: QA-4411-02
+    severidade: low
+    categoria: correctness
+    titulo: "Centavos de diferença entre o total do bloco e o da cadeia — inerente, não defeito"
+    reproduzido: true
+    bloqueia: false
+    descricao: >
+      Depois da correção, restam diferenças de R$ 0,02 a R$ 0,24 em totais de
+      milhares (até 0,005%). A causa é legítima: a cadeia arredonda por
+      `(campanha, dia)` e o bloco por `(ad, dia)`. Um dia com três anúncios tem
+      três arredondamentos de um lado e um do outro.
+
+      Não peço correção. Fazer o bloco arredondar por campanha-dia seria
+      distorcer um bloco cuja unidade é o anúncio, para casar um centavo. Fica
+      registrado para que a próxima pessoa que notar não vá caçar bug.
+    correcaoSugerida: "Nenhuma. Registrar é a ação."
+
+  - id: QA-4411-03
+    severidade: low
+    categoria: performance
+    titulo: "A query por `ad_id` não tem limite, e uma campanha do projeto tem 75 anúncios"
+    arquivo: "packages/api/src/services/meta-ad-daily.ts"
+    reproduzido: true
+    bloqueia: false
+    descricao: >
+      A consulta traz todas as linhas de `meta_ad_insights_daily` das campanhas
+      da etapa no período, sem `LIMIT`. Medido: a maior campanha do projeto tem
+      **75 anúncios distintos**; com 6 campanhas e 90 dias isso chega a ~40 mil
+      linhas por requisição da aba.
+
+      Hoje é aceitável — as etapas reais têm janelas menores e a agregação é em
+      memória, não em rede. Mas a aba é interativa e o número cresce com o
+      tempo, não com o uso.
+
+      Mesma recomendação que dei no QA-4410-02: **observar**, não limitar
+      preventivamente. Um teto arbitrário esconderia criativos sem que ninguém
+      soubesse por quê, que é pior que uma query lenta.
+    correcaoSugerida: >
+      Medir o tempo da rota numa etapa grande depois do deploy. Se passar de
+      ~1s no bloco, agregar no SQL em vez de em memória — `GROUP BY ad_id,
+      date_start` devolve 100× menos linhas.
+
+verificacoes:
+  - id: V1
+    o_que: "Taxas re-derivadas dos somatórios (AC2)"
+    resultado: CONFERE
+    nota: "Reversão para média de médias derruba o teste do Ad ID pequeno com CTR absurdo."
+  - id: V2
+    o_que: "Ausência de vídeo é ausência (AC3)"
+    resultado: CONFERE
+    nota: >
+      Reversão que transforma em zero derruba 3 testes. E o caso do grupo misto
+      está coberto: o denominador do Hook usa só as impressões dos ids de vídeo,
+      senão uma imagem irmã afundaria o Hook de um vídeo bom.
+  - id: V3
+    o_que: "A distribuição usa mediana, não média (AC4)"
+    resultado: CONFERE
+    nota: >
+      Reversão para média derruba o teste do outlier. E há o teste que prova o
+      ponto da AC: duas etapas com a mesma média (25%) e dispersões opostas
+      devolvem `abaixoDeMetadeDaMediana` de 0 e 2.
+  - id: V4
+    o_que: "Normalização de nome não come nome legítimo"
+    resultado: CONFERE
+    nota: >
+      `Aula 3` e `VSL 2026` sobrevivem; `X - Copy`, `X — Cópia` e `X (2)`
+      agrupam. Sem esse teste, o regex de sufixo comeria o número que faz parte
+      do nome — e o gestor procuraria um criativo que a tela renomeou.
+  - id: V5
+    o_que: "Body Conversion declarado, não omitido"
+    resultado: CONFERE
+    nota: >
+      O @dev mediu o custo (75 anúncios × dias no cache) antes de decidir, e a
+      ausência aparece no payload e na tela. É redução de escopo com evidência
+      e declaração — o padrão certo.
+
+baseline:
+  antes: "1304 / 11 (a própria branch, antes da correção do QA-4411-01)"
+  depois: "1306 / 11"
+  falhasPreExistentes: "funnel-stages-lead-inputs (3), instagram-routes (1), instagram (2), projects (3), schema (2)"
+  turbo: "typecheck lint build --force — 12/12"
+
+coderabbit: SKIPPED — CLI em WSL, host macOS. Oitavo gate seguido.
+
+porQueFAILeNaoCONCERNS: >
+  A régua deste epic, fixada no gate da 44.12, é reprovar por **defeito presente
+  no comportamento entregue**, não por risco futuro. Este era presente, medido
+  em produção, e visível na tela: dois números na mesma página que não fecham.
+
+  Considerei CONCERNS porque a correção era pequena e a arquitetura do bloco
+  está certa. Mas o defeito não era um erro de conta — era a reimplementação de
+  um agregador que existe **especificamente** para impedir esse erro, com um
+  comentário no arquivo garantindo a propriedade violada. CONCERNS teria
+  sinalizado que o item era negociável, e ele não era.
+
+  O re-gate é CONCERNS: os dois restantes são observações com ação diferida, e
+  nenhum deles muda um número.
+
+paraODevops:
+  - "⚠️ Diferente da 44.10, este bloco NÃO depende de backfill: lê `meta_ad_insights_daily` direto. Aparece assim que o deploy sair."
+backlog:
+  - "QA-4411-02 — nenhuma ação; registrado para não virar caça a bug."
+  - "QA-4411-03 — medir o tempo da rota numa etapa grande pós-deploy; agregar no SQL se passar de ~1s."
+  - "Body Conversion — precisa de leads por `ad_id`. Se for prioridade, é story com decisão de tamanho de cache."

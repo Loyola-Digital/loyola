@@ -906,6 +906,43 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
     await app.close();
   });
 
+  it("o investimento do bloco FECHA com o da cadeia — imposto Meta incluído (QA-4411-01)", async () => {
+    /**
+     * O defeito que o gate pegou. A primeira versão somava `spend` cru e o
+     * bloco mostrava **13,83% a menos** que o topo da própria aba — um gestor
+     * somando as linhas não chegava ao total exibido acima delas.
+     *
+     * A causa: `accumulate` (o agregador que a série por campanha usa) aplica
+     * o gross-up `valor / (1 - 0,1215)`, e a soma artesanal não. É a divergência
+     * que o comentário de `meta-insight-agg.ts` avisa em letras maiúsculas.
+     */
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 1));
+    filaLeadCache([]);
+    filaCriativos([
+      {
+        adId: "a1",
+        adName: "Único",
+        dateStart: "2026-08-10",
+        spend: "100",
+        impressions: 10_000,
+        reach: 9_000,
+        clicks: 300,
+        actions: [{ action_type: "link_click", value: "200" }],
+        actionValues: null,
+        lastSyncedAt: new Date("2026-08-11T00:00:00Z"),
+        videoMetrics: null,
+      },
+    ]);
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+
+    // R$ 100 crus viram R$ 113,83 tributados — o mesmo que a cadeia mostra.
+    expect(body.criativos[0].spend).toBeCloseTo(100 / (1 - TAXA_META), 2);
+    expect(body.criativos[0].spend).toBeCloseTo(body.agregado.spend, 2);
+    await app.close();
+  });
+
   it("o bloco de criativos chega ao payload, agrupado e ordenado (44.11)", async () => {
     filaVinculo([etapa({ stageType: "free" })]);
     filaInsights(diasDe("c1", 10));
