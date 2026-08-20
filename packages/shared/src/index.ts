@@ -75,8 +75,15 @@ export {
   sinalizar,
   alvoVigente,
   TOLERANCIA_DO_ALVO,
+  // Story 44.11 — o bloco de criativos
+  agruparCriativos,
+  distribuicaoDoHook,
+  normalizarNomeDeCriativo,
 } from "./cadeia-cac.js";
 export type {
+  CriativoBruto,
+  CriativoDaAba,
+  DistribuicaoHook,
   Familia,
   MotivoIndisponivel,
   Confianca,

@@ -178,6 +178,10 @@ export function CadeiaCacStageTab({
   stageId: string;
 }) {
   const { data, isLoading, error } = useCadeiaCac(projectId, stageId);
+  // AC3 — a coluna de vídeo existe se ALGUM criativo é vídeo. Numa etapa 100%
+  // imagem ela não aparece: "—" sugeriria dado faltando, e não falta.
+  const temVideo = (data?.criativos ?? []).some((c) => c.hookRate !== null);
+
   const linhas = useMemo(() => (data ? montarTabela(data) : []), [data]);
 
   if (isLoading) {
@@ -367,6 +371,134 @@ export function CadeiaCacStageTab({
           />
         )}
       </div>
+
+      {/* ── Story 44.11: o bloco de criativos ──────────────────────────── */}
+      {data.criativos && data.criativos.length > 0 && (
+        <div className="rounded-lg border bg-card">
+          <div className="space-y-1 px-5 pt-4">
+            <h3 className="text-sm font-semibold">Criativos</h3>
+            <p className="text-xs text-muted-foreground">
+              A cadeia diz qual métrica atacar; aqui está em qual criativo. Ordenado por
+              investimento, com a régua da própria etapa.
+            </p>
+          </div>
+
+          {/* AC4 — a distribuição do Hook, que é onde está o valor. Uma etapa
+              com Hook mediano de 25% pode ter todos em 25% ou metade em 45% e
+              metade em 5%: as ações são opostas, e a média não distingue. */}
+          {data.distribuicaoHook && (
+            <div className="mx-5 mt-3 grid gap-3 rounded-md border bg-muted/40 p-3 sm:grid-cols-4">
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Hook mediano
+                </div>
+                <div className="text-base font-semibold tabular-nums">
+                  {pct(data.distribuicaoHook.mediana, 1)}
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {data.distribuicaoHook.criativosDeVideo} criativo(s) de vídeo
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Melhor
+                </div>
+                <div className="truncate text-sm font-medium" title={data.distribuicaoHook.melhor.nome}>
+                  {data.distribuicaoHook.melhor.nome}
+                </div>
+                <div className="text-[11px] tabular-nums text-muted-foreground">
+                  {pct(data.distribuicaoHook.melhor.valor, 1)}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Pior</div>
+                <div className="truncate text-sm font-medium" title={data.distribuicaoHook.pior.nome}>
+                  {data.distribuicaoHook.pior.nome}
+                </div>
+                <div className="text-[11px] tabular-nums text-muted-foreground">
+                  {pct(data.distribuicaoHook.pior.valor, 1)}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Abaixo da metade
+                </div>
+                <div className="text-base font-semibold tabular-nums">
+                  {data.distribuicaoHook.abaixoDeMetadeDaMediana}
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {data.distribuicaoHook.abaixoDeMetadeDaMediana === 0
+                    ? "dispersão saudável"
+                    : "candidatos a corte"}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="overflow-x-auto px-5 py-2">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="py-2 pr-4 font-medium">Criativo</th>
+                  <th className="py-2 pr-4 font-medium">Investimento</th>
+                  <th className="py-2 pr-4 font-medium">Impressões</th>
+                  <th className="py-2 pr-4 font-medium">CTR</th>
+                  <th className="py-2 pr-4 font-medium">CPC</th>
+                  {/* AC3 — as colunas de vídeo só existem se ALGUM criativo é
+                      vídeo. Mostrar "—" numa etapa 100% imagem sugeriria que
+                      falta dado, quando não falta: não se aplica. */}
+                  {temVideo && (
+                    <>
+                      <th className="py-2 pr-4 font-medium">Hook</th>
+                      <th className="py-2 pr-4 font-medium">Hold</th>
+                    </>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {data.criativos.map((c) => (
+                  <tr key={c.adIds.join(",")} className="border-b last:border-0">
+                    <td className="max-w-[260px] py-2 pr-4">
+                      <span className="block truncate" title={c.nome}>
+                        {c.nome}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {/* AC6 — id declarado como id. "(sem nome)" mudo faria
+                            a pessoa procurar um criativo que não existe. */}
+                        {c.ehId && "ID do anúncio — nome não resolvido"}
+                        {!c.ehId && c.adIds.length > 1 && `${c.adIds.length} anúncios agrupados`}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-4 tabular-nums">{brl(c.spend)}</td>
+                    <td className="py-2 pr-4 tabular-nums">
+                      {c.impressions.toLocaleString("pt-BR")}
+                    </td>
+                    <td className="py-2 pr-4 tabular-nums">{c.ctr === null ? "—" : pct(c.ctr)}</td>
+                    <td className="py-2 pr-4 tabular-nums">{c.cpc === null ? "—" : brl(c.cpc)}</td>
+                    {temVideo && (
+                      <>
+                        <td className="py-2 pr-4 tabular-nums text-muted-foreground">
+                          {c.hookRate === null ? "não é vídeo" : pct(c.hookRate, 1)}
+                        </td>
+                        <td className="py-2 pr-4 tabular-nums text-muted-foreground">
+                          {c.holdRate === null ? "não é vídeo" : pct(c.holdRate, 1)}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Declarado, não omitido: quem lê Hook e Hold vai procurar o Body. */}
+          {temVideo && data.bodyConvIndisponivel && (
+            <div className="px-5 pb-4">
+              <Motivo texto={data.bodyConvIndisponivel.message} />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

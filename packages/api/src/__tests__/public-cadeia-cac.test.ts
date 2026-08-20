@@ -118,6 +118,27 @@ function filaInsights(rows: unknown[]) {
   mockSelect.mockReturnValueOnce({ from: () => ({ where: () => Promise.resolve(rows) }) });
 }
 
+/**
+ * Reset do banco mockado COM o default das chamadas além das enfileiradas.
+ *
+ * Todo `mockSelect.mockReset()` solto apaga o default e faz a 4ª query devolver
+ * `undefined`, derrubando a rota — use este helper no lugar.
+ */
+function resetDb() {
+  mockSelect.mockReset();
+  mockSelect.mockReturnValue({
+    from: () => ({
+      where: () => Promise.resolve([]),
+      innerJoin: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
+    }),
+  });
+}
+
+/** 4ª chamada (Story 44.11) = linhas por `ad_id` do bloco de criativos. */
+function filaCriativos(rows: unknown[]) {
+  mockSelect.mockReturnValueOnce({ from: () => ({ where: () => Promise.resolve(rows) }) });
+}
+
 /** 3ª chamada (só família gratuita) = cache de lead-origin. */
 function filaLeadCache(rows: unknown[]) {
   mockSelect.mockReturnValueOnce({
@@ -243,6 +264,19 @@ beforeEach(() => {
   vinculoSpy.innerJoins = 0;
   vinculoSpy.where = null;
   mockSelect.mockReset();
+  /**
+   * Story 44.11 — default para as chamadas ALEM das enfileiradas.
+   *
+   * O bloco de criativos (`carregarCriativosDaEtapa`) e a 4a query, e os
+   * `mockReturnValueOnce` cobrem 3. Sem um default, a 4a devolve `undefined` e
+   * derruba a rota inteira — apareceu como 64 testes vermelhos que nada tinham
+   * a ver com criativos.
+   *
+   * O default e `[]`, nao um objeto rico: um teste que queira afirmar sobre
+   * criativos enfileira `filaCriativos` e diz o que espera. Assim a ausencia
+   * continua sendo ausencia, e nenhum teste passa por acidente.
+   */
+  resetDb();
   mockGetFreshSalesDaily.mockReset();
   mockGetFreshSalesDaily.mockResolvedValue(vendas());
   mockResolveLeadSource.mockReset();
@@ -681,7 +715,7 @@ describe("cadeia-cac — resíduos da 2ª passada (QA-448-06, QA-448-07)", () =>
       { fonte: null, erro: true, esperado: "indeterminado" },
     ];
     for (const c of cenarios) {
-      mockSelect.mockReset();
+      resetDb();
       filaVinculo([etapa({ stageType: "free" })]);
       filaInsights(diasDe("c1", 10));
       filaLeadCache([]);
@@ -746,7 +780,7 @@ describe("cadeia-cac — os campos da etapa que decidem o benchmark (QA-449-01)"
     // `null`  = ninguém respondeu (pede ação).
     // As duas levam a "sem benchmark", por caminhos com ações opostas.
     for (const [valor, esperado] of [[false, false], [null, null]] as const) {
-      mockSelect.mockReset();
+      resetDb();
       filaVinculo([etapa({ lpTemVsl: valor })]);
       filaInsights(diasDe("c1", 10));
       const app = await buildApp();
@@ -869,6 +903,38 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
     expect(familia).toBe("gratuita");
     // A MESMA série do cache, não uma vazia nem um `{}`.
     expect(opts?.coberturaDaEtapa).toEqual(cobertura);
+    await app.close();
+  });
+
+  it("o bloco de criativos chega ao payload, agrupado e ordenado (44.11)", async () => {
+    filaVinculo([etapa({ stageType: "free" })]);
+    filaInsights(diasDe("c1", 10));
+    filaLeadCache([]);
+    filaCriativos([
+      // Duas cópias do mesmo criativo, de vídeo.
+      { adId: "a1", adName: "VSL Longa", spend: "300", impressions: 10_000, actions: [{ action_type: "link_click", value: "200" }], videoMetrics: { p75: 1_000, views3s: 4_000 } },
+      { adId: "a2", adName: "VSL Longa - Copy", spend: "100", impressions: 5_000, actions: [{ action_type: "link_click", value: "50" }], videoMetrics: { p75: 300, views3s: 1_000 } },
+      // Uma imagem, com investimento menor.
+      { adId: "b1", adName: "Estático", spend: "50", impressions: 2_000, actions: [{ action_type: "link_click", value: "40" }], videoMetrics: null },
+    ]);
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+
+    expect(body.criativos).toHaveLength(2);
+    // Ordenado por investimento: a VSL (400) antes do estático (50).
+    expect(body.criativos[0].nome).toBe("VSL Longa");
+    expect(body.criativos[0].adIds.sort()).toEqual(["a1", "a2"]);
+    // Taxa re-derivada dos somatórios: 250 / 15.000, não a média de 2% e 1%.
+    expect(body.criativos[0].ctr).toBeCloseTo(250 / 15_000, 9);
+    // Hook do grupo: 5.000 / 15.000.
+    expect(body.criativos[0].hookRate).toBeCloseTo(5_000 / 15_000, 9);
+    // O estático não tem vídeo — ausência, não zero.
+    expect(body.criativos[1].hookRate).toBeNull();
+
+    // E a distribuição só conta o criativo de vídeo.
+    expect(body.distribuicaoHook.criativosDeVideo).toBe(1);
+    // Body declarado como ausente, nunca omitido em silêncio.
+    expect(body.bodyConvIndisponivel.motivo).toBe("semFonteDeLeadPorCriativo");
     await app.close();
   });
 
@@ -1167,7 +1233,8 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
     const body = (await app.inject({ method: "GET", url: url() })).json();
     expect(body.guardaDeCobertura.estado).toBe("aplicada");
     expect(body.principal.leadsUnicos).toBe(400);
-    expect(mockSelect).toHaveBeenCalledTimes(3); // vínculo, insights, cache
+    // Story 44.11 somou a 4ª: as linhas por `ad_id` do bloco de criativos.
+    expect(mockSelect).toHaveBeenCalledTimes(4); // vínculo, insights, cache de lead, criativos
     await app.close();
   });
 });

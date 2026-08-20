@@ -999,3 +999,143 @@ export function decomporCPC(
     ambos: 1 - cpc(cpmTeto, ctrTeto) / base,
   };
 }
+
+// -------------------------------------------------------------
+// Story 44.11 - o bloco de criativos
+//
+// A cadeia diz QUAL metrica atacar. Este bloco diz EM QUAL CRIATIVO, com a
+// regua da propria etapa: o teto que a aba ja calcula, nao benchmark externo.
+
+/** Uma linha crua de criativo, por `adId`, ja agregada no periodo. */
+export interface CriativoBruto {
+  adId: string;
+  /** `null` quando o nome nao veio - a tela mostra o id e diz que e id. */
+  adName: string | null;
+  spend: number;
+  impressions: number;
+  linkClicks: number;
+  /**
+   * `actions[].video_view` (Story 43.3). `null` = nao e video. Atencao: `0` e
+   * afirmacao diferente - e video e ninguem passou de 3s.
+   */
+  views3s: number | null;
+  /** `video_p75_watched_actions`. `null` pelo mesmo motivo. */
+  p75: number | null;
+}
+
+export interface CriativoDaAba {
+  /** Nome do anuncio, ou o `adId` quando nao resolveu. */
+  nome: string;
+  /** `true` quando `nome` e um id - a tela precisa dizer isso, nao fingir nome. */
+  ehId: boolean;
+  /** Um Ad Name agrupa N Ad IDs. Todos os que entraram nesta linha. */
+  adIds: string[];
+  spend: number;
+  impressions: number;
+  linkClicks: number;
+  ctr: number | null;
+  cpc: number | null;
+  /** `null` quando nenhum id do grupo e video. */
+  hookRate: number | null;
+  holdRate: number | null;
+}
+
+export interface DistribuicaoHook {
+  /** MEDIANA, nao media: a media e arrastada pelo criativo de maior volume. */
+  mediana: number;
+  melhor: { nome: string; valor: number };
+  pior: { nome: string; valor: number };
+  /** Quantos criativos estao abaixo de metade da mediana - "mato quantos?". */
+  abaixoDeMetadeDaMediana: number;
+  /** Quantos criativos de video entraram na conta. */
+  criativosDeVideo: number;
+}
+
+/**
+ * Normaliza o nome do anuncio para agrupar copias.
+ *
+ * A Meta cria `Nome - Copy`, `Nome - Copia` e `Nome (1)` ao duplicar um
+ * anuncio; sao o mesmo criativo com ids diferentes. Agrupar e o que faz a
+ * tabela responder "qual criativo" em vez de "qual id".
+ */
+export function normalizarNomeDeCriativo(nome: string): string {
+  return nome
+    .trim()
+    .replace(/\s*[-—–]\s*(c[oó]pia|copy)\s*\d*$/i, "")
+    .replace(/\s*\(\d+\)\s*$/, "")
+    .trim();
+}
+
+/**
+ * Agrupa criativos por nome e RE-DERIVA as taxas dos somatorios.
+ *
+ * Nunca media de medias. Um Ad ID com 10 impressoes e CTR de 50% nao pode
+ * puxar o CTR de um grupo que tem 100.000 impressoes - a taxa do grupo e
+ * `sum(cliques) / sum(impressoes)`. Regra do projeto, ja violada antes.
+ */
+export function agruparCriativos(brutos: CriativoBruto[]): CriativoDaAba[] {
+  const grupos = new Map<string, { nome: string; ehId: boolean; itens: CriativoBruto[] }>();
+  for (const b of brutos) {
+    const bruto = b.adName?.trim();
+    const ehId = !bruto;
+    const nome = ehId ? b.adId : normalizarNomeDeCriativo(bruto);
+    const chave = `${ehId ? "id" : "nome"} ${nome.toLowerCase()}`;
+    const g = grupos.get(chave) ?? { nome, ehId, itens: [] };
+    g.itens.push(b);
+    grupos.set(chave, g);
+  }
+
+  return [...grupos.values()]
+    .map(({ nome, ehId, itens }) => {
+      const spend = itens.reduce((s, x) => s + x.spend, 0);
+      const impressions = itens.reduce((s, x) => s + x.impressions, 0);
+      const linkClicks = itens.reduce((s, x) => s + x.linkClicks, 0);
+      // Video so existe se ALGUM id do grupo tem a metrica. Um grupo misto
+      // (video + imagem com o mesmo nome) soma so o que e video.
+      const comVideo = itens.filter((x) => x.views3s !== null);
+      const views3s = comVideo.length > 0 ? comVideo.reduce((s, x) => s + (x.views3s ?? 0), 0) : null;
+      const p75 = comVideo.length > 0 ? comVideo.reduce((s, x) => s + (x.p75 ?? 0), 0) : null;
+      // Denominador do Hook e a impressao DOS IDS DE VIDEO, nao a do grupo:
+      // misturar imagem no denominador afundaria o Hook de um video bom.
+      const impressoesDeVideo = comVideo.reduce((s, x) => s + x.impressions, 0);
+      return {
+        nome,
+        ehId,
+        adIds: itens.map((x) => x.adId),
+        spend,
+        impressions,
+        linkClicks,
+        ctr: div(linkClicks, impressions),
+        cpc: div(spend, linkClicks),
+        hookRate: views3s === null ? null : div(views3s, impressoesDeVideo),
+        holdRate: p75 === null || views3s === null ? null : div(p75, views3s),
+      };
+    })
+    .sort((a, b) => b.spend - a.spend); // onde o dinheiro esta
+}
+
+/**
+ * A distribuicao do Hook Rate (@po, 44.11 AC4).
+ *
+ * Uma etapa com Hook medio de 25% pode ter todos os criativos em 25%, ou
+ * metade em 45% e metade em 5%. As acoes sao opostas - na primeira o problema
+ * e a oferta, na segunda e matar metade dos criativos. Uma media sozinha nao
+ * distingue os dois casos, e por isso nao atende a AC.
+ */
+export function distribuicaoDoHook(criativos: CriativoDaAba[]): DistribuicaoHook | null {
+  const comHook = criativos.filter(
+    (c): c is CriativoDaAba & { hookRate: number } => c.hookRate !== null,
+  );
+  if (comHook.length === 0) return null;
+
+  const med = mediana(comHook.map((c) => c.hookRate));
+  if (med === null) return null;
+  const ordenado = [...comHook].sort((a, b) => b.hookRate - a.hookRate);
+  return {
+    mediana: med,
+    melhor: { nome: ordenado[0].nome, valor: ordenado[0].hookRate },
+    pior: { nome: ordenado[ordenado.length - 1].nome, valor: ordenado[ordenado.length - 1].hookRate },
+    abaixoDeMetadeDaMediana: comHook.filter((c) => c.hookRate < med / 2).length,
+    criativosDeVideo: comHook.length,
+  };
+}
