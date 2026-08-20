@@ -76,6 +76,13 @@ import { RefreshDataButton } from "./refresh-data-button";
 import { MetaFreshnessBadge } from "./meta-freshness-badge";
 import { PerpetualSpreadsheetWizardDialog } from "./perpetual-spreadsheet-wizard-dialog";
 import { PerpetualProductTypesDialog } from "./perpetual-product-types-dialog";
+import { legendaQuebraPorTipo } from "@/lib/utils/perpetual-product-types";
+import {
+  calcularTendencia,
+  direcao,
+  tendenciaDaEntidade,
+  type Tendencia,
+} from "@/lib/utils/perpetual-tendencia";
 import { usePerpetualSpreadsheet } from "@/lib/hooks/use-perpetual-spreadsheet";
 import {
   usePerpetualSalesData,
@@ -1542,6 +1549,28 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     });
   }, [dailyChartData]);
 
+  /**
+   * Story 29.54 — ROAS e Margem em 1, 3 e 7 dias.
+   *
+   * Sai da MESMA série dos gráficos (`dailyChartData`), onde `spend` já vem com
+   * o imposto de mídia aplicado uma vez (AC3). Nada de gross-up aqui: foi
+   * exatamente isso que a 29.27 corrigiu neste caminho.
+   *
+   * Sem planilha não há faturamento por dia que preste — o `revenue` cairia no
+   * pixel da Meta e o ROAS da tendência contradiria o card, que já mostra "—".
+   */
+  const tendencia = useMemo(() => {
+    if (!usingSpreadsheet) return null;
+    return calcularTendencia(
+      dailyChartData.map((d) => ({
+        dateIso: d.dateIso,
+        spend: d.spend,
+        revenue: d.revenue,
+        margin: d.margin,
+      })),
+    );
+  }, [dailyChartData, usingSpreadsheet]);
+
   // Story 29.9: agregados com tax aplicado, derivados de `campaign-daily`.
   //
   // Story 29.27 — ATENÇÃO ao mexer aqui. O backend NÃO é uniforme quanto ao
@@ -2253,6 +2282,18 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             usingSpreadsheet && salesData && m.totalSales > 0 ? salesData.ticketMedioBruto : null;
           const cacAcimaDoTicket =
             m.cac != null && ticketMedio != null && ticketMedio > 0 && m.cac > ticketMedio;
+          /**
+           * Story 29.53 (AC3): a quebra por tipo de produto sob o card de Vendas.
+           *
+           * Só existe quando a planilha é a fonte — sem ela `salesData` é nulo e
+           * o card já avisa "Conectar fonte de vendas". `null` também quando o
+           * gestor ainda não classificou nada no diálogo da 29.49, e nesse caso
+           * o card fica exatamente como antes da story.
+           */
+          const quebraDeProduto =
+            usingSpreadsheet && salesData
+              ? legendaQuebraPorTipo(salesData.porTipoProduto, m.totalSales)
+              : null;
           return (
             // Story 29.32: 8 cards em DUAS linhas de quatro — resultado em cima
             // (Faturamento Bruto, Vendas, Ticket Médio, Investimento), eficiência
@@ -2265,7 +2306,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                 <KpiCard icon={DollarSign} label="Faturamento Bruto" value={fmtCurrency(m.totalRevenue)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
               </MetricTooltip>
               <MetricTooltip label="Vendas" value={fmtNumber(m.totalSales)} formula={buildFunnelSalesCountFormula(m.totalSales, f)}>
-                <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(m.totalSales)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
+                <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(m.totalSales)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} breakdown={quebraDeProduto ?? undefined} />
               </MetricTooltip>
               {/* Story 29.32: Ticket Médio ganha card. O valor JÁ existia na tela
                   desde a 29.28 (`ticketMedio`, do backend) — só era usado para
@@ -2340,6 +2381,15 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           );
         })()
       ) : <EmptyState />}
+
+      {/* ================================================================ */}
+      {/* Story 29.54 — TENDÊNCIA: ROAS e Margem em 1, 3 e 7 dias          */}
+      {/*                                                                  */}
+      {/* O card mostra o número do período inteiro, que carrega o passado.*/}
+      {/* Aqui está a direção — e a coluna "Período" fica ao lado para que */}
+      {/* o gestor saiba contra o que está comparando.                     */}
+      {/* ================================================================ */}
+      {tendencia && <TendenciaBlock t={tendencia} />}
 
       {/* ================================================================ */}
       {/* Story 29.32 — TRÊS GRÁFICOS DE LINHA×ÁREA (últimos 7 dias)       */}
@@ -2795,6 +2845,20 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       />
 
       {/* ================================================================ */}
+      {/* Story 29.54 (AC5) — TENDÊNCIA POR ENTIDADE                       */}
+      {/*                                                                  */}
+      {/* No agregado, a virada de uma campanha some na média das outras.  */}
+      {/* Segue o mesmo `tableFilter` do Detalhamento e dos gráficos, e as */}
+      {/* mesmas entidades plotadas — não um recorte terceiro.             */}
+      {/* ================================================================ */}
+      <TendenciaPorEntidade
+        series={entitySeries}
+        dimensao={tableFilter}
+        temPlanilha={usingSpreadsheet}
+        loading={entityDailyLoading}
+      />
+
+      {/* ================================================================ */}
       {/* COMPARATIVO ENTRE LPs — Story 29.40
             Abaixo do Detalhamento, como o AC3 pede. A LP é atributo do anúncio
             e a agregação parte de `funnelAds`, então esta tabela independe do
@@ -3230,6 +3294,210 @@ function InvestmentBreakdownTooltip({
   );
 }
 
+/**
+ * Story 29.54 (AC4) — o bloco de tendência.
+ *
+ * Duas métricas × três janelas, mais a coluna do período. A coluna "Período"
+ * não é enfeite: sem ela o gestor lê "ROAS 7d = 1,87" e não sabe se isso é
+ * melhora ou piora. A seta compara cada janela com ela.
+ */
+function TendenciaBlock({ t }: { t: Tendencia }) {
+  const linhas = [
+    {
+      rotulo: "ROAS",
+      valores: t.janelas.map((j) => j.roas),
+      referencia: t.periodo.roas,
+      fmt: (v: number | null) => fmtRoas(v),
+      /** ROAS não tem "negativo" — a cor sai só da direção. */
+      sinal: () => "" as const,
+    },
+    {
+      rotulo: "Margem",
+      valores: t.janelas.map((j) => j.margem as number | null),
+      referencia: t.periodo.margem as number | null,
+      fmt: (v: number | null) => fmtCurrency(v),
+      // Story 29.15/29.20: margem negativa é vermelha em toda a tela. Herdar a
+      // semântica, não inventar paleta.
+      sinal: (v: number | null) => (v != null && v < 0 ? "text-red-400" : ""),
+    },
+  ];
+
+  return (
+    <div className="rounded-xl border border-border/30 bg-card/60 p-4">
+      <div className="flex items-baseline justify-between mb-3">
+        <h3 className="text-sm font-semibold">Tendência</h3>
+        <span className="text-[10px] text-muted-foreground">
+          janelas que terminam em {t.fim.slice(8, 10)}/{t.fim.slice(5, 7)} — o último dia com dado do período
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              <th className="text-left font-medium pb-1.5"></th>
+              {t.janelas.map((j) => (
+                <th key={j.dias} className="text-right font-medium pb-1.5">
+                  {j.dias}d
+                  {/* AC6: janela maior que o período não pode se passar por cheia. */}
+                  {j.parcial && (
+                    <span
+                      className="ml-1 text-amber-500/90 normal-case"
+                      title={`O período filtrado tem ${t.diasDoPeriodo} dia(s) — menos que os ${j.dias} da janela. O valor mostrado é o do período inteiro, não o de ${j.dias} dias.`}
+                    >
+                      ⚠️{j.diasCobertos}d
+                    </span>
+                  )}
+                </th>
+              ))}
+              <th className="text-right font-medium pb-1.5">Período</th>
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((l) => (
+              <tr key={l.rotulo} className="border-t border-border/20">
+                <td className="py-1.5 text-xs text-muted-foreground">{l.rotulo}</td>
+                {l.valores.map((v, i) => {
+                  const dir = direcao(v, l.referencia);
+                  return (
+                    <td key={i} className="py-1.5 text-right tabular-nums">
+                      <span className={`font-semibold ${l.sinal(v)}`}>{l.fmt(v)}</span>
+                      {dir && (
+                        <span
+                          className={`ml-1 text-[10px] ${dir === "sobe" ? "text-emerald-400" : "text-red-400"}`}
+                          title={`${dir === "sobe" ? "Acima" : "Abaixo"} do número do período`}
+                        >
+                          {dir === "sobe" ? "▲" : "▼"}
+                        </span>
+                      )}
+                    </td>
+                  );
+                })}
+                <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                  <span className={l.sinal(l.referencia)}>{l.fmt(l.referencia)}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Story 29.54 (AC5) — a tendência por campanha, público ou criativo.
+ *
+ * As entidades são as MESMAS que os gráficos plotam (`plotted`), e a âncora é o
+ * fim do período, não o último dia de cada uma — duas linhas lado a lado
+ * precisam falar do mesmo tempo.
+ */
+function TendenciaPorEntidade({
+  series,
+  dimensao,
+  temPlanilha,
+  loading,
+}: {
+  series: ReturnType<typeof buildEntitySeries>;
+  dimensao: "campaign" | "adset" | "ad";
+  temPlanilha: boolean;
+  loading: boolean;
+}) {
+  const rotuloDim =
+    dimensao === "campaign" ? "campanha" : dimensao === "adset" ? "público" : "criativo";
+
+  const linhas = useMemo(() => {
+    if (series.dates.length === 0) return [];
+    const periodo = {
+      inicio: series.dates[0]!,
+      fim: series.dates[series.dates.length - 1]!,
+    };
+    return series.plotted
+      .map((s) => ({ nome: s.name, t: tendenciaDaEntidade(s.byDate, periodo) }))
+      .filter((l): l is { nome: string; t: Tendencia } => l.t !== null);
+  }, [series]);
+
+  if (loading) return <Skeleton className="h-44 rounded-xl" />;
+  // Sem planilha não há faturamento por entidade: ROAS e Margem seriam ambos
+  // derivados de zero, e a tabela inteira diria "—". O Detalhamento já avisa.
+  if (!temPlanilha || linhas.length === 0) return null;
+
+  /** A célula vazia é DECLARADA — precedente da 29.45, os gráficos que sumiam. */
+  const celula = (
+    valor: number | null,
+    janela: { spend: number; parcial: boolean; dias: number; diasCobertos: number },
+    fmt: (v: number | null) => string,
+    negativoEmVermelho: boolean,
+  ) => {
+    if (valor == null && janela.spend === 0) {
+      return (
+        <span className="text-muted-foreground/60" title={`Sem investimento nos últimos ${janela.dias} dia(s) do período`}>
+          sem dado
+        </span>
+      );
+    }
+    const vermelho = negativoEmVermelho && valor != null && valor < 0;
+    return <span className={vermelho ? "text-red-400" : ""}>{fmt(valor)}</span>;
+  };
+
+  return (
+    <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold">Tendência por {rotuloDim}</h3>
+        <span className="text-[10px] text-muted-foreground">
+          mesmas {linhas.length} {linhas.length === 1 ? "entidade" : "entidades"} dos gráficos acima · janelas ancoradas no fim do período
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-muted-foreground border-b border-border/20">
+              <th className="text-left py-2 pr-3">Dimensao</th>
+              <th className="text-right px-2" colSpan={4}>ROAS</th>
+              <th className="text-right px-2" colSpan={4}>Margem</th>
+            </tr>
+            <tr className="text-[10px] uppercase tracking-wider text-muted-foreground/70 border-b border-border/20">
+              <th className="py-1"></th>
+              {["1d", "3d", "7d", "Período"].map((c) => (
+                <th key={`roas-${c}`} className="text-right px-2 font-medium">{c}</th>
+              ))}
+              {["1d", "3d", "7d", "Período"].map((c) => (
+                <th key={`margem-${c}`} className="text-right px-2 font-medium">{c}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map(({ nome, t }) => (
+              <tr key={nome} className="border-b border-border/10 hover:bg-muted/20">
+                <td className="py-1.5 pr-3 max-w-[220px] truncate" title={nome}>{nome}</td>
+                {t.janelas.map((j) => (
+                  <td key={`r${j.dias}`} className="text-right px-2 tabular-nums">
+                    {celula(j.roas, j, fmtRoas, false)}
+                  </td>
+                ))}
+                <td className="text-right px-2 tabular-nums text-muted-foreground">{fmtRoas(t.periodo.roas)}</td>
+                {t.janelas.map((j) => (
+                  <td key={`m${j.dias}`} className="text-right px-2 tabular-nums">
+                    {celula(j.spend === 0 && j.revenue === 0 ? null : j.margem, j, fmtCurrencyCompact, true)}
+                  </td>
+                ))}
+                <td className={`text-right px-2 tabular-nums ${t.periodo.margem < 0 ? "text-red-400" : "text-muted-foreground"}`}>
+                  {fmtCurrencyCompact(t.periodo.margem)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {/* AC6, por entidade: o aviso de período curto vale para a tabela toda. */}
+      {linhas[0]!.t.janelas.some((j) => j.parcial) && (
+        <p className="text-[10px] text-amber-500/90">
+          ⚠️ O período filtrado tem {linhas[0]!.t.diasDoPeriodo} dia(s) — as janelas maiores que isso repetem o número do período.
+        </p>
+      )}
+    </div>
+  );
+}
+
 const KpiCard = React.forwardRef<HTMLDivElement, {
   icon: React.ComponentType<{ className?: string }>; label: string; value: string;
   target?: number; actual?: number | null; hintTooltip?: boolean;
@@ -3239,6 +3507,15 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
   warning?: string;
   /** Story 29.15: colore o card por sinal do valor (verde > 0, vermelho ≤ 0). Ex: Margem. */
   signValue?: number | null;
+  /**
+   * Story 29.53 (AC3): linha fina abaixo do valor com a quebra por tipo de
+   * produto ("Principal 109 · Order Bump 20").
+   *
+   * Separada de `warning` de propósito: aquilo é âmbar e pede ação, isto é
+   * detalhe do número. O `titulo` vira `title` nativo e carrega a explicação de
+   * por que as fatias não somam o valor do card.
+   */
+  breakdown?: { texto: string; titulo: string };
   /**
    * Story 29.28: alerta explícito — pinta o card de vermelho quando uma condição
    * de negócio é violada (ex: CAC acima do Ticket Médio = prejuízo por venda).
@@ -3251,7 +3528,7 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
    */
   alert?: boolean;
 } & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
-  { icon: Icon, label, value, target, actual, hintTooltip, comparison, fromSheet, warning, signValue, alert, className, ...rest },
+  { icon: Icon, label, value, target, actual, hintTooltip, comparison, fromSheet, warning, breakdown, signValue, alert, className, ...rest },
   ref,
 ) {
   const isRoas = target !== undefined;
@@ -3285,6 +3562,14 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
       {warning && (
         <p className="mt-1 flex items-center gap-1 text-[10px] font-medium leading-tight text-amber-500/90">
           <span aria-hidden>⚠️</span> {warning}
+        </p>
+      )}
+      {breakdown && (
+        <p
+          className="mt-1 text-[10px] leading-tight text-muted-foreground cursor-help"
+          title={breakdown.titulo}
+        >
+          {breakdown.texto}
         </p>
       )}
       {comparison && (
