@@ -19,6 +19,7 @@
  */
 
 import { classifyTemperatura } from "../utils/lead-origin.js";
+import { chaveDeComprador } from "../utils/comprador.js";
 import { daysBetween, shiftDayKey } from "../utils/sale-date.js";
 import type { PerpetualReportConfig, PerpetualRates } from "./perpetual-report-config.js";
 
@@ -252,8 +253,21 @@ export function computePerpetualReport(input: PerpetualReportInput): PerpetualRe
   // ---- 3. Unidade contada: e-mail distinto (§C.3.2) ----
   // Order bump conta no faturamento mas não cria comprador — por isso vendas é
   // contagem de e-mails e transações é contagem de linhas.
-  const emailsPagos = new Set(pagas.map((v) => v.email.trim().toLowerCase()));
-  const vendas = emailsPagos.size;
+  /**
+   * Story 29.53 (AC6): a MESMA função do card e da série diária.
+   *
+   * Aqui era `new Set(pagas.map(v => v.email.trim().toLowerCase()))` — a mesma
+   * intenção, escrita uma terceira vez. Duas consequências práticas de unificar:
+   * a regra passa a mudar num lugar só, e a linha sem e-mail deixa de colapsar.
+   * Antes, todas as vendas sem e-mail viravam a chave `""` e contavam como UMA;
+   * agora cada uma cai no seu índice, como no card.
+   *
+   * ⚠️ O que NÃO converge é o número, e isso é por construção: o relatório conta
+   * só as vendas de origem PAGA (`pagas`), o card conta todas. A regra é a
+   * mesma; o conjunto é outro.
+   */
+  const compradoresPagos = new Set(pagas.map((v, i) => chaveDeComprador(v.email, null, i)));
+  const vendas = compradoresPagos.size;
   const transacoes = pagas.length;
   const faturamentoBruto = pagas.reduce((s, v) => s + v.valorBruto, 0);
 
@@ -341,7 +355,9 @@ export function computePerpetualReport(input: PerpetualReportInput): PerpetualRe
     segmentos: seg.segmentos,
     tendencia,
     organico: {
-      vendas: new Set(organicas.map((v) => v.email.trim().toLowerCase())).size,
+      // Story 29.53 (AC6): a mesma regra da venda paga — o orgânico também tem
+      // order bump, e contava a linha dele como comprador.
+      vendas: new Set(organicas.map((v, i) => chaveDeComprador(v.email, null, i))).size,
       faturamento: round2(organicas.reduce((s, v) => s + v.valorBruto, 0)),
     },
     reconciliacao: {
@@ -497,8 +513,21 @@ function buildSegmentos(
   let comMedium = 0;
   let comContent = 0;
 
-  for (const v of pagas) {
-    const email = v.email.trim().toLowerCase();
+  for (const [i, v] of pagas.entries()) {
+    /**
+     * Story 29.53 (AC6): a MESMA chave do KPI de vendas — e-mail quando existe,
+     * índice da linha quando não.
+     *
+     * Aqui era `v.email.trim().toLowerCase()`. Enquanto o KPI usava uma regra e
+     * a segmentação outra, a invariante P7 (`Σcampanhas − sobreposição +
+     * semAtribuição = vendas`) quebrava assim que aparecia uma venda sem e-mail:
+     * o KPI contava três anônimos, a segmentação colapsava os três numa chave
+     * vazia. O teste `perpetual-contagem-unificada` reproduz.
+     *
+     * ⚠️ Os nomes em volta (`emailsAtribuidos`, `bucket.emails`) seguem falando
+     * em e-mail porque é o caso normal — mas o que circula é a chave.
+     */
+    const email = chaveDeComprador(v.email, null, i);
     const cid = v.utmCampaign?.trim() || null;
     const campanha = cid ? campanhaPorId.get(cid) : undefined;
 
@@ -673,7 +702,8 @@ function buildTendencia(
   const ultimos = pagas.filter((v) => v.dia >= inicio7);
 
   const agg = (rows: PerpetualSaleRow[], janelaDias: number) => {
-    const emails = new Set(rows.map((v) => v.email.trim().toLowerCase()));
+    // Story 29.53 (AC6): mesma chave de comprador do resto do relatório.
+    const emails = new Set(rows.map((v, i) => chaveDeComprador(v.email, null, i)));
     const fat = rows.reduce((s, v) => s + v.valorBruto, 0);
     // Investimento é rateado pela janela: não temos spend diário aqui, e o
     // objetivo é comparar ritmo, não fechar caixa.

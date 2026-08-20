@@ -1,4 +1,5 @@
 import { chaveDeComprador } from "../utils/comprador.js";
+import { quebraVazia, tipoDoProduto, type TipoDeProduto } from "../utils/produto.js";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
@@ -112,6 +113,9 @@ function effectivePlatformFeeRate(platform: string | null, hasStatusCol: boolean
 
 const EMPTY_SALES_DATA = {
   totalVendas: 0,
+  // Story 29.53 (AC3): sem planilha não há linha para classificar. `null` é o
+  // mesmo sinal de "não há quebra a mostrar" que o funil sem classificação dá.
+  porTipoProduto: null as { principal: number; order_bump: number; upsell: number } | null,
   faturamentoBruto: 0,
   faturamentoLiquido: 0,
   faturamentoLiquidoCalculado: 0,
@@ -203,6 +207,10 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       const mapping = spreadsheet.columnMapping as {
         email: string;
         transactionId?: string;
+        // Story 29.53 (AC1): a coluna que o wizard mapeia desde a 29.31. A chave
+        // é `productName` — `produto` era o nome errado que fazia o índice ser
+        // -1 em toda planilha (AC7, corrigido no relatório na Fatia A).
+        productName?: string;
         valorBruto?: string;
         valorLiquido?: string;
         formaPagamento?: string;
@@ -213,6 +221,15 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         dataVenda?: string;
         status?: string;
       };
+
+      /**
+       * Story 29.53 (AC1) — a classificação da 29.49 finalmente entra na conta.
+       *
+       * `{}` significa "nada classificado", e nada classificado é exatamente o
+       * comportamento anterior à story: `tipoDoProduto` devolve `principal` para
+       * quem está ausente do mapa.
+       */
+      const tiposDeProduto = (spreadsheet.productTypes as Record<string, TipoDeProduto> | null) ?? {};
 
       let sheetData;
       try {
@@ -239,6 +256,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       const dataIdx = colIdx(mapping.dataVenda);
       const statusIdx = colIdx(mapping.status);
       const hasStatusCol = statusIdx !== -1;
+      const produtoIdx = colIdx(mapping.productName);
 
       if (emailIdx === -1) return { ...EMPTY_SALES_DATA, semDados: true };
 
@@ -278,6 +296,18 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       let reembolsoBruto = 0;
       let reembolsoLiquido = 0;
       let vendasReembolsadas = 0;
+
+      /**
+       * Story 29.53 (AC3) — a quebra conta LINHAS, não compradores.
+       *
+       * Por isso ela não fecha com `totalVendas`, e a legenda do card precisa
+       * dizer isso: no funil do Netão são 109 linhas principais + 20 de bump =
+       * 129 linhas pagas, contra 110 compradores únicos. Somar as fatias e
+       * esperar o total é o erro que parece acerto.
+       *
+       * Conta as linhas que são receita — as mesmas que entram no faturamento.
+       */
+      const quebraPorTipo = quebraVazia();
       // txIds reembolsados → remove a linha "paid" pareada (mesmo id) das vendas.
       const refundedTxIds = new Set<string>();
 
@@ -322,6 +352,10 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         // Sai antes da dedup — não conta em vendas, faturamento, ticket médio
         // nem em nenhum corte por UTM.
         if (!isRevenueBucket(bucket)) continue;
+
+        // Story 29.53 (AC1/AC3): classifica a linha paga. Produto ausente do
+        // mapa — ou coluna não mapeada — é `principal`, o default da 29.49.
+        quebraPorTipo[tipoDoProduto(produtoIdx === -1 ? null : row[produtoIdx], tiposDeProduto)] += 1;
 
         /**
          * Story 29.53 (AC2) — a unidade contada e o E-MAIL, nao a transacao.
@@ -406,8 +440,19 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       const feeRate = effectivePlatformFeeRate(platform, hasStatusCol);
       const faturamentoLiquidoCalculado = totalBruto * (1 - feeRate);
 
+      /**
+       * Story 29.53 (AC3): a quebra só aparece quando há o que quebrar.
+       *
+       * Precisa das DUAS pontas — a coluna de produto mapeada no wizard (29.31)
+       * e ao menos um produto classificado no diálogo (29.49). Com uma só, todas
+       * as linhas caem em `principal` e o card exibiria "Principal 129" como se
+       * fosse informação, quando é só a ausência dela.
+       */
+      const temClassificacao = produtoIdx !== -1 && Object.keys(tiposDeProduto).length > 0;
+
       return {
         totalVendas,
+        porTipoProduto: temClassificacao ? quebraPorTipo : null,
         faturamentoBruto: totalBruto,
         faturamentoLiquido: totalLiquido,
         faturamentoLiquidoCalculado,
@@ -556,6 +601,8 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
        * neste dia?" e "quantos compradores no periodo?" nao somam.
        */
       const vistosPorDia = new Set<string>();
+      /** Story 29.53 (AC6): o mesmo, por entidade — ver o comentário no uso. */
+      const vistosPorEntidadeNoDia = new Set<string>();
       for (const [idxDaLinha, row] of rows.entries()) {
         const rowDay = saleDayKey(row[dataIdx]);
         if (!rowDay) continue;
@@ -608,7 +655,25 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
           const chave = sanitizeUtmValue(utmIdx === -1 ? undefined : row[utmIdx]) ?? SEM_ORIGEM_LABEL;
           const e = (byEntity[chave] ??= { revenueByDay: {}, salesByDay: {} });
           e.revenueByDay[rowDay] = (e.revenueByDay[rowDay] ?? 0) + bruto;
-          e.salesByDay[rowDay] = (e.salesByDay[rowDay] ?? 0) + 1;
+          /**
+           * Story 29.53 (AC6) — a série POR ENTIDADE deduplica igual à agregada.
+           *
+           * Aqui era `+= 1` por linha: o total do dia já contava compradores e a
+           * quebra por campanha/público/criativo ainda contava linhas. O bump
+           * saía do card e continuava inflando o CAC do Detalhamento — a mesma
+           * distorção, um nível abaixo, onde a decisão de pausar é tomada.
+           *
+           * ⚠️ Σ(entidades) pode passar o total do dia quando o principal e o
+           * bump da mesma pessoa vêm com UTMs diferentes: ela é um comprador em
+           * cada entidade. É a resposta certa para "quantos compradores esta
+           * campanha trouxe hoje" e não soma com o total, pela mesma razão que
+           * Σ(dias) ≠ período.
+           */
+          const chaveNaEntidade = `${chave}|${chaveDoDia}`;
+          if (!vistosPorEntidadeNoDia.has(chaveNaEntidade)) {
+            vistosPorEntidadeNoDia.add(chaveNaEntidade);
+            e.salesByDay[rowDay] = (e.salesByDay[rowDay] ?? 0) + 1;
+          }
         }
         counted++;
       }

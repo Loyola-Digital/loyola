@@ -39,6 +39,40 @@ export function contarPorTipo(
 }
 
 /**
+ * Story 29.53 (AC3) — a legenda da quebra do card de Vendas.
+ *
+ * Devolve `null` quando não há o que mostrar: sem classificação, ou com tudo
+ * caindo em `principal` (que é a ausência de informação, não informação).
+ *
+ * ⚠️ As fatias contam LINHAS e o valor do card conta COMPRADORES — elas não
+ * somam, e o `titulo` existe para dizer isso a quem tentar somar. O order bump
+ * chega numa linha própria com o mesmo e-mail da compra principal: 109 + 20 é
+ * 129 linhas pagas, não 110 compradores.
+ */
+export function legendaQuebraPorTipo(
+  quebra: { principal: number; order_bump: number; upsell: number } | null | undefined,
+  totalVendas: number,
+): { texto: string; titulo: string } | null {
+  if (!quebra) return null;
+  if (quebra.order_bump === 0 && quebra.upsell === 0) return null;
+
+  const partes: string[] = [];
+  if (quebra.principal > 0) partes.push(`Principal ${quebra.principal}`);
+  if (quebra.order_bump > 0) partes.push(`Order Bump ${quebra.order_bump}`);
+  if (quebra.upsell > 0) partes.push(`Upsell ${quebra.upsell}`);
+  if (partes.length === 0) return null;
+
+  const totalLinhas = quebra.principal + quebra.order_bump + quebra.upsell;
+  return {
+    texto: partes.join(" · "),
+    titulo:
+      `${totalLinhas} linhas pagas na planilha contra ${totalVendas} compradores únicos. ` +
+      "As fatias contam linhas, não pessoas: o order bump vem numa linha própria com o " +
+      "mesmo e-mail da compra principal, e por isso as fatias não somam o valor do card.",
+  };
+}
+
+/**
  * Separa os nomes por tipo — o que a 29.50 consome para propor as premissas do
  * relatório sem que ninguém redigite nome de produto.
  *

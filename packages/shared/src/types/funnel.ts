@@ -196,6 +196,20 @@ export interface PerpetualSpreadsheet {
  */
 export interface PerpetualSalesData {
   totalVendas: number;
+  /**
+   * Story 29.53 (AC3): quantas LINHAS pagas de cada tipo de produto.
+   *
+   * ⚠️ Linhas, não compradores — as fatias NÃO somam `totalVendas`, e é assim
+   * que tem que ser: o order bump vem numa linha própria com o mesmo e-mail da
+   * compra principal. No funil do Netão, 109 principais + 20 bumps = 129 linhas
+   * pagas contra 110 compradores. Quem espera 109 + 20 = 110 está fazendo a
+   * pergunta errada, e a legenda do card existe para dizer isso.
+   *
+   * `null` quando não há classificação — coluna de produto não mapeada (29.31)
+   * ou nenhum produto marcado no diálogo (29.49). Nesse caso a quebra não
+   * aparece na tela, em vez de exibir "Principal 129" como se fosse informação.
+   */
+  porTipoProduto?: { principal: number; order_bump: number; upsell: number } | null;
   faturamentoBruto: number;
   faturamentoLiquido: number;
   /** Story 29.7: bruto × (1 − feeRate) — sempre confiável (calculado server) */
