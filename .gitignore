@@ -50,3 +50,12 @@ coverage/
 
 # Docker
 *.pid
+
+# Artefatos de sync do iCloud/Drive: o cliente duplica o arquivo com sufixo
+# " 2" quando resolve conflito. Eles já foram commitados por engano uma vez
+# (QA-4412-05, 8 arquivos e ~1.120 linhas), e um deles era um SERVIÇO dentro
+# de `src/` — o tsc o compilava para `dist/`. Ignorar na origem é mais barato
+# que revisar `git add`.
+* 2.*
+* 2/
+*.d 2.ts

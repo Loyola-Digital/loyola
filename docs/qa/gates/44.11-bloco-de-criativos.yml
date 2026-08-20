@@ -150,8 +150,43 @@ achados:
       soubesse por quê, que é pior que uma query lenta.
     correcaoSugerida: >
       Medir o tempo da rota numa etapa grande depois do deploy. Se passar de
-      ~1s no bloco, agregar no SQL em vez de em memória — `GROUP BY ad_id,
-      date_start` devolve 100× menos linhas.
+      ~1s no bloco, agregar no SQL em vez de em memória.
+    medicaoPosDeploy:
+      data: "2026-08-20"
+      resultado: SEM_ACAO
+      numeros: >
+        As 5 etapas com mais linhas, medidas de uma máquina local contra o banco
+        de produção:
+
+          FZ & MFB / Vendas          2.010 linhas   12.512 ms
+          BBE / Perpétuo             1.909 linhas    3.176 ms
+          DG & CPDF / Captação Paga  1.524 linhas    7.448 ms
+          PP / Aquisição             1.391 linhas    1.867 ms
+          BBE / Captação paga        1.300 linhas    1.999 ms
+
+        Isolando os dois serviços na maior (`FZ & MFB / Vendas`):
+
+          série por campanha (44.1, pré-existente):  1.516 ms
+          criativos (44.11, novo):                   2.241 ms  (41 anúncios)
+      porQueSemAcao: >
+        O banco não é o gargalo. `idx_meta_ad_insights_campaign`
+        `(project_id, campaign_id, date_start)` existe e é usado — `EXPLAIN
+        ANALYZE` devolve **Index Scan em 0,074 ms**.
+
+        Os segundos são latência de rede e transferência (~710 bytes × 2.010
+        linhas) medindo de casa contra o banco de produção. Na Railway, API e
+        banco estão na mesma região, e esses números não se traduzem.
+
+        Otimizar com base numa medição feita no lugar errado é como consertar
+        um número que ninguém viu errado.
+      oQueSobraComoAlvoREAL: >
+        As duas queries leem **a mesma tabela com o mesmo filtro** — uma agrega
+        por campanha, outra por anúncio. Ler uma vez e derivar as duas
+        agregações eliminaria ~1,4 MB de transferência por requisição, sem
+        mudar nenhum número.
+
+        Só vale fazer depois de medir na Railway. Se lá o bloco custar menos de
+        200 ms, o acoplamento entre os dois serviços custa mais do que economiza.
 
 verificacoes:
   - id: V1
