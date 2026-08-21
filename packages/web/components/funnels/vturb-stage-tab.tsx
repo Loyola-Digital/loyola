@@ -80,7 +80,9 @@ function CardComTendencia({
   inverso?: boolean;
 }) {
   const pontos = serie.filter((n) => Number.isFinite(n));
-  const temTendencia = pontos.length >= 3;
+  // Dois pontos já dizem a direção. Exigir três escondia a faixa justamente nos
+  // períodos curtos, que é quando se olha a tendência com mais atenção.
+  const temTendencia = pontos.length >= 2;
   const primeiro = pontos[0] ?? 0;
   const ultimo = pontos[pontos.length - 1] ?? 0;
   const subiu = ultimo >= primeiro;
@@ -473,6 +475,13 @@ function VslDashboard({
           ))}
         </div>
       </div>
+
+      {data.statsReconstruidos && (
+        <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+          O VTurb devolveu o resumo deste período vazio, então os totais foram somados dia a dia.
+          Os contadores são exatos; as taxas são derivadas deles e podem variar alguns pontos.
+        </p>
+      )}
 
       {/* Os seis números que descrevem a VSL, do começo ao fim do funil: quem
           deu play, quanto assistiu, quem chegou na oferta, quem clicou, quem
