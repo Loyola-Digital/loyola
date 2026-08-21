@@ -66,6 +66,8 @@ export default function StagePage() {
   // Captação de Evento: comprovante lido pela IA vira rascunho da venda.
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [receiptPrefill, setReceiptPrefill] = useState<DadosComprovante | null>(null);
+  /** O arquivo lido, para ser guardado junto da venda depois de confirmada. */
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [editingSale, setEditingSale] = useState<ManualSale | null>(null);
   const [paidSalesDays, setPaidSalesDays] = useState(90);
 
@@ -796,11 +798,13 @@ export default function StagePage() {
             if (!open) {
               setEditingSale(null);
               setReceiptPrefill(null);
+              setReceiptFile(null);
             }
           }}
           editingSale={editingSale}
           isTicket={ehCaptacaoDeEvento}
           prefill={receiptPrefill}
+          receiptFile={receiptFile}
         />
       )}
 
@@ -813,11 +817,13 @@ export default function StagePage() {
           stageId={params.stageId}
           open={receiptOpen}
           onOpenChange={setReceiptOpen}
-          onConfirmar={(dados) => {
+          onConfirmar={(dados, arquivo) => {
             // Abre o formulário já preenchido: a gravação continua sendo do
-            // fluxo normal, depois da conferência.
+            // fluxo normal, depois da conferência. O arquivo viaja junto e é
+            // anexado à venda assim que ela existir.
             setEditingSale(null);
             setReceiptPrefill(dados);
+            setReceiptFile(arquivo);
             setManualSaleOpen(true);
           }}
         />

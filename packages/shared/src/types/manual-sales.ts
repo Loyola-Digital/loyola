@@ -9,6 +9,14 @@ export type InvoiceStatus = "emitida" | "pendente";
 
 export interface ManualSale {
   id: string;
+  /**
+   * Existe comprovante (print/PDF) guardado para esta venda?
+   *
+   * Só a existência: o arquivo vem por uma rota própria, sob demanda. Trazer o
+   * binário na listagem seria pago por toda tela que mostra venda manual.
+   * Opcional porque as rotas antigas não devolvem o campo.
+   */
+  temComprovante?: boolean;
   stageId: string;
   customerName: string;
   customerEmail: string | null;

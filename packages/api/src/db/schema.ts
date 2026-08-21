@@ -17,9 +17,22 @@ import {
   numeric,
   bigint,
   doublePrecision,
+  customType,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+
+/**
+ * `bytea` — binário cru no Postgres.
+ *
+ * O Drizzle não traz esse tipo pronto. A alternativa seria guardar base64 em
+ * `text`, que infla 33% e obriga a converter dos dois lados a cada leitura.
+ */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 // ============================================================
 // ENUMS
@@ -1033,6 +1046,45 @@ export const manualSales = pgTable(
 // ============================================================
 // FUNNEL SPREADSHEETS (EPIC-17 — Planilhas Genéricas no Funil)
 // ============================================================
+
+
+/**
+ * Comprovante (print ou PDF) de uma venda manual.
+ *
+ * Tabela à parte, e não coluna em `manual_sales`, por um motivo prático: aquela
+ * tabela é lida com `select()` inteiro em vários lugares do dashboard, e trazer
+ * alguns MB de binário junto em toda listagem seria pago em toda tela que
+ * mostra venda manual — inclusive nas que nem sabem que comprovante existe.
+ *
+ * O arquivo mora no Postgres porque não há storage de objetos neste ambiente, e
+ * o volume não pede um: são dezenas de vendas manuais, com prints de PIX. Se um
+ * dia virar milhares, o caminho é mover o conteúdo para um bucket e manter esta
+ * linha como ponteiro — o resto do código não muda.
+ */
+export const manualSaleReceipts = pgTable(
+  "manual_sale_receipts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    manualSaleId: uuid("manual_sale_id")
+      .notNull()
+      .references(() => manualSales.id, { onDelete: "cascade" }),
+    /** `image/png`, `image/jpeg`, `application/pdf`… — define como a tela exibe. */
+    mimeType: varchar("mime_type", { length: 100 }).notNull(),
+    /** Nome original, só para o download fazer sentido para quem baixa. */
+    fileName: varchar("file_name", { length: 255 }),
+    byteSize: integer("byte_size").notNull(),
+    conteudo: bytea("conteudo").notNull(),
+    uploadedBy: uuid("uploaded_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // Um comprovante por venda: reenviar substitui, em vez de acumular versões
+    // que ninguém saberia qual é a boa.
+    uniqueIndex("uq_manual_sale_receipt").on(table.manualSaleId),
+  ]
+);
 
 export const funnelSpreadsheetTypeEnum = pgEnum("funnel_spreadsheet_type", [
   "leads",

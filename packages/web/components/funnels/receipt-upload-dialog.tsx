@@ -70,8 +70,11 @@ interface Props {
   stageId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Recebe os dados confirmados pra abrir o formulário já preenchido. */
-  onConfirmar: (dados: DadosComprovante) => void;
+  /**
+   * Recebe os dados confirmados e o ARQUIVO lido, para abrir o formulário
+   * preenchido e guardar o comprovante junto da venda quando ela for salva.
+   */
+  onConfirmar: (dados: DadosComprovante, arquivo: File | null) => void;
 }
 
 export function ReceiptUploadDialog({
@@ -85,11 +88,15 @@ export function ReceiptUploadDialog({
   const extrair = useExtrairComprovante(projectId, funnelId, stageId);
   const [dados, setDados] = useState<DadosComprovante | null>(null);
   const [nomeArquivo, setNomeArquivo] = useState<string | null>(null);
+  // O arquivo em si fica numa ref: ele não desenha nada na tela, e guardá-lo em
+  // estado provocaria re-render a cada seleção sem nenhum ganho.
+  const arquivoRef = useRef<File | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   function reset() {
     setDados(null);
     setNomeArquivo(null);
+    arquivoRef.current = null;
     if (inputRef.current) inputRef.current.value = "";
   }
 
@@ -111,6 +118,7 @@ export function ReceiptUploadDialog({
     }
 
     setNomeArquivo(arquivo.name);
+    arquivoRef.current = arquivo;
     try {
       const lidos = await extrair.mutateAsync(arquivo);
       setDados(lidos);
@@ -121,6 +129,9 @@ export function ReceiptUploadDialog({
       }
     } catch (e) {
       setNomeArquivo(null);
+      // O arquivo some junto: se a leitura falhou, guardar o comprovante de um
+      // rascunho que ninguém confirmou não ajuda ninguém.
+      arquivoRef.current = null;
       toast.error(e instanceof Error ? e.message : "Não consegui ler o comprovante");
     }
   }
@@ -215,7 +226,7 @@ export function ReceiptUploadDialog({
               <Button
                 className="gap-2"
                 onClick={() => {
-                  onConfirmar(dados);
+                  onConfirmar(dados, arquivoRef.current);
                   fechar();
                 }}
               >
