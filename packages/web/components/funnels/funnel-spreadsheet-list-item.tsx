@@ -13,12 +13,17 @@ import { useDeleteFunnelSpreadsheet } from "@/lib/hooks/use-funnel-spreadsheets"
 import type { FunnelSpreadsheet, FunnelSpreadsheetType } from "@/lib/types/funnel-spreadsheet";
 import { EditFunnelSpreadsheetDialog } from "@/components/funnels/edit-funnel-spreadsheet-dialog";
 import { countMappedFields } from "@/components/funnels/funnel-spreadsheet-wizard-dialog";
+import { ehGerenciadaPorOutraTela, ondeSeEdita } from "@/lib/utils/funnel-spreadsheet-ownership";
 
+// Story 29.55 (AC4): os dois do perpétuo entraram. Sem eles o badge saía vazio
+// — `TYPE_LABEL[type]` era `undefined` e a linha ficava sem dizer o que é.
 const TYPE_LABEL: Record<FunnelSpreadsheetType, string> = {
   leads: "Leads",
   sales: "Vendas",
   custom: "Custom",
   applications: "Aplicação",
+  perpetual_sales: "Perpétuo · Vendas",
+  perpetual_upsell: "Perpétuo · Ascensão",
 };
 
 const TYPE_CLASSES: Record<FunnelSpreadsheetType, string> = {
@@ -26,6 +31,8 @@ const TYPE_CLASSES: Record<FunnelSpreadsheetType, string> = {
   sales: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/15",
   custom: "bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/15",
   applications: "bg-violet-500/10 text-violet-600 border-violet-500/30 hover:bg-violet-500/15",
+  perpetual_sales: "bg-cyan-500/10 text-cyan-600 border-cyan-500/30",
+  perpetual_upsell: "bg-purple-500/10 text-purple-600 border-purple-500/30",
 };
 
 interface FunnelSpreadsheetListItemProps {
@@ -42,6 +49,8 @@ export function FunnelSpreadsheetListItem({
   const deleteSpreadsheet = useDeleteFunnelSpreadsheet(projectId, funnelId);
 
   const mappedCount = countMappedFields(spreadsheet.columnMapping);
+  // Story 29.55: o backend recusa a escrita (409); aqui a tela para de oferecer.
+  const gerenciadaPorOutraTela = ehGerenciadaPorOutraTela(spreadsheet.type);
 
   function handleDelete() {
     deleteSpreadsheet.mutate(spreadsheet.id, {
@@ -78,26 +87,35 @@ export function FunnelSpreadsheetListItem({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-0.5 shrink-0">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setEditOpen(true)}
-            aria-label="Editar mapeamento"
-          >
-            <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-destructive/70 hover:text-destructive"
-            onClick={() => setDeleteOpen(true)}
-            aria-label="Remover planilha"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+        {/* Story 29.55 (AC3): planilha com tela própria continua VISÍVEL, sem os
+            botões. Sumir com ela responderia "cadê a planilha do perpétuo?" com
+            silêncio; a frase responde com o caminho. */}
+        {gerenciadaPorOutraTela ? (
+          <p className="text-[10px] text-muted-foreground shrink-0 max-w-[160px] text-right leading-tight">
+            {ondeSeEdita(spreadsheet.type) ?? "Editada em outra tela"}
+          </p>
+        ) : (
+          <div className="flex items-center gap-0.5 shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setEditOpen(true)}
+              aria-label="Editar mapeamento"
+            >
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-destructive/70 hover:text-destructive"
+              onClick={() => setDeleteOpen(true)}
+              aria-label="Remover planilha"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
       </div>
 
       {editOpen && (

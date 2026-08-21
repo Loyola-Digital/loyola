@@ -6,7 +6,20 @@
 // "applications" = formulário de aplicação do comercial que roda depois do
 // lançamento pago. Tipo próprio porque o gráfico de volume diário localiza a
 // planilha pelo tipo, no funil atual e no de comparação.
-export type FunnelSpreadsheetType = "leads" | "sales" | "custom" | "applications";
+export type FunnelSpreadsheetType =
+  | "leads"
+  | "sales"
+  | "custom"
+  | "applications"
+  /**
+   * Story 29.55 — os dois tipos do perpétuo, que esta feature NÃO cria nem
+   * edita, mas RECEBE: a listagem do backend devolve tudo do funil sem filtrar
+   * por tipo, então eles chegam aqui. Fora do union, o badge renderizava sem
+   * texto (`TYPE_LABEL[type]` = `undefined`) e o `tsc` não avisava, porque o
+   * tipo mentia sobre o que a API devolve.
+   */
+  | "perpetual_sales"
+  | "perpetual_upsell";
 
 export interface ColumnMapping {
   name?: string;
