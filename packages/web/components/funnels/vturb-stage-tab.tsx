@@ -53,6 +53,76 @@ const brl = (v: unknown) => {
   return n == null ? "—" : n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 };
 
+/**
+ * Card com o número grande e a tendência do período embaixo.
+ *
+ * A minifaixa não tem eixo nem rótulo de propósito: ela responde "está subindo
+ * ou caindo?", que é a pergunta que se faz olhando de relance. Quem precisa do
+ * valor exato de cada dia tem os gráficos grandes logo abaixo.
+ *
+ * Some quando há menos de três pontos — duas bolinhas ligadas por uma reta
+ * sugerem tendência onde não há.
+ */
+function CardComTendencia({
+  label,
+  value,
+  sub,
+  serie,
+  accent,
+  inverso,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  serie: number[];
+  accent?: boolean;
+  /** Métrica em que cair é bom (nenhuma hoje, mas o card não presume). */
+  inverso?: boolean;
+}) {
+  const pontos = serie.filter((n) => Number.isFinite(n));
+  const temTendencia = pontos.length >= 3;
+  const primeiro = pontos[0] ?? 0;
+  const ultimo = pontos[pontos.length - 1] ?? 0;
+  const subiu = ultimo >= primeiro;
+  const bom = inverso ? !subiu : subiu;
+  const cor = !temTendencia ? VIZ_SERIES_1 : bom ? "#10b981" : "#f43f5e";
+
+  return (
+    <div
+      className={`rounded-xl border p-3 ${
+        accent ? "border-primary/30 bg-primary/5" : "border-border/40 bg-card/60"
+      }`}
+    >
+      <p className="truncate text-[11px] text-muted-foreground" title={label}>{label}</p>
+      <p className="mt-0.5 text-xl font-bold tabular-nums">{value}</p>
+      {sub && <p className="mt-0.5 truncate text-[10px] text-muted-foreground" title={sub}>{sub}</p>}
+      {temTendencia && (
+        <div className="mt-2 h-8">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={pontos.map((v, i) => ({ i, v }))} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id={`spark-${label.replace(/\W/g, "")}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={cor} stopOpacity={0.35} />
+                  <stop offset="100%" stopColor={cor} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <Area
+                type="monotone"
+                dataKey="v"
+                stroke={cor}
+                strokeWidth={1.5}
+                fill={`url(#spark-${label.replace(/\W/g, "")})`}
+                dot={false}
+                isAnimationActive={false}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Segundos → mm:ss. O eixo da retenção é tempo de vídeo, não número solto. */
 function mmss(s: number): string {
   const m = Math.floor(s / 60);
@@ -344,6 +414,40 @@ function VslDashboard({
     retencao: base > 0 ? +((p.total_users / base) * 100).toFixed(1) : 0,
   }));
 
+  /** Dias em ordem cronológica — a API não garante a ordem, e sparkline
+   *  desordenado desenha uma tendência que não existe. */
+  const dias_ordenados = [...(data.byDay ?? [])].sort((a, b) => a.date_key.localeCompare(b.date_key));
+
+  const serieDe = (pega: (d: (typeof dias_ordenados)[number]) => number): number[] =>
+    dias_ordenados.map(pega);
+
+  /** Taxa em %, protegida contra divisão por zero (dia sem tráfego). */
+  const taxa = (parte: unknown, todo: unknown): number => {
+    const p = numero(parte) ?? 0;
+    const t = numero(todo) ?? 0;
+    return t > 0 ? (p / t) * 100 : 0;
+  };
+
+  /**
+   * Tempo assistido do dia, em segundos.
+   *
+   * A API devolve engajamento como PORCENTAGEM da duração, não como tempo —
+   * então o tempo sai de `engagement_rate × duração`. Sem duração cadastrada
+   * não há como converter, e zero é a resposta honesta: melhor a faixa sumir do
+   * que exibir uma curva que não mede nada.
+   */
+  const tempoAssistidoDoDia = (d: (typeof dias_ordenados)[number]): number =>
+    duracao ? ((numero(d.engagement_rate) ?? 0) / 100) * duracao : 0;
+
+  const ctrPlayer = taxa(s.total_clicked, s.total_viewed);
+
+  const serieTempo = duracao
+    ? dias_ordenados.map((d) => ({
+        label: d.date_key.slice(8, 10) + "/" + d.date_key.slice(5, 7),
+        segundos: tempoAssistidoDoDia(d),
+      }))
+    : [];
+
   return (
     <div className={`space-y-4 ${isFetching ? "opacity-70 transition-opacity" : ""}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -370,19 +474,50 @@ function VslDashboard({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Play rate" value={pct(s.play_rate)} sub={`${nfCompact(s.total_started)} plays`} accent />
-        <StatTile label="Engajamento" value={pct(s.engagement_rate)} sub="tempo médio ÷ duração" />
-        <StatTile
+      {/* Os seis números que descrevem a VSL, do começo ao fim do funil: quem
+          deu play, quanto assistiu, quem chegou na oferta, quem clicou, quem
+          comprou e quanto entrou. Cada um com a tendência do período. */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+        <CardComTendencia
+          label="Play rate"
+          value={pct(s.play_rate)}
+          sub={`${nfCompact(s.total_started)} plays`}
+          serie={serieDe((d) => numero(d.play_rate) ?? 0)}
+          accent
+        />
+        <CardComTendencia
+          label="Tempo assistido"
+          value={data.engagement ? mmss(data.engagement.average_watched_time) : "—"}
+          sub={duracao ? `de ${mmss(duracao)} de vídeo` : "sem duração cadastrada"}
+          serie={serieDe((d) => tempoAssistidoDoDia(d))}
+        />
+        <CardComTendencia
+          label="Engajamento"
+          value={pct(s.engagement_rate)}
+          sub="tempo médio ÷ duração"
+          serie={serieDe((d) => numero(d.engagement_rate) ?? 0)}
+        />
+        <CardComTendencia
           label="Chegaram no pitch"
           value={pct(s.over_pitch_rate)}
-          sub={pitch ? `${nfCompact(s.total_over_pitch)} de ${nfCompact(s.total_over_pitch + s.total_under_pitch)}` : "pitch não configurado"}
+          sub={pitch ? `${nfCompact(s.total_over_pitch)} pessoas · ${mmss(pitch)}` : "pitch não configurado"}
+          serie={serieDe((d) => numero(d.over_pitch_rate) ?? 0)}
         />
-        <StatTile
+        <CardComTendencia
+          label="Cliques no player"
+          value={pct(ctrPlayer)}
+          sub={`${nfCompact(s.total_clicked)} de ${nfCompact(s.total_viewed)} views`}
+          serie={serieDe((d) => taxa(d.total_clicked, d.total_viewed))}
+        />
+        <CardComTendencia
           label="Conversão"
           value={pct(s.overall_conversion_rate)}
           sub={`${nf(s.total_conversions)} vendas · ${brl(s.total_amount_brl)}`}
+          serie={serieDe((d) => numero(d.overall_conversion_rate) ?? 0)}
         />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile label="Views" value={nfCompact(s.total_viewed)} sub={`${nfCompact(s.total_viewed_device_uniq)} dispositivos únicos`} />
         {/* Não confundir com "Chegaram no pitch": este é o FIM do vídeo, sempre
             um subconjunto de quem passou do pitch. Sem o comparativo no rótulo,
@@ -398,9 +533,53 @@ function VslDashboard({
                 : undefined
           }
         />
-        <StatTile label="Cliques" value={nfCompact(s.total_clicked)} />
+        <StatTile label="Receita" value={brl(s.total_amount_brl)} sub={`${nf(s.total_conversions)} conversões`} />
         <StatTile label="Período" value={`${dias}d`} sub={`${range.startDate} → ${range.endDate}`} />
       </div>
+
+      {/* Tempo assistido dia a dia — o equivalente ao "Watch Time" do painel de
+          referência. Fica ao lado da retenção porque as duas respondem a mesma
+          pergunta por ângulos diferentes: quanto a VSL segura, no agregado do
+          dia e ao longo do próprio vídeo. */}
+      {serieTempo.length > 1 && (
+        <ChartCard
+          title="Tempo assistido por dia"
+          hint="Tempo médio que cada pessoa assistiu, dia a dia"
+          table={{
+            head: ["Dia", "Tempo médio"],
+            rows: serieTempo.map((p) => [p.label, mmss(p.segundos)]),
+          }}
+        >
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={serieTempo}>
+              <defs>
+                <linearGradient id="vturb-watch" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={VIZ_SERIES_1} stopOpacity={0.3} />
+                  <stop offset="100%" stopColor={VIZ_SERIES_1} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="label" {...axisProps} minTickGap={24} />
+              <YAxis {...axisProps} tickFormatter={(v: number) => mmss(v)} width={48} />
+              <Tooltip
+                cursor={{ stroke: "var(--viz-axis)", strokeWidth: 1 }}
+                content={({ active, payload }) => {
+                  const d = payload?.[0]?.payload as (typeof serieTempo)[0] | undefined;
+                  if (!d) return null;
+                  return (
+                    <VizTooltip
+                      active={active}
+                      title={d.label}
+                      rows={[{ label: "Tempo médio assistido", value: mmss(d.segundos), color: VIZ_SERIES_1 }]}
+                    />
+                  );
+                }}
+              />
+              <Area type="monotone" dataKey="segundos" name="Tempo médio" stroke={VIZ_SERIES_1} strokeWidth={2} fill="url(#vturb-watch)" dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      )}
 
       {/* A curva. Sem duração cadastrada a API não devolve — dizemos por quê. */}
       {curva.length > 0 ? (
