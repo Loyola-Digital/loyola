@@ -22,6 +22,7 @@ import {
   metaAdInsightsDaily,
   metaPlacementInsightsDaily,
   metaAdCreativesCache,
+  metaCreativeThumbnails,
 } from "../db/schema.js";
 import {
   fetchCampaignDailyInsightsForIds,
@@ -512,5 +513,113 @@ export async function upsertAdCreatives(
         lastSyncedAt: sql`EXCLUDED.last_synced_at`,
       },
     });
+
+  // A URL da miniatura só vale agora: baixar aqui é a diferença entre ter a
+  // imagem para sempre e ter um link que morre em algumas horas.
+  await guardarMiniaturas(db, projectId, creatives);
   return values.length;
+}
+
+/** Quantas miniaturas baixamos ao mesmo tempo. Sem limite, um sync com centenas
+ *  de criativos abriria centenas de conexões ao CDN de uma vez. */
+const MINIATURAS_EM_PARALELO = 5;
+
+/**
+ * Baixa e guarda as miniaturas dos criativos recém-sincronizados.
+ *
+ * Por que aqui, e não quando a tela pede: a URL que a Meta devolve é assinada e
+ * **expira**. Quem tenta baixar depois encontra link morto — foi o que os
+ * criativos antigos da Lyrio mostraram, todos com URL guardada e nenhuma ainda
+ * respondendo. Neste ponto do sync a URL acabou de chegar, e é o único momento
+ * em que ela é garantidamente boa.
+ *
+ * Só baixa o que falta ou o que mudou de URL: repetir o download de 40 imagens
+ * a cada sync seria desperdício de banda dos dois lados.
+ *
+ * Falha aqui não derruba o sync — miniatura é enfeite; insight é o dado.
+ */
+async function guardarMiniaturas(
+  db: Database,
+  projectId: string,
+  creatives: MetaAdCreative[],
+): Promise<void> {
+  const comUrl = creatives.filter((c) => c.adId && c.thumbnailUrl);
+  if (comUrl.length === 0) return;
+
+  const jaTemos = new Map(
+    (
+      await db
+        .select({ adId: metaCreativeThumbnails.adId, sourceUrl: metaCreativeThumbnails.sourceUrl })
+        .from(metaCreativeThumbnails)
+        .where(eq(metaCreativeThumbnails.projectId, projectId))
+    ).map((r) => [r.adId, r.sourceUrl]),
+  );
+
+  const pendentes = comUrl.filter((c) => {
+    if (!jaTemos.has(c.adId)) return true;
+    // Mesma imagem servida por outro host do CDN não é criativo novo: a Meta
+    // troca de servidor entre requests, e rebaixar por isso seria repetir o
+    // download inteiro toda noite.
+    const guardada = jaTemos.get(c.adId);
+    return caminhoDaUrl(guardada) !== caminhoDaUrl(c.thumbnailUrl);
+  });
+  if (pendentes.length === 0) return;
+
+  for (let i = 0; i < pendentes.length; i += MINIATURAS_EM_PARALELO) {
+    const lote = pendentes.slice(i, i + MINIATURAS_EM_PARALELO);
+    await Promise.all(
+      lote.map(async (c) => {
+        try {
+          const res = await fetch(c.thumbnailUrl!, { signal: AbortSignal.timeout(15_000) });
+          if (!res.ok) return;
+          const tipo = res.headers.get("content-type") ?? "image/jpeg";
+          if (!tipo.startsWith("image/")) return;
+          const conteudo = Buffer.from(await res.arrayBuffer());
+          if (conteudo.length === 0) return;
+
+          await db
+            .insert(metaCreativeThumbnails)
+            .values({
+              projectId,
+              adId: c.adId,
+              mimeType: tipo,
+              byteSize: conteudo.length,
+              conteudo,
+              sourceUrl: c.thumbnailUrl,
+            })
+            .onConflictDoUpdate({
+              target: [metaCreativeThumbnails.projectId, metaCreativeThumbnails.adId],
+              set: {
+                mimeType: tipo,
+                byteSize: conteudo.length,
+                conteudo,
+                sourceUrl: c.thumbnailUrl,
+                fetchedAt: new Date(),
+              },
+            });
+        } catch {
+          // Uma miniatura a menos não justifica interromper o sync.
+        }
+      }),
+    );
+  }
+}
+
+/**
+ * Identidade da imagem, ignorando a assinatura.
+ *
+ * O caminho sozinho não basta: o CDN da Meta serve TAMANHOS diferentes do mesmo
+ * arquivo variando só o parâmetro `stp` (`...p64x64...` vs `...p400x400...`).
+ * Comparando apenas o caminho, subir de 64 para 400px parecia "mesma imagem" e
+ * a miniatura velha nunca era trocada. O resto da query (`oh`, `oe`, `_nc_*`) é
+ * assinatura e muda a cada request — incluí-la mandaria rebaixar tudo todo dia.
+ */
+function caminhoDaUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    return `${u.pathname}?${u.searchParams.get("stp") ?? ""}`;
+  } catch {
+    return url;
+  }
 }

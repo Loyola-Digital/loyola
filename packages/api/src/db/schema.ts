@@ -2066,6 +2066,38 @@ export const metaAdCreativesCache = pgTable(
 // Insights de dias passados (>7 dias atrás) NÃO mudam mais pela Meta —
 // servem do DB indefinidamente. Dias 1-7 atrás: TTL 24h. Dia atual: TTL 30min
 // (Meta ainda processa). Caller aplica TTL no SELECT.
+
+/**
+ * Miniatura do criativo, guardada como ARQUIVO — não como link.
+ *
+ * `meta_ad_creatives_cache` guarda a URL que a Meta devolve, e essa URL é
+ * assinada: ela expira. Enquanto vale, a imagem aparece; depois, quebra sozinha
+ * na tela sem ninguém ter mexido em nada — e a única saída seria bater na Meta
+ * de novo a cada visita, que é justamente o que se quer evitar.
+ *
+ * Guardando os bytes, a miniatura passa a ser servida por nós: a tela abre sem
+ * uma única chamada externa, e o download do CDN acontece UMA vez por criativo.
+ *
+ * Só a miniatura. O vídeo em si continua vindo da Meta sob demanda: são MBs por
+ * peça, e ninguém assiste a 41 vídeos ao abrir uma tabela.
+ */
+export const metaCreativeThumbnails = pgTable(
+  "meta_creative_thumbnails",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    adId: varchar("ad_id", { length: 64 }).notNull(),
+    mimeType: varchar("mime_type", { length: 100 }).notNull(),
+    byteSize: integer("byte_size").notNull(),
+    conteudo: bytea("conteudo").notNull(),
+    /** De qual URL veio — para auditar e para saber se o criativo mudou. */
+    sourceUrl: text("source_url"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.adId] })]
+);
+
 export const metaCampaignInsightsDaily = pgTable(
   "meta_campaign_insights_daily",
   {

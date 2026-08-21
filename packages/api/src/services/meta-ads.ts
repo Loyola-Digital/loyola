@@ -1153,6 +1153,15 @@ interface CreativeCacheEntry {
   timestamp: number;
 }
 
+/**
+ * Lado da miniatura pedida à Meta.
+ *
+ * 400px é o meio-termo: dá para reconhecer o criativo numa grade e abrir num
+ * modal sem borrar, e cada arquivo continua na casa das dezenas de KB — o
+ * padrão da Meta (64px) não serve nem para reconhecer o anúncio.
+ */
+const THUMBNAIL_PX = 400;
+
 const creativeCache = new Map<string, CreativeCacheEntry>();
 
 function getCachedCreative(adId: string): MetaAdCreative | undefined {
@@ -1338,7 +1347,13 @@ export async function fetchAdCreatives(
         // Mesmo request, mesmo lote de 50 — nenhum custo de rate limit a mais.
         // Story 36.8: `effective_object_story_id` entra no MESMO `fields=`, no
         // mesmo lote de 50 — zero requisição a mais (ver resolveAdPermalinkUrl).
-        `/?ids=${idsParam}&fields=id,creative{id,thumbnail_url,image_url,effective_instagram_media_id,title,body,link_url,call_to_action_type,object_type,video_id,object_story_spec,asset_feed_spec,effective_object_story_id}`,
+        // O tamanho da miniatura vai como MODIFICADOR DO CAMPO
+        // (`creative.thumbnail_width(400)`), não como parâmetro no topo da URL.
+        // Medido nesta conta: no topo a Meta ignora e devolve 64x64 (1,5 KB),
+        // que serve de ícone e não de preview; como modificador vem 400x400
+        // (20 KB). Mesmo request, mesmo lote — nenhuma chamada a mais.
+        `/?ids=${idsParam}&fields=id,creative.thumbnail_width(${THUMBNAIL_PX}).thumbnail_height(${THUMBNAIL_PX})` +
+          `{id,thumbnail_url,image_url,effective_instagram_media_id,title,body,link_url,call_to_action_type,object_type,video_id,object_story_spec,asset_feed_spec,effective_object_story_id}`,
         accessToken
       );
       for (const adId of batch) {

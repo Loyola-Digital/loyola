@@ -25,7 +25,14 @@ import {
   type MetaEntityType,
   type ResolveEntityNamesCacheAdapter,
 } from "../services/meta-ads.js";
-import { metaAdsAccounts, metaAdsAccountProjects, metaEntityNamesCache, metaAdCreativesCache, projectMembers } from "../db/schema.js";
+import {
+  metaAdsAccounts,
+  metaAdsAccountProjects,
+  metaEntityNamesCache,
+  metaAdCreativesCache,
+  metaCreativeThumbnails,
+  projectMembers,
+} from "../db/schema.js";
 import { getProjectMetaFreshness } from "../services/meta-sync-state.js";
 import { getEntityDailySeries } from "../services/meta-entity-daily.js";
 
@@ -1040,4 +1047,105 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
     }
   );
 
+
+  // ---- GET /api/traffic/analytics/:projectId/creative-thumb/:adId ----
+  /**
+   * Miniatura do criativo, servida por nós.
+   *
+   * Nunca chama a Graph API. Na primeira vez baixa a imagem da URL que o cache
+   * de criativos já tem e guarda os bytes; da segunda em diante responde do
+   * banco. É isso que permite a tabela de criativos abrir com dezenas de
+   * miniaturas sem nenhuma ida à Meta.
+   *
+   * O 404 aqui é esperado e barato: criativo sem miniatura no cache, ou URL da
+   * Meta que já expirou antes de alguém abrir a tela. A tela mostra um
+   * placeholder, e o próximo sync de criativos renova a URL.
+   */
+  fastify.get(
+    "/api/traffic/analytics/:projectId/creative-thumb/:adId",
+    async (request, reply) => {
+      const params = z
+        .object({ projectId: z.string().uuid(), adId: z.string().min(1).max(64) })
+        .safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      if (!(await guestCanAccessTraffic(request.userRole, request.userId, params.data.projectId))) {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const servir = (mimeType: string, conteudo: Buffer) =>
+        reply
+          .header("Content-Type", mimeType)
+          .header("Content-Length", String(conteudo.length))
+          // Miniatura de anúncio não muda: o mesmo ad_id sempre devolve a mesma
+          // imagem. Cache longo no navegador tira até a ida ao nosso servidor.
+          .header("Cache-Control", "private, max-age=86400, immutable")
+          .send(conteudo);
+
+      const [guardada] = await fastify.db
+        .select()
+        .from(metaCreativeThumbnails)
+        .where(
+          and(
+            eq(metaCreativeThumbnails.projectId, params.data.projectId),
+            eq(metaCreativeThumbnails.adId, params.data.adId),
+          ),
+        )
+        .limit(1);
+      if (guardada) return servir(guardada.mimeType, guardada.conteudo);
+
+      // Primeira vez: pega a URL que o cache de criativos já tem.
+      const [cache] = await fastify.db
+        .select({ creative: metaAdCreativesCache.creative })
+        .from(metaAdCreativesCache)
+        .where(
+          and(
+            eq(metaAdCreativesCache.projectId, params.data.projectId),
+            eq(metaAdCreativesCache.adId, params.data.adId),
+          ),
+        )
+        .limit(1);
+      const url = cache?.creative?.thumbnailUrl ?? null;
+      if (!url) return reply.code(404).send({ error: "Sem miniatura para este criativo" });
+
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+        if (!res.ok) return reply.code(404).send({ error: "Miniatura indisponível na origem" });
+        const tipo = res.headers.get("content-type") ?? "image/jpeg";
+        // Só imagem: se a URL passou a devolver HTML de erro, guardar isso
+        // criaria um "cache do problema" que nunca mais se corrige sozinho.
+        if (!tipo.startsWith("image/")) {
+          return reply.code(404).send({ error: "Origem não devolveu uma imagem" });
+        }
+        const conteudo = Buffer.from(await res.arrayBuffer());
+        if (conteudo.length === 0) return reply.code(404).send({ error: "Miniatura vazia" });
+
+        await fastify.db
+          .insert(metaCreativeThumbnails)
+          .values({
+            projectId: params.data.projectId,
+            adId: params.data.adId,
+            mimeType: tipo,
+            byteSize: conteudo.length,
+            conteudo,
+            sourceUrl: url,
+          })
+          .onConflictDoUpdate({
+            target: [metaCreativeThumbnails.projectId, metaCreativeThumbnails.adId],
+            set: {
+              mimeType: tipo,
+              byteSize: conteudo.length,
+              conteudo,
+              sourceUrl: url,
+              fetchedAt: new Date(),
+            },
+          });
+
+        return servir(tipo, conteudo);
+      } catch (err) {
+        request.log.warn({ err, adId: params.data.adId }, "[creative-thumb] download falhou");
+        return reply.code(404).send({ error: "Não consegui baixar a miniatura" });
+      }
+    },
+  );
 });

@@ -40,6 +40,7 @@ import {
   useTrafficCampaigns, useAllAdSets, useAllAds,
 } from "@/lib/hooks/use-traffic-analytics";
 import { useGoogleAdsCampaigns, type GoogleAdsCampaign } from "@/lib/hooks/use-google-ads-analytics";
+import { CreativeThumb } from "@/components/traffic/creative-thumb";
 import {
   buildCampaignRows, metaRow, sortRows, totalSpend,
   type LyrioDetailRow, type LyrioSortKey, type MetaEntityInput,
@@ -151,7 +152,9 @@ export function LyrioDetailTable({
   // Hook e Hold só existem a nível de anúncio — somem nas outras dimensões em
   // vez de virar "—" (mesmo tratamento do Perpétuo).
   const mostraVideo = dimensao === "ad";
-  const colunas = 7 + (mostraVideo ? 2 : 0);
+  // A miniatura só faz sentido por criativo: campanha e público não têm imagem.
+  const mostraPreview = dimensao === "ad";
+  const colunas = 7 + (mostraVideo ? 2 : 0) + (mostraPreview ? 1 : 0);
 
   const th = "text-right px-2 cursor-pointer select-none hover:text-foreground";
 
@@ -197,6 +200,7 @@ export function LyrioDetailTable({
             <thead>
               <tr className="text-muted-foreground border-b border-border/20">
                 <th className="text-left py-2 pr-3 select-none">Plataforma</th>
+                {mostraPreview && <th className="text-left py-2 pr-2 select-none w-12">Prévia</th>}
                 <th
                   className="text-left py-2 pr-3 cursor-pointer select-none hover:text-foreground"
                   onClick={() => toggleSort("name")}
@@ -256,6 +260,15 @@ export function LyrioDetailTable({
                         {r.platform === "meta" ? "Meta" : "Google"}
                       </span>
                     </td>
+                    {mostraPreview && (
+                      <td className="py-2 pr-2">
+                        {r.platform === "meta" ? (
+                          <CreativeThumb projectId={projectId} adId={r.id} nome={r.name} />
+                        ) : (
+                          <div className="h-10 w-10" />
+                        )}
+                      </td>
+                    )}
                     <td className="py-2 pr-3 max-w-[280px] truncate" title={r.name}>
                       {r.name}
                     </td>
