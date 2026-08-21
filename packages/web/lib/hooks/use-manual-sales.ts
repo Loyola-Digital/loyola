@@ -2,6 +2,7 @@
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@clerk/nextjs";
 import type {
   CreateManualSaleInput,
   ManualSale,
@@ -9,6 +10,9 @@ import type {
 } from "@loyola-x/shared";
 
 const STALE_TIME = 30 * 1000;
+
+/** Igual ao do api-client: as rotas de arquivo usam `fetch` cru. */
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 function buildKey(projectId: string, funnelId: string, stageId: string, days: number) {
   return ["manual-sales", projectId, funnelId, stageId, days] as const;
@@ -235,5 +239,108 @@ export function useAllSales(
       ),
     enabled: !!projectId && !!funnelId && !!stageId,
     staleTime: STALE_TIME,
+  });
+}
+
+// ============================================================
+// Comprovante da venda (print ou PDF)
+// ============================================================
+
+/**
+ * Anexa o comprovante a uma venda já criada.
+ *
+ * Em duas etapas — cria a venda, depois anexa — e não num request só: a venda
+ * entra por JSON e o arquivo por multipart. Juntar os dois obrigaria a mudar o
+ * POST que já funciona, inclusive para quem lança venda sem comprovante nenhum.
+ *
+ * `fetch` cru porque o apiClient serializa JSON e sobrescreveria o
+ * Content-Type, que precisa carregar o boundary do multipart.
+ */
+export function useAnexarComprovante(projectId: string, funnelId: string, stageId: string) {
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ saleId, arquivo }: { saleId: string; arquivo: File }) => {
+      const token = await getToken();
+      const form = new FormData();
+      form.append("file", arquivo);
+      const res = await fetch(
+        `${API_URL}/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/manual-sales/${saleId}/receipt`,
+        { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form },
+      );
+      if (!res.ok) {
+        const corpo = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(corpo?.error ?? `Falha ao guardar o comprovante (${res.status})`);
+      }
+      return (await res.json()) as { ok: true; byteSize: number; mimeType: string };
+    },
+    onSuccess: () => invalidateSalesQueries(queryClient, projectId, funnelId, stageId),
+  });
+}
+
+export function useRemoverComprovante(projectId: string, funnelId: string, stageId: string) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (saleId: string) =>
+      apiClient<void>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/manual-sales/${saleId}/receipt`,
+        { method: "DELETE" },
+      ),
+    onSuccess: () => invalidateSalesQueries(queryClient, projectId, funnelId, stageId),
+  });
+}
+
+/**
+ * Busca o comprovante como blob local.
+ *
+ * A rota exige o token no cabeçalho, então não dá para apontar um `<img src>`
+ * direto para ela — o navegador não manda Authorization em carregamento de
+ * imagem. O jeito é baixar autenticado e exibir por object URL.
+ */
+export function useBaixarComprovante(projectId: string, funnelId: string, stageId: string) {
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async (saleId: string): Promise<{ url: string; mimeType: string }> => {
+      const token = await getToken();
+      const res = await fetch(
+        `${API_URL}/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/manual-sales/${saleId}/receipt`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+      );
+      if (!res.ok) throw new Error("Não consegui carregar o comprovante.");
+      const blob = await res.blob();
+      return { url: URL.createObjectURL(blob), mimeType: blob.type };
+    },
+  });
+}
+
+/**
+ * Baixa o CSV de todas as vendas manuais da etapa.
+ *
+ * O arquivo vem pronto do servidor (separador `;`, BOM, valores em formato
+ * brasileiro) porque o destino é o Excel em português. Montar no navegador
+ * exigiria refazer essa formatação aqui e mantê-la em dois lugares.
+ */
+export function useExportarVendasManuais(projectId: string, funnelId: string, stageId: string) {
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async () => {
+      const token = await getToken();
+      const res = await fetch(
+        `${API_URL}/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/manual-sales/export.csv`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+      );
+      if (!res.ok) throw new Error(`Falha ao gerar o CSV (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `vendas-manuais-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Sem o revoke o blob fica na memória da aba até ela ser fechada.
+      URL.revokeObjectURL(url);
+    },
   });
 }

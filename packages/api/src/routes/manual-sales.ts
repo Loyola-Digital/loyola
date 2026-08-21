@@ -22,6 +22,7 @@ import {
   stageEventProducts,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import { manualSaleReceipts } from "../db/schema.js";
 import { enrollMember, decryptMemberkitKey } from "../services/memberkit.js";
 import { extrairComprovante, MIMES_IMAGEM, MIME_PDF } from "../services/comprovante-extract.js";
 import type { MemberkitEnrollmentStatus, MemberkitMemberStatus } from "@loyola-x/shared";
@@ -463,7 +464,23 @@ export default fp(async function manualSalesRoutes(fastify) {
         )
         .orderBy(desc(manualSales.saleDate));
 
-      const sales = rows.map(shapeManualSale);
+      // Quais dessas vendas têm comprovante. Uma consulta só, e sem trazer o
+      // binário: a lista precisa do ícone, não do arquivo.
+      const idsComComprovante = new Set(
+        rows.length === 0
+          ? []
+          : (
+              await fastify.db
+                .select({ manualSaleId: manualSaleReceipts.manualSaleId })
+                .from(manualSaleReceipts)
+                .where(inArray(manualSaleReceipts.manualSaleId, rows.map((r) => r.id)))
+            ).map((r) => r.manualSaleId),
+      );
+
+      const sales = rows.map((r) => ({
+        ...shapeManualSale(r),
+        temComprovante: idsComComprovante.has(r.id),
+      }));
 
       // Vendas reembolsadas continuam na lista (histórico), mas saem dos
       // totais e do ranking — receita reembolsada não é receita.
@@ -1363,6 +1380,267 @@ export default fp(async function manualSalesRoutes(fastify) {
           details: mensagem,
         });
       }
+    },
+  );
+
+  // ---------------------------------------------------------------
+  // Comprovante da venda (print ou PDF) — guardar, ver e baixar
+  // ---------------------------------------------------------------
+
+  const vendaParamsSchema = stageParamsSchema.extend({ saleId: z.string().uuid() });
+
+  /** A venda existe nesta etapa? Evita anexar comprovante em venda de outro funil. */
+  async function acharVendaDaEtapa(stageId: string, saleId: string) {
+    const [venda] = await fastify.db
+      .select({ id: manualSales.id, customerName: manualSales.customerName })
+      .from(manualSales)
+      .where(and(eq(manualSales.id, saleId), eq(manualSales.stageId, stageId)))
+      .limit(1);
+    return venda ?? null;
+  }
+
+  /**
+   * Anexa (ou substitui) o comprovante de uma venda manual.
+   *
+   * Separado da criação da venda de propósito: a venda entra por JSON e o
+   * arquivo por multipart, e juntar os dois num request só obrigaria a mudar o
+   * POST que já funciona — inclusive para quem lança venda sem comprovante.
+   */
+  fastify.post(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/manual-sales/:saleId/receipt",
+    async (request, reply) => {
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+      const params = vendaParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const stage = await getStageContext(
+        params.data.projectId,
+        params.data.funnelId,
+        params.data.stageId,
+        request.userId,
+        request.userRole,
+      );
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const venda = await acharVendaDaEtapa(params.data.stageId, params.data.saleId);
+      if (!venda) return reply.code(404).send({ error: "Venda não encontrada nesta etapa" });
+
+      const arquivo = await request.file();
+      if (!arquivo) return reply.code(400).send({ error: "Envie o comprovante (print ou PDF)" });
+      if (!MIMES_IMAGEM.has(arquivo.mimetype) && arquivo.mimetype !== MIME_PDF) {
+        return reply.code(400).send({
+          error: "Formato não suportado — envie um print (PNG, JPG, WEBP) ou um PDF",
+        });
+      }
+
+      const buffer = await arquivo.toBuffer();
+      if (buffer.length === 0) return reply.code(400).send({ error: "Arquivo vazio" });
+      // O plugin multipart já corta em 10MB; este limite é o do que a gente
+      // aceita GUARDAR, que é decisão diferente de quanto aceita receber.
+      if (buffer.length > 5 * 1024 * 1024) {
+        return reply.code(413).send({ error: "Comprovante maior que 5MB" });
+      }
+
+      const valores = {
+        manualSaleId: params.data.saleId,
+        mimeType: arquivo.mimetype,
+        fileName: arquivo.filename?.slice(0, 255) ?? null,
+        byteSize: buffer.length,
+        conteudo: buffer,
+        uploadedBy: request.userId,
+      };
+      await fastify.db
+        .insert(manualSaleReceipts)
+        .values(valores)
+        // Reenviar substitui: duas versões do mesmo comprovante deixariam
+        // qualquer pessoa em dúvida sobre qual vale.
+        .onConflictDoUpdate({
+          target: manualSaleReceipts.manualSaleId,
+          set: {
+            mimeType: valores.mimeType,
+            fileName: valores.fileName,
+            byteSize: valores.byteSize,
+            conteudo: valores.conteudo,
+            uploadedBy: valores.uploadedBy,
+            createdAt: new Date(),
+          },
+        });
+
+      return reply.code(201).send({ ok: true, byteSize: buffer.length, mimeType: arquivo.mimetype });
+    },
+  );
+
+  /**
+   * Devolve o comprovante para a tela exibir.
+   *
+   * `inline` para o navegador renderizar dentro do app (imagem ou PDF); com
+   * `?download=1`, vira anexo com o nome original. Cache privado: é documento de
+   * cliente, não pode ficar em cache compartilhado de proxy.
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/manual-sales/:saleId/receipt",
+    async (request, reply) => {
+      const params = vendaParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const stage = await getStageContext(
+        params.data.projectId,
+        params.data.funnelId,
+        params.data.stageId,
+        request.userId,
+        request.userRole,
+      );
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const [receipt] = await fastify.db
+        .select()
+        .from(manualSaleReceipts)
+        .where(eq(manualSaleReceipts.manualSaleId, params.data.saleId))
+        .limit(1);
+      if (!receipt) return reply.code(404).send({ error: "Sem comprovante para esta venda" });
+
+      const baixar = (request.query as { download?: string }).download === "1";
+      const nome = receipt.fileName ?? `comprovante-${params.data.saleId.slice(0, 8)}`;
+      return reply
+        .header("Content-Type", receipt.mimeType)
+        .header("Content-Length", String(receipt.byteSize))
+        .header("Cache-Control", "private, max-age=300")
+        .header(
+          "Content-Disposition",
+          `${baixar ? "attachment" : "inline"}; filename="${nome.replace(/"/g, "")}"`,
+        )
+        .send(receipt.conteudo);
+    },
+  );
+
+  /** Remove o comprovante (a venda continua). */
+  fastify.delete(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/manual-sales/:saleId/receipt",
+    async (request, reply) => {
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+      const params = vendaParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const stage = await getStageContext(
+        params.data.projectId,
+        params.data.funnelId,
+        params.data.stageId,
+        request.userId,
+        request.userRole,
+      );
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const apagados = await fastify.db
+        .delete(manualSaleReceipts)
+        .where(eq(manualSaleReceipts.manualSaleId, params.data.saleId))
+        .returning({ id: manualSaleReceipts.id });
+      if (apagados.length === 0) return reply.code(404).send({ error: "Sem comprovante para esta venda" });
+      return reply.code(204).send();
+    },
+  );
+
+  // ---------------------------------------------------------------
+  // Exportação CSV
+  // ---------------------------------------------------------------
+
+  /** Escapa um campo de CSV: aspas dobradas e o valor entre aspas quando precisa. */
+  function csvCampo(valor: unknown): string {
+    if (valor === null || valor === undefined) return "";
+    const texto = String(valor);
+    return /[";\n\r]/.test(texto) ? `"${texto.replace(/"/g, '""')}"` : texto;
+  }
+
+  /**
+   * Todas as vendas manuais da etapa em CSV.
+   *
+   * Separador `;` e BOM UTF-8 porque o destino real é o Excel em português: com
+   * vírgula ele joga a linha inteira numa coluna só, e sem BOM come os acentos.
+   * O valor sai com vírgula decimal pelo mesmo motivo.
+   *
+   * Sem recorte de período: exportação existe para fechar mês e conferir com o
+   * financeiro, e um filtro escondido de 30 dias faria a planilha mentir por
+   * omissão. Quem quiser recortar, recorta na planilha.
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/manual-sales/export.csv",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const stage = await getStageContext(
+        params.data.projectId,
+        params.data.funnelId,
+        params.data.stageId,
+        request.userId,
+        request.userRole,
+      );
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const rows = await fastify.db
+        .select()
+        .from(manualSales)
+        .where(eq(manualSales.stageId, params.data.stageId))
+        .orderBy(desc(manualSales.saleDate));
+
+      const comComprovante = new Set(
+        rows.length === 0
+          ? []
+          : (
+              await fastify.db
+                .select({ manualSaleId: manualSaleReceipts.manualSaleId })
+                .from(manualSaleReceipts)
+                .where(inArray(manualSaleReceipts.manualSaleId, rows.map((r) => r.id)))
+            ).map((r) => r.manualSaleId),
+      );
+
+      const dataBr = (d: Date | string | null) => {
+        if (!d) return "";
+        const data = typeof d === "string" ? new Date(d) : d;
+        return Number.isNaN(data.getTime()) ? "" : data.toLocaleDateString("pt-BR");
+      };
+      const numeroBr = (v: unknown) => String(Number(v ?? 0).toFixed(2)).replace(".", ",");
+
+      const colunas = [
+        "Data da venda", "Cliente", "E-mail", "Telefone", "CPF", "Produto",
+        "Valor", "Valor recebido", "Forma de pagamento", "Parcelas", "Valor da parcela",
+        "Vendedor", "Status nota", "Negociação", "Memberkit", "Reembolsada em",
+        "Motivo do reembolso", "Tem comprovante", "Criada em",
+      ];
+
+      const linhas = rows.map((r) =>
+        [
+          dataBr(r.saleDate),
+          r.customerName,
+          r.customerEmail,
+          r.customerPhone,
+          r.customerCpf,
+          r.product,
+          numeroBr(r.value),
+          r.valorRecebido === null || r.valorRecebido === undefined ? "" : numeroBr(r.valorRecebido),
+          r.paymentMethod,
+          r.installmentCount ?? "",
+          r.installmentAmount === null || r.installmentAmount === undefined ? "" : numeroBr(r.installmentAmount),
+          r.sellerName,
+          r.invoiceStatus,
+          r.negociacao,
+          r.memberkitStatus,
+          dataBr(r.refundedAt),
+          r.refundReason,
+          comComprovante.has(r.id) ? "sim" : "não",
+          dataBr(r.createdAt),
+        ]
+          .map(csvCampo)
+          .join(";"),
+      );
+
+      // BOM na frente: sem ele o Excel abre "João" como "JoÃ£o".
+      const csv = "\uFEFF" + [colunas.join(";"), ...linhas].join("\r\n");
+      const nomeArquivo = `vendas-manuais-${new Date().toISOString().slice(0, 10)}.csv`;
+
+      return reply
+        .header("Content-Type", "text/csv; charset=utf-8")
+        .header("Content-Disposition", `attachment; filename="${nomeArquivo}"`)
+        .send(csv);
     },
   );
 });

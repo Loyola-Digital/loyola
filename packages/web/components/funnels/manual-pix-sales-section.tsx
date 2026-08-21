@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Wallet, ReceiptText, ScanLine } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Wallet, ReceiptText, ScanLine , FileText, Download, Loader2} from "lucide-react";
 import type { ManualSale } from "@loyola-x/shared";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,10 +17,19 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   useAllSales,
   useDeleteManualSale,
   useManualSales,
   type UnifiedSale,
+
+  useBaixarComprovante,
+  useExportarVendasManuais,
 } from "@/lib/hooks/use-manual-sales";
 
 interface ManualPixSalesSectionProps {
@@ -114,6 +123,13 @@ function SourceBadge({ sale }: { sale: UnifiedSale }) {
   );
 }
 
+/** Comprovante aberto no visualizador. */
+interface ComprovanteAberto {
+  url: string;
+  mimeType: string;
+  cliente: string;
+}
+
 export function ManualPixSalesSection({
   projectId,
   funnelId,
@@ -129,7 +145,37 @@ export function ManualPixSalesSection({
   const { data, isLoading } = useAllSales(projectId, funnelId, stageId, "main_product,tmb", days);
   const { data: manualPayload } = useManualSales(projectId, funnelId, stageId, days);
   const deleteMutation = useDeleteManualSale(projectId, funnelId, stageId);
+  const exportar = useExportarVendasManuais(projectId, funnelId, stageId);
+  const baixarComprovante = useBaixarComprovante(projectId, funnelId, stageId);
+  const [comprovante, setComprovante] = useState<ComprovanteAberto | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  /**
+   * Abre o comprovante da venda.
+   *
+   * O arquivo é baixado autenticado e vira object URL — a rota exige token no
+   * cabeçalho, e o navegador não manda Authorization ao carregar `<img src>`.
+   */
+  async function abrirComprovante(manualSaleId: string, cliente: string) {
+    try {
+      const { url, mimeType } = await baixarComprovante.mutateAsync(manualSaleId);
+      // O anterior é revogado aqui: sem isso, abrir vários comprovantes seguidos
+      // deixa cada blob preso na memória da aba até ela fechar.
+      setComprovante((atual) => {
+        if (atual) URL.revokeObjectURL(atual.url);
+        return { url, mimeType, cliente };
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não consegui abrir o comprovante");
+    }
+  }
+
+  function fecharComprovante() {
+    setComprovante((atual) => {
+      if (atual) URL.revokeObjectURL(atual.url);
+      return null;
+    });
+  }
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 10;
 
@@ -234,6 +280,25 @@ export function ManualPixSalesSection({
           <Button size="sm" variant="outline" className="gap-1.5" onClick={onLaunchClick}>
             <Plus className="h-3.5 w-3.5" />
             {isTicket ? "Lançar ingresso" : "Lançar venda manual"}
+          </Button>
+          {/* Exporta TODAS as vendas manuais da etapa, não só as da página nem
+              as do filtro de dias: o uso real é fechar mês com o financeiro, e
+              um recorte silencioso faria a planilha mentir por omissão. */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="gap-1.5"
+            disabled={exportar.isPending}
+            onClick={() =>
+              exportar.mutate(undefined, {
+                onSuccess: () => toast.success("CSV baixado"),
+                onError: (e) => toast.error(e instanceof Error ? e.message : "Falha ao gerar o CSV"),
+              })
+            }
+            title="Baixar todas as vendas manuais em CSV"
+          >
+            {exportar.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            CSV
           </Button>
         </div>
       </div>
@@ -372,6 +437,17 @@ export function ManualPixSalesSection({
                     <td className="px-3 py-2 text-right">
                       {sale.source === "manual" && sale.manualSaleId ? (
                         <div className="flex items-center justify-end gap-2">
+                          {manualMap.get(sale.manualSaleId!)?.temComprovante && (
+                            <button
+                              type="button"
+                              onClick={() => abrirComprovante(sale.manualSaleId!, sale.customerName ?? "")}
+                              className="text-muted-foreground transition-colors hover:text-primary"
+                              aria-label="Ver comprovante"
+                              title="Ver comprovante"
+                            >
+                              <FileText className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                           {onEditSale && (
                             <button
                               type="button"
@@ -467,6 +543,40 @@ export function ManualPixSalesSection({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Visualizador do comprovante.
+          Imagem renderiza direto; PDF vai num iframe, que é o visualizador que
+          o próprio navegador já tem — embutir um leitor de PDF só para isso
+          seria peso morto na página. */}
+      <Dialog open={!!comprovante} onOpenChange={(aberto: boolean) => !aberto && fecharComprovante()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-sm">
+              Comprovante {comprovante?.cliente ? `— ${comprovante.cliente}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {comprovante && (
+            <div className="space-y-2">
+              {comprovante.mimeType === "application/pdf" ? (
+                <iframe src={comprovante.url} title="Comprovante" className="h-[70vh] w-full rounded-md border border-border/40" />
+              ) : (
+                // Tag <img> crua de propósito: o otimizador do Next não
+                // processa object URL (blob:), que é o que temos aqui.
+                <img src={comprovante.url} alt="Comprovante" className="max-h-[70vh] w-full rounded-md border border-border/40 object-contain" />
+              )}
+              <div className="flex justify-end">
+                <a
+                  href={comprovante.url}
+                  download={`comprovante-${comprovante.cliente || "venda"}`}
+                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <Download className="h-3.5 w-3.5" /> Baixar arquivo
+                </a>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

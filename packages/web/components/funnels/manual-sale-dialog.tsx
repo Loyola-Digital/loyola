@@ -24,6 +24,7 @@ import {
   useCreateManualSale,
   useEligibleSellers,
   useUpdateManualSale,
+  useAnexarComprovante,
 } from "@/lib/hooks/use-manual-sales";
 import { useEventProducts, useEventClosers, useEventLeads } from "@/lib/hooks/use-event-config";
 import type { InvoiceStatus, ManualSale } from "@loyola-x/shared";
@@ -104,6 +105,14 @@ interface ManualSaleDialogProps {
    */
   isTicket?: boolean;
   /**
+   * O comprovante lido, para ser guardado junto da venda.
+   *
+   * Anexado DEPOIS do POST, porque só aí a venda tem id. Se o anexo falhar, a
+   * venda continua salva e a tela avisa — perder a venda inteira por causa do
+   * arquivo seria trocar um problema pequeno por um grande.
+   */
+  receiptFile?: File | null;
+  /**
    * Valores lidos de um comprovante pela IA. Entram no formulário como rascunho
    * — a pessoa confere e salva. Só se aplica em venda NOVA; em edição o que
    * vale é o que já está gravado.
@@ -173,6 +182,7 @@ export function ManualSaleDialog({
   stageId,
   open,
   onOpenChange,
+  receiptFile,
   editingSale,
   isEvent = false,
   isTicket = false,
@@ -189,6 +199,7 @@ export function ManualSaleDialog({
   const eventClosers = closersData?.closers ?? [];
   const eventLeads = leadsData?.leads ?? [];
   const createMutation = useCreateManualSale(projectId, funnelId, stageId);
+  const anexarComprovante = useAnexarComprovante(projectId, funnelId, stageId);
   const updateMutation = useUpdateManualSale(projectId, funnelId, stageId);
 
   const [customerName, setCustomerName] = useState("");
@@ -422,9 +433,23 @@ export function ManualSaleDialog({
         await updateMutation.mutateAsync({ saleId: editingSale.id, input: payload });
         toast.success("Venda atualizada");
       } else {
-        await createMutation.mutateAsync(payload);
+        const criada = await createMutation.mutateAsync(payload);
         toast.success("Venda lançada");
         void fireConfetti();
+
+        // Comprovante: a venda já está salva, então uma falha aqui é um aviso,
+        // não um erro que desfaz o lançamento.
+        if (receiptFile && criada?.id) {
+          try {
+            await anexarComprovante.mutateAsync({ saleId: criada.id, arquivo: receiptFile });
+          } catch (e) {
+            toast.warning(
+              e instanceof Error
+                ? `Venda salva, mas o comprovante não foi guardado: ${e.message}`
+                : "Venda salva, mas o comprovante não foi guardado.",
+            );
+          }
+        }
       }
       resetForm();
       onOpenChange(false);
