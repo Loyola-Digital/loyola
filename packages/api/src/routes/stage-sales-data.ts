@@ -555,22 +555,34 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       const canalMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const formaMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const utmSourceMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+      /** Fontes que são vendedor de venda manual — a tela as separa das UTMs. */
+      const fontesManuais = new Set<string>();
       const utmMediumMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const utmTermMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       const utmContentMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
       // Story 18.48: ingressos (vendas dedup) por dia × origem. Mesma dedup do
       // total (emailMap) → soma bate com totalVendas da planilha. Origem por
       // classifyFonte(utm_source); dia pela lastDate da entrada deduplicada.
-      const ingressosByDay: Record<string, { pago: number; org: number; semTrack: number }> = {};
-      const addIngresso = (date: Date | null, fonte: "Pago" | "Orgânico" | "Sem Track") => {
+      /**
+       * Venda manual tem bucket PRÓPRIO, separado de "sem track".
+       *
+       * Antes ela caía em "sem track", e isso misturava duas coisas opostas:
+       * "perdemos o rastreio desta venda" e "esta venda nunca teve UTM porque
+       * foi PIX na mão de um vendedor". O time lia o número inflado e ia
+       * procurar erro de tag que não existia — foi o caso do bbe-pr2, onde 2
+       * vendas sem UTM viravam 4 na tela.
+       */
+      const ingressosByDay: Record<string, { pago: number; org: number; semTrack: number; manual: number }> = {};
+      const addIngresso = (date: Date | null, fonte: "Pago" | "Orgânico" | "Sem Track" | "Manual") => {
         if (!date) return;
         const y = date.getFullYear();
         const m = String(date.getMonth() + 1).padStart(2, "0");
         const d = String(date.getDate()).padStart(2, "0");
         const key = `${y}-${m}-${d}`;
-        const e = ingressosByDay[key] ?? { pago: 0, org: 0, semTrack: 0 };
+        const e = ingressosByDay[key] ?? { pago: 0, org: 0, semTrack: 0, manual: 0 };
         if (fonte === "Pago") e.pago += 1;
         else if (fonte === "Sem Track") e.semTrack += 1;
+        else if (fonte === "Manual") e.manual += 1;
         else e.org += 1;
         ingressosByDay[key] = e;
       };
@@ -644,6 +656,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
               saleDate: manualSales.saleDate,
               email: manualSales.customerEmail,
               product: manualSales.product,
+              sellerName: manualSales.sellerName,
             })
             .from(manualSales)
             .where(
@@ -657,9 +670,22 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         : [];
       const manualVendas = manualRows.length;
       const manualBruto = manualRows.reduce((s, r) => s + (Number(r.value) || 0), 0);
-      // Story 18.48: vendas manuais (PIX direto) entram como ingresso "sem track".
+      // A origem de uma venda manual é QUEM VENDEU — é a única atribuição
+      // verdadeira que ela tem. Entra no mapa de fontes com o nome do vendedor,
+      // em vez de engrossar "sem track" (ver comentário em `ingressosByDay`).
+      const LABEL_MANUAL_SEM_VENDEDOR = "Venda manual";
       for (const mr of manualRows) {
-        addIngresso(mr.saleDate ? new Date(mr.saleDate) : null, "Sem Track");
+        addIngresso(mr.saleDate ? new Date(mr.saleDate) : null, "Manual");
+
+        const vendedor = (mr.sellerName ?? "").trim() || LABEL_MANUAL_SEM_VENDEDOR;
+        const bruto = Number(mr.value) || 0;
+        const entry = utmSourceMap.get(vendedor) ?? { vendas: 0, bruto: 0, liquido: 0 };
+        entry.vendas += 1;
+        entry.bruto += bruto;
+        // PIX direto não tem taxa de plataforma: bruto e líquido são o mesmo.
+        entry.liquido += bruto;
+        utmSourceMap.set(vendedor, entry);
+        fontesManuais.add(vendedor);
       }
 
       const totalVendas = totalVendasPlanilha + manualVendas;
@@ -686,17 +712,29 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       // (manual sem e-mail) não colapsa → cada venda é 1 ingresso avulso, mantido
       // numa lista à parte (evita chave sintética que poderia colidir com um
       // customerEmail literal).
-      type Captura = { bruto: number; lastDate: Date | null; utmSource: string | null };
+      type Captura = {
+        bruto: number;
+        lastDate: Date | null;
+        utmSource: string | null;
+        /** Veio de venda manual (PIX na mão do vendedor), não da plataforma. */
+        manual?: boolean;
+      };
       const capturaByEmail = new Map<string, Captura>();
       const capturaNoEmail: Captura[] = [];
-      const considerCaptura = (email: string, bruto: number, lastDate: Date | null, utmSource: string | null) => {
+      const considerCaptura = (
+        email: string,
+        bruto: number,
+        lastDate: Date | null,
+        utmSource: string | null,
+        manual = false,
+      ) => {
         if (!email) {
-          capturaNoEmail.push({ bruto, lastDate, utmSource });
+          capturaNoEmail.push({ bruto, lastDate, utmSource, manual });
           return;
         }
         const cur = capturaByEmail.get(email);
         const newer = !cur || (lastDate != null && (cur.lastDate == null || lastDate > cur.lastDate));
-        if (newer) capturaByEmail.set(email, { bruto, lastDate, utmSource });
+        if (newer) capturaByEmail.set(email, { bruto, lastDate, utmSource, manual });
       };
 
       // Ingressos por produto (TOTAIS — todas as linhas) pro tooltip de 18.51b.
@@ -732,11 +770,11 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         const bump = isOrderBump(prod);
         addProduto(prod || MANUAL_PRODUCT_LABEL, val, bump);
         if (dt) faturamentoTotalByDay[dayKeyOf(dt)] = (faturamentoTotalByDay[dayKeyOf(dt)] ?? 0) + val;
-        if (!bump) considerCaptura((mr.email ?? "").trim().toLowerCase(), val, dt, null);
+        if (!bump) considerCaptura((mr.email ?? "").trim().toLowerCase(), val, dt, null, true);
       }
 
       // Fecha o único: faturamento único + recortes por dia (e-mail dedup + avulsos).
-      const ingressosUnicosByDay: Record<string, { pago: number; org: number; semTrack: number }> = {};
+      const ingressosUnicosByDay: Record<string, { pago: number; org: number; semTrack: number; manual: number }> = {};
       const faturamentoUnicoByDay: Record<string, number> = {};
       let faturamentoUnico = 0;
       for (const c of [...capturaByEmail.values(), ...capturaNoEmail]) {
@@ -744,8 +782,10 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         if (c.lastDate) {
           const k = dayKeyOf(c.lastDate);
           const fonte = classifyFonte(c.utmSource);
-          const e = ingressosUnicosByDay[k] ?? { pago: 0, org: 0, semTrack: 0 };
-          if (fonte === "Pago") e.pago += 1;
+          const e = ingressosUnicosByDay[k] ?? { pago: 0, org: 0, semTrack: 0, manual: 0 };
+          // Manual tem bucket próprio; o resto vem da classificação por UTM.
+          if (c.manual) e.manual += 1;
+          else if (fonte === "Pago") e.pago += 1;
           else if (fonte === "Sem Track") e.semTrack += 1;
           else e.org += 1;
           ingressosUnicosByDay[k] = e;
@@ -933,7 +973,9 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           .map(([forma, v]) => ({ forma, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
         porUtmSource: Array.from(utmSourceMap.entries())
-          .map(([fonte, v]) => ({ fonte, ...v }))
+          // `manual: true` diz que aquela linha é um vendedor, não uma UTM — a
+          // tela usa isso para rotular sem ter de adivinhar pelo nome.
+          .map(([fonte, v]) => ({ fonte, ...v, manual: fontesManuais.has(fonte) }))
           .sort((a, b) => b.vendas - a.vendas),
         porUtmMedium: porUtmMediumGrouped,
         porUtmTerm: Array.from(utmTermMap.entries())

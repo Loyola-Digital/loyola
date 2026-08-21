@@ -197,6 +197,7 @@ function AcumTip({ active, payload, isPaid }: any) {
       <TipRow l="Pago" v={int(tnum(d.pago))} c={T.emerald} />
       <TipRow l="Org" v={int(tnum(d.org))} c={T.teal} />
       <TipRow l="s/ Track" v={int(tnum(d.semTrack))} c={T.amber} />
+      {tnum(d.manual) > 0 && <TipRow l="Manual" v={int(tnum(d.manual))} c={T.teal} />}
     </TipShell>
   );
 }
@@ -327,7 +328,7 @@ export function MetaAdsTesteTab({
     if (!ingUnicosByDay) return metrics.totals;
     const all = Object.values(ingUnicosByDay);
     const pagos = all.reduce((s, v) => s + v.pago, 0);
-    const totais = all.reduce((s, v) => s + v.pago + v.org + v.semTrack, 0);
+    const totais = all.reduce((s, v) => s + v.pago + v.org + v.semTrack + (v.manual ?? 0), 0);
     return overrideCplWithUniqueIngressos(metrics.totals, pagos, totais);
   }, [metrics.totals, ingUnicosByDay]);
 
@@ -395,8 +396,11 @@ export function MetaAdsTesteTab({
   );
 
   // ---- KPIs (paridade com o dash) ----
-  const sumOrigem = (v?: { pago: number; org: number; semTrack: number }) => (v ? v.pago + v.org + v.semTrack : 0);
-  const sumAllOrigem = (rec?: Record<string, { pago: number; org: number; semTrack: number }>) =>
+  // `manual` entra na soma: é venda de verdade, só não veio por UTM. Deixá-la
+  // de fora faria o total do gráfico não fechar com o total de vendas.
+  const sumOrigem = (v?: { pago: number; org: number; semTrack: number; manual?: number }) =>
+    v ? v.pago + v.org + v.semTrack + (v.manual ?? 0) : 0;
+  const sumAllOrigem = (rec?: Record<string, { pago: number; org: number; semTrack: number; manual?: number }>) =>
     rec ? Object.values(rec).reduce((s, v) => s + sumOrigem(v), 0) : 0;
   const sumAllNum = (rec?: Record<string, number>) => (rec ? Object.values(rec).reduce((s, v) => s + v, 0) : 0);
   const showFaturamento = isPaid && !!stageId && !!salesData;
@@ -715,6 +719,7 @@ export function MetaAdsTesteTab({
                         <Line dataKey="pago" name="Pago" type="monotone" stroke={T.emerald} strokeWidth={2} dot={{ r: 2, fill: T.emerald, strokeWidth: 0 }} />
                         <Line dataKey="org" name="Org" type="monotone" stroke={T.teal} strokeWidth={2} dot={{ r: 2, fill: T.teal, strokeWidth: 0 }} />
                         <Line dataKey="semTrack" name="s/ Track" type="monotone" stroke={T.amber} strokeWidth={2} dot={{ r: 2, fill: T.amber, strokeWidth: 0 }} />
+                        <Line dataKey="manual" name="Manual" type="monotone" stroke={T.teal} strokeWidth={2} dot={{ r: 2, fill: T.teal, strokeWidth: 0 }} />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>

@@ -141,16 +141,30 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
   const vendasPago = salesData?.vendasPago ?? 0;
   // Story 19.9 ext: tooltip com breakdown planilha vs manual
   const breakdown = salesData?.breakdown;
-  // Breakdown por fonte (Pago/Orgânico/Sem Track) com % sobre o faturamento —
-  // mesmo padrão do dash de Captação (launch-dashboard). porUtmSource cobre só
-  // as vendas de planilha; manuais (PIX, sem utm) entram na linha de baixo.
+  /**
+   * Breakdown por fonte com % sobre o faturamento.
+   *
+   * As três fixas (Pago/Orgânico/Sem Track) aparecem sempre, mesmo zeradas —
+   * "Sem Track: R$ 0 (0%)" é informação, some da lista seria dúvida. Depois
+   * vêm os VENDEDORES das vendas manuais, que o servidor marca com
+   * `manual: true`: um PIX na mão tem como origem quem vendeu, e antes essas
+   * vendas engordavam "Sem Track" fingindo ser rastreio perdido.
+   */
   const fonteBreakdown = (() => {
-    const byFonte = new Map((salesData?.porUtmSource ?? []).map((u) => [u.fonte, u]));
-    return ["Pago", "Orgânico", "Sem Track"].map((fonte) => {
+    const linhas = salesData?.porUtmSource ?? [];
+    const byFonte = new Map(linhas.map((u) => [u.fonte, u]));
+    const pct = (bruto: number) => (faturamento > 0 ? ((bruto / faturamento) * 100).toFixed(0) : "0");
+
+    const fixas = ["Pago", "Orgânico", "Sem Track"].map((fonte) => {
       const bruto = byFonte.get(fonte)?.bruto ?? 0;
-      const pct = faturamento > 0 ? ((bruto / faturamento) * 100).toFixed(0) : "0";
-      return `${fonte}: ${fmtCurrency(bruto)} (${pct}%)`;
+      return `${fonte}: ${fmtCurrency(bruto)} (${pct(bruto)}%)`;
     });
+    const vendedores = linhas
+      .filter((u) => u.manual)
+      .sort((a, b) => b.bruto - a.bruto)
+      .map((u) => `${u.fonte} (manual): ${fmtCurrency(u.bruto)} (${pct(u.bruto)}%)`);
+
+    return [...fixas, ...vendedores];
   })();
   const fatTooltip = breakdown
     ? `${fonteBreakdown.join("\n")}\n\nPlanilha: ${fmtCurrency(breakdown.spreadsheet.bruto)} (${breakdown.spreadsheet.vendas})\nManuais: ${fmtCurrency(breakdown.manual.bruto)} (${breakdown.manual.vendas})`

@@ -35,7 +35,7 @@ interface CrossedFunnelDailyTableProps {
    * colunas de ingresso (Total/Pg/Org/s-track) usam ISSO em vez dos leads.
    * O card "Leads Popup" (fora desta tabela) continua usando leads.
    */
-  ingressosByDay?: Record<string, { pago: number; org: number; semTrack: number }>;
+  ingressosByDay?: Record<string, { pago: number; org: number; semTrack: number; manual?: number }>;
   /**
    * Map de adset_id → adset_name vindo da Meta API. Quando informado, o
    * tooltip de Total Leads resolve `utm_medium` (que armazena o adset_id)
@@ -62,7 +62,7 @@ interface CrossedFunnelDailyTableProps {
    * Paga. `ingressosTotaisByDay` espelha `ingressosByDay`. Presentes só quando há
    * planilha de vendas conectada — `undefined` = sem planilha (AC-BUG.1).
    */
-  ingressosUnicosByDay?: Record<string, { pago: number; org: number; semTrack: number }>;
+  ingressosUnicosByDay?: Record<string, { pago: number; org: number; semTrack: number; manual?: number }>;
   ingressosTotaisByDay?: Record<string, { pago: number; org: number; semTrack: number }>;
   faturamentoUnicoByDay?: Record<string, number>;
   faturamentoTotalByDay?: Record<string, number>;

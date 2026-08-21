@@ -358,7 +358,7 @@ export interface StageSalesData {
    * Mesma dedup do `totalVendas` → soma bate. Origem pela utm_source da venda.
    * Usado pela Dados Diários da etapa Paga (Total Ingressos = vendas, não leads).
    */
-  ingressosByDay?: Record<string, { pago: number; org: number; semTrack: number }>;
+  ingressosByDay?: Record<string, { pago: number; org: number; semTrack: number; manual?: number }>;
   /**
    * Story 18.51a: métricas ÚNICAS vs TOTAIS da etapa Captação Paga.
    * - Único = e-mails distintos que compraram o(s) produto(s) da captação (não
@@ -372,15 +372,23 @@ export interface StageSalesData {
   ingressosTotais?: number;
   faturamentoUnico?: number;
   faturamentoTotal?: number;
-  ingressosUnicosByDay?: Record<string, { pago: number; org: number; semTrack: number }>;
-  ingressosTotaisByDay?: Record<string, { pago: number; org: number; semTrack: number }>;
+  ingressosUnicosByDay?: Record<string, { pago: number; org: number; semTrack: number; manual?: number }>;
+  ingressosTotaisByDay?: Record<string, { pago: number; org: number; semTrack: number; manual?: number }>;
   faturamentoUnicoByDay?: Record<string, number>;
   faturamentoTotalByDay?: Record<string, number>;
   /** Ingressos (vendas) por produto — todos os produtos, sem dedup. Tooltip de "Ingressos totais". */
   ingressosPorProduto?: { produto: string; count: number; bruto: number; isOrderBump: boolean }[];
   porCanal: { canal: string; vendas: number; bruto: number; liquido: number }[];
   porFormaPagamento: { forma: string; vendas: number; bruto: number; liquido: number }[];
-  porUtmSource: { fonte: string; vendas: number; bruto: number; liquido: number }[];
+  /**
+   * Fontes das vendas.
+   *
+   * Além de "Pago"/"Orgânico"/"Sem Track", vem uma linha por VENDEDOR de venda
+   * manual, marcada com `manual: true`. A origem de um PIX na mão é quem
+   * vendeu — jogá-la em "sem track" misturava "perdemos o rastreio" com "nunca
+   * houve rastreio a perder".
+   */
+  porUtmSource: { fonte: string; vendas: number; bruto: number; liquido: number; manual?: boolean }[];
   /**
    * Agregação por utm_medium. utm_medium carrega o adset_id (padrão Loyola).
    * Backend resolve pra adset_name via cache persistente (Story 28.7) — quando
