@@ -22,26 +22,44 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
+/**
+ * Resultado da busca da miniatura.
+ *
+ * `semRota` separa dois 404 que parecem iguais e não são: o do Fastify, quando
+ * a ROTA não existe (backend numa versão anterior à do site), e o nosso, quando
+ * o criativo simplesmente não tem imagem guardada. Sem essa distinção, uma API
+ * desatualizada vira uma tabela inteira de ícones quebrados sem explicação — e
+ * manda procurar defeito na Meta, que não tem nada a ver com isso.
+ */
+interface Miniatura {
+  dataUrl: string | null;
+  semRota: boolean;
+}
+
 export function useCreativeThumb(projectId: string, adId: string | null | undefined) {
   const { getToken } = useAuth();
   return useQuery({
     queryKey: ["creative-thumb", projectId, adId],
-    queryFn: async (): Promise<string | null> => {
+    queryFn: async (): Promise<Miniatura> => {
       const token = await getToken();
       const res = await fetch(
         `${API_URL}/api/traffic/analytics/${projectId}/creative-thumb/${adId}`,
         { headers: token ? { Authorization: `Bearer ${token}` } : {} },
       );
-      // 404 é rotina: criativo sem imagem guardada ainda. Não é erro para
-      // repetir — devolvemos null e a célula mostra o placeholder.
-      if (!res.ok) return null;
+      if (!res.ok) {
+        // O 404 do Fastify traz `error: "Not Found"`; o nosso traz uma
+        // mensagem em português dizendo o que faltou.
+        const corpo = (await res.json().catch(() => null)) as { error?: string } | null;
+        return { dataUrl: null, semRota: res.status === 404 && corpo?.error === "Not Found" };
+      }
       const blob = await res.blob();
-      return await new Promise<string>((resolve, reject) => {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result));
         reader.onerror = () => reject(new Error("Falha ao ler a imagem"));
         reader.readAsDataURL(blob);
       });
+      return { dataUrl, semRota: false };
     },
     enabled: Boolean(projectId && adId),
     // A miniatura de um anúncio não muda: uma vez carregada, vale a sessão toda.
@@ -66,13 +84,17 @@ export function CreativeThumb({ projectId, adId, nome, className }: Props) {
   const caixa = `h-10 w-10 shrink-0 overflow-hidden rounded-md border border-border/40 ${className ?? ""}`;
 
   if (isLoading) return <div className={`${caixa} animate-pulse bg-muted`} />;
-  if (!data) {
+  if (!data?.dataUrl) {
     return (
       <div
         className={`${caixa} flex items-center justify-center bg-muted/30`}
-        title="Sem miniatura guardada para este criativo"
+        title={
+          data?.semRota
+            ? "O servidor da API ainda não tem esta funcionalidade — o deploy do backend está atrás do site. Refaça o deploy da API."
+            : "Sem miniatura guardada para este criativo — ela é baixada no próximo sync com a Meta."
+        }
       >
-        <ImageOff className="h-3.5 w-3.5 text-muted-foreground/50" />
+        <ImageOff className={`h-3.5 w-3.5 ${data?.semRota ? "text-amber-500/70" : "text-muted-foreground/50"}`} />
       </div>
     );
   }
@@ -81,7 +103,7 @@ export function CreativeThumb({ projectId, adId, nome, className }: Props) {
     <>
       <button type="button" onClick={() => setAberto(true)} className={`${caixa} transition-opacity hover:opacity-80`} title="Ver maior">
         {/* <img> cru: a origem é uma data URL, que o otimizador do Next não processa. */}
-        <img src={data} alt={nome ?? "Criativo"} className="h-full w-full object-cover" />
+        <img src={data.dataUrl} alt={nome ?? "Criativo"} className="h-full w-full object-cover" />
       </button>
 
       <Dialog open={aberto} onOpenChange={setAberto}>
@@ -89,7 +111,7 @@ export function CreativeThumb({ projectId, adId, nome, className }: Props) {
           <DialogHeader>
             <DialogTitle className="text-sm">{nome ?? "Criativo"}</DialogTitle>
           </DialogHeader>
-          <img src={data} alt={nome ?? "Criativo"} className="max-h-[70vh] w-full rounded-md object-contain" />
+          <img src={data.dataUrl} alt={nome ?? "Criativo"} className="max-h-[70vh] w-full rounded-md object-contain" />
         </DialogContent>
       </Dialog>
     </>
