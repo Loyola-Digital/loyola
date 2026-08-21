@@ -15,10 +15,11 @@
  */
 
 import { useState } from "react";
-import { ImageOff } from "lucide-react";
+import { ExternalLink, ImageOff, Play } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useApiClient } from "@/lib/hooks/use-api-client";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -69,17 +70,54 @@ export function useCreativeThumb(projectId: string, adId: string | null | undefi
   });
 }
 
+/**
+ * Onde assistir ao criativo.
+ *
+ * Vem da nossa rota, não do endpoint de vídeo da Meta: aquele responde
+ * "Application does not have permission" nesta conta. A URL boa é a do media do
+ * criativo, e o backend cuida de renová-la quando expira.
+ *
+ * Só busca quando a prévia abre — uma tabela de 40 linhas não pode resolver 40
+ * vídeos só por estar na tela.
+ */
+function useCreativeVideo(projectId: string, adId: string | null | undefined, habilitado: boolean) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["creative-video", projectId, adId],
+    queryFn: () =>
+      apiClient<{ sourceUrl: string; origem: "cache" | "meta"; permalinkUrl: string | null }>(
+        `/api/traffic/analytics/${projectId}/creative-video/${adId}`,
+      ),
+    enabled: habilitado && Boolean(projectId && adId),
+    // A URL é assinada e expira; meia hora é bem menos que a validade dela.
+    staleTime: 30 * 60 * 1000,
+    retry: false,
+  });
+}
+
 interface Props {
   projectId: string;
   adId: string | null | undefined;
   /** Nome do criativo — vira título ao abrir em tamanho maior. */
   nome?: string;
+  /**
+   * Id do vídeo na Meta, quando o criativo é vídeo. Com ele, abrir a prévia
+   * toca a peça em vez de mostrar um quadro parado — que é como o criativo é
+   * julgado nos outros funis.
+   */
+  videoId?: string | null;
   className?: string;
 }
 
-export function CreativeThumb({ projectId, adId, nome, className }: Props) {
+export function CreativeThumb({ projectId, adId, nome, videoId, className }: Props) {
   const { data, isLoading } = useCreativeThumb(projectId, adId);
   const [aberto, setAberto] = useState(false);
+  const ehVideo = Boolean(videoId);
+  const { data: video, isLoading: carregandoVideo, isError: videoFalhou } = useCreativeVideo(
+    projectId,
+    adId,
+    aberto && ehVideo,
+  );
 
   const caixa = `h-10 w-10 shrink-0 overflow-hidden rounded-md border border-border/40 ${className ?? ""}`;
 
@@ -101,9 +139,19 @@ export function CreativeThumb({ projectId, adId, nome, className }: Props) {
 
   return (
     <>
-      <button type="button" onClick={() => setAberto(true)} className={`${caixa} transition-opacity hover:opacity-80`} title="Ver maior">
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        className={`${caixa} group relative transition-opacity hover:opacity-80`}
+        title={ehVideo ? "Assistir ao criativo" : "Ver maior"}
+      >
         {/* <img> cru: a origem é uma data URL, que o otimizador do Next não processa. */}
         <img src={data.dataUrl} alt={nome ?? "Criativo"} className="h-full w-full object-cover" />
+        {ehVideo && (
+          <span className="absolute inset-0 flex items-center justify-center bg-black/30">
+            <Play className="h-3.5 w-3.5 fill-white text-white" />
+          </span>
+        )}
       </button>
 
       <Dialog open={aberto} onOpenChange={setAberto}>
@@ -111,7 +159,43 @@ export function CreativeThumb({ projectId, adId, nome, className }: Props) {
           <DialogHeader>
             <DialogTitle className="text-sm">{nome ?? "Criativo"}</DialogTitle>
           </DialogHeader>
-          <img src={data.dataUrl} alt={nome ?? "Criativo"} className="max-h-[70vh] w-full rounded-md object-contain" />
+          {/* Cascata igual à da galeria de criativos: arquivo direto quando a
+              Meta entrega, embed quando não, e link como último recurso. A
+              miniatura guardada vira o poster — não expira como a da Meta. */}
+          {ehVideo && video?.sourceUrl ? (
+            <video
+              key={video.sourceUrl}
+              src={video.sourceUrl}
+              controls
+              autoPlay
+              poster={data.dataUrl}
+              className="max-h-[70vh] w-full rounded-md bg-black object-contain"
+            />
+          ) : ehVideo && carregandoVideo ? (
+            // A miniatura fica na tela enquanto o vídeo resolve: trocar por um
+            // retângulo cinza faria parecer que algo quebrou.
+            <div className="relative">
+              <img src={data.dataUrl} alt={nome ?? "Criativo"} className="max-h-[70vh] w-full rounded-md object-contain opacity-60" />
+              <span className="absolute inset-0 flex items-center justify-center text-xs text-white drop-shadow">
+                Carregando o vídeo…
+              </span>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <img src={data.dataUrl} alt={nome ?? "Criativo"} className="max-h-[70vh] w-full rounded-md object-contain" />
+              {ehVideo && (
+                <p className="text-[11px] text-muted-foreground">
+                  {video?.permalinkUrl ? (
+                    <a href={video.permalinkUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-foreground">
+                      <ExternalLink className="h-3 w-3" /> Abrir o anúncio na Meta
+                    </a>
+                  ) : videoFalhou ? (
+                    "Não consegui carregar o vídeo deste criativo."
+                  ) : null}
+                </p>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </>

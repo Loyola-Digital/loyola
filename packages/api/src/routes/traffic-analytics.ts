@@ -16,7 +16,9 @@ import {
   makeAdCreativeCacheAdapter,
   type TopPerformerMetric,
 } from "../services/traffic-analytics.js";
+import { upsertAdCreatives } from "../services/meta-insights-cache.js";
 import {
+  fetchAdCreatives,
   fetchAdCreativesWithCache,
   fetchVideoSource,
   decryptAccountToken,
@@ -1145,6 +1147,102 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
       } catch (err) {
         request.log.warn({ err, adId: params.data.adId }, "[creative-thumb] download falhou");
         return reply.code(404).send({ error: "Não consegui baixar a miniatura" });
+      }
+    },
+  );
+
+  // ---- GET /api/traffic/analytics/:projectId/creative-video/:adId ----
+  /**
+   * Onde assistir ao criativo em vídeo.
+   *
+   * Não devolve o arquivo: devolve a URL para o player usar. Guardar o mp4
+   * seria megabytes por peça, e ninguém assiste a quarenta vídeos — a miniatura
+   * é o que precisa estar sempre à mão, e essa já é nossa.
+   *
+   * A fonte é o `imageUrl` do criativo, que para vídeo é o media do Instagram.
+   * Parece estranho e é assim mesmo: o endpoint próprio de vídeo
+   * (`/{video-id}?fields=source`) responde **"(#10) Application does not have
+   * permission for this action"** nesta conta, então ele fica como último
+   * recurso em vez de primeiro.
+   *
+   * A URL é assinada e expira. Por isso ela é conferida antes de sair daqui, e
+   * só quando está morta a gente pergunta à Meta de novo — uma chamada, no
+   * clique de quem quer assistir, e não a cada abertura de tabela.
+   */
+  fastify.get(
+    "/api/traffic/analytics/:projectId/creative-video/:adId",
+    async (request, reply) => {
+      const params = z
+        .object({ projectId: z.string().uuid(), adId: z.string().min(1).max(64) })
+        .safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      if (!(await guestCanAccessTraffic(request.userRole, request.userId, params.data.projectId))) {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      /** A URL ainda entrega vídeo? Um range de 1 byte responde sem baixar a peça. */
+      async function aindaVale(url: string): Promise<boolean> {
+        try {
+          const res = await fetch(url, {
+            headers: { Range: "bytes=0-0" },
+            signal: AbortSignal.timeout(10_000),
+          });
+          return res.ok || res.status === 206;
+        } catch {
+          return false;
+        }
+      }
+
+      const [linha] = await fastify.db
+        .select({ creative: metaAdCreativesCache.creative })
+        .from(metaAdCreativesCache)
+        .where(
+          and(
+            eq(metaAdCreativesCache.projectId, params.data.projectId),
+            eq(metaAdCreativesCache.adId, params.data.adId),
+          ),
+        )
+        .limit(1);
+
+      const doCache = linha?.creative?.imageUrl ?? null;
+      if (doCache && (await aindaVale(doCache))) {
+        return { sourceUrl: doCache, origem: "cache" as const, permalinkUrl: linha?.creative?.adPermalinkUrl ?? null };
+      }
+
+      // URL morta (ou ausente): uma consulta à Meta para renovar.
+      const [link] = await fastify.db
+        .select({ accountId: metaAdsAccountProjects.accountId })
+        .from(metaAdsAccountProjects)
+        .where(eq(metaAdsAccountProjects.projectId, params.data.projectId))
+        .limit(1);
+      const [account] = link
+        ? await fastify.db
+            .select()
+            .from(metaAdsAccounts)
+            .where(eq(metaAdsAccounts.id, link.accountId))
+            .limit(1)
+        : [];
+      if (!account) {
+        return reply.code(404).send({ error: "Conta Meta não vinculada a este projeto" });
+      }
+
+      try {
+        const token = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
+        const [fresco] = await fetchAdCreatives(account.metaAccountId, token, [params.data.adId]);
+        if (fresco?.imageUrl) {
+          // Reaproveita o caminho normal de persistência: além de renovar a URL,
+          // ele já baixa a miniatura se ela tiver mudado.
+          await upsertAdCreatives(fastify.db, params.data.projectId, [fresco]);
+          return { sourceUrl: fresco.imageUrl, origem: "meta" as const, permalinkUrl: fresco.adPermalinkUrl ?? null };
+        }
+        return reply.code(404).send({
+          error: "Este criativo não tem vídeo acessível",
+          permalinkUrl: fresco?.adPermalinkUrl ?? linha?.creative?.adPermalinkUrl ?? null,
+        });
+      } catch (err) {
+        request.log.warn({ err, adId: params.data.adId }, "[creative-video] renovação falhou");
+        return reply.code(502).send({ error: "Não consegui obter o vídeo agora" });
       }
     },
   );
