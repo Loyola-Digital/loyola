@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  useTrafficCampaigns, useAllAdSets, useAllAds,
+  useTrafficCampaigns, useAllAdSets, useAllAds, useAdCreatives,
 } from "@/lib/hooks/use-traffic-analytics";
 import { useGoogleAdsCampaigns, type GoogleAdsCampaign } from "@/lib/hooks/use-google-ads-analytics";
 import { CreativeThumb } from "@/components/traffic/creative-thumb";
@@ -151,6 +151,26 @@ export function LyrioDetailTable({
 
   // Hook e Hold só existem a nível de anúncio — somem nas outras dimensões em
   // vez de virar "—" (mesmo tratamento do Perpétuo).
+  /**
+   * Criativos dos anúncios listados, só para saber quais são vídeo.
+   *
+   * Vem do cache do backend (`ad-creatives`), não da Meta: é a mesma fonte que
+   * a galeria de criativos usa. Sem isto a prévia abriria sempre como imagem
+   * parada, e vídeo é justamente o que o time precisa assistir para julgar.
+   */
+  const adIdsVisiveis = useMemo(
+    () => (dimensao === "ad" ? sorted.filter((r) => r.platform === "meta").map((r) => r.id) : []),
+    [dimensao, sorted],
+  );
+  const { data: creativesData } = useAdCreatives(projectId, adIdsVisiveis);
+  const videoPorAd = useMemo(() => {
+    const m = new Map<string, string | null>();
+    for (const c of creativesData?.creatives ?? []) {
+      if (c.objectType === "VIDEO") m.set(c.adId, c.videoId ?? null);
+    }
+    return m;
+  }, [creativesData]);
+
   const mostraVideo = dimensao === "ad";
   // A miniatura só faz sentido por criativo: campanha e público não têm imagem.
   const mostraPreview = dimensao === "ad";
@@ -263,7 +283,12 @@ export function LyrioDetailTable({
                     {mostraPreview && (
                       <td className="py-2 pr-2">
                         {r.platform === "meta" ? (
-                          <CreativeThumb projectId={projectId} adId={r.id} nome={r.name} />
+                          <CreativeThumb
+                            projectId={projectId}
+                            adId={r.id}
+                            nome={r.name}
+                            videoId={videoPorAd.get(r.id) ?? null}
+                          />
                         ) : (
                           <div className="h-10 w-10" />
                         )}
