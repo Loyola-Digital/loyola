@@ -57,6 +57,12 @@ export interface VturbOverview {
   };
   range: { startDate: string; endDate: string; timezone: string };
   stats: VturbStats;
+  /**
+   * Os totais foram somados do diário porque o agregado do VTurb veio vazio.
+   * As taxas, nesse caso, são derivadas dos contadores e podem diferir alguns
+   * pontos das que o VTurb calcularia — ele usa bases próprias por sessão.
+   */
+  statsReconstruidos?: boolean;
   byDay: (VturbStats & { date_key: string })[];
   /** null quando a VSL não tem duração cadastrada (a API exige pra calcular). */
   engagement: {

@@ -15,6 +15,7 @@ import { funnels, funnelStages, vturbConnections, vturbPlayers } from "../db/sch
 import { decrypt, encrypt } from "../services/encryption.js";
 import {
   VturbError, clicksTimed, listPlayers, quotaUsage, sessionStats, sessionStatsByDay,
+  type VturbSessionStats, type VturbStatsByDay,
   userEngagement, validateToken,
 } from "../services/vturb.js";
 import { ProtocolViolation, derivarCadeia, fonteVturb } from "../services/vturb-chain.js";
@@ -268,6 +269,19 @@ export default fp(async function vturbRoutes(fastify) {
           clicksTimed(conn.token, base),
         ]);
 
+        // A API do VTurb às vezes devolve o agregado ZERADO enquanto o diário do
+        // mesmo período vem cheio — visto em produção com 30 dias: a tela
+        // mostrava tudo em 0 e bastava trocar para 7 dias para os números
+        // voltarem. Zero é indistinguível de "não houve tráfego", então o time
+        // acredita e vai investigar uma queda que não existiu.
+        //
+        // Os contadores do diário somam EXATAMENTE o agregado quando os dois
+        // vêm bons (conferido em 7, 30 e 90 dias), então dá para reconstruir a
+        // partir dele em vez de servir o zero.
+        const statsFinal = pareceVazio(stats) && temMovimento(byDay)
+          ? reconstruirStats(byDay, stats)
+          : stats;
+
         return {
           player: {
             id: link.id,
@@ -277,7 +291,14 @@ export default fp(async function vturbRoutes(fastify) {
             pitchTime: link.pitchTime,
           },
           range: { startDate: q.data.startDate, endDate: q.data.endDate, timezone: conn.timezone },
-          stats,
+          stats: statsFinal,
+          /**
+           * Os totais vieram do diário porque o agregado chegou vazio. A tela
+           * avisa: as taxas são derivadas dos contadores e podem diferir alguns
+           * pontos das que o VTurb calcularia (ele usa bases próprias por
+           * sessão/dispositivo).
+           */
+          statsReconstruidos: statsFinal !== stats,
           byDay,
           engagement,
           clicks,
@@ -351,6 +372,7 @@ export default fp(async function vturbRoutes(fastify) {
 
         const cadeia = derivarCadeia(stats, link.pitchTime);
 
+
         return {
           player: {
             id: link.id,
@@ -387,4 +409,78 @@ export default fp(async function vturbRoutes(fastify) {
       }
     },
   );
+
 });
+
+/** O agregado veio sem nenhum sinal de vida? */
+export function pareceVazio(s: VturbSessionStats): boolean {
+  return (s.total_viewed ?? 0) === 0 && (s.total_started ?? 0) === 0 && (s.total_conversions ?? 0) === 0;
+}
+
+/** O diário tem movimento de verdade? */
+export function temMovimento(byDay: VturbStatsByDay): boolean {
+  return byDay.some((d) => (d.total_viewed ?? 0) > 0);
+}
+
+/**
+ * Refaz os totais somando o diário.
+ *
+ * Contadores somam direto — foi conferido que batem número a número com o
+ * agregado quando os dois vêm bons. As TAXAS não: o VTurb calcula play rate
+ * sobre uma base própria (sessões/dispositivos únicos), e derivar de
+ * `plays ÷ views` dá alguns pontos a menos. Ainda assim é o certo aqui: um
+ * número coerente com os contadores exibidos vale mais que um zero que mente,
+ * e a tela sinaliza que foi reconstruído.
+ */
+export function reconstruirStats(
+  byDay: VturbStatsByDay,
+  molde: VturbSessionStats,
+): VturbSessionStats {
+  const soma = (chave: keyof VturbSessionStats): number =>
+    byDay.reduce((acc, d) => acc + (Number(d[chave]) || 0), 0);
+
+  const total_viewed = soma("total_viewed");
+  const total_started = soma("total_started");
+  const total_over_pitch = soma("total_over_pitch");
+  const total_under_pitch = soma("total_under_pitch");
+  const total_conversions = soma("total_conversions");
+
+  const taxa = (parte: number, todo: number) => (todo > 0 ? Number(((parte / todo) * 100).toFixed(2)) : 0);
+
+  return {
+    ...molde,
+    total_viewed,
+    total_viewed_device_uniq: soma("total_viewed_device_uniq"),
+    total_viewed_session_uniq: soma("total_viewed_session_uniq"),
+    total_started,
+    total_started_device_uniq: soma("total_started_device_uniq"),
+    total_started_session_uniq: soma("total_started_session_uniq"),
+    total_finished: soma("total_finished"),
+    total_finished_device_uniq: soma("total_finished_device_uniq"),
+    total_finished_session_uniq: soma("total_finished_session_uniq"),
+    total_clicked: soma("total_clicked"),
+    total_clicked_device_uniq: soma("total_clicked_device_uniq"),
+    total_clicked_session_uniq: soma("total_clicked_session_uniq"),
+    total_over_pitch,
+    total_under_pitch,
+    total_conversions,
+    total_amount_brl: soma("total_amount_brl"),
+    total_amount_usd: soma("total_amount_usd"),
+    total_amount_eur: soma("total_amount_eur"),
+    play_rate: taxa(total_started, total_viewed),
+    over_pitch_rate: taxa(total_over_pitch, total_over_pitch + total_under_pitch),
+    overall_conversion_rate: taxa(total_conversions, total_viewed),
+    // Engajamento é média de tempo, não contagem: a média dos dias com
+    // audiência é a aproximação honesta — somar daria número sem significado.
+    engagement_rate: (() => {
+      const comDados = byDay.filter((d) => (Number(d.total_viewed) || 0) > 0);
+      if (comDados.length === 0) return 0;
+      const pesoTotal = comDados.reduce((a, d) => a + (Number(d.total_viewed) || 0), 0);
+      const ponderada = comDados.reduce(
+        (a, d) => a + (Number(d.engagement_rate) || 0) * (Number(d.total_viewed) || 0),
+        0,
+      );
+      return Number((ponderada / pesoTotal).toFixed(2));
+    })(),
+  };
+}
