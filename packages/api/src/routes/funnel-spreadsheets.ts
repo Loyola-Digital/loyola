@@ -64,6 +64,37 @@ const listQuerySchema = z.object({
   stageId: z.string().uuid().optional(),
 });
 
+/**
+ * Story 29.55 — os tipos que esta rota NÃO edita.
+ *
+ * `funnel_spreadsheets` é compartilhada por seis tipos (`schema.ts:1061`) e os
+ * dois `perpetual_*` têm tela própria, com vocabulário de `column_mapping`
+ * próprio: o CRUD genérico fala `name/phone/date/value`, o perpétuo fala
+ * `transactionId/valorBruto/dataVenda/productName`.
+ *
+ * Como o `PUT` abaixo SUBSTITUI o mapeamento inteiro (não faz merge), salvar um
+ * registro do perpétuo por aqui apaga `valorBruto` e `productName` — o
+ * dashboard perde o faturamento e a classificação de produto some, sem nada na
+ * tela explicando. O `DELETE` é a mesma coisa, em versão definitiva.
+ *
+ * A guarda mora aqui, e não só na UI: esconder o botão deixaria o estrago a um
+ * `curl` de distância.
+ */
+const TIPOS_COM_TELA_PROPRIA: ReadonlySet<string> = new Set([
+  "perpetual_sales",
+  "perpetual_upsell",
+]);
+
+/** A porta certa de cada um — vai na resposta, para o erro dizer o que fazer. */
+const ONDE_SE_EDITA: Record<string, string> = {
+  perpetual_sales: "no dashboard do funil perpétuo, no botão com o nome da planilha",
+  perpetual_upsell: "no dashboard do funil perpétuo, no botão da planilha de Ascensão",
+};
+
+export function ehGerenciadaPorOutraTela(type: string): boolean {
+  return TIPOS_COM_TELA_PROPRIA.has(type);
+}
+
 type ColumnMapping = z.infer<typeof columnMappingSchema>;
 
 // ============================================================
@@ -206,6 +237,19 @@ export default fp(async function funnelSpreadsheetsRoutes(fastify) {
         .limit(1);
       if (!existing) return reply.code(404).send({ error: "Planilha nao encontrada" });
 
+      /**
+       * Story 29.55 (AC1) — antes de qualquer escrita.
+       *
+       * A ordem importa e está testada: com a guarda depois do `update`, o
+       * status seria 409 e o dado já teria sido gravado. O teste verifica que o
+       * `.set(...)` não foi chamado, não só o código de resposta.
+       */
+      if (ehGerenciadaPorOutraTela(existing.type)) {
+        return reply.code(409).send({
+          error: `Esta planilha é do tipo "${existing.type}" e se edita ${ONDE_SE_EDITA[existing.type] ?? "na tela própria dela"}. Salvar por aqui apagaria o mapeamento que aquela tela usa.`,
+        });
+      }
+
       const patch: Partial<typeof funnelSpreadsheets.$inferInsert> = {
         updatedAt: new Date(),
       };
@@ -239,6 +283,31 @@ export default fp(async function funnelSpreadsheetsRoutes(fastify) {
 
       const funnel = await getFunnelInProject(p.data.projectId, p.data.funnelId);
       if (!funnel) return reply.code(404).send({ error: "Funil nao encontrado" });
+
+      /**
+       * Story 29.55 (AC2) — o tipo precisa ser lido ANTES de apagar.
+       *
+       * O handler ia direto ao `delete`, e o `returning()` só conta a linha
+       * depois que ela já não existe. Uma leitura a mais é o preço de não
+       * remover o vínculo do perpétuo por uma tela que não sabe o que ele é.
+       */
+      const [existing] = await fastify.db
+        .select({ type: funnelSpreadsheets.type })
+        .from(funnelSpreadsheets)
+        .where(
+          and(
+            eq(funnelSpreadsheets.id, p.data.id),
+            eq(funnelSpreadsheets.funnelId, p.data.funnelId),
+          ),
+        )
+        .limit(1);
+      if (!existing) return reply.code(404).send({ error: "Planilha nao encontrada" });
+
+      if (ehGerenciadaPorOutraTela(existing.type)) {
+        return reply.code(409).send({
+          error: `Esta planilha é do tipo "${existing.type}" e se remove ${ONDE_SE_EDITA[existing.type] ?? "na tela própria dela"}.`,
+        });
+      }
 
       const deleted = await fastify.db
         .delete(funnelSpreadsheets)
