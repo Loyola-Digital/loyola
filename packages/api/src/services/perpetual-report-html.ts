@@ -10,6 +10,7 @@
  */
 
 import type { PerpetualReport, SegmentoRow } from "./perpetual-report-metrics.js";
+import { SEM_ATRIBUICAO_AD_KEY } from "./perpetual-report-metrics.js";
 import { buildReadings, buildDataNotes, trendLabel } from "./perpetual-report-readings.js";
 
 const brl = (n: number | null) =>
@@ -51,6 +52,9 @@ h2{font-size:15px;font-weight:600;margin:28px 0 10px;color:#c7cbd6}
 .kpi.pos{border-color:rgba(52,199,123,.4);background:rgba(52,199,123,.07)}
 .kpi.neg{border-color:rgba(240,90,90,.4);background:rgba(240,90,90,.07)}
 .pos-v{color:#34c77b}.neg-v{color:#f05a5a}
+/* Story 29.58: a cauda não coberta pelo grão de anúncio. Discreta e presente —
+   escondê-la faria a seção apresentar 90% como se fosse o total. */
+tr.cauda td{color:#8a93a3;font-style:italic}
 table{width:100%;border-collapse:collapse;font-size:13px}
 .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
 th,td{padding:7px 9px;text-align:right;border-bottom:1px solid #1e2333;white-space:nowrap}
@@ -85,9 +89,17 @@ function kpiCard(lbl: string, val: string, hint?: string, tone?: "pos" | "neg"):
 
 function segTable(titulo: string, rows: SegmentoRow[]): string {
   if (rows.length === 0) return "";
+  // Story 29.58 (AC5) — a linha de cauda vai para o fim, independente do valor.
+  // Ela não é um conjunto nem um criativo: deixá-la competir no ranking por
+  // investimento colocaria no topo uma linha sobre a qual não há ação possível.
+  rows = [...rows].sort((a, b) => {
+    const ca = a.chave === SEM_ATRIBUICAO_AD_KEY ? 1 : 0;
+    const cb = b.chave === SEM_ATRIBUICAO_AD_KEY ? 1 : 0;
+    return ca !== cb ? ca - cb : b.investimento - a.investimento;
+  });
   const body = rows
     .map(
-      (r) => `<tr>
+      (r) => `<tr${r.chave === SEM_ATRIBUICAO_AD_KEY ? ' class="cauda"' : ""}>
       <td>${esc(r.label)}</td>
       <td>${brl(r.investimento)}</td>
       <td>${pct(r.pctInvestimento)}</td>

@@ -229,3 +229,97 @@ function totalCampaignSpend(
   }
   return m;
 }
+
+/**
+ * Story 29.58 — o grão de anúncio COMPLETO, para o relatório perpétuo.
+ *
+ * ## Por que não `getEntityDailySeries`
+ *
+ * Aquela função devolve uma entidade por linha (`entityId` + `entityName`), o
+ * que basta para plotar um gráfico por dimensão. O relatório precisa do VÍNCULO
+ * entre os grãos: qual conjunto contém qual anúncio. Sem `adsetId` na mesma
+ * linha do `adId`, não há como somar investimento por público — e é exatamente
+ * essa a coluna que sai zerada hoje.
+ *
+ * Chamar `getEntityDailySeries` duas vezes (`"ad"` e `"adset"`) devolveria os
+ * dois nomes e nenhuma ligação entre eles.
+ *
+ * ## Imposto
+ *
+ * Devolve spend **BRUTO**, como todo este módulo. O gross-up é do consumidor, e
+ * acontece uma única vez — no relatório, dia a dia, porque a alíquota só vale a
+ * partir de 2026-01-01 e um período pode atravessar essa data.
+ *
+ * ## Meta
+ *
+ * Não chama a Graph API. Lê `meta_ad_insights_daily`, que o sync mantém quente.
+ */
+export interface AdLevelDailyRow {
+  adId: string;
+  adName: string;
+  adsetId: string | null;
+  adsetName: string | null;
+  campaignId: string;
+  dateStart: string;
+  /** BRUTO, sem os 12,15% de imposto. */
+  spend: number;
+}
+
+export async function getAdLevelDailySpend(
+  db: Database,
+  projectId: string,
+  since: string,
+  until: string,
+  campaignIds?: string[],
+): Promise<AdLevelDailyRow[]> {
+  const conds = [
+    eq(metaAdInsightsDaily.projectId, projectId),
+    gte(metaAdInsightsDaily.dateStart, since),
+    lte(metaAdInsightsDaily.dateStart, until),
+  ];
+  if (campaignIds && campaignIds.length > 0) {
+    conds.push(inArray(metaAdInsightsDaily.campaignId, campaignIds));
+  }
+  const rows = await db.select().from(metaAdInsightsDaily).where(and(...conds));
+
+  const saida: AdLevelDailyRow[] = [];
+  for (const r of rows) {
+    if (!r.adId) continue;
+    saida.push({
+      adId: r.adId,
+      // O sync grava `ad_name`/`adset_name` na própria linha — medido no BBE,
+      // 0 das 196 linhas do período vieram sem. O fallback para o cache de
+      // nomes fica abaixo, para o caso em que vier.
+      adName: r.adName ?? r.adId,
+      adsetId: r.adsetId ?? null,
+      adsetName: r.adsetName ?? null,
+      // `campaign_id` pode ser nulo na tabela; sem ele a linha não se liga a
+      // campanha nenhuma e o relatório não saberia onde encaixá-la.
+      campaignId: r.campaignId ?? "",
+      dateStart: r.dateStart,
+      spend: toNum(r.spend),
+    });
+  }
+
+  // Nome pelo cache só para o que a linha não trouxe — o mesmo padrão de
+  // `getEntityDailySeries`, e pelo mesmo motivo: o SELECT extra é desperdício
+  // quando o dado já veio junto.
+  const adsSemNome = [...new Set(saida.filter((r) => r.adName === r.adId).map((r) => r.adId))];
+  if (adsSemNome.length > 0) {
+    const names = await resolveEntityNames(db, projectId, "ad", adsSemNome);
+    for (const r of saida) {
+      if (r.adName === r.adId) r.adName = names.get(r.adId) ?? r.adId;
+    }
+  }
+  const adsetsSemNome = [
+    ...new Set(saida.filter((r) => r.adsetId && !r.adsetName).map((r) => r.adsetId!)),
+  ];
+  if (adsetsSemNome.length > 0) {
+    const names = await resolveEntityNames(db, projectId, "adset", adsetsSemNome);
+    for (const r of saida) {
+      if (r.adsetId && !r.adsetName) r.adsetName = names.get(r.adsetId) ?? null;
+    }
+  }
+
+  return saida;
+}

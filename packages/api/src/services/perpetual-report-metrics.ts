@@ -53,8 +53,25 @@ export interface CampaignSpendRow {
 
 export interface AdSpendRow {
   adId: string;
+  /**
+   * Story 29.58 (AC3) — o conjunto a que o anúncio pertence.
+   *
+   * Sem ele não há como somar investimento por público: o grão de anúncio é a
+   * única tabela que carrega `adset_id`, e a dimensão de conjunto nunca teve
+   * investimento nenhum por falta exatamente deste campo.
+   */
+  adsetId?: string | null;
   campaignId: string;
+  /** Spend cru da Meta, sem gross-up — é o que a invariante P1 compara. */
   spend: number;
+  /**
+   * Spend com o imposto de mídia aplicado, **por dia** (§2.3c).
+   *
+   * ⚠️ Mesma convenção de `CampaignSpendRow`, e pelo mesmo motivo: este projeto
+   * já contou o imposto duas vezes neste caminho (29.24, corrigida na 29.27).
+   * Um campo só, chamado `spend`, era o convite para o erro voltar.
+   */
+  spendComImposto: number;
 }
 
 export interface PerpetualReportInput {
@@ -451,6 +468,14 @@ interface Bucket {
   label: string;
 }
 
+/**
+ * Story 29.58 (AC5) — a linha que recolhe o investimento que o grão de anúncio
+ * não cobre. Chave própria para que o HTML possa distingui-la de um conjunto
+ * de verdade, e para que ela não colida com um nome real.
+ */
+export const SEM_ATRIBUICAO_AD_KEY = "__sem_atribuicao_ad__";
+export const SEM_ATRIBUICAO_AD_LABEL = "Sem atribuição no grão de anúncio";
+
 function emptyBucket(label: string): Bucket {
   return { investimento: 0, emails: new Set(), faturamento: 0, label };
 }
@@ -575,11 +600,52 @@ function buildSegmentos(
   }
 
   // --- investimento por anúncio → público/criativo, quando houver ad-level
+  //
+  // Story 29.58 (AC4) — este bloco fazia `if (!nome) continue` e buscava um
+  // bucket que só existia se alguma VENDA o tivesse criado. Duas consequências,
+  // as duas silenciosas:
+  //
+  //   1. anúncio sem nome resolvido tinha o investimento DESCARTADO — não
+  //      realocado, não declarado. O total por dimensão saía menor que o real.
+  //   2. anúncio que gastou e não vendeu não aparecia — que é exatamente a
+  //      linha que o gestor procura quando abre a tabela para cortar algo.
+  //
+  // Agora soma sempre, e o ID vira rótulo quando o nome não vier. Perder o nome
+  // é aceitável; perder o dinheiro não.
+  let investimentoAdLevel = 0;
   for (const a of input.anuncios ?? []) {
-    const nome = input.nomes?.ads?.[a.adId];
-    if (!nome) continue;
-    const b = criativos.get(normalizeName(nome));
-    if (b) b.investimento += a.spend;
+    const valor = a.spendComImposto;
+    investimentoAdLevel += valor;
+
+    const nomeAd = input.nomes?.ads?.[a.adId] ?? a.adId;
+    getOrInit(criativos, normalizeName(nomeAd), nomeAd).investimento += valor;
+
+    // AC3 — a mesma soma, por conjunto. Agrupada por NOME resolvido: em CBO o
+    // mesmo conjunto aparece em campanhas diferentes, e separá-los por ID
+    // fatiaria o público em linhas que ninguém consegue comparar.
+    if (a.adsetId) {
+      const nomeAdset = input.nomes?.adsets?.[a.adsetId] ?? a.adsetId;
+      getOrInit(publicos, normalizeName(nomeAdset), nomeAdset).investimento += valor;
+    }
+  }
+
+  // --- AC5: a diferença entre o grão de anúncio e o de campanha, DECLARADA
+  //
+  // O grão de anúncio é subconjunto do de campanha, nunca superconjunto: existe
+  // campanha-dia com gasto que a Meta reporta sem nenhuma linha de anúncio
+  // (anúncio deletado é a causa típica — 1,55% na medição da 29.42). No BBE, no
+  // período que motivou esta story, a cobertura foi de 100% e esta linha não
+  // aparece; ela existe para o caso em que aparece.
+  //
+  // Somar 98% e apresentar como total é o que faz o leitor calcular o CAC
+  // errado — e no relatório, ao contrário do dashboard, ele não tem como
+  // conferir clicando.
+  const temAdLevel = (input.anuncios?.length ?? 0) > 0;
+  const naoAtribuido = investimentoTotal - investimentoAdLevel;
+  if (temAdLevel && naoAtribuido > TOL) {
+    for (const m of [publicos, criativos]) {
+      getOrInit(m, SEM_ATRIBUICAO_AD_KEY, SEM_ATRIBUICAO_AD_LABEL).investimento += naoAtribuido;
+    }
   }
 
   // --- W-P4: dimensão indisponível quando a maioria das vendas não traz o ID
@@ -756,6 +822,9 @@ function assertInvariantes(
 
   // P1 — Σ spend dos anúncios == Σ spend das campanhas
   if (input.anuncios && input.anuncios.length > 0) {
+    // Os valores CRUS dos dois lados. Comparar tributado com tributado daria o
+    // mesmo veredito, mas esconderia um erro de gross-up assimétrico atrás de
+    // uma diferença proporcional que passaria pela tolerância.
     const somaAds = input.anuncios.reduce((s, a) => s + a.spend, 0);
     const somaCamps = input.campanhas.reduce((s, c) => s + c.spend, 0);
     const diff = Math.abs(somaAds - somaCamps);

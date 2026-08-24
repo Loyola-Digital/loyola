@@ -17,6 +17,7 @@ import {
   limparCooldownDeCura,
   TETO_POR_CURA,
   COOLDOWN_MS,
+  type ParamsDaCura,
 } from "../services/lp-cache-selfheal.js";
 import type { MetaAdCreative } from "../services/meta-ads.js";
 
@@ -80,6 +81,9 @@ function textoDoSql(valor: unknown): string {
     })
     .join(" ");
 }
+
+/** Conta o que seria gravado sem tocar no CDN de miniaturas da Meta. */
+const gravarFalso: ParamsDaCura["gravarCriativos"] = async (_db, _p, cs) => cs.length;
 
 function criativo(adId: string, linkUrl: string | null): MetaAdCreative {
   return { adId, linkUrl } as MetaAdCreative;
@@ -182,7 +186,7 @@ describe("cooldown por projeto (AC4)", () => {
         chamadas++;
         return ids.map((id) => criativo(id, "https://exemplo.com/lp"));
       },
-      gravarCriativos: async (_db: never, _p: string, cs: MetaAdCreative[]) => cs.length,
+      gravarCriativos: gravarFalso,
     };
     await curarCacheDeLp({ ...params, agoraMs: 1_000_000 });
     await curarCacheDeLp({ ...params, agoraMs: 1_000_000 + 60_000 });
@@ -201,7 +205,7 @@ describe("cooldown por projeto (AC4)", () => {
         chamadas++;
         return ids.map((id) => criativo(id, "https://exemplo.com/lp"));
       },
-      gravarCriativos: async (_db: never, _p: string, cs: MetaAdCreative[]) => cs.length,
+      gravarCriativos: gravarFalso,
     };
     await curarCacheDeLp({ ...params, agoraMs: 1_000_000 });
     await curarCacheDeLp({ ...params, agoraMs: 1_000_000 + COOLDOWN_MS });
@@ -222,7 +226,7 @@ describe("cooldown por projeto (AC4)", () => {
         chamadas++;
         return ids.map((id) => criativo(id, "https://exemplo.com/lp"));
       },
-      gravarCriativos: async (_db: never, _p: string, cs: MetaAdCreative[]) => cs.length,
+      gravarCriativos: gravarFalso,
     };
     await curarCacheDeLp({ ...base, projectId: "proj-1" });
     await curarCacheDeLp({ ...base, projectId: "proj-2" });

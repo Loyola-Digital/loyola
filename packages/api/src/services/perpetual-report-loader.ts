@@ -25,11 +25,13 @@ import {
   loadPerpetualReportConfig,
   resolvePerpetualRates,
 } from "./perpetual-report-config.js";
+import { getAdLevelDailySpend } from "./meta-entity-daily.js";
 import {
   computePerpetualReport,
   type PerpetualReport,
   type PerpetualSaleRow,
   type CampaignSpendRow,
+  type AdSpendRow,
 } from "./perpetual-report-metrics.js";
 import type { Database } from "../db/client.js";
 
@@ -140,13 +142,102 @@ export async function loadPerpetualReport(
     );
   }
 
+  // 3c. Story 29.58 — o grão de ANÚNCIO, que alimenta conjunto e criativo.
+  //
+  // Sem isto, `computePerpetualReport` recebia `input.anuncios` e `input.nomes`
+  // indefinidos e as duas seções saíam com o ID no lugar do nome e R$ 0,00 de
+  // investimento. Os dois campos existiam no tipo desde a 41.8 e só eram
+  // preenchidos nos testes — as seções nunca funcionaram em produção.
+  //
+  // Lê do banco (R-E2 do epic 41): o relatório não abre caminho novo contra a
+  // Graph API. Falhar aqui não derruba o relatório — as seções voltam a sair
+  // sem investimento, que é o comportamento de antes, e o resto (KPIs,
+  // campanhas, temperatura) não depende disso.
+  const { anuncios, nomes } = await loadAdLevel(
+    db,
+    config.projectId,
+    campaignIds,
+    periodo,
+  ).catch(() => ({ anuncios: [] as AdSpendRow[], nomes: undefined }));
+
   // 4. Taxas — plataforma vem da planilha, ramo de reembolso vem da coluna status
   const rates = resolvePerpetualRates(config, sheet.platform ?? null, hasStatusCol);
 
-  return computePerpetualReport({ config, rates, periodo, vendas, campanhas });
+  return computePerpetualReport({ config, rates, periodo, vendas, campanhas, anuncios, nomes });
 }
 
 // ------------------------------------------------------------------
+
+/**
+ * Story 29.58 (AC1/AC2) — spend por anúncio e os nomes de anúncio e conjunto.
+ *
+ * ## O imposto vai por DIA, antes de somar
+ *
+ * `getAdLevelDailySpend` devolve spend bruto, uma linha por (anúncio, dia).
+ * `applyMetaTax` recebe a data porque a alíquota de 12,15% só vale a partir de
+ * 2026-01-01 — aplicá-la sobre o total já somado erraria em qualquer período
+ * que cruze o ano, que é exatamente o que `loadCampanhaSpend` faz logo acima e
+ * pelo mesmo motivo.
+ *
+ * ⚠️ Este é o ponto onde a contagem dupla de imposto já entrou duas vezes neste
+ * projeto (29.24, corrigida na 29.27). Se o número por criativo sair ~12% acima
+ * do da campanha, é aqui.
+ */
+async function loadAdLevel(
+  db: Database,
+  projectId: string,
+  campaignIds: string[],
+  periodo: { inicio: string; fim: string },
+): Promise<{
+  anuncios: AdSpendRow[];
+  nomes: { adsets?: Record<string, string>; ads?: Record<string, string> } | undefined;
+}> {
+  if (campaignIds.length === 0) return { anuncios: [], nomes: undefined };
+
+  const linhas = await getAdLevelDailySpend(
+    db,
+    projectId,
+    periodo.inicio,
+    periodo.fim,
+    campaignIds,
+  );
+  if (linhas.length === 0) return { anuncios: [], nomes: undefined };
+
+  const porAd = new Map<string, AdSpendRow>();
+  const ads: Record<string, string> = {};
+  const adsets: Record<string, string> = {};
+
+  for (const l of linhas) {
+    let acc = porAd.get(l.adId);
+    if (!acc) {
+      acc = {
+        adId: l.adId,
+        adsetId: l.adsetId,
+        campaignId: l.campaignId,
+        spend: 0,
+        spendComImposto: 0,
+      };
+      porAd.set(l.adId, acc);
+    }
+    acc.spend += l.spend;
+    acc.spendComImposto += applyMetaTax(l.spend, l.dateStart);
+
+    if (l.adName && l.adName !== l.adId) ads[l.adId] = l.adName;
+    if (l.adsetId && l.adsetName) adsets[l.adsetId] = l.adsetName;
+  }
+
+  return {
+    anuncios: [...porAd.values()],
+    // Objeto vazio e `undefined` significam a mesma coisa para o motor (o `??`
+    // cai no ID nos dois casos), mas devolver `undefined` deixa explícito no
+    // debug que nenhum nome foi resolvido — em vez de um `{}` que parece
+    // resposta.
+    nomes:
+      Object.keys(ads).length > 0 || Object.keys(adsets).length > 0
+        ? { ads, adsets }
+        : undefined,
+  };
+}
 
 interface SheetShape {
   headers: string[];
