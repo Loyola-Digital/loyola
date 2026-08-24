@@ -626,6 +626,14 @@ export const funnels = pgTable(
       (): AnyPgColumn => funnels.id,
       { onDelete: "set null" }
     ),
+    /**
+     * Dia 1 do funil comparado, quando não é o primeiro dia de veiculação.
+     *
+     * Lançamento que roda tráfego semanas antes de abrir carrinho tem um começo
+     * "de verdade" diferente do primeiro anúncio — alinhar por veiculação põe o
+     * D1 do antigo num dia sem venda e entorta a comparação inteira.
+     */
+    compareStartDate: varchar("compare_start_date", { length: 10 }),
     matchCode: varchar("match_code", { length: 50 }),
     /** IDs de campanhas órfãs (Epic 25) que o usuário escolheu OCULTAR do banner
      * de "campanhas não selecionadas". Persistido no funil → vale pra todos os

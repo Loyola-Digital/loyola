@@ -497,6 +497,11 @@ export interface Funnel {
   switchyFolderIds: SwitchyFolderRef[];
   switchyLinkedLinks: SwitchyLinkRef[];
   compareFunnelId: string | null;
+  /**
+   * aaaa-mm-dd — Dia 1 do funil comparado, quando não é o primeiro dia de
+   * veiculação. Null = alinhamento pelo primeiro anúncio.
+   */
+  compareStartDate?: string | null;
   /** Substring case-insensitive a buscar em campaign.name pra detectar
    * campanhas órfãs (Epic 25). Null = alerta desativado. */
   matchCode: string | null;
@@ -516,6 +521,8 @@ export interface Funnel {
 
 export interface ComparisonDayMetrics {
   dayIndex: number;
+  /** aaaa-mm-dd do dia no calendário — permite reancorar o Dia 1. */
+  date?: string;
   impressions: number;
   clicks: number;
   /** Cliques no LINK (link_click) — usado pra CTR de tráfego real. */
