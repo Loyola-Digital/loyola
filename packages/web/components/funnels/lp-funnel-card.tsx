@@ -1,5 +1,7 @@
 "use client";
 
+import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
+
 /**
  * Mini-funil de uma LP: a cadeia LP View → Lead → Aplicação → Pesquisa → Compra
  * de uma única página, com a barra de cada etapa proporcional ao topo.
@@ -112,7 +114,8 @@ export function LpFunnelCard({
     );
   }
 
-  const isPaid = stageType === "paid";
+  // Inclui a Captação de Evento: o funil da LP é o mesmo, muda o que se vende.
+  const isPaid = ehCaptacaoPaga(stageType);
 
   // A cadeia (quais etapas, em que ordem, com que rótulo) é regra de domínio e
   // vive em `lp-funnel-steps`, com teste — foi onde a primeira versão errou.

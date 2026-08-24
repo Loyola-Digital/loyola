@@ -21,6 +21,7 @@
 import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
+import { tiposEquivalentes } from "../utils/stage-types.js";
 import {
   funnelSpreadsheets,
   funnelStages,
@@ -347,7 +348,9 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
           .where(
             and(
               eq(funnelStages.funnelId, ctx.compareFunnelId),
-              eq(funnelStages.stageType, ctx.stageType),
+              // Mesmo motivo do gráfico de mídia: `event_capture` e `paid` são
+              // a mesma etapa quando se compara lançamento com lançamento.
+              inArray(funnelStages.stageType, tiposEquivalentes(ctx.stageType)),
             ),
           )
           .limit(1);

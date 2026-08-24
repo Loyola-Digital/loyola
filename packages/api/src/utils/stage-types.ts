@@ -16,6 +16,7 @@
  * `dist/index.js`. Ver a tabela em `packages/shared/src/index.ts`.
  */
 export {
+  tiposEquivalentes,
   ehCaptacaoPaga,
   temDashboardDeVendas,
   ehEtapaDeCaptacao,
