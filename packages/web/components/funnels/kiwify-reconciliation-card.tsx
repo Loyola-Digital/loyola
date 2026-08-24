@@ -134,11 +134,22 @@ export function KiwifyReconciliationCard({ projectId, funnelId, stageId }: Props
             {r.ingressosKiwify != null && (
               <div className="rounded-md border border-border/40 bg-background/60 px-2.5 py-1.5 text-xs">
                 <span>
-                  <strong className="tabular-nums">{r.ingressosKiwify}</strong> ingressos em{" "}
-                  <strong className="tabular-nums">{r.totalKiwify}</strong> vendas
+                  <strong className="tabular-nums">{r.ingressosKiwify}</strong> ingressos
+                  {r.fonteDosIngressos === "lotes" ? (
+                    // Os lotes contam desde a abertura das vendas; o total de
+                    // vendas acima respeita o período. Escrever "X ingressos em
+                    // Y vendas" juntaria dois recortes diferentes num número só.
+                    <span className="text-muted-foreground"> no evento todo</span>
+                  ) : (
+                    <>
+                      {" "}em <strong className="tabular-nums">{r.totalKiwify}</strong> vendas
+                    </>
+                  )}
                 </span>
                 {r.fonteDosIngressos === "lotes" ? (
-                  <span className="ml-2 text-muted-foreground">— contagem oficial dos lotes do evento.</span>
+                  <span className="ml-2 text-muted-foreground">
+                    — contagem oficial dos lotes, sem filtro de período.
+                  </span>
                 ) : r.comprasMultiplas.length > 0 ? (
                   <span className="ml-2 text-muted-foreground">
                     — {r.comprasMultiplas.length} compra(s) com mais de um ingresso:{" "}
