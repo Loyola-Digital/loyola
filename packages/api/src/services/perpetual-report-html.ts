@@ -10,6 +10,7 @@
  */
 
 import type { PerpetualReport, SegmentoRow } from "./perpetual-report-metrics.js";
+import { CHAVES_DE_CAUDA } from "./perpetual-report-metrics.js";
 import { buildReadings, buildDataNotes, trendLabel } from "./perpetual-report-readings.js";
 
 const brl = (n: number | null) =>
@@ -51,6 +52,9 @@ h2{font-size:15px;font-weight:600;margin:28px 0 10px;color:#c7cbd6}
 .kpi.pos{border-color:rgba(52,199,123,.4);background:rgba(52,199,123,.07)}
 .kpi.neg{border-color:rgba(240,90,90,.4);background:rgba(240,90,90,.07)}
 .pos-v{color:#34c77b}.neg-v{color:#f05a5a}
+/* Story 29.58: a cauda não coberta pelo grão de anúncio. Discreta e presente —
+   escondê-la faria a seção apresentar 90% como se fosse o total. */
+tr.cauda td{color:#8a93a3;font-style:italic}
 table{width:100%;border-collapse:collapse;font-size:13px}
 .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
 th,td{padding:7px 9px;text-align:right;border-bottom:1px solid #1e2333;white-space:nowrap}
@@ -85,9 +89,17 @@ function kpiCard(lbl: string, val: string, hint?: string, tone?: "pos" | "neg"):
 
 function segTable(titulo: string, rows: SegmentoRow[]): string {
   if (rows.length === 0) return "";
+  // Story 29.58 (AC5) — a linha de cauda vai para o fim, independente do valor.
+  // Ela não é um conjunto nem um criativo: deixá-la competir no ranking por
+  // investimento colocaria no topo uma linha sobre a qual não há ação possível.
+  rows = [...rows].sort((a, b) => {
+    const ca = CHAVES_DE_CAUDA.has(a.chave) ? 1 : 0;
+    const cb = CHAVES_DE_CAUDA.has(b.chave) ? 1 : 0;
+    return ca !== cb ? ca - cb : b.investimento - a.investimento;
+  });
   const body = rows
     .map(
-      (r) => `<tr>
+      (r) => `<tr${CHAVES_DE_CAUDA.has(r.chave) ? ' class="cauda"' : ""}>
       <td>${esc(r.label)}</td>
       <td>${brl(r.investimento)}</td>
       <td>${pct(r.pctInvestimento)}</td>
@@ -101,7 +113,7 @@ function segTable(titulo: string, rows: SegmentoRow[]): string {
     .join("");
   return `<h2>${titulo}</h2><div class="scroll"><table>
     <thead><tr><th>Nome</th><th>Investimento</th><th>% inv.</th><th>Vendas</th>
-    <th>Faturamento</th><th>CAC</th><th>ROAS</th><th>Margem</th></tr></thead>
+    <th>Faturamento Bruto</th><th>CAC</th><th>ROAS</th><th>Margem</th></tr></thead>
     <tbody>${body}</tbody></table></div>`;
 }
 
@@ -173,6 +185,10 @@ export function renderPerpetualReportHtml(report: PerpetualReport): string {
     segTable("Campanhas", segmentos.campanhas),
     segmentos.publicos ? segTable("Conjuntos (público)", segmentos.publicos) : "",
     segmentos.criativos ? segTable("Criativos", segmentos.criativos) : "",
+    // Story 29.59 — o teste de LP, no mesmo documento que o resto. Depois de
+    // Criativos porque a LP é atributo do anúncio: quem lê chega nela vindo do
+    // criativo que a alimenta.
+    segmentos.lps ? segTable("Landing pages", segmentos.lps) : "",
   ].join("");
 
   const leituras = buildReadings(report)

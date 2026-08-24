@@ -428,6 +428,26 @@ export interface AdLinkUrlsResponse {
    * e a ação é rodar o backfill de criativos, não desistir do dado.
    */
   staleInCache?: string[];
+  /**
+   * Story 29.56 (AC6) — quantos ad_ids o backend mandou re-sincronizar nesta
+   * chamada. Ausente significa API anterior à 29.56.
+   *
+   * A tabela de LPs não consome este campo (AC7): ele existe para que "não
+   * agendou porque não precisava" e "não agendou porque quebrou" sejam
+   * distinguíveis em produção, que é onde a auto-cura ou funciona ou some.
+   */
+  refreshAgendado?: number;
+  /**
+   * Por que a contagem acima é zero (gate PO F1). `sem_conta_meta` e
+   * `token_invalido` são falhas que exigem ação; `cooldown` e `nada_a_curar`
+   * significam que está tudo certo.
+   */
+  refreshMotivo?:
+    | "agendado"
+    | "nada_a_curar"
+    | "cooldown"
+    | "sem_conta_meta"
+    | "token_invalido";
 }
 
 /**

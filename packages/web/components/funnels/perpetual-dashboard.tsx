@@ -81,6 +81,8 @@ import { PerpetualProductTypesDialog } from "./perpetual-product-types-dialog";
 import { legendaQuebraPorTipo } from "@/lib/utils/perpetual-product-types";
 import {
   calcularTendencia,
+  ultimoDiaFechado,
+  JANELAS_TENDENCIA,
   direcao,
   tendenciaDaEntidade,
   type Tendencia,
@@ -1561,6 +1563,18 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
    * Sem planilha não há faturamento por dia que preste — o `revenue` cairia no
    * pixel da Meta e o ROAS da tendência contradiria o card, que já mostra "—".
    */
+  /**
+   * Story 29.57 — a âncora das janelas, calculada UMA vez e compartilhada pelo
+   * bloco agregado e pelo por-entidade.
+   *
+   * Deixar cada um chamar `ultimoDiaFechado()` por conta própria funcionaria em
+   * 99,99% dos renders e divergiria exatamente no que atravessa a meia-noite —
+   * o tipo de defeito que aparece uma vez por mês, de madrugada, e não se
+   * reproduz. `dailyChartData` como dependência faz a âncora ser reavaliada
+   * sempre que os dados chegam, que é quando a tela pode ter ficado aberta.
+   */
+  const ancoraDasJanelas = useMemo(() => ultimoDiaFechado(), [dailyChartData]);
+
   const tendencia = useMemo(() => {
     if (!usingSpreadsheet) return null;
     return calcularTendencia(
@@ -1570,8 +1584,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         revenue: d.revenue,
         margin: d.margin,
       })),
+      JANELAS_TENDENCIA,
+      ancoraDasJanelas,
     );
-  }, [dailyChartData, usingSpreadsheet]);
+  }, [dailyChartData, usingSpreadsheet, ancoraDasJanelas]);
 
   // Story 29.9: agregados com tax aplicado, derivados de `campaign-daily`.
   //
@@ -2858,6 +2874,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         dimensao={tableFilter}
         temPlanilha={usingSpreadsheet}
         loading={entityDailyLoading}
+        ancoraMaxima={ancoraDasJanelas}
       />
 
       {/* ================================================================ */}
@@ -3331,7 +3348,18 @@ function TendenciaBlock({ t }: { t: Tendencia }) {
       <div className="flex items-baseline justify-between mb-3">
         <h3 className="text-sm font-semibold">Tendência</h3>
         <span className="text-[10px] text-muted-foreground">
-          janelas que terminam em {t.fim.slice(8, 10)}/{t.fim.slice(5, 7)} — o último dia com dado do período
+          {/* Story 29.57 (AC6): sem esta frase a correção da âncora é
+              invisível — quem já desconfiava do número de 1d não teria como
+              saber que ele mudou de regra. E ela responde de antemão "por que
+              7d não bate com os últimos sete dias do gráfico?". */}
+          janelas até {t.ancora.slice(8, 10)}/{t.ancora.slice(5, 7)}
+          {t.ancora < t.fim ? (
+            <span title={`O período vai até ${t.fim.slice(8, 10)}/${t.fim.slice(5, 7)}, mas esse dia ainda não terminou. Um dia em andamento tem só parte do investimento e quase nenhuma venda registrada — incluí-lo puxaria o ROAS para baixo sem que nada tivesse piorado.`}>
+              {" "}— último dia fechado, o dia corrente fica de fora
+            </span>
+          ) : (
+            " — último dia com dado do período"
+          )}
         </span>
       </div>
       <div className="overflow-x-auto">
@@ -3346,7 +3374,15 @@ function TendenciaBlock({ t }: { t: Tendencia }) {
                   {j.parcial && (
                     <span
                       className="ml-1 text-amber-500/90 normal-case"
-                      title={`O período filtrado tem ${t.diasDoPeriodo} dia(s) — menos que os ${j.dias} da janela. O valor mostrado é o do período inteiro, não o de ${j.dias} dias.`}
+                      title={
+                        // Story 29.57 (AC7): o teto passou a ser o dia FECHADO,
+                        // então um filtro de 7 dias que inclui hoje tem 7 dias
+                        // de período e 6 de material. Dizer "o período tem 7"
+                        // faria o aviso parecer errado.
+                        t.diasFechados < t.diasDoPeriodo
+                          ? `O período tem ${t.diasDoPeriodo} dia(s), mas só ${t.diasFechados} já fecharam — menos que os ${j.dias} da janela. O valor mostrado cobre ${j.diasCobertos} dia(s), não ${j.dias}.`
+                          : `O período filtrado tem ${t.diasDoPeriodo} dia(s) — menos que os ${j.dias} da janela. O valor mostrado é o do período inteiro, não o de ${j.dias} dias.`
+                      }
                     >
                       ⚠️{j.diasCobertos}d
                     </span>
@@ -3400,11 +3436,14 @@ function TendenciaPorEntidade({
   dimensao,
   temPlanilha,
   loading,
+  ancoraMaxima,
 }: {
   series: ReturnType<typeof buildEntitySeries>;
   dimensao: "campaign" | "adset" | "ad";
   temPlanilha: boolean;
   loading: boolean;
+  /** Story 29.57 (AC4) — a MESMA âncora do bloco agregado, nunca uma segunda. */
+  ancoraMaxima: string;
 }) {
   const rotuloDim =
     dimensao === "campaign" ? "campanha" : dimensao === "adset" ? "público" : "criativo";
@@ -3416,9 +3455,12 @@ function TendenciaPorEntidade({
       fim: series.dates[series.dates.length - 1]!,
     };
     return series.plotted
-      .map((s) => ({ nome: s.name, t: tendenciaDaEntidade(s.byDate, periodo) }))
+      .map((s) => ({
+        nome: s.name,
+        t: tendenciaDaEntidade(s.byDate, periodo, JANELAS_TENDENCIA, ancoraMaxima),
+      }))
       .filter((l): l is { nome: string; t: Tendencia } => l.t !== null);
-  }, [series]);
+  }, [series, ancoraMaxima]);
 
   if (loading) return <Skeleton className="h-44 rounded-xl" />;
   // Sem planilha não há faturamento por entidade: ROAS e Margem seriam ambos
@@ -3448,7 +3490,7 @@ function TendenciaPorEntidade({
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="text-sm font-semibold">Tendência por {rotuloDim}</h3>
         <span className="text-[10px] text-muted-foreground">
-          mesmas {linhas.length} {linhas.length === 1 ? "entidade" : "entidades"} dos gráficos acima · janelas ancoradas no fim do período
+          mesmas {linhas.length} {linhas.length === 1 ? "entidade" : "entidades"} dos gráficos acima · janelas até {ancoraMaxima.slice(8, 10)}/{ancoraMaxima.slice(5, 7)} (último dia fechado)
         </span>
       </div>
       <div className="overflow-x-auto">

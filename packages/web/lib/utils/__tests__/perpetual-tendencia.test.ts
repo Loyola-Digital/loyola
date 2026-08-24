@@ -5,9 +5,11 @@
  * Cada teste tem que FALHAR com o defeito de volta; um teste que sobrevive à
  * reversão é decorativo.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   calcularTendencia,
+  diaDeNegocio,
+  ultimoDiaFechado,
   direcao,
   tendenciaDaEntidade,
   JANELAS_TENDENCIA,
@@ -223,5 +225,170 @@ describe("as ausências, declaradas", () => {
     expect(direcao(1.8, 1.8)).toBeNull();
     expect(direcao(null, 1.8)).toBeNull();
     expect(direcao(1.8, null)).toBeNull();
+  });
+});
+
+// ============================================================================
+// Story 29.57 — a âncora é o último dia FECHADO
+//
+// A tabela do "🧪 Verificação por reversão" da story, uma linha por `describe`.
+//
+// ⚠️ Todos os casos passam `ancoraMaxima` explícito. Depender do relógio faria
+// esta suíte mudar de resultado à meia-noite — e o projeto já tem três testes
+// date-dependent que quebram sozinhos no CI. O default (`ultimoDiaFechado()`)
+// é exercido no `describe` do fuso, que é onde ele é o objeto do teste.
+// ============================================================================
+
+/** Uma semana em que o ÚLTIMO dia é parcial — o retrato do bug em produção. */
+const SEMANA_COM_HOJE: PontoDiario[] = [
+  ponto("2026-08-18", 1050, 2100),
+  ponto("2026-08-19", 860, 1720),
+  ponto("2026-08-20", 740, 1480),
+  ponto("2026-08-21", 980, 1960),
+  ponto("2026-08-22", 827, 1654),
+  ponto("2026-08-23", 842, 1684),
+  // 24/08 às 11h: 35% do investimento de um dia normal, e a planilha de vendas
+  // ainda não recebeu nada. É este dia que sequestrava a janela de 1d.
+  ponto("2026-08-24", 308, 0),
+];
+
+/** Ontem, do ponto de vista da série acima. */
+const ONTEM = "2026-08-23";
+
+describe("a âncora é o último dia fechado", () => {
+  it("1d fala de ontem, não do dia em andamento", () => {
+    const t = calcularTendencia(SEMANA_COM_HOJE, JANELAS_TENDENCIA, ONTEM)!;
+    expect(t.ancora).toBe(ONTEM);
+    // Com o defeito de volta a janela pegaria o dia parcial: spend 308,
+    // revenue 0, ROAS 0.
+    expect(t.janelas[0]!.spend).toBe(842);
+    expect(t.janelas[0]!.revenue).toBe(1684);
+    expect(t.janelas[0]!.roas).toBeCloseTo(2, 10);
+  });
+
+  it("3d e 7d também excluem o dia em andamento (AC2)", () => {
+    const t = calcularTendencia(SEMANA_COM_HOJE, JANELAS_TENDENCIA, ONTEM)!;
+    // 3d = 21, 22, 23 — sem o 24.
+    expect(t.janelas[1]!.spend).toBe(980 + 827 + 842);
+    // 7d = 18..23, seis dias fechados. O 24 não entra em nenhuma.
+    expect(t.janelas[2]!.spend).toBe(1050 + 860 + 740 + 980 + 827 + 842);
+    expect(t.janelas.every((j) => j.revenue > 0)).toBe(true);
+  });
+
+  it("as três janelas terminam no MESMO dia — nenhuma fica para trás", () => {
+    const t = calcularTendencia(SEMANA_COM_HOJE, JANELAS_TENDENCIA, ONTEM)!;
+    // Se só a de 1d fosse recortada, a de 3d carregaria o dia parcial e a
+    // comparação entre elas — a única razão de estarem lado a lado — seria
+    // inválida. 3d ⊃ 1d tem que valer nas somas.
+    expect(t.janelas[1]!.spend).toBeGreaterThan(t.janelas[0]!.spend);
+    expect(t.janelas[2]!.spend).toBeGreaterThan(t.janelas[1]!.spend);
+    // E nenhuma delas pode conter o spend do dia parcial.
+    expect(t.janelas[2]!.spend).not.toBe(
+      1050 + 860 + 740 + 980 + 827 + 842 + 308,
+    );
+  });
+});
+
+describe("período que já acabou não é recortado", () => {
+  it("filtro no passado ancora no fim DELE, não em ontem", () => {
+    // A SEMANA termina em 08/08 e a âncora máxima é 23/08. Recortar aqui
+    // faria a tendência falar de agosto enquanto os cards falam de julho —
+    // exatamente o que o AC1 da 29.54 evitou, e que esta story não desfaz.
+    const t = calcularTendencia(SEMANA, JANELAS_TENDENCIA, ONTEM)!;
+    expect(t.ancora).toBe("2026-08-08");
+    expect(t.janelas[0]!.revenue).toBe(300);
+  });
+
+  it("o `min` não vira `max`: a âncora nunca ultrapassa o fim do período", () => {
+    const t = calcularTendencia(SEMANA, JANELAS_TENDENCIA, ONTEM)!;
+    expect(t.ancora <= t.fim).toBe(true);
+  });
+});
+
+describe("a coluna Período continua sendo o range inteiro (AC3)", () => {
+  const t = calcularTendencia(SEMANA_COM_HOJE, JANELAS_TENDENCIA, ONTEM)!;
+
+  it("Período inclui o dia em andamento — é o que o gestor filtrou", () => {
+    // Recortá-la faria a tendência divergir dos cards de investimento, que
+    // somam o dia corrente.
+    expect(t.periodo.spend).toBe(1050 + 860 + 740 + 980 + 827 + 842 + 308);
+    expect(t.fim).toBe("2026-08-24");
+    expect(t.diasDoPeriodo).toBe(7);
+  });
+
+  it("mas as janelas têm um dia a menos de material (AC7)", () => {
+    expect(t.diasFechados).toBe(6);
+    // 7d num período de 7 dias com só 6 fechados É parcial, e precisa dizer.
+    expect(t.janelas[2]!.parcial).toBe(true);
+    expect(t.janelas[2]!.diasCobertos).toBe(6);
+    // 1d e 3d têm material de sobra — o aviso não pode vazar para elas.
+    expect(t.janelas[0]!.parcial).toBe(false);
+    expect(t.janelas[1]!.parcial).toBe(false);
+  });
+});
+
+describe("período sem nenhum dia fechado declara, não mente (AC5)", () => {
+  it("filtro só do dia corrente devolve null", () => {
+    const t = calcularTendencia([ponto("2026-08-24", 308, 0)], JANELAS_TENDENCIA, ONTEM);
+    // Com o defeito de volta viria uma janela com ROAS 0 — um número que o
+    // gestor leria como "despencou" quando o dia mal começou.
+    expect(t).toBeNull();
+  });
+
+  it("o dia seguinte à âncora também não vira tendência", () => {
+    expect(
+      calcularTendencia([ponto("2026-09-01", 100, 500)], JANELAS_TENDENCIA, ONTEM),
+    ).toBeNull();
+  });
+});
+
+describe("a tendência por entidade usa a MESMA âncora (AC4)", () => {
+  const periodoComHoje = { inicio: "2026-08-18", fim: "2026-08-24" };
+
+  it("entidade que só gastou no dia parcial não inventa janela de 1d", () => {
+    const byDate = { "2026-08-24": { spend: 308, revenue: 0, margin: -308 } };
+    const t = tendenciaDaEntidade(byDate, periodoComHoje, JANELAS_TENDENCIA, ONTEM)!;
+    expect(t.ancora).toBe(ONTEM);
+    expect(t.janelas[0]!.spend).toBe(0);
+    expect(t.janelas[0]!.roas).toBeNull();
+  });
+
+  it("duas entidades com fins diferentes ancoram no mesmo dia", () => {
+    const cedo = { "2026-08-19": { spend: 100, revenue: 300, margin: 200 } };
+    const tarde = { "2026-08-23": { spend: 100, revenue: 200, margin: 100 } };
+    const a = tendenciaDaEntidade(cedo, periodoComHoje, JANELAS_TENDENCIA, ONTEM)!;
+    const b = tendenciaDaEntidade(tarde, periodoComHoje, JANELAS_TENDENCIA, ONTEM)!;
+    expect(a.ancora).toBe(b.ancora);
+    expect(a.ancora).toBe(ONTEM);
+  });
+});
+
+describe("o dia de negócio não é o do processo", () => {
+  const TZ_ORIGINAL = process.env.TZ;
+  afterEach(() => {
+    process.env.TZ = TZ_ORIGINAL;
+  });
+
+  it("22h em São Paulo ainda é o mesmo dia, com o processo em UTC", () => {
+    // 2026-08-24T01:30:00Z = 23h30 de 23/08 em São Paulo. Um `getDate()` no
+    // processo em UTC devolveria 24; o dia de negócio é 23.
+    process.env.TZ = "UTC";
+    const instante = new Date("2026-08-24T01:30:00Z");
+    expect(diaDeNegocio(instante)).toBe("2026-08-23");
+    expect(ultimoDiaFechado(instante)).toBe("2026-08-22");
+  });
+
+  it("o mesmo instante dá o mesmo dia com o processo em Tóquio", () => {
+    // O fuso do NAVEGADOR não pode mudar o que a tela mostra: dois gestores
+    // lado a lado precisam ler a mesma tendência.
+    process.env.TZ = "Asia/Tokyo";
+    const instante = new Date("2026-08-24T01:30:00Z");
+    expect(diaDeNegocio(instante)).toBe("2026-08-23");
+    expect(ultimoDiaFechado(instante)).toBe("2026-08-22");
+  });
+
+  it("a virada do mês retrocede corretamente", () => {
+    // 01/09 às 03:00Z = 00h de 01/09 em São Paulo. Ontem é 31/08, não 00/09.
+    expect(ultimoDiaFechado(new Date("2026-09-01T03:00:00Z"))).toBe("2026-08-31");
   });
 });

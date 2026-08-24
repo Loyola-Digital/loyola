@@ -35,6 +35,9 @@ export {
   tiposEquivalentes,
 } from "./stage-types.js";
 export { normalizarNomeCampanha, temSufixoDeCopia } from "./campaign-name.js";
+// Story 29.59: a identidade de uma landing page. Compartilhada porque o
+// dashboard e o relatório TÊM que agrupar as mesmas URLs na mesma linha.
+export { normalizeLpUrl, lpLabel, type LpKey } from "./lp-url.js";
 export {
   // fronteira de unidade
   dePercentual,

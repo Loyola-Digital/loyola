@@ -1,0 +1,138 @@
+storyIds: [29.56, 29.57, 29.58, 29.59]
+epic: 29
+titulo: "Correções do Perpétuo — auto-cura de LP, âncora da tendência, relatório adset/ad e LPs"
+revisadoPor: "@qa (Quinn)"
+data: 2026-08-24
+branch: feat/perpetual-29-56-a-29-59
+commits: [db8a9060, 8dfd0907, d057226f, f2ffceaf, 99101703]
+
+verdict: CONCERNS
+
+resumo: >
+  As quatro passam nos 7 checks. O veredito é CONCERNS e não PASS por um único
+  motivo, e ele não é sobre o código: nenhuma das quatro foi vista rodando na
+  tela. Três são backend puro e dependem de um deploy da API que está fora do
+  alcance desta branch; a quarta (29.57) sobe com o web e é validável no
+  primeiro carregamento. Aprovar como PASS seria dizer que a verificação
+  terminou, e ela não terminou — é a mesma lacuna que a 29.51 e a 43.6 fecharam
+  tarde demais neste projeto.
+
+checks:
+  - id: 1
+    nome: Code review
+    resultado: OK
+    notas: >
+      Dois achados corrigidos durante a revisão, não apenas anotados.
+      (a) sql.raw interpolando LINK_URL_RESOLVER_VERSION no jsonb_set: hoje é
+      constante do código e inofensivo, mas raw é armadilha para quem vier
+      depois — no dia em que a versão vier de config ou header, a injeção entra
+      sem que o diff pareça suspeito. Trocado por bind (to_jsonb($1::int)).
+      (b) A decisão do motivo da cura estava num closure dentro do handler
+      Fastify, onde só seria testável levantando a app inteira — movida para
+      avaliarCura, no serviço.
+
+  - id: 2
+    nome: Unit tests
+    resultado: OK
+    notas: >
+      64 testes novos. O que sustenta o check não é o número: cada defeito foi
+      REINTRODUZIDO e a queda medida — 22 reversões executadas ao todo, nenhuma
+      passou despercebida. Duas mereceram checagem extra porque costumam ser
+      decorativas — (a) o teste de fuso da 29.57, onde confirmei que
+      process.env.TZ tem efeito em runtime neste Node e que voltar a getDate()
+      derruba 2 testes; (b) o teste da F4, que não existia e cuja reversão
+      passava — foi escrito e agora derruba 2.
+
+  - id: 3
+    nome: Acceptance criteria
+    resultado: OK
+    notas: >
+      27 ACs entre as quatro. Dois não estavam atendidos e foram tratados pelo
+      gate do @po antes deste — o AC6 da 29.56 (o refreshAgendado prometia
+      distinguir "quebrou" e não distinguia) e o AC5 da 29.59 (pedia uma ordem
+      de colunas que quebraria a consistência do próprio relatório; AC
+      reescrito, vocabulário alinhado). O AC1 da 29.58 especificava uma função
+      incapaz de entregar o AC3; o desvio está documentado na story.
+
+  - id: 4
+    nome: No regressions
+    resultado: OK
+    notas: >
+      API 1373 -> 1435 testes com as MESMAS 11 falhas pré-existentes do começo
+      ao fim (instagram, projects, schema, funnel-stages-lead-inputs — nenhuma
+      de perpétuo ou traffic). Web 509 -> 523, zero falhas. turbo build 4/4.
+      Boot real da API verificado com node -e import(...) sobre os módulos
+      tocados — é a única checagem que pega o erro de subpath do shared, que
+      passa por tsc, vitest e next build sem acusar nada. O SQL do carimbo foi
+      validado contra um Postgres real (SELECT sobre literal, sem tocar em
+      tabela) — preserva o resto do criativo e grava o resolver.
+
+  - id: 5
+    nome: Performance
+    resultado: CONCERNS
+    notas: >
+      Ver OBS-1 e OBS-2. Nenhuma bloqueia — as duas são exposições que o código
+      já tinha em caminhos vizinhos, não regressões desta branch.
+
+  - id: 6
+    nome: Security
+    resultado: OK
+    notas: >
+      O endpoint alterado mantém guestCanAccessTraffic antes de qualquer
+      leitura, e as duas escritas novas filtram por projectId — um projeto não
+      alcança o cache de outro. Nenhuma entrada do usuário chega ao SQL sem
+      bind depois da correção do sql.raw. O token Meta continua decriptado sob
+      demanda e nunca sai na resposta.
+
+  - id: 7
+    nome: Documentation
+    resultado: OK
+    notas: >
+      As quatro stories carregam a medição de produção que as motivou, e o
+      código carrega o porquê nos pontos onde o projeto já errou antes —
+      contagem dupla de imposto, subpath do shared, promise sem catch.
+
+issues:
+  - id: OBS-1
+    severity: low
+    category: performance
+    description: >
+      loadLinkUrls e getAdLevelDailySpend leem sem teto — inArray com todos os
+      ad_ids do período e um SELECT sem LIMIT sobre meta_ad_insights_daily. No
+      BBE são 196 anúncios; um funil com histórico longo pode multiplicar isso.
+    recommendation: >
+      Não mexer agora. O teto seria pior que a exposição — a soma da seção de
+      LPs precisa fechar com o investimento, e cortar em N faria dinheiro
+      desaparecer da tabela, que é exatamente o defeito que a 29.58 corrigiu.
+      Se virar problema, a saída é agregar no SQL, não truncar.
+
+  - id: OBS-2
+    severity: low
+    category: performance
+    description: >
+      A auto-cura chama upsertAdCreatives, que baixa miniaturas do CDN da Meta
+      como efeito colateral. A story não previu isso. São no máximo 100
+      criativos por cura, 5 downloads em paralelo, e só do que falta ou mudou
+      de URL.
+    recommendation: >
+      Aceitar. O efeito é desejável — a URL da miniatura expira, e este é um dos
+      poucos momentos em que ela está boa — e está contido pelo cooldown de 10
+      min. Registrado para que não seja descoberto como surpresa.
+
+  - id: OBS-3
+    severity: medium
+    category: requirements
+    description: >
+      Nenhuma das quatro foi vista rodando. A 29.57 é validável assim que o web
+      subir; as outras três não produzem efeito nenhum sem deploy da API — e
+      esse deploy é histórico de pendência neste projeto (18.60, 18.61, 29.45 e
+      44.9 ficaram esperando por ele).
+    recommendation: >
+      Validar a 29.57 no primeiro carregamento após o merge — o rótulo "janelas
+      até DD/MM" na tela é a evidência. Para as outras três, a evidência é
+      regerar o relatório 17/07-23/08 do bbe-fc1-mai-26 e conferir nomes,
+      investimentos e a seção de LPs; e reabrir o Desempenho por LP para ver a
+      linha "Sem link resolvido" encolher.
+
+deployPendente: true
+proximoPasso: "@devops — push da branch e PR"
