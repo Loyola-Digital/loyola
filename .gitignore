@@ -63,5 +63,5 @@ coverage/
 # Exports de venda baixados da Kiwify para análise pontual.
 # Contêm dados pessoais de clientes reais (nome, e-mail, telefone, valores) —
 # NUNCA versionar. Ver .aiox/kiwify-analise/README.md.
-.aiox/kiwify-analise/*
-!.aiox/kiwify-analise/README.md
+kiwify-analise/*
+!kiwify-analise/README.md
