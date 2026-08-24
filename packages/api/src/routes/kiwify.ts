@@ -6,10 +6,17 @@ import { LRUCache } from "lru-cache";
 import {
   kiwifyConnections,
   kiwifyCache,
+  kiwifyStageConfigs,
   kiwifySubscriptions,
+  funnels,
+  funnelStages,
+  stageSalesSpreadsheets,
   projects,
   projectMembers,
 } from "../db/schema.js";
+import { readSheetData } from "../services/google-sheets.js";
+import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
+import { conciliar, diaNormalizado, type VendaDaPlanilha } from "../services/kiwify-reconciliation.js";
 import {
   encryptKiwifySecret,
   decryptKiwifySecret,
@@ -17,6 +24,7 @@ import {
   kiwifyGet,
   listKiwifyProducts,
   computeKiwifyDashboard,
+  fetchSalesWindowed,
 } from "../services/kiwify.js";
 
 // ============================================================
@@ -296,11 +304,15 @@ export default fp(async function kiwifyRoutes(fastify) {
     const creds = await getCreds(params.data.projectId);
     if (!creds) return reply.code(409).send({ error: "Kiwify não conectado neste projeto" });
 
-    const cacheKey = `products:${query.data.months}`;
+    // `todos=1`: o seletor da conferência precisa dos produtos de VENDA ÚNICA,
+    // que são a maioria num lançamento. O default continua só recorrentes para
+    // não mudar o dashboard de assinaturas, que é quem já usava esta rota.
+    const todos = (request.query as { todos?: string }).todos === "1";
+    const cacheKey = `products:${query.data.months}:${todos ? "todos" : "recorrentes"}`;
     try {
       const products = await serveWithSwr(params.data.projectId, cacheKey, async () => {
         const token = await getKiwifyToken(creds.clientId, creds.clientSecret);
-        return listKiwifyProducts(token, creds.accountId);
+        return listKiwifyProducts(token, creds.accountId, !todos);
       });
       return { products };
     } catch (err) {
@@ -454,4 +466,333 @@ export default fp(async function kiwifyRoutes(fastify) {
         .map((r) => ({ currency: r.currency as string, value: r.value })),
     };
   });
+
+  // ============================================================
+  // Conferência com a planilha (Story: divergência de vendas)
+  // ============================================================
+
+  const stageParamsSchema = z.object({
+    projectId: z.string().uuid(),
+    funnelId: z.string().uuid(),
+    stageId: z.string().uuid(),
+  });
+
+  const configBodySchema = z.object({
+    /** Ids de produto da Kiwify que entram na conferência desta etapa. */
+    productIds: z.array(z.string().min(1)).min(1, "Escolha ao menos um produto"),
+    /** aaaa-mm-dd — a partir de quando contar. */
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data no formato aaaa-mm-dd"),
+  });
+
+  /** A etapa pertence ao funil, e o funil ao projeto? */
+  async function etapaDoProjeto(projectId: string, funnelId: string, stageId: string) {
+    const [linha] = await fastify.db
+      .select({ id: funnelStages.id, funnelProject: funnels.projectId })
+      .from(funnelStages)
+      .innerJoin(funnels, eq(funnelStages.funnelId, funnels.id))
+      .where(and(eq(funnelStages.id, stageId), eq(funnelStages.funnelId, funnelId)))
+      .limit(1);
+    return linha && linha.funnelProject === projectId ? linha : null;
+  }
+
+  /** Config da conferência desta etapa, mais o estado da conexão do projeto. */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/kiwify/config",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      if (!(await etapaDoProjeto(params.data.projectId, params.data.funnelId, params.data.stageId))) {
+        return reply.code(404).send({ error: "Etapa não encontrada" });
+      }
+
+      const [cfg] = await fastify.db
+        .select()
+        .from(kiwifyStageConfigs)
+        .where(eq(kiwifyStageConfigs.stageId, params.data.stageId))
+        .limit(1);
+
+      // A conexão é do projeto: dizer aqui se ela existe evita a tela ter de
+      // fazer uma segunda chamada só para saber se pode oferecer a conferência.
+      const conectado = Boolean(await getCreds(params.data.projectId));
+
+      return {
+        conectado,
+        config: cfg
+          ? { productIds: cfg.productIds ?? [], startDate: cfg.startDate, updatedAt: cfg.updatedAt.toISOString() }
+          : null,
+      };
+    },
+  );
+
+  /** Define o recorte (produtos + data de início) da conferência. */
+  fastify.put(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/kiwify/config",
+    async (request, reply) => {
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const body = configBodySchema.safeParse(request.body);
+      if (!body.success) {
+        return reply.code(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+      }
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      if (!(await etapaDoProjeto(params.data.projectId, params.data.funnelId, params.data.stageId))) {
+        return reply.code(404).send({ error: "Etapa não encontrada" });
+      }
+      if (!(await getCreds(params.data.projectId))) {
+        return reply.code(409).send({ error: "Conecte a Kiwify no projeto antes de configurar a conferência" });
+      }
+
+      const agora = new Date();
+      await fastify.db
+        .insert(kiwifyStageConfigs)
+        .values({
+          stageId: params.data.stageId,
+          productIds: body.data.productIds,
+          startDate: body.data.startDate,
+          createdBy: request.userId,
+          updatedAt: agora,
+        })
+        .onConflictDoUpdate({
+          target: kiwifyStageConfigs.stageId,
+          set: { productIds: body.data.productIds, startDate: body.data.startDate, updatedAt: agora },
+        });
+
+      return { config: { productIds: body.data.productIds, startDate: body.data.startDate } };
+    },
+  );
+
+  /** Desliga a conferência desta etapa. */
+  fastify.delete(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/kiwify/config",
+    async (request, reply) => {
+      if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      await fastify.db
+        .delete(kiwifyStageConfigs)
+        .where(eq(kiwifyStageConfigs.stageId, params.data.stageId));
+      return { config: null };
+    },
+  );
+
+  /**
+   * Confere a planilha da etapa contra a Kiwify e diz onde diverge.
+   *
+   * Não muda nada: o dashboard continua lendo a planilha. Isto responde uma
+   * pergunta que hoje não tem resposta — "os números batem?" — e, quando não
+   * batem, mostra QUAIS vendas estão de cada lado, que é o que permite achar a
+   * causa em vez de discutir o total.
+   *
+   * A janela vai da data de início configurada até hoje. Os produtos são os
+   * escolhidos para a etapa: a conta da Kiwify tem todos os produtos do expert,
+   * e comparar tudo contra a planilha de um lançamento acusaria divergência em
+   * cada venda dos outros.
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/kiwify/reconciliation",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const [cfg] = await fastify.db
+        .select()
+        .from(kiwifyStageConfigs)
+        .where(eq(kiwifyStageConfigs.stageId, params.data.stageId))
+        .limit(1);
+      // Sem configuração não há conferência — e isso não é erro: a maioria das
+      // etapas não usa Kiwify.
+      if (!cfg) return { configurado: false as const };
+
+      const creds = await getCreds(params.data.projectId);
+      if (!creds) {
+        return reply.code(409).send({ error: "Kiwify não conectado neste projeto" });
+      }
+
+      const hoje = new Date().toISOString().slice(0, 10);
+      const planilhas = await fastify.db
+        .select()
+        .from(stageSalesSpreadsheets)
+        .where(eq(stageSalesSpreadsheets.stageId, params.data.stageId));
+
+      try {
+        const [daPlanilha, daKiwify] = await Promise.all([
+          lerVendasDasPlanilhas(planilhas, cfg.startDate, hoje),
+          (async () => {
+            const token = await getKiwifyToken(creds.clientId, creds.clientSecret);
+            const listas = await Promise.all(
+              (cfg.productIds ?? []).map((productId) =>
+                fetchSalesWindowed(token, creds.accountId, {
+                  productId,
+                  from: cfg.startDate,
+                  to: hoje,
+                  fullDetails: true,
+                }),
+              ),
+            );
+            return listas.flat();
+          })(),
+        ]);
+
+        // Reembolso e recusa não são venda: a planilha também não os conta, e
+        // incluí-los aqui acusaria divergência a cada estorno.
+        const pagas = daKiwify.filter((v) => VENDA_VALE.has((v.status ?? "").toLowerCase()));
+
+        const resultado = conciliar(
+          daPlanilha,
+          pagas.map((v) => ({
+            id: String(v.id ?? ""),
+            reference: (v as { reference?: string }).reference ?? null,
+            email: (v as { customer?: { email?: string } }).customer?.email ?? null,
+            data: diaNormalizado(v.approved_date ?? (v as { created_at?: string }).created_at ?? null),
+            // net_amount vem em CENTAVOS.
+            valor: (v.net_amount ?? 0) / 100,
+            produto: v.product?.name ?? null,
+          })),
+        );
+
+        /**
+         * Produtos que aparecem na PLANILHA, com quantas linhas cada um.
+         *
+         * É o antídoto do principal modo de erro da conferência: escolher na
+         * Kiwify um produto que não é o do lançamento. Aí a divergência é
+         * enorme e não significa nada — some as vendas de um produto contra as
+         * de outro. Vendo lado a lado o que a planilha tem, a pessoa percebe
+         * na hora que escolheu errado.
+         */
+        const produtosNaPlanilha = (() => {
+          const m = new Map<string, number>();
+          for (const linha of daPlanilha) {
+            const nome = (linha.produto ?? "").trim() || "(sem produto)";
+            m.set(nome, (m.get(nome) ?? 0) + 1);
+          }
+          return [...m.entries()]
+            .map(([nome, vendas]) => ({ nome, vendas }))
+            .sort((a, b) => b.vendas - a.vendas)
+            .slice(0, 10);
+        })();
+
+        return {
+          configurado: true as const,
+          periodo: { de: cfg.startDate, ate: hoje },
+          produtos: cfg.productIds ?? [],
+          produtosNaPlanilha,
+          ...resultado,
+          // As listas podem ser longas num lançamento grande. A tela recebe uma
+          // amostra, mas o TOTAL vai separado: mostrar 50 quando são 300 seria
+          // subestimar o problema justamente no caso em que ele é maior.
+          soNaKiwify: resultado.soNaKiwify.slice(0, AMOSTRA),
+          soNaPlanilha: resultado.soNaPlanilha.slice(0, AMOSTRA),
+          soNaKiwifyTotal: resultado.soNaKiwify.length,
+          soNaPlanilhaTotal: resultado.soNaPlanilha.length,
+          amostraLimitada:
+            resultado.soNaKiwify.length > AMOSTRA || resultado.soNaPlanilha.length > AMOSTRA,
+        };
+      } catch (err) {
+        request.log.error(err, "[kiwify] conferência falhou");
+        return reply.code(502).send({
+          error: "Não consegui comparar agora",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+  );
 });
+
+/**
+ * Status da Kiwify que representam venda válida.
+ *
+ * Fora daqui ficam reembolso, chargeback e recusa — que a planilha também não
+ * conta como venda. Incluí-los faria a conferência acusar divergência a cada
+ * estorno, e o aviso perderia o sentido de tanto aparecer sem motivo.
+ */
+const VENDA_VALE = new Set(["paid", "approved"]);
+
+/** Quantas divergências a resposta detalha. O total vai sempre completo. */
+const AMOSTRA = 50;
+
+/**
+ * Lê as vendas das planilhas da etapa, com as MESMAS regras do dashboard.
+ *
+ * Precisa ser igual: comparar a Kiwify contra uma contagem diferente da que
+ * aparece na tela produziria um aviso que ninguém consegue conferir.
+ */
+async function lerVendasDasPlanilhas(
+  planilhas: Array<{
+    spreadsheetId: string;
+    sheetName: string;
+    columnMapping: unknown;
+  }>,
+  de: string,
+  ate: string,
+): Promise<VendaDaPlanilha[]> {
+  const out: VendaDaPlanilha[] = [];
+
+  for (const sp of planilhas) {
+    const mapping = (sp.columnMapping ?? {}) as {
+      email?: string;
+      dataVenda?: string;
+      transactionId?: string;
+      status?: string;
+      valorBruto?: string;
+      productName?: string;
+    };
+
+    let data: { headers: string[]; rows: string[][] };
+    try {
+      data = await readSheetData(sp.spreadsheetId, sp.sheetName);
+    } catch {
+      // Planilha ilegível (permissão, aba renomeada) não derruba a conferência:
+      // ela é justamente um dos motivos de divergência que queremos flagrar.
+      continue;
+    }
+
+    const col = (nome: string | undefined) => (nome ? data.headers.indexOf(nome) : -1);
+    const iEmail = col(mapping.email);
+    const iData = col(mapping.dataVenda);
+    const iTx = col(mapping.transactionId);
+    const iStatus = col(mapping.status);
+    const iValor = col(mapping.valorBruto);
+    const iProduto = col(mapping.productName);
+    const temStatus = iStatus !== -1;
+
+    const vistos = new Set<string>();
+    for (const row of data.rows) {
+      if (temStatus && isRefundBucket(classifyRefundStatus(row[iStatus], true))) continue;
+
+      const dia = diaNormalizado(iData !== -1 ? row[iData] : null);
+      // Fora da janela configurada: a planilha costuma ter o histórico inteiro,
+      // e a conferência é do recorte que o time escolheu. Data ilegível NÃO é
+      // descartada — some do recorte por engano seria inventar divergência.
+      if (dia && (dia < de || dia > ate)) continue;
+
+      const chave = iTx !== -1 ? (row[iTx] ?? "").trim() : "";
+      const produto = iProduto !== -1 ? (row[iProduto] ?? "").trim() : "";
+      // Mesma dedup do dashboard: retry do gateway repete a transação para o
+      // mesmo produto, e isso é uma venda só.
+      const dedup = chave ? `${chave}::${produto.toLowerCase()}` : "";
+      if (dedup) {
+        if (vistos.has(dedup)) continue;
+        vistos.add(dedup);
+      }
+
+      out.push({
+        chave: chave || null,
+        email: iEmail !== -1 ? (row[iEmail] ?? "").trim() || null : null,
+        data: dia || null,
+        valor: iValor !== -1 ? Number(String(row[iValor] ?? "").replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || 0 : 0,
+        produto: produto || null,
+      });
+    }
+  }
+
+  return out;
+}
