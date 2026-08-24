@@ -27,6 +27,13 @@ import {
   type MetaEntityType,
   type ResolveEntityNamesCacheAdapter,
 } from "../services/meta-ads.js";
+// Story 29.56 — auto-cura do cache de LP. A regra mora em serviço próprio para
+// que o teto, a prioridade e o cooldown sejam prováveis sem levantar a rota.
+import {
+  curarCacheDeLpEmSegundoPlano,
+  podeTentarCura,
+  selecionarParaCura,
+} from "../services/lp-cache-selfheal.js";
 import {
   metaAdsAccounts,
   metaAdsAccountProjects,
@@ -846,15 +853,94 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
       const cached = new Set(rows.map((r) => r.adId));
       const missingFromCache = adIds.filter((id) => !cached.has(id));
 
+      // Story 29.56 (AC1) — a partir daqui o endpoint deixa de só CONTAR o que
+      // está velho e passa a mandar consertar.
+      //
+      // Medição que motivou (BBE, 17/07–23/08): 24 anúncios com cache anterior
+      // à 29.40 e ZERO sem link na Meta. Eles nunca se resolveriam sozinhos —
+      // o sync diário só busca criativo de anúncio com gasto no período, e
+      // anúncio que parou não volta a ter gasto nunca mais.
+      //
+      // O agendamento acontece DEPOIS da resposta estar montada e **não é
+      // aguardado**: uma requisição de leitura não pode ficar pendurada na
+      // Graph API. A linha encolhe na próxima abertura da aba.
+      const refreshAgendado = await agendarCuraDoCacheDeLp(
+        fastify,
+        paramResult.data.projectId,
+        staleInCache,
+        missingFromCache,
+      );
+
       return {
         linkUrls,
         requested: adIds.length,
         resolved: Object.values(linkUrls).filter(Boolean).length,
         missingFromCache,
         staleInCache,
+        // Story 29.56 (AC6): sem este campo não há como distinguir "não
+        // agendou porque não precisava" de "não agendou porque quebrou" — nem
+        // em produção nem no teste. Aditivo: consumidor antigo ignora.
+        refreshAgendado,
       };
     },
   );
+
+  /**
+   * Story 29.56 — resolve a conta Meta do projeto e dispara a cura.
+   *
+   * Devolve quantos ad_ids foram enviados, para o `refreshAgendado` do AC6. A
+   * contagem é feita ANTES do disparo (a fila é determinística) justamente para
+   * que o campo possa ser informado sem esperar a Meta responder.
+   *
+   * Projeto sem conta Meta vinculada devolve 0 e segue: o endpoint continua
+   * respondendo o que o cache tem, que é o contrato dele.
+   */
+  async function agendarCuraDoCacheDeLp(
+    app: typeof fastify,
+    projectId: string,
+    staleInCache: string[],
+    missingFromCache: string[],
+  ): Promise<number> {
+    const agora = Date.now();
+    if (!podeTentarCura(projectId, agora)) return 0;
+    const fila = selecionarParaCura(staleInCache, missingFromCache);
+    if (fila.length === 0) return 0;
+
+    const [link] = await app.db
+      .select({ accountId: metaAdsAccountProjects.accountId })
+      .from(metaAdsAccountProjects)
+      .where(eq(metaAdsAccountProjects.projectId, projectId))
+      .limit(1);
+    if (!link) return 0;
+
+    const [account] = await app.db
+      .select()
+      .from(metaAdsAccounts)
+      .where(eq(metaAdsAccounts.id, link.accountId))
+      .limit(1);
+    if (!account) return 0;
+
+    let accessToken: string;
+    try {
+      accessToken = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
+    } catch {
+      return 0;
+    }
+
+    curarCacheDeLpEmSegundoPlano(
+      {
+        db: app.db,
+        projectId,
+        metaAccountId: account.metaAccountId,
+        accessToken,
+        staleInCache,
+        missingFromCache,
+        agoraMs: agora,
+      },
+      (erro) => app.log.warn({ erro, projectId }, "[29.56] cura do cache de LP falhou"),
+    );
+    return fila.length;
+  }
 
   // ---- GET /api/traffic/analytics/:projectId/entity-daily ---- (Story 29.42, AC6/AC7)
   /**
