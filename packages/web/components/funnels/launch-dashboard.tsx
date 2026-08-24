@@ -508,19 +508,28 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                           Ingresso+OrderBump: {fmtNumber(ingressosTotaisCard)}
                         </div>
                       )}
-                      {/* Ingressos emitidos, direto dos lotes da Kiwify.
-                          Só aparece quando difere: quem compra três ingressos
-                          gera UMA venda, e o card acima conta vendas. Igual aos
-                          demais não precisa de linha própria. */}
-                      {salesData?.ingressosReais != null &&
-                        salesData.ingressosReais !== ingressosUnicosCard && (
-                          <div
-                            className="cursor-help font-medium text-primary"
-                            title="Ingressos emitidos segundo os lotes do evento na Kiwify. Difere das vendas porque uma compra pode levar vários ingressos."
-                          >
-                            Ingressos emitidos: {fmtNumber(salesData.ingressosReais)}
-                          </div>
-                        )}
+                      {/* Ingressos emitidos, direto dos lotes do evento na
+                          Kiwify. Aparece SEMPRE que existe — a primeira versão
+                          só mostrava quando diferia do número de vendas, e
+                          bastava os dois coincidirem num recorte para a linha
+                          sumir sem explicação.
+
+                          É o total do EVENTO, não do período: os lotes contam
+                          desde a abertura das vendas, e o filtro de dias acima
+                          não se aplica a ele. */}
+                      {salesData?.ingressosReais != null && (
+                        <div
+                          className="cursor-help font-medium text-primary"
+                          title={
+                            "Ingressos emitidos segundo os lotes do evento na Kiwify.\n" +
+                            "Difere das vendas porque uma compra pode levar vários ingressos.\n" +
+                            "É o total do evento — não segue o filtro de período."
+                          }
+                        >
+                          Ingressos emitidos: {fmtNumber(salesData.ingressosReais)}
+                          <span className="ml-1 font-normal text-muted-foreground">(evento todo)</span>
+                        </div>
+                      )}
                     </>
                   }
                   hintTooltip={showIngressos}
