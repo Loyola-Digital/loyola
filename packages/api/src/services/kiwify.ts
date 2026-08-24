@@ -383,6 +383,8 @@ export async function kiwifyGet<T>(
 export async function listKiwifyProducts(
   token: string,
   accountId: string,
+  /** `false` traz todos os produtos, não só os de assinatura. */
+  apenasRecorrentes = true,
 ): Promise<Array<{ id: string; name: string }>> {
   const out: KiwifyProduct[] = [];
   let total = Infinity;
@@ -399,7 +401,7 @@ export async function listKiwifyProducts(
     if (out.length >= total || items.length === 0) break;
   }
 
-  return distinctRecurringProducts(out);
+  return apenasRecorrentes ? distinctRecurringProducts(out) : distinctProducts(out);
 }
 
 /**
@@ -494,6 +496,29 @@ export async function fetchKiwifyStats(
 // ============================================================
 // Agregação pura (testável sem rede)
 // ============================================================
+
+/**
+ * TODOS os produtos distintos { id, name }, sem filtrar tipo de pagamento.
+ *
+ * Existe separada de `distinctRecurringProducts` porque as duas respondem
+ * perguntas diferentes: aquela alimenta o dashboard de recorrência, onde só
+ * assinatura importa; esta alimenta a conferência de vendas, onde o normal é
+ * produto de venda única. Medido na conta do DG: o filtro de recorrência
+ * devolvia 5 produtos enquanto as vendas do período tinham 8 — a pessoa não
+ * conseguiria escolher o produto do próprio lançamento.
+ */
+export function distinctProducts(items: KiwifyProduct[]): Array<{ id: string; name: string }> {
+  const map = new Map<string, string>();
+  for (const it of items) {
+    const id = it.id;
+    if (id === undefined || id === null || String(id).trim() === "") continue;
+    const key = String(id);
+    if (!map.has(key)) map.set(key, it.name ?? key);
+  }
+  return Array.from(map.entries())
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
 
 /**
  * Produtos distintos { id, name } filtrando payment_type === "recurring".

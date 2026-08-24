@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Wallet, ReceiptText, ScanLine , FileText, Download, Loader2} from "lucide-react";
 import type { ManualSale } from "@loyola-x/shared";
 import { toast } from "sonner";
+import { KiwifyReconciliationCard } from "@/components/funnels/kiwify-reconciliation-card";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -302,6 +303,10 @@ export function ManualPixSalesSection({
           </Button>
         </div>
       </div>
+
+      {/* A conferência fica logo abaixo do total: é ali que a dúvida sobre o
+          número aparece, e um aviso escondido em outra aba não seria lido. */}
+      <KiwifyReconciliationCard projectId={projectId} funnelId={funnelId} stageId={stageId} />
 
       <p className="text-xs text-muted-foreground">
         Vendas das planilhas de Produto Principal e TMB, mais vendas PIX direto lançadas manualmente.

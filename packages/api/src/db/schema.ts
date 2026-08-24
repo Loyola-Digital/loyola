@@ -1494,6 +1494,40 @@ export const kiwifyConnections = pgTable(
 // ?api_key=) para matricular o comprador. A key vai na query string da API do
 // MemberKit — NUNCA logar a URL com a key.
 // ============================================================
+
+/**
+ * Qual recorte da Kiwify uma etapa deve conferir.
+ *
+ * A conexão (credenciais) é do PROJETO; o que muda por etapa é o recorte:
+ * quais produtos entram na conta e a partir de que dia. Sem isso a comparação
+ * não teria sentido — a conta da Kiwify tem todos os produtos do expert, e a
+ * planilha da etapa tem só o lançamento dela.
+ *
+ * A data de início é do time, não derivada do funil: quem opera sabe quando a
+ * contagem daquele lançamento começa a valer, e adivinhar isso por `created_at`
+ * daria divergência logo na primeira comparação.
+ */
+export const kiwifyStageConfigs = pgTable(
+  "kiwify_stage_configs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .unique()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    /** Ids de produto da Kiwify. Vazio = nenhum produto escolhido ainda. */
+    productIds: jsonb("product_ids").$type<string[]>().notNull().default([]),
+    /** aaaa-mm-dd — a partir de quando contar. */
+    startDate: varchar("start_date", { length: 10 }).notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_kiwify_stage_configs_stage").on(table.stageId)]
+);
+
 export const memberkitConnections = pgTable(
   "memberkit_connections",
   {
