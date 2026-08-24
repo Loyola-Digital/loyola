@@ -160,3 +160,50 @@ export function conciliar(
     bate: soNaKiwify.length === 0 && soNaPlanilha.length === 0,
   };
 }
+
+// ============================================================
+// Quantos ingressos uma venda representa
+// ============================================================
+
+/**
+ * Ingressos de uma venda, a partir do preço base.
+ *
+ * A Kiwify **não expõe quantidade**: procurei `quantity`, `qty`, `items`,
+ * `tickets` e `seats` nos campos da venda, em `/sales/{id}` e nos endpoints
+ * `/items` e `/orders` (404 nos dois). Uma compra de 3 ingressos chega como UMA
+ * venda — que é exatamente o furo relatado: o dashboard mostra 1 onde entraram 3.
+ *
+ * O que a API dá é `payment.product_base_price`, e ele **já embute a
+ * quantidade**. Medido na conta do Netão, produto "BBE Escala - 2ª Ed":
+ *
+ * | base      | ÷ 1097 | ingressos |
+ * |-----------|--------|-----------|
+ * | R$ 3291   | 3.000  | **3**     |
+ * | R$ 1097   | 1.000  | 1         |
+ * | R$ 1000   | 0.912  | 1         |
+ * | R$ 797    | 0.727  | 1         |
+ *
+ * Duas decisões que sustentam isso:
+ *
+ * **Usa o preço BASE, não o cobrado.** `charge_amount` inclui juros de
+ * parcelamento — na mesma amostra havia razões de 1.05, 1.09, 1.20 e 1.24 sobre
+ * o base. Dividir pelo cobrado transformaria parcelamento caro em "1,24
+ * ingresso", e um combo parcelado em quantidade errada.
+ *
+ * **Só conta múltiplo quando a divisão é exata.** Preço promocional e valor
+ * negociado (797, 1000) não são fração de ingresso — são um ingresso mais
+ * barato. Sem essa trava, arredondar 0,73 daria 1 por sorte, e 1,6 daria 2 por
+ * engano.
+ */
+export function quantidadeDeIngressos(
+  precoBase: number,
+  precoUnitario: number | null | undefined,
+  /** Folga para centavos de arredondamento da própria Kiwify. */
+  tolerancia = 0.01,
+): number {
+  if (!precoUnitario || precoUnitario <= 0 || !Number.isFinite(precoBase) || precoBase <= 0) return 1;
+  const razao = precoBase / precoUnitario;
+  const inteiro = Math.round(razao);
+  if (inteiro < 2) return 1;
+  return Math.abs(razao - inteiro) <= tolerancia ? inteiro : 1;
+}

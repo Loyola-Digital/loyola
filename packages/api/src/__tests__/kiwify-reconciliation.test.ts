@@ -3,7 +3,7 @@
  * positivo aqui custa caro: manda alguém caçar venda que não sumiu.
  */
 import { describe, it, expect } from "vitest";
-import { conciliar, diaNormalizado, type VendaDaKiwify, type VendaDaPlanilha } from "../services/kiwify-reconciliation.js";
+import { conciliar, diaNormalizado, quantidadeDeIngressos, type VendaDaKiwify, type VendaDaPlanilha } from "../services/kiwify-reconciliation.js";
 
 const k = (over: Partial<VendaDaKiwify>): VendaDaKiwify => ({
   id: "uuid-1", reference: "ABC123", email: "a@x.com", data: "2026-08-10", valor: 1097, produto: "Curso", ...over,
@@ -97,5 +97,44 @@ describe("data da planilha", () => {
   it("a data brasileira convertida entra na janela certa", () => {
     const dia = diaNormalizado("01/08/2026 17:00:48")!;
     expect(dia >= "2026-07-01" && dia <= "2026-08-24").toBe(true);
+  });
+});
+
+describe("quantidade de ingressos por venda", () => {
+  const UNITARIO = 1097;
+
+  it("conta 3 ingressos quando o base é 3x o unitário", () => {
+    // Caso real: WILLIAM VIEIRA GOMES, 21/08, base R$ 3.291 = 1097 × 3.
+    expect(quantidadeDeIngressos(3291, UNITARIO)).toBe(3);
+  });
+
+  it("conta 1 no preço cheio", () => {
+    expect(quantidadeDeIngressos(1097, UNITARIO)).toBe(1);
+  });
+
+  it("preço promocional é um ingresso mais barato, não fração", () => {
+    // 797 e 1000 aparecem na conta real: 0,727 e 0,912 do unitário.
+    expect(quantidadeDeIngressos(797, UNITARIO)).toBe(1);
+    expect(quantidadeDeIngressos(1000, UNITARIO)).toBe(1);
+  });
+
+  it("não confunde juros de parcelamento com quantidade", () => {
+    // charge_amount de 1097 parcelado chega a 1361 (1,24×). Se alguém passar o
+    // valor cobrado por engano, ainda assim não vira 1 ingresso a mais.
+    expect(quantidadeDeIngressos(1361.46, UNITARIO)).toBe(1);
+    expect(quantidadeDeIngressos(1214.48, UNITARIO)).toBe(1);
+  });
+
+  it("valor negociado no meio do caminho não vira 2", () => {
+    expect(quantidadeDeIngressos(1755, UNITARIO)).toBe(1); // 1,6×
+  });
+
+  it("sem preço unitário configurado, toda venda vale 1", () => {
+    expect(quantidadeDeIngressos(3291, null)).toBe(1);
+    expect(quantidadeDeIngressos(3291, 0)).toBe(1);
+  });
+
+  it("aguenta centavos de arredondamento", () => {
+    expect(quantidadeDeIngressos(2194.01, UNITARIO)).toBe(2);
   });
 });
