@@ -42,6 +42,22 @@ export function KiwifyReconciliationCard({ projectId, funnelId, stageId }: Props
   const [configOpen, setConfigOpen] = useState(false);
   const conferencia = useKiwifyReconciliation(projectId, funnelId, stageId, Boolean(cfg.data?.config));
 
+  // Backend numa versão anterior à do site: a rota não existe e o Fastify
+  // responde 404 "Not Found". Sem este aviso o card apenas SOME, e quem
+  // procurou a configuração conclui que ela não foi feita.
+  const rotaInexistente =
+    cfg.isError && (cfg.error as { status?: number } | null)?.status === 404;
+  if (rotaInexistente) {
+    return (
+      <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3">
+        <p className="text-[11px] text-amber-700 dark:text-amber-400">
+          A conferência com a Kiwify ainda não existe no servidor — o deploy do backend está atrás do
+          site. Refaça o deploy da API para configurar.
+        </p>
+      </section>
+    );
+  }
+
   // Sem Kiwify no projeto não há o que oferecer — e a etapa nem sabe disso.
   if (cfg.isLoading || !cfg.data?.conectado) return null;
 

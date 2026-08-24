@@ -51,6 +51,7 @@ import type { Funnel, FunnelCampaign, StageType, ComparisonDayMetrics } from "@l
 import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { StageSalesSection } from "./stage-sales-section";
+import { KiwifyReconciliationCard } from "./kiwify-reconciliation-card";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
@@ -809,6 +810,12 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
       {ehPaga && stageId && (
         <div className="space-y-6 pt-2 border-t border-border/30">
           <h3 className="text-base font-semibold">Vendas</h3>
+
+          {/* Conferência com a Kiwify: mora aqui, no topo de "Vendas", porque é
+              onde a dúvida sobre o número aparece. Antes ficava só na etapa do
+              tipo `sales`, que a Captação Paga e a de Evento nem usam — a
+              configuração existia e ninguém achava. */}
+          <KiwifyReconciliationCard projectId={projectId} funnelId={funnel.id} stageId={stageId} />
           {/* Story 18.57: tabela de Criativos saiu daqui — vive standalone
               abaixo dos Testes de LPs (após Ingressos Acumulados) */}
           <StageSalesSection
