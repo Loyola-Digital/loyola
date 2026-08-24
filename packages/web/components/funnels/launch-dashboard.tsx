@@ -735,6 +735,21 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           comparisonDays={compDays}
           compFunnelName={compData?.compareFunnelName}
           atualSalesByDay={compData?.atualSalesByDay}
+          compareStartDate={funnel.compareStartDate ?? null}
+          onCompareStartDateChange={(novaData) =>
+            updateFunnel.mutate(
+              { compareStartDate: novaData },
+              {
+                onSuccess: () =>
+                  toast.success(
+                    novaData
+                      ? `Dia 1 da comparação: ${novaData.split("-").reverse().join("/")}`
+                      : "Comparação voltou ao 1º dia com anúncio",
+                  ),
+                onError: (e) => toast.error(e instanceof Error ? e.message : "Não consegui salvar"),
+              },
+            )
+          }
         />
       )}
 
@@ -1395,9 +1410,12 @@ export function FunnelComparisonChart({
           {/* Dia 1 do lançamento comparado. Só aparece quando as datas vieram
               na resposta — sem elas não há como reancorar. */}
           {onCompareStartDateChange && datasDisponiveis.length > 0 && (
-            <div className="mr-2 flex items-center gap-1">
-              <label className="text-[11px] text-muted-foreground" htmlFor="comp-inicio">
-                Dia 1 de {compFunnelName ?? "comparação"}:
+            <div className="mr-2 flex min-w-0 items-center gap-1">
+              {/* No celular o nome do funil comparado é longo demais para caber
+                  ao lado de dez botões de métrica — fica só "Dia 1", e o nome
+                  segue visível no subtítulo logo acima. */}
+              <label className="shrink-0 text-[11px] text-muted-foreground" htmlFor="comp-inicio">
+                Dia 1<span className="hidden sm:inline"> de {compFunnelName ?? "comparação"}</span>:
               </label>
               <select
                 id="comp-inicio"
