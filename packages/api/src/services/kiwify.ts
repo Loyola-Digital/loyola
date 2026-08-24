@@ -726,3 +726,69 @@ export async function computeKiwifyDashboard(
 
   return aggregateKiwifyDashboard({ sales, mrrSales, stats });
 }
+
+// ============================================================
+// Eventos presenciais — lotes e ingressos
+// ============================================================
+
+/** Um lote do evento: preço próprio, estoque próprio, contagem própria. */
+export interface KiwifyEventBatch {
+  id: string;
+  name: string;
+  /** Em CENTAVOS, como o resto da API. */
+  price: number;
+  maxTickets: number;
+  availableTickets: number;
+  issuedTickets: number;
+  soldTickets: number;
+}
+
+export interface KiwifyEventProduct {
+  id: string;
+  name: string;
+  /** `event` = evento presencial, com lotes de ingresso. */
+  type: string | null;
+  batches: KiwifyEventBatch[];
+}
+
+/**
+ * Detalhe do produto, com os lotes quando ele é um evento.
+ *
+ * É aqui que mora a resposta para "quantos ingressos foram vendidos". A venda
+ * não carrega quantidade — uma compra de três ingressos chega como uma venda só
+ * — mas o lote guarda `issued_tickets`, que é a contagem oficial da Kiwify.
+ *
+ * Também resolve o problema dos preços múltiplos: 797, 997 e 1097 não são
+ * desconto sobre um preço só, são LOTES diferentes (Empreendedor, VIP, Black),
+ * cada um com o seu. Qualquer conta que assuma um preço único erra em dois
+ * terços das vendas.
+ */
+export async function fetchEventProduct(
+  token: string,
+  accountId: string,
+  productId: string,
+): Promise<KiwifyEventProduct | null> {
+  const raw = await kiwifyGet<Record<string, unknown>>(token, accountId, `/products/${productId}`, {});
+  if (!raw) return null;
+
+  const lotes = Array.isArray(raw.event_batches) ? (raw.event_batches as Record<string, unknown>[]) : [];
+  return {
+    id: String(raw.id ?? productId),
+    name: String(raw.name ?? ""),
+    type: raw.type ? String(raw.type) : null,
+    batches: lotes.map((b) => ({
+      id: String(b.id ?? ""),
+      name: String(b.name ?? "(sem nome)"),
+      price: Number(b.price ?? 0),
+      maxTickets: Number(b.max_tickets ?? 0),
+      availableTickets: Number(b.available_tickets ?? 0),
+      issuedTickets: Number(b.issued_tickets ?? 0),
+      soldTickets: Number(b.sold_tickets ?? 0),
+    })),
+  };
+}
+
+/** Total de ingressos emitidos somando os lotes. */
+export function totalDeIngressos(batches: KiwifyEventBatch[]): number {
+  return batches.reduce((acc, b) => acc + b.issuedTickets, 0);
+}

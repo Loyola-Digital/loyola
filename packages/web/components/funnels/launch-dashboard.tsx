@@ -508,6 +508,19 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                           Ingresso+OrderBump: {fmtNumber(ingressosTotaisCard)}
                         </div>
                       )}
+                      {/* Ingressos emitidos, direto dos lotes da Kiwify.
+                          Só aparece quando difere: quem compra três ingressos
+                          gera UMA venda, e o card acima conta vendas. Igual aos
+                          demais não precisa de linha própria. */}
+                      {salesData?.ingressosReais != null &&
+                        salesData.ingressosReais !== ingressosUnicosCard && (
+                          <div
+                            className="cursor-help font-medium text-primary"
+                            title="Ingressos emitidos segundo os lotes do evento na Kiwify. Difere das vendas porque uma compra pode levar vários ingressos."
+                          >
+                            Ingressos emitidos: {fmtNumber(salesData.ingressosReais)}
+                          </div>
+                        )}
                     </>
                   }
                   hintTooltip={showIngressos}

@@ -60,7 +60,17 @@ export type KiwifyReconciliation =
       amostraLimitada: boolean;
       /** Ingressos ≠ vendas. `null` sem preço unitário configurado. */
       ingressosKiwify: number | null;
+      /** `lotes` = contagem oficial do evento; `preco` = derivado do valor. */
+      fonteDosIngressos: "lotes" | "preco" | null;
       ticketPrice: number | null;
+      ingressosPorLote: Array<{
+        produto: string;
+        lote: string;
+        preco: number;
+        emitidos: number;
+        disponiveis: number;
+        total: number;
+      }>;
       comprasMultiplas: Array<{
         nome: string | null;
         email: string | null;
