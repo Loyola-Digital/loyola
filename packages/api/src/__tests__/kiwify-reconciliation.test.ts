@@ -138,3 +138,34 @@ describe("quantidade de ingressos por venda", () => {
     expect(quantidadeDeIngressos(2194.01, UNITARIO)).toBe(2);
   });
 });
+
+describe("status que contam como venda", () => {
+  // A conta do Netão tinha 15 registros no evento: 10 pagos e 5 recusados
+  // (`refused_bank`) — um cliente com 1 paga e 2 recusadas no mesmo dia.
+  // Contar recusada inflaria vendas E ingressos.
+  const VENDA_VALE = new Set(["paid", "approved"]);
+
+  it("conta paga e aprovada", () => {
+    expect(VENDA_VALE.has("paid")).toBe(true);
+    expect(VENDA_VALE.has("approved")).toBe(true);
+  });
+
+  it("NÃO conta recusada, reembolsada, chargeback nem pendente", () => {
+    for (const status of ["refused", "refunded", "chargedback", "waiting_payment", "pending", "processing"]) {
+      expect(VENDA_VALE.has(status)).toBe(false);
+    }
+  });
+
+  it("três tentativas do mesmo cliente valem só a que passou", () => {
+    // Caso real: Marcelo Novaes Leite, 23/08 — paid, refused, refused.
+    const tentativas = [
+      { status: "paid", base: 1097 },
+      { status: "refused", base: 1097 },
+      { status: "refused", base: 1097 },
+    ];
+    const pagas = tentativas.filter((t) => VENDA_VALE.has(t.status));
+    expect(pagas).toHaveLength(1);
+    const ingressos = pagas.reduce((acc, t) => acc + quantidadeDeIngressos(t.base, 1097), 0);
+    expect(ingressos).toBe(1);
+  });
+});
