@@ -1128,12 +1128,17 @@ function MarginTimeTooltip({
   active,
   payload,
   platform,
+  mostrarVendas = false,
 }: {
   active?: boolean;
+  /** Story 29.60 (AC5): sem planilha não há venda única a declarar. */
+  mostrarVendas?: boolean;
   payload?: Array<{
     payload?: {
       rangeLabel?: string; revenue?: number; spend?: number;
       spendBruto?: number; spendTax?: number; margin?: number; sales?: number;
+      /** Story 29.60: compradores distintos — o que a linha do gráfico plota. */
+      salesCount?: number;
     };
   }>;
   platform?: string | null;
@@ -1196,10 +1201,17 @@ function MarginTimeTooltip({
           <span>= Margem</span>
           <span className="tabular-nums">{fmtCurrency(margin)}</span>
         </div>
-        {(d.sales ?? 0) > 0 && (
+        {/* Story 29.60 (AC4) — CORREÇÃO DE DEFEITO, não enfeite.
+            Esta linha mostrava `d.sales`, que é o PIXEL da Meta, enquanto o
+            Quadro de Dados Diários logo abaixo mostrava `salesCount`, da
+            planilha. Medido no BBE (17/07–23/08): 98 contra 115 — a mesma
+            palavra, dois números, na mesma tela. E a linha nova do gráfico
+            plota 115, então sem esta troca o tooltip contradiria o gráfico em
+            que ele vive. */}
+        {mostrarVendas && (d.salesCount ?? 0) > 0 && (
           <div className="flex justify-between gap-4 text-[11px] text-muted-foreground pt-0.5">
-            <span>Vendas</span>
-            <span className="tabular-nums">{fmtNumber(d.sales)}</span>
+            <span>Vendas únicas</span>
+            <span className="tabular-nums">{fmtNumber(d.salesCount)}</span>
           </div>
         )}
       </div>
@@ -1626,6 +1638,16 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     () => aggregateSeriesByGranularity(dailyChartData, granularity),
     [dailyChartData, granularity],
   );
+
+  /**
+   * Story 29.60 (AC5) — a linha de vendas únicas só existe com planilha.
+   *
+   * Sem planilha com data de venda, `salesCount` cai para o pixel da Meta
+   * (`salesFromPixel`), que **não é dedupado** — medido no BBE: 98 contra 115.
+   * Plotá-lo sob o rótulo "vendas únicas" seria mentira, então a linha some e a
+   * legenda diz por quê.
+   */
+  const mostrarLinhaDeVendas = usingSpreadsheet && salesDataDaily?.salesByDay != null;
 
   // Epic 29 Story 29.4 — quando planilha conectada, sobrescreve vendas/receita/CAC/margem/ROAS
   // com dados da planilha. Spend continua Meta.
@@ -2596,6 +2618,19 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
               <h3 className="text-sm font-semibold mb-1">Margem no Tempo</h3>
               <p className="text-[11px] text-muted-foreground">
                 Margem líquida por {granLabel} (com fees) · <span className="text-emerald-400">verde = positiva</span> · <span className="text-red-400">vermelho = negativa</span>
+                {/* Story 29.60 (AC6): sem declarar, alguém soma as barras da
+                    semana, compara com o card do período e conclui que o
+                    dashboard está quebrado. */}
+                {mostrarLinhaDeVendas ? (
+                  <>
+                    {" · "}
+                    <span className="text-sky-400">linha = vendas únicas</span>
+                    {" "}(compradores distintos no dia; order bump não conta)
+                    {granularity !== "day" && " — soma dos dias: quem comprou em dois dias conta nos dois"}
+                  </>
+                ) : (
+                  <> · vendas únicas exigem planilha com data de venda</>
+                )}
               </p>
             </div>
             <Select value={granularity} onValueChange={(v) => setGranularity(v as ChartGranularity)}>
@@ -2611,20 +2646,47 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           </div>
           {dailyLoading ? <Skeleton className="h-48" /> : timeSeries.length > 0 ? (
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={timeSeries} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
+              {/* Story 29.60 (AC3) — `ComposedChart`, não `BarChart`: no
+                  Recharts, `BarChart` NÃO renderiza `<Line>`. A linha
+                  simplesmente não apareceria, sem erro de compilação e sem erro
+                  em runtime. O padrão de eixo duplo já existe neste arquivo
+                  desde a 29.32 (gráficos por dimensão). */}
+              <ComposedChart data={timeSeries} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" />
-                <YAxis tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => fmtCurrencyCompact(v)} />
-                <Tooltip cursor={{ fill: "var(--color-muted)", opacity: 0.12 }} content={<MarginTimeTooltip platform={marginPlatform} />} />
-                <ReferenceLine y={0} stroke="var(--color-muted-foreground)" />
-                <Bar dataKey="margin" name="Margem" radius={[2, 2, 0, 0]}>
+                <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "#fff" }} stroke="var(--color-muted-foreground)" tickFormatter={(v) => fmtCurrencyCompact(v)} />
+                {/* Margem é R$ e vendas é contagem: num eixo só, a linha
+                    rasteiraria no chão (115 contra milhares de reais) ou
+                    esmagaria as barras. */}
+                {mostrarLinhaDeVendas && (
+                  <YAxis yAxisId="right" orientation="right" allowDecimals={false} tick={{ fontSize: 11, fill: "hsl(199 89% 60%)" }} stroke="hsl(199 89% 60%)" />
+                )}
+                <Tooltip cursor={{ fill: "var(--color-muted)", opacity: 0.12 }} content={<MarginTimeTooltip platform={marginPlatform} mostrarVendas={mostrarLinhaDeVendas} />} />
+                <ReferenceLine yAxisId="left" y={0} stroke="var(--color-muted-foreground)" />
+                <Bar yAxisId="left" dataKey="margin" name="Margem" radius={[2, 2, 0, 0]}>
                   {timeSeries.map((d, i) => (
                     <Cell key={i} fill={d.margin >= 0 ? "hsl(150 60% 45%)" : "hsl(0 72% 55%)"} />
                   ))}
                   {/* Story 29.21: valor numérico (Math.ceil) em cada barra, cor da barra */}
                   <LabelList dataKey="margin" content={<MarginBarLabel />} />
                 </Bar>
-              </BarChart>
+                {/* Story 29.60 (AC1/AC5) — `salesCount` (compradores distintos,
+                    da planilha), NUNCA `sales` (pixel da Meta). Sem planilha, o
+                    `salesCount` cai para o pixel e a linha some: plotá-lo sob o
+                    rótulo "vendas únicas" seria mentira. */}
+                {mostrarLinhaDeVendas && (
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="salesCount"
+                    name="Vendas únicas"
+                    stroke="hsl(199 89% 60%)"
+                    strokeWidth={2}
+                    dot={{ r: 2, fill: "hsl(199 89% 60%)" }}
+                    isAnimationActive={false}
+                  />
+                )}
+              </ComposedChart>
             </ResponsiveContainer>
           ) : <EmptyState />}
         </div>

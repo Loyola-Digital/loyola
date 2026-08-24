@@ -22,6 +22,15 @@ import { readSheetData } from "../services/google-sheets.js";
 import { temDashboardDeVendas } from "../utils/stage-types.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
 import { contarIngressosDoEvento } from "../services/kiwify-event-tickets.js";
+// Stories 18.66/18.67 — a regra de order bump por comprador. Módulo puro, para
+// que a separação acessório/avulso seja provável sem levantar a rota.
+import {
+  resumirOrderBump,
+  tabelaPorPublico,
+  type LinhaDeVenda,
+  type ResumoOrderBump,
+  type LinhaDePublico,
+} from "../utils/order-bump.js";
 import {
   decryptAccountToken,
   resolveEntityNames,
@@ -195,6 +204,21 @@ const EMPTY_RESPONSE = {
   faturamentoUnicoByDay: {} as Record<string, number>,
   faturamentoTotalByDay: {} as Record<string, number>,
   ingressosPorProduto: [] as { produto: string; count: number; bruto: number; isOrderBump: boolean }[],
+  // Stories 18.66/18.67: sem dados, sem análise. `temConfiguracao: false` faz a
+  // UI sumir com o card em vez de mostrá-lo zerado (AC5 da 18.66).
+  orderBump: {
+    temConfiguracao: false,
+    faturamentoTotal: 0,
+    faturamentoPrincipal: 0,
+    bumpAcessorio: 0,
+    bumpAvulso: 0,
+    representatividade: null,
+    compradoresComPrincipal: 0,
+    compradoresComBump: 0,
+    taxaDeAdesao: null,
+    compradoresSoBump: 0,
+  } as ResumoOrderBump,
+  publicos: [] as LinhaDePublico[],
   semDados: true,
 };
 
@@ -751,8 +775,25 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         ingressosPorProdutoMap.set(key, pp);
       };
 
+      /**
+       * Stories 18.66/18.67 — as linhas que alimentam a análise de order bump.
+       *
+       * Montadas AQUI, no mesmo laço que já produz `ingressosPorProduto`, e não
+       * num segundo passe: dois laços com filtros próprios divergiriam na
+       * primeira mudança de regra, e o card passaria a contradizer o tooltip de
+       * produtos logo ao lado.
+       */
+      const linhasDeVenda: LinhaDeVenda[] = [];
+
       for (const entry of emailMap.values()) {
         const bump = isOrderBump(entry.product);
+        linhasDeVenda.push({
+          email: entry.email.trim().toLowerCase(),
+          isOrderBump: bump,
+          bruto: entry.bruto,
+          utmSource: entry.utmSource,
+          utmTerm: entry.utmTerm,
+        });
         addProduto(entry.product || "(sem produto)", entry.bruto, bump);
         if (entry.lastDate) {
           const k = dayKeyOf(entry.lastDate);
@@ -769,6 +810,16 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         const dt = mr.saleDate ? new Date(mr.saleDate) : null;
         const prod = (mr.product ?? "").trim();
         const bump = isOrderBump(prod);
+        // Venda manual (PIX) não tem UTM — cai em "Sem Track", que é o que ela
+        // é. Deixá-la fora subestimaria o faturamento total e a soma do AC5 da
+        // 18.67 não fecharia.
+        linhasDeVenda.push({
+          email: (mr.email ?? "").trim().toLowerCase(),
+          isOrderBump: bump,
+          bruto: val,
+          utmSource: null,
+          utmTerm: null,
+        });
         addProduto(prod || MANUAL_PRODUCT_LABEL, val, bump);
         if (dt) faturamentoTotalByDay[dayKeyOf(dt)] = (faturamentoTotalByDay[dayKeyOf(dt)] ?? 0) + val;
         if (!bump) considerCaptura((mr.email ?? "").trim().toLowerCase(), val, dt, null, true);
@@ -988,6 +1039,10 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         faturamentoUnicoByDay,
         faturamentoTotalByDay,
         ingressosPorProduto,
+        // Story 18.66 — o card de representatividade do order bump.
+        orderBump: resumirOrderBump(linhasDeVenda, orderBumpSet.size > 0),
+        // Story 18.67 — a tabela de conversão de bump e AOV por público.
+        publicos: tabelaPorPublico(linhasDeVenda),
 
         porCanal: Array.from(canalMap.entries())
           .map(([canal, v]) => ({ canal, ...v }))

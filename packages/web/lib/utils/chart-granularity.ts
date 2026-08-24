@@ -14,7 +14,29 @@ export interface DailySeriesPoint {
   spendTax: number;     // imposto (12,15%)
   revenue: number;      // receita bruta
   margin: number;       // margem líquida do dia (aditiva)
+  /**
+   * ⚠️ Vendas do PIXEL da Meta. NÃO é o número de compradores.
+   *
+   * Story 29.60: existem três contagens diferentes de "vendas por dia", e este
+   * é a menos exata das três. Medido no BBE (17/07–23/08):
+   *
+   * ```
+   *   únicas (planilha, dedup por comprador/dia) .... 115
+   *   linhas da planilha (com order bump) ........... 140
+   *   pixel Meta (purchase) .........................  98   <- este campo
+   * ```
+   *
+   * Para plotar ou exibir "vendas", use `salesCount`.
+   */
   sales: number;
+  /**
+   * Story 29.60 — compradores distintos no dia, da planilha (`salesByDay`,
+   * dedupado desde a 29.53). É o número que o Quadro de Dados Diários mostra.
+   *
+   * Opcional porque o campo é aditivo: série montada por código anterior à
+   * 29.60 continua agregando sem ele.
+   */
+  salesCount?: number;
 }
 
 export interface AggregatedSeriesPoint {
@@ -27,7 +49,18 @@ export interface AggregatedSeriesPoint {
   spendTax: number;
   revenue: number;
   margin: number;
+  /** ⚠️ Pixel da Meta — ver `DailySeriesPoint.sales`. */
   sales: number;
+  /**
+   * Story 29.60 — compradores distintos, somados no bucket.
+   *
+   * ⚠️ Somar compradores/dia por semana NÃO dá compradores/semana: quem comprou
+   * terça e quinta conta duas vezes. Desvio deliberado, já assumido pela 29.53
+   * (AC2) para a série diária e pela 44.12 — são perguntas diferentes, e
+   * "quantos compradores nesta semana?" exigiria deduplicar na origem. A UI
+   * declara isso na legenda (AC6).
+   */
+  salesCount: number;
 }
 
 const MESES_CURTO = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
@@ -92,6 +125,10 @@ export function aggregateSeriesByGranularity(
   if (granularity === "day") {
     return daily.map((d) => ({
       ...d,
+      // Story 29.60: o campo é opcional na entrada e obrigatório na saída —
+      // série antiga agrega como zero em vez de `undefined`, que o Recharts
+      // plotaria como buraco na linha.
+      salesCount: d.salesCount ?? 0,
       bucketKey: d.dateIso,
       label: ddmm(d.dateIso),
       rangeLabel: fullDate(d.dateIso),
@@ -108,7 +145,7 @@ export function aggregateSeriesByGranularity(
         bucketKey: key,
         label: "",
         rangeLabel: "",
-        spend: 0, spendBruto: 0, spendTax: 0, revenue: 0, margin: 0, sales: 0,
+        spend: 0, spendBruto: 0, spendTax: 0, revenue: 0, margin: 0, sales: 0, salesCount: 0,
       };
       buckets.set(key, b);
     }
@@ -118,6 +155,10 @@ export function aggregateSeriesByGranularity(
     b.revenue += d.revenue;
     b.margin += d.margin;
     b.sales += d.sales;
+    // Story 29.60 (AC2): sem esta linha, Semanal e Mensal plotariam o pixel
+    // enquanto Diário plota o único — a série mudaria de significado ao trocar
+    // o seletor, sem nada na tela indicando.
+    b.salesCount += d.salesCount ?? 0;
   }
 
   return Array.from(buckets.values())

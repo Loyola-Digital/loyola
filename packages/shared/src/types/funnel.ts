@@ -378,6 +378,53 @@ export interface StageSalesData {
   faturamentoTotalByDay?: Record<string, number>;
   /** Ingressos (vendas) por produto — todos os produtos, sem dedup. Tooltip de "Ingressos totais". */
   ingressosPorProduto?: { produto: string; count: number; bruto: number; isOrderBump: boolean }[];
+
+  /**
+   * Story 18.66 — representatividade do order bump no faturamento.
+   *
+   * ⚠️ `bumpAcessorio` e `bumpAvulso` NÃO são a mesma coisa. A configuração
+   * marca **produtos**, e o mesmo produto é bump quando acompanha outro e é
+   * venda própria quando vai sozinho. Medido no DG & CPDF: 10% dos compradores
+   * só têm linha de produto marcado, R$ 23.122 que não são acréscimo a venda
+   * nenhuma. Somá-los levaria a representatividade de 26,3% para 45,58%.
+   */
+  orderBump?: {
+    /** A etapa tem produto marcado. `false` → a UI SOME com o card. */
+    temConfiguracao: boolean;
+    faturamentoTotal: number;
+    faturamentoPrincipal: number;
+    /** Bump de quem tem produto principal — o bump de verdade. */
+    bumpAcessorio: number;
+    /** Bump de quem NÃO tem principal: venda própria desses produtos. */
+    bumpAvulso: number;
+    /** `bumpAcessorio ÷ faturamentoTotal`. */
+    representatividade: number | null;
+    compradoresComPrincipal: number;
+    compradoresComBump: number;
+    taxaDeAdesao: number | null;
+    compradoresSoBump: number;
+  };
+
+  /**
+   * Story 18.67 — conversão de order bump e AOV por público.
+   *
+   * Cinco baldes, não três: os pedidos (Orgânico, Pago quente, Pago frio) mais
+   * "Sem Track" — que tem o MAIOR AOV medido — e "Pago indefinido". Balde sem
+   * comprador não vem na lista.
+   *
+   * O público vem do produto PRINCIPAL do comprador: 54% das linhas de bump não
+   * têm `utm_term` e classificá-las isoladamente destruiria a tabela.
+   */
+  publicos?: {
+    publico: "Orgânico" | "Pago quente" | "Pago frio" | "Pago indefinido" | "Sem Track";
+    compradores: number;
+    compradoresComBump: number;
+    taxaBump: number | null;
+    receitaPrincipal: number;
+    receitaBump: number;
+    aovSemBump: number | null;
+    aovComBump: number | null;
+  }[];
   porCanal: { canal: string; vendas: number; bruto: number; liquido: number }[];
   porFormaPagamento: { forma: string; vendas: number; bruto: number; liquido: number }[];
   /**
