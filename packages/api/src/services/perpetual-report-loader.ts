@@ -14,6 +14,7 @@ import { eq, and, inArray, gte, lte } from "drizzle-orm";
 import {
   funnelSpreadsheets,
   metaAdsAccounts,
+  metaAdCreativesCache,
   metaCampaignInsightsDaily,
 } from "../db/schema.js";
 import { readSheetData } from "./google-sheets.js";
@@ -160,10 +161,31 @@ export async function loadPerpetualReport(
     periodo,
   ).catch(() => ({ anuncios: [] as AdSpendRow[], nomes: undefined }));
 
+  // 3d. Story 29.59 — a URL de destino de cada anúncio, para a seção de LPs.
+  //
+  // Mesma fonte do `/ad-link-urls` do dashboard (`meta_ad_creatives_cache`), e
+  // pelo mesmo motivo: ler do Postgres não tem rate limit, e o relatório não
+  // abre caminho novo contra a Graph API. O que não estiver no cache vira a
+  // linha "Sem link resolvido", que é visível e honesta.
+  const linkUrlPorAd = await loadLinkUrls(
+    db,
+    config.projectId,
+    anuncios.map((a) => a.adId),
+  ).catch(() => ({}));
+
   // 4. Taxas — plataforma vem da planilha, ramo de reembolso vem da coluna status
   const rates = resolvePerpetualRates(config, sheet.platform ?? null, hasStatusCol);
 
-  return computePerpetualReport({ config, rates, periodo, vendas, campanhas, anuncios, nomes });
+  return computePerpetualReport({
+    config,
+    rates,
+    periodo,
+    vendas,
+    campanhas,
+    anuncios,
+    nomes,
+    linkUrlPorAd,
+  });
 }
 
 // ------------------------------------------------------------------
@@ -237,6 +259,36 @@ async function loadAdLevel(
         ? { ads, adsets }
         : undefined,
   };
+}
+
+/**
+ * Story 29.59 — `ad_id → URL de destino`, direto do cache de criativos.
+ *
+ * Sem teto: a soma da seção de LPs precisa fechar com o investimento que
+ * entrou, e cortar em N faria o dinheiro do anúncio N+1 desaparecer da tabela.
+ * O teto do `/ad-creatives` existe porque aquele caminho CHAMA a Meta; este lê
+ * do Postgres, onde não há rate limit.
+ */
+async function loadLinkUrls(
+  db: Database,
+  projectId: string,
+  adIds: string[],
+): Promise<Record<string, string | null>> {
+  if (adIds.length === 0) return {};
+  const rows = await db
+    .select({ adId: metaAdCreativesCache.adId, creative: metaAdCreativesCache.creative })
+    .from(metaAdCreativesCache)
+    .where(
+      and(
+        eq(metaAdCreativesCache.projectId, projectId),
+        inArray(metaAdCreativesCache.adId, adIds),
+      ),
+    );
+  const out: Record<string, string | null> = {};
+  for (const r of rows) {
+    out[r.adId] = (r.creative as { linkUrl?: string | null } | null)?.linkUrl ?? null;
+  }
+  return out;
 }
 
 interface SheetShape {

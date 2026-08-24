@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { normalizeLpUrl } from "../lp-url";
+// Story 29.59: o módulo mudou para o shared. Subpath porque este é o lado web.
+import { normalizeLpUrl } from "@loyola-x/shared/src/lp-url";
 
 describe("normalizeLpUrl — Story 29.40 (AC2)", () => {
   describe("os 4 casos que o AC2 exige", () => {

@@ -17,7 +17,9 @@
 // ============================================================
 
 import { deriveDetailMetrics, type DetailMetricsOutput } from "./perpetual-detail-metrics";
-import { normalizeLpUrl } from "./lp-url";
+// Story 29.59: a regra mudou para o shared, para que o relatório da API use a
+// MESMA identidade de LP. Subpath porque este é o lado web — ver `index.ts`.
+import { normalizeLpUrl } from "@loyola-x/shared/src/lp-url";
 
 /** Chave da linha que recolhe o investimento sem LP identificada. */
 export const UNRESOLVED_LP_KEY = "—";

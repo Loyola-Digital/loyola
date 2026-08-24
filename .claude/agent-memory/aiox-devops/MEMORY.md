@@ -1,0 +1,4 @@
+- [PR conventions (Loyola)](reference_pr_conventions_loyola.md) — title format, narrative PT body, main is PR-protected, no force push here
+- [API deploy is manual and lags](project_api_deploy_manual_and_lags.md) — web auto-deploys, API doesn't; merge is not ship, and cache-writing stories decay
+- [Never stage `" 2"` sync artifacts](feedback_never_stage_sync_artifacts.md) — stage selectively; a `git add -A` cost Story 44.12 a blocking QA item
+- [Commit the QA gate before the PR](feedback_commit_qa_gate_before_pr.md) — gates are tracked but @qa often leaves them untracked

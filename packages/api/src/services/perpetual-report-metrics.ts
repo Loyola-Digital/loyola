@@ -18,6 +18,10 @@
  * Venda sem ID resolvível vai para `semAtribuicao`, nunca para heurística.
  */
 
+// Story 29.59 — a MESMA identidade de LP do dashboard. Import BARE: este é o
+// lado API, e o subpath sairia no `dist/` sem extensão, falhando em runtime sem
+// que tsc, vitest ou next build acusassem nada (Story 19.14).
+import { normalizeLpUrl } from "@loyola-x/shared";
 import { classifyTemperatura } from "../utils/lead-origin.js";
 import { chaveDeComprador } from "../utils/comprador.js";
 import { daysBetween, shiftDayKey } from "../utils/sale-date.js";
@@ -87,6 +91,15 @@ export interface PerpetualReportInput {
   vendasPixel?: number | null;
   /** id → nome, para exibir conjunto/criativo sem ID cru. */
   nomes?: { adsets?: Record<string, string>; ads?: Record<string, string> };
+  /**
+   * Story 29.59 — `ad_id → URL de destino`, do `meta_ad_creatives_cache`.
+   *
+   * `null` e ausente significam a mesma coisa AQUI (a LP não foi resolvida) —
+   * a distinção entre as três causas é do dashboard, que tem tooltip para
+   * explicá-las. No relatório, que é um retrato arquivado, o que importa é
+   * quanto ficou sem LP, não por qual dos três motivos.
+   */
+  linkUrlPorAd?: Record<string, string | null>;
 }
 
 // ------------------------------------------------------------------
@@ -158,6 +171,11 @@ export interface PerpetualReport {
     /** Ausentes quando a maioria das vendas não traz o ID (W-P4). */
     publicos?: SegmentoRow[];
     criativos?: SegmentoRow[];
+    /**
+     * Story 29.59 — desempenho por landing page. Ausente quando nenhum anúncio
+     * do período tem URL no cache de criativos (W-LP).
+     */
+    lps?: SegmentoRow[];
   };
   tendencia:
     | { disponivel: true; metricas: TendenciaMetrica[] }
@@ -476,6 +494,21 @@ interface Bucket {
 export const SEM_ATRIBUICAO_AD_KEY = "__sem_atribuicao_ad__";
 export const SEM_ATRIBUICAO_AD_LABEL = "Sem atribuição no grão de anúncio";
 
+/**
+ * Story 29.59 (AC4/AC7) — o investimento de anúncios cuja LP não resolveu.
+ *
+ * Ela entra na tabela, e no FIM dela. A invariante do AC6 da 29.40 é o que dá
+ * confiança à seção: a soma das linhas, incluindo esta, tem que bater com o
+ * investimento que entrou. Uma seção que "quase bate" é indistinguível de erro
+ * de cálculo para quem lê — e no relatório o leitor não tem como conferir
+ * clicando, como tem no dashboard.
+ */
+export const LP_NAO_RESOLVIDA_KEY = "__lp_nao_resolvida__";
+export const LP_NAO_RESOLVIDA_LABEL = "Sem link resolvido";
+
+/** As linhas que NÃO são entidades e nunca competem no ranking (AC7). */
+export const CHAVES_DE_CAUDA = new Set([SEM_ATRIBUICAO_AD_KEY, LP_NAO_RESOLVIDA_KEY]);
+
 function emptyBucket(label: string): Bucket {
   return { investimento: 0, emails: new Set(), faturamento: 0, label };
 }
@@ -518,6 +551,22 @@ function buildSegmentos(
   const campanhas = new Map<string, Bucket>();
   const publicos = new Map<string, Bucket>();
   const criativos = new Map<string, Bucket>();
+  /** Story 29.59 — a seção de landing pages. Só sai do forno se resolver algo. */
+  const lps = new Map<string, Bucket>();
+
+  /**
+   * `ad_id → chave da LP`. Construído uma vez e usado nos dois lados (o
+   * investimento, que vem do anúncio, e a venda, que vem do `utm_content`) —
+   * duas resoluções separadas poderiam divergir e mandar o dinheiro para uma
+   * linha e a venda para outra.
+   */
+  const lpPorAd = new Map<string, { chave: string; label: string }>();
+  for (const [adId, url] of Object.entries(input.linkUrlPorAd ?? {})) {
+    const chave = normalizeLpUrl(url);
+    if (chave) lpPorAd.set(adId, { chave, label: chave });
+  }
+  const lpDe = (adId: string) =>
+    lpPorAd.get(adId) ?? { chave: LP_NAO_RESOLVIDA_KEY, label: LP_NAO_RESOLVIDA_LABEL };
 
   // --- investimento: vem da campanha, distribuído pelas classificações do NOME dela
   for (const c of input.campanhas) {
@@ -596,6 +645,16 @@ function buildSegmentos(
       comContent++;
       const nome = input.nomes?.ads?.[adId] ?? adId;
       addVenda(getOrInit(criativos, normalizeName(nome), nome), email, v.valorBruto);
+
+      // Story 29.59 (AC3) — `utm_content` É o ad_id (convenção Loyola,
+      // documentada no topo deste arquivo), e o ad_id resolve para a LP pelo
+      // mesmo mapa que o investimento usou.
+      //
+      // `addVenda` deduplica por `email`, que aqui é a chave de comprador — a
+      // regra da 29.53 vale integralmente: order bump não é venda nova, e
+      // contar linhas da planilha inflaria a LP que vende o combo.
+      const lp = lpDe(adId);
+      addVenda(getOrInit(lps, lp.chave, lp.label), email, v.valorBruto);
     }
   }
 
@@ -627,6 +686,11 @@ function buildSegmentos(
       const nomeAdset = input.nomes?.adsets?.[a.adsetId] ?? a.adsetId;
       getOrInit(publicos, normalizeName(nomeAdset), nomeAdset).investimento += valor;
     }
+
+    // Story 29.59 (AC2) — o investimento por LP é o MESMO spend por anúncio,
+    // já tributado. Nenhuma fonte nova, nenhuma chamada nova à Meta.
+    const lp = lpDe(a.adId);
+    getOrInit(lps, lp.chave, lp.label).investimento += valor;
   }
 
   // --- AC5: a diferença entre o grão de anúncio e o de campanha, DECLARADA
@@ -643,7 +707,7 @@ function buildSegmentos(
   const temAdLevel = (input.anuncios?.length ?? 0) > 0;
   const naoAtribuido = investimentoTotal - investimentoAdLevel;
   if (temAdLevel && naoAtribuido > TOL) {
-    for (const m of [publicos, criativos]) {
+    for (const m of [publicos, criativos, lps]) {
       getOrInit(m, SEM_ATRIBUICAO_AD_KEY, SEM_ATRIBUICAO_AD_LABEL).investimento += naoAtribuido;
     }
   }
@@ -709,6 +773,26 @@ function buildSegmentos(
   }
   if (!criativoIndisponivel && criativos.size > 0) {
     segmentos.criativos = toRows(criativos, investimentoTotal, rates);
+  }
+
+  // Story 29.59 (AC6) — ausente ≠ zerado.
+  //
+  // Sem nenhuma LP resolvida a seção SOME, como `formato`, `publicos` e
+  // `criativos` já fazem (§C.9). Ela não vai com uma linha "Sem link resolvido"
+  // de 100% e nada mais: isso não é uma tabela de LPs, é uma tabela vazia com
+  // cara de resposta.
+  //
+  // E some com um alerta: sumir em silêncio faria o leitor achar que o
+  // relatório saiu de uma versão anterior do sistema.
+  const temLpResolvida = [...lps.keys()].some((k) => !CHAVES_DE_CAUDA.has(k));
+  if (temLpResolvida) {
+    segmentos.lps = toRows(lps, investimentoTotal, rates);
+  } else if (lps.size > 0) {
+    alertas.push({
+      codigo: "W-LP",
+      mensagem:
+        "Seção de landing pages omitida: nenhum anúncio do período tem URL de destino no cache de criativos.",
+    });
   }
 
   return {

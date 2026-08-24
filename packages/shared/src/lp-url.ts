@@ -1,5 +1,25 @@
+/// <reference lib="dom" />
+// Story 29.59 — `URL` (WHATWG) existe nos dois runtimes que consomem este
+// módulo: global no Node desde a v10 e no browser desde sempre. O que não
+// existe é a DECLARAÇÃO dele: o `lib` do `tsconfig.base` é só `ES2022`, que não
+// traz `URL`. A referência fica AQUI, e não no tsconfig do pacote, para não
+// abrir `document`/`window` para o resto do shared — que roda na API.
 /**
  * Story 29.40 (AC2) — identidade de uma landing page a partir da URL do anúncio.
+ *
+ * ## Story 29.59 — por que este módulo mudou de pacote
+ *
+ * A regra nasceu em `web/lib/utils/lp-url.ts`, onde só o dashboard precisava
+ * dela. O relatório perpétuo roda inteiro na API e passou a precisar da MESMA
+ * identidade de LP: duas implementações divergiriam no dia em que uma delas
+ * mudasse, e o sintoma seria o pior possível — relatório e dashboard mostrando
+ * LPs diferentes para o mesmo período, sem nada indicando qual está certa.
+ *
+ * ⚠️ **O import tem caminho diferente por pacote** (ver `index.ts`): o web vai
+ * por subpath (`@loyola-x/shared/src/lp-url`), a API vai bare
+ * (`@loyola-x/shared`). Trocar isso derruba o boot da API e passa por
+ * `tsc --noEmit`, `vitest` e `next build` sem acusar nada — foi o que a
+ * Story 19.14 pagou para aprender.
  *
  * Duas URLs que levam à mesma página TÊM que cair na mesma linha da tabela,
  * senão o comparativo de LPs vira uma lista de UTMs e não responde a pergunta

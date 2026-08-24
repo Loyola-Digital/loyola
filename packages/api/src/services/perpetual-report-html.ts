@@ -10,7 +10,7 @@
  */
 
 import type { PerpetualReport, SegmentoRow } from "./perpetual-report-metrics.js";
-import { SEM_ATRIBUICAO_AD_KEY } from "./perpetual-report-metrics.js";
+import { CHAVES_DE_CAUDA } from "./perpetual-report-metrics.js";
 import { buildReadings, buildDataNotes, trendLabel } from "./perpetual-report-readings.js";
 
 const brl = (n: number | null) =>
@@ -93,13 +93,13 @@ function segTable(titulo: string, rows: SegmentoRow[]): string {
   // Ela não é um conjunto nem um criativo: deixá-la competir no ranking por
   // investimento colocaria no topo uma linha sobre a qual não há ação possível.
   rows = [...rows].sort((a, b) => {
-    const ca = a.chave === SEM_ATRIBUICAO_AD_KEY ? 1 : 0;
-    const cb = b.chave === SEM_ATRIBUICAO_AD_KEY ? 1 : 0;
+    const ca = CHAVES_DE_CAUDA.has(a.chave) ? 1 : 0;
+    const cb = CHAVES_DE_CAUDA.has(b.chave) ? 1 : 0;
     return ca !== cb ? ca - cb : b.investimento - a.investimento;
   });
   const body = rows
     .map(
-      (r) => `<tr${r.chave === SEM_ATRIBUICAO_AD_KEY ? ' class="cauda"' : ""}>
+      (r) => `<tr${CHAVES_DE_CAUDA.has(r.chave) ? ' class="cauda"' : ""}>
       <td>${esc(r.label)}</td>
       <td>${brl(r.investimento)}</td>
       <td>${pct(r.pctInvestimento)}</td>
@@ -185,6 +185,10 @@ export function renderPerpetualReportHtml(report: PerpetualReport): string {
     segTable("Campanhas", segmentos.campanhas),
     segmentos.publicos ? segTable("Conjuntos (público)", segmentos.publicos) : "",
     segmentos.criativos ? segTable("Criativos", segmentos.criativos) : "",
+    // Story 29.59 — o teste de LP, no mesmo documento que o resto. Depois de
+    // Criativos porque a LP é atributo do anúncio: quem lê chega nela vindo do
+    // criativo que a alimenta.
+    segmentos.lps ? segTable("Landing pages", segmentos.lps) : "",
   ].join("");
 
   const leituras = buildReadings(report)
