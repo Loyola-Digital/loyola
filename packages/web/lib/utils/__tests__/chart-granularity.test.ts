@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   aggregateSeriesByGranularity,
+  serieTemVendaUnica,
   startOfWeekSunday,
   type DailySeriesPoint,
 } from "../chart-granularity";
@@ -169,5 +170,42 @@ describe("Story 29.60 — salesCount atravessa a agregação", () => {
     // faria a linha ficar mais curta que as barras.
     expect(r).toHaveLength(4);
     expect(r[3]!.salesCount).toBe(0);
+  });
+});
+
+// ============================================================================
+// Gate QA (Story 29.60, AC5) — a linha de vendas únicas só existe quando a
+// série REALMENTE tem venda única.
+//
+// A primeira implementação usava duas condições diferentes em dois lugares:
+// a UI checava `salesByDay != null` e `dailyChartData` checava
+// `!semDados && byDay não vazio`. Elas discordam no caso "planilha conectada,
+// zero venda no range" — e ali `salesCount` cai para o PIXEL enquanto a linha
+// aparecia rotulada "vendas únicas". Uma função só, testada aqui.
+// ============================================================================
+
+describe("Gate QA — serieTemVendaUnica", () => {
+  it("planilha com vendas no range: sim", () => {
+    expect(serieTemVendaUnica(true, { semDados: false, byDay: { "2026-02-05": 300 } })).toBe(true);
+  });
+
+  it("planilha conectada mas ZERO venda no range: não", () => {
+    // É o caso que separava as duas condições. `byDay` vazio significa que
+    // `salesCount` caiu para o pixel — plotá-lo como "único" é a mentira que o
+    // AC5 proíbe.
+    expect(serieTemVendaUnica(true, { semDados: false, byDay: {} })).toBe(false);
+  });
+
+  it("`semDados` do backend: não", () => {
+    expect(serieTemVendaUnica(true, { semDados: true, byDay: { "2026-02-05": 300 } })).toBe(false);
+  });
+
+  it("sem planilha: não, mesmo com payload presente", () => {
+    expect(serieTemVendaUnica(false, { semDados: false, byDay: { "2026-02-05": 300 } })).toBe(false);
+  });
+
+  it("payload ausente ou nulo: não", () => {
+    expect(serieTemVendaUnica(true, null)).toBe(false);
+    expect(serieTemVendaUnica(true, undefined)).toBe(false);
   });
 });

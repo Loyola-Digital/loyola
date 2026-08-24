@@ -170,3 +170,31 @@ export function aggregateSeriesByGranularity(
       return { ...b, label: monthShort(b.dateIso), rangeLabel: monthLong(b.dateIso) };
     });
 }
+
+/**
+ * Story 29.60 (AC5) — a série diária tem venda ÚNICA, ou só o pixel da Meta?
+ *
+ * ## Por que isto é uma função, e não um `&&` na UI
+ *
+ * O gate de QA pegou exatamente esta divergência: a UI checava
+ * `salesDataDaily?.salesByDay != null` enquanto `dailyChartData` decidia por
+ * `!semDados && Object.keys(byDay).length > 0`. As duas discordam num caso
+ * real — planilha conectada, sem venda nenhuma no range filtrado:
+ *
+ *   `byDay` vazio  → `salesCount` cai para o PIXEL da Meta
+ *   `salesByDay` presente como `{}` → a UI mostrava a linha
+ *
+ * Ou seja: a linha aparecia plotando o pixel sob o rótulo "vendas únicas" —
+ * precisamente a mentira que o AC5 existe para impedir. Duas condições que
+ * PRECISAM concordar não podem viver em dois lugares.
+ *
+ * @param usandoPlanilha  há planilha de vendas conectada
+ * @param diario          o payload de `/perpetual-sales-data` com `daily`
+ */
+export function serieTemVendaUnica(
+  usandoPlanilha: boolean,
+  diario: { semDados?: boolean; byDay?: Record<string, number> } | null | undefined,
+): boolean {
+  if (!usandoPlanilha || !diario || diario.semDados) return false;
+  return Object.keys(diario.byDay ?? {}).length > 0;
+}

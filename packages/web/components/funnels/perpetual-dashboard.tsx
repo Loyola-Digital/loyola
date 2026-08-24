@@ -120,6 +120,7 @@ import {
 } from "@/lib/formulas/funnels";
 import {
   aggregateSeriesByGranularity,
+  serieTemVendaUnica,
   type ChartGranularity,
 } from "@/lib/utils/chart-granularity";
 import { deriveDetailMetrics } from "@/lib/utils/perpetual-detail-metrics";
@@ -1449,8 +1450,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   //             Receita falla pra Meta se planilha não tem dataVenda mapeada.
   const dailyChartData = useMemo(() => {
     // Fallback: planilha sem dataVenda OU sem rows válidas no range → Meta revenue
-    const sheetHasDaily = usingSpreadsheet && salesDataDaily && !salesDataDaily.semDados
-      && Object.keys(salesDataDaily.byDay ?? {}).length > 0;
+    // Gate QA (Story 29.60): a MESMA função que decide se a linha de vendas
+    // únicas aparece. Duas condições que precisam concordar não podem viver em
+    // dois lugares — foi assim que a linha quase plotou o pixel.
+    const sheetHasDaily = serieTemVendaUnica(usingSpreadsheet, salesDataDaily);
     const sheetByDay = sheetHasDaily ? salesDataDaily!.byDay : {};
     // Story 29.23: contagem de vendas por dia da planilha (novo campo do backend).
     const sheetSalesByDay = sheetHasDaily ? (salesDataDaily!.salesByDay ?? {}) : {};
@@ -1646,8 +1649,14 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
    * (`salesFromPixel`), que **não é dedupado** — medido no BBE: 98 contra 115.
    * Plotá-lo sob o rótulo "vendas únicas" seria mentira, então a linha some e a
    * legenda diz por quê.
+   *
+   * ⚠️ Gate QA: a condição É a mesma de `sheetHasDaily` dentro de
+   * `dailyChartData`, e por isso mora numa função só. A primeira versão desta
+   * linha checava `salesByDay != null` e divergia no caso "planilha conectada,
+   * zero venda no range": `salesCount` caía para o pixel e a linha aparecia
+   * assim mesmo, rotulada como "vendas únicas".
    */
-  const mostrarLinhaDeVendas = usingSpreadsheet && salesDataDaily?.salesByDay != null;
+  const mostrarLinhaDeVendas = serieTemVendaUnica(usingSpreadsheet, salesDataDaily);
 
   // Epic 29 Story 29.4 — quando planilha conectada, sobrescreve vendas/receita/CAC/margem/ROAS
   // com dados da planilha. Spend continua Meta.
