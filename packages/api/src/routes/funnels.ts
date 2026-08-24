@@ -48,6 +48,8 @@ const updateFunnelSchema = z.object({
   switchyFolderIds: z.array(switchyFolderSchema).optional(),
   switchyLinkedLinks: z.array(switchyLinkRefSchema).optional(),
   compareFunnelId: z.string().uuid().nullable().optional(),
+  /** aaaa-mm-dd — Dia 1 do funil comparado. Null = primeiro dia com veiculação. */
+  compareStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   matchCode: z.string().max(50).nullable().optional(),
   // Story 18.19 fix: Meta Total + Data Final do gráfico de tendência
   leadsGoalMeta: z.number().int().nonnegative().nullable().optional(),
@@ -101,6 +103,7 @@ function funnelShape(f: typeof funnels.$inferSelect) {
     switchyFolderIds: f.switchyFolderIds ?? [],
     switchyLinkedLinks: f.switchyLinkedLinks ?? [],
     compareFunnelId: f.compareFunnelId ?? null,
+    compareStartDate: f.compareStartDate ?? null,
     matchCode: f.matchCode ?? null,
     leadsGoalMeta: f.leadsGoalMeta ?? null,
     leadsGoalDataFinal: f.leadsGoalDataFinal ?? null,
@@ -563,7 +566,7 @@ export default fp(async function funnelRoutes(fastify) {
     }
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
-    const { name, type, metaAccountId, campaigns, googleAdsAccountId, googleAdsCampaigns, switchyFolderIds, switchyLinkedLinks, compareFunnelId, matchCode, leadsGoalMeta, leadsGoalDataFinal } = parseResult.data;
+    const { name, type, metaAccountId, campaigns, googleAdsAccountId, googleAdsCampaigns, switchyFolderIds, switchyLinkedLinks, compareFunnelId, compareStartDate, matchCode, leadsGoalMeta, leadsGoalDataFinal } = parseResult.data;
     if (name !== undefined) updates.name = name;
     if (type !== undefined) updates.type = type;
     if (metaAccountId !== undefined) updates.metaAccountId = metaAccountId;
@@ -573,6 +576,7 @@ export default fp(async function funnelRoutes(fastify) {
     if (switchyFolderIds !== undefined) updates.switchyFolderIds = switchyFolderIds;
     if (switchyLinkedLinks !== undefined) updates.switchyLinkedLinks = switchyLinkedLinks;
     if (compareFunnelId !== undefined) updates.compareFunnelId = compareFunnelId;
+    if (compareStartDate !== undefined) updates.compareStartDate = compareStartDate;
     if (matchCode !== undefined) {
       // Normaliza pra lowercase e trim. String vazia vira null pra desativar alerta.
       const normalized = (matchCode ?? "").trim().toLowerCase();

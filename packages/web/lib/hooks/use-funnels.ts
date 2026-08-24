@@ -25,6 +25,8 @@ export interface UpdateFunnelInput {
   switchyFolderIds?: { id: number; name: string }[];
   switchyLinkedLinks?: { uniq: number; id: string; domain: string }[];
   compareFunnelId?: string | null;
+  /** aaaa-mm-dd — Dia 1 do funil comparado. Null volta ao 1º dia com anúncio. */
+  compareStartDate?: string | null;
   matchCode?: string | null;
   /** Story 18.19 fix: Meta Total + Data Final do gráfico de tendência */
   leadsGoalMeta?: number | null;
