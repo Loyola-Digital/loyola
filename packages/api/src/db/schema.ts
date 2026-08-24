@@ -1519,6 +1519,12 @@ export const kiwifyStageConfigs = pgTable(
     productIds: jsonb("product_ids").$type<string[]>().notNull().default([]),
     /** aaaa-mm-dd — a partir de quando contar. */
     startDate: varchar("start_date", { length: 10 }).notNull(),
+    /**
+     * Preço de UM ingresso. Com ele, `product_base_price ÷ unitário` revela
+     * quantos ingressos a venda tem — a Kiwify não manda essa quantidade, e uma
+     * compra de 3 chega como uma venda só. Nulo = cada venda conta 1.
+     */
+    ticketPrice: numeric("ticket_price"),
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),

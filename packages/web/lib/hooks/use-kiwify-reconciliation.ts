@@ -16,6 +16,11 @@ export interface KiwifyStageConfig {
   productIds: string[];
   /** aaaa-mm-dd */
   startDate: string;
+  /**
+   * Preço de UM ingresso. Sem ele cada venda conta 1 — e a compra de três
+   * ingressos, que a Kiwify manda como uma venda só, fica invisível.
+   */
+  ticketPrice?: number | null;
   updatedAt?: string;
 }
 
@@ -53,6 +58,16 @@ export type KiwifyReconciliation =
       soNaKiwifyTotal: number;
       soNaPlanilhaTotal: number;
       amostraLimitada: boolean;
+      /** Ingressos ≠ vendas. `null` sem preço unitário configurado. */
+      ingressosKiwify: number | null;
+      ticketPrice: number | null;
+      comprasMultiplas: Array<{
+        nome: string | null;
+        email: string | null;
+        data: string | null;
+        ingressos: number;
+        precoBase: number;
+      }>;
     };
 
 function base(projectId: string, funnelId: string, stageId: string) {
@@ -72,7 +87,7 @@ export function useSaveKiwifyStageConfig(projectId: string, funnelId: string, st
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (dados: { productIds: string[]; startDate: string }) =>
+    mutationFn: (dados: { productIds: string[]; startDate: string; ticketPrice?: number | null }) =>
       apiClient<{ config: KiwifyStageConfig }>(`${base(projectId, funnelId, stageId)}/config`, {
         method: "PUT",
         body: JSON.stringify(dados),

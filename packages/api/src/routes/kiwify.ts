@@ -16,7 +16,12 @@ import {
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
-import { conciliar, diaNormalizado, type VendaDaPlanilha } from "../services/kiwify-reconciliation.js";
+import {
+  conciliar,
+  diaNormalizado,
+  quantidadeDeIngressos,
+  type VendaDaPlanilha,
+} from "../services/kiwify-reconciliation.js";
 import {
   encryptKiwifySecret,
   decryptKiwifySecret,
@@ -482,6 +487,12 @@ export default fp(async function kiwifyRoutes(fastify) {
     productIds: z.array(z.string().min(1)).min(1, "Escolha ao menos um produto"),
     /** aaaa-mm-dd — a partir de quando contar. */
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data no formato aaaa-mm-dd"),
+    /**
+     * Preço de UM ingresso. Opcional: sem ele cada venda conta 1, que é o
+     * comportamento de sempre. Com ele, a compra de 3 ingressos deixa de
+     * aparecer como uma venda só.
+     */
+    ticketPrice: z.number().positive().nullable().optional(),
   });
 
   /** A etapa pertence ao funil, e o funil ao projeto? */
@@ -520,7 +531,12 @@ export default fp(async function kiwifyRoutes(fastify) {
       return {
         conectado,
         config: cfg
-          ? { productIds: cfg.productIds ?? [], startDate: cfg.startDate, updatedAt: cfg.updatedAt.toISOString() }
+          ? {
+              productIds: cfg.productIds ?? [],
+              startDate: cfg.startDate,
+              ticketPrice: cfg.ticketPrice === null ? null : Number(cfg.ticketPrice),
+              updatedAt: cfg.updatedAt.toISOString(),
+            }
           : null,
       };
     },
@@ -553,15 +569,27 @@ export default fp(async function kiwifyRoutes(fastify) {
           stageId: params.data.stageId,
           productIds: body.data.productIds,
           startDate: body.data.startDate,
+          ticketPrice: body.data.ticketPrice != null ? String(body.data.ticketPrice) : null,
           createdBy: request.userId,
           updatedAt: agora,
         })
         .onConflictDoUpdate({
           target: kiwifyStageConfigs.stageId,
-          set: { productIds: body.data.productIds, startDate: body.data.startDate, updatedAt: agora },
+          set: {
+            productIds: body.data.productIds,
+            startDate: body.data.startDate,
+            ticketPrice: body.data.ticketPrice != null ? String(body.data.ticketPrice) : null,
+            updatedAt: agora,
+          },
         });
 
-      return { config: { productIds: body.data.productIds, startDate: body.data.startDate } };
+      return {
+        config: {
+          productIds: body.data.productIds,
+          startDate: body.data.startDate,
+          ticketPrice: body.data.ticketPrice ?? null,
+        },
+      };
     },
   );
 
@@ -646,6 +674,30 @@ export default fp(async function kiwifyRoutes(fastify) {
         // incluí-los aqui acusaria divergência a cada estorno.
         const pagas = daKiwify.filter((v) => VENDA_VALE.has((v.status ?? "").toLowerCase()));
 
+        /**
+         * Ingressos, que não são a mesma coisa que vendas.
+         *
+         * A Kiwify manda UMA venda quando a pessoa compra três ingressos —
+         * então contar linhas subestima o público do evento. Com o preço
+         * unitário configurado, o preço base revela a quantidade.
+         */
+        const unitario = cfg.ticketPrice === null ? null : Number(cfg.ticketPrice);
+        const comQuantidade = pagas.map((v) => {
+          const base = Number((v as { payment?: { product_base_price?: number } }).payment?.product_base_price ?? 0) / 100;
+          return { venda: v, ingressos: quantidadeDeIngressos(base, unitario), precoBase: base };
+        });
+        const ingressosKiwify = comQuantidade.reduce((acc, x) => acc + x.ingressos, 0);
+        const comprasMultiplas = comQuantidade
+          .filter((x) => x.ingressos > 1)
+          .map((x) => ({
+            nome: (x.venda as { customer?: { name?: string } }).customer?.name ?? null,
+            email: (x.venda as { customer?: { email?: string } }).customer?.email ?? null,
+            data: diaNormalizado(x.venda.approved_date ?? null),
+            ingressos: x.ingressos,
+            precoBase: x.precoBase,
+          }))
+          .sort((a, b) => b.ingressos - a.ingressos);
+
         const resultado = conciliar(
           daPlanilha,
           pagas.map((v) => ({
@@ -685,6 +737,15 @@ export default fp(async function kiwifyRoutes(fastify) {
           periodo: { de: cfg.startDate, ate: hoje },
           produtos: cfg.productIds ?? [],
           produtosNaPlanilha,
+          /**
+           * Ingressos ≠ vendas. `null` quando não há preço unitário
+           * configurado: nesse caso não dá para saber, e mostrar o número de
+           * vendas como se fosse de ingressos seria repetir o erro que esta
+           * contagem existe para corrigir.
+           */
+          ingressosKiwify: unitario ? ingressosKiwify : null,
+          ticketPrice: unitario,
+          comprasMultiplas,
           ...resultado,
           // As listas podem ser longas num lançamento grande. A tela recebe uma
           // amostra, mas o TOTAL vai separado: mostrar 50 quando são 300 seria

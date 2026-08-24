@@ -113,6 +113,29 @@ export function KiwifyReconciliationCard({ projectId, funnelId, stageId }: Props
               </span>
             </div>
 
+            {/* Ingressos ≠ vendas: a Kiwify manda UMA venda quando a pessoa
+                leva três ingressos, e contar linhas subestima o público. */}
+            {r.ingressosKiwify != null && (
+              <div className="rounded-md border border-border/40 bg-background/60 px-2.5 py-1.5 text-xs">
+                <span>
+                  <strong className="tabular-nums">{r.ingressosKiwify}</strong> ingressos em{" "}
+                  <strong className="tabular-nums">{r.totalKiwify}</strong> vendas
+                </span>
+                {r.comprasMultiplas.length > 0 ? (
+                  <span className="ml-2 text-muted-foreground">
+                    — {r.comprasMultiplas.length} compra(s) com mais de um ingresso:{" "}
+                    {r.comprasMultiplas
+                      .slice(0, 3)
+                      .map((c) => `${c.nome ?? c.email ?? "?"} (${c.ingressos})`)
+                      .join(", ")}
+                    {r.comprasMultiplas.length > 3 ? "…" : ""}
+                  </span>
+                ) : (
+                  <span className="ml-2 text-muted-foreground">— nenhuma compra múltipla no período.</span>
+                )}
+              </div>
+            )}
+
             {r.planilhaSemChave > 0 && (
               <p className="text-[11px] text-muted-foreground">
                 {r.planilhaSemChave} linha(s) da planilha sem id e sem e-mail — não dá para conferir essas.
@@ -203,12 +226,17 @@ function ConfigDialog({
   open,
   onOpenChange,
   atual,
-}: Props & { open: boolean; onOpenChange: (v: boolean) => void; atual: { productIds: string[]; startDate: string } | null }) {
+}: Props & {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  atual: { productIds: string[]; startDate: string; ticketPrice?: number | null } | null;
+}) {
   const produtos = useKiwifyProducts(projectId, open);
   const salvar = useSaveKiwifyStageConfig(projectId, funnelId, stageId);
   const desligar = useDisableKiwifyStageConfig(projectId, funnelId, stageId);
   const [selecionados, setSelecionados] = useState<string[]>(atual?.productIds ?? []);
   const [data, setData] = useState(atual?.startDate ?? "");
+  const [precoIngresso, setPrecoIngresso] = useState(atual?.ticketPrice != null ? String(atual.ticketPrice) : "");
   const [busca, setBusca] = useState("");
 
   const lista = (produtos.data?.products ?? []).filter((p) =>
@@ -230,6 +258,26 @@ function ConfigDialog({
           <div className="space-y-1.5">
             <Label htmlFor="kiwify-data" className="text-xs font-medium">Contar a partir de</Label>
             <Input id="kiwify-data" type="date" value={data} onChange={(e) => setData(e.target.value)} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="kiwify-ingresso" className="text-xs font-medium">
+              Preço de um ingresso <span className="font-normal text-muted-foreground">(opcional)</span>
+            </Label>
+            <Input
+              id="kiwify-ingresso"
+              type="number"
+              step="0.01"
+              min="0"
+              value={precoIngresso}
+              onChange={(e) => setPrecoIngresso(e.target.value)}
+              placeholder="ex.: 1097"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              A Kiwify manda <strong>uma venda só</strong> quando a pessoa compra vários ingressos.
+              Com o preço unitário, dá para descobrir quantos foram — o valor da compra é múltiplo
+              dele. Sem isso, cada venda conta como um ingresso.
+            </p>
           </div>
 
           <div className="space-y-1.5">
@@ -292,7 +340,13 @@ function ConfigDialog({
               disabled={salvar.isPending || selecionados.length === 0 || !data}
               onClick={() =>
                 salvar.mutate(
-                  { productIds: selecionados, startDate: data },
+                  {
+                    productIds: selecionados,
+                    startDate: data,
+                    // Campo vazio significa "não sei o preço", e é diferente de
+                    // zero: manda `null` para cada venda voltar a contar 1.
+                    ticketPrice: precoIngresso.trim() ? Number(precoIngresso) : null,
+                  },
                   {
                     onSuccess: () => {
                       toast.success("Conferência configurada");
