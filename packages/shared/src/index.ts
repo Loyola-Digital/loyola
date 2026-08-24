@@ -32,6 +32,7 @@ export {
   ehCaptacaoPaga,
   temDashboardDeVendas,
   ehEtapaDeCaptacao,
+  tiposEquivalentes,
 } from "./stage-types.js";
 export { normalizarNomeCampanha, temSufixoDeCopia } from "./campaign-name.js";
 export {

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { eq, and, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
+import { tiposEquivalentes } from "../utils/stage-types.js";
 import {
   funnelStages,
   funnels,
@@ -207,7 +208,10 @@ export default fp(async function metaAdsComparisonRoutes(fastify) {
         .where(
           and(
             eq(funnelStages.funnelId, row.compareFunnelId),
-            eq(funnelStages.stageType, row.stageType)
+            // Por GRUPO, não por tipo exato: uma Captação de Evento precisa
+            // casar com a Captação Paga do lançamento anterior. Com igualdade
+            // exata o gráfico sumia sem erro nenhum.
+            inArray(funnelStages.stageType, tiposEquivalentes(row.stageType))
           )
         )
         .limit(1);

@@ -1,5 +1,7 @@
 "use client";
 
+import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
+
 import * as React from "react";
 import { useState, useMemo, useEffect } from "react";
 import {
@@ -3092,8 +3094,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         />
       </div>
 
-      {/* Dashboard Financeiro — apenas etapas pagas (Story 19.6) */}
-      {stageType === "paid" && stageId && (
+      {/* Dashboard Financeiro — etapas com tráfego pago (Story 19.6).
+          `ehCaptacaoPaga` em vez de `=== "paid"`: a Captação de Evento também
+          vende, e a seção inteira sumia para ela. */}
+      {ehCaptacaoPaga(stageType) && stageId && (
         <div className="space-y-6 pt-2 border-t border-border/30">
           <h3 className="text-base font-semibold">Vendas</h3>
           <StageSalesSection

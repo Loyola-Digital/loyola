@@ -256,7 +256,10 @@ export function StageCreativePerformanceTable({
   // For free stages, suppress revenue and ROAS columns
   // Story 18.55: paid stages usam o conjunto Ingressos/Faturamento Único-Total
   const visibleColumns = useMemo(() => {
-    if (stageType === 'paid') {
+    // Captação de Evento é Captação Paga com ingresso no lugar do produto:
+    // mesmas colunas. Com a comparação literal, ela caía no conjunto genérico e
+    // a tabela saía sem Ingressos e sem Faturamento Único/Total.
+    if (ehCaptacaoPaga(stageType)) {
       return PAID_COLUMNS;
     }
     if (stageType === 'free') {
@@ -311,7 +314,7 @@ export function StageCreativePerformanceTable({
           // Story 18.55: só na Paga — repassar Único/Total muda CPL (÷ Ing.
           // Únicos) e ROAS (Fat. Total ÷ Invest) dentro do calculator. Nas
           // demais etapas os campos ficam de fora e nada muda (AC8).
-          ...(stageType === 'paid' && creative.ingressosUnicos != null
+          ...(ehCaptacaoPaga(stageType) && creative.ingressosUnicos != null
             ? {
                 ingressosUnicos: creative.ingressosUnicos,
                 ingressosTotais: creative.ingressosTotais,
