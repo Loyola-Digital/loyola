@@ -191,9 +191,14 @@ async function carimbarStaleNaoResolvido(
   await db
     .update(metaAdCreativesCache)
     .set({
-      creative: sql`jsonb_set(${metaAdCreativesCache.creative}, '{linkUrlResolver}', ${sql.raw(
-        `'${LINK_URL_RESOLVER_VERSION}'::jsonb`,
-      )}, true)`,
+      // A versão vai como PARÂMETRO, não interpolada.
+      //
+      // Gate QA: hoje `LINK_URL_RESOLVER_VERSION` é uma constante numérica do
+      // código e um `sql.raw` seria inofensivo. Mas raw é uma armadilha para
+      // quem vier depois — no dia em que essa versão vier de config, de header
+      // ou do banco, a injeção entra sem que nada no diff pareça suspeito. O
+      // bind custa o mesmo e não tem esse dia.
+      creative: sql`jsonb_set(${metaAdCreativesCache.creative}, '{linkUrlResolver}', to_jsonb(${LINK_URL_RESOLVER_VERSION}::int), true)`,
       lastSyncedAt: new Date(),
     })
     .where(
