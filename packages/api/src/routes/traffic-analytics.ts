@@ -30,9 +30,9 @@ import {
 // Story 29.56 — auto-cura do cache de LP. A regra mora em serviço próprio para
 // que o teto, a prioridade e o cooldown sejam prováveis sem levantar a rota.
 import {
+  avaliarCura,
   curarCacheDeLpEmSegundoPlano,
-  podeTentarCura,
-  selecionarParaCura,
+  type MotivoDaCura,
 } from "../services/lp-cache-selfheal.js";
 import {
   metaAdsAccounts,
@@ -864,7 +864,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
       // O agendamento acontece DEPOIS da resposta estar montada e **não é
       // aguardado**: uma requisição de leitura não pode ficar pendurada na
       // Graph API. A linha encolhe na próxima abertura da aba.
-      const refreshAgendado = await agendarCuraDoCacheDeLp(
+      const refresh = await agendarCuraDoCacheDeLp(
         fastify,
         paramResult.data.projectId,
         staleInCache,
@@ -877,10 +877,17 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
         resolved: Object.values(linkUrls).filter(Boolean).length,
         missingFromCache,
         staleInCache,
-        // Story 29.56 (AC6): sem este campo não há como distinguir "não
+        // Story 29.56 (AC6): sem estes campos não há como distinguir "não
         // agendou porque não precisava" de "não agendou porque quebrou" — nem
-        // em produção nem no teste. Aditivo: consumidor antigo ignora.
-        refreshAgendado,
+        // em produção nem no teste. Aditivos: consumidor antigo ignora.
+        //
+        // Gate PO F1: a contagem sozinha NÃO cumpria o AC. `0` respondia por
+        // quatro situações — nada velho, cooldown ativo, projeto sem conta Meta
+        // e token que não decriptou — e as duas últimas são exatamente o
+        // "quebrou". O motivo é o que separa "está tudo certo" de "alguém
+        // precisa olhar isso".
+        refreshAgendado: refresh.agendados,
+        refreshMotivo: refresh.motivo,
       };
     },
   );
@@ -888,43 +895,44 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   /**
    * Story 29.56 — resolve a conta Meta do projeto e dispara a cura.
    *
-   * Devolve quantos ad_ids foram enviados, para o `refreshAgendado` do AC6. A
-   * contagem é feita ANTES do disparo (a fila é determinística) justamente para
-   * que o campo possa ser informado sem esperar a Meta responder.
+   * Devolve a contagem E o motivo de ela ser zero (gate PO F1). A contagem é
+   * feita ANTES do disparo (a fila é determinística) justamente para que o
+   * campo possa ser informado sem esperar a Meta responder — mas "agendei 12" e
+   * "agendei 0" não bastam: o zero tem quatro causas, e duas delas exigem que
+   * alguém faça alguma coisa.
    *
-   * Projeto sem conta Meta vinculada devolve 0 e segue: o endpoint continua
-   * respondendo o que o cache tem, que é o contrato dele.
+   * Projeto sem conta Meta vinculada devolve `sem_conta_meta` e segue: o
+   * endpoint continua respondendo o que o cache tem, que é o contrato dele.
    */
   async function agendarCuraDoCacheDeLp(
     app: typeof fastify,
     projectId: string,
     staleInCache: string[],
     missingFromCache: string[],
-  ): Promise<number> {
+  ): Promise<{ agendados: number; motivo: MotivoDaCura }> {
     const agora = Date.now();
-    if (!podeTentarCura(projectId, agora)) return 0;
-    const fila = selecionarParaCura(staleInCache, missingFromCache);
-    if (fila.length === 0) return 0;
+    const { fila, motivo } = avaliarCura(projectId, agora, staleInCache, missingFromCache);
+    if (fila.length === 0) return { agendados: 0, motivo };
 
     const [link] = await app.db
       .select({ accountId: metaAdsAccountProjects.accountId })
       .from(metaAdsAccountProjects)
       .where(eq(metaAdsAccountProjects.projectId, projectId))
       .limit(1);
-    if (!link) return 0;
+    if (!link) return { agendados: 0, motivo: "sem_conta_meta" };
 
     const [account] = await app.db
       .select()
       .from(metaAdsAccounts)
       .where(eq(metaAdsAccounts.id, link.accountId))
       .limit(1);
-    if (!account) return 0;
+    if (!account) return { agendados: 0, motivo: "sem_conta_meta" };
 
     let accessToken: string;
     try {
       accessToken = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
     } catch {
-      return 0;
+      return { agendados: 0, motivo: "token_invalido" };
     }
 
     curarCacheDeLpEmSegundoPlano(
@@ -939,7 +947,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
       },
       (erro) => app.log.warn({ erro, projectId }, "[29.56] cura do cache de LP falhou"),
     );
-    return fila.length;
+    return { agendados: fila.length, motivo: "agendado" };
   }
 
   // ---- GET /api/traffic/analytics/:projectId/entity-daily ---- (Story 29.42, AC6/AC7)

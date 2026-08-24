@@ -205,6 +205,53 @@ async function carimbarStaleNaoResolvido(
   return adIds.length;
 }
 
+/**
+ * Story 29.56 (AC6, gate PO F1) — por que a cura não foi agendada.
+ *
+ * Cada valor manda o gestor (ou quem estiver depurando) a um lugar diferente:
+ *
+ * | motivo | o que fazer |
+ * |---|---|
+ * | `agendado` | nada — está funcionando |
+ * | `nada_a_curar` | nada — não havia cache velho |
+ * | `cooldown` | esperar; outra aba acabou de disparar |
+ * | `sem_conta_meta` | vincular a conta Meta ao projeto |
+ * | `token_invalido` | reconectar a conta — a credencial não decriptou |
+ *
+ * Sem isso, `refreshAgendado: 0` respondia pelas cinco e não respondia nenhuma.
+ */
+export type MotivoDaCura =
+  | "agendado"
+  | "nada_a_curar"
+  | "cooldown"
+  | "sem_conta_meta"
+  | "token_invalido";
+
+/**
+ * A fila e o motivo, numa decisão só (gate PO F1).
+ *
+ * Vive aqui, e não na rota, porque é a parte que decide o que a Meta recebe e
+ * o que a resposta declara — enterrada num closure de handler, ela só seria
+ * testável levantando o Fastify inteiro, e na prática não seria testada.
+ *
+ * Os motivos que dependem da CONTA (`sem_conta_meta`, `token_invalido`) ficam
+ * com a rota: são dela os `SELECT`s que os descobrem.
+ */
+export function avaliarCura(
+  projectId: string,
+  agoraMs: number,
+  staleInCache: string[],
+  missingFromCache: string[],
+): { fila: string[]; motivo: MotivoDaCura } {
+  // A ordem importa: cooldown ANTES de olhar a fila. Ao contrário, um projeto
+  // em cooldown com nada velho reportaria `nada_a_curar` e esconderia que o
+  // endpoint nem chegou a avaliar.
+  if (!podeTentarCura(projectId, agoraMs)) return { fila: [], motivo: "cooldown" };
+  const fila = selecionarParaCura(staleInCache, missingFromCache);
+  if (fila.length === 0) return { fila: [], motivo: "nada_a_curar" };
+  return { fila, motivo: "agendado" };
+}
+
 export interface ParamsDaCura {
   db: Database;
   projectId: string;

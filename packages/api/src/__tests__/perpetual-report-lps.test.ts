@@ -279,3 +279,48 @@ describe("o renderer põe a cauda no fim e a marca (AC7)", () => {
     expect(semLp).not.toContain("Landing pages");
   });
 });
+
+// ============================================================================
+// Gate PO F4 — vocabulário alinhado com o dashboard.
+//
+// O AC5 original pedia "os mesmos nomes E a mesma ordem da tabela do
+// dashboard". Cumprir a ordem daria às LPs um cabeçalho diferente do das outras
+// quatro seções DO MESMO DOCUMENTO — troca uma inconsistência por outra pior,
+// porque a segunda está na mesma página. O @po reescreveu o AC: o que evita a
+// pergunta "esses dois números são a mesma coisa?" é o NOME da métrica, não a
+// posição da coluna.
+// ============================================================================
+
+describe("vocabulário do relatório bate com o do dashboard (AC5, gate PO F4)", () => {
+  it('a coluna é "Faturamento Bruto", como no dashboard e na 29.28', async () => {
+    const { renderPerpetualReportHtml } = await import(
+      "../services/perpetual-report-html.js"
+    );
+    const html = renderPerpetualReportHtml(
+      computePerpetualReport(
+        input({ linkUrlPorAd: { "ad-1": "https://exemplo.com.br/lp-a", "ad-2": null } }),
+      ),
+    );
+    expect(html).toContain("<th>Faturamento Bruto</th>");
+    // "Faturamento" sozinho é ambíguo entre bruto e líquido — e o relatório
+    // mostra os dois em lugares diferentes.
+    expect(html).not.toContain("<th>Faturamento</th>");
+  });
+
+  it("o alinhamento vale para TODAS as seções, não só a de LPs", async () => {
+    const { renderPerpetualReportHtml } = await import(
+      "../services/perpetual-report-html.js"
+    );
+    const html = renderPerpetualReportHtml(
+      computePerpetualReport(
+        input({ linkUrlPorAd: { "ad-1": "https://exemplo.com.br/lp-a", "ad-2": null } }),
+      ),
+    );
+    // Uma seção com cabeçalho diferente das outras é a inconsistência que a
+    // reescrita do AC5 existe para evitar.
+    const cabecalhos = html.match(/<th>Faturamento Bruto<\/th>/g) ?? [];
+    const secoes = html.match(/<h2>/g) ?? [];
+    expect(cabecalhos.length).toBeGreaterThan(1);
+    expect(secoes.length).toBeGreaterThan(cabecalhos.length - 1);
+  });
+});

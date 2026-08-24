@@ -12,7 +12,9 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import {
+  avaliarCura,
   curarCacheDeLp,
+  registrarTentativaDeCura,
   selecionarParaCura,
   limparCooldownDeCura,
   TETO_POR_CURA,
@@ -322,5 +324,54 @@ describe("o que a Meta não devolve é carimbado, não re-enfileirado (AC5)", ()
     expect(r).toEqual({ agendados: 0, resolvidos: 0, carimbados: 0 });
     expect(reg.inserts).toHaveLength(0);
     expect(reg.updates).toHaveLength(0);
+  });
+});
+
+// ============================================================================
+// Gate PO F1 — `refreshAgendado === 0` tem que dizer POR QUÊ.
+//
+// A contagem sozinha não cumpria o AC6: `0` respondia por cinco situações, e
+// duas delas (`sem_conta_meta`, `token_invalido`) exigem que alguém faça
+// alguma coisa. Um teste que só checasse `agendados === 0` passaria com o
+// motivo removido — por isso cada caso aqui olha o motivo, não a contagem.
+// ============================================================================
+
+describe("o motivo da não-cura (gate PO F1)", () => {
+  it("fila com trabalho devolve `agendado`", () => {
+    const r = avaliarCura("proj-f1", 1_000_000, ["ad_a"], []);
+    expect(r.motivo).toBe("agendado");
+    expect(r.fila).toEqual(["ad_a"]);
+  });
+
+  it("nada velho devolve `nada_a_curar`, que é 'está tudo certo'", () => {
+    const r = avaliarCura("proj-f1", 1_000_000, [], []);
+    expect(r.motivo).toBe("nada_a_curar");
+    expect(r.fila).toEqual([]);
+  });
+
+  it("cooldown ativo devolve `cooldown`, que é 'espere'", () => {
+    registrarTentativaDeCura("proj-f1", 1_000_000);
+    const r = avaliarCura("proj-f1", 1_000_000 + 60_000, ["ad_a"], []);
+    expect(r.motivo).toBe("cooldown");
+    expect(r.fila).toEqual([]);
+  });
+
+  it("cooldown é avaliado ANTES da fila", () => {
+    // Ao contrário, um projeto em cooldown e sem nada velho reportaria
+    // `nada_a_curar` — escondendo que o endpoint nem chegou a avaliar a fila.
+    registrarTentativaDeCura("proj-f1", 1_000_000);
+    expect(avaliarCura("proj-f1", 1_000_000, [], []).motivo).toBe("cooldown");
+  });
+
+  it("os cinco motivos são distinguíveis entre si", () => {
+    // O defeito que a F1 apontou era todos colapsarem em `0`. Se dois motivos
+    // voltarem a ter o mesmo valor, este teste cai.
+    const motivos = new Set<string>([
+      avaliarCura("proj-a", 1_000_000, ["x"], []).motivo,
+      avaliarCura("proj-b", 1_000_000, [], []).motivo,
+    ]);
+    registrarTentativaDeCura("proj-c", 1_000_000);
+    motivos.add(avaliarCura("proj-c", 1_000_000, ["x"], []).motivo);
+    expect(motivos).toEqual(new Set(["agendado", "nada_a_curar", "cooldown"]));
   });
 });

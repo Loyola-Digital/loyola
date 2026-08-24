@@ -113,7 +113,7 @@ function segTable(titulo: string, rows: SegmentoRow[]): string {
     .join("");
   return `<h2>${titulo}</h2><div class="scroll"><table>
     <thead><tr><th>Nome</th><th>Investimento</th><th>% inv.</th><th>Vendas</th>
-    <th>Faturamento</th><th>CAC</th><th>ROAS</th><th>Margem</th></tr></thead>
+    <th>Faturamento Bruto</th><th>CAC</th><th>ROAS</th><th>Margem</th></tr></thead>
     <tbody>${body}</tbody></table></div>`;
 }
 
