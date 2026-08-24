@@ -364,6 +364,10 @@ export default fp(async function metaAdsComparisonRoutes(fastify) {
 
       const dayMetrics = sortedEntries.map(([date, v], idx) => ({
         dayIndex: idx + 1,
+        // A data existia aqui e não saía na resposta. Sem ela, escolher outro
+        // "Dia 1" para o lançamento comparado é impossível — não há como saber
+        // a que dia do calendário cada ponto corresponde.
+        date,
         impressions: v.impressions,
         clicks: v.clicks,
         linkClicks: v.linkClicks,

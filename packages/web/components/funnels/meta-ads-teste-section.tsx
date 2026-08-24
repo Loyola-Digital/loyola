@@ -42,6 +42,7 @@ import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
 import { useLpFunnel, useLpFunnelView } from "@/lib/hooks/use-sales-journey";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
+import { toast } from "sonner";
 import { useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { expandChartDataV2, calculateProjectionPercentage } from "@/lib/utils/lead-trend-calculations";
 import { useLeadsProjection } from "@/lib/hooks/use-leads-projection";
@@ -289,6 +290,9 @@ export function MetaAdsTesteTab({
     projectId, campaignIds.length > 0 ? campaignIds : null, days,
   );
   const { data: compData } = useMetaAdsComparison(projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days);
+  // A âncora do "Dia 1" vive no funil: é decisão do lançamento, não da sessão de
+  // quem está olhando — todo mundo do time vê a mesma comparação.
+  const atualizarFunil = useUpdateFunnel(projectId, funnel.id);
   const { adsetsMap } = useFunnelAdsetsMap(projectId, campaignIds, days);
   const hasComparison = !!(compData && !compData.semDados);
   const compDays = hasComparison ? compData!.days : null;
@@ -922,7 +926,27 @@ export function MetaAdsTesteTab({
               {hasComparison && compDays && dailyData && dailyData.length > 0 && (
                 <div className="space-y-4">
                   <GroupHeading icon={ArrowLeftRight} title="COMPARAÇÃO DE LANÇAMENTOS" subtitle={`Este funil × ${compData?.compareFunnelName ?? "comparação"} — alinhado por dia`} />
-                  <FunnelComparisonChart data={dailyData} comparisonDays={compDays} compFunnelName={compData?.compareFunnelName} atualSalesByDay={compData?.atualSalesByDay} />
+                  <FunnelComparisonChart
+                    data={dailyData}
+                    comparisonDays={compDays}
+                    compFunnelName={compData?.compareFunnelName}
+                    atualSalesByDay={compData?.atualSalesByDay}
+                    compareStartDate={funnel.compareStartDate ?? null}
+                    onCompareStartDateChange={(novaData) =>
+                      atualizarFunil.mutate(
+                        { compareStartDate: novaData },
+                        {
+                          onSuccess: () =>
+                            toast.success(
+                              novaData
+                                ? `Dia 1 da comparação: ${novaData.split("-").reverse().join("/")}`
+                                : "Comparação voltou ao 1º dia com anúncio",
+                            ),
+                          onError: (e) => toast.error(e instanceof Error ? e.message : "Não consegui salvar"),
+                        },
+                      )
+                    }
+                  />
                 </div>
               )}
 

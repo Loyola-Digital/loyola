@@ -1258,16 +1258,46 @@ export function FunnelComparisonChart({
   comparisonDays,
   compFunnelName,
   atualSalesByDay,
+  compareStartDate,
+  onCompareStartDateChange,
 }: {
   data: CampaignDailyInsight[];
   comparisonDays: ComparisonDayMetrics[];
   compFunnelName?: string;
   atualSalesByDay?: Record<string, { faturamento: number; vendas: number }>;
+  /** Dia 1 do lançamento comparado. Vazio = primeiro dia com veiculação. */
+  compareStartDate?: string | null;
+  onCompareStartDateChange?: (data: string | null) => void;
 }) {
   const [metric, setMetric] = useState<CompMetricKey>("spend");
   const [modo, setModo] = useState<"dia" | "acumulado">("dia");
   const meta = COMPARISON_METRICS.find((m) => m.key === metric)!;
-  const maxLen = Math.max(data.length, comparisonDays.length);
+
+  /**
+   * Onde começa o lançamento comparado.
+   *
+   * O alinhamento padrão é pelo primeiro dia de VEICULAÇÃO, o que pressupõe que
+   * os dois lançamentos passaram a valer no primeiro anúncio. Quando o anterior
+   * rodou tráfego semanas antes de abrir carrinho, esse D1 é um dia sem venda —
+   * e a comparação nasce torta, com o lançamento novo parecendo melhor por
+   * estar sendo comparado com o aquecimento do outro.
+   *
+   * Escolhendo a data, o D1 do comparado passa a ser o dia que o time considera
+   * o começo de verdade. Os dias anteriores saem da série (não viram zero: zero
+   * seria "não vendeu", quando o certo é "ainda não tinha começado").
+   */
+  const comparados = useMemo(() => {
+    if (!compareStartDate) return comparisonDays;
+    return comparisonDays.filter((d) => !d.date || d.date >= compareStartDate);
+  }, [comparisonDays, compareStartDate]);
+
+  /** Datas oferecidas no seletor — só dias que o lançamento comparado teve. */
+  const datasDisponiveis = useMemo(
+    () => comparisonDays.map((d) => d.date).filter((d): d is string => Boolean(d)),
+    [comparisonDays],
+  );
+
+  const maxLen = Math.max(data.length, comparados.length);
 
   /**
    * Acumulado a partir dos COMPONENTES de cada dia, não do valor já calculado.
@@ -1302,7 +1332,7 @@ export function FunnelComparisonChart({
     () =>
       serieAcumulada(
         Array.from({ length: maxLen }, (_, i) => {
-          const c = comparisonDays[i];
+          const c = comparados[i];
           if (!c) return null;
           return {
             spend: c.spend,
@@ -1315,7 +1345,7 @@ export function FunnelComparisonChart({
         }),
         metric as MetricaComparada,
       ),
-    [comparisonDays, maxLen, metric],
+    [comparados, maxLen, metric],
   );
 
   const chartData = Array.from({ length: maxLen }, (_, idx) => ({
@@ -1329,8 +1359,8 @@ export function FunnelComparisonChart({
     comp:
       modo === "acumulado"
         ? acumComp[idx]
-        : comparisonDays[idx]
-          ? compMetricValue(comparisonDays[idx], metric)
+        : comparados[idx]
+          ? compMetricValue(comparados[idx], metric)
           : undefined,
   }));
 
@@ -1341,6 +1371,13 @@ export function FunnelComparisonChart({
           <h3 className="text-sm font-semibold">Comparação de Lançamentos</h3>
           <p className="text-[11px] text-muted-foreground mt-0.5">
             Este funil × {compFunnelName ?? "comparação"} — alinhado por dia do lançamento (datas diferentes)
+            {compareStartDate && (
+              <>
+                {" · "}
+                {compFunnelName ?? "comparação"} contando de{" "}
+                {compareStartDate.split("-").reverse().join("/")}
+              </>
+            )}
             {modo === "acumulado" && (
               <>
                 {" · "}
@@ -1355,6 +1392,28 @@ export function FunnelComparisonChart({
           {/* Dia responde "como foi ontem"; acumulado responde "a esta altura,
               estamos à frente do lançamento passado?" — que é a pergunta que
               decide acelerar ou segurar investimento. */}
+          {/* Dia 1 do lançamento comparado. Só aparece quando as datas vieram
+              na resposta — sem elas não há como reancorar. */}
+          {onCompareStartDateChange && datasDisponiveis.length > 0 && (
+            <div className="mr-2 flex items-center gap-1">
+              <label className="text-[11px] text-muted-foreground" htmlFor="comp-inicio">
+                Dia 1 de {compFunnelName ?? "comparação"}:
+              </label>
+              <select
+                id="comp-inicio"
+                className="h-7 rounded-md border border-border/50 bg-background px-1.5 text-xs"
+                value={compareStartDate ?? ""}
+                onChange={(e) => onCompareStartDateChange(e.target.value || null)}
+              >
+                <option value="">1º dia com anúncio</option>
+                {datasDisponiveis.map((d) => (
+                  <option key={d} value={d}>
+                    {d.split("-").reverse().join("/")}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="mr-2 inline-flex rounded-md border border-border/50 p-0.5">
             {(["dia", "acumulado"] as const).map((m) => (
               <button
