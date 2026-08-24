@@ -388,6 +388,14 @@ export interface StageSalesData {
    * vendeu — jogá-la em "sem track" misturava "perdemos o rastreio" com "nunca
    * houve rastreio a perder".
    */
+  /**
+   * Ingressos emitidos do evento, pelos lotes da Kiwify (`issued_tickets`).
+   *
+   * Difere de `totalVendas` porque uma compra pode levar vários ingressos — e a
+   * Kiwify manda UMA venda nesse caso. `null` quando a etapa não tem conferência
+   * Kiwify configurada ou o produto não é evento.
+   */
+  ingressosReais?: number | null;
   porUtmSource: { fonte: string; vendas: number; bruto: number; liquido: number; manual?: boolean }[];
   /**
    * Agregação por utm_medium. utm_medium carrega o adset_id (padrão Loyola).

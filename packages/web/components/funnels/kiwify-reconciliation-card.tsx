@@ -137,7 +137,9 @@ export function KiwifyReconciliationCard({ projectId, funnelId, stageId }: Props
                   <strong className="tabular-nums">{r.ingressosKiwify}</strong> ingressos em{" "}
                   <strong className="tabular-nums">{r.totalKiwify}</strong> vendas
                 </span>
-                {r.comprasMultiplas.length > 0 ? (
+                {r.fonteDosIngressos === "lotes" ? (
+                  <span className="ml-2 text-muted-foreground">— contagem oficial dos lotes do evento.</span>
+                ) : r.comprasMultiplas.length > 0 ? (
                   <span className="ml-2 text-muted-foreground">
                     — {r.comprasMultiplas.length} compra(s) com mais de um ingresso:{" "}
                     {r.comprasMultiplas
@@ -149,6 +151,25 @@ export function KiwifyReconciliationCard({ projectId, funnelId, stageId }: Props
                 ) : (
                   <span className="ml-2 text-muted-foreground">— nenhuma compra múltipla no período.</span>
                 )}
+              </div>
+            )}
+
+            {/* Lotes: é aqui que os preços diferentes deixam de ser mistério —
+                797, 997 e 1097 não são desconto, são lotes distintos, cada um
+                com estoque próprio. */}
+            {r.ingressosPorLote.length > 0 && (
+              <div className="space-y-0.5 rounded-md border border-border/40 bg-background/60 p-2 text-[11px]">
+                <p className="font-medium">Lotes do evento</p>
+                {r.ingressosPorLote.map((l, i) => (
+                  <div key={`${l.lote}-${i}`} className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate" title={`${l.produto} · ${l.lote}`}>
+                      {l.lote} <span className="text-muted-foreground">· {brl(l.preco)}</span>
+                    </span>
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                      {l.emitidos} emitido(s) · restam {l.disponiveis}/{l.total}
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
 

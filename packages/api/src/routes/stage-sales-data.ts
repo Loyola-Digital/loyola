@@ -21,6 +21,7 @@ import {
 import { readSheetData } from "../services/google-sheets.js";
 import { temDashboardDeVendas } from "../utils/stage-types.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
+import { contarIngressosDoEvento } from "../services/kiwify-event-tickets.js";
 import {
   decryptAccountToken,
   resolveEntityNames,
@@ -794,6 +795,28 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       }
       const ingressosUnicos = capturaByEmail.size + capturaNoEmail.length;
       const ingressosTotais = totalVendas;
+
+      /**
+       * Ingressos de verdade — não linhas de planilha.
+       *
+       * Quem compra 3 ingressos gera UMA linha, e contar linhas subestima o
+       * público do evento. A contagem oficial vem da própria Kiwify: produto do
+       * tipo `event` traz os lotes com `issued_tickets`.
+       *
+       * Não é derivado de preço de propósito. Este evento tem nove lotes (797,
+       * 997, 1097 e versões com desconto), então dividir o valor por um preço
+       * único erraria na maioria das vendas — a divisão só acertaria quem
+       * comprou pelo lote escolhido como referência.
+       *
+       * `null` quando a etapa não tem conferência configurada: aí não há de
+       * onde tirar o número, e repetir o total de vendas fingindo ser contagem
+       * de ingresso é o erro que isto existe para corrigir.
+       */
+      const ingressosReais = await contarIngressosDoEvento(
+        fastify.db,
+        params.data.projectId,
+        params.data.stageId,
+      );
       const faturamentoTotal = totalBruto;
       const ingressosPorProduto = Array.from(ingressosPorProdutoMap.values())
         .map((v) => ({ produto: v.name, count: v.count, bruto: v.bruto, isOrderBump: v.isOrderBump }))
@@ -972,6 +995,8 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         porFormaPagamento: Array.from(formaMap.entries())
           .map(([forma, v]) => ({ forma, ...v }))
           .sort((a, b) => b.vendas - a.vendas),
+        /** Ingressos do evento (Kiwify), contando compras múltiplas. */
+        ingressosReais,
         porUtmSource: Array.from(utmSourceMap.entries())
           // `manual: true` diz que aquela linha é um vendedor, não uma UTM — a
           // tela usa isso para rotular sem ter de adivinhar pelo nome.

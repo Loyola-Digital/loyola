@@ -30,6 +30,8 @@ import {
   listKiwifyProducts,
   computeKiwifyDashboard,
   fetchSalesWindowed,
+  fetchEventProduct,
+  totalDeIngressos,
 } from "../services/kiwify.js";
 
 // ============================================================
@@ -652,10 +654,11 @@ export default fp(async function kiwifyRoutes(fastify) {
         .where(eq(stageSalesSpreadsheets.stageId, params.data.stageId));
 
       try {
+        // Um token para tudo: vendas e detalhe dos produtos usam o mesmo.
+        const token = await getKiwifyToken(creds.clientId, creds.clientSecret);
         const [daPlanilha, daKiwify] = await Promise.all([
           lerVendasDasPlanilhas(planilhas, cfg.startDate, hoje),
           (async () => {
-            const token = await getKiwifyToken(creds.clientId, creds.clientSecret);
             const listas = await Promise.all(
               (cfg.productIds ?? []).map((productId) =>
                 fetchSalesWindowed(token, creds.accountId, {
@@ -677,16 +680,48 @@ export default fp(async function kiwifyRoutes(fastify) {
         /**
          * Ingressos, que não são a mesma coisa que vendas.
          *
-         * A Kiwify manda UMA venda quando a pessoa compra três ingressos —
-         * então contar linhas subestima o público do evento. Com o preço
-         * unitário configurado, o preço base revela a quantidade.
+         * A Kiwify manda UMA venda quando a pessoa compra três ingressos, então
+         * contar linhas subestima o público. A resposta oficial está no
+         * PRODUTO: sendo `type: "event"`, ele traz os lotes com
+         * `issued_tickets` — a contagem da própria Kiwify, por lote.
+         *
+         * Isso substitui a divisão por preço, que quebraria aqui: este evento
+         * tem nove lotes (797, 997, 1097, versões com 15% de desconto…), e
+         * qualquer conta que assuma um preço único erra na maioria das vendas.
+         * O preço unitário configurado fica como reserva, para produto que não
+         * é evento e mesmo assim vende em quantidade.
          */
+        const lotes = (
+          await Promise.all(
+            (cfg.productIds ?? []).map((id) =>
+              fetchEventProduct(token, creds.accountId, id).catch(() => null),
+            ),
+          )
+        ).filter((p): p is NonNullable<typeof p> => p !== null && p.type === "event");
+
+        const ingressosPorLote = lotes.flatMap((p) =>
+          p.batches
+            .filter((b) => b.issuedTickets > 0 || b.availableTickets < b.maxTickets)
+            .map((b) => ({
+              produto: p.name,
+              lote: b.name,
+              preco: b.price / 100,
+              emitidos: b.issuedTickets,
+              disponiveis: b.availableTickets,
+              total: b.maxTickets,
+            })),
+        );
+        const ingressosDoEvento = lotes.length > 0
+          ? lotes.reduce((acc, p) => acc + totalDeIngressos(p.batches), 0)
+          : null;
+
         const unitario = cfg.ticketPrice === null ? null : Number(cfg.ticketPrice);
         const comQuantidade = pagas.map((v) => {
           const base = Number((v as { payment?: { product_base_price?: number } }).payment?.product_base_price ?? 0) / 100;
           return { venda: v, ingressos: quantidadeDeIngressos(base, unitario), precoBase: base };
         });
-        const ingressosKiwify = comQuantidade.reduce((acc, x) => acc + x.ingressos, 0);
+        // O número do evento manda quando existe: é contagem, não estimativa.
+        const ingressosKiwify = ingressosDoEvento ?? comQuantidade.reduce((acc, x) => acc + x.ingressos, 0);
         const comprasMultiplas = comQuantidade
           .filter((x) => x.ingressos > 1)
           .map((x) => ({
@@ -743,8 +778,11 @@ export default fp(async function kiwifyRoutes(fastify) {
            * vendas como se fosse de ingressos seria repetir o erro que esta
            * contagem existe para corrigir.
            */
-          ingressosKiwify: unitario ? ingressosKiwify : null,
+          ingressosKiwify: ingressosDoEvento ?? (unitario ? ingressosKiwify : null),
+          /** `lotes` = veio de `issued_tickets`; `preco` = derivado do valor. */
+          fonteDosIngressos: ingressosDoEvento != null ? ("lotes" as const) : unitario ? ("preco" as const) : null,
           ticketPrice: unitario,
+          ingressosPorLote,
           comprasMultiplas,
           ...resultado,
           // As listas podem ser longas num lançamento grande. A tela recebe uma
