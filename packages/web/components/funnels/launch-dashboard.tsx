@@ -3,6 +3,11 @@
 import * as React from "react";
 import { useState, useMemo, useCallback } from "react";
 import {
+  ehSomavel,
+  serieAcumulada,
+  type MetricaComparada,
+} from "@/lib/utils/comparacao-acumulada";
+import {
   DollarSign,
   MousePointerClick,
   Percent,
@@ -1247,6 +1252,7 @@ function fmtCompMetric(v: number | null | undefined, kind: "currency" | "percent
   return Math.round(v).toLocaleString("pt-BR");
 }
 
+/** @see lib/utils/comparacao-acumulada — por que taxa não se soma. */
 export function FunnelComparisonChart({
   data,
   comparisonDays,
@@ -1259,12 +1265,73 @@ export function FunnelComparisonChart({
   atualSalesByDay?: Record<string, { faturamento: number; vendas: number }>;
 }) {
   const [metric, setMetric] = useState<CompMetricKey>("spend");
+  const [modo, setModo] = useState<"dia" | "acumulado">("dia");
   const meta = COMPARISON_METRICS.find((m) => m.key === metric)!;
   const maxLen = Math.max(data.length, comparisonDays.length);
+
+  /**
+   * Acumulado a partir dos COMPONENTES de cada dia, não do valor já calculado.
+   *
+   * CPL, CPC, CPM e CTR são razões: somá-las não significa nada e a média das
+   * médias mente. Com os brutos, o acumulado é investimento acumulado ÷ leads
+   * acumulados — que é a pergunta real ("a esta altura, estamos melhor que o
+   * lançamento passado?"). Ver `lib/utils/comparacao-acumulada`.
+   */
+  const acumAtual = useMemo(
+    () =>
+      serieAcumulada(
+        Array.from({ length: maxLen }, (_, i) => {
+          const d = data[i];
+          if (!d) return null;
+          return {
+            spend: safeNum(d.spend),
+            impressions: safeNum(d.impressions),
+            // Clique no LINK, para casar com o CTR diário desta comparação.
+            clicks: linkClicksFromInsight(d),
+            leads: leadsFromActions(d),
+            faturamento: atualSalesByDay?.[d.date_start]?.faturamento ?? 0,
+            vendas: atualSalesByDay?.[d.date_start]?.vendas ?? 0,
+          };
+        }),
+        metric as MetricaComparada,
+      ),
+    [data, maxLen, metric, atualSalesByDay],
+  );
+
+  const acumComp = useMemo(
+    () =>
+      serieAcumulada(
+        Array.from({ length: maxLen }, (_, i) => {
+          const c = comparisonDays[i];
+          if (!c) return null;
+          return {
+            spend: c.spend,
+            impressions: c.impressions,
+            clicks: c.clicks,
+            leads: c.leads ?? 0,
+            faturamento: c.faturamento ?? 0,
+            vendas: c.vendas ?? 0,
+          };
+        }),
+        metric as MetricaComparada,
+      ),
+    [comparisonDays, maxLen, metric],
+  );
+
   const chartData = Array.from({ length: maxLen }, (_, idx) => ({
     dia: `Dia ${idx + 1}`,
-    atual: data[idx] ? atualMetricValue(data[idx], metric, atualSalesByDay) : undefined,
-    comp: comparisonDays[idx] ? compMetricValue(comparisonDays[idx], metric) : undefined,
+    atual:
+      modo === "acumulado"
+        ? acumAtual[idx]
+        : data[idx]
+          ? atualMetricValue(data[idx], metric, atualSalesByDay)
+          : undefined,
+    comp:
+      modo === "acumulado"
+        ? acumComp[idx]
+        : comparisonDays[idx]
+          ? compMetricValue(comparisonDays[idx], metric)
+          : undefined,
   }));
 
   return (
@@ -1274,9 +1341,34 @@ export function FunnelComparisonChart({
           <h3 className="text-sm font-semibold">Comparação de Lançamentos</h3>
           <p className="text-[11px] text-muted-foreground mt-0.5">
             Este funil × {compFunnelName ?? "comparação"} — alinhado por dia do lançamento (datas diferentes)
+            {modo === "acumulado" && (
+              <>
+                {" · "}
+                {ehSomavel(metric as MetricaComparada)
+                  ? "somado desde o dia 1"
+                  : "razão dos acumulados até cada dia"}
+              </>
+            )}
           </p>
         </div>
         <div className="flex gap-1 flex-wrap">
+          {/* Dia responde "como foi ontem"; acumulado responde "a esta altura,
+              estamos à frente do lançamento passado?" — que é a pergunta que
+              decide acelerar ou segurar investimento. */}
+          <div className="mr-2 inline-flex rounded-md border border-border/50 p-0.5">
+            {(["dia", "acumulado"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setModo(m)}
+                className={`rounded px-2 py-1 text-xs transition-colors ${
+                  modo === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {m === "dia" ? "Por dia" : "Acumulado"}
+              </button>
+            ))}
+          </div>
           {COMPARISON_METRICS.map((m) => (
             <Button
               key={m.key}
