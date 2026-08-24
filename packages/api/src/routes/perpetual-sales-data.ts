@@ -387,12 +387,25 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         // linhas de bump são 24 compradores no funil medido. Os dois números
         // são certos, e a tela declara qual é qual.
         linhasParaPublico.push({
-          email: (row[emailIdx] ?? "").trim().toLowerCase(),
+          // Gate QA: reusa o `email` do topo do laço em vez de recalcular. Duas
+          // normalizações da mesma chave divergem no dia em que uma mudar, e o
+          // sintoma seria um comprador contado duas vezes.
+          email,
           isOrderBump: tipoDaLinha === "order_bump",
           isUpsell: tipoDaLinha === "upsell",
           bruto,
-          utmSource: utmSourceIdx === -1 ? null : sanitizeUtmValue(row[utmSourceIdx]) ?? null,
-          utmTerm: utmTermIdx === -1 ? null : sanitizeUtmValue(row[utmTermIdx]) ?? null,
+          /**
+           * ⚠️ Gate QA — `null`, NUNCA `SEM_ORIGEM_LABEL`.
+           *
+           * A linha 328 acima faz `sanitizeUtmValue(...) ?? SEM_ORIGEM_LABEL`
+           * porque ali o valor vira rótulo de agrupamento. Repetir isso aqui
+           * seria um defeito silencioso: `"(sem origem)"` é uma string não
+           * vazia, `classifyOrigem` não a encontra em `PAID_UTM_SOURCES` e a
+           * classifica como **"Orgânico"** — venda sem rastreio nenhum viraria
+           * tráfego orgânico na tabela.
+           */
+          utmSource: utmSourceIdx === -1 ? null : sanitizeUtmValue(row[utmSourceIdx]),
+          utmTerm: utmTermIdx === -1 ? null : sanitizeUtmValue(row[utmTermIdx]),
         });
 
         /**

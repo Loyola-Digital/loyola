@@ -1,0 +1,144 @@
+storyIds: [29.61]
+epic: 29
+titulo: "Conversão de order bump, upsell e AOV por público no Perpétuo"
+revisadoPor: "@qa (Quinn)"
+data: 2026-08-24
+branch: feat/perpetuo-bump-upsell-aov
+commits: [e323e4cd]
+
+verdict: CONCERNS
+
+resumo: >
+  Os 7 checks passam. CONCERNS porque a story não foi vista rodando e depende do
+  deploy da API para os números aparecerem na tela.
+
+  A revisão corrigiu dois pontos e mediu o impacto de um deles em produção em
+  vez de estimá-lo — 37,7% das linhas da planilha do Netão seriam afetadas.
+
+checks:
+  - id: 1
+    nome: Code review
+    resultado: OK
+    notas: >
+      Dois achados corrigidos, não anotados. (a) O push que alimenta a análise
+      recalculava `email` em vez de reusar a variável do topo do laço — duas
+      normalizações da mesma chave divergem no dia em que uma mudar, e o sintoma
+      seria um comprador contado duas vezes. (b) A UTM ia como `null`, correto,
+      mas nada impedia alguém de "harmonizar" com a linha 345 logo acima
+      (`sanitizeUtmValue(...) ?? SEM_ORIGEM_LABEL`) — ver DEF-1.
+
+      Verifiquei também a ORDEM do push no laço: ele acontece depois dos cortes
+      de período e de status, então a análise conta as mesmas linhas que os
+      cards. Não assumi - fui olhar.
+
+  - id: 2
+    nome: Unit tests
+    resultado: OK
+    notas: >
+      19 testes novos (16 da implementação + 3 do gate). 6 defeitos
+      reintroduzidos e todos pegos. O fixture tem comprador com bump E upsell de
+      propósito - sem ele, somar as duas colunas e separá-las dá o mesmo número
+      e o AC3 não é exercitado. Há também um teste dedicado provando que a
+      Captação Paga NÃO regride quando a linha não traz `isUpsell`.
+
+  - id: 3
+    nome: Acceptance criteria
+    resultado: OK
+    notas: >
+      10 ACs (8 da story + AC3-bis e AC7-bis do gate PO). Os dois do @po foram
+      implementados como pedido: o detector usa investimento × zero comprador
+      pago, não heurística de formato de string, e o piso de amostra marca sem
+      esconder a linha.
+
+  - id: 4
+    nome: No regressions
+    resultado: OK
+    notas: >
+      API 1443 -> 1457 com as MESMAS 11 falhas pré-existentes; web 542 -> 547,
+      zero falhas. turbo build 4/4, tsc limpo, boot real da API verificado. O
+      módulo `order-bump.ts` foi estendido com campos ADITIVOS (`isUpsell`,
+      `amostraBaixa`) e os 19 testes da Captação Paga seguem verdes sem
+      alteração.
+
+  - id: 5
+    nome: Performance
+    resultado: OK
+    notas: >
+      Uma lista a mais por request (`linhasParaPublico`), montada no laço que já
+      percorre as linhas - 2.222 no maior caso medido. `consolidar` roda duas
+      vezes sobre ela (resumo e tabela); memoizar economizaria microssegundos e
+      acoplaria as duas funções.
+
+  - id: 6
+    nome: Security
+    resultado: OK
+    notas: >
+      Nenhuma rota nova, nenhum parâmetro novo de usuário, nenhuma escrita. Os
+      campos adicionados à resposta são agregados - contagens e somas - e
+      nenhum e-mail atravessa a fronteira. O guard da rota permanece.
+
+  - id: 7
+    nome: Documentation
+    resultado: OK
+    notas: >
+      O módulo carrega a medição que fundamenta cada decisão, incluindo a
+      armadilha do DEF-1 documentada em teste em vez de escondida.
+
+issues:
+  - id: DEF-1
+    severity: medium
+    category: correctness
+    status: corrigido-nesta-revisão
+    description: >
+      A rota do perpétuo faz `sanitizeUtmValue(...) ?? SEM_ORIGEM_LABEL` poucas
+      linhas acima do ponto que alimenta a análise, porque ali o valor vira
+      rótulo de agrupamento. Repetir esse `??` no caminho da análise seria um
+      defeito silencioso: `"(sem origem)"` é string não vazia, `classifyOrigem`
+      não a acha em `PAID_UTM_SOURCES` e devolve **"Orgânico"** - venda sem
+      rastreio nenhum viraria tráfego orgânico na tabela.
+    recommendation: >
+      O código já estava certo; o que faltava era o que impede alguém de
+      "harmonizar" as duas linhas depois. Três testes travam a distinção,
+      incluindo um que documenta a armadilha explicitamente
+      (`classificarPublicoDaVenda("(sem origem)") === "Orgânico"`).
+
+      **Impacto medido em produção**, não estimado - linhas com `utm_source`
+      vazia por funil perpétuo:
+
+        bbe-fc1-mai-26 ....  87 de   231  (37,7%)
+        fz-a1 .............  99 de 1.603  ( 6,2%)
+        dg-a1 .............  52 de 2.147  ( 2,4%)
+        pps1 ..............   6 de   459  ( 1,3%)
+
+      No Netão, mais de um terço da planilha. No período medido essas linhas
+      ficaram fora do recorte, mas em outro período seriam um balde "Sem Track"
+      grande - e, com o defeito, "Orgânico".
+
+  - id: OBS-1
+    severity: medium
+    category: requirements
+    description: >
+      A story não foi vista rodando. Os números aparecem na tela só depois do
+      deploy da API.
+    recommendation: >
+      Validar após o deploy: (a) o perpétuo do Netão deve mostrar o card em
+      9,56% e a tabela de quatro públicos, com "Pago frio" e "Pago indefinido"
+      marcados com asterisco; (b) a coluna de Upsell NÃO deve aparecer (nenhum
+      classificado); (c) o `dg-a1` deve exibir a recusa do AC7-bis em vez de uma
+      tabela dizendo 100% Orgânico.
+
+  - id: OBS-2
+    severity: low
+    category: process
+    description: >
+      Uma primeira tentativa de medir o impacto do DEF-1 rodou um script que
+      monta as linhas direto da planilha, sem passar pela rota - logo, reverter
+      a rota não mudava nada e a medição não provava coisa alguma. Refeita
+      contando as linhas com `utm_source` vazia, que é o que a rota veria.
+    recommendation: >
+      Registrado porque o erro é fácil de repetir: um script de conferência que
+      reimplementa o caminho não serve para medir o impacto de um defeito NAQUELE
+      caminho.
+
+deployPendente: true
+proximoPasso: "@devops — push da branch e PR"

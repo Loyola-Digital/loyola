@@ -323,3 +323,36 @@ describe("Story 29.61 — a Captação Paga não regride", () => {
     }
   });
 });
+
+// ============================================================================
+// Gate QA (29.61) — venda sem rastreio é "Sem Track", nunca "Orgânico".
+//
+// A rota do perpétuo tem, poucas linhas acima do ponto que alimenta esta
+// análise, um `sanitizeUtmValue(...) ?? SEM_ORIGEM_LABEL` — porque ali o valor
+// vira rótulo de agrupamento. Repetir esse `??` no caminho da análise seria um
+// defeito silencioso, e o teste abaixo é o que impede alguém de "harmonizar"
+// as duas linhas depois.
+// ============================================================================
+
+describe("Gate QA — UTM ausente não pode virar Orgânico", () => {
+  it("null é Sem Track", () => {
+    expect(classificarPublicoDaVenda(null, null)).toBe("Sem Track");
+    expect(classificarPublicoDaVenda(undefined, null)).toBe("Sem Track");
+    expect(classificarPublicoDaVenda("", null)).toBe("Sem Track");
+  });
+
+  it("um RÓTULO de ausência seria classificado como Orgânico — a armadilha", () => {
+    // Este teste documenta o defeito em vez de escondê-lo: `classifyOrigem` vê
+    // uma string não vazia que não está em PAID_UTM_SOURCES e devolve
+    // "Orgânico". Por isso o caminho da análise passa `null`.
+    expect(classificarPublicoDaVenda("(sem origem)", null)).toBe("Orgânico");
+  });
+
+  it("o balde Sem Track é distinto do Orgânico na tabela", () => {
+    const t = tabelaPorPublico([
+      { email: "a@x.com", bruto: 100, isOrderBump: false, utmSource: null, utmTerm: null },
+      { email: "b@x.com", bruto: 100, isOrderBump: false, utmSource: "instagram", utmTerm: null },
+    ]);
+    expect(t.map((l) => l.publico).sort()).toEqual(["Orgânico", "Sem Track"]);
+  });
+});
