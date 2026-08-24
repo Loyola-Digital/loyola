@@ -7,6 +7,7 @@ import {
   serieAcumulada,
   type MetricaComparada,
 } from "@/lib/utils/comparacao-acumulada";
+import { comImpostoMeta } from "@/lib/utils/meta-tax";
 import {
   DollarSign,
   MousePointerClick,
@@ -1231,11 +1232,24 @@ function atualMetricValue(
   key: CompMetricKey,
   salesByDay?: Record<string, { faturamento: number; vendas: number }>,
 ): number | undefined {
+  // O investimento vem LÍQUIDO da Meta; a tabela diária desta mesma etapa
+  // mostra com imposto. O gráfico mostrava sem, e o mesmo dia aparecia como
+  // R$ 238,67 aqui e R$ 271,68 ali — os dois "certos" pela própria conta.
+  const spendComImposto = comImpostoMeta(safeNum(d.spend), d.date_start);
   switch (key) {
+    case "spend": return spendComImposto;
     case "leads": return leadsFromActions(d);
     case "cpl": {
       const leads = leadsFromActions(d);
-      return leads > 0 ? safeNum(d.spend) / leads : undefined;
+      return leads > 0 ? spendComImposto / leads : undefined;
+    }
+    case "cpc": {
+      const cliques = safeNum(d.clicks);
+      return cliques > 0 ? spendComImposto / cliques : undefined;
+    }
+    case "cpm": {
+      const impressoes = safeNum(d.impressions);
+      return impressoes > 0 ? (spendComImposto / impressoes) * 1000 : undefined;
     }
     // CTR do gráfico de comparação usa CLIQUE NO LINK, não o clique total.
     case "ctr": return linkCtr(d);
@@ -1245,17 +1259,21 @@ function atualMetricValue(
   }
 }
 function compMetricValue(c: ComparisonDayMetrics, key: CompMetricKey): number | undefined {
+  // Mesma convenção do lado atual: a rota devolve líquido, o imposto entra aqui.
+  const spendComImposto = comImpostoMeta(c.spend, c.date);
   switch (key) {
-    case "spend": return c.spend;
+    case "spend": return spendComImposto;
     case "ctr": return c.ctr;
-    case "cpc": return c.cpc;
+    case "cpc": return c.clicks > 0 ? spendComImposto / c.clicks : undefined;
     case "clicks": return c.clicks;
     case "impressions": return c.impressions;
     // CPM não vem no payload de comparação — deriva de spend/impressions.
-    case "cpm": return c.impressions > 0 ? (c.spend / c.impressions) * 1000 : 0;
+    case "cpm": return c.impressions > 0 ? (spendComImposto / c.impressions) * 1000 : 0;
     // Payload antigo em cache pode não ter os campos novos — vira gap, não zero fake.
     case "leads": return c.leads ?? undefined;
-    case "cpl": return c.cpl ?? undefined;
+    // O CPL do payload foi calculado com o spend líquido; refazer aqui mantém
+    // as duas linhas do gráfico na mesma base.
+    case "cpl": return c.leads && c.leads > 0 ? spendComImposto / c.leads : undefined;
     case "faturamento": return c.faturamento ?? undefined;
     case "vendas": return c.vendas ?? undefined;
   }
@@ -1329,7 +1347,7 @@ export function FunnelComparisonChart({
           const d = data[i];
           if (!d) return null;
           return {
-            spend: safeNum(d.spend),
+            spend: comImpostoMeta(safeNum(d.spend), d.date_start),
             impressions: safeNum(d.impressions),
             // Clique no LINK, para casar com o CTR diário desta comparação.
             clicks: linkClicksFromInsight(d),
@@ -1350,7 +1368,7 @@ export function FunnelComparisonChart({
           const c = comparados[i];
           if (!c) return null;
           return {
-            spend: c.spend,
+            spend: comImpostoMeta(c.spend, c.date),
             impressions: c.impressions,
             clicks: c.clicks,
             leads: c.leads ?? 0,
