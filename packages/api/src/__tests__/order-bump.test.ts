@@ -14,6 +14,7 @@ import {
   resumirOrderBump,
   tabelaPorPublico,
   classificarPublicoDaVenda,
+  PISO_DE_AMOSTRA,
   type LinhaDeVenda,
 } from "../utils/order-bump.js";
 
@@ -193,5 +194,200 @@ describe("comprador anônimo", () => {
     const semTrack = t.find((l) => l.publico === "Sem Track")!;
     expect(semTrack.compradores).toBe(2);
     expect(semTrack.aovSemBump).toBe(200);
+  });
+});
+
+// ============================================================================
+// Story 29.61 — upsell como alavanca SEPARADA, e o piso de amostra.
+//
+// O Perpétuo classifica em três tipos (`principal`, `order_bump`, `upsell`)
+// desde a 29.49; a Captação Paga só marca "é bump ou não é". Bump acontece no
+// checkout e upsell depois da compra — fundi-los esconderia qual das duas está
+// funcionando, que é a única pergunta que a coluna responde.
+//
+// ⚠️ O fixture tem comprador com bump E upsell de propósito. Sem ele, somar as
+// duas colunas e separá-las dá o mesmo número e o AC3 não é exercitado.
+// ============================================================================
+
+function vendaPerp(
+  email: string,
+  bruto: number,
+  tipo: "principal" | "order_bump" | "upsell",
+  utmSource: string | null = "meta",
+  utmTerm: string | null = "hot",
+): LinhaDeVenda {
+  return {
+    email,
+    bruto,
+    isOrderBump: tipo === "order_bump",
+    isUpsell: tipo === "upsell",
+    utmSource,
+    utmTerm,
+  };
+}
+
+/** 12 compradores pagos quentes (acima do piso) + 2 orgânicos (abaixo). */
+const PERP: LinhaDeVenda[] = [
+  ...Array.from({ length: 12 }, (_, i) => vendaPerp(`q${i}@x.com`, 347, "principal")),
+  // q0 leva bump E upsell — o caso que separa as duas colunas.
+  vendaPerp("q0@x.com", 97, "order_bump"),
+  vendaPerp("q0@x.com", 497, "upsell"),
+  // q1 leva só bump.
+  vendaPerp("q1@x.com", 97, "order_bump"),
+  // q2 leva só upsell.
+  vendaPerp("q2@x.com", 497, "upsell"),
+  vendaPerp("o1@x.com", 347, "principal", "instagram", null),
+  vendaPerp("o2@x.com", 347, "principal", "instagram", null),
+  vendaPerp("o1@x.com", 97, "order_bump", "instagram", null),
+];
+
+describe("Story 29.61 — upsell é alavanca separada do bump (AC3)", () => {
+  const t = tabelaPorPublico(PERP);
+  const quente = t.find((l) => l.publico === "Pago quente")!;
+
+  it("as duas taxas são contadas separadamente", () => {
+    // 2 de 12 com bump (q0, q1); 2 de 12 com upsell (q0, q2).
+    expect(quente.compradoresComBump).toBe(2);
+    expect(quente.compradoresComUpsell).toBe(2);
+    expect(quente.taxaBump).toBeCloseTo(2 / 12, 10);
+    expect(quente.taxaUpsell).toBeCloseTo(2 / 12, 10);
+  });
+
+  it("o comprador com AMBOS conta uma vez em cada, não duas em nenhuma", () => {
+    // Se upsell caísse no balde de bump, `compradoresComBump` seria 3.
+    expect(quente.compradoresComBump).not.toBe(3);
+    expect(quente.compradoresComUpsell).not.toBe(3);
+  });
+
+  it("a receita de upsell não é somada à de bump", () => {
+    expect(quente.receitaBump).toBe(97 * 2);
+    expect(quente.receitaUpsell).toBe(497 * 2);
+  });
+});
+
+describe("Story 29.61 — o AOV soma TODOS os adicionais (AC4)", () => {
+  const quente = tabelaPorPublico(PERP).find((l) => l.publico === "Pago quente")!;
+
+  it("AOV sem adicionais é só o principal", () => {
+    expect(quente.aovSemBump).toBe(347); // 12 × 347 / 12
+  });
+
+  it("AOV com adicionais inclui bump E upsell", () => {
+    // (12×347 + 2×97 + 2×497) / 12
+    expect(quente.aovComBump).toBeCloseTo((12 * 347 + 194 + 994) / 12, 8);
+  });
+
+  it("num funil de preço fixo, a diferença entre as colunas é a informação", () => {
+    // O AOV sem adicionais é constante (preço único); só a segunda coluna varia.
+    expect(quente.aovComBump! - quente.aovSemBump!).toBeCloseTo(99, 6);
+  });
+});
+
+describe("Story 29.61 (AC3-bis) — piso de amostra", () => {
+  const t = tabelaPorPublico(PERP);
+
+  it("balde abaixo do piso é marcado", () => {
+    // 2 compradores orgânicos: a taxa de 50% dali não tem a mesma autoridade
+    // que a de 12 compradores.
+    const org = t.find((l) => l.publico === "Orgânico")!;
+    expect(org.compradores).toBe(2);
+    expect(org.amostraBaixa).toBe(true);
+  });
+
+  it("balde acima do piso não é marcado", () => {
+    expect(t.find((l) => l.publico === "Pago quente")!.amostraBaixa).toBe(false);
+  });
+
+  it("a linha NÃO some — o balde existe e o AOV dele vale", () => {
+    expect(t.find((l) => l.publico === "Orgânico")).toBeDefined();
+    expect(t.find((l) => l.publico === "Orgânico")!.aovSemBump).toBe(347);
+  });
+
+  it("exatamente no piso já conta como amostra normal", () => {
+    const dez = Array.from({ length: PISO_DE_AMOSTRA }, (_, i) =>
+      vendaPerp(`d${i}@x.com`, 100, "principal"),
+    );
+    expect(tabelaPorPublico(dez)[0]!.amostraBaixa).toBe(false);
+  });
+});
+
+describe("Story 29.61 — a Captação Paga não regride", () => {
+  it("linhas sem `isUpsell` seguem funcionando, com upsell zerado", () => {
+    // A 18.67 não passa o campo. Se `undefined` caísse no ramo de upsell, o
+    // produto principal viraria adicional e o AOV sem bump iria a zero.
+    const t = tabelaPorPublico(FIXTURE);
+    for (const l of t) {
+      expect(l.compradoresComUpsell).toBe(0);
+      expect(l.receitaUpsell).toBe(0);
+      expect(l.aovSemBump).toBeGreaterThan(0);
+    }
+  });
+});
+
+// ============================================================================
+// Gate QA (29.61) — venda sem rastreio é "Sem Track", nunca "Orgânico".
+//
+// A rota do perpétuo tem, poucas linhas acima do ponto que alimenta esta
+// análise, um `sanitizeUtmValue(...) ?? SEM_ORIGEM_LABEL` — porque ali o valor
+// vira rótulo de agrupamento. Repetir esse `??` no caminho da análise seria um
+// defeito silencioso, e o teste abaixo é o que impede alguém de "harmonizar"
+// as duas linhas depois.
+// ============================================================================
+
+describe("Gate QA — UTM ausente não pode virar Orgânico", () => {
+  it("null é Sem Track", () => {
+    expect(classificarPublicoDaVenda(null, null)).toBe("Sem Track");
+    expect(classificarPublicoDaVenda(undefined, null)).toBe("Sem Track");
+    expect(classificarPublicoDaVenda("", null)).toBe("Sem Track");
+  });
+
+  it("um RÓTULO de ausência seria classificado como Orgânico — a armadilha", () => {
+    // Este teste documenta o defeito em vez de escondê-lo: `classifyOrigem` vê
+    // uma string não vazia que não está em PAID_UTM_SOURCES e devolve
+    // "Orgânico". Por isso o caminho da análise passa `null`.
+    expect(classificarPublicoDaVenda("(sem origem)", null)).toBe("Orgânico");
+  });
+
+  it("o balde Sem Track é distinto do Orgânico na tabela", () => {
+    const t = tabelaPorPublico([
+      { email: "a@x.com", bruto: 100, isOrderBump: false, utmSource: null, utmTerm: null },
+      { email: "b@x.com", bruto: 100, isOrderBump: false, utmSource: "instagram", utmTerm: null },
+    ]);
+    expect(t.map((l) => l.publico).sort()).toEqual(["Orgânico", "Sem Track"]);
+  });
+});
+
+// ============================================================================
+// Card de AOV no topo — o número precisa FECHAR com a linha "Total" da tabela
+// por público, que fica logo abaixo dele na tela.
+// ============================================================================
+
+describe("AOV geral do card", () => {
+  it("é (principal + bump acessório) ÷ compradores com principal", () => {
+    const r = resumirOrderBump(FIXTURE, true);
+    // 400 de principal + 100 de bump acessório, 3 compradores com principal.
+    expect(r.aovGeral).toBeCloseTo(500 / 3, 10);
+  });
+
+  it("fecha com a linha Total da tabela por público", () => {
+    // Se as bases divergissem, o card mostraria um número que não bate com
+    // nenhuma linha da tabela logo abaixo, e o leitor tentaria reconciliar.
+    const r = resumirOrderBump(FIXTURE, true);
+    const t = tabelaPorPublico(FIXTURE);
+    const n = t.reduce((s, l) => s + l.compradores, 0);
+    const receita = t.reduce((s, l) => s + l.aovComBump! * l.compradores, 0);
+    expect(r.aovGeral).toBeCloseTo(receita / n, 8);
+  });
+
+  it("NÃO inclui o comprador só-bump", () => {
+    // Ele não tem produto principal: entrar no denominador puxaria o AOV para
+    // baixo e o número deixaria de bater com a tabela.
+    const r = resumirOrderBump(FIXTURE, true);
+    expect(r.compradoresSoBump).toBe(1);
+    expect(r.aovGeral).not.toBeCloseTo(800 / 4, 5);
+  });
+
+  it("sem compradores é null, não zero", () => {
+    expect(resumirOrderBump([], true).aovGeral).toBeNull();
   });
 });

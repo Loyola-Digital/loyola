@@ -1,5 +1,13 @@
 import { chaveDeComprador } from "../utils/comprador.js";
 import { quebraVazia, tipoDoProduto, type TipoDeProduto } from "../utils/produto.js";
+// Story 29.61 — a MESMA regra da Captação Paga (18.66/18.67), reusada.
+// O que muda é a ENTRADA: aqui o tipo vem do mapa `product_types` (três tipos,
+// Story 29.49) e não da lista `order_bump_products` (dois).
+import {
+  resumirOrderBump,
+  tabelaPorPublico,
+  type LinhaDeVenda,
+} from "../utils/order-bump.js";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
@@ -218,6 +226,11 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         utm_medium?: string;
         utm_content?: string;
         utm_campaign?: string;
+        // Story 29.61: a temperatura (quente/frio) do público sai daqui — é o
+        // mesmo campo que `classifyTemperatura` lê no resto do projeto. Estava
+        // ausente deste cast, embora exista em `SaleColumnMapping` e as
+        // planilhas do perpétuo o mapeiem ("t=").
+        utm_term?: string;
         dataVenda?: string;
         status?: string;
       };
@@ -257,6 +270,8 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       const statusIdx = colIdx(mapping.status);
       const hasStatusCol = statusIdx !== -1;
       const produtoIdx = colIdx(mapping.productName);
+      // Story 29.61 — a temperatura vem do `utm_term`, como no resto do projeto.
+      const utmTermIdx = colIdx(mapping.utm_term);
 
       if (emailIdx === -1) return { ...EMPTY_SALES_DATA, semDados: true };
 
@@ -308,6 +323,8 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
        * Conta as linhas que são receita — as mesmas que entram no faturamento.
        */
       const quebraPorTipo = quebraVazia();
+      /** Story 29.61 — alimenta `resumirOrderBump` e `tabelaPorPublico`. */
+      const linhasParaPublico: LinhaDeVenda[] = [];
       // txIds reembolsados → remove a linha "paid" pareada (mesmo id) das vendas.
       const refundedTxIds = new Set<string>();
 
@@ -355,7 +372,41 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
 
         // Story 29.53 (AC1/AC3): classifica a linha paga. Produto ausente do
         // mapa — ou coluna não mapeada — é `principal`, o default da 29.49.
-        quebraPorTipo[tipoDoProduto(produtoIdx === -1 ? null : row[produtoIdx], tiposDeProduto)] += 1;
+        const tipoDaLinha = tipoDoProduto(
+          produtoIdx === -1 ? null : row[produtoIdx],
+          tiposDeProduto,
+        );
+        quebraPorTipo[tipoDaLinha] += 1;
+
+        // Story 29.61 — a mesma linha que entra na quebra entra na análise de
+        // público. Derivar as duas do mesmo laço é o que garante que os números
+        // não se contradigam: se fossem dois passes com filtros próprios,
+        // divergiriam na primeira mudança de regra.
+        //
+        // ⚠️ A quebra conta LINHAS e a análise conta COMPRADORES (AC6): 26
+        // linhas de bump são 24 compradores no funil medido. Os dois números
+        // são certos, e a tela declara qual é qual.
+        linhasParaPublico.push({
+          // Gate QA: reusa o `email` do topo do laço em vez de recalcular. Duas
+          // normalizações da mesma chave divergem no dia em que uma mudar, e o
+          // sintoma seria um comprador contado duas vezes.
+          email,
+          isOrderBump: tipoDaLinha === "order_bump",
+          isUpsell: tipoDaLinha === "upsell",
+          bruto,
+          /**
+           * ⚠️ Gate QA — `null`, NUNCA `SEM_ORIGEM_LABEL`.
+           *
+           * A linha 328 acima faz `sanitizeUtmValue(...) ?? SEM_ORIGEM_LABEL`
+           * porque ali o valor vira rótulo de agrupamento. Repetir isso aqui
+           * seria um defeito silencioso: `"(sem origem)"` é uma string não
+           * vazia, `classifyOrigem` não a encontra em `PAID_UTM_SOURCES` e a
+           * classifica como **"Orgânico"** — venda sem rastreio nenhum viraria
+           * tráfego orgânico na tabela.
+           */
+          utmSource: utmSourceIdx === -1 ? null : sanitizeUtmValue(row[utmSourceIdx]),
+          utmTerm: utmTermIdx === -1 ? null : sanitizeUtmValue(row[utmTermIdx]),
+        });
 
         /**
          * Story 29.53 (AC2) — a unidade contada e o E-MAIL, nao a transacao.
@@ -450,9 +501,28 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
        */
       const temClassificacao = produtoIdx !== -1 && Object.keys(tiposDeProduto).length > 0;
 
+      /**
+       * Story 29.61 — há produto classificado como bump ou upsell?
+       *
+       * `temClassificacao` (acima) é mais frouxo: ele aceita um mapa que só
+       * tenha `principal`, porque a quebra da 29.53 ainda faz sentido assim.
+       * Aqui não: sem bump nem upsell, não há taxa a calcular e o card some
+       * (AC7), como na Captação Paga.
+       */
+      const temAdicionais = Object.values(tiposDeProduto).some(
+        (t) => t === "order_bump" || t === "upsell",
+      );
+
       return {
         totalVendas,
         porTipoProduto: temClassificacao ? quebraPorTipo : null,
+        // Story 29.61 (AC5) — separa bump acessório de venda avulsa, mesma
+        // regra da 18.66.
+        orderBump: resumirOrderBump(linhasParaPublico, temAdicionais),
+        // Story 29.61 (AC3/AC4) — conversão de bump, de upsell e AOV.
+        publicos: tabelaPorPublico(linhasParaPublico),
+        /** Story 29.61 (AC3) — a coluna de upsell some quando ninguém classificou. */
+        temUpsellClassificado: Object.values(tiposDeProduto).some((t) => t === "upsell"),
         faturamentoBruto: totalBruto,
         faturamentoLiquido: totalLiquido,
         faturamentoLiquidoCalculado,

@@ -79,6 +79,13 @@ import { MetaFreshnessBadge } from "./meta-freshness-badge";
 import { PerpetualSpreadsheetWizardDialog } from "./perpetual-spreadsheet-wizard-dialog";
 import { PerpetualProductTypesDialog } from "./perpetual-product-types-dialog";
 import { legendaQuebraPorTipo } from "@/lib/utils/perpetual-product-types";
+// Story 29.61 — order bump, upsell e AOV por público. A regra é do backend
+// (`utils/order-bump.ts`), a mesma da Captação Paga; aqui só a apresentação.
+import {
+  PerpetualAovCard,
+  PerpetualOrderBumpCard,
+  PerpetualPublicosTable,
+} from "./perpetual-publicos-section";
 import {
   calcularTendencia,
   ultimoDiaFechado,
@@ -2730,6 +2737,29 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       {/* ================================================================ */}
       {/* QUADRO DE DADOS DIÁRIOS — Story 29.23: tabela por dia (15 colunas) */}
       {/* ================================================================ */}
+      {/* Story 29.61 — conversão de bump/upsell e AOV por público. Fica acima
+          do Quadro de Dados Diários porque responde sobre QUEM comprou, e o
+          quadro responde sobre QUANDO. */}
+      {/* O card fica AQUI e não no grid de KPIs de propósito: aquele grid é um
+          4×2 fechado (resultado em cima, eficiência embaixo, decisão da 29.32),
+          e um nono card cairia sozinho numa terceira linha. Aqui ele fica ao
+          lado da tabela que o detalha, que é onde a leitura continua. */}
+      {salesData?.orderBump?.aovGeral != null && (
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+          {/* AOV aparece mesmo sem order bump configurado — valor médio do
+              pedido é receita ÷ compradores. O card de bump, ao lado, some. */}
+          <PerpetualAovCard ob={salesData.orderBump} />
+          <PerpetualOrderBumpCard ob={salesData.orderBump} />
+        </div>
+      )}
+
+      <PerpetualPublicosTable
+        publicos={salesData?.publicos}
+        temBump={salesData?.orderBump?.temConfiguracao ?? false}
+        temUpsell={salesData?.temUpsellClassificado ?? false}
+        investimento={spendAggregates.totalSpendComTax}
+      />
+
       <PerpetualDailyTable rows={dailyChartData} />
 
       {/* ================================================================ */}
