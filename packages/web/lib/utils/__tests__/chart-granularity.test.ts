@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   aggregateSeriesByGranularity,
+  serieTemVendaUnica,
   startOfWeekSunday,
   type DailySeriesPoint,
 } from "../chart-granularity";
@@ -91,5 +92,120 @@ describe("invariante de aditividade", () => {
   it("série vazia → []", () => {
     expect(aggregateSeriesByGranularity([], "week")).toEqual([]);
     expect(aggregateSeriesByGranularity([], "month")).toEqual([]);
+  });
+});
+
+// ============================================================================
+// Story 29.60 — o agregador carrega `salesCount`, não só `sales`.
+//
+// ⚠️ O fixture tem pixel ≠ planilha DE PROPÓSITO. Com os dois iguais, trocar
+// `salesCount` por `sales` não muda nada e o teste é decorativo. Os números
+// vêm da divergência real medida no BBE em 17/07–23/08:
+//
+//     únicas (planilha) .... 115     linhas .... 140     pixel .... 98
+//
+// e do dia 22/07, onde a planilha registrou 8 compradores e o pixel, 6.
+// ============================================================================
+
+const mkDiaComDivergencia = (
+  dateIso: string,
+  pixel: number,
+  unicas: number,
+): DailySeriesPoint => ({
+  dateIso,
+  spend: 100,
+  spendBruto: 100 * (1 - 0.1215),
+  spendTax: 100 * 0.1215,
+  revenue: 300,
+  margin: 300 * (1 - FEE) - 100,
+  sales: pixel,
+  salesCount: unicas,
+});
+
+/** Dois dias da mesma semana + um da seguinte, todos com pixel < único. */
+const comDivergencia: DailySeriesPoint[] = [
+  mkDiaComDivergencia("2026-02-05", 6, 8),
+  mkDiaComDivergencia("2026-02-06", 5, 7),
+  mkDiaComDivergencia("2026-02-09", 2, 4),
+];
+
+describe("Story 29.60 — salesCount atravessa a agregação", () => {
+  it("day: o único e o pixel chegam separados, cada um com seu valor", () => {
+    const r = aggregateSeriesByGranularity(comDivergencia, "day");
+    expect(r.map((d) => d.salesCount)).toEqual([8, 7, 4]);
+    // Se `salesCount` caísse para `sales`, isto seria [6, 5, 2] — que é
+    // exatamente o defeito que a story existe para evitar.
+    expect(r.map((d) => d.sales)).toEqual([6, 5, 2]);
+  });
+
+  it("week: soma os únicos do bucket, não os do pixel", () => {
+    const r = aggregateSeriesByGranularity(comDivergencia, "week");
+    expect(r).toHaveLength(2);
+    expect(r[0]!.salesCount).toBe(15); // 8 + 7
+    expect(r[1]!.salesCount).toBe(4);
+    // Sem o AC2, a semana plotaria 11 (6+5) enquanto o dia plota 8 e 7 — a
+    // série mudaria de significado ao trocar o seletor de granularidade.
+    expect(r[0]!.salesCount).not.toBe(r[0]!.sales);
+  });
+
+  it("month: idem", () => {
+    const r = aggregateSeriesByGranularity(comDivergencia, "month");
+    expect(r).toHaveLength(1);
+    expect(r[0]!.salesCount).toBe(19); // 8 + 7 + 4
+    expect(r[0]!.sales).toBe(13);      // 6 + 5 + 2
+  });
+
+  it("série sem o campo agrega como ZERO, não como buraco", () => {
+    // `salesCount` é opcional na entrada: série montada por código anterior à
+    // 29.60 continua agregando. `undefined` viraria buraco na linha do Recharts.
+    const r = aggregateSeriesByGranularity(daily, "day");
+    expect(r.every((d) => d.salesCount === 0)).toBe(true);
+    expect(r.every((d) => typeof d.salesCount === "number")).toBe(true);
+  });
+
+  it("dia sem venda mantém o ponto na série, com zero (AC7)", () => {
+    const comZero = [...comDivergencia, mkDiaComDivergencia("2026-02-10", 0, 0)];
+    const r = aggregateSeriesByGranularity(comZero, "day");
+    // Zero é informação: o investimento continuou correndo. Sumir com o ponto
+    // faria a linha ficar mais curta que as barras.
+    expect(r).toHaveLength(4);
+    expect(r[3]!.salesCount).toBe(0);
+  });
+});
+
+// ============================================================================
+// Gate QA (Story 29.60, AC5) — a linha de vendas únicas só existe quando a
+// série REALMENTE tem venda única.
+//
+// A primeira implementação usava duas condições diferentes em dois lugares:
+// a UI checava `salesByDay != null` e `dailyChartData` checava
+// `!semDados && byDay não vazio`. Elas discordam no caso "planilha conectada,
+// zero venda no range" — e ali `salesCount` cai para o PIXEL enquanto a linha
+// aparecia rotulada "vendas únicas". Uma função só, testada aqui.
+// ============================================================================
+
+describe("Gate QA — serieTemVendaUnica", () => {
+  it("planilha com vendas no range: sim", () => {
+    expect(serieTemVendaUnica(true, { semDados: false, byDay: { "2026-02-05": 300 } })).toBe(true);
+  });
+
+  it("planilha conectada mas ZERO venda no range: não", () => {
+    // É o caso que separava as duas condições. `byDay` vazio significa que
+    // `salesCount` caiu para o pixel — plotá-lo como "único" é a mentira que o
+    // AC5 proíbe.
+    expect(serieTemVendaUnica(true, { semDados: false, byDay: {} })).toBe(false);
+  });
+
+  it("`semDados` do backend: não", () => {
+    expect(serieTemVendaUnica(true, { semDados: true, byDay: { "2026-02-05": 300 } })).toBe(false);
+  });
+
+  it("sem planilha: não, mesmo com payload presente", () => {
+    expect(serieTemVendaUnica(false, { semDados: false, byDay: { "2026-02-05": 300 } })).toBe(false);
+  });
+
+  it("payload ausente ou nulo: não", () => {
+    expect(serieTemVendaUnica(true, null)).toBe(false);
+    expect(serieTemVendaUnica(true, undefined)).toBe(false);
   });
 });

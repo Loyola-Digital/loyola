@@ -56,6 +56,9 @@ import type { Funnel, FunnelCampaign, StageType, ComparisonDayMetrics } from "@l
 import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { StageSalesSection } from "./stage-sales-section";
+// Stories 18.66/18.67 — order bump: representatividade e público. A regra é do
+// backend (`utils/order-bump.ts`); aqui só a apresentação.
+import { orderBumpCardProps, OrderBumpVazio, PublicosTable } from "./order-bump-analysis";
 import { KiwifyReconciliationCard } from "./kiwify-reconciliation-card";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
@@ -413,8 +416,12 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           const cplGeralVal = isPaidCapture ? paidTotals.cplG : metrics.cplGeral;
           const cplPagoLabel = isPaidCapture ? "CPL Pago Único" : "CPL Pago";
           const cplGeralLabel = isPaidCapture ? "CPL Geral Único" : "CPL Geral";
+          // Story 18.66 — `null` quando a etapa não tem produto marcado como
+          // order bump, que é o caso de 17 das 20 planilhas em produção.
+          const obCard = orderBumpCardProps(salesData?.orderBump);
           let colCount = 7; // base: Investimento, Leads, CPL, Connect, CTR, CPC, CPM
           if (showFaturamento) colCount++;
+          if (obCard) colCount++;
           // Story 18.52 AC6: card "Ingressos" removido — não conta mais no grid.
           if (showVendaIngressos) colCount++;
           if (showTaxaCheckout) colCount++;
@@ -441,6 +448,28 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   } : undefined}
                 />
               </MetricTooltip>
+              {/* Story 18.66 — quanto do faturamento veio da caixinha do
+                  checkout. Ao lado do Faturamento Total, que é o denominador. */}
+              {obCard && (
+                <KpiCard
+                  icon={Percent}
+                  label="Order Bump"
+                  value={obCard.value}
+                  title={obCard.title}
+                  hintTooltip
+                  subValue={
+                    <span className="block space-y-0.5">
+                      <span className="block tabular-nums">{obCard.valorAcessorio}</span>
+                      <span className="block text-[10px] text-muted-foreground">{obCard.adesao}</span>
+                      {obCard.avulso && (
+                        <span className="block text-[10px] text-amber-600 dark:text-amber-400">
+                          {obCard.avulso}
+                        </span>
+                      )}
+                    </span>
+                  }
+                />
+              )}
               {showFaturamento && (
                 <KpiCard
                   icon={Banknote}
@@ -871,6 +900,16 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             adsetsMap={adsetsMap}
             showCreativeTable={false}
           />
+          {/* Story 18.67 — onde o order bump funciona e quanto vale um
+              comprador de cada origem. Fica no bloco de Vendas porque as duas
+              perguntas são sobre quem comprou, não sobre quem chegou. */}
+          <PublicosTable
+            publicos={salesData?.publicos}
+            temBump={salesData?.orderBump?.temConfiguracao ?? false}
+          />
+          {/* Story 18.66 (AC6) — a configuração existe desde a 18.51 e está
+              vazia em quase todo lugar. Provavelmente porque ninguém sabe. */}
+          <OrderBumpVazio ob={salesData?.orderBump} />
           <div className="border-t border-border/20" />
           <StageSalesSection
             projectId={projectId}

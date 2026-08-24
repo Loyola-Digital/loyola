@@ -1,0 +1,148 @@
+storyIds: [18.66, 18.67, 29.60]
+epics: [18, 29]
+titulo: "Order bump por público na Captação Paga e vendas únicas no gráfico de Margem"
+revisadoPor: "@qa (Quinn)"
+data: 2026-08-24
+branch: feat/order-bump-publico-e-vendas-margem
+commits: [dea517e9]
+
+verdict: CONCERNS
+
+resumo: >
+  Os 7 checks passam. CONCERNS, e não PASS, por dois motivos: nenhuma das três
+  foi vista rodando (duas dependem de deploy da API), e a etapa de Vendas do
+  DG & CPDF — que TEM order bump configurado — fica sem a análise por estar
+  fora do escopo declarado das stories.
+
+  A revisão encontrou um defeito real e o corrigiu antes do gate: a linha de
+  vendas únicas apareceria plotando o PIXEL da Meta sob o rótulo "vendas
+  únicas", que é exatamente a mentira que o AC5 da 29.60 existe para impedir.
+
+checks:
+  - id: 1
+    nome: Code review
+    resultado: OK
+    notas: >
+      Um achado corrigido, não anotado — ver DEF-1. Fora dele, a decisão de pôr
+      as regras em módulos puros (`utils/order-bump.ts`, `chart-granularity.ts`)
+      é o que tornou possível provar 12 reversões sem levantar rota nem montar
+      árvore; o web deste projeto não tem jsdom, então lógica dentro de
+      componente é, na prática, lógica não testada.
+
+  - id: 2
+    nome: Unit tests
+    resultado: OK
+    notas: >
+      29 testes novos. O que sustenta o check é que 12 defeitos foram
+      REINTRODUZIDOS e a queda medida, incluindo o que a própria revisão
+      encontrou. Os fixtures carregam de propósito os dois casos que dados
+      bem-comportados não exercitam - comprador SÓ com bump (10% da população
+      real) e comprador com DOIS bumps - e, na 29.60, pixel diferente de
+      planilha (6/8, 5/7, 2/4). Com pixel igual a planilha, metade dos testes da
+      29.60 seria decorativa.
+
+  - id: 3
+    nome: Acceptance criteria
+    resultado: OK
+    notas: >
+      22 ACs entre as três. O AC5 da 29.60 estava VIOLADO pela implementação
+      (DEF-1) e foi corrigido. Os três ACs que o gate do @po já havia ajustado
+      (F1, F2, F3) conferem com o que o código produz - a conferência contra
+      produção reproduziu 158/1004/15,7% e 65,00/96,41, que eram justamente os
+      números corrigidos.
+
+  - id: 4
+    nome: No regressions
+    resultado: OK
+    notas: >
+      API 1424 -> 1443 com as MESMAS 11 falhas pré-existentes; web 523 -> 533,
+      zero falhas. turbo build 4/4, tsc limpo nos dois pacotes, boot real da API
+      verificado com node -e import(...). O `faturamentoTotal` do novo card foi
+      conferido contra o `totalBruto` que a etapa já exibia: saem do mesmo
+      `emailMap` mais as vendas manuais, então o card não pode divergir do
+      número ao lado dele.
+
+  - id: 5
+    nome: Performance
+    resultado: OK
+    notas: >
+      `consolidar` roda duas vezes por request (uma no resumo, outra na tabela)
+      sobre a mesma lista - 1.302 linhas no maior caso real medido. Memoizar
+      economizaria microssegundos e acoplaria as duas funções; não vale.
+
+  - id: 6
+    nome: Security
+    resultado: OK
+    notas: >
+      Nenhuma rota nova e nenhum parâmetro novo de usuário. Os dois campos
+      adicionados à resposta são agregados (contagens e somas), não linhas de
+      venda - nenhum e-mail ou nome atravessa a fronteira. O guard da rota
+      permanece intacto.
+
+  - id: 7
+    nome: Documentation
+    resultado: OK
+    notas: >
+      As três stories carregam a medição que as motivou e o DoD com as
+      reversões executadas. O código carrega o porquê nos pontos onde este
+      projeto já errou - as três contagens de "vendas", a diferença entre bump
+      acessório e avulso, e a razão de a condição do AC5 viver numa função só.
+
+issues:
+  - id: DEF-1
+    severity: high
+    category: correctness
+    status: corrigido-nesta-revisão
+    description: >
+      A linha de vendas únicas apareceria plotando o PIXEL da Meta. A UI decidia
+      por `salesDataDaily?.salesByDay != null` enquanto `dailyChartData` decidia
+      por `!semDados && Object.keys(byDay).length > 0`. As duas discordam num
+      caso real - planilha conectada, zero venda no range filtrado: ali `byDay`
+      é vazio e `salesCount` cai para o pixel, mas `salesByDay` chega como `{}`
+      e a UI mostrava a linha assim mesmo.
+    recommendation: >
+      Corrigido na raiz, não na condição: as duas passaram a chamar
+      `serieTemVendaUnica`, função pura com 5 testes. Duas condições que PRECISAM
+      concordar não podem viver em dois lugares. A reversão para a condição
+      frouxa derruba 2 testes.
+
+  - id: OBS-1
+    severity: medium
+    category: requirements
+    description: >
+      A etapa **Vendas** do DG & CPDF (`stage db38a12a`, `stage_type: sales`)
+      tem 5 produtos marcados como order bump e NÃO recebe a análise: o card e a
+      tabela vivem no bloco `ehCaptacaoPaga`, que cobre `paid` e `event_capture`,
+      não `sales`. Das 3 planilhas com bump configurado em produção, esta é uma.
+    recommendation: >
+      Está fora do escopo declarado das stories ("Etapa Captação Paga") e não é
+      defeito. Mas é um terço da população que tem o dado configurado, e a etapa
+      de Vendas tem dashboard próprio (`sales-stage-view.tsx`). Vale uma story
+      para estender - decisão do @po/gestor, não minha.
+
+  - id: OBS-2
+    severity: medium
+    category: requirements
+    description: >
+      Nenhuma das três foi vista rodando. A 29.60 é web puro e vale no merge;
+      18.66 e 18.67 têm metade backend e dependem de deploy da API - pendência
+      recorrente neste projeto.
+    recommendation: >
+      Validar após o deploy: (a) a Captação Paga do DG & CPDF deve mostrar o
+      card em 26,3% com a linha de R$ 23.122,30 e a tabela de cinco públicos;
+      (b) as etapas do Netão devem SUMIR com o card e exibir a mensagem do AC6;
+      (c) o gráfico de Margem do perpétuo deve ganhar a linha azul, e o tooltip
+      passar a dizer 115 onde dizia 98.
+
+  - id: OBS-3
+    severity: low
+    category: process
+    description: >
+      CodeRabbit não foi executado. A task `dev-develop-story.md` manda rodá-lo
+      via WSL, e esta máquina é macOS - sem WSL e sem o binário.
+    recommendation: >
+      A própria task prevê o skip com aviso. Registrado para que a ausência não
+      seja lida como "passou".
+
+deployPendente: true
+proximoPasso: "@devops — push da branch e PR"
