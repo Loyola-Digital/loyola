@@ -11,6 +11,7 @@ import {
   DollarSign,
   MousePointerClick,
   Percent,
+  ShoppingCart,
   LinkIcon,
   Users,
   Target,
@@ -58,7 +59,7 @@ import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { StageSalesSection } from "./stage-sales-section";
 // Stories 18.66/18.67 — order bump: representatividade e público. A regra é do
 // backend (`utils/order-bump.ts`); aqui só a apresentação.
-import { orderBumpCardProps, OrderBumpVazio, PublicosTable } from "./order-bump-analysis";
+import { aovCardProps, orderBumpCardProps, OrderBumpVazio, PublicosTable } from "./order-bump-analysis";
 import { KiwifyReconciliationCard } from "./kiwify-reconciliation-card";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
@@ -419,9 +420,14 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           // Story 18.66 — `null` quando a etapa não tem produto marcado como
           // order bump, que é o caso de 17 das 20 planilhas em produção.
           const obCard = orderBumpCardProps(salesData?.orderBump);
+          // AOV no topo: valor médio do pedido. Independe de order bump
+          // configurado — é receita ÷ compradores — então aparece mesmo nas
+          // etapas sem bump marcado.
+          const aovCard = aovCardProps(salesData?.orderBump);
           let colCount = 7; // base: Investimento, Leads, CPL, Connect, CTR, CPC, CPM
           if (showFaturamento) colCount++;
           if (obCard) colCount++;
+          if (aovCard) colCount++;
           // Story 18.52 AC6: card "Ingressos" removido — não conta mais no grid.
           if (showVendaIngressos) colCount++;
           if (showTaxaCheckout) colCount++;
@@ -448,6 +454,20 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   } : undefined}
                 />
               </MetricTooltip>
+              {/* AOV — valor médio do pedido. Ao lado do Faturamento Total
+                  porque é a mesma receita vista por comprador. */}
+              {aovCard && (
+                <KpiCard
+                  icon={ShoppingCart}
+                  label="AOV"
+                  value={aovCard.value}
+                  title={aovCard.title}
+                  hintTooltip
+                  subValue={
+                    <span className="block text-[10px] text-muted-foreground">{aovCard.sub}</span>
+                  }
+                />
+              )}
               {/* Story 18.66 — quanto do faturamento veio da caixinha do
                   checkout. Ao lado do Faturamento Total, que é o denominador. */}
               {obCard && (

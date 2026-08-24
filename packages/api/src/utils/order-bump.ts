@@ -153,6 +153,19 @@ export interface ResumoOrderBump {
   taxaDeAdesao: number | null;
   /** Compradores que só têm linhas de produto marcado como bump. */
   compradoresSoBump: number;
+  /**
+   * AOV geral — valor médio do pedido, com os adicionais somados.
+   *
+   * `(principal + bump acessório) ÷ compradores com principal`.
+   *
+   * A base é a MESMA da tabela por público (só quem tem produto principal), e
+   * por isso o card fecha com a linha "Total" dela. Incluir os compradores
+   * só-bump aqui daria um número que não bate com nenhuma linha da tabela logo
+   * abaixo — e o leitor tentaria reconciliar os dois.
+   *
+   * `null` sem compradores: dividir por zero não é "R$ 0,00".
+   */
+  aovGeral: number | null;
 }
 
 export interface LinhaDePublico {
@@ -269,6 +282,7 @@ export function resumirOrderBump(
     compradoresComBump: comBump,
     taxaDeAdesao: comPrincipal > 0 ? comBump / comPrincipal : null,
     compradoresSoBump: soBump,
+    aovGeral: comPrincipal > 0 ? (faturamentoPrincipal + bumpAcessorio) / comPrincipal : null,
   };
 }
 

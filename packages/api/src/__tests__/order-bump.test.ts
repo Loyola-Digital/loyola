@@ -356,3 +356,38 @@ describe("Gate QA — UTM ausente não pode virar Orgânico", () => {
     expect(t.map((l) => l.publico).sort()).toEqual(["Orgânico", "Sem Track"]);
   });
 });
+
+// ============================================================================
+// Card de AOV no topo — o número precisa FECHAR com a linha "Total" da tabela
+// por público, que fica logo abaixo dele na tela.
+// ============================================================================
+
+describe("AOV geral do card", () => {
+  it("é (principal + bump acessório) ÷ compradores com principal", () => {
+    const r = resumirOrderBump(FIXTURE, true);
+    // 400 de principal + 100 de bump acessório, 3 compradores com principal.
+    expect(r.aovGeral).toBeCloseTo(500 / 3, 10);
+  });
+
+  it("fecha com a linha Total da tabela por público", () => {
+    // Se as bases divergissem, o card mostraria um número que não bate com
+    // nenhuma linha da tabela logo abaixo, e o leitor tentaria reconciliar.
+    const r = resumirOrderBump(FIXTURE, true);
+    const t = tabelaPorPublico(FIXTURE);
+    const n = t.reduce((s, l) => s + l.compradores, 0);
+    const receita = t.reduce((s, l) => s + l.aovComBump! * l.compradores, 0);
+    expect(r.aovGeral).toBeCloseTo(receita / n, 8);
+  });
+
+  it("NÃO inclui o comprador só-bump", () => {
+    // Ele não tem produto principal: entrar no denominador puxaria o AOV para
+    // baixo e o número deixaria de bater com a tabela.
+    const r = resumirOrderBump(FIXTURE, true);
+    expect(r.compradoresSoBump).toBe(1);
+    expect(r.aovGeral).not.toBeCloseTo(800 / 4, 5);
+  });
+
+  it("sem compradores é null, não zero", () => {
+    expect(resumirOrderBump([], true).aovGeral).toBeNull();
+  });
+});

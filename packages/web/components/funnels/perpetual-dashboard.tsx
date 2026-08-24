@@ -82,6 +82,7 @@ import { legendaQuebraPorTipo } from "@/lib/utils/perpetual-product-types";
 // Story 29.61 — order bump, upsell e AOV por público. A regra é do backend
 // (`utils/order-bump.ts`), a mesma da Captação Paga; aqui só a apresentação.
 import {
+  PerpetualAovCard,
   PerpetualOrderBumpCard,
   PerpetualPublicosTable,
 } from "./perpetual-publicos-section";
@@ -2743,8 +2744,11 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           4×2 fechado (resultado em cima, eficiência embaixo, decisão da 29.32),
           e um nono card cairia sozinho numa terceira linha. Aqui ele fica ao
           lado da tabela que o detalha, que é onde a leitura continua. */}
-      {salesData?.orderBump?.temConfiguracao && (
+      {salesData?.orderBump?.aovGeral != null && (
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+          {/* AOV aparece mesmo sem order bump configurado — valor médio do
+              pedido é receita ÷ compradores. O card de bump, ao lado, some. */}
+          <PerpetualAovCard ob={salesData.orderBump} />
           <PerpetualOrderBumpCard ob={salesData.orderBump} />
         </div>
       )}

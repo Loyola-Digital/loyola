@@ -39,6 +39,24 @@ const fmtPct = (v: number | null) =>
  * Netão. Um card zerado em dezessete lugares ensina o time a ignorá-lo, e no
  * décimo oitavo — onde o número importa — ele já virou paisagem.
  */
+/** Card de AOV do topo. `null` quando não há comprador. */
+export function aovCardProps(
+  ob: StageSalesData["orderBump"],
+): { value: string; title: string; sub: string } | null {
+  if (!ob || ob.aovGeral == null) return null;
+  return {
+    value: fmtCurrency(ob.aovGeral),
+    title:
+      "AOV (valor médio do pedido) = (produto principal + order bump) ÷ compradores.\n\n" +
+      `Base: ${fmtNumber(ob.compradoresComPrincipal)} compradores com produto principal.\n` +
+      (ob.compradoresSoBump > 0
+        ? `Não inclui ${fmtNumber(ob.compradoresSoBump)} comprador(es) que só levaram produtos de bump — eles não têm pedido principal, e incluí-los puxaria o número para baixo sem bater com a tabela por público.\n`
+        : "") +
+      "\nFecha com a linha Total da tabela de públicos abaixo.",
+    sub: `${fmtNumber(ob.compradoresComPrincipal)} compradores`,
+  };
+}
+
 export interface OrderBumpCardProps {
   value: string;
   title: string;

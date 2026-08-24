@@ -234,6 +234,8 @@ export interface PerpetualSalesData {
     compradoresComBump: number;
     taxaDeAdesao: number | null;
     compradoresSoBump: number;
+    /** AOV geral: `(principal + bump acessório) ÷ compradores com principal`. */
+    aovGeral: number | null;
   };
   publicos?: {
     publico: "Orgânico" | "Pago quente" | "Pago frio" | "Pago indefinido" | "Sem Track";
@@ -446,6 +448,8 @@ export interface StageSalesData {
     compradoresComBump: number;
     taxaDeAdesao: number | null;
     compradoresSoBump: number;
+    /** AOV geral: `(principal + bump acessório) ÷ compradores com principal`. */
+    aovGeral: number | null;
   };
 
   /**

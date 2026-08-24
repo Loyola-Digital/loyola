@@ -15,7 +15,7 @@
  * de "taxa de bump" mudasse, e o gestor veria dois números em duas abas.
  */
 
-import { Percent, Users, AlertTriangle } from "lucide-react";
+import { Percent, Users, AlertTriangle, ShoppingCart } from "lucide-react";
 import type { PerpetualSalesData } from "@loyola-x/shared";
 import { diagnosticarPublico } from "@/lib/utils/publico-confiavel";
 
@@ -69,6 +69,41 @@ export function PerpetualOrderBumpCard({
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Card de AOV. Diferente do de Order Bump, este aparece mesmo sem produto
+ * classificado: valor médio do pedido é receita ÷ compradores e não depende de
+ * bump nenhum.
+ */
+export function PerpetualAovCard({ ob }: { ob: PerpetualSalesData["orderBump"] }) {
+  if (!ob || ob.aovGeral == null) return null;
+  return (
+    <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          AOV
+        </span>
+        <ShoppingCart className="h-3.5 w-3.5 text-muted-foreground/50" />
+      </div>
+      <p
+        className="text-xl font-bold tracking-tight underline decoration-dotted decoration-muted-foreground/40 underline-offset-4 cursor-help"
+        title={
+          "AOV (valor médio do pedido) = (produto principal + adicionais) ÷ compradores.\n\n" +
+          `Base: ${fmtNumber(ob.compradoresComPrincipal)} compradores com produto principal.\n` +
+          (ob.compradoresSoBump > 0
+            ? `Não inclui ${fmtNumber(ob.compradoresSoBump)} comprador(es) que só levaram produtos de bump — sem pedido principal, entrariam no denominador puxando o número para baixo, e ele deixaria de bater com a tabela abaixo.\n`
+            : "") +
+          "\nFecha com a linha Total da tabela de públicos."
+        }
+      >
+        {fmtCurrency(ob.aovGeral)}
+      </p>
+      <p className="text-[10px] text-muted-foreground mt-0.5">
+        {fmtNumber(ob.compradoresComPrincipal)} compradores
+      </p>
     </div>
   );
 }
