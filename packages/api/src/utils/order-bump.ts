@@ -52,6 +52,20 @@ export interface LinhaDeVenda {
   email: string;
   /** `true` quando o produto está na lista de order bumps da etapa. */
   isOrderBump: boolean;
+  /**
+   * Story 29.61 (AC3) — `true` quando o produto é UPSELL.
+   *
+   * Só o Perpétuo distingue: a Captação Paga tem uma lista de "é bump ou não é"
+   * (`order_bump_products`), enquanto o Perpétuo classifica em três tipos desde
+   * a 29.49 (`product_types`: principal | order_bump | upsell).
+   *
+   * São alavancas DIFERENTES — o bump acontece no checkout, o upsell depois da
+   * compra. Fundi-las num "produto adicional" esconderia qual das duas está
+   * funcionando, que é a única pergunta que a coluna responde.
+   *
+   * Opcional: a Captação Paga não passa o campo e nada muda para ela.
+   */
+  isUpsell?: boolean;
   /** Valor bruto da linha. */
   bruto: number;
   utmSource?: string | null;
@@ -88,11 +102,23 @@ export function classificarPublicoDaVenda(
   return temp === "quente" ? "Pago quente" : temp === "frio" ? "Pago frio" : "Pago indefinido";
 }
 
+/**
+ * Story 29.61 (AC3-bis) — piso de compradores para a taxa ser exibida com
+ * autoridade normal.
+ *
+ * 10 separa em dois grupos naturais os quatro baldes medidos no perpétuo do
+ * Netão (94 e 13 de um lado; 3 e 2 do outro). Não é um número mágico: é o
+ * ponto em que uma conversão a mais deixa de mover a taxa em mais de 10 pontos.
+ */
+export const PISO_DE_AMOSTRA = 10;
+
 /** Um comprador consolidado — todas as linhas dele, principais e bumps. */
 interface Comprador {
   principal: number;
   bump: number;
   nBumps: number;
+  upsell: number;
+  nUpsells: number;
   temPrincipal: boolean;
   /**
    * Público do PRIMEIRO produto principal do período.
@@ -135,13 +161,37 @@ export interface LinhaDePublico {
   compradoresComBump: number;
   /** `compradoresComBump ÷ compradores` (Story 18.67, AC3). */
   taxaBump: number | null;
+  /** Story 29.61 (AC3) — compradores com ao menos um upsell. */
+  compradoresComUpsell: number;
+  /** `compradoresComUpsell ÷ compradores`. */
+  taxaUpsell: number | null;
+  /** Receita de upsell do público. */
+  receitaUpsell: number;
+  /**
+   * Story 29.61 (AC3-bis, gate PO F2) — a amostra é pequena demais para a taxa
+   * se apresentar com a mesma autoridade das outras.
+   *
+   * "Pago frio: 3 compradores, 0,0%" se lê como "esse público não adere ao
+   * bump". Significa "três pessoas não aderiram". E o achado que motivou a
+   * story — 46,2% no orgânico — vem de 13 compradores e 6 conversões: grande o
+   * bastante para investigar, pequeno o bastante para virar por acaso.
+   *
+   * A linha NÃO some: o balde existe e o AOV dele vale.
+   */
+  amostraBaixa: boolean;
   /** Receita de produto principal do público. */
   receitaPrincipal: number;
   /** Receita de bump acessório do público. */
   receitaBump: number;
   /** `receitaPrincipal ÷ compradores` (AC4). */
   aovSemBump: number | null;
-  /** `(receitaPrincipal + receitaBump) ÷ compradores` (AC4). */
+  /**
+   * `(principal + bump + upsell) ÷ compradores` (AC4 das duas stories).
+   *
+   * ⚠️ O nome fala em "bump" por herança da 18.67 e o cálculo soma TODOS os
+   * adicionais — no Perpétuo, upsell inclusive. Renomear quebraria o contrato
+   * com a Captação Paga sem ganho: lá `upsell` é sempre zero.
+   */
   aovComBump: number | null;
 }
 
@@ -160,12 +210,15 @@ function consolidar(linhas: LinhaDeVenda[]): Map<string, Comprador> {
     const chave = l.email || `__anonimo_${i}__`;
     let c = compradores.get(chave);
     if (!c) {
-      c = { principal: 0, bump: 0, nBumps: 0, temPrincipal: false, publico: null };
+      c = { principal: 0, bump: 0, nBumps: 0, upsell: 0, nUpsells: 0, temPrincipal: false, publico: null };
       compradores.set(chave, c);
     }
     if (l.isOrderBump) {
       c.bump += l.bruto;
       c.nBumps += 1;
+    } else if (l.isUpsell) {
+      c.upsell += l.bruto;
+      c.nUpsells += 1;
     } else {
       c.principal += l.bruto;
       c.temPrincipal = true;
@@ -242,6 +295,10 @@ export function tabelaPorPublico(linhas: LinhaDeVenda[]): LinhaDePublico[] {
         compradores: 0,
         compradoresComBump: 0,
         taxaBump: null,
+        compradoresComUpsell: 0,
+        taxaUpsell: null,
+        receitaUpsell: 0,
+        amostraBaixa: false,
         receitaPrincipal: 0,
         receitaBump: 0,
         aovSemBump: null,
@@ -253,16 +310,23 @@ export function tabelaPorPublico(linhas: LinhaDeVenda[]): LinhaDePublico[] {
     // AC3 — COMPRADORES, não linhas. Quem leva dois bumps é uma conversão, não
     // duas; contar linhas infla o público que compra combo.
     if (c.nBumps > 0) e.compradoresComBump += 1;
+    if (c.nUpsells > 0) e.compradoresComUpsell += 1;
     e.receitaPrincipal += c.principal;
     e.receitaBump += c.bump;
+    e.receitaUpsell += c.upsell;
   }
 
   return [...acc.values()]
     .map((e) => ({
       ...e,
       taxaBump: e.compradores > 0 ? e.compradoresComBump / e.compradores : null,
+      taxaUpsell: e.compradores > 0 ? e.compradoresComUpsell / e.compradores : null,
+      amostraBaixa: e.compradores < PISO_DE_AMOSTRA,
       aovSemBump: e.compradores > 0 ? e.receitaPrincipal / e.compradores : null,
-      aovComBump: e.compradores > 0 ? (e.receitaPrincipal + e.receitaBump) / e.compradores : null,
+      aovComBump:
+        e.compradores > 0
+          ? (e.receitaPrincipal + e.receitaBump + e.receitaUpsell) / e.compradores
+          : null,
     }))
     // AC7 — por compradores, decrescente. Ordenar por taxa poria um balde de 3
     // pessoas no topo, e três pessoas não sustentam uma taxa.

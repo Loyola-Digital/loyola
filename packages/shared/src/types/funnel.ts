@@ -210,6 +210,49 @@ export interface PerpetualSalesData {
    * aparece na tela, em vez de exibir "Principal 129" como se fosse informação.
    */
   porTipoProduto?: { principal: number; order_bump: number; upsell: number } | null;
+
+  /**
+   * Story 29.61 — order bump e AOV por público no Perpétuo.
+   *
+   * ⚠️ Estes campos contam **COMPRADORES**, enquanto `porTipoProduto` acima
+   * conta **LINHAS**. Os dois são certos e diferentes: no funil medido, 26
+   * linhas de order bump são 24 compradores. A tela declara qual é qual — sem
+   * isso, os dois números aparecem em alturas diferentes sem explicação.
+   *
+   * Mesma estrutura da Captação Paga (18.66/18.67), com dois acréscimos que só
+   * o Perpétuo tem: a coluna de **upsell** (terceiro tipo da 29.49) e a
+   * marcação de **amostra baixa**.
+   */
+  orderBump?: {
+    temConfiguracao: boolean;
+    faturamentoTotal: number;
+    faturamentoPrincipal: number;
+    bumpAcessorio: number;
+    bumpAvulso: number;
+    representatividade: number | null;
+    compradoresComPrincipal: number;
+    compradoresComBump: number;
+    taxaDeAdesao: number | null;
+    compradoresSoBump: number;
+  };
+  publicos?: {
+    publico: "Orgânico" | "Pago quente" | "Pago frio" | "Pago indefinido" | "Sem Track";
+    compradores: number;
+    compradoresComBump: number;
+    taxaBump: number | null;
+    compradoresComUpsell: number;
+    taxaUpsell: number | null;
+    receitaUpsell: number;
+    /** Abaixo do piso: a taxa não se apresenta com a mesma autoridade. */
+    amostraBaixa: boolean;
+    receitaPrincipal: number;
+    receitaBump: number;
+    aovSemBump: number | null;
+    /** Inclui bump E upsell — ver `LinhaDePublico.aovComBump` na API. */
+    aovComBump: number | null;
+  }[];
+  /** Story 29.61 (AC3): a coluna de upsell some quando ninguém classificou. */
+  temUpsellClassificado?: boolean;
   faturamentoBruto: number;
   faturamentoLiquido: number;
   /** Story 29.7: bruto × (1 − feeRate) — sempre confiável (calculado server) */
