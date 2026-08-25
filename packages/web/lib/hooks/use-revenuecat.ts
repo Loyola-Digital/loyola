@@ -246,3 +246,37 @@ export function useRunRevenuecatBackfill(projectId: string, funnelId: string, st
     onSuccess: () => qc.invalidateQueries({ queryKey: ["revenuecat-backfill", stageId] }),
   });
 }
+
+// ============================================================
+// Story 42.9 (AC8) — as métricas que a API não entrega.
+// ============================================================
+
+export interface RevenuecatMetricasDerivadas {
+  novasAssinaturasPagas: number;
+  novosTrials: number;
+  conversoesDeTrial: number;
+  taxaDeConversaoDeTrial: number | null;
+  churnPagante: number;
+  abandonoDeTrial: number;
+  cancelamentosPagantes: number;
+  movimentoDeAssinaturas: number;
+  /** Data do primeiro evento de ASSINATURA. Antes disso não há série (AC5). */
+  serieDesde: string | null;
+  totalDeEventos: number;
+}
+
+export function useRevenuecatMetricasDerivadas(
+  projectId: string,
+  funnelId: string,
+  stageId: string,
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["revenuecat-metricas-derivadas", stageId],
+    queryFn: () =>
+      apiClient<RevenuecatMetricasDerivadas>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/metricas-derivadas`,
+      ),
+    staleTime: STALE,
+  });
+}

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { calcularMetricasDerivadas } from "../utils/metricas-revenuecat.js";
 import { eq, and, gte, inArray, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import fp from "fastify-plugin";
@@ -507,6 +508,63 @@ export default fp(async function revenuecatRoutes(fastify) {
             "Não foi possível puxar as métricas do RevenueCat. Confirme que a Secret API Key tem a permissão de leitura de métricas (charts_metrics:overview:read).",
         });
       }
+    },
+  );
+
+
+  // ---- GET /.../revenuecat/metricas-derivadas ---- (Story 42.9, AC8)
+  /**
+   * As métricas que a API do RevenueCat não entrega, calculadas dos eventos de
+   * webhook que já guardamos.
+   *
+   * ⚠️ A série de assinatura começa em 10/ago/2026 (`revenuecat_sales`). Antes
+   * disso só há eventos de paywall. `serieDesde` vai na resposta para a tela
+   * declarar isso (AC5) — um gráfico que desenhe reta em zero antes dessa data
+   * estaria inventando histórico.
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/metricas-derivadas",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const linhas = await fastify.db
+        .select({
+          eventType: revenuecatSales.eventType,
+          appUserId: revenuecatSales.appUserId,
+          eventAt: revenuecatSales.eventAt,
+          payload: revenuecatSales.payload,
+        })
+        .from(revenuecatSales)
+        .where(eq(revenuecatSales.stageId, params.data.stageId));
+
+      const eventos = linhas.map((l) => ({
+        eventType: l.eventType,
+        appUserId: l.appUserId,
+        eventAt: l.eventAt,
+        periodType:
+          ((l.payload as { event?: { period_type?: string } } | null)?.event?.period_type) ?? null,
+      }));
+
+      // Só os eventos de ASSINATURA definem a data de início da série: os de
+      // paywall existem desde 11/jun e diriam que a série começa antes do que
+      // de fato começa.
+      const deAssinatura = eventos.filter(
+        (e) => e.eventType && e.eventType !== "TEST" && !e.eventType.startsWith("PAYWALL"),
+      );
+      const datas = deAssinatura
+        .map((e) => e.eventAt)
+        .filter((d): d is Date => d instanceof Date)
+        .sort((a, b) => a.getTime() - b.getTime());
+
+      return {
+        ...calcularMetricasDerivadas(eventos, eventos),
+        serieDesde: datas[0]?.toISOString().slice(0, 10) ?? null,
+        totalDeEventos: deAssinatura.length,
+      };
     },
   );
 
