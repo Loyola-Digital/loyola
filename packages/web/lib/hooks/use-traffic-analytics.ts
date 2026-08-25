@@ -635,3 +635,39 @@ export function useAllAds(
     staleTime: TRAFFIC_STALE_TIME,
   });
 }
+
+// ============================================================
+// Story 29.62 — temperatura de público por entidade.
+// ============================================================
+
+export type TemperaturaDePublico = "quente" | "frio";
+export type NivelDaTemperatura = "anuncio" | "conjunto" | "campanha";
+
+export interface ClassificacaoDeEntidade {
+  temperatura: TemperaturaDePublico;
+  /** De qual nível da hierarquia veio — a tela declara isto (AC5). */
+  nivel: NivelDaTemperatura;
+}
+
+export interface MapasDeTemperatura {
+  campaign: Record<string, ClassificacaoDeEntidade>;
+  adset: Record<string, ClassificacaoDeEntidade>;
+  ad: Record<string, ClassificacaoDeEntidade>;
+}
+
+/**
+ * Um request por projeto, não um por dimensão: os três mapas saem da mesma
+ * varredura, e a cascata do anúncio precisa da campanha de qualquer forma.
+ */
+export function useTemperaturaDePublico(projectId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["traffic-temperatura-publico", projectId],
+    queryFn: () =>
+      apiClient<MapasDeTemperatura>(
+        `/api/traffic/analytics/${projectId}/temperatura-publico`,
+      ),
+    enabled: !!projectId,
+    staleTime: 10 * 60 * 1000,
+  });
+}

@@ -69,9 +69,16 @@ import {
   useAdCreatives,
   useAdLinkUrls,
   useEntityDaily,
+  useTemperaturaDePublico,
   type CampaignAnalytics,
   type MetaAdCreative,
 } from "@/lib/hooks/use-traffic-analytics";
+import {
+  filtrarPorPublico,
+  avisoDeNaoClassificados,
+  OPCOES_DE_PUBLICO,
+  type FiltroDePublico,
+} from "@/lib/utils/filtro-de-publico";
 import { CampaignSelector } from "./campaign-selector";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { RefreshDataButton } from "./refresh-data-button";
@@ -1281,6 +1288,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const [showProductTypes, setShowProductTypes] = useState(false);
   const [showUpsellWizard, setShowUpsellWizard] = useState(false);
   const [tableFilter, setTableFilter] = useState<"campaign" | "adset" | "ad">("campaign");
+  /**
+   * Story 29.62 — o público das tabelas. Um estado só para o Detalhamento e o
+   * Desempenho por LP: são a mesma pergunta ("quem esta linha atinge") e vê-las
+   * discordar na mesma tela seria pior que não ter o filtro.
+   */
+  const [filtroPublico, setFiltroPublico] = useState<FiltroDePublico>("todos");
+  const temperatura = useTemperaturaDePublico(projectId);
   // Story 29.19: ordenação de colunas + largura da coluna Dimensão no Detalhamento
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -1843,7 +1857,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     return overlaySpreadsheetMetrics(base, salesByAdName, (r) => r.campaignName);
   }, [adsData, usingSpreadsheet, salesData, salesByAdName]);
 
-  const tableData = useMemo((): CampaignAnalytics[] => {
+  const tableDataSemFiltro = useMemo((): CampaignAnalytics[] => {
     // Sem campanha Meta: linhas 100% da planilha, agrupadas por UTM.
     if (!hasCampaigns) {
       if (!usingSpreadsheet || !salesData) return [];
@@ -1865,6 +1879,26 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       default: return [];
     }
   }, [tableFilter, funnelCampaigns, funnelAdSets, funnelAds, hasCampaigns, usingSpreadsheet, salesData, campaignNamesMap, salesByAdsetName, salesByAdName]);
+
+  /**
+   * Story 29.62 (AC1-AC3) — o Detalhamento filtrado por público.
+   *
+   * `campaignId` guarda o id da ENTIDADE da dimensão corrente — o tipo
+   * `CampaignAnalytics` é reusado nos três níveis. Por isso o mapa é escolhido
+   * por `tableFilter`: usar sempre o de campanha não acharia nenhum anúncio.
+   */
+  const detalhamentoFiltrado = useMemo(
+    () =>
+      filtrarPorPublico(
+        tableDataSemFiltro,
+        filtroPublico,
+        (l) => l.campaignId,
+        temperatura.data?.[tableFilter],
+      ),
+    [tableDataSemFiltro, filtroPublico, temperatura.data, tableFilter],
+  );
+  const tableData = detalhamentoFiltrado.linhas;
+  const avisoPublicoDetalhamento = avisoDeNaoClassificados(detalhamentoFiltrado, filtroPublico);
 
   // Story 29.20 (Danilo): fee rate da plataforma pra Margem LÍQUIDA por linha.
   const detailFeeRate = usingSpreadsheet && salesData ? salesData.feeRate : 0;
@@ -2049,9 +2083,29 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     return m;
   }, [salesData, usingSpreadsheet]);
 
+  /**
+   * Story 29.62 (AC6) — as LPs seguem o mesmo filtro de público.
+   *
+   * O corte é nas LINHAS DE ANÚNCIO que compõem cada LP, não na LP pronta: uma
+   * LP recebe tráfego quente e frio ao mesmo tempo, e filtrar depois de somar
+   * mostraria a LP inteira ou nenhuma. Cortando antes, ela aparece com a
+   * parcela do público escolhido e as taxas se recalculam sobre ela.
+   */
+  const lpRowsFiltradas = useMemo(
+    () =>
+      filtrarPorPublico(
+        lpEntityDaily?.rows ?? [],
+        filtroPublico,
+        (r) => r.entityId,
+        temperatura.data?.ad,
+      ),
+    [lpEntityDaily, filtroPublico, temperatura.data],
+  );
+  const avisoPublicoLp = avisoDeNaoClassificados(lpRowsFiltradas, filtroPublico);
+
   const lpAds = useMemo(
-    () => buildLpAdInputs(lpEntityDaily?.rows ?? [], salesByAdId, applyMetaTax),
-    [lpEntityDaily, salesByAdId],
+    () => buildLpAdInputs(lpRowsFiltradas.linhas, salesByAdId, applyMetaTax),
+    [lpRowsFiltradas, salesByAdId],
   );
 
   // Sem teto aqui: `useAdLinkUrls` lê do cache do Postgres e agora vai em
@@ -2795,8 +2849,30 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                 <SelectItem value="ad">Por Criativo</SelectItem>
               </SelectContent>
             </Select>
+            {/* Story 29.62 (AC1) — o público. Ao lado da dimensão porque as
+                duas recortam a mesma tabela. */}
+            <Select value={filtroPublico} onValueChange={(v) => setFiltroPublico(v as FiltroDePublico)}>
+              <SelectTrigger className="w-[170px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {OPCOES_DE_PUBLICO.map((o) => (
+                  <SelectItem key={o.valor} value={o.valor}>{o.rotulo}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
+
+        {/* Story 29.62 (AC4) — o que ficou de fora por não ter público
+            identificável. Sem isto, Quente + Frio não fecha com Todos e a
+            conclusão natural é que o dashboard está errado: no bbe-fc1-mai-26,
+            119 das 242 vendas não têm rastreio nenhum. */}
+        {avisoPublicoDetalhamento && (
+          <p className="mb-2 text-[11px] text-amber-600 dark:text-amber-400">
+            {avisoPublicoDetalhamento}
+          </p>
+        )}
 
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -2995,7 +3071,24 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
               <Filter className="h-4 w-4" />
               Desempenho por LP
             </h3>
+            {/* Story 29.62 (AC6) — o mesmo seletor, controlando o mesmo estado
+                do Detalhamento: são a mesma pergunta sobre a mesma base, e
+                vê-las discordar na mesma tela seria pior que não filtrar. */}
+            <Select value={filtroPublico} onValueChange={(v) => setFiltroPublico(v as FiltroDePublico)}>
+              <SelectTrigger className="w-[170px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {OPCOES_DE_PUBLICO.map((o) => (
+                  <SelectItem key={o.valor} value={o.valor}>{o.rotulo}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+
+          {avisoPublicoLp && (
+            <p className="text-[11px] text-amber-600 dark:text-amber-400">{avisoPublicoLp}</p>
+          )}
 
           {/* Story 29.43 (AC3) — o aviso diz a CAUSA, não só o percentual.
               São três causas com ações diferentes, e a versão anterior tratava
