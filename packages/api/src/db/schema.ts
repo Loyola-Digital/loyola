@@ -2098,6 +2098,50 @@ export const revenuecatSubscriptions = pgTable(
  * custa uma chamada por cliente — sem cursor, falhar no meio obrigaria a
  * recomeçar do zero.
  */
+
+/**
+ * Story 42.10 — um ponto por dia das métricas do RevenueCat.
+ *
+ * ## Por que a tabela existe
+ *
+ * `/v2/.../metrics/overview` devolve o estado de AGORA. Não há endpoint que
+ * devolva o MRR de uma data passada — cada dia sem gravar é um ponto perdido
+ * para sempre. MRR Movement e Cohort, que o gestor pediu, dependem desta série.
+ *
+ * ## Por que `metrics` é JSONB e não uma coluna por métrica
+ *
+ * A API devolve 6 métricas hoje e pode devolver uma sétima amanhã. Uma coluna
+ * por métrica exigiria migration a cada mudança do provedor, no ponto mais caro
+ * de mudar. `getRevenuecatOverview` já tolera shapes diferentes e
+ * `metricValue()` já lê por id — a tabela mantém essa tolerância.
+ *
+ * ⚠️ `revenue` e `new_customers` são acumulados de 28 DIAS, não do dia. A
+ * diferença entre dois dias consecutivos NÃO é a receita do dia: as janelas se
+ * sobrepõem em 27. Quem for montar gráfico precisa saber disso.
+ */
+export const revenuecatMetricSnapshots = pgTable(
+  "revenuecat_metric_snapshots",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    rcProjectId: text("rc_project_id").notNull(),
+    /** O DIA da coleta (local do servidor). Um ponto por dia, por etapa. */
+    snapshotDate: text("snapshot_date").notNull(),
+    /** `{ [id]: { value, unit } }` — o que a API devolveu, sem transformação. */
+    metrics: jsonb("metrics").notNull(),
+    /** Instante exato da coleta: `active_subscriptions` é snapshot, e coletar
+     *  às 3h ou às 23h dá números diferentes para o mesmo "dia". */
+    collectedAt: timestamp("collected_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // AC3: rodar duas vezes no mesmo dia atualiza, não duplica.
+    unique("uq_rc_snapshot_stage_date").on(table.stageId, table.snapshotDate),
+    index("idx_rc_snapshot_stage_date").on(table.stageId, table.snapshotDate),
+  ]
+);
+
 export const revenuecatBackfillState = pgTable("revenuecat_backfill_state", {
   stageId: uuid("stage_id")
     .primaryKey()
