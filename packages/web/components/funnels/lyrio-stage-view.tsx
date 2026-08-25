@@ -53,6 +53,7 @@ import { useGoogleAdsCampaigns } from "@/lib/hooks/use-google-ads-analytics";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
 import { SalesMetaKpis } from "./sales-meta-kpis";
+import { RevenuecatOverviewBlock } from "./revenuecat-overview-block";
 import { LyrioDetailTable } from "./lyrio-detail-table";
 import {
   useRevenuecatConnection,
@@ -925,6 +926,19 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
           </p>
         )}
       </section>
+
+      {/* Story 42.9 — o Overview completo do RevenueCat. Depois do resumo do
+          topo (que já usa 5 destas métricas) e antes do tráfego: primeiro o que
+          o app é, depois o que o custa. */}
+      {connected && (
+        <section className="space-y-3">
+          <RevenuecatOverviewBlock
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+          />
+        </section>
+      )}
 
       {/* Meta — conversões + spend das campanhas linkadas */}
       <section className="space-y-3">
