@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Package, Ticket } from "lucide-react";
+import { useEffect, useState } from "react";
+import {AlertTriangle} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -89,20 +89,7 @@ export function OrderBumpsDialog({
   const products = data?.products ?? [];
   const productMapped = data?.productMapped ?? true;
 
-  const capturaCount = useMemo(
-    () => products.filter((p) => !marked.has(p.name.trim().toLowerCase())).length,
-    [products, marked],
-  );
 
-  function toggle(name: string) {
-    const key = name.trim().toLowerCase();
-    setMarked((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
 
   async function handleSave() {
     // Persiste os nomes ORIGINAIS (case preservado) dos produtos marcados.
