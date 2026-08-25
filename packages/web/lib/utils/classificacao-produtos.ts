@@ -106,3 +106,32 @@ export function mapaParaPersistir(
   }
   return out;
 }
+
+/**
+ * Story 18.70 (D1) — esta planilha oferece classificação de produtos?
+ *
+ * ## O espelho
+ *
+ * Toda etapa `sales` tem um subtype `capture` apontando para a MESMA aba da
+ * Captação Paga do funil. É uma segunda linha em `stage_sales_spreadsheets`
+ * sobre o mesmo dado — com classificação própria, que já divergiu em produção:
+ *
+ * ```
+ *   dg-pg04 / Captação Paga / capture / n8n-kiwify-captação → 6 marcados
+ *   dg-pg04 / Vendas        / capture / n8n-kiwify-captação → 5 marcados
+ *                                        (falta "ChatGPT para negócios + Gravação")
+ * ```
+ *
+ * Duas fontes de verdade sobre a mesma aba, uma já errada. Pior: era ESTE o
+ * botão que o gestor via na etapa de Vendas — classificando a captação enquanto
+ * procurava classificar o produto vendido.
+ *
+ * Decisão do gestor (2026-08-25): a captação é dona daquela aba. O espelho
+ * mostra o vínculo e não deixa mais classificar.
+ */
+export function permiteClassificarProdutos(
+  stageType: string | null | undefined,
+  subtype: string,
+): boolean {
+  return !(stageType === "sales" && subtype === "capture");
+}

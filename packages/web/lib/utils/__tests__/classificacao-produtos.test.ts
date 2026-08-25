@@ -2,7 +2,7 @@
  * Story 18.69 — verificação por reversão do que se persiste ao salvar.
  */
 import { describe, it, expect } from "vitest";
-import { mapaParaPersistir, contextoDoSubtype, tiposDisponiveis, tipoPadraoDe, TIPO_PADRAO_CAPTACAO } from "../classificacao-produtos";
+import { mapaParaPersistir, contextoDoSubtype, tiposDisponiveis, tipoPadraoDe, TIPO_PADRAO_CAPTACAO, permiteClassificarProdutos } from "../classificacao-produtos";
 
 const PRODUTOS = [
   { name: "Imersão Super Funcionário com Claude" },
@@ -139,5 +139,30 @@ describe("mapaParaPersistir com o default da venda", () => {
       "mentoria claudelab | advanced": "principal",
     });
     expect(mapa["mentoria claudelab | basic e advanced"]).toBe("combo");
+  });
+});
+
+describe("permiteClassificarProdutos (D1 — o espelho)", () => {
+  it("a etapa de Vendas NÃO classifica pelo espelho da captação", () => {
+    expect(permiteClassificarProdutos("sales", "capture")).toBe(false);
+  });
+
+  it("mas classifica o produto que ela vende", () => {
+    expect(permiteClassificarProdutos("sales", "main_product")).toBe(true);
+    expect(permiteClassificarProdutos("sales", "tmb")).toBe(true);
+  });
+
+  it("a Captação Paga segue classificando a própria aba", () => {
+    // Ela é a dona: esconder o botão aqui deixaria os 6 produtos do dg-pg04
+    // sem nenhum lugar para serem classificados.
+    expect(permiteClassificarProdutos("paid", "capture")).toBe(true);
+    expect(permiteClassificarProdutos("event_capture", "capture")).toBe(true);
+  });
+
+  it("tipo desconhecido não perde a classificação por omissão", () => {
+    // A regra é uma exceção nomeada, não uma allowlist: um tipo de etapa novo
+    // não deve nascer sem poder classificar.
+    expect(permiteClassificarProdutos(undefined, "capture")).toBe(true);
+    expect(permiteClassificarProdutos("free", "capture")).toBe(true);
   });
 });
