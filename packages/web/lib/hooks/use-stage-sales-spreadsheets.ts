@@ -2,6 +2,7 @@
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { corpoDoPutDeClassificacao } from "@/lib/utils/payload-order-bumps";
 import type {
   StageSalesSpreadsheet,
   SaleColumnMapping,
@@ -136,18 +137,20 @@ export function useUpdateOrderBumps(
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ current, orderBumpProducts }: UpdateOrderBumpsInput) =>
+    mutationFn: ({ current, orderBumpProducts, productTypes }: UpdateOrderBumpsInput) =>
       apiClient<StageSalesSpreadsheet>(
         `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/sales-spreadsheets/by-id/${current.id}`,
         {
           method: "PUT",
-          body: JSON.stringify({
-            spreadsheetId: current.spreadsheetId,
-            spreadsheetName: current.spreadsheetName,
-            sheetName: current.sheetName,
-            columnMapping: current.columnMapping,
-            orderBumpProducts,
-          }),
+          // Story 18.69 — o corpo é montado por `corpoDoPutDeClassificacao`,
+          // que é testado. Antes era um literal aqui dentro, e `productTypes`
+          // ficou de fora dele: o diálogo enviava, o TypeScript aceitava (o
+          // campo existe no tipo do input) e o hook descartava em silêncio.
+          // A feature ficou inerte em produção e passou por typecheck, lint e
+          // dois gates — porque nenhum teste olhava o corpo enviado.
+          body: JSON.stringify(
+            corpoDoPutDeClassificacao({ current, orderBumpProducts, productTypes }),
+          ),
         }
       ),
     onSuccess: () => {
