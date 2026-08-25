@@ -8,7 +8,7 @@
  *
  * ## Por que não é só somar
  *
- * Metade das métricas não se soma. CPL, CPC, CPM e CTR são razões: somar o CPL
+ * Metade das métricas não se soma. CPL, CPV, CPC, CPM e CTR são razões: somar o CPL
  * de cada dia dá um número sem significado, e tirar a média das médias dá outro
  * — errado de um jeito difícil de perceber, porque parece plausível. Um dia com
  * 2 leads a R$ 50 e outro com 200 leads a R$ 10 não têm CPL acumulado de R$ 30;
@@ -31,7 +31,7 @@ export interface DiaBruto {
 
 export type MetricaComparada =
   | "spend" | "faturamento" | "vendas" | "leads" | "clicks" | "impressions"
-  | "cpl" | "ctr" | "cpc" | "cpm";
+  | "cpl" | "cpv" | "ctr" | "cpc" | "cpm";
 
 /** Métricas que se somam. O resto é razão e precisa ser recalculado. */
 const SOMAVEIS = new Set<MetricaComparada>([
@@ -74,6 +74,9 @@ export function valorAcumulado(t: DiaBruto, metrica: MetricaComparada): number |
     case "clicks": return t.clicks;
     case "impressions": return t.impressions;
     case "cpl": return t.leads > 0 ? t.spend / t.leads : undefined;
+    // CPV custa por VENDA, não por lead: o lead de popup entra em volume muito
+    // maior e faz o custo parecer baixo mesmo quando ninguem compra.
+    case "cpv": return t.vendas > 0 ? t.spend / t.vendas : undefined;
     case "cpc": return t.clicks > 0 ? t.spend / t.clicks : undefined;
     case "cpm": return t.impressions > 0 ? (t.spend / t.impressions) * 1000 : undefined;
     case "ctr": return t.impressions > 0 ? (t.clicks / t.impressions) * 100 : undefined;

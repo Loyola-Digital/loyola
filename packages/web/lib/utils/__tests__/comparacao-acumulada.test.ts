@@ -57,11 +57,41 @@ describe("série acumulada da comparação", () => {
     expect(ehSomavel("spend")).toBe(true);
     expect(ehSomavel("leads")).toBe(true);
     expect(ehSomavel("cpl")).toBe(false);
+    expect(ehSomavel("cpv")).toBe(false);
     expect(ehSomavel("ctr")).toBe(false);
   });
 
+  it("CPV acumulado divide o investimento pelas VENDAS, não pelos leads", () => {
+    // O mesmo dia visto pelas duas réguas: 500 leads de popup e 4 vendas.
+    // Pelo lead o custo é R$ 4; pela venda, R$ 500 — é este que diz se o
+    // lançamento se paga.
+    const dias = [dia({ spend: 1000, leads: 300, vendas: 2 }), dia({ spend: 1000, leads: 200, vendas: 2 })];
+    expect(serieAcumulada(dias, "cpv")).toEqual([500, 500]);
+    expect(serieAcumulada(dias, "cpl")).toEqual([1000 / 300, 4]);
+  });
+
+  it("CPV acumulado é razão dos acumulados, não média das médias", () => {
+    // Dia 1: 1 venda a R$ 900. Dia 2: 30 vendas a R$ 100.
+    const r = serieAcumulada(
+      [dia({ spend: 900, vendas: 1 }), dia({ spend: 3000, vendas: 30 })],
+      "cpv",
+    );
+    expect(r[0]).toBe(900);
+    expect(r[1]).toBeCloseTo(125.8, 1);
+    expect(r[1]).not.toBeCloseTo(500, 0);
+  });
+
+  it("dia sem venda deixa o CPV vazio em vez de R$ 0,00", () => {
+    // Investiu e não vendeu: o custo por venda não existe ainda. Zero leria
+    // como aquisição de graça — o oposto do que aconteceu.
+    const r = serieAcumulada([dia({ spend: 800, leads: 120 }), dia({ spend: 400, vendas: 3 })], "cpv");
+    expect(r[0]).toBeUndefined();
+    expect(r[1]).toBe(400);
+  });
+
   it("valorAcumulado é coerente com a série", () => {
-    const total = dia({ spend: 1000, leads: 40 });
+    const total = dia({ spend: 1000, leads: 40, vendas: 5 });
     expect(valorAcumulado(total, "cpl")).toBe(25);
+    expect(valorAcumulado(total, "cpv")).toBe(200);
   });
 });

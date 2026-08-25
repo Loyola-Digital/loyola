@@ -1276,13 +1276,21 @@ export function CtrCpmChart({
 // do cache sales-daily somado por etapa).
 type CompMetricKey =
   | "spend" | "ctr" | "cpc" | "cpm" | "clicks" | "impressions"
-  | "leads" | "cpl" | "faturamento" | "vendas";
-const COMPARISON_METRICS: { key: CompMetricKey; label: string; kind: "currency" | "percent" | "int" }[] = [
+  | "leads" | "cpl" | "faturamento" | "vendas" | "cpv";
+const COMPARISON_METRICS: {
+  key: CompMetricKey;
+  label: string;
+  kind: "currency" | "percent" | "int";
+  /** Aparece no hover. CPL e CPV têm o mesmo numerador e denominadores bem
+   *  diferentes — sem a fórmula à vista os dois se confundem. */
+  formula?: string;
+}[] = [
   { key: "spend", label: "Investimento", kind: "currency" },
   { key: "faturamento", label: "Faturamento", kind: "currency" },
   { key: "vendas", label: "Vendas", kind: "int" },
+  { key: "cpv", label: "CPV", kind: "currency", formula: "Custo por venda = Investimento ÷ Vendas" },
   { key: "leads", label: "Leads", kind: "int" },
-  { key: "cpl", label: "CPL", kind: "currency" },
+  { key: "cpl", label: "CPL", kind: "currency", formula: "Custo por lead = Investimento ÷ Leads do pixel" },
   { key: "ctr", label: "CTR", kind: "percent" },
   { key: "cpc", label: "CPC", kind: "currency" },
   { key: "cpm", label: "CPM", kind: "currency" },
@@ -1336,6 +1344,12 @@ function atualMetricValue(
     case "ctr": return linkCtr(d);
     case "faturamento": return salesByDay?.[d.date_start]?.faturamento ?? 0;
     case "vendas": return salesByDay?.[d.date_start]?.vendas ?? 0;
+    // Custo por VENDA. O CPL divide pelo lead do popup, que entra em volume
+    // muito maior — o custo parece baixo mesmo num dia sem venda nenhuma.
+    case "cpv": {
+      const vendas = salesByDay?.[d.date_start]?.vendas ?? 0;
+      return vendas > 0 ? spendComImposto / vendas : undefined;
+    }
     default: return safeNum(d[key]);
   }
 }
@@ -1357,6 +1371,7 @@ function compMetricValue(c: ComparisonDayMetrics, key: CompMetricKey): number | 
     case "cpl": return c.leads && c.leads > 0 ? spendComImposto / c.leads : undefined;
     case "faturamento": return c.faturamento ?? undefined;
     case "vendas": return c.vendas ?? undefined;
+    case "cpv": return c.vendas && c.vendas > 0 ? spendComImposto / c.vendas : undefined;
   }
 }
 function fmtCompMetric(v: number | null | undefined, kind: "currency" | "percent" | "int"): string {
@@ -1551,6 +1566,7 @@ export function FunnelComparisonChart({
               size="sm"
               variant={metric === m.key ? "secondary" : "ghost"}
               className="h-7 text-xs px-2"
+              title={m.formula}
               onClick={() => setMetric(m.key)}
             >
               {m.label}
