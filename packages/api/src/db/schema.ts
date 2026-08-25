@@ -674,6 +674,71 @@ export const funnels = pgTable(
 // FUNNEL STAGES (EPIC-19)
 // ============================================================
 
+/**
+ * Mapa do funil — os blocos e conectores que o time desenha.
+ *
+ * Um lançamento real tem mais peças do que etapas: anúncio, LP, VSL, checkout,
+ * order bump, upsell, e-mail, remarketing. A cadeia de `funnel_stages` cobre as
+ * etapas; o resto vivia em Figma, Miro ou na cabeça de quem montou.
+ *
+ * O desenho é um DOCUMENTO — lido e salvo inteiro, por um funil só, sem
+ * consulta relacional em cima —, então mora em JSONB. Normalizar traria junção
+ * e migração a cada campo novo do canvas, sem ganho nenhum de consulta.
+ */
+export const funnelMaps = pgTable("funnel_maps", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  /**
+   * O mapa é de uma ETAPA do tipo `mapa`, não do funil.
+   *
+   * Assim ele aparece na lista de etapas como qualquer outra, com nome próprio
+   * — e um funil pode ter mais de um desenho (o do lançamento e o do perpétuo,
+   * por exemplo) sem que um sobrescreva o outro.
+   */
+  stageId: uuid("stage_id")
+    .notNull()
+    .unique()
+    .references(() => funnelStages.id, { onDelete: "cascade" }),
+  /** Abas do mapa, cada uma com seus blocos e conectores. */
+  tabs: jsonb("tabs")
+    .$type<
+      Array<{
+        id: string;
+        name: string;
+        boxes: Array<{
+          id: string;
+          type: string;
+          label: string;
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+          color: string;
+          /** ativo | construcao | otimizar | pausado */
+          status: string;
+          /** Etapa do Loyola X que este bloco representa, quando representa. */
+          stageId?: string | null;
+          notes?: string | null;
+          url?: string | null;
+        }>;
+        connectors: Array<{
+          id: string;
+          fromBox: string;
+          fromPoint: string;
+          toBox: string;
+          toPoint: string;
+          /** solid | dashed */
+          type: string;
+          label?: string | null;
+        }>;
+      }>
+    >()
+    .notNull()
+    .default([]),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const funnelStages = pgTable(
   "funnel_stages",
   {

@@ -42,7 +42,12 @@ export default function FunnelPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [stageName, setStageName] = useState("");
-  const [stageType, setStageType] = useState<"free" | "paid" | "sales" | "cpl" | "event" | "event_capture" | "debriefing" | "comercial">("free");
+  // Lista literal em vez de `StageType`: "lyrio" não é criável por aqui (nasce
+  // do funil mobile), e deixá-la no estado ofereceria uma opção que a tela não
+  // desenha.
+  const [stageType, setStageType] = useState<
+    "free" | "paid" | "sales" | "cpl" | "event" | "event_capture" | "debriefing" | "comercial" | "mapa"
+  >("free");
   const [matchCodeDraft, setMatchCodeDraft] = useState<string>("");
 
   const { data: funnelData, isLoading: funnelLoading } = useFunnel(params.id, params.funnelId);
@@ -147,7 +152,7 @@ export default function FunnelPage() {
     setCreateOpen(false);
   }
 
-  function stageTypePlaceholder(type: "free" | "paid" | "sales" | "cpl" | "event" | "event_capture" | "debriefing" | "comercial"): string {
+  function stageTypePlaceholder(type: "free" | "paid" | "sales" | "cpl" | "event" | "event_capture" | "debriefing" | "comercial" | "mapa"): string {
     if (type === "paid") return "ex: Captação Paga";
     if (type === "sales") return "ex: Vendas Produto Principal";
     if (type === "cpl") return "ex: CPL Aula 1";
@@ -155,6 +160,7 @@ export default function FunnelPage() {
     if (type === "event_capture") return "ex: Captação Imersão SP";
     if (type === "debriefing") return "ex: Debriefing DGPG-03";
     if (type === "comercial") return "ex: Comercial Upsell";
+    if (type === "mapa") return "ex: Mapa do Lançamento";
     return "ex: Captação Orgânica";
   }
 
@@ -422,6 +428,19 @@ export default function FunnelPage() {
                 >
                   <span className="font-medium">Debriefing</span>
                   <span className="text-xs text-muted-foreground">Docs HTML + comentários</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStageType("mapa")}
+                  className={cn(
+                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                    stageType === "mapa"
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border hover:bg-muted"
+                  )}
+                >
+                  <span className="font-medium">Mapa</span>
+                  <span className="text-xs text-muted-foreground">Desenho do funil em blocos</span>
                 </button>
                 <button
                   type="button"

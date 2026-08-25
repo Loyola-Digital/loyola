@@ -20,6 +20,7 @@ import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-
 import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-spreadsheet-section";
 import { SalesStageView } from "@/components/funnels/sales-stage-view";
 import { EventStageView } from "@/components/funnels/event-stage-view";
+import { MapStageView } from "@/components/funnels/map-stage-view";
 import { DebriefingStageView } from "@/components/funnels/debriefing-stage-view";
 import { ComercialStageView } from "@/components/funnels/comercial-stage-view";
 import { LyrioStageView } from "@/components/funnels/lyrio-stage-view";
@@ -138,6 +139,19 @@ export default function StagePage() {
   if (stage.stageType === "cpl") {
     return (
       <CplStageView
+        projectId={params.id}
+        funnelId={params.funnelId}
+        funnelName={funnel.name}
+        stage={stage}
+      />
+    );
+  }
+
+  // Etapa "mapa" — o desenho do funil. Sem KPI, sem tráfego, sem planilha: a
+  // tela inteira é o quadro, então render dedicado como as demais especiais.
+  if ((stage.stageType as string) === "mapa") {
+    return (
+      <MapStageView
         projectId={params.id}
         funnelId={params.funnelId}
         funnelName={funnel.name}
