@@ -37,7 +37,11 @@ export type StageType =
   | "event_capture"
   | "debriefing"
   | "comercial"
-  | "lyrio";
+  | "lyrio"
+  // "mapa" = o desenho do funil: blocos e setas das peças do lançamento
+  // (anúncio, LP, VSL, checkout, upsell, e-mail). Não tem métrica própria — é
+  // onde o time enxerga o plano inteiro ao lado das etapas que têm dado.
+  | "mapa";
 // Story 19.10: "event_sales" = planilha de vendas de evento presencial (formato
 // Nome/Produto/Valor/Caixa/Closer/Telefone, SEM email).
 export type StageSalesSubtype = "capture" | "main_product" | "sales" | "tmb" | "event_sales";
