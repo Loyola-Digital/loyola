@@ -14,6 +14,7 @@ import {
 } from "../db/schema.js";
 import { decryptYouTubeToken, getYouTubeAccessToken } from "../services/youtube.js";
 import { decrypt } from "../services/encryption.js";
+import { violaUnicidade } from "../utils/db-errors.js";
 import type {
   OrganicPostSource,
   OrganicPostHydration,
@@ -498,7 +499,7 @@ export default fp(async function organicPostsRoutes(fastify) {
           .returning();
         return reply.code(201).send(row);
       } catch (err: unknown) {
-        if (err instanceof Error && err.message.includes("uq_stage_organic_post")) {
+        if (violaUnicidade(err, "uq_stage_organic_post")) {
           return reply.code(409).send({ error: "already_linked" });
         }
         throw err;
