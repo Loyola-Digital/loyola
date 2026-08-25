@@ -95,7 +95,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   const salvar = useSaveFunnelMap(projectId, funnelId, stageId);
 
   const [abas, setAbas] = useState<AbaDoMapa[] | null>(null);
-  const [abaAtiva, setAbaAtiva] = useState(0);
+  // O seletor de abas ainda não tem UI (PR #603): `abaAtiva` é lido em três
+  // pontos e o setter não é chamado em lugar nenhum, o que derruba o lint. Fica
+  // só o valor até a UI existir — quando existir, o setter volta aqui.
+  const [abaAtiva] = useState(0);
   const [selecionado, setSelecionado] = useState<string | null>(null);
   const [ligando, setLigando] = useState<{ boxId: string; ponto: PontoDeConexao } | null>(null);
   const [sujo, setSujo] = useState(false);
