@@ -21,6 +21,7 @@ import {
 } from "@/lib/hooks/use-stage-sales-spreadsheets";
 import { StageSalesWizardDialog } from "./stage-sales-wizard-dialog";
 import { OrderBumpsDialog } from "./order-bumps-dialog";
+import { contextoDoSubtype } from "@/lib/utils/classificacao-produtos";
 import { Package } from "lucide-react";
 import type { StageSalesSubtype } from "@loyola-x/shared";
 
@@ -47,6 +48,10 @@ export function StageSalesSpreadsheetSection({
   const disconnect = useDisconnectSaleSpreadsheet(projectId, funnelId, stageId);
 
   const spreadsheet = all?.find((s) => s.subtype === subtype) ?? null;
+  // Story 18.70 — o vocabulário da classificação muda entre a planilha da
+  // captação e a do produto vendido.
+  const contexto = contextoDoSubtype(subtype);
+  const ehCaptacao = contexto === "captacao";
 
   async function handleDisconnect() {
     await disconnect.mutateAsync(subtype);
@@ -83,23 +88,29 @@ export function StageSalesSpreadsheetSection({
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0 ml-3">
-            {subtype === "capture" && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 gap-1 text-xs"
-                onClick={() => setOrderBumpsOpen(true)}
-                title="Marcar quais produtos são order bump (o resto é produto da captação)"
-              >
-                <Package className="h-3.5 w-3.5" />
-                Order bumps
-                {spreadsheet.orderBumpProducts?.length > 0 && (
-                  <span className="ml-0.5 rounded bg-muted px-1 text-[10px] font-medium">
-                    {spreadsheet.orderBumpProducts.length}
-                  </span>
-                )}
-              </Button>
-            )}
+            {/* Story 18.70 (AC1) — antes só `capture` oferecia classificação, e
+                na etapa de Vendas o `capture` é um ESPELHO da aba de captação.
+                O gestor via o botão numa seção que classifica a captação e não
+                via nenhum nas planilhas do produto que a etapa realmente vende. */}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 gap-1 text-xs"
+              onClick={() => setOrderBumpsOpen(true)}
+              title={
+                ehCaptacao
+                  ? "Classificar os produtos desta captação (ingresso, order bump, combo)"
+                  : "Classificar os produtos vendidos nesta etapa (produto principal, combo, order bump)"
+              }
+            >
+              <Package className="h-3.5 w-3.5" />
+              {ehCaptacao ? "Order bumps" : "Classificar produtos"}
+              {spreadsheet.orderBumpProducts?.length > 0 && (
+                <span className="ml-0.5 rounded bg-muted px-1 text-[10px] font-medium">
+                  {spreadsheet.orderBumpProducts.length}
+                </span>
+              )}
+            </Button>
             <Button
               size="sm"
               variant="ghost"
@@ -132,12 +143,13 @@ export function StageSalesSpreadsheetSection({
         current={spreadsheet}
       />
 
-      {subtype === "capture" && spreadsheet && (
+      {spreadsheet && (
         <OrderBumpsDialog
           projectId={projectId}
           funnelId={funnelId}
           stageId={stageId}
           spreadsheet={spreadsheet}
+          contexto={contexto}
           open={orderBumpsOpen}
           onOpenChange={setOrderBumpsOpen}
         />
