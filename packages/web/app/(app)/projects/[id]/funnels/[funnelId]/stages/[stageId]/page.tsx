@@ -416,6 +416,24 @@ export default function StagePage() {
                     type="button"
                     onClick={() => {
                       updateStage.mutate(
+                        { stageType: "mapa" },
+                        { onSuccess: () => toast.success("Tipo alterado para Mapa") }
+                      );
+                    }}
+                    className={cn(
+                      "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                      (stage.stageType as string) === "mapa"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border hover:bg-muted"
+                    )}
+                  >
+                    <span className="font-medium">Mapa</span>
+                    <span className="text-xs text-muted-foreground">Desenho do funil em blocos</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateStage.mutate(
                         { stageType: "comercial" },
                         { onSuccess: () => toast.success("Tipo alterado para Comercial") }
                       );
