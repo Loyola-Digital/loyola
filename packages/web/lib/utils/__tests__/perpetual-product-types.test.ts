@@ -18,24 +18,28 @@ describe("productKey", () => {
 });
 
 describe("contarPorTipo", () => {
-  it("conta os tres tipos", () => {
+  it("conta os tipos", () => {
     expect(contarPorTipo(["principal", "order_bump", "order_bump", "upsell"])).toEqual({
+      ingresso: 0,
       principal: 1,
       order_bump: 2,
+      combo: 0,
       upsell: 1,
     });
   });
 
-  it("undefined conta como principal — e o default, nao um quarto estado", () => {
+  it("undefined conta como principal — e o default, nao um estado a mais", () => {
     expect(contarPorTipo([undefined, undefined, "upsell"])).toEqual({
+      ingresso: 0,
       principal: 2,
       order_bump: 0,
+      combo: 0,
       upsell: 1,
     });
   });
 
-  it("lista vazia devolve os tres zerados, nao objeto vazio", () => {
-    expect(contarPorTipo([])).toEqual({ principal: 0, order_bump: 0, upsell: 0 });
+  it("lista vazia devolve todos zerados, nao objeto vazio", () => {
+    expect(contarPorTipo([])).toEqual({ ingresso: 0, principal: 0, order_bump: 0, combo: 0, upsell: 0 });
   });
 });
 
@@ -52,8 +56,8 @@ describe("agruparPorTipo", () => {
     expect(out.upsell).toEqual(["Mentoria Pro"]);
   });
 
-  it("sem produtos, os tres grupos existem vazios (a 29.50 itera sobre eles)", () => {
-    expect(agruparPorTipo([])).toEqual({ principal: [], order_bump: [], upsell: [] });
+  it("sem produtos, todos os grupos existem vazios (a 29.50 itera sobre eles)", () => {
+    expect(agruparPorTipo([])).toEqual({ ingresso: [], principal: [], order_bump: [], combo: [], upsell: [] });
   });
 
   it("o default e principal", () => {
@@ -64,12 +68,12 @@ describe("agruparPorTipo", () => {
 // Story 29.53 (AC3) — a legenda da quebra sob o card de Vendas.
 describe("legendaQuebraPorTipo", () => {
   it("monta a linha do AC: Principal 109 · Order Bump 20", () => {
-    const out = legendaQuebraPorTipo({ principal: 109, order_bump: 20, upsell: 0 }, 110);
+    const out = legendaQuebraPorTipo({ ingresso: 0, principal: 109, order_bump: 20, combo: 0, upsell: 0 }, 110);
     expect(out?.texto).toBe("Principal 109 · Order Bump 20");
   });
 
   it("o titulo diz por que as fatias nao somam o card", () => {
-    const out = legendaQuebraPorTipo({ principal: 109, order_bump: 20, upsell: 0 }, 110);
+    const out = legendaQuebraPorTipo({ ingresso: 0, principal: 109, order_bump: 20, combo: 0, upsell: 0 }, 110);
     // 129 linhas contra 110 compradores — quem somar 109 + 20 e esperar 110
     // esta fazendo a pergunta errada, e a explicacao precisa estar na tela.
     expect(out?.titulo).toContain("129 linhas pagas");
@@ -77,10 +81,10 @@ describe("legendaQuebraPorTipo", () => {
   });
 
   it("mostra o upsell quando existe, e o oculta quando e zero", () => {
-    expect(legendaQuebraPorTipo({ principal: 5, order_bump: 2, upsell: 1 }, 5)?.texto).toBe(
+    expect(legendaQuebraPorTipo({ ingresso: 0, principal: 5, order_bump: 2, combo: 0, upsell: 1 }, 5)?.texto).toBe(
       "Principal 5 · Order Bump 2 · Upsell 1",
     );
-    expect(legendaQuebraPorTipo({ principal: 5, order_bump: 2, upsell: 0 }, 5)?.texto).toBe(
+    expect(legendaQuebraPorTipo({ ingresso: 0, principal: 5, order_bump: 2, combo: 0, upsell: 0 }, 5)?.texto).toBe(
       "Principal 5 · Order Bump 2",
     );
   });
@@ -93,6 +97,6 @@ describe("legendaQuebraPorTipo", () => {
   it("tudo principal e ausencia de informacao, nao informacao", () => {
     // O gestor ainda nao classificou nada. Exibir "Principal 129" sugeriria que
     // alguem conferiu e nao ha bump — que e outra afirmacao.
-    expect(legendaQuebraPorTipo({ principal: 129, order_bump: 0, upsell: 0 }, 110)).toBeNull();
+    expect(legendaQuebraPorTipo({ ingresso: 0, principal: 129, order_bump: 0, combo: 0, upsell: 0 }, 110)).toBeNull();
   });
 });

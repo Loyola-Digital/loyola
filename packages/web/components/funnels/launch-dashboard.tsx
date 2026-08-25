@@ -13,6 +13,7 @@ import {
   MousePointerClick,
   Percent,
   ShoppingCart,
+  Layers,
   LinkIcon,
   Users,
   Target,
@@ -60,7 +61,7 @@ import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { StageSalesSection } from "./stage-sales-section";
 // Stories 18.66/18.67 — order bump: representatividade e público. A regra é do
 // backend (`utils/order-bump.ts`); aqui só a apresentação.
-import { aovCardProps, orderBumpCardProps, OrderBumpVazio, PublicosTable } from "./order-bump-analysis";
+import { aovCardProps, comboCardProps, orderBumpCardProps, OrderBumpVazio, PublicosTable } from "./order-bump-analysis";
 import { KiwifyReconciliationCard } from "./kiwify-reconciliation-card";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
@@ -425,10 +426,13 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           // configurado — é receita ÷ compradores — então aparece mesmo nas
           // etapas sem bump marcado.
           const aovCard = aovCardProps(salesData?.orderBump);
+          // Story 18.69 — o combo tem card próprio, ao lado do order bump.
+          const comboCard = comboCardProps(salesData?.orderBump);
           let colCount = 7; // base: Investimento, Leads, CPL, Connect, CTR, CPC, CPM
           if (showFaturamento) colCount++;
           if (obCard) colCount++;
           if (aovCard) colCount++;
+          if (comboCard) colCount++;
           // Story 18.52 AC6: card "Ingressos" removido — não conta mais no grid.
           if (showVendaIngressos) colCount++;
           if (showTaxaCheckout) colCount++;
@@ -466,6 +470,23 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   hintTooltip
                   subValue={
                     <span className="block text-[10px] text-muted-foreground">{aovCard.sub}</span>
+                  }
+                />
+              )}
+              {/* Story 18.69 — o combo substitui o ingresso com o extra
+                  embutido. NUNCA somado ao order bump: são duas ofertas. */}
+              {comboCard && (
+                <KpiCard
+                  icon={Layers}
+                  label="Combo"
+                  value={comboCard.value}
+                  title={comboCard.title}
+                  hintTooltip
+                  subValue={
+                    <span className="block space-y-0.5">
+                      <span className="block tabular-nums">{comboCard.valor}</span>
+                      <span className="block text-[10px] text-muted-foreground">{comboCard.adesao}</span>
+                    </span>
                   }
                 />
               )}
@@ -927,6 +948,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           <PublicosTable
             publicos={salesData?.publicos}
             temBump={salesData?.orderBump?.temConfiguracao ?? false}
+            temCombo={(salesData?.orderBump?.comboReceita ?? 0) > 0}
           />
           {/* Story 18.66 (AC6) — a configuração existe desde a 18.51 e está
               vazia em quase todo lugar. Provavelmente porque ninguém sabe. */}

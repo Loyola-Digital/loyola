@@ -15,7 +15,7 @@
  * de "taxa de bump" mudasse, e o gestor veria dois números em duas abas.
  */
 
-import { Percent, Users, AlertTriangle, ShoppingCart } from "lucide-react";
+import { Percent, Users, AlertTriangle, ShoppingCart, Layers } from "lucide-react";
 import type { PerpetualSalesData } from "@loyola-x/shared";
 import { diagnosticarPublico } from "@/lib/utils/publico-confiavel";
 
@@ -108,14 +108,56 @@ export function PerpetualAovCard({ ob }: { ob: PerpetualSalesData["orderBump"] }
   );
 }
 
+/**
+ * Story 18.69 — o bloco do Combo, com a MESMA estrutura do order bump:
+ * representatividade e conversão, e a quebra pelos mesmos públicos.
+ *
+ * ⚠️ Os dois blocos NUNCA se somam. Decisão do gestor (2026-08-25): são duas
+ * ofertas com dois números, lado a lado. Um total unificado ("upgrade") foi
+ * proposto e recusado por confundir a leitura.
+ */
+export function PerpetualComboCard({ ob }: { ob: PerpetualSalesData["orderBump"] }) {
+  if (!ob || !ob.comboReceita || ob.comboReceita <= 0) return null;
+  return (
+    <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          Combo
+        </span>
+        <Layers className="h-3.5 w-3.5 text-muted-foreground/50" />
+      </div>
+      <p
+        className="text-xl font-bold tracking-tight underline decoration-dotted decoration-muted-foreground/40 underline-offset-4 cursor-help"
+        title={
+          "Representatividade do combo = receita de combo ÷ receita da captação.\n\n" +
+          "O combo SUBSTITUI o produto principal, com o extra embutido — quem compra combo não tem linha do principal.\n\n" +
+          "Não se soma ao order bump: são duas ofertas diferentes para o mesmo extra."
+        }
+      >
+        {fmtPct(ob.comboRepresentatividade ?? null)}
+      </p>
+      <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight space-y-0.5">
+        <p className="tabular-nums">{fmtCurrency(ob.comboReceita)}</p>
+        <p>
+          {fmtNumber(ob.compradoresComCombo ?? 0)} de {fmtNumber(ob.compradoresComPrincipal)}{" "}
+          compradores ({fmtPct(ob.taxaDeCombo ?? null)})
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function PerpetualPublicosTable({
   publicos,
   temBump,
+  temCombo,
   temUpsell,
   investimento,
 }: {
   publicos: PerpetualSalesData["publicos"];
   temBump: boolean;
+  /** Story 18.69 — a coluna some quando ninguém classificou um combo. */
+  temCombo: boolean;
   temUpsell: boolean;
   /** Investimento do período, para o detector do AC7-bis. */
   investimento: number | null;
@@ -130,6 +172,7 @@ export function PerpetualPublicosTable({
 
   const total = publicos.reduce((s, p) => s + p.compradores, 0);
   const totalBump = publicos.reduce((s, p) => s + p.compradoresComBump, 0);
+  const totalCombo = publicos.reduce((s, p) => s + (p.compradoresComCombo ?? 0), 0);
   const totalUpsell = publicos.reduce((s, p) => s + p.compradoresComUpsell, 0);
   const totalPrincipal = publicos.reduce((s, p) => s + p.receitaPrincipal, 0);
   const totalAdicional = publicos.reduce((s, p) => s + p.receitaBump + p.receitaUpsell, 0);
@@ -174,6 +217,7 @@ export function PerpetualPublicosTable({
                 <th className="text-left py-2 pr-3">Público</th>
                 <th className="text-right px-2">Compradores</th>
                 {temBump && <th className="text-right px-2">Conv. Order Bump</th>}
+                {temCombo && <th className="text-right px-2">Conv. Combo</th>}
                 {temUpsell && <th className="text-right px-2">Conv. Upsell</th>}
                 <th className="text-right px-2">AOV s/ adicionais</th>
                 {(temBump || temUpsell) && <th className="text-right px-2">AOV c/ adicionais</th>}
@@ -216,6 +260,11 @@ export function PerpetualPublicosTable({
                         {taxa(p.taxaBump, p.compradoresComBump)}
                       </td>
                     )}
+                    {temCombo && (
+                      <td className="text-right px-2 tabular-nums">
+                        {taxa(p.taxaCombo ?? null, p.compradoresComCombo ?? 0)}
+                      </td>
+                    )}
                     {temUpsell && (
                       <td className="text-right px-2 tabular-nums">
                         {taxa(p.taxaUpsell, p.compradoresComUpsell)}
@@ -243,6 +292,11 @@ export function PerpetualPublicosTable({
                 {temBump && (
                   <td className="text-right px-2 tabular-nums">
                     {fmtPct(total > 0 ? totalBump / total : null)}
+                  </td>
+                )}
+                {temCombo && (
+                  <td className="text-right px-2 tabular-nums">
+                    {fmtPct(total > 0 ? totalCombo / total : null)}
                   </td>
                 )}
                 {temUpsell && (
