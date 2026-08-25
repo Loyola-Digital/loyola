@@ -20,8 +20,69 @@
 // Em `lib/utils` porque é o único diretório que o runner do pacote executa.
 // ============================================================
 
-/** O tipo de quem não foi classificado, na Captação Paga. */
+/**
+ * O tipo que o BACKEND assume para produto sem entrada no mapa.
+ *
+ * Não é "o default da tela" — é o que `tipoDoProdutoNaVenda()` devolve quando
+ * não acha a chave (`stage-sales-data.ts:446`). Tudo que difere disto precisa
+ * ser gravado, ou o mapa e o cálculo discordam em silêncio.
+ */
 export const TIPO_PADRAO_CAPTACAO = "ingresso";
+
+/**
+ * Story 18.70 — o papel que a planilha cumpre na etapa.
+ *
+ * `captacao`: a planilha do que a captação vende (subtype `capture`).
+ * `venda`: a planilha do produto vendido (`main_product`, `tmb`).
+ *
+ * O vocabulário muda entre as duas. "Ingresso" não existe numa etapa de venda,
+ * e oferecê-lo lá convida à classificação errada.
+ */
+export type ContextoDaPlanilha = "captacao" | "venda";
+
+/** Deriva o contexto do subtype da planilha. */
+export function contextoDoSubtype(subtype: string): ContextoDaPlanilha {
+  return subtype === "capture" ? "captacao" : "venda";
+}
+
+/** Os cinco papéis da 18.69, com rótulo. */
+const TODOS_OS_TIPOS = [
+  { valor: "ingresso", rotulo: "Ingresso" },
+  { valor: "order_bump", rotulo: "Order bump" },
+  { valor: "combo", rotulo: "Combo" },
+  { valor: "upsell", rotulo: "Upsell" },
+  { valor: "principal", rotulo: "Principal (outra etapa)" },
+] as const;
+
+/**
+ * Os tipos oferecidos ao gestor, por contexto (AC3).
+ *
+ * Na venda, `ingresso` sai da lista e `principal` deixa de dizer "outra etapa"
+ * — ali ele É o produto da etapa.
+ */
+export function tiposDisponiveis(
+  contexto: ContextoDaPlanilha,
+): ReadonlyArray<{ valor: string; rotulo: string }> {
+  if (contexto === "captacao") return TODOS_OS_TIPOS;
+  return TODOS_OS_TIPOS.filter((t) => t.valor !== "ingresso").map((t) =>
+    t.valor === "principal" ? { valor: "principal", rotulo: "Produto principal" } : { ...t },
+  );
+}
+
+/**
+ * O tipo pré-selecionado na tela para produto ainda não classificado.
+ *
+ * ## Por que na venda ele difere do padrão do backend
+ *
+ * O backend assume `ingresso` para o que não está no mapa. Numa etapa de venda
+ * isso é errado — a Mentoria ClaudeLab passaria a ancorar checkouts de
+ * captação. Então a tela pré-seleciona `principal`, que por DIFERIR de
+ * `TIPO_PADRAO_CAPTACAO` é gravado explicitamente ao salvar, e o backend passa
+ * a ler o papel certo em vez de cair no default.
+ */
+export function tipoPadraoDe(contexto: ContextoDaPlanilha): string {
+  return contexto === "captacao" ? TIPO_PADRAO_CAPTACAO : "principal";
+}
 
 /**
  * Monta o mapa a persistir.

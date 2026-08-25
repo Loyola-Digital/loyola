@@ -13,7 +13,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { mapaParaPersistir } from "@/lib/utils/classificacao-produtos";
+import {
+  mapaParaPersistir,
+  tiposDisponiveis,
+  tipoPadraoDe,
+  type ContextoDaPlanilha,
+} from "@/lib/utils/classificacao-produtos";
 import {
   useStageSalesProducts,
   useUpdateOrderBumps,
@@ -25,6 +30,11 @@ interface OrderBumpsDialogProps {
   funnelId: string;
   stageId: string;
   spreadsheet: StageSalesSpreadsheet;
+  /**
+   * Story 18.70 — o papel da planilha na etapa. Governa quais tipos aparecem e
+   * qual deles vem pré-selecionado.
+   */
+  contexto: ContextoDaPlanilha;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -35,23 +45,19 @@ interface OrderBumpsDialogProps {
  * marcação alimenta as métricas únicas (dedup por e-mail, só captação) vs
  * totais (todos os produtos) da etapa Paga.
  */
-/** Story 18.69 — os cinco papéis, na ordem em que fazem sentido para o gestor. */
-const TIPOS_DE_PRODUTO = [
-  { valor: "ingresso", rotulo: "Ingresso" },
-  { valor: "order_bump", rotulo: "Order bump" },
-  { valor: "combo", rotulo: "Combo" },
-  { valor: "upsell", rotulo: "Upsell" },
-  { valor: "principal", rotulo: "Principal (outra etapa)" },
-] as const;
-
 export function OrderBumpsDialog({
   projectId,
   funnelId,
   stageId,
   spreadsheet,
+  contexto,
   open,
   onOpenChange,
 }: OrderBumpsDialogProps) {
+  // Story 18.70 — vocabulário e default por contexto (AC3).
+  const TIPOS_DE_PRODUTO = tiposDisponiveis(contexto);
+  const tipoPadrao = tipoPadraoDe(contexto);
+  const ehCaptacao = contexto === "captacao";
   const { data, isLoading } = useStageSalesProducts(
     projectId,
     funnelId,
@@ -80,11 +86,11 @@ export function OrderBumpsDialog({
       const derivado: Record<string, string> = {};
       for (const p of data.products ?? []) {
         const k = p.name.trim().toLowerCase();
-        derivado[k] = doMapa[k] ?? (bumps.has(k) ? "order_bump" : "ingresso");
+        derivado[k] = doMapa[k] ?? (bumps.has(k) ? "order_bump" : tipoPadrao);
       }
       setTipos(derivado);
     }
-  }, [open, data]);
+  }, [open, data, tipoPadrao]);
 
   const products = data?.products ?? [];
   const productMapped = data?.productMapped ?? true;
@@ -122,16 +128,34 @@ export function OrderBumpsDialog({
         <DialogHeader>
           <DialogTitle>Classificar produtos</DialogTitle>
           <DialogDescription>
-            Diga o papel de cada produto nesta etapa. Produto não classificado é
-            tratado como <strong>ingresso</strong>.
-            <br />
-            <span className="text-[11px] text-muted-foreground">
-              <strong>Ingresso</strong>: o que a captação vende ·{" "}
-              <strong>Order bump</strong>: extra marcado no checkout ·{" "}
-              <strong>Combo</strong>: substitui o ingresso, com o extra embutido ·{" "}
-              <strong>Principal</strong>: produto de OUTRA etapa, fica fora das
-              métricas da captação
-            </span>
+            {ehCaptacao ? (
+              <>
+                Diga o papel de cada produto nesta etapa. Produto não classificado
+                é tratado como <strong>ingresso</strong>.
+                <br />
+                <span className="text-[11px] text-muted-foreground">
+                  <strong>Ingresso</strong>: o que a captação vende ·{" "}
+                  <strong>Order bump</strong>: extra marcado no checkout ·{" "}
+                  <strong>Combo</strong>: substitui o ingresso, com o extra
+                  embutido · <strong>Principal</strong>: produto de OUTRA etapa,
+                  fica fora das métricas da captação
+                </span>
+              </>
+            ) : (
+              /* Story 18.70 (AC3) — na venda não há ingresso, e "principal"
+                 quer dizer o produto DESTA etapa, não o de outra. */
+              <>
+                Diga o papel de cada produto vendido nesta etapa.
+                <br />
+                <span className="text-[11px] text-muted-foreground">
+                  <strong>Produto principal</strong>: o que a etapa vende ·{" "}
+                  <strong>Combo</strong>: um único produto que junta dois (ex.:
+                  &quot;Basic e Advanced&quot;) · <strong>Order bump</strong>:
+                  extra marcado no mesmo checkout · <strong>Upsell</strong>:
+                  oferta feita depois da compra
+                </span>
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -159,7 +183,7 @@ export function OrderBumpsDialog({
             <div className="max-h-[320px] overflow-y-auto space-y-1.5 pr-1">
               {products.map((p) => {
                 const key = p.name.trim().toLowerCase();
-                const tipo = tipos[key] ?? (marked.has(key) ? "order_bump" : "ingresso");
+                const tipo = tipos[key] ?? (marked.has(key) ? "order_bump" : tipoPadrao);
                 return (
                   <div
                     key={key}
