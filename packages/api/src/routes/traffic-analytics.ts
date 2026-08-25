@@ -984,6 +984,15 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
       const p = projectIdParamSchema.safeParse(request.params);
       if (!p.success) return reply.code(400).send({ error: "projectId invalido" });
 
+      /**
+       * Sem `campaignIds`, a resposta cobre o PROJETO inteiro — e um projeto
+       * tem várias etapas. O BBE tem 166 criativos no total; a etapa que os
+       * exibe tem uma fração disso, e mostrar todos faria o campeão de uma
+       * etapa aparecer como campeão de outra.
+       */
+      const idsCru = (request.query as { campaignIds?: string }).campaignIds;
+      const campaignIds = idsCru?.split(",").map((x) => x.trim()).filter(Boolean) ?? [];
+
       const linhas = await fastify.db
         .select({
           adId: metaAdInsightsDaily.adId,
@@ -999,6 +1008,9 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
           and(
             eq(metaAdInsightsDaily.projectId, p.data.projectId),
             sql`${metaAdInsightsDaily.videoMetrics} ? 'views3s'`,
+            ...(campaignIds.length > 0
+              ? [inArray(metaAdInsightsDaily.campaignId, campaignIds)]
+              : []),
           ),
         )
         .groupBy(metaAdInsightsDaily.adId);

@@ -3287,7 +3287,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           que rendeu, esta seção mostra ONDE cada vídeo perde o espectador — e o
           que dá para recombinar. Não depende de `hasCampaigns`: a leitura por
           camada é sobre o CRIATIVO, e vale mesmo sem campanha vinculada. */}
-      <CamadasDeVideoSection projectId={projectId} />
+      <CamadasDeVideoSection projectId={projectId} campaignIds={campaignIds} />
 
       {hasCampaigns && (
       <TopCreativesGallery

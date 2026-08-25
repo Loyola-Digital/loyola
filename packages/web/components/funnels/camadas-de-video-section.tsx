@@ -39,8 +39,15 @@ function nomeCurto(c: CriativoAvaliado | null) {
   return c.adName.length > 46 ? `${c.adName.slice(0, 46)}…` : c.adName;
 }
 
-export function CamadasDeVideoSection({ projectId }: { projectId: string }) {
-  const { data, isLoading } = useCamadasDeVideo(projectId);
+export function CamadasDeVideoSection({
+  projectId,
+  campaignIds,
+}: {
+  projectId: string;
+  /** As campanhas da etapa. Sem elas, a leitura cobre o projeto inteiro. */
+  campaignIds?: string[];
+}) {
+  const { data, isLoading } = useCamadasDeVideo(projectId, campaignIds);
 
   if (isLoading) {
     return <div className="h-40 animate-pulse rounded-xl border border-border/30 bg-muted/20" />;

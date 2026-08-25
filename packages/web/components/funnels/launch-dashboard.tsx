@@ -64,6 +64,7 @@ import { StageSalesSection } from "./stage-sales-section";
 import { aovCardProps, comboCardProps, orderBumpCardProps, OrderBumpVazio, PublicosTable } from "./order-bump-analysis";
 import { KiwifyReconciliationCard } from "./kiwify-reconciliation-card";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
+import { CamadasDeVideoSection } from "./camadas-de-video-section";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
 import { useLpFunnel, useLpFunnelView } from "@/lib/hooks/use-sales-journey";
@@ -756,6 +757,14 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           stageType={stageType}
         />
       )}
+      {/* Story 43.8 — as três camadas do vídeo, ao lado da tabela de criativos.
+          A tabela responde "quanto rendeu"; esta seção responde ONDE o vídeo
+          perde o espectador, que é o que orienta o recorte.
+
+          Vale para Paga e para Gratuita: a leitura é sobre o CRIATIVO, e o
+          criativo é o mesmo dos dois lados. */}
+      {stageId && <CamadasDeVideoSection projectId={projectId} campaignIds={campaignIds} />}
+
       {ehPaga && stageId && (
         <div className="space-y-4 pt-2 border-t border-border/30">
           <h3 className="text-base font-semibold">Desempenho de Criativos (Meta Ads)</h3>
