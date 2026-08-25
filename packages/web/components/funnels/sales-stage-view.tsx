@@ -293,6 +293,7 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
             projectId={projectId}
             funnelId={funnelId}
             stageId={stage.id}
+            stageType={stage.stageType}
             subtype="capture"
             title="Produto de Captação"
           />
@@ -301,6 +302,7 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
             projectId={projectId}
             funnelId={funnelId}
             stageId={stage.id}
+            stageType={stage.stageType}
             subtype="main_product"
             title="Produto Principal"
           />
@@ -309,6 +311,7 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
             projectId={projectId}
             funnelId={funnelId}
             stageId={stage.id}
+            stageType={stage.stageType}
             subtype="tmb"
             title="TMB"
           />
