@@ -265,6 +265,13 @@ interface GoogleCampaignPickerResponse {
   campaigns: { id: string; name: string; status: string }[];
   accountLinked: boolean;
   accountId: string | null;
+  /**
+   * Story 42.8 — o motivo da falha, quando a busca não foi possível. A rota
+   * sempre devolveu este campo (`funnels.ts:952`); era o `select` abaixo que o
+   * descartava, fazendo um erro de autenticação chegar à tela como ausência de
+   * campanha.
+   */
+  error?: string | null;
 }
 
 export function useGoogleAdsCampaignPicker(projectId: string | null) {
@@ -281,6 +288,10 @@ export function useGoogleAdsCampaignPicker(projectId: string | null) {
       campaigns: data.campaigns.filter((c) => c.status !== "REMOVED"),
       accountLinked: data.accountLinked,
       accountId: data.accountId,
+      // Story 42.8: a rota sempre devolveu o motivo da falha aqui; o `select`
+      // o descartava, e o seletor concluía "sem campanhas" de um erro de
+      // autenticação.
+      error: data.error ?? null,
     }),
   });
 }

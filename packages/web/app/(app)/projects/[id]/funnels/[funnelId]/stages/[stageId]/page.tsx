@@ -496,6 +496,7 @@ export default function StagePage() {
                   <GoogleAdsCampaignSelector
                     campaigns={googlePicker.campaigns}
                     accountLinked={googlePicker.accountLinked}
+                    error={googlePicker.error}
                     value={stage.googleAdsCampaigns}
                     onChange={(googleAdsCampaigns) => {
                       updateStage.mutate(

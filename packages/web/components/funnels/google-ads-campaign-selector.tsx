@@ -12,6 +12,10 @@
 
 import { cn } from "@/lib/utils";
 import type { FunnelCampaign } from "@loyola-x/shared";
+import {
+  orientacaoDaFalha,
+  JANELA_DE_CAMPANHAS_EM_DIAS,
+} from "@/lib/utils/google-ads-erro";
 
 export interface GoogleAdsCampaignOption {
   id: string;
@@ -26,6 +30,12 @@ interface GoogleAdsCampaignSelectorProps {
   value: FunnelCampaign[];
   onChange: (campaigns: FunnelCampaign[]) => void;
   disabled?: boolean;
+  /**
+   * Story 42.8 — o motivo da falha, quando houve. A rota sempre o devolveu;
+   * sem ele aqui, um erro de autenticação era exibido como ausência de
+   * campanha e mandava o gestor procurar no lugar errado.
+   */
+  error?: string | null;
 }
 
 export function GoogleAdsCampaignSelector({
@@ -34,7 +44,9 @@ export function GoogleAdsCampaignSelector({
   value,
   onChange,
   disabled,
+  error,
 }: GoogleAdsCampaignSelectorProps) {
+  const falha = orientacaoDaFalha(error);
   if (!accountLinked) {
     return (
       <p className="text-xs text-muted-foreground">
@@ -45,10 +57,29 @@ export function GoogleAdsCampaignSelector({
     );
   }
 
+  // Story 42.8 (AC1/AC2) — falha primeiro. A ordem importa: uma busca que
+  // falhou também devolve zero campanhas, e testar o vazio antes esconderia o
+  // motivo.
+  if (falha) {
+    return (
+      <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
+        <p className="font-medium text-amber-700 dark:text-amber-500">{falha.titulo}</p>
+        <p className="mt-1 text-muted-foreground">{falha.acao}</p>
+        {falha.detalhe && (
+          <p className="mt-1.5 break-words font-mono text-[10px] text-muted-foreground/70">
+            {falha.detalhe}
+          </p>
+        )}
+      </div>
+    );
+  }
+
   if (campaigns.length === 0) {
     return (
       <p className="text-xs text-muted-foreground">
-        A conta está vinculada, mas não retornou campanhas no período.
+        A conta está vinculada e respondeu, mas não há campanha com entrega nos
+        últimos {JANELA_DE_CAMPANHAS_EM_DIAS} dias. Campanha criada e ainda sem
+        veiculação não aparece aqui.
       </p>
     );
   }
