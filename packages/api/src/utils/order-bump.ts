@@ -106,6 +106,43 @@ export function tiposQueAncoram(linhas: LinhaDeVenda[]): Set<TipoDeProdutoNaVend
     : new Set<TipoDeProdutoNaVenda>(["principal", "combo"]);
 }
 
+/**
+ * Story 18.70 (AC7) — o papel que um produto NÃO classificado assume, por etapa.
+ *
+ * ## Por que não pode ser sempre `ingresso`
+ *
+ * Numa Captação Paga o default certo é `ingresso`: é o que a etapa vende, e
+ * quem não foi classificado provavelmente é isso. Numa etapa de Vendas o mesmo
+ * default é veneno, e não só para a linha que ele atinge — `tiposQueAncoram()`
+ * decide pelo CONJUNTO: basta UMA linha `ingresso` para que `principal` deixe
+ * de ancorar em todas as outras.
+ *
+ * Medido em produção (2026-08-25), etapa Vendas do `dg-pg02`:
+ *
+ * ```
+ *   62 linhas de planilha, classificadas `principal` pelo gestor
+ *    9 vendas manuais (PIX), produto com grafia diferente da planilha:
+ *         manual   "Mentoria Claude Lab Basic e Advanced"
+ *         planilha "mentoria claudelab | basic e advanced"
+ *      → fora do mapa → default `ingresso`
+ *
+ *   Resultado: temIngresso = true, âncoras = {ingresso, combo},
+ *   as 62 `principal` saem do denominador e sobram as 9 manuais.
+ *   Denominador devolvido: R$ 31.300,00 — exatamente a soma das manuais,
+ *   contra R$ 247.877,40 de faturamento real da etapa.
+ * ```
+ *
+ * O `dg-pg04` reproduziu o mesmo: R$ 6.875,00 de denominador, que é a soma
+ * exata das suas 3 vendas manuais.
+ *
+ * Casar a grafia das manuais resolveria estes dois casos e deixaria a armadilha
+ * armada para o próximo produto novo que entrar na planilha antes de alguém
+ * classificá-lo. O default é que estava errado para esta etapa.
+ */
+export function tipoPadraoDaEtapa(stageType: string | null | undefined): TipoDeProdutoNaVenda {
+  return stageType === "sales" ? "principal" : "ingresso";
+}
+
 /** O mínimo que uma linha de venda precisa expor para entrar na análise. */
 export interface LinhaDeVenda {
   /** Já normalizado (trim + lowercase). Vazio = comprador anônimo. */

@@ -18,6 +18,8 @@ import {
   transacaoAgrupa,
   tiposQueAncoram,
   type LinhaDeVenda,
+  tipoPadraoDaEtapa,
+  type TipoDeProdutoNaVenda,
 } from "../utils/order-bump.js";
 
 /**
@@ -657,5 +659,68 @@ describe("Story 18.68 — produto não classificado DENTRO do checkout de capta�
       linha("o@x.com", 39.9, "ingresso", 2),
     ], true);
     expect(antes.faturamentoTotal).toBeCloseTo(depois.faturamentoTotal, 6);
+  });
+});
+
+// ============================================================
+// Story 18.70 (AC7) — o default por etapa, e por que ele contamina o conjunto.
+// ============================================================
+describe("tipoPadraoDaEtapa", () => {
+  it("captação: produto não classificado é ingresso", () => {
+    expect(tipoPadraoDaEtapa("paid")).toBe("ingresso");
+    expect(tipoPadraoDaEtapa("event_capture")).toBe("ingresso");
+  });
+
+  it("etapa de Vendas: produto não classificado é principal", () => {
+    expect(tipoPadraoDaEtapa("sales")).toBe("principal");
+  });
+});
+
+describe("uma linha não classificada não pode derrubar o denominador (18.70)", () => {
+  const linha = (email: string, tipo: TipoDeProdutoNaVenda, bruto: number): LinhaDeVenda => ({
+    email, tipo, bruto, data: new Date("2026-08-01T10:00:00Z"),
+    transacaoId: null, utmSource: null, utmTerm: null,
+  });
+
+  /**
+   * O caso real do `dg-pg02`: 4 compras de planilha classificadas `principal`
+   * e 1 venda manual cujo produto tem grafia diferente.
+   */
+  const CLASSIFICADAS = [
+    linha("a@x.com", "principal", 4500),
+    linha("b@x.com", "principal", 4500),
+    linha("c@x.com", "principal", 3000),
+    linha("d@x.com", "principal", 3000),
+  ];
+  const MANUAL_VALOR = 2500;
+
+  it("com o default certo, a manual SOMA ao denominador", () => {
+    const linhas = [...CLASSIFICADAS, linha("e@x.com", tipoPadraoDaEtapa("sales"), MANUAL_VALOR)];
+    const r = resumirOrderBump(linhas, false);
+    expect(r.faturamentoPrincipal).toBe(15000 + MANUAL_VALOR);
+    expect(r.compradoresComPrincipal).toBe(5);
+  });
+
+  it("com o default errado, a manual EXPULSA as outras quatro", () => {
+    // A regressão que o AC7 fecha: `tiposQueAncoram` decide pelo conjunto, e
+    // uma única linha `ingresso` troca as âncoras de {principal,combo} para
+    // {ingresso,combo}. As 4 classificadas somem e sobra a manual sozinha —
+    // que foi exatamente o R$ 31.300 medido em produção.
+    const linhas = [...CLASSIFICADAS, linha("e@x.com", "ingresso", MANUAL_VALOR)];
+    const r = resumirOrderBump(linhas, false);
+    expect(r.faturamentoPrincipal).toBe(MANUAL_VALOR);
+    expect(r.compradoresComPrincipal).toBe(1);
+  });
+
+  it("a captação não muda: lá o ingresso é quem deve ancorar", () => {
+    // AC8 — nenhuma regressão na Captação Paga.
+    const linhas = [
+      linha("a@x.com", tipoPadraoDaEtapa("paid"), 29.9),
+      linha("b@x.com", tipoPadraoDaEtapa("paid"), 29.9),
+      linha("c@x.com", "combo", 226.9),
+    ];
+    const r = resumirOrderBump(linhas, false);
+    expect(r.faturamentoPrincipal).toBeCloseTo(29.9 + 29.9 + 226.9, 2);
+    expect(r.compradoresComPrincipal).toBe(3);
   });
 });

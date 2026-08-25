@@ -26,6 +26,7 @@ import { contarIngressosDoEvento } from "../services/kiwify-event-tickets.js";
 // que a separação acessório/avulso seja provável sem levantar a rota.
 import {
   resumirOrderBump,
+  tipoPadraoDaEtapa,
   tabelaPorPublico,
   type LinhaDeVenda,
   type TipoDeProdutoNaVenda,
@@ -440,10 +441,11 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         const k = (product ?? "").trim().toLowerCase();
         const doMapa = tiposPorProduto.get(k);
         if (doMapa) return doMapa;
-        // Sem mapa, o produto não listado é INGRESSO: nesta etapa é o que se
-        // vende. `principal` aqui significaria "produto da etapa de Vendas" e
-        // tiraria o ingresso do denominador.
-        return orderBumpSet.has(k) ? "order_bump" : "ingresso";
+        // Story 18.70: o default depende da ETAPA. Numa captação, produto não
+        // listado é o ingresso. Numa etapa de Vendas, `ingresso` fazia as
+        // vendas manuais (grafia fora do mapa) derrubarem a ancoragem de todos
+        // os produtos classificados — ver `tipoPadraoDaEtapa`.
+        return orderBumpSet.has(k) ? "order_bump" : tipoPadraoDaEtapa(stage.stageType);
       };
 
       // Reembolso NÃO deduplica: a pessoa compra (linha paid, id X) e ao reembolsar
