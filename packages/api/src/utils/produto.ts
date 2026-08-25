@@ -12,7 +12,7 @@
  */
 
 /** Story 29.49 — `principal` é o default de quem não foi classificado. */
-export const TIPOS_DE_PRODUTO = ["principal", "order_bump", "upsell"] as const;
+export const TIPOS_DE_PRODUTO = ["ingresso", "principal", "order_bump", "combo", "upsell"] as const;
 export type TipoDeProduto = (typeof TIPOS_DE_PRODUTO)[number];
 
 /**
@@ -55,11 +55,15 @@ export function tipoDoProduto(
 
 /** Contagem de LINHAS por tipo — não de compradores. Ver `contarPorTipo`. */
 export interface QuebraPorTipo {
+  /** Story 18.68 — o produto que a CAPTAÇÃO vende, distinto do principal. */
+  ingresso: number;
   principal: number;
   order_bump: number;
+  /** Story 18.69 — o combo substitui o principal, com o extra embutido. */
+  combo: number;
   upsell: number;
 }
 
 export function quebraVazia(): QuebraPorTipo {
-  return { principal: 0, order_bump: 0, upsell: 0 };
+  return { ingresso: 0, principal: 0, order_bump: 0, combo: 0, upsell: 0 };
 }

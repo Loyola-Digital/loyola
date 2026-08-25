@@ -391,9 +391,13 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
           // normalizações da mesma chave divergem no dia em que uma mudar, e o
           // sintoma seria um comprador contado duas vezes.
           email,
-          isOrderBump: tipoDaLinha === "order_bump",
-          isUpsell: tipoDaLinha === "upsell",
+          // Story 18.69: o tipo vai direto — o Perpétuo já classifica em
+          // quatro papéis desde a 29.49, agora com `combo` incluído.
+          tipo: tipoDaLinha,
           bruto,
+          // Story 18.68: a data forma o checkout.
+          data: dataIdx === -1 ? null : (parseDate(row[dataIdx])),
+          transacaoId: txIdx === -1 ? null : (row[txIdx] ?? "").trim() || null,
           /**
            * ⚠️ Gate QA — `null`, NUNCA `SEM_ORIGEM_LABEL`.
            *

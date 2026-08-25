@@ -817,6 +817,19 @@ export const stageSalesSpreadsheets = pgTable(
       .notNull()
       .default([])
       .$type<string[]>(),
+    /**
+     * Story 18.69 — `produto → tipo` (principal | order_bump | combo | upsell).
+     *
+     * Substitui conceitualmente `orderBumpProducts`, que só sabia dizer "é bump
+     * ou não é" e por isso não expressava o COMBO — a oferta que substitui o
+     * ingresso com o extra embutido, e que é 65,97% da receita da captação no
+     * dg-pg02.
+     *
+     * NULO enquanto o gestor não classificar: o backend cai na lista antiga e
+     * o comportamento é o de hoje. Mesma chave canônica da 29.49 (produto em
+     * minúsculas, sem espaços nas pontas).
+     */
+    productTypes: jsonb("product_types").$type<Record<string, string> | null>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
