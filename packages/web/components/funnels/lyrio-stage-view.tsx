@@ -626,6 +626,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
                     <GoogleAdsCampaignSelector
                       campaigns={googlePicker.campaigns}
                       accountLinked={googlePicker.accountLinked}
+                      error={googlePicker.error}
                       value={googleCampaigns}
                       onChange={(googleAdsCampaigns) => {
                         updateStage.mutate(
