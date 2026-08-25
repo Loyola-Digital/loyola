@@ -38,6 +38,32 @@ export { normalizarNomeCampanha, temSufixoDeCopia } from "./campaign-name.js";
 // Story 29.59: a identidade de uma landing page. Compartilhada porque o
 // dashboard e o relatório TÊM que agrupar as mesmas URLs na mesma linha.
 export { normalizeLpUrl, lpLabel, type LpKey } from "./lp-url.js";
+// Story 43.8: as três camadas do vídeo. Módulo folha — o web importa por
+// subpath (`@loyola-x/shared/src/video-camadas`), a API por aqui.
+export {
+  ALVOS,
+  PISO_DE_REPRODUCOES,
+  ROTULO_DA_CAMADA,
+  ROTULO_DA_TAXA,
+  calcularTaxas,
+  taxaDaCamada,
+  anguloDoNome,
+  avaliar,
+  ranquearPorCamada,
+  avaliarContraAlvo,
+  classificar,
+  sugerirRemontagens,
+  mediana as medianaDeVideo,
+} from "./video-camadas.js";
+export type {
+  Camada,
+  CriativoDeVideo,
+  TaxasDoVideo,
+  CriativoAvaliado,
+  AvaliacaoContraAlvo,
+  ClasseDoCriativo,
+  Remontagem,
+} from "./video-camadas.js";
 export {
   // fronteira de unidade
   dePercentual,
