@@ -46,26 +46,91 @@
 
 import { classifyOrigem, classifyTemperatura } from "./lead-origin.js";
 
+/**
+ * Story 18.69 (AC1) — os quatro papéis que um produto cumpre numa venda.
+ *
+ * ```
+ *   principal   — o ingresso / produto de entrada
+ *   order_bump  — extra marcado no checkout, linha à parte
+ *   combo       — SUBSTITUI o principal, com o extra embutido
+ *   upsell      — oferta posterior à compra
+ * ```
+ *
+ * O `combo` é o que faltava, e a ausência dele escondia a maior oferta da
+ * captação. Medido no `dg-pg02`: 597 combos, R$ 143.156,20 — **65,97% da
+ * receita da captação** — que caíam em `principal` e sumiam da análise. O
+ * dashboard reportava 6,2% de conversão em order bump enquanto 32,1% dos
+ * compradores levavam a MESMA Gravação pelo combo.
+ *
+ * Provado por três ângulos independentes:
+ *   • preço = lote + R$ 197 em 93,1% dos combos do pg02
+ *   • 481 de 562 não têm linha de ingresso no checkout
+ *   • ZERO order bumps acompanham um combo — quem já tem, não compra de novo
+ */
+export type TipoDeProdutoNaVenda =
+  | "ingresso"
+  | "principal"
+  | "order_bump"
+  | "combo"
+  | "upsell";
+
+/**
+ * Story 18.68 (AC7) — os tipos que ANCORAM um checkout de captação.
+ *
+ * ## Por que `ingresso` é separado de `principal`
+ *
+ * Os dois são "o produto que a pessoa veio comprar", mas de etapas diferentes:
+ *
+ * ```
+ *   ingresso   — o que a CAPTAÇÃO vende (Imersão, R$ 39,90)
+ *   principal  — o que a etapa de VENDAS vende (Mentoria, R$ 4.500)
+ * ```
+ *
+ * Sem essa separação, o default "não classificado = principal" fazia Mentoria
+ * ClaudeLab, Automações e Sistemas e Comunidade entrarem no denominador da
+ * captação. Medido no `dg-pg02`: a receita da captação saía R$ 447.523,05 em
+ * vez de R$ 216.997,05 — **o dobro** — e a representatividade do order bump
+ * caía de 6,39% para 3,10%.
+ *
+ * ## A compatibilidade
+ *
+ * `principal` ancora **quando o funil não tem nenhum `ingresso` classificado**.
+ * É o que mantém o Perpétuo funcionando: lá o produto vendido é o `principal`
+ * e não existe ingresso. Na captação, marcar o ingresso passa a excluir os
+ * produtos de outras etapas automaticamente.
+ */
+export function tiposQueAncoram(linhas: LinhaDeVenda[]): Set<TipoDeProdutoNaVenda> {
+  const temIngresso = linhas.some((l) => l.tipo === "ingresso");
+  return temIngresso
+    ? new Set<TipoDeProdutoNaVenda>(["ingresso", "combo"])
+    : new Set<TipoDeProdutoNaVenda>(["principal", "combo"]);
+}
+
 /** O mínimo que uma linha de venda precisa expor para entrar na análise. */
 export interface LinhaDeVenda {
   /** Já normalizado (trim + lowercase). Vazio = comprador anônimo. */
   email: string;
-  /** `true` quando o produto está na lista de order bumps da etapa. */
-  isOrderBump: boolean;
   /**
-   * Story 29.61 (AC3) — `true` quando o produto é UPSELL.
-   *
-   * Só o Perpétuo distingue: a Captação Paga tem uma lista de "é bump ou não é"
-   * (`order_bump_products`), enquanto o Perpétuo classifica em três tipos desde
-   * a 29.49 (`product_types`: principal | order_bump | upsell).
-   *
-   * São alavancas DIFERENTES — o bump acontece no checkout, o upsell depois da
-   * compra. Fundi-las num "produto adicional" esconderia qual das duas está
-   * funcionando, que é a única pergunta que a coluna responde.
-   *
-   * Opcional: a Captação Paga não passa o campo e nada muda para ela.
+   * Story 18.69 — o papel do produto NESTA venda, do mapa de classificação.
+   * Produto não classificado é `principal`, o default estabelecido pela 29.49.
    */
-  isUpsell?: boolean;
+  tipo: TipoDeProdutoNaVenda;
+  /**
+   * Story 18.68 (AC1) — quando a venda aconteceu. É o que forma o CHECKOUT.
+   *
+   * Sem ela não há como distinguir order bump de recompra, e a análise não
+   * sai (AC4). Medido: 20 de 20 planilhas em produção têm a data mapeada, e
+   * as duas do n8n trazem hora.
+   */
+  data: Date | null;
+  /**
+   * Story 18.68 (AC2) — ID do PEDIDO, quando a planilha o traz.
+   *
+   * ⚠️ Precisa ser validado antes de usar: no `dg-pg02` o `transactionId` é
+   * igual ao ID da linha e agruparia nada, silenciosamente. Ver
+   * `transacaoAgrupa`.
+   */
+  transacaoId?: string | null;
   /** Valor bruto da linha. */
   bruto: number;
   utmSource?: string | null;
@@ -112,25 +177,122 @@ export function classificarPublicoDaVenda(
  */
 export const PISO_DE_AMOSTRA = 10;
 
-/** Um comprador consolidado — todas as linhas dele, principais e bumps. */
-interface Comprador {
-  principal: number;
-  bump: number;
-  nBumps: number;
-  upsell: number;
-  nUpsells: number;
-  temPrincipal: boolean;
-  /**
-   * Público do PRIMEIRO produto principal do período.
-   *
-   * Story 18.67 (AC2): não vem da linha do bump — **149 das 275 linhas de bump
-   * (54%) não têm `utm_term`**. Classificar a linha do bump isoladamente jogaria
-   * mais da metade em "indefinido" e destruiria a tabela.
-   *
-   * Quando o comprador tem mais de um principal, vale o primeiro. Arbitrário e
-   * declarado: o caso é raro e qualquer regra aqui é convenção, não verdade.
-   */
-  publico: PublicoDeVenda | null;
+/**
+ * Story 18.68 (AC1) — a janela que define "mesmo checkout", em milissegundos.
+ *
+ * Medido nos exports da Kiwify (2026-08-24/25): a distribuição da distância
+ * entre compras consecutivas do mesmo e-mail é BIMODAL, com um vale quase
+ * absoluto no meio —
+ *
+ * ```
+ *              pg02   pg04
+ *   ≤ 60s       202    186     ← todos entre 0 e 6 segundos
+ *   1–5 min       0      0
+ *   5–60 min      0      3
+ *   > 1 dia     144     82
+ * ```
+ *
+ * e os 388 pares de segundos são **100% de produtos diferentes**, zero
+ * repetições. Não é um limiar escolhido: é um vale observado.
+ *
+ * 60s é folgado de propósito — o maior gap real dentro de um checkout foi 6s
+ * (pg04) e 48s num caso isolado do pg02. A folga não captura recompra porque
+ * o vale vai até 1 hora.
+ */
+export const JANELA_DE_CHECKOUT_MS = 60_000;
+
+/**
+ * Story 18.68 (AC2) — o `transactionId` desta planilha agrupa um pedido?
+ *
+ * ⚠️ Nem sempre. No `dg-pg04` ele é o ID do pedido e agrupa 126 pedidos
+ * multi-produto; no `dg-pg02` é **igual ao ID da linha** e todos os valores
+ * são únicos. Usá-lo lá reportaria zero order bump, em silêncio.
+ *
+ * O teste é direto: se todo valor aparece uma vez só, não é ID de pedido.
+ */
+export function transacaoAgrupa(linhas: LinhaDeVenda[]): boolean {
+  const vistos = new Map<string, number>();
+  for (const l of linhas) {
+    const t = (l.transacaoId ?? "").trim();
+    if (!t) continue;
+    vistos.set(t, (vistos.get(t) ?? 0) + 1);
+  }
+  if (vistos.size === 0) return false;
+  for (const n of vistos.values()) if (n > 1) return true;
+  return false;
+}
+
+/** Story 18.68 (AC3) — qual sinal governou o agrupamento. */
+export type SinalDeCheckout = "transacao" | "janela" | "indisponivel";
+
+/**
+ * Agrupa as linhas em CHECKOUTS.
+ *
+ * ⚠️ Story 18.68 — esta é a mudança central. A regra anterior agrupava por
+ * COMPRADOR e ignorava a data, então contava recompra como order bump: 51% do
+ * "bump acessório" do `dg-pg02` era de outra data, com mediana de 13 dias.
+ *
+ * AC5 — a janela agrupa em CADEIA, não em pares: três linhas a 0s, 2s e 4s são
+ * UM checkout. Um pedido com principal + bump + upsell existe e precisa ficar
+ * inteiro.
+ */
+export function agruparEmCheckouts(
+  linhas: LinhaDeVenda[],
+): { checkouts: LinhaDeVenda[][]; sinal: SinalDeCheckout } {
+  if (linhas.length === 0) return { checkouts: [], sinal: "indisponivel" };
+
+  // Nível 1 da cascata: o pedido, quando ele existe de verdade.
+  if (transacaoAgrupa(linhas)) {
+    const porTx = new Map<string, LinhaDeVenda[]>();
+    const soltas: LinhaDeVenda[][] = [];
+    for (const l of linhas) {
+      const t = (l.transacaoId ?? "").trim();
+      // Linha sem transação não vira um balde vazio compartilhado — cada uma é
+      // o seu próprio checkout, como o comprador anônimo do AC6.
+      if (!t) { soltas.push([l]); continue; }
+      const atual = porTx.get(t);
+      if (atual) atual.push(l);
+      else porTx.set(t, [l]);
+    }
+    return { checkouts: [...porTx.values(), ...soltas], sinal: "transacao" };
+  }
+
+  // Nível 2: e-mail + janela. Exige data (AC4).
+  const temData = linhas.some((l) => l.data instanceof Date);
+  if (!temData) return { checkouts: [], sinal: "indisponivel" };
+
+  const porEmail = new Map<string, LinhaDeVenda[]>();
+  const anonimas: LinhaDeVenda[][] = [];
+  linhas.forEach((l) => {
+    // AC6 — sem e-mail não há como formar checkout: cada linha é a sua.
+    if (!l.email) { anonimas.push([l]); return; }
+    const atual = porEmail.get(l.email);
+    if (atual) atual.push(l);
+    else porEmail.set(l.email, [l]);
+  });
+
+  const checkouts: LinhaDeVenda[][] = [...anonimas];
+  for (const doComprador of porEmail.values()) {
+    const comData = doComprador.filter((l) => l.data instanceof Date);
+    const semData = doComprador.filter((l) => !(l.data instanceof Date));
+    // Linha sem data no meio de um comprador que tem data: não dá para saber a
+    // qual checkout pertence. Vira a sua própria, em vez de entrar na cadeia
+    // pela ordem do array — que seria arbitrária.
+    for (const l of semData) checkouts.push([l]);
+
+    comData.sort((a, b) => a.data!.getTime() - b.data!.getTime());
+    let atual: LinhaDeVenda[] = [];
+    for (const l of comData) {
+      if (atual.length === 0) { atual = [l]; continue; }
+      const ultimo = atual[atual.length - 1]!;
+      // Compara com a ÚLTIMA linha do grupo, não com a primeira: é o que faz o
+      // agrupamento ser em cadeia (AC5).
+      if (l.data!.getTime() - ultimo.data!.getTime() <= JANELA_DE_CHECKOUT_MS) atual.push(l);
+      else { checkouts.push(atual); atual = [l]; }
+    }
+    if (atual.length > 0) checkouts.push(atual);
+  }
+  return { checkouts, sinal: "janela" };
 }
 
 export interface ResumoOrderBump {
@@ -153,10 +315,19 @@ export interface ResumoOrderBump {
   taxaDeAdesao: number | null;
   /** Compradores que só têm linhas de produto marcado como bump. */
   compradoresSoBump: number;
+  /** Story 18.68 (AC3) — qual sinal governou o agrupamento em checkouts. */
+  sinalDeCheckout: SinalDeCheckout;
+  /** Story 18.69 — receita de produtos do tipo `combo`. */
+  comboReceita: number;
+  /** `comboReceita ÷ receita da captação`. */
+  comboRepresentatividade: number | null;
+  compradoresComCombo: number;
+  /** `compradoresComCombo ÷ checkouts de captação`. */
+  taxaDeCombo: number | null;
   /**
    * AOV geral — valor médio do pedido, com os adicionais somados.
    *
-   * `(principal + bump acessório) ÷ compradores com principal`.
+   * `receita da captação ÷ checkouts de captação`.
    *
    * A base é a MESMA da tabela por público (só quem tem produto principal), e
    * por isso o card fecha com a linha "Total" dela. Incluir os compradores
@@ -174,6 +345,12 @@ export interface LinhaDePublico {
   compradoresComBump: number;
   /** `compradoresComBump ÷ compradores` (Story 18.67, AC3). */
   taxaBump: number | null;
+  /** Story 18.69 — compradores que levaram um COMBO. */
+  compradoresComCombo: number;
+  /** `compradoresComCombo ÷ compradores`. */
+  taxaCombo: number | null;
+  /** Receita de combo do público. */
+  receitaCombo: number;
   /** Story 29.61 (AC3) — compradores com ao menos um upsell. */
   compradoresComUpsell: number;
   /** `compradoresComUpsell ÷ compradores`. */
@@ -208,81 +385,136 @@ export interface LinhaDePublico {
   aovComBump: number | null;
 }
 
-/**
- * Consolida as linhas por comprador. É o passo que separa acessório de avulso e
- * de onde tudo o mais é derivado.
- *
- * Compradores **sem e-mail** entram como indivíduos distintos (chave sintética
- * por índice) em vez de colapsarem num balde único — colapsá-los faria N
- * anônimos virarem um comprador com receita somada, e o AOV do público deles
- * explodiria. Mesmo raciocínio de `chaveDeComprador` na 29.53.
- */
-function consolidar(linhas: LinhaDeVenda[]): Map<string, Comprador> {
-  const compradores = new Map<string, Comprador>();
-  linhas.forEach((l, i) => {
-    const chave = l.email || `__anonimo_${i}__`;
-    let c = compradores.get(chave);
-    if (!c) {
-      c = { principal: 0, bump: 0, nBumps: 0, upsell: 0, nUpsells: 0, temPrincipal: false, publico: null };
-      compradores.set(chave, c);
-    }
-    if (l.isOrderBump) {
-      c.bump += l.bruto;
-      c.nBumps += 1;
-    } else if (l.isUpsell) {
-      c.upsell += l.bruto;
-      c.nUpsells += 1;
-    } else {
-      c.principal += l.bruto;
-      c.temPrincipal = true;
-      // AC2 — o público vem do PRIMEIRO principal, e só dele.
-      c.publico ??= classificarPublicoDaVenda(l.utmSource, l.utmTerm);
-    }
-  });
-  return compradores;
+/** Um checkout consolidado — a unidade de análise desde a Story 18.68. */
+interface Checkout {
+  /** Receita de produto `principal` ou `combo` — a base do pedido. */
+  base: number;
+  bump: number;
+  nBumps: number;
+  upsell: number;
+  nUpsells: number;
+  combo: number;
+  nCombos: number;
+  /** Tem produto `principal` ou `combo` — é um checkout de CAPTAÇÃO (AC7). */
+  ehCaptacao: boolean;
+  publico: PublicoDeVenda | null;
 }
 
-/** Story 18.66 — o card de representatividade. */
+/**
+ * Consolida cada checkout.
+ *
+ * ⚠️ Story 18.68 — a unidade mudou de COMPRADOR para CHECKOUT. Quem compra o
+ * ingresso em maio e o mesmo produto avulso em junho tem dois checkouts, e
+ * apenas o primeiro pode ter order bump. Antes os dois colapsavam num só e a
+ * recompra virava bump.
+ */
+function consolidar(linhas: LinhaDeVenda[]): { checkouts: Checkout[]; sinal: SinalDeCheckout } {
+  const { checkouts: grupos, sinal } = agruparEmCheckouts(linhas);
+  const ancoram = tiposQueAncoram(linhas);
+  const out: Checkout[] = [];
+  for (const g of grupos) {
+    const c: Checkout = {
+      base: 0, bump: 0, nBumps: 0, upsell: 0, nUpsells: 0,
+      combo: 0, nCombos: 0, ehCaptacao: false, publico: null,
+    };
+    /**
+     * Dois passes de propósito.
+     *
+     * Se o checkout é de captação, TODA linha dele entra na receita — a pessoa
+     * pagou junto, no mesmo pedido. Um passe só decidiria isso na ordem do
+     * array: um produto não classificado que viesse ANTES do ingresso ficaria
+     * de fora, e o mesmo produto depois entraria.
+     *
+     * Medido: no `dg-pg04` são 25 vendas de "Claude para Negócios"
+     * (R$ 1.925,00) dentro de checkouts de captação, sem estar classificadas.
+     * A pessoa pagou; o número tem que refletir isso.
+     */
+    c.ehCaptacao = g.some((l) => ancoram.has(l.tipo));
+    for (const l of g) {
+      switch (l.tipo) {
+        case "order_bump": c.bump += l.bruto; c.nBumps += 1; break;
+        case "upsell": c.upsell += l.bruto; c.nUpsells += 1; break;
+        case "combo":
+          c.combo += l.bruto; c.nCombos += 1;
+          c.base += l.bruto;
+          // AC2 da 18.67 — o público vem do produto que ANCORA o pedido.
+          if (ancoram.has(l.tipo)) c.publico ??= classificarPublicoDaVenda(l.utmSource, l.utmTerm);
+          break;
+        default:
+          // `ingresso` ancora a captação; `principal` só quando o funil não tem
+          // ingresso classificado (é o caso do Perpétuo).
+          //
+          // Produto de outra etapa (Mentoria, Automações) NÃO ancora — mas se
+          // cair dentro de um checkout que já é de captação, soma na receita
+          // dele: foi pago no mesmo pedido.
+          if (c.ehCaptacao) c.base += l.bruto;
+          if (ancoram.has(l.tipo)) c.publico ??= classificarPublicoDaVenda(l.utmSource, l.utmTerm);
+      }
+    }
+    out.push(c);
+  }
+  return { checkouts: out, sinal };
+}
+
 export function resumirOrderBump(
   linhas: LinhaDeVenda[],
   temConfiguracao: boolean,
 ): ResumoOrderBump {
-  const compradores = consolidar(linhas);
-  let faturamentoPrincipal = 0;
-  let bumpAcessorio = 0;
-  let bumpAvulso = 0;
-  let comPrincipal = 0;
-  let comBump = 0;
-  let soBump = 0;
+  const { checkouts, sinal } = consolidar(linhas);
+  let receitaBase = 0, bumpAcessorio = 0, bumpAvulso = 0, comboReceita = 0;
+  let nCaptacao = 0, comBump = 0, comCombo = 0, soBump = 0;
 
-  for (const c of compradores.values()) {
-    faturamentoPrincipal += c.principal;
-    if (c.temPrincipal) {
-      comPrincipal += 1;
+  for (const c of checkouts) {
+    if (c.ehCaptacao) {
+      nCaptacao += 1;
+      receitaBase += c.base;
       bumpAcessorio += c.bump;
+      comboReceita += c.combo;
       if (c.nBumps > 0) comBump += 1;
+      if (c.nCombos > 0) comCombo += 1;
     } else {
+      // Checkout sem produto de captação: o bump dali é venda própria daquele
+      // produto, não acréscimo a venda nenhuma (Story 18.66, AC1).
       soBump += 1;
       bumpAvulso += c.bump;
     }
   }
 
-  const faturamentoTotal = faturamentoPrincipal + bumpAcessorio + bumpAvulso;
+  /**
+   * Story 18.68 (AC7) — o denominador é a receita da CAPTAÇÃO.
+   *
+   * A regra anterior usava "o faturamento total da etapa", o que só funciona
+   * quando a planilha tem apenas vendas de captação. A do DG & CPDF não tem:
+   * 54% do que está lá é Mentoria (R$ 130.500), Automações (R$ 142.700) e
+   * Comunidade — de outras etapas. Um punhado de vendas de R$ 4.500 desloca o
+   * denominador mais que centenas de ingressos de R$ 39,90.
+   *
+   * Medido: a representatividade do order bump no pg02 sai de 2,95% para
+   * 6,39%, e a do pg04 de 8,13% para 23,96%.
+   *
+   * ⚠️ Gate PO (F1): "checkout de captação" é definido por TIPO
+   * (`principal` ou `combo`), nunca por nome de produto. Exigir o "produto de
+   * entrada" excluiria os 597 checkouts de combo do pg02 — 68% do denominador.
+   */
+  const receitaCaptacao = receitaBase + bumpAcessorio;
+
   return {
     temConfiguracao,
-    faturamentoTotal,
-    faturamentoPrincipal,
+    sinalDeCheckout: sinal,
+    faturamentoTotal: receitaCaptacao,
+    faturamentoPrincipal: receitaBase,
     bumpAcessorio,
     bumpAvulso,
-    // AC2 — o denominador é o faturamento TOTAL. A pergunta é "que fatia do que
-    // entrou veio do bump"; trocar o denominador pelo do principal inflaria o
-    // número de 26,3% para 48,3% sem nada na tela avisando.
-    representatividade: faturamentoTotal > 0 ? bumpAcessorio / faturamentoTotal : null,
-    compradoresComPrincipal: comPrincipal,
+    representatividade: receitaCaptacao > 0 ? bumpAcessorio / receitaCaptacao : null,
+    comboReceita,
+    comboRepresentatividade: receitaCaptacao > 0 ? comboReceita / receitaCaptacao : null,
+    compradoresComCombo: comCombo,
+    taxaDeCombo: nCaptacao > 0 ? comCombo / nCaptacao : null,
+    compradoresComPrincipal: nCaptacao,
     compradoresComBump: comBump,
-    taxaDeAdesao: comPrincipal > 0 ? comBump / comPrincipal : null,
+    taxaDeAdesao: nCaptacao > 0 ? comBump / nCaptacao : null,
     compradoresSoBump: soBump,
-    aovGeral: comPrincipal > 0 ? (faturamentoPrincipal + bumpAcessorio) / comPrincipal : null,
+    aovGeral: nCaptacao > 0 ? receitaCaptacao / nCaptacao : null,
   };
 }
 
@@ -297,36 +529,37 @@ export function resumirOrderBump(
  * zeros que o olho lê como "esse público não converte".
  */
 export function tabelaPorPublico(linhas: LinhaDeVenda[]): LinhaDePublico[] {
-  const compradores = consolidar(linhas);
+  const { checkouts } = consolidar(linhas);
   const acc = new Map<PublicoDeVenda, LinhaDePublico>();
 
-  for (const c of compradores.values()) {
-    if (!c.temPrincipal || !c.publico) continue;
+  for (const c of checkouts) {
+    // Só checkout de captação tem público: quem levou apenas um produto de
+    // bump, sem principal nem combo, não tem origem conhecida (54% das linhas
+    // de bump não trazem `utm_term`), e inventá-la seria atribuir venda a uma
+    // origem que não se sabe.
+    if (!c.ehCaptacao || !c.publico) continue;
     let e = acc.get(c.publico);
     if (!e) {
       e = {
-        publico: c.publico,
-        compradores: 0,
-        compradoresComBump: 0,
-        taxaBump: null,
-        compradoresComUpsell: 0,
-        taxaUpsell: null,
-        receitaUpsell: 0,
+        publico: c.publico, compradores: 0,
+        compradoresComBump: 0, taxaBump: null,
+        compradoresComCombo: 0, taxaCombo: null, receitaCombo: 0,
+        compradoresComUpsell: 0, taxaUpsell: null, receitaUpsell: 0,
         amostraBaixa: false,
-        receitaPrincipal: 0,
-        receitaBump: 0,
-        aovSemBump: null,
-        aovComBump: null,
+        receitaPrincipal: 0, receitaBump: 0,
+        aovSemBump: null, aovComBump: null,
       };
       acc.set(c.publico, e);
     }
     e.compradores += 1;
-    // AC3 — COMPRADORES, não linhas. Quem leva dois bumps é uma conversão, não
-    // duas; contar linhas infla o público que compra combo.
+    // AC3 — COMPRADORES, não linhas. Quem leva dois bumps é uma conversão.
     if (c.nBumps > 0) e.compradoresComBump += 1;
+    if (c.nCombos > 0) e.compradoresComCombo += 1;
     if (c.nUpsells > 0) e.compradoresComUpsell += 1;
-    e.receitaPrincipal += c.principal;
+    // `base` já inclui o combo — é a receita que ancora o pedido.
+    e.receitaPrincipal += c.base;
     e.receitaBump += c.bump;
+    e.receitaCombo += c.combo;
     e.receitaUpsell += c.upsell;
   }
 
@@ -334,6 +567,7 @@ export function tabelaPorPublico(linhas: LinhaDeVenda[]): LinhaDePublico[] {
     .map((e) => ({
       ...e,
       taxaBump: e.compradores > 0 ? e.compradoresComBump / e.compradores : null,
+      taxaCombo: e.compradores > 0 ? e.compradoresComCombo / e.compradores : null,
       taxaUpsell: e.compradores > 0 ? e.compradoresComUpsell / e.compradores : null,
       amostraBaixa: e.compradores < PISO_DE_AMOSTRA,
       aovSemBump: e.compradores > 0 ? e.receitaPrincipal / e.compradores : null,

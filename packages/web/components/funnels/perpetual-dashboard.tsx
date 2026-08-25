@@ -83,6 +83,7 @@ import { legendaQuebraPorTipo } from "@/lib/utils/perpetual-product-types";
 // (`utils/order-bump.ts`), a mesma da Captação Paga; aqui só a apresentação.
 import {
   PerpetualAovCard,
+  PerpetualComboCard,
   PerpetualOrderBumpCard,
   PerpetualPublicosTable,
 } from "./perpetual-publicos-section";
@@ -2750,12 +2751,15 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
               pedido é receita ÷ compradores. O card de bump, ao lado, some. */}
           <PerpetualAovCard ob={salesData.orderBump} />
           <PerpetualOrderBumpCard ob={salesData.orderBump} />
+          {/* Story 18.69 — ao lado do order bump, nunca somado a ele. */}
+          <PerpetualComboCard ob={salesData.orderBump} />
         </div>
       )}
 
       <PerpetualPublicosTable
         publicos={salesData?.publicos}
         temBump={salesData?.orderBump?.temConfiguracao ?? false}
+        temCombo={(salesData?.orderBump?.comboReceita ?? 0) > 0}
         temUpsell={salesData?.temUpsellClassificado ?? false}
         investimento={spendAggregates.totalSpendComTax}
       />

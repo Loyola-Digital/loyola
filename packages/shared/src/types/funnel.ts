@@ -160,7 +160,17 @@ export const PLATFORM_FEE_RATES: Record<SalesPlatform, number> = {
  * planilha já conectada com o comportamento anterior à story, e espelha a
  * regra da Captação Paga, onde o produto não marcado é o de entrada.
  */
-export type PerpetualProductType = "principal" | "order_bump" | "upsell";
+/**
+ * Story 18.69 — quatro papéis. `combo` SUBSTITUI o principal com o extra
+ * embutido; sem ele, o combo caía em `principal` e sumia da análise —
+ * 65,97% da receita da captação do dg-pg02.
+ */
+export type PerpetualProductType =
+  | "ingresso"
+  | "principal"
+  | "order_bump"
+  | "combo"
+  | "upsell";
 
 /** Item da lista de produtos distintos da planilha do perpétuo. */
 export interface PerpetualProduct {
@@ -209,7 +219,7 @@ export interface PerpetualSalesData {
    * ou nenhum produto marcado no diálogo (29.49). Nesse caso a quebra não
    * aparece na tela, em vez de exibir "Principal 129" como se fosse informação.
    */
-  porTipoProduto?: { principal: number; order_bump: number; upsell: number } | null;
+  porTipoProduto?: { ingresso: number; principal: number; order_bump: number; combo: number; upsell: number } | null;
 
   /**
    * Story 29.61 — order bump e AOV por público no Perpétuo.
@@ -234,14 +244,24 @@ export interface PerpetualSalesData {
     compradoresComBump: number;
     taxaDeAdesao: number | null;
     compradoresSoBump: number;
-    /** AOV geral: `(principal + bump acessório) ÷ compradores com principal`. */
+    /** AOV geral: `receita da captação ÷ checkouts de captação`. */
     aovGeral: number | null;
+    /** Story 18.68 (AC3): qual sinal agrupou os checkouts. */
+    sinalDeCheckout?: "transacao" | "janela" | "indisponivel";
+    /** Story 18.69: o combo, com números próprios — nunca somado ao bump. */
+    comboReceita?: number;
+    comboRepresentatividade?: number | null;
+    compradoresComCombo?: number;
+    taxaDeCombo?: number | null;
   };
   publicos?: {
     publico: "Orgânico" | "Pago quente" | "Pago frio" | "Pago indefinido" | "Sem Track";
     compradores: number;
     compradoresComBump: number;
     taxaBump: number | null;
+    compradoresComCombo?: number;
+    taxaCombo?: number | null;
+    receitaCombo?: number;
     compradoresComUpsell: number;
     taxaUpsell: number | null;
     receitaUpsell: number;
@@ -448,8 +468,15 @@ export interface StageSalesData {
     compradoresComBump: number;
     taxaDeAdesao: number | null;
     compradoresSoBump: number;
-    /** AOV geral: `(principal + bump acessório) ÷ compradores com principal`. */
+    /** AOV geral: `receita da captação ÷ checkouts de captação`. */
     aovGeral: number | null;
+    /** Story 18.68 (AC3): qual sinal agrupou os checkouts. */
+    sinalDeCheckout?: "transacao" | "janela" | "indisponivel";
+    /** Story 18.69: o combo, com números próprios — nunca somado ao bump. */
+    comboReceita?: number;
+    comboRepresentatividade?: number | null;
+    compradoresComCombo?: number;
+    taxaDeCombo?: number | null;
   };
 
   /**
@@ -467,6 +494,9 @@ export interface StageSalesData {
     compradores: number;
     compradoresComBump: number;
     taxaBump: number | null;
+    compradoresComCombo?: number;
+    taxaCombo?: number | null;
+    receitaCombo?: number;
     receitaPrincipal: number;
     receitaBump: number;
     aovSemBump: number | null;

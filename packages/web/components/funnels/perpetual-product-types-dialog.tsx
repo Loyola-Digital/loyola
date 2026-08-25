@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Package, Star, TrendingUp } from "lucide-react";
+import { AlertTriangle, Package, Star, TrendingUp, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -45,6 +45,10 @@ const TIPOS: Array<{
 }> = [
   { valor: "principal", rotulo: "Principal", Icone: Star, classe: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30" },
   { valor: "order_bump", rotulo: "Order bump", Icone: Package, classe: "bg-amber-500/10 text-amber-600 border-amber-500/30" },
+  // Story 18.69 — o combo SUBSTITUI o principal, com o extra embutido. Sem
+  // este tipo ele caía em "principal" e sumia da análise: 597 vendas e 65,97%
+  // da receita da captação no dg-pg02.
+  { valor: "combo", rotulo: "Combo", Icone: Layers, classe: "bg-sky-500/10 text-sky-600 border-sky-500/30" },
   { valor: "upsell", rotulo: "Upsell", Icone: TrendingUp, classe: "bg-purple-500/10 text-purple-600 border-purple-500/30" },
 ];
 
@@ -94,8 +98,15 @@ export function PerpetualProductTypesDialog({ projectId, funnelId, open, onOpenC
         <DialogHeader>
           <DialogTitle>Classificar produtos</DialogTitle>
           <DialogDescription>
-            Diga o que é <strong>produto principal</strong>, <strong>order bump</strong> e{" "}
-            <strong>upsell</strong>. Produto não classificado é tratado como principal.
+            Diga o que é <strong>produto principal</strong>, <strong>order bump</strong>,{" "}
+            <strong>combo</strong> e <strong>upsell</strong>. Produto não classificado é tratado
+            como principal.
+            <br />
+            <span className="text-[11px] text-muted-foreground">
+              O <strong>combo</strong> substitui o produto principal, já com o extra embutido —
+              quem compra combo não tem linha do principal. Por isso ele conta como uma venda
+              própria, e não como order bump.
+            </span>
           </DialogDescription>
         </DialogHeader>
 
@@ -160,7 +171,7 @@ export function PerpetualProductTypesDialog({ projectId, funnelId, open, onOpenC
               })}
             </div>
             <p className="text-xs text-muted-foreground">
-              {resumo.principal} principal · {resumo.order_bump} order bump · {resumo.upsell} upsell
+              {resumo.principal} principal · {resumo.order_bump} order bump · {resumo.combo} combo · {resumo.upsell} upsell
             </p>
           </>
         )}

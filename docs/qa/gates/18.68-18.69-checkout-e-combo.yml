@@ -1,0 +1,134 @@
+storyIds: [18.68, 18.69]
+epic: 18
+titulo: "Checkout como unidade de agrupamento e Combo como tipo de produto"
+revisadoPor: "@qa (Quinn)"
+data: 2026-08-25
+branch: feat/checkout-e-combo
+commits: [18a9dcc0, de180a1f]
+
+verdict: CONCERNS
+
+resumo: >
+  Os 7 checks passam. CONCERNS por dois motivos: as stories não foram vistas
+  rodando, e — mais relevante — elas só produzem o número correto DEPOIS que o
+  gestor classificar os produtos. Até lá o default trata Mentoria e Automações
+  como ingresso e o denominador continua inflado. É uma dependência de
+  configuração, não um defeito, mas quem olhar a tela antes disso vai ver o
+  número antigo e concluir que a entrega não funcionou.
+
+  A revisão encontrou e corrigiu um defeito que o próprio ato de SALVAR
+  introduziria.
+
+checks:
+  - id: 1
+    nome: Code review
+    resultado: OK
+    notas: >
+      Um achado corrigido — DEF-1. Fora dele, a decisão de dois passes em
+      `consolidar` está certa e documentada: um passe só decidiria "é captação?"
+      pela ordem do array, e um produto não classificado que viesse antes do
+      ingresso ficaria de fora enquanto o mesmo produto depois entraria.
+
+  - id: 2
+    nome: Unit tests
+    resultado: OK
+    notas: >
+      60 testes novos entre os dois pacotes. 10 defeitos reintroduzidos e todos
+      pegos. Os fixtures carregam de propósito os casos que dados
+      bem-comportados não exercitam: recompra a 14 dias junto de bump no mesmo
+      segundo, cadeia de 4 linhas com 50s entre cada, transactionId com valores
+      todos únicos, e produto de outra etapa na mesma planilha.
+
+  - id: 3
+    nome: Acceptance criteria
+    resultado: OK
+    notas: >
+      16 ACs entre as duas. Dois achados durante a implementação foram levados
+      ao gestor em vez de decididos sozinho — o `principal` ambíguo (que virou o
+      tipo `ingresso`) e o produto não classificado dentro do checkout. Parar e
+      perguntar foi o certo: os dois eram regra de negócio, não detalhe técnico.
+
+  - id: 4
+    nome: No regressions
+    resultado: OK
+    notas: >
+      API 1461 -> 1479 com as MESMAS 11 falhas pré-existentes; web 551 -> 556,
+      zero falhas. turbo build 4/4, tsc limpo, boot real da API verificado sobre
+      os quatro módulos tocados. Há teste dedicado provando que o Perpétuo não
+      regride: lá `principal` continua ancorando porque não existe `ingresso`
+      classificado.
+
+  - id: 5
+    nome: Performance
+    resultado: OK
+    notas: >
+      `consolidar` roda duas vezes por request e agora ordena por data dentro de
+      cada comprador — O(n log n) sobre 2.222 linhas no maior caso medido.
+      Irrelevante.
+
+  - id: 6
+    nome: Security
+    resultado: OK
+    notas: >
+      A rota de planilhas passou a aceitar `productTypes`, validado por zod com
+      enum fechado dos cinco tipos — não aceita string livre. Migration aditiva,
+      coluna nula. Nenhum dado novo atravessa a fronteira.
+
+  - id: 7
+    nome: Documentation
+    resultado: OK
+    notas: >
+      O código carrega as medições que fundamentam cada decisão, incluindo os
+      números que mudariam se cada regra fosse revertida.
+
+issues:
+  - id: DEF-1
+    severity: high
+    category: correctness
+    status: corrigido-nesta-revisão
+    description: >
+      O diálogo de classificação gravava tipo explícito para TODOS os produtos
+      da planilha, derivando `ingresso` para o que não estivesse marcado. Abrir
+      o diálogo de uma etapa não classificada e salvar — sem mudar nada —
+      gravaria `ingresso` na Mentoria ClaudeLab (R$ 4.500) e nas Automações
+      (R$ 5.000).
+    recommendation: >
+      Esses produtos passariam a ANCORAR checkouts de captação e o denominador
+      dobraria: R$ 447.523 em vez de R$ 216.997 no dg-pg02 — exatamente o
+      defeito que a 18.68 existe para corrigir. E pior que o original, porque
+      ficaria PERSISTIDO: quem investigasse depois veria classificação
+      explícita, não um default.
+
+      Corrigido com `mapaParaPersistir` (`lib/utils/classificacao-produtos.ts`,
+      5 testes): só se grava o que difere do default. Um mapa enxuto diz "o
+      gestor declarou isto"; um mapa cheio de defaults afirma o que ninguém
+      declarou.
+
+  - id: OBS-1
+    severity: medium
+    category: requirements
+    description: >
+      As duas stories só produzem o número correto DEPOIS que o gestor
+      classificar os produtos. Enquanto Mentoria e Automações não forem marcadas
+      como "Principal (outra etapa)", o default as trata como `ingresso` e o
+      denominador do dg-pg02 segue em R$ 447.523.
+    recommendation: >
+      Não é defeito — é a decisão de que o sistema não infere papel de produto.
+      Mas precisa ser dito ao gestor: sem a classificação, a tela mostra o
+      número antigo e a entrega parece não ter funcionado. Vale considerar um
+      aviso na tela quando houver produto não classificado com receita
+      desproporcional ao ingresso; fora do escopo destas stories.
+
+  - id: OBS-2
+    severity: medium
+    category: requirements
+    description: >
+      Nenhuma das duas foi vista rodando.
+    recommendation: >
+      Validar após o deploy: (a) classificar os produtos do dg-pg02 e dg-pg04 e
+      conferir os seis números; (b) marcar um produto como Combo e ver o card
+      aparecer; (c) conferir que o card some onde não há combo; (d) conferir que
+      o Perpétuo do Netão continua com os números da 29.61.
+
+deployPendente: true
+proximoPasso: "@devops — push e PR"

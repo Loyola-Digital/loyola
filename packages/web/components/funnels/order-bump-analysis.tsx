@@ -57,6 +57,29 @@ export function aovCardProps(
   };
 }
 
+/**
+ * Story 18.69 — as props do card de Combo, ou `null` quando não há combo.
+ *
+ * ⚠️ Nunca somado ao order bump. Decisão do gestor (2026-08-25): duas ofertas,
+ * dois números lado a lado. No `dg-pg02` o combo é 65,97% da receita da
+ * captação contra 6,39% do bump — somá-los esconderia que são caminhos
+ * diferentes para o mesmo extra.
+ */
+export function comboCardProps(
+  ob: StageSalesData["orderBump"],
+): { value: string; title: string; valor: string; adesao: string } | null {
+  if (!ob || !ob.comboReceita || ob.comboReceita <= 0) return null;
+  return {
+    value: fmtPct(ob.comboRepresentatividade ?? null),
+    title:
+      "Representatividade do combo = receita de combo ÷ receita da captação.\n\n" +
+      "O combo SUBSTITUI o ingresso, já com o extra embutido — quem compra combo não tem linha de ingresso.\n\n" +
+      "Não se soma ao order bump: são duas ofertas para o mesmo extra.",
+    valor: fmtCurrency(ob.comboReceita),
+    adesao: `${fmtNumber(ob.compradoresComCombo ?? 0)} de ${fmtNumber(ob.compradoresComPrincipal)} compradores (${fmtPct(ob.taxaDeCombo ?? null)})`,
+  };
+}
+
 export interface OrderBumpCardProps {
   value: string;
   title: string;
@@ -116,14 +139,18 @@ export function OrderBumpVazio({ ob }: { ob: StageSalesData["orderBump"] }) {
 export function PublicosTable({
   publicos,
   temBump,
+  temCombo = false,
 }: {
   publicos: StageSalesData["publicos"];
   temBump: boolean;
+  /** Story 18.69 — a coluna some quando ninguém classificou um combo. */
+  temCombo?: boolean;
 }) {
   if (!publicos || publicos.length === 0) return null;
 
   const totalCompradores = publicos.reduce((s, p) => s + p.compradores, 0);
   const totalComBump = publicos.reduce((s, p) => s + p.compradoresComBump, 0);
+  const totalComCombo = publicos.reduce((s, p) => s + (p.compradoresComCombo ?? 0), 0);
   const totalPrincipal = publicos.reduce((s, p) => s + p.receitaPrincipal, 0);
   const totalBump = publicos.reduce((s, p) => s + p.receitaBump, 0);
 
@@ -168,6 +195,14 @@ export function PublicosTable({
                       </span>
                     </td>
                   )}
+                  {temCombo && (
+                    <td className="text-right px-2 tabular-nums">
+                      {fmtPct(p.taxaCombo ?? null)}
+                      <span className="text-[10px] text-muted-foreground">
+                        {" "}({fmtNumber(p.compradoresComCombo ?? 0)})
+                      </span>
+                    </td>
+                  )}
                   <td className="text-right px-2 tabular-nums">
                     {p.aovSemBump == null ? "—" : fmtCurrency(p.aovSemBump)}
                   </td>
@@ -192,6 +227,11 @@ export function PublicosTable({
             <tr className="border-t border-border/30 font-semibold">
               <td className="py-2 pr-3">Total</td>
               <td className="text-right px-2 tabular-nums">{fmtNumber(totalCompradores)}</td>
+              {temCombo && (
+                <td className="text-right px-2 tabular-nums">
+                  {fmtPct(totalCompradores > 0 ? totalComCombo / totalCompradores : null)}
+                </td>
+              )}
               {temBump && (
                 <td className="text-right px-2 tabular-nums">
                   {fmtPct(totalCompradores > 0 ? totalComBump / totalCompradores : null)}

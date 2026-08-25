@@ -33,7 +33,7 @@ export function productKey(name: string): string {
 export function contarPorTipo(
   tipos: Array<PerpetualProductType | undefined>,
 ): Record<PerpetualProductType, number> {
-  const out: Record<PerpetualProductType, number> = { principal: 0, order_bump: 0, upsell: 0 };
+  const out: Record<PerpetualProductType, number> = { ingresso: 0, principal: 0, order_bump: 0, combo: 0, upsell: 0 };
   for (const t of tipos) out[t ?? TIPO_PADRAO] += 1;
   return out;
 }
@@ -50,14 +50,17 @@ export function contarPorTipo(
  * 129 linhas pagas, não 110 compradores.
  */
 export function legendaQuebraPorTipo(
-  quebra: { principal: number; order_bump: number; upsell: number } | null | undefined,
+  quebra: { principal: number; order_bump: number; combo?: number; upsell: number } | null | undefined,
   totalVendas: number,
 ): { texto: string; titulo: string } | null {
   if (!quebra) return null;
-  if (quebra.order_bump === 0 && quebra.upsell === 0) return null;
+  if (quebra.order_bump === 0 && quebra.combo === 0 && quebra.upsell === 0) return null;
 
   const partes: string[] = [];
   if (quebra.principal > 0) partes.push(`Principal ${quebra.principal}`);
+  // Story 18.69 — o combo é venda própria, não um adicional: aparece na quebra
+  // com o mesmo peso do principal.
+  if ((quebra.combo ?? 0) > 0) partes.push(`Combo ${quebra.combo}`);
   if (quebra.order_bump > 0) partes.push(`Order Bump ${quebra.order_bump}`);
   if (quebra.upsell > 0) partes.push(`Upsell ${quebra.upsell}`);
   if (partes.length === 0) return null;
@@ -82,7 +85,7 @@ export function legendaQuebraPorTipo(
 export function agruparPorTipo(
   produtos: Array<{ name: string; type: PerpetualProductType }>,
 ): Record<PerpetualProductType, string[]> {
-  const out: Record<PerpetualProductType, string[]> = { principal: [], order_bump: [], upsell: [] };
+  const out: Record<PerpetualProductType, string[]> = { ingresso: [], principal: [], order_bump: [], combo: [], upsell: [] };
   for (const p of produtos) out[p.type ?? TIPO_PADRAO].push(p.name);
   return out;
 }

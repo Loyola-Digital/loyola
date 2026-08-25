@@ -56,6 +56,12 @@ const createSchema = z
     columnMapping: saleColumnMappingSchema,
     // Story 18.51a: productNames marcados como order bump. Opcional (default []).
     orderBumpProducts: z.array(z.string()).optional(),
+    /**
+     * Story 18.69 — `produto → tipo`. Substitui conceitualmente a lista acima,
+     * que só sabia dizer "é bump ou não é" e por isso não expressava o COMBO.
+     * As duas coexistem: onde houver mapa ele manda.
+     */
+    productTypes: z.record(z.string(), z.enum(["ingresso","principal","order_bump","combo","upsell"])).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.subtype === "event_sales") {
@@ -110,6 +116,7 @@ function shapeRow(row: typeof stageSalesSpreadsheets.$inferSelect) {
     // Story 18.51a: order bumps marcados (productNames). Default [] p/ linhas
     // antigas sem a coluna preenchida.
     orderBumpProducts: (row.orderBumpProducts as string[] | null) ?? [],
+    productTypes: (row.productTypes as Record<string, string> | null) ?? {},
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -238,6 +245,7 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
           sheetName: body.sheetName,
           columnMapping: body.columnMapping,
           orderBumpProducts: body.orderBumpProducts ?? [],
+          productTypes: body.productTypes ?? null,
         })
         .returning();
 
@@ -341,6 +349,7 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
         // Story 18.51a: order bumps. Opcional — quando ausente, preserva o
         // valor existente (não sobrescreve com []).
         orderBumpProducts: z.array(z.string()).optional(),
+        productTypes: z.record(z.string(), z.enum(["ingresso","principal","order_bump","combo","upsell"])).optional(),
       });
       const bodyResult = updateSchema.safeParse(request.body);
       if (!bodyResult.success)
@@ -369,6 +378,7 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
           // Preserva order bumps existentes quando o body não manda (edição só
           // de mapeamento não deve zerar a marcação).
           orderBumpProducts: body.orderBumpProducts ?? (existing.orderBumpProducts as string[] | null) ?? [],
+          productTypes: body.productTypes ?? (existing.productTypes as Record<string, string> | null) ?? null,
         })
         .where(
           and(
@@ -413,9 +423,10 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
 
       const mapping = sheet.columnMapping as { productName?: string };
       const orderBumps = ((sheet.orderBumpProducts as string[] | null) ?? []);
+      const productTypes = (sheet.productTypes as Record<string, string> | null) ?? {};
       if (!mapping.productName) {
         // Story 18.51a AC0.3: sem coluna de produto → não dá pra separar.
-        return { productMapped: false, products: [], orderBumpProducts: orderBumps };
+        return { productMapped: false, products: [], orderBumpProducts: orderBumps, productTypes };
       }
 
       let sheetData;
@@ -427,7 +438,7 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
 
       const productIdx = sheetData.headers.indexOf(mapping.productName);
       if (productIdx === -1) {
-        return { productMapped: false, products: [], orderBumpProducts: orderBumps };
+        return { productMapped: false, products: [], orderBumpProducts: orderBumps, productTypes };
       }
 
       // Agrupa preservando o primeiro rótulo visto (case original), mas dedup
@@ -447,7 +458,7 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
         .map((p) => ({ name: p.name, count: p.count, isOrderBump: bumpSet.has(p.name.trim().toLowerCase()) }))
         .sort((a, b) => b.count - a.count);
 
-      return { productMapped: true, products, orderBumpProducts: orderBumps };
+      return { productMapped: true, products, orderBumpProducts: orderBumps, productTypes };
     }
   );
 });

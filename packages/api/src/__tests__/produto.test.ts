@@ -72,7 +72,9 @@ describe("a quebra do card conta LINHAS, e por isso não fecha com o total", () 
   for (const l of linhas) quebra[tipoDoProduto(l.produto, TIPOS_DO_NETAO)] += 1;
 
   it("3 principais + 1 bump = 4 linhas", () => {
-    expect(quebra).toEqual({ principal: 3, order_bump: 1, upsell: 0 });
+    // Story 18.69: a quebra ganhou `combo` como quarto tipo. Zero aqui porque
+    // nenhum produto do fixture está classificado assim.
+    expect(quebra).toEqual({ ingresso: 0, principal: 3, order_bump: 1, combo: 0, upsell: 0 });
   });
 
   it("as fatias somam LINHAS (4), não compradores (3)", () => {
@@ -89,6 +91,6 @@ describe("a quebra do card conta LINHAS, e por isso não fecha com o total", () 
     // esconder a quebra em vez de exibir "Principal 4" como se fosse dado.
     const semMapa = quebraVazia();
     for (const l of linhas) semMapa[tipoDoProduto(l.produto, {})] += 1;
-    expect(semMapa).toEqual({ principal: 4, order_bump: 0, upsell: 0 });
+    expect(semMapa).toEqual({ ingresso: 0, principal: 4, order_bump: 0, combo: 0, upsell: 0 });
   });
 });

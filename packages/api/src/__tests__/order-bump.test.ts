@@ -15,17 +15,33 @@ import {
   tabelaPorPublico,
   classificarPublicoDaVenda,
   PISO_DE_AMOSTRA,
+  transacaoAgrupa,
+  tiposQueAncoram,
   type LinhaDeVenda,
 } from "../utils/order-bump.js";
 
+/**
+ * Story 18.68 — as linhas agora carregam DATA, porque a unidade de análise é o
+ * checkout. `t` é o deslocamento em segundos dentro do mesmo checkout: sem ele
+ * todas cairiam no mesmo instante e a janela nunca seria exercitada.
+ */
+const T0 = new Date("2026-07-20T10:00:00Z").getTime();
 function venda(
   email: string,
   bruto: number,
   isOrderBump = false,
   utmSource: string | null = "meta",
   utmTerm: string | null = "hot_cbo",
+  t = 0,
 ): LinhaDeVenda {
-  return { email, bruto, isOrderBump, utmSource, utmTerm };
+  return {
+    email,
+    bruto,
+    tipo: isOrderBump ? "order_bump" : "ingresso",
+    data: new Date(T0 + t * 1000),
+    utmSource,
+    utmTerm,
+  };
 }
 
 /**
@@ -60,15 +76,23 @@ describe("acessório e avulso são coisas diferentes (18.66, AC1)", () => {
     expect(r.compradoresSoBump).toBe(1);
   });
 
-  it("a representatividade usa só o acessório sobre o total", () => {
-    // total = 400 principal + 100 acessório + 300 avulso = 800
-    expect(r.faturamentoTotal).toBe(800);
-    expect(r.representatividade).toBeCloseTo(100 / 800, 10);
+  it("a representatividade é sobre a receita da CAPTAÇÃO (18.68, AC7)", () => {
+    // ⚠️ MUDOU na 18.68. Antes o denominador era `principal + acessório +
+    // avulso` (800 aqui). Agora é só a captação — 400 principal + 100
+    // acessório = 500 — porque o avulso é venda de OUTRA oferta, e mantê-lo no
+    // denominador dilui a métrica com receita que não é do funil.
+    //
+    // Medido em produção: no dg-pg02 o denominador antigo incluía R$ 252.772
+    // de Mentoria, Automações e Comunidade, e a representatividade saía 2,95%
+    // em vez de 6,39%.
+    expect(r.faturamentoTotal).toBe(500);
+    expect(r.representatividade).toBeCloseTo(100 / 500, 10);
   });
 
-  it("o denominador é o TOTAL, não o principal", () => {
-    // 100/400 = 25% seria o número inflado.
-    expect(r.representatividade).not.toBeCloseTo(100 / 400, 5);
+  it("o avulso NÃO entra no denominador", () => {
+    // 100/800 = 12,5% era o número diluído da regra antiga.
+    expect(r.representatividade).not.toBeCloseTo(100 / 800, 5);
+    expect(r.bumpAvulso).toBe(300);
   });
 });
 
@@ -161,11 +185,13 @@ describe("a tabela fecha com a etapa (18.67, AC5)", () => {
     expect(t.reduce((s, l) => s + l.compradores, 0)).toBe(r.compradoresComPrincipal);
   });
 
-  it("Σ (AOV c/ bump × compradores) = faturamento − bump avulso", () => {
+  it("Σ (AOV c/ bump × compradores) = receita da captação", () => {
+    // Desde a 18.68 o `faturamentoTotal` JÁ é só a captação, então não há mais
+    // o que subtrair — a tabela fecha com ele diretamente.
     const r = resumirOrderBump(FIXTURE, true);
     const t = tabelaPorPublico(FIXTURE);
     const soma = t.reduce((s, l) => s + l.aovComBump! * l.compradores, 0);
-    expect(soma).toBeCloseTo(r.faturamentoTotal - r.bumpAvulso, 6);
+    expect(soma).toBeCloseTo(r.faturamentoTotal, 6);
   });
 });
 
@@ -212,18 +238,12 @@ describe("comprador anônimo", () => {
 function vendaPerp(
   email: string,
   bruto: number,
-  tipo: "principal" | "order_bump" | "upsell",
+  tipo: "ingresso" | "principal" | "order_bump" | "combo" | "upsell",
   utmSource: string | null = "meta",
   utmTerm: string | null = "hot",
+  t = 0,
 ): LinhaDeVenda {
-  return {
-    email,
-    bruto,
-    isOrderBump: tipo === "order_bump",
-    isUpsell: tipo === "upsell",
-    utmSource,
-    utmTerm,
-  };
+  return { email, bruto, tipo, data: new Date(T0 + t * 1000), utmSource, utmTerm };
 }
 
 /** 12 compradores pagos quentes (acima do piso) + 2 orgânicos (abaixo). */
@@ -350,8 +370,8 @@ describe("Gate QA — UTM ausente não pode virar Orgânico", () => {
 
   it("o balde Sem Track é distinto do Orgânico na tabela", () => {
     const t = tabelaPorPublico([
-      { email: "a@x.com", bruto: 100, isOrderBump: false, utmSource: null, utmTerm: null },
-      { email: "b@x.com", bruto: 100, isOrderBump: false, utmSource: "instagram", utmTerm: null },
+      { email: "a@x.com", bruto: 100, tipo: "ingresso", data: new Date(T0), utmSource: null, utmTerm: null },
+      { email: "b@x.com", bruto: 100, tipo: "ingresso", data: new Date(T0), utmSource: "instagram", utmTerm: null },
     ]);
     expect(t.map((l) => l.publico).sort()).toEqual(["Orgânico", "Sem Track"]);
   });
@@ -389,5 +409,253 @@ describe("AOV geral do card", () => {
 
   it("sem compradores é null, não zero", () => {
     expect(resumirOrderBump([], true).aovGeral).toBeNull();
+  });
+});
+
+// ============================================================================
+// Story 18.68 — o CHECKOUT é a unidade, não o comprador.
+//
+// ⚠️ O fixture tem recompra distante E bump no mesmo segundo, de propósito.
+// Com só um dos dois, trocar a chave de agrupamento não muda nada e metade
+// destes testes seria decorativa.
+// ============================================================================
+
+function linha(
+  email: string,
+  bruto: number,
+  tipo: "ingresso" | "principal" | "order_bump" | "combo" | "upsell",
+  segundos: number,
+  transacaoId: string | null = null,
+): LinhaDeVenda {
+  return {
+    email, bruto, tipo,
+    data: new Date(T0 + segundos * 1000),
+    transacaoId,
+    utmSource: "meta", utmTerm: "hot",
+  };
+}
+
+/**
+ * Reproduz o caso real: comprador leva ingresso + bump no mesmo checkout e,
+ * 14 dias depois, compra o mesmo produto de bump de novo. A regra antiga
+ * contava as duas como order bump.
+ */
+const DIA = 86_400;
+const COM_RECOMPRA: LinhaDeVenda[] = [
+  linha("a@x.com", 40, "ingresso", 0),
+  linha("a@x.com", 197, "order_bump", 2),      // mesmo checkout
+  linha("a@x.com", 197, "order_bump", 14 * DIA), // RECOMPRA, 14 dias depois
+];
+
+describe("Story 18.68 — recompra não é order bump (AC1)", () => {
+  it("o bump de 14 dias depois vira checkout próprio", () => {
+    const r = resumirOrderBump(COM_RECOMPRA, true);
+    // Só o bump de 2s é acessório. O de 14 dias não tem principal no checkout
+    // dele, então é venda avulsa.
+    expect(r.bumpAcessorio).toBe(197);
+    expect(r.bumpAvulso).toBe(197);
+    // Com a regra antiga (por comprador) os dois somariam em acessório: 394.
+    expect(r.bumpAcessorio).not.toBe(394);
+  });
+
+  it("o comprador conta uma vez na captação, não duas", () => {
+    const r = resumirOrderBump(COM_RECOMPRA, true);
+    expect(r.compradoresComPrincipal).toBe(1);
+    expect(r.compradoresComBump).toBe(1);
+  });
+});
+
+describe("Story 18.68 — a janela agrupa em CADEIA (AC5)", () => {
+  it("três linhas a 0s, 2s e 4s são UM checkout", () => {
+    const r = resumirOrderBump([
+      linha("b@x.com", 40, "ingresso", 0),
+      linha("b@x.com", 197, "order_bump", 2),
+      linha("b@x.com", 97, "upsell", 4),
+    ], true);
+    expect(r.compradoresComPrincipal).toBe(1);
+    expect(r.bumpAvulso).toBe(0);
+  });
+
+  it("uma cadeia longa não se parte se cada passo cabe na janela", () => {
+    // 0, 50, 100, 150 — cada passo tem 50s, mas a ponta está a 150s do início.
+    // Comparar com a PRIMEIRA linha partiria isso em dois checkouts.
+    const r = resumirOrderBump([
+      linha("c@x.com", 40, "ingresso", 0),
+      linha("c@x.com", 10, "order_bump", 50),
+      linha("c@x.com", 10, "order_bump", 100),
+      linha("c@x.com", 10, "order_bump", 150),
+    ], true);
+    expect(r.compradoresComPrincipal).toBe(1);
+    expect(r.bumpAcessorio).toBe(30);
+  });
+
+  it("acima da janela, separa", () => {
+    const r = resumirOrderBump([
+      linha("d@x.com", 40, "ingresso", 0),
+      linha("d@x.com", 197, "order_bump", 61),
+    ], true);
+    expect(r.bumpAcessorio).toBe(0);
+    expect(r.bumpAvulso).toBe(197);
+  });
+});
+
+describe("Story 18.68 — cascata de sinais (AC2/AC3)", () => {
+  it("`transactionId` que AGRUPA é usado, e o sinal é declarado", () => {
+    const r = resumirOrderBump([
+      linha("e@x.com", 40, "ingresso", 0, "PED-1"),
+      // 2 horas depois, mas MESMO pedido: a transação manda.
+      linha("e@x.com", 197, "order_bump", 7200, "PED-1"),
+    ], true);
+    expect(r.sinalDeCheckout).toBe("transacao");
+    expect(r.bumpAcessorio).toBe(197);
+  });
+
+  it("`transactionId` com valores TODOS ÚNICOS não é ID de pedido", () => {
+    // É o caso real do dg-pg02: `Transaction` é igual ao ID da linha. Usá-lo
+    // reportaria zero order bump, em silêncio.
+    const linhas = [
+      linha("f@x.com", 40, "ingresso", 0, "LINHA-1"),
+      linha("f@x.com", 197, "order_bump", 2, "LINHA-2"),
+    ];
+    expect(transacaoAgrupa(linhas)).toBe(false);
+    const r = resumirOrderBump(linhas, true);
+    expect(r.sinalDeCheckout).toBe("janela");
+    expect(r.bumpAcessorio).toBe(197);
+  });
+
+  it("sem data e sem transação que agrupe, a análise não sai (AC4)", () => {
+    const semData: LinhaDeVenda[] = [
+      { email: "g@x.com", bruto: 40, tipo: "ingresso", data: null },
+      { email: "g@x.com", bruto: 197, tipo: "order_bump", data: null },
+    ];
+    const r = resumirOrderBump(semData, true);
+    expect(r.sinalDeCheckout).toBe("indisponivel");
+    // Não cai de volta para agrupar por comprador — que era o defeito.
+    expect(r.compradoresComPrincipal).toBe(0);
+    expect(r.representatividade).toBeNull();
+  });
+});
+
+// ============================================================================
+// Story 18.69 — Combo é um tipo próprio, com números próprios.
+// ============================================================================
+
+/** Ingresso R$ 39,90 + bump R$ 197 num checkout; combo R$ 236,90 em outro. */
+const COM_COMBO: LinhaDeVenda[] = [
+  linha("h@x.com", 39.9, "ingresso", 0),
+  linha("h@x.com", 197, "order_bump", 1),
+  linha("i@x.com", 236.9, "combo", 10),
+  linha("j@x.com", 39.9, "ingresso", 20),
+];
+
+describe("Story 18.69 — o combo entra na captação (AC1)", () => {
+  it("checkout só com combo É checkout de captação", () => {
+    // Gate PO (F1): se "captação" exigisse o produto de ENTRADA, este checkout
+    // sairia do denominador — 68% dele no dg-pg02.
+    const r = resumirOrderBump(COM_COMBO, true);
+    expect(r.compradoresComPrincipal).toBe(3);
+    expect(r.faturamentoTotal).toBeCloseTo(39.9 + 197 + 236.9 + 39.9, 6);
+  });
+
+  it("o combo tem representatividade e conversão próprias", () => {
+    const r = resumirOrderBump(COM_COMBO, true);
+    expect(r.comboReceita).toBeCloseTo(236.9, 6);
+    expect(r.compradoresComCombo).toBe(1);
+    expect(r.taxaDeCombo).toBeCloseTo(1 / 3, 10);
+  });
+
+  it("combo NUNCA é somado ao order bump", () => {
+    // Decisão do gestor: dois blocos, sem total. Se somassem, a
+    // representatividade seria (197+236,90)/513,70 = 84%.
+    const r = resumirOrderBump(COM_COMBO, true);
+    expect(r.representatividade).toBeCloseTo(197 / 513.7, 6);
+    expect(r.comboRepresentatividade).toBeCloseTo(236.9 / 513.7, 6);
+    expect(r.representatividade! + r.comboRepresentatividade!).toBeLessThan(1);
+  });
+
+  it("a tabela por público quebra as duas ofertas", () => {
+    const t = tabelaPorPublico(COM_COMBO);
+    const quente = t.find((l) => l.publico === "Pago quente")!;
+    expect(quente.compradores).toBe(3);
+    expect(quente.compradoresComBump).toBe(1);
+    expect(quente.compradoresComCombo).toBe(1);
+    expect(quente.taxaCombo).toBeCloseTo(1 / 3, 10);
+  });
+});
+
+// ============================================================================
+// Story 18.68 (AC7) — ingresso é da CAPTAÇÃO; principal é de outra etapa.
+//
+// O caso que motivou: a planilha do dg-pg02 tem Mentoria ClaudeLab (R$ 4.500)
+// e Automações e Sistemas (R$ 5.000) misturadas com os ingressos de R$ 39,90.
+// Enquanto "não classificado" virava `principal` e `principal` ancorava a
+// captação, essas vendas dobravam o denominador.
+// ============================================================================
+
+describe("Story 18.68 (AC7) — produto de outra etapa fica fora do denominador", () => {
+  const COM_OUTRA_ETAPA: LinhaDeVenda[] = [
+    linha("k@x.com", 39.9, "ingresso", 0),
+    linha("k@x.com", 197, "order_bump", 1),
+    // Mentoria: produto da etapa de Vendas, na mesma planilha.
+    linha("z@x.com", 4500, "principal", 5000),
+  ];
+
+  it("a Mentoria não entra na receita da captação", () => {
+    const r = resumirOrderBump(COM_OUTRA_ETAPA, true);
+    expect(r.faturamentoTotal).toBeCloseTo(39.9 + 197, 6);
+    // Com ela dentro seriam R$ 4.736,90 e a representatividade cairia de
+    // 83% para 4% — foi o que aconteceu na medição contra produção.
+    expect(r.faturamentoTotal).not.toBeCloseTo(4736.9, 2);
+  });
+
+  it("e não conta como comprador da captação", () => {
+    const r = resumirOrderBump(COM_OUTRA_ETAPA, true);
+    expect(r.compradoresComPrincipal).toBe(1);
+  });
+
+  it("`principal` ANCORA quando não há ingresso classificado (o Perpétuo)", () => {
+    // Retrocompatibilidade: no Perpétuo o produto vendido é o `principal` e não
+    // existe ingresso. Se `principal` deixasse de ancorar, o perpétuo zeraria.
+    const perpetuo: LinhaDeVenda[] = [
+      linha("p1@x.com", 347, "principal", 0),
+      linha("p1@x.com", 97, "order_bump", 2),
+    ];
+    const r = resumirOrderBump(perpetuo, true);
+    expect(r.compradoresComPrincipal).toBe(1);
+    expect(r.faturamentoTotal).toBeCloseTo(444, 6);
+  });
+
+  it("a presença de UM ingresso já muda quem ancora", () => {
+    const s = tiposQueAncoram([linha("x@x.com", 10, "ingresso", 0)]);
+    expect(s.has("ingresso")).toBe(true);
+    expect(s.has("principal")).toBe(false);
+    const semIngresso = tiposQueAncoram([linha("y@x.com", 10, "principal", 0)]);
+    expect(semIngresso.has("principal")).toBe(true);
+  });
+});
+
+describe("Story 18.68 — produto não classificado DENTRO do checkout de captação", () => {
+  it("soma na receita: foi pago no mesmo pedido", () => {
+    // Caso real: 25 vendas de "Claude para Negócios" (R$ 1.925) no dg-pg04,
+    // dentro de checkouts de captação, sem classificação.
+    const r = resumirOrderBump([
+      linha("m@x.com", 39.9, "ingresso", 0),
+      linha("m@x.com", 77, "principal", 2), // não classificado, mesmo checkout
+    ], true);
+    expect(r.faturamentoTotal).toBeCloseTo(116.9, 6);
+  });
+
+  it("a ordem no array não muda o resultado (dois passes)", () => {
+    // Um passe só decidiria "é captação?" na ordem de leitura: o produto que
+    // viesse ANTES do ingresso ficaria de fora.
+    const depois = resumirOrderBump([
+      linha("n@x.com", 39.9, "ingresso", 0),
+      linha("n@x.com", 77, "principal", 2),
+    ], true);
+    const antes = resumirOrderBump([
+      linha("o@x.com", 77, "principal", 0),
+      linha("o@x.com", 39.9, "ingresso", 2),
+    ], true);
+    expect(antes.faturamentoTotal).toBeCloseTo(depois.faturamentoTotal, 6);
   });
 });

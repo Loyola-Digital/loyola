@@ -95,6 +95,8 @@ export interface UpdateSaleSpreadsheetInput {
   columnMapping: SaleColumnMapping;
   /** Story 18.51a: opcional — preserva marcação existente quando ausente. */
   orderBumpProducts?: string[];
+  /** Story 18.69 — `produto → tipo`. Substitui a lista acima. */
+  productTypes?: Record<string, string>;
 }
 
 // Story 18.51a: lista os productName distintos da planilha (via id) pro wizard
@@ -123,6 +125,7 @@ export function useStageSalesProducts(
 export interface UpdateOrderBumpsInput {
   current: StageSalesSpreadsheet;
   orderBumpProducts: string[];
+  productTypes?: Record<string, string>;
 }
 
 export function useUpdateOrderBumps(

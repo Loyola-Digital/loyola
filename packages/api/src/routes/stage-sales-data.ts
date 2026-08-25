@@ -28,6 +28,7 @@ import {
   resumirOrderBump,
   tabelaPorPublico,
   type LinhaDeVenda,
+  type TipoDeProdutoNaVenda,
   type ResumoOrderBump,
   type LinhaDePublico,
 } from "../utils/order-bump.js";
@@ -414,6 +415,37 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       }
       const isOrderBump = (product: string) => orderBumpSet.has(product.trim().toLowerCase());
 
+      /**
+       * Story 18.69 (AC1/AC2) — o TIPO do produto, no vocabulário de quatro
+       * papéis que o Perpétuo já usa desde a 29.49.
+       *
+       * A Captação Paga guardava uma LISTA (`order_bump_products`) que só
+       * respondia "é bump ou não é". O mapa (`product_types`) responde qual
+       * papel. A migração é por LEITURA: onde houver mapa ele manda; onde só
+       * houver lista, ela vira `order_bump` e o resto é `principal` — que é
+       * exatamente o comportamento de hoje.
+       *
+       * Reescrever os 20 registros num deploy seria risco sem ganho: a leitura
+       * já entrega o resultado.
+       */
+      const tiposPorProduto = new Map<string, TipoDeProdutoNaVenda>();
+      for (const sp of spreadsheets) {
+        const mapa = (sp.productTypes as Record<string, TipoDeProdutoNaVenda> | null) ?? {};
+        for (const [prod, tipo] of Object.entries(mapa)) {
+          const k = prod.trim().toLowerCase();
+          if (k) tiposPorProduto.set(k, tipo);
+        }
+      }
+      const tipoDoProdutoNaVenda = (product: string): TipoDeProdutoNaVenda => {
+        const k = (product ?? "").trim().toLowerCase();
+        const doMapa = tiposPorProduto.get(k);
+        if (doMapa) return doMapa;
+        // Sem mapa, o produto não listado é INGRESSO: nesta etapa é o que se
+        // vende. `principal` aqui significaria "produto da etapa de Vendas" e
+        // tiraria o ingresso do denominador.
+        return orderBumpSet.has(k) ? "order_bump" : "ingresso";
+      };
+
       // Reembolso NÃO deduplica: a pessoa compra (linha paid, id X) e ao reembolsar
       // volta como NOVA linha refunded com o MESMO id X. Cada linha refunded/
       // chargeback é um reembolso real (1:1 com as linhas). Fora do emailMap pra
@@ -789,8 +821,12 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         const bump = isOrderBump(entry.product);
         linhasDeVenda.push({
           email: entry.email.trim().toLowerCase(),
-          isOrderBump: bump,
+          tipo: tipoDoProdutoNaVenda(entry.product),
           bruto: entry.bruto,
+          // Story 18.68: a data é o que forma o checkout. Sem ela, a análise
+          // não sai — e não cai de volta para agrupar por comprador.
+          data: entry.lastDate,
+          transacaoId: entry.txId || null,
           utmSource: entry.utmSource,
           utmTerm: entry.utmTerm,
         });
@@ -815,8 +851,10 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         // 18.67 não fecharia.
         linhasDeVenda.push({
           email: (mr.email ?? "").trim().toLowerCase(),
-          isOrderBump: bump,
+          tipo: tipoDoProdutoNaVenda(prod),
           bruto: val,
+          data: dt,
+          transacaoId: null,
           utmSource: null,
           utmTerm: null,
         });
