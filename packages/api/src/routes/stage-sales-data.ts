@@ -161,16 +161,45 @@ function classifyFonte(utmSource: string | null): "Pago" | "Orgânico" | "Sem Tr
   return "Orgânico";
 }
 
-function parseDate(val: string | undefined): Date | null {
+/**
+ * Data de venda da planilha, nos dois formatos que as abas trazem.
+ *
+ * ## O defeito que a captura da HORA corrige
+ *
+ * A versão anterior casava só `dd/mm/aaaa` e montava `new Date(yy, mm-1, dd)` —
+ * **descartando a hora**. Toda linha no formato brasileiro virava meia-noite.
+ *
+ * Isso não é cosmético: `agruparEmCheckouts` (Story 18.68) junta linhas do mesmo
+ * comprador que estejam a menos de 60 segundos uma da outra. Com todas as horas
+ * zeradas, **duas compras do mesmo e-mail no mesmo dia ficam a 0 segundos** e
+ * viram um checkout só — mesmo tendo acontecido com horas de diferença.
+ *
+ * Medido em 2026-08-25: das 20 planilhas em produção, a maioria usa o formato
+ * brasileiro COM hora (`25/06/2026 15:43:00`), e três misturam os dois formatos
+ * na mesma aba (`dg-pg04` capture, 1.237 ISO contra 52 BR).
+ *
+ * O formato ISO já preservava a hora por cair no `new Date()` — o que tornava o
+ * defeito invisível em qualquer aba 100% ISO, e mudava o comportamento da mesma
+ * conta conforme a origem da linha.
+ */
+export function parseDate(val: string | undefined): Date | null {
   if (!val) return null;
   const trimmed = val.trim();
-  const brMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\D|$)/);
+  // `dd/mm/aaaa` com hora opcional. A hora entra quando existe; sem ela, o dia
+  // começa à meia-noite, que é o melhor palpite disponível.
+  const brMatch = trimmed.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/,
+  );
   if (brMatch) {
-    const [, d, m, y] = brMatch;
-    const dd = parseInt(d, 10);
-    const mm = parseInt(m, 10);
-    const yy = parseInt(y, 10);
-    const dt = new Date(yy, mm - 1, dd);
+    const [, d, m, y, hh, mi, ss] = brMatch;
+    const dt = new Date(
+      parseInt(y, 10),
+      parseInt(m, 10) - 1,
+      parseInt(d, 10),
+      hh ? parseInt(hh, 10) : 0,
+      mi ? parseInt(mi, 10) : 0,
+      ss ? parseInt(ss, 10) : 0,
+    );
     return isNaN(dt.getTime()) ? null : dt;
   }
   const dt = new Date(trimmed);
