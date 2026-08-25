@@ -986,6 +986,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
           loading={overview.isLoading}
           connected={connected}
           data={overview.data}
+          erro={overview.error}
           brlRate={brlRate}
           onConfigure={() => setSettingsOpen(true)}
         />
@@ -1195,18 +1196,49 @@ function RevenuecatOverviewPanel({
   loading,
   connected,
   data,
+  erro,
   brlRate,
   onConfigure,
 }: {
   loading: boolean;
   connected: boolean;
   data: ReturnType<typeof useRevenuecatOverview>["data"];
+  /**
+   * A falha da requisição, quando houve.
+   *
+   * Sem isto, `!data?.configured` era verdadeiro tanto para "o app não foi
+   * escolhido" quanto para "a chamada falhou" — e a tela mandava o gestor
+   * configurar algo que já estava configurado. É o mesmo defeito que o Google
+   * Ads tinha (#614): erro chegando à tela como ausência.
+   */
+  erro?: unknown;
   brlRate: number | null;
   onConfigure: () => void;
 }) {
   if (loading) return <Skeleton className="h-[110px] rounded-xl" />;
   // Não conectado: o painel de vendas abaixo já mostra esse estado.
   if (!connected) return null;
+
+  // A falha é testada ANTES da ausência: uma requisição que falhou também
+  // chega aqui sem `configured`, e testar a ausência primeiro esconderia o
+  // motivo real.
+  if (erro) {
+    const msg = erro instanceof Error ? erro.message : String(erro);
+    const semPermissao = /permiss|charts_metrics|403/i.test(msg);
+    return (
+      <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 text-xs">
+        <p className="font-medium text-amber-700 dark:text-amber-500">
+          Não foi possível puxar as métricas do RevenueCat.
+        </p>
+        <p className="mt-1 text-muted-foreground">
+          {semPermissao
+            ? "A Secret API Key precisa da permissão de leitura de métricas (charts_metrics:overview:read). Verifique no painel do RevenueCat."
+            : "O app está configurado — a falha foi na chamada. Se persistir, o deploy da API pode estar defasado."}
+        </p>
+        <p className="mt-1.5 break-words font-mono text-[10px] text-muted-foreground/70">{msg}</p>
+      </div>
+    );
+  }
 
   if (!data?.configured) {
     return (

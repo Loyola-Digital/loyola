@@ -89,11 +89,20 @@ export function RevenuecatOverviewBlock({
         {d && (
           /* AC7 — o gestor decidiu o numerador: quem inicia TRIAL.
              O rótulo diz TRIAL de propósito: sob "Conversão para pagante" este
-             número (1,64%) faria o app parecer 5x melhor do que converte em
-             receita, onde quem paga era 0,32%. */
+             número faria o app parecer ~5x melhor do que converte em receita. */
           <Card rotulo="Conversão para Trial"
             valor={fmtPct(activeUsers ? d.novosTrials / activeUsers : null)} janela="serie"
-            detalhe={`${fmtNum(d.novosTrials)} usuários iniciaram trial ÷ ${fmtNum(activeUsers)} usuários ativos. Mede entrada no funil de assinatura, NÃO receita — para receita, veja Novas assinaturas pagas.`} />
+            detalhe={`${fmtNum(d.novosTrials)} usuários iniciaram trial ÷ ${fmtNum(activeUsers)} usuários ativos. Mede entrada no funil de assinatura, NÃO receita — para receita, veja o card ao lado.`} />
+        )}
+        {d && (
+          /* Pedido do gestor (2026-08-25): ver a conversão para PAGANTE ao lado
+             da de trial. São a mesma divisão com numeradores diferentes, e é
+             justamente a distância entre as duas que informa — quem entra no
+             teste contra quem chega a pagar. */
+          <Card rotulo="Conversão para Pagante"
+            valor={fmtPct(activeUsers ? (d.novasAssinaturasPagas + d.conversoesDeTrial) / activeUsers : null)}
+            janela="serie"
+            detalhe={`${fmtNum(d.novasAssinaturasPagas + d.conversoesDeTrial)} pagantes (${fmtNum(d.novasAssinaturasPagas)} entraram pagando + ${fmtNum(d.conversoesDeTrial)} converteram do trial) ÷ ${fmtNum(activeUsers)} usuários ativos. Este é o número que vira receita.`} />
         )}
       </div>
 
