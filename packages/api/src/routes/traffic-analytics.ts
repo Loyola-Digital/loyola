@@ -46,6 +46,14 @@ import {
 import { getProjectMetaFreshness } from "../services/meta-sync-state.js";
 import { getEntityDailySeries } from "../services/meta-entity-daily.js";
 import { montarMapasDeTemperatura } from "../utils/temperatura-de-publico.js";
+import {
+  avaliar,
+  avaliarContraAlvo,
+  ranquearPorCamada,
+  sugerirRemontagens,
+  classificar,
+  type Camada,
+} from "@loyola-x/shared";
 
 // Story 18.26 Fase 1 / 18.37: TTL alinhado com stage-sales-data.ts (30d). Evita
 // re-consultar a Meta a cada 24h e estourar rate limit; refresh vem do backfill.
@@ -952,6 +960,89 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
     return { agendados: fila.length, motivo: "agendado" };
   }
 
+
+
+  // ---- GET /api/traffic/analytics/:projectId/camadas-de-video ---- (Story 43.8)
+  /**
+   * As três camadas do vídeo, o ranking por camada e as sugestões de remontagem.
+   *
+   * ⚠️ Filtra por `video_metrics ? 'views3s'`: o denominador das três taxas só
+   * existe em linhas sincronizadas a partir da 43.3 (02/08/2026). Sem esse
+   * recorte, o numerador cobre meses e o denominador cobre semanas — medido em
+   * 2026-08-25, isso produzia conversão de 234% e retenção de 116%.
+   */
+  fastify.get(
+    "/api/traffic/analytics/:projectId/camadas-de-video",
+    async (request, reply) => {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+      const p = projectIdParamSchema.safeParse(request.params);
+      if (!p.success) return reply.code(400).send({ error: "projectId invalido" });
+
+      const linhas = await fastify.db
+        .select({
+          adId: metaAdInsightsDaily.adId,
+          adName: sql<string>`MAX(${metaAdInsightsDaily.adName})`,
+          impressoes: sql<number>`SUM(${metaAdInsightsDaily.impressions})`,
+          views3s: sql<number>`SUM((${metaAdInsightsDaily.videoMetrics}->>'views3s')::numeric)`,
+          thruplay: sql<number>`SUM(COALESCE((${metaAdInsightsDaily.videoMetrics}->>'thruplay')::numeric,0))`,
+          p75: sql<number>`SUM(COALESCE((${metaAdInsightsDaily.videoMetrics}->>'p75')::numeric,0))`,
+          desde: sql<string>`MIN(${metaAdInsightsDaily.dateStart})`,
+        })
+        .from(metaAdInsightsDaily)
+        .where(
+          and(
+            eq(metaAdInsightsDaily.projectId, p.data.projectId),
+            sql`${metaAdInsightsDaily.videoMetrics} ? 'views3s'`,
+          ),
+        )
+        .groupBy(metaAdInsightsDaily.adId);
+
+      const criativos = linhas.map((l) => ({
+        adId: String(l.adId),
+        adName: String(l.adName ?? ""),
+        impressoes: Number(l.impressoes ?? 0),
+        views3s: l.views3s === null ? null : Number(l.views3s),
+        thruplay: l.thruplay === null ? null : Number(l.thruplay),
+        p75: l.p75 === null ? null : Number(l.p75),
+      }));
+
+      const avaliados = avaliar(criativos);
+      const camadas: Camada[] = ["abertura", "promessa", "corpo"];
+      const alvos = Object.fromEntries(
+        camadas.map((c) => [c, avaliarContraAlvo(avaliados, c)]),
+      );
+      const medianas = Object.fromEntries(
+        camadas.map((c) => [c, alvos[c].medianaDaConta]),
+      ) as Record<Camada, number | null>;
+
+      return {
+        // AC2: a tela declara desde quando a série existe.
+        serieDesde: linhas.map((l) => l.desde).filter(Boolean).sort()[0] ?? null,
+        totalDeCriativos: criativos.length,
+        acimaDoPiso: avaliados.filter((c) => !c.amostraBaixa).length,
+        alvos,
+        campeoes: Object.fromEntries(
+          camadas.map((c) => [c, ranquearPorCamada(avaliados, c)[0] ?? null]),
+        ),
+        ranking: Object.fromEntries(
+          camadas.map((c) => [c, ranquearPorCamada(avaliados, c).slice(0, 10)]),
+        ),
+        sugestoes: sugerirRemontagens(avaliados, 3),
+        padraoOuro: avaliados.filter(
+          (c) => !c.amostraBaixa && classificar(c, medianas) === "padrao_ouro",
+        ),
+        fracos: avaliados.filter(
+          (c) => !c.amostraBaixa && classificar(c, medianas) === "fraco_nos_tres",
+        ),
+      };
+    },
+  );
 
   // ---- GET /api/traffic/analytics/:projectId/temperatura-publico ---- (Story 29.62)
   /**

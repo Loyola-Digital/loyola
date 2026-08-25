@@ -81,6 +81,7 @@ import {
 } from "@/lib/utils/filtro-de-publico";
 import { CampaignSelector } from "./campaign-selector";
 import { TopCreativesGallery } from "./top-creatives-gallery";
+import { CamadasDeVideoSection } from "./camadas-de-video-section";
 import { RefreshDataButton } from "./refresh-data-button";
 import { MetaFreshnessBadge } from "./meta-freshness-badge";
 import { PerpetualSpreadsheetWizardDialog } from "./perpetual-spreadsheet-wizard-dialog";
@@ -3282,6 +3283,12 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       {/* ================================================================ */}
       {/* TOP CRIATIVOS — precisa de campanhas Meta (sem filtro viria o projeto inteiro) */}
       {/* ================================================================ */}
+      {/* Story 43.8 — as três camadas do vídeo. Antes da galeria: ela mostra o
+          que rendeu, esta seção mostra ONDE cada vídeo perde o espectador — e o
+          que dá para recombinar. Não depende de `hasCampaigns`: a leitura por
+          camada é sobre o CRIATIVO, e vale mesmo sem campanha vinculada. */}
+      <CamadasDeVideoSection projectId={projectId} />
+
       {hasCampaigns && (
       <TopCreativesGallery
         projectId={projectId}
