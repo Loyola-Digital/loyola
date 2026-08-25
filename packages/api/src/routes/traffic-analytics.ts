@@ -35,15 +35,17 @@ import {
   type MotivoDaCura,
 } from "../services/lp-cache-selfheal.js";
 import {
-  metaAdsAccounts,
-  metaAdsAccountProjects,
-  metaEntityNamesCache,
   metaAdCreativesCache,
+  metaAdInsightsDaily,
+  metaAdsAccountProjects,
+  metaAdsAccounts,
   metaCreativeThumbnails,
+  metaEntityNamesCache,
   projectMembers,
 } from "../db/schema.js";
 import { getProjectMetaFreshness } from "../services/meta-sync-state.js";
 import { getEntityDailySeries } from "../services/meta-entity-daily.js";
+import { montarMapasDeTemperatura } from "../utils/temperatura-de-publico.js";
 
 // Story 18.26 Fase 1 / 18.37: TTL alinhado com stage-sales-data.ts (30d). Evita
 // re-consultar a Meta a cada 24h e estourar rate limit; refresh vem do backfill.
@@ -949,6 +951,50 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
     );
     return { agendados: fila.length, motivo: "agendado" };
   }
+
+
+  // ---- GET /api/traffic/analytics/:projectId/temperatura-publico ---- (Story 29.62)
+  /**
+   * Mapas de temperatura (quente/frio) por entidade, nas três dimensões.
+   *
+   * Lê do cache do Postgres, como `/entity-daily` — não chama a Meta. A regra
+   * de cascata vive em `utils/temperatura-de-publico.ts`, testada fora do HTTP.
+   *
+   * `meta_ad_insights_daily` é a fonte porque traz `ad_id`, `adset_name` e
+   * `campaign_name` na MESMA linha: a hierarquia sai sem join, e é dela que a
+   * cascata depende — nenhum anúncio traz a temperatura no próprio nome.
+   */
+  fastify.get(
+    "/api/traffic/analytics/:projectId/temperatura-publico",
+    async (request, reply) => {
+      if (!(await guestCanAccessTraffic(
+        request.userRole,
+        request.userId,
+        (request.params as { projectId?: string }).projectId,
+      ))) {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const paramResult = projectIdParamSchema.safeParse(request.params);
+      if (!paramResult.success) {
+        return reply.code(400).send({ error: "projectId invalido" });
+      }
+
+      const linhas = await fastify.db
+        .selectDistinct({
+          adId: metaAdInsightsDaily.adId,
+          adName: metaAdInsightsDaily.adName,
+          adsetId: metaAdInsightsDaily.adsetId,
+          adsetName: metaAdInsightsDaily.adsetName,
+          campaignId: metaAdInsightsDaily.campaignId,
+          campaignName: metaAdInsightsDaily.campaignName,
+        })
+        .from(metaAdInsightsDaily)
+        .where(eq(metaAdInsightsDaily.projectId, paramResult.data.projectId));
+
+      return montarMapasDeTemperatura(linhas);
+    },
+  );
 
   // ---- GET /api/traffic/analytics/:projectId/entity-daily ---- (Story 29.42, AC6/AC7)
   /**
