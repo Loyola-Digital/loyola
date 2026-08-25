@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { mapaParaPersistir } from "@/lib/utils/classificacao-produtos";
 import {
   useStageSalesProducts,
   useUpdateOrderBumps,
@@ -115,11 +116,10 @@ export function OrderBumpsDialog({
      * de escrevê-la quebraria quem ainda não migrou. O backend prefere o mapa
      * quando ele existe.
      */
-    const productTypes: Record<string, string> = {};
-    for (const p of products) {
-      const k = p.name.trim().toLowerCase();
-      productTypes[k] = tipos[k] ?? (marked.has(k) ? "order_bump" : "ingresso");
-    }
+    // Gate QA: só o que DIFERE do default é gravado. Derivar `ingresso` para
+    // todo produto não marcado persistiria uma suposição sobre a Mentoria e as
+    // Automações, fazendo-as ancorar checkouts de captação.
+    const productTypes = mapaParaPersistir(products, tipos);
     try {
       await updateOrderBumps.mutateAsync({ current: spreadsheet, orderBumpProducts, productTypes });
       toast.success("Produtos classificados");
