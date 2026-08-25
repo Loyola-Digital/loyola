@@ -6,9 +6,11 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { z } from "zod";
 import {
   aggregateProducts,
   normalizeProductTypes,
+  productTypesSchema,
   productKey,
 } from "../routes/perpetual-spreadsheets.js";
 
@@ -109,5 +111,55 @@ describe("normalizeProductTypes", () => {
 describe("productKey", () => {
   it("normaliza espaco e caixa", () => {
     expect(productKey("  Workshop DO Netão  ")).toBe("workshop do netão");
+  });
+});
+
+// ============================================================
+// Story 18.70 — o Combo precisa atravessar a persistência.
+//
+// A 29.61 levou o Combo ao diálogo e ao cálculo do Perpétuo, mas não à lista
+// de tipos aceitos pela rota. O zod rejeitava o corpo inteiro (400) e a tela
+// dizia só "Erro ao salvar a classificação".
+//
+// O detalhe que enganava: marcar o mesmo produto como `order_bump` FUNCIONAVA.
+// Em produção (`pps1`) o "Combo 2 em 1" ficou gravado como order bump — a
+// classificação errada passava, a certa era recusada.
+// ============================================================
+describe("combo atravessa a persistência (Story 18.70)", () => {
+  const COMBO_REAL = "Combo 2 em 1: Aulão sobre Ansiedade + Fundamentos do Atendimento Clínico";
+
+  it("o schema aceita `combo`", () => {
+    const r = z.object({ productTypes: productTypesSchema }).safeParse({
+      productTypes: { [COMBO_REAL]: "combo" },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("`normalizeProductTypes` GRAVA o combo, não o descarta", () => {
+    // Aceitar no schema e descartar aqui seria pior que o 400: a tela diria
+    // "Produtos classificados" e o banco não guardaria nada.
+    const out = normalizeProductTypes({ [COMBO_REAL]: "combo" });
+    expect(Object.values(out)).toContain("combo");
+  });
+
+  it("os quatro papéis do diálogo do Perpétuo passam juntos", () => {
+    const corpo = {
+      "Fundamentos do Atendimento Clínico": "principal",
+      "Aulão Aprenda a Encarar a Vida": "order_bump",
+      [COMBO_REAL]: "combo",
+      "Mentoria Vitalícia": "upsell",
+    };
+    expect(z.object({ productTypes: productTypesSchema }).safeParse({ productTypes: corpo }).success)
+      .toBe(true);
+    const out = normalizeProductTypes(corpo);
+    // `principal` continua fora: é o default, e gravá-lo faria o mapa crescer
+    // com informação nula.
+    expect(Object.values(out).sort()).toEqual(["combo", "order_bump", "upsell"]);
+  });
+
+  it("um tipo inventado continua sendo recusado", () => {
+    expect(z.object({ productTypes: productTypesSchema }).safeParse({
+      productTypes: { [COMBO_REAL]: "combo_promocional" },
+    }).success).toBe(false);
   });
 });

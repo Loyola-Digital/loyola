@@ -1215,7 +1215,9 @@ export const funnelSpreadsheets = pgTable(
     productTypes: jsonb("product_types")
       .notNull()
       .default({})
-      .$type<Record<string, "principal" | "order_bump" | "upsell">>(),
+      // Story 18.70: `combo` faltava aqui, na rota e no zod. A 29.61 levou o
+      // Combo ao diálogo e ao cálculo do Perpétuo e parou antes da persistência.
+      .$type<Record<string, "principal" | "order_bump" | "combo" | "upsell">>(),
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
