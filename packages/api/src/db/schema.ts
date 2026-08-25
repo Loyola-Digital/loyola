@@ -1632,17 +1632,6 @@ export const memberkitConnections = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     apiKeyEncrypted: text("api_key_encrypted").notNull(),
     apiKeyIv: text("api_key_iv").notNull(),
-    /**
-     * Login opcional — usado SÓ para listar os sites da instância.
-     *
-     * A Sites API (/api/v1/sites) não existe no Community Edition: a rota dá
-     * 404 HTML, porque o Plausible a restringiu à Enterprise. O endpoint do
-     * próprio painel (/api/sites) existe, mas só aceita sessão. Sem isto, o
-     * seletor de site vira campo de digitação livre.
-     */
-    loginEmail: text("login_email"),
-    loginPasswordEncrypted: text("login_password_encrypted"),
-    loginPasswordIv: text("login_password_iv"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1934,16 +1923,15 @@ export const revenuecatConnections = pgTable(
     apiKeyEncrypted: text("api_key_encrypted").notNull(),
     apiKeyIv: text("api_key_iv").notNull(),
     /**
-     * Login opcional — usado SÓ para listar os sites da instância.
+     * ⚠️ Sem `login_email`/`login_password_*` — eles são do Plausible.
      *
-     * A Sites API (/api/v1/sites) não existe no Community Edition: a rota dá
-     * 404 HTML, porque o Plausible a restringiu à Enterprise. O endpoint do
-     * próprio painel (/api/sites) existe, mas só aceita sessão. Sem isto, o
-     * seletor de site vira campo de digitação livre.
+     * Story 42.9: o bloco da 0108 foi colado aqui e em `memberkitConnections`
+     * além do `plausibleConfig`, com o comentário sobre a Sites API junto. A
+     * migration criou as colunas SÓ em `plausible_config`, então o Drizzle
+     * passou a gerar `SELECT … login_email …` para uma tabela que não a tem —
+     * e toda rota que lesse esta tabela devolvia 500. Foi assim que o overview
+     * do RevenueCat apareceu zerado na tela do Lyrio.
      */
-    loginEmail: text("login_email"),
-    loginPasswordEncrypted: text("login_password_encrypted"),
-    loginPasswordIv: text("login_password_iv"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
