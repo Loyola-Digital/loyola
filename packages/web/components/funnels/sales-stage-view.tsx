@@ -27,6 +27,7 @@ import { ApplicationBandsCard } from "./application-bands-card";
 import { BuyersOriginCard } from "./buyers-origin-card";
 import { LeadJourneyPanel } from "./lead-journey-panel";
 import { ManualPixSalesSection } from "./manual-pix-sales-section";
+import { SalesStagePublicosSection } from "./sales-stage-publicos-section";
 import { ManualSaleDialog } from "./manual-sale-dialog";
 import { useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { toast } from "sonner";
@@ -264,6 +265,15 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
             title="TMB"
             days={days}
             adsetsMap={adsetsMap}
+          />
+          {/* Story 18.70 (AC4-AC6) — AOV por público e Combo. Fica depois das
+              seções por planilha e antes das vendas manuais porque responde
+              "quem comprou", não "o que foi vendido". */}
+          <SalesStagePublicosSection
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+            days={days}
           />
           <ManualPixSalesSection
             projectId={projectId}
