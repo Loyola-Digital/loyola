@@ -24,13 +24,19 @@ export interface CamadasDeVideoResponse {
   fracos: CriativoAvaliado[];
 }
 
-export function useCamadasDeVideo(projectId: string | null) {
+/**
+ * @param campaignIds  as campanhas da etapa. Sem elas, a resposta cobre o
+ *   PROJETO inteiro — o que faria o campeão de uma etapa aparecer como campeão
+ *   de outra.
+ */
+export function useCamadasDeVideo(projectId: string | null, campaignIds?: string[]) {
   const apiClient = useApiClient();
+  const ids = campaignIds && campaignIds.length > 0 ? [...campaignIds].sort() : null;
   return useQuery({
-    queryKey: ["camadas-de-video", projectId],
+    queryKey: ["camadas-de-video", projectId, ids?.join(",") ?? ""],
     queryFn: () =>
       apiClient<CamadasDeVideoResponse>(
-        `/api/traffic/analytics/${projectId}/camadas-de-video`,
+        `/api/traffic/analytics/${projectId}/camadas-de-video${ids ? `?campaignIds=${ids.join(",")}` : ""}`,
       ),
     enabled: !!projectId,
     staleTime: 10 * 60 * 1000,
