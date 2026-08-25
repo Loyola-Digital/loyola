@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, TrendingUp, Youtube, Pencil, Trash2, CreditCard, Gift, DollarSign, Video, CalendarDays, FileText, Handshake, Ticket } from "lucide-react";
+import { MoreHorizontal, TrendingUp, Youtube, Pencil, Trash2, CreditCard, Gift, DollarSign, Video, CalendarDays, FileText, Handshake, Ticket, Map } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -99,13 +99,21 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
                   : stage.stageType === "event_capture" ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
                   : stage.stageType === "debriefing" ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
                   : stage.stageType === "comercial" ? "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400"
+                  : stage.stageType === "mapa" ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
                   : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                 }`}>
-                  {stage.stageType === "paid" ? "Paga" : stage.stageType === "sales" ? "Vendas" : stage.stageType === "cpl" ? "CPL" : stage.stageType === "event" ? "Evento Presencial" : stage.stageType === "event_capture" ? "Captação de Evento" : stage.stageType === "debriefing" ? "Debriefing" : stage.stageType === "comercial" ? "Comercial" : "Gratuita"}
+                  {stage.stageType === "paid" ? "Paga" : stage.stageType === "sales" ? "Vendas" : stage.stageType === "cpl" ? "CPL" : stage.stageType === "event" ? "Evento Presencial" : stage.stageType === "event_capture" ? "Captação de Evento" : stage.stageType === "debriefing" ? "Debriefing" : stage.stageType === "comercial" ? "Comercial" : stage.stageType === "mapa" ? "Mapa" : "Gratuita"}
                 </span>
               </div>
               <div className="mt-2 space-y-1">
-                {stage.stageType === "sales" ? (
+                {stage.stageType === "mapa" ? (
+                  // Mapa não tem métrica: o card diz o que a etapa é, em vez de
+                  // cair no texto de captação e prometer número que não existe.
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Map className="h-3 w-3 shrink-0 text-violet-600" />
+                    <span>Desenho do funil</span>
+                  </div>
+                ) : stage.stageType === "sales" ? (
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <DollarSign className="h-3 w-3 shrink-0 text-emerald-600" />
                     <span>Etapa de vendas</span>
@@ -179,7 +187,12 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
                     <Pencil className="h-4 w-4 mr-2" />
                     Renomear
                   </DropdownMenuItem>
-                  {stage.stageType !== "sales" && stage.stageType !== "cpl" && stage.stageType !== "event" && stage.stageType !== "event_capture" && stage.stageType !== "debriefing" && stage.stageType !== "comercial" && (
+                  {/* O atalho Paga/Gratuita só vale para etapas de captação.
+                      Numa etapa de Mapa (ou Vendas, CPL, Evento…) ele ofereceria
+                      uma troca que destrói o sentido da etapa. */}
+                  {!["sales", "cpl", "event", "event_capture", "debriefing", "comercial", "mapa"].includes(
+                    stage.stageType as string,
+                  ) && (
                     <DropdownMenuItem
                       onClick={() => {
                         const newType = stage.stageType === "paid" ? "free" : "paid";
