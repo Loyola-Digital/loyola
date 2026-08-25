@@ -62,9 +62,22 @@ const upsertSchema = z.object({
 });
 
 // Story 29.49 — classificação de produto. Ausente do mapa = `principal`.
-const PRODUCT_TYPES = ["principal", "order_bump", "upsell"] as const;
+/**
+ * Os papéis que a rota aceita.
+ *
+ * Story 18.70: `combo` faltava aqui. A 29.61 adicionou o Combo ao diálogo do
+ * Perpétuo e ao cálculo (`perpetual-sales-data.ts:395` já o esperava), mas não
+ * a esta lista — então o zod rejeitava o corpo inteiro com 400 e a tela dizia
+ * "Erro ao salvar a classificação", sem dizer qual produto era o problema.
+ *
+ * Sintoma em produção (`pps1`): o gestor conseguia salvar marcando o
+ * "Combo 2 em 1" como `order_bump`, e só falhava ao escolher `combo` — o valor
+ * certo. A classificação errada passava; a certa era recusada.
+ */
+const PRODUCT_TYPES = ["principal", "order_bump", "combo", "upsell"] as const;
 type ProductType = (typeof PRODUCT_TYPES)[number];
-const productTypesSchema = z.record(z.string().min(1), z.enum(PRODUCT_TYPES));
+/** Exportado para teste: é a fronteira que recusava o `combo` (Story 18.70). */
+export const productTypesSchema = z.record(z.string().min(1), z.enum(PRODUCT_TYPES));
 
 /**
  * Agrupa os produtos de uma planilha lida e aplica a classificação salva.
@@ -113,7 +126,12 @@ export function normalizeProductTypes(input: Record<string, string>): Record<str
   const out: Record<string, ProductType> = {};
   for (const [name, tipo] of Object.entries(input)) {
     if (tipo === "principal") continue;
-    if (tipo === "order_bump" || tipo === "upsell") out[productKey(name)] = tipo;
+    // Story 18.70: `combo` entra junto. Sem ele nesta linha o valor seria
+    // aceito pelo zod e descartado aqui — pior que o 400, porque a tela diria
+    // "Produtos classificados" e o banco não guardaria nada.
+    if (tipo === "order_bump" || tipo === "combo" || tipo === "upsell") {
+      out[productKey(name)] = tipo;
+    }
   }
   return out;
 }

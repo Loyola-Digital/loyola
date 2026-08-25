@@ -122,9 +122,21 @@ export function PerpetualProductTypesDialog({ projectId, funnelId, open, onOpenC
              o gestor procurar na planilha um problema que está na configuração. */
           <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
             <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+            {/* Story 18.70 — "abra o wizard da planilha" mandou o gestor para a
+                tela errada. O funil costuma ter DUAS planilhas na mesma aba: a
+                de Vendas (`sales`, CRUD genérico) e a do Perpétuo. Só a segunda
+                tem o campo Produto — o editor genérico nem o oferece. */}
             <p>
-              A coluna <strong>Produto</strong> não está mapeada. Abra o wizard da planilha,
-              mapeie o campo &quot;Produto&quot; e volte aqui para classificar.
+              A coluna <strong>Produto</strong> não está mapeada nesta planilha.
+              Feche este diálogo e clique no <strong>botão com o nome da planilha
+              do Perpétuo</strong>, aqui mesmo no dashboard, para mapear o campo
+              &quot;Produto&quot;.
+              <br />
+              <span className="text-[11px] text-muted-foreground">
+                Não é pela aba <strong>Planilhas</strong> do funil: o editor de lá
+                não tem o campo Produto, e é outra planilha — mesmo quando aponta
+                para a mesma aba.
+              </span>
             </p>
           </div>
         ) : produtos.length === 0 ? (
