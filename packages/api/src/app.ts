@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyError } from "fastify";
 import { clerkPlugin } from "@clerk/fastify";
 import "./types/index.js";
 
@@ -109,6 +109,20 @@ import instaScanWorkerPlugin from "./plugins/insta-scan-worker.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
+
+  // Erro nao tratado nunca vaza SQL: o DrizzleQueryError traz "Failed query: <sql>"
+  // na mensagem e os parametros (tokens cifrados, emails) em `cause.parameters`.
+  // Loga o erro inteiro no servidor e devolve so o essencial ao cliente.
+  app.setErrorHandler((erro: FastifyError, request, reply) => {
+    const status = erro.statusCode && erro.statusCode >= 400 ? erro.statusCode : 500;
+
+    if (status >= 500) {
+      request.log.error({ err: erro }, "erro nao tratado");
+      return reply.code(status).send({ error: "Erro interno do servidor" });
+    }
+
+    return reply.code(status).send({ error: erro.message });
+  });
 
   // 1. Config (first — everything depends on env)
   await app.register(envPlugin);

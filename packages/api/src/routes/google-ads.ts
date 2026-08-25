@@ -7,6 +7,7 @@ import {
   projects,
 } from "../db/schema.js";
 import { encrypt } from "../services/encryption.js";
+import { violaUnicidade } from "../utils/db-errors.js";
 import {
   validateGoogleAdsAccount,
   normalizeCustomerId,
@@ -95,11 +96,8 @@ export default fp(async function googleAdsRoutes(fastify) {
 
       return reply.code(201).send(account);
     } catch (err: unknown) {
-      if (
-        err instanceof Error &&
-        err.message.includes("uq_google_ads_customer_id")
-      ) {
-        return reply.code(409).send({ error: "Conta ja cadastrada" });
+      if (violaUnicidade(err, "uq_google_ads_customer_id")) {
+        return reply.code(409).send({ error: "Essa conta do Google Ads ja esta conectada — veja a lista abaixo." });
       }
       throw err;
     }
@@ -212,10 +210,7 @@ export default fp(async function googleAdsRoutes(fastify) {
         });
         return { success: true };
       } catch (err: unknown) {
-        if (
-          err instanceof Error &&
-          err.message.includes("uq_google_ads_account_project")
-        ) {
+        if (violaUnicidade(err, "uq_google_ads_account_project")) {
           return reply.code(409).send({ error: "Projeto ja vinculado" });
         }
         throw err;
@@ -369,8 +364,8 @@ export default fp(async function googleAdsRoutes(fastify) {
 
       return reply.code(201).send(account);
     } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes("uq_google_ads_customer_id")) {
-        return reply.code(409).send({ error: "Conta ja cadastrada" });
+      if (violaUnicidade(err, "uq_google_ads_customer_id")) {
+        return reply.code(409).send({ error: "Essa conta do Google Ads ja esta conectada — veja a lista abaixo." });
       }
       throw err;
     }

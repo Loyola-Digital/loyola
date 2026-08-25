@@ -3,6 +3,7 @@ import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { youtubeChannels, youtubeChannelProjects, projects } from "../db/schema.js";
 import { encrypt } from "../services/encryption.js";
+import { violaUnicidade } from "../utils/db-errors.js";
 import {
   getYouTubeOAuthUrl,
   exchangeYouTubeCode,
@@ -65,7 +66,7 @@ export default fp(async function youtubeChannelRoutes(fastify) {
       }).returning();
       return reply.code(201).send(channel);
     } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes("uq_youtube_channel_id")) {
+      if (violaUnicidade(err, "uq_youtube_channel_id")) {
         return reply.code(409).send({ error: "Canal ja cadastrado" });
       }
       throw err;
@@ -123,7 +124,7 @@ export default fp(async function youtubeChannelRoutes(fastify) {
       await fastify.db.insert(youtubeChannelProjects).values({ channelId: p.data.id, projectId: p.data.projectId });
       return { success: true };
     } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes("uq_youtube_channel_project")) return reply.code(409).send({ error: "Projeto ja vinculado" });
+      if (violaUnicidade(err, "uq_youtube_channel_project")) return reply.code(409).send({ error: "Projeto ja vinculado" });
       throw err;
     }
   });
