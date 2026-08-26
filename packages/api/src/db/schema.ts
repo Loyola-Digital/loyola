@@ -3340,10 +3340,9 @@ export const plausibleProjectSites = pgTable(
 // client_id/secret ficam junto porque o refresh exige os dois.
 export const sendflowConnections = pgTable("sendflow_connections", {
   id: uuid("id").defaultRandom().primaryKey(),
-  projectId: uuid("project_id")
-    .notNull()
-    .unique()
-    .references(() => projects.id, { onDelete: "cascade" }),
+  /** NULL = conexão GLOBAL, vale pra todos os projetos. O SendFlow é uma conta
+   *  só para todos os experts; um projeto pode ter linha própria como override. */
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
   clientId: varchar("client_id", { length: 255 }).notNull(),
   clientSecretEncrypted: text("client_secret_encrypted").notNull(),
   clientSecretIv: varchar("client_secret_iv", { length: 64 }).notNull(),

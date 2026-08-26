@@ -186,7 +186,29 @@ export class SendflowSession {
     return this.enfileirar(() => this.chamarAgora<T>(name, args));
   }
 
+  /**
+   * O servidor DERRUBA a sessão sozinho — reproduzido: uma sequência de
+   * chamadas passa, e a seguinte volta 400 "A valid MCP session is required"
+   * sem nada ter mudado do nosso lado. Não é transitório, e não dá pra prever
+   * quando. Então, ao perder a sessão, refazemos o handshake e repetimos UMA
+   * vez, em silêncio: quem chama não deveria precisar saber disso.
+   */
   private async chamarAgora<T>(name: string, args: Record<string, unknown>): Promise<T> {
+    try {
+      return await this.tentar<T>(name, args);
+    } catch (err) {
+      const perdeuSessao =
+        err instanceof SendflowError &&
+        err.status === 400 &&
+        /valid MCP session/i.test(err.message);
+      if (!perdeuSessao) throw err;
+      this.sessionId = null;
+      await this.conectar();
+      return this.tentar<T>(name, args);
+    }
+  }
+
+  private async tentar<T>(name: string, args: Record<string, unknown>): Promise<T> {
     const r = (await this.post({
       jsonrpc: "2.0",
       id: Math.floor(Math.random() * 1e6),
@@ -277,19 +299,41 @@ export async function analyticsDaCampanha(s: SendflowSession, releaseId: string)
   return (await s.chamar<SendflowAnalytics>("get-analytics", { releaseId })) ?? {};
 }
 
+/**
+ * Histórico de ações da campanha, PAGINADO.
+ *
+ * `list-actions` tem teto de 100 por página. Pedir 100 e parar truncaria o
+ * histórico em silêncio — o log ficaria sem os disparos mais antigos e ninguém
+ * saberia. Aqui seguimos o `nextCursor` até acabar, com um teto de páginas como
+ * proteção contra laço infinito se o servidor devolver cursor repetido.
+ */
 export async function disparosDaCampanha(
   s: SendflowSession,
   releaseId: string,
-  limite = 50,
-): Promise<SendflowAction[]> {
-  const r = await s.chamar("list-actions", {
-    releaseId,
-    // `rootOnly` esconde subações; hoje não há nenhuma, mas se passar a haver o
-    // log não deve virar uma linha por pedaço do mesmo disparo.
-    rootOnly: true,
-    limit: Math.min(100, Math.max(1, limite)),
-  });
-  return comoLista<SendflowAction>(r);
+  maxPaginas = 10,
+): Promise<{ acoes: SendflowAction[]; truncado: boolean }> {
+  const acoes: SendflowAction[] = [];
+  let cursor: string | null = null;
+  let paginas = 0;
+
+  do {
+    const args: Record<string, unknown> = {
+      releaseId,
+      // `rootOnly` esconde subações; hoje não há nenhuma, mas se passar a haver
+      // o log não deve virar uma linha por pedaço do mesmo disparo.
+      rootOnly: true,
+      limit: 100,
+    };
+    if (cursor) args.cursor = cursor;
+    const r = (await s.chamar("list-actions", args)) as { nextCursor?: string | null };
+    acoes.push(...comoLista<SendflowAction>(r));
+    const proximo = r?.nextCursor ?? null;
+    // Cursor repetido = servidor em laço; parar é melhor que girar pra sempre.
+    cursor = proximo && proximo !== cursor ? proximo : null;
+    paginas++;
+  } while (cursor && paginas < maxPaginas);
+
+  return { acoes, truncado: !!cursor };
 }
 
 /** "15072026" → "2026-07-15". Chave das séries diárias é DDMMYYYY. */
