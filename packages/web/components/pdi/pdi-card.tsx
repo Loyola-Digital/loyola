@@ -1,97 +1,369 @@
 "use client";
 
 /**
- * O PDI desenhado com os componentes do app.
+ * A carta de PDI, desenhada com os componentes do app.
  *
- * Substitui o iframe quando o documento entrega os dados (o normal). Ganhos que
- * o embed não dava: o texto é selecionável e pesquisável pelo Ctrl+F da página,
- * a carta acompanha o tema e a largura da tela em vez de rolar dentro de uma
- * caixa, e nada de terceiro roda no navegador de quem abre.
+ * É uma reprodução do documento original, não uma releitura: mesmas medidas
+ * (carta de 480px, painéis #1A1A1A sobre #111111), mesmo radar de cinco eixos,
+ * mesmos rótulos e a mesma ordem de seções. Quem já recebeu a sua tem que
+ * reconhecer o papel.
  *
- * O amarelo sobre escuro é mantido de propósito: é a identidade da carta, e
- * quem já recebeu a sua reconhece o documento.
+ * O que muda é só o meio: sai o iframe com uma página inteira dentro, entra
+ * markup do próprio app — texto selecionável, achável pelo Ctrl+F da página,
+ * e nenhum HTML de terceiro rodando no navegador de quem abre.
  */
 
-import { Award, Check, GraduationCap, Square, Target, TrendingUp } from "lucide-react";
-import type { PdiDados } from "@/lib/utils/pdi-dados";
+import { Inter } from "next/font/google";
+import type { AtributoDoPdi, PdiDados } from "@/lib/utils/pdi-dados";
+
+/**
+ * A fonte do documento original.
+ *
+ * Sem ela a carta fica parecida, não igual: a métrica do Inter é mais estreita
+ * que a da fonte do sistema, e o texto quebra em outros pontos — o lema saía em
+ * uma linha onde o documento usa duas. O Next serve o arquivo do próprio
+ * domínio, então não há requisição ao Google em runtime.
+ */
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  style: ["normal", "italic"],
+  display: "swap",
+});
 
 const AMARELO = "#F5C800";
+const PRETO = "#111111";
+const PAINEL = "#1A1A1A";
+const LINHA = "#333333";
+const CINZA = "#888888";
 
-function Secao({
-  titulo,
-  icone,
-  children,
-}: {
-  titulo: string;
-  icone?: React.ReactNode;
-  children: React.ReactNode;
-}) {
+/** Usada no SVG, que não herda a classe da fonte pelo `font-family` do texto. */
+const FONTE =
+  "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+
+// ============================================================
+// Radar
+// ============================================================
+
+/**
+ * Quebra o rótulo em duas linhas pelo ponto mais equilibrado.
+ *
+ * Mesma regra do documento: até 14 caracteres cabe numa linha; acima disso,
+ * procura o corte que deixa as duas metades mais parecidas — "COMUNICAÇÃO DE
+ * TAREFAS" quebrado no meio fica melhor que quebrado na primeira palavra.
+ */
+function quebrarRotulo(rotulo: string): [string, string?] {
+  if (rotulo.length <= 14) return [rotulo];
+  const palavras = rotulo.split(" ");
+  if (palavras.length === 1) return [rotulo];
+  let melhor: { a: string; b: string; nota: number } | null = null;
+  for (let i = 1; i < palavras.length; i += 1) {
+    const a = palavras.slice(0, i).join(" ");
+    const b = palavras.slice(i).join(" ");
+    const nota = Math.max(a.length, b.length);
+    if (!melhor || nota < melhor.nota) melhor = { a, b, nota };
+  }
+  return [melhor!.a, melhor!.b];
+}
+
+const CX = 200;
+const CY = 150;
+const RAIO = 70;
+const RAIO_ROTULO = RAIO + 24;
+const NIVEIS = 5;
+
+function RadarDeAtributos({ atributos }: { atributos: AtributoDoPdi[] }) {
+  const n = atributos.length;
+  const anguloDe = (i: number) => (Math.PI * 2 * i) / n - Math.PI / 2;
+  const pontoDe = (i: number, r: number): [number, number] => {
+    const a = anguloDe(i);
+    return [CX + r * Math.cos(a), CY + r * Math.sin(a)];
+  };
+
+  const teias = Array.from({ length: NIVEIS }, (_, l) => {
+    const r = (RAIO * (l + 1)) / NIVEIS;
+    return Array.from({ length: n }, (_, i) => pontoDe(i, r).join(",")).join(" ");
+  });
+  const dados = atributos.map((a, i) => pontoDe(i, RAIO * (a.value / 10)));
+
   return (
-    <section className="space-y-2">
-      <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-400">
-        {icone}
-        {titulo}
-      </h3>
-      {children}
-    </section>
+    <svg
+      viewBox="0 0 400 310"
+      className="block h-auto w-full max-w-[400px]"
+      role="img"
+      aria-label={`Radar: ${atributos.map((a) => `${a.label} ${a.value} de 10`).join(", ")}`}
+    >
+      {teias.map((pts, i) => (
+        <polygon key={i} points={pts} fill="none" stroke={LINHA} strokeWidth={1} />
+      ))}
+      {atributos.map((_, i) => {
+        const [x, y] = pontoDe(i, RAIO);
+        return <line key={i} x1={CX} y1={CY} x2={x} y2={y} stroke={LINHA} strokeWidth={1} />;
+      })}
+      <polygon
+        points={dados.map((p) => p.join(",")).join(" ")}
+        fill={AMARELO}
+        fillOpacity={0.3}
+        stroke={AMARELO}
+        strokeWidth={2}
+      />
+      {dados.map((p, i) => (
+        <circle key={i} cx={p[0]} cy={p[1]} r={3.5} fill={AMARELO} />
+      ))}
+      {atributos.map((a, i) => {
+        const [lx, ly] = pontoDe(i, RAIO_ROTULO);
+        // Rótulo à esquerda do centro ancora pela direita (e vice-versa), senão
+        // o texto invade o desenho.
+        const ancora = lx < CX - 15 ? "end" : lx > CX + 15 ? "start" : "middle";
+        const [l1, l2] = quebrarRotulo(a.label);
+        return (
+          <text
+            key={a.label}
+            x={lx}
+            y={ly}
+            textAnchor={ancora}
+            fontFamily={FONTE}
+            fontSize={10}
+            fontWeight={700}
+            fill="#FFFFFF"
+          >
+            <tspan x={lx} dy={0}>
+              {l1}
+            </tspan>
+            {l2 && (
+              <tspan x={lx} dy={11}>
+                {l2}
+              </tspan>
+            )}
+          </text>
+        );
+      })}
+    </svg>
   );
 }
 
-/** Item com quadradinho — o mesmo desenho das listas do documento original. */
-function Linha({ texto }: { texto: string }) {
+// ============================================================
+// Peças da carta
+// ============================================================
+
+function Rotulo({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-2.5 rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2">
-      <span
-        className="mt-1 h-2 w-2 shrink-0 rounded-[2px]"
-        style={{ background: AMARELO }}
-        aria-hidden
-      />
-      <span className="text-[13px] leading-snug text-neutral-200">{texto}</span>
+    <span
+      className="mb-2.5 block text-xs font-bold uppercase"
+      style={{ color: AMARELO, letterSpacing: "2px" }}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** Item com o quadradinho amarelo — pontos fortes e conquistas. */
+function LinhaDaPilha({ texto }: { texto: string }) {
+  return (
+    <div
+      className="flex items-center gap-2.5 rounded-md px-3.5 py-2.5"
+      style={{ background: PAINEL }}
+    >
+      <span className="h-1.5 w-1.5 shrink-0" style={{ background: AMARELO }} aria-hidden />
+      <span className="text-sm leading-[1.35] text-white">{texto}</span>
     </div>
   );
 }
 
+function Regua() {
+  return <hr className="border-0" style={{ height: 1, background: LINHA }} />;
+}
+
+// ============================================================
+// Carta
+// ============================================================
+
 export function PdiCard({ dados }: { dados: PdiDados }) {
   return (
-    <article className="overflow-hidden rounded-xl border border-white/10 bg-[#111111] text-white">
-      {/* Cabeçalho */}
-      <header className="border-b border-white/10 px-5 py-5 sm:px-7 sm:py-6">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.24em]" style={{ color: AMARELO }}>
-          {dados.eyebrow}
-        </p>
-        <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-2xl font-bold leading-tight sm:text-3xl">{dados.name}</h2>
-            <p className="mt-0.5 text-[13px] text-neutral-400">
-              {[dados.role, dados.company].filter(Boolean).join(" · ")}
-            </p>
-          </div>
-          {dados.levelBadge && (
-            <span
-              className="shrink-0 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-black"
-              style={{ background: AMARELO }}
+    <div className="flex justify-center">
+      <article
+        className={`${inter.className} flex w-full max-w-[480px] flex-col gap-5 rounded-2xl p-5 sm:p-7`}
+        style={{
+          background: PRETO,
+          color: "#FFFFFF",
+          boxShadow: "0 30px 60px -20px rgba(0,0,0,0.45), 0 2px 10px rgba(0,0,0,0.2)",
+        }}
+      >
+        {/* Cabeçalho: retrato + identificação */}
+        <header className="grid grid-cols-[100px_1fr] gap-5">
+          {dados.foto ? (
+            <div
+              className="h-[100px] w-[100px] overflow-hidden rounded-full p-0.5"
+              style={{ background: AMARELO, border: `3px solid ${AMARELO}` }}
             >
-              {dados.levelBadge}
-            </span>
+              {/* <img> puro, não next/image: a origem é um data: URI embutido
+                  no documento, e não há o que o otimizador otimize. Sem
+                  eslint-disable de propósito: a regra @next/next/* não está
+                  registrada nesta config, e desabilitar regra inexistente é
+                  erro de lint — o gate que derruba o build na Vercel. */}
+              <img
+                src={dados.foto}
+                alt={dados.name}
+                className="block h-full w-full rounded-full object-cover"
+              />
+            </div>
+          ) : (
+            // Sem retrato, a inicial ocupa o lugar — o grid de duas colunas
+            // desmontaria se a primeira ficasse vazia.
+            <div
+              className="flex h-[100px] w-[100px] items-center justify-center rounded-full text-3xl font-extrabold"
+              style={{ background: AMARELO, color: PRETO }}
+              aria-hidden
+            >
+              {dados.name.charAt(0).toUpperCase()}
+            </div>
           )}
-        </div>
+
+          <div className="flex min-w-0 flex-col">
+            <span
+              className="text-[11px] font-semibold uppercase"
+              style={{ color: CINZA, letterSpacing: "0.14em" }}
+            >
+              {dados.eyebrow}
+            </span>
+            {dados.levelBadge && (
+              <span
+                className="mt-2 inline-flex self-start rounded-full px-2.5 py-1 text-[11px] font-bold"
+                style={{ background: AMARELO, color: PRETO }}
+              >
+                {dados.levelBadge}
+              </span>
+            )}
+            <h2
+              className="mt-2 text-[32px] font-extrabold leading-[1.05]"
+              style={{ letterSpacing: "-0.5px" }}
+            >
+              {dados.name}
+            </h2>
+            {dados.role && (
+              <p className="mt-1 text-sm font-bold" style={{ color: AMARELO }}>
+                {dados.role}
+              </p>
+            )}
+            {dados.company && (
+              <p className="mt-[3px] text-[11px]" style={{ color: CINZA }}>
+                {dados.company}
+              </p>
+            )}
+          </div>
+        </header>
+
+        <Regua />
+
         {dados.motto && (
-          <p className="mt-4 border-l-2 pl-3 text-[13px] italic leading-relaxed text-neutral-300" style={{ borderColor: AMARELO }}>
+          <p
+            className="rounded-lg px-4 py-3 text-[13px] italic leading-[1.4]"
+            style={{ background: PAINEL, borderLeft: `3px solid ${AMARELO}` }}
+          >
             “{dados.motto}”
           </p>
         )}
-      </header>
 
-      <div className="space-y-7 px-5 py-6 sm:px-7">
-        {/* Ciclo */}
-        {(dados.cycle.label || dados.cycle.percent > 0) && (
-          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-[13px] font-medium">{dados.cycle.label}</p>
-              <p className="text-[11px] text-neutral-400">{dados.cycle.monthOf}</p>
+        <div>
+          <Rotulo>Características Principais</Rotulo>
+          <div
+            className="flex flex-col items-center rounded-xl px-2 pb-1.5 pt-3"
+            style={{ background: PAINEL }}
+          >
+            <RadarDeAtributos atributos={dados.attributes} />
+            <p className="mt-0.5 text-center text-[10px] italic" style={{ color: AMARELO }}>
+              Posicionamento em desenvolvimento ↑
+            </p>
+          </div>
+        </div>
+
+        {dados.strengths.length > 0 && (
+          <div>
+            <Rotulo>✦ Pontos Fortes</Rotulo>
+            <div className="flex flex-col gap-1.5">
+              {dados.strengths.map((t) => (
+                <LinhaDaPilha key={t} texto={t} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {dados.achievements.length > 0 && (
+          <div>
+            <Rotulo>◆ Conquistas do Mês</Rotulo>
+            <div className="flex flex-col gap-1.5">
+              {dados.achievements.map((t) => (
+                <LinhaDaPilha key={t} texto={t} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {(dados.improvements.length > 0 || dados.studies.length > 0) && (
+          <div className="grid grid-cols-2 gap-2.5">
+            {dados.improvements.length > 0 && (
+              <div className="rounded-lg p-3" style={{ background: PAINEL }}>
+                <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold text-white">
+                  <span style={{ color: AMARELO }}>→</span> PONTOS DE MELHORIA
+                </div>
+                <ul className="flex flex-col gap-1.5">
+                  {dados.improvements.map((t) => (
+                    <li
+                      key={t}
+                      className="relative pl-3.5 text-[13px] leading-[1.35] text-white"
+                    >
+                      <span
+                        className="absolute left-0 top-0 text-[11px] font-bold"
+                        style={{ color: AMARELO }}
+                        aria-hidden
+                      >
+                        →
+                      </span>
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {dados.studies.length > 0 && (
+              <div className="rounded-lg p-3" style={{ background: PAINEL }}>
+                <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold text-white">
+                  □ ESTUDOS
+                </div>
+                <ul className="flex flex-col gap-1.5">
+                  {dados.studies.map((t) => (
+                    <li
+                      key={t}
+                      className="relative pl-3.5 text-[13px] leading-[1.35] text-white"
+                    >
+                      <span
+                        className="absolute left-0 top-[5px] h-[5px] w-[5px]"
+                        style={{ background: AMARELO }}
+                        aria-hidden
+                      />
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* O ciclo mora dentro dos objetivos, como no documento: a barra é o
+            andamento dos 90 dias, não uma seção separada. */}
+        {(dados.goals.length > 0 || dados.cycle.label) && (
+          <div>
+            <Rotulo>Objetivos · Próximos 90 Dias</Rotulo>
+            <div className="mb-2.5 flex items-center justify-between gap-2">
+              <span className="text-[13px] font-medium text-white">{dados.cycle.label}</span>
+              <span className="shrink-0 text-[10px]" style={{ color: CINZA }}>
+                {dados.cycle.monthOf}
+              </span>
             </div>
             <div
-              className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10"
+              className="mb-3 h-1.5 overflow-hidden rounded-full"
+              style={{ background: LINHA }}
               role="progressbar"
               aria-valuenow={dados.cycle.percent}
               aria-valuemin={0}
@@ -99,111 +371,48 @@ export function PdiCard({ dados }: { dados: PdiDados }) {
               aria-label={dados.cycle.label || "Progresso do ciclo"}
             >
               <div
-                className="h-full rounded-full transition-all"
+                className="h-full rounded-full"
                 style={{ width: `${dados.cycle.percent}%`, background: AMARELO }}
               />
             </div>
-          </div>
-        )}
-
-        {/* Características principais */}
-        <Secao titulo="Características Principais" icone={<TrendingUp className="h-3.5 w-3.5" />}>
-          <div className="space-y-2.5">
-            {dados.attributes.map((a) => (
-              <div key={a.label}>
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-[11px] uppercase tracking-wide text-neutral-300">{a.label}</span>
-                  <span className="shrink-0 font-mono text-[11px] tabular-nums" style={{ color: AMARELO }}>
-                    {a.value}/10
-                  </span>
-                </div>
-                <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
-                  <div
-                    className="h-full rounded-full"
-                    style={{ width: `${a.value * 10}%`, background: AMARELO }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </Secao>
-
-        {dados.strengths.length > 0 && (
-          <Secao titulo="Pontos Fortes" icone={<Award className="h-3.5 w-3.5" />}>
-            <div className="space-y-1.5">
-              {dados.strengths.map((t) => (
-                <Linha key={t} texto={t} />
-              ))}
-            </div>
-          </Secao>
-        )}
-
-        {dados.achievements.length > 0 && (
-          <Secao titulo="Conquistas do Mês" icone={<Check className="h-3.5 w-3.5" />}>
-            <div className="space-y-1.5">
-              {dados.achievements.map((t) => (
-                <Linha key={t} texto={t} />
-              ))}
-            </div>
-          </Secao>
-        )}
-
-        {/* Melhoria e estudos lado a lado, como no documento — e empilhados no
-            celular, que é onde o embed antigo obrigava a rolar de lado. */}
-        {(dados.improvements.length > 0 || dados.studies.length > 0) && (
-          <div className="grid gap-5 sm:grid-cols-2">
-            {dados.improvements.length > 0 && (
-              <Secao titulo="Pontos de Melhoria" icone={<Target className="h-3.5 w-3.5" />}>
-                <ul className="space-y-1.5">
-                  {dados.improvements.map((t) => (
-                    <li key={t} className="flex gap-2 text-[13px] leading-snug text-neutral-300">
-                      <span style={{ color: AMARELO }}>→</span>
-                      {t}
-                    </li>
-                  ))}
-                </ul>
-              </Secao>
-            )}
-            {dados.studies.length > 0 && (
-              <Secao titulo="Estudos" icone={<GraduationCap className="h-3.5 w-3.5" />}>
-                <ul className="space-y-1.5">
-                  {dados.studies.map((t) => (
-                    <li key={t} className="flex gap-2 text-[13px] leading-snug text-neutral-300">
-                      <Square className="mt-1 h-2.5 w-2.5 shrink-0" style={{ color: AMARELO }} />
-                      {t}
-                    </li>
-                  ))}
-                </ul>
-              </Secao>
-            )}
-          </div>
-        )}
-
-        {dados.goals.length > 0 && (
-          <Secao titulo="Objetivos · Próximos 90 Dias">
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-1.5">
               {dados.goals.map((t, i) => (
                 <div
                   key={t}
-                  className="flex items-start gap-3 rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2.5"
+                  className="flex items-center gap-3.5 rounded-md px-3.5 py-2.5"
+                  style={{ background: PAINEL }}
                 >
-                  <span className="font-mono text-[13px] font-bold tabular-nums" style={{ color: AMARELO }}>
+                  <span className="shrink-0 text-sm font-extrabold" style={{ color: AMARELO }}>
                     {String(i + 1).padStart(2, "0")}
                   </span>
-                  <span className="text-[13px] leading-snug text-neutral-200">{t}</span>
+                  <span className="w-px shrink-0 self-stretch" style={{ background: LINHA }} />
+                  <span className="text-sm leading-[1.35] text-white">{t}</span>
                 </div>
               ))}
             </div>
-          </Secao>
+          </div>
         )}
-      </div>
 
-      {(dados.issued || dados.cardNumber) && (
-        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-5 py-3 text-[10px] uppercase tracking-wider text-neutral-500 sm:px-7">
-          <span>{dados.issued}</span>
-          <span>{dados.cardNumber}</span>
+        <Regua />
+
+        <footer className="flex items-center justify-between pt-1">
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-extrabold"
+              style={{ background: AMARELO, color: PRETO, letterSpacing: "-0.03em" }}
+            >
+              KL
+            </span>
+            <span className="text-xs font-bold text-white">LOYOLA DIGITAL</span>
+          </div>
+          <div className="text-right">
+            <p className="text-[11px]" style={{ color: CINZA }}>
+              {dados.issued}
+            </p>
+            <p className="mt-0.5 text-[11px] font-bold text-white">{dados.cardNumber}</p>
+          </div>
         </footer>
-      )}
-    </article>
+      </article>
+    </div>
   );
 }
