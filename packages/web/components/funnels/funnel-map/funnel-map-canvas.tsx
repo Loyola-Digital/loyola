@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Icons from "lucide-react";
 import {
-  Copy, Keyboard, Loader2, Maximize2, Minus, Pencil, Plus, RotateCcw, Save, Trash2, Undo2, Redo2, Unlink, X,
+  ClipboardCopy, Copy, Keyboard, Loader2, Maximize2, Minus, Pencil, Plus, RotateCcw, Save, Trash2, Undo2, Redo2, Unlink, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -87,6 +87,61 @@ function caminhoDaSeta(de: { x: number; y: number }, dePonto: PontoDeConexao, pa
 
 const PONTOS: PontoDeConexao[] = ["top", "right", "bottom", "left"];
 
+/** Distância em px (na escala do desenho) para o alinhamento "colar". */
+const IMA = 6;
+
+export interface Guia { eixo: "x" | "y"; valor: number }
+
+/**
+ * Alinhamento com os blocos vizinhos.
+ *
+ * Compara as três referências que a pessoa enxerga — início, centro e fim — nos
+ * dois eixos, e devolve o ajuste que "cola" mais perto. Só o snap de grade não
+ * resolve isto: dois blocos de larguras diferentes podem estar ambos na grade e
+ * ainda assim visivelmente desalinhados pelo centro.
+ */
+function calcularGuias(
+  movido: { x: number; y: number; width: number; height: number },
+  outros: { x: number; y: number; width: number; height: number }[],
+): { dx: number; dy: number; guias: Guia[] } {
+  const refsX = (b: { x: number; width: number }) => [b.x, b.x + b.width / 2, b.x + b.width];
+  const refsY = (b: { y: number; height: number }) => [b.y, b.y + b.height / 2, b.y + b.height];
+
+  let dx = 0;
+  let dy = 0;
+  let melhorX = IMA;
+  let melhorY = IMA;
+  const guias: Guia[] = [];
+
+  for (const o of outros) {
+    for (const a of refsX(movido)) {
+      for (const b of refsX(o)) {
+        const d = Math.abs(a - b);
+        if (d <= melhorX) { melhorX = d; dx = b - a; }
+      }
+    }
+    for (const a of refsY(movido)) {
+      for (const b of refsY(o)) {
+        const d = Math.abs(a - b);
+        if (d <= melhorY) { melhorY = d; dy = b - a; }
+      }
+    }
+  }
+
+  // Só desenha a guia onde houve encaixe — linha sem colagem confunde.
+  if (melhorX < IMA) {
+    for (const a of refsX({ x: movido.x + dx, width: movido.width })) {
+      for (const o of outros) if (refsX(o).some((b) => Math.abs(a - b) < 0.5)) guias.push({ eixo: "x", valor: a });
+    }
+  }
+  if (melhorY < IMA) {
+    for (const a of refsY({ y: movido.y + dy, height: movido.height })) {
+      for (const o of outros) if (refsY(o).some((b) => Math.abs(a - b) < 0.5)) guias.push({ eixo: "y", valor: a });
+    }
+  }
+  return { dx: melhorX < IMA ? dx : 0, dy: melhorY < IMA ? dy : 0, guias };
+}
+
 interface Props {
   projectId: string;
   funnelId: string;
@@ -100,10 +155,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   const salvar = useSaveFunnelMap(projectId, funnelId, stageId);
 
   const [abas, setAbas] = useState<AbaDoMapa[] | null>(null);
-  // O seletor de abas ainda não tem UI (PR #603): `abaAtiva` é lido em três
-  // pontos e o setter não é chamado em lugar nenhum, o que derruba o lint. Fica
-  // só o valor até a UI existir — quando existir, o setter volta aqui.
-  const [abaAtiva] = useState(0);
+  const [abaAtiva, setAbaAtiva] = useState(0);
   const selecao = useSelecao();
   const historico = useHistorico<AbaDoMapa[]>();
   const zoom = useZoom();
@@ -116,10 +168,14 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   const [previaLigacao, setPreviaLigacao] = useState<{ x: number; y: number } | null>(null);
   const [ajuda, setAjuda] = useState(false);
   const [marquee, setMarquee] = useState<{ ax: number; ay: number; bx: number; by: number } | null>(null);
+  /** Linhas de alinhamento mostradas durante o arrasto. */
+  const [guias, setGuias] = useState<Guia[]>([]);
+  /** Bloco em renomeação no próprio card (não no painel lateral). */
+  const [renomeando, setRenomeando] = useState<{ id: string; valor: string } | null>(null);
   const areaRef = useRef<HTMLDivElement>(null);
-  const nomeRef = useRef<HTMLInputElement>(null);
   const espaco = useRef(false);
   const acabouDeArrastar = useRef(false);
+  const areaTransferencia = useRef<{ boxes: BlocoDoMapa[]; connectors: ConectorDoMapa[] } | null>(null);
 
   // O servidor manda o rascunho das etapas quando ninguém desenhou ainda; a
   // partir daí o estado é local, senão cada refetch desfaria o que está sendo
@@ -200,6 +256,20 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
       // que o ponteiro.
       const dx = (ev.clientX - inicioX) / zoom.valor;
       const dy = (ev.clientY - inicioY) / zoom.valor;
+      // Guia só quando se move UM bloco: com vários, "alinhar" não tem uma
+      // referência única e as linhas viram ruído.
+      let ajusteX = 0;
+      let ajusteY = 0;
+      let guiasAtivas: Guia[] = [];
+      if (origens.size === 1) {
+        const alvo = { x: snap(origens.get(bloco.id)!.x + dx), y: snap(origens.get(bloco.id)!.y + dy), width: bloco.width, height: bloco.height };
+        const r = calcularGuias(alvo, blocos.filter((o) => o.id !== bloco.id));
+        ajusteX = r.dx;
+        ajusteY = r.dy;
+        guiasAtivas = r.guias;
+      }
+      setGuias(guiasAtivas);
+
       alterarAba(
         (a) => ({
           ...a,
@@ -208,7 +278,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
             if (!o) return b;
             // Trava no zero: bloco arrastado para fora à esquerda ou para cima
             // ficaria inalcançável, sem barra de rolagem que chegue lá.
-            return { ...b, x: Math.max(0, snap(o.x + dx)), y: Math.max(0, snap(o.y + dy)) };
+            return {
+              ...b,
+              x: Math.max(0, snap(o.x + dx) + ajusteX),
+              y: Math.max(0, snap(o.y + dy) + ajusteY),
+            };
           }),
         }),
         // Uma entrada de histórico por gesto, gravada no primeiro frame.
@@ -219,9 +293,109 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
     const soltar = () => {
       window.removeEventListener("pointermove", mover);
       window.removeEventListener("pointerup", soltar);
+      setGuias([]);
     };
     window.addEventListener("pointermove", mover);
     window.addEventListener("pointerup", soltar);
+  }
+
+  /**
+   * Copiar/colar.
+   *
+   * A área de transferência é um ref local, não a do sistema: colar aqui tem
+   * que trazer blocos COM as ligações internas, e o clipboard do navegador só
+   * carregaria texto — além de exigir permissão que o navegador nega em parte
+   * dos contextos.
+   */
+  function copiarSelecionados() {
+    const alvos = blocos.filter((b) => selecao.ids.has(b.id));
+    if (alvos.length === 0) return;
+    const ids = new Set(alvos.map((b) => b.id));
+    areaTransferencia.current = {
+      boxes: alvos.map((b) => ({ ...b })),
+      // Só as ligações entre os copiados: uma seta apontando pra fora da
+      // seleção não teria destino do outro lado.
+      connectors: (aba?.connectors ?? []).filter((c) => ids.has(c.fromBox) && ids.has(c.toBox)),
+    };
+    toast.success(alvos.length > 1 ? `${alvos.length} blocos copiados` : "Bloco copiado");
+  }
+
+  function colar() {
+    const area = areaTransferencia.current;
+    if (!area || area.boxes.length === 0) return;
+    const sufixo = `${Date.now().toString(36)}`;
+    // Mapa id-antigo → id-novo pra reapontar as ligações copiadas.
+    const novoId = new Map(area.boxes.map((b, i) => [b.id, `b-${sufixo}-${i}`]));
+    const blocosNovos = area.boxes.map((b) => ({
+      ...b,
+      id: novoId.get(b.id)!,
+      x: snap(b.x + GRADE * 2),
+      y: snap(b.y + GRADE * 2),
+    }));
+    const conectoresNovos = area.connectors.map((c, i) => ({
+      ...c,
+      id: `c-${sufixo}-${i}`,
+      fromBox: novoId.get(c.fromBox)!,
+      toBox: novoId.get(c.toBox)!,
+    }));
+    alterarAba((a) => ({
+      ...a,
+      boxes: [...a.boxes, ...blocosNovos],
+      connectors: [...a.connectors, ...conectoresNovos],
+    }));
+    // Cola sobre si mesmo em sequência: colar duas vezes não empilha no mesmo
+    // ponto, porque a área guarda a posição já deslocada.
+    areaTransferencia.current = { boxes: blocosNovos, connectors: conectoresNovos };
+    selecao.definir(blocosNovos.map((b) => b.id));
+    toast.success(blocosNovos.length > 1 ? `${blocosNovos.length} blocos colados` : "Bloco colado");
+  }
+
+  /**
+   * Redimensionar pelo canto. O bloco tem tamanho mínimo porque abaixo disso o
+   * rótulo e o selo de status não cabem — e um bloco de 10px é impossível de
+   * pegar de volta.
+   */
+  function iniciarResize(e: React.PointerEvent, b: BlocoDoMapa) {
+    e.stopPropagation();
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const w0 = b.width;
+    const h0 = b.height;
+    let primeiro = true;
+    const mover = (ev: PointerEvent) => {
+      const dw = (ev.clientX - x0) / zoom.valor;
+      const dh = (ev.clientY - y0) / zoom.valor;
+      alterarAba(
+        (a) => ({
+          ...a,
+          boxes: a.boxes.map((x) =>
+            x.id === b.id
+              ? { ...x, width: Math.max(120, snap(w0 + dw)), height: Math.max(60, snap(h0 + dh)) }
+              : x,
+          ),
+        }),
+        !primeiro,
+      );
+      primeiro = false;
+    };
+    const soltar = () => {
+      window.removeEventListener("pointermove", mover);
+      window.removeEventListener("pointerup", soltar);
+    };
+    window.addEventListener("pointermove", mover);
+    window.addEventListener("pointerup", soltar);
+  }
+
+  /** Grava o nome digitado no próprio bloco. */
+  function confirmarRename() {
+    if (!renomeando) return;
+    const nome = renomeando.valor.trim();
+    const alvo = renomeando.id;
+    const atual = blocos.find((b) => b.id === alvo);
+    setRenomeando(null);
+    if (!nome || !atual || nome === atual.label) return;
+    alterarAba((a) => ({ ...a, boxes: a.boxes.map((b) => (b.id === alvo ? { ...b, label: nome } : b)) }));
   }
 
   /** Duplica os blocos selecionados, deslocados pra não nascer por baixo. */
@@ -507,6 +681,54 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
     el.scrollTo({ left: 0, top: 0 });
   }
 
+  // ---- Abas do mapa ------------------------------------------------------
+  // O modelo sempre teve várias abas (um lançamento tem o funil principal, o de
+  // remarketing, o de upsell); faltava a interface.
+
+  function adicionarAba() {
+    const nova: AbaDoMapa = {
+      id: `t-${Date.now().toString(36)}`,
+      name: `Aba ${(abas?.length ?? 0) + 1}`,
+      boxes: [],
+      connectors: [],
+    };
+    setAbas((atuais) => {
+      if (!atuais) return atuais;
+      historico.registrar(atuais);
+      return [...atuais, nova];
+    });
+    setAbaAtiva(abas?.length ?? 0);
+    selecao.limpar();
+    setSujo(true);
+  }
+
+  function renomearAba(indice: number, nome: string) {
+    setAbas((atuais) => {
+      if (!atuais) return atuais;
+      const copia = [...atuais];
+      copia[indice] = { ...copia[indice], name: nome };
+      return copia;
+    });
+    setSujo(true);
+  }
+
+  function removerAba(indice: number) {
+    // Uma aba tem que sobrar: sem nenhuma, o canvas não teria onde desenhar e
+    // o `abaAtiva` apontaria pro vazio.
+    if ((abas?.length ?? 0) <= 1) {
+      toast.error("O mapa precisa de pelo menos uma aba");
+      return;
+    }
+    setAbas((atuais) => {
+      if (!atuais) return atuais;
+      historico.registrar(atuais);
+      return atuais.filter((_, i) => i !== indice);
+    });
+    setAbaAtiva((a) => (a >= indice && a > 0 ? a - 1 : a));
+    selecao.limpar();
+    setSujo(true);
+  }
+
   function salvarMapa() {
     if (!abas) return;
     salvar.mutate(abas, {
@@ -543,6 +765,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
       if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); salvarMapa(); return; }
       if (mod && e.key.toLowerCase() === "a") { e.preventDefault(); selecao.definir(blocos.map((b) => b.id)); return; }
       if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); duplicarSelecionados(); return; }
+      if (mod && e.key.toLowerCase() === "c") { e.preventDefault(); copiarSelecionados(); return; }
+      if (mod && e.key.toLowerCase() === "v") { e.preventDefault(); colar(); return; }
       if (mod && (e.key === "=" || e.key === "+")) { e.preventDefault(); zoom.aumentar(); return; }
       if (mod && e.key === "-") { e.preventDefault(); zoom.diminuir(); return; }
       if (mod && e.key === "0") { e.preventDefault(); enquadrarTudo(); return; }
@@ -555,9 +779,14 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
         else removerSelecionados();
         return;
       }
-      if (e.key === "Escape") { selecao.limpar(); setConectorSel(null); setLigando(null); setMenu(null); setAjuda(false); return; }
+      if (e.key === "Escape") { selecao.limpar(); setConectorSel(null); setLigando(null); setMenu(null); setAjuda(false); setRenomeando(null); return; }
       if (e.key === "?") { e.preventDefault(); setAjuda((v) => !v); return; }
-      if (e.key === "F2" && selecao.unico) { e.preventDefault(); nomeRef.current?.select(); return; }
+      if ((e.key === "F2" || e.key === "Enter") && selecao.unico) {
+        e.preventDefault();
+        const b = blocos.find((x) => x.id === selecao.unico);
+        if (b) setRenomeando({ id: b.id, valor: b.label });
+        return;
+      }
 
       if (selecao.ids.size > 0 && e.key.startsWith("Arrow")) {
         e.preventDefault();
@@ -649,6 +878,49 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
             Salvar
           </Button>
         </div>
+      </div>
+
+      {/* Abas do mapa. Aparece a partir de duas — com uma só, a barra seria
+          uma linha de cromo sem função. O "+" fica sempre visível. */}
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-border/40 pb-1">
+        {(abas ?? []).map((t, i) => (
+          <div key={t.id} className="group/aba flex shrink-0 items-center">
+            <button
+              type="button"
+              onClick={() => { setAbaAtiva(i); selecao.limpar(); setConectorSel(null); }}
+              onDoubleClick={() => {
+                const nome = window.prompt("Nome da aba", t.name);
+                if (nome && nome.trim()) renomearAba(i, nome.trim());
+              }}
+              className={`rounded-t px-2.5 py-1 text-[11px] transition-colors ${
+                i === abaAtiva
+                  ? "border-b-2 border-primary font-medium text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              title="Duplo clique renomeia"
+            >
+              {t.name}
+            </button>
+            {(abas?.length ?? 0) > 1 && (
+              <button
+                type="button"
+                onClick={() => removerAba(i)}
+                aria-label={`Remover aba ${t.name}`}
+                className="ml-0.5 text-muted-foreground/40 opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/aba:opacity-100"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={adicionarAba}
+          className="shrink-0 rounded px-1.5 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label="Nova aba"
+        >
+          <Plus className="h-3 w-3" />
+        </button>
       </div>
 
       <div className="flex gap-3">
@@ -750,6 +1022,21 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
                   />
                 );
               })()}
+
+              {/* Guias de alinhamento — some assim que o bloco é solto. */}
+              {guias.map((g, i) => (
+                <line
+                  key={`${g.eixo}-${g.valor}-${i}`}
+                  x1={g.eixo === "x" ? g.valor : 0}
+                  y1={g.eixo === "x" ? 0 : g.valor}
+                  x2={g.eixo === "x" ? g.valor : largura}
+                  y2={g.eixo === "x" ? alturaDoDesenho : g.valor}
+                  stroke="currentColor"
+                  className="pointer-events-none text-primary/70"
+                  strokeWidth={1}
+                  strokeDasharray="4 4"
+                />
+              ))}
             </svg>
 
             {blocos.map((b) => {
@@ -760,7 +1047,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
                   key={b.id}
                   onPointerDown={(e) => iniciarArrasto(e, b)}
                   onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, e.shiftKey); }}
-                  onDoubleClick={(e) => { e.stopPropagation(); selecao.definir([b.id]); setTimeout(() => nomeRef.current?.select(), 0); }}
+                  onDoubleClick={(e) => { e.stopPropagation(); selecao.definir([b.id]); setRenomeando({ id: b.id, valor: b.label }); }}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -791,6 +1078,33 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
                     <span className="absolute left-1.5 top-[-8px] rounded bg-primary px-1 text-[8px] font-medium text-primary-foreground">
                       etapa
                     </span>
+                  )}
+
+                  {/* Renomear no próprio bloco. */}
+                  {renomeando?.id === b.id && (
+                    <div className="absolute inset-x-1 top-1 z-20" onPointerDown={(ev) => ev.stopPropagation()}>
+                      <Input
+                        autoFocus
+                        value={renomeando.valor}
+                        onChange={(ev) => setRenomeando({ id: b.id, valor: ev.target.value })}
+                        onBlur={confirmarRename}
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Enter") { ev.preventDefault(); confirmarRename(); }
+                          if (ev.key === "Escape") { ev.preventDefault(); setRenomeando(null); }
+                        }}
+                        className="h-6 px-1 text-[11px]"
+                      />
+                    </div>
+                  )}
+
+                  {/* Alça de redimensionar — só no bloco selecionado, senão
+                      vira ruído em cima de cada card. */}
+                  {ativo && (
+                    <span
+                      role="presentation"
+                      onPointerDown={(ev) => iniciarResize(ev, b)}
+                      className="absolute -bottom-1 -right-1 z-20 h-3 w-3 cursor-nwse-resize touch-none rounded-sm border border-primary bg-background"
+                    />
                   )}
 
                   {PONTOS.map((p) => {
@@ -842,7 +1156,6 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
             <div className="space-y-1">
               <Label className="text-[10px]">Nome</Label>
               <Input
-                ref={nomeRef}
                 value={blocoSelecionado.label}
                 onChange={(e) =>
                   alterarAba((a) => ({
@@ -929,9 +1242,15 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
               icon={Pencil}
               label="Renomear"
               atalho="F2"
-              onClick={() => { selecao.definir([menu.boxId]); setMenu(null); setTimeout(() => nomeRef.current?.select(), 0); }}
+              onClick={() => {
+                const b = blocos.find((x) => x.id === menu.boxId);
+                selecao.definir([menu.boxId]);
+                setMenu(null);
+                if (b) setRenomeando({ id: b.id, valor: b.label });
+              }}
             />
             <ItemDoMenu icon={Copy} label="Duplicar" atalho="⌘D" onClick={() => { duplicarSelecionados(); setMenu(null); }} />
+            <ItemDoMenu icon={ClipboardCopy} label="Copiar" atalho="⌘C" onClick={() => { copiarSelecionados(); setMenu(null); }} />
             <ItemDoMenu icon={Unlink} label="Remover ligações" onClick={() => { desconectar(menu.boxId); setMenu(null); }} />
             <div className="my-1 h-px bg-border/60" />
             <ItemDoMenu icon={Trash2} label="Remover bloco" atalho="Del" destrutivo onClick={() => { removerSelecionados(); setMenu(null); }} />
@@ -996,9 +1315,11 @@ const ATALHOS: { grupo: string; itens: [string, string][] }[] = [
   {
     grupo: "Edição",
     itens: [
-      ["Duplo clique", "Renomeia"],
-      ["F2", "Renomeia"],
+      ["Duplo clique", "Renomeia no bloco"],
+      ["F2 / Enter", "Renomeia no bloco"],
       ["⌘D", "Duplica"],
+      ["⌘C / ⌘V", "Copia / cola (com ligações)"],
+      ["Arrastar o canto", "Redimensiona"],
       ["Del", "Remove"],
       ["⌘Z / ⇧⌘Z", "Desfaz / refaz"],
       ["⌘S", "Salva o mapa"],
