@@ -110,11 +110,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   const [ligando, setLigando] = useState<{ boxId: string; ponto: PontoDeConexao } | null>(null);
   const [sujo, setSujo] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; boxId: string } | null>(null);
+  /** Seta selecionada — permite apagar UMA ligação, sem levar as outras junto. */
+  const [conectorSel, setConectorSel] = useState<string | null>(null);
+  /** Ponta solta da linha enquanto se arrasta de uma bolinha até outro bloco. */
+  const [previaLigacao, setPreviaLigacao] = useState<{ x: number; y: number } | null>(null);
   const [ajuda, setAjuda] = useState(false);
   const [marquee, setMarquee] = useState<{ ax: number; ay: number; bx: number; by: number } | null>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const nomeRef = useRef<HTMLInputElement>(null);
   const espaco = useRef(false);
+  const acabouDeArrastar = useRef(false);
 
   // O servidor manda o rascunho das etapas quando ninguém desenhou ainda; a
   // partir daí o estado é local, senão cada refetch desfaria o que está sendo
@@ -271,6 +276,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   }
 
   function clicarNoPonto(boxId: string, ponto: PontoDeConexao) {
+    if (acabouDeArrastar.current) return;
     if (!ligando) {
       setLigando({ boxId, ponto });
       return;
@@ -280,16 +286,124 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
       setLigando(null);
       return;
     }
-    const novo: ConectorDoMapa = {
-      id: `c-${Date.now().toString(36)}`,
-      fromBox: ligando.boxId,
-      fromPoint: ligando.ponto,
-      toBox: boxId,
-      toPoint: ponto,
-      type: "solid",
-    };
-    alterarAba((a) => ({ ...a, connectors: [...a.connectors, novo] }));
+
+    conectarOuDesligar(ligando.boxId, ligando.ponto, boxId, ponto);
     setLigando(null);
+  }
+
+  /**
+   * Liga dois blocos — ou desliga, se já estavam ligados nesse sentido.
+   *
+   * Compara só o PAR e o sentido, ignorando de qual bolinha saiu: quem quer
+   * desfazer mira "estes dois blocos", não o mesmo par de âncoras de antes.
+   * Exigir as mesmas âncoras faria o desligar funcionar às vezes — pior que
+   * não existir.
+   */
+  function conectarOuDesligar(
+    origem: string,
+    pontoOrigem: PontoDeConexao,
+    destino: string,
+    pontoDestino: PontoDeConexao,
+  ) {
+    if (origem === destino) return;
+    const jaLigado = aba?.connectors.some((c) => c.fromBox === origem && c.toBox === destino);
+    if (jaLigado) {
+      alterarAba((a) => ({
+        ...a,
+        connectors: a.connectors.filter((c) => !(c.fromBox === origem && c.toBox === destino)),
+      }));
+      setConectorSel(null);
+      toast.success("Ligação removida");
+      return;
+    }
+    alterarAba((a) => ({
+      ...a,
+      connectors: [
+        ...a.connectors,
+        {
+          id: `c-${Date.now().toString(36)}`,
+          fromBox: origem,
+          fromPoint: pontoOrigem,
+          toBox: destino,
+          toPoint: pontoDestino,
+          type: "solid",
+        } as ConectorDoMapa,
+      ],
+    }));
+  }
+
+  /** Bloco sob o ponteiro, em coordenadas de tela. */
+  function blocoSob(cx: number, cy: number): BlocoDoMapa | null {
+    const p = paraDesenho(cx, cy);
+    // De trás pra frente: o último desenhado é o que está por cima.
+    for (let i = blocos.length - 1; i >= 0; i--) {
+      const b = blocos[i];
+      if (p.x >= b.x && p.x <= b.x + b.width && p.y >= b.y && p.y <= b.y + b.height) return b;
+    }
+    return null;
+  }
+
+  /** Âncora do bloco mais perto de onde a linha chegou — a seta cai natural. */
+  function ancoraMaisProxima(b: BlocoDoMapa, cx: number, cy: number): PontoDeConexao {
+    const p = paraDesenho(cx, cy);
+    let melhor: PontoDeConexao = "left";
+    let dist = Infinity;
+    for (const nome of PONTOS) {
+      const a = pontoDoBloco(b, nome);
+      const d = (a.x - p.x) ** 2 + (a.y - p.y) ** 2;
+      if (d < dist) { dist = d; melhor = nome; }
+    }
+    return melhor;
+  }
+
+  /**
+   * Arrastar da bolinha até outro bloco.
+   *
+   * O mesmo pointerdown serve aos dois gestos: se o ponteiro andou, é arrasto e
+   * fecha a ligação onde soltar; se não andou, foi clique e cai no fluxo
+   * clicar-clicar, que continua existindo porque é o que funciona no toque.
+   */
+  function pontoPointerDown(e: React.PointerEvent, b: BlocoDoMapa, ponto: PontoDeConexao) {
+    // Sem preventDefault: ele suprime os eventos de mouse de compatibilidade,
+    // e junto o `click` de que o fluxo clicar-clicar depende. A seleção de
+    // texto já é barrada por `touch-none`/`select-none` no bloco.
+    e.stopPropagation();
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    let arrastou = false;
+    setLigando({ boxId: b.id, ponto });
+
+    const mover = (ev: PointerEvent) => {
+      if (!arrastou && (Math.abs(ev.clientX - x0) > 4 || Math.abs(ev.clientY - y0) > 4)) arrastou = true;
+      if (arrastou) setPreviaLigacao(paraDesenho(ev.clientX, ev.clientY));
+    };
+    const soltar = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", mover);
+      window.removeEventListener("pointerup", soltar);
+      setPreviaLigacao(null);
+      // Não arrastou: mantém `ligando` armado e deixa o clique no outro bloco
+      // fechar a ligação.
+      if (!arrastou) return;
+      // O `click` ainda vai disparar nesta bolinha depois do arrasto; sem esta
+      // trava ele rearmaria `ligando` e o próximo clique em qualquer lugar
+      // criaria uma ligação fantasma.
+      acabouDeArrastar.current = true;
+      setTimeout(() => { acabouDeArrastar.current = false; }, 0);
+      const alvo = blocoSob(ev.clientX, ev.clientY);
+      if (alvo && alvo.id !== b.id) {
+        conectarOuDesligar(b.id, ponto, alvo.id, ancoraMaisProxima(alvo, ev.clientX, ev.clientY));
+      }
+      setLigando(null);
+    };
+    window.addEventListener("pointermove", mover);
+    window.addEventListener("pointerup", soltar);
+  }
+
+  /** Apaga uma seta específica — a que estiver selecionada. */
+  function removerConector(id: string) {
+    alterarAba((a) => ({ ...a, connectors: a.connectors.filter((c) => c.id !== id) }));
+    setConectorSel(null);
+    toast.success("Ligação removida");
   }
 
   function removerBloco(id: string) {
@@ -433,8 +547,15 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
       if (mod && e.key === "-") { e.preventDefault(); zoom.diminuir(); return; }
       if (mod && e.key === "0") { e.preventDefault(); enquadrarTudo(); return; }
 
-      if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); removerSelecionados(); return; }
-      if (e.key === "Escape") { selecao.limpar(); setLigando(null); setMenu(null); setAjuda(false); return; }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        // Seta selecionada tem prioridade: quem acabou de clicar numa ligação
+        // espera apagar ELA, não os blocos que ainda estavam selecionados.
+        if (conectorSel) removerConector(conectorSel);
+        else removerSelecionados();
+        return;
+      }
+      if (e.key === "Escape") { selecao.limpar(); setConectorSel(null); setLigando(null); setMenu(null); setAjuda(false); return; }
       if (e.key === "?") { e.preventDefault(); setAjuda((v) => !v); return; }
       if (e.key === "F2" && selecao.unico) { e.preventDefault(); nomeRef.current?.select(); return; }
 
@@ -481,7 +602,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
             {data?.rascunho && !sujo
               ? "Sugestão a partir das etapas cadastradas — arraste, adicione e salve para tornar seu."
               : ligando
-                ? "Clique em outro bloco para ligar. Clique no mesmo ponto para cancelar."
+                ? "Solte em cima de outro bloco para ligar — ou clique nele. Esc cancela."
                 : "Arraste os blocos; clique nas bolinhas da borda para ligar dois blocos."}
           </p>
         </div>
@@ -564,7 +685,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
           style={{ height: altura }}
           onWheel={fundoWheel}
           onPointerDown={fundoPointerDown}
-          onClick={() => { if (!arrastouMarquee.current) { selecao.limpar(); setLigando(null); } }}
+          onClick={() => { if (!arrastouMarquee.current) { selecao.limpar(); setConectorSel(null); setLigando(null); } }}
           onContextMenu={(e) => e.preventDefault()}
         >
           {/* O desenho escala por transform e o contêiner cresce junto, senão o
@@ -584,19 +705,51 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
                 const de = blocos.find((b) => b.id === c.fromBox);
                 const para = blocos.find((b) => b.id === c.toBox);
                 if (!de || !para) return null;
+                const d = caminhoDaSeta(pontoDoBloco(de, c.fromPoint), c.fromPoint, pontoDoBloco(para, c.toPoint), c.toPoint);
+                const ativa = conectorSel === c.id;
                 return (
-                  <path
-                    key={c.id}
-                    d={caminhoDaSeta(pontoDoBloco(de, c.fromPoint), c.fromPoint, pontoDoBloco(para, c.toPoint), c.toPoint)}
-                    fill="none"
-                    stroke="currentColor"
-                    className="text-muted-foreground/60"
-                    strokeWidth={2}
-                    strokeDasharray={c.type === "dashed" ? "8 4" : undefined}
-                    markerEnd="url(#seta-mapa)"
-                  />
+                  <g key={c.id}>
+                    {/* Trilha invisível e grossa: acertar uma linha de 2px com o
+                        mouse é quase impossível, então o alvo de clique é bem
+                        maior que o traço que se vê. */}
+                    <path
+                      d={d}
+                      fill="none"
+                      stroke="transparent"
+                      strokeWidth={16}
+                      className="pointer-events-auto cursor-pointer"
+                      onClick={(e) => { e.stopPropagation(); setConectorSel(c.id); selecao.limpar(); }}
+                      onDoubleClick={(e) => { e.stopPropagation(); removerConector(c.id); }}
+                    />
+                    <path
+                      d={d}
+                      fill="none"
+                      stroke="currentColor"
+                      className={`pointer-events-none ${ativa ? "text-primary" : "text-muted-foreground/60"}`}
+                      strokeWidth={ativa ? 3 : 2}
+                      strokeDasharray={c.type === "dashed" ? "8 4" : undefined}
+                      markerEnd="url(#seta-mapa)"
+                    />
+                  </g>
                 );
               })}
+
+              {/* Linha solta enquanto se arrasta da bolinha até o alvo. */}
+              {ligando && previaLigacao && (() => {
+                const de = blocos.find((b) => b.id === ligando.boxId);
+                if (!de) return null;
+                const origem = pontoDoBloco(de, ligando.ponto);
+                return (
+                  <path
+                    d={`M ${origem.x} ${origem.y} L ${previaLigacao.x} ${previaLigacao.y}`}
+                    fill="none"
+                    stroke="currentColor"
+                    className="pointer-events-none text-primary"
+                    strokeWidth={2}
+                    strokeDasharray="6 4"
+                  />
+                );
+              })()}
             </svg>
 
             {blocos.map((b) => {
@@ -646,9 +799,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
                       <button
                         key={p}
                         type="button"
-                        onPointerDown={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => pontoPointerDown(e, b, p)}
                         onClick={(e) => { e.stopPropagation(); clicarNoPonto(b.id, p); }}
-                        className={`absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-colors ${
+                        className={`absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-crosshair touch-none rounded-full border transition-colors ${
                           ligando?.boxId === b.id && ligando.ponto === p
                             ? "border-primary bg-primary"
                             : "border-border bg-background hover:bg-primary"
@@ -866,8 +1019,11 @@ const ATALHOS: { grupo: string; itens: [string, string][] }[] = [
   {
     grupo: "Ligações",
     itens: [
-      ["Clique na bolinha", "Começa a ligação"],
-      ["Clique na outra", "Fecha a ligação"],
+      ["Arrastar da bolinha", "Liga até onde soltar"],
+      ["Clique na bolinha", "Começa; clique no alvo fecha"],
+      ["Repetir a ligação", "Desliga os dois blocos"],
+      ["Clique na seta", "Seleciona (Del apaga)"],
+      ["Duplo clique na seta", "Apaga a ligação"],
       ["Botão direito", "Menu do bloco"],
     ],
   },
