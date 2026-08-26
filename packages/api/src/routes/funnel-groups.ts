@@ -42,6 +42,8 @@ interface DailyPoint {
 interface CampaignSeries {
   campaignId: string;
   campaignName: string;
+  /** 'sendflow' = lido da fonte; 'planilha' = exportação manual (legado). */
+  fonte: string;
   series: DailyPoint[];
 }
 
@@ -244,7 +246,15 @@ export default fp(async function funnelGroupsRoutes(fastify) {
         const day = formatDay(r.snapshotAt);
         const key = `${r.campaignId}|${day}`;
         // rows estão ordenadas desc por snapshotAt — o primeiro que vê é o último do dia
-        if (!lastByCampDay.has(key)) {
+        const atual = lastByCampDay.get(key);
+        // PRIORIDADE AO SENDFLOW: com as duas origens no mesmo dia, vence o que
+        // veio da fonte. A planilha é exportação manual e pode estar velha (ou
+        // conter linhas coladas de outra campanha), então "mais recente" não
+        // basta como critério.
+        const trocar =
+          !atual ||
+          (r.source === "sendflow" && atual.source !== "sendflow");
+        if (trocar) {
           lastByCampDay.set(key, r);
         }
         if (!campaignNames.has(r.campaignId)) {
@@ -284,6 +294,9 @@ export default fp(async function funnelGroupsRoutes(fastify) {
         campaigns.push({
           campaignId,
           campaignName: campaignNames.get(campaignId) ?? campaignId,
+          // De onde veio o dado MAIS RECENTE desta campanha. A tela mostra isso
+          // pra ninguém se perguntar se está vendo planilha velha.
+          fonte: snaps[snaps.length - 1]?.source ?? "planilha",
           series,
         });
       }

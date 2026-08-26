@@ -1398,6 +1398,8 @@ export const funnelGroupSnapshots = pgTable(
     inputAmount: integer("input_amount").notNull().default(0),
     outputAmount: integer("output_amount").notNull().default(0),
     participantsAmount: integer("participants_amount").notNull().default(0),
+    /** 'sendflow' (lido da fonte) ou 'planilha' (exportação manual, legado). */
+    source: varchar("source", { length: 20 }).notNull().default("planilha"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

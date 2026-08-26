@@ -166,6 +166,7 @@ export async function sincronizarGruposDoSendflow(
     inputAmount: analytics.add?.total ?? 0,
     outputAmount: analytics.remove?.total ?? 0,
     participantsAmount: totalDeParticipantes(grupos),
+    source: "sendflow" as const,
   };
 
   await db
@@ -186,6 +187,7 @@ export async function sincronizarGruposDoSendflow(
         inputAmount: sql`excluded.input_amount`,
         outputAmount: sql`excluded.output_amount`,
         participantsAmount: sql`excluded.participants_amount`,
+        source: sql`excluded.source`,
       },
     });
 
