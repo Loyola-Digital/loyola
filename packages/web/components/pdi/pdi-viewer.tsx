@@ -3,8 +3,14 @@
 /**
  * Renderiza o documento de PDI.
  *
- * Em `<iframe sandbox srcDoc>` e não inline no DOM, por três motivos que se
- * somam:
+ * Caminho normal: o documento carrega os dados num
+ * `<script type="application/json">` e se desenha a partir deles. Quando dá
+ * pra ler esse bloco — os 7 PDIs de produção dão — o app monta a carta com os
+ * próprios componentes, e nenhum HTML de fora chega ao navegador.
+ *
+ * O iframe abaixo ficou como SAÍDA: documento fora do formato continua
+ * aparecendo em vez de virar tela vazia. Os motivos de ele ser sandbox, e não
+ * HTML inline, seguem valendo:
  *
  * 1. O documento é uma página inteira, com `body{...}` e `*{margin:0}` no CSS —
  *    injetado inline, ele reescreveria o estilo do app todo.
@@ -17,13 +23,19 @@
  *    HTML que veio de fora.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { PdiCard } from "@/components/pdi/pdi-card";
+import { extrairDadosDoPdi } from "@/lib/utils/pdi-dados";
 
 const ALTURA_MINIMA = 420;
 
 export function PdiViewer({ html, titulo }: { html: string; titulo: string }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [altura, setAltura] = useState(ALTURA_MINIMA);
+
+  // Memo porque o HTML tem ~16 KB: refazer o parse a cada render seria trabalho
+  // repetido sobre um dado que não muda enquanto o documento é o mesmo.
+  const dados = useMemo(() => extrairDadosDoPdi(html), [html]);
 
   /**
    * Iframe não cresce sozinho com o conteúdo. Sem origem compartilhada não dá
@@ -60,6 +72,8 @@ export function PdiViewer({ html, titulo }: { html: string; titulo: string }) {
   }
 })();
 </script>`;
+
+  if (dados) return <PdiCard dados={dados} />;
 
   const documento = html.includes("</body>")
     ? html.replace("</body>", `${medidor}</body>`)
