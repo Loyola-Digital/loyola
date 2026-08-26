@@ -10,9 +10,10 @@
  */
 
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { funnels, sendflowConnections } from "../db/schema.js";
+import { conexaoPara } from "../services/sendflow-groups-sync.js";
 import { encrypt, decrypt } from "../services/encryption.js";
 import {
   SendflowError,
@@ -47,11 +48,7 @@ export default fp(async function sendflowRoutes(fastify) {
   const renovando = new Map<string, Promise<string>>();
 
   async function tokenPara(projectId: string): Promise<string | null> {
-    const [conn] = await fastify.db
-      .select()
-      .from(sendflowConnections)
-      .where(eq(sendflowConnections.projectId, projectId))
-      .limit(1);
+    const conn = await conexaoPara(fastify.db, projectId);
     if (!conn) return null;
 
     const agora = Date.now();
@@ -86,7 +83,7 @@ export default fp(async function sendflowRoutes(fastify) {
           refreshTokenIv: ref.iv,
           updatedAt: new Date(),
         })
-        .where(eq(sendflowConnections.projectId, projectId));
+        .where(eq(sendflowConnections.id, conn.id));
       return t.accessToken;
     })().finally(() => renovando.delete(projectId));
 
@@ -128,16 +125,15 @@ export default fp(async function sendflowRoutes(fastify) {
     const p = projetoParam.safeParse(request.params);
     if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
 
-    const [conn] = await fastify.db
-      .select({
-        clientId: sendflowConnections.clientId,
-        updatedAt: sendflowConnections.updatedAt,
-      })
-      .from(sendflowConnections)
-      .where(eq(sendflowConnections.projectId, p.data.projectId))
-      .limit(1);
+    const conn = await conexaoPara(fastify.db, p.data.projectId);
     // Nunca devolve segredo — só o suficiente pra tela dizer "conectado".
-    return { connected: !!conn, clientId: conn?.clientId ?? null, updatedAt: conn?.updatedAt ?? null };
+    return {
+      connected: !!conn,
+      clientId: conn?.clientId ?? null,
+      updatedAt: conn?.updatedAt ?? null,
+      /** true = veio da conexão global (o normal), não de uma do projeto. */
+      global: conn ? conn.projectId === null : false,
+    };
   });
 
   const corpoConexao = z.object({
@@ -206,6 +202,73 @@ export default fp(async function sendflowRoutes(fastify) {
     return { connected: false };
   });
 
+  // ---- Conexão GLOBAL ----------------------------------------------------
+  // O SendFlow é uma conta só para todos os experts, então a configuração vive
+  // aqui e não por projeto. `project_id NULL` marca a linha global; um índice
+  // parcial garante que só exista uma.
+
+  fastify.get("/api/settings/sendflow/connection", async (request, reply) => {
+    if (negarGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const [conn] = await fastify.db
+      .select({ clientId: sendflowConnections.clientId, updatedAt: sendflowConnections.updatedAt })
+      .from(sendflowConnections)
+      .where(isNull(sendflowConnections.projectId))
+      .limit(1);
+    return { connected: !!conn, clientId: conn?.clientId ?? null, updatedAt: conn?.updatedAt ?? null };
+  });
+
+  fastify.put("/api/settings/sendflow/connection", async (request, reply) => {
+    if (negarGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const body = corpoConexao.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados inválidos" });
+    if (!request.userId) return reply.code(401).send({ error: "Unauthorized" });
+
+    // Valida ANTES de gravar: credencial errada guardada em silêncio só
+    // apareceria como erro na primeira consulta, longe daqui.
+    let tokens;
+    try {
+      tokens = await renovarToken(body.data.clientId, body.data.clientSecret, body.data.refreshToken);
+    } catch (err) {
+      return erro(reply, err);
+    }
+    const seg = encrypt(body.data.clientSecret);
+    const ref = encrypt(tokens.refreshToken);
+    const acc = encrypt(tokens.accessToken);
+    const valores = {
+      clientId: body.data.clientId,
+      clientSecretEncrypted: seg.encrypted,
+      clientSecretIv: seg.iv,
+      refreshTokenEncrypted: ref.encrypted,
+      refreshTokenIv: ref.iv,
+      accessTokenEncrypted: acc.encrypted,
+      accessTokenIv: acc.iv,
+      accessTokenExpiresAt: new Date(tokens.expiresAt),
+      updatedAt: new Date(),
+    };
+    const [existente] = await fastify.db
+      .select({ id: sendflowConnections.id })
+      .from(sendflowConnections)
+      .where(isNull(sendflowConnections.projectId))
+      .limit(1);
+    if (existente) {
+      await fastify.db
+        .update(sendflowConnections)
+        .set(valores)
+        .where(eq(sendflowConnections.id, existente.id));
+    } else {
+      await fastify.db
+        .insert(sendflowConnections)
+        .values({ ...valores, projectId: null, createdBy: request.userId });
+    }
+    return { connected: true };
+  });
+
+  fastify.delete("/api/settings/sendflow/connection", async (request, reply) => {
+    if (negarGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    await fastify.db.delete(sendflowConnections).where(isNull(sendflowConnections.projectId));
+    return { connected: false };
+  });
+
   // ---- Campanhas ---------------------------------------------------------
 
   fastify.get("/api/projects/:projectId/sendflow/releases", async (request, reply) => {
@@ -265,11 +328,12 @@ export default fp(async function sendflowRoutes(fastify) {
           };
         }
 
-        const [grupos, analytics, disparos] = await Promise.all([
+        const [grupos, analytics, historico] = await Promise.all([
           gruposDaCampanha(s, campanha.id),
           analyticsDaCampanha(s, campanha.id),
-          disparosDaCampanha(s, campanha.id, 30),
+          disparosDaCampanha(s, campanha.id),
         ]);
+        const disparos = historico.acoes;
 
         const serie = (d?: Record<string, number>) =>
           Object.entries(d ?? {})

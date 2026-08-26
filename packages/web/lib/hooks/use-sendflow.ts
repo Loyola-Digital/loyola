@@ -14,6 +14,8 @@ export interface SendflowConnection {
   connected: boolean;
   clientId: string | null;
   updatedAt: string | null;
+  /** true = veio da conexão global (o normal), não de uma do projeto. */
+  global?: boolean;
 }
 
 export interface SendflowGrupo {
@@ -51,6 +53,52 @@ export type SendflowSummary =
       cliques: { total: number; porDia: { date: string; valor: number }[] };
       disparos: SendflowDisparo[];
     };
+
+// ---- Conexão GLOBAL (settings) -----------------------------------------
+// Uma conta atende todos os experts, então a configuração é única.
+
+const CHAVE_GLOBAL = ["sendflow-connection-global"] as const;
+
+export function useSendflowGlobalConnection() {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: CHAVE_GLOBAL,
+    queryFn: () => apiClient<SendflowConnection>("/api/settings/sendflow/connection"),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useSaveSendflowGlobalConnection() {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { clientId: string; clientSecret: string; refreshToken: string }) =>
+      apiClient<{ connected: boolean }>("/api/settings/sendflow/connection", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: CHAVE_GLOBAL });
+      // O card por funil também depende disto.
+      qc.invalidateQueries({ queryKey: ["sendflow-connection"] });
+      qc.invalidateQueries({ queryKey: ["sendflow-summary"] });
+    },
+  });
+}
+
+export function useDeleteSendflowGlobalConnection() {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient<{ connected: boolean }>("/api/settings/sendflow/connection", { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: CHAVE_GLOBAL });
+      qc.invalidateQueries({ queryKey: ["sendflow-connection"] });
+      qc.invalidateQueries({ queryKey: ["sendflow-summary"] });
+    },
+  });
+}
 
 export function useSendflowConnection(projectId: string | null) {
   const apiClient = useApiClient();

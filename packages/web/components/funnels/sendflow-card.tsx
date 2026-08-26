@@ -11,18 +11,10 @@
  * enviada" sem o conteúdo é o máximo honesto que dá.
  */
 
-import { useState } from "react";
+import Link from "next/link";
 import { MessageSquare, Users, TrendingUp, TrendingDown, MousePointerClick, Link2 } from "lucide-react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  useSendflowConnection,
-  useSaveSendflowConnection,
-  useSendflowSummary,
-} from "@/lib/hooks/use-sendflow";
+import { useSendflowConnection, useSendflowSummary } from "@/lib/hooks/use-sendflow";
 
 const nf = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString("pt-BR"));
 
@@ -51,56 +43,6 @@ function Numero({
   );
 }
 
-function FormularioConexao({ projectId }: { projectId: string }) {
-  const salvar = useSaveSendflowConnection(projectId);
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [refreshToken, setRefreshToken] = useState("");
-
-  return (
-    <div className="space-y-2.5">
-      <p className="text-xs text-muted-foreground">
-        O SendFlow não emite chave de API: o servidor só aceita login por navegador
-        (<code className="text-[10px]">authorization_code</code>). Autorize uma vez, cole aqui o
-        <strong> refresh token</strong> e o Loyola X renova o acesso sozinho daí em diante.
-      </p>
-      <div className="grid gap-2 sm:grid-cols-3">
-        <div className="space-y-1">
-          <Label className="text-[10px]">Client ID</Label>
-          <Input value={clientId} onChange={(e) => setClientId(e.target.value)} className="h-7 text-xs" placeholder="mcp_client_…" />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-[10px]">Client Secret</Label>
-          <Input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} className="h-7 text-xs" placeholder="mcp_secret_…" />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-[10px]">Refresh Token</Label>
-          <Input type="password" value={refreshToken} onChange={(e) => setRefreshToken(e.target.value)} className="h-7 text-xs" />
-        </div>
-      </div>
-      <Button
-        size="sm"
-        className="h-7 text-xs"
-        disabled={!clientId.trim() || !clientSecret.trim() || !refreshToken.trim() || salvar.isPending}
-        onClick={() =>
-          salvar.mutate(
-            { clientId: clientId.trim(), clientSecret: clientSecret.trim(), refreshToken: refreshToken.trim() },
-            {
-              onSuccess: () => { toast.success("SendFlow conectado"); setClientSecret(""); setRefreshToken(""); },
-              onError: (e) => toast.error(e instanceof Error ? e.message : "Não consegui conectar"),
-            },
-          )
-        }
-      >
-        {salvar.isPending ? "Validando..." : "Conectar"}
-      </Button>
-      <p className="text-[10px] text-muted-foreground">
-        As credenciais são validadas contra o SendFlow antes de gravar, e ficam criptografadas.
-      </p>
-    </div>
-  );
-}
-
 export function SendflowCard({ projectId, funnelId }: { projectId: string; funnelId: string }) {
   const { data: conn, isLoading: carregandoConn } = useSendflowConnection(projectId);
   const { data, isLoading, error } = useSendflowSummary(projectId, funnelId, !!conn?.connected);
@@ -114,10 +56,13 @@ export function SendflowCard({ projectId, funnelId }: { projectId: string; funne
           <MessageSquare className="h-4 w-4 text-emerald-600" />
           Grupos de WhatsApp (SendFlow)
         </h3>
-        <p className="mb-3 mt-0.5 text-[11px] text-muted-foreground">
-          Conecte para ver quantas pessoas estão nos grupos da campanha e trazer os disparos pro log.
+        <p className="mt-0.5 text-[11px] text-muted-foreground">
+          A conexão com o SendFlow é única para todos os experts e fica em{" "}
+          <Link href="/settings/whatsapp" className="underline underline-offset-2 hover:text-foreground">
+            Configurações → WhatsApp
+          </Link>
+          . Depois de conectar, aparecem aqui as pessoas nos grupos e os disparos da campanha.
         </p>
-        <FormularioConexao projectId={projectId} />
       </div>
     );
   }
