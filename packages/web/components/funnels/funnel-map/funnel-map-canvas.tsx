@@ -303,12 +303,15 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
           boxes: a.boxes.map((b) => {
             const o = origens.get(b.id);
             if (!o) return b;
-            // Trava no zero: bloco arrastado para fora à esquerda ou para cima
-            // ficaria inalcançável, sem barra de rolagem que chegue lá.
+            // Sem trava no zero. Ela existia quando a área rolava e nada
+            // acima do topo era alcançável; hoje o mapa é panorâmico e o
+            // ⌘0 enquadra tudo, então o único efeito da trava era impedir
+            // de subir — e ACHATAR a seleção múltipla contra o topo, porque
+            // o bloco que batia em 0 parava enquanto os outros seguiam.
             return {
               ...b,
-              x: Math.max(0, snap(o.x + dx) + ajusteX),
-              y: Math.max(0, snap(o.y + dy) + ajusteY),
+              x: snap(o.x + dx) + ajusteX,
+              y: snap(o.y + dy) + ajusteY,
             };
           }),
         }),
@@ -896,6 +899,30 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
 
   useEffect(() => { zoomRef.current = zoom.valor; }, [zoom.valor]);
 
+  /**
+   * Traz o conteúdo para dentro da tela ao abrir a aba.
+   *
+   * Com o pan em 0,0 a área mostra o mundo a partir de 0,0 — então um bloco
+   * que alguém arrastou para cima (y negativo) ficaria fora do campo de visão
+   * ao recarregar, dando a impressão de que sumiu. Ajusta uma vez por aba, e
+   * só quando há coordenada negativa: quem nunca arrastou para além do topo
+   * não percebe diferença nenhuma.
+   */
+  const abasEnquadradas = useRef(new Set<number>());
+  useEffect(() => {
+    if (blocos.length === 0 || abasEnquadradas.current.has(abaAtiva)) return;
+    abasEnquadradas.current.add(abaAtiva);
+    const minX = Math.min(...blocos.map((b) => b.x));
+    const minY = Math.min(...blocos.map((b) => b.y));
+    if (minX >= 0 && minY >= 0) return;
+    const z = zoomRef.current;
+    const FOLGA = 40;
+    setPan((p) => ({
+      x: minX < 0 ? FOLGA - minX * z : p.x,
+      y: minY < 0 ? FOLGA - minY * z : p.y,
+    }));
+  }, [blocos, abaAtiva]);
+
   // O navegador pode sair da tela cheia por fora (Esc, gesto do SO) — sem
   // escutar, o botão ficaria mentindo sobre o estado.
   useEffect(() => {
@@ -963,7 +990,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
           ...a,
           boxes: a.boxes.map((b) =>
             selecao.ids.has(b.id)
-              ? { ...b, x: Math.max(0, b.x + dx), y: Math.max(0, b.y + dy) }
+              ? { ...b, x: b.x + dx, y: b.y + dy }
               : b,
           ),
         }));
@@ -986,6 +1013,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   const blocoSelecionado = blocos.find((b) => b.id === selecao.unico) ?? null;
   const largura = Math.max(1200, ...blocos.map((b) => b.x + b.width + 200));
   const alturaDoDesenho = Math.max(altura, ...blocos.map((b) => b.y + b.height + 160));
+  // Origem do desenho. Os blocos podem ficar em coordenada negativa (arrastar
+  // para cima/esquerda é livre), e o <svg> recorta no próprio box — sem
+  // esticá-lo para trás, os conectores que passam acima de zero sumiriam.
+  const origemX = Math.min(0, ...blocos.map((b) => b.x - 200));
+  const origemY = Math.min(0, ...blocos.map((b) => b.y - 160));
 
   return (
     <section
@@ -1205,7 +1237,13 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
               transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom.valor})`,
             }}
           >
-            <svg className="pointer-events-none absolute inset-0" width={largura} height={alturaDoDesenho}>
+            <svg
+              className="pointer-events-none absolute"
+              style={{ left: origemX, top: origemY }}
+              width={largura - origemX}
+              height={alturaDoDesenho - origemY}
+              viewBox={`${origemX} ${origemY} ${largura - origemX} ${alturaDoDesenho - origemY}`}
+            >
               <defs>
                 <marker id="seta-mapa" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto">
                   <path d="M0,0 L0,6 L8,3 z" fill="currentColor" className="text-muted-foreground" />
@@ -1265,8 +1303,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
               {guias.map((g, i) => (
                 <line
                   key={`${g.eixo}-${g.valor}-${i}`}
-                  x1={g.eixo === "x" ? g.valor : 0}
-                  y1={g.eixo === "x" ? 0 : g.valor}
+                  x1={g.eixo === "x" ? g.valor : origemX}
+                  y1={g.eixo === "x" ? origemY : g.valor}
                   x2={g.eixo === "x" ? g.valor : largura}
                   y2={g.eixo === "x" ? alturaDoDesenho : g.valor}
                   stroke="currentColor"
