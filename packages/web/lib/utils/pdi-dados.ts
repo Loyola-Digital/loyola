@@ -41,6 +41,8 @@ export interface PdiDados {
   goals: string[];
   issued: string;
   cardNumber: string;
+  /** Retrato embutido no documento (data: URI). Fica fora do bloco JSON. */
+  foto: string | null;
 }
 
 function texto(v: unknown): string {
@@ -87,6 +89,22 @@ function blocoJson(html: string): unknown | null {
   }
 }
 
+/**
+ * O retrato do documento.
+ *
+ * Mora no markup (`<img>` dentro de `.portrait-wrap`), não no JSON — por isso
+ * sai por outro caminho. Só `data:` é aceito: um `src` http faria o navegador
+ * de quem abre buscar um recurso no servidor de quem montou o arquivo, e o
+ * ganho de não ter HTML de terceiro rodando aqui iria embora junto.
+ */
+function retrato(html: string): string | null {
+  const bloco = html.match(/class=["'][^"']*portrait-wrap[^"']*["'][\s\S]{0,400}?<img[^>]*>/i);
+  const alvo = bloco ? bloco[0] : html.match(/<img[^>]*>/i)?.[0];
+  if (!alvo) return null;
+  const src = alvo.match(/src=["'](data:image\/[a-z+]+;base64,[A-Za-z0-9+/=\s]+)["']/i);
+  return src ? src[1].replace(/\s+/g, "") : null;
+}
+
 export function extrairDadosDoPdi(html: string): PdiDados | null {
   const cru = blocoJson(html);
   if (!cru || typeof cru !== "object") return null;
@@ -121,5 +139,6 @@ export function extrairDadosDoPdi(html: string): PdiDados | null {
     goals: listaDeTextos(d.goals),
     issued: texto(d.issued),
     cardNumber: texto(d.cardNumber),
+    foto: retrato(html),
   };
 }
