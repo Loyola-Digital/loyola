@@ -49,6 +49,18 @@ const updateFunnelSchema = z.object({
   switchyLinkedLinks: z.array(switchyLinkRefSchema).optional(),
   compareFunnelId: z.string().uuid().nullable().optional(),
   matchCode: z.string().max(50).nullable().optional(),
+  // Mapa do funil: posições e conexões. Semântica REPLACE — o cliente manda o
+  // mapa inteiro já mesclado, porque arrastar um nó pode mover vários (seleção
+  // múltipla) e um merge parcial no servidor perderia o resto do gesto.
+  canvas: z
+    .object({
+      nodes: z.record(z.string().uuid(), z.object({ x: z.number(), y: z.number() })).optional(),
+      edges: z
+        .array(z.object({ from: z.string().uuid(), to: z.string().uuid() }))
+        .max(200)
+        .optional(),
+    })
+    .optional(),
   // Story 18.19 fix: Meta Total + Data Final do gráfico de tendência
   leadsGoalMeta: z.number().int().nonnegative().nullable().optional(),
   leadsGoalDataFinal: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
@@ -102,6 +114,7 @@ function funnelShape(f: typeof funnels.$inferSelect) {
     switchyLinkedLinks: f.switchyLinkedLinks ?? [],
     compareFunnelId: f.compareFunnelId ?? null,
     matchCode: f.matchCode ?? null,
+    canvas: f.canvas ?? {},
     leadsGoalMeta: f.leadsGoalMeta ?? null,
     leadsGoalDataFinal: f.leadsGoalDataFinal ?? null,
     lastAuditAt: f.lastAuditAt ?? null,
@@ -545,8 +558,9 @@ export default fp(async function funnelRoutes(fastify) {
     }
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
-    const { name, type, metaAccountId, campaigns, googleAdsAccountId, googleAdsCampaigns, switchyFolderIds, switchyLinkedLinks, compareFunnelId, matchCode, leadsGoalMeta, leadsGoalDataFinal } = parseResult.data;
+    const { name, type, metaAccountId, campaigns, googleAdsAccountId, googleAdsCampaigns, switchyFolderIds, switchyLinkedLinks, compareFunnelId, matchCode, canvas, leadsGoalMeta, leadsGoalDataFinal } = parseResult.data;
     if (name !== undefined) updates.name = name;
+    if (canvas !== undefined) updates.canvas = canvas;
     if (type !== undefined) updates.type = type;
     if (metaAccountId !== undefined) updates.metaAccountId = metaAccountId;
     if (campaigns !== undefined) updates.campaigns = campaigns;

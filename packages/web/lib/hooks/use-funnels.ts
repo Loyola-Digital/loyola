@@ -26,6 +26,8 @@ export interface UpdateFunnelInput {
   switchyLinkedLinks?: { uniq: number; id: string; domain: string }[];
   compareFunnelId?: string | null;
   matchCode?: string | null;
+  /** Mapa do funil: posições das etapas no canvas + conexões. REPLACE. */
+  canvas?: { nodes?: Record<string, { x: number; y: number }>; edges?: { from: string; to: string }[] };
   /** Story 18.19 fix: Meta Total + Data Final do gráfico de tendência */
   leadsGoalMeta?: number | null;
   leadsGoalDataFinal?: string | null;

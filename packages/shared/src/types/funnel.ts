@@ -369,6 +369,16 @@ export interface StageSalesData {
   };
 }
 
+/**
+ * Mapa do funil — posição de cada etapa no canvas e as conexões entre elas.
+ * `nodes` vazio significa que o mapa nunca foi arrumado à mão: a UI monta o
+ * layout automático a partir do sortOrder, então nunca há tela em branco.
+ */
+export interface FunnelCanvas {
+  nodes?: Record<string, { x: number; y: number }>;
+  edges?: { from: string; to: string }[];
+}
+
 export interface Funnel {
   id: string;
   projectId: string;
@@ -391,6 +401,8 @@ export interface Funnel {
   /** Story 18.40 fix: Gasto Total Projetado para gráfico
    * "Leads: Reais vs Projeção (Baseado em Custo)" — persistido no DB (era localStorage). */
   leadsGoalGastoTotal: number | null;
+  /** Mapa do funil (posições + conexões). Ver FunnelCanvas. */
+  canvas: FunnelCanvas;
   /** Story 10.9: NULL = ativo; preenchido = arquivado. Exposto p/ permitir
    * escolher funis arquivados como comparação. */
   archivedAt?: string | null;

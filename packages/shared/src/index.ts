@@ -52,6 +52,7 @@ export type {
   FunnelStage,
   StageSalesData,
   Funnel,
+  FunnelCanvas,
   ComparisonDayMetrics,
   MetaAdsComparisonData,
   OrphanCampaign,

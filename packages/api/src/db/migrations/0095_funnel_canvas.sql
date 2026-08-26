@@ -1,0 +1,12 @@
+-- Mapa do funil: posição de cada etapa no canvas + conexões entre etapas.
+--
+-- Uma coluna só, no FUNIL, em vez de x/y por etapa + tabela de arestas: o mapa
+-- é uma propriedade do desenho do funil, salva atômica (arrastar um nó e criar
+-- uma seta viram um único write) e não deixa tabela órfã quando a etapa some.
+--
+-- Formato:
+--   { "nodes": { "<stageId>": { "x": 120, "y": 40 } },
+--     "edges": [ { "from": "<stageId>", "to": "<stageId>" } ] }
+--
+-- `{}` = mapa nunca aberto: a UI cai no layout automático a partir do sortOrder.
+ALTER TABLE "funnels" ADD COLUMN IF NOT EXISTS "canvas" jsonb DEFAULT '{}'::jsonb NOT NULL;

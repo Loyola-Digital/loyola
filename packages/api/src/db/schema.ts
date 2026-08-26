@@ -601,6 +601,15 @@ export const funnels = pgTable(
       .notNull()
       .default([])
       .$type<{ uniq: number; id: string; domain: string }[]>(),
+    /** Mapa do funil: posição das etapas no canvas + conexões. `{}` = nunca
+     *  aberto, e a UI monta o layout a partir do sortOrder. */
+    canvas: jsonb("canvas")
+      .notNull()
+      .default({})
+      .$type<{
+        nodes?: Record<string, { x: number; y: number }>;
+        edges?: { from: string; to: string }[];
+      }>(),
     compareFunnelId: uuid("compare_funnel_id").references(
       (): AnyPgColumn => funnels.id,
       { onDelete: "set null" }

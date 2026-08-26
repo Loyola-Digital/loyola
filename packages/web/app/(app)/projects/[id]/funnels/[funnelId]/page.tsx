@@ -29,6 +29,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SortableStageGrid } from "@/components/funnels/sortable-stage-grid";
+import { FunnelMapCanvas, type CanvasState } from "@/components/funnels/funnel-map-canvas";
+import { LayoutGrid, Workflow } from "lucide-react";
 import { CampaignLogCard } from "@/components/funnels/campaign-log-link";
 import { OrphanCampaignsBanner } from "@/components/funnels/orphan-campaigns-banner";
 import { SwitchyFunnelSection } from "@/components/funnels/switchy-funnel-section";
@@ -44,6 +46,9 @@ export default function FunnelPage() {
   const [stageName, setStageName] = useState("");
   const [stageType, setStageType] = useState<"free" | "paid" | "sales" | "cpl" | "event" | "debriefing" | "comercial">("free");
   const [matchCodeDraft, setMatchCodeDraft] = useState<string>("");
+  /** Grade (reordenar) x Mapa (desenhar). Grade é o padrão: com 2-3 etapas ela
+   *  mostra tudo sem exigir navegação. */
+  const [visao, setVisao] = useState<"grade" | "mapa">("grade");
 
   const { data: funnelData, isLoading: funnelLoading } = useFunnel(params.id, params.funnelId);
 
@@ -247,15 +252,51 @@ export default function FunnelPage() {
       {/* Banner de campanhas órfãs (Epic 25) */}
       <OrphanCampaignsBanner projectId={params.id} funnelId={params.funnelId} />
 
-      {/* Stage grid (drag-and-drop pra reordenar) */}
+      {/* Etapas: grade (reordenar) ou mapa (desenhar o funil).
+          A grade continua sendo o padrão — resolve o caso de 2-3 etapas sem
+          exigir navegação. O mapa é pra quem quer ver ramificação. */}
       {!stages || stages.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nenhuma etapa cadastrada.</p>
       ) : (
-        <SortableStageGrid
-          stages={stages}
-          projectId={params.id}
-          funnelId={params.funnelId}
-        />
+        <div className="space-y-3">
+          <div className="inline-flex rounded-md border border-border/50 p-0.5 text-xs">
+            {([
+              ["grade", "Grade", LayoutGrid],
+              ["mapa", "Mapa", Workflow],
+            ] as const).map(([k, label, Icon]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setVisao(k)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded px-2.5 py-1 transition-colors",
+                  visao === k
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {visao === "grade" ? (
+            <SortableStageGrid
+              stages={stages}
+              projectId={params.id}
+              funnelId={params.funnelId}
+            />
+          ) : (
+            <FunnelMapCanvas
+              projectId={params.id}
+              funnelId={params.funnelId}
+              stages={stages}
+              canvas={funnelData?.funnel?.canvas as CanvasState | undefined}
+              onPersist={(c) => updateFunnel.mutate({ canvas: c })}
+            />
+          )}
+        </div>
       )}
 
       {/* Log de Campanha — entrada FIXA em todo funil (Story 38.1) */}
