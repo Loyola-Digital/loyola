@@ -31,6 +31,8 @@ export interface FunnelGroupsDailyPoint {
 export interface FunnelGroupsCampaignSeries {
   campaignId: string;
   campaignName: string;
+  /** 'sendflow' = lido direto da fonte; 'planilha' = exportação manual (legado). */
+  fonte?: string;
   series: FunnelGroupsDailyPoint[];
 }
 
