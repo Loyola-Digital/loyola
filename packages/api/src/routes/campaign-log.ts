@@ -19,9 +19,17 @@ import {
   mauticConnections,
   projects,
   projectMembers,
+  sendflowConnections,
   users,
 } from "../db/schema.js";
 import { decryptMauticPassword, listAllMauticEmails } from "../services/mautic.js";
+import { encrypt, decrypt } from "../services/encryption.js";
+import {
+  SendflowSession,
+  disparosDaCampanha,
+  listarCampanhas,
+  renovarToken,
+} from "../services/sendflow.js";
 
 const funnelParamsSchema = z.object({
   projectId: z.string().uuid(),
@@ -452,7 +460,93 @@ export default fp(async function campaignLogRoutes(fastify) {
         }
       }
 
-      return { archived: false, mautic: mauticResult, instagram: instagramResult };
+      // ---- SendFlow (WhatsApp) ----
+      // Cada disparo da campanha vira uma linha. O que NÃO dá pra trazer é o
+      // texto da mensagem: a action do SendFlow guarda só metadados (tipo,
+      // horários, sucesso) — `refId` vem nulo e não há link pro template. Por
+      // isso `notes` descreve o disparo, não o conteúdo.
+      let sendflowResult = { ...empty };
+      const [sfConn] = await fastify.db
+        .select()
+        .from(sendflowConnections)
+        .where(eq(sendflowConnections.projectId, params.data.projectId))
+        .limit(1);
+      if (sfConn) {
+        try {
+          const t = await renovarToken(
+            sfConn.clientId,
+            decrypt(sfConn.clientSecretEncrypted, sfConn.clientSecretIv),
+            decrypt(sfConn.refreshTokenEncrypted, sfConn.refreshTokenIv),
+          );
+          // O refresh rotaciona a cada uso — não regravar mataria a conexão.
+          const refNovo = encrypt(t.refreshToken);
+          const accNovo = encrypt(t.accessToken);
+          await fastify.db
+            .update(sendflowConnections)
+            .set({
+              refreshTokenEncrypted: refNovo.encrypted,
+              refreshTokenIv: refNovo.iv,
+              accessTokenEncrypted: accNovo.encrypted,
+              accessTokenIv: accNovo.iv,
+              accessTokenExpiresAt: new Date(t.expiresAt),
+              updatedAt: new Date(),
+            })
+            .where(eq(sendflowConnections.projectId, params.data.projectId));
+
+          const sess = new SendflowSession(t.accessToken);
+          await sess.conectar();
+          const token = (funnel.matchCode ?? funnelMatchToken(funnel.name)).toLowerCase();
+          const campanha = (await listarCampanhas(sess))
+            .filter((c) => !c.archived)
+            .find((c) => (c.name ?? "").toLowerCase().includes(token));
+
+          if (campanha) {
+            const disparos = (await disparosDaCampanha(sess, campanha.id, 100)).filter(
+              (a) => a.type === "sendMessages" && a.processed,
+            );
+            let created = 0;
+            for (const a of disparos) {
+              const quando = a.scheduledTo ?? a.startedAt ?? a.createdAt;
+              if (!quando) continue;
+              const occurredAt = new Date(quando);
+              if (isNaN(occurredAt.getTime())) continue;
+              const inserted = await fastify.db
+                .insert(campaignLogEntries)
+                .values({
+                  funnelId: params.data.funnelId,
+                  occurredAt,
+                  evento: "Disparo no WhatsApp",
+                  aplicativo: "SendFlow",
+                  categoria: campanha.name.slice(0, 80),
+                  notes:
+                    a.success === false
+                      ? `Disparo FALHOU${a.error ? ` — ${String(a.error).slice(0, 100)}` : ""}`
+                      : "Disparo para os grupos da campanha",
+                  responsavel: "SendFlow (auto)",
+                  source: "sendflow",
+                  sourceId: `sendflow-action:${a.id}`,
+                  createdBy: request.userId,
+                })
+                .onConflictDoNothing()
+                .returning({ id: campaignLogEntries.id });
+              if (inserted.length > 0) created += 1;
+            }
+            sendflowResult = { connected: true, matched: disparos.length, created };
+          } else {
+            sendflowResult = { connected: true, matched: 0, created: 0 };
+          }
+        } catch (err) {
+          fastify.log.warn({ err }, "campaign-log sync: SendFlow falhou (os outros seguem)");
+          sendflowResult = { connected: true, matched: 0, created: 0 };
+        }
+      }
+
+      return {
+        archived: false,
+        mautic: mauticResult,
+        instagram: instagramResult,
+        sendflow: sendflowResult,
+      };
     },
   );
 

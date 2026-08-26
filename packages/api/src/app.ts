@@ -86,6 +86,7 @@ import zoomStageRoutes from "./routes/zoom-stage.js";
 import stageCreativePerformanceRoutes from "./routes/stage-creative-performance.js";
 import lpCampaignsRoutes from "./routes/lp-campaigns.js";
 import mauticRoutes from "./routes/mautic.js";
+import sendflowRoutes from "./routes/sendflow.js";
 import hotmartRoutes from "./routes/hotmart.js";
 import kiwifyRoutes from "./routes/kiwify.js";
 import memberkitRoutes from "./routes/memberkit.js";
@@ -237,6 +238,7 @@ export async function buildServer() {
   await app.register(stageCreativePerformanceRoutes);
   await app.register(lpCampaignsRoutes);
   await app.register(mauticRoutes);
+  await app.register(sendflowRoutes);
   await app.register(hotmartRoutes);
   await app.register(kiwifyRoutes);
   await app.register(memberkitRoutes);
