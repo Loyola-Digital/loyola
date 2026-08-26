@@ -180,11 +180,70 @@ export const CORES_BLOCO = [
 ] as const;
 
 /** Emojis dos blocos genéricos, agrupados pelo que o time desenha. */
-export const EMOJIS_GENERICOS: { grupo: string; itens: string[] }[] = [
-  { grupo: "Fluxo", itens: ["▶️", "⏸️", "🔀", "🔁", "✅", "❌", "⚠️", "🎯"] },
-  { grupo: "Canais", itens: ["📱", "💬", "📧", "📞", "🌐", "📺", "🎥", "📸"] },
-  { grupo: "Pessoas", itens: ["👤", "👥", "🧲", "🤝", "💼", "🎓", "🛒", "💰"] },
-  { grupo: "Marcos", itens: ["🚀", "🔥", "⭐", "📌", "🧠", "📊", "🗓️", "🏁"] },
+/**
+ * Blocos livres, desenhados com ícone.
+ *
+ * Eram emoji. Emoji muda de desenho conforme o sistema operacional, não
+ * acompanha o tema e destoa do resto da tela, que é toda de ícone de traço —
+ * e some no PDF, onde a fonte não tem o glifo.
+ *
+ * Cada um já nasce com um nome de verdade ("Início", "Decisão"), porque o
+ * genérico aqui é a FORMA, não o rótulo: um card escrito "genérico" não
+ * informa nada a quem lê o mapa depois.
+ */
+export const ICONES_GENERICOS: { grupo: string; itens: { icone: string; rotulo: string }[] }[] = [
+  {
+    grupo: "Fluxo",
+    itens: [
+      { icone: "Play", rotulo: "Início" },
+      { icone: "Pause", rotulo: "Pausa" },
+      { icone: "Split", rotulo: "Decisão" },
+      { icone: "RefreshCw", rotulo: "Repetição" },
+      { icone: "Check", rotulo: "Concluído" },
+      { icone: "X", rotulo: "Descartado" },
+      { icone: "TriangleAlert", rotulo: "Atenção" },
+      { icone: "Target", rotulo: "Objetivo" },
+    ],
+  },
+  {
+    grupo: "Canais",
+    itens: [
+      { icone: "Smartphone", rotulo: "App" },
+      { icone: "MessageCircle", rotulo: "WhatsApp" },
+      { icone: "Mail", rotulo: "E-mail" },
+      { icone: "Phone", rotulo: "Ligação" },
+      { icone: "Globe", rotulo: "Site" },
+      { icone: "Tv", rotulo: "Anúncio" },
+      { icone: "Video", rotulo: "Vídeo" },
+      { icone: "Camera", rotulo: "Conteúdo" },
+    ],
+  },
+  {
+    grupo: "Pessoas",
+    itens: [
+      { icone: "User", rotulo: "Lead" },
+      { icone: "Users", rotulo: "Público" },
+      { icone: "Magnet", rotulo: "Captação" },
+      { icone: "Handshake", rotulo: "Fechamento" },
+      { icone: "Briefcase", rotulo: "Time" },
+      { icone: "GraduationCap", rotulo: "Aluno" },
+      { icone: "ShoppingCart", rotulo: "Carrinho" },
+      { icone: "DollarSign", rotulo: "Receita" },
+    ],
+  },
+  {
+    grupo: "Marcos",
+    itens: [
+      { icone: "Rocket", rotulo: "Lançamento" },
+      { icone: "Flame", rotulo: "Aquecimento" },
+      { icone: "Star", rotulo: "Destaque" },
+      { icone: "Pin", rotulo: "Marco" },
+      { icone: "Brain", rotulo: "Estratégia" },
+      { icone: "BarChart3", rotulo: "Métrica" },
+      { icone: "Calendar", rotulo: "Data" },
+      { icone: "Flag", rotulo: "Meta" },
+    ],
+  },
 ];
 
 /** Tamanhos de fonte por hierarquia do bloco de texto. */

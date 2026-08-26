@@ -45,8 +45,10 @@ const boxSchema = z.object({
   italico: z.boolean().optional(),
   /** Tamanho da fonte em px, quando a pessoa ajusta à mão. */
   fonte: z.number().min(8).max(96).nullable().optional(),
-  /** Emoji do bloco genérico. */
+  /** Emoji do bloco genérico — só nos criados antes da troca por ícone. */
   emoji: z.string().max(8).nullable().optional(),
+  /** Nome do ícone lucide do bloco genérico. */
+  icone: z.string().max(40).nullable().optional(),
 });
 
 const connectorSchema = z.object({
