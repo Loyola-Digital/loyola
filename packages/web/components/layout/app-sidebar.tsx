@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Brain, MessageSquare, CheckSquare, Settings, Plus, Eye, EyeOff, LayoutGrid, Radar, Library , Target } from "lucide-react";
+import { Brain, MessageSquare, CheckSquare, Settings, Plus, Eye, EyeOff, LayoutGrid, Radar, Library , Target, Map as MapIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { useHiddenProjectsStore } from "@/lib/stores/hidden-projects-store";
@@ -42,6 +42,9 @@ const navItems = [
   { label: "Spy de Conteúdo", href: "/spy-conteudo", icon: Radar },
   // Biblioteca de referências de anúncios do time (print/vídeo/link).
   { label: "Swipe Files", href: "/swipe-files", icon: Library },
+  // Os mapas vivem dentro de etapa > funil > projeto; aqui ficam todos juntos,
+  // para comparar e editar sem navegar três níveis por desenho.
+  { label: "Mapas de Funil", href: "/funnel-maps", icon: MapIcon },
   // Epic 37: Debriefing saiu do menu global — agora é etapa de funil
   // (stageType "debriefing"); as rotas /debriefings/* seguem servindo o detalhe.
   { label: "Settings", href: "/settings", icon: Settings },
