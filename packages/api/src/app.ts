@@ -36,6 +36,7 @@ import projectRoutes from "./routes/projects.js";
 import invitationsRoutes from "./routes/invitations.js";
 import adminRoutes from "./routes/admin.js";
 import pdiRoutes from "./routes/pdi.js";
+import pessoalRoutes from "./routes/pessoal.js";
 import apiKeysRoutes from "./routes/api-keys.js";
 import publicDiscoveryRoutes from "./routes/public-discovery.js";
 import publicMetaRoutes from "./routes/public-meta.js";
@@ -190,6 +191,7 @@ export async function buildServer() {
   await app.register(invitationsRoutes);
   await app.register(adminRoutes);
   await app.register(pdiRoutes);
+  await app.register(pessoalRoutes);
   await app.register(apiKeysRoutes);
   // API pública read-only (/api/public/*) — Story 36.3
   await app.register(publicDiscoveryRoutes);
