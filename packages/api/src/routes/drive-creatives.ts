@@ -63,7 +63,7 @@ export default fp(async function driveCreativesRoutes(fastify) {
    * com 30 anúncios faria isso 30 vezes. A pasta de uma campanha não muda de
    * lugar, então 30 min é conservador.
    */
-  const pastas = new Map<string, { id: string | null; expira: number }>();
+  const pastas = new Map<string, { ids: string[]; expira: number }>();
   const TTL_MS = 30 * 60 * 1000;
 
   async function contexto(p: z.infer<typeof stageParam>) {
@@ -87,13 +87,13 @@ export default fp(async function driveCreativesRoutes(fastify) {
     return ctx ?? null;
   }
 
-  async function pastaDe(
+  async function pastasDe(
     ctx: { projeto: string; funil: string; stageType: string },
     tipo: TipoDeCriativo,
-  ): Promise<string | null> {
+  ): Promise<string[]> {
     const chave = `${ctx.funil}|${tipo}|${ctx.stageType}`;
     const guardado = pastas.get(chave);
-    if (guardado && guardado.expira > Date.now()) return guardado.id;
+    if (guardado && guardado.expira > Date.now()) return guardado.ids;
 
     const r = await resolverPastaDeCriativos({
       drive: driveDoProjeto(ctx.projeto, ctx.funil),
@@ -103,8 +103,8 @@ export default fp(async function driveCreativesRoutes(fastify) {
     });
     // Cacheia o negativo também: sem isso, funil sem pasta refaz seis chamadas
     // ao Drive a cada anúncio da galeria.
-    pastas.set(chave, { id: r.pastaId, expira: Date.now() + TTL_MS });
-    return r.pastaId;
+    pastas.set(chave, { ids: r.pastaIds, expira: Date.now() + TTL_MS });
+    return r.pastaIds;
   }
 
   /**
@@ -126,13 +126,13 @@ export default fp(async function driveCreativesRoutes(fastify) {
       try {
         const porNome: Record<string, { url: string; view: string | null; tipo: TipoDeCriativo }> = {};
         for (const tipo of ["video", "estatico"] as TipoDeCriativo[]) {
-          const pastaId = await pastaDe(ctx, tipo);
-          if (!pastaId) continue;
+          for (const pastaId of await pastasDe(ctx, tipo)) {
           for (const f of await criativosDaPasta(pastaId)) {
             // `thumbnailLink` expira, então isto é resposta de request — nunca
             // vai pro banco.
             if (!f.thumbnailLink) continue;
             porNome[f.name] = { url: f.thumbnailLink, view: f.webViewLink ?? null, tipo };
+          }
           }
         }
         return { criativos: porNome, total: Object.keys(porNome).length };
@@ -173,12 +173,15 @@ export default fp(async function driveCreativesRoutes(fastify) {
 
       const arquivos: { tipo: string; nomes: string[] }[] = [];
       for (const [tipo, r] of [["video", video], ["estatico", estatico]] as const) {
-        if (!r.pastaId) continue;
-        try {
-          arquivos.push({ tipo, nomes: (await criativosDaPasta(r.pastaId)).map((f) => f.name).slice(0, 40) });
-        } catch {
-          /* pasta some entre a resolução e a listagem: ignora */
+        const nomes: string[] = [];
+        for (const id of r.pastaIds) {
+          try {
+            nomes.push(...(await criativosDaPasta(id)).map((f) => f.name));
+          } catch {
+            /* pasta some entre a resolução e a listagem: ignora */
+          }
         }
+        if (nomes.length) arquivos.push({ tipo, nomes: nomes.slice(0, 40) });
       }
 
       return {
@@ -204,8 +207,7 @@ export default fp(async function driveCreativesRoutes(fastify) {
       if (!ctx) return reply.code(404).send({ error: "Etapa não encontrada" });
 
       for (const tipo of ["video", "estatico"] as TipoDeCriativo[]) {
-        const pastaId = await pastaDe(ctx, tipo);
-        if (!pastaId) continue;
+        for (const pastaId of await pastasDe(ctx, tipo)) {
         const achado = acharCriativo(await criativosDaPasta(pastaId), q.data.ad);
         if (achado) {
           return {
@@ -215,6 +217,7 @@ export default fp(async function driveCreativesRoutes(fastify) {
             url: achado.thumbnailLink ?? null,
             view: achado.webViewLink ?? null,
           };
+        }
         }
       }
       return { casou: false };

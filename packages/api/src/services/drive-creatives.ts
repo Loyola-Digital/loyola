@@ -132,20 +132,40 @@ export async function drivesCompartilhados(): Promise<DriveCompartilhado[]> {
   return d.drives ?? [];
 }
 
-/** Subpasta de `paiId` cujo nome casa com um dos apelidos. */
+/**
+ * Subpasta cujo nome casa com um dos apelidos.
+ *
+ * Igualdade primeiro, depois "contém". O drive real numera e enfeita as pastas
+ * pra ordenar na interface — " 📢 - Campanhas", "1 - MATERIAIS" — então exigir
+ * igualdade exata faria a árvore falhar já no segundo degrau.
+ */
 async function subpasta(paiId: string, apelidos: string[]): Promise<ArquivoDoDrive | null> {
   const filhas = await listar(`'${paiId}' in parents and mimeType='${MIME_PASTA}' and trashed=false`, "id,name,mimeType");
   const alvos = apelidos.map(normalizar);
-  return filhas.find((f) => alvos.includes(normalizar(f.name))) ?? null;
+  const exata = filhas.find((f) => alvos.includes(normalizar(f.name)));
+  if (exata) return exata;
+  // Apelido mais LONGO primeiro: "criativosestatico" antes de "estatico", pra
+  // não casar a pasta errada quando as duas existem lado a lado.
+  for (const alvo of [...alvos].sort((a, b) => b.length - a.length)) {
+    const achada = filhas.find((f) => normalizar(f.name).includes(alvo));
+    if (achada) return achada;
+  }
+  return null;
 }
 
-/** Subpasta cujo nome COMEÇA com o prefixo — a campanha tem sufixo de mês. */
+/**
+ * Subpasta da campanha.
+ *
+ * O nome real é "16 - DG-PG04-JUN-26": prefixo numérico de ordenação na frente
+ * e sufixo de mês atrás. Nem `startsWith` nem igualdade servem — o que
+ * identifica é o token do meio.
+ */
 async function subpastaPorPrefixo(paiId: string, prefixo: string): Promise<ArquivoDoDrive | null> {
   const filhas = await listar(`'${paiId}' in parents and mimeType='${MIME_PASTA}' and trashed=false`, "id,name,mimeType");
   const alvo = normalizar(prefixo);
-  // Mais específico primeiro: "dg-pg04" não deve casar com "dg-pg04-b" se
-  // "dg-pg04-jun-26" existir e for mais próximo.
-  const candidatas = filhas.filter((f) => normalizar(f.name).startsWith(alvo));
+  const candidatas = filhas.filter((f) => normalizar(f.name).includes(alvo));
+  // Mais curta primeiro: entre "dgpg04jun26" e "dgpg04jun26copia", a primeira é
+  // a pasta e a segunda é sobra.
   candidatas.sort((a, b) => normalizar(a.name).length - normalizar(b.name).length);
   return candidatas[0] ?? null;
 }
@@ -164,7 +184,17 @@ const NOMES = {
   estatico: ["CRIATIVOS ESTATICO", "CRIATIVOS ESTATICOS", "CRIATIVO ESTATICO", "ESTATICOS", "ESTATICO"],
   vendas: ["VENDAS", "VENDA"],
   captacao: ["CAPTACAO", "CAPTAÇÃO", "CAPTURA"],
+  /**
+   * Onde moram os arquivos de ANÚNCIO no fim da árvore.
+   *
+   * Não é uma pasta só: medido no drive real, vídeo guarda em "2. Com edição"
+   * e estático guarda em "Ads" — às vezes direto na etapa, às vezes dentro de
+   * "LOTE N". As irmãs "Wpp" e "Orgânico" ficam de fora de propósito: são
+   * criativos de WhatsApp e orgânico, não anúncios, e entrariam como ruído na
+   * galeria de ads.
+   */
   comEdicao: ["COM EDICAO", "COM EDIÇÃO", "COM-EDICAO", "EDITADOS"],
+  ads: ["ADS"],
 } as const;
 
 /** Cada degrau da árvore, pra tela poder dizer ONDE parou. */
@@ -176,10 +206,49 @@ export interface PassoDaBusca {
 
 export interface ResolucaoDePasta {
   ok: boolean;
-  pastaId: string | null;
+  /**
+   * TODAS as pastas "Com edição" abaixo da etapa.
+   *
+   * Plural porque a árvore real não é uniforme: em Vendas/vídeo ela é filha
+   * direta, em Captação/estático está dentro de cada "LOTE N", e em
+   * Vendas/estático dentro de "Ads"/"Whatsapp"/"Orgânico". Pegar só a primeira
+   * deixaria criativos de fora sem avisar.
+   */
+  pastaIds: string[];
   passos: PassoDaBusca[];
   /** Preenchido quando falha por acesso, não por convenção. */
   erro?: string;
+}
+
+/**
+ * Procura "Com edição" abaixo de `paiId`, descendo até `profundidade` níveis.
+ *
+ * Existe porque o time organiza o miolo como quiser — por lote, por canal — e
+ * exigir que "Com edição" fosse filha direta da etapa faria a integração
+ * funcionar em um ramo de quatro.
+ */
+async function acharComEdicao(paiId: string, profundidade = 3): Promise<string[]> {
+  const achadas: string[] = [];
+  const porConter = NOMES.comEdicao.map(normalizar);
+  const porIgualdade = NOMES.ads.map(normalizar);
+  async function descer(id: string, resta: number): Promise<void> {
+    const filhas = await listar(`'${id}' in parents and mimeType='${MIME_PASTA}' and trashed=false`, "id,name,mimeType");
+    for (const f of filhas) {
+      const n = normalizar(f.name);
+      // "Ads" por IGUALDADE: `includes` casaria "ads-feio" e qualquer pasta com
+      // "ads" no meio do nome. "Com edição" por conteúdo, porque vem numerada
+      // ("2. Com edição").
+      if (porConter.some((a) => n.includes(a)) || porIgualdade.includes(n)) {
+        achadas.push(f.id);
+        // Não desce mais neste ramo: subpasta de "Com edição" é organização
+        // interna, e varrer tudo traria material que não é anúncio.
+        continue;
+      }
+      if (resta > 0) await descer(f.id, resta - 1);
+    }
+  }
+  await descer(paiId, profundidade);
+  return achadas;
 }
 
 /**
@@ -209,7 +278,7 @@ export async function resolverPastaDeCriativos(opts: {
     if (!dr) {
       return {
         ok: false,
-        pastaId: null,
+        pastaIds: [],
         passos,
         erro:
           drives.length === 0
@@ -225,7 +294,6 @@ export async function resolverPastaDeCriativos(opts: {
       ["MATERIAIS", [...NOMES.materiais]],
       [opts.tipo === "video" ? "CRIATIVOS VIDEO" : "CRIATIVOS ESTATICO", [...NOMES[opts.tipo]]],
       [opts.etapa === "vendas" ? "VENDAS" : "CAPTACAO", [...NOMES[opts.etapa]]],
-      ["COM EDICAO", [...NOMES.comEdicao]],
     ];
 
     for (const [nivel, alvoDoNivel] of degraus) {
@@ -238,14 +306,23 @@ export async function resolverPastaDeCriativos(opts: {
         procurado: typeof alvoDoNivel === "string" ? `${alvoDoNivel}…` : alvoDoNivel[0],
         achado: achada?.name ?? null,
       });
-      if (!achada) return { ok: false, pastaId: null, passos };
+      if (!achada) return { ok: false, pastaIds: [], passos };
       atual = achada.id;
     }
-    return { ok: true, pastaId: atual, passos };
+
+    // "Com edição" pode estar a até três níveis abaixo da etapa.
+    const comEdicao = await acharComEdicao(atual);
+    passos.push({
+      nivel: "COM EDICAO",
+      procurado: "COM EDICAO",
+      achado: comEdicao.length ? `${comEdicao.length} pasta(s)` : null,
+    });
+    if (comEdicao.length === 0) return { ok: false, pastaIds: [], passos };
+    return { ok: true, pastaIds: comEdicao, passos };
   } catch (err) {
     return {
       ok: false,
-      pastaId: null,
+      pastaIds: [],
       passos,
       erro: err instanceof Error ? err.message : "Falha ao falar com o Drive",
     };
