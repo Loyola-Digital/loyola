@@ -79,15 +79,27 @@ async function main() {
   // Story 29.43: a cobertura de LP é o número que decide se a tabela do perpétuo
   // é utilizável. Imprimir aqui evita ter que ir ao banco conferir se adiantou.
   if (creatives) {
+    // Story 29.63 (AC6): o permalink entra na mesma contagem. Um relatório que
+    // mede só a LP fica cego justamente no campo recém-adicionado — foi o QA-35
+    // da 36.8, que teria reaparecido aqui se ninguém tocasse nesta query.
     const lp = await pool.query(
       `SELECT count(*)::int AS total,
               count(*) FILTER (WHERE creative->>'linkUrl' IS NOT NULL)::int AS com_link,
-              count(*) FILTER (WHERE (creative->>'linkUrlResolver')::int IS NOT NULL)::int AS carimbados
+              count(*) FILTER (WHERE (creative->>'linkUrlResolver')::int IS NOT NULL)::int AS carimbados,
+              count(*) FILTER (WHERE creative->>'igPermalinkUrl' IS NOT NULL)::int AS com_ig,
+              count(*) FILTER (WHERE (creative->>'igPermalinkResolver')::int IS NOT NULL)::int AS ig_carimbados,
+              count(*) FILTER (WHERE creative->>'adPermalinkUrl' IS NOT NULL)::int AS com_fb
          FROM meta_ad_creatives_cache`,
     );
-    const { total, com_link, carimbados } = lp.rows[0];
-    const pct = total > 0 ? ((com_link / total) * 100).toFixed(2) : "0.00";
-    console.log(`criativos -> ${total} rows | com LP: ${com_link} (${pct}%) | carimbados: ${carimbados}`);
+    const { total, com_link, carimbados, com_ig, ig_carimbados, com_fb } = lp.rows[0];
+    const pct = (n: number) => (total > 0 ? ((n / total) * 100).toFixed(2) : "0.00");
+    console.log(`criativos -> ${total} rows | com LP: ${com_link} (${pct(com_link)}%) | carimbados: ${carimbados}`);
+    // `com_ig` mede o dado; `ig_carimbados` mede quantas linhas SABEM responder
+    // sobre ele. A diferença entre os dois é o tamanho do "não perguntamos".
+    console.log(
+      `permalink -> Instagram: ${com_ig} (${pct(com_ig)}%) | carimbados: ${ig_carimbados} | ` +
+        `Facebook (fallback): ${com_fb} (${pct(com_fb)}%)`,
+    );
   }
   await pool.end();
 }

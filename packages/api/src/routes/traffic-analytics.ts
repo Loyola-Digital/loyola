@@ -24,6 +24,7 @@ import {
   decryptAccountToken,
   resolveEntityNames,
   LINK_URL_RESOLVER_VERSION,
+  IG_PERMALINK_RESOLVER_VERSION,
   type MetaEntityType,
   type ResolveEntityNamesCacheAdapter,
 } from "../services/meta-ads.js";
@@ -755,9 +756,44 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
           accessToken,
           adIds,
         );
+        // Story 29.63 (AC6): quais destes vieram de linha escrita por código
+        // que ainda não perguntava pelo permalink do Instagram.
+        //
+        // Sem isso, `igPermalinkUrl: null` tem duas causas indistinguíveis na
+        // tela: "a Meta não tem post para este anúncio" (definitivo) e "o cache
+        // é velho" (se resolve sozinho no próximo sync). A primeira pede que a
+        // pessoa pare de esperar; a segunda, que espere. Mostrar o mesmo "—"
+        // para as duas manda o time investigar a Meta quando o problema é nosso.
+        //
+        // Custo: uma consulta por PK aos mesmos ad_ids que acabaram de ser
+        // lidos. Só cache-hit pode estar velho — o que veio fresco da Meta tem
+        // o campo por construção.
+        const linhasEmCache = await fastify.db
+          .select({
+            adId: metaAdCreativesCache.adId,
+            creative: metaAdCreativesCache.creative,
+          })
+          .from(metaAdCreativesCache)
+          .where(
+            and(
+              eq(metaAdCreativesCache.projectId, paramResult.data.projectId),
+              inArray(metaAdCreativesCache.adId, adIds),
+            ),
+          );
+        const igPermalinkStale = linhasEmCache
+          .filter(
+            (l) => (l.creative?.igPermalinkResolver ?? 0) < IG_PERMALINK_RESOLVER_VERSION,
+          )
+          .map((l) => l.adId);
+
         // Story 29.34: `requested` > `limit` diz à UI que houve corte. Campos
         // aditivos — consumidor antigo que só lê `creatives` segue funcionando.
-        return { creatives, requested: requestedAdIds.length, limit: AD_CREATIVES_LIMIT };
+        return {
+          creatives,
+          requested: requestedAdIds.length,
+          limit: AD_CREATIVES_LIMIT,
+          igPermalinkStale,
+        };
       } catch (err) {
         return reply.code(502).send({
           error: "Erro ao buscar criativos",

@@ -67,6 +67,7 @@ import {
   useAllAdSets,
   useAllAds,
   useAdCreatives,
+  creativePermalink,
   useAdLinkUrls,
   useEntityDaily,
   useTemperaturaDePublico,
@@ -2034,6 +2035,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     for (const c of creativesData?.creatives ?? []) m.set(c.adId, c);
     return m;
   }, [creativesData]);
+  // Story 29.63 (AC6): quais ad_ids têm cache anterior ao permalink do
+  // Instagram. Separa "ainda não sincronizado" de "a Meta não tem" no tooltip
+  // do "—" — duas causas que pedem reações opostas de quem lê a tabela.
+  const igPermalinkStale = useMemo(
+    () => new Set(creativesData?.igPermalinkStale ?? []),
+    [creativesData],
+  );
 
   // Story 29.34 (QA-03): quantas linhas ficaram SEM Tipo/Link por causa do
   // teto. Sem este aviso, o "—" dessas linhas se confunde com "a Meta não tem
@@ -2897,7 +2905,11 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                 {showVideoCols && (
                   <>
                     <th className="text-left px-2 select-none" title="VIDEO no objectType da Meta → Vídeo; qualquer outro valor → Estático; ausente → —">Tipo</th>
-                    <th className="text-left px-2 select-none" title="Link do anúncio na Meta (link_url; fallback permalink)">Link</th>
+                    {/* Story 29.63: abre o POST do criativo (Instagram, com
+                        fallback para o Facebook) — não a landing page. O
+                        cabeçalho antigo prometia esse fallback, mas ele nunca
+                        chegou à tela: o tipo do web não declarava o campo. */}
+                    <th className="text-left px-2 select-none" title="Abre o post do criativo no Instagram (fallback: Facebook). Não é a landing page de destino.">Criativo</th>
                   </>
                 )}
                 <th className="text-right px-2 cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("spend")}>Investimento{sortArrow("spend")}</th>
@@ -2986,20 +2998,41 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                     {showVideoCols && (
                       <>
                         <td className="px-2 whitespace-nowrap">{creativeTypeLabel(creativeByAdId.get(row.representativeAdId))}</td>
+                        {/* Story 29.63 (AC4/AC6): cascata Instagram → Facebook →
+                            "—". Quando cai em "—", o tooltip diz QUAL das duas
+                            causas é: cache velho (se resolve sozinho) ou anúncio
+                            sem post (não se resolve esperando). */}
                         <td className="px-2">
-                          {creativeByAdId.get(row.representativeAdId)?.linkUrl ? (
-                            <a
-                              href={creativeByAdId.get(row.representativeAdId)!.linkUrl!}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-primary hover:underline"
-                              title={creativeByAdId.get(row.representativeAdId)!.linkUrl!}
-                            >
-                              abrir
-                            </a>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
+                          {(() => {
+                            const criativo = creativeByAdId.get(row.representativeAdId);
+                            const permalink = creativePermalink(criativo);
+                            if (permalink) {
+                              return (
+                                <a
+                                  href={permalink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:underline"
+                                  title={permalink}
+                                >
+                                  ver criativo
+                                </a>
+                              );
+                            }
+                            const naoSincronizado = igPermalinkStale.has(row.representativeAdId);
+                            return (
+                              <span
+                                className="text-muted-foreground cursor-help"
+                                title={
+                                  naoSincronizado
+                                    ? "Ainda não sincronizado — este criativo foi salvo antes do link existir. O próximo sync resolve."
+                                    : "A Meta não tem post publicado para este anúncio."
+                                }
+                              >
+                                —
+                              </span>
+                            );
+                          })()}
                         </td>
                       </>
                     )}

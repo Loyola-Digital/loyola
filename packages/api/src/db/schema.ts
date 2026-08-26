@@ -2213,6 +2213,14 @@ export const metaAdCreativesCache = pgTable(
         adPermalinkUrl?: string | null;
         /** Story 36.8: versão do resolver que escreveu `adPermalinkUrl`. */
         adPermalinkResolver?: number;
+        /**
+         * Story 29.63: permalink do post no INSTAGRAM (`/p/{shortcode}/`).
+         * Preferido sobre o `adPermalinkUrl` (Facebook) na tela: é o link que o
+         * anunciante reconhece, e cobre 96–100% dos anúncios com entrega.
+         */
+        igPermalinkUrl?: string | null;
+        /** Story 29.63: versão do resolver que escreveu `igPermalinkUrl`. */
+        igPermalinkResolver?: number;
       }>(),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
   },
