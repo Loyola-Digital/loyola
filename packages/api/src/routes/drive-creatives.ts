@@ -63,7 +63,7 @@ export default fp(async function driveCreativesRoutes(fastify) {
    * com 30 anúncios faria isso 30 vezes. A pasta de uma campanha não muda de
    * lugar, então 30 min é conservador.
    */
-  const pastas = new Map<string, { ids: string[]; expira: number }>();
+  const pastas = new Map<string, { lista: { id: string; nome: string; editada: boolean }[]; expira: number }>();
   const TTL_MS = 30 * 60 * 1000;
 
   async function contexto(p: z.infer<typeof stageParam>) {
@@ -90,10 +90,10 @@ export default fp(async function driveCreativesRoutes(fastify) {
   async function pastasDe(
     ctx: { projeto: string; funil: string; stageType: string },
     tipo: TipoDeCriativo,
-  ): Promise<string[]> {
+  ): Promise<{ id: string; nome: string; editada: boolean }[]> {
     const chave = `${ctx.funil}|${tipo}|${ctx.stageType}`;
     const guardado = pastas.get(chave);
-    if (guardado && guardado.expira > Date.now()) return guardado.ids;
+    if (guardado && guardado.expira > Date.now()) return guardado.lista;
 
     const r = await resolverPastaDeCriativos({
       drive: driveDoProjeto(ctx.projeto, ctx.funil),
@@ -103,8 +103,8 @@ export default fp(async function driveCreativesRoutes(fastify) {
     });
     // Cacheia o negativo também: sem isso, funil sem pasta refaz seis chamadas
     // ao Drive a cada anúncio da galeria.
-    pastas.set(chave, { ids: r.pastaIds, expira: Date.now() + TTL_MS });
-    return r.pastaIds;
+    pastas.set(chave, { lista: r.pastas, expira: Date.now() + TTL_MS });
+    return r.pastas;
   }
 
   /**
@@ -124,14 +124,28 @@ export default fp(async function driveCreativesRoutes(fastify) {
       if (!ctx) return reply.code(404).send({ error: "Etapa não encontrada" });
 
       try {
-        const porNome: Record<string, { url: string; view: string | null; tipo: TipoDeCriativo }> = {};
+        const porNome: Record<
+          string,
+          { url: string; view: string | null; tipo: TipoDeCriativo; pasta: string; editada: boolean }
+        > = {};
         for (const tipo of ["video", "estatico"] as TipoDeCriativo[]) {
-          for (const pastaId of await pastasDe(ctx, tipo)) {
-          for (const f of await criativosDaPasta(pastaId)) {
+          for (const p of await pastasDe(ctx, tipo)) {
+          for (const f of await criativosDaPasta(p.id)) {
             // `thumbnailLink` expira, então isto é resposta de request — nunca
             // vai pro banco.
             if (!f.thumbnailLink) continue;
-            porNome[f.name] = { url: f.thumbnailLink, view: f.webViewLink ?? null, tipo };
+            // Mesmo nome em duas pastas: a EDITADA não pode ser sobrescrita.
+            const jaTem = porNome[f.name];
+            if (jaTem?.editada && !p.editada) continue;
+            // `pasta` sai na resposta pra tela poder dizer DE ONDE veio o
+            // arquivo — sem isso, "carregou o errado" vira investigação longa.
+            porNome[f.name] = {
+              url: f.thumbnailLink,
+              view: f.webViewLink ?? null,
+              tipo,
+              pasta: p.nome,
+              editada: p.editada,
+            };
           }
           }
         }
@@ -174,9 +188,9 @@ export default fp(async function driveCreativesRoutes(fastify) {
       const arquivos: { tipo: string; nomes: string[] }[] = [];
       for (const [tipo, r] of [["video", video], ["estatico", estatico]] as const) {
         const nomes: string[] = [];
-        for (const id of r.pastaIds) {
+        for (const p of r.pastas) {
           try {
-            nomes.push(...(await criativosDaPasta(id)).map((f) => f.name));
+            nomes.push(...(await criativosDaPasta(p.id)).map((f) => `${p.nome} / ${f.name}`));
           } catch {
             /* pasta some entre a resolução e a listagem: ignora */
           }
@@ -207,12 +221,14 @@ export default fp(async function driveCreativesRoutes(fastify) {
       if (!ctx) return reply.code(404).send({ error: "Etapa não encontrada" });
 
       for (const tipo of ["video", "estatico"] as TipoDeCriativo[]) {
-        for (const pastaId of await pastasDe(ctx, tipo)) {
-        const achado = acharCriativo(await criativosDaPasta(pastaId), q.data.ad);
+        for (const p of await pastasDe(ctx, tipo)) {
+        const achado = acharCriativo(await criativosDaPasta(p.id), q.data.ad);
         if (achado) {
           return {
             casou: true,
             tipo,
+            pasta: p.nome,
+            editada: p.editada,
             arquivo: achado.name,
             url: achado.thumbnailLink ?? null,
             view: achado.webViewLink ?? null,
