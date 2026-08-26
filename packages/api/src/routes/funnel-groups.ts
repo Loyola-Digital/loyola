@@ -6,6 +6,7 @@ import {
   funnelGroupsSpreadsheets,
   funnelGroupSnapshots,
 } from "../db/schema.js";
+import { sincronizarGruposDoSendflow } from "../services/sendflow-groups-sync.js";
 import { syncGroupsFromSheet } from "../services/funnel-groups-sync.js";
 
 const paramsSchema = z.object({
@@ -159,8 +160,35 @@ export default fp(async function funnelGroupsRoutes(fastify) {
       if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
 
       try {
+        // SendFlow primeiro: a planilha que alimentava isto era uma EXPORTAÇÃO
+        // manual do próprio SendFlow. Lendo da fonte, some o passo humano — e
+        // se o projeto não estiver conectado, cai na planilha como antes.
+        try {
+          const sf = await sincronizarGruposDoSendflow(
+            fastify.db,
+            p.data.projectId,
+            p.data.funnelId,
+          );
+          if (sf.connected && sf.campanha) {
+            return {
+              fonte: "sendflow" as const,
+              campanha: sf.campanha,
+              rowsProcessed: 1,
+              rowsInserted: sf.inseridos,
+              rowsUpdated: 0,
+              participantes: sf.participantes,
+              grupos: sf.grupos,
+              errors: [],
+            };
+          }
+        } catch (err) {
+          // Falha no SendFlow não pode derrubar o sync: a planilha ainda
+          // responde, e o time não fica sem número por causa da integração.
+          fastify.log.warn({ err }, "[funnel-groups] SendFlow falhou, caindo na planilha");
+        }
+
         const result = await syncGroupsFromSheet(fastify.db, p.data.funnelId);
-        return result;
+        return { fonte: "planilha" as const, ...result };
       } catch (err) {
         fastify.log.error({ err }, "[funnel-groups] sync failed");
         return reply.code(502).send({
