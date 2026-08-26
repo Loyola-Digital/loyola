@@ -20,6 +20,10 @@ export interface DriveCriativo {
   url: string;
   view: string | null;
   tipo: "video" | "estatico";
+  /** Pasta de onde o arquivo veio — a tela mostra pra dar rastreabilidade. */
+  pasta: string;
+  /** true = veio de "Com edição"; false = de "Ads". Nunca de "Sem edição". */
+  editada: boolean;
 }
 
 export interface DriveCreativesResposta {

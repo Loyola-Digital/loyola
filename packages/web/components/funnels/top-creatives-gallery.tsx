@@ -114,6 +114,21 @@ function srcDoCriativo(
   return doDrive(nome)?.url || creativeImgSrc(c);
 }
 
+/**
+ * De onde a imagem veio, pra tooltip.
+ *
+ * Sem isto, "carregou o criativo errado" vira investigação: não dá pra saber se
+ * veio do Drive ou da Meta, nem de qual pasta.
+ */
+function origemDoCriativo(
+  nome: string | null | undefined,
+  doDrive: (n: string | null | undefined) => { pasta: string; editada: boolean } | null,
+): string {
+  const d = doDrive(nome);
+  if (!d) return "Preview da Meta (sem arquivo correspondente no Drive)";
+  return `Drive · ${d.pasta}`;
+}
+
 /** True quando não há imageUrl HD e estamos caindo em thumbnail_url low-res. */
 function isLowResFallback(c: MetaAdCreative | null): boolean {
   return !c?.imageUrl && !!c?.thumbnailUrl;
@@ -129,6 +144,7 @@ function isLowResFallback(c: MetaAdCreative | null): boolean {
  * a pixelização em vez de esticar áspero.
  */
 function CreativeThumbnail({
+  title,
   src,
   alt,
   className,
@@ -138,6 +154,8 @@ function CreativeThumbnail({
   alt: string;
   className: string;
   isLowRes?: boolean;
+  /** Tooltip de origem (Drive + pasta, ou Meta). */
+  title?: string;
 }) {
   const [failed, setFailed] = useState(false);
   // Reset fallback quando a src muda (ex: lightbox navegando entre itens)
@@ -156,6 +174,7 @@ function CreativeThumbnail({
     <img
       src={src}
       alt={alt}
+      title={title}
       className={className}
       onError={() => setFailed(true)}
       style={isLowRes ? { imageRendering: "auto", filter: "blur(1.5px)" } : undefined}
@@ -874,6 +893,7 @@ export function TopCreativesGallery({
               <div className="relative aspect-video bg-muted/30">
                 <CreativeThumbnail
                   src={srcDoCriativo(c.creative, c.name, criativoDoDrive)}
+                  title={origemDoCriativo(c.name, criativoDoDrive)}
                   alt={c.name}
                   className="w-full h-full object-cover"
                   isLowRes={isLowResFallback(c.creative)}

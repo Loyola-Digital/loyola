@@ -195,6 +195,14 @@ const NOMES = {
    */
   comEdicao: ["COM EDICAO", "COM EDIÇÃO", "COM-EDICAO", "EDITADOS"],
   ads: ["ADS"],
+  /**
+   * Pastas que NUNCA entram, por mais que o resto da regra as alcance.
+   *
+   * "Sem edição" guarda o corte cru do mesmo anúncio — e a regra do time é
+   * explícita: sempre a versão editada. Sem esta barreira, bastaria alguém
+   * criar uma "Ads" dentro de "Sem edição" pro material cru entrar na galeria.
+   */
+  nunca: ["SEM EDICAO", "SEM EDIÇÃO", "BRUTO", "BRUTOS", "RAW"],
 } as const;
 
 /** Cada degrau da árvore, pra tela poder dizer ONDE parou. */
@@ -214,7 +222,7 @@ export interface ResolucaoDePasta {
    * Vendas/estático dentro de "Ads"/"Whatsapp"/"Orgânico". Pegar só a primeira
    * deixaria criativos de fora sem avisar.
    */
-  pastaIds: string[];
+  pastas: { id: string; nome: string; editada: boolean }[];
   passos: PassoDaBusca[];
   /** Preenchido quando falha por acesso, não por convenção. */
   erro?: string;
@@ -227,19 +235,27 @@ export interface ResolucaoDePasta {
  * exigir que "Com edição" fosse filha direta da etapa faria a integração
  * funcionar em um ramo de quatro.
  */
-async function acharComEdicao(paiId: string, profundidade = 3): Promise<string[]> {
-  const achadas: string[] = [];
+async function acharComEdicao(
+  paiId: string,
+  profundidade = 3,
+): Promise<{ id: string; nome: string; editada: boolean }[]> {
+  const achadas: { id: string; nome: string; editada: boolean }[] = [];
   const porConter = NOMES.comEdicao.map(normalizar);
   const porIgualdade = NOMES.ads.map(normalizar);
+  const proibidas = NOMES.nunca.map(normalizar);
   async function descer(id: string, resta: number): Promise<void> {
     const filhas = await listar(`'${id}' in parents and mimeType='${MIME_PASTA}' and trashed=false`, "id,name,mimeType");
     for (const f of filhas) {
       const n = normalizar(f.name);
+      // Barreira: nem casa, nem desce. O que estiver embaixo de "Sem edição" é
+      // material cru, independente de como a subpasta se chame.
+      if (proibidas.some((x) => n.includes(x))) continue;
       // "Ads" por IGUALDADE: `includes` casaria "ads-feio" e qualquer pasta com
       // "ads" no meio do nome. "Com edição" por conteúdo, porque vem numerada
       // ("2. Com edição").
-      if (porConter.some((a) => n.includes(a)) || porIgualdade.includes(n)) {
-        achadas.push(f.id);
+      const editada = porConter.some((a) => n.includes(a));
+      if (editada || porIgualdade.includes(n)) {
+        achadas.push({ id: f.id, nome: f.name, editada });
         // Não desce mais neste ramo: subpasta de "Com edição" é organização
         // interna, e varrer tudo traria material que não é anúncio.
         continue;
@@ -248,6 +264,9 @@ async function acharComEdicao(paiId: string, profundidade = 3): Promise<string[]
     }
   }
   await descer(paiId, profundidade);
+  // "Com edição" primeiro: quando o mesmo nome de arquivo existe em duas
+  // pastas, quem indexa por último vence — e a versão editada tem que vencer.
+  achadas.sort((a, b) => Number(b.editada) - Number(a.editada));
   return achadas;
 }
 
@@ -278,7 +297,7 @@ export async function resolverPastaDeCriativos(opts: {
     if (!dr) {
       return {
         ok: false,
-        pastaIds: [],
+        pastas: [],
         passos,
         erro:
           drives.length === 0
@@ -306,7 +325,7 @@ export async function resolverPastaDeCriativos(opts: {
         procurado: typeof alvoDoNivel === "string" ? `${alvoDoNivel}…` : alvoDoNivel[0],
         achado: achada?.name ?? null,
       });
-      if (!achada) return { ok: false, pastaIds: [], passos };
+      if (!achada) return { ok: false, pastas: [], passos };
       atual = achada.id;
     }
 
@@ -317,12 +336,12 @@ export async function resolverPastaDeCriativos(opts: {
       procurado: "COM EDICAO",
       achado: comEdicao.length ? `${comEdicao.length} pasta(s)` : null,
     });
-    if (comEdicao.length === 0) return { ok: false, pastaIds: [], passos };
-    return { ok: true, pastaIds: comEdicao, passos };
+    if (comEdicao.length === 0) return { ok: false, pastas: [], passos };
+    return { ok: true, pastas: comEdicao, passos };
   } catch (err) {
     return {
       ok: false,
-      pastaIds: [],
+      pastas: [],
       passos,
       erro: err instanceof Error ? err.message : "Falha ao falar com o Drive",
     };
@@ -345,10 +364,13 @@ export function acharCriativo(arquivos: ArquivoDoDrive[], nomeDoAnuncio: string)
   const alvo = normalizar(nomeDoAnuncio);
   if (!alvo) return null;
   const semExt = (n: string) => normalizar(n.replace(/\.[a-z0-9]{2,5}$/i, ""));
+  // Só igualdade e "o arquivo começa com o nome do anúncio" (cobre a extensão
+  // e sufixos tipo _v2). A regra inversa — o ANÚNCIO começar com o nome do
+  // arquivo — foi removida: ela deixava um arquivo de nome curto casar com
+  // vários anúncios diferentes, e um match errado é pior que nenhum.
   return (
     arquivos.find((f) => semExt(f.name) === alvo) ??
     arquivos.find((f) => semExt(f.name).startsWith(alvo)) ??
-    arquivos.find((f) => alvo.startsWith(semExt(f.name)) && semExt(f.name).length > 8) ??
     null
   );
 }
