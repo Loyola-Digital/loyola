@@ -1,0 +1,108 @@
+schema: 1
+story: '29.63'
+gate: CONCERNS
+iteration: 1
+status_reason: >-
+  CONCERNS — aprovado para merge, uma observacao low, nenhuma bloqueante.
+  Os oito ACs estao atendidos, e a story fez mais do que pediu: as duas dividas
+  que a 36.8 deixou abertas (QA-34 e QA-35) foram FECHADAS, nao contornadas.
+  Verifiquei o QA-34 por mutacao propria: removi `igPermalinkUrl` do `loadCached`
+  e o `tsc` REJEITOU com "Property 'igPermalinkUrl' is missing in type". Com o
+  cast que existia antes, esse mesmo erro passava limpo — era o modo de falha
+  mais caro que o repo tinha (certo na Meta, errado na tela, verde no CI).
+  A observacao unica: o AC6 (`igPermalinkStale`) nao tem teste. Inverter o
+  predicado `< IG_PERMALINK_RESOLVER_VERSION` nao derruba nada. E o QA-36 da
+  36.9 reaparecendo em outra rota — predicado de query sem cobertura.
+reviewer: 'Quinn'
+updated: '2026-08-26T00:00:00Z'
+
+verificacoes:
+  code_review: PASS           # cast do QA-34 REMOVIDO e protecao provada por mutacao
+  unit_tests: CONCERNS        # 13 testes, 2 diferenciais provados; AC6 sem cobertura
+  acceptance_criteria: PASS   # AC1-AC8; AC1 executado antes do codigo, 5/5
+  no_regressions: PASS        # baseline da API identico (5 arquivos/11 falhas, git stash -u)
+  performance: PASS           # campo no mesmo `fields=` do lote de 50; stale = 1 lookup por PK
+  security: PASS              # href dinamico, mas React 19 bloqueia `javascript:`; 16 hrefs assim ja existem
+  documentation: PASS         # Dev Agent Record com medicao e File List completa
+
+verificacoes_manuais_executadas:
+  - o: 'O cast removido realmente protege, ou so parece?'
+    como: >-
+      Removi a linha `igPermalinkUrl: r.creative?.igPermalinkUrl ?? null` do
+      `loadCached` e rodei o `tsc`.
+    resultado: >-
+      ERRO TS2322 — "Property 'igPermalinkUrl' is missing in type ... but
+      required in type 'MetaAdCreative'". PROVA de que o QA-34 esta resolvido:
+      antes, esse mesmo estado compilava limpo. Restaurado depois.
+
+  - o: 'A query de `igPermalinkStale` pode ler o cache ANTES da escrita do fresh?'
+    como: >-
+      Rastreei a ordem: `fetchAdCreativesWithCache` faz `await
+      adapter.saveToCache(fresh)` (meta-ads.ts:1801) antes do return, e a query
+      de stale roda depois disso na rota.
+    resultado: >-
+      Sem race. Cheguei a suspeitar da AUSENCIA de filtro de TTL na query de
+      stale (o `loadCached` filtra por 24h e ela nao) — mas a ausencia esta
+      CERTA: a query precisa ver o estado pos-escrita, nao o pre. Nao e achado.
+
+  - o: 'O import de valor do shared quebra o `next build`? (tsc nao pega esse caso)'
+    como: '`next build` completo no `packages/web`, ~55 min nesta maquina.'
+    resultado: >-
+      BUILD_ID e manifests gerados, e `PISO_DE_REPRODUCOES` aparece em
+      `.next/server/chunks/4072.js` — o simbolo foi resolvido e empacotado.
+      O import usa modulo folha (`video-camadas.ts` nao tem import nenhum) via
+      subpath, o mesmo padrao de 6 arquivos ja em producao.
+
+  - o: 'O AC7 ("nada muda de valor") se sustenta?'
+    como: >-
+      `git diff main...HEAD` filtrado por termos de calculo (spend, revenue,
+      margin, roas, cac, reduce, `* 100`).
+    resultado: >-
+      Todas as ocorrencias sao FIXTURES de arquivos de teste. Nenhuma funcao de
+      calculo de producao foi tocada.
+
+  - o: 'O `hookRate` sobrevive ao `enrichWithPaidLeads`?'
+    como: 'Inspecao do retorno — `return { ...c, ... }`.'
+    resultado: 'Spread preserva. Sem perda de campo na cadeia agregacao -> enrich.'
+
+top_issues:
+  - id: 'QA-63-01'
+    severity: low
+    finding: >-
+      O AC6 (`igPermalinkStale`) nao tem teste. O predicado
+      `(l.creative?.igPermalinkResolver ?? 0) < IG_PERMALINK_RESOLVER_VERSION`
+      pode ser invertido, ou o `?? 0` trocado por `?? 999`, sem derrubar nada.
+      Mesma familia do QA-36 da 36.9: predicado de query sem cobertura.
+    suggested_action: >-
+      Extrair o predicado para funcao pura e testa-la, ou cobrir a rota. O custo
+      de errar aqui e baixo (o campo so muda um tooltip), mas o padrao de deixar
+      predicados de query descobertos ja apareceu duas vezes.
+    refs: ['packages/api/src/routes/traffic-analytics.ts:781-787']
+
+waiver: { active: false }
+
+divida_fechada_por_esta_story:
+  - id: 'QA-34 (Story 36.8, medium)'
+    resolucao: >-
+      O `as MetaAdCreative[]` do `loadCached` foi REMOVIDO. Provado por mutacao
+      que o compilador agora rejeita campo faltante.
+  - id: 'QA-35 (Story 36.8, low)'
+    resolucao: >-
+      `backfill-meta-perf.ts --creatives` passou a contar `igPermalinkUrl`,
+      `igPermalinkResolver` e `adPermalinkUrl`.
+
+o_que_merece_registro:
+  - >-
+    O AC1 foi executado ANTES da primeira linha de codigo, e com controle
+    negativo. O `curl` nao servia porque o Instagram entrega o mesmo shell de
+    615 KB para qualquer URL; renderizar em navegador deslogado resolveu, e o
+    shortcode inventado devolvendo "Post nao esta disponivel" e o que
+    transforma "a pagina abriu" em prova. Sem o controle negativo, o teste
+    diria a mesma coisa para um campo que nao funcionasse.
+  - >-
+    Os testes foram provados por REVERSAO, nao afirmados: com a cascata de volta
+    em `linkUrl`, 2 dos 7 falham. Reconferi o numero rodando eu mesmo.
+
+pendencias_operacionais:
+  - 'Backfill `tsx src/scripts/backfill-meta-perf.ts --creatives` — sem ele o campo so nasce nos anuncios que o sync diario tocar.'
+  - 'Validacao visual no Perpetuo do `bbe-pr2-ago-26`.'
