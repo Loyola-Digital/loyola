@@ -25,6 +25,13 @@ export interface BlocoDoMapa {
   stageId?: string | null;
   notes?: string | null;
   url?: string | null;
+  /** Nota adesiva e bloco de texto guardam o conteúdo aqui, não no `label`. */
+  texto?: string | null;
+  estilo?: "h1" | "h2" | "h3" | "corpo" | null;
+  negrito?: boolean;
+  italico?: boolean;
+  fonte?: number | null;
+  emoji?: string | null;
 }
 
 export type PontoDeConexao = "top" | "right" | "bottom" | "left";

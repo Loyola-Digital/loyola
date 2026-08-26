@@ -35,6 +35,18 @@ const boxSchema = z.object({
   stageId: z.string().uuid().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   url: z.string().max(2048).nullable().optional(),
+  // Zod descarta chave fora do schema em silêncio: campo novo do bloco PRECISA
+  // entrar aqui, senão o canvas grava e o dado some sem erro nenhum.
+  /** Nota adesiva e bloco de texto guardam o conteúdo aqui, não no `label`. */
+  texto: z.string().max(4000).nullable().optional(),
+  /** Hierarquia do bloco de texto. */
+  estilo: z.enum(["h1", "h2", "h3", "corpo"]).nullable().optional(),
+  negrito: z.boolean().optional(),
+  italico: z.boolean().optional(),
+  /** Tamanho da fonte em px, quando a pessoa ajusta à mão. */
+  fonte: z.number().min(8).max(96).nullable().optional(),
+  /** Emoji do bloco genérico. */
+  emoji: z.string().max(8).nullable().optional(),
 });
 
 const connectorSchema = z.object({

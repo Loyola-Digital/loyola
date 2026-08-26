@@ -137,3 +137,65 @@ export function metaDoTipo(type: string): { label: string; icon: string; cor: st
 
 export const LARGURA_PADRAO = 160;
 export const ALTURA_PADRAO = 80;
+
+// ============================================================
+// Blocos livres — nota, texto e genéricos
+// ============================================================
+
+/**
+ * Tipos que não representam peça do funil: servem pra anotar e organizar.
+ *
+ * Ficam fora de CATEGORIAS de propósito. `metaDoTipo` cai no genérico pra eles,
+ * e o canvas os renderiza com desenho próprio — sem selo de status, sem porta
+ * de conexão no caso do texto.
+ */
+export const TIPO_NOTA = "nota";
+export const TIPO_TEXTO = "texto";
+export const TIPO_GENERICO = "generico";
+
+export function ehBlocoLivre(type: string): boolean {
+  return type === TIPO_NOTA || type === TIPO_TEXTO || type === TIPO_GENERICO;
+}
+
+/** Cores das notas adesivas — as mesmas de bloco de papel. */
+export const CORES_NOTA = [
+  { nome: "Amarelo", cor: "#fde68a" },
+  { nome: "Verde", cor: "#bbf7d0" },
+  { nome: "Azul", cor: "#bfdbfe" },
+  { nome: "Rosa", cor: "#fbcfe8" },
+  { nome: "Laranja", cor: "#fed7aa" },
+  { nome: "Roxo", cor: "#e9d5ff" },
+] as const;
+
+/** Cores para as caixas de elemento (item 8 do feedback). */
+export const CORES_BLOCO = [
+  { nome: "Índigo", cor: "#6366f1" },
+  { nome: "Violeta", cor: "#8b5cf6" },
+  { nome: "Verde", cor: "#10b981" },
+  { nome: "Âmbar", cor: "#f59e0b" },
+  { nome: "Vermelho", cor: "#ef4444" },
+  { nome: "Rosa", cor: "#ec4899" },
+  { nome: "Ciano", cor: "#06b6d4" },
+  { nome: "Cinza", cor: "#6b7280" },
+] as const;
+
+/** Emojis dos blocos genéricos, agrupados pelo que o time desenha. */
+export const EMOJIS_GENERICOS: { grupo: string; itens: string[] }[] = [
+  { grupo: "Fluxo", itens: ["▶️", "⏸️", "🔀", "🔁", "✅", "❌", "⚠️", "🎯"] },
+  { grupo: "Canais", itens: ["📱", "💬", "📧", "📞", "🌐", "📺", "🎥", "📸"] },
+  { grupo: "Pessoas", itens: ["👤", "👥", "🧲", "🤝", "💼", "🎓", "🛒", "💰"] },
+  { grupo: "Marcos", itens: ["🚀", "🔥", "⭐", "📌", "🧠", "📊", "🗓️", "🏁"] },
+];
+
+/** Tamanhos de fonte por hierarquia do bloco de texto. */
+export const TAMANHO_DO_ESTILO: Record<string, number> = {
+  h1: 32,
+  h2: 24,
+  h3: 18,
+  corpo: 14,
+};
+
+export const NOTA_LARGURA = 180;
+export const NOTA_ALTURA = 140;
+export const TEXTO_LARGURA = 260;
+export const TEXTO_ALTURA = 60;

@@ -19,7 +19,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Icons from "lucide-react";
 import {
-  ClipboardCopy, Copy, Keyboard, Loader2, Maximize2, Minus, Pencil, Plus, RotateCcw, Save, Trash2, Undo2, Redo2, Unlink, X,
+  ClipboardCopy, Copy, Keyboard, Loader2, Maximize2, Minimize2, Minus, Pencil, Plus, RotateCcw, Save, Scan,
+  StickyNote, Trash2, Type, Undo2, Redo2, Unlink, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,19 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   CATEGORIAS,
+  CORES_BLOCO,
+  CORES_NOTA,
+  EMOJIS_GENERICOS,
+  NOTA_ALTURA,
+  NOTA_LARGURA,
   STATUS,
+  TAMANHO_DO_ESTILO,
+  TEXTO_ALTURA,
+  TEXTO_LARGURA,
+  TIPO_GENERICO,
+  TIPO_NOTA,
+  TIPO_TEXTO,
+  ehBlocoLivre,
   ALTURA_PADRAO,
   LARGURA_PADRAO,
   metaDoTipo,
@@ -172,8 +185,22 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   const [guias, setGuias] = useState<Guia[]>([]);
   /** Bloco em renomeação no próprio card (não no painel lateral). */
   const [renomeando, setRenomeando] = useState<{ id: string; valor: string } | null>(null);
+  /** Nota/texto em edição — conteúdo vai em `texto`, não em `label`. */
+  const [editando, setEditando] = useState<{ id: string; valor: string } | null>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const espaco = useRef(false);
+  /**
+   * Deslocamento do desenho, em px de TELA.
+   *
+   * Antes o "mover a tela" mexia no scroll do contêiner — e por isso não
+   * funcionava: com o desenho cabendo na área visível não há o que rolar, e o
+   * Space parecia morto. Com translate a tela move sempre.
+   */
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [telaCheia, setTelaCheia] = useState(false);
+  const secaoRef = useRef<HTMLElement>(null);
+  /** Zoom corrente pra ler DEPOIS do render, quando o estado ainda não chegou. */
+  const zoomRef = useRef(1);
   const acabouDeArrastar = useRef(false);
   const areaTransferencia = useRef<{ boxes: BlocoDoMapa[]; connectors: ConectorDoMapa[] } | null>(null);
 
@@ -387,6 +414,23 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
     window.addEventListener("pointerup", soltar);
   }
 
+  /** Grava o conteúdo da nota / bloco de texto. */
+  function confirmarTexto() {
+    if (!editando) return;
+    const alvo = editando.id;
+    const valor = editando.valor;
+    setEditando(null);
+    alterarAba((a) => ({
+      ...a,
+      boxes: a.boxes.map((b) => (b.id === alvo ? { ...b, texto: valor } : b)),
+    }));
+  }
+
+  /** Muda um atributo do bloco selecionado (cor, estilo, negrito…). */
+  function ajustarBloco(id: string, mudanca: Partial<BlocoDoMapa>) {
+    alterarAba((a) => ({ ...a, boxes: a.boxes.map((b) => (b.id === id ? { ...b, ...mudanca } : b)) }));
+  }
+
   /** Grava o nome digitado no próprio bloco. */
   function confirmarRename() {
     if (!renomeando) return;
@@ -444,6 +488,78 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
       boxes: [
         ...a.boxes,
         { id, type: tipo, label, x, y: 160, width: LARGURA_PADRAO, height: ALTURA_PADRAO, color: cor, status: "construcao" as StatusBloco },
+      ],
+    }));
+    selecao.definir([id]);
+  }
+
+  /** Posição livre à direita do que já existe, pra não nascer por cima. */
+  function proximaPosicao(): { x: number; y: number } {
+    return {
+      x: blocos.length === 0 ? 100 : Math.max(...blocos.map((b) => b.x)) + 280,
+      y: 160,
+    };
+  }
+
+  function novoId(prefixo: string): string {
+    return `${prefixo}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`;
+  }
+
+  /** Nota adesiva: texto solto, sem status nem conexão. */
+  function adicionarNota() {
+    const id = novoId("n");
+    const p = proximaPosicao();
+    alterarAba((a) => ({
+      ...a,
+      boxes: [
+        ...a.boxes,
+        {
+          id, type: TIPO_NOTA, label: "", ...p,
+          width: NOTA_LARGURA, height: NOTA_ALTURA,
+          color: CORES_NOTA[0].cor, status: "ativo" as StatusBloco,
+          texto: "", estilo: "corpo" as const,
+        },
+      ],
+    }));
+    selecao.definir([id]);
+    setEditando({ id, valor: "" });
+  }
+
+  /** Bloco de texto: título ou parágrafo solto no board. */
+  function adicionarTexto(estilo: "h1" | "h2" | "h3" | "corpo") {
+    const id = novoId("t");
+    const p = proximaPosicao();
+    alterarAba((a) => ({
+      ...a,
+      boxes: [
+        ...a.boxes,
+        {
+          id, type: TIPO_TEXTO, label: "", ...p,
+          width: TEXTO_LARGURA,
+          height: estilo === "h1" ? 56 : estilo === "h2" ? 46 : TEXTO_ALTURA,
+          color: "transparent", status: "ativo" as StatusBloco,
+          texto: "", estilo,
+        },
+      ],
+    }));
+    selecao.definir([id]);
+    setEditando({ id, valor: "" });
+  }
+
+  /** Bloco genérico com emoji — o "quadradinho" pra qualquer coisa. */
+  function adicionarGenerico(emoji: string) {
+    const id = novoId("g");
+    const p = proximaPosicao();
+    alterarAba((a) => ({
+      ...a,
+      boxes: [
+        ...a.boxes,
+        {
+          id, type: TIPO_GENERICO, label: "Novo bloco", ...p,
+          width: LARGURA_PADRAO, height: ALTURA_PADRAO,
+          color: CORES_BLOCO[0].cor, status: "construcao" as StatusBloco,
+          emoji,
+        },
       ],
     }));
     selecao.definir([id]);
@@ -602,10 +718,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
     if (!el) return { x: 0, y: 0 };
     const r = el.getBoundingClientRect();
     return {
-      x: (cx - r.left + el.scrollLeft) / zoom.valor,
-      y: (cy - r.top + el.scrollTop) / zoom.valor,
+      x: (cx - r.left - pan.x) / zoom.valor,
+      y: (cy - r.top - pan.y) / zoom.valor,
     };
-  }, [zoom.valor]);
+  }, [zoom.valor, pan]);
 
   /** Seleção por área e mover a tela com Space/botão do meio. */
   function fundoPointerDown(e: React.PointerEvent) {
@@ -613,15 +729,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
     setMenu(null);
 
     if (e.button === 1 || espaco.current) {
-      const el = areaRef.current;
-      if (!el) return;
       const sx = e.clientX;
       const sy = e.clientY;
-      const l0 = el.scrollLeft;
-      const t0 = el.scrollTop;
+      const p0 = { ...pan };
       const mover = (ev: PointerEvent) => {
-        el.scrollLeft = l0 - (ev.clientX - sx);
-        el.scrollTop = t0 - (ev.clientY - sy);
+        setPan({ x: p0.x + (ev.clientX - sx), y: p0.y + (ev.clientY - sy) });
       };
       const soltar = () => {
         window.removeEventListener("pointermove", mover);
@@ -675,10 +787,35 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   function enquadrarTudo() {
     const el = areaRef.current;
     if (!el || blocos.length === 0) return;
-    const w = Math.max(...blocos.map((b) => b.x + b.width)) + 80;
-    const h = Math.max(...blocos.map((b) => b.y + b.height)) + 80;
-    zoom.enquadrar({ w, h }, { w: el.clientWidth, h: el.clientHeight });
-    el.scrollTo({ left: 0, top: 0 });
+    const minX = Math.min(...blocos.map((b) => b.x));
+    const minY = Math.min(...blocos.map((b) => b.y));
+    const maxX = Math.max(...blocos.map((b) => b.x + b.width));
+    const maxY = Math.max(...blocos.map((b) => b.y + b.height));
+    const pad = 60;
+    zoom.enquadrar(
+      { w: maxX - minX + pad * 2, h: maxY - minY + pad * 2 },
+      { w: el.clientWidth, h: el.clientHeight },
+    );
+    // O zoom novo só vale no próximo render; centraliza com ele já aplicado.
+    requestAnimationFrame(() => {
+      const z = zoomRef.current;
+      setPan({
+        x: el.clientWidth / 2 - ((minX + maxX) / 2) * z,
+        y: el.clientHeight / 2 - ((minY + maxY) / 2) * z,
+      });
+    });
+  }
+
+  /** Tela cheia de verdade (Fullscreen API), não só "enquadrar". */
+  async function alternarTelaCheia() {
+    const el = secaoRef.current;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await el.requestFullscreen();
+    } catch {
+      toast.error("O navegador recusou a tela cheia");
+    }
   }
 
   // ---- Abas do mapa ------------------------------------------------------
@@ -729,6 +866,21 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
     setSujo(true);
   }
 
+  /**
+   * Auto-save.
+   *
+   * Dispara 2s depois da última alteração, não a cada mudança: arrastar um
+   * bloco emite dezenas de frames e viraria dezenas de PUTs. O botão Salvar
+   * continua existindo pra quem quer gravar na hora — e some do caminho quando
+   * não há nada pendente.
+   */
+  const salvarRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (!sujo || !abas) return;
+    const t = setTimeout(() => salvarRef.current?.(), 2000);
+    return () => clearTimeout(t);
+  }, [sujo, abas]);
+
   function salvarMapa() {
     if (!abas) return;
     salvar.mutate(abas, {
@@ -739,6 +891,18 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
       onError: (e) => toast.error(e instanceof Error ? e.message : "Não consegui salvar o mapa"),
     });
   }
+  // O efeito acima chama a versão mais recente sem se re-agendar a cada render.
+  salvarRef.current = salvarMapa;
+
+  useEffect(() => { zoomRef.current = zoom.valor; }, [zoom.valor]);
+
+  // O navegador pode sair da tela cheia por fora (Esc, gesto do SO) — sem
+  // escutar, o botão ficaria mentindo sobre o estado.
+  useEffect(() => {
+    const aoMudar = () => setTelaCheia(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", aoMudar);
+    return () => document.removeEventListener("fullscreenchange", aoMudar);
+  }, []);
 
   // ---- Atalhos de teclado ------------------------------------------------
   useEffect(() => {
@@ -781,6 +945,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
       }
       if (e.key === "Escape") { selecao.limpar(); setConectorSel(null); setLigando(null); setMenu(null); setAjuda(false); setRenomeando(null); return; }
       if (e.key === "?") { e.preventDefault(); setAjuda((v) => !v); return; }
+      if (e.key.toLowerCase() === "f" && !mod) { e.preventDefault(); void alternarTelaCheia(); return; }
       if ((e.key === "F2" || e.key === "Enter") && selecao.unico) {
         e.preventDefault();
         const b = blocos.find((x) => x.id === selecao.unico);
@@ -823,7 +988,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   const alturaDoDesenho = Math.max(altura, ...blocos.map((b) => b.y + b.height + 160));
 
   return (
-    <section className="space-y-3 rounded-xl border border-border/40 bg-card/60 p-4">
+    <section
+      ref={secaoRef}
+      className="space-y-3 rounded-xl border border-border/40 bg-card/60 p-4 data-[cheia=true]:rounded-none"
+      data-cheia={telaCheia}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold">Mapa do funil</h3>
@@ -846,8 +1015,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={zoom.aumentar} aria-label="Aumentar zoom">
               <Plus className="h-3 w-3" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={enquadrarTudo} aria-label="Enquadrar tudo">
-              <Maximize2 className="h-3 w-3" />
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={enquadrarTudo} aria-label="Enquadrar tudo" title="Enquadrar tudo (⌘0)">
+              <Scan className="h-3 w-3" />
             </Button>
           </div>
           <Button
@@ -862,6 +1031,14 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
           >
             <Redo2 className="h-3 w-3" />
           </Button>
+          <Button
+            variant="ghost" size="icon" className="h-6 w-6"
+            onClick={alternarTelaCheia}
+            aria-label={telaCheia ? "Sair da tela cheia" : "Tela cheia"}
+            title={telaCheia ? "Sair da tela cheia" : "Tela cheia"}
+          >
+            {telaCheia ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+          </Button>
           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAjuda(true)} aria-label="Atalhos">
             <Keyboard className="h-3 w-3" />
           </Button>
@@ -870,8 +1047,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
               <X className="h-3 w-3" /> Cancelar ligação
             </Button>
           )}
-          {sujo && (
-            <span className="mr-1 text-[11px] text-amber-600 dark:text-amber-400">alterações não salvas</span>
+          {(sujo || salvar.isPending) && (
+            <span className="mr-1 text-[11px] text-muted-foreground">
+              {salvar.isPending ? "salvando…" : "salva sozinho"}
+            </span>
           )}
           <Button size="sm" className="h-7 gap-1.5 px-2 text-[11px]" onClick={salvarMapa} disabled={salvar.isPending || !sujo}>
             {salvar.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
@@ -926,6 +1105,56 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
       <div className="flex gap-3">
         {/* Paleta */}
         <div className="hidden w-44 shrink-0 space-y-2 overflow-y-auto md:block" style={{ maxHeight: altura }}>
+          {/* Blocos livres: anotar e organizar, não peças do funil. */}
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Anotar
+            </p>
+            <div className="space-y-0.5">
+              <button
+                type="button"
+                onClick={adicionarNota}
+                className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-muted"
+              >
+                <StickyNote className="h-3 w-3 shrink-0" />
+                Nota
+              </button>
+              {(["h1", "h2", "h3", "corpo"] as const).map((e) => (
+                <button
+                  key={e}
+                  type="button"
+                  onClick={() => adicionarTexto(e)}
+                  className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-muted"
+                >
+                  <Type className="h-3 w-3 shrink-0" />
+                  {e === "corpo" ? "Texto" : e.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Genéricos: o "quadradinho" pra qualquer coisa que o funil tenha. */}
+          {EMOJIS_GENERICOS.map((g) => (
+            <div key={g.grupo}>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {g.grupo}
+              </p>
+              <div className="flex flex-wrap gap-0.5">
+                {g.itens.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => adicionarGenerico(emoji)}
+                    title={`Bloco ${emoji}`}
+                    className="rounded px-1 py-0.5 text-sm transition-colors hover:bg-muted"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+
           {CATEGORIAS.map((cat) => (
             <div key={cat.name}>
               <p className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -953,19 +1182,28 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
         {/* Canvas */}
         <div
           ref={areaRef}
-          className="relative flex-1 overflow-auto rounded-lg border border-border/40 bg-[radial-gradient(circle,var(--color-border)_1px,transparent_1px)] [background-size:20px_20px]"
-          style={{ height: altura }}
+          className="relative flex-1 touch-none overflow-hidden rounded-lg border border-border/40"
+          style={{
+            height: telaCheia ? "calc(100vh - 190px)" : altura,
+            cursor: espaco.current ? "grab" : "default",
+            // A grade acompanha o pan e o zoom — é a referência visual de que a
+            // tela está se movendo.
+            backgroundImage: "radial-gradient(circle, var(--color-border) 1px, transparent 1px)",
+            backgroundSize: `${20 * zoom.valor}px ${20 * zoom.valor}px`,
+            backgroundPosition: `${pan.x}px ${pan.y}px`,
+          }}
           onWheel={fundoWheel}
           onPointerDown={fundoPointerDown}
           onClick={() => { if (!arrastouMarquee.current) { selecao.limpar(); setConectorSel(null); setLigando(null); } }}
           onContextMenu={(e) => e.preventDefault()}
         >
-          {/* O desenho escala por transform e o contêiner cresce junto, senão o
-              scroll não alcança o que o zoom empurrou pra fora. */}
-          <div style={{ width: largura * zoom.valor, height: alturaDoDesenho * zoom.valor }}>
           <div
-            className="relative origin-top-left"
-            style={{ width: largura, height: alturaDoDesenho, transform: `scale(${zoom.valor})` }}
+            className="absolute left-0 top-0 origin-top-left"
+            style={{
+              width: largura,
+              height: alturaDoDesenho,
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom.valor})`,
+            }}
           >
             <svg className="pointer-events-none absolute inset-0" width={largura} height={alturaDoDesenho}>
               <defs>
@@ -1042,6 +1280,81 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
             {blocos.map((b) => {
               const meta = metaDoTipo(b.type);
               const ativo = selecao.tem(b.id);
+
+              // Nota e texto têm desenho próprio: sem selo de status, sem card
+              // de peça do funil. Compartilham só o gesto de arrastar.
+              if (b.type === TIPO_NOTA || b.type === TIPO_TEXTO) {
+                const ehNota = b.type === TIPO_NOTA;
+                const tamanho = b.fonte ?? TAMANHO_DO_ESTILO[b.estilo ?? "corpo"] ?? 14;
+                return (
+                  <div
+                    key={b.id}
+                    onPointerDown={(e) => iniciarArrasto(e, b)}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      selecao.definir([b.id]);
+                      setEditando({ id: b.id, valor: b.texto ?? "" });
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!selecao.tem(b.id)) selecao.definir([b.id]);
+                      setMenu({ x: e.clientX, y: e.clientY, boxId: b.id });
+                    }}
+                    className={`absolute cursor-grab touch-none select-none active:cursor-grabbing ${
+                      ehNota ? "rounded-sm p-2 shadow-md" : "p-1"
+                    } ${ativo ? "ring-2 ring-primary ring-offset-1" : ""}`}
+                    style={{
+                      left: b.x, top: b.y, width: b.width, height: b.height,
+                      background: ehNota ? b.color : "transparent",
+                      // Nota tem cor de papel clara sempre: texto escuro nela é
+                      // legível nos dois temas, e herdar o foreground do tema
+                      // deixaria branco-no-amarelo no dark.
+                      color: ehNota ? "#1f2937" : undefined,
+                    }}
+                  >
+                    {editando?.id === b.id ? (
+                      <textarea
+                        autoFocus
+                        value={editando.valor}
+                        onChange={(ev) => setEditando({ id: b.id, valor: ev.target.value })}
+                        onBlur={confirmarTexto}
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Escape") { ev.preventDefault(); setEditando(null); }
+                          // Enter quebra linha; ⌘/Ctrl+Enter fecha a edição.
+                          if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); confirmarTexto(); }
+                        }}
+                        onPointerDown={(ev) => ev.stopPropagation()}
+                        className="h-full w-full resize-none bg-transparent outline-none"
+                        style={{
+                          fontSize: tamanho,
+                          fontWeight: b.negrito ? 700 : ehNota ? 400 : 600,
+                          fontStyle: b.italico ? "italic" : "normal",
+                          color: ehNota ? "#1f2937" : "var(--color-foreground)",
+                        }}
+                      />
+                    ) : (
+                      <div
+                        className="h-full w-full overflow-hidden whitespace-pre-wrap break-words"
+                        style={{
+                          fontSize: tamanho,
+                          fontWeight: b.negrito ? 700 : ehNota ? 400 : 600,
+                          fontStyle: b.italico ? "italic" : "normal",
+                          lineHeight: 1.25,
+                          color: ehNota ? "#1f2937" : "var(--color-foreground)",
+                        }}
+                      >
+                        {b.texto || (
+                          <span className="opacity-40">
+                            {ehNota ? "Duplo clique pra escrever" : "Texto"}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={b.id}
@@ -1060,7 +1373,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
                   style={{ left: b.x, top: b.y, width: b.width, height: b.height, borderColor: b.color }}
                 >
                   <div className="flex items-center gap-1.5">
-                    <IconePorNome nome={meta.icon} className="h-3.5 w-3.5 shrink-0" />
+                    {b.emoji ? (
+                      <span className="shrink-0 text-sm leading-none">{b.emoji}</span>
+                    ) : (
+                      <IconePorNome nome={meta.icon} className="h-3.5 w-3.5 shrink-0" />
+                    )}
                     <span className="truncate text-[11px] font-medium" title={b.label}>{b.label}</span>
                   </div>
                   <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{meta.label}</p>
@@ -1141,7 +1458,6 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
               />
             )}
           </div>
-          </div>
         </div>
 
         {/* Propriedades */}
@@ -1166,6 +1482,83 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
                 className="h-7 text-xs"
               />
             </div>
+            {/* Cor da caixa (item 8). Nota usa a paleta de papel; o resto usa
+                as cores de elemento. */}
+            <div className="space-y-1">
+              <Label className="text-[10px]">Cor</Label>
+              <div className="flex flex-wrap gap-1">
+                {(blocoSelecionado.type === TIPO_NOTA ? CORES_NOTA : CORES_BLOCO).map((c) => (
+                  <button
+                    key={c.cor}
+                    type="button"
+                    title={c.nome}
+                    onClick={() => ajustarBloco(blocoSelecionado.id, { color: c.cor })}
+                    className={`h-5 w-5 rounded border transition-transform hover:scale-110 ${
+                      blocoSelecionado.color === c.cor ? "ring-2 ring-primary ring-offset-1" : "border-border/60"
+                    }`}
+                    style={{ background: c.cor }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Formatação — só faz sentido em nota e texto. */}
+            {(blocoSelecionado.type === TIPO_NOTA || blocoSelecionado.type === TIPO_TEXTO) && (
+              <div className="space-y-1">
+                <Label className="text-[10px]">Texto</Label>
+                <div className="flex flex-wrap gap-1">
+                  {(["h1", "h2", "h3", "corpo"] as const).map((e) => (
+                    <button
+                      key={e}
+                      type="button"
+                      onClick={() => ajustarBloco(blocoSelecionado.id, { estilo: e, fonte: null })}
+                      className={`rounded border px-1.5 py-0.5 text-[10px] transition-colors ${
+                        (blocoSelecionado.estilo ?? "corpo") === e
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border/60 hover:bg-muted"
+                      }`}
+                    >
+                      {e === "corpo" ? "Normal" : e.toUpperCase()}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => ajustarBloco(blocoSelecionado.id, { negrito: !blocoSelecionado.negrito })}
+                    className={`rounded border px-1.5 py-0.5 text-[10px] font-bold transition-colors ${
+                      blocoSelecionado.negrito ? "border-primary bg-primary/10 text-primary" : "border-border/60 hover:bg-muted"
+                    }`}
+                  >
+                    B
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => ajustarBloco(blocoSelecionado.id, { italico: !blocoSelecionado.italico })}
+                    className={`rounded border px-1.5 py-0.5 text-[10px] italic transition-colors ${
+                      blocoSelecionado.italico ? "border-primary bg-primary/10 text-primary" : "border-border/60 hover:bg-muted"
+                    }`}
+                  >
+                    I
+                  </button>
+                </div>
+                <div className="flex items-center gap-1.5 pt-0.5">
+                  <span className="text-[10px] text-muted-foreground">Tamanho</span>
+                  <input
+                    type="range"
+                    min={10}
+                    max={64}
+                    value={blocoSelecionado.fonte ?? TAMANHO_DO_ESTILO[blocoSelecionado.estilo ?? "corpo"] ?? 14}
+                    onChange={(e) => ajustarBloco(blocoSelecionado.id, { fonte: Number(e.target.value) })}
+                    className="h-1 flex-1"
+                  />
+                  <span className="w-6 text-right font-mono text-[10px] text-muted-foreground">
+                    {blocoSelecionado.fonte ?? TAMANHO_DO_ESTILO[blocoSelecionado.estilo ?? "corpo"] ?? 14}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Status não se aplica a anotação — é atributo de peça do funil. */}
+            {!ehBlocoLivre(blocoSelecionado.type) && (
             <div className="space-y-1">
               <Label className="text-[10px]">Status</Label>
               <div className="grid grid-cols-2 gap-1">
@@ -1189,6 +1582,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
                 ))}
               </div>
             </div>
+            )}
             <div className="space-y-1">
               <Label className="text-[10px]">Link (opcional)</Label>
               <Input
@@ -1315,14 +1709,14 @@ const ATALHOS: { grupo: string; itens: [string, string][] }[] = [
   {
     grupo: "Edição",
     itens: [
-      ["Duplo clique", "Renomeia no bloco"],
+      ["Duplo clique", "Renomeia (ou edita nota/texto)"],
       ["F2 / Enter", "Renomeia no bloco"],
       ["⌘D", "Duplica"],
       ["⌘C / ⌘V", "Copia / cola (com ligações)"],
       ["Arrastar o canto", "Redimensiona"],
       ["Del", "Remove"],
       ["⌘Z / ⇧⌘Z", "Desfaz / refaz"],
-      ["⌘S", "Salva o mapa"],
+      ["⌘S", "Salva agora (salva sozinho também)"],
       ["Setas", "Move 20px (Shift = 100px)"],
     ],
   },
@@ -1330,6 +1724,7 @@ const ATALHOS: { grupo: string; itens: [string, string][] }[] = [
     grupo: "Navegação",
     itens: [
       ["Space + arraste", "Move a tela"],
+      ["F", "Tela cheia"],
       ["Botão do meio", "Move a tela"],
       ["⌘ + roda", "Zoom"],
       ["⌘+ / ⌘−", "Zoom"],
