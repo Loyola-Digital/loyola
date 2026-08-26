@@ -31,7 +31,10 @@ export interface BlocoDoMapa {
   negrito?: boolean;
   italico?: boolean;
   fonte?: number | null;
+  /** Emoji do bloco livre — só em blocos criados antes da troca por ícone. */
   emoji?: string | null;
+  /** Nome do ícone lucide do bloco livre. */
+  icone?: string | null;
 }
 
 export type PontoDeConexao = "top" | "right" | "bottom" | "left";

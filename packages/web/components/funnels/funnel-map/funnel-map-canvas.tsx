@@ -32,7 +32,7 @@ import {
   CATEGORIAS,
   CORES_BLOCO,
   CORES_NOTA,
-  EMOJIS_GENERICOS,
+  ICONES_GENERICOS,
   NOTA_ALTURA,
   NOTA_LARGURA,
   STATUS,
@@ -633,8 +633,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
     setEditando({ id, valor: "" });
   }
 
-  /** Bloco genérico com emoji — o "quadradinho" pra qualquer coisa. */
-  function adicionarGenerico(emoji: string) {
+  /** Bloco livre com ícone — o "quadradinho" pra qualquer coisa. */
+  function adicionarGenerico(icone: string, rotulo: string) {
     const id = novoId("g");
     const p = proximaPosicao();
     alterarAba((a) => ({
@@ -642,10 +642,13 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
       boxes: [
         ...a.boxes,
         {
-          id, type: TIPO_GENERICO, label: "Novo bloco", ...p,
+          // Nasce com o nome do próprio ícone, não com um "Novo bloco": o
+          // genérico é a FORMA, e um card sem rótulo útil obriga quem lê o
+          // mapa depois a abrir um por um pra saber o que é.
+          id, type: TIPO_GENERICO, label: rotulo, ...p,
           width: LARGURA_PADRAO, height: ALTURA_PADRAO,
           color: CORES_BLOCO[0].cor, status: "construcao" as StatusBloco,
-          emoji,
+          icone,
         },
       ],
     }));
@@ -1138,15 +1141,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
     })),
   ];
   const filtroLivres = SECOES_LIVRES.filter((l) => casa(l.rotulo) || casa("anotar"));
-  // O emoji não é pesquisável por si; o que casa é o nome do grupo.
-  const filtrarEmojis = (g: { grupo: string; itens: readonly string[] }) =>
-    casa(g.grupo) ? [...g.itens] : [];
+  // Ícone casa pelo grupo OU pelo próprio rótulo — o emoji antigo só dava pra
+  // achar pelo grupo, porque não tinha nome nenhum.
+  const filtrarIcones = (g: { grupo: string; itens: { icone: string; rotulo: string }[] }) =>
+    casa(g.grupo) ? g.itens : g.itens.filter((i) => casa(i.rotulo));
   const filtrarItens = (cat: { name: string; items: { type: string; label: string; icon: string }[] }) =>
     casa(cat.name) ? cat.items : cat.items.filter((i) => casa(i.label));
   const semResultado =
     !!alvoDaBusca &&
     filtroLivres.length === 0 &&
-    EMOJIS_GENERICOS.every((g) => filtrarEmojis(g).length === 0) &&
+    ICONES_GENERICOS.every((g) => filtrarIcones(g).length === 0) &&
     CATEGORIAS.every((c) => filtrarItens(c).length === 0);
 
   /** Mesma altura do canvas: a coluna acompanha a área de desenho. */
@@ -1319,20 +1323,21 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
           )}
 
           {/* Genéricos: o "quadradinho" pra qualquer coisa que o funil tenha. */}
-          {EMOJIS_GENERICOS.map((g) => {
-            const itens = filtrarEmojis(g);
+          {ICONES_GENERICOS.map((g) => {
+            const itens = filtrarIcones(g);
             return (
               <Secao key={g.grupo} titulo={g.grupo} chave={`e:${g.grupo}`} fechada={fechadas} alternar={alternarSecao} visivel={itens.length > 0}>
-                <div className="flex flex-wrap gap-0.5">
-                  {itens.map((emoji) => (
+                <div className="grid grid-cols-4 gap-0.5">
+                  {itens.map((i) => (
                     <button
-                      key={emoji}
+                      key={i.icone}
                       type="button"
-                      onClick={() => adicionarGenerico(emoji)}
-                      title={`Bloco ${emoji}`}
-                      className="rounded px-1 py-0.5 text-sm transition-colors hover:bg-muted"
+                      onClick={() => adicionarGenerico(i.icone, i.rotulo)}
+                      title={i.rotulo}
+                      aria-label={`Bloco ${i.rotulo}`}
+                      className="flex h-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                     >
-                      {emoji}
+                      <IconePorNome nome={i.icone} className="h-3.5 w-3.5" />
                     </button>
                   ))}
                 </div>
@@ -1601,13 +1606,19 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
                     <>
                       <div className="flex items-center gap-1.5">
                         {b.emoji ? (
+                          // Bloco criado antes da troca por ícone: mantém o que
+                          // a pessoa escolheu em vez de sumir com o desenho.
                           <span className="shrink-0 text-sm leading-none">{b.emoji}</span>
                         ) : (
-                          <IconePorNome nome={meta.icon} className="h-3.5 w-3.5 shrink-0" />
+                          <IconePorNome nome={b.icone ?? meta.icon} className="h-3.5 w-3.5 shrink-0" />
                         )}
                         <span className="truncate text-[11px] font-medium" title={b.label}>{b.label}</span>
                       </div>
-                      <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{meta.label}</p>
+                      {/* O genérico não tem tipo pra mostrar: `metaDoTipo` cai no
+                          fallback e escreveria "generico" embaixo do nome. */}
+                      {b.type !== TIPO_GENERICO && (
+                        <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{meta.label}</p>
+                      )}
                     </>
                   )}
                   {renomeando?.id !== b.id && (
