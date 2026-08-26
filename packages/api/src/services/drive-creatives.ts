@@ -235,43 +235,63 @@ export interface ResolucaoDePasta {
  * exigir que "Com edição" fosse filha direta da etapa faria a integração
  * funcionar em um ramo de quatro.
  */
-async function acharComEdicao(
-  paiId: string,
-  profundidade = 3,
+/**
+ * Toda a subárvore da etapa, exceto os ramos de material cru.
+ *
+ * A regra anterior exigia que a pasta se CHAMASSE "Com edição" ou "Ads" — e a
+ * árvore real não colabora. Medido em DG-PG04/Captação: além dos "LOTE N /
+ * 2. Com edição", há uma pasta "Danilo" com 7 anúncios e um "LOTE 00" com 11
+ * arquivos soltos. Dezoito criativos invisíveis, e nenhum nome de pasta que dê
+ * pra catalogar: o próximo vira "Reedição pra Ads - 23 JUL" ou o nome de quem
+ * editou. Catalogar apelidos é a configuração manual que queríamos evitar.
+ *
+ * Então o critério inverteu: entra tudo, MENOS o que é proibido. Quem decide
+ * se um arquivo é anúncio é o casamento com o nome vindo da Meta — um vídeo
+ * orgânico simplesmente não casa com nenhum.
+ *
+ * `editada` deixou de ser filtro e virou só prioridade: quando o mesmo nome
+ * existe em duas pastas, a versão editada continua vencendo.
+ */
+async function pastasDeCriativos(
+  etapaId: string,
+  nomeDaEtapa: string,
+  profundidade = 4,
 ): Promise<{ id: string; nome: string; editada: boolean }[]> {
-  const achadas: { id: string; nome: string; editada: boolean }[] = [];
   const porConter = NOMES.comEdicao.map(normalizar);
   const porIgualdade = NOMES.ads.map(normalizar);
   const proibidas = NOMES.nunca.map(normalizar);
-  async function descer(id: string, resta: number): Promise<void> {
-    const filhas = await listar(`'${id}' in parents and mimeType='${MIME_PASTA}' and trashed=false`, "id,name,mimeType");
+  // A própria etapa entra: em várias campanhas os anúncios ficam soltos nela,
+  // sem subpasta nenhuma.
+  const achadas = [{ id: etapaId, nome: nomeDaEtapa, editada: false }];
+
+  async function descer(id: string, resta: number, herdouEditada: boolean): Promise<void> {
+    const filhas = await listar(
+      `'${id}' in parents and mimeType='${MIME_PASTA}' and trashed=false`,
+      "id,name,mimeType",
+    );
     for (const f of filhas) {
       const n = normalizar(f.name);
-      // Barreira: nem casa, nem desce. O que estiver embaixo de "Sem edição" é
-      // material cru, independente de como a subpasta se chame.
+      // Barreira: nem entra, nem desce. O que estiver embaixo de "Sem edição" é
+      // material cru, independente de como a subpasta se chame — é o caso real
+      // de "1. Sem edição / 1. ADS - HENRIQUE".
       if (proibidas.some((x) => n.includes(x))) continue;
-      // "Ads" por IGUALDADE: `includes` casaria "ads-feio" e qualquer pasta com
-      // "ads" no meio do nome. "Com edição" por conteúdo, porque vem numerada
-      // ("2. Com edição").
-      const editada = porConter.some((a) => n.includes(a));
-      if (editada || porIgualdade.includes(n)) {
-        achadas.push({ id: f.id, nome: f.name, editada });
-        // Não desce mais neste ramo: subpasta de "Com edição" é organização
-        // interna, e varrer tudo traria material que não é anúncio.
-        continue;
-      }
-      if (resta > 0) await descer(f.id, resta - 1);
+      // "Ads" por IGUALDADE: `includes` casaria qualquer pasta com "ads" no
+      // meio do nome. "Com edição" por conteúdo, porque vem numerada.
+      const editada = herdouEditada || porConter.some((a) => n.includes(a)) || porIgualdade.includes(n);
+      achadas.push({ id: f.id, nome: f.name, editada });
+      if (resta > 0) await descer(f.id, resta - 1, editada);
     }
   }
-  await descer(paiId, profundidade);
-  // "Com edição" primeiro: quando o mesmo nome de arquivo existe em duas
-  // pastas, quem indexa por último vence — e a versão editada tem que vencer.
+
+  await descer(etapaId, profundidade, false);
+  // Editada primeiro: quem indexa por último vence, e a versão editada tem que
+  // vencer o arquivo de mesmo nome que estiver numa pasta qualquer.
   achadas.sort((a, b) => Number(b.editada) - Number(a.editada));
   return achadas;
 }
 
 /**
- * Desce a árvore até "COM EDICAO".
+ * Desce a árvore até a etapa e varre o que houver embaixo dela.
  *
  * Devolve o caminho percorrido mesmo quando falha — sem isso, "não achei o
  * criativo" não diz se o problema é o drive, o nome da campanha ou a etapa, e
@@ -329,15 +349,14 @@ export async function resolverPastaDeCriativos(opts: {
       atual = achada.id;
     }
 
-    // "Com edição" pode estar a até três níveis abaixo da etapa.
-    const comEdicao = await acharComEdicao(atual);
+    const nomeDaEtapa = passos[passos.length - 1]?.achado ?? "etapa";
+    const encontradas = await pastasDeCriativos(atual, nomeDaEtapa);
     passos.push({
-      nivel: "COM EDICAO",
-      procurado: "COM EDICAO",
-      achado: comEdicao.length ? `${comEdicao.length} pasta(s)` : null,
+      nivel: "Pastas de criativos",
+      procurado: "tudo sob a etapa, menos material cru",
+      achado: `${encontradas.length} pasta(s): ${encontradas.map((p) => p.nome).slice(0, 8).join(", ")}`,
     });
-    if (comEdicao.length === 0) return { ok: false, pastas: [], passos };
-    return { ok: true, pastas: comEdicao, passos };
+    return { ok: true, pastas: encontradas, passos };
   } catch (err) {
     return {
       ok: false,
