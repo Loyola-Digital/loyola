@@ -129,8 +129,15 @@ export default fp(async function driveCreativesRoutes(fastify) {
           { url: string; view: string | null; tipo: TipoDeCriativo; pasta: string; editada: boolean }
         > = {};
         for (const tipo of ["video", "estatico"] as TipoDeCriativo[]) {
-          for (const p of await pastasDe(ctx, tipo)) {
-          for (const f of await criativosDaPasta(p.id)) {
+          const daEtapa = await pastasDe(ctx, tipo);
+          // Em paralelo: a varredura passou a devolver a subárvore inteira da
+          // etapa (uma dúzia de pastas, não meia), e em série isso somaria a
+          // latência do Drive uma vez por pasta a cada abertura da galeria.
+          const conteudos = await Promise.all(
+            daEtapa.map((p) => criativosDaPasta(p.id).catch(() => [])),
+          );
+          for (const [i, p] of daEtapa.entries()) {
+          for (const f of conteudos[i]) {
             // `thumbnailLink` expira, então isto é resposta de request — nunca
             // vai pro banco.
             if (!f.thumbnailLink) continue;
