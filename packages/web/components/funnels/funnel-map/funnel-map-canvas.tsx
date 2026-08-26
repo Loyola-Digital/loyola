@@ -19,7 +19,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Icons from "lucide-react";
 import {
-  ClipboardCopy, Copy, Keyboard, Loader2, Maximize2, Minimize2, Minus, Pencil, Plus, RotateCcw, Save, Scan,
+  ChevronDown, ChevronRight, ClipboardCopy, Copy, FileDown, Keyboard, Loader2, Maximize2, Minimize2, Minus,
+  PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Save, Scan, Search,
   StickyNote, Trash2, Type, Undo2, Redo2, Unlink, X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -47,6 +48,7 @@ import {
   metaDoTipo,
   type StatusBloco,
 } from "@/lib/utils/funnel-map-palette";
+import { exportarMapaEmPdf } from "@/lib/utils/funnel-map-pdf";
 import {
   GRADE, snap, useHistorico, useSelecao, useZoom,
 } from "@/lib/hooks/use-canvas-ux";
@@ -155,6 +157,41 @@ function calcularGuias(
   return { dx: melhorX < IMA ? dx : 0, dy: melhorY < IMA ? dy : 0, guias };
 }
 
+/**
+ * Uma seção da paleta, recolhível.
+ *
+ * `visivel` existe por causa da busca: a seção some inteira quando nenhum item
+ * dela casa, em vez de virar um cabeçalho órfão sobre o vazio.
+ */
+function Secao({
+  titulo, chave, cor, fechada, alternar, visivel, children,
+}: {
+  titulo: string;
+  chave: string;
+  cor?: string;
+  fechada: Set<string>;
+  alternar: (chave: string) => void;
+  visivel: boolean;
+  children: React.ReactNode;
+}) {
+  if (!visivel) return null;
+  const aberta = !fechada.has(chave);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => alternar(chave)}
+        className="mb-1 flex w-full items-center gap-1 rounded text-[10px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {aberta ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
+        {cor && <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: cor }} />}
+        <span className="truncate">{titulo}</span>
+      </button>
+      {aberta && children}
+    </div>
+  );
+}
+
 interface Props {
   projectId: string;
   funnelId: string;
@@ -197,6 +234,36 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
    * Space parecia morto. Com translate a tela move sempre.
    */
   const [pan, setPan] = useState({ x: 0, y: 0 });
+
+  // ---- Paleta: aberta/fechada, busca e seções recolhidas -------------------
+  // A preferência é de quem está usando e vale por navegador; guardar no banco
+  // faria uma pessoa mudar a barra da outra.
+  const [paletaAberta, setPaletaAberta] = useState(true);
+  const [busca, setBusca] = useState("");
+  const [fechadas, setFechadas] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      setPaletaAberta(localStorage.getItem("mapa:paleta") !== "0");
+      const cru = localStorage.getItem("mapa:secoes");
+      if (cru) setFechadas(new Set(JSON.parse(cru) as string[]));
+    } catch {
+      /* modo privado ou storage bloqueado: fica no padrão */
+    }
+  }, []);
+  function alternarPaleta() {
+    setPaletaAberta((v) => {
+      try { localStorage.setItem("mapa:paleta", v ? "0" : "1"); } catch { /* ignora */ }
+      return !v;
+    });
+  }
+  function alternarSecao(chave: string) {
+    setFechadas((atual) => {
+      const nova = new Set(atual);
+      if (nova.has(chave)) nova.delete(chave); else nova.add(chave);
+      try { localStorage.setItem("mapa:secoes", JSON.stringify([...nova])); } catch { /* ignora */ }
+      return nova;
+    });
+  }
   const [telaCheia, setTelaCheia] = useState(false);
   const secaoRef = useRef<HTMLElement>(null);
   /** Zoom corrente pra ler DEPOIS do render, quando o estado ainda não chegou. */
@@ -483,25 +550,42 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
 
   function adicionarBloco(tipo: string, cor: string, label: string) {
     const id = `b-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`;
-    // Entra num espaço livre à direita do que já existe, para não nascer em
-    // cima de outro bloco.
-    const x = blocos.length === 0 ? 100 : Math.max(...blocos.map((b) => b.x)) + 280;
+    const p = proximaPosicao();
     alterarAba((a) => ({
       ...a,
       boxes: [
         ...a.boxes,
-        { id, type: tipo, label, x, y: 160, width: LARGURA_PADRAO, height: ALTURA_PADRAO, color: cor, status: "construcao" as StatusBloco },
+        { id, type: tipo, label, ...p, width: LARGURA_PADRAO, height: ALTURA_PADRAO, color: cor, status: "construcao" as StatusBloco },
       ],
     }));
     selecao.definir([id]);
   }
 
-  /** Posição livre à direita do que já existe, pra não nascer por cima. */
-  function proximaPosicao(): { x: number; y: number } {
-    return {
-      x: blocos.length === 0 ? 100 : Math.max(...blocos.map((b) => b.x)) + 280,
-      y: 160,
-    };
+  /**
+   * Onde um elemento novo nasce: no meio do que está visível.
+   *
+   * Antes ia para a direita de tudo que já existia — com um mapa grande, o
+   * bloco nascia longe da vista e a pessoa tinha que sair procurando para
+   * confirmar que foi criado. Nascer no centro da tela dispensa mover a câmera:
+   * o elemento aparece onde o olho já está.
+   */
+  function proximaPosicao(w = LARGURA_PADRAO, h = ALTURA_PADRAO): { x: number; y: number } {
+    const el = areaRef.current;
+    const z = zoom.valor;
+    const centro = el
+      ? { x: (el.clientWidth / 2 - pan.x) / z, y: (el.clientHeight / 2 - pan.y) / z }
+      : { x: 200, y: 200 };
+    let x = snap(centro.x - w / 2);
+    let y = snap(centro.y - h / 2);
+    // Desvia em cascata enquanto o lugar estiver ocupado: nascer exatamente em
+    // cima de outro bloco esconderia o novo, que é o problema de origem.
+    const ocupado = () =>
+      blocos.some((b) => Math.abs(b.x - x) < GRADE && Math.abs(b.y - y) < GRADE);
+    for (let i = 0; i < 40 && ocupado(); i += 1) {
+      x += GRADE * 2;
+      y += GRADE * 2;
+    }
+    return { x, y };
   }
 
   function novoId(prefixo: string): string {
@@ -511,7 +595,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   /** Nota adesiva: texto solto, sem status nem conexão. */
   function adicionarNota() {
     const id = novoId("n");
-    const p = proximaPosicao();
+    const p = proximaPosicao(NOTA_LARGURA, NOTA_ALTURA);
     alterarAba((a) => ({
       ...a,
       boxes: [
@@ -531,7 +615,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   /** Bloco de texto: título ou parágrafo solto no board. */
   function adicionarTexto(estilo: "h1" | "h2" | "h3" | "corpo") {
     const id = novoId("t");
-    const p = proximaPosicao();
+    const p = proximaPosicao(TEXTO_LARGURA, TEXTO_ALTURA);
     alterarAba((a) => ({
       ...a,
       boxes: [
@@ -809,6 +893,28 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
     });
   }
 
+  const [exportando, setExportando] = useState(false);
+
+  /**
+   * Exporta o desenho em PDF.
+   *
+   * Vai o documento inteiro, uma página por aba — e não só o que está
+   * enquadrado: o PDF costuma ser o que alguém manda pro cliente, e mandar
+   * meio mapa porque o zoom estava assim na hora seria uma armadilha.
+   */
+  async function exportarPdf() {
+    if (!abas || abas.length === 0) return;
+    setExportando(true);
+    try {
+      await exportarMapaEmPdf({ abas, titulo: "Mapa do funil" });
+      toast.success(abas.length > 1 ? `PDF gerado — ${abas.length} abas` : "PDF gerado");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não consegui gerar o PDF");
+    } finally {
+      setExportando(false);
+    }
+  }
+
   /** Tela cheia de verdade (Fullscreen API), não só "enquadrar". */
   async function alternarTelaCheia() {
     const el = secaoRef.current;
@@ -1016,6 +1122,36 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   // Origem do desenho. Os blocos podem ficar em coordenada negativa (arrastar
   // para cima/esquerda é livre), e o <svg> recorta no próprio box — sem
   // esticá-lo para trás, os conectores que passam acima de zero sumiriam.
+  // ---- Filtro da paleta ----------------------------------------------------
+  // Normaliza acento: quem digita "trafego" tem que achar "Tráfego".
+  const alvoDaBusca = busca.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const casa = (texto: string) =>
+    !alvoDaBusca ||
+    texto.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").includes(alvoDaBusca);
+
+  const SECOES_LIVRES = [
+    { chave: "nota", rotulo: "Nota", acao: adicionarNota },
+    ...(["h1", "h2", "h3", "corpo"] as const).map((e) => ({
+      chave: e,
+      rotulo: e === "corpo" ? "Texto" : e.toUpperCase(),
+      acao: () => adicionarTexto(e),
+    })),
+  ];
+  const filtroLivres = SECOES_LIVRES.filter((l) => casa(l.rotulo) || casa("anotar"));
+  // O emoji não é pesquisável por si; o que casa é o nome do grupo.
+  const filtrarEmojis = (g: { grupo: string; itens: readonly string[] }) =>
+    casa(g.grupo) ? [...g.itens] : [];
+  const filtrarItens = (cat: { name: string; items: { type: string; label: string; icon: string }[] }) =>
+    casa(cat.name) ? cat.items : cat.items.filter((i) => casa(i.label));
+  const semResultado =
+    !!alvoDaBusca &&
+    filtroLivres.length === 0 &&
+    EMOJIS_GENERICOS.every((g) => filtrarEmojis(g).length === 0) &&
+    CATEGORIAS.every((c) => filtrarItens(c).length === 0);
+
+  /** Mesma altura do canvas: a coluna acompanha a área de desenho. */
+  const alturaDaArea = telaCheia ? "calc(100vh - 190px)" : altura;
+
   const origemX = Math.min(0, ...blocos.map((b) => b.x - 200));
   const origemY = Math.min(0, ...blocos.map((b) => b.y - 160));
 
@@ -1070,6 +1206,21 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
             title={telaCheia ? "Sair da tela cheia" : "Tela cheia"}
           >
             {telaCheia ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+          </Button>
+          <Button
+            variant="ghost" size="icon" className="hidden h-6 w-6 md:inline-flex"
+            onClick={alternarPaleta}
+            aria-label={paletaAberta ? "Ocultar barra lateral" : "Mostrar barra lateral"}
+            title={paletaAberta ? "Ocultar barra lateral" : "Mostrar barra lateral"}
+          >
+            {paletaAberta ? <PanelLeftClose className="h-3 w-3" /> : <PanelLeftOpen className="h-3 w-3" />}
+          </Button>
+          <Button
+            variant="ghost" size="icon" className="h-6 w-6"
+            onClick={exportarPdf} disabled={exportando}
+            aria-label="Exportar em PDF" title="Exportar em PDF"
+          >
+            {exportando ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileDown className="h-3 w-3" />}
           </Button>
           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAjuda(true)} aria-label="Atalhos">
             <Keyboard className="h-3 w-3" />
@@ -1136,87 +1287,104 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
 
       <div className="flex gap-3">
         {/* Paleta */}
-        <div className="hidden w-44 shrink-0 space-y-2 overflow-y-auto md:block" style={{ maxHeight: altura }}>
-          {/* Blocos livres: anotar e organizar, não peças do funil. */}
-          <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Anotar
-            </p>
-            <div className="space-y-0.5">
-              <button
-                type="button"
-                onClick={adicionarNota}
-                className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-muted"
-              >
-                <StickyNote className="h-3 w-3 shrink-0" />
-                Nota
-              </button>
-              {(["h1", "h2", "h3", "corpo"] as const).map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => adicionarTexto(e)}
-                  className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-muted"
-                >
-                  <Type className="h-3 w-3 shrink-0" />
-                  {e === "corpo" ? "Texto" : e.toUpperCase()}
-                </button>
-              ))}
-            </div>
+        {paletaAberta && (
+        <div className="hidden w-48 shrink-0 flex-col gap-2 md:flex" style={{ maxHeight: alturaDaArea }}>
+          <div className="relative shrink-0">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar elemento"
+              className="h-7 pl-7 text-[11px]"
+            />
           </div>
 
-          {/* Genéricos: o "quadradinho" pra qualquer coisa que o funil tenha. */}
-          {EMOJIS_GENERICOS.map((g) => (
-            <div key={g.grupo}>
-              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                {g.grupo}
-              </p>
-              <div className="flex flex-wrap gap-0.5">
-                {g.itens.map((emoji) => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    onClick={() => adicionarGenerico(emoji)}
-                    title={`Bloco ${emoji}`}
-                    className="rounded px-1 py-0.5 text-sm transition-colors hover:bg-muted"
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-
-          {CATEGORIAS.map((cat) => (
-            <div key={cat.name}>
-              <p className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                <span className="h-2 w-2 rounded-sm" style={{ background: cat.color }} />
-                {cat.name}
-              </p>
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
+          {SECOES_LIVRES.length > 0 && (
+            <Secao titulo="Anotar" chave="anotar" fechada={fechadas} alternar={alternarSecao} visivel={!!filtroLivres.length}>
               <div className="space-y-0.5">
-                {cat.items.map((item) => (
+                {filtroLivres.map((l) => (
                   <button
-                    key={item.type}
+                    key={l.chave}
                     type="button"
-                    onClick={() => adicionarBloco(item.type, cat.color, item.label)}
+                    onClick={l.acao}
                     className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-muted"
                   >
-                    <IconePorNome nome={item.icon} className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{item.label}</span>
-                    <Plus className="ml-auto h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                    {l.chave === "nota" ? <StickyNote className="h-3 w-3 shrink-0" /> : <Type className="h-3 w-3 shrink-0" />}
+                    {l.rotulo}
                   </button>
                 ))}
               </div>
-            </div>
-          ))}
+            </Secao>
+          )}
+
+          {/* Genéricos: o "quadradinho" pra qualquer coisa que o funil tenha. */}
+          {EMOJIS_GENERICOS.map((g) => {
+            const itens = filtrarEmojis(g);
+            return (
+              <Secao key={g.grupo} titulo={g.grupo} chave={`e:${g.grupo}`} fechada={fechadas} alternar={alternarSecao} visivel={itens.length > 0}>
+                <div className="flex flex-wrap gap-0.5">
+                  {itens.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => adicionarGenerico(emoji)}
+                      title={`Bloco ${emoji}`}
+                      className="rounded px-1 py-0.5 text-sm transition-colors hover:bg-muted"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </Secao>
+            );
+          })}
+
+          {CATEGORIAS.map((cat) => {
+            const itens = filtrarItens(cat);
+            return (
+              <Secao
+                key={cat.name}
+                titulo={cat.name}
+                chave={`c:${cat.name}`}
+                cor={cat.color}
+                fechada={fechadas}
+                alternar={alternarSecao}
+                visivel={itens.length > 0}
+              >
+                <div className="space-y-0.5">
+                  {itens.map((item) => (
+                    <button
+                      key={item.type}
+                      type="button"
+                      onClick={() => adicionarBloco(item.type, cat.color, item.label)}
+                      className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-muted"
+                    >
+                      <IconePorNome nome={item.icon} className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{item.label}</span>
+                      <Plus className="ml-auto h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                    </button>
+                  ))}
+                </div>
+              </Secao>
+            );
+          })}
+
+          {semResultado && (
+            <p className="px-1 py-4 text-center text-[11px] text-muted-foreground">
+              Nada com “{busca}”.
+            </p>
+          )}
+          </div>
         </div>
+        )}
 
         {/* Canvas */}
         <div
           ref={areaRef}
           className="relative flex-1 touch-none overflow-hidden rounded-lg border border-border/40"
           style={{
-            height: telaCheia ? "calc(100vh - 190px)" : altura,
+            height: alturaDaArea,
             cursor: espaco.current ? "grab" : "default",
             // A grade acompanha o pan e o zoom — é a referência visual de que a
             // tela está se movendo.
