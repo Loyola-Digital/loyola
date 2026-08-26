@@ -106,6 +106,7 @@ import stageComercialRoutes from "./routes/stage-comercial.js";
 import instagramScansRoutes from "./routes/instagram-scans.js";
 import swipeFilesRoutes from "./routes/swipe-files.js";
 import paymentAlertsSchedulerPlugin from "./plugins/payment-alerts-scheduler.js";
+import sendflowGroupsSchedulerPlugin from "./plugins/sendflow-groups-scheduler.js";
 import revenuecatSnapshotSchedulerPlugin from "./plugins/revenuecat-snapshot-scheduler.js";
 import instaScanWorkerPlugin from "./plugins/insta-scan-worker.js";
 
@@ -167,6 +168,8 @@ export async function buildServer() {
   // Log de Campanha automático a partir do histórico de alterações da Meta.
   await app.register(metaActivitiesSchedulerPlugin);
   await app.register(paymentAlertsSchedulerPlugin);
+  // Grupos do SendFlow (substitui a exportação manual pra planilha).
+  await app.register(sendflowGroupsSchedulerPlugin);
   // Story 42.10: um ponto por dia das métricas do RevenueCat. A API só devolve
   // o estado de agora — cada dia sem coletar é um ponto perdido para sempre.
   await app.register(revenuecatSnapshotSchedulerPlugin);
