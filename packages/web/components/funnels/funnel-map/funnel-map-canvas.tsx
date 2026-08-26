@@ -1372,34 +1372,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
                   }`}
                   style={{ left: b.x, top: b.y, width: b.width, height: b.height, borderColor: b.color }}
                 >
-                  <div className="flex items-center gap-1.5">
-                    {b.emoji ? (
-                      <span className="shrink-0 text-sm leading-none">{b.emoji}</span>
-                    ) : (
-                      <IconePorNome nome={meta.icon} className="h-3.5 w-3.5 shrink-0" />
-                    )}
-                    <span className="truncate text-[11px] font-medium" title={b.label}>{b.label}</span>
-                  </div>
-                  <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{meta.label}</p>
-                  <span
-                    className="absolute bottom-1.5 right-2 flex items-center gap-1 text-[9px]"
-                    style={{ color: STATUS[b.status]?.color }}
-                    title={STATUS[b.status]?.label}
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS[b.status]?.color }} />
-                    {STATUS[b.status]?.label}
-                  </span>
-                  {/* Etapa de verdade do Loyola X: o mapa mostra quais blocos
-                      têm dado atrás e quais são só plano. */}
-                  {b.stageId && (
-                    <span className="absolute left-1.5 top-[-8px] rounded bg-primary px-1 text-[8px] font-medium text-primary-foreground">
-                      etapa
-                    </span>
-                  )}
-
-                  {/* Renomear no próprio bloco. */}
-                  {renomeando?.id === b.id && (
-                    <div className="absolute inset-x-1 top-1 z-20" onPointerDown={(ev) => ev.stopPropagation()}>
+                  {/* Editando: o input SUBSTITUI o conteúdo do card.
+                      Antes ele flutuava por cima e o nome antigo continuava
+                      aparecendo atrás — parecia bug. */}
+                  {renomeando?.id === b.id ? (
+                    <div onPointerDown={(ev) => ev.stopPropagation()}>
                       <Input
                         autoFocus
                         value={renomeando.valor}
@@ -1409,9 +1386,40 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
                           if (ev.key === "Enter") { ev.preventDefault(); confirmarRename(); }
                           if (ev.key === "Escape") { ev.preventDefault(); setRenomeando(null); }
                         }}
+                        onFocus={(ev) => ev.currentTarget.select()}
                         className="h-6 px-1 text-[11px]"
                       />
+                      <p className="mt-1 text-[9px] text-muted-foreground">Enter salva · Esc cancela</p>
                     </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        {b.emoji ? (
+                          <span className="shrink-0 text-sm leading-none">{b.emoji}</span>
+                        ) : (
+                          <IconePorNome nome={meta.icon} className="h-3.5 w-3.5 shrink-0" />
+                        )}
+                        <span className="truncate text-[11px] font-medium" title={b.label}>{b.label}</span>
+                      </div>
+                      <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{meta.label}</p>
+                    </>
+                  )}
+                  {renomeando?.id !== b.id && (
+                  <span
+                    className="absolute bottom-1.5 right-2 flex items-center gap-1 text-[9px]"
+                    style={{ color: STATUS[b.status]?.color }}
+                    title={STATUS[b.status]?.label}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS[b.status]?.color }} />
+                    {STATUS[b.status]?.label}
+                  </span>
+                  )}
+                  {/* Etapa de verdade do Loyola X: o mapa mostra quais blocos
+                      têm dado atrás e quais são só plano. */}
+                  {b.stageId && (
+                    <span className="absolute left-1.5 top-[-8px] rounded bg-primary px-1 text-[8px] font-medium text-primary-foreground">
+                      etapa
+                    </span>
                   )}
 
                   {/* Alça de redimensionar — só no bloco selecionado, senão

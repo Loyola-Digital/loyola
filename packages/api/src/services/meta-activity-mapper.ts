@@ -82,11 +82,34 @@ function formatarDinheiro(valor: unknown): string | null {
 }
 
 /** Texto curto de um lado do antes/depois. Objetos viram JSON compacto e truncado. */
+/**
+ * URL de CDN da Meta — o "valor" de um evento de criativo é o link da imagem.
+ *
+ * Ela não vira texto de log: são ~200 caracteres que empurram o NOME do anúncio
+ * pra fora da linha, expiram em pouco tempo e ninguém clica num link colado no
+ * meio de uma observação. O que interessa ali é qual anúncio mudou.
+ */
+function ehUrlDeMidia(valor: string): boolean {
+  const v = valor.trim();
+  if (!/^https?:\/\//i.test(v)) return false;
+  // Só o que É a mídia. O link de DESTINO do anúncio (a LP) continua passando —
+  // ali a troca importa.
+  return /(fbcdn\.net|cdninstagram\.com)/i.test(v) || /facebook\.com\/ads\/image/i.test(v);
+}
+
+/** ID de mídia solto: sem a URL ao lado, um número de 15 dígitos não diz nada. */
+function ehIdSolto(valor: string): boolean {
+  return /^\d{10,}$/.test(valor.trim());
+}
+
 function ladoLegivel(valor: unknown): string | null {
   if (valor === null || valor === undefined) return null;
   const dinheiro = formatarDinheiro(valor);
   if (dinheiro) return dinheiro;
-  if (typeof valor === "string") return valor.trim() || null;
+  if (typeof valor === "string") {
+    if (ehUrlDeMidia(valor)) return null;
+    return valor.trim() || null;
+  }
   if (typeof valor === "number" || typeof valor === "boolean") return String(valor);
   // Direcionamento vem como lista de blocos { content, children } — vira um
   // resumo de uma linha em vez de despejar o JSON inteiro na observação.
@@ -100,9 +123,13 @@ function ladoLegivel(valor: unknown): string | null {
           const filhos = Array.isArray(bloco.children) ? bloco.children.join(", ") : "";
           return filhos ? `${titulo}: ${filhos}` : titulo;
         }
-        return typeof item === "string" ? item : null;
+        if (typeof item !== "string") return null;
+        return ehUrlDeMidia(item) ? null : item;
       })
       .filter((p): p is string => Boolean(p));
+    // Carrossel vem como [url, id, url, id]: tiradas as URLs sobram só os ids,
+    // que sozinhos não informam nada.
+    if (partes.every(ehIdSolto)) return null;
     return partes.length ? truncar(partes.join(" · "), 400) : null;
   }
   return truncar(JSON.stringify(valor), 300);
