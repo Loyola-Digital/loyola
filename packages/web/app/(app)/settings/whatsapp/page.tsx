@@ -7,7 +7,8 @@
  * Mesma razão da aba Analytics.
  */
 
-import { useState } from "react";
+import { Suspense, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { MessageSquare, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -18,28 +19,41 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useSendflowGlobalConnection,
-  useSaveSendflowGlobalConnection,
+  useConectarSendflow,
   useDeleteSendflowGlobalConnection,
 } from "@/lib/hooks/use-sendflow";
 
+/**
+ * Avisa o resultado da volta do OAuth.
+ *
+ * Componente separado e sob <Suspense> porque `useSearchParams` obriga a isso
+ * no Next — sem a fronteira, o build falha ao pré-renderizar a página.
+ */
+function AvisoDoRetorno() {
+  const params = useSearchParams();
+  const resultado = params.get("sendflow");
+  const motivo = params.get("motivo");
+  useEffect(() => {
+    if (resultado === "ok") toast.success("SendFlow conectado");
+    if (resultado === "erro") toast.error(motivo || "Não consegui conectar ao SendFlow");
+  }, [resultado, motivo]);
+  return null;
+}
+
 export default function WhatsappSettingsPage() {
   const { data, isLoading } = useSendflowGlobalConnection();
-  const salvar = useSaveSendflowGlobalConnection();
+  const conectar = useConectarSendflow();
   const remover = useDeleteSendflowGlobalConnection();
 
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [refreshToken, setRefreshToken] = useState("");
-
-  const preenchido = clientId.trim() && clientSecret.trim() && refreshToken.trim();
 
   return (
     <div className="space-y-6">
+      <Suspense fallback={null}>
+        <AvisoDoRetorno />
+      </Suspense>
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold">
           <MessageSquare className="h-6 w-6 text-emerald-600" />
@@ -54,9 +68,9 @@ export default function WhatsappSettingsPage() {
         <CardHeader>
           <CardTitle className="text-base">Conexão</CardTitle>
           <CardDescription>
-            O SendFlow não emite chave de API: o servidor só aceita autorização por navegador
-            (<code className="text-xs">authorization_code</code>). Autorize uma vez, cole o
-            refresh token aqui e o Loyola X renova o acesso sozinho daí em diante.
+            O SendFlow só autoriza por navegador — não emite chave de API. Clique em conectar,
+            faça login lá, e pronto: o Loyola X registra o próprio acesso e o renova sozinho daí
+            em diante.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -94,68 +108,17 @@ export default function WhatsappSettingsPage() {
                 </div>
               )}
 
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Client ID</Label>
-                  <Input
-                    value={clientId}
-                    onChange={(e) => setClientId(e.target.value)}
-                    placeholder="mcp_client_…"
-                    className="h-8 text-xs"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Client Secret</Label>
-                  <Input
-                    type="password"
-                    value={clientSecret}
-                    onChange={(e) => setClientSecret(e.target.value)}
-                    placeholder="mcp_secret_…"
-                    className="h-8 text-xs"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Refresh Token</Label>
-                  <Input
-                    type="password"
-                    value={refreshToken}
-                    onChange={(e) => setRefreshToken(e.target.value)}
-                    className="h-8 text-xs"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <Button
-                  size="sm"
-                  disabled={!preenchido || salvar.isPending}
-                  onClick={() =>
-                    salvar.mutate(
-                      {
-                        clientId: clientId.trim(),
-                        clientSecret: clientSecret.trim(),
-                        refreshToken: refreshToken.trim(),
-                      },
-                      {
-                        onSuccess: () => {
-                          toast.success(data?.connected ? "Conexão atualizada" : "SendFlow conectado");
-                          setClientSecret("");
-                          setRefreshToken("");
-                        },
-                        onError: (e) =>
-                          toast.error(e instanceof Error ? e.message : "Não consegui conectar"),
-                      },
-                    )
-                  }
-                >
-                  {salvar.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-                  {data?.connected ? "Atualizar conexão" : "Conectar"}
+              <div className="flex flex-wrap items-center gap-3">
+                <Button size="sm" disabled={conectar.isPending} onClick={() => conectar.mutate()}>
+                  {conectar.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                  {data?.connected ? "Reconectar" : "Conectar com o SendFlow"}
                 </Button>
                 <p className="text-[11px] text-muted-foreground">
-                  As credenciais são validadas contra o SendFlow antes de gravar, e ficam
-                  criptografadas no banco.
+                  Abre o login do SendFlow. Você autoriza uma vez e o Loyola X cuida do resto —
+                  não precisa copiar token nenhum.
                 </p>
               </div>
+
             </>
           )}
         </CardContent>

@@ -13,6 +13,9 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1),
   CLERK_WEBHOOK_SECRET: z.string().min(1).optional(),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  /** URL pública desta API. Só é usada pra montar o callback do OAuth do
+   *  SendFlow; sem ela, derivamos do próprio request. */
+  API_PUBLIC_URL: z.string().optional(),
   MINDS_BASE_PATH: z.string().default("./squads"),
   CLICKUP_API_TOKEN: z.string().min(1).optional(),
   ENCRYPTION_KEY: z.string().length(64).regex(/^[0-9a-fA-F]+$/, "Must be 64-char hex string").optional(),

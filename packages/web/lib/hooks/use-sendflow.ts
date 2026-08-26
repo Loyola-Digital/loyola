@@ -68,6 +68,23 @@ export function useSendflowGlobalConnection() {
   });
 }
 
+/**
+ * Inicia a conexão: pede a URL de autorização e leva o navegador pra lá.
+ *
+ * A URL vem por POST autenticado, e não por redirect direto, porque a sessão do
+ * Loyola X não acompanha uma navegação pra outro domínio.
+ */
+export function useConectarSendflow() {
+  const apiClient = useApiClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient<{ url: string }>("/api/settings/sendflow/authorize-url", { method: "POST" }),
+    onSuccess: (r) => {
+      if (r?.url) window.location.href = r.url;
+    },
+  });
+}
+
 export function useSaveSendflowGlobalConnection() {
   const apiClient = useApiClient();
   const qc = useQueryClient();
