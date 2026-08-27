@@ -225,6 +225,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   /** Nota/texto em edição — conteúdo vai em `texto`, não em `label`. */
   const [editando, setEditando] = useState<{ id: string; valor: string } | null>(null);
   const areaRef = useRef<HTMLDivElement>(null);
+  /** O nó que contém blocos e conectores — é ele que a exportação fotografa. */
+  const desenhoRef = useRef<HTMLDivElement>(null);
   const espaco = useRef(false);
   /**
    * Deslocamento do desenho, em px de TELA.
@@ -899,21 +901,76 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   const [exportando, setExportando] = useState(false);
 
   /**
-   * Exporta o desenho em PDF.
+   * Espera o React pintar a troca de aba antes de fotografar.
    *
-   * Vai o documento inteiro, uma página por aba — e não só o que está
-   * enquadrado: o PDF costuma ser o que alguém manda pro cliente, e mandar
-   * meio mapa porque o zoom estava assim na hora seria uma armadilha.
+   * O `setTimeout` não é redundância defensiva: em aba de segundo plano o
+   * navegador não dispara quadro nenhum, e sem a saída pelo tempo a exportação
+   * ficaria parada aqui até a pessoa voltar para a aba.
+   */
+  function proximoQuadro(): Promise<void> {
+    return new Promise((resolve) => {
+      let pronto = false;
+      const terminar = () => {
+        if (pronto) return;
+        pronto = true;
+        resolve();
+      };
+      requestAnimationFrame(() => requestAnimationFrame(terminar));
+      setTimeout(terminar, 200);
+    });
+  }
+
+  /**
+   * Exporta o desenho em PDF — um print, não um redesenho.
+   *
+   * Percorre as abas trocando a que está visível, porque só a ativa existe no
+   * DOM. O estado é restaurado no `finally`: uma falha no meio não pode deixar
+   * a pessoa numa aba que ela não abriu.
    */
   async function exportarPdf() {
-    if (!abas || abas.length === 0) return;
+    const abasAgora = abasRef.current;
+    if (!abasAgora || abasAgora.length === 0 || !desenhoRef.current) return;
+    const voltarPara = abaAtiva;
     setExportando(true);
     try {
-      await exportarMapaEmPdf({ abas, titulo: "Mapa do funil" });
-      toast.success(abas.length > 1 ? `PDF gerado — ${abas.length} abas` : "PDF gerado");
+      const areas = [];
+      for (let i = 0; i < abasAgora.length; i += 1) {
+        if (i !== abaAtiva) {
+          setAbaAtiva(i);
+          await proximoQuadro();
+        }
+        const no = desenhoRef.current;
+        if (!no) continue;
+        const bs = abasRef.current?.[i]?.boxes ?? [];
+        // Recorta pelo que EXISTE, não pelo tamanho do mundo.
+        //
+        // O mundo tem no mínimo 1200px de largura e a altura da área visível —
+        // usar isso deixaria metade da folha em branco num mapa de três blocos,
+        // e ainda cobraria o tempo de rasterizar o vazio. A margem cobre a
+        // curva dos conectores, que sai um pouco fora dos blocos.
+        //
+        // Calculado por aba: o recorte da aba ativa cortaria as outras.
+        const MARGEM = 60;
+        const temBloco = bs.length > 0;
+        areas.push({
+          no,
+          nome: abasAgora[i].name,
+          origemX: (temBloco ? Math.min(...bs.map((b) => b.x)) : 0) - MARGEM,
+          origemY: (temBloco ? Math.min(...bs.map((b) => b.y)) : 0) - MARGEM,
+          fimX: (temBloco ? Math.max(...bs.map((b) => b.x + b.width)) : 800) + MARGEM,
+          fimY: (temBloco ? Math.max(...bs.map((b) => b.y + b.height)) : 600) + MARGEM,
+        });
+      }
+      // A cor vem da tela: no tema escuro, fundo branco deixaria o texto claro
+      // ilegível no papel.
+      const fundo =
+        (areaRef.current && getComputedStyle(areaRef.current).backgroundColor) || "#ffffff";
+      await exportarMapaEmPdf({ areas, titulo: "Mapa do funil", fundo });
+      toast.success(areas.length > 1 ? `PDF gerado — ${areas.length} abas` : "PDF gerado");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Não consegui gerar o PDF");
     } finally {
+      setAbaAtiva(voltarPara);
       setExportando(false);
     }
   }
@@ -1007,6 +1064,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   salvarRef.current = salvarMapa;
 
   useEffect(() => { zoomRef.current = zoom.valor; }, [zoom.valor]);
+
+  // Espelho das abas para a exportação: ela troca de aba dentro de um `await`,
+  // e a closure enxergaria o valor do render em que começou.
+  const abasRef = useRef(abas);
+  useEffect(() => { abasRef.current = abas; }, [abas]);
 
   /**
    * Traz o conteúdo para dentro da tela ao abrir a aba.
@@ -1403,6 +1465,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
           onContextMenu={(e) => e.preventDefault()}
         >
           <div
+            ref={desenhoRef}
             className="absolute left-0 top-0 origin-top-left"
             style={{
               width: largura,
