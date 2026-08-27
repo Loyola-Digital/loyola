@@ -1,8 +1,21 @@
 schema: 1
 story: '29.66'
-gate: FAIL
-iteration: 1
+gate: PASS
+iteration: 2
 status_reason: >-
+  PASS na iteracao 2 — o QA-66-01 foi resolvido na RAIZ, e o @dev foi alem do que
+  o gate pediu. Eu sugeri normalizar na chamada; ele transformou a traducao entre
+  os dois formatos em funcao nomeada (`permalinkDaRotaDeVideo`), com o argumento
+  correto: um literal montado na chamada resolveria este caso e deixaria o
+  proximo consumidor da rota repetindo o mesmo risco, sem ajuda do compilador.
+  Reverifiquei por EXECUCAO, com o mesmo payload que produziu o FAIL: o link do
+  Facebook volta e o rotulo diz "Assistir no Facebook".
+  O QA-66-02 nao virou so cobertura: o @dev escreveu um caso DIFERENCIAL que
+  afirma `creativePermalink(payloadDaRota) === null`. O teste documenta que
+  passar o objeto direto esta errado — "simplificar" de volta quebra a suite.
+  QA-66-03 corrigido. Nenhuma observacao aberta.
+
+  --- iteracao 1 (FAIL), mantida para historico ---
   FAIL — uma REGRESSAO real, provada por execucao, e de correcao curta.
   Seis dos sete ACs estao bem resolvidos, e a story melhorou a propria premissa:
   descobriu que `useVideoSource` chama outra rota (`/video-source?videoId=`),
@@ -19,10 +32,10 @@ reviewer: 'Quinn'
 updated: '2026-08-27T00:00:00Z'
 
 verificacoes:
-  code_review: FAIL           # QA-66-01 — cascata recebe objeto de outro formato
-  unit_tests: CONCERNS        # 7 testes bons, mas nenhum cobre o formato do useCreativeVideo
-  acceptance_criteria: FAIL   # AC2 incompleto e AC6 violado no 4o ponto
-  no_regressions: FAIL        # perda de link onde ele existia e funcionava
+  code_review: PASS           # traducao de formato isolada em funcao nomeada
+  unit_tests: PASS            # 18 testes; o payload da rota entrou, com caso diferencial
+  acceptance_criteria: PASS   # AC1-AC7
+  no_regressions: PASS        # o link do Facebook volta — reverificado por execucao
   performance: PASS           # nenhuma chamada nova; a rota ja era consultada
   security: PASS              # href dinamico, React 19 bloqueia `javascript:`
   documentation: PASS         # llms.txt corrigido, inclusive a divida da 36.8
@@ -59,9 +72,33 @@ verificacoes_manuais_executadas:
       valido para o compilador. Mesma familia do QA-34 da 36.8: a assinatura
       aceita o incompleto em silencio. Ver QA-66-02.
 
-top_issues:
+verificacoes_da_iteracao_2:
+  - o: 'O fix funciona, ou so parece?'
+    como: >-
+      Rodei o payload EXATO que produziu o FAIL (`permalinkUrl` do Facebook,
+      `igPermalinkUrl: null`) contra `permalinkDaRotaDeVideo`.
+    resultado: >-
+      Devolve o link do Facebook, e `rotuloDoPermalink` diz "Assistir no
+      Facebook". O caso que sumia da tela voltou. Teste removido apos a prova.
+
+  - o: 'Sobrou algum consumidor passando o objeto da rota direto?'
+    como: 'Busca por `creativePermalink(video…` / `creativePermalink(data…` fora de testes.'
+    resultado: 'Nenhum. A unica ocorrencia e dentro de um comentario explicativo.'
+
+  - o: 'Os tres botoes regrediram com a mudanca?'
+    como: 'Contagem do padrao com fallback explicito nos tres arquivos.'
+    resultado: '3 usos em cada, intactos. O fix ficou contido no quarto ponto.'
+
+  - o: 'O escopo do fix e o declarado?'
+    como: '`git diff --stat` da iteracao.'
+    resultado: >-
+      4 arquivos: o modulo, o `CreativeThumb`, o teste e a story. A API nao foi
+      tocada nesta iteracao — logo o baseline dela segue valendo do gate anterior.
+
+top_issues_resolvidos_na_iteracao_2:
   - id: 'QA-66-01'
     severity: high
+    status: RESOLVIDO
     finding: >-
       `creativePermalink(video)` no `CreativeThumb` le `adPermalinkUrl`, mas o
       objeto de `useCreativeVideo` chama esse campo de `permalinkUrl`. Para os
@@ -73,10 +110,13 @@ top_issues:
       Normalizar na chamada — `creativePermalink({ igPermalinkUrl:
       video?.igPermalinkUrl, adPermalinkUrl: video?.permalinkUrl })` — ou alinhar
       o nome do campo na resposta da rota. A primeira opcao nao mexe em contrato.
-    refs: ['packages/web/components/traffic/creative-thumb.tsx:200-202']
+    refs: ['packages/web/components/traffic/creative-thumb.tsx:200-207']
+    resolucao: >-
+      Nasceu `permalinkDaRotaDeVideo`. Reverificado por execucao.
 
   - id: 'QA-66-02'
     severity: medium
+    status: RESOLVIDO
     finding: >-
       Nenhum teste cobre o formato que vem de `useCreativeVideo`. Os 14 testes do
       arquivo usam sempre objetos com `igPermalinkUrl`/`adPermalinkUrl` — o
@@ -86,6 +126,10 @@ top_issues:
       Ao corrigir o QA-66-01, adicionar um caso com o payload REAL da rota
       (`{ sourceUrl, origem, permalinkUrl, igPermalinkUrl }`) e um anuncio sem
       Instagram. Sem ele, a correcao nao fica presa.
+    resolucao: >-
+      4 casos com o payload real, e um deles e DIFERENCIAL: afirma
+      `creativePermalink(payloadDaRota) === null`. O @dev provou por reversao que
+      reintroduzir o defeito derruba 2 de 18.
 
   - id: 'QA-66-03'
     severity: low
@@ -94,7 +138,9 @@ top_issues:
       pt-BR normativo o verbo pede preposicao ("assistir AO criativo"). Texto
       visivel ao usuario.
     suggested_action: 'Ajustar quando tocar no arquivo. Nao bloqueia.'
-    refs: ['packages/web/lib/utils/creative-permalink.ts:90']
+    status: RESOLVIDO
+    resolucao: '"Assistir ao criativo".'
+    refs: ['packages/web/lib/utils/creative-permalink.ts:124']
 
 waiver: { active: false }
 
@@ -118,7 +164,17 @@ o_que_merece_registro:
     Agora documenta os dois, a distincao para `linkUrl` e o significado de
     `*Stale`.
 
-retorno_ao_dev:
-  - 'Corrigir o QA-66-01 (uma linha) e adicionar o teste do QA-66-02 junto.'
-  - 'O QA-66-03 pode ir no mesmo commit ou ficar para depois.'
-  - 'Nada mais precisa mudar: os outros seis ACs estao cumpridos.'
+aprendizado_da_story:
+  - >-
+    O defeito nasceu ao PROPAGAR uma boa decisao. Trocar a fonte para
+    `item.creative` foi acerto; ao levar a mesma ideia para o quarto ponto, o
+    formato divergente do payload passou despercebido — e os campos opcionais da
+    interface deixaram o compilador calado. Vale lembrar: interface com todos os
+    campos opcionais aceita QUALQUER objeto, inclusive o errado.
+  - >-
+    O gate propos o remendo; o @dev entregou a correcao. Registrado porque o
+    caminho inverso (fazer o minimo que o gate pediu) teria deixado a armadilha
+    montada para o proximo campo.
+
+pendencias_operacionais:
+  - 'Validacao visual: abrir um criativo de video que nao toca e conferir a rede no rotulo. Em PP ou Lyrio da para ver o caso do Facebook (os ~4%).'
