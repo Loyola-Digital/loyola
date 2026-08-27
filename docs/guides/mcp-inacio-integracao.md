@@ -128,6 +128,39 @@ Era bug: contava só `funnels.campaigns` (nível funil), e as campanhas hoje viv
 - **Hash**: sha256 de `trim(lowercase(email))` — determinístico, junta com o `email_sha256` do dedup de leads e entre quaisquer respostas da API.
 - **Caches** em `public_metrics_cache`: sales-daily e cross-launch são pré-computados (scheduler diário + backfill manual); sales-rows é leitura ao vivo (dado quente, sem cache além dos 30s do Sheets).
 
+## 7.5. A Cadeia de CAC agora é uma chamada (Story 44.14 — ago/2026)
+
+**Pare de recompor a cadeia à mão.** A tool `get_stage_cadeia_cac(projectId, stageId, from?, to?)` devolve **o mesmo payload que a aba "Inácio" do painel renderiza**: CPM, CTR, CPC, Connect Rate, Conv. LP, os tetos por janela de 7 dias, o ranking do gargalo, os benchmarks e os criativos **da etapa**.
+
+Contrato completo em [`docs/llms.txt`](../llms.txt), seção `GET .../stages/{stageId}/cadeia-cac`.
+
+### Por que isto virou uma nota de virada
+
+No laudo de 2026-08-27 a cadeia foi reconstruída a partir de `get_stage_daily`. As cinco métricas de mídia bateram na casa decimal — e três conclusões saíram erradas, todas pela mesma causa: **os campos que responderiam estavam num payload que não tinha como ser lido**.
+
+| Conclusão do laudo | O campo que responde |
+|---|---|
+| "Conv. LP 2,39% não tem lastro" | `agregado.leadsAtribuidos` — existe no payload |
+| "O bloco de criativos mistura outros funis" | `criativos` do `/cadeia-cac` é **só da etapa**; `get_creative_performance` é do projeto |
+| Pedido de print da tela, duas vezes | o payload responde sozinho |
+
+Recompor por fora não é só retrabalho: produz **uma segunda régua**. Foi assim que o `connectRate` ficou 18 a 35 p.p. errado por mais de um ano, e o Epic 44 inteiro existe para que exista uma régua só.
+
+### As quatro armadilhas ao ler o payload
+
+1. **O número principal muda de métrica com a família.** `cacReal` na paga (`paid`/`sales`/`event_capture`/`event`), `cplReal` na gratuita (`free`/`cpl`). **Numa etapa gratuita o principal NÃO é CAC** — chamar o CPL de CAC é o erro que a rota existe para impedir.
+2. **Taxas em decimal.** `0.0192` é 1,92%. O payload declara em `unidadeDasTaxas`.
+3. **`spend` já inclui o imposto Meta**, como gross-up (`spend ÷ (1 − 0,1215)`). Não reaplicar, não reverter.
+4. **`familia: null` não é erro.** É etapa fora da aba (`lyrio`, `comercial`, `debriefing`), com `200` e `motivo: "foraDaAba"`.
+
+### O que continua não existindo — e agora está declarado
+
+- **`bodyConv`** (leads ÷ visualizações de 75%): exige lead por `ad_id`, que o cache não guarda. O payload traz `bodyConvIndisponivel.motivo`. `hookRate` e `holdRate` estão completos.
+- **`atribuicao.coberturaVendas`**: sempre `null` — o sync de vendas não mapeia `utm_content`.
+- **CAC por campanha ou por criativo**: não existe. O CAC é **por etapa**.
+
+---
+
 ## 8. Ainda NÃO existe (não invente)
 
 - **Listas cumulativas Front/Comunidade** — o app não tem onde "conectar" essas planilhas como entidade; feature de produto pendente.

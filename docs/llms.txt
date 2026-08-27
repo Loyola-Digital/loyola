@@ -74,6 +74,48 @@ Resposta: `{ projectId, stageId, stageName, campaignIds: [..], range, partial, l
 > **checkouts / checkoutRate** (Resumão v4): `checkouts` = evento `initiate_checkout` do pixel; `checkoutRate` = `purchases ÷ checkouts × 100`. Em todos os objetos Meta.
 > **linkClicks / ctrLink / cpcLink** (Epic 39): `clicks` cru da Meta = cliques TOTAIS (inclui curtida/perfil); `linkClicks` = evento `link_click` (tráfego real). Para análise de tráfego use `linkClicks`/`ctrLink`/`cpcLink`; `ctr`/`cpc` seguem sobre cliques totais por compatibilidade.
 
+### GET /api/public/meta/v1/projects/{projectId}/stages/{stageId}/cadeia-cac
+**A Cadeia de CAC de uma etapa — o MESMO payload que a aba "Inácio" do painel renderiza** (Epic 44). Query: `from`, `to` (default: últimos 30 dias), `fresh=1` (força recompute das vendas).
+
+⚠️ **PREFIRA esta rota a recompor a cadeia a partir de `/stages/{stageId}/daily`.** CPM, CTR, CPC, Connect Rate, Conv. LP, tetos e ranking já vêm calculados, com a régua da spec do Epic 44. Recalcular por fora produz uma segunda régua que diverge da tela.
+
+**Unidades:** `unidadeDasTaxas: "decimal"` — `0,0192` é 1,92%, não 1,92. `spendIncludesMetaTax: true` — o `spend` JÁ inclui o imposto Meta, aplicado como gross-up (`spend ÷ (1 − 0,1215)`); não reaplicar nem tentar reverter.
+
+**`familia`** — `"paga"` (`paid`/`sales`/`event_capture`/`event`) · `"gratuita"` (`free`/`cpl`) · `null`. **`null` NÃO é erro**: a etapa (`lyrio`, `comercial`, `debriefing`) está fora da aba, e a resposta vem `200` com `semDados: true` e `motivo: "foraDaAba"`.
+
+**`principal`** — o número principal, e **ele muda de métrica com a família**:
+- família **paga** → `metrica: "cacReal"`, `valor = spend ÷ vendasReais` (vendas do Loyola, não do pixel)
+- família **gratuita** → `metrica: "cplReal"`, `valor = spend ÷ leadsUnicos`
+⚠️ **Numa etapa gratuita o número principal NÃO é CAC.** Chamar o CPL de CAC é o erro que esta rota existe para impedir.
+⚠️ Os campos de `principal` **mudam por ramo** — não assuma que coexistem:
+
+| família | situação | campos além de `metrica` |
+|---|---|---|
+| paga | ok | `valor`, `spend`, `vendasReais`, `dataSource`, `computedAt` |
+| paga | sem fonte de vendas | `valor: null`, `motivo: "semDados"`, `message`, `spend` |
+| paga | leitura da fonte falhou | `valor: null`, `motivo: "leituraFalhou"`, `message`, `spend` |
+| gratuita | ok | `valor`, `spend`, `leadsUnicos`, `fonteDeLead`, `computedAt` |
+| gratuita | tem fonte, cache não computado | `valor: null`, `motivo: "syncPendente"`, `message`, `spend` |
+| gratuita | sem fonte conectada | `valor: null`, `motivo: "semDados"`, `message`, `spend` |
+| gratuita | não foi possível determinar | `valor: null`, `motivo: "indeterminado"`, `message`, `spend` |
+
+Os `motivo` pedem **ações diferentes**: `semDados` = conectar fonte · `syncPendente` = esperar o sync · `leituraFalhou` = checar permissão/tentar de novo · `indeterminado` = a checagem falhou. Não colapse em "sem dados".
+
+**`agregado`** — os brutos somáveis que compõem toda taxa: `{ spend, impressions, linkClicks, landingPageViews, checkouts, leadsAtribuidos, dias }`. `leadsAtribuidos: null` = não medido (não é zero).
+**`atuais`** — `{ cpm, cpc, ctr, connectRate, convLP }` no período. Razão de somas, nunca média de médias.
+**`tetos`** — o melhor valor de cada elo em janela de 7 dias, por campanha da etapa: `{ valor, campaignId, de, ate, base, confianca: "alta"|"baixa", fonte }`. `valor: null` vem com `motivo: "baseInsuficiente"` ou `"semDados"`. ⚠️ **Teto com `confianca: "baixa"` é indicação, não meta.**
+**`ranking`** — os elos ordenados pela maior queda contra o próprio teto; `ranking[0]` é o gargalo. `posicao` é a posição do elo NA CADEIA (1=cpc, 2=connectRate, 3=convLP), **não** a prioridade.
+**`composto`** — `{ rotulo: "cenario-teorico", queda, custoAtual, custoNoTeto, metricasDoTeto }`. ⚠️ O rótulo é literal: os tetos vêm de campanhas diferentes e multiplicar taxas assume independência entre os elos, que eles não têm. Cite sempre como cenário teórico.
+**`benchmarks`** — `{ rotulo: "mediana-historica", medianas, campanhasElegiveis, medianaCustoDaCadeia, campanhasComSerie }`. CTR (≥2%) e Connect Rate (>85%) são constantes de mercado e **não** vêm aqui.
+**`criativos`** — agrupados por nome, **SÓ das campanhas desta etapa**: `{ nome, ehId, adIds, spend, impressions, linkClicks, ctr, cpc, hookRate, holdRate }`. ⚠️ Diferente de `/creatives`, que é do **projeto inteiro** e mistura funis.
+**`distribuicaoHook`** — `{ mediana, melhor, pior, abaixoDeMetadeDaMediana, criativosDeVideo }`.
+**`atribuicao`** — `{ coberturaVendas, coberturaLeads, motivo, message }`. ⚠️ **Diagnóstico exibido, NUNCA multiplicador** (spec §2.7): não corrija número nenhum por ele.
+**`guardaDeCobertura`** — se o teto de Conv. LP foi protegido contra "a semana em que o rastreio funcionou melhor". Estados: `aplicada` · `semLeadNoPeriodo` · `indisponivel` · `naoSeAplica`.
+**`vendasSemDataNoTotal` / `leadsSemData`** — quanto ficou fora da série por data ilegível na planilha. `null` = não medido; `0` = medido e nada ficou de fora.
+**`campanhas`** — uma linha por campanha vinculada: `{ campaignId, campaignName, dias, motivo, lastSyncedAt }`. `dias: null` + `motivo: "semDados"` = vinculada mas sem nenhuma linha no cache (≠ "rodou e não teve nada").
+
+Resposta (etapa com dados): `{ projectId, stageId, stageName, stageType, familia, fonte: "ad-level", spendIncludesMetaTax, unidadeDasTaxas, range, lpTemVsl, ticketMedioManual, campanhas, agregado, atuais, principal, atribuicao, criativos, distribuicaoHook, bodyConvIndisponivel, vendasSemDataNoTotal, leadsSemData, tetos, guardaDeCobertura, ranking, composto, decomposicaoCPC, benchmarks }`
+
 ## Endpoints — Leads por origem (Story 36.7)
 
 ### GET /api/public/v1/projects/{projectId}/stages/{stageId}/leads-summary
@@ -163,6 +205,9 @@ Estes dados existem no Loyola X mas ainda não foram expostos (em construção).
 
 - **ROAS por CRIATIVO** (atribuição ad_id↔venda individual). ROAS real por origem/dia JÁ dá pra calcular combinando `/sales-daily` (faturamento) + `/daily` (investimento); por criativo individual virá depois.
 - **Preview interativo do anúncio** (`previewUrl`). Por ora use `creative.thumbnailUrl`/`imageUrl`.
+- **`bodyConv` (Body Conversion = leads ÷ visualizações de 75%)** — NÃO existe e não é omissão: exige lead por `ad_id`, que o cache não guarda. O payload de `/cadeia-cac` declara isso em `bodyConvIndisponivel.motivo = "semFonteDeLeadPorCriativo"`. `hookRate` e `holdRate` não dependem disso e estão completos.
+- **`atribuicao.coberturaVendas` é sempre `null`** — a planilha do sync de vendas não mapeia `utm_content`, então não há numerador. `coberturaLeads` existe em etapa gratuita com cache de lead. Nos dois casos é diagnóstico, nunca multiplicador.
+- **CAC por CAMPANHA ou por CRIATIVO** — não existe. `/cadeia-cac` dá CAC/CPL **por ETAPA** (total da etapa ÷ vendas ou leads da etapa) e desempenho de mídia por criativo. Não cruze os dois para inventar um CAC por criativo.
 
 ## MCP server
 
@@ -177,6 +222,7 @@ Tools (mapeiam 1:1 nos endpoints):
 - `get_creative_timeseries(projectId, adId, from?, to?)` → GET .../creatives/{adId}/timeseries
 - `get_daily(projectId, from?, to?)` → GET /api/public/meta/v1/projects/{projectId}/daily
 - `get_stage_daily(projectId, stageId, from?, to?)` → GET /api/public/meta/v1/projects/{projectId}/stages/{stageId}/daily (mídia SÓ das campanhas da etapa — sem contaminação entre funis/evergreen)
+- `get_stage_cadeia_cac(projectId, stageId, from?, to?)` → GET .../meta/v1/projects/{projectId}/stages/{stageId}/cadeia-cac (**a Cadeia de CAC pronta** — CPM/CTR/CPC/Connect/Conv.LP, tetos, ranking e criativos DA ETAPA. Use em vez de recompor a partir de `get_stage_daily`)
 - `get_stage_leads_summary(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/leads-summary
 - `get_stage_survey(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/survey
 - `get_stage_sales_daily(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/sales-daily

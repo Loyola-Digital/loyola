@@ -198,6 +198,35 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
       )
   );
 
+  // ---- Cadeia de CAC da ETAPA (Epic 44) — o cálculo pronto, igual ao da aba ----
+  server.registerTool(
+    "get_stage_cadeia_cac",
+    {
+      title: "Cadeia de CAC da ETAPA",
+      description:
+        "A Cadeia de CAC de uma etapa — o MESMO payload que a aba 'Inácio' do painel renderiza (Epic 44). " +
+        "PREFIRA esta tool a recompor a cadeia à mão a partir de get_stage_daily: CPM, CTR, CPC, Connect Rate, Conv. LP, tetos por janela de 7 dias, ranking do gargalo e benchmarks já vêm calculados com a régua da spec — recalcular por fora cria uma segunda régua que diverge da tela. " +
+        "O número principal MUDA de métrica com a família da etapa: cacReal (spend ÷ vendas) na família paga (paid/sales/event_capture/event), cplReal (spend ÷ leads únicos) na gratuita (free/cpl) — numa etapa gratuita o principal NÃO é CAC. " +
+        "`criativos` aqui é SÓ das campanhas desta etapa; get_creative_performance é do PROJETO inteiro e mistura funis. " +
+        "Taxas em decimal (0.0192 = 1,92%); spend já inclui o imposto Meta. " +
+        "familia:null não é erro — é etapa fora da aba (lyrio/comercial/debriefing), com motivo 'foraDaAba'. " +
+        "Cada `motivo` pede uma ação diferente (semDados=conectar fonte, syncPendente=esperar o sync, leituraFalhou=checar permissão): não colapse em 'sem dados'.",
+      inputSchema: {
+        projectId: z.string().uuid().describe("ID do projeto (de list_projects)."),
+        stageId: z.string().describe("ID da etapa (de list_stages)."),
+        from: fromField,
+        to: toField,
+      },
+    },
+    async ({ projectId, stageId, from, to }) =>
+      run(() =>
+        client.get(
+          `/api/public/meta/v1/projects/${encodeURIComponent(projectId)}/stages/${encodeURIComponent(stageId)}/cadeia-cac`,
+          { from, to }
+        )
+      )
+  );
+
   // ---- Etapa: leads por origem / pesquisa / vendas ----
   server.registerTool(
     "get_stage_leads_summary",
