@@ -24,6 +24,7 @@ import {
   decryptAccountToken,
   resolveEntityNames,
   LINK_URL_RESOLVER_VERSION,
+  IG_PERMALINK_RESOLVER_VERSION,
   type MetaEntityType,
   type ResolveEntityNamesCacheAdapter,
 } from "../services/meta-ads.js";
@@ -755,9 +756,44 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
           accessToken,
           adIds,
         );
+        // Story 29.63 (AC6): quais destes vieram de linha escrita por código
+        // que ainda não perguntava pelo permalink do Instagram.
+        //
+        // Sem isso, `igPermalinkUrl: null` tem duas causas indistinguíveis na
+        // tela: "a Meta não tem post para este anúncio" (definitivo) e "o cache
+        // é velho" (se resolve sozinho no próximo sync). A primeira pede que a
+        // pessoa pare de esperar; a segunda, que espere. Mostrar o mesmo "—"
+        // para as duas manda o time investigar a Meta quando o problema é nosso.
+        //
+        // Custo: uma consulta por PK aos mesmos ad_ids que acabaram de ser
+        // lidos. Só cache-hit pode estar velho — o que veio fresco da Meta tem
+        // o campo por construção.
+        const linhasEmCache = await fastify.db
+          .select({
+            adId: metaAdCreativesCache.adId,
+            creative: metaAdCreativesCache.creative,
+          })
+          .from(metaAdCreativesCache)
+          .where(
+            and(
+              eq(metaAdCreativesCache.projectId, paramResult.data.projectId),
+              inArray(metaAdCreativesCache.adId, adIds),
+            ),
+          );
+        const igPermalinkStale = linhasEmCache
+          .filter(
+            (l) => (l.creative?.igPermalinkResolver ?? 0) < IG_PERMALINK_RESOLVER_VERSION,
+          )
+          .map((l) => l.adId);
+
         // Story 29.34: `requested` > `limit` diz à UI que houve corte. Campos
         // aditivos — consumidor antigo que só lê `creatives` segue funcionando.
-        return { creatives, requested: requestedAdIds.length, limit: AD_CREATIVES_LIMIT };
+        return {
+          creatives,
+          requested: requestedAdIds.length,
+          limit: AD_CREATIVES_LIMIT,
+          igPermalinkStale,
+        };
       } catch (err) {
         return reply.code(502).send({
           error: "Erro ao buscar criativos",
@@ -1450,7 +1486,16 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
 
       const doCache = linha?.creative?.imageUrl ?? null;
       if (doCache && (await aindaVale(doCache))) {
-        return { sourceUrl: doCache, origem: "cache" as const, permalinkUrl: linha?.creative?.adPermalinkUrl ?? null };
+        // Story 29.66 (AC1): os DOIS permalinks. `permalinkUrl` mantém o
+        // significado que sempre teve (Facebook) porque há telas lendo ele; o do
+        // Instagram entra como campo novo, e quem consome decide a precedência
+        // com `creativePermalink`.
+        return {
+          sourceUrl: doCache,
+          origem: "cache" as const,
+          permalinkUrl: linha?.creative?.adPermalinkUrl ?? null,
+          igPermalinkUrl: linha?.creative?.igPermalinkUrl ?? null,
+        };
       }
 
       // URL morta (ou ausente): uma consulta à Meta para renovar.
@@ -1477,11 +1522,19 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
           // Reaproveita o caminho normal de persistência: além de renovar a URL,
           // ele já baixa a miniatura se ela tiver mudado.
           await upsertAdCreatives(fastify.db, params.data.projectId, [fresco]);
-          return { sourceUrl: fresco.imageUrl, origem: "meta" as const, permalinkUrl: fresco.adPermalinkUrl ?? null };
+          return {
+            sourceUrl: fresco.imageUrl,
+            origem: "meta" as const,
+            permalinkUrl: fresco.adPermalinkUrl ?? null,
+            igPermalinkUrl: fresco.igPermalinkUrl ?? null,
+          };
         }
+        // O 404 também leva os dois: é justamente aqui que a tela oferece
+        // "assistir no post" como alternativa a um vídeo que não toca.
         return reply.code(404).send({
           error: "Este criativo não tem vídeo acessível",
           permalinkUrl: fresco?.adPermalinkUrl ?? linha?.creative?.adPermalinkUrl ?? null,
+          igPermalinkUrl: fresco?.igPermalinkUrl ?? linha?.creative?.igPermalinkUrl ?? null,
         });
       } catch (err) {
         request.log.warn({ err, adId: params.data.adId }, "[creative-video] renovação falhou");

@@ -16,7 +16,7 @@
 
 import { eq, and, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { LINK_URL_RESOLVER_VERSION, AD_PERMALINK_RESOLVER_VERSION } from "./meta-ads.js";
+import { LINK_URL_RESOLVER_VERSION, AD_PERMALINK_RESOLVER_VERSION, IG_PERMALINK_RESOLVER_VERSION } from "./meta-ads.js";
 import {
   metaCampaignInsightsDaily,
   metaAdInsightsDaily,
@@ -499,6 +499,9 @@ export async function upsertAdCreatives(
         // linkUrl para que os dois caminhos de persistência fiquem iguais.
         adPermalinkUrl: c.adPermalinkUrl,
         adPermalinkResolver: AD_PERMALINK_RESOLVER_VERSION,
+        // Story 29.63: permalink do Instagram + carimbo, pelo mesmo motivo.
+        igPermalinkUrl: c.igPermalinkUrl,
+        igPermalinkResolver: IG_PERMALINK_RESOLVER_VERSION,
       },
       lastSyncedAt: now,
     }));
