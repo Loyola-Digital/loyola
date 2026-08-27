@@ -57,7 +57,17 @@ function ymd(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** Range default: últimos 30 dias, igual às rotas irmãs. */
+/**
+ * Range default: últimos 30 dias, igual às rotas irmãs — mas ⚠️ **o valor só é
+ * usado quando `explicitRange` é `true`** (`montarPayloadCadeiaCac:169`). Sem
+ * `from`/`to` a série vem INTEIRA (`meta-campaign-daily.ts:110`) e `range` sai
+ * `{from: null, to: null}` declarando isso. Decisão da 44.8: sem recorte, o
+ * denominador de venda usa `totalVendas` e não a soma do `byDay`, que descarta
+ * venda sem data.
+ *
+ * QA-4414-01: este comentário dizia só a primeira metade, e a doc do
+ * `llms.txt` herdou dele um `default: últimos 30 dias` que a rota não cumpre.
+ */
 function resolveRange(from?: string, to?: string): { from: string; to: string } {
   const today = new Date();
   const toStr = to ?? ymd(today);

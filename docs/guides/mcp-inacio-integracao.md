@@ -146,12 +146,13 @@ No laudo de 2026-08-27 a cadeia foi reconstruída a partir de `get_stage_daily`.
 
 Recompor por fora não é só retrabalho: produz **uma segunda régua**. Foi assim que o `connectRate` ficou 18 a 35 p.p. errado por mais de um ano, e o Epic 44 inteiro existe para que exista uma régua só.
 
-### As quatro armadilhas ao ler o payload
+### As cinco armadilhas ao ler o payload
 
-1. **O número principal muda de métrica com a família.** `cacReal` na paga (`paid`/`sales`/`event_capture`/`event`), `cplReal` na gratuita (`free`/`cpl`). **Numa etapa gratuita o principal NÃO é CAC** — chamar o CPL de CAC é o erro que a rota existe para impedir.
-2. **Taxas em decimal.** `0.0192` é 1,92%. O payload declara em `unidadeDasTaxas`.
-3. **`spend` já inclui o imposto Meta**, como gross-up (`spend ÷ (1 − 0,1215)`). Não reaplicar, não reverter.
-4. **`familia: null` não é erro.** É etapa fora da aba (`lyrio`, `comercial`, `debriefing`), com `200` e `motivo: "foraDaAba"`.
+1. **Não existe default de 30 dias aqui.** Sem `from`/`to` a resposta cobre o **histórico inteiro da etapa**, e `range` vem `{from: null, to: null}` declarando isso. `agregado.dias` diz quantos dias foram somados — uma etapa com 160 dias devolve o CPL de 160 dias. Publicar isso como "nos últimos 30 dias" é número certo com significado errado. As rotas irmãs (`/daily`, `/creatives`) **têm** o default de 30 dias; esta é a exceção do arquivo.
+2. **O número principal muda de métrica com a família.** `cacReal` na paga (`paid`/`sales`/`event_capture`/`event`), `cplReal` na gratuita (`free`/`cpl`). **Numa etapa gratuita o principal NÃO é CAC** — chamar o CPL de CAC é o erro que a rota existe para impedir.
+3. **Taxas em decimal.** `0.0192` é 1,92%. O payload declara em `unidadeDasTaxas`.
+4. **`spend` já inclui o imposto Meta**, como gross-up (`spend ÷ (1 − 0,1215)`). Não reaplicar, não reverter.
+5. **`familia: null` não é erro.** É etapa fora da aba (`lyrio`, `comercial`, `debriefing`), com `200` e `motivo: "foraDaAba"`.
 
 ### O que continua não existindo — e agora está declarado
 

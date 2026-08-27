@@ -66,23 +66,31 @@ describe("Story 44.14 — contrato entre docs/llms.txt e a rota da cadeia de CAC
   it("a tool MCP aponta para o mesmo caminho da rota", () => {
     const caminho = caminhoRegistrado(rotaPublica);
 
-    // A tool monta o path com template string e `encodeURIComponent`, então o
-    // que se compara são os segmentos literais, não a string inteira.
-    const segmentos = caminho
-      .split("/")
-      .filter((s) => s && !s.startsWith(":"));
-
-    for (const seg of segmentos) {
-      expect(
-        toolsMcp.includes(seg),
-        `O segmento "${seg}" do caminho da rota não aparece em packages/mcp/src/tools.ts`,
-      ).toBe(true);
-    }
-
     expect(
       toolsMcp.includes("get_stage_cadeia_cac"),
       "A tool get_stage_cadeia_cac não está registrada no MCP",
     ).toBe(true);
+
+    /**
+     * QA-4414-05: a versão anterior comparava SEGMENTOS soltos (`api`,
+     * `public`, `meta`, ...) com `includes` sobre o arquivo inteiro — e seis dos
+     * sete aparecem em qualquer uma das 17 tools. Um caminho errado
+     * (`.../etapas/{stageId}/cadeia-cac`) passava.
+     *
+     * Aqui o path da tool é extraído do template string e normalizado
+     * (`${encodeURIComponent(projectId)}` → `:projectId`) para comparar com o
+     * caminho da rota INTEIRO, como a asserção do llms.txt já fazia.
+     */
+    const m = toolsMcp.match(/`(\/api\/public\/[^`]*cadeia-cac)`/);
+    expect(m, "não achei o path da cadeia-cac montado em packages/mcp/src/tools.ts").not.toBe(null);
+
+    const daTool = m![1].replace(/\$\{encodeURIComponent\((\w+)\)\}/g, ":$1");
+
+    expect(
+      daTool,
+      `A tool monta "${daTool}" e a rota registra "${caminho}". ` +
+        `Caminhos diferentes = 404 sem o build reclamar.`,
+    ).toBe(caminho);
   });
 
   it("o llms.txt declara a tool na lista do rodapé", () => {
@@ -91,6 +99,38 @@ describe("Story 44.14 — contrato entre docs/llms.txt e a rota da cadeia de CAC
       "A tool existe no MCP mas não está na lista de tools do llms.txt — " +
         "o agente lê essa lista para saber o que pode chamar.",
     ).toBe(true);
+  });
+
+  /**
+   * QA-4414-01 — o default de período.
+   *
+   * A primeira versão desta entrada declarava `default: últimos 30 dias`,
+   * copiando a regra geral do topo do arquivo. A rota faz o oposto: sem
+   * `from`/`to`, `explicitRange` é `false` e o `where` não filtra data
+   * (`meta-campaign-daily.ts:110`) — vem o histórico inteiro. Uma etapa com 160
+   * dias de série devolveria o CPL de 160 dias sob um rótulo de 30.
+   *
+   * É a única rota do arquivo que não segue o default de 30 dias, e a única
+   * cuja doc precisa dizer isso em voz alta. Este teste é o que impede a frase
+   * de voltar.
+   */
+  it("a entrada da cadeia declara que NÃO tem default de 30 dias", () => {
+    const inicio = llms.indexOf("### GET /api/public/meta/v1/projects/{projectId}/stages/{stageId}/cadeia-cac");
+    expect(inicio, "a entrada da cadeia sumiu do llms.txt").toBeGreaterThan(-1);
+    const fim = llms.indexOf("\n## ", inicio);
+    const entrada = llms.slice(inicio, fim === -1 ? undefined : fim);
+
+    expect(
+      /hist[oó]rico inteiro/i.test(entrada),
+      "A entrada não declara que, sem `from`/`to`, a resposta cobre o histórico inteiro da etapa. " +
+        "Sem isso o consumidor herda o default de 30 dias da regra geral (llms.txt:38) e dá " +
+        "período errado a todo número do payload.",
+    ).toBe(true);
+
+    expect(
+      /default:?\s*(de\s*)?[úu]ltimos 30 dias/i.test(entrada),
+      "A entrada voltou a declarar um default de 30 dias que a rota não cumpre (QA-4414-01).",
+    ).toBe(false);
   });
 
   /**

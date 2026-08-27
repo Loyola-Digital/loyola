@@ -35,7 +35,7 @@ Resposta: `{ "funnelId", "projectId", "funnelName", "stages": [{ "id", "name", "
 
 ## Endpoints — Meta Ads
 
-Parâmetros de data comuns: `from`, `to` (ISO `YYYY-MM-DD`; default = últimos 30 dias).
+Parâmetros de data comuns: `from`, `to` (ISO `YYYY-MM-DD`; default = últimos 30 dias). ⚠️ **Uma exceção:** `/stages/{stageId}/cadeia-cac` **não** tem default de 30 dias — sem `from`/`to` ela cobre o histórico inteiro da etapa. Ver a entrada dela.
 
 ### GET /api/public/meta/v1/projects/{projectId}/campaigns
 Performance agregada por campanha no período.
@@ -75,13 +75,16 @@ Resposta: `{ projectId, stageId, stageName, campaignIds: [..], range, partial, l
 > **linkClicks / ctrLink / cpcLink** (Epic 39): `clicks` cru da Meta = cliques TOTAIS (inclui curtida/perfil); `linkClicks` = evento `link_click` (tráfego real). Para análise de tráfego use `linkClicks`/`ctrLink`/`cpcLink`; `ctr`/`cpc` seguem sobre cliques totais por compatibilidade.
 
 ### GET /api/public/meta/v1/projects/{projectId}/stages/{stageId}/cadeia-cac
-**A Cadeia de CAC de uma etapa — o MESMO payload que a aba "Inácio" do painel renderiza** (Epic 44). Query: `from`, `to` (default: últimos 30 dias), `fresh=1` (força recompute das vendas).
+**A Cadeia de CAC de uma etapa — o MESMO payload que a aba "Inácio" do painel renderiza** (Epic 44). Query: `from`, `to`, `fresh=1` (força recompute das vendas).
 
 ⚠️ **PREFIRA esta rota a recompor a cadeia a partir de `/stages/{stageId}/daily`.** CPM, CTR, CPC, Connect Rate, Conv. LP, tetos e ranking já vêm calculados, com a régua da spec do Epic 44. Recalcular por fora produz uma segunda régua que diverge da tela.
+
+⚠️ **Período: esta rota NÃO tem default de 30 dias.** Sem `from`/`to` a resposta cobre o **histórico inteiro da etapa** — todos os dias que existem no cache — e `range` vem `{from: null, to: null}` justamente para declarar que não houve recorte. Com `from`/`to`, `range` ecoa o recorte aplicado. **Leia `range` antes de dar período a qualquer número do payload:** `agregado.dias` diz sobre quantos dias ele foi somado (uma etapa com 160 dias de série devolve o CPL de 160 dias, não de 30). É a única rota deste arquivo que se comporta assim, por decisão da Story 44.8 — sem recorte, o denominador de venda usa o total da etapa, e não a soma por dia, que descarta venda sem data.
 
 **Unidades:** `unidadeDasTaxas: "decimal"` — `0,0192` é 1,92%, não 1,92. `spendIncludesMetaTax: true` — o `spend` JÁ inclui o imposto Meta, aplicado como gross-up (`spend ÷ (1 − 0,1215)`); não reaplicar nem tentar reverter.
 
 **`familia`** — `"paga"` (`paid`/`sales`/`event_capture`/`event`) · `"gratuita"` (`free`/`cpl`) · `null`. **`null` NÃO é erro**: a etapa (`lyrio`, `comercial`, `debriefing`) está fora da aba, e a resposta vem `200` com `semDados: true` e `motivo: "foraDaAba"`.
+⚠️ **São DOIS os cortes que devolvem `200` truncado**, sem `atuais`/`principal`/`tetos`/`ranking`/`composto`/`criativos`: `motivo: "foraDaAba"` (etapa fora da aba) e `motivo: "semDados"` com `campanhas: []` (etapa DA aba, sem nenhuma campanha vinculada — etapa orgânica, não erro). Os dois trazem `semDados: true` no topo: **teste esse campo antes de ler `atuais`/`principal`**.
 
 **`principal`** — o número principal, e **ele muda de métrica com a família**:
 - família **paga** → `metrica: "cacReal"`, `valor = spend ÷ vendasReais` (vendas do Loyola, não do pixel)
@@ -98,15 +101,17 @@ Resposta: `{ projectId, stageId, stageName, campaignIds: [..], range, partial, l
 | gratuita | tem fonte, cache não computado | `valor: null`, `motivo: "syncPendente"`, `message`, `spend` |
 | gratuita | sem fonte conectada | `valor: null`, `motivo: "semDados"`, `message`, `spend` |
 | gratuita | não foi possível determinar | `valor: null`, `motivo: "indeterminado"`, `message`, `spend` |
+| paga ou gratuita | fonte OK, **zero no denominador** | `valor: null`, `motivo: "semDados"` **junto de** `vendasReais: 0`/`leadsUnicos: 0`, `spend`, `dataSource`/`fonteDeLead`, `computedAt` — e **sem `message`** |
 
 Os `motivo` pedem **ações diferentes**: `semDados` = conectar fonte · `syncPendente` = esperar o sync · `leituraFalhou` = checar permissão/tentar de novo · `indeterminado` = a checagem falhou. Não colapse em "sem dados".
+⚠️ **`semDados` sai em dois ramos com ações opostas.** Sem fonte conectada ele vem com `message` e sem `vendasReais`/`leadsUnicos`; com fonte conectada e zero no denominador ele vem **sem `message`** e **com** `vendasReais: 0`/`leadsUnicos: 0` + `computedAt`. Mandar conectar fonte no segundo caso é pedir para configurar algo que já está configurado.
 
 **`agregado`** — os brutos somáveis que compõem toda taxa: `{ spend, impressions, linkClicks, landingPageViews, checkouts, leadsAtribuidos, dias }`. `leadsAtribuidos: null` = não medido (não é zero).
 **`atuais`** — `{ cpm, cpc, ctr, connectRate, convLP }` no período. Razão de somas, nunca média de médias.
 **`tetos`** — o melhor valor de cada elo em janela de 7 dias, por campanha da etapa: `{ valor, campaignId, de, ate, base, confianca: "alta"|"baixa", fonte }`. `valor: null` vem com `motivo: "baseInsuficiente"` ou `"semDados"`. ⚠️ **Teto com `confianca: "baixa"` é indicação, não meta.**
 **`ranking`** — os elos ordenados pela maior queda contra o próprio teto; `ranking[0]` é o gargalo. `posicao` é a posição do elo NA CADEIA (1=cpc, 2=connectRate, 3=convLP), **não** a prioridade.
 **`composto`** — `{ rotulo: "cenario-teorico", queda, custoAtual, custoNoTeto, metricasDoTeto }`. ⚠️ O rótulo é literal: os tetos vêm de campanhas diferentes e multiplicar taxas assume independência entre os elos, que eles não têm. Cite sempre como cenário teórico.
-**`benchmarks`** — `{ rotulo: "mediana-historica", medianas, campanhasElegiveis, medianaCustoDaCadeia, campanhasComSerie }`. CTR (≥2%) e Connect Rate (>85%) são constantes de mercado e **não** vêm aqui.
+**`benchmarks`** — `{ rotulo: "mediana-historica", medianas, campanhasElegiveis, medianaCustoDaCadeia, campanhasElegiveisCustoDaCadeia, campanhasComSerie }`. CTR (≥2%) e Connect Rate (>85%) são constantes de mercado e **não** vêm aqui.
 **`criativos`** — agrupados por nome, **SÓ das campanhas desta etapa**: `{ nome, ehId, adIds, spend, impressions, linkClicks, ctr, cpc, hookRate, holdRate }`. ⚠️ Diferente de `/creatives`, que é do **projeto inteiro** e mistura funis.
 **`distribuicaoHook`** — `{ mediana, melhor, pior, abaixoDeMetadeDaMediana, criativosDeVideo }`.
 **`atribuicao`** — `{ coberturaVendas, coberturaLeads, motivo, message }`. ⚠️ **Diagnóstico exibido, NUNCA multiplicador** (spec §2.7): não corrija número nenhum por ele.
